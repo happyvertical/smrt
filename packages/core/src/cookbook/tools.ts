@@ -4,6 +4,7 @@ import type { AITool } from '@happyvertical/ai';
 import type { Cookbook, RecipeDefinition } from '@happyvertical/smrt-types';
 import type { ActivationCoordinator } from '../activation.js';
 import type { MCPContext, MCPGenerator } from '../generators/mcp.js';
+import { stableStringify } from '../knowledge-graph.js';
 import {
   COOKBOOK_TOOLS_MODEL,
   isRuntimeModelEnabled,
@@ -36,6 +37,7 @@ import {
   type CookbookToolName,
 } from './index.js';
 import type { createAppModelEditor } from './model-editor.js';
+import type { AppModelOperation } from './model-history.js';
 
 /** Control-plane identity: this is gated by the host predicate, never recipe membership. */
 export { COOKBOOK_TOOLS_MODEL } from '../runtime-exposure.js';
@@ -50,6 +52,11 @@ export interface CookbookToolContext {
   tenantId?: string | null;
   userId?: string | null;
   surface: 'mcp' | 'assistant';
+  /** Trusted host run/action identity, never tool arguments or permission authority. */
+  designAction?: { application: string; runId: string; actionId: string };
+  threadId?: string;
+  /** Person Profile identity resolved by the host, not a work profile selector. */
+  profileId?: string | null;
   /** Trusted human first-run route, derived from durable server state; never tool arguments. */
   initialSetup?: boolean;
 }
@@ -83,10 +90,11 @@ export interface CookbookToolApprovals {
     requestedBy: string;
     tool: string;
     callId: string;
+    requestKey?: string;
     args: Record<string, unknown>;
     summary: string;
     context: Record<string, unknown>;
-  }): Promise<{ id: string }>;
+  }): Promise<{ id: string; status?: string }>;
   get(
     tenantId: string,
     id: string,
@@ -187,7 +195,7 @@ const object = (
   additionalProperties: false,
 });
 const digest = (value: unknown): string =>
-  createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  createHash('sha256').update(stableStringify(value)).digest('hex');
 const same = (a: unknown, b: unknown) => digest(a) === digest(b);
 const writes = new Set<CookbookToolName>([
   'recipes.enable',
@@ -409,6 +417,123 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     expires: number;
   };
   const previews = new Map<string, Preview>();
+  const supportsDesignAction = (name: string): name is CookbookToolName =>
+    writes.has(name as CookbookToolName);
+  function designBinding(
+    name: CookbookToolName,
+    args: Record<string, unknown>,
+    context: CookbookToolContext,
+  ): Record<string, unknown> {
+    const { approvalId: _, ...boundArgs } = args;
+    return JSON.parse(
+      stableStringify({
+        tool: name,
+        args: boundArgs,
+        designAction: context.designAction,
+        ...(context.threadId
+          ? {
+              threadId: context.threadId,
+              principal: {
+                userId: context.userId,
+                tenantId: context.tenantId,
+                profileId: context.profileId,
+              },
+            }
+          : {}),
+      }),
+    );
+  }
+  function actionKey(context: CookbookToolContext): string {
+    return digest([
+      context.designAction!.application,
+      context.tenantId,
+      context.userId,
+      context.designAction!.runId,
+      context.designAction!.actionId,
+    ]);
+  }
+  function validateDesignAction(
+    name: CookbookToolName,
+    context: CookbookToolContext,
+  ) {
+    if (!context.designAction) return;
+    const action = context.designAction;
+    const editor = options.modelEditorFor?.(context);
+    if (
+      !supportsDesignAction(name) ||
+      !editor?.supportsDurableOperations ||
+      editor.application !== action.application ||
+      Object.keys(action).sort().join(',') !== 'actionId,application,runId' ||
+      ![action.application, action.runId, action.actionId].every(
+        (value) =>
+          typeof value === 'string' && !!value.trim() && value.length <= 4000,
+      ) ||
+      (context.threadId &&
+        (!context.profileId || typeof context.profileId !== 'string'))
+    )
+      fail(
+        'unsupported_design_action',
+        'This host cannot safely recover this design action.',
+      );
+  }
+  async function recoverDesign(
+    name: CookbookToolName,
+    args: Record<string, unknown>,
+    context: CookbookToolContext,
+  ): Promise<CookbookToolResult | null> {
+    if (!context.designAction) return null;
+    await assertAllowed(context, name);
+    validateDesignAction(name, context);
+    const row = await options.modelEditorFor!(context)!.recover({
+      actor: context.userId!,
+      tenantId: context.tenantId!,
+      requestId: actionKey(context),
+      expectedRevision: Number(args.expectedRevision),
+      operation: { binding: designBinding(name, args, context) },
+    });
+    if (!row) return null;
+    if (row.operation?.approvalId) {
+      const held = await options.approvals.get(
+        context.tenantId!,
+        row.operation.approvalId,
+      );
+      const { approvalId: _, ...boundArgs } = args;
+      if (
+        !held ||
+        held.tenantId !== context.tenantId ||
+        held.requestedBy !== context.userId ||
+        held.tool !== name ||
+        !same(held.args, boundArgs) ||
+        !same(held.context.designAction, context.designAction) ||
+        !['executing', 'succeeded'].includes(held.status)
+      )
+        return fail(
+          'forbidden',
+          'The original approval cannot authorize recovery.',
+        );
+      await assertAllowed(context, name);
+      if (held.status === 'executing') {
+        try {
+          await options.approvals.complete(
+            context.tenantId!,
+            held.id,
+            true,
+            row.result,
+          );
+        } catch (error) {
+          // A simultaneous recovery may already have completed this same proven result.
+          if (
+            (await options.approvals.get(context.tenantId!, held.id))
+              ?.status !== 'succeeded'
+          )
+            throw error;
+        }
+      }
+    }
+    await assertAllowed(context, name);
+    validateDesignAction(name, context);
+    return structuredClone(row.result) as CookbookToolResult;
+  }
   async function allowed(context: CookbookToolContext, name: CookbookToolName) {
     try {
       return (
@@ -486,32 +611,66 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     binding: Record<string, unknown>,
     summary: string,
   ): Promise<string | CookbookToolResult> {
+    binding = {
+      ...binding,
+      ...(context.designAction ? { designAction: context.designAction } : {}),
+      ...(context.threadId
+        ? {
+            threadId: context.threadId,
+            principal: {
+              userId: context.userId,
+              tenantId: context.tenantId,
+              profileId: context.profileId,
+            },
+          }
+        : {}),
+    };
     const { approvalId: _, ...boundArgs } = args;
-    if (typeof args.approvalId !== 'string') {
+    let approvalId = args.approvalId;
+    if (typeof approvalId !== 'string') {
       const request = await options.approvals.request({
         tenantId: context.tenantId!,
         requestedBy: context.userId!,
         tool: name,
-        callId: randomUUID(),
+        callId: context.designAction ? actionKey(context) : randomUUID(),
+        ...(context.designAction ? { requestKey: actionKey(context) } : {}),
         args: boundArgs,
         summary,
         context: binding,
       });
-      await options.audit({
-        context,
-        tool: name,
-        outcome: 'approval_required',
-        summary,
-      });
-      return {
-        status: 'approval_required',
-        summary: `Owner approval required: ${summary}`,
-        approvalId: request.id,
-      };
+      if (
+        context.designAction &&
+        request.status &&
+        request.status !== 'pending'
+      ) {
+        if (request.status === 'executing' || request.status === 'succeeded')
+          fail(
+            'outcome_unknown',
+            'The original action has no confirmed journal result; reconcile its outcome before continuing.',
+          );
+        if (request.status !== 'approved')
+          fail(
+            'approval_terminal',
+            `The original approval is ${request.status}; start a new design action.`,
+          );
+        approvalId = request.id;
+      } else {
+        await options.audit({
+          context,
+          tool: name,
+          outcome: 'approval_required',
+          summary,
+        });
+        return {
+          status: 'approval_required',
+          summary: `Owner approval required: ${summary}`,
+          approvalId: request.id,
+        };
+      }
     }
     const record = await options.approvals.get(
       context.tenantId!,
-      args.approvalId,
+      approvalId as string,
     );
     if (
       !record ||
@@ -607,7 +766,9 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       name === 'app.removeField' ||
       name === 'app.removeList' ||
       name === 'app.undo' ||
-      options.requiresApproval?.(name, context)
+      options.requiresApproval?.(name, context) ||
+      (context.designAction &&
+        (await options.previewBeforeApply?.(context)) !== false)
     ) {
       const approval = await approveChange(
         name,
@@ -648,9 +809,29 @@ export function createCookbookToolService(options: CookbookToolOptions) {
           actor: context.userId!,
           tenantId: context.tenantId!,
           expectedRevision: before.revision,
-          requestId: hold ?? randomUUID(),
+          requestId: context.designAction
+            ? actionKey(context)
+            : (hold ?? randomUUID()),
+          ...(context.designAction
+            ? {
+                operation: {
+                  binding: designBinding(name, args, context),
+                  result: {
+                    status: 'ok',
+                    summary: planned.summary,
+                    ...(planned.data === undefined
+                      ? {}
+                      : { data: planned.data }),
+                  },
+                  catalog: options.catalog,
+                  ...(hold ? { approvalId: hold } : {}),
+                } satisfies AppModelOperation,
+              }
+            : {}),
         },
       );
+      if (context.designAction)
+        return (await recoverDesign(name, args, context))!;
       const result: CookbookToolResult = {
         status: 'ok',
         summary: planned.summary,
@@ -662,7 +843,13 @@ export function createCookbookToolService(options: CookbookToolOptions) {
         await options.approvals.complete(context.tenantId!, hold, true, result);
       return result;
     } catch (error) {
-      if (hold)
+      if (
+        hold &&
+        (!context.designAction ||
+          !(await editor.history()).some(
+            (row) => row.requestId === actionKey(context),
+          ))
+      )
         await options.approvals.complete(context.tenantId!, hold, false, {
           status: 'refused',
         });
@@ -681,6 +868,13 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       await assertAllowed(context, name);
       const problem = checkSchema(schemas[name], args);
       if (problem) fail('invalid_input', problem.message);
+      validateDesignAction(name, context);
+      if (context.designAction && name === 'cookbook.apply') {
+        args.apply = true;
+        delete args.previewToken;
+      }
+      const recovered = await recoverDesign(name, args, context);
+      if (recovered) return recovered;
       if (name.startsWith('app.'))
         return await invokeApp(name as AppToolName, args, context);
       const engine = options.engineFor(context)!;
@@ -796,7 +990,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
         summary = `Use ${template.name}.`;
         const requiresPreview =
           (await options.previewBeforeApply?.(context)) !== false;
-        if (args.apply !== true && requiresPreview) {
+        if (!context.designAction && args.apply !== true && requiresPreview) {
           for (const [key, value] of previews)
             if (value.expires <= Date.now()) previews.delete(key);
           if (previews.size >= 500)
@@ -851,13 +1045,17 @@ export function createCookbookToolService(options: CookbookToolOptions) {
             );
           }
         }
-        if (!requiresPreview && args.expectedRevision !== before.revision)
+        if (
+          (context.designAction || !requiresPreview) &&
+          args.expectedRevision !== before.revision
+        )
           fail(
             'conflict',
             'The cookbook changed. Read it again before editing.',
           );
         const preview = previews.get(String(args.previewToken));
         if (
+          !context.designAction &&
           requiresPreview &&
           (!preview ||
             preview.expires <= Date.now() ||
@@ -941,15 +1139,21 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       summary ||= 'No changes needed; dependencies still in use are retained.';
       const approvalRequired =
         replacingApp ||
-        (options.requiresApproval?.(name, context) ??
-          name === 'recipes.disable');
+        name === 'recipes.disable' ||
+        options.requiresApproval?.(name, context) === true ||
+        (context.designAction &&
+          (await options.previewBeforeApply?.(context)) !== false);
       let hold: string | undefined;
       const binding = {
         cookbookTools: 1,
         before: digest(before),
         after: digest(staged.state()),
         ...(name === 'cookbook.apply'
-          ? { preview: previews.get(String(args.previewToken)) }
+          ? {
+              preview: context.designAction
+                ? { before: before.cookbook, after: staged.cookbook() }
+                : previews.get(String(args.previewToken)),
+            }
           : {}),
       };
       if (approvalRequired) {
@@ -1030,9 +1234,22 @@ export function createCookbookToolService(options: CookbookToolOptions) {
               actor: context.userId!,
               tenantId: context.tenantId!,
               expectedRevision: snapshot.revision,
-              requestId: hold ?? randomUUID(),
+              requestId: context.designAction
+                ? actionKey(context)
+                : (hold ?? randomUUID()),
+              ...(context.designAction
+                ? {
+                    operation: {
+                      binding: designBinding(name, args, context),
+                      result,
+                      ...(hold ? { approvalId: hold } : {}),
+                    } satisfies AppModelOperation,
+                  }
+                : {}),
             },
           );
+          if (context.designAction)
+            return (await recoverDesign(name, args, context))!;
           result.revision = options.engineFor(context)!.snapshot().revision;
           result.snapshot = options.engineFor(context)!.snapshot();
         } else {
@@ -1053,7 +1270,13 @@ export function createCookbookToolService(options: CookbookToolOptions) {
           );
         return result;
       } catch (error) {
-        if (hold)
+        if (
+          hold &&
+          (!context.designAction ||
+            !(await options.modelEditorFor!(context)!.history()).some(
+              (row) => row.requestId === actionKey(context),
+            ))
+        )
           await options.approvals.complete(context.tenantId!, hold, false, {
             status: 'refused',
           });
@@ -1108,6 +1331,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       return result;
     },
     invoke,
+    supportsDesignAction,
     /** Chat/agents' existing PrincipalTool contract, kept structural to avoid a back edge. */
     async assistantTools(context: CookbookToolContext) {
       return (await this.list(context)).map((definition) => ({

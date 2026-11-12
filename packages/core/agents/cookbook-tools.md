@@ -171,3 +171,45 @@ revision checks and durable owner approvals remain authoritative.
 `previewBeforeApply(context)` is an optional owner-preference callback, default
 true. False permits cookbook application without a preview token but still
 requires the current `expectedRevision` and all destructive approval checks.
+
+## Trusted durable design actions
+
+A host can supply `CookbookToolContext.designAction` with its immutable
+`{ application, runId, actionId }`. This is correlation, never authentication.
+Arguments cannot supply it. `supportsDesignAction(name)` identifies supported
+structural app, recipe and cookbook writes; `list(context)` retains their existing
+input schemas. Durable calls require the matching application editor and a history
+store explicitly advertising `supportsDurableOperations`. Legacy custom stores
+remain usable for ordinary calls but cannot silently accept durable actions.
+
+The identity key includes the application, tenant, requesting user, run and action.
+The journal binds it to the exact tool and canonical arguments, including the
+original expected revision. Only `approvalId` is excluded; trusted cookbook final
+application normalizes `apply: true` and uses native durable review rather than an
+ephemeral preview-token exchange. Changed content or an original revision mismatch
+refuses. Completed calls recover before current-list lookup, collision checks or
+fresh revision planning. They return the exact stored tool result, including its
+original lists/snapshot/revision, even after later edits or installed catalog changes.
+Recovery does not publish old state or erase later changes. Live owner membership,
+permission and tenant checks still run on apply and recovery.
+
+With `previewBeforeApply` enabled, every design write requests an existing native
+owner hold before appending history. The host can resolve this preference from its
+pinned run snapshot using the trusted run id. Destructive app removals, undo and
+recipe disable always require approval, including when preview is off or a custom
+approval policy returns false. A cookbook replacement pins the staged before/after
+diff in its hold. Approval retries use the same native `requestKey` and preserve
+expiry. Denied, expired or failed holds refuse rather than creating another hold.
+
+For thread presentation, the host may supply `threadId` and its live-resolved person
+`profileId`; the native envelope pins `principal: { userId, tenantId, profileId }`.
+These are host identity fields, unrelated to the selected work profile. Hosts must
+validate the original principal before restoring them from a continuation.
+
+If activation/publication or journal completion fails after append, the existing
+pending revision remains closed and its consumed approval stays executing. Reopen
+the editor to recover activation and complete its original projection/result. If
+only approval completion or the caller checkpoint failed, a retry proves the
+applied journal result and reconciles executing to succeeded. An executing hold
+without journal proof reports an explicit unknown outcome; it is never dispatched
+again automatically. Generic owner continuations retain their at-most-once rule.

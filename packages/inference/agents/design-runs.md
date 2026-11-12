@@ -32,6 +32,22 @@ abort signal, may feed facts to the next pass, request a bounded repeat, or paus
 for owner approval. Checks must be read-only or idempotent because a crash may
 replay them. A profile supplies quality and budgets, never permission or approval.
 
+An approval hold retains the accepted output, current pass index and `check`
+phase, clears repair state and releases the settled check lease. Resume reruns
+that same check, including for the final pass; only a cleared check can advance
+or finish the run. It never calls the model again for that accepted output or
+duplicates its attempts/token usage. A denied check may fail terminally. Hosts
+must give effects stable identities and recover their exact recorded result
+when replay follows a crash after apply but before the completion checkpoint.
+Recover a running/checking job by calling `run` under its legitimate replacement
+TaskRunner claim (`ownsExecution`), without clearing leases through frontend
+`resume`, weakening liveness proof or enabling generic failed-run retries.
+For a definitive check rejection, the trusted host may return `failure` with
+its own safe, static explanation. This ends the run as `failed`, retaining the
+validated output, input, usage and attempts; it takes precedence over an approval
+hold or repeat. Never copy model output or caught exception text into `failure`.
+Ordinary thrown errors still receive the driver's generic failure explanation.
+
 Inputs carry resource ids. `readResource` rejects ids outside the host's pinned
 list; the host checks current owner access and supplies summary-first pages with
 opaque cursors. A page exceeding `toolResultChars`, including its envelope, is

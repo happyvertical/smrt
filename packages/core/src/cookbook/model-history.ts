@@ -7,7 +7,16 @@ import { MigrationTracker } from '../migrations/tracker.js';
 import { runSerializedAgainstSystemTableBootstrap } from '../system/bootstrap.js';
 import { getDatabaseEngine } from '../system/compatibility.js';
 import { toSafeInteger } from '../utils/safe-integer.js';
+import type { EngineCatalog } from './engine/types.js';
+import type { AppModelEditReceipt } from './model-editor.js';
 
+/** Inert host binding and first-completion projection recipe; never authority. */
+export interface AppModelOperation {
+  binding: Record<string, unknown>;
+  result?: Record<string, unknown>;
+  catalog?: EngineCatalog;
+  approvalId?: string;
+}
 export interface AppModelChange {
   revision: number;
   requestId: string;
@@ -18,12 +27,21 @@ export interface AppModelChange {
   status: 'pending' | 'applied';
   undoes?: number;
   elapsedMs?: number;
+  operation?: AppModelOperation;
+  receipt?: AppModelEditReceipt;
+  result?: Record<string, unknown>;
 }
 /** One application/tenant binding per store. append must atomically check the latest revision. */
 export interface AppModelHistoryStore {
+  readonly supportsDurableOperations?: boolean;
   read(): Promise<AppModelChange[]>;
   append(change: AppModelChange, expectedRevision: number): Promise<void>;
-  complete(revision: number, elapsedMs: number): Promise<void>;
+  complete(
+    revision: number,
+    elapsedMs: number,
+    receipt?: AppModelEditReceipt,
+    result?: Record<string, unknown>,
+  ): Promise<void>;
   /** PostgreSQL revision CAS and application DDL must share this locked transaction. */
   transaction?<T>(
     work: (store: AppModelHistoryStore, db: DatabaseInterface) => Promise<T>,
@@ -61,6 +79,16 @@ export async function createAppModelHistory(options: {
           [],
           { packageName: '@happyvertical/smrt-core', version: '1' },
         ),
+        createMigrationDefinition(
+          'smrt_app_model_changes_v2',
+          [
+            'ALTER TABLE _smrt_app_model_changes ADD COLUMN operation_json TEXT',
+            'ALTER TABLE _smrt_app_model_changes ADD COLUMN receipt_json TEXT',
+            'ALTER TABLE _smrt_app_model_changes ADD COLUMN result_json TEXT',
+          ],
+          [],
+          { packageName: '@happyvertical/smrt-core', version: '2' },
+        ),
       ],
       { postgresSafe: false, reconcile: false },
     );
@@ -77,6 +105,7 @@ export async function createAppModelHistory(options: {
     }
   });
   const bound = (db: DatabaseInterface): AppModelHistoryStore => ({
+    supportsDurableOperations: true,
     async read() {
       const { rows } = await db.query(
         `SELECT * FROM _smrt_app_model_changes WHERE application = ? AND tenant_id = ? ORDER BY revision`,
@@ -90,6 +119,15 @@ export async function createAppModelHistory(options: {
         before: JSON.parse(String(row.before_doc)),
         after: JSON.parse(String(row.after_doc)),
         status: row.status as AppModelChange['status'],
+        ...(row.operation_json
+          ? { operation: JSON.parse(String(row.operation_json)) }
+          : {}),
+        ...(row.receipt_json
+          ? { receipt: JSON.parse(String(row.receipt_json)) }
+          : {}),
+        ...(row.result_json
+          ? { result: JSON.parse(String(row.result_json)) }
+          : {}),
         ...(row.undoes != null
           ? { undoes: toSafeInteger(row.undoes, 'Undone revision') }
           : {}),
@@ -116,8 +154,8 @@ export async function createAppModelHistory(options: {
       // One insert statement is the CAS even across two SQLite connections.
       const { rows } = await db.query(
         `INSERT INTO _smrt_app_model_changes
-        (application, tenant_id, revision, request_id, actor, command, before_doc, after_doc, status, undoes)
-        SELECT ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?
+        (application, tenant_id, revision, request_id, actor, command, before_doc, after_doc, status, undoes, operation_json)
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?
         WHERE COALESCE((SELECT MAX(revision) FROM _smrt_app_model_changes WHERE application = ? AND tenant_id = ?), 0) = ?
         AND NOT EXISTS (SELECT 1 FROM _smrt_app_model_changes WHERE application = ? AND tenant_id = ? AND status = 'pending')
         ON CONFLICT DO NOTHING RETURNING revision`,
@@ -131,6 +169,7 @@ export async function createAppModelHistory(options: {
           JSON.stringify(change.before),
           JSON.stringify(change.after),
           change.undoes ?? null,
+          change.operation ? JSON.stringify(change.operation) : null,
           application,
           tenantId,
           expectedRevision,
@@ -143,9 +182,9 @@ export async function createAppModelHistory(options: {
           'MODEL_EDIT_CONFLICT: history advanced or activation is pending',
         );
     },
-    async complete(revision, elapsedMs) {
+    async complete(revision, elapsedMs, receipt, result) {
       const { rows } = await db.query(
-        `UPDATE _smrt_app_model_changes SET status = 'applied', elapsed_ms = ? WHERE application = ? AND tenant_id = ? AND revision = ? RETURNING revision`,
+        `UPDATE _smrt_app_model_changes SET status = 'applied', elapsed_ms = ?, receipt_json = ?, result_json = ? WHERE application = ? AND tenant_id = ? AND revision = ? AND status = 'pending' RETURNING revision`,
         [
           engine === 'postgres'
             ? toSafeInteger(
@@ -153,13 +192,25 @@ export async function createAppModelHistory(options: {
                 'App model elapsed milliseconds',
               )
             : elapsedMs,
+
+          receipt ? JSON.stringify(receipt) : null,
+          result ? JSON.stringify(result) : null,
           application,
           tenantId,
           revision,
         ],
       );
-      if (rows.length !== 1)
-        throw new Error('MODEL_EDIT_CONFLICT: missing pending revision');
+      if (rows.length !== 1) {
+        const existing = (
+          await db.query(
+            `SELECT status FROM _smrt_app_model_changes WHERE application = ? AND tenant_id = ? AND revision = ?`,
+            [application, tenantId, revision],
+          )
+        ).rows[0];
+        if (existing?.status !== 'applied')
+          throw new Error('MODEL_EDIT_CONFLICT: missing pending revision');
+        // Another completion already won. Never replace its first receipt/result.
+      }
     },
   });
   const store = bound(db);
@@ -168,14 +219,14 @@ export async function createAppModelHistory(options: {
       runSerializedAgainstSystemTableBootstrap(db, engine, (tx) =>
         work(bound(tx), tx),
       );
-    store.complete = (revision, elapsedMs) =>
+    store.complete = (revision, elapsedMs, receipt, result) =>
       runSerializedAgainstSystemTableBootstrap(db, engine, async (tx) => {
         const scoped = bound(tx);
         const latest = (await scoped.read()).at(-1);
         if (latest?.revision !== revision)
           throw new Error('MODEL_EDIT_CONFLICT: history advanced');
         if (latest.status === 'pending')
-          await scoped.complete(revision, elapsedMs);
+          await scoped.complete(revision, elapsedMs, receipt, result);
       });
   }
   return store;

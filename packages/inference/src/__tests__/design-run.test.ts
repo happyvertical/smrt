@@ -461,3 +461,235 @@ describe('durable design run driver', () => {
     await driver.resume('run', 'owner');
   });
 });
+
+describe('approval-gated check checkpoints', () => {
+  it.each([
+    1, 2,
+  ])('rechecks pass %i after owner approval without repeating its model output', async (passCount) => {
+    const f = fixture();
+    let approved = false;
+    let mutations = 0;
+    const applied = new Set<string>();
+    const check = vi.fn(
+      async (_output: unknown, state: Readonly<DesignRunState>) => {
+        if (!approved)
+          return {
+            waitingApproval: true,
+            note: 'Owner approval required',
+            input: { approvalId: 'owner-hold' },
+          };
+        if (!applied.has(state.id)) {
+          applied.add(state.id);
+          mutations++;
+        }
+        return {};
+      },
+    );
+    f.options.passes = Array.from({ length: passCount }, (_, index) => ({
+      name: `Pass ${index}`,
+      schema: {},
+      ...(index === 0 ? { check } : {}),
+    }));
+    // Include a repaired output so waiting clears all prior repair state.
+    f.executePass.mockResolvedValueOnce({
+      output: { valid: false },
+      metadata: {
+        profile: 'design',
+        engine: 'claude-code',
+        effort: 'max',
+        model: 'strongest',
+        durationMs: 1,
+        tokens: 7,
+        toolCalls: 0,
+      },
+    });
+    const driver = createDesignRunDriver(f.options);
+    await driver.start(f.input);
+    const paused = await driver.run('run', 'owner');
+    expect(paused).toMatchObject({
+      status: 'waiting-approval',
+      phase: 'check',
+      passIndex: 0,
+      tokens: 17,
+      repair: 0,
+      input: { approvalId: 'owner-hold' },
+      outputs: [{ valid: true }],
+    });
+    expect(paused.leaseRevision).toBeUndefined();
+    expect(paused.leaseUntil).toBeUndefined();
+    expect(paused.invalidOutput).toBeUndefined();
+    expect(paused.validationErrors).toBeUndefined();
+    const attempts = structuredClone(paused.attempts);
+    const resumed = createDesignRunDriver(f.options);
+    await resumed.resume('run', 'owner');
+    expect((await resumed.run('run', 'owner')).status).toBe('waiting-approval');
+    expect(f.executePass).toHaveBeenCalledTimes(2);
+    expect((await resumed.status('run', 'owner')).attempts).toEqual(attempts);
+    approved = true;
+    await resumed.resume('run', 'owner');
+    const done = await resumed.run('run', 'owner');
+    expect(done.status).toBe('done');
+    expect(done.tokens).toBe(17 + (passCount - 1) * 10);
+    expect(f.executePass).toHaveBeenCalledTimes(passCount + 1);
+    expect(mutations).toBe(1);
+    await resumed.run('run', 'owner');
+    expect(mutations).toBe(1);
+  });
+
+  it('replays an applied check after a lost completion checkpoint under replacement execution ownership', async () => {
+    const f = fixture();
+    const effects = new Map<string, unknown>();
+    let mutations = 0;
+    const check = vi.fn(
+      async (output: unknown, state: Readonly<DesignRunState>) => {
+        if (!effects.has(state.id)) {
+          effects.set(state.id, structuredClone(output));
+          mutations++;
+        }
+        expect(effects.get(state.id)).toEqual(output);
+        return {};
+      },
+    );
+    f.options.passes = [{ name: 'Apply final output', schema: {}, check }];
+    const save = f.store.save.bind(f.store);
+    let rejectCompletion = true;
+    f.store.save = async (state, expected) => {
+      // The last durable record is checking with its live lease. The effect is
+      // durable, but this worker loses ownership before completing the CAS.
+      if (rejectCompletion && state.passIndex === 1) return false;
+      return save(state, expected);
+    };
+    const original = createDesignRunDriver(f.options);
+    await original.start(f.input);
+    await expect(original.run('run', 'owner')).rejects.toBeInstanceOf(
+      DesignRunConflictError,
+    );
+    const persisted = await original.status('run', 'owner');
+    expect(persisted).toMatchObject({
+      status: 'checking',
+      phase: 'check',
+      passIndex: 0,
+      tokens: 10,
+      outputs: [{ valid: true }],
+    });
+    expect(persisted.leaseRevision).toBeDefined();
+    expect(mutations).toBe(1);
+    const attempts = structuredClone(persisted.attempts);
+    const unowned = createDesignRunDriver({
+      ...f.options,
+      ownsExecution: async () => false,
+    });
+    await expect(unowned.run('run', 'owner')).rejects.toBeInstanceOf(
+      DesignRunConflictError,
+    );
+    expect(check).toHaveBeenCalledTimes(1);
+    rejectCompletion = false;
+    // Integration hosts replace this fixture proof with the live TaskRunner
+    // claim. No elapsed-time inference or frontend lease clearing is involved.
+    const replacement = createDesignRunDriver({
+      ...f.options,
+      ownsExecution: async () => true,
+    });
+    expect(await replacement.run('run', 'owner')).toMatchObject({
+      status: 'done',
+      tokens: 10,
+      attempts,
+      outputs: [{ valid: true }],
+    });
+    expect(check).toHaveBeenCalledTimes(2);
+    expect(f.executePass).toHaveBeenCalledOnce();
+    expect(mutations).toBe(1);
+  });
+
+  it('ends a denied approval check without replaying the validated model output', async () => {
+    const f = fixture();
+    let denied = false;
+    f.options.passes = [
+      {
+        name: 'Apply',
+        schema: {},
+        check: async () => {
+          if (denied) throw new Error('Owner denied');
+          return { waitingApproval: true };
+        },
+      },
+    ];
+    const driver = createDesignRunDriver(f.options);
+    await driver.start(f.input);
+    expect((await driver.run('run', 'owner')).status).toBe('waiting-approval');
+    denied = true;
+    await driver.resume('run', 'owner');
+    const failed = await driver.run('run', 'owner');
+    expect(failed).toMatchObject({
+      status: 'failed',
+      phase: 'check',
+      passIndex: 0,
+      tokens: 10,
+      outputs: [{ valid: true }],
+    });
+    expect(f.executePass).toHaveBeenCalledOnce();
+    await expect(driver.resume('run', 'owner')).rejects.toThrow('has ended');
+    expect((await driver.run('run', 'owner')).status).toBe('failed');
+    expect(f.executePass).toHaveBeenCalledOnce();
+  });
+});
+
+describe('trusted host check failures', () => {
+  it('fails terminally with the host explanation while retaining the accepted checkpoint', async () => {
+    const f = fixture();
+    const check = vi.fn(async () => ({
+      failure: 'The final proposal is not ready. Start a new design run.',
+      input: { ready: false },
+      // A definitive failure must take precedence over a conflicting hold/repeat.
+      waitingApproval: true,
+      repeat: true,
+    }));
+    f.options.passes = [{ name: 'Final readiness', schema: {}, check }];
+    const driver = createDesignRunDriver(f.options);
+    await driver.start(f.input);
+    const failed = await driver.run('run', 'owner');
+    expect(failed).toMatchObject({
+      status: 'failed',
+      note: 'The final proposal is not ready. Start a new design run.',
+      phase: 'check',
+      passIndex: 0,
+      input: { ready: false },
+      outputs: [{ valid: true }],
+      tokens: 10,
+      durationMs: 0,
+      repair: 0,
+    });
+    expect(failed.attempts).toHaveLength(1);
+    expect(failed.leaseRevision).toBeUndefined();
+    expect(failed.leaseUntil).toBeUndefined();
+    expect(f.events.some((event) => event.status === 'waiting-approval')).toBe(
+      false,
+    );
+    await expect(driver.resume('run', 'owner')).rejects.toThrow('has ended');
+    const fresh = createDesignRunDriver(f.options);
+    expect(await fresh.run('run', 'owner')).toEqual(failed);
+    expect(check).toHaveBeenCalledOnce();
+    expect(f.executePass).toHaveBeenCalledOnce();
+  });
+
+  it('continues to sanitize ordinary thrown check errors', async () => {
+    const f = fixture();
+    f.options.passes = [
+      {
+        name: 'Final',
+        schema: {},
+        check: async () => {
+          throw new Error('private-provider-payload');
+        },
+      },
+    ];
+    const driver = createDesignRunDriver(f.options);
+    await driver.start(f.input);
+    const failed = await driver.run('run', 'owner');
+    expect(failed.status).toBe('failed');
+    expect(failed.note).toBe(
+      'The design run failed. Review its inputs before starting again.',
+    );
+    expect(JSON.stringify(failed)).not.toContain('private-provider-payload');
+  });
+});

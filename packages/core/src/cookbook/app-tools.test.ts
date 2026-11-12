@@ -44,6 +44,10 @@ import {
 } from './index.js';
 import { createAppModelEditor } from './model-editor.js';
 import {
+  type AppModelHistoryStore,
+  createSqliteAppModelHistory,
+} from './model-history.js';
+import {
   type CookbookToolContext,
   type CookbookToolName,
   type CookbookToolOptions,
@@ -1286,5 +1290,399 @@ describe('app customization tools', () => {
       write('app.addField', { list: 'Customers', label: 'Note', kind: 'text' }),
     ).rejects.toThrow('audit unavailable');
     expect(await editor.history()).toHaveLength(0);
+  });
+});
+
+describe('host design action durable boundary', () => {
+  const host = (actionId = '1'): CookbookToolContext => ({
+    ...context,
+    designAction: { application: 'c6', runId: 'design-run', actionId },
+  });
+  const reopenEditor = async (store?: AppModelHistoryStore) => {
+    editor = await createAppModelEditor({
+      db,
+      application: 'c6',
+      tenantId: TENANT,
+      packageName: APP,
+      cookbook: initial(),
+      catalog,
+      ...(store ? { store } : {}),
+      authorize: (c) => owner && c.tenantId === TENANT && c.actor === USER,
+      publish: (snapshot) => {
+        engine = createCookbookEngine({
+          catalog,
+          state: {
+            version: 1,
+            revision: snapshot.revision,
+            applied: null,
+            cookbook: snapshot.cookbook,
+            journal: [],
+          },
+        });
+      },
+    });
+    service = createCookbookToolService(options);
+  };
+  const add = {
+    list: 'Customers',
+    label: 'Preferred colour',
+    kind: 'text',
+    expectedRevision: 0,
+  };
+  it('returns the exact original result after later edits, registry/catalog changes and reopen', async () => {
+    options.previewBeforeApply = () => false;
+    const original = await call('app.addField', add, host());
+    await write('app.addField', {
+      list: 'Customers',
+      label: 'Later note',
+      kind: 'text',
+    });
+    await reopenEditor();
+    // Completed replay never rebuilds its response from the live catalog.
+    options.catalog = {
+      ...catalog,
+      recipes: catalog.recipes.map((r) => ({ ...r, synonyms: ['different'] })),
+    };
+    service = createCookbookToolService(options);
+    expect(await call('app.addField', add, host())).toStrictEqual(original);
+    expect(editor.snapshot().revision).toBe(2);
+    expect((await editor.history()).map((r) => r.revision)).toEqual([1, 2]);
+    expect(JSON.stringify(editor.snapshot().cookbook)).toContain('laterNote');
+  });
+  it('deduplicates native preview holds and applies an approved original call once', async () => {
+    const first = await call('app.addField', add, host());
+    expect(first.status).toBe('approval_required');
+    service = createCookbookToolService(options);
+    expect(await call('app.addField', add, host())).toStrictEqual(first);
+    expect(await editor.history()).toHaveLength(0);
+    expect(
+      await authority.list({ id: USER, tenantId: TENANT }, false),
+    ).toHaveLength(1);
+    await authority.decide(
+      { id: USER, tenantId: TENANT },
+      String(first.approvalId),
+      true,
+    );
+    const original = await call('app.addField', add, host());
+    expect(original.status).toBe('ok');
+    expect(await call('app.addField', add, host())).toStrictEqual(original);
+    expect(await editor.history()).toHaveLength(1);
+  });
+  it('rejects changed content/revision/tool, wrong application and revoked live authority before recovery', async () => {
+    options.previewBeforeApply = () => false;
+    await call('app.addField', add, host());
+    for (const args of [
+      { ...add, label: 'Forged' },
+      { ...add, expectedRevision: 1 },
+    ])
+      await expect(call('app.addField', args, host())).rejects.toThrow(
+        'REUSED',
+      );
+    await expect(
+      call(
+        'app.renameList',
+        { list: 'Customers', label: 'People', expectedRevision: 0 },
+        host(),
+      ),
+    ).rejects.toThrow('REUSED');
+    await expect(
+      call('app.addField', add, {
+        ...host(),
+        designAction: { ...host().designAction!, application: 'other' },
+      }),
+    ).rejects.toThrow('safely recover');
+    permission = false;
+    await expect(call('app.addField', add, host())).rejects.toThrow(
+      'signed-in owner',
+    );
+    permission = true;
+    owner = false;
+    await expect(call('app.addField', add, host())).rejects.toThrow(
+      'signed-in owner',
+    );
+    owner = true;
+    await expect(
+      call('app.addField', add, { ...host(), tenantId: OTHER }),
+    ).rejects.toThrow('signed-in owner');
+    await expect(
+      call(
+        'app.addField',
+        { ...add, designAction: host().designAction },
+        host(),
+      ),
+    ).rejects.toThrow();
+  });
+  it('fails closed before mutation when a custom history store has no exact-result capability', async () => {
+    const store = await createSqliteAppModelHistory({
+      db,
+      application: 'c6',
+      tenantId: TENANT,
+    });
+    await reopenEditor({
+      read: store.read,
+      append: store.append,
+      complete: store.complete,
+    });
+    await expect(call('app.addField', add, host())).rejects.toThrow(
+      'safely recover',
+    );
+    expect(await editor.history()).toHaveLength(0);
+    options.previewBeforeApply = () => false;
+    expect(
+      (
+        await write('app.addField', {
+          list: 'Customers',
+          label: 'Ordinary',
+          kind: 'text',
+        })
+      ).status,
+    ).toBe('ok');
+  });
+  it('recovers pending publication bookkeeping, reconciles the executing hold and never mutates twice', async () => {
+    const store = await createSqliteAppModelHistory({
+      db,
+      application: 'c6',
+      tenantId: TENANT,
+    });
+    let fail = true;
+    await reopenEditor({
+      ...store,
+      complete: async (...args) => {
+        if (fail) throw new Error('crash before complete');
+        await store.complete(...args);
+      },
+    });
+    const hold = await call('app.addField', add, host());
+    await authority.decide(
+      { id: USER, tenantId: TENANT },
+      String(hold.approvalId),
+      true,
+    );
+    await expect(call('app.addField', add, host())).rejects.toThrow(
+      'crash before complete',
+    );
+    expect((await editor.history())[0].status).toBe('pending');
+    expect((await authority.get(TENANT, String(hold.approvalId)))?.status).toBe(
+      'executing',
+    );
+    fail = false;
+    await reopenEditor();
+    const recovered = await call('app.addField', add, host());
+    expect(recovered.status).toBe('ok');
+    expect(await call('app.addField', add, host())).toStrictEqual(recovered);
+    expect(await editor.history()).toHaveLength(1);
+    expect((await authority.get(TENANT, String(hold.approvalId)))?.status).toBe(
+      'succeeded',
+    );
+  });
+  it.each([
+    'denied',
+    'expired',
+  ] as const)('refuses a %s native hold without creating another approval', async (status) => {
+    const result = await call('app.addField', add, host());
+    if (status === 'denied')
+      await authority.decide(
+        { id: USER, tenantId: TENANT },
+        String(result.approvalId),
+        false,
+      );
+    else {
+      const now = Date.now() + 20 * 60_000;
+      authority = new OwnerApprovalAuthority(
+        await createSqliteOwnerApprovalStore(db, () => now),
+        async () => true,
+        () => now,
+      );
+      options.approvals = authority;
+    }
+    await expect(call('app.addField', add, host())).rejects.toThrow(status);
+    expect(await editor.history()).toHaveLength(0);
+    expect(
+      await authority.list({ id: USER, tenantId: TENANT }, false),
+    ).toHaveLength(1);
+  });
+  it('keeps the destructive approval floor with preview off and a permissive custom policy', async () => {
+    options.previewBeforeApply = () => false;
+    options.requiresApproval = () => false;
+    await call('app.addField', add, host());
+    expect(
+      (
+        await call(
+          'app.removeField',
+          { list: 'Customers', field: 'Preferred colour', expectedRevision: 1 },
+          host('remove'),
+        )
+      ).status,
+    ).toBe('approval_required');
+    expect(
+      (
+        await call(
+          'recipes.disable',
+          { id: 'customers', expectedRevision: 1 },
+          host('disable'),
+        )
+      ).status,
+    ).toBe('approval_required');
+    expect(await editor.history()).toHaveLength(1);
+  });
+  it('keeps first completion immutable even when another completion supplies a different projection', async () => {
+    options.previewBeforeApply = () => false;
+    const first = await call('app.addField', add, host());
+    const stored = (await editor.history())[0];
+    const store = await createSqliteAppModelHistory({
+      db,
+      application: 'c6',
+      tenantId: TENANT,
+    });
+    await Promise.all([
+      store.complete(
+        1,
+        999,
+        { ...stored.receipt!, revision: 999 },
+        { status: 'ok', summary: 'forged' },
+      ),
+      store.complete(1, 888, stored.receipt, {
+        status: 'ok',
+        summary: 'other',
+      }),
+    ]);
+    expect((await editor.history())[0]).toStrictEqual(stored);
+    expect(await call('app.addField', add, host())).toStrictEqual(first);
+  });
+  it('preserves the exact applied result when approval completion crashes before the caller checkpoint', async () => {
+    const hold = await call('app.addField', add, host());
+    await authority.decide(
+      { id: USER, tenantId: TENANT },
+      String(hold.approvalId),
+      true,
+    );
+    options.approvals = {
+      request: authority.request.bind(authority),
+      get: authority.get.bind(authority),
+      consume: authority.consume.bind(authority),
+      complete: async () => {
+        throw new Error('lost response');
+      },
+    };
+    await expect(call('app.addField', add, host())).rejects.toThrow(
+      'lost response',
+    );
+    const committed = (await editor.history())[0].result;
+    expect((await editor.history())[0].status).toBe('applied');
+    options.approvals = authority;
+    await write('app.addField', {
+      list: 'Customers',
+      label: 'Later',
+      kind: 'text',
+    });
+    await reopenEditor();
+    expect(await call('app.addField', add, host())).toStrictEqual(committed);
+    expect(await editor.history()).toHaveLength(2);
+    expect((await authority.get(TENANT, String(hold.approvalId)))?.status).toBe(
+      'succeeded',
+    );
+  });
+  it('reports an unconfirmed executing hold without journal proof and never dispatches again', async () => {
+    const hold = await call('app.addField', add, host());
+    await authority.decide(
+      { id: USER, tenantId: TENANT },
+      String(hold.approvalId),
+      true,
+    );
+    await authority.consume(TENANT, String(hold.approvalId));
+    await expect(call('app.addField', add, host())).rejects.toThrow(
+      'no confirmed journal result',
+    );
+    expect(await editor.history()).toHaveLength(0);
+  });
+  it('lets only one competing action advance the same revision', async () => {
+    options.previewBeforeApply = () => false;
+    const results = await Promise.allSettled([
+      call('app.addField', add, host()),
+      call('app.addField', { ...add, label: 'Other field' }, host('other')),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(await editor.history()).toHaveLength(1);
+  });
+  it('covers every app edit and recipe enable/disable through the same stable boundary', async () => {
+    options.previewBeforeApply = () => false;
+    const operations: [CookbookToolName, Record<string, unknown>][] = [
+      [
+        'app.addList',
+        {
+          label: 'Loaners',
+          nameField: 'Name',
+          fields: [{ label: 'Name', kind: 'text' }],
+        },
+      ],
+      ['app.renameList', { list: 'Loaners', label: 'Gear' }],
+      ['app.addField', { list: 'Gear', label: 'Colour', kind: 'text' }],
+      ['app.renameField', { list: 'Gear', field: 'Colour', label: 'Shade' }],
+      ['app.hideField', { list: 'Gear', field: 'Shade' }],
+      ['app.showField', { list: 'Gear', field: 'Shade' }],
+      ['app.removeField', { list: 'Gear', field: 'Shade' }],
+      ['app.removeList', { list: 'Gear' }],
+      ['app.undo', {}],
+      ['recipes.disable', { id: 'customers' }],
+      ['recipes.enable', { id: 'customers' }],
+    ];
+    for (const [index, [name, input]] of operations.entries()) {
+      const args = { ...input, expectedRevision: editor.snapshot().revision };
+      const caller = host(`operation-${index}`);
+      let result = await call(name, args, caller);
+      if (result.status === 'approval_required') {
+        await authority.decide(
+          { id: USER, tenantId: TENANT },
+          String(result.approvalId),
+          true,
+        );
+        result = await call(name, args, caller);
+      }
+      expect(result.status, name).toBe('ok');
+      service = createCookbookToolService(options);
+      expect(await call(name, args, caller), name).toStrictEqual(result);
+      expect(await editor.history(), name).toHaveLength(index + 1);
+    }
+  });
+  it('supports recipe configuration and cookbook application without ephemeral preview tokens', async () => {
+    options.catalog = {
+      ...catalog,
+      cookbooks: [{ id: 'fixture', name: 'Fixture', document: initial() }],
+    };
+    service = createCookbookToolService(options);
+    const configure = {
+      id: 'customers',
+      expectedRevision: 0,
+      fields: [{ model: CUSTOMER, field: 'name', label: 'Customer name' }],
+    };
+    const hold = await call('recipes.configure', configure, host('configure'));
+    await authority.decide(
+      { id: USER, tenantId: TENANT },
+      String(hold.approvalId),
+      true,
+    );
+    const result = await call(
+      'recipes.configure',
+      configure,
+      host('configure'),
+    );
+    expect(
+      await call('recipes.configure', configure, host('configure')),
+    ).toStrictEqual(result);
+    const args = { id: 'fixture', expectedRevision: 1 };
+    const replacement = await call('cookbook.apply', args, host('template'));
+    expect(replacement.status).toBe('approval_required');
+    await authority.decide(
+      { id: USER, tenantId: TENANT },
+      String(replacement.approvalId),
+      true,
+    );
+    const applied = await call('cookbook.apply', args, host('template'));
+    expect(applied.status).toBe('ok');
+    service = createCookbookToolService(options);
+    expect(await call('cookbook.apply', args, host('template'))).toStrictEqual(
+      applied,
+    );
+    expect(await editor.history()).toHaveLength(2);
   });
 });

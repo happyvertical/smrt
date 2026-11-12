@@ -221,3 +221,21 @@ and `cookbook/engine/{commands,document,engine,nav,types}.ts`.
 Outside core: shared cookbook types/exports in `packages/types`, CLI command
 cache in `packages/cli/src/cli-generator.ts` with its test/documentation,
 and generated core/CLI knowledge pages. No other package implementation changes.
+
+### Historical receipts and durable tool results
+
+The existing journal's v2 migration adds optional operation, receipt and result
+JSON columns. New completions persist the exact historical receipt; durable host
+operations additionally persist their exact tool response. First completion is a
+pending-only CAS: repeated/concurrent completion cannot replace the winning
+projection, timing or result. Pending boot recovery completes the original
+operation using its pinned catalog and captured manifest identity mapping, then
+stores the response before readiness opens. Completed replay never rebuilds a
+response from live registry/catalog state. Ordinary pre-v2 rows retain their
+legacy snapshot replay fallback; durable operations refuse missing verified data.
+
+Custom stores opt into `supportsDurableOperations` only when they atomically retain
+operation metadata at append and the first receipt/result passed to `complete`.
+`editor.recover(context)` rechecks authorization, tenant, actor, original revision
+and operation binding before returning a verified completed journal row. The
+matching `application` and capability getters support trusted host adapters.

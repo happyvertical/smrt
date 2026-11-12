@@ -7,6 +7,7 @@ import { coveredModels } from './engine/document.js';
 import { buildNav, humanize, modelParts, navItemId } from './engine/nav.js';
 import type { AppToolName } from './index.js';
 import type { AppModelEdit, AppModelSnapshot } from './model-editor.js';
+import type { AppModelOperation } from './model-history.js';
 import { cookbookModelCatalog, isCustomIdentifier } from './models.js';
 import type { CookbookToolOptions, CookbookToolResult } from './tools.js';
 
@@ -68,7 +69,7 @@ export function describeApp(
       const item =
         nav.find((entry) => recipeItems.includes(entry.id)) ??
         nav.find((entry) => entry.id === itemId);
-      const effective = ObjectRegistry.getClass(id)?.qualifiedName ?? id;
+      const effective = snapshot.manifest.objects[id]?.replacedBy ?? id;
       const definition = snapshot.webDefinitions.find(
         (entry) => entry.objectRef === effective || entry.objectRef === id,
       );
@@ -377,4 +378,23 @@ export function planAppEdit(
     },
     summary: `${name === 'app.hideField' ? 'Hid' : 'Showed'} ${field.label} in ${list.label}.`,
   };
+}
+
+/** Materialize once at journal completion, including pending activation recovery. */
+export function appOperationResult(
+  operation: AppModelOperation | undefined,
+  snapshot: AppModelSnapshot,
+): Record<string, unknown> | undefined {
+  if (!operation?.result) return undefined;
+  const result: Record<string, unknown> = {
+    ...operation.result,
+    revision: snapshot.revision,
+  };
+  if (operation.catalog)
+    Object.assign(result, { lists: describeApp(snapshot, operation.catalog) });
+  else if (result.snapshot && typeof result.snapshot === 'object')
+    Object.assign(result, {
+      snapshot: { ...result.snapshot, revision: snapshot.revision },
+    });
+  return JSON.parse(JSON.stringify(result));
 }

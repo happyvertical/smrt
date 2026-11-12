@@ -1,5 +1,10 @@
-import { randomUUID } from 'node:crypto';
-import type { CookbookToolDefinition } from '@happyvertical/smrt-core/cookbook/tools';
+import { createHash, randomUUID } from 'node:crypto';
+import type {
+  CookbookToolDefinition,
+  CookbookToolName,
+  CookbookToolResult,
+} from '@happyvertical/smrt-core/cookbook/tools';
+import { stableStringify } from '@happyvertical/smrt-core/knowledge';
 import {
   createDesignRunDriver,
   createDesignRunStore,
@@ -13,7 +18,9 @@ import {
 } from '@happyvertical/smrt-inference/server';
 import {
   isRunnerExecutionContext,
+  JobHandle,
   SmrtJobCollection,
+  SmrtJobEventCollection,
 } from '@happyvertical/smrt-jobs';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import Ajv from 'ajv/dist/2020.js';
@@ -22,6 +29,22 @@ import Ajv from 'ajv/dist/2020.js';
 export interface CookbookDesignRunsOptions {
   db: DatabaseInterface;
   authorize(ownerId: string, tenantId: string | null): Promise<void>;
+  authorizeThread?(
+    ownerId: string,
+    tenantId: string | null,
+    threadId: string,
+  ): Promise<void>;
+  currentRevision?(ownerId: string, tenantId: string | null): Promise<number>;
+  executeOperation?(input: {
+    ownerId: string;
+    tenantId: string | null;
+    threadId: string;
+    runId: string;
+    actionId: string;
+    permissions: readonly string[];
+    operation: { tool: CookbookToolName; args: Record<string, unknown> };
+    signal: AbortSignal;
+  }): Promise<CookbookToolResult>;
   /** Current core-owned structural schemas, resolved under the live owner. */
   listOperations?(
     ownerId: string,
@@ -74,7 +97,13 @@ const outputSchema = {
     },
   },
 };
-const definitionPrefix = 'cookbook-design/v2/';
+const definitionPrefix = 'cookbook-design/v3/';
+// d3b879bef0: core app.addField inputSchema after the v2 adapter excludes
+// approvalId. Derived with core's exported stableStringify, never a copied schema.
+const v2AddFieldSchemaPin =
+  '0a56ace412f0b4756eb29fb16575da602fb97316fe644ac5ea217278756be9b4';
+const fingerprint = (value: unknown) =>
+  createHash('sha256').update(stableStringify(value)).digest('hex');
 
 /**
  * Concrete cookbook workflow on inference checkpoints and the existing jobs queue.
@@ -85,6 +114,27 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
   const ajv = new Ajv({ strict: true, allErrors: true });
   const jobs = SmrtJobCollection.create({ db: options.db });
   const controllers = new Map<string, AbortController>();
+  async function enqueue(
+    tx: DatabaseInterface,
+    state: Readonly<DesignRunState>,
+    tenantId: string | null,
+  ) {
+    await (await jobs).enqueueJob(
+      {
+        objectType: '@happyvertical/smrt-inference:DesignRunRecord',
+        objectId: state.id,
+        method: 'execute',
+        args: {},
+        tenantId,
+        dedupeKey: state.id,
+        queue: 'default',
+        maxAttempts: 1,
+        timeout: state.budget.maxDurationMs,
+        timeoutBehavior: 'warn',
+      },
+      { transaction: tx },
+    );
+  }
 
   async function driver(
     ownerId: string,
@@ -97,10 +147,11 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
       throw new Error('Design passes must be between 1 and 64');
     // v1 outputs retain their original contract. New runs advertise the actual
     // owning schemas without granting the model any mutation tools.
-    const operations = definition.startsWith(definitionPrefix)
+    const structured = !definition.startsWith('cookbook-design/v1/');
+    const operations = structured
       ? ((await options.listOperations?.(ownerId, tenantId)) ?? [])
       : [];
-    const schema = definition.startsWith(definitionPrefix)
+    const schema = structured
       ? {
           ...outputSchema,
           properties: {
@@ -174,26 +225,10 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
           }
         : {}),
       async enqueue(tx, state) {
-        await (await jobs).enqueueJob(
-          {
-            objectType: '@happyvertical/smrt-inference:DesignRunRecord',
-            objectId: state.id,
-            method: 'execute',
-            args: {},
-            tenantId,
-            dedupeKey: state.id,
-            queue: 'default',
-            // Domain checkpoints own resume; never retry a stopped claim.
-            maxAttempts: 1,
-            timeout: state.budget.maxDurationMs,
-            // The driver owns per-pass deadlines and durable cumulative budgets.
-            timeoutBehavior: 'warn',
-          },
-          { transaction: tx },
-        );
+        await enqueue(tx, state, tenantId);
       },
     });
-    return createDesignRunDriver({
+    const workflow = createDesignRunDriver({
       store,
       definition,
       passes: Array.from({ length: count }, (_, index) => ({
@@ -204,13 +239,101 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
               ? 'Propose the design'
               : 'Check and revise the design',
         schema,
-        async check(output: unknown, state: Readonly<DesignRunState>) {
+        async check(
+          output: unknown,
+          state: Readonly<DesignRunState>,
+          { signal },
+        ) {
           // Mechanical validation is repeated after a crash before advancing.
           if (!validateOutput(output))
             throw new Error('Stored design output failed validation');
-          const plan = output as { operations: unknown[]; ready: boolean };
+          const plan = output as {
+            operations: Array<{
+              tool: CookbookToolName;
+              args: Record<string, unknown>;
+            }>;
+            ready: boolean;
+          };
           const final = index === count - 1;
-          const preview = readInput(state.input).profile.previewBeforeApply;
+          const input = readInput(state.input);
+          if (
+            definition.startsWith(definitionPrefix) &&
+            (state.input as { schemaPin?: unknown }).schemaPin !==
+              fingerprint(schema)
+          )
+            throw new Error(
+              'The design schema changed; start a new design run',
+            );
+          const preview = input.profile.previewBeforeApply;
+          if (final && definition.startsWith(definitionPrefix) && !plan.ready)
+            return {
+              failure:
+                'No changes were applied. The design needs more information before it can propose a supported change.',
+              input: {
+                ...(state.input as Record<string, unknown>),
+                previousCheck: { pass: index + 1, ready: false, checked: true },
+              },
+            };
+          if (
+            final &&
+            definition.startsWith(definitionPrefix) &&
+            plan.ready &&
+            plan.operations.length
+          ) {
+            if (!options.executeOperation)
+              throw new Error('Durable design application is unavailable');
+            await options.authorize(ownerId, tenantId);
+            await options.authorizeThread?.(ownerId, tenantId, input.threadId);
+            const pin = (state.input as Record<string, unknown>).applyPin;
+            if (pin && pin !== fingerprint({ input, output, schema }))
+              throw new Error('The approved design proposal or schema changed');
+            const results: CookbookToolResult[] = [];
+            for (const [action, operation] of plan.operations.entries()) {
+              signal.throwIfAborted();
+              if (!input.permissions.includes(operation.tool))
+                throw new Error(
+                  'Design operation is outside its original permission ceiling',
+                );
+              const result = await options.executeOperation({
+                ownerId,
+                tenantId,
+                threadId: input.threadId,
+                runId: state.id,
+                actionId: String(action),
+                permissions: input.permissions,
+                operation,
+                signal,
+              });
+              if (result.status === 'approval_required') {
+                if (typeof result.approvalId !== 'string')
+                  throw new Error('Design approval is unavailable');
+                return {
+                  waitingApproval: true,
+                  note: result.summary,
+                  input: {
+                    ...(state.input as Record<string, unknown>),
+                    pendingApprovalId: result.approvalId,
+                    previousCheck: {
+                      pass: index + 1,
+                      ready: true,
+                      checked: true,
+                    },
+                    results,
+                  },
+                };
+              }
+              if (result.status !== 'ok') throw new Error(result.summary);
+              results.push(result);
+            }
+            return {
+              input: {
+                ...(state.input as Record<string, unknown>),
+                pendingApprovalId: undefined,
+                previousCheck: { pass: index + 1, ready: true, checked: true },
+                results,
+              },
+            };
+          }
           return {
             ...(final && (plan.operations.length > 0 || !plan.ready)
               ? {
@@ -223,7 +346,7 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
                 }
               : {}),
             input: {
-              ...readInput(state.input),
+              ...(state.input as Record<string, unknown>),
               previousCheck: {
                 pass: index + 1,
                 ready: (output as { ready: boolean }).ready,
@@ -242,6 +365,12 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
       },
       async executePass(request) {
         await options.authorize(ownerId, tenantId);
+        if (
+          definition.startsWith(definitionPrefix) &&
+          (request.input as { schemaPin?: unknown }).schemaPin !==
+            fingerprint(schema)
+        )
+          throw new Error('The design schema changed; start a new design run');
         const input = readInput(request.input);
         return options.executePass({
           ownerId,
@@ -279,10 +408,11 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
         : {}),
       onProgress: options.onProgress,
     });
+    return { ...workflow, validateProposal: validateOutput, schema };
   }
 
   function passCount(definition: string) {
-    const match = /^cookbook-design\/v[12]\/(\d+)$/.exec(definition);
+    const match = /^cookbook-design\/v[123]\/(\d+)$/.exec(definition);
     if (!match) throw new Error('Design run definition changed');
     return Number(match[1]);
   }
@@ -372,7 +502,8 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
           if (input.profile.name !== 'design')
             throw new Error('Design runs require the design profile');
           const budget = input.profile.budgets;
-          return (await driver(ownerId, tenantId, budget.passes)).start({
+          const run = await driver(ownerId, tenantId, budget.passes);
+          return run.start({
             id: randomUUID(),
             ownerId,
             resourceIds: input.resourceIds ?? [],
@@ -381,6 +512,7 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
               content: input.content,
               profile: input.profile,
               permissions: [...(input.permissions ?? [])],
+              schemaPin: fingerprint(run.schema),
             },
             budget: {
               maxTokens: budget.maxRunTokens,
@@ -409,6 +541,54 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
         async status(id: string) {
           return (await existing(id)).status(id, ownerId);
         },
+        async validateAction(
+          id: string,
+          actionId: string,
+          tool: string,
+          args: Record<string, unknown>,
+        ) {
+          const run = await existing(id);
+          const state = await run.status(id, ownerId);
+          const output = state.outputs[passCount(state.definition) - 1];
+          const input = readInput(state.input);
+          if (
+            !state.definition.startsWith(definitionPrefix) ||
+            state.phase !== 'check' ||
+            state.passIndex !== passCount(state.definition) - 1 ||
+            !['waiting-approval', 'running', 'checking'].includes(
+              state.status,
+            ) ||
+            !run.validateProposal(output) ||
+            (state.input as { schemaPin?: unknown }).schemaPin !==
+              fingerprint(run.schema) ||
+            !(output as { ready: boolean }).ready ||
+            !/^(0|[1-9]\d*)$/.test(actionId)
+          )
+            throw new Error('Saved design action changed');
+          const operation = (
+            output as {
+              operations: Array<{
+                tool: string;
+                args: Record<string, unknown>;
+              }>;
+            }
+          ).operations[Number(actionId)];
+          const desired =
+            operation?.tool === 'cookbook.apply'
+              ? { ...operation.args, apply: true }
+              : operation?.args;
+          if (
+            !operation ||
+            operation.tool !== tool ||
+            !input.permissions.includes(tool) ||
+            fingerprint(desired) !== fingerprint(args)
+          )
+            throw new Error('Saved design arguments changed');
+          const pin = (state.input as { applyPin?: unknown }).applyPin;
+          if (pin && pin !== fingerprint({ input, output, schema: run.schema }))
+            throw new Error('Saved design proposal changed');
+          await options.authorizeThread?.(ownerId, tenantId, input.threadId);
+        },
         async stop(id: string) {
           const run = await existing(id);
           const state = await run.status(id, ownerId);
@@ -418,8 +598,112 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
           return result;
         },
         async resume(id: string, budget?: Partial<DesignRunBudget>) {
-          const run = await existing(id);
-          const state = await run.status(id, ownerId);
+          let run = await existing(id);
+          let state = await run.status(id, ownerId);
+          const input = readInput(state.input);
+          if (
+            state.definition.startsWith('cookbook-design/v2/') &&
+            state.status === 'waiting-approval'
+          ) {
+            const count = passCount(state.definition);
+            const final = state.outputs[count - 1];
+            const upgraded = await driver(ownerId, tenantId, count);
+            const variants = upgraded.schema.properties.operations.items as {
+              oneOf?: Array<{
+                properties: { tool: { const: string }; args: unknown };
+              }>;
+            };
+            const fieldSchema = variants.oneOf?.find(
+              (variant) => variant.properties.tool.const === 'app.addField',
+            )?.properties.args;
+            if (
+              state.phase !== 'model' ||
+              state.passIndex !== count ||
+              state.outputs.length !== count ||
+              state.leaseRevision !== undefined ||
+              state.leaseUntil !== undefined ||
+              !upgraded.validateProposal(final) ||
+              fingerprint(fieldSchema) !== v2AddFieldSchemaPin ||
+              !(final as { ready: boolean }).ready ||
+              !(final as { operations: unknown[] }).operations.length ||
+              !options.authorizeThread ||
+              !(
+                final as { operations: Array<{ tool: string }> }
+              ).operations.every((operation) =>
+                input.permissions.includes(operation.tool),
+              ) ||
+              !(
+                final as { operations: Array<{ tool: string }> }
+              ).operations.every(
+                (operation) => operation.tool === 'app.addField',
+              )
+            )
+              throw new Error(
+                'The design proposal is not compatible with durable application',
+              );
+            await options.authorizeThread(ownerId, tenantId, input.threadId);
+            if (!options.currentRevision)
+              throw new Error('Live design revision is unavailable');
+            const revision = await options.currentRevision(ownerId, tenantId);
+            if (
+              !(
+                final as {
+                  operations: Array<{ args: { expectedRevision?: unknown } }>;
+                }
+              ).operations.every(
+                (operation, index) =>
+                  operation.args.expectedRevision === revision + index,
+              )
+            )
+              throw new Error(
+                'The application revision changed; start a new design run',
+              );
+            // The same current owning schema must still be offered after auth.
+            if (
+              fingerprint(upgraded.schema) !==
+              fingerprint((await driver(ownerId, tenantId, count)).schema)
+            )
+              throw new Error('The design schema changed');
+            const next: DesignRunState = {
+              ...state,
+              revision: state.revision + 1,
+              definition: `${definitionPrefix}${count}`,
+              phase: 'check',
+              passIndex: count - 1,
+              input: {
+                ...(state.input as Record<string, unknown>),
+                schemaPin: fingerprint(upgraded.schema),
+                applyPin: fingerprint({
+                  input,
+                  output: final,
+                  schema: upgraded.schema,
+                }),
+              },
+            };
+            if (!options.db.transaction)
+              throw new Error('Design runs require transaction support');
+            const scope =
+              tenantId === null ? 'tenant_id IS NULL' : 'tenant_id = ?';
+            const migrated = await options.db.transaction(async (tx) =>
+              tx.query(
+                `UPDATE _smrt_inference_design_runs SET revision = ?, payload = ?, updated_at = ? WHERE id = ? AND owner_id = ? AND ${scope} AND revision = ? AND payload = ? AND NOT EXISTS (SELECT 1 FROM _smrt_jobs WHERE object_id = ? AND object_type = ? AND status IN ('pending', 'running')) RETURNING id`,
+                next.revision,
+                JSON.stringify(next),
+                new Date().toISOString(),
+                id,
+                ownerId,
+                ...(tenantId === null ? [] : [tenantId]),
+                state.revision,
+                JSON.stringify(state),
+                id,
+                '@happyvertical/smrt-inference:DesignRunRecord',
+              ),
+            );
+            if (migrated.rows.length !== 1)
+              throw new Error('Design run changed; reload its current status');
+            state = next;
+            run = upgraded;
+          }
           if (
             state.passIndex >= passCount(state.definition) &&
             state.status !== 'done'
@@ -436,7 +720,113 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
             throw new Error(
               'The current design pass is stopping. Resume when it has stopped.',
             );
+          if (
+            state.definition.startsWith(definitionPrefix) &&
+            state.phase === 'check' &&
+            ['running', 'checking'].includes(state.status) &&
+            state.passIndex === passCount(state.definition) - 1
+          ) {
+            const output = state.outputs[state.passIndex];
+            if (
+              !run.validateProposal(output) ||
+              !(output as { ready: boolean }).ready ||
+              !options.authorizeThread
+            )
+              throw new Error(
+                'Design recovery requires a valid final proposal',
+              );
+            await options.authorizeThread(ownerId, tenantId, input.threadId);
+            const collection = await jobs;
+            const candidates = await collection.list({
+              where: {
+                objectId: id,
+                objectType: '@happyvertical/smrt-inference:DesignRunRecord',
+                status: 'failed',
+              },
+              orderBy: 'updated_at DESC',
+              limit: 1,
+            });
+            const prior = candidates[0];
+            const events = await SmrtJobEventCollection.create({
+              db: options.db,
+            });
+            const outcomes = await events.listTerminalOutcomes({
+              tenantId,
+              objectTypes: ['@happyvertical/smrt-inference:DesignRunRecord'],
+              limit: 1000,
+            });
+            if (
+              !prior?.id ||
+              !outcomes.outcomes.some(
+                (event) =>
+                  event.jobId === prior.id &&
+                  event.attempts === prior.attempts &&
+                  event.failureKind === 'stale-recovery',
+              )
+            )
+              throw new Error(
+                'The previous worker has not been recovered by TaskRunner',
+              );
+            if (!options.db.transaction)
+              throw new Error('Design runs require transaction support');
+            const next = {
+              ...state,
+              status: 'running' as const,
+              revision: state.revision + 1,
+            };
+            await options.db.transaction(async (tx) => {
+              const recovered = await tx.query(
+                "UPDATE _smrt_jobs SET updated_at = updated_at WHERE id = ? AND status = 'failed' AND attempts = ? RETURNING id",
+                prior.id,
+                prior.attempts,
+              );
+              if (recovered.rows.length !== 1)
+                throw new Error('The recovered job changed');
+              const scope =
+                tenantId === null ? 'tenant_id IS NULL' : 'tenant_id = ?';
+              const saved = await tx.query(
+                `UPDATE _smrt_inference_design_runs SET revision = ?, payload = ?, updated_at = ? WHERE id = ? AND owner_id = ? AND ${scope} AND revision = ? AND payload = ? AND NOT EXISTS (SELECT 1 FROM _smrt_jobs WHERE object_id = ? AND object_type = ? AND status IN ('pending', 'running')) RETURNING id`,
+                next.revision,
+                JSON.stringify(next),
+                new Date().toISOString(),
+                id,
+                ownerId,
+                ...(tenantId === null ? [] : [tenantId]),
+                state.revision,
+                JSON.stringify(state),
+                id,
+                '@happyvertical/smrt-inference:DesignRunRecord',
+              );
+              if (saved.rows.length !== 1)
+                throw new Error(
+                  'Design run changed; reload its current status',
+                );
+              await enqueue(tx, next, tenantId);
+            });
+            return next;
+          }
           return run.resume(id, ownerId, budget);
+        },
+        async resumeAfterApproval(id: string) {
+          await options.authorize(ownerId, tenantId);
+          const active = await options.db.query(
+            "SELECT id FROM _smrt_jobs WHERE object_id = ? AND object_type = ? AND status = 'running'",
+            id,
+            '@happyvertical/smrt-inference:DesignRunRecord',
+          );
+          for (const row of active.rows)
+            await new JobHandle(String(row.id), await jobs).wait({
+              timeout: 30_000,
+              pollInterval: 25,
+            });
+          const run = await existing(id);
+          const state = await run.status(id, ownerId);
+          if (
+            state.status !== 'waiting-approval' ||
+            !state.definition.startsWith(definitionPrefix)
+          )
+            return state;
+          return run.resume(id, ownerId);
         },
       };
     },

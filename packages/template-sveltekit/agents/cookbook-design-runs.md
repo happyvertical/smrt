@@ -39,14 +39,14 @@ next input. This generic check establishes output structure, not application
 schema correctness. Cookbook policy, revision checks and the existing apply
 preview and approvals remain the authority for actual changes.
 
-New runs pin `cookbook-design/v2/<passes>`. Their operation schema is a `oneOf`
+New runs pin `cookbook-design/v3/<passes>`. Their operation schema is a `oneOf`
 of the current core cookbook structural tool names and input schemas, resolved
 under the live owner. Approval ids are excluded from proposal arguments. The
 model sees those exact schemas as proposal data while its callable tools remain
 read-only; unknown tool names, MCP wire names and extra arguments enter the same
 bounded schema repair path without effects. Persisted v1 runs retain their
 original schema and review-pending semantics; their completed outputs are never
-reinterpreted as valid v2 actions.
+reinterpreted as valid actions.
 
 Authenticated same-origin `POST /api/assistant/design-runs` admits a design job
 directly using exactly `{ threadId, content }`. It reuses chat's own thread-read
@@ -58,16 +58,50 @@ The server's pass executor uses its existing authenticated assistant route and
 engine adapters with job-bound limits. Design passes offer only read/proposal
 tools: replay and schema repair cannot repeat mutation effects. The run produces
 a concrete proposal (`operations: [{ tool, args }]`) in the original thread.
-A nonempty final proposal remains `waiting-approval`, with a note that the person
-must review and apply it using the app controls. This is review-pending state,
-not a claim that a native owner-approval hold has already been created. Resume
-cannot mark that proposal applied. Preview-off explicitly reports automatic
-application as blocked: owning cookbook tools do not yet accept a trusted stable
-run/action replay key at their mutation boundary. The model never applies effects
-as part of a replayable schema pass. Applying the proposal continues through
-existing preview/approval routes. The profile grants no authority. Deterministic Fresh,
+A ready v3 final proposal is applied by its deterministic check through the
+existing core cookbook service. The host supplies an application/run/action
+identity; an action's index is stable and core pins its exact arguments. Preview
+creates a native durable owner hold in the existing thread approval UI. Its
+ordinary decision route executes the held action with current owner permissions
+intersected with the original ceiling, then queues the same final check. That
+check recovers the exact core result before advancing to `done`; it never makes
+another model call. With preview off, additive changes apply directly and still
+enter change history. Destructive changes always retain native owner approval.
+An unready final v3 proposal terminates as failed with the host's plain note that
+no changes were applied and more information is needed. It creates no approval
+hold or history entry. Historical v1/v2 review semantics are preserved. The
+profile grants no authority. The model
+never applies effects as part of a replayable schema pass. Deterministic Fresh,
 template application and Start over keep their established policy; only actual
 assistant work starts a design job.
+
+Stop also pauses new effects from an existing native hold. The ordinary owner
+decision can still record approval while stopped, returning its normal approved
+state without consuming or executing it. Explicit Resume applies that same hold
+once and completes the run. Denial remains a durable terminal decision. Stop
+does not reverse an effect already recorded in change history.
+
+Explicit owner Resume can migrate a completed v2 `app.addField` review proposal
+to v3's final check without repeating its model passes. This narrow adapter pins
+the core argument schema from committed `d3b879bef0` using core's exported
+`stableStringify`; other v2 operations require a fresh v3 run. Migration requires
+a ready nonempty proposal valid against the current supported core schemas, its
+original permission ceiling, live thread ownership and application revision, and
+no job or execution lease. One
+transaction compares the exact old payload, revision and scoped identity before
+changing the definition; attempts, outputs, usage and run id are preserved. A
+proposal/schema fingerprint prevents later drift. New v3 runs persist their own
+schema pin, preserve it through every check and validate it before native
+continuation effects. V1 and unready v2 outputs are never migrated. HTTP cannot
+select a definition, action or profile.
+
+Crash recovery preserves the persisted final-check lease. The old job must first
+be terminally recovered by TaskRunner's worker-liveness sweep, with an
+authoritative `stale-recovery` outcome for that exact job/attempt. Owner Resume
+then atomically admits a new existing job against the unchanged checkpoint. Its
+real replacement claim authorizes check replay and core returns the exact
+committed action result. Generic failed jobs and a live original worker do not
+qualify; no lease is cleared to bypass ownership.
 
 Inference reserves unknown usage conservatively, accumulates time/tokens across
 passes and preserves usage on resume. The host's `readResource` callback is
@@ -91,6 +125,15 @@ resume after replacing the host, active Stop with preserved usage and permission
 ceiling, immediate resume of a cooperatively settled pass with a 30-minute lease,
 uncooperative execution retaining its reservation, late release refused after a
 job claim changes, three ordered checked passes, schema repair and
-unknown-usage cumulative budget exhaustion/resume, and the explicit preview-off
-automatic-apply blocker without effects. No external engines or
-containers are involved.
+unknown-usage cumulative budget exhaustion/resume, and durable final-check
+replay. Its 22 tests include narrow historical schema drift, live
+revision/permission rejection and concurrent migration. The real host suite
+verifies default native preview and the
+existing approval POST, direct preview-off history, destructive approval,
+denial, approval deferred by Stop, schema repair without effects and scoped
+history projection. Its
+file-backed SQLite crash scenario suspends the completion checkpoint after a
+real core mutation, simulates worker death with public liveness retirement,
+observes TaskRunner's real orphan outcome and recovers the exact result under a
+replacement job claim without clearing the persisted lease or calling a model
+again. No external engines or containers are involved.

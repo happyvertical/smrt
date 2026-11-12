@@ -1,6 +1,7 @@
 /** Durable, single-use holds for host tools. Never expose this authority to a model. */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import {
   type ApprovalPrincipal,
   ApprovalService,
@@ -42,6 +43,8 @@ export interface OwnerApprovalInput {
   requestedBy: string;
   tool: string;
   callId: string;
+  /** Trusted host action identity; retries preserve the original hold and expiry. */
+  requestKey?: string;
   args: Record<string, unknown>;
   summary: string;
   /** Host recovery envelope (thread, principal, permission ceiling), never request-body authority. */
@@ -66,6 +69,8 @@ export interface OwnerApprovalStore {
   /** Only legacy host stores with an established indefinite-hold contract opt in. */
   readonly supportsNonExpiring?: boolean;
   insert(record: OwnerApproval): Promise<void>;
+  /** Atomically claim or recover the original inert envelope and canonical gate. */
+  insertOrGet?(record: OwnerApproval): Promise<OwnerApproval>;
   get(tenantId: string, id: string): Promise<OwnerApproval | null>;
   list(tenantId: string): Promise<OwnerApproval[]>;
   transition(
@@ -144,6 +149,11 @@ export class OwnerApprovalAuthority {
         copy.callId,
         copy.summary,
       ].every((v) => typeof v === 'string' && v.trim() && v.length <= 4000) ||
+      (copy.requestKey !== undefined &&
+        (typeof copy.requestKey !== 'string' ||
+          !copy.requestKey.trim() ||
+          copy.requestKey.length > 4000 ||
+          !this.store.insertOrGet)) ||
       !Number.isSafeInteger(ttl) ||
       ttl < 60_000 ||
       ttl > 24 * 60 * 60_000 ||
@@ -160,7 +170,17 @@ export class OwnerApprovalAuthority {
     const createdAt = this.now();
     const record: OwnerApproval = {
       ...data,
-      id: randomUUID(),
+      id: copy.requestKey
+        ? `action-${createHash('sha256')
+            .update(
+              JSON.stringify([
+                copy.tenantId,
+                copy.requestedBy,
+                copy.requestKey,
+              ]),
+            )
+            .digest('hex')}`
+        : randomUUID(),
       status: 'pending',
       createdAt,
       expiresAt: this.options.nonExpiring
@@ -169,6 +189,12 @@ export class OwnerApprovalAuthority {
       decidedBy: null,
       decidedAt: null,
     };
+    if (copy.requestKey) {
+      const stored = await this.store.insertOrGet!(record);
+      const fresh = await this.get(stored.tenantId, stored.id);
+      if (!fresh) throw new OwnerApprovalError('conflict');
+      return fresh;
+    }
     await this.store.insert(record);
     return record;
   }
@@ -417,34 +443,78 @@ export async function createOwnerApprovalStore(
       ...(row.result == null ? {} : { result: JSON.parse(String(row.result)) }),
     };
   };
-  return {
-    async insert(record) {
-      // An unlinked envelope can never be listed, decided or consumed.
+  const insertEnvelope = async (
+    record: OwnerApproval,
+    retry: boolean,
+  ): Promise<OwnerApproval> => {
+    await db.query(
+      `INSERT INTO ${TABLE} (id, tenant_id, record) VALUES (?, ?, ?) ${retry ? 'ON CONFLICT (id) DO NOTHING' : ''}`,
+      record.id,
+      record.tenantId,
+      JSON.stringify(record),
+    );
+    const row = (
       await db.query(
-        `INSERT INTO ${TABLE} (id, tenant_id, record) VALUES (?, ?, ?)`,
-        record.id,
+        `SELECT * FROM ${TABLE} WHERE tenant_id = ? AND id = ?`,
         record.tenantId,
-        JSON.stringify(record),
+        record.id,
+      )
+    ).rows[0];
+    if (!row) throw new OwnerApprovalError('conflict');
+    const original = JSON.parse(String(row.record)) as OwnerApproval;
+    const content = (value: OwnerApproval) => {
+      const {
+        id: _,
+        status: _status,
+        createdAt,
+        expiresAt,
+        decidedBy: _by,
+        decidedAt: _at,
+        result: _result,
+        ...input
+      } = value;
+      return JSON.parse(
+        JSON.stringify({ ...input, ttlMs: expiresAt - createdAt }),
       );
-      const gate = await service.requestApproval(
-        principal(record.tenantId, record.requestedBy, 'agent'),
+    };
+    if (!isDeepStrictEqual(content(original), content(record)))
+      throw new OwnerApprovalError('conflict');
+    // Recover an interrupted envelope→gate link through ApprovalService's existing requestKey.
+    if (!row.gate_id) {
+      // Preserve the original expiry even if linking is recovered much later.
+      const gate = await new ApprovalService({
+        db,
+        now: () => new Date(original.createdAt),
+      }).requestApproval(
+        principal(original.tenantId, original.requestedBy, 'agent'),
         {
-          kind: kind(record),
-          subjectId: record.id,
-          subjectRevisionHash: hash(record),
-          requestKey: record.id,
-          summary: record.summary,
+          kind: kind(original),
+          subjectId: original.id,
+          subjectRevisionHash: hash(original),
+          requestKey: original.id,
+          summary: original.summary,
         },
       );
       if (!gate.request || gate.outcome === 'refused')
         throw new OwnerApprovalError('invalid_request');
       await db.query(
-        `UPDATE ${TABLE} SET gate_id = ? WHERE tenant_id = ? AND id = ?`,
+        `UPDATE ${TABLE} SET gate_id = ? WHERE tenant_id = ? AND id = ? AND (gate_id IS NULL OR gate_id = ?)`,
         gate.request.id,
-        record.tenantId,
-        record.id,
+        original.tenantId,
+        original.id,
+        gate.request.id,
       );
+    }
+    const linked = await rowFor(original.tenantId, original.id);
+    const result = linked ? await read(linked) : null;
+    if (!result) throw new OwnerApprovalError('conflict');
+    return result;
+  };
+  return {
+    async insert(record) {
+      await insertEnvelope(record, false);
     },
+    insertOrGet: (record) => insertEnvelope(record, true),
     async get(tenantId, id) {
       const row = await rowFor(tenantId, id);
       return row ? read(row) : null;

@@ -72,6 +72,8 @@ export interface DesignRunStore {
 /** Mechanical checks run after a validated model pass, including on replay. */
 export interface DesignPassCheck {
   input?: unknown;
+  /** Safe terminal explanation authored by the trusted host check, never model output. */
+  failure?: string;
   repeat?: boolean;
   waitingApproval?: boolean;
   note?: string;
@@ -382,7 +384,24 @@ export function createDesignRunDriver(options: DesignRunDriverOptions) {
             }
             state.durationMs += Math.max(0, now() - began) - allowance;
             clearSettledLease();
+            state.repair = 0;
+            state.invalidOutput = undefined;
+            state.validationErrors = undefined;
             if (check?.input !== undefined) state.input = check.input;
+            if (check?.failure !== undefined) {
+              state.status = 'failed';
+              state.note = check.failure;
+              await save(state);
+              return state;
+            }
+            if (check?.waitingApproval) {
+              // The accepted output is still awaiting this pass's check. Resume
+              // replays only the idempotent check, including on the final pass.
+              state.status = 'waiting-approval';
+              state.note = check.note ?? 'Waiting for your approval.';
+              await save(state);
+              return state;
+            }
             if (check?.repeat) {
               if (state.iteration >= (pass.maxRepeats ?? 0))
                 throw new Error(
@@ -394,13 +413,6 @@ export function createDesignRunDriver(options: DesignRunDriverOptions) {
               state.iteration = 0;
             }
             state.phase = 'model';
-            state.repair = 0;
-            if (check?.waitingApproval) {
-              state.status = 'waiting-approval';
-              state.note = check.note ?? 'Waiting for your approval.';
-              await save(state);
-              return state;
-            }
             await save(state);
             continue;
           }

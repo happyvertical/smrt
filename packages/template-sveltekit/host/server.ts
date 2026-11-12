@@ -90,6 +90,7 @@ import {
   type ChatGPTPlanConnection,
   createAgentCliService,
   createChatGPTPlanConnection,
+  createDesignRunStore,
   createInferenceSettingsController,
   createInferenceSettingsHost,
   INFERENCE_PERMISSION_DEFINITIONS,
@@ -373,9 +374,128 @@ export function createCookbookHost(options: CookbookHostOptions) {
       store: createPreferenceStore({ db }),
       isOwner: (p) => isOwner(p.tenantId, p.userId),
     });
+    async function restoredDesignContext(
+      record: import('@happyvertical/smrt-app-runtime').OwnerApproval,
+    ) {
+      const action = record.context.designAction as
+        | Record<string, unknown>
+        | undefined;
+      if (!action) return {};
+      if (
+        action.application !== (options.application ?? options.packageName) ||
+        typeof action.runId !== 'string' ||
+        typeof action.actionId !== 'string' ||
+        !/^(0|[1-9]\d*)$/.test(action.actionId)
+      )
+        throw new Error('Invalid saved design action');
+      const user = await (await UserCollection.create({ db })).get({
+        id: record.requestedBy,
+      });
+      const principal = record.context.principal as
+        | Record<string, unknown>
+        | undefined;
+      const saved = await createDesignRunStore({
+        db,
+        ownerId: record.requestedBy,
+        tenantId: record.tenantId,
+        enqueue: async () => {
+          throw new Error('Read only');
+        },
+      }).load(action.runId, record.requestedBy);
+      if (
+        !saved?.definition.startsWith('cookbook-design/v3/') ||
+        !user?.profileId ||
+        principal?.profileId !== user.profileId ||
+        (saved.input as { threadId?: unknown }).threadId !==
+          record.context.threadId
+      )
+        throw new Error('Saved design principal changed');
+      await authorizeDesignThread(
+        record.requestedBy,
+        record.tenantId,
+        record.context.threadId as string,
+      );
+      await designRuns
+        .forOwner(record.requestedBy, record.tenantId)
+        .validateAction(
+          action.runId,
+          action.actionId,
+          record.tool,
+          record.args,
+        );
+      return {
+        designAction: {
+          application: action.application as string,
+          runId: action.runId,
+          actionId: action.actionId,
+        },
+        threadId: record.context.threadId as string,
+        profileId: user.profileId,
+      };
+    }
+    async function authorizeDesignThread(
+      ownerId: string,
+      tenantId: string | null,
+      threadId: string,
+    ) {
+      if (!tenantId) throw new Error('Tenant required');
+      await runtime.runAsPrincipal(
+        { id: ownerId, tenantId, kind: 'human' },
+        async (bound) => {
+          const user = await (await UserCollection.create({ db })).get({
+            id: ownerId,
+          });
+          if (!user?.profileId || !bound) throw new Error('Owner unavailable');
+          const url = new URL(
+            `/api/assistant/threads/${encodeURIComponent(threadId)}/messages`,
+            origin ?? 'http://127.0.0.1',
+          );
+          const response = await assistantRoutes.GET({
+            url,
+            request: new Request(url),
+            params: {
+              path: `threads/${encodeURIComponent(threadId)}/messages`,
+            },
+            locals: {
+              user: { id: ownerId, profileId: user.profileId },
+              tenantId,
+              permissions: [...(bound.scopes ?? [])],
+            },
+          } as unknown as RequestEvent);
+          if (!response.ok) throw new Error('Design thread unavailable');
+        },
+      );
+    }
     const continuations = new OwnerApprovalContinuations(authority, {
-      cookbook: async (record) =>
-        executeSaved(record, async () =>
+      cookbook: async (record) => {
+        const action = record.context.designAction as
+          | { runId?: unknown }
+          | undefined;
+        if (typeof action?.runId === 'string') {
+          const saved = await createDesignRunStore({
+            db,
+            ownerId: record.requestedBy,
+            tenantId: record.tenantId,
+            enqueue: async () => {
+              throw new Error('Read only');
+            },
+          }).load(action.runId, record.requestedBy);
+          // Native authority records the owner's decision normally. An
+          // executor-owned hold remains approved/unconsumed while Stop pauses
+          // effects; explicit Resume performs the same stable action.
+          if (
+            saved?.status === 'stopped' &&
+            saved.definition.startsWith('cookbook-design/v3/') &&
+            saved.phase === 'check' &&
+            saved.passIndex === Number(saved.definition.split('/').at(-1)) - 1
+          )
+            return {
+              status: 'deferred',
+              summary:
+                'This design is paused. Resume it to apply the approved change.',
+            };
+        }
+        return executeSaved(record, async () =>
           service.invoke(
             record.tool as Parameters<typeof service.invoke>[0],
             { ...record.args, approvalId: record.id },
@@ -383,9 +503,11 @@ export function createCookbookHost(options: CookbookHostOptions) {
               surface: 'mcp',
               tenantId: record.tenantId,
               userId: record.requestedBy,
+              ...(await restoredDesignContext(record)),
             },
           ),
-        ),
+        );
+      },
       model: async (record) =>
         executeSaved(record, async (run) => {
           const offered =
@@ -463,9 +585,26 @@ export function createCookbookHost(options: CookbookHostOptions) {
         ).permissions.has(slug);
       },
       approvals: continuations.adapter('cookbook'),
-      previewBeforeApply: async () =>
-        (await workProfiles.read()).settings.design?.previewBeforeApply !==
-        false,
+      previewBeforeApply: async (context) => {
+        if (context.designAction && context.userId && context.tenantId) {
+          const saved = await createDesignRunStore({
+            db,
+            ownerId: context.userId,
+            tenantId: context.tenantId,
+            enqueue: async () => {
+              throw new Error('Read only');
+            },
+          }).load(context.designAction.runId, context.userId);
+          return (
+            (saved?.input as { profile?: ResolvedWorkProfile } | undefined)
+              ?.profile?.previewBeforeApply !== false
+          );
+        }
+        return (
+          (await workProfiles.read()).settings.design?.previewBeforeApply !==
+          false
+        );
+      },
       isAppEmpty: async (context) => {
         if (!context.initialSetup || !context.tenantId) return false;
         const engine = state.engineFor(context);
@@ -582,6 +721,24 @@ export function createCookbookHost(options: CookbookHostOptions) {
       : undefined;
     const designRuns = createCookbookDesignRuns({
       db,
+      authorizeThread: authorizeDesignThread,
+      currentRevision: async (ownerId, tenantId) => {
+        if (!tenantId) throw new Error('Tenant required');
+        return runtime.runAsPrincipal(
+          { id: ownerId, tenantId, kind: 'human' },
+          async () => {
+            await prepare(tenantId, false);
+            const result = await service.invoke(
+              'app.describe',
+              {},
+              { surface: 'mcp', tenantId, userId: ownerId },
+            );
+            if (!Number.isSafeInteger(result.revision))
+              throw new Error('Application revision unavailable');
+            return result.revision as number;
+          },
+        );
+      },
       authorize: async (ownerId, tenantId) => {
         if (!(await isOwner(tenantId, ownerId)))
           throw new Error('Owner required');
@@ -594,10 +751,91 @@ export function createCookbookHost(options: CookbookHostOptions) {
             await prepare(tenantId, false);
             return (
               await service.list({ surface: 'mcp', userId: ownerId, tenantId })
-            ).filter(
-              (tool) =>
-                tool.annotations.workProfile === 'design' &&
-                !tool.annotations.readOnlyHint,
+            ).filter((tool) => service.supportsDesignAction(tool.name));
+          },
+        );
+      },
+      executeOperation: async ({
+        ownerId,
+        tenantId,
+        threadId,
+        runId,
+        actionId,
+        permissions,
+        operation,
+        signal,
+      }) => {
+        if (
+          !tenantId ||
+          !options.packageName ||
+          !service.supportsDesignAction(operation.tool)
+        )
+          throw new Error('Durable design operation unavailable');
+        return runtime.runAsPrincipal(
+          { id: ownerId, tenantId, kind: 'human', scopes: [...permissions] },
+          async (bound) => {
+            await prepare(tenantId, false);
+            await authorizeDesignThread(ownerId, tenantId, threadId);
+            const user = await (await UserCollection.create({ db })).get({
+              id: ownerId,
+            });
+            if (!user?.profileId || !bound)
+              throw new Error('Owner unavailable');
+            signal.throwIfAborted();
+            const ceiling = [...(bound.scopes ?? [])].filter((permission) =>
+              permissions.includes(permission),
+            );
+            return executeAsPrincipal(
+              {
+                principal: {
+                  runAsUserId: ownerId,
+                  tenantId,
+                  allowedTools: [operation.tool],
+                },
+                db: runtime.databaseConfig(),
+                permissions: ceiling,
+              },
+              async (run) => {
+                run.assertToolAllowed(operation.tool);
+                const at = operation.tool.lastIndexOf('.');
+                await run.assertOperation(
+                  operation.tool.slice(0, at),
+                  operation.tool.slice(at + 1),
+                );
+                await designRuns
+                  .forOwner(ownerId, tenantId)
+                  .validateAction(
+                    runId,
+                    actionId,
+                    operation.tool,
+                    operation.tool === 'cookbook.apply'
+                      ? { ...operation.args, apply: true }
+                      : operation.args,
+                  );
+                signal.throwIfAborted();
+                return continuations.capture(
+                  {
+                    id: ownerId,
+                    tenantId,
+                    permissions: ceiling,
+                    allowedTools: [operation.tool],
+                  },
+                  () =>
+                    service.invoke(operation.tool, operation.args, {
+                      surface: 'mcp',
+                      tenantId,
+                      userId: ownerId,
+                      profileId: user.profileId,
+                      threadId,
+                      designAction: {
+                        application:
+                          options.application ?? options.packageName!,
+                        runId,
+                        actionId,
+                      },
+                    }),
+                );
+              },
             );
           },
         );
@@ -802,7 +1040,17 @@ export function createCookbookHost(options: CookbookHostOptions) {
         for (const record of await host.authority.list(owner, false)) {
           if (record.status !== 'approved' || !record.continuation) continue;
           try {
-            await host.continuations.resume(owner, record.id);
+            const outcome = await host.continuations.resume(owner, record.id);
+            const action = outcome.context.designAction as
+              | { runId?: unknown }
+              | undefined;
+            if (
+              outcome.status === 'succeeded' &&
+              typeof action?.runId === 'string'
+            )
+              await host.designRuns
+                .forOwner(outcome.requestedBy, outcome.tenantId)
+                .resumeAfterApproval(action.runId);
           } catch (error) {
             // A concurrent claimant or a recorded refusal is already visible to the requester.
             if (
@@ -1529,7 +1777,34 @@ export function createCookbookHost(options: CookbookHostOptions) {
     event: Parameters<typeof assistantRoutes.handle>[0],
   ) => {
     const path = event.params?.path ?? '';
-    if (!path.startsWith('design-runs')) return assistantRoutes.handle(event);
+    if (!path.startsWith('design-runs')) {
+      const response = await assistantRoutes.handle(event);
+      const decision = /^approvals\/([^/]+)\/decide$/.exec(path);
+      const actor = resolveAssistantPrincipalFromLocals(event.locals);
+      if (response.ok && decision && event.request.method === 'POST' && actor) {
+        const host = await ready();
+        const record = await host.authority.get(actor.tenantId, decision[1]);
+        const action = record?.context.designAction as
+          | { runId?: unknown }
+          | undefined;
+        if (
+          record &&
+          typeof action?.runId === 'string' &&
+          ['succeeded', 'denied', 'failed', 'expired'].includes(record.status)
+        ) {
+          // Native decision is already durable. Queue only its deterministic
+          // check; a status read can retry admission after a transient conflict.
+          try {
+            await host.designRuns
+              .forOwner(record.requestedBy, record.tenantId)
+              .resumeAfterApproval(action.runId);
+          } catch {
+            /* durable hold/outcome remains available */
+          }
+        }
+      }
+      return response;
+    }
     const p = resolveAssistantPrincipalFromLocals(event.locals);
     if (!p || !(await isOwner(p.tenantId, p.userId)))
       return json({ code: 'not_allowed' }, 403);
@@ -1537,8 +1812,31 @@ export function createCookbookHost(options: CookbookHostOptions) {
     try {
       if (path === 'design-runs' && event.request.method === 'GET') {
         const threadId = event.url.searchParams.get('threadId');
+        let state = threadId ? await runs.latest(threadId) : null;
+        const pending =
+          state?.input &&
+          (state.input as { pendingApprovalId?: unknown }).pendingApprovalId;
+        if (
+          state?.status === 'waiting-approval' &&
+          typeof pending === 'string'
+        ) {
+          const record = await (await ready()).authority.get(
+            p.tenantId,
+            pending,
+          );
+          if (
+            record?.requestedBy === p.userId &&
+            ['succeeded', 'denied', 'failed', 'expired'].includes(record.status)
+          ) {
+            try {
+              state = await runs.resumeAfterApproval(state.id);
+            } catch {
+              /* retry on next status read */
+            }
+          }
+        }
         return json({
-          run: threadId ? designProgress(await runs.latest(threadId)) : null,
+          run: designProgress(state),
         });
       }
       if (path === 'design-runs' && event.request.method === 'POST') {
@@ -1916,6 +2214,70 @@ export function createCookbookHost(options: CookbookHostOptions) {
     pluginMode: pluginMode.handle,
     inferenceSettings,
     workProfiles,
+    async history(event: RequestEvent) {
+      if (event.request.method !== 'GET')
+        return json({ code: 'method_not_allowed' }, 405);
+      const principal = resolveAssistantPrincipalFromLocals(event.locals);
+      if (!principal || !(await isOwner(principal.tenantId, principal.userId)))
+        return json({ code: 'not_allowed' }, 403);
+      const snapshot =
+        principal.permissions ??
+        (event.locals as SmrtRuntimeLocals).permissions ??
+        [];
+      if (!snapshot.includes('app.history'))
+        return json({ code: 'not_allowed' }, 403);
+      try {
+        return await runtime.runAsPrincipal(
+          {
+            id: principal.userId,
+            tenantId: principal.tenantId,
+            kind: 'human',
+            scopes: [...snapshot],
+          },
+          async () => {
+            const host = await prepare(principal.tenantId, false);
+            const result = await host.service.invoke(
+              'app.history',
+              {},
+              {
+                surface: 'mcp',
+                tenantId: principal.tenantId,
+                userId: principal.userId,
+              },
+            );
+            if (result.status !== 'ok' || !Array.isArray(result.changes))
+              throw new Error('History unavailable');
+            const entries = result.changes
+              .flatMap((value: unknown) => {
+                if (!value || typeof value !== 'object') return [];
+                const row = value as Record<string, unknown>;
+                if (!Number.isSafeInteger(row.revision)) return [];
+                return [
+                  {
+                    id: String(row.revision),
+                    action:
+                      typeof row.summary === 'string'
+                        ? row.summary
+                        : 'Changed app structure',
+                    resourceType: 'App structure',
+                    resourceId: `Revision ${row.revision}`,
+                    ...(row.actor === principal.userId
+                      ? { actorLabel: 'You' }
+                      : {}),
+                    ...(row.status === 'pending'
+                      ? { reason: 'Activation pending' }
+                      : {}),
+                  },
+                ];
+              })
+              .reverse();
+            return json({ revision: result.revision, entries });
+          },
+        );
+      } catch {
+        return json({ code: 'history_unavailable' }, 403);
+      }
+    },
     async onboarding(event: RequestEvent) {
       const mounted = (await ready()).onboarding;
       return mounted ? mounted.handle(event) : json({ code: 'not_found' }, 404);

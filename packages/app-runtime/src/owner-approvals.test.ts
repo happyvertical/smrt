@@ -107,6 +107,90 @@ describe(`owner tool holds over the canonical approval ledger (${databaseType})`
     },
   );
 
+  it('deduplicates concurrent stable host requests through one canonical approval and preserves expiry after reopen', async () => {
+    const stable = { ...input, requestKey: 'application/run/action' };
+    const records = await Promise.all([
+      authority.request(stable),
+      authority.request(stable),
+      authority.request(stable),
+    ]);
+    expect(new Set(records.map((r) => r.id)).size).toBe(1);
+    const saved = records[0];
+    now += 10_000;
+    authority = await open();
+    expect(await authority.request(stable)).toStrictEqual(saved);
+    expect(await authority.list(owner, false)).toHaveLength(1);
+    expect(
+      (
+        await db.query(
+          'SELECT COUNT(*) AS n FROM approval_requests WHERE tenant_id = ?',
+          tenantId,
+        )
+      ).rows[0].n,
+    ).toBe(1);
+    await expect(
+      authority.request({ ...stable, args: { id: 'another' } }),
+    ).rejects.toThrow('conflict');
+    await expect(
+      authority.request({
+        ...stable,
+        context: { ...input.context, widened: true },
+      }),
+    ).rejects.toThrow('conflict');
+    await expect(
+      authority.request({ ...stable, tool: 'invoices.purge' }),
+    ).rejects.toThrow('conflict');
+    const foreign = await authority.request({
+      ...stable,
+      tenantId: randomUUID(),
+    });
+    expect(foreign.id).not.toBe(saved.id);
+  });
+  it('repairs an interrupted native envelope link using the original canonical request key', async () => {
+    const stable = { ...input, requestKey: 'recovery' };
+    const saved = await authority.request(stable);
+    await db.query(
+      'UPDATE _smrt_owner_tool_holds SET gate_id = NULL WHERE tenant_id = ? AND id = ?',
+      tenantId,
+      saved.id,
+    );
+    now += 30_000;
+    authority = await open();
+    expect(await authority.request(stable)).toStrictEqual(saved);
+    expect(
+      (
+        await db.query(
+          'SELECT COUNT(*) AS n FROM approval_requests WHERE tenant_id = ?',
+          tenantId,
+        )
+      ).rows[0].n,
+    ).toBe(1);
+    now += 40_000;
+    expect((await authority.request(stable)).status).toBe('expired');
+    expect((await authority.get(tenantId, saved.id))?.expiresAt).toBe(
+      saved.expiresAt,
+    );
+  });
+  it('refuses stable host requests on legacy stores before inserting an envelope', async () => {
+    let inserts = 0;
+    const legacy: OwnerApprovalStore = {
+      insert: async () => {
+        inserts++;
+      },
+      get: async () => null,
+      list: async () => [],
+      transition: async () => false,
+    };
+    const unsupported = new OwnerApprovalAuthority(
+      legacy,
+      async () => true,
+      () => now,
+    );
+    await expect(
+      unsupported.request({ ...input, requestKey: 'stable' }),
+    ).rejects.toThrow('invalid_request');
+    expect(inserts).toBe(0);
+  });
   it('reopens a non-thread continuation and records one original-caller result under concurrent resume', async () => {
     let executions = 0;
     const principal = {

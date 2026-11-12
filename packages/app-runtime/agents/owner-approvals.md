@@ -131,3 +131,23 @@ close/reopen, single consumption, actor revalidation and results. No hosted
 credential or external-effects exactly-once guarantee is implied.
 
 Legacy PostgreSQL envelopes with TEXT identities fail with `OWNER_APPROVAL_MIGRATION_REQUIRED`; validate their values and migrate the system table to UUID before serving. Runtime never rewrites those identities.
+## Stable native host action requests
+
+`OwnerApprovalInput.requestKey` is an optional trusted host correlation key. The
+authority derives an envelope id scoped to tenant and requester, then uses the
+canonical SQLite store's `insertOrGet`. The first immutable envelope wins; tool,
+arguments, call id, context, continuation, summary and TTL mismatches refuse.
+Retries preserve the original expiry and terminal decision. A legacy custom store
+without this explicit capability rejects a keyed request before insertion.
+
+The adapter uses insert-on-conflict followed by the original envelope, and links
+it with `ApprovalService.requestApproval` using that original id as canonical
+request key and subject. An interrupted envelope/gate link can therefore be
+repaired without another approval model or authority. Canonical creation uses the
+original envelope creation time so recovery never renews its TTL. Concurrent
+requests resolve to one canonical gate. Completion and consumption remain the
+existing single-use transitions; no generic executing continuation replay is added.
+
+The cookbook editor can reconcile an executing native hold only when its durable
+journal proves the identical action's completed result. An executing hold without
+that proof remains an explicit unknown outcome requiring reconciliation.

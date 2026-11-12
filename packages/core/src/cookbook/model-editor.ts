@@ -9,6 +9,7 @@ import type {
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { withRuntimeSchemaActivation } from '../activation.js';
 import { getRuntimeManifest } from '../generators/rest.js';
+import { stableStringify } from '../knowledge-graph.js';
 import {
   getPendingSchemaStatements,
   migrateSmrtSchemas,
@@ -33,6 +34,7 @@ import {
   buildWebCollectionDefinition,
   selectWebCollectionEntries,
 } from '../vite-plugin/web-collections.js';
+import { appOperationResult } from './app-tool-edits.js';
 import { canonical, coveredModels } from './engine/document.js';
 import { createCookbookEngine } from './engine/engine.js';
 import { buildNav, modelParts, navItemId } from './engine/nav.js';
@@ -40,6 +42,7 @@ import type { EngineCatalog } from './engine/types.js';
 import {
   type AppModelChange,
   type AppModelHistoryStore,
+  type AppModelOperation,
   createAppModelHistory,
 } from './model-history.js';
 import {
@@ -80,6 +83,7 @@ export interface AppModelEditContext {
   tenantId: string;
   requestId: string;
   expectedRevision: number;
+  operation?: AppModelOperation;
 }
 export interface AppModelEditorOptions {
   db: DatabaseInterface;
@@ -640,6 +644,53 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     return projection();
   }
 
+  function receiptFor(
+    current: AppModelSnapshot,
+    edit: AppModelEdit,
+    elapsedMs: number,
+  ): AppModelEditReceipt {
+    return JSON.parse(
+      JSON.stringify({
+        ...current,
+        path: ['label_field', 'hide_field', 'remove_field'].includes(edit.type)
+          ? 'policy'
+          : 'runtime',
+        elapsedMs,
+      }),
+    );
+  }
+  async function recover(
+    context: AppModelEditContext,
+  ): Promise<AppModelChange | null> {
+    if (
+      context.tenantId !== options.tenantId ||
+      !context.actor ||
+      !context.requestId ||
+      !(await options.authorize(context))
+    )
+      throw new Error('MODEL_EDIT_FORBIDDEN');
+    if (!store.supportsDurableOperations)
+      throw new Error('MODEL_DURABLE_OPERATIONS_UNSUPPORTED');
+    const found = (await store.read()).find(
+      (row) => row.requestId === context.requestId,
+    );
+    if (!found) return null;
+    if (
+      found.actor !== context.actor ||
+      found.revision - 1 !== context.expectedRevision ||
+      !found.operation ||
+      !context.operation ||
+      stableStringify(found.operation.binding) !==
+        stableStringify(context.operation.binding)
+    )
+      throw new Error('MODEL_REQUEST_ID_REUSED');
+    if (found.status !== 'applied')
+      throw new Error('MODEL_ACTIVATION_PENDING: reopen the editor to recover');
+    if (!found.receipt || !found.result)
+      throw new Error('MODEL_RESULT_UNAVAILABLE');
+    return structuredClone(found);
+  }
+
   await withRuntimeSchemaActivation(async () => {
     const started = performance.now();
     if (engine === 'postgres') {
@@ -673,7 +724,18 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       await activate(doc, storageModels(documents()));
     }
     if (history.at(-1)?.status === 'pending') {
-      await store.complete(revision, performance.now() - started);
+      const pending = history.at(-1)!;
+      const receipt = receiptFor(
+        projection(),
+        JSON.parse(pending.command),
+        performance.now() - started,
+      );
+      await store.complete(
+        revision,
+        receipt.elapsedMs,
+        receipt,
+        appOperationResult(pending.operation, receipt),
+      );
       history = await store.read();
     }
     release(storageModels(documents()));
@@ -683,6 +745,8 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     edit: AppModelEdit,
     context: AppModelEditContext,
   ): Promise<AppModelEditReceipt> {
+    edit = structuredClone(edit);
+    context = structuredClone(context);
     const execute = async () => {
       if (
         context.tenantId !== options.tenantId ||
@@ -691,6 +755,11 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         !(await options.authorize(context))
       )
         throw new Error('MODEL_EDIT_FORBIDDEN');
+      if (
+        context.operation &&
+        (!store.supportsDurableOperations || !context.operation.result)
+      )
+        throw new Error('MODEL_DURABLE_OPERATIONS_UNSUPPORTED');
       const latest = await store.read();
       const print = JSON.stringify(edit);
       if ('model' in edit) {
@@ -715,8 +784,13 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           throw new Error(
             'MODEL_ACTIVATION_PENDING: reopen the editor to recover',
           );
+        if (context.operation) {
+          const recovered = await recover(context);
+          if (!recovered) throw new Error('MODEL_RESULT_UNAVAILABLE');
+          return { ...recovered.receipt!, replayed: true };
+        }
         return {
-          ...snapshot(),
+          ...(replay.receipt ?? snapshot()),
           path: ['label_field', 'hide_field', 'remove_field'].includes(
             edit.type,
           )
@@ -963,6 +1037,9 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         after: next,
         status: 'pending',
         ...(undoes ? { undoes } : {}),
+        ...(context.operation
+          ? { operation: structuredClone(context.operation) }
+          : {}),
       };
       if (engine === 'postgres') {
         const previous = { history, revision, doc, ready };
@@ -999,7 +1076,13 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         await activate(next, storageModels([...documents(), next]));
       }
       const elapsedMs = performance.now() - began;
-      await store.complete(revision, elapsedMs);
+      const receipt = receiptFor(projection(), edit, elapsedMs);
+      await store.complete(
+        revision,
+        elapsedMs,
+        receipt,
+        appOperationResult(change.operation, receipt),
+      );
       history = await store.read();
       release(storageModels(documents()));
       const result = snapshot();
@@ -1010,13 +1093,10 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           /* Transport subscriber cannot undo a committed revision. */
         }
       }
-      return {
-        ...result,
-        path: ['label_field', 'hide_field', 'remove_field'].includes(edit.type)
-          ? ('policy' as const)
-          : ('runtime' as const),
-        elapsedMs,
-      };
+      return structuredClone(
+        history.find((row) => row.revision === change.revision)?.receipt ??
+          receipt,
+      );
     };
     const operation = tail.then(() => withRuntimeSchemaActivation(execute));
     tail = operation.then(
@@ -1027,6 +1107,13 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
   }
   return {
     /** Server transports reuse the exact editor database, including in-memory SQLite. */
+    get application() {
+      return options.application;
+    },
+    get supportsDurableOperations() {
+      return store.supportsDurableOperations === true;
+    },
+    recover,
     get database() {
       return options.db;
     },

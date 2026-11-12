@@ -529,9 +529,15 @@ Internal passes reuse authenticated assistant adapters with a private server
 profile binding, original permission ceiling intersected with live permissions,
 read-only tools, full schema validation, and a detached job cancellation signal.
 Technical prompts stay server-side; the owner sees each design summary and
-reviewable operations. Current proposal runs cannot atomically apply a final
-operation and checkpoint it; final review is explicitly pending. Preview-off
-reports that blocker instead of pretending the operation was applied.
+reviewable operations. Ready v3 proposals enter a deterministic final check using
+core's stable design-action identity and exact result recovery. Preview uses the
+existing native thread approval UI; preview-off applies additive changes directly
+with change history, while destructive changes retain approval. Completing an
+approval resumes that check without another model turn. Explicit owner Resume
+can safely migrate a validated ready v2 `app.addField` proposal against its
+frozen historical argument schema; v1 never applies. The owner-scoped
+`history(event)` read handler projects the normal `app.history` result into
+browser-safe, undated entries for the existing Change history component.
 
 The existing assistant endpoint additionally handles owner-scoped design-run
 status by thread and same-origin Stop/Resume. `createCookbookAssistant` enables

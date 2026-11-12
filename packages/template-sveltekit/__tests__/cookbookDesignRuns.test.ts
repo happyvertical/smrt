@@ -65,12 +65,14 @@ describe('cookbook durable design jobs', () => {
   function install(
     executePass: CookbookDesignRunsOptions['executePass'],
     listOperations?: CookbookDesignRunsOptions['listOperations'],
+    extra: Partial<CookbookDesignRunsOptions> = {},
   ) {
     host = createCookbookDesignRuns({
       db,
       authorize: async () => {},
       executePass,
       listOperations,
+      ...extra,
     });
     return host.forOwner('owner', null);
   }
@@ -344,22 +346,31 @@ describe('cookbook durable design jobs', () => {
     const execute = vi.fn<CookbookDesignRunsOptions['executePass']>(
       async () => ({ output: proposed, metadata }),
     );
-    const bound = install(execute, async () => definitions);
+    const apply = vi
+      .fn<NonNullable<CookbookDesignRunsOptions['executeOperation']>>()
+      .mockResolvedValue({
+        status: 'approval_required',
+        summary: 'Review Birthday.',
+        approvalId: 'approval',
+      });
+    const bound = install(execute, async () => definitions, {
+      executeOperation: apply,
+    });
     const selected = profile();
-    selected.previewBeforeApply = false;
+    selected.previewBeforeApply = true;
     const created = await bound.start({
       threadId: 'thread',
       content: 'Add a birthday field',
       profile: selected,
+      permissions: ['app.addField'],
     });
     await startWorker();
     const pending = await terminal(created.id);
     expect(pending.status).toBe('waiting-approval');
-    expect(pending.note).toContain('Automatic application is blocked');
+    expect(pending.note).toContain('Review Birthday');
     expect(pending.outputs[2]).toEqual(proposed);
-    expect((await bound.stop(created.id)).status).toBe('waiting-approval');
     expect(execute).toHaveBeenCalledTimes(3);
-    expect(pending.definition).toBe('cookbook-design/v2/3');
+    expect(pending.definition).toBe('cookbook-design/v3/3');
     expect(execute.mock.calls[0][0].request.schema).toMatchObject({
       properties: {
         operations: {
@@ -382,9 +393,24 @@ describe('cookbook durable design jobs', () => {
       JSON.stringify(execute.mock.calls[0][0].request.schema),
     ).not.toContain('approvalId');
     expect(effect).not.toHaveBeenCalled();
-    await expect(bound.resume(created.id)).rejects.toThrow(
-      'Review the proposed design',
-    );
+    apply.mockResolvedValue({
+      status: 'ok',
+      summary: 'Added Birthday.',
+      revision: 2,
+    });
+    await bound.resumeAfterApproval(created.id);
+    const done = await terminal(created.id);
+    expect(done.status).toBe('done');
+    expect(done.outputs).toEqual(pending.outputs);
+    expect(done.attempts).toEqual(pending.attempts);
+    expect((done.input as { results: unknown[] }).results).toEqual([
+      { status: 'ok', summary: 'Added Birthday.', revision: 2 },
+    ]);
+    expect(apply.mock.calls.map(([input]) => input.actionId)).toEqual([
+      '0',
+      '0',
+    ]);
+    expect(execute).toHaveBeenCalledTimes(3);
   });
   it('keeps completed v1 proposal contracts unchanged rather than reinterpreting unsupported operations', async () => {
     const execute = vi.fn<CookbookDesignRunsOptions['executePass']>();
@@ -479,6 +505,170 @@ describe('cookbook durable design jobs', () => {
       execute.mock.calls[1][0].request.repair?.errors.length,
     ).toBeGreaterThan(0);
     expect(effect).not.toHaveBeenCalled();
+  });
+  it.each([
+    'success',
+    'ready-false',
+    'v1',
+    'foreign-thread',
+    'changed-content',
+    'changed-schema',
+    'old-schema-drift',
+    'stale-revision',
+    'missing-permission',
+    'lease',
+    'concurrent',
+  ])('migrates only the exact compatible owner v2 proposal: %s', async (scenario) => {
+    const service = createCookbookToolService({
+      catalog: { recipes: [], models: [] },
+      engineFor: () => ({}) as never,
+      modelEditorFor: () => ({}) as never,
+      isOwner: async () => true,
+      can: async () => true,
+      approvals: {} as never,
+      isAppEmpty: async () => true,
+      commit: async () => {},
+      audit: async () => {},
+    });
+    const definition = (
+      await service.list({
+        surface: 'mcp',
+        userId: 'owner',
+        tenantId: 'tenant',
+      })
+    ).find((tool) => tool.name === 'app.addField')!;
+    let changedSchema = scenario === 'old-schema-drift';
+    let concurrent = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const execute = vi.fn<CookbookDesignRunsOptions['executePass']>();
+    const apply = vi
+      .fn<NonNullable<CookbookDesignRunsOptions['executeOperation']>>()
+      .mockResolvedValue({ status: 'ok', summary: 'Added field', revision: 2 });
+    let legacy: import('@happyvertical/smrt-inference/server').DesignRunState;
+    const bound = install(
+      execute,
+      async () => [
+        {
+          ...definition,
+          inputSchema: changedSchema
+            ? {
+                ...definition.inputSchema,
+                properties: {
+                  ...(definition.inputSchema.properties as object),
+                  list: { type: 'string', maxLength: 199 },
+                },
+              }
+            : definition.inputSchema,
+        },
+      ],
+      {
+        executeOperation: apply,
+        currentRevision: async () => (scenario === 'stale-revision' ? 2 : 1),
+        authorizeThread: async () => {
+          if (scenario === 'foreign-thread')
+            throw new Error('Thread unavailable');
+          if (scenario === 'changed-content')
+            await db.query(
+              'UPDATE _smrt_inference_design_runs SET payload = ? WHERE id = ?',
+              JSON.stringify({
+                ...legacy,
+                input: {
+                  ...(legacy.input as object),
+                  content: 'Changed request',
+                },
+              }),
+              legacy.id,
+            );
+          if (scenario === 'changed-schema') changedSchema = true;
+          if (scenario === 'concurrent') {
+            concurrent++;
+            if (concurrent === 2) release();
+            await gate;
+          }
+        },
+      },
+    );
+    const created = await bound.start({
+      threadId: 'thread',
+      content: 'Add Note',
+      profile: profile(),
+      permissions: scenario === 'missing-permission' ? [] : ['app.addField'],
+    });
+    await bound.stop(created.id);
+    for (const job of await (await SmrtJobCollection.create({ db })).list({
+      where: { objectId: created.id },
+    }))
+      await job.cancel();
+    const prior = await bound.status(created.id);
+    const proposal = {
+      ...output,
+      ready: scenario !== 'ready-false',
+      operations: [
+        {
+          tool: 'app.addField',
+          args: {
+            list: 'Customers',
+            label: 'Note',
+            kind: 'text',
+            expectedRevision: 1,
+          },
+        },
+      ],
+    };
+    legacy = {
+      ...prior,
+      definition:
+        scenario === 'v1' ? 'cookbook-design/v1/3' : 'cookbook-design/v2/3',
+      status: 'waiting-approval',
+      phase: 'model',
+      passIndex: 3,
+      outputs: [proposal, proposal, proposal],
+      attempts: [metadata, metadata, metadata],
+      tokens: 6,
+      ...(scenario === 'lease'
+        ? { leaseRevision: 99, leaseUntil: Date.now() + 100000 }
+        : {}),
+    };
+    await db.query(
+      'UPDATE _smrt_inference_design_runs SET payload = ? WHERE id = ?',
+      JSON.stringify(legacy),
+      created.id,
+    );
+    if (scenario === 'success' || scenario === 'concurrent') {
+      if (scenario === 'concurrent') {
+        const results = await Promise.allSettled([
+          bound.resume(created.id),
+          bound.resume(created.id),
+        ]);
+        expect(
+          results.filter((result) => result.status === 'fulfilled'),
+        ).toHaveLength(1);
+      } else await bound.resume(created.id);
+      const migrated = await bound.status(created.id);
+      expect(migrated).toMatchObject({
+        id: created.id,
+        definition: 'cookbook-design/v3/3',
+        phase: 'check',
+        passIndex: 2,
+        outputs: legacy.outputs,
+        attempts: legacy.attempts,
+        tokens: 6,
+      });
+      await startWorker();
+      expect((await terminal(created.id)).status).toBe('done');
+      expect(execute).not.toHaveBeenCalled();
+      expect(apply).toHaveBeenCalledTimes(1);
+    } else {
+      await expect(bound.resume(created.id)).rejects.toThrow();
+      expect((await bound.status(created.id)).definition).toBe(
+        legacy.definition,
+      );
+      expect(execute).not.toHaveBeenCalled();
+      expect(apply).not.toHaveBeenCalled();
+    }
   });
   it('charges unknown usage and pauses the cumulative budget until an owner raises it', async () => {
     const execute = vi.fn<CookbookDesignRunsOptions['executePass']>(

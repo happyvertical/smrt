@@ -22,6 +22,10 @@ import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { createAgentCliService } from '@happyvertical/smrt-inference/server';
 import {
+  SmrtWorkerCollection,
+  unregisterLiveWorker,
+} from '@happyvertical/smrt-jobs';
+import {
   Profile as ProfileBase,
   ProfileTypeCollection,
 } from '@happyvertical/smrt-profiles';
@@ -43,6 +47,7 @@ import {
   UserCollection,
   UserStatus,
 } from '@happyvertical/smrt-users';
+import { getDatabase } from '@happyvertical/sql';
 import {
   CLIENT_CAPABILITIES_META_KEY,
   CLIENT_INFO_META_KEY,
@@ -53,6 +58,66 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { testHomeEnvironment } from '../../vitest/src/test-home.js';
 import { createCookbookHost, loadCookbookModelPage } from '../host/server.js';
 import { createCookbookHostState } from '../host/state.js';
+
+const checkpointFault = vi.hoisted(() => ({
+  errors: [] as string[],
+  beforeSave: undefined as
+    | undefined
+    | ((
+        state: import('@happyvertical/smrt-inference/server').DesignRunState,
+      ) => Promise<void>),
+}));
+vi.mock('@happyvertical/smrt-inference/server', async (importOriginal) => {
+  const original =
+    await importOriginal<
+      typeof import('@happyvertical/smrt-inference/server')
+    >();
+  return {
+    ...original,
+    createDesignRunDriver: (
+      options: Parameters<typeof original.createDesignRunDriver>[0],
+    ) =>
+      original.createDesignRunDriver({
+        ...options,
+        executePass: async (...args) => {
+          try {
+            return await options.executePass(...args);
+          } catch (error) {
+            checkpointFault.errors.push(String(error));
+            throw error;
+          }
+        },
+        passes: options.passes.map((pass) => ({
+          ...pass,
+          check: pass.check
+            ? async (...args: Parameters<NonNullable<typeof pass.check>>) => {
+                try {
+                  return await pass.check!(...args);
+                } catch (error) {
+                  checkpointFault.errors.push(String(error));
+                  throw error;
+                }
+              }
+            : undefined,
+        })),
+      }),
+    createDesignRunStore: (
+      ...args: Parameters<typeof original.createDesignRunStore>
+    ) => {
+      const store = original.createDesignRunStore(...args);
+      return {
+        ...store,
+        async save(
+          state: import('@happyvertical/smrt-inference/server').DesignRunState,
+          revision: number | null,
+        ) {
+          await checkpointFault.beforeSave?.(state);
+          return store.save(state, revision);
+        },
+      };
+    },
+  };
+});
 
 @smrt({
   packageName: '@fixture/host',
@@ -258,7 +323,7 @@ async function mcp(
   return { status: r.status, body: raw ? JSON.parse(raw) : null };
 }
 
-beforeEach(async () => {
+beforeEach(async ({ task }) => {
   enableTenancy();
   origin = 'http://127.0.0.1:4999';
   stateDirectory = await mkdtemp(join(tmpdir(), 'cookbook-host-cli-'));
@@ -295,7 +360,11 @@ beforeEach(async () => {
   revoked = [];
   tokens = new Map();
   errors.length = 0;
-  db = await getTestDatabase();
+  db = await getTestDatabase(
+    task.name.includes('simulated worker death')
+      ? { type: 'sqlite', url: join(stateDirectory, 'crash.sqlite') }
+      : {},
+  );
   const tenants = await TenantCollection.create({ db });
   const tenant = await tenants.create({ name: 'Host business' });
   await tenant.save();
@@ -438,6 +507,8 @@ beforeEach(async () => {
   await host.init();
 });
 afterEach(async () => {
+  checkpointFault.errors.length = 0;
+  checkpointFault.beforeSave = undefined;
   await host?.shutdown();
   if (http) {
     http.closeAllConnections();
@@ -486,6 +557,56 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       return new Response();
     });
   }
+  async function durableDesignHost(preview = true) {
+    const runtime = host.runtime;
+    await host.shutdown();
+    host.dispose();
+    const calls = vi.fn(async (messages: unknown, options: unknown) =>
+      response(messages as never, options as never),
+    );
+    host = createCookbookHost({
+      runtime,
+      packageName: '@fixture/host-app',
+      app: { cookbook, catalog },
+      assistant: { ai: { chat: calls } as never },
+    });
+    await host.init();
+    await request(event('/'), async (e) => json(await host.load(e)));
+    permissions = [
+      ...(
+        await (
+          await PermissionResolver.create({ db })
+        ).resolvePermissions(owner.id, tenantId)
+      ).permissions,
+    ];
+    await request(event('/settings/inference'), async (e) => {
+      const saved = await host.workProfiles.read(e);
+      expect(
+        (
+          await host.workProfiles.write(e, {
+            settings: {
+              design: { previewBeforeApply: preview, budgets: { passes: 3 } },
+            },
+            revision: saved.revision,
+          })
+        ).ok,
+      ).toBe(true);
+      return new Response();
+    });
+    return calls;
+  }
+  async function designState(id: string) {
+    return JSON.parse(
+      String(
+        (
+          await db.query(
+            'SELECT payload FROM _smrt_inference_design_runs WHERE id = ?',
+            id,
+          )
+        ).rows[0].payload,
+      ),
+    );
+  }
 
   it('loads owner quality overrides, rejects stale saves, and resets without exposing unavailable model failures', async () => {
     await request(event('/settings/inference'), async (e) => {
@@ -520,6 +641,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
   });
 
   it('admits a durable design proposal before a structural tool executes', async () => {
+    await durableDesignHost();
     await request(event('/api/onboarding'), host.onboarding);
     await db.query(
       `UPDATE _smrt_cookbook_onboarding SET state = ? WHERE tenant_id = ? AND user_id = ?`,
@@ -657,7 +779,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
           ),
         );
         expect(state.status).toBe('waiting-approval');
-        expect(state.definition).toBe('cookbook-design/v2/3');
+        expect(state.definition).toBe('cookbook-design/v3/3');
         expect(state.outputs[2].operations[0].tool).toBe('app.addField');
       },
       { timeout: 15000 },
@@ -676,6 +798,45 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       arguments: {},
     });
     expect(history.body.result.structuredContent.changes).toEqual([]);
+    const pending = await chat(`threads/${id}/approvals`, undefined, 'GET');
+    expect(pending.status).toBe(200);
+    const approvals = (await pending.json()).approvals;
+    expect(approvals).toHaveLength(1);
+    const before = await designState(runId);
+    const decision = await chat(`approvals/${approvals[0].id}/decide`, {
+      approve: true,
+    });
+    expect(decision.status).toBe(200);
+    expect((await decision.json()).approval.status).toBe('succeeded');
+    await vi.waitFor(
+      async () => expect((await designState(runId)).status).toBe('done'),
+      { timeout: 15000 },
+    );
+    const done = await designState(runId);
+    expect(done.outputs).toEqual(before.outputs);
+    expect(done.attempts).toEqual(before.attempts);
+    expect(done.tokens).toBe(before.tokens);
+    expect(calls).toHaveLength(3);
+    const applied = await mcp('tools/call', {
+      name: 'app_history',
+      arguments: {},
+    });
+    expect(applied.body.result.structuredContent.changes).toHaveLength(1);
+    expect(done.input.results).toHaveLength(1);
+    const historyResponse = await request(event('/api/history'), host.history);
+    expect(historyResponse.status).toBe(200);
+    const visibleHistory = await historyResponse.json();
+    expect(visibleHistory.entries).toEqual([
+      {
+        id: '1',
+        action: expect.stringContaining('Birthday'),
+        resourceType: 'App structure',
+        resourceId: 'Revision 1',
+        actorLabel: 'You',
+      },
+    ]);
+    expect(JSON.stringify(visibleHistory)).not.toContain('before');
+    expect(JSON.stringify(visibleHistory)).not.toContain('timestamp');
   });
 
   it('rejects forged direct design authority, foreign threads and cross-origin admission before any model call', async () => {
@@ -746,6 +907,362 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(
       (await db.query('SELECT id FROM _smrt_inference_design_runs')).rows,
     ).toHaveLength(0);
+  });
+  it('keeps structure history owner-scoped and permission-bound without leaking change documents', async () => {
+    await durableDesignHost();
+    const own = await request(event('/api/history'), host.history);
+    expect(own.status).toBe(200);
+    expect(await own.json()).toEqual({ revision: 0, entries: [] });
+    expect(
+      (
+        await request(
+          event('/api/history', 'GET', undefined, false),
+          host.history,
+        )
+      ).status,
+    ).toBe(403);
+    const foreign = event('/api/history');
+    (foreign.locals as { tenantId: string }).tenantId = randomUUID();
+    expect((await request(foreign, host.history)).status).toBe(403);
+    const withoutPermission = event('/api/history');
+    (withoutPermission.locals as { permissions: string[] }).permissions = [];
+    expect((await request(withoutPermission, host.history)).status).toBe(403);
+    expect(
+      (await request(event('/api/history', 'POST', {}), host.history)).status,
+    ).toBe(405);
+  });
+
+  it.each([
+    'automatic',
+    'destructive',
+    'denied',
+  ])('runs deterministic final design application through the native host boundary: %s', async (mode) => {
+    const calls = await durableDesignHost(mode === 'denied');
+    const operation =
+      mode === 'destructive'
+        ? {
+            tool: 'recipes.disable',
+            args: { id: 'host.customers', expectedRevision: 0 },
+          }
+        : {
+            tool: 'app.addField',
+            args: {
+              list: 'Customers',
+              label: `Visit note ${mode}`,
+              kind: 'text',
+              expectedRevision: 0,
+            },
+          };
+    response = () => ({
+      content: JSON.stringify({
+        summary: 'Update the app.',
+        checks: ['Target exists.'],
+        ready: true,
+        operations: [operation],
+      }),
+      finishReason: 'stop',
+    });
+    const id = await thread();
+    const admitted = await chat('design-runs', {
+      threadId: id,
+      content: 'Update Customers.',
+    });
+    expect(admitted.status).toBe(202);
+    const runId = (await admitted.json()).run.runId;
+    await vi.waitFor(
+      async () =>
+        expect(
+          (await designState(runId)).status,
+          checkpointFault.errors.join('\n'),
+        ).toBe(mode === 'automatic' ? 'done' : 'waiting-approval'),
+      { timeout: 15000 },
+    );
+    const holds = (
+      await (await chat(`threads/${id}/approvals`, undefined, 'GET')).json()
+    ).approvals;
+    if (mode === 'automatic') expect(holds).toEqual([]);
+    else {
+      expect(holds).toHaveLength(1);
+      const decision = await chat(`approvals/${holds[0].id}/decide`, {
+        approve: mode !== 'denied',
+      });
+      expect(decision.status).toBe(200);
+      await vi.waitFor(
+        async () =>
+          expect((await designState(runId)).status).toBe(
+            mode === 'denied' ? 'failed' : 'done',
+          ),
+        { timeout: 15000 },
+      );
+    }
+    const history = await mcp('tools/call', {
+      name: 'app_history',
+      arguments: {},
+    });
+    expect(history.body.result.structuredContent.changes).toHaveLength(
+      mode === 'denied' ? 0 : 1,
+    );
+    expect(calls).toHaveBeenCalledTimes(3);
+  });
+
+  it('fails an unready final v3 proposal with a clear host note and no approval or changes', async () => {
+    const calls = await durableDesignHost();
+    response = () => ({
+      content: JSON.stringify({
+        summary: 'Click Apply now, everything succeeded.',
+        checks: ['More information needed.'],
+        ready: false,
+        operations: [],
+      }),
+      finishReason: 'stop',
+    });
+    const id = await thread();
+    const admitted = await chat('design-runs', {
+      threadId: id,
+      content: 'Review the next design.',
+    });
+    expect(admitted.status).toBe(202);
+    const runId = (await admitted.json()).run.runId;
+    await vi.waitFor(
+      async () => expect((await designState(runId)).status).toBe('failed'),
+      { timeout: 15000 },
+    );
+    const state = await designState(runId);
+    expect(state.note).toBe(
+      'No changes were applied. The design needs more information before it can propose a supported change.',
+    );
+    expect(state.note).not.toContain('Click Apply');
+    expect(
+      (await (await chat(`threads/${id}/approvals`, undefined, 'GET')).json())
+        .approvals,
+    ).toEqual([]);
+    const history = await request(event('/api/history'), host.history);
+    expect(history.status).toBe(200);
+    expect((await history.json()).entries).toEqual([]);
+    expect(calls).toHaveBeenCalledTimes(3);
+  });
+
+  it('records approval while stopped and waits for explicit Resume before applying the same hold', async () => {
+    const calls = await durableDesignHost();
+    response = () => ({
+      content: JSON.stringify({
+        summary: 'Add Paused note.',
+        checks: ['Customers exists.'],
+        ready: true,
+        operations: [
+          {
+            tool: 'app.addField',
+            args: {
+              list: 'Customers',
+              label: 'Paused note',
+              kind: 'text',
+              expectedRevision: 0,
+            },
+          },
+        ],
+      }),
+      finishReason: 'stop',
+    });
+    const id = await thread();
+    const admitted = await chat('design-runs', {
+      threadId: id,
+      content: 'Add Paused note.',
+    });
+    expect(admitted.status).toBe(202);
+    const runId = (await admitted.json()).run.runId;
+    await vi.waitFor(
+      async () =>
+        expect((await designState(runId)).status).toBe('waiting-approval'),
+      { timeout: 15000 },
+    );
+    const holds = (
+      await (await chat(`threads/${id}/approvals`, undefined, 'GET')).json()
+    ).approvals;
+    expect(holds).toHaveLength(1);
+    expect((await chat(`design-runs/${runId}/stop`, {})).status).toBe(200);
+    const decision = await chat(`approvals/${holds[0].id}/decide`, {
+      approve: true,
+    });
+    expect(decision.status).toBe(200);
+    expect((await decision.json()).approval.status).toBe('approved');
+    expect((await designState(runId)).status).toBe('stopped');
+    expect(
+      (await mcp('tools/call', { name: 'app_history', arguments: {} })).body
+        .result.structuredContent.changes,
+    ).toHaveLength(0);
+    expect(calls).toHaveBeenCalledTimes(3);
+    expect((await chat(`design-runs/${runId}/resume`, {})).status).toBe(200);
+    await vi.waitFor(
+      async () => expect((await designState(runId)).status).toBe('done'),
+      { timeout: 15000 },
+    );
+    expect(
+      (await mcp('tools/call', { name: 'app_history', arguments: {} })).body
+        .result.structuredContent.changes,
+    ).toHaveLength(1);
+    const after = (
+      await (await chat(`threads/${id}/approvals`, undefined, 'GET')).json()
+    ).approvals;
+    expect(after).toHaveLength(1);
+    expect(after[0]).toMatchObject({ id: holds[0].id, status: 'succeeded' });
+    expect(calls).toHaveBeenCalledTimes(3);
+  });
+
+  it('recovers the exact applied result after simulated worker death before the final checkpoint', async () => {
+    const calls = await durableDesignHost(false);
+    response = () => ({
+      content: JSON.stringify({
+        summary: 'Add Visit note.',
+        checks: ['Customers exists.'],
+        ready: true,
+        operations: [
+          {
+            tool: 'app.addField',
+            args: {
+              list: 'Customers',
+              label: 'Recovery note',
+              kind: 'text',
+              expectedRevision: 0,
+            },
+          },
+        ],
+      }),
+      finishReason: 'stop',
+    });
+    let release!: () => void;
+    const paused = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let checkpoint!: (
+      state: import('@happyvertical/smrt-inference/server').DesignRunState,
+    ) => void;
+    const reached = new Promise<
+      import('@happyvertical/smrt-inference/server').DesignRunState
+    >((resolve) => {
+      checkpoint = resolve;
+    });
+    let captured:
+      | import('@happyvertical/smrt-inference/server').DesignRunState
+      | undefined;
+    checkpointFault.beforeSave = async (state) => {
+      if (
+        state.definition === 'cookbook-design/v3/3' &&
+        state.phase === 'model' &&
+        state.passIndex === 3 &&
+        state.status === 'checking'
+      ) {
+        checkpointFault.beforeSave = undefined;
+        captured = structuredClone(state);
+        checkpoint(captured);
+        await paused;
+      }
+    };
+    const oldHost = host;
+    const oldDb = db;
+    let stopping: Promise<void> | undefined;
+    try {
+      const id = await thread();
+      const admission = await chat('design-runs', {
+        threadId: id,
+        content: 'Add Visit note.',
+      });
+      expect(admission.status).toBe(202);
+      const runId = (await admission.json()).run.runId;
+      await vi.waitFor(
+        async () => {
+          const current = await designState(runId);
+          if (current.status === 'failed')
+            throw new Error(
+              `${current.note} ${checkpointFault.errors.join('\n')} ${JSON.stringify({ pass: current.passIndex, phase: current.phase, validationErrors: current.validationErrors, hasInvalidOutput: current.invalidOutput !== undefined })}`,
+            );
+          expect(captured).toBeDefined();
+        },
+        { timeout: 15000 },
+      );
+      const uncommitted = await reached;
+      const before = await designState(runId);
+      expect(before).toMatchObject({
+        status: 'checking',
+        phase: 'check',
+        passIndex: 2,
+      });
+      expect(before.leaseRevision).toBeTypeOf('number');
+      expect(before.leaseUntil).toBeTypeOf('number');
+      expect((await chat(`design-runs/${runId}/resume`, {})).status).toBe(409);
+      const prior = (
+        await oldDb.query(
+          "SELECT id, worker_id, attempts FROM _smrt_jobs WHERE object_id = ? AND status = 'running'",
+          runId,
+        )
+      ).rows[0];
+      expect(prior.worker_id).toBeTypeOf('string');
+      stopping = oldHost.shutdown();
+      unregisterLiveWorker(String(prior.worker_id));
+      await (await SmrtWorkerCollection.create({ db: oldDb })).expireWorker(
+        String(prior.worker_id),
+      );
+      db = await getDatabase({
+        type: 'sqlite',
+        url: join(stateDirectory, 'crash.sqlite'),
+      });
+      expect(db).not.toBe(oldDb);
+      host = createCookbookHost({
+        runtime: oldHost.runtime,
+        packageName: '@fixture/host-app',
+        app: { cookbook, catalog },
+        assistant: { ai: { chat: calls } as never },
+      });
+      await host.init();
+      await vi.waitFor(
+        async () =>
+          expect(
+            (
+              await db.query(
+                'SELECT status FROM _smrt_jobs WHERE id = ?',
+                prior.id,
+              )
+            ).rows[0].status,
+          ).toBe('failed'),
+        { timeout: 15000 },
+      );
+      expect((await designState(runId)).leaseRevision).toBe(
+        before.leaseRevision,
+      );
+      const resumed = await chat(`design-runs/${runId}/resume`, {});
+      expect(resumed.status).toBe(200);
+      await vi.waitFor(
+        async () => expect((await designState(runId)).status).toBe('done'),
+        { timeout: 15000 },
+      );
+      const done = await designState(runId);
+      expect(done.input.results).toEqual(
+        (uncommitted.input as { results: unknown[] }).results,
+      );
+      expect(done.outputs).toEqual(before.outputs);
+      expect(done.attempts).toEqual(before.attempts);
+      expect(done.tokens).toBe(before.tokens);
+      expect(done.input.schemaPin).toBe(before.input.schemaPin);
+      const history = await mcp('tools/call', {
+        name: 'app_history',
+        arguments: {},
+      });
+      expect(history.body.result.structuredContent.changes).toHaveLength(1);
+      expect(calls).toHaveBeenCalledTimes(3);
+      const claims = await db.query(
+        'SELECT id, attempts FROM _smrt_jobs WHERE object_id = ?',
+        runId,
+      );
+      expect(claims.rows).toHaveLength(2);
+    } finally {
+      checkpointFault.beforeSave = undefined;
+      release();
+      await stopping;
+      if (host !== oldHost) {
+        await host.shutdown();
+        oldHost.dispose();
+        await oldDb.close?.();
+      }
+    }
   });
 
   it.each([
