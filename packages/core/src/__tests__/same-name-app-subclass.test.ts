@@ -1,7 +1,7 @@
-/** #4869/A2: installed package declarations, effective app identities, SQLite I/O. */
+/** #4869/A2: installed declarations, effective app identities and portable I/O. */
 import { readFileSync } from 'node:fs';
 import { ManifestAdapter, OxcScanner } from '@happyvertical/smrt-scanner';
-import { getDatabase } from '@happyvertical/sql';
+import type { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveCookbookFieldPolicy } from '../../../fields/src/policy.js';
 import { deriveScreenFields } from '../../../smrt-svelte/src/components/screens/fields.js';
@@ -25,7 +25,9 @@ import { buildDomainKnowledgeManifest } from '../knowledge';
 import { clearManifestCache } from '../manifest/manifest-loader';
 import { annotateModelReplacements } from '../manifest/model-replacements';
 import { generateSchemaDiff } from '../migrations/differ';
+import { createMigrationDefinition } from '../migrations/generator';
 import { collectStatementsFromDiff } from '../migrations/orchestrate';
+import { MigrationTracker } from '../migrations/tracker';
 import { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import { createConsumerWorkspace } from '../registry/__tests__/helpers/consumer-workspace';
@@ -37,12 +39,18 @@ import { ManifestGenerator } from '../scanner/manifest-generator';
 import type { SmartObjectManifest } from '../scanner/types';
 import { SchemaAggregator } from '../schema/schema-aggregator';
 import { snapshotObjectRegistryState } from '../test-utils';
+import { getTestDatabase } from '../testing/database.js';
 import { generateSvelteKitRoutes } from '../vite-plugin/sveltekit-generator';
 import {
   buildWebCollectionDefinition,
   buildWebMcpToolDefinitions,
   selectWebCollectionEntries,
 } from '../vite-plugin/web-collections';
+
+const databaseType = process.env.SMRT_TEST_PGLITE === '1' ? 'pglite' : 'sqlite';
+const TENANT_A = '11111111-1111-4111-8111-111111111111';
+const dialect = databaseType === 'pglite' ? 'postgres' : 'sqlite';
+const databaseUrl = databaseType === 'pglite' ? 'memory://' : ':memory:';
 
 const UP = '@fixture/a2-upstream';
 const APP = '@fixture/a2-app';
@@ -65,7 +73,7 @@ const appSource = (
 ) => `import { smrt, SmrtCollection } from '@happyvertical/smrt-core';
 import { Customer as CustomerBase, Profile as ProfileBase, Base as BaseBase } from '${UP}';
 @smrt({})
-export class AppCustomer extends CustomerBase { ${custom ? "favoritePose = '';" : ''} greeting() { return 'app'; } }
+export class AppCustomer extends CustomerBase { ${custom ? "favoritePose = ''; visits = 0;" : ''} greeting() { return 'app'; } }
 export { AppCustomer as Customer };
 @smrt({})
 export class Customers extends SmrtCollection<AppCustomer> { static readonly _itemClass = AppCustomer; }
@@ -143,6 +151,7 @@ function runtime(up: SmartObjectManifest, app?: SmartObjectManifest) {
     return { Customer, Invoice, Profile, Person, Base, Leaf, Customers };
   class AppCustomer extends Customer {
     favoritePose = '';
+    visits = 0;
     override greeting() {
       return 'app';
     }
@@ -230,30 +239,52 @@ function schemas(manifest: SmartObjectManifest) {
   const aggregate = new SchemaAggregator().aggregate({
     packages: [APP],
     localPaths: { [APP]: file },
-    dialect: 'sqlite',
+    dialect,
   });
   return Object.fromEntries(
     [...aggregate.tables].map(([name, table]) => [name, table.definition]),
   );
 }
 async function migrate(manifest: SmartObjectManifest) {
-  if (!db) throw new Error('SQLite fixture not initialized');
+  if (!db) throw new Error('Database fixture not initialized');
   const diff = await generateSchemaDiff(db, schemas(manifest), {
-    engineHint: 'sqlite',
+    engineHint: dialect,
   });
-  const statements = collectStatementsFromDiff(diff, db, 'sqlite');
-  for (const sql of statements) await db.query(sql);
+  const statements = collectStatementsFromDiff(diff, db, dialect);
+  if (statements.length) {
+    const results = await new MigrationTracker({
+      db,
+      engineHint: dialect,
+    }).applyAll(
+      [
+        createMigrationDefinition(
+          `a2_schema_${crypto.randomUUID()}`,
+          statements,
+          [],
+          { packageName: APP, version: '1' },
+        ),
+      ],
+      { atomic: true, postgresSafe: false },
+    );
+    const failed = results.find((result) => !result.success);
+    if (failed) throw failed.error;
+  }
   return statements;
 }
 
 describe('same-name app subclass', () => {
-  it('serves reference picker search and labels from the effective app model only after lazy activation', async () => {
+  // Live DDL remains SQLite-only; eager PostgreSQL subclass CRUD is covered below.
+  it('serves reference picker search and labels from the effective app model only after lazy activation', async ({
+    skip,
+  }) => {
+    if (databaseType === 'pglite') skip();
     runtime(up, app);
-    db = await getDatabase({
-      type: 'sqlite',
-      url: ':memory:',
-      __smrtSkipVitestSchemaPreparation: true,
-    } as Parameters<typeof getDatabase>[0]);
+    db = await getTestDatabase({
+      type: databaseType,
+      url: databaseUrl,
+      includeSystemTables: false,
+      classes: [],
+    });
     merged.objects[`${APP}:Customer`].displayLabelField = 'title';
     const activation = createActivationCoordinator({
       scope: ws.root,
@@ -308,7 +339,7 @@ describe('same-name app subclass', () => {
     const invoice = buildWebCollectionDefinition(invoiceEntry, merged);
     const handler = new APIGenerator(
       { basePath: '/api' },
-      { db, tenantId: 'a' },
+      { db, tenantId: TENANT_A },
     ).generateHandler();
     const fetcher: typeof fetch = async (input, init) =>
       handler(new Request(new URL(String(input), 'http://fixture'), init));
@@ -330,7 +361,10 @@ describe('same-name app subclass', () => {
     const customers = await ObjectRegistry.getCollection(`${UP}:Customer`, {
       db,
     });
-    const row = await customers.create({ title: 'Maya', favoritePose: 'tree' });
+    const row = await customers.create({
+      title: 'Maya',
+      favoritePose: 'tree',
+    });
     const page = await target.source.search!({
       query: 'Maya',
       offset: 0,
@@ -375,7 +409,12 @@ describe('same-name app subclass', () => {
 
   it('keeps provider cookbook defaults and hidden fields on generated app STI creates', async () => {
     runtime(up, app);
-    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    db = await getTestDatabase({
+      type: databaseType,
+      url: databaseUrl,
+      includeSystemTables: false,
+      classes: [],
+    });
     await migrate(merged);
     await ObjectRegistry.getCollection(`${UP}:Profile`, { db });
     const entry = selectWebCollectionEntries(merged).find(
@@ -435,7 +474,12 @@ describe('same-name app subclass', () => {
 
   it('dispatches shared STI creates to the app root even with children first', async () => {
     const f = runtime(up, app);
-    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    db = await getTestDatabase({
+      type: databaseType,
+      url: databaseUrl,
+      includeSystemTables: false,
+      classes: [],
+    });
     await migrate(merged);
     await ObjectRegistry.getCollection(`${UP}:Profile`, { db });
     await ObjectRegistry.getCollection(`${UP}:Person`, { db });
@@ -502,18 +546,23 @@ describe('same-name app subclass', () => {
   it.each([
     { replacement: false, lazy: false },
     { replacement: true, lazy: false },
-    { replacement: false, lazy: true },
-    { replacement: true, lazy: true },
+    ...(databaseType === 'sqlite'
+      ? [
+          { replacement: false, lazy: true },
+          { replacement: true, lazy: true },
+        ]
+      : []),
   ])('agrees on gated STI collection ownership through REST and MCP: %j', async ({
     replacement,
     lazy,
   }) => {
     const fixture = runtime(up, replacement ? app : undefined);
-    db = await getDatabase({
-      type: 'sqlite',
-      url: ':memory:',
-      __smrtSkipVitestSchemaPreparation: lazy,
-    } as Parameters<typeof getDatabase>[0]);
+    db = await getTestDatabase({
+      type: databaseType,
+      url: databaseUrl,
+      includeSystemTables: false,
+      classes: [],
+    });
     const manifest = replacement ? merged : up;
     const activation = lazy
       ? createActivationCoordinator({
@@ -589,7 +638,7 @@ describe('same-name app subclass', () => {
         { basePath: '/api', authMiddleware: () => async (req) => req },
         {
           db,
-          tenantId: 'a',
+          tenantId: TENANT_A,
           user: { id: 'test' },
           permissions: ['profiles.create'],
         },
@@ -604,7 +653,11 @@ describe('same-name app subclass', () => {
         );
       const mcp = new MCPGenerator(
         { classNames: [effective] },
-        { db, tenantId: 'a', user: { id: 'test' } },
+        {
+          db,
+          tenantId: TENANT_A,
+          user: { id: 'test' },
+        },
       );
       const call = () =>
         mcp.handleToolCall({
@@ -698,13 +751,18 @@ describe('same-name app subclass', () => {
       `${UP}:Person`,
     );
     expect(ObjectRegistry.getTableName(`${UP}:Leaf`)).toBe('a2_leaves');
-    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    db = await getTestDatabase({
+      type: databaseType,
+      url: databaseUrl,
+      includeSystemTables: false,
+      classes: [],
+    });
     await migrate(merged);
     const customers = await f.Customers.create({ db });
     expect(customers.getItemClass()).toBe(f.AppCustomer);
     const customer = await customers.create({
       title: 'Maya',
-      tenantId: 'tenant',
+      tenantId: TENANT_A,
       profileId: 'profile',
       favoritePose: 'tree',
     });
@@ -712,7 +770,7 @@ describe('same-name app subclass', () => {
     expect(customer.greeting()).toBe('app');
     expect((await customers.get(customer.id!))?.toJSON()).toMatchObject({
       favoritePose: 'tree',
-      tenantId: 'tenant',
+      tenantId: TENANT_A,
       profileId: 'profile',
     });
     const invoices = await ObjectRegistry.getCollection(`${UP}:Invoice`, {
@@ -756,7 +814,12 @@ describe('same-name app subclass', () => {
   });
 
   it('keeps the provider cookbook identity when gating an app replacement', async () => {
-    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    db = await getTestDatabase({
+      type: databaseType,
+      url: databaseUrl,
+      includeSystemTables: false,
+      classes: [],
+    });
     const fixture = runtime(up, app);
     const Item = fixture.AppCustomer;
     if (!Item) throw new Error('App subclass fixture was not registered');
@@ -781,13 +844,16 @@ describe('same-name app subclass', () => {
     setRuntimeExposureGate(gate);
     try {
       const customers = await ObjectRegistry.getCollection(id, { db });
-      const api = new APIGenerator({ basePath: '/api' }, { db, tenantId: 'a' });
+      const api = new APIGenerator(
+        { basePath: '/api' },
+        { db, tenantId: TENANT_A },
+      );
       api.registerCollection('customers', customers);
       const request = () =>
         api.generateHandler()(new Request('http://fixture/api/customers'));
       const mcp = new MCPGenerator(
         { classNames: [`${APP}:Customer`] },
-        { db, tenantId: 'a' },
+        { db, tenantId: TENANT_A },
       );
       expect((await request()).status).toBe(404);
       expect(await mcp.generateTools()).toEqual([]);
@@ -802,7 +868,7 @@ describe('same-name app subclass', () => {
         (
           await new MCPGenerator(
             { classNames: [`${APP}:Customers`] },
-            { tenantId: 'a' },
+            { tenantId: TENANT_A },
           ).generateTools()
         ).some((tool) => tool.name === 'customers_list'),
       ).toBe(true);
@@ -817,7 +883,12 @@ describe('same-name app subclass', () => {
   });
 
   it('migrates a custom column onto the existing upstream table and serves REST CRUD', async () => {
-    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    db = await getTestDatabase({
+      type: databaseType,
+      url: databaseUrl,
+      includeSystemTables: false,
+      classes: [],
+    });
     await migrate(up);
     runtime(up, app);
     const statements = await migrate(merged);
@@ -826,6 +897,13 @@ describe('same-name app subclass', () => {
     );
     expect(statements.join('\n')).not.toContain('CREATE TABLE');
     expect(await migrate(merged)).toEqual([]);
+    const journal = await db.query(
+      'SELECT status FROM _smrt_schema_migrations',
+    );
+    expect(journal.rows).toEqual([
+      { status: 'completed' },
+      { status: 'completed' },
+    ]);
     const customers = await ObjectRegistry.getCollection(`${UP}:Customer`, {
       db,
     });
@@ -850,11 +928,29 @@ describe('same-name app subclass', () => {
     const created = await request('', 'POST', {
       title: 'Maya',
       favoritePose: 'tree',
-      tenantId: 'tenant',
+      visits: 4_294_967_296,
+      tenantId: TENANT_A,
       profileId: 'profile',
     });
     expect(created.status).toBe(201);
-    const row = (await created.json()) as { id: string; favoritePose: string };
+    const row = (await created.json()) as {
+      id: string;
+      favoritePose: string;
+      visits: number;
+    };
+    expect(row.visits).toBe(4_294_967_296);
+    expect(await (await request(`/${row.id}`)).json()).toMatchObject({
+      visits: 4_294_967_296,
+    });
+    if (databaseType === 'pglite') {
+      const { rows } = await db.query(
+        "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'a2_customers' AND column_name IN ('id', 'visits') ORDER BY column_name",
+      );
+      expect(rows).toEqual([
+        { column_name: 'id', data_type: 'uuid' },
+        { column_name: 'visits', data_type: 'bigint' },
+      ]);
+    }
     expect(row.favoritePose).toBe('tree');
     expect(
       ((await (await request(`/${row.id}`)).json()) as { favoritePose: string })
@@ -894,7 +990,12 @@ describe('same-name app subclass', () => {
       objects: { ...up.objects, ...app.objects },
     });
     const models = runtime(up, merged);
-    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    db = await getTestDatabase({
+      type: databaseType,
+      url: databaseUrl,
+      includeSystemTables: false,
+      classes: [],
+    });
     await migrate(merged);
     const profiles = await ObjectRegistry.getCollection(`${UP}:Profile`, {
       db,

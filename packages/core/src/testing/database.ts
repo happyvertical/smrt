@@ -29,7 +29,6 @@ import { recordRegistryDiagnostic } from '../registry/diagnostics.js';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import { ObjectRegistry } from '../registry.js';
 import { resolveRelationshipTargetName } from '../relationship-loader.js';
-import { detectEngine } from '../schema/ddl/index.js';
 import {
   schemaForeignKeys,
   schemaForeignKeysForEngine,
@@ -37,7 +36,10 @@ import {
 import { planForeignKeyCreation } from '../schema/foreign-key-planner.js';
 import { SchemaGenerator } from '../schema/generator.js';
 import type { SchemaDefinition } from '../schema/types.js';
-import { ensureLegacySystemTableCompatibility } from '../system/compatibility.js';
+import {
+  ensureLegacySystemTableCompatibility,
+  getDatabaseEngine,
+} from '../system/compatibility.js';
 import { getSystemTableDDL } from '../system/schema.js';
 import { resolveDisplayLabelProjection } from '../ui-metadata.js';
 
@@ -207,8 +209,9 @@ export interface TestDatabaseOptions {
    * - 'json': JSON adapter (stores data as JSON files with DuckDB for querying)
    * - 'duckdb': Native DuckDB database
    * - 'postgres': PostgreSQL database (normally supplied through `db`)
+   * - 'pglite': In-process PostgreSQL (requires the SDK's optional PGlite peer)
    */
-  type?: 'sqlite' | 'json' | 'duckdb' | 'postgres';
+  type?: 'sqlite' | 'json' | 'duckdb' | 'postgres' | 'pglite';
 
   /**
    * Database URL (default: ':memory:')
@@ -254,7 +257,7 @@ export function resolveTestDatabaseDDLEngine(
   // Native DuckDB and JSON-on-DuckDB both expose exportTable(), so capability
   // inference must not override an explicit native DuckDB request.
   if (!inferFromDatabase) {
-    return type ?? 'sqlite';
+    return type === 'pglite' ? 'postgres' : (type ?? 'sqlite');
   }
 
   const configuredDb = db as DatabaseInterface & {
@@ -285,10 +288,7 @@ export function resolveTestDatabaseDDLEngine(
     return 'json';
   }
 
-  return detectEngine(
-    db.url || configuredDb.config?.url || '',
-    configuredDb.type || configuredDb.config?.type,
-  );
+  return getDatabaseEngine(db);
 }
 
 function omitTestForeignKeyConstraints(
@@ -407,12 +407,22 @@ export async function getTestDatabase(
     omitForeignKeyConstraints = false,
   } = options;
 
+  // The PostgreSQL lane reuses the isolated SDK/peer fixture from browser QA.
+  // Keeping that peer outside the workspace preserves the browser import graph.
+  const factoryModule =
+    !existingDb && type === 'pglite'
+      ? process.env.SMRT_TEST_PGLITE_MODULE
+      : undefined;
+  const openDatabase: typeof getDatabase = factoryModule
+    ? (await import(/* @vite-ignore */ factoryModule)).getDatabase
+    : getDatabase;
+
   // Use existing database or create new one
   const db =
     existingDb ??
-    (await getDatabase({
+    (await openDatabase({
       type: type ?? 'sqlite',
-      url,
+      url: type === 'pglite' && url === ':memory:' ? 'memory://' : url,
       __smrtSkipVitestSchemaPreparation: true,
     } as TestDatabaseConnectionOptions));
   if (!existingDb) await applySqliteTestPragmas(db, type, url);
@@ -726,14 +736,7 @@ export async function getTestDatabase(
 async function initializeSystemTables(db: DatabaseInterface): Promise<void> {
   await ensureLegacySystemTableCompatibility(db);
 
-  const configuredDb = db as DatabaseInterface & {
-    config?: { type?: string; url?: string };
-    type?: string;
-  };
-  const engine = detectEngine(
-    db.url || configuredDb.config?.url || '',
-    configuredDb.type || configuredDb.config?.type,
-  );
+  const engine = getDatabaseEngine(db);
 
   // Split multi-statement SQL into individual statements
   const allStatements: string[] = [];

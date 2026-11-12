@@ -73,6 +73,7 @@ import {
   type DecisionResult,
   executeDecision,
 } from './decisions.js';
+import { isPerConnectionMemoryUrl } from './embedded-write-queue.js';
 import { createFilesystemAdapter } from './filesystem-loader.js';
 import { getDatabase, importAI } from './host.js';
 import {
@@ -2109,7 +2110,7 @@ export class SmrtClass {
     // - Any database with undefined URL
     // Use WeakSet for instance tracking, Set<string> for URL tracking
     const dbConstructorName = this._db.constructor?.name || '';
-    const isMemoryDb = dbUrl === ':memory:';
+    const isMemoryDb = isPerConnectionMemoryUrl(dbUrl);
     const isJsonDb = dbConstructorName.toLowerCase().includes('json');
     const hasUndefinedUrl = !dbUrl;
     const useInstanceTracking = isMemoryDb || isJsonDb || hasUndefinedUrl;
