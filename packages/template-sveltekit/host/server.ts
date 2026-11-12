@@ -1266,13 +1266,8 @@ export function createCookbookHost(options: CookbookHostOptions) {
         )
           return [];
       }
-      const identity = ObjectRegistry.getClass(key)?.qualifiedName;
-      const entry = [...shell.entries.values()].find(
-        (candidate) =>
-          ObjectRegistry.getClass(candidate.model.id)?.qualifiedName ===
-          identity,
-      );
-      if (!identity || !entry) return [];
+      const entry = modelPlacement(shell, key)?.entry;
+      if (!entry) return [];
       const functionName = wireName(`${entry.label}_${tool.action}`).slice(
         0,
         64,
@@ -1288,6 +1283,27 @@ export function createCookbookHost(options: CookbookHostOptions) {
         },
       ];
     });
+  };
+  // Shared business vocabulary for both native and generated-MCP previews.
+  const modelPlacement = (
+    shell: ReturnType<typeof buildCookbookShell> | undefined,
+    modelId: string,
+  ) => {
+    const identity = ObjectRegistry.getClass(modelId)?.qualifiedName;
+    if (!identity) return undefined;
+    const entry = [...(shell?.entries.values() ?? [])].find(
+      (candidate) =>
+        ObjectRegistry.getClass(candidate.model.id)?.qualifiedName === identity,
+    );
+    if (!entry) return undefined;
+    return {
+      entry,
+      noun:
+        shell?.layout?.items?.[entry.id]?.singularLabel ??
+        (shell?.layout?.items?.[entry.id]?.label
+          ? entry.label
+          : (entry.noun ?? entry.label)),
+    };
   };
   const mcpModels = async (
     principal: McpAppPrincipal,
@@ -1328,12 +1344,11 @@ export function createCookbookHost(options: CookbookHostOptions) {
       if ((COOKBOOK_TOOL_NAMES as readonly string[]).includes(descriptor.name))
         return [];
       const identity = generator.getToolIdentity(descriptor);
-      const entry = [...(shell?.entries.values() ?? [])].find(
-        (candidate) =>
-          ObjectRegistry.getClass(candidate.model.id)?.qualifiedName ===
-          ObjectRegistry.getClass(identity.qualifiedName ?? identity.objectName)
-            ?.qualifiedName,
+      const placement = modelPlacement(
+        shell,
+        identity.qualifiedName ?? identity.objectName,
       );
+      const entry = placement?.entry;
       if (placedOnly && !entry) return [];
       if (placedOnly && entry)
         descriptor.description += ` App list label (data): ${JSON.stringify(entry.label)}.`;
@@ -1355,12 +1370,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
               descriptor,
               tool,
               generator,
-              noun: entry
-                ? (shell?.layout?.items?.[entry.id]?.singularLabel ??
-                  (shell?.layout?.items?.[entry.id]?.label
-                    ? entry.label
-                    : (entry.noun ?? entry.label)))
-                : undefined,
+              noun: placement?.noun,
             },
           ]
         : [];
@@ -1937,21 +1947,51 @@ export function createCookbookHost(options: CookbookHostOptions) {
       }
       if (record.continuation?.executor !== 'model' || !binding)
         return undefined;
-      const model = (
-        await mcpModels(
-          {
-            id: record.requestedBy,
-            tenantId: record.tenantId,
-            scopes: binding.allowedTools,
-          },
-          true,
-        )
-      ).find((entry) => entry.tool.slug === record.tool);
-      const action = model?.tool.action;
+      if (!binding.allowedTools.includes(record.tool)) return undefined;
+      // Match the continuation executor's catalog. Plugin/thread tools use the
+      // app manifest; an API-native action need not also be a generated MCP tool.
+      const native =
+        record.context.pluginMode === true || record.context.threadId;
+      const generated = native
+        ? undefined
+        : (
+            await mcpModels(
+              {
+                id: record.requestedBy,
+                tenantId: record.tenantId,
+                scopes: binding.permissions,
+              },
+              true,
+            )
+          ).find((entry) => entry.tool.slug === record.tool);
+      const tool = native
+        ? (
+            await manifest(
+              record.tenantId,
+              record.requestedBy,
+              binding.permissions,
+            )
+          ).find((entry) => entry.slug === record.tool)
+        : generated?.tool;
+      let noun = generated?.noun;
+      if (native && tool) {
+        const host = await ready();
+        const document = host.state
+          .engineFor({ tenantId: record.tenantId })
+          ?.cookbook();
+        const shell = document
+          ? buildCookbookShell({ cookbook: document, catalog: host.catalog })
+          : undefined;
+        noun = modelPlacement(
+          shell,
+          tool.qualifiedName ?? tool.className,
+        )?.noun;
+      }
+      const action = tool?.action;
       if (
-        !model?.noun ||
+        !noun ||
         !['delete', 'create', 'update'].includes(action ?? '') ||
-        !personChangeSummary(`Added ${model.noun}.`)
+        !personChangeSummary(`Added ${noun}.`)
       )
         return undefined;
       const verb =
@@ -1966,7 +2006,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
             : action === 'create'
               ? 'Add'
               : 'Update';
-      return { summary: `${client ? `${client}: ` : ''}${verb} ${model.noun}` };
+      return { summary: `${client ? `${client}: ` : ''}${verb} ${noun}` };
     },
     describeTool: describePublicAssistantTool,
     systemPrompt: async (context) => {

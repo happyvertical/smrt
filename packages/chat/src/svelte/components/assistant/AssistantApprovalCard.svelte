@@ -2,9 +2,10 @@
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button, Card } from '@happyvertical/smrt-ui/ui';
 import { onMount, type Snippet, untrack } from 'svelte';
-import type {
-  AssistantApprovalRequest,
-  AssistantApprovalView,
+import {
+  type AssistantApprovalRequest,
+  type AssistantApprovalView,
+  reconcileAssistantApprovalView,
 } from '../../../assistant-turn-events.js';
 import { M } from '../../i18n.js';
 import type { AssistantTransport } from './assistant-transport.js';
@@ -76,7 +77,7 @@ onMount(() => {
       if (!active) return;
       const current = rows?.find((row) => row.id === boundApproval.id);
       if (current) {
-        view = current;
+        view = reconcileAssistantApprovalView(view, current);
         verified = true;
       }
     } catch {
@@ -104,7 +105,10 @@ async function decide(approve: boolean) {
   busy = true;
   error = false;
   try {
-    view = await transport.decideApproval(approval.id, approve);
+    view = reconcileAssistantApprovalView(
+      view,
+      await transport.decideApproval(approval.id, approve),
+    );
     await ondecided?.();
   } catch {
     error = true;

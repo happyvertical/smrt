@@ -132,3 +132,14 @@ parameterized DOM cases cover thread and owner-list success/refusal; restoring
 the old thread-only render/poll guards makes both owner-list cases fail. The
 unchanged app-shell suites exercise Tricia's presentation/detail and connection
 contracts. No duplicate card or decision route is introduced.
+
+Overlapping browser reads use the public browser-safe
+`reconcileAssistantApprovalView(current, next)` beside the existing wire type.
+Same-hold presentation advances pending → approved → executing → terminal; equal
+or forward active views take current canonical data, while the first terminal
+view is retained. Different hold ids never merge. AssistantApprovalCard, cookbook
+client completion observation and Settings reuse this one policy so a delayed
+pending poll cannot re-enable buttons after a newer decision. Verification and
+execution authority remain server-owned. Tests release an actual deferred card
+poll after approved/executing/terminal decision responses and preserve the
+newer caption, status and disabled decision state.

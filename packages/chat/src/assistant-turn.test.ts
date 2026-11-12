@@ -37,8 +37,10 @@ import {
   SESSION_CONTINUATIONS_FIELD,
 } from './assistant-turn.js';
 import {
+  type AssistantApprovalView,
   type AssistantTurnEvent,
   readAssistantTurnStream,
+  reconcileAssistantApprovalView,
 } from './assistant-turn-events.js';
 import { ChatService } from './services/index.js';
 import {
@@ -1766,5 +1768,72 @@ describe('assistant turn', () => {
         /stopped responding/,
       );
     });
+  });
+});
+
+describe('canonical approval presentation reconciliation', () => {
+  const pending: AssistantApprovalView = {
+    id: 'hold',
+    callId: 'hold',
+    tool: 'change',
+    summary: 'Review this change',
+    status: 'pending',
+  };
+  it('accepts the first canonical view without inventing state', () => {
+    expect(reconcileAssistantApprovalView(undefined, pending)).toBe(pending);
+  });
+  it.each([
+    ['pending', 'pending'],
+    ['pending', 'approved'],
+    ['approved', 'executing'],
+    ['executing', 'executing'],
+    ['executing', 'succeeded'],
+  ] as const)('uses canonical data for %s to %s', (before, after) => {
+    const current = { ...pending, status: before };
+    const next = { ...pending, status: after, summary: 'Current caption' };
+    expect(reconcileAssistantApprovalView(current, next)).toBe(next);
+  });
+  it.each([
+    ['approved', 'pending'],
+    ['executing', 'pending'],
+    ['executing', 'approved'],
+  ] as const)('retains %s against a late %s', (before, after) => {
+    const current = { ...pending, status: before };
+    expect(
+      reconcileAssistantApprovalView(current, { ...pending, status: after }),
+    ).toBe(current);
+  });
+  it.each([
+    'succeeded',
+    'denied',
+    'failed',
+    'expired',
+  ] as const)('retains the first terminal %s against every later status', (status) => {
+    const current = { ...pending, status };
+    for (const later of [
+      'pending',
+      'approved',
+      'executing',
+      'succeeded',
+      'denied',
+      'failed',
+      'expired',
+    ] as const)
+      expect(
+        reconcileAssistantApprovalView(current, {
+          ...pending,
+          status: later,
+          summary: 'Later caption',
+        }),
+      ).toBe(current);
+  });
+  it('never merges different approval identities', () => {
+    expect(
+      reconcileAssistantApprovalView(pending, {
+        ...pending,
+        id: 'other',
+        status: 'succeeded',
+      }),
+    ).toBe(pending);
   });
 });

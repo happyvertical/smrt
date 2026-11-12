@@ -660,3 +660,42 @@ the last structure change”, without promising record restoration. Stored appro
 summaries, operation bindings, receipts and history commands are unchanged. Tests
 cover delayed real execution through these statuses and its actual Undo/history,
 as well as Settings-to-native memo selection and scope/key invalidation.
+
+The browser assistant observes canonical approval responses through its existing
+transport. Once it has seen a pending, approved or executing hold, a later
+`succeeded` response refreshes application data once for that hold. A decision
+response still has its existing immediate refresh; when that response is only
+approved, its later completion causes a separate refresh after the effect. An
+immediate succeeded decision is not refreshed again by subsequent card polls.
+First-seen historical success, including after transport recreation, is inert;
+terminal refusals never count as successful completion. No design-run/approval
+correlation metadata, additional poller or authority is introduced. This covers
+approval completion, not arbitrary preview-off run completion.
+
+The cookbook Settings composition connects OwnerApprovalsSettings's optional
+`onsettled` callback to the existing `invalidateAll`, separately from `ondecided`.
+Its observer owns approval discovery and canonical status polling; whole-page
+timed invalidation is unnecessary. The vanilla template Settings page remains
+the section menu and has no approval composition. Client tests cover delayed
+approved/executing/succeeded observations, stale responses, historical success,
+transport recreation, refusal states and unchanged send/resume/decision behavior.
+
+Native approval presentation follows the same offering source as its saved
+continuation executor: plugin and thread holds use the app manifest with the
+saved permission ceiling; external non-thread MCP holds use generated MCP
+definitions. An app-native delete may legitimately be offered while that model's
+generated MCP delete is excluded, so MCP eligibility cannot be a prerequisite
+for its person-facing preview. The exact saved tool must still belong to the
+continuation's allow-list. Safe business vocabulary comes from the registered
+current placement/layout, and the client label from the canonical continuation;
+raw stored summaries never become a native preview fallback. The plugin fixture
+retains its original MCP-enabled case and separately covers API-only native delete
+through a real delegated token, pending and succeeded owner-list captions, one
+actual deletion and unchanged ledger summary.
+
+One private same-file placement resolver supplies registered identity matching
+and layout/noun precedence to the manifest, generated MCP and native approval
+presentation paths. An unknown qualified identity returns no placement before
+entry matching, so two missing registrations cannot match through undefined
+values. A retained hold for an unavailable model stays a generic review caption;
+the owning plugin fixture checks this without executing or approving that hold.

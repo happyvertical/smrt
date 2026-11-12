@@ -27,6 +27,7 @@ import {
 import type { AppModelSnapshot } from '@happyvertical/smrt-core/app-models';
 import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
 import { isRuntimeModelEnabled } from '@happyvertical/smrt-core/runtime-exposure';
+import { snapshotObjectRegistryState } from '@happyvertical/smrt-core/testing';
 import { disableTenancy } from '@happyvertical/smrt-tenancy';
 import {
   DEFAULT_ROLE_SLUGS,
@@ -115,6 +116,7 @@ let assistantDefinitions: NonNullable<
   PluginModeState['tools']
 >[number]['definition'][] = [];
 let released: (() => void) | undefined;
+let restoreRegistry: (() => void) | undefined;
 afterEach(async () => {
   vi.restoreAllMocks();
   await client?.close();
@@ -124,6 +126,7 @@ afterEach(async () => {
     await new Promise<void>((resolve) => http!.close(() => resolve()));
     http = undefined;
   }
+  await host?.shutdown();
   host?.dispose();
   if (host) {
     try {
@@ -136,6 +139,8 @@ afterEach(async () => {
   released?.();
   released = undefined;
   disableTenancy();
+  restoreRegistry?.();
+  restoreRegistry = undefined;
   if (root) await rm(root, { recursive: true, force: true });
   if (stateRoot) await rm(stateRoot, { recursive: true, force: true });
 });
@@ -176,7 +181,23 @@ async function call(name: string, args: Record<string, unknown> = {}) {
   return payload(await client!.callTool({ name, arguments: args }));
 }
 
-it('generates private setup; bridges live tools, writes and durable owner decisions without leaking tokens', async () => {
+it.each([
+  {
+    name: 'generates private setup; bridges live tools, writes and durable owner decisions without leaking tokens',
+    nativeOnly: false,
+  },
+  {
+    name: 'bridges API-only native delete with the canonical plugin client and business preview',
+    nativeOnly: true,
+  },
+])('$name', async ({ nativeOnly }) => {
+  restoreRegistry = snapshotObjectRegistryState();
+  if (nativeOnly)
+    ObjectRegistry.register(PluginMember, {
+      ...ObjectRegistry.getConfig('@fixture/plugin:PluginMember'),
+      api: { include: ['list', 'get', 'create', 'delete'] },
+      mcp: { include: ['list', 'get', 'create'] },
+    });
   root = await realpath(await mkdtemp(join(tmpdir(), 'smrt-plugin-')));
   failures = [];
   const sourceRoot = join(root, 'source');
@@ -586,6 +607,24 @@ it('generates private setup; bridges live tools, writes and durable owner decisi
     '/api/assistant/approvals',
     host.assistant.GET,
   ).then((r) => r.json());
+  if (nativeOnly) {
+    const matching = approvals.approvals.find(
+      (record: { id: string }) => record.id === pending.approvalId,
+    );
+    // Public caption/status only: diagnostic never includes recovery context,
+    // operation arguments or scoped credentials.
+    expect({
+      present: !!matching,
+      status: matching?.status,
+      summary: matching?.summary,
+    }).toEqual({
+      present: true,
+      status: 'pending',
+      summary: 'Codex: Delete Members',
+    });
+    expect(held?.continuation?.executor).toBe('model');
+    expect(held?.continuation?.principal.clientName).toBe('Codex');
+  }
   expect(approvals.approvals).toContainEqual(
     expect.objectContaining({
       id: pending.approvalId,
@@ -620,6 +659,50 @@ it('generates private setup; bridges live tools, writes and durable owner decisi
     (await decision.clone().text()) + '; ' + failures.join('; '),
   ).toBe(200);
   expect(await members.get(id)).toBeFalsy();
+  if (nativeOnly) {
+    const completed = await request(
+      '/api/assistant/approvals',
+      host.assistant.GET,
+    ).then((response) => response.json());
+    expect(
+      completed.approvals.find(
+        (record: { id: string }) => record.id === pending.approvalId,
+      ),
+    ).toMatchObject({ status: 'succeeded', summary: 'Codex: Deleted Members' });
+    expect(
+      (await authority.get(owner.tenantId, pending.approvalId))?.summary ===
+        held?.summary,
+    ).toBe(true);
+    const savedBinding = held?.continuation;
+    if (!savedBinding) throw new Error('Missing canonical continuation');
+    // A retained native hold whose model is no longer registered must never
+    // borrow an unrelated placement or promote its old raw caption.
+    const missing = await authority.request({
+      tenantId: owner.tenantId,
+      requestedBy: owner.userId,
+      tool: 'retired_members.delete',
+      callId: randomUUID(),
+      args: {},
+      summary: 'PRIVATE retired implementation caption',
+      context: { pluginMode: true },
+      continuation: {
+        ...savedBinding,
+        principal: {
+          ...savedBinding.principal,
+          allowedTools: ['retired_members.delete'],
+        },
+      },
+    });
+    const missingViews = await request(
+      '/api/assistant/approvals',
+      host.assistant.GET,
+    ).then((response) => response.json());
+    expect(
+      missingViews.approvals.find(
+        (record: { id: string }) => record.id === missing.id,
+      ),
+    ).toMatchObject({ status: 'pending', summary: 'Review this change' });
+  }
   expect(
     (await call('owner_approval_outcome', { id: pending.approvalId })).status,
   ).toBe('succeeded');

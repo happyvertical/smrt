@@ -32,7 +32,7 @@ const transport = createAssistantHttpTransport({ endpoint: '/api/assistant' });
 
 <!-- Appearance, account, and layout; preferences persist through the shell storageKey. -->
 <ShellSettingsPage onSignOut={signOut}>
-  <OwnerApprovalsSettings approvals={data.approvals} {transport} ondecided={invalidateAll} />
+  <OwnerApprovalsSettings approvals={data.approvals} {transport} ondecided={invalidateAll} onsettled={invalidateAll} />
   <Button href="/onboarding?restart=1">{t(M['cookbook.settings.template'])}</Button>
   <ConnectAi {client} variant="settings" apiKeyHref="/settings/inference" />
   <Toggle label="Pre-built components" checked={data.prebuilt.enabled} disabled={busy} onchange={async enabled => {

@@ -38,10 +38,27 @@ that same component. The preference control owns no store or approval authority.
 observation composition once. It renders the canonical chat `AssistantApprovalCard`
 for pending/approved/executing records from an authorized host loader, removes
 terminal outcomes observed through the card's existing decision or polling calls,
-and labels its empty state. It adds no poller, authority, recovery payload or
-decision route. The product and generated cookbook Settings share this export.
-Owning mounted tests retain decision/poll removal and fail-closed verification;
-legacy Prebuilt tests remain unchanged. MCP architecture/review/introspection and
+and labels its empty state. Its optional `onsettled` callback runs once per known
+pending/approved/executing hold that canonically succeeds, before publishing the
+new views and unmounting its card. Seeded historical successes never notify;
+`ondecided` remains the existing human-decision callback. Both props and transport
+observations use Chat's shared `reconcileAssistantApprovalView` to retain already
+observed canonical progress; normalized rows also return to the card. Final view
+publication reconciles again after an awaited host refresh so overlapping holds
+cannot regress. No status is inferred from time or a missing row.
+
+While no unsettled card exists, targeted owner-list discovery retries once per
+second. It stops when cards take over polling, shares any outstanding list read
+across that handoff, and clears timers/discards obsolete results on cleanup.
+The existing transport has no abort-signal parameter; unmount cannot cancel an
+already-issued network request, but its result cannot publish or notify. Discovery
+errors expose no transport details, and host refresh failures do not change the
+canonical result. No authority, recovery payload or decision route is added.
+The product and generated cookbook Settings share this export. Mounted tests cover
+delayed/external completion, callback-driven invalidation, historical/remounted
+successes, stale decisions/lists, two-hold overlap, discovery and cleanup, alongside
+the existing decision/poll and fail-closed verification cases. Legacy Prebuilt
+tests retain their original assertions. MCP architecture/review/introspection and
 name/purpose searches found the canonical card and original composition, with no
 existing reusable titled owner settings container.
 

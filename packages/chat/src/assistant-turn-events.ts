@@ -130,6 +130,25 @@ export interface AssistantApprovalView extends AssistantApprovalRequest {
   decidedAt?: number | null;
 }
 
+/**
+ * Reconcile same-hold browser presentation when canonical reads overlap.
+ * This grants no execution authority; server verification remains mandatory.
+ * The first terminal view wins, and unrelated hold identities never merge.
+ */
+export function reconcileAssistantApprovalView(
+  current: AssistantApprovalView | undefined,
+  next: AssistantApprovalView,
+): AssistantApprovalView {
+  if (!current) return next;
+  if (current.id !== next.id) return current;
+  const active = ['pending', 'approved', 'executing'];
+  const previousRank = active.indexOf(current.status);
+  const nextRank = active.indexOf(next.status);
+  if (previousRank < 0 || (nextRank >= 0 && nextRank < previousRank))
+    return current;
+  return next;
+}
+
 /** One event of a streamed assistant turn. `M` is the host's message shape. */
 export type AssistantTurnEvent<M = Record<string, unknown>> =
   | { type: 'status'; status: AssistantStatus }

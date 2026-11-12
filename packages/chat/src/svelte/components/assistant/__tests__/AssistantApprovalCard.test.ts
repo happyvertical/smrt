@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { render, screen, userEvent } from '@happyvertical/smrt-vitest/svelte';
+import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import type { AssistantApprovalView } from '../../../../assistant-turn-events.js';
 import AssistantApprovalCard from '../AssistantApprovalCard.svelte';
@@ -119,5 +120,57 @@ describe('AssistantApprovalCard', () => {
       screen.getByRole('button', { name: 'Approve' }).hasAttribute('disabled'),
     ).toBe(true);
     expect(transport.decideApproval).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['approved', 'pending', 'Approved'],
+    ['executing', 'pending', 'Approved. Running…'],
+    ['executing', 'approved', 'Approved. Running…'],
+    ['succeeded', 'pending', 'Approved and completed'],
+    ['denied', 'pending', 'Denied. The tool did not run.'],
+    ['failed', 'approved', 'The approved tool failed'],
+  ] as const)('keeps decision %s when an older %s poll arrives', async (status, staleStatus, label) => {
+    let release!: (rows: AssistantApprovalView[]) => void;
+    const delayed = new Promise<AssistantApprovalView[]>((resolve) => {
+      release = resolve;
+    });
+    const transport = createInMemoryAssistantTransport();
+    const next = { ...approval, status, summary: 'Current canonical caption' };
+    const list = vi
+      .fn()
+      .mockResolvedValueOnce([approval])
+      .mockImplementationOnce(() => delayed)
+      .mockResolvedValue([next]);
+    transport.listApprovals = list;
+    transport.decideApproval = vi.fn(async () => next);
+    const ondecided = vi.fn();
+    render(AssistantApprovalCard, {
+      props: { approval, transport, ondecided },
+    });
+    try {
+      const approve = screen.getByRole('button', { name: 'Approve' });
+      await vi.waitFor(() => expect(approve).not.toBeDisabled());
+      // Let the existing one-second card poll begin; its response stays pending
+      // while the real decision transport returns a newer canonical state.
+      await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2), {
+        timeout: 2000,
+      });
+      await userEvent.click(approve);
+      expect(await screen.findByText(label)).toBeTruthy();
+      release([{ ...approval, status: staleStatus }]);
+      await delayed;
+      await tick();
+      expect(screen.getByRole('status')).toHaveTextContent(label);
+      expect(screen.getByText('Current canonical caption')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Deny' })).toBeNull();
+      expect(transport.decideApproval).toHaveBeenCalledExactlyOnceWith(
+        approval.id,
+        true,
+      );
+      expect(ondecided).toHaveBeenCalledTimes(1);
+    } finally {
+      release([{ ...approval, status: staleStatus }]);
+    }
   });
 });
