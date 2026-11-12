@@ -908,21 +908,28 @@ query, and `db:status` seeds the orphan report with
 `SchemaComparer.getLiveSchemaSnapshot()`. Never add a per-table or
 per-relationship query to these paths without batching or bounding it.
 
-**Partial apply and opt-in orphan disposition (#2748).** The batch an
-unflagged `db:migrate` attempts already excludes every blocked change (a
-FK-with-orphans, a manual `type_upgrade`/`alter_column`) — those never leave
-`SchemaDiff.changes` as executable SQL, so they never enter the atomic
-tracker batch on their own. `--apply-unblocked` adds a second, opt-in
-safety layer on top of that exclusion: the CLI partitions the remaining
-"safe" bucket by *dependency*, not just by whether a change is individually
-blocked. `computeBlockedColumns()` (`packages/cli/src/commands/
-db-migrate-actions.ts`) reads every manual intervention's blocked
-`table.column` identity; `partitionUnblockedMigrations()` then withholds any
-`add_index`/`add_foreign_key`/`alter_column`/`drop_column` that reads or
-writes one of those columns (an index on a column whose type upgrade is
-blocked, or a FK whose child *or* parent column is blocked) and applies
-everything else through the normal transaction/tracker path. Off by
-default: without the flag, the batch stays exactly what it always was.
+**All-or-nothing migrate (#4927).** `decideMigrationRun()` in
+`migrations/migration-run-decision.ts` is the shared run gate. Pass `changes`,
+`addedTables`, and `engine`. It returns `proceed`, `stops` (original change,
+kind, reason, message), and `heldBack` (plain description, table, optional
+column). Only `decideSchemaChange()` stops refuse a run. Reports never do.
+Every new table and apply change is held back if any stop remains. The CLI and
+`migrateSmrtSchemas()` both call this gate; Work-style wrappers need no local
+policy. `getPendingSchemaStatements().decision` exposes the same read-only plan.
+A refused core run returns `applied:false`, `refused:true`, `stops`, and
+`heldBack`; `unactionableChanges` and `hasManualDrift` still contain the stops.
+It does not initialize the tracker or stamp a successful migrate record.
+Proceeding/in-sync runs return `refused:false` and empty stops/heldBack.
+Ordinary execution uses `tracker.applyAll(..., {atomic:true})`. A later failure
+rolls back the whole batch. PostgreSQL concurrent-index mode is the declared
+exception: non-index changes commit first and a rerun completes the indexes.
+The batched PostgreSQL index read includes `pg_index.indisvalid`; an INVALID
+index cannot satisfy a declaration by name or signature and is planned again.
+A stop still refuses that mode before any writes. The CLI also defers tracker
+bootstrap and system timestamp conversion until after the decision. Its lock
+uses session advisory locks on PostgreSQL and writes no table rows; other
+engines need no lock. Removed `--apply-unblocked` fails before connecting.
+See [CLI contract](../../cli/agents/db-migrate-all-or-nothing.md).
 
 The FK-orphan advisory branch in `compareForeignKeys()` (`migrations/
 differ.ts`) tags its `SchemaChange` with `orphanBlocked: true` and
@@ -935,7 +942,9 @@ differ's own suggested `UPDATE ... SET <column> = NULL` (from
 rendered — never re-derived), then rebuilds the `ADD CONSTRAINT NOT VALID` +
 `VALIDATE CONSTRAINT` pair via the shared `renderForeignKeyAddStatements()`
 helper (`schema/foreign-key-ddl.ts`, also used by the differ's own safe-add
-branch) and adds it through the normal tracker path. A NOT NULL child column
+branch) and adds it through the normal atomic tracker batch. The exact original
+change is included in `resolvedStops` for the shared gate. Any other stop
+holds back both this UPDATE and the FK. A NOT NULL child column
 keeps the unconditional "Manual repair required" refusal — nulling isn't an
 option and the flag never deletes rows. `planOrphanDispositions()` fails
 closed (routes to "not nullable"/no-op) if an orphan-blocked change is
@@ -949,9 +958,8 @@ alone (review, #2748). A manifest relaxed to nullable while the live column
 has not converged yet — the same drift `--relax-columns` handles for plain
 columns — would otherwise report `nullable: true` from the manifest side
 only, and `--null-orphans` would attempt an `UPDATE` PostgreSQL rejects
-outright (`23502`), failing the whole atomic batch instead of refusing just
-that one relationship. Nullable only when both sides agree; a real
-NOT NULL on either side keeps the unconditional refusal.
+outright (`23502`). The whole run now refuses before writes. Nullable only
+when both sides agree; a real NOT NULL on either side keeps the unconditional refusal.
 
 ### Pre-R11 `text` ids converge to `uuid` before any FK statement (#2608)
 

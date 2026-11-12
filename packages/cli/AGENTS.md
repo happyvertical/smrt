@@ -1,6 +1,6 @@
 # @happyvertical/smrt-cli
 
-CLI with lazy-loaded commands, manifest discovery, and class introspection.
+CLI: lazy commands, manifest discovery, class introspection.
 
 ## Commands
 
@@ -16,7 +16,7 @@ smrt users:provision-owner   # Trusted PostgreSQL owner provisioning; password f
 smrt db:migrate              # agents/type-drift.md, agents/db-migrate-concurrency.md; successful non-dry runs (also in-sync) append core release/packages/schema fingerprint to _smrt_migrate_runs; stops/errors never stamp; read API none = first run (../core/agents/schema-paths.md)
 smrt db:migrate --postgres-safe # PostgreSQL concurrent-index mode (see below)
 smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...] # Force exact generated migrations in one atomic batch
-smrt db:migrate --apply-unblocked / --null-orphans # agents/db-migrate-partial-apply.md
+smrt db:migrate --null-orphans # agents/db-migrate-all-or-nothing.md; a stop holds the whole run
 smrt db:migrate-uuid         # Convert schema-declared UUID text columns after data remap (incl. PG system tenant ids, #3297)
 smrt db:migrate-int8
 smrt db:migrate-null-equal-indexes # ../core/agents/null-equal-indexes.md
@@ -72,8 +72,8 @@ cycles are created without the cyclic clauses first, then receive named
 constraints after both tables exist. When a same-package constraint is missing
 on an existing table, `db:migrate` probes the exact child/parent columns for
 orphans before `ADD ... NOT VALID` and `VALIDATE CONSTRAINT`; orphaned data or a
-failed probe stays manual with detector/repair SQL by default
-(agents/db-migrate-partial-apply.md).
+failed probe stops the whole run with detector/repair SQL
+(agents/db-migrate-all-or-nothing.md).
 
 `db:migrate --dry-run` and deprecated `db:setup --dry-run` print the same
 engine-specific dependency plan used for execution, including exact table DDL

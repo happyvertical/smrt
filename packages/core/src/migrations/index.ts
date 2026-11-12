@@ -115,6 +115,7 @@ export {
   MigrationLockTimeoutError,
   MigrationLockUnsupportedError,
 } from './migration-lock.js';
+export * from './migration-run-decision.js';
 // Money major-units → integer minor-units rescale (#2401)
 export {
   buildMinorUnitsStatements,

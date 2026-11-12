@@ -410,10 +410,10 @@ describe('shouldFailDbMigrate', () => {
     expect(shouldFailDbMigrate({ manualInterventionCount: 1 })).toBe(true);
   });
 
-  it('allows dry-run previews of manual drift', () => {
+  it('fails dry-run previews when the real run would be refused', () => {
     expect(
       shouldFailDbMigrate({ manualInterventionCount: 1, dryRun: true }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('fails when table creation or tracking fails', () => {

@@ -652,6 +652,7 @@ export class SchemaComparer {
    * query.
    */
   private indexPredicateCache: Map<string, Map<string, string>> | null = null;
+  private invalidIndexNames = new Set<string>();
 
   /**
    * Cross-table batch queries stay bounded regardless of schema shape: this
@@ -704,6 +705,7 @@ export class SchemaComparer {
     this.liveSchemas.clear();
     this.renameDataPendingCache = null;
     this.indexPredicateCache = null;
+    this.invalidIndexNames.clear();
 
     // #2878 review: `renameDataPendingCache` is populated below for the
     // duration of this call only. The `finally` clears it again on the way
@@ -808,6 +810,7 @@ export class SchemaComparer {
       this.plannedTables.clear();
       this.renameDataPendingCache = null;
       this.indexPredicateCache = null;
+      this.invalidIndexNames.clear();
     }
   }
 
@@ -1104,18 +1107,21 @@ export class SchemaComparer {
    */
   private async precomputeIndexPredicates(): Promise<void> {
     this.indexPredicateCache = null;
+    this.invalidIndexNames.clear();
     if (this.engine !== 'postgres') return;
     try {
       const result = await this.db.query(
-        `SELECT tablename, indexname, indexdef FROM pg_indexes WHERE schemaname = 'public'`,
+        `SELECT tablename, indexname, indexdef, (SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass(format('%I.%I', schemaname, indexname))) AS is_valid FROM pg_indexes WHERE schemaname = 'public'`,
       );
       const cache = new Map<string, Map<string, string>>();
       for (const row of result.rows as {
         tablename?: string;
         indexname?: string;
         indexdef?: string;
+        is_valid?: boolean;
       }[]) {
         if (!row.tablename || !row.indexname || !row.indexdef) continue;
+        if (row.is_valid === false) this.invalidIndexNames.add(row.indexname);
         const predicate = extractIndexPredicate(row.indexdef);
         if (!predicate) continue;
         let predicates = cache.get(row.tablename);
@@ -4117,6 +4123,7 @@ export class SchemaComparer {
     for (const idx of dbSchema.indexes) {
       const unique = idx.unique ?? false;
       dbIndexesByName.set(idx.name, { columns: idx.columns, unique });
+      if (this.invalidIndexNames.has(idx.name)) continue;
       const signature = this.getIndexSignature(
         idx.columns,
         unique,
@@ -4171,7 +4178,7 @@ export class SchemaComparer {
         // here; if the json path itself changes, the index name changes
         // too (we encode the field name into it), so a name match is a
         // stronger guarantee than the column list for this index family.
-        if (isJsonPathIndex(idx)) {
+        if (isJsonPathIndex(idx) && !this.invalidIndexNames.has(idx.name)) {
           continue;
         }
 
@@ -4180,7 +4187,10 @@ export class SchemaComparer {
           dbByName.unique,
           dbPredicateFor(idx.name),
         );
-        if (dbSignature === manifestSignature) {
+        if (
+          dbSignature === manifestSignature &&
+          !this.invalidIndexNames.has(idx.name)
+        ) {
           continue; // Same name, same shape — nothing to do.
         }
 

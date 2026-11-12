@@ -498,6 +498,7 @@ export {
   readLastMigrateRecord,
   recordSuccessfulMigrate,
 } from './migrations/migrate-record.js';
+export * from './migrations/migration-run-decision.js';
 export { computeSchemaFingerprint } from './migrations/schema-fingerprint.js';
 export * from './object';
 export {

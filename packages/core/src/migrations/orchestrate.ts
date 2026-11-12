@@ -31,6 +31,10 @@ import {
   generateMigrationTimestamp,
 } from './generator.js';
 import { recordSuccessfulMigrate } from './migrate-record.js';
+import {
+  decideMigrationRun,
+  type MigrationRunDecision,
+} from './migration-run-decision.js';
 import { MigrationTracker } from './tracker.js';
 
 const logger = createLogger({ level: 'info' });
@@ -136,7 +140,10 @@ export interface MigrateSmrtSchemasOptions {
   relaxColumns?: boolean;
 }
 
-export interface MigrateSmrtSchemasResult {
+export interface MigrateSmrtSchemasResult
+  extends Omit<MigrationRunDecision<SchemaChange>, 'proceed'> {
+  /** True when any stop refused the entire run, before tracker bootstrap. */
+  refused: boolean;
   applied: boolean;
   results: MigrationResult[];
   statements: string[];
@@ -162,6 +169,7 @@ export interface MigrateSmrtSchemasResult {
 }
 
 export interface PendingSchemaStatementsResult {
+  decision: MigrationRunDecision<SchemaChange>;
   diff: Awaited<ReturnType<typeof generateSchemaDiff>>;
   statements: string[];
   schemaCount: number;
@@ -232,6 +240,11 @@ export async function getPendingSchemaStatements(
   );
   return {
     diff,
+    decision: decideMigrationRun({
+      changes: diff.changes,
+      addedTables: diff.added_tables,
+      engine: resolveMigrationEngine(db, options.engineHint),
+    }),
     schemaCount: Object.keys(schemas).length,
     statements,
     hasChanges: hasActionableChanges(diff),
@@ -266,15 +279,9 @@ export async function getPendingSchemaStatements(
  * `failed` row in `_smrt_schema_migrations` per attempt. Pass an explicit
  * `name` if you want to overwrite the same record across retries.
  *
- * **Note on `unactionableChanges`:** the differ can detect schema drift
- * the migration step can't auto-resolve — incompatible type mismatches,
- * SQLite type widening that needs table recreation, etc. Those changes
- * appear in `result.unactionableChanges` and are NOT applied (the
- * statements list is filtered to executable DDL only). When the diff
- * contains *only* unactionable changes, the function returns
- * `applied: false` with a populated `unactionableChanges` so callers can
- * surface a "manual migration required" signal. Without inspecting that
- * field, the result would look indistinguishable from "already in sync."
+ * A stop refuses the whole run before tracker bootstrap. `refused`, `stops`,
+ * and `heldBack` expose that decision directly; wrappers need no policy of
+ * their own. `unactionableChanges` and `hasManualDrift` remain available.
  */
 export async function migrateSmrtSchemas(
   options: MigrateSmrtSchemasOptions,
@@ -285,6 +292,21 @@ export async function migrateSmrtSchemas(
     emptyTextAsNull: options.emptyTextAsNull,
     relaxColumns: options.relaxColumns,
   });
+  const { stops, heldBack, proceed } = pending.decision;
+  if (!proceed) {
+    return {
+      applied: false,
+      refused: true,
+      stops,
+      heldBack,
+      results: [],
+      statements: pending.statements,
+      schemaCount: pending.schemaCount,
+      unactionableChanges: pending.unactionableChanges,
+      hasManualDrift: pending.hasManualDrift,
+      relaxedColumns: [],
+    };
+  }
   if (!pending.hasChanges || pending.statements.length === 0) {
     if (!pending.hasManualDrift) {
       await recordSuccessfulMigrate(options.db, {
@@ -293,6 +315,9 @@ export async function migrateSmrtSchemas(
     }
     return {
       applied: false,
+      refused: false,
+      stops,
+      heldBack,
       results: [],
       statements: [],
       schemaCount: pending.schemaCount,
@@ -321,6 +346,7 @@ export async function migrateSmrtSchemas(
   );
 
   const results = await tracker.applyAll([migration], {
+    atomic: true,
     postgresSafe: options.postgresSafe ?? true,
     reconcile: options.reconcile ?? true,
   });
@@ -351,6 +377,9 @@ export async function migrateSmrtSchemas(
 
   return {
     applied,
+    refused: false,
+    stops,
+    heldBack,
     results,
     statements: pending.statements,
     schemaCount: pending.schemaCount,
