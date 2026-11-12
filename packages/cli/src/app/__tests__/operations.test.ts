@@ -21,6 +21,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { type FileHandle, open } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -304,6 +305,31 @@ const snapshotKeys: SnapshotKeyProvider = {
 function expectNoLocks(fixture: Fixture): void {
   expect(existsSync(join(fixture.stateRoot(), 'operation.lock'))).toBe(false);
   expect(existsSync(join(fixture.stateRoot(), 'writer.lease'))).toBe(false);
+}
+
+/** Observe completed native directory flushes without replacing real I/O. */
+async function observeDirectoryFlushes(root: string) {
+  const path = join(root, 'directory-sync-probe');
+  const probe = await open(path, 'wx', 0o600);
+  const prototype = Object.getPrototypeOf(probe);
+  const original = prototype.sync;
+  await probe.close();
+  rmSync(path);
+  const completed = new Set<string>();
+  const spy = vi.spyOn(prototype, 'sync').mockImplementation(async function (
+    this: FileHandle,
+  ) {
+    const stat = await this.stat({ bigint: true });
+    await original.call(this);
+    if (stat.isDirectory()) completed.add(`${stat.dev}:${stat.ino}`);
+  } as never);
+  return {
+    expectFlushed(path: string) {
+      const stat = statSync(path, { bigint: true });
+      expect(completed.has(`${stat.dev}:${stat.ino}`), path).toBe(true);
+    },
+    restore: () => spy.mockRestore(),
+  };
 }
 
 async function freePort(): Promise<string> {
@@ -1217,6 +1243,31 @@ describe('smrt app doctor', () => {
 });
 
 describe('smrt app backup', () => {
+  it.runIf(process.platform !== 'win32')(
+    'flushes new encrypted backup parent entries through the CLI command',
+    async () => {
+      const fixture = makeFixture();
+      expect(await fixture.run(['setup'])).toBe(0);
+      const parent = join(fixture.root, 'backup-parents');
+      const nested = join(parent, 'nested');
+      const destination = join(nested, 'backup.hvsnap');
+      const observer = await observeDirectoryFlushes(fixture.root);
+      try {
+        expect(
+          await fixture.run(['backup', '--encrypted', destination], {
+            snapshotKeys,
+          }),
+        ).toBe(0);
+        observer.expectFlushed(nested);
+        observer.expectFlushed(parent);
+        observer.expectFlushed(fixture.root);
+        expectNoLocks(fixture);
+      } finally {
+        observer.restore();
+      }
+    },
+  );
+
   it('validates storage without creating it, then copies to a new private directory', async () => {
     const fixture = makeFixture();
     const destination = join(fixture.root, 'backups', 'first');
@@ -1718,6 +1769,30 @@ describe('smrt app export / import', () => {
     );
     expect(allOutput(fixture)).not.toContain(DB_PASSWORD);
   });
+
+  it.runIf(process.platform !== 'win32')(
+    'flushes new encrypted export parent entries through the CLI command',
+    async () => {
+      const { fixture } = await seededApplication();
+      const parent = join(fixture.root, 'export-parents');
+      const nested = join(parent, 'nested');
+      const destination = join(nested, 'bundle.hvsnap');
+      const observer = await observeDirectoryFlushes(fixture.root);
+      try {
+        expect(
+          await fixture.run(['export', '--encrypted', destination], {
+            snapshotKeys,
+          }),
+        ).toBe(0);
+        observer.expectFlushed(nested);
+        observer.expectFlushed(parent);
+        observer.expectFlushed(fixture.root);
+        expectNoLocks(fixture);
+      } finally {
+        observer.restore();
+      }
+    },
+  );
 
   it('exports an encrypted bundle with --encrypted that decrypts to the logical bundle', async () => {
     const { fixture } = await seededApplication();

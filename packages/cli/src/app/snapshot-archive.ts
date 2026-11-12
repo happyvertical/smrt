@@ -22,6 +22,7 @@ import {
   writeSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { syncSnapshotDirectory } from './snapshot-storage.js';
 
 const MAGIC = Buffer.from('HVSA\x01', 'latin1');
 const ENTRY_END = 0;
@@ -308,5 +309,11 @@ export async function extractDataRootArchive(
       closeSync(fd);
     }
   }
-  return reader.end();
+  const digest = await reader.end();
+  // Children were declared after their parents. Commit their entries before
+  // the root directory is renamed into the published candidate path.
+  for (const path of [...directories].reverse()) {
+    await syncSnapshotDirectory(join(directory, ...path.split('/')));
+  }
+  return digest;
 }

@@ -59,7 +59,7 @@ backup is restorable. All writes loop until complete and the written size is
 checked before publication.
 `export-bundle` plaintext is the logical bundle JSON.
 
-## Clear header metadata
+## Relay-visible metadata
 
 Anything in the file header is readable by whoever holds the file, including a
 relay that stores it without parsing it. It is: format version, kind (data root
@@ -69,9 +69,23 @@ ID**. The device ID is clear on purpose: a device lost with its laptop must not
 take the knowledge of which device produced the file with it, and a new device
 restores with only the file and the vault key. It is already visible to the
 relay as the authenticated uploader. Account ID, plaintext and keys never
-appear. `readSnapshotHeader` returns these fields without authenticating them,
+appear in this file header. `readSnapshotHeader` returns these fields without authenticating them,
 and `snapshotReport` (backup and export output) prints the device ID next to
 the sequence.
+
+The relay is blind to **content**, not to metadata or account activity:
+
+| Surface | Visible to the relay or storage operator |
+| --- | --- |
+| HVSF file | All clear fields above, record lengths/boundaries, encrypted record count, exact plaintext length and ciphertext length. Archived filenames, individual file sizes/counts, content and the plaintext digest stay encrypted. |
+| Authenticated protocol | Account and device IDs, the device public key, request timestamps/nonces/signatures, snapshot sequences and upload IDs. The relay knows the account ID from authentication even though the HVSF file does not contain it. Storage keys and logs may use a derived account handle; hashing a handle does not hide linkage between that account's requests. |
+| Upload/storage | Transport chunk size/count/index, uploaded and retained byte/count totals, ciphertext SHA-256 digests, creation/expiry/retention/deletion times, and which sequence is latest. Transport chunks are independent of HVSF's encrypted records. |
+| Network/access | Request timing, sizes, frequency, download/delete activity, and any client network address/HTTP metadata exposed to the chosen deployment or its proxy. Devices and activity can be correlated within an account. |
+
+No key material is sent to the relay. This format offers neither metadata
+anonymity nor padding to hide lengths. Deployment logs must still follow the
+relay's policy: no bodies, signatures, nonces or raw account IDs. Possession of
+stored ciphertext alone does not reveal archived filenames or plaintext.
 
 ## Limits
 
@@ -107,3 +121,31 @@ Encrypted bundles cannot be passed to `smrt app import` yet; decrypt first.
 Writing uses an owner-only ciphertext temp file published with `link()` and
 removed on success or failure. Snapshot length is public; callers needing
 rollback protection track accepted sequences in trusted state.
+
+### Filesystem durability and capability
+
+File contents are flushed before publication. A data-root restore flushes each
+file (including empty files), then its directories from the leaves to the
+candidate root before renaming the candidate. On POSIX, publication flushes the
+containing directory after `link()` or `rename()` and also flushes the ancestor
+entries created for a new destination parent. Destination ancestors must be
+caller-controlled and stable during the operation; the filesystem and storage
+must honor the OS flush requests. Tests check syscall completion order and
+injected I/O failures, not a physical power cut.
+
+Directory flushing in this implementation is POSIX-only. Windows retains
+mandatory file flushes and the existing publication behavior, but success does
+not promise crash-durable directory entries on Windows. POSIX file/directory
+flush failures are reported, never silently accepted. A failure **after** a
+successful link or rename leaves the complete verified artifact in place:
+durability could not be confirmed, so the operation reports an error. Inspect
+that artifact before retrying; an existing destination is still never replaced.
+A crash may leave a private temporary name alongside a valid published file.
+
+Publishing an encrypted file requires atomic hard links. exFAT and some network
+mounts do not provide them; permission restrictions can also prevent them. The
+operation then fails with an actionable error to check permissions or select a
+filesystem/target supporting hard links, and removes its temporary file.
+There is deliberately no copy-and-rename fallback: Node's portable rename can
+replace an existing target, which would violate snapshot publication's
+no-overwrite guarantee. Unexpected I/O errors retain their original cause.
