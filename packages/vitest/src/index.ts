@@ -828,6 +828,7 @@ export function getWorkspaceViteAliases(
         'generate',
         'preferences',
         'settings',
+        'plugin-mode',
         'sveltekit-client',
       ]) {
         addAliasIfPresent(

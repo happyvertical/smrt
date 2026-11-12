@@ -445,3 +445,5 @@ mapping, recipe vocabulary, thread-bound continuation context, foreign-owner
 refusal and one delete after approval with a refused repeat. Existing explicit
 STI/replacement, reference-picker and restart/permission-revocation cases remain
 intact; no separate model/reference dispatcher is introduced.
+
+Local harness setup and Settings: [plugin mode](plugin-mode.md).

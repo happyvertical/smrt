@@ -4251,16 +4251,19 @@ importers:
 
   packages/template-sveltekit:
     dependencies:
+      '@happyvertical/smrt-app-cli':
+        specifier: workspace:*
+        version: link:../app-cli
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-desktop':
+        specifier: workspace:*
+        version: link:../smrt-desktop
     devDependencies:
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
-      '@happyvertical/smrt-app-cli':
-        specifier: workspace:*
-        version: link:../app-cli
       '@happyvertical/smrt-app-mcp':
         specifier: workspace:*
         version: link:../smrt-app-mcp

@@ -20,6 +20,7 @@
     "__tests__/commerceBootstrap.test.ts",
     "__tests__/cookbookApply.test.ts",
     "__tests__/cookbookHost.test.ts",
+    "__tests__/cookbookPluginMode.test.ts",
     "__tests__/onboardingWriteThrough.test.ts",
     "__tests__/runtimeEntry.test.ts",
     "__tests__/runtimeOperations.test.ts",

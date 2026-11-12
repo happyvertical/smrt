@@ -45,10 +45,17 @@
     "./host/CookbookModelPage.svelte": {
       "svelte": "./host/CookbookModelPage.svelte",
       "default": "./host/CookbookModelPage.svelte"
+    },
+    "./host/plugin-mode": {
+      "types": "./dist/host/plugin-mode.d.ts",
+      "import": "./dist/host/plugin-mode.js",
+      "default": "./dist/host/plugin-mode.js"
     }
   },
   "smrt": {
-    "resourceExports": ["./template/*"]
+    "resourceExports": [
+      "./template/*"
+    ]
   },
   "files": [
     "CLAUDE.md",
@@ -147,5 +154,9 @@
   "publishConfig": {
     "registry": "https://registry.npmjs.org",
     "access": "public"
+  },
+  "dependencies": {
+    "@happyvertical/smrt-app-cli": "workspace:*",
+    "@happyvertical/smrt-desktop": "workspace:*"
   }
 }

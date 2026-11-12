@@ -164,6 +164,7 @@ export async function createCookbookHostState(
       ).rows[0];
       if (!row) return null;
       const saved = JSON.parse(String(row.state));
+      if (saved.engine === undefined) return null;
       if (!['api', 'chatgpt', 'claude-code', 'codex'].includes(saved.engine))
         throw new Error('Invalid saved engine');
       return saved.engine;
@@ -175,10 +176,29 @@ export async function createCookbookHostState(
       )
         throw new Error('Invalid engine');
       await db.query(
-        `INSERT INTO ${TABLE} (tenant_id, user_id, state) VALUES (?, ?, ?) ON CONFLICT(tenant_id, user_id) DO UPDATE SET state = excluded.state`,
+        `INSERT INTO ${TABLE} (tenant_id, user_id, state) VALUES (?, ?, ?) ON CONFLICT(tenant_id, user_id) DO UPDATE SET state = json_set(${TABLE}.state, '$.engine', json_extract(excluded.state, '$.engine'))`,
         tenantId,
         userId,
         JSON.stringify({ engine }),
+      );
+    },
+    async embed(tenantId: string, userId: string): Promise<boolean> {
+      const row = (
+        await db.query(
+          `SELECT state FROM ${TABLE} WHERE tenant_id = ? AND user_id = ?`,
+          tenantId,
+          userId,
+        )
+      ).rows[0];
+      const value = row ? JSON.parse(String(row.state)).embed : false;
+      return value === true || value === 1;
+    },
+    async setEmbed(tenantId: string, userId: string, embed: boolean) {
+      await db.query(
+        `INSERT INTO ${TABLE} (tenant_id, user_id, state) VALUES (?, ?, ?) ON CONFLICT(tenant_id, user_id) DO UPDATE SET state = json_set(${TABLE}.state, '$.embed', json_extract(excluded.state, '$.embed'))`,
+        tenantId,
+        userId,
+        JSON.stringify({ embed }),
       );
     },
   };

@@ -1,0 +1,703 @@
+/** Real owner tokens, SQLite host, generated launchers and stdio MCP client. */
+import { randomUUID } from 'node:crypto';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
+import { createServer, type Server } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
+import {
+  buildManifestToolCatalog,
+  manifestToolToAITool,
+} from '@happyvertical/smrt-chat';
+import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
+import {
+  field,
+  ObjectRegistry,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
+import { disableTenancy } from '@happyvertical/smrt-tenancy';
+import {
+  DEFAULT_ROLE_SLUGS,
+  MembershipCollection,
+  PermissionCollection,
+  RoleCollection,
+  RolePermissionCollection,
+  TenantCollection,
+} from '@happyvertical/smrt-users';
+import {
+  Client,
+  StreamableHTTPClientTransport,
+} from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
+import type { RequestEvent } from '@sveltejs/kit';
+import { afterEach, expect, it, vi } from 'vitest';
+import type { PluginModeState } from '../host/plugin-mode.js';
+import { createCookbookHost } from '../host/server.js';
+
+@smrt({
+  packageName: '@fixture/plugin',
+  collection: 'plugin_members',
+  mcp: { include: ['list', 'get', 'create', 'delete'] },
+})
+class PluginMember extends SmrtObject {
+  @field() name = '';
+}
+@smrt({
+  packageName: '@fixture/plugin',
+  collection: 'plugin_tasks',
+  mcp: { include: ['list', 'get'] },
+})
+class PluginTask extends SmrtObject {
+  @field() name = '';
+}
+void PluginMember;
+void PluginTask;
+
+let root = '';
+let host: ReturnType<typeof createCookbookHost> | undefined;
+let http: Server | undefined;
+let client: Client | undefined;
+let origin = '';
+let session = '';
+let failures: string[] = [];
+let stateRoot = '';
+let released: (() => void) | undefined;
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await client?.close();
+  client = undefined;
+  if (http) {
+    http.closeAllConnections();
+    await new Promise<void>((resolve) => http!.close(() => resolve()));
+    http = undefined;
+  }
+  host?.dispose();
+  if (host) {
+    try {
+      await (await host.runtime.localRuntime()).db.close?.();
+    } catch {
+      /* Failed startup has no database. */
+    }
+  }
+  host = undefined;
+  released?.();
+  released = undefined;
+  disableTenancy();
+  if (root) await rm(root, { recursive: true, force: true });
+  if (stateRoot) await rm(stateRoot, { recursive: true, force: true });
+});
+function event(path: string, body?: unknown, signedIn = true): RequestEvent {
+  const url = new URL(path, origin);
+  return {
+    url,
+    request: new Request(url, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { origin, host: url.host, 'content-type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    }),
+    locals: {},
+    params: { path: path.replace('/api/assistant/', '') },
+    cookies: {
+      get: () => (signedIn ? session : undefined),
+      getAll: () => [],
+      set: () => {},
+      delete: () => {},
+    },
+    getClientAddress: () => '127.0.0.1',
+  } as unknown as RequestEvent;
+}
+async function request(
+  path: string,
+  handler: (e: RequestEvent) => Promise<Response>,
+  body?: unknown,
+  signedIn = true,
+) {
+  return host!.handle({ event: event(path, body, signedIn), resolve: handler });
+}
+function payload(result: Awaited<ReturnType<Client['callTool']>>) {
+  expect(result.isError, JSON.stringify(result)).not.toBe(true);
+  const text = result.content.find((c) => c.type === 'text');
+  return JSON.parse(text && 'text' in text ? text.text : '{}');
+}
+async function call(name: string, args: Record<string, unknown> = {}) {
+  return payload(await client!.callTool({ name, arguments: args }));
+}
+
+it('generates private setup; bridges live tools, writes and durable owner decisions without leaking tokens', async () => {
+  root = await realpath(await mkdtemp(join(tmpdir(), 'smrt-plugin-')));
+  failures = [];
+  const sourceRoot = join(root, 'source');
+  await mkdir(sourceRoot);
+  await writeFile(
+    join(sourceRoot, 'package.json'),
+    JSON.stringify({ name: '@fixture/plugin-app' }),
+  );
+  // Keep installation state outside the source without touching global harness config.
+  const { defaultWriterLease } = await import(
+    '@happyvertical/smrt-app-runtime/sveltekit'
+  );
+  const runtime = createSmrtSvelteKitRuntime({
+    appId: `plugin-${randomUUID()}`,
+    sourceRoot,
+    dataDirectory: join(root, 'data'),
+    runtime: resolveApplicationRuntime({ profile: 'local' }),
+    env: Object.fromEntries([
+      ['NODE_ENV', 'development'],
+      ['HOST', '127.0.0.1'],
+    ]),
+    acquireWriterLease: (context) => {
+      const lease = defaultWriterLease(context);
+      released = () => lease.release();
+      return lease;
+    },
+    session: { cookieName: 'sid', cookieSecure: false },
+  });
+  const member = '@fixture/plugin:PluginMember';
+  const task = '@fixture/plugin:PluginTask';
+  host = createCookbookHost({
+    title: 'plebeos',
+    assistant: {
+      onError: (e) => {
+        failures.push(String(e));
+      },
+    },
+    runtime,
+    root: sourceRoot,
+    packageName: '@fixture/plugin',
+    app: {
+      cookbook: {
+        $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json',
+        version: 1,
+        recipes: ['plugin.members'],
+        features: [],
+        policies: [],
+      },
+      catalog: {
+        cookbooks: [
+          {
+            id: 'empty',
+            name: 'Empty',
+            document: {
+              $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json',
+              version: 1,
+              recipes: [],
+              features: [],
+              policies: [],
+            },
+          },
+        ],
+        models: [
+          { id: member, name: 'PluginMember', packageId: 'plugin' },
+          { id: task, name: 'PluginTask', packageId: 'plugin' },
+        ],
+        recipes: [
+          {
+            id: 'plugin.members',
+            label: 'Members',
+            models: [member],
+            nav: [{ model: member, label: 'Members' }],
+            requires: [],
+          },
+          {
+            id: 'plugin.tasks',
+            label: 'Tasks',
+            models: [task],
+            nav: [{ model: task, label: 'Tasks' }],
+            requires: [],
+          },
+        ],
+      },
+    },
+  });
+  await host.init();
+  stateRoot = runtime.applicationStateRoot();
+  const local = await runtime.localRuntime();
+  const invitation = await local.rotateBootstrapInvitation();
+  const owner = await local.claimOwner({
+    token: invitation.token,
+    name: 'Owner',
+    email: 'owner@plugin.test',
+  });
+  session = owner.sessionId;
+  origin = 'http://127.0.0.1:4998';
+  // HTTP transport is real; fixture dispatch still uses the normal runtime.handle.
+  http = createServer(async (incoming, outgoing) => {
+    try {
+      if (
+        incoming.method === 'GET' &&
+        incoming.url === '/api/_runtime/health'
+      ) {
+        outgoing.writeHead(200);
+        outgoing.end('{}');
+        return;
+      }
+      const chunks: Buffer[] = [];
+      for await (const chunk of incoming) chunks.push(Buffer.from(chunk));
+      const e = event(
+        '/mcp',
+        JSON.parse(Buffer.concat(chunks).toString('utf8')),
+        false,
+      );
+      for (const [key, value] of Object.entries(incoming.headers))
+        if (typeof value === 'string') e.request.headers.set(key, value);
+      const result = await host!.handle({ event: e, resolve: host!.mcp });
+      outgoing.writeHead(result.status, Object.fromEntries(result.headers));
+      outgoing.end(await result.text());
+    } catch (error) {
+      failures.push(String(error));
+      outgoing.writeHead(500);
+      outgoing.end();
+    }
+  });
+  await new Promise<void>((resolve) => http!.listen(0, '127.0.0.1', resolve));
+  origin = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+  // Publish the same non-secret origin record the desktop supervisor uses.
+  const { writeOriginFile } = await import('@happyvertical/smrt-app-runtime');
+  writeOriginFile(runtime.applicationStateRoot(), origin);
+  expect(
+    (await request('/api/plugin-mode', host.pluginMode, undefined, false))
+      .status,
+  ).toBe(403);
+  const foreign = event('/api/plugin-mode', {
+    action: 'connect',
+    client: 'codex',
+  });
+  foreign.request.headers.set('origin', 'https://other.test');
+  expect(
+    (await host.handle({ event: foreign, resolve: host.pluginMode })).status,
+  ).toBe(403);
+  for (const action of [
+    ['connect'],
+    ['revoke'],
+    { action: 'connect' },
+    null,
+    7,
+  ]) {
+    expect(
+      (
+        await request('/api/plugin-mode', host.pluginMode, {
+          action,
+          client: 'codex',
+        })
+      ).status,
+    ).toBe(400);
+  }
+  expect(await local.mcpTokens!.list()).toEqual([]);
+  const setupResponse = await request('/api/plugin-mode', host.pluginMode, {
+    action: 'connect',
+    client: 'codex',
+  });
+  expect(setupResponse.status, await setupResponse.clone().text()).toBe(200);
+  const settings: PluginModeState = await setupResponse.json();
+  const setup = settings.connections.find((c) => c.client === 'codex')!.setup!;
+  expect(JSON.stringify(settings).includes('smrt_mcp_')).toBe(false);
+  const tokenRecord = (await local.mcpTokens!.list()).find(
+    (r) => r.holder === 'plugin-mode:codex',
+  )!;
+  expect(tokenRecord.scopes).toEqual(['app.plugin']);
+  const config = JSON.parse(
+    await readFile(
+      join(runtime.applicationStateRoot(), 'plugin-mode/codex.json'),
+      'utf8',
+    ),
+  );
+  for (const other of ['claude-code', 'claude-desktop'] as const) {
+    const connected = await request('/api/plugin-mode', host.pluginMode, {
+      action: 'connect',
+      client: other,
+    });
+    expect(connected.status).toBe(200);
+    const state: PluginModeState = await connected.json();
+    const otherSetup = state.connections.find((c) => c.client === other)!
+      .setup!;
+    const otherClient = new Client(
+      { name: `setup-${other}`, version: '1' },
+      { versionNegotiation: { mode: { pin: '2026-07-28' } } },
+    );
+    try {
+      await otherClient.connect(
+        new StdioClientTransport({
+          command: otherSetup.entry.command,
+          args: otherSetup.entry.args,
+          stderr: 'pipe',
+        }),
+      );
+      expect(
+        (await otherClient.listTools()).tools.map((t) => t.name),
+      ).toContain('plugin_members_read');
+      payload(
+        await otherClient.callTool({
+          name: 'plugin_members_read',
+          arguments: {},
+        }),
+      );
+      await request('/api/plugin-mode', host.pluginMode, {
+        action: 'revoke',
+        client: other,
+      });
+      await expect(otherClient.listTools()).rejects.toThrow();
+      expect(await runtime.verifyLocalMcpToken(config.token)).not.toBeNull();
+    } finally {
+      await otherClient.close();
+    }
+  }
+  const transport = new StdioClientTransport({
+    command: setup.entry.command,
+    args: setup.entry.args,
+    stderr: 'pipe',
+  });
+  let notifications = 0;
+  client = new Client(
+    { name: 'plugin-fixture', version: '1' },
+    {
+      versionNegotiation: { mode: { pin: '2026-07-28' } },
+      listChanged: {
+        tools: {
+          onChanged: () => {
+            notifications++;
+          },
+        },
+      },
+    },
+  );
+  await client.connect(transport);
+  const listed = await client.listTools().catch((error) => {
+    throw new Error(String(error) + '; host: ' + failures.join('; '));
+  });
+  const names = listed.tools.map((t) => t.name);
+  expect(names).toContain('plugin_members_read');
+  expect(names).not.toContain('plugin_tasks_read');
+  const assistant = buildManifestToolCatalog({ all: true }).filter(
+    (t) => t.qualifiedName === member,
+  );
+  expect(
+    names.filter((name) => name.startsWith('plugin_members_')).sort(),
+  ).toEqual(assistant.map((tool) => tool.slug.replaceAll('.', '_')).sort());
+  expect(assistant.map((t) => t.action)).toEqual(
+    expect.arrayContaining(['read', 'create', 'delete']),
+  );
+  expect(names).toEqual(
+    expect.arrayContaining([
+      'plugin_members_read',
+      'plugin_members_create',
+      'plugin_members_delete',
+      'recipes_enable',
+      'app_add_list',
+    ]),
+  );
+  for (const tool of assistant)
+    expect(
+      listed.tools.find((t) => t.name === tool.slug.replaceAll('.', '_'))!
+        .inputSchema,
+    ).toEqual(manifestToolToAITool(tool, owner.tenantId).function.parameters);
+  await call('plugin_members_read');
+  const created = await call('plugin_members_create', { name: 'Maya Plugin' });
+  const members = await ObjectRegistry.getCollection(
+    member,
+    runtime.classOptions('PluginMember'),
+  );
+  const rows = await members.list({ where: { name: 'Maya Plugin' } });
+  expect(rows).toHaveLength(1);
+  const id = rows[0].id!;
+  expect(created).toBeTruthy();
+  const deletion = vi.spyOn(PluginMember.prototype, 'delete');
+  const pending = await call('plugin_members_delete', { id });
+  expect(pending).toMatchObject({
+    status: 'approval_required',
+    outcomeTool: 'owner_approval_outcome',
+    message: "Waiting for the owner's approval in plebeos.",
+  });
+  expect(deletion).not.toHaveBeenCalled();
+  expect(await members.get(id)).toBeTruthy();
+  const approvals = await request(
+    '/api/assistant/approvals',
+    host.assistant.GET,
+  ).then((r) => r.json());
+  expect(approvals.approvals).toContainEqual(
+    expect.objectContaining({
+      id: pending.approvalId,
+      summary: expect.stringContaining('Codex'),
+    }),
+  );
+  const tokenOnlyDecision = event(
+    `/api/assistant/approvals/${pending.approvalId}/decide`,
+    { approve: true },
+    false,
+  );
+  tokenOnlyDecision.request.headers.set(
+    'authorization',
+    `Bearer ${config.token}`,
+  );
+  expect(
+    (
+      await host.handle({
+        event: tokenOnlyDecision,
+        resolve: host.assistant.POST,
+      })
+    ).status,
+  ).toBe(401);
+  expect(deletion).not.toHaveBeenCalled();
+  const decision = await request(
+    `/api/assistant/approvals/${pending.approvalId}/decide`,
+    host.assistant.POST,
+    { approve: true },
+  );
+  expect(
+    decision.status,
+    (await decision.clone().text()) + '; ' + failures.join('; '),
+  ).toBe(200);
+  expect(await members.get(id)).toBeFalsy();
+  expect(
+    (await call('owner_approval_outcome', { id: pending.approvalId })).status,
+  ).toBe('succeeded');
+  expect(
+    (
+      await request(
+        `/api/assistant/approvals/${pending.approvalId}/decide`,
+        host.assistant.POST,
+        { approve: true },
+      )
+    ).status,
+  ).toBe(409);
+  expect(deletion).toHaveBeenCalledTimes(1);
+  await call('recipes_enable', { id: 'plugin.tasks', expectedRevision: 0 });
+  await expect.poll(() => notifications, { timeout: 7000 }).toBeGreaterThan(0);
+  expect((await client.listTools()).tools.map((t) => t.name)).toContain(
+    'plugin_tasks_read',
+  );
+  const app = await call('app_describe');
+  await call('app_add_list', {
+    label: 'Guests',
+    fields: [{ label: 'Name', kind: 'text' }],
+    nameField: 'Name',
+    expectedRevision: app.revision,
+  });
+  await expect
+    .poll(async () =>
+      (await client!.listTools()).tools.some(
+        (t) => t.name.includes('guest') && t.name.endsWith('_create'),
+      ),
+    )
+    .toBe(true);
+  const described = await call('app_describe');
+  const removing = await call('app_remove_list', {
+    list: 'Guests',
+    expectedRevision: described.revision,
+  });
+  expect(removing).toMatchObject({
+    status: 'approval_required',
+    outcomeTool: 'owner_approval_outcome',
+  });
+  expect(
+    (
+      await request(
+        `/api/assistant/approvals/${removing.approvalId}/decide`,
+        host.assistant.POST,
+        { approve: true },
+      )
+    ).status,
+  ).toBe(200);
+  expect(
+    (await call('owner_approval_outcome', { id: removing.approvalId })).status,
+  ).toBe('succeeded');
+  const taskRecipe = await call('recipes_describe', { id: 'plugin.tasks' });
+  const disabling = await call('recipes_disable', {
+    id: 'plugin.tasks',
+    expectedRevision: taskRecipe.recipe.revision,
+  });
+  expect(disabling.status).toBe('approval_required');
+  expect(
+    (
+      await request(
+        `/api/assistant/approvals/${disabling.approvalId}/decide`,
+        host.assistant.POST,
+        { approve: true },
+      )
+    ).status,
+    failures.join('; '),
+  ).toBe(200);
+  expect((await client.listTools()).tools.map((t) => t.name)).not.toContain(
+    'plugin_tasks_read',
+  );
+  const preview = await call('cookbook_apply', { id: 'empty' });
+  const applying = await call('cookbook_apply', {
+    id: 'empty',
+    apply: true,
+    expectedRevision: preview.revision,
+    previewToken: preview.previewToken,
+  });
+  expect(applying.status).toBe('approval_required');
+  const applyApprovals = await request(
+    '/api/assistant/approvals',
+    host.assistant.GET,
+  ).then((r) => r.json());
+  expect(applyApprovals.approvals).toContainEqual(
+    expect.objectContaining({
+      id: applying.approvalId,
+      summary: expect.stringContaining('Codex'),
+    }),
+  );
+  expect(
+    (
+      await request(
+        `/api/assistant/approvals/${applying.approvalId}/decide`,
+        host.assistant.POST,
+        { approve: false },
+      )
+    ).status,
+  ).toBe(200);
+  expect(
+    (await call('owner_approval_outcome', { id: applying.approvalId })).status,
+  ).toBe('denied');
+  await request('/api/plugin-mode', host.pluginMode, {
+    action: 'embed',
+    enabled: true,
+  });
+  expect(
+    (
+      await request('/', async (e) => Response.json(await host!.load(e))).then(
+        (r) => r.json(),
+      )
+    ).embed,
+  ).toBe(true);
+  const state = await request('/api/cookbook/prebuilt', host.prebuilt).then(
+    (r) => r.json(),
+  );
+  await request('/api/cookbook/prebuilt', host.prebuilt, {
+    enabled: false,
+    revision: state.revision,
+  });
+  const remaining = (await client.listTools()).tools.map((t) => t.name);
+  expect(remaining.some((n) => n.startsWith('recipes_'))).toBe(false);
+  expect(remaining).not.toContain('plugin_members_read');
+  expect(remaining).toContain('app_add_list');
+  const narrow = await local.mcpTokens!.issue({
+    scopes: ['plugin_members.read'],
+  });
+  expect((await runtime.verifyLocalMcpToken(narrow.token))!.scopes).toEqual([
+    'plugin_members.read',
+  ]);
+  const narrowClient = new Client(
+    { name: 'read-only', version: '1' },
+    { versionNegotiation: { mode: { pin: '2026-07-28' } } },
+  );
+  try {
+    await narrowClient.connect(
+      new StreamableHTTPClientTransport(new URL('/mcp', origin), {
+        requestInit: { headers: { authorization: `Bearer ${narrow.token}` } },
+      }),
+    );
+    expect(
+      (await narrowClient.listTools()).tools.some((t) =>
+        t.name.endsWith('_create'),
+      ),
+    ).toBe(false);
+    const refused = await narrowClient
+      .callTool({
+        name: 'plugin_members_create',
+        arguments: { name: 'Forbidden' },
+      })
+      .catch(() => null);
+    expect(refused === null || refused.isError === true).toBe(true);
+  } finally {
+    await narrowClient.close();
+  }
+  expect(
+    (await local.mcpTokens!.list()).find((r) => r.id === tokenRecord.id)!
+      .lastUsedAt,
+  ).toBeTruthy();
+  await request('/api/plugin-mode', host.pluginMode, {
+    action: 'revoke',
+    client: 'codex',
+  });
+  expect(await runtime.verifyLocalMcpToken(config.token)).toBeNull();
+  await expect(client.listTools()).rejects.toThrow();
+  const ownerRoles = await RoleCollection.create({ db: local.db });
+  const ownerRole = await ownerRoles.findSystemRoleBySlug(
+    DEFAULT_ROLE_SLUGS.OWNER,
+  );
+  const permissions = await PermissionCollection.create({ db: local.db });
+  const readPermission = await permissions.findBySlug('plugin_members.read');
+  const grants = await RolePermissionCollection.create({ db: local.db });
+  const mixed = await local.mcpTokens!.issue(
+    {
+      scopes: ['app.plugin', 'plugin_members.read'],
+    },
+    owner,
+  );
+  await grants.removePermission(ownerRole!.id!, readPermission!.id!);
+  const mixedClient = new Client(
+    { name: 'mixed-scopes', version: '1' },
+    { versionNegotiation: { mode: { pin: '2026-07-28' } } },
+  );
+  try {
+    expect((await runtime.verifyLocalMcpToken(mixed.token))!.scopes).toEqual([
+      'app.plugin',
+    ]);
+    await mixedClient.connect(
+      new StreamableHTTPClientTransport(new URL('/mcp', origin), {
+        requestInit: { headers: { authorization: `Bearer ${mixed.token}` } },
+      }),
+    );
+    expect(
+      (await mixedClient.listTools()).tools.map((t) => t.name),
+    ).not.toContain('app_add_list');
+  } finally {
+    await mixedClient.close();
+    await grants.addPermission(ownerRole!.id!, readPermission!.id!);
+  }
+  const liveOwnerToken = await local.mcpTokens!.issue(
+    { scopes: ['app.plugin'] },
+    owner,
+  );
+  const liveOwnerClient = new Client(
+    { name: 'owner-binding', version: '1' },
+    { versionNegotiation: { mode: { pin: '2026-07-28' } } },
+  );
+  await liveOwnerClient.connect(
+    new StreamableHTTPClientTransport(new URL('/mcp', origin), {
+      requestInit: {
+        headers: { authorization: `Bearer ${liveOwnerToken.token}` },
+      },
+    }),
+  );
+  const ownerCatalog = await liveOwnerClient.listTools();
+  expect(ownerCatalog.ttlMs).toBe(0);
+  expect(ownerCatalog.tools.length).toBeGreaterThan(0);
+  try {
+    const tenants = await TenantCollection.create({ db: local.db });
+    const second = await tenants.create({ name: 'Other owner', slug: 'other' });
+    await second.save();
+    const roles = await RoleCollection.create({ db: local.db });
+    const role = await roles.findSystemRoleBySlug(DEFAULT_ROLE_SLUGS.OWNER);
+    const memberships = await MembershipCollection.create({ db: local.db });
+    const extra = await memberships.create({
+      userId: owner.userId,
+      tenantId: second.id!,
+      roleId: role!.id!,
+    });
+    await extra.save();
+    expect((await request('/api/plugin-mode', host.pluginMode)).status).toBe(
+      403,
+    );
+    expect(
+      (
+        await request('/api/plugin-mode', host.pluginMode, {
+          action: 'connect',
+          client: 'codex',
+        })
+      ).status,
+    ).toBe(403);
+    await expect(liveOwnerClient.listTools()).rejects.toThrow();
+  } finally {
+    await liveOwnerClient.close();
+  }
+}, 180000);

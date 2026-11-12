@@ -28,6 +28,7 @@ import {
   describeAssistantTool,
   invokeManifestTool,
   type ManifestTool,
+  manifestToolToAITool,
   requiresOwnerApproval,
 } from '@happyvertical/smrt-chat';
 import {
@@ -115,6 +116,7 @@ import {
 import type { Handle, RequestEvent, ServerLoad } from '@sveltejs/kit';
 import { error, redirect } from '@sveltejs/kit';
 import { createCookbookOnboarding } from './onboarding.js';
+import { createPluginMode, PLUGIN_PERMISSION } from './plugin-mode.js';
 import { createCookbookHostState } from './state.js';
 
 export interface CookbookHostOptions {
@@ -245,7 +247,16 @@ export function createCookbookApplication(
 export function createCookbookHost(options: CookbookHostOptions) {
   const { runtime } = options;
   registerPreferenceKind(inferencePreferenceKind, { replace: true });
-  registerPermissionDefinitions([...INFERENCE_PERMISSION_DEFINITIONS]);
+  registerPermissionDefinitions([
+    ...INFERENCE_PERMISSION_DEFINITIONS,
+    {
+      slug: PLUGIN_PERMISSION,
+      category: 'app',
+      name: 'Use the app with your own AI',
+      description:
+        'Delegate the current enabled app tool surface to a local AI client; destructive calls still require owner approval',
+    },
+  ]);
   const inference = createInferenceSettingsHost({
     database: () => runtime.database(),
     masterKeyProvider: () => runtime.secretMasterKey(),
@@ -1033,6 +1044,38 @@ export function createCookbookHost(options: CookbookHostOptions) {
       },
     });
   const session = createSessionLayoutLoad();
+  const pluginMode = createPluginMode({
+    runtime,
+    sourceRoot: options.root ?? process.cwd(),
+    name: options.application ?? 'smrt-app',
+    state: async () => (await ready()).state,
+    authorize: async (event) => {
+      const p = resolveAssistantPrincipalFromLocals(event.locals);
+      if (!p) return null;
+      const local = await runtime.localRuntime();
+      const id = event.cookies.get(runtime.sessionCookie.name);
+      const restored = id ? await local.restoreSession(id) : null;
+      if (
+        !restored ||
+        restored.user.id !== p.userId ||
+        restored.tenantId !== p.tenantId ||
+        restored.parent ||
+        restored.permissionCeiling !== null ||
+        !['local-bootstrap', 'password', 'passkey'].includes(
+          restored.authMethod ?? '',
+        )
+      )
+        return null;
+      if (
+        !(await local.mcpTokens?.isOwnerSession?.({
+          userId: p.userId,
+          tenantId: p.tenantId,
+        }))
+      )
+        return null;
+      return { id: p.userId, tenantId: p.tenantId };
+    },
+  });
   async function load(event: Parameters<typeof session>[0]): Promise<
     Awaited<ReturnType<typeof session>> & {
       dynamicDefinitions: AppModelSnapshot['webDefinitions'];
@@ -1042,6 +1085,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
       assistantIntroduction:
         | { lists: string[]; actions: string[]; configured: boolean }
         | undefined;
+      embed: boolean;
     }
   > {
     const data = await session(event);
@@ -1095,6 +1139,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
       : null;
     return {
       ...data,
+      embed: p ? await host.state.embed(p.tenantId, p.userId) : false,
       onboarding,
       assistantIntroduction: p
         ? {
@@ -1181,6 +1226,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
     load,
     assistant,
     connectAi,
+    pluginMode: pluginMode.handle,
     inferenceSettings,
     async onboarding(event: RequestEvent) {
       const mounted = (await ready()).onboarding;
@@ -1279,9 +1325,66 @@ export function createCookbookHost(options: CookbookHostOptions) {
         .get('authorization')
         ?.match(/^Bearer (.+)$/i)?.[1];
       const locals = event.locals as SmrtRuntimeLocals;
-      const verified = bearer
-        ? await runtime.verifyLocalMcpToken(bearer)
-        : null;
+      // This one delegation scope grants only the live app tool surface, not
+      // arbitrary owner permissions. Ordinary operation-scoped tokens stay narrow.
+      let pluginDelegated = false;
+      const verifyPluginToken = async (token: string) => {
+        const verified = await runtime.verifyLocalMcpToken(token);
+        if (!verified) return null;
+        const local = await runtime.localRuntime();
+        const issued = verified.tokenId
+          ? (await local.mcpTokens?.list())?.find(
+              (record) => record.id === verified.tokenId,
+            )
+          : undefined;
+        // Opt-in follows the issued ceiling, never a live intersection that
+        // shrank after permission removal. A mixed token must stay narrow.
+        if (!issued)
+          return verified.scopes.length === 1 &&
+            verified.scopes[0] === PLUGIN_PERMISSION
+            ? null
+            : verified;
+        if (issued.status !== 'active') return null;
+        if (
+          issued.scopes.length !== 1 ||
+          issued.scopes[0] !== PLUGIN_PERMISSION
+        )
+          return verified;
+        if (!verified.scopes.includes(PLUGIN_PERMISSION)) return null;
+        pluginDelegated = true;
+        if (
+          !(await local.mcpTokens?.isOwnerSession?.({
+            userId: verified.id,
+            tenantId: verified.tenantId,
+          }))
+        )
+          return null;
+        return runtime.runAsPrincipal(verified, async () => {
+          await prepare(verified.tenantId);
+          const held = (
+            await (
+              await PermissionResolver.create({ db: await runtime.database() })
+            ).resolvePermissions(verified.id, verified.tenantId)
+          ).permissions;
+          const offered = new Set([
+            ...manifest(verified.tenantId).map((tool) => tool.slug),
+            ...(
+              await host.service.list({
+                surface: 'mcp',
+                tenantId: verified.tenantId,
+                userId: verified.id,
+              })
+            ).map((tool) => tool.name),
+          ]);
+          return {
+            ...verified,
+            ...(verified.clientName ? { clientName: verified.clientName } : {}),
+            scopes: [...held].filter((scope) => offered.has(scope)),
+          };
+        });
+      };
+      const verified = bearer ? await verifyPluginToken(bearer) : null;
+      const clientName = verified?.clientName;
       const principal: McpAppPrincipal | null = verified
         ? { ...verified, scopes: [...verified.scopes] }
         : !bearer && locals.user?.id && locals.tenantId
@@ -1303,7 +1406,9 @@ export function createCookbookHost(options: CookbookHostOptions) {
             await prepare(principal.tenantId!);
             const scope = new Set(bound?.scopes ?? []);
             const modelTools = (
-              await mcpModels({ ...principal, scopes: [...scope] }, !!binding)
+              pluginDelegated
+                ? []
+                : await mcpModels({ ...principal, scopes: [...scope] }, !!binding)
             ).filter(
               (t) =>
                 !binding ||
@@ -1315,6 +1420,23 @@ export function createCookbookHost(options: CookbookHostOptions) {
               userId: principal.id,
             });
             const specs = [
+              ...(pluginDelegated
+                ? manifest(principal.tenantId!)
+                    .filter((tool) => scope.has(tool.slug))
+                    .map((tool) => ({
+                      name: wireName(tool.slug),
+                      slug: tool.slug,
+                      ai: manifestToolToAITool(tool, principal.tenantId),
+                      model: tool,
+                      generator: undefined,
+                      annotations: {
+                        readOnlyHint: tool.action === 'read',
+                        destructiveHint: requiresOwnerApproval(tool, {}),
+                        idempotentHint: tool.action === 'read',
+                        openWorldHint: false,
+                      },
+                    }))
+                : []),
               ...modelTools.map(({ tool, descriptor, generator }) => ({
                 name: descriptor.name,
                 slug: tool.slug,
@@ -1419,6 +1541,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
                         tenantId: caller.tenantId,
                         permissions: [...(caller.scopes ?? [])],
                         allowedTools: [spec.slug],
+                        ...(clientName ? { clientName } : {}),
                       },
                       () =>
                         host.continuations
@@ -1427,6 +1550,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
                     );
                     const result = {
                       status: 'approval_required',
+                      message: `Waiting for the owner's approval in ${options.title ?? 'this app'}.`,
                       approvalId: hold.id,
                       summary: hold.summary,
                       ...(!binding
@@ -1441,7 +1565,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
                       structuredContent: result,
                     };
                   }
-                  if (tool && spec.generator)
+                  if (tool)
                     return executeAsPrincipal(
                       {
                         principal: {
@@ -1455,10 +1579,35 @@ export function createCookbookHost(options: CookbookHostOptions) {
                       async (run) => {
                         run.assertToolAllowed(spec.slug);
                         await run.assertOperation(tool.collection, tool.action);
-                        return spec.generator!.handleToolCall({
-                          method: 'tools/call',
-                          params: { name, arguments: args },
-                        });
+                        if (spec.generator)
+                          return spec.generator.handleToolCall({
+                            method: 'tools/call',
+                            params: { name, arguments: args },
+                          });
+                        const value = await invokeManifestTool(
+                          run,
+                          tool,
+                          args,
+                          {
+                            db:
+                              run.context.database ?? runtime.databaseConfig(),
+                          },
+                        );
+                        const result =
+                          value &&
+                          typeof value === 'object' &&
+                          !Array.isArray(value)
+                            ? value
+                            : { result: value };
+                        return {
+                          content: [
+                            {
+                              type: 'text' as const,
+                              text: JSON.stringify(result),
+                            },
+                          ],
+                          structuredContent: result,
+                        };
                       },
                     );
                   const result = await host.continuations.capture(
@@ -1467,6 +1616,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
                       tenantId: caller.tenantId,
                       permissions: [...(caller.scopes ?? [])],
                       allowedTools: [spec.slug],
+                      ...(clientName ? { clientName } : {}),
                     },
                     () =>
                       host.service.invoke(
@@ -1479,9 +1629,19 @@ export function createCookbookHost(options: CookbookHostOptions) {
                         },
                       ),
                   );
+                  const presented =
+                    result.status === 'approval_required'
+                      ? {
+                          ...result,
+                          message: `Waiting for the owner's approval in ${options.title ?? 'this app'}.`,
+                          outcomeTool: 'owner_approval_outcome',
+                        }
+                      : result;
                   return {
-                    content: [{ type: 'text', text: JSON.stringify(result) }],
-                    structuredContent: result,
+                    content: [
+                      { type: 'text', text: JSON.stringify(presented) },
+                    ],
+                    structuredContent: presented,
                   };
                 },
               };
@@ -1533,10 +1693,11 @@ export function createCookbookHost(options: CookbookHostOptions) {
           },
         );
       return mountMcpAppRoute({
-        runtime,
+        runtime: { ...runtime, verifyLocalMcpToken: verifyPluginToken },
         models: [],
         requiredScopes: [],
         workflowTools: workflows,
+        toolListCache: { ttlMs: 0, cacheScope: 'private' },
       })({ ...event, locals: { ...event.locals } });
     },
     dispose() {
