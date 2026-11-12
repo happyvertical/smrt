@@ -244,3 +244,82 @@ intent index; `rg` name/purpose searches for preflight, engine diagnostics,
 reference/error IDs, environment helpers and retry presentation in owning
 packages, core, smrt-ui and smrt-svelte. Extend existing detection, turn error
 boundary and dock instead of adding a second engine or error presentation.
+
+## Owner work profiles
+
+`work-profiles.ts` exports browser-safe `recommendedWorkProfile` and
+`resolveWorkProfile`: `assist` defaults to high effort, `design` to maximum,
+`background` to low. Design/assist API calls resolve to `best`; the host must
+apply the selected tier to its existing inference client. Owner settings may
+select engine/model/effort and each numeric budget, pass/repair counts,
+automatic escalation and preview. These settings carry no tool authority.
+The preferences package stores owner overrides; inference contains no storage.
+
+Claude recommendations select the strongest installed alias, `fable`, then
+`opus`, then `sonnet`; hosts can supply the installed alias inventory. Codex
+and ChatGPT automatic recommendations require a catalog with explicit
+`intelligenceRank` (higher is stronger), or an explicit owner model. Catalog
+order and model-name spelling are not intelligence evidence. The installed
+AI SDK 0.111.10 ChatGPT `getModels()` only maps visible raw entries to
+id/name/capabilities in response order; it exposes no intelligence ranking.
+Consequently a host using that unranked listing must show model selection as
+unavailable until the owner chooses a model or verified ranking is supplied.
+The owning SDK catalog API must expose intelligence ordering before a host can
+promise an automatic strongest ChatGPT choice. No model IDs are invented here.
+Codex readiness still refuses the incompatible disabled code host.
+
+`runAgentTurn({ profile, outputSchema })` supplies explicit model and effort,
+Claude `--json-schema`, or Codex `--output-schema` through a private per-pass
+file. Codex maximum maps to `model_reasoning_effort="xhigh"`. Existing machine
+feature prohibitions and parser guards remain in force, including unknown
+structured-output tool kinds: they are refused, never allowed as built-in tools.
+Claude's final `structured_output` object is serialized for the host's schema
+validator. A host still validates and bounds repair attempts through the design
+run driver. ChatGPT's SDK rejects reasoning and JSON format controls, so its
+adapter omits those unsupported controls; schema validation/repair stays host
+side. Recorded effort is the requested policy where the provider cannot honor
+an effort option; it is not a claim of vendor enforcement.
+
+Token mint receives the pass timeout; `tokenCredentials` requests a lifetime
+of at least that timeout plus one minute, retaining owner holder/scopes and
+revocation at exit. CLI usage is recorded only when input/output token counts
+are reported, otherwise unknown. `host.recordExecution` and stored assistant
+`meta.workRun` (when a CLI session exists) carry profile, runtime-reported model (unknown when omitted),
+requested alias/model, duration, tool count and
+fallback. `createChatGPTModel` accepts the same profile and execution callback.
+
+Both real invocation adapters wire `runWorkModelWithFallback` when a host
+supplies a scoped fallback store and the next verified model. Only explicit
+plan-model refusal codes qualify; arbitrary failures, policy refusals, quota,
+network errors, published text or any tool activity never retry another model.
+One fallback step is allowed, with shared fixed wording. The host persists the
+memo under owner, engine, refused requested model and a connection/catalog key;
+change the key after account/catalog or selection changes. No engine or billing
+path fallback is performed. No live CLI/provider call is needed for tests.
+
+Reuse audit: smrt-dev-mcp `review_smrt_project` on inference and
+`build_context(task: architecture)` inventoried package exports/models. The
+intent index and name/purpose searches across smrt-ui, smrt-svelte, chat, core
+and inference found no existing work-intelligence resolver or owner-engine
+fallback memo. `work-profiles.ts` owns that pure inference policy and reuses
+`InferenceEngineId` moved unchanged to browser-safe `engine-id.ts`; existing session/turn/credentials/model adapters own all
+execution. No UI helper, credential store, queue or approval system was added.
+
+Native CLI budget enforcement is limited to the subprocess wall deadline and
+observed tool-result truncation for display/history. The vendor has already
+received the MCP result by then: this is not a model-context result bound.
+Resource pages are bounded before context entry; generic MCP observations still
+need a safe serializer with a minimum envelope preserving outcome, approvals and
+cursors without inviting mutation retries. Claude's installed help has no per-call token or
+step limit flag; Codex is incompatible under the required lockdown. Numeric
+step/token settings remain host/driver admission and accounting budgets, not a
+claim that a vendor CLI stops at those token counts. Hosts must reserve a
+conservative allowance before a CLI pass when native usage is unknown and
+must not count unknown usage as zero. The driver pauses future passes at run
+exhaustion; a request already admitted may exceed a token estimate. Claude
+aggregate usage includes cache reads/creation as well as uncached input/output;
+Codex cached input is already part of input_tokens and is not counted twice.
+
+A sessionless CLI pass records execution through `host.recordExecution`; its
+message has no session metadata. Existing hosts retain the original tool/session
+message union without fabricated session IDs.

@@ -17,6 +17,10 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+  type ResolvedWorkProfile,
+  validateWorkModel,
+} from '../work-profiles.js';
 import type { AgentCliLocation } from './detect.js';
 import { cliEnv } from './detect.js';
 import {
@@ -45,6 +49,8 @@ export interface AgentRunSpec {
 
 export interface SpecInput {
   tool: AgentTool;
+  profile?: ResolvedWorkProfile;
+  outputSchema?: Record<string, unknown>;
   location: AgentCliLocation;
   /** `<data root>/agent-cli`: holds `work/` (empty cwd) and `run/` (temp). */
   stateDir: string;
@@ -103,6 +109,13 @@ function claudeSpec(
       'stream-json',
       '--verbose',
       '--include-partial-messages',
+      '--model',
+      input.profile?.model ?? 'fable',
+      '--effort',
+      input.profile?.effort ?? 'high',
+      ...(input.outputSchema
+        ? ['--json-schema', JSON.stringify(input.outputSchema)]
+        : []),
       // No built-in tools at all (shell, file, web, sub-agents).
       '--tools',
       '',
@@ -178,7 +191,20 @@ function codexSpec(
   work: string,
 ): AgentRunSpec {
   const server = `mcp_servers.${MCP_SERVER_NAME}`;
+  const schemaPath = join(runDir, 'output-schema.json');
+  if (input.outputSchema)
+    writeFileSync(schemaPath, JSON.stringify(input.outputSchema), {
+      mode: 0o600,
+    });
   const overrides: [string, string][] = [
+    [
+      'model_reasoning_effort',
+      toml(
+        input.profile?.effort === 'max'
+          ? 'xhigh'
+          : (input.profile?.effort ?? 'high'),
+      ),
+    ],
     ['sandbox_mode', toml('read-only')],
     ['approval_policy', toml('never')],
     ['web_search', toml('disabled')],
@@ -199,6 +225,8 @@ function codexSpec(
       ...(input.resumeId ? ['resume'] : []),
       '--json',
       '--skip-git-repo-check',
+      ...(input.profile?.model ? ['-m', input.profile.model] : []),
+      ...(input.outputSchema ? ['--output-schema', schemaPath] : []),
       // None of the person's config.toml (MCP servers, hooks, profiles) or
       // execpolicy rules; the sign-in (CODEX_HOME) is kept.
       '--ignore-user-config',
@@ -222,6 +250,8 @@ function codexSpec(
 /** Build the run: an empty private cwd, a private temp dir, the command. */
 export function buildAgentRun(input: SpecInput): AgentRunSpec {
   assertLoopbackUrl(input.mcpUrl);
+  if (input.profile?.model !== undefined)
+    validateWorkModel(input.profile.model);
   const work = join(input.stateDir, 'work');
   mkdirSync(work, { recursive: true, mode: 0o700 });
   const runRoot = join(input.stateDir, 'run');

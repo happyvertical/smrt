@@ -89,3 +89,6 @@ export {
 } from './types.js';
 
 registerInference();
+
+export * from './design-run.js';
+export * from './work-profiles.js';

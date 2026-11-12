@@ -139,3 +139,85 @@ describe('ChatGPT model-round adapter', () => {
     await expect(model.complete(request())).rejects.toBe(cause);
   });
 });
+
+it('executes one plan fallback and records actual model without unsupported effort options', async () => {
+  const recordExecution = vi.fn();
+  const notify = vi.fn();
+  const store = {
+    read: vi.fn(async () => undefined),
+    write: vi.fn(async () => {}),
+  };
+  const calls: Record<string, unknown>[] = [];
+  const model = await createChatGPTModel({
+    connection: {
+      clientOptions: async (options) => ({
+        type: 'chatgpt-plan',
+        defaultModel: options?.model,
+      }),
+    },
+    profile: 'design',
+    catalog: [
+      { id: 'fast', intelligenceRank: 1 },
+      { id: 'strong', intelligenceRank: 2 },
+    ],
+    toolNamespace: namespace,
+    recordExecution,
+    fallback: {
+      ownerId: 'owner',
+      connectionKey: 'account-v1',
+      nextModel: 'fast',
+      store,
+      notify,
+    },
+    createClient: async (options) => ({
+      chat: async (_messages, chatOptions) => {
+        calls.push(chatOptions);
+        if (options.defaultModel === 'strong')
+          throw { code: 'model_access_denied' };
+        return {
+          model: 'native-fast',
+          content: 'done',
+          usage: { totalTokens: 42 },
+        };
+      },
+    }),
+  });
+  expect((await model.complete(request())).text).toBe('done');
+  expect(recordExecution).toHaveBeenCalledWith(
+    expect.objectContaining({
+      profile: 'design',
+      model: 'native-fast',
+      requestedModel: 'fast',
+      tokens: 42,
+      fallback: { from: 'strong', to: 'fast', reason: 'plan-model-refused' },
+    }),
+  );
+  expect(calls).toHaveLength(2);
+  expect(calls.every((call) => !('reasoning' in call))).toBe(true);
+  expect(notify).toHaveBeenCalledOnce();
+});
+
+it('never retries a plan refusal after streaming text', async () => {
+  const chat = vi.fn(async (_messages, options) => {
+    options.onProgress('started');
+    throw { code: 'MODEL_ACCESS_DENIED' };
+  });
+  const model = await createChatGPTModel({
+    connection: { clientOptions: async () => ({}) },
+    profile: 'assist',
+    model: 'strong',
+    toolNamespace: namespace,
+    fallback: {
+      ownerId: 'owner',
+      connectionKey: 'v1',
+      nextModel: 'fast',
+      store: { read: async () => undefined, write: async () => {} },
+      notify: vi.fn(),
+    },
+    createClient: async () => ({ chat }),
+  });
+  await expect(model.complete(request())).rejects.toMatchObject({
+    code: 'MODEL_ACCESS_DENIED',
+  });
+  expect(chat).toHaveBeenCalledOnce();
+});

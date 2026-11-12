@@ -5,10 +5,10 @@ description: "Inference alias chains with classified failures, recorded fallback
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-12T02:17:43Z"
+  at: "2026-11-12T05:12:16Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:ff4ac45369023f76129a3869d3ee28a85910cf564d701470ead36f5a7b16de59"
+source_revision: "sha256:3129a76ac8f58acf7b9532217f9fca12562c629cb2aed8afb0d33ce8b649ad80"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/package.json"
@@ -17,18 +17,21 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/AGENTS.md"
     title: "@happyvertical/smrt-inference packages/inference/AGENTS.md"
   - id: "agents-2"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/agents/design-runs.md"
+    title: "@happyvertical/smrt-inference packages/inference/agents/design-runs.md"
+  - id: "agents-3"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/agents/engines.md"
     title: "@happyvertical/smrt-inference packages/inference/agents/engines.md"
-  - id: "agents-3"
+  - id: "agents-4"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/agents/fusions.md"
     title: "@happyvertical/smrt-inference packages/inference/agents/fusions.md"
-  - id: "agents-4"
+  - id: "agents-5"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/agents/hosted.md"
     title: "@happyvertical/smrt-inference packages/inference/agents/hosted.md"
-  - id: "agents-5"
+  - id: "agents-6"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/agents/resolver.md"
     title: "@happyvertical/smrt-inference packages/inference/agents/resolver.md"
-  - id: "agents-6"
+  - id: "agents-7"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/agents/settings.md"
     title: "@happyvertical/smrt-inference packages/inference/agents/settings.md"
 ---
@@ -45,6 +48,7 @@ sources:
 ## Documentation
 
 - `packages/inference/AGENTS.md`
+- `packages/inference/agents/design-runs.md`
 - `packages/inference/agents/engines.md`
 - `packages/inference/agents/fusions.md`
 - `packages/inference/agents/hosted.md`
@@ -81,5 +85,6 @@ sources:
 
 ## Models
 
+- `DesignRunRecord` (collection `designrunrecords`, extends `SmrtObject`)
 - `InferenceOverride` (collection `inferenceoverrides`, extends `SmrtObject`)
 - `InferenceOverrideCollection` (collection `inferenceoverrides`, extends `SmrtCollection`)

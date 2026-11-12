@@ -101,6 +101,8 @@ reasoning, forced single-function `toolChoice` and `stream()` with tools; the
 caller sends none of them (`classifyChatGPTPlanFailure` names the failures).
 Guide: [docs/content/inference-settings.md](../../docs/content/inference-settings.md).
 
+[Owner work profiles and durable design runs](agents/design-runs.md).
+
 ## Config
 
 ```ts

@@ -1,7 +1,9 @@
 import type { AgentCliStatus } from './agent-cli/detect.js';
 import { AGENT_TOOL_INFO, type AgentTool } from './agent-cli/tools.js';
 import type { ChatGPTPlanConnection } from './chatgpt/connection.js';
-export type InferenceEngineId = 'api' | 'chatgpt' | AgentTool;
+import type { InferenceEngineId } from './engine-id.js';
+
+export type { InferenceEngineId } from './engine-id.js';
 export interface InferenceEngineAction {
   label: string;
   href: string;

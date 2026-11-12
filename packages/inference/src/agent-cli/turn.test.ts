@@ -1,11 +1,12 @@
 // Ported subprocess lifecycle/security cases. No real CLI or provider is used.
 // Shell tests additionally exercise these engines through its real owner policy.
 import { randomBytes } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { resolveWorkProfile } from '../work-profiles.js';
 import { nodeDir } from './env.js';
 import { installStub, tempDir } from './test-support.js';
 import type { AgentTool } from './tools.js';
@@ -537,5 +538,216 @@ it.each([
   );
   expect(JSON.stringify([events, logged.mock.calls])).not.toContain(
     'secret in token store error',
+  );
+});
+
+describe('profile subprocess execution', () => {
+  it('retries a refused Claude model once and persists actual-model usage', async () => {
+    const { deps, stateDir } = setup('claude-code');
+    const location = await deps.locate('claude-code');
+    if (!location) throw new Error('fixture missing');
+    writeFileSync(
+      location.path,
+      `#!/usr/bin/env node
+const fs=require('node:fs');
+const args=process.argv.slice(2);
+fs.appendFileSync(process.env.HOME+'/attempts',JSON.stringify(args)+'\\n');
+const model=args[args.indexOf('--model')+1];
+if(model==='fable')console.log(JSON.stringify({type:'result',subtype:'error',is_error:true,error_code:'model_access_denied'}));
+else {console.log(JSON.stringify({type:'system',subtype:'init',session_id:'runtime-session',model:'claude-opus-native'}));console.log(JSON.stringify({type:'result',subtype:'success',result:'Designed',usage:{input_tokens:30,output_tokens:12}}));}
+`,
+    );
+    const messages: AgentTurnMessage[] = [];
+    const recordExecution = vi.fn();
+    const events: TurnEvent[] = [];
+    const store = {
+      read: vi.fn(async () => undefined),
+      write: vi.fn(async () => {}),
+    };
+    const stop = await runAgentTurn({
+      tool: 'claude-code',
+      text: 'design',
+      mcpUrl: 'http://127.0.0.1:4801/mcp',
+      deps,
+      signal: new AbortController().signal,
+      emit: (e) => events.push(e),
+      host: { ...threadHost('design', messages), recordExecution },
+      profile: resolveWorkProfile({ engine: 'claude-code', profile: 'design' }),
+      fallback: {
+        ownerId: 'owner',
+        connectionKey: 'account-v1',
+        nextModel: 'opus',
+        store,
+      },
+    });
+    expect(stop).toBe('complete');
+    expect(
+      readFileSync(join(stateDir, 'attempts'), 'utf8').trim().split('\n'),
+    ).toHaveLength(2);
+    expect(recordExecution).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'claude-opus-native',
+        requestedModel: 'opus',
+        profile: 'design',
+        tokens: 42,
+        fallback: { from: 'fable', to: 'opus', reason: 'plan-model-refused' },
+      }),
+    );
+    expect(messages.at(-1)?.meta).toMatchObject({
+      workRun: {
+        model: 'claude-opus-native',
+        requestedModel: 'opus',
+        tokens: 42,
+      },
+    });
+    expect(
+      events.filter(
+        (e) => e.type === 'text' && e.delta.includes('next strongest'),
+      ),
+    ).toHaveLength(1);
+  });
+  it('does not fall back around the Codex disabled-code-host refusal', async () => {
+    const { deps, stateDir } = setup('codex');
+    const location = await deps.locate('codex');
+    if (!location) throw new Error('fixture missing');
+    writeFileSync(
+      location.path,
+      `#!/usr/bin/env node
+const fs=require('node:fs');
+fs.appendFileSync(process.env.HOME+'/attempts','attempt\\n');
+console.log(JSON.stringify({type:'item.completed',item:{type:'error',message:'code-mode host is disabled'}}));
+`,
+    );
+    const messages: AgentTurnMessage[] = [];
+    const events: TurnEvent[] = [];
+    const store = {
+      read: vi.fn(async () => undefined),
+      write: vi.fn(async () => {}),
+    };
+    const stop = await runAgentTurn({
+      tool: 'codex',
+      text: 'design',
+      mcpUrl: 'http://127.0.0.1:4801/mcp',
+      deps,
+      signal: new AbortController().signal,
+      emit: (e) => events.push(e),
+      host: threadHost('design', messages),
+      profile: resolveWorkProfile({
+        engine: 'codex',
+        profile: 'design',
+        settings: { model: 'ranked-test' },
+      }),
+      fallback: {
+        ownerId: 'owner',
+        connectionKey: 'v1',
+        nextModel: 'lesser-test',
+        store,
+      },
+    });
+    expect(stop).toBe('error');
+    expect(readFileSync(join(stateDir, 'attempts'), 'utf8').trim()).toBe(
+      'attempt',
+    );
+    expect(store.write).not.toHaveBeenCalled();
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'error', code: 'tool_host_policy' }),
+    );
+  });
+});
+
+it.each([
+  'claude-code',
+  'codex',
+] as const)('rejects an unsafe %s profile before credential mint or spawn', async (tool) => {
+  const { deps } = setup(tool);
+  const mint = vi.spyOn(deps.credentials, 'mint');
+  const locate = vi.spyOn(deps, 'locate');
+  const appendMessage = vi.fn();
+  const profile = {
+    ...resolveWorkProfile({ engine: tool, settings: { model: 'valid-model' } }),
+    model: '--dangerously-skip-permissions',
+  };
+  await expect(
+    runAgentTurn({
+      tool,
+      profile,
+      text: 'hello',
+      mcpUrl: 'http://127.0.0.1:4801/mcp',
+      deps,
+      signal: new AbortController().signal,
+      emit: vi.fn(),
+      host: { ...threadHost('hello', []), appendMessage },
+    }),
+  ).rejects.toThrow('Invalid work profile model');
+  expect(mint).not.toHaveBeenCalled();
+  expect(locate).not.toHaveBeenCalled();
+  expect(appendMessage).not.toHaveBeenCalled();
+});
+
+it('keeps execution metadata structurally compatible with legacy host messages', () => {
+  const current: AgentTurnMessage = {
+    role: 'assistant',
+    content: 'done',
+    meta: {
+      cliSession: { tool: 'claude-code', id: 's' },
+      workRun: {
+        profile: 'assist',
+        engine: 'claude-code',
+        effort: 'high',
+        durationMs: 1,
+        toolCalls: 0,
+      },
+    },
+  };
+  const legacy: {
+    role: 'user' | 'assistant' | 'tool';
+    content: string;
+    meta?:
+      | {
+          id: string;
+          name: string;
+          ok: boolean;
+          summary: string;
+          approvalId?: string;
+        }
+      | { cliSession: { tool: string; id: string } };
+  } = current;
+  expect(legacy.meta).toMatchObject({ cliSession: { id: 's' } });
+});
+
+it('records a sessionless execution through the callback without inventing session metadata', async () => {
+  const { deps } = setup('codex');
+  const location = await deps.locate('codex');
+  if (!location) throw new Error('fixture missing');
+  writeFileSync(
+    location.path,
+    `#!/usr/bin/env node
+console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'done'}}));
+console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:10,output_tokens:2}}));
+`,
+  );
+  const messages: AgentTurnMessage[] = [];
+  const recordExecution = vi.fn();
+  const result = await runAgentTurn({
+    tool: 'codex',
+    text: 'hello',
+    profile: resolveWorkProfile({
+      engine: 'codex',
+      settings: { model: 'verified-model' },
+    }),
+    mcpUrl: 'http://127.0.0.1:4801/mcp',
+    deps,
+    signal: new AbortController().signal,
+    emit: vi.fn(),
+    host: { ...threadHost('hello', messages), recordExecution },
+  });
+  expect(result).toBe('complete');
+  expect(messages.at(-1)).toEqual({ role: 'assistant', content: 'done' });
+  expect(recordExecution).toHaveBeenCalledWith(
+    expect.objectContaining({
+      profile: 'assist',
+      requestedModel: 'verified-model',
+      tokens: 12,
+    }),
   );
 });

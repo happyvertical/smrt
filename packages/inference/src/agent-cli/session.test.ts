@@ -3,6 +3,7 @@
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { resolveWorkProfile } from '../work-profiles.js';
 import { assertLoopbackUrl, buildAgentRun, TOKEN_ENV } from './session.js';
 import { claudeParser, codexParser, shellToolName } from './stream.js';
 import { tempDir } from './test-support.js';
@@ -306,4 +307,149 @@ describe('stream parsers', () => {
     expect(shellToolName('mcp__smrt__chore_list')).toBe('chore_list');
     expect(shellToolName('chore_list')).toBe('chore_list');
   });
+});
+
+describe('explicit profile invocation', () => {
+  it.each([
+    'claude-code',
+    'codex',
+  ] as const)('passes %s model effort and JSON schema without relaxing lockdown', (tool) => {
+    const schema = { type: 'object', properties: { ok: { type: 'boolean' } } };
+    const profile = resolveWorkProfile({
+      engine: tool,
+      profile: 'design',
+      settings: { model: 'strong-test' },
+    });
+    const run = buildAgentRun({
+      tool,
+      profile,
+      outputSchema: schema,
+      location: { path: '/fake/cli', extraPath: [] },
+      stateDir: tempDir(),
+      mcpUrl: 'http://127.0.0.1:4801/mcp',
+      token: TOKEN,
+      systemPrompt: 'app only',
+      prompt: 'design',
+    });
+    if (tool === 'claude-code') {
+      expect(run.args.slice(5, 11)).toEqual([
+        '--model',
+        'strong-test',
+        '--effort',
+        'max',
+        '--json-schema',
+        JSON.stringify(schema),
+      ]);
+      expect(run.args).toContain('--strict-mcp-config');
+      expect(run.args[run.args.indexOf('--tools') + 1]).toBe('');
+    } else {
+      expect(run.args.slice(3, 7)).toEqual([
+        '-m',
+        'strong-test',
+        '--output-schema',
+        expect.any(String),
+      ]);
+      expect(JSON.parse(readFileSync(run.args[6], 'utf8'))).toEqual(schema);
+      expect(run.args).toContain('model_reasoning_effort="xhigh"');
+      expect(run.args).toContain('code_mode_host');
+      expect(run.args).toContain('sandbox_mode="read-only"');
+    }
+    expect(run.args.join(' ')).not.toContain(TOKEN);
+    run.cleanup();
+  });
+});
+
+it('keeps unexpected structured-output tools forbidden and captures runtime model identity', () => {
+  const parse = claudeParser();
+  expect(
+    parse(
+      JSON.stringify({
+        type: 'system',
+        subtype: 'init',
+        session_id: 's',
+        model: 'claude-fable-runtime',
+      }),
+    ),
+  ).toEqual([
+    { type: 'execution_model', model: 'claude-fable-runtime' },
+    { type: 'session', id: 's' },
+  ]);
+  expect(
+    parse(
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'tool_use', id: 'x', name: 'StructuredOutput', input: {} },
+          ],
+        },
+      }),
+    ),
+  ).toEqual([{ type: 'forbidden', what: 'StructuredOutput' }]);
+  expect(
+    parse(
+      JSON.stringify({
+        type: 'result',
+        subtype: 'success',
+        structured_output: { ok: true },
+        usage: { input_tokens: 15, output_tokens: 5 },
+      }),
+    ),
+  ).toEqual([{ type: 'done', ok: true, text: '{"ok":true}', tokens: 20 }]);
+});
+
+it('includes Anthropic cache usage without double-counting Codex cached input', () => {
+  expect(
+    claudeParser()(
+      JSON.stringify({
+        type: 'result',
+        subtype: 'success',
+        usage: {
+          input_tokens: 10,
+          output_tokens: 5,
+          cache_read_input_tokens: 100,
+          cache_creation_input_tokens: 20,
+        },
+      }),
+    ),
+  ).toEqual([{ type: 'done', ok: true, tokens: 135 }]);
+  expect(
+    codexParser()(
+      JSON.stringify({
+        type: 'turn.completed',
+        usage: { input_tokens: 100, output_tokens: 5, cached_input_tokens: 80 },
+      }),
+    ),
+  ).toEqual([{ type: 'done', ok: true, tokens: 105 }]);
+  expect(
+    claudeParser()(
+      JSON.stringify({
+        type: 'result',
+        subtype: 'success',
+        usage: { input_tokens: 10 },
+      }),
+    ),
+  ).toEqual([{ type: 'done', ok: true }]);
+});
+
+it.each([
+  'claude-code',
+  'codex',
+] as const)('rejects unsafe %s argv before building run files', (tool) => {
+  const profile = {
+    ...resolveWorkProfile({ engine: tool, settings: { model: 'valid-model' } }),
+    model: '--dangerously-skip-permissions',
+  };
+  expect(() =>
+    buildAgentRun({
+      tool,
+      profile,
+      location: { path: '/unused', extraPath: [] },
+      stateDir: tempDir(),
+      mcpUrl: 'http://127.0.0.1:4801/mcp',
+      token: TOKEN,
+      systemPrompt: '',
+      prompt: '',
+    }),
+  ).toThrow('Invalid work profile model');
 });

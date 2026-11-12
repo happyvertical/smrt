@@ -7,7 +7,7 @@ export const AGENT_TOKEN_TTL_SECONDS = 15 * 60;
 
 export interface AgentCredentials {
   /** Mint the token for one turn (rotating any earlier one). */
-  mint(): Promise<string>;
+  mint(options?: { timeoutMs: number }): Promise<string>;
   /** Revoke it. Safe to call twice. */
   revoke(): Promise<void>;
 }
@@ -28,12 +28,15 @@ export function tokenCredentials(
   options: { holder: string; scopes: readonly string[]; label: string },
 ): AgentCredentials {
   return {
-    async mint() {
+    async mint(pass) {
       const tokens = await store();
       if (!tokens) throw new Error('This app has no local token store.');
       const issued = await tokens.issue({
         scopes: options.scopes,
-        expiresInSeconds: AGENT_TOKEN_TTL_SECONDS,
+        expiresInSeconds: Math.max(
+          AGENT_TOKEN_TTL_SECONDS,
+          Math.ceil((pass?.timeoutMs ?? 0) / 1000) + 60,
+        ),
         label: options.label,
         holder: options.holder,
       });

@@ -2,6 +2,13 @@
 // tool policy and approval authority; this engine never decides an approval.
 import { randomUUID } from 'node:crypto';
 import type { AIToolCall } from '@happyvertical/ai';
+import {
+  type ResolvedWorkProfile,
+  runWorkModelWithFallback,
+  validateWorkModel,
+  type WorkModelFallbackStore,
+  type WorkRunMetadata,
+} from '../work-profiles.js';
 import type { AgentCredentials } from './credentials.js';
 import type { AgentCliLocation } from './detect.js';
 import { runProcess } from './runner.js';
@@ -95,6 +102,7 @@ export interface AgentTurnHost {
     ok: boolean;
     approvalId?: string;
   }): Promise<{ summary: string; details?: Record<string, unknown> }>;
+  recordExecution?(metadata: WorkRunMetadata): Promise<void>;
   completionNote?(): Promise<string | null>;
 }
 
@@ -111,11 +119,19 @@ export interface AgentTurnMessage {
         summary: string;
         approvalId?: string;
       }
-    | { cliSession: { tool: string; id: string } };
+    | { cliSession: { tool: string; id: string }; workRun?: WorkRunMetadata };
 }
 
 export interface AgentTurnOptions {
   text: string;
+  profile?: ResolvedWorkProfile;
+  outputSchema?: Record<string, unknown>;
+  fallback?: {
+    ownerId: string;
+    connectionKey: string;
+    nextModel: string;
+    store: WorkModelFallbackStore;
+  };
   tool: AgentTool;
   mcpUrl: string;
   signal: AbortSignal;
@@ -243,6 +259,15 @@ async function runAgentTurnImpl(
   options: AgentTurnOptions,
 ): Promise<AgentTurnStop> {
   const { host, tool, deps } = options;
+  if (
+    options.profile &&
+    (options.profile.engine !== tool || !options.profile.model)
+  )
+    throw new Error('The work profile does not match this connected engine.');
+  if (options.profile?.model !== undefined)
+    validateWorkModel(options.profile.model);
+  if (options.fallback?.nextModel !== undefined)
+    validateWorkModel(options.fallback.nextModel);
   const emit: AgentTurnOptions['emit'] = (event) => {
     if (event.type === 'error' && !event.message.includes(' Reference: ')) {
       const reference = reportAgentFailure(
@@ -257,7 +282,20 @@ async function runAgentTurnImpl(
       });
     } else options.emit(event);
   };
-  const limits = { ...DEFAULT_AGENT_LIMITS, ...deps.limits };
+  const startedAt = Date.now();
+  let toolCalls = 0;
+  let reportedModel: string | undefined;
+  let reportedTokens: number | undefined;
+  const limits = {
+    ...DEFAULT_AGENT_LIMITS,
+    ...(options.profile
+      ? {
+          turnTimeoutMs: options.profile.budgets.requestTimeoutMs,
+          toolResultChars: options.profile.budgets.toolResultChars,
+        }
+      : {}),
+    ...deps.limits,
+  };
   const label = AGENT_TOOL_INFO[tool].label;
   const fail = (
     code: string,
@@ -306,7 +344,7 @@ async function runAgentTurnImpl(
 
   let token: string;
   try {
-    token = await deps.credentials.mint();
+    token = await deps.credentials.mint({ timeoutMs: limits.turnTimeoutMs });
   } catch (error) {
     const code = tokenFailureCode(error);
     return fail('agent_cli_token', tokenFailureMessage(code), 'error', error);
@@ -376,6 +414,7 @@ async function runAgentTurnImpl(
           });
           return;
         case 'tool_use': {
+          toolCalls++;
           if (!host.allowTool(event.name)) {
             stop = 'error';
             controller.abort();
@@ -464,7 +503,12 @@ async function runAgentTurnImpl(
           });
           return;
         }
+        case 'execution_model':
+          reportedModel = event.model;
+          return;
         case 'done':
+          if (event.tokens !== undefined)
+            reportedTokens = (reportedTokens ?? 0) + event.tokens;
           finished = event;
           if (!event.ok && event.error === 'tool_host_policy') {
             emit({
@@ -482,10 +526,14 @@ async function runAgentTurnImpl(
     const checkHostFailure = () => {
       if (hostFailure) throw hostFailure.error;
     };
+    let activeProfile = options.profile;
+    let fallback: WorkRunMetadata['fallback'];
     const attempt = async (resume: string | null) => {
       const guidance = await host.guidance();
       const spec = buildAgentRun({
         tool,
+        profile: activeProfile,
+        outputSchema: options.outputSchema,
         location,
         stateDir: await deps.stateDir(),
         mcpUrl: options.mcpUrl,
@@ -504,7 +552,10 @@ async function runAgentTurnImpl(
           env: spec.env,
           stdin: spec.stdin,
           signal: controller.signal,
-          timeoutMs: limits.turnTimeoutMs,
+          timeoutMs: Math.max(
+            1,
+            limits.turnTimeoutMs - (Date.now() - startedAt),
+          ),
           onStdoutLine: (line) => {
             const events = spec.parse(line);
             // One at a time, in order, even though lines arrive synchronously.
@@ -524,7 +575,38 @@ async function runAgentTurnImpl(
       }
     };
 
-    let result = await attempt(resumeId);
+    let result: Awaited<ReturnType<typeof attempt>>;
+    const requestedProfile = options.profile;
+    if (options.fallback && requestedProfile) {
+      const outcome = await runWorkModelWithFallback({
+        ...options.fallback,
+        profile: requestedProfile,
+        execute: async (model, activity) => {
+          activeProfile = { ...requestedProfile, model };
+          finished = null;
+          reportedModel = undefined;
+          const result = await attempt(resumeId);
+          await queue;
+          checkHostFailure();
+          if (streamedAny) activity.markOutput();
+          if (toolCalls > 0 || controller.signal.aborted)
+            activity.markToolExecution();
+          if (
+            (finished as { error?: string } | null)?.error ===
+            'plan_model_refused'
+          )
+            throw Object.assign(new Error('Plan model refused'), {
+              code: 'plan_model_refused',
+            });
+          return result;
+        },
+        isPlanModelRefusal: (error) =>
+          (error as { code?: string })?.code === 'plan_model_refused',
+        notify: (message) => emit({ type: 'text', delta: `${message}\n\n` }),
+      });
+      result = outcome.result;
+      fallback = outcome.fallback;
+    } else result = await attempt(resumeId);
     await queue;
     checkHostFailure();
     // The tool forgot an old session (its own housekeeping): start a new one.
@@ -601,12 +683,33 @@ async function runAgentTurnImpl(
       pendingText += `${pendingText ? '\n\n' : ''}${note}`;
       emit({ type: 'text', delta: `\n\n${note}` });
     }
-    if (pendingText || sessionId)
+    const execution: WorkRunMetadata | undefined = options.profile
+      ? {
+          profile: options.profile.name,
+          engine: tool,
+          model: reportedModel,
+          requestedModel: activeProfile?.model,
+          ...(fallback ? { fallback } : {}),
+          effort: options.profile.effort,
+          durationMs: Date.now() - startedAt,
+          toolCalls,
+          ...(reportedTokens !== undefined ? { tokens: reportedTokens } : {}),
+        }
+      : undefined;
+    if (pendingText || sessionId || execution)
       await host.appendMessage({
         role: 'assistant',
         content: pendingText,
-        ...(sessionId ? { meta: { cliSession: { tool, id: sessionId } } } : {}),
+        ...(sessionId
+          ? {
+              meta: {
+                cliSession: { tool, id: sessionId },
+                ...(execution ? { workRun: execution } : {}),
+              },
+            }
+          : {}),
       });
+    if (execution) await host.recordExecution?.(execution);
     emit({ type: 'done', stop });
     return stop;
   } finally {

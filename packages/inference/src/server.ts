@@ -121,6 +121,8 @@ export {
   openSystemBrowser,
   type SpawnLike,
 } from './chatgpt/support.js';
+export * from './design-run.js';
+export * from './design-run-store.js';
 export {
   type EngineModel,
   EngineModelFailure,
@@ -140,6 +142,7 @@ export {
   type InferenceEngineStatusHost,
   inferenceEngineStatus,
 } from './engine-status.js';
+export * from './models/DesignRunRecord.js';
 export {
   APP_INFERENCE_SCOPE_ID,
   InferenceOverride,
@@ -258,3 +261,4 @@ export {
   loadInferenceTranscriptSettings,
   storedTranscriptSettings,
 } from './settings/transcripts.js';
+export * from './work-profiles.js';

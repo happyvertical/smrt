@@ -45,3 +45,19 @@ describe('host token-store adapter', () => {
     await expect(credentials.revoke()).resolves.toBeUndefined();
   });
 });
+
+it('ties owner-token lifetime to a long design pass with cleanup margin', async () => {
+  const issue = vi.fn(async () => ({ token: 'fake' }));
+  const credentials = tokenCredentials(
+    async () => ({ issue, revokeHolder: async () => 'revoked' }),
+    { holder: 'pass', label: 'Design pass', scopes: ['assistant.use'] },
+  );
+  await credentials.mint({ timeoutMs: 1_800_000 });
+  expect(issue).toHaveBeenCalledWith(
+    expect.objectContaining({
+      expiresInSeconds: 1860,
+      holder: 'pass',
+      scopes: ['assistant.use'],
+    }),
+  );
+});

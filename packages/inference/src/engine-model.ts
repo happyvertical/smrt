@@ -19,6 +19,8 @@ export interface EngineModelRequest {
 }
 
 export interface EngineModelReply {
+  /** The provider-reported answering model, when available. */
+  model?: string;
   text: string;
   toolCalls: EngineModelToolCall[];
   /** Total tokens the call used, when the provider reports it. */
@@ -48,11 +50,13 @@ export class EngineModelFailure extends Error {
 }
 
 export function engineModelReply(response: {
+  model?: string;
   content?: string;
   toolCalls?: AIToolCall[];
   usage?: { totalTokens?: number };
 }): EngineModelReply {
   return {
+    ...(response.model ? { model: response.model } : {}),
     text: response.content ?? '',
     toolCalls: (response.toolCalls ?? []).map((c) => ({
       id: c.id,

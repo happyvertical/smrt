@@ -8,13 +8,20 @@
 
 export type AgentEvent =
   | { type: 'session'; id: string }
+  | { type: 'execution_model'; model: string }
   | { type: 'text'; delta: string }
   /** A whole message (the tool did not stream it, or it is the last word). */
   | { type: 'message'; text: string }
   | { type: 'tool_use'; id: string; name: string; args: string }
   | { type: 'tool_result'; id: string; ok: boolean; text: string }
   | { type: 'forbidden'; what: string }
-  | { type: 'done'; ok: boolean; text?: string; error?: string };
+  | {
+      type: 'done';
+      ok: boolean;
+      text?: string;
+      error?: string;
+      tokens?: number;
+    };
 
 /** The MCP server name both tools are given, and so the tool-name prefix. */
 export const MCP_SERVER_NAME = 'smrt';
@@ -62,6 +69,17 @@ export function claudeParser() {
     if (!e) return [];
     const out: AgentEvent[] = [];
     const type = str(e.type);
+    const reportedModel =
+      type === 'system' && str(e.subtype) === 'init'
+        ? e.model
+        : type === 'assistant'
+          ? obj(e.message)?.model
+          : undefined;
+    if (
+      typeof reportedModel === 'string' &&
+      /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$/.test(reportedModel)
+    )
+      out.push({ type: 'execution_model', model: reportedModel });
     if (type === 'system' && str(e.subtype) === 'init' && str(e.session_id))
       out.push({ type: 'session', id: str(e.session_id) });
     else if (type === 'stream_event') {
@@ -117,8 +135,21 @@ export function claudeParser() {
       out.push({
         type: 'done',
         ok,
-        ...(str(e.result) ? { text: str(e.result) } : {}),
-        ...(!ok ? { error: str(e.subtype) || 'error' } : {}),
+        ...(e.structured_output && typeof e.structured_output === 'object'
+          ? { text: JSON.stringify(e.structured_output) }
+          : str(e.result)
+            ? { text: str(e.result) }
+            : {}),
+        ...usageTokens(e.usage),
+        ...(!ok
+          ? {
+              error: ['model_not_available', 'model_access_denied'].includes(
+                str(e.error_code),
+              )
+                ? 'plan_model_refused'
+                : str(e.subtype) || 'error',
+            }
+          : {}),
       });
     }
     return out;
@@ -147,14 +178,19 @@ export function codexParser() {
     const type = str(e.type);
     if (type === 'thread.started' && str(e.thread_id))
       return [{ type: 'session', id: str(e.thread_id) }];
-    if (type === 'turn.completed') return [{ type: 'done', ok: true }];
+    if (type === 'turn.completed')
+      return [{ type: 'done', ok: true, ...usageTokens(e.usage) }];
     if (type === 'turn.failed' || type === 'error') {
       const failure = obj(e.error);
       return [
         {
           type: 'done',
           ok: false,
-          error: str(failure?.message) || str(e.message) || 'error',
+          error: ['model_not_available', 'model_access_denied'].includes(
+            str(failure?.code),
+          )
+            ? 'plan_model_refused'
+            : str(failure?.message) || str(e.message) || 'error',
         },
       ];
     }
@@ -208,4 +244,27 @@ export function codexParser() {
     }
     return [];
   };
+}
+
+/** Native Anthropic input_tokens excludes cache reads/creation. Codex cached_input_tokens
+ * is already part of input_tokens and is deliberately not added again. */
+function usageTokens(value: unknown): { tokens?: number } {
+  const usage = obj(value);
+  if (usage?.input_tokens === undefined || usage.output_tokens === undefined)
+    return {};
+  const counts = [
+    usage.input_tokens,
+    usage.output_tokens,
+    usage.cache_read_input_tokens ?? 0,
+    usage.cache_creation_input_tokens ?? 0,
+  ];
+  if (
+    !counts.every(
+      (count) =>
+        typeof count === 'number' && Number.isSafeInteger(count) && count >= 0,
+    )
+  )
+    return {};
+  const total = (counts as number[]).reduce((sum, count) => sum + count, 0);
+  return Number.isSafeInteger(total) ? { tokens: total } : {};
 }

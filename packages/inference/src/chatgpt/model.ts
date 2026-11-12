@@ -4,12 +4,34 @@ import {
   EngineModelFailure,
   engineModelReply,
 } from '../engine-model.js';
+import {
+  type ResolvedWorkProfile,
+  resolveWorkProfile,
+  runWorkModelWithFallback,
+  validateWorkModel,
+  type WorkModelCatalogEntry,
+  type WorkModelFallbackStore,
+  type WorkProfileName,
+  type WorkProfileSettings,
+  type WorkRunMetadata,
+} from '../work-profiles.js';
 import type { ChatGPTPlanConnection } from './connection.js';
 import { chatgptFailureNote } from './support.js';
 
 export interface ChatGPTModelOptions {
   connection: Pick<ChatGPTPlanConnection, 'clientOptions'>;
   model?: string;
+  profile?: WorkProfileName;
+  settings?: WorkProfileSettings;
+  catalog?: readonly WorkModelCatalogEntry[];
+  fallback?: {
+    ownerId: string;
+    connectionKey: string;
+    nextModel: string;
+    store: WorkModelFallbackStore;
+    notify(message: string): void;
+  };
+  recordExecution?(metadata: WorkRunMetadata): Promise<void>;
   toolNamespace: { name: string; description: string };
   settingsHref?: string;
   /** Tests/hosts may supply a provider factory; never a raw API-key fallback. */
@@ -22,6 +44,7 @@ export interface ChatGPTModelOptions {
         onProgress(delta: string): void;
       },
     ): Promise<{
+      model?: string;
       content?: string;
       toolCalls?: AIToolCall[];
       usage?: { totalTokens?: number };
@@ -33,8 +56,23 @@ export interface ChatGPTModelOptions {
 export async function createChatGPTModel(
   input: ChatGPTModelOptions,
 ): Promise<EngineModel> {
+  const profile: ResolvedWorkProfile | undefined = input.profile
+    ? resolveWorkProfile({
+        profile: input.profile,
+        engine: 'chatgpt',
+        settings: {
+          ...input.settings,
+          ...(input.model ? { model: input.model } : {}),
+        },
+        catalog: input.catalog,
+      })
+    : undefined;
+  if (profile && profile.engine !== 'chatgpt')
+    throw new Error('The work profile does not match this connected engine.');
+  const selectedModel = profile?.model ?? input.model;
+  if (selectedModel !== undefined) validateWorkModel(selectedModel);
   const options = await input.connection.clientOptions({
-    ...(input.model ? { model: input.model } : {}),
+    ...(selectedModel ? { model: selectedModel } : {}),
     toolNamespace: input.toolNamespace,
   });
   const createClient =
@@ -43,17 +81,69 @@ export async function createChatGPTModel(
       const { getAI } = await import('@happyvertical/ai');
       return getAI(options as unknown as Parameters<typeof getAI>[0]);
     });
-  const ai = await createClient(options);
+  let ai = await createClient(options);
+  let actualModel = selectedModel;
   return {
     async complete(request) {
       try {
-        return engineModelReply(
-          await ai.chat(request.messages, {
-            tools: request.tools,
-            signal: request.signal,
-            onProgress: request.onText,
-          }),
-        );
+        const startedAt = Date.now();
+        const execute = async (
+          model?: string,
+          activity?: { markOutput(): void },
+        ) => {
+          if (model && model !== actualModel) {
+            ai = await createClient(
+              await input.connection.clientOptions({
+                model,
+                toolNamespace: input.toolNamespace,
+              }),
+            );
+            actualModel = model;
+          }
+          return engineModelReply(
+            await ai.chat(request.messages, {
+              tools: request.tools,
+              signal: request.signal,
+              onProgress: activity
+                ? (delta) => {
+                    if (delta) activity.markOutput();
+                    request.onText(delta);
+                  }
+                : request.onText,
+            }),
+          );
+        };
+        let fallback: WorkRunMetadata['fallback'];
+        let reply: Awaited<ReturnType<typeof execute>>;
+        if (profile && input.fallback) {
+          const outcome = await runWorkModelWithFallback({
+            ...input.fallback,
+            profile,
+            execute,
+            isPlanModelRefusal: (error) =>
+              [
+                'MODEL_NOT_AVAILABLE',
+                'MODEL_ACCESS_DENIED',
+                'model_not_available',
+                'model_access_denied',
+              ].includes((error as { code?: string })?.code ?? ''),
+          });
+          reply = outcome.result;
+          fallback = outcome.fallback;
+        } else reply = await execute(actualModel);
+        if (profile)
+          await input.recordExecution?.({
+            profile: profile.name,
+            engine: 'chatgpt',
+            model: reply.model,
+            requestedModel: actualModel,
+            effort: profile.effort,
+            durationMs: Date.now() - startedAt,
+            tokens: reply.totalTokens,
+            toolCalls: reply.toolCalls.length,
+            ...(fallback ? { fallback } : {}),
+          });
+        return reply;
       } catch (error) {
         const note = chatgptFailureNote(error, input.settingsHref);
         if (note)
