@@ -4,9 +4,10 @@
  */
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { field } from '../decorators/index.js';
+import { field, foreignKey } from '../decorators/index.js';
 import { MCPGenerator } from '../generators/mcp.js';
 import { APIGenerator } from '../generators/rest.js';
+import { SmrtHierarchical } from '../hierarchical.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 import {
@@ -314,7 +315,7 @@ describe('#4871 run-time models', () => {
       ]);
     });
 
-    it('#4869 check 1: a subclass of a one-table-per-class parent gets its own table, with the inherited fields declared again', async () => {
+    it('#4869 check 1 (#4922): a subclass of a one-table-per-class parent gets its own table holding the inherited fields, restated or not, once each', async () => {
       const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
       const parent = qn(Gadget4871);
       const q = registerRuntimeModel({
@@ -329,6 +330,22 @@ describe('#4871 run-time models', () => {
         ObjectRegistry.getAllSchemasAsDefinitions().gadgets.columns,
       );
       expect(cols).toEqual(expect.arrayContaining(['label', 'voltage']));
+      // A definition that restates the inherited field still yields one column.
+      const restated = registerRuntimeModel({
+        name: 'GadgetRestated',
+        packageName: '@test/rt4871cti3',
+        extends: parent,
+        fields: { label: { type: 'text' }, voltage: { type: 'integer' } },
+      });
+      const restatedCols = Object.keys(
+        ObjectRegistry.getAllSchemasAsDefinitions()[
+          ObjectRegistry.getTableName(restated) as string
+        ].columns,
+      );
+      expect(restatedCols.filter((c) => c === 'label')).toHaveLength(1);
+      expect(restatedCols).toEqual(
+        expect.arrayContaining(['label', 'voltage']),
+      );
       await migrate(db, q);
       const gadgets: any = await ObjectRegistry.getCollection(q, { db });
       const g = await gadgets.create({ label: 'amp', voltage: 12 });
@@ -340,7 +357,8 @@ describe('#4871 run-time models', () => {
       expect(
         (await db.query('SELECT COUNT(*) AS n FROM rt4871_gadgets')).rows[0].n,
       ).toBe(0);
-      // An empty subclass of such a parent is not free: it adds a table.
+      // An empty subclass of such a parent is not free: it adds a table, which
+      // now holds the inherited columns too.
       const before = await tables(db);
       const e = registerRuntimeModel({
         name: 'Gadget',
@@ -354,6 +372,61 @@ describe('#4871 run-time models', () => {
           .filter((t) => !before.includes(t))
           .some((t) => t.startsWith('table:')),
       ).toBe(true);
+    });
+
+    it('a subclass of a hierarchical own-table parent links its tree to its own table (#4940)', async () => {
+      // `SmrtHierarchical` reaches the registry the way it does in an app:
+      // from core's manifest, as a framework base.
+      const core = '@happyvertical/smrt-core';
+      ObjectRegistry.registerFromManifest(
+        `${core}:SmrtHierarchical`,
+        {
+          name: 'smrthierarchical',
+          className: 'SmrtHierarchical',
+          collection: 'smrthierarchicals',
+          filePath: 'hierarchical.ts',
+          fields: { parentId: { type: 'text' } },
+          methods: {},
+          decoratorConfig: {},
+          extends: 'SmrtObject',
+        } as never,
+        core,
+      );
+      @smrt({ tableName: 'rt4940_nodes' })
+      class Node4940 extends SmrtHierarchical {
+        @field() label = '';
+      }
+      const parent = qn(Node4940);
+      const q = registerRuntimeModel({
+        name: 'SubNode4940',
+        packageName: '@test/rt4940',
+        extends: parent,
+        fields: { depth: { type: 'integer' } },
+      });
+      const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
+      const table = ObjectRegistry.getTableName(q) as string;
+      expect(schemas.rt4940_nodes.columns.parent_id?.foreignKey?.table).toBe(
+        'rt4940_nodes',
+      );
+      expect(schemas[table].columns.parent_id?.foreignKey?.table).toBe(table);
+    });
+
+    it("a subclass of a parent that declares its own self-reference keeps the parent's target (#4940)", async () => {
+      @smrt({ tableName: 'rt4940_folders' })
+      class Folder4940 extends SmrtObject {
+        @foreignKey(Folder4940, { required: false }) parentId = '';
+      }
+      const q = registerRuntimeModel({
+        name: 'SharedFolder4940',
+        packageName: '@test/rt4940b',
+        extends: qn(Folder4940),
+        fields: { shared: { type: 'boolean' } },
+      });
+      // The subclass's `parentId` keeps the target the parent's declaration
+      // names; only SmrtHierarchical's tree link is rebound to the subclass.
+      expect(ObjectRegistry.getFields(q).get('parentId')?.related).toBe(
+        'Folder4940',
+      );
     });
 
     it("a subclass that shares its parent's simple name leaves the parent family intact", async () => {

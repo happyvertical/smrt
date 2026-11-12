@@ -25,6 +25,9 @@ import {
  * smrt-projects re-exports), so the classes on this table stay one two-level
  * inheritance chain. The shared fields are restated because package-isolated
  * manifest scanning deliberately does not inspect dependency source trees.
+ * Restating is no longer required for the table definition (an own-table
+ * subclass carries its ancestors' fields, #4922) but is harmless: each
+ * column still appears once and this declaration wins.
  * Runtime behavior is inherited from the shared model; every package
  * addresses the same table and rows.
  */

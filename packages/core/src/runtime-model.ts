@@ -19,6 +19,10 @@
 import type { DatabaseEngine } from './migrations/types.js';
 import type { SmrtObject } from './object.js';
 import { registerFromManifest } from './registry/class-registration.js';
+import {
+  getOwnTableFieldsSync,
+  inheritsHierarchicalBase,
+} from './registry/inheritance-resolver.js';
 import { fieldsToColumns } from './registry/schema-builder.js';
 import { ObjectRegistry } from './registry.js';
 import type {
@@ -168,14 +172,25 @@ export function runtimeModelEntry(
   }
   const fields: Record<string, FieldDefinition> = {};
   // A subclass of a one-table-per-class parent has a table of its own that
-  // holds only its own fields, so the inherited ones are declared again on it
-  // (#4869). An STI subclass shares its parent's table and needs none.
+  // also holds the parent's fields, concrete ancestors' included (#4922).
+  // They are listed here, relaxed to optional, because this entry's own
+  // column list is authoritative; a definition that restates one still
+  // yields a single column (its own declaration wins below). An STI subclass
+  // shares its parent's table and needs none.
   if (parent && ObjectRegistry.getSTIBase(def.extends!) === null) {
-    for (const [name, inherited] of ObjectRegistry.getFields(def.extends!)) {
+    const hierarchical = inheritsHierarchicalBase(parent);
+    for (const [name, inherited] of getOwnTableFieldsSync(parent)) {
+      // A hierarchical parent's `parentId` points at the parent's own table;
+      // the subclass has its own table, and its tree links to itself. A
+      // foreign key a concrete class declared itself keeps its target.
+      const related =
+        name === 'parentId' && hierarchical && inherited.related === parent.name
+          ? def.name
+          : inherited.related;
       fields[name] = {
         type: inherited.type,
         required: false,
-        ...(inherited.related ? { related: inherited.related } : {}),
+        ...(related ? { related } : {}),
       } as FieldDefinition;
     }
   }
