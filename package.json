@@ -45,6 +45,7 @@
     "check:hardcoded-strings": "node scripts/check-hardcoded-strings.mjs",
     "check:coverage": "node scripts/check-coverage.mjs",
     "check:no-smrt-peers": "node scripts/check-no-smrt-peers.mjs",
+    "check:direct-model-construction": "node scripts/check-direct-model-construction.mjs",
     "check:package-dag": "node scripts/check-package-dag.mjs",
     "check:mcp-config": "node scripts/check-mcp-config.mjs",
     "check:mcp-protocol-hygiene": "node scripts/check-mcp-protocol-hygiene.mjs",

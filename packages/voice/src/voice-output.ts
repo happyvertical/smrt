@@ -10,6 +10,7 @@ import {
   crossPackageRef,
   field,
   foreignKey,
+  ObjectRegistry,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped } from '@happyvertical/smrt-tenancy';
@@ -292,7 +293,7 @@ export class VoiceOutput extends Content {
     options: VoiceOutputFromSynthesizedSpeechOptions,
   ): VoiceOutput {
     const { speech, audioMetadata, duration, wordTimings, ...rest } = options;
-    return new VoiceOutput({
+    return new (ObjectRegistry.resolveEffectiveConstructor(VoiceOutput))({
       ...rest,
       duration: duration ?? speech.durationSeconds ?? 0,
       wordTimings: wordTimings ?? wordTimingsFromSpeech(speech.words),

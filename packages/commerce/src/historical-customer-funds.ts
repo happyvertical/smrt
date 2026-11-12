@@ -1,5 +1,6 @@
 /** Retained original cash is factual authority, never a forged completed Payment. */
 import { createHash } from 'node:crypto';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
 import { ISO_4217_MINOR_UNITS } from '@happyvertical/smrt-ui/currency';
@@ -468,7 +469,9 @@ export async function recordHistoricalCustomerFunds(
           'Historical cash refund exceeds matching issued-credit capacity',
         );
     }
-    const row = await new HistoricalCustomerFunds({
+    const row = await new (ObjectRegistry.resolveEffectiveConstructor(
+      HistoricalCustomerFunds,
+    ))({
       db,
       id: identity({
         tenantId: input.tenantId,
@@ -894,7 +897,9 @@ export async function recordHistoricalCustomerAllocation(
       effect,
       journalId: null,
     };
-    const row = await new HistoricalCustomerFundsAllocation({
+    const row = await new (ObjectRegistry.resolveEffectiveConstructor(
+      HistoricalCustomerFundsAllocation,
+    ))({
       db,
       id: identity({
         tenantId: input.tenantId,
@@ -1020,7 +1025,9 @@ export async function applyHistoricalCustomerFunds(
       false,
       'historical-receipt',
     );
-    const row = await new HistoricalCustomerFundsAllocation({
+    const row = await new (ObjectRegistry.resolveEffectiveConstructor(
+      HistoricalCustomerFundsAllocation,
+    ))({
       db,
       id: identity({ tenantId: input.tenantId, sourceKeyHash }),
       tenantId: input.tenantId,
@@ -1126,7 +1133,9 @@ export async function refundHistoricalCustomerFunds(
       recordedAt: new Date().toISOString(),
       operations: [],
     };
-    const payment = await new Payment({
+    const payment = await new (ObjectRegistry.resolveEffectiveConstructor(
+      Payment,
+    ))({
       db,
       id: identity({
         tenantId: input.tenantId,
@@ -1187,7 +1196,9 @@ export async function refundHistoricalCustomerFunds(
       refundSource: { kind: 'unallocated-funds', receiptId: input.receiptId },
       currentRequest: request,
     };
-    const row = await new HistoricalCustomerFunds({
+    const row = await new (ObjectRegistry.resolveEffectiveConstructor(
+      HistoricalCustomerFunds,
+    ))({
       db,
       id: identity({
         tenantId: input.tenantId,

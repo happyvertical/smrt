@@ -218,8 +218,14 @@ package or a class that was never replaced.
   A junction collection is created against the effective class too, and
   `setLinks()` judges batch eligibility on the constructor it will build, so an
   app subclass that overrides the lifecycle takes the sequential path at once.
-- Limit: a direct `new Model(...)` in a service bypasses the collection and still
-  builds the class it imported.
+- A direct `new Model(...)` in a service bypasses the collection and builds the
+  class it imported, so an app subclass never applies. Package sources build
+  registered models through the collection's `create()`, or where no collection
+  fits through `ObjectRegistry.resolveEffectiveConstructor(Model)` (same rule as
+  `resolveItemConstructor()`). `pnpm check:direct-model-construction`
+  (`scripts/check-direct-model-construction.mjs`) fails on a new direct call; its
+  baseline `scripts/direct-model-construction-baseline.json` may only shrink and
+  each entry states why the call must stay (#4931).
 
 ## Child Accessors (R10)
 

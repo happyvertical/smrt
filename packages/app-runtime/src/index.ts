@@ -17,7 +17,10 @@ import {
   type RuntimeProviderOverrides,
   resolveApplicationRuntime,
 } from '@happyvertical/smrt-config';
-import { setDatabaseSyncDeviceId } from '@happyvertical/smrt-core';
+import {
+  ObjectRegistry,
+  setDatabaseSyncDeviceId,
+} from '@happyvertical/smrt-core';
 import { TaskRunner, type TaskRunnerConfig } from '@happyvertical/smrt-jobs';
 import { Person, ProfileTypeCollection } from '@happyvertical/smrt-profiles';
 import { withSystemContext } from '@happyvertical/smrt-tenancy';
@@ -1209,7 +1212,7 @@ async function createLocalOwnerRecords(
       description: 'An individual person',
     }),
   );
-  const person = new Person({
+  const person = new (ObjectRegistry.resolveEffectiveConstructor(Person))({
     db,
     id: identity.profileId,
     _skipLoad: true,

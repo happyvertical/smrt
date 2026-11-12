@@ -325,6 +325,11 @@ jobs:
       - name: Check smrt package graph is acyclic
         run: node scripts/check-package-dag.mjs
 
+      # Registered models are built through their collection, never `new Model()`
+      # in package sources, so an app's same-named subclass applies (#4931).
+      - name: Check direct model construction
+        run: node scripts/check-direct-model-construction.mjs
+
       # Agent instruction-chain budget (#2106, #2108). The org-wide
       # `hv-agent audit` caps root+package AGENTS.md at 32 KB; this catches a
       # breach on the PR that grew the doc and warns above 80% of the cap.

@@ -12,6 +12,7 @@ import {
   detectEngine,
   isEmbeddedDatabase,
   isTransientDatabaseError,
+  ObjectRegistry,
   withEmbeddedWriteTransaction,
 } from '@happyvertical/smrt-core';
 import { SmrtJobCollection } from '@happyvertical/smrt-jobs';
@@ -4052,7 +4053,9 @@ export class IngestionService {
       if (Array.isArray(cleanup))
         for (const entry of cleanup) {
           const locator = object(entry);
-          const asset = new Asset({ db: this.db });
+          const asset = new (ObjectRegistry.resolveEffectiveConstructor(Asset))(
+            { db: this.db },
+          );
           asset.id = String(locator.assetId);
           asset.tenantId = this.scope.tenantId;
           asset.sourceUri = String(locator.sourceUri);
