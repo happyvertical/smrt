@@ -2970,6 +2970,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-inference':
+        specifier: workspace:*
+        version: link:../inference
       '@happyvertical/smrt-svelte':
         specifier: workspace:*
         version: link:../smrt-svelte
@@ -2983,9 +2986,6 @@ importers:
         specifier: ^0.111.10
         version: 0.111.10(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
-      '@happyvertical/smrt-inference':
-        specifier: workspace:*
-        version: link:../inference
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
@@ -4260,6 +4260,9 @@ importers:
       '@happyvertical/smrt-desktop':
         specifier: workspace:*
         version: link:../smrt-desktop
+      ajv:
+        specifier: ^8.20.0
+        version: 8.20.0
     devDependencies:
       '@happyvertical/smrt-agents':
         specifier: workspace:*
