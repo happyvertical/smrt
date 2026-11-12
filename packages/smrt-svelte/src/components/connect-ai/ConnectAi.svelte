@@ -93,16 +93,20 @@ async function refresh(): Promise<void> {
       info = next;
       if (presentation !== 'compact') failed = false;
       if (!next.chatgpt.signingIn && !awaitingChatGPT) signInUrl = undefined;
-      onchange?.(next, next.configured);
+      onchange?.(next, engineReady(next));
       if (presentation === 'compact') {
         if (!busy) {
           for (const tool of next.tools) {
             if (!awaiting.has(tool.tool) || tool.login === 'running') continue;
             awaiting.delete(tool.tool);
-            if (tool.signedIn && next.engine !== tool.tool) {
+            if (
+              tool.signedIn &&
+              tool.ready === true &&
+              next.engine !== tool.tool
+            ) {
               await client.connect(tool.tool, active.signal);
               info = await client.state(active.signal);
-              onchange?.(info, info.configured);
+              onchange?.(info, engineReady(info));
             } else if (!tool.signedIn) {
               message = `Signing in to ${tool.label ?? (tool.tool === 'codex' ? 'Codex' : 'Claude Code')} did not finish. Try again.`;
               failed = true;
@@ -114,7 +118,7 @@ async function refresh(): Promise<void> {
             if (next.chatgpt.signedIn) {
               await client.choose('chatgpt', active.signal);
               info = await client.state(active.signal);
-              onchange?.(info, info.configured);
+              onchange?.(info, engineReady(info));
             } else {
               message =
                 next.chatgpt.error?.message ??
@@ -195,7 +199,10 @@ async function use(tool: ConnectAiState['tools'][number]) {
     if (result?.result === 'missing') {
       message = `${label} is not installed.`;
       failed = true;
-    } else if (result?.result === 'ready' || tool.signedIn)
+    } else if (
+      result?.result === 'ready' ||
+      (tool.signedIn && tool.ready === true)
+    )
       message = `${label} is connected.`;
     else {
       awaiting.add(tool.tool);
@@ -367,17 +374,17 @@ onMount(() => {
             <div class="smrt-connect-ai__row">
               <div>
                 <h3>{label}</h3>
-                <p>{t(!found?.installed ? M['ui.connect_ai.missing'] : found.signedIn === null ? M['ui.connect_ai.unknown'] : found.signedIn ? M['ui.connect_ai.signed_in'] : M['ui.connect_ai.signed_out'])}</p>
+                <p>{t(!found?.installed ? M['ui.connect_ai.missing'] : found.signedIn === null ? M['ui.connect_ai.unknown'] : found.signedIn && found.ready !== true ? M['ui.connect_ai.unusable'] : found.signedIn ? M['ui.connect_ai.signed_in'] : M['ui.connect_ai.signed_out'])}</p>
                 {#if found?.startError}<p role="alert">{t(M[`ui.connect_ai.${found.startError}`])}</p>{/if}
                 {#if found?.login === 'failed'}<p role="alert">{t(M['ui.connect_ai.sign_in_error'])}</p>{/if}
               </div>
               {#if !found?.installed}
                 <Button href={safeHref(found?.installUrl ?? '') ?? undefined} target="_blank" rel="noopener noreferrer" variant="secondary">{t(M['ui.connect_ai.install'], { tool: label })} {t(M['ui.connect_ai.new_tab'])}</Button>
-              {:else if found.signedIn && found.ready !== false && info.engine === option.tool}
+              {:else if found.signedIn && found.ready === true && info.engine === option.tool}
                 <Badge>{t(M['ui.connect_ai.in_use'])}</Badge>
               {:else}
-                <Button disabled={busy || found.login === 'running'} onclick={() => act(() => found.signedIn === null || found.ready === false ? refresh() : client.connect(option.tool, active.signal))}>
-                  {t(found.login === 'running' ? M['ui.connect_ai.waiting'] : found.signedIn === null || found.ready === false ? M['ui.connect_ai.retry'] : found.signedIn ? M['ui.connect_ai.use'] : M['ui.connect_ai.sign_in'], { tool: label })}
+                <Button disabled={busy || found.login === 'running'} onclick={() => act(() => found.signedIn === null || (found.signedIn && found.ready !== true) ? refresh() : client.connect(option.tool, active.signal))}>
+                  {t(found.login === 'running' ? M['ui.connect_ai.waiting'] : found.signedIn === null || (found.signedIn && found.ready !== true) ? M['ui.connect_ai.retry'] : found.signedIn ? M['ui.connect_ai.use'] : M['ui.connect_ai.sign_in'], { tool: label })}
                 </Button>
               {/if}
             </div>
@@ -425,7 +432,7 @@ onMount(() => {
     {#if signInUrl}
       <Button href={signInUrl} target="_blank" rel="noopener noreferrer" variant="secondary">{t(M['ui.connect_ai.open_sign_in'])} {t(M['ui.connect_ai.new_tab'])}</Button>
     {/if}
-    <p role="status">{t(info.configured ? M['ui.connect_ai.ready'] : M['ui.connect_ai.not_ready'])}</p>
+    <p role="status">{t(engineReady(info) ? M['ui.connect_ai.ready'] : M['ui.connect_ai.not_ready'])}</p>
     <p>{t(M['ui.connect_ai.legal'])}</p>
     <p><a href="https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations" target="_blank" rel="noopener noreferrer">{t(M['ui.connect_ai.preview'])} {t(M['ui.connect_ai.new_tab'])}</a></p>
   {/if}
@@ -447,6 +454,8 @@ onMount(() => {
           Not installed on this computer.
         {:else if tool.signedIn === null}
           Installed, but it did not answer.
+        {:else if tool.signedIn && tool.ready !== true}
+          {t(M['ui.connect_ai.unusable'])}
         {:else if tool.signedIn}
           Installed and signed in{tool.version ? `, version ${tool.version}` : ''}.
         {:else}

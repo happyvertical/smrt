@@ -186,6 +186,26 @@ describe('Connect AI route over inference APIs', () => {
     expect(output).not.toMatch(/sk-server-secret|secret-account/);
   });
 
+  it('refuses signed-in legacy status without a successful preflight', async () => {
+    const { routes, binding } = setup();
+    vi.spyOn(binding.cli, 'cliStatus').mockResolvedValue({
+      tool: 'codex',
+      label: 'Codex',
+      installUrl: 'https://developers.openai.com/codex/cli',
+      installed: true,
+      signedIn: true,
+    });
+    for (const body of [
+      { action: 'connect', tool: 'codex' },
+      { action: 'select', engine: 'codex' },
+    ]) {
+      const response = await routes.POST(event(body));
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ code: 'engine_not_ready' });
+    }
+    expect(binding.select).not.toHaveBeenCalled();
+  });
+
   it('starts only vendor CLI login and lets polling observe completion before selection', async () => {
     const { routes, dir, binding } = setup();
     installFakeCli(join(dir, 'bin'), 'codex');

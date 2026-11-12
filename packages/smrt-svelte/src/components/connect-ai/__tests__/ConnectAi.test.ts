@@ -42,6 +42,29 @@ describe.each([
   undefined,
   'compact',
 ] as const)('startup readiness in %s presentation', (presentation) => {
+  it('does not trust a configured snapshot without a successful per-engine preflight', async () => {
+    const info = state();
+    info.engine = 'claude-code';
+    info.configured = true;
+    Object.assign(info.tools[0], { installed: true, signedIn: true });
+    const onchange = vi.fn();
+    render(ConnectAi, {
+      client: client(info),
+      presentation,
+      apiKeyHref: '/settings',
+      initialState: info,
+      onchange,
+    });
+    expect(
+      await screen.findByText('Installed, but not usable in this app.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('In use')).toBeNull();
+    expect(screen.queryByText('The assistant is ready.')).toBeNull();
+    expect(
+      await screen.findByRole('button', { name: 'Check again' }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(onchange).toHaveBeenLastCalledWith(info, false));
+  });
   it.each([
     'working_directory',
     'runtime_unavailable',
@@ -128,6 +151,7 @@ it('starts the installed CLI vendor login and polls, then lets the user select t
     await screen.findByRole('button', { name: 'Waiting for sign-in…' }),
   ).toBeDisabled();
   info.tools[1].signedIn = true;
+  info.tools[1].ready = true;
   info.tools[1].login = 'finished';
   // A refreshed status is a new server snapshot, not a mutated browser credential.
   vi.mocked(api.state).mockImplementation(async () => structuredClone(info));
@@ -319,6 +343,7 @@ it('compact hosts select a CLI after the vendor login finishes, including immedi
   vi.mocked(api.state).mockImplementation(async () => structuredClone(info));
   vi.mocked(api.connect).mockImplementation(async () => {
     info.tools[0].signedIn = true;
+    info.tools[0].ready = true;
     info.tools[0].login = 'finished';
     if (vi.mocked(api.connect).mock.calls.length === 2) {
       info.engine = 'claude-code';

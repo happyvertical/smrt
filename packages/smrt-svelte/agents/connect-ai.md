@@ -4,6 +4,16 @@
 Connect AI shows its translated app-only-tools incompatibility, suppresses ready
 and In use, and offers Check again. It never enables the CLI's built-in tools.
 
+CLI readiness requires `ready === true` from inference's startup preflight,
+not merely installed/signed-in or a stale top-level `configured` snapshot.
+Both presentations and the onboarding `onchange` gate use this same condition.
+Each engine is missing, signed out/unknown, installed-but-unusable with its fixed
+reason, or preflighted ready. Only the last may say In use / assistant ready.
+The native Codex compatibility/options evidence lives in inference's
+[engine contract](../../inference/agents/engines.md#codex-01621-compatibility-evidence-and-owner-options).
+Mounted tests refuse absent preflight even when `configured: true`; existing
+positive sign-in fixtures explicitly complete preflight before selection.
+
 `ConnectAi` is a Provider-free, Svelte 5 onboarding step or settings panel. It
 composes smrt-ui Button/Card/Badge and translated `ui.connect_ai.*` messages,
 with token-only styling, heading/region names, live status, accessible errors,

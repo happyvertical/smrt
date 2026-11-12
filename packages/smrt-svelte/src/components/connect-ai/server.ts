@@ -178,7 +178,8 @@ export function mountConnectAiRoutes<E extends ConnectAiRequestEvent>(options: {
           const found = await binding.cli.cliStatus(body.tool, { fresh: true });
           if (!found.installed) return error(409, 'cli_missing');
           if (found.signedIn === null) return error(502, 'cli_no_answer');
-          if (found.ready === false) return error(409, 'engine_not_ready');
+          if (found.signedIn && found.ready !== true)
+            return error(409, 'engine_not_ready');
           if (found.signedIn) {
             await binding.select(body.tool);
             return json({ ok: true });

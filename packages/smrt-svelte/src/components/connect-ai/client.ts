@@ -52,7 +52,7 @@ export function engineReady(info: OnboardingInfo): boolean {
   if (info.engine === 'api') return info.apiReady;
   if (info.engine === 'chatgpt') return info.chatgpt?.signedIn === true;
   const tool = info.tools.find((t) => t.tool === info.engine);
-  return !!tool?.installed && tool.signedIn === true && tool.ready !== false;
+  return !!tool?.installed && tool.signedIn === true && tool.ready === true;
 }
 
 /**
@@ -123,7 +123,7 @@ export type ToolAction =
 /** The one button a tool gets, and its words. */
 export function toolAction(tool: ToolInfo, info: OnboardingInfo): ToolAction {
   if (!tool.installed) return { kind: 'install', label: 'How to install' };
-  if (tool.signedIn === null || tool.ready === false)
+  if (tool.signedIn === null || (tool.signedIn === true && tool.ready !== true))
     return { kind: 'retry', label: 'Check again' };
   if (tool.signedIn === false)
     return tool.login === 'running'

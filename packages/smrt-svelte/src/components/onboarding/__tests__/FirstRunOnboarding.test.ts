@@ -64,6 +64,7 @@ function fixture(
           tool: 'codex',
           installed: true,
           signedIn: true,
+          ready: true,
           login: 'idle',
           installUrl: 'https://developers.openai.com/codex/cli',
         },
