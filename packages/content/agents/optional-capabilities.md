@@ -26,3 +26,11 @@ refuses both image SDK and Sharp resolution; the existing rendering tests verify
 that first use still dispatches to the SDK. No new public API, component, helper,
 model or persistence path is introduced. All runtimes supported by this Node-only
 server operation keep its async signature; SQL dialect behavior is unchanged.
+
+Content editor chat resolves the AI SDK only when an actual send needs the default
+client. Its existing injected `getAIClient` seam short-circuits that import; model
+selection and missing-configuration errors still run first. The published-root
+startup guard also refuses the AI SDK root. Existing chat and image-generation
+operation tests prove the SDK is still reachable at first use. Reuse: MCP content
+review and exact `getAI`/client-acquisition searches found this async send seam;
+no second provider selector, wrapper, helper or public signature is introduced.

@@ -38,7 +38,7 @@ vi.mock('@happyvertical/smrt-images', () => ({
 import { ThumbnailGenerator } from './thumbnail-generator';
 
 describe('ThumbnailGenerator', () => {
-  it('imports published content without loading the unused image SDK or sharp', () => {
+  it('imports published content without loading unused AI or image SDKs', () => {
     const child = spawnSync(
       process.execPath,
       [
@@ -46,7 +46,7 @@ describe('ThumbnailGenerator', () => {
         '-e',
         `import { registerHooks } from 'node:module';
 registerHooks({ resolve(specifier, context, next) {
-  if (specifier === 'sharp' || specifier === '@happyvertical/images') throw new Error('image processor loaded at boot');
+  if (specifier === 'sharp' || specifier === '@happyvertical/images' || specifier === '@happyvertical/ai') throw new Error('image processor loaded at boot');
   return next(specifier, context);
 } });
 const content = await import(${JSON.stringify(new URL('../dist/index.js', import.meta.url).href)});
