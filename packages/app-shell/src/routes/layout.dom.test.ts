@@ -523,7 +523,7 @@ describe('draft controls in the content column', () => {
     expect(
       q('#smrt-admin-shell-main')?.contains(button('Start draft') ?? null),
     ).toBe(true);
-    expect(q('.draft-strip')).toBeNull();
+    expect(q('.smrt-draft-bar__draft-strip')).toBeNull();
   });
 
   it('starts a draft and explicitly saves the draft view', async () => {
@@ -554,7 +554,7 @@ describe('draft controls in the content column', () => {
     expect(q('a[href="/draft/review"]')?.textContent).toContain(
       'Review and publish',
     );
-    expect(q('.draft-strip')?.textContent).toBe(
+    expect(q('.smrt-draft-bar__draft-strip')?.textContent).toBe(
       'Draft: a test copy. Records you add here are thrown away when you publish.',
     );
     expect(q('.smrt-tenant-nav a[href="/m/Order"] small')?.textContent).toBe(
@@ -567,7 +567,7 @@ describe('draft controls in the content column', () => {
   it('keeps live navigation and hides the strip in Live view while building in draft', async () => {
     await render(draftData('live'));
     expect(button('Live')?.getAttribute('aria-pressed')).toBe('true');
-    expect(q('.draft-strip')).toBeNull();
+    expect(q('.smrt-draft-bar__draft-strip')).toBeNull();
     expect(q('.smrt-tenant-nav a[href="/m/Order"]')).toBeNull();
     expect(panel()?.textContent).toContain('Building in draft');
   });
@@ -601,7 +601,7 @@ describe('draft controls in the content column', () => {
       '/api/shell/records/Customer?limit=500&target=live',
       expect.anything(),
     );
-    expect(q('.draft-strip')).toBeNull();
+    expect(q('.smrt-draft-bar__draft-strip')).toBeNull();
   });
 
   it('preserves the viewed copy if saving the view fails', async () => {
@@ -668,8 +668,8 @@ describe('draft controls in the content column', () => {
     expect(main?.contains(q('[role="group"][aria-label="View copy"]'))).toBe(
       true,
     );
-    expect(main?.contains(q('.draft-actions'))).toBe(true);
-    expect(main?.contains(q('.draft-strip'))).toBe(true);
+    expect(main?.contains(q('.smrt-draft-bar__draft-actions'))).toBe(true);
+    expect(main?.contains(q('.smrt-draft-bar__draft-strip'))).toBe(true);
   });
 
   it.each([

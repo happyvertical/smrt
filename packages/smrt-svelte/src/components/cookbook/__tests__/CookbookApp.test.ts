@@ -125,7 +125,7 @@ describe('CookbookApp', () => {
     render(Harness, { cookbook: changed, catalog, sectionId: 'custom:shop' });
     await waitFor(() => {
       const main = document.querySelector(
-        'main.cookbook-section',
+        'main[data-smrt-component="CookbookSectionPage"]',
       ) as HTMLElement;
       const label = within(main).getByText('Clients');
       const link = label.closest('a');
@@ -169,7 +169,7 @@ describe('CookbookApp', () => {
     });
     await waitFor(() => {
       const link = document.querySelector(
-        'main.cookbook-section a[href="/m/app/Note/"]',
+        'main[data-smrt-component="CookbookSectionPage"] a[href="/m/app/Note/"]',
       );
       expect(link?.textContent).toContain('Notes');
       expect(link?.querySelector('path')?.getAttribute('d')).toBe(

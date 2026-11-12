@@ -238,7 +238,9 @@ it('keeps a host alternative inside the AI step card and removes it on other ste
     name: 'Use with your own AI in Settings',
   });
   expect(alternative.closest('[data-smrt-component="Card"]')).toBeTruthy();
-  expect(alternative.closest('main.onboarding')).toBeTruthy();
+  expect(
+    alternative.closest('main[data-smrt-component="FirstRunOnboarding"]'),
+  ).toBeTruthy();
   await userEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
   expect(screen.queryByRole('link', { name: aiAlternative.label })).toBeNull();
 });
