@@ -284,8 +284,13 @@ describe('PostgreSQL ON DELETE convergence (#3023)', () => {
     expect(
       diff.changes.some((change) => change.type === 'add_foreign_key'),
     ).toBe(false);
-    expect(mock.queries.some((sql) => sql.includes('FROM pg_constraint'))).toBe(
-      false,
-    );
+    // No foreign-key catalog lookup (the shared-table check query, #4932, reads
+    // the same catalog for `contype = 'c'`).
+    expect(
+      mock.queries.some(
+        (sql) =>
+          sql.includes('FROM pg_constraint') && sql.includes("contype = 'f'"),
+      ),
+    ).toBe(false);
   });
 });

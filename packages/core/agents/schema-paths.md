@@ -125,6 +125,36 @@ winning, before types are converted. It works on `RawFieldDefinition`s (type
 annotations and decorators), not converted fields, so it does not use this
 module; the two agree because core's rule is nearest-wins as well.
 
+### An app hardens a smrt object by overriding a field (#4932)
+
+The nearest declaration wins, tighter or looser. The one limit: a field that is
+required **and** carries `requiredFor` (`_meta.requiredFor`, #4923) may not be
+made optional by a subclass. `resolveInheritedFields` reports it through
+`onRequiredLoosened`; `ManifestGenerator.mergeInheritedFields()` throws
+`CONFIG_REQUIRED_FIELD_LOOSENED` naming the class and field. The registry does
+not pass the callback: the build is the gate. A required `@tenantId()` carries
+`requiredFor: 'tenant-scope'` (scanner and `smrt-tenancy`), so it is covered by
+the same fact.
+
+What the database does with a stricter subclass field:
+
+- Own-table class: the column is `NOT NULL`.
+- Shared-table (STI) class: every column stays nullable, so `sti-hardening.ts`
+  adds a table `CHECK` on PostgreSQL that is true for every other class:
+  `_meta_type NOT IN ('<class>', ...) OR "col" IS NOT NULL`. One constraint per
+  column lists the requiring classes, descendants included; its name is
+  `smrt_ck_<hash of table, column, rule>`. It is carried as `schema.checks` in
+  the manifest and `SchemaDefinition.checks`.
+- It covers a field the subclass requires and the **base leaves optional**. A
+  field the base itself requires keeps today's nullable column.
+- The differ (`compareTableChecks`) adds a missing constraint (`alter_column`,
+  alteration `set_check`), reports instead when live rows already break the
+  rule, and drops a `smrt_ck_` constraint the manifest no longer declares
+  (`drop_check`). Other constraints are never touched.
+- SQLite and DuckDB get no constraint. SQLite cannot add one in place and
+  DuckDB has no per-class form. There the rule is smrt's save-time check
+  (`VALIDATION_REQUIRED_FIELD`).
+
 ### Index rules (#2359)
 
 - **Reference columns are always indexed.** `ensureReferenceColumnIndexes()`

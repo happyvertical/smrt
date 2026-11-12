@@ -342,6 +342,8 @@ export interface ManifestSchema {
   ddl: string;
   columns: Record<string, ManifestColumnDefinition>;
   indexes: ManifestIndexDefinition[];
+  /** Table-level checks (PostgreSQL only; #4932). */
+  checks?: Array<{ name: string; columns: string[]; expression: string }>;
   version: string; // Hash of schema definition for migration tracking
 }
 

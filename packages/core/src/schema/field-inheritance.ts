@@ -40,6 +40,10 @@
  *   for a shared-table one. In an own-table class a concrete ancestor's own
  *   `parentId` never replaces that binding; the class's own declaration does.
  *
+ * The one limit on loosening: a field that is required and carries
+ * `requiredFor` (smrt's own code is wrong without it) may not become
+ * optional. The build reports it through `onRequiredLoosened` (#4932).
+ *
  * Methods merge by a different rule and are not part of this.
  */
 
@@ -83,6 +87,18 @@ export interface ResolveInheritedFieldsInput<F extends InheritableField> {
   /** The class's own declared fields, applied last. */
   own: Iterable<readonly [string, F]>;
   representation: FieldRepresentation;
+  /**
+   * Called when a redeclaration makes a field optional that smrt requires for
+   * its own correctness: the inherited field is required and carries
+   * `requiredFor` (#4923). The one limit on what an app may loosen (#4932).
+   * The build throws here; the registry does not pass it.
+   */
+  onRequiredLoosened?: (
+    fieldName: string,
+    requiredFor: string,
+    inherited: F,
+    resolved: F,
+  ) => void;
   /** Called when a replacement changes a field's type (a developer warning). */
   onTypeMismatch?: (
     fieldName: string,
@@ -319,7 +335,17 @@ export function resolveInheritedFields<F extends InheritableField>(
     ) {
       input.onTypeMismatch(name, inherited.type, incoming.type, inherited);
     }
-    return fillMissing(inherited, incoming, representation);
+    const resolved = fillMissing(inherited, incoming, representation);
+    const reason = inherited._meta?.requiredFor;
+    if (
+      input.onRequiredLoosened &&
+      typeof reason === 'string' &&
+      inherited.required === true &&
+      resolved.required !== true
+    ) {
+      input.onRequiredLoosened(name, reason, inherited, resolved);
+    }
+    return resolved;
   };
 
   for (const link of ancestors) {

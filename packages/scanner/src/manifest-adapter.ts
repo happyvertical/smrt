@@ -1215,6 +1215,11 @@ export class ManifestAdapter {
         _meta: {
           sqlType: 'UUID',
           ...(parsedOptions ?? {}),
+          // smrt's tenant filter is wrong without it, so the manifest says
+          // why, like any other required field with a reason (#4932).
+          ...(required && !nullable && parsedOptions?.requiredFor === undefined
+            ? { requiredFor: 'tenant-scope' }
+            : {}),
           __tenancy: {
             isTenantIdField: true,
             autoFilter: parsedOptions?.autoFilter ?? true,

@@ -35,6 +35,7 @@ import type {
   IndexDefinition,
   SchemaDefinition,
   SQLDataType,
+  TableCheckDefinition,
 } from './types.js';
 
 const logger = createLogger({ level: 'info' });
@@ -72,6 +73,7 @@ export interface ManifestSchemaLike {
   ddl?: string;
   columns?: Record<string, ManifestColumnLike>;
   indexes?: ManifestIndexLike[];
+  checks?: TableCheckDefinition[];
   version?: string;
 }
 
@@ -163,6 +165,9 @@ export function manifestSchemaToDefinition(
     columns,
     indexes: manifestIndexesToDefinitions(schema.indexes),
     triggers: [],
+    ...(schema.checks?.length
+      ? { checks: schema.checks.map((check) => ({ ...check })) }
+      : {}),
     foreignKeys,
     dependencies: foreignKeys
       .map((foreignKey) => foreignKey.referencesTable)
@@ -238,6 +243,12 @@ export function mergeSchemaDefinitionInto(
     }
     if (index.nullsNotDistinct !== undefined)
       existing.nullsNotDistinct = index.nullsNotDistinct;
+  }
+  for (const check of incoming.checks ?? []) {
+    target.checks ??= [];
+    if (!target.checks.some((existing) => existing.name === check.name)) {
+      target.checks.push({ ...check });
+    }
   }
   const foreignKeyKeys = new Set(
     target.foreignKeys.map(

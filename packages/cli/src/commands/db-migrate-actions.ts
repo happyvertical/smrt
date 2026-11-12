@@ -8,7 +8,9 @@ export type ColumnAlterationLike =
   | 'set_not_null'
   | 'drop_not_null'
   | 'set_default'
-  | 'drop_default';
+  | 'drop_default'
+  | 'set_check'
+  | 'drop_check';
 
 /**
  * Report-only detail attached to a change the differ surfaces but does not

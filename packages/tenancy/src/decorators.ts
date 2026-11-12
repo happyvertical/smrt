@@ -229,6 +229,10 @@ export function tenantId(options: TenantIdFieldOptions = {}) {
           sqlType: 'UUID',
           required: opts.required,
           nullable: opts.nullable,
+          // smrt's tenant filter is wrong without it (#4932).
+          ...(opts.required && !opts.nullable
+            ? { requiredFor: 'tenant-scope' as const }
+            : {}),
           __tenancy: {
             ...opts,
             isTenantIdField: true,

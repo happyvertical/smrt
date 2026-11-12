@@ -85,6 +85,14 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
       columnDefs.push(renderForeignKeyConstraint(tableName, foreignKey));
     }
 
+    if (this.supportsTableChecks()) {
+      for (const check of schema.checks ?? []) {
+        columnDefs.push(
+          `CONSTRAINT ${quoteIdentifier(check.name)} CHECK (${check.expression})`,
+        );
+      }
+    }
+
     sql += columnDefs.map((def) => `  ${def}`).join(',\n');
     sql += '\n);';
 
@@ -364,6 +372,14 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
    */
   supportsTriggers(): boolean {
     return true;
+  }
+
+  /**
+   * Whether `SchemaDefinition.checks` are emitted as table constraints.
+   * PostgreSQL only (#4932); the other engines keep the rule in the manifest.
+   */
+  supportsTableChecks(): boolean {
+    return false;
   }
 
   /**
