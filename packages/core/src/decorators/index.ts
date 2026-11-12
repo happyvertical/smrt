@@ -120,7 +120,8 @@ export interface FieldOptions {
   required?: boolean;
   /**
    * The reason smrt's own code needs this field (see
-   * {@link RequiredForReason}). Every `required: true` field in a smrt package
+   * {@link RequiredForReason}). Every field in a smrt package that a caller
+   * must supply (required, and no class initializer holding a real value)
    * states one, and `scripts/check-required-reasons.mjs` fails the lint gate
    * when it does not. The value must be a string literal so the scanner and
    * the check can read it from source. An app may not loosen a field that
