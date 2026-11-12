@@ -1,7 +1,7 @@
 // Ported subprocess lifecycle/security cases. No real CLI or provider is used.
 // Shell tests additionally exercise these engines through its real owner policy.
 import { randomBytes } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
@@ -850,4 +850,25 @@ describe('blocked tool diagnostics and schema result channels', () => {
       'raw-payload',
     );
   });
+});
+
+it('continues the app request after sandbox-confined Codex builtins, without logging their arguments or leaving files', async () => {
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const { deps, stateDir } = setup('codex');
+  const { events, stop } = await turn('codex', 'confined', { deps });
+  expect(stop).toBe('complete');
+  expect(events).not.toContainEqual(expect.objectContaining({ type: 'error' }));
+  for (const name of ['apply_patch', 'exec_command'])
+    expect(log).toHaveBeenCalledWith(
+      '[smrt-inference] local engine failure',
+      expect.objectContaining({
+        code: 'agent_tool_confined',
+        blockedTool: name,
+        blockedKind: 'confined_builtin',
+      }),
+    );
+  expect(JSON.stringify([events, log.mock.calls])).not.toMatch(
+    /secret-payload|secret-path/,
+  );
+  expect(readdirSync(join(stateDir, 'run'))).toEqual([]);
 });

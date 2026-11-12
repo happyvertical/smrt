@@ -3,8 +3,8 @@
 // event kinds over time, and nothing here may depend on a kind it has not seen.
 //
 // `forbidden` is a safety net, not the lock: every machine-touching tool is
-// switched off on the command line (see ./session.ts). If a stream ever shows
-// one anyway, the turn stops instead of carrying on.
+// switched off or OS-confined by the secured spec (see ./session.ts). Unknown
+// and unoffered tools stop; known Codex file/command items are diagnostic-only.
 
 export type AgentEvent =
   | { type: 'session'; id: string }
@@ -15,7 +15,11 @@ export type AgentEvent =
   | { type: 'message'; text: string }
   | { type: 'tool_use'; id: string; name: string; args: string }
   | { type: 'tool_result'; id: string; ok: boolean; text: string }
-  | { type: 'forbidden'; what: string; kind?: 'unoffered_mcp' | 'unknown_item' }
+  | {
+      type: 'forbidden';
+      what: string;
+      kind?: 'unoffered_mcp' | 'unknown_item' | 'confined_builtin';
+    }
   | {
       type: 'done';
       ok: boolean;
@@ -180,9 +184,9 @@ export function claudeParser(outputSchema?: Record<string, unknown>) {
 }
 
 /**
- * The only item kinds a turn through the shell's tools produces. Anything
- * else (a command, a file change, a web search, a sub-agent call, a kind a
- * newer Codex adds) is treated as forbidden: fail closed.
+ * Ordinary app-tool item kinds. The default parser fails closed on others.
+ * Only the secured Codex spec opts known file/command items into native sandbox
+ * containment diagnostics; web, subagents and unknown kinds still stop.
  */
 const CODEX_ALLOWED_ITEMS: ReadonlySet<string> = new Set([
   'agent_message',
@@ -194,7 +198,7 @@ const CODEX_ALLOWED_ITEMS: ReadonlySet<string> = new Set([
 ]);
 
 /** Codex `exec --json`: whole items, no text deltas. */
-export function codexParser() {
+export function codexParser(options: { confinedBuiltins?: boolean } = {}) {
   return (line: string): AgentEvent[] => {
     const e = parse(line);
     if (!e) return [];
@@ -226,6 +230,19 @@ export function codexParser() {
       str(item.message).includes('code-mode host is disabled')
     )
       return [{ type: 'done', ok: false, error: 'tool_host_policy' }];
+    if (
+      options.confinedBuiltins &&
+      ['file_change', 'command_execution'].includes(kind)
+    )
+      return type === 'item.completed'
+        ? [
+            {
+              type: 'forbidden',
+              what: kind === 'file_change' ? 'apply_patch' : 'exec_command',
+              kind: 'confined_builtin',
+            },
+          ]
+        : [];
     if (!CODEX_ALLOWED_ITEMS.has(kind))
       return [
         { type: 'forbidden', what: kind || 'an item', kind: 'unknown_item' },

@@ -80,7 +80,7 @@ export function cliEngineStatus(
       ...(found.startError ? { startError: found.startError } : {}),
       message:
         found.startError === 'tool_host_policy'
-          ? `${label} is not supported with this Codex version yet. App tools require a host that also exposes built-in file tools; use a compatible engine in AI settings.`
+          ? `${label} cannot start the app tool host with this Codex version. Update Codex, then check again in AI settings.`
           : found.startError === 'working_directory'
             ? `${label} needs a writable temporary directory.`
             : found.startError === 'runtime_unavailable'

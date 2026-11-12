@@ -169,6 +169,7 @@ const diagnosticCodes = new Set([
   'agent_cli_failed',
   'agent_mcp_unavailable',
   'agent_tool_blocked',
+  'agent_tool_confined',
   'timeout',
   'invalid_scope',
   'owner_unavailable',
@@ -192,7 +193,7 @@ export function reportAgentFailure(
   code?: string,
   blocked?: {
     name: string;
-    kind: 'builtin' | 'unoffered_mcp' | 'unknown_item';
+    kind: 'builtin' | 'unoffered_mcp' | 'unknown_item' | 'confined_builtin';
   },
 ): string {
   if (error && typeof error === 'object') {
@@ -453,8 +454,29 @@ async function runAgentTurnImpl(
           return;
         }
         case 'forbidden':
+          if (tool === 'codex' && event.kind === 'confined_builtin') {
+            toolCalls++;
+            // The secured spec owns the OS boundary. Record only the fixed
+            // tool name, never commands, patches, paths or child output.
+            reportAgentFailure(
+              tool,
+              'guard',
+              undefined,
+              'agent_tool_confined',
+              {
+                name: event.what,
+                kind: event.kind,
+              },
+            );
+            return;
+          }
           // A tool outside the shell's own appeared in the stream: stop at once.
-          blockTool(event.what, event.kind ?? 'builtin');
+          blockTool(
+            event.what,
+            event.kind === 'confined_builtin'
+              ? 'builtin'
+              : (event.kind ?? 'builtin'),
+          );
           return;
         case 'tool_use': {
           toolCalls++;

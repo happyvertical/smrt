@@ -1,13 +1,11 @@
 // The exact command line, environment and stdin of one assistant turn through
 // a local agent CLI. The lock-down lives here, in one place:
 //
-//  - The only tools the model has are the shell's own, from the shell's MCP
-//    route, authenticated by a short-lived owner-bound token. Every built-in
-//    tool of the CLI that touches the machine (shell, file read/edit, web,
-//    sub-agents) is switched off, and the stream is checked for one anyway
-//    (stream.ts `forbidden`).
-//  - The CLI runs in an empty, private working directory and loads none of the
-//    person's own settings, hooks, skills, plugins or MCP servers.
+//  - App data is changed only through the owner-bound MCP route. Claude's
+//    built-ins are absent. Codex requires code_mode_host (and apply_patch):
+//    its OS sandbox permits writes only in this attempt's disposable cwd,
+//    excludes temp roots and denies command networking. Shell stays disabled.
+//  - No user config/rules, project documents, bundled skills or extra MCP.
 //  - The token never appears on a command line or on disk: it is in the
 //    child's environment only, and the MCP config names the variable.
 //  - The prompt is on stdin.
@@ -151,7 +149,7 @@ function claudeSpec(
 }
 
 /**
- * Codex features that reach the machine or the wider world, all switched off.
+ * Optional Codex features switched off. code_mode_host alone is enabled below.
  * Every name is one `codex features list` prints for 0.162.1.
  */
 const CODEX_DISABLED_FEATURES = [
@@ -172,7 +170,6 @@ const CODEX_DISABLED_FEATURES = [
   'tool_suggest',
   'goals',
   'code_mode',
-  'code_mode_host',
   'request_permissions_tool',
 ] as const;
 
@@ -205,7 +202,15 @@ function codexSpec(
           : (input.profile?.effort ?? 'high'),
       ),
     ],
-    ['sandbox_mode', toml('read-only')],
+    ['sandbox_mode', toml('workspace-write')],
+    ['sandbox_workspace_write.network_access', 'false'],
+    ['sandbox_workspace_write.writable_roots', '[]'],
+    ['sandbox_workspace_write.exclude_slash_tmp', 'true'],
+    ['sandbox_workspace_write.exclude_tmpdir_env_var', 'true'],
+    // No secret-bearing environment is inherited by a model-generated command.
+    ['shell_environment_policy.inherit', toml('none')],
+    ['project_doc_max_bytes', '0'],
+    ['skills.bundled.enabled', 'false'],
     ['approval_policy', toml('never')],
     ['web_search', toml('disabled')],
     [`${server}.url`, toml(input.mcpUrl)],
@@ -234,6 +239,8 @@ function codexSpec(
       ...CODEX_DISABLED_FEATURES.flatMap((f) => ['--disable', f]),
       '--enable',
       CODEX_MODERN_MCP_FEATURE,
+      '--enable',
+      'code_mode_host',
       ...overrides.flatMap(([k, v]) => ['-c', `${k}=${v}`]),
       ...(input.resumeId ? [input.resumeId] : []),
       '-',
@@ -241,7 +248,7 @@ function codexSpec(
     cwd: work,
     env: cliEnv(input.location, input.baseEnv, { [TOKEN_ENV]: input.token }),
     stdin: input.prompt,
-    parse: codexParser(),
+    parse: codexParser({ confinedBuiltins: true }),
     sessionId: input.resumeId ?? null,
     cleanup: () => rmSync(runDir, { recursive: true, force: true }),
   };
@@ -252,12 +259,22 @@ export function buildAgentRun(input: SpecInput): AgentRunSpec {
   assertLoopbackUrl(input.mcpUrl);
   if (input.profile?.model !== undefined)
     validateWorkModel(input.profile.model);
-  const work = join(input.stateDir, 'work');
-  mkdirSync(work, { recursive: true, mode: 0o700 });
   const runRoot = join(input.stateDir, 'run');
   mkdirSync(runRoot, { recursive: true, mode: 0o700 });
   const runDir = mkdtempSync(join(runRoot, 'turn-'));
-  return input.tool === 'claude-code'
-    ? claudeSpec(input, runDir, work)
-    : codexSpec(input, runDir, work);
+  try {
+    // Codex's code host brings apply_patch. Its only writable root must be a
+    // NEW empty 0700 folder on every attempt (also on resume/fallback).
+    const work =
+      input.tool === 'codex'
+        ? join(runDir, 'work')
+        : join(input.stateDir, 'work');
+    mkdirSync(work, { recursive: true, mode: 0o700 });
+    return input.tool === 'claude-code'
+      ? claudeSpec(input, runDir, work)
+      : codexSpec(input, runDir, work);
+  } catch (error) {
+    rmSync(runDir, { recursive: true, force: true });
+    throw error;
+  }
 }

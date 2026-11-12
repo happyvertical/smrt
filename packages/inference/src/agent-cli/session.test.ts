@@ -1,6 +1,12 @@
 // The lock-down, asserted: what the command line, the config file and the
 // environment of a turn contain, and what they must never contain.
-import { readFileSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { resolveWorkProfile } from '../work-profiles.js';
@@ -118,8 +124,21 @@ describe('Codex command line', () => {
       ]),
     );
     const overrides = a.flatMap((x, i) => (a[i - 1] === '-c' ? [x] : []));
-    expect(overrides).toContain('sandbox_mode="read-only"');
+    expect(overrides).toContain('sandbox_mode="workspace-write"');
     expect(overrides).toContain('approval_policy="never"');
+    expect(overrides).toEqual(
+      expect.arrayContaining([
+        'sandbox_workspace_write.network_access=false',
+        'sandbox_workspace_write.writable_roots=[]',
+        'sandbox_workspace_write.exclude_slash_tmp=true',
+        'sandbox_workspace_write.exclude_tmpdir_env_var=true',
+        'shell_environment_policy.inherit="none"',
+      ]),
+    );
+    expect(disabled).not.toContain('code_mode_host');
+    expect(
+      a.some((v, i) => v === 'code_mode_host' && a[i - 1] === '--enable'),
+    ).toBe(true);
     expect(overrides).toContain('web_search="disabled"');
     expect(overrides).toContain('mcp_servers.smrt.required=true');
     expect(overrides).toContain(
@@ -354,7 +373,7 @@ describe('explicit profile invocation', () => {
       expect(JSON.parse(readFileSync(run.args[6], 'utf8'))).toEqual(schema);
       expect(run.args).toContain('model_reasoning_effort="xhigh"');
       expect(run.args).toContain('code_mode_host');
-      expect(run.args).toContain('sandbox_mode="read-only"');
+      expect(run.args).toContain('sandbox_mode="workspace-write"');
     }
     expect(run.args.join(' ')).not.toContain(TOKEN);
     run.cleanup();
@@ -608,4 +627,28 @@ it('classifies foreign Claude MCP tools separately from builtins', () => {
   ).toEqual([
     { type: 'forbidden', what: 'mcp__foreign__read', kind: 'unoffered_mcp' },
   ]);
+});
+
+it('gives concurrent Codex attempts fresh empty private writable roots and removes them on cleanup', () => {
+  const stateDir = tempDir();
+  const input = {
+    tool: 'codex' as const,
+    stateDir,
+    location: { path: '/fake', extraPath: [] },
+    mcpUrl: 'http://127.0.0.1:4801/mcp',
+    token: TOKEN,
+    systemPrompt: '',
+    prompt: '',
+  };
+  const first = buildAgentRun(input);
+  const second = buildAgentRun({ ...input, resumeId: 'prior' });
+  expect(first.cwd).not.toBe(second.cwd);
+  for (const run of [first, second]) {
+    expect(run.cwd.startsWith(join(stateDir, 'run'))).toBe(true);
+    expect(statSync(run.cwd).mode & 0o777).toBe(0o700);
+    expect(readdirSync(run.cwd)).toEqual([]);
+    writeFileSync(join(run.cwd, 'stray-patch'), 'discard me');
+    run.cleanup();
+    expect(existsSync(run.cwd)).toBe(false);
+  }
 });

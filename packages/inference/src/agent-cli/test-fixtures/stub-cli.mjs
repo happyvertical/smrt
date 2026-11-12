@@ -32,7 +32,7 @@ const sessionOf = () => {
   return { resumed: false, id: j >= 0 ? argv[j + 1] : 'codex-thread-1' };
 };
 const session = sessionOf();
-const sibling = (name) => join(dirname(process.cwd()), name);
+const sibling = (name) => join(isCodex ? dirname(dirname(dirname(process.cwd()))) : dirname(process.cwd()), name);
 
 function start() {
   if (isCodex) {
@@ -152,8 +152,13 @@ if (head === 'say') {
   if (isCodex) out({ type: 'item.started', item: { id: 'x', type: 'mcp_tool_call', server: 'smrt', tool: name, arguments: { secret: 'raw-payload' } } });
   else out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'x', name, input: { secret: 'raw-payload' } }] } });
   setInterval(() => {}, 1000);
+} else if (head === 'confined') {
+  const work = process.cwd();
+  writeFileSync(join(work, 'stray-patch'), 'discard me');
+  for (const type of ['file_change', 'command_execution']) out({type: 'item.completed', item: {id: type, type, command: 'secret-payload', changes: [{path: 'secret-path'}]}});
+  say('App request finished.');
 } else if (head === 'forbidden') {
-  if (isCodex) out({ type: 'item.completed', item: { id: 'x', type: 'command_execution', command: 'ls' } });
+  if (isCodex) out({ type: 'item.completed', item: { id: 'x', type: 'unexpected_remote_tool', command: 'ls' } });
   else out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'x', name: 'Bash', input: { command: 'ls' } }] } });
   setInterval(() => {}, 1000);
 } else if (head === 'fail') {

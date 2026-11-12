@@ -61,6 +61,7 @@ case "$*" in *'model_provider="smrt_preflight"'*)
   [ ! -f "$HOME/signed-in" ] && [ "$HOME" = "$CODEX_HOME" ] && [ -z "$HTTP_PROXY" ] && [ -z "$HTTPS_PROXY" ] && [ -z "$ALL_PROXY" ] || exit 3
   case "$*" in *'base_url="http://127.0.0.1:1"'*) ;; *) exit 3;; esac
   case "$*" in *'requires_openai_auth=false'*) ;; *) exit 3;; esac
+  case "$*" in *'--enable code_mode_host'*) ;; *) echo '{"type":"item.completed","item":{"type":"error","message":"code-mode host is disabled"}}'; exit 0;; esac
   echo '${options.toolHostDisabled ? '{"type":"item.completed","item":{"type":"error","message":"Code Mode is unavailable because code-mode host is disabled."}}' : '{"type":"turn.started"}'}'
   exit 0;; esac
 case "$1 $2" in

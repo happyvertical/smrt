@@ -12,7 +12,7 @@ import { fakeDeps, installFakeCli, tempDir } from './test-support.js';
 
 describe('detectAgentCli', () => {
   afterEach(() => vi.unstubAllEnvs());
-  it('refuses a signed-in Codex whose default model needs the disabled tool host', async () => {
+  it('refuses a genuinely incompatible Codex even when its required code host is enabled', async () => {
     const home = tempDir();
     const bin = tempDir();
     installFakeCli(bin, 'codex', { toolHostDisabled: true });
@@ -22,6 +22,17 @@ describe('detectAgentCli', () => {
       signedIn: true,
       ready: false,
       startError: 'tool_host_policy',
+    });
+  });
+  it('preflights a signed-in Codex that requires code_mode_host without an account or model request', async () => {
+    const home = tempDir();
+    const bin = tempDir();
+    installFakeCli(bin, 'codex');
+    writeFileSync(join(home, 'signed-in'), '');
+    expect(await detectAgentCli('codex', fakeDeps(home, [bin]))).toMatchObject({
+      installed: true,
+      signedIn: true,
+      ready: true,
     });
   });
   it.each([
