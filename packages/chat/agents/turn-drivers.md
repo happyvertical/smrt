@@ -226,7 +226,9 @@ leaves a durable job running. No browser id grants access to a run.
 `formatAssistantReply(content, context)` is a trusted host presentation hook for
 structured pass output. It returns human-facing `content` and optional metadata
 before persistence; hosts can keep the validated output under
-`metadata.designOutput` for their durable runner. Ordinary replies are unchanged.
+`metadata.designOutput` for their durable runner. That output is available only
+on the trusted internal pass SSE handoff, never ordinary message wire objects.
+Ordinary replies are unchanged.
 
 Known design flows set `deferDesignTurn` to queue through that same durable hook
 before any model call. Detached passes use the trusted `internalTurn(context)`
@@ -234,8 +236,47 @@ callback to supply private pass input and the original owner-message id. The
 route still authenticates ownership and validates that original message against
 the same thread and actor, but authors no synthetic user message and does not
 rewrite the original send's lifecycle. Private pass bindings belong to the host,
-not browser request flags. Only `designOutput` and `workRun` metadata are projected
-onto assistant message wire objects; other stored metadata remains private.
+not browser request flags. After that callback and the original-message checks,
+the route records the request in its own WeakSet and stamps every assistant/tool
+write with trusted `assistantInternalTurn` provenance via the existing author
+metadata. This applies to the built-in loop, external driver, errors and tool
+holds. Request headers, body/context fields and user-authored metadata cannot
+select that provenance. Raw rows remain available to private provider history.
+
+The ordinary message route requests `ChatService`'s conversation visibility.
+It excludes marked assistant/tool rows and positively identified legacy assistant
+rows with `designOutput`; user rows are never hidden by metadata. Filtering runs
+before the visible limit using ordinary tenant/member-scoped collection pages
+of 200, deterministic timestamp/id ordering, and the existing list-bound resolver.
+Reply lookup rejects a hidden root and filters linked replies in the same way.
+Raw service reads retain their previous default. Legacy unmarked tool rows have
+no reliable run/pass linkage and are not deleted or heuristically attributed.
+Public wire metadata includes only `workRun` and `designRunId`.
+
+Hosts may opt into `toolPresentation: 'generic'` on the routes and AssistantDock.
+It uses `describeAssistantTool` without raw observations, summaries or arguments;
+unknown tool messages receive a fixed person-facing fallback. The same projection
+covers live SSE messages, steps/status, stored legacy tool messages, and approval
+references. The dock also suppresses raw browser-tool name/description/argument
+fallbacks while retaining destructive warnings and the existing decision controls.
+Public generic streams omit provisional model tokens; the final formatted answer
+remains visible. Trusted internal handoff streams retain their original tokens.
+Default clients and private provider history keep their existing contracts.
+
+For meaningful approval previews under generic presentation, the trusted async
+`presentApproval(record)` callback receives the canonical authorized hold and
+returns only a host-derived business summary. The public summary and explicit
+`presentation.summary` carry that caption; unsafe/unrecognized holds fall back to
+“Review this change.” No raw stored/model summary is promoted by this option.
+The existing card uses only the explicit presentation in generic mode; polling
+and decisions still use the canonical authority.
+
+The route tests cover built-in and external actual-tool passes, raw private SSE
+handoff, reload, forged request flags, hidden-root refusal, legacy app-description
+and ordinary-record tool rows, ordinary human/assistant retention, and 201 internal
+rows ahead of the public page. DOM tests render legacy messages, browser-tool
+confirmation and approval refresh with malicious raw captions and safe host previews.
+Both default contracts and opted presentation run in the affected regression suites.
 
 Token accounting is conservative: `workRun.tokens` is omitted if any completion
 omits valid usage, including across escalation and browser continuations. An

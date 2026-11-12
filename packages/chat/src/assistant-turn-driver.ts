@@ -235,7 +235,7 @@ async function runExternalAssistantAttempt<M>(
       content,
       messageType,
       toolCallData,
-      metadata,
+      metadata: { ...metadata, ...author.metadata },
     });
     const wire = serialize(message);
     emit({ type: 'message', message: wire });
@@ -609,6 +609,7 @@ export async function recordDesignHandoff<M>(
         kind: 'assistant',
         content,
         metadata: {
+          ...author.metadata,
           designRunId: accepted.runId,
           ...(workRun ? { workRun } : {}),
         },

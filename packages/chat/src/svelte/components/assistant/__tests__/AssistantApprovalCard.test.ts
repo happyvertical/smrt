@@ -16,6 +16,33 @@ const approval: AssistantApprovalView = {
 describe('AssistantApprovalCard', () => {
   it.each([
     undefined,
+    { summary: 'Add Licence plate to Members' },
+  ])('uses only explicit host presentation in generic mode (%j)', async (presentation) => {
+    const raw = {
+      ...approval,
+      summary: 'PRIVATE TenantId ProfileId @fixture/models:Member',
+      ...(presentation ? { presentation } : {}),
+    };
+    const transport = createInMemoryAssistantTransport();
+    transport.listApprovals = async () => [raw];
+    transport.decideApproval = async () => ({ ...raw, status: 'succeeded' });
+    const view = render(AssistantApprovalCard, {
+      props: { approval: raw, transport, toolPresentation: 'generic' },
+    });
+    expect(
+      await screen.findByText(presentation?.summary ?? 'Review this change'),
+    ).toBeTruthy();
+    await vi.waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Approve' }),
+      ).not.toBeDisabled(),
+    );
+    expect(view.container.textContent).not.toMatch(
+      /PRIVATE|TenantId|ProfileId|@fixture/,
+    );
+  });
+  it.each([
+    undefined,
     't1',
   ])('shows the persisted summary, approves once, and announces the outcome with thread %s', async (threadId) => {
     const transport = createInMemoryAssistantTransport();

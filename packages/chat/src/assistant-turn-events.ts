@@ -119,6 +119,8 @@ export interface AssistantApprovalRequest {
   tool: string;
   callId: string;
   summary: string;
+  /** Optional host-authored business preview, supplied by the authenticated presentation seam. */
+  presentation?: { summary: string };
 }
 
 // Public projection only: never send the principal/arguments recovery envelope to the browser.

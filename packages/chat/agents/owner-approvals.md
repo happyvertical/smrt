@@ -102,6 +102,11 @@ Synthetic message ids are `approval:<public approval id>`; timestamps come from
 the canonical record. Persisted cards are deduplicated by approval id. Native
 public views use that same public id for `callId` and omit arguments, recovery
 context/keys and raw results; decisions still use the existing continuation rail.
+Generic tool presentation uses a fixed safe caption unless the trusted async
+`presentApproval(record)` callback derives a business preview from the canonical
+hold. That caption appears in both the public summary and explicit presentation;
+the generic card never promotes a raw stored/model summary. See
+[turn presentation](turn-drivers.md) for private pass provenance and public paging.
 Projection is enabled by either an explicit approval authority or configured
 continuations using the default database-backed live-owner authority. Ordinary
 chat without either option does not query the owner ledger.

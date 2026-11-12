@@ -455,6 +455,12 @@ export interface MountAssistantRoutesOptions {
    */
   turnStartTimeoutMs?: number;
   describeTool?: DescribeAssistantTool;
+  /** Trusted host presentation. Tool payloads stay in storage/provider history, not public messages. */
+  toolPresentation?: 'generic';
+  /** Trusted presentation of an authorized canonical hold; never reads model-selected UI flags. */
+  presentApproval?(
+    record: import('@happyvertical/smrt-app-runtime').OwnerApproval,
+  ): { summary: string } | undefined | Promise<{ summary: string } | undefined>;
   /**
    * Persist a successful server tool invocation (default: short summary). Its
    * tool name must be on `allowedTools`, which is mirrored onto the session.
@@ -536,7 +542,6 @@ export interface AssistantThreadWire {
 export interface AssistantMessageWire {
   /** Explicit host design output and sanitized execution accounting only. */
   metadata?: {
-    designOutput?: unknown;
     workRun?: unknown;
     designRunId?: string;
   };
@@ -926,15 +931,9 @@ export function toAssistantMessageWire(
     createdAt: toIso(message.created_at) ?? new Date(0).toISOString(),
     ...(attachments.length > 0 ? { attachments } : {}),
     ...(toolCallData ? { toolCallData } : {}),
-    ...(metadata &&
-    ('designOutput' in metadata ||
-      'workRun' in metadata ||
-      'designRunId' in metadata)
+    ...(metadata && ('workRun' in metadata || 'designRunId' in metadata)
       ? {
           metadata: {
-            ...('designOutput' in metadata
-              ? { designOutput: metadata.designOutput }
-              : {}),
             ...('workRun' in metadata ? { workRun: metadata.workRun } : {}),
             ...(typeof metadata.designRunId === 'string'
               ? { designRunId: metadata.designRunId }
@@ -1056,6 +1055,47 @@ export function mountAssistantRoutes(
   const maxBody = options.maxBodyBytes ?? DEFAULT_ASSISTANT_MAX_BODY_BYTES;
   const maxContent = options.maxContentLength ?? MAX_CHAT_STREAM_CONTENT_LENGTH;
   const historyLimit = Math.max(0, options.historyLimit ?? 20);
+  const internalRequests = new WeakSet<Request>();
+  const publicMessage = (message: ChatMessage): AssistantMessageWire => {
+    const wire = toAssistantMessageWire(message);
+    if (options.toolPresentation !== 'generic' || wire.role !== 'tool')
+      return wire;
+    const approval = parseObject(wire.toolCallData?.approval);
+    if (typeof approval?.id === 'string')
+      return {
+        ...wire,
+        content: 'Review this change',
+        toolCallData: {
+          approval: {
+            id: approval.id,
+            tool: 'change',
+            callId: approval.id,
+            summary: 'Review this change',
+          },
+        },
+      };
+    const tool = wire.toolCallData;
+    const name =
+      typeof tool?.name === 'string'
+        ? tool.name
+        : typeof tool?.tool === 'string'
+          ? tool.tool
+          : '';
+    const ok = !['error', 'refused', 'rejected', 'denied'].includes(
+      String(tool?.status),
+    );
+    const label = describeAssistantTool(
+      name,
+      undefined,
+      { ok, observation: undefined },
+      { recordLabels: 'generic' },
+    );
+    return {
+      ...wire,
+      content: label,
+      toolCallData: { label, status: ok ? 'success' : 'error' },
+    };
+  };
   const checkOrigin = options.checkOrigin ?? true;
   const trustedOrigins = options.trustedOrigins ?? [];
   const resolvePrincipal: AssistantPrincipalResolver =
@@ -1577,13 +1617,31 @@ export function mountAssistantRoutes(
           : {}),
         ...(options.describeTool ? { describeTool: options.describeTool } : {}),
         onError: safeLog,
-        serializeMessage: (message: unknown) =>
-          toAssistantMessageWire(message as ChatMessage),
+        serializeMessage: (message: unknown) => {
+          if (!internalRequests.has(context.event.request))
+            return publicMessage(message as ChatMessage);
+          const wire = toAssistantMessageWire(message as ChatMessage);
+          const metadata = parseObject((message as ChatMessage).metadata);
+          return {
+            ...wire,
+            ...(metadata && 'designOutput' in metadata
+              ? {
+                  metadata: {
+                    ...wire.metadata,
+                    designOutput: metadata.designOutput,
+                  },
+                }
+              : {}),
+          };
+        },
         author: {
           chatService: chat,
           agentSessionId: String(session.id),
           tenantId: principal.tenantId,
           threadId: String(thread.id),
+          ...(internalRequests.has(context.event.request)
+            ? { metadata: { assistantInternalTurn: true } }
+            : {}),
           ...(options.authorInvocation
             ? { authorInvocation: options.authorInvocation }
             : {}),
@@ -1598,16 +1656,78 @@ export function mountAssistantRoutes(
   const stream = (
     events: AsyncGenerator<AssistantTurnEvent<AssistantMessageWire>, unknown>,
     abort: AbortController,
+    internalTurn = false,
   ) =>
-    createAssistantTurnResponse(events, {
-      ...(options.heartbeatMs !== undefined
-        ? { heartbeatMs: options.heartbeatMs }
-        : {}),
-      onError: safeLog,
-      // A cancelled body cancels the turn, even when the adapter never
-      // aborts the request signal on disconnect.
-      onCancel: () => abort.abort(),
-    });
+    createAssistantTurnResponse(
+      (async function* () {
+        for await (const event of events) {
+          if (internalTurn || options.toolPresentation !== 'generic') {
+            yield event;
+            continue;
+          }
+          // Provisional model text may describe internal work before the host
+          // formats its final answer. The persisted answer remains public.
+          if (event.type === 'token') continue;
+          if (event.type === 'step' && event.step.kind !== 'thinking') {
+            const step = event.step;
+            const label = describeAssistantTool(
+              step.tool,
+              undefined,
+              step.kind === 'tool_result'
+                ? { ok: step.ok, observation: undefined }
+                : undefined,
+              { recordLabels: 'generic' },
+            );
+            yield {
+              ...event,
+              step: {
+                ...step,
+                tool: 'change',
+                label:
+                  step.kind === 'tool_call' ? 'Working on this action' : label,
+                ...(step.kind === 'tool_result' ? { error: undefined } : {}),
+              },
+            };
+          } else if (event.type === 'status') {
+            yield {
+              ...event,
+              status: {
+                ...event.status,
+                label:
+                  event.status.state === 'working'
+                    ? 'Working on your request'
+                    : event.status.state === 'done'
+                      ? 'Done'
+                      : event.status.state === 'error'
+                        ? 'Could not complete this request'
+                        : null,
+              },
+            };
+          } else if (event.type === 'approval_needed') {
+            yield {
+              ...event,
+              approval: {
+                id: event.approval.id,
+                callId: event.approval.id,
+                tool: 'change',
+                summary: 'Review this change',
+              },
+            };
+          } else if (event.type === 'error') {
+            yield { ...event, error: 'Could not complete this request.' };
+          } else yield event;
+        }
+      })(),
+      {
+        ...(options.heartbeatMs !== undefined
+          ? { heartbeatMs: options.heartbeatMs }
+          : {}),
+        onError: safeLog,
+        // A cancelled body cancels the turn, even when the adapter never
+        // aborts the request signal on disconnect.
+        onCancel: () => abort.abort(),
+      },
+    );
 
   type TurnSetup = Awaited<ReturnType<typeof turnSetup>>;
   type TurnEvent = AssistantTurnEvent<AssistantMessageWire>;
@@ -1636,18 +1756,20 @@ export function mountAssistantRoutes(
     ) => AsyncGenerator<TurnEvent, unknown>,
     durableSend?: string,
   ): Promise<Response> => {
+    const internalTurn = internalRequests.has(context.event.request);
     const transaction = requestTransaction();
     if (!transaction) {
       return stream(
         detached(first, pump(start(chat, setup))).events,
         prepared.abort,
+        internalTurn,
       );
     }
     const isActive = transaction.isActive;
     if (!runtime || typeof isActive !== 'function') {
       const turn = detached(first, pump(start(chat, setup)));
       await turn.settled;
-      return stream(turn.events, prepared.abort);
+      return stream(turn.events, prepared.abort, internalTurn);
     }
     const { principal } = context;
     // The request's authority, frozen before the response returns (an empty
@@ -1783,7 +1905,11 @@ export function mountAssistantRoutes(
         });
       }
     };
-    return stream(detached(first, ownLifetime).events, prepared.abort);
+    return stream(
+      detached(first, ownLifetime).events,
+      prepared.abort,
+      internalTurn,
+    );
   };
 
   // ---- route bodies ------------------------------------------------------
@@ -1841,8 +1967,9 @@ export function mountAssistantRoutes(
       actorProfileId: principal.profileId,
       tenantId: principal.tenantId,
       limit: 200,
+      visibility: 'conversation',
     });
-    let items = messages.map(toAssistantMessageWire);
+    let items = messages.map(publicMessage);
     if (options.approvals || options.approvalContinuations) {
       let approvals: Awaited<ReturnType<typeof ownedThreadApprovals>> = [];
       try {
@@ -1881,7 +2008,7 @@ export function mountAssistantRoutes(
           shown.has(record.id)
         )
           continue;
-        const view = publicApproval(record);
+        const view = await publicApproval(record);
         items.push({
           id: `approval:${record.id}`,
           threadId,
@@ -1930,6 +2057,7 @@ export function mountAssistantRoutes(
       messageId,
       actorProfileId: principal.profileId,
       tenantId: principal.tenantId,
+      visibility: 'conversation',
     });
     const anchor = stored?.message;
     if (
@@ -1939,8 +2067,8 @@ export function mountAssistantRoutes(
     ) {
       return null;
     }
-    const userMessage = toAssistantMessageWire(anchor);
-    const after = stored.replies.map(toAssistantMessageWire);
+    const userMessage = publicMessage(anchor);
+    const after = stored.replies.map(publicMessage);
     const assistantMessage = [...after]
       .reverse()
       .find((message) => message.role === 'assistant');
@@ -2107,6 +2235,7 @@ export function mountAssistantRoutes(
         )
           throw notFound();
       }
+      internalRequests.add(context.event.request);
       const prepared = await prepareTurn(context, body);
       const setup = await turnSetup(context, chat, session, thread, prepared);
       const earlier =
@@ -2497,20 +2626,37 @@ export function mountAssistantRoutes(
     id: context.principal.userId,
     tenantId: context.principal.tenantId,
   });
-  const publicApproval = (
+  const publicApproval = async (
     record: import('@happyvertical/smrt-app-runtime').OwnerApproval,
-  ) => ({
-    id: record.id,
-    tool: record.tool,
-    callId: record.continuation ? record.id : record.callId,
-    summary: record.summary,
-    status: record.status,
-    decidedBy: record.decidedBy,
-    decidedAt: record.decidedAt,
-    ...(record.continuation || record.result === undefined
-      ? {}
-      : { result: record.result }),
-  });
+  ) => {
+    const presentation =
+      options.toolPresentation === 'generic'
+        ? await options.presentApproval?.(record)
+        : undefined;
+    return {
+      id: record.id,
+      tool: options.toolPresentation === 'generic' ? 'change' : record.tool,
+      callId:
+        record.continuation || options.toolPresentation === 'generic'
+          ? record.id
+          : record.callId,
+      summary:
+        options.toolPresentation === 'generic'
+          ? (presentation?.summary ?? 'Review this change')
+          : record.summary,
+      ...(presentation
+        ? { presentation: { summary: presentation.summary } }
+        : {}),
+      status: record.status,
+      decidedBy: record.decidedBy,
+      decidedAt: record.decidedAt,
+      ...(options.toolPresentation === 'generic' ||
+      record.continuation ||
+      record.result === undefined
+        ? {}
+        : { result: record.result }),
+    };
+  };
   const ownedThreadApprovals = async (
     context: AssistantRequestContext,
     threadId: string,
@@ -2543,8 +2689,8 @@ export function mountAssistantRoutes(
     threadId: string,
   ) =>
     json({
-      approvals: (await ownedThreadApprovals(context, threadId)).map(
-        publicApproval,
+      approvals: await Promise.all(
+        (await ownedThreadApprovals(context, threadId)).map(publicApproval),
       ),
     });
   const decideApproval = async (
@@ -2565,7 +2711,7 @@ export function mountAssistantRoutes(
       );
       if (!continuations) throw notFound();
       return json({
-        approval: publicApproval(
+        approval: await publicApproval(
           await continuations.decide(approvalActor(context), id, body.approve),
         ),
       });
@@ -2728,7 +2874,7 @@ export function mountAssistantRoutes(
         label,
       );
     }
-    return json({ approval: publicApproval(decision) });
+    return json({ approval: await publicApproval(decision) });
   };
 
   // ---- dispatch ----------------------------------------------------------
@@ -2783,11 +2929,13 @@ export function mountAssistantRoutes(
       switch (match.route) {
         case 'owner-approvals':
           return json({
-            approvals: (
-              await (
-                await authorityFor(context)
-              ).list(approvalActor(context), false)
-            ).map(publicApproval),
+            approvals: await Promise.all(
+              (
+                await (
+                  await authorityFor(context)
+                ).list(approvalActor(context), false)
+              ).map(publicApproval),
+            ),
           });
         case 'approvals':
           return await listApprovals(

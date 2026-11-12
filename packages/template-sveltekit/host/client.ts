@@ -24,6 +24,7 @@ export function createCookbookAssistant(
   };
   return {
     component: OnboardingAssistant,
+    toolPresentation: 'generic',
     transport: {
       ...transport,
       sendMessage: (input) => refresh(transport.sendMessage(input)),

@@ -97,6 +97,11 @@ shell panel, shares the registry with Provider, and owns the desktop/phone toggl
 `embed` hides in-app chat by omitting the assistant component. A host without
 `assistant` retains the existing explicit panel/dock snippet API.
 
+The optional host-owned `assistant.toolPresentation: 'generic'` flows through
+the supplied component and `OnboardingAssistant` to the shared dock. It keeps
+person-facing tool activity generic without changing provider history or
+execution authority; hosts that omit it retain their existing presentation.
+
 `AppShell` with the builder's output. Props: `cookbook`, `catalog`, any
 `AppShell` prop (title, logo, `storageKey`, `user`, `permissions`, `dock`,
 `slotItems`, `settingsHref`, ...), and:

@@ -36,6 +36,7 @@ const metadata = {
 };
 const output = {
   summary: 'Keep the existing data and propose a field.',
+  personSummary: 'I’m checking the requested changes.',
   checks: ['The request has a target list.'],
   ready: true,
   operations: [],
@@ -308,6 +309,30 @@ describe('cookbook durable design jobs', () => {
     );
     expect(done.tokens).toBe(8);
   });
+  it('requires the separate v4 person field and repairs it on the same read-only pass', async () => {
+    const { personSummary: _missing, ...missingPersonField } = output;
+    const execute = vi
+      .fn<CookbookDesignRunsOptions['executePass']>()
+      .mockResolvedValueOnce({ output: missingPersonField, metadata })
+      .mockResolvedValue({ output, metadata });
+    const effect = vi.fn();
+    const bound = install(execute, undefined, { executeOperation: effect });
+    const created = await bound.start({
+      threadId: 'thread',
+      content: 'Review the list',
+      profile: profile(),
+    });
+    await startWorker();
+    const done = await terminal(created.id);
+    expect(done.status).toBe('done');
+    expect(done.definition).toBe('cookbook-design/v4/3');
+    expect(execute).toHaveBeenCalledTimes(4);
+    expect(execute.mock.calls[1][0].request.repair?.errors.join(' ')).toContain(
+      'personSummary',
+    );
+    expect(done.outputs).toEqual([output, output, output]);
+    expect(effect).not.toHaveBeenCalled();
+  });
   it('advertises the exact core add-field schema and keeps valid proposals pending without effects', async () => {
     const effect = vi.fn();
     // Only list() runs: the actual owning input schema is the contract under test.
@@ -329,8 +354,13 @@ describe('cookbook durable design jobs', () => {
         tenantId: 'tenant',
       })
     ).filter((tool) => tool.name === 'app.addField');
+    const privateReasoning =
+      '@happyvertical/smrt-commerce:Customer app.addField expectedRevision 2 cookbook';
+    const onProgress = vi.fn();
     const proposed = {
       ...output,
+      summary: privateReasoning,
+      personSummary: privateReasoning,
       operations: [
         {
           tool: 'app.addField',
@@ -355,6 +385,7 @@ describe('cookbook durable design jobs', () => {
       });
     const bound = install(execute, async () => definitions, {
       executeOperation: apply,
+      onProgress,
     });
     const selected = profile();
     selected.previewBeforeApply = true;
@@ -369,9 +400,16 @@ describe('cookbook durable design jobs', () => {
     expect(pending.status).toBe('waiting-approval');
     expect(pending.note).toContain('Review Birthday');
     expect(pending.outputs[2]).toEqual(proposed);
+    expect(onProgress.mock.calls.at(-1)?.[0].note).toBe(
+      'Your changes are ready for your review.',
+    );
+    expect(JSON.stringify(onProgress.mock.calls)).not.toContain(
+      privateReasoning,
+    );
     expect(execute).toHaveBeenCalledTimes(3);
-    expect(pending.definition).toBe('cookbook-design/v3/3');
+    expect(pending.definition).toBe('cookbook-design/v4/3');
     expect(execute.mock.calls[0][0].request.schema).toMatchObject({
+      required: expect.arrayContaining(['summary', 'personSummary']),
       properties: {
         operations: {
           items: {
@@ -603,8 +641,9 @@ describe('cookbook durable design jobs', () => {
     }))
       await job.cancel();
     const prior = await bound.status(created.id);
+    const { personSummary: _presentation, ...legacyOutput } = output;
     const proposal = {
-      ...output,
+      ...legacyOutput,
       ready: scenario !== 'ready-false',
       operations: [
         {
@@ -660,6 +699,11 @@ describe('cookbook durable design jobs', () => {
       await startWorker();
       expect((await terminal(created.id)).status).toBe('done');
       expect(execute).not.toHaveBeenCalled();
+      expect(
+        (await terminal(created.id)).outputs.every(
+          (result) => !Object.hasOwn(result as object, 'personSummary'),
+        ),
+      ).toBe(true);
       expect(apply).toHaveBeenCalledTimes(1);
     } else {
       await expect(bound.resume(created.id)).rejects.toThrow();

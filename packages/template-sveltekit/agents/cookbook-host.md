@@ -535,8 +535,13 @@ queue runner; `host.shutdown()` drains the runner and disposes its executor.
 Internal passes reuse authenticated assistant adapters with a private server
 profile binding, original permission ceiling intersected with live permissions,
 read-only tools, full schema validation, and a detached job cancellation signal.
-Technical prompts stay server-side; the owner sees each design summary and
-reviewable operations. Ready v3 proposals enter a deterministic final check using
+Technical prompts and raw reasoning stay server-side. New v4 proposals require
+separate `summary` and bounded `personSummary` fields; neither model field is
+trusted as public prose. The host explicitly projects progress to short fixed
+person-facing notes, including errors, repairs and reloaded state. Raw outputs
+remain unchanged in durable checkpoints. Pinned v3 schemas and deterministic
+Apply/recovery remain supported; the historical v2 adapter still upgrades only
+to its exact v3 schema. Ready v3/v4 proposals enter a deterministic final check using
 core's stable design-action identity and exact result recovery. Preview uses the
 existing native thread approval UI; preview-off applies additive changes directly
 with change history, while destructive changes retain approval. Completing an
@@ -584,7 +589,6 @@ is added. Tests use the actual runner for idle and initialization-race shutdown,
 reject first initialization after the shutdown event, and clean a runner that
 started before initialization failed without a second failure or exit-code change.
 
-<<<<<<< HEAD
 
 C4 follow-up: `/favicon.ico` redirects with public caching to the shipped
 `/favicon.svg` before runtime authorization/initialization (browser requests need
@@ -600,7 +604,7 @@ Products exports dist/lib/manifest.json; dropping it made all four template
 activation cases fail with ContractLineItem -> Product unresolved. All original
 REST/assistant write and linked-contact assertions remain. No production registry
 or exposure behavior changes.
-=======
+
 `onboardingWriteThrough.test.ts` retains the generated contact route coverage for
 every bundled template. Mechanic additionally adds a field through the existing
 host MCP HTTP workflow and through a three-pass design run with the native owner
@@ -617,4 +621,14 @@ product browser gate. These cases preserve the same-name configured app
 Customer's curated columns, API metadata, cookbook policy/exposure, original rows
 and custom value. No template-host route workaround is added for a core registry
 or exposure defect.
->>>>>>> 09e0607df9 (fix(core): retain configured model routes and columns after edits)
+
+The host opts chat and its client into generic public tool presentation. Trusted
+internal pass SSE retains its structured handoff; public events and thread reads
+exclude internal pass rows and render legacy unmarked tool rows generically.
+Approval captions come separately from bounded core editor command summaries or
+the existing manifest's business noun and trusted local-client label; unsafe
+identity labels, tool/package syntax and implementation captions use the fixed
+review fallback. This presentation does not change the stored hold or execution
+authority, and safe business previews persist after completion. Change history
+retains its count/order and stable technical DTO keys, but displays human command
+captions with a safe fallback and no revision labels, raw edits or invented dates.

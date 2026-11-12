@@ -55,12 +55,14 @@ describe('CookbookApp', () => {
         component: AssistantFixture,
         registry: createDataSurfaceRegistry(),
         transport: {} as AssistantTransport,
+        toolPresentation: 'generic',
       },
     });
     const dock = await screen.findByTestId('assistant-dock');
     expect(dock.dataset.context).toBe('server');
     expect(dock.dataset.registry).toBe('true');
     expect(dock.dataset.transport).toBe('true');
+    expect(dock.dataset.toolPresentation).toBe('generic');
     const toggles = screen.getAllByRole('button', { name: 'Assistant' });
     expect(toggles.length).toBeGreaterThan(0);
     const before = dock.dataset.visible;

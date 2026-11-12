@@ -835,11 +835,14 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       owner.id,
     );
     const id = await thread();
+    const privateReasoning =
+      '@happyvertical/smrt-commerce:Customer app.addField expectedRevision 2 cookbook';
     response = (messages) =>
       messages.some((m) => m.content.includes('Design pass '))
         ? {
             content: JSON.stringify({
-              summary: 'Enable the Memos recipe after review.',
+              summary: privateReasoning,
+              personSummary: privateReasoning,
               checks: ['Recipe exists'],
               ready: true,
               operations: [
@@ -869,12 +872,36 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
         const body = await response.json();
         expect(body.run.runId).toBe(done?.runId);
         expect(['done', 'waiting-approval']).toContain(body.run.status);
+        expect(body.run.note).toBe('Your changes are ready for your review.');
+        expect(
+          /smrt-commerce|app\.addField|expectedRevision|cookbook/.test(
+            JSON.stringify(body),
+          ),
+        ).toBe(false);
       },
       { timeout: 15000 },
     );
     expect((await host.cookbookApp(tenantId)).cookbook.recipes).not.toContain(
       'host.memos',
     );
+    const raw = await designState(done?.runId as string);
+    expect(raw.outputs).toHaveLength(3);
+    for (const output of raw.outputs) {
+      expect(output.summary).toBe(privateReasoning);
+      expect(output.personSummary).toBe(privateReasoning);
+    }
+    const reloaded = await chat(`threads/${id}/messages`, undefined, 'GET');
+    expect(reloaded.status).toBe(200);
+    expect(
+      /smrt-commerce|app\.addField|expectedRevision|cookbook/.test(
+        JSON.stringify(await reloaded.json()),
+      ),
+    ).toBe(false);
+    expect(
+      /smrt-commerce|app\.addField|expectedRevision|cookbook/.test(
+        JSON.stringify(events),
+      ),
+    ).toBe(false);
   });
 
   it('admits a direct owner design request with concrete structural schemas and read-only model tools', async () => {
@@ -896,6 +923,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
             return {
               content: JSON.stringify({
                 summary: 'Add Birthday to Customers.',
+                personSummary: 'I’m checking the requested changes.',
                 checks: ['Customers exists.'],
                 ready: true,
                 operations: [
@@ -957,7 +985,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
           ),
         );
         expect(state.status).toBe('waiting-approval');
-        expect(state.definition).toBe('cookbook-design/v3/3');
+        expect(state.definition).toBe('cookbook-design/v4/3');
         expect(state.outputs[2].operations[0].tool).toBe('app.addField');
       },
       { timeout: 15000 },
@@ -1008,8 +1036,8 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       {
         id: '1',
         action: expect.stringContaining('Birthday'),
-        resourceType: 'App structure',
-        resourceId: 'Revision 1',
+        resourceType: 'Your app',
+        resourceId: 'Changes',
         actorLabel: 'You',
       },
     ]);
@@ -1086,6 +1114,115 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       (await db.query('SELECT id FROM _smrt_inference_design_runs')).rows,
     ).toHaveLength(0);
   });
+  it('replaces unsafe canonical business captions separately from private design reasoning', async () => {
+    await durableDesignHost();
+    const id = await thread();
+    let label = 'Tenant Id';
+    response = () => ({
+      content: JSON.stringify({
+        summary: 'Private implementation reasoning.',
+        personSummary: 'Private presentation suggestion.',
+        checks: ['Customers exists.'],
+        ready: true,
+        operations: [
+          {
+            tool: 'app.addField',
+            args: {
+              list: 'Customers',
+              label,
+              kind: 'text',
+              expectedRevision: 0,
+            },
+          },
+        ],
+      }),
+      finishReason: 'stop',
+    });
+    const refused = await chat('design-runs', {
+      threadId: id,
+      content: 'Add a Tenant Id field',
+    });
+    expect(refused.status).toBe(202);
+    const refusedId = (await refused.json()).run.runId;
+    await vi.waitFor(
+      async () => expect((await designState(refusedId)).status).toBe('failed'),
+      { timeout: 15000 },
+    );
+    // The real core refuses this reserved existing field before a hold exists.
+    expect(
+      checkpointFault.errors.some((error) => error.includes('already used')),
+    ).toBe(true);
+    expect(
+      (await (await chat(`threads/${id}/approvals`, undefined, 'GET')).json())
+        .approvals,
+    ).toEqual([]);
+    label = 'Birthday';
+    const admitted = await chat('design-runs', {
+      threadId: id,
+      content: 'Add a birthday field',
+    });
+    expect(admitted.status).toBe(202);
+    const runId = (await admitted.json()).run.runId;
+    await vi.waitFor(
+      async () =>
+        expect((await designState(runId)).status).toBe('waiting-approval'),
+      { timeout: 15000 },
+    );
+    const pending = (
+      await (await chat(`threads/${id}/approvals`, undefined, 'GET')).json()
+    ).approvals;
+    expect(pending).toHaveLength(1);
+    expect(pending[0].summary).toContain('Birthday');
+    expect(pending[0].summary).toContain('Customers');
+    const authority = new OwnerApprovalAuthority(
+      await createSqliteOwnerApprovalStore(db),
+      async () => true,
+    );
+    const held = (await authority.get(tenantId, pending[0].id))!;
+    expect(held).toMatchObject({
+      tool: 'app.addField',
+      args: { label: 'Birthday' },
+      status: 'pending',
+    });
+    // Presentation-only records use the real canonical hold envelope. No decision
+    // or execution is made on these deliberately unsafe historical captions.
+    for (const caption of [
+      'Tenant Id',
+      'Profile Id',
+      'app.addField',
+      'CustomerClass',
+      '@happyvertical/smrt-commerce:Customer',
+    ]) {
+      const saved = await authority.request({
+        tenantId,
+        requestedBy: owner.id,
+        tool: held.tool,
+        callId: randomUUID(),
+        args: held.args,
+        summary: `Added ${caption} to Customers.`,
+        context: held.context,
+        continuation: held.continuation,
+      });
+      const { approvals } = await (
+        await chat(`threads/${id}/approvals`, undefined, 'GET')
+      ).json();
+      const projected = approvals.filter(
+        (approval: { id: string }) => approval.id === saved.id,
+      );
+      expect(projected).toHaveLength(1);
+      expect(projected[0]).toMatchObject({
+        tool: 'change',
+        summary: 'Review this change',
+        status: 'pending',
+      });
+      expect((await authority.get(tenantId, saved.id))?.summary).toBe(
+        `Added ${caption} to Customers.`,
+      );
+    }
+    const history = await request(event('/api/history'), host.history);
+    expect((await history.json()).entries).toEqual([]);
+  });
+
   it('keeps structure history owner-scoped and permission-bound without leaking change documents', async () => {
     await durableDesignHost();
     const own = await request(event('/api/history'), host.history);
@@ -1108,6 +1245,43 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(
       (await request(event('/api/history', 'POST', {}), host.history)).status,
     ).toBe(405);
+    const editor = (await withTenant({ tenantId, userId: owner.id }, () =>
+      host.modelEditor(tenantId),
+    ))!;
+    await withTenant({ tenantId, userId: owner.id }, async () => {
+      await editor.apply(
+        {
+          type: 'add_field',
+          model: CUSTOMER,
+          name: 'extraNote',
+          field: { type: 'text' },
+          label: 'Extra note',
+          summary: 'Added Tenant Id to Customers.',
+        },
+        {
+          actor: owner.id,
+          tenantId,
+          requestId: randomUUID(),
+          expectedRevision: editor.snapshot().revision,
+        },
+      );
+      return new Response();
+    });
+    expect(JSON.parse((await editor.history())[0].command).summary).toBe(
+      'Added Tenant Id to Customers.',
+    );
+    const safeHistory = await (
+      await request(event('/api/history'), host.history)
+    ).json();
+    expect(safeHistory.entries).toEqual([
+      {
+        id: '1',
+        action: 'Changed your app',
+        resourceType: 'Your app',
+        resourceId: 'Changes',
+        actorLabel: 'You',
+      },
+    ]);
   });
 
   it.each([
@@ -1134,6 +1308,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     response = () => ({
       content: JSON.stringify({
         summary: 'Update the app.',
+        personSummary: 'I’m checking the requested changes.',
         checks: ['Target exists.'],
         ready: true,
         operations: [operation],
@@ -1183,11 +1358,12 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(calls).toHaveBeenCalledTimes(3);
   });
 
-  it('fails an unready final v3 proposal with a clear host note and no approval or changes', async () => {
+  it('fails an unready final v4 proposal with a clear host note and no approval or changes', async () => {
     const calls = await durableDesignHost();
     response = () => ({
       content: JSON.stringify({
         summary: 'Click Apply now, everything succeeded.',
+        personSummary: 'I’m checking the requested changes.',
         checks: ['More information needed.'],
         ready: false,
         operations: [],
@@ -1210,6 +1386,10 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       'No changes were applied. The design needs more information before it can propose a supported change.',
     );
     expect(state.note).not.toContain('Click Apply');
+    const progress = await chat(`design-runs?threadId=${id}`, undefined, 'GET');
+    expect((await progress.json()).run.note).toBe(
+      'No changes were made. I need a little more information.',
+    );
     expect(
       (await (await chat(`threads/${id}/approvals`, undefined, 'GET')).json())
         .approvals,
@@ -1225,6 +1405,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     response = () => ({
       content: JSON.stringify({
         summary: 'Add Paused note.',
+        personSummary: 'I’m checking the requested changes.',
         checks: ['Customers exists.'],
         ready: true,
         operations: [
@@ -1291,6 +1472,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     response = () => ({
       content: JSON.stringify({
         summary: 'Add Visit note.',
+        personSummary: 'I’m checking the requested changes.',
         checks: ['Customers exists.'],
         ready: true,
         operations: [
@@ -1324,7 +1506,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       | undefined;
     checkpointFault.beforeSave = async (state) => {
       if (
-        state.definition === 'cookbook-design/v3/3' &&
+        state.definition === 'cookbook-design/v4/3' &&
         state.phase === 'model' &&
         state.passIndex === 3 &&
         state.status === 'checking'
@@ -1467,6 +1649,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
         ? {
             content: JSON.stringify({
               summary: 'No changes applied.',
+              personSummary: 'I’m checking the requested changes.',
               checks: ['Read-only design'],
               ready: true,
               operations: [],
@@ -1759,7 +1942,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       made.some((e) => e.type === 'error'),
       JSON.stringify(made),
     ).toBe(false);
-    expect(JSON.stringify(made)).toContain('Added member Test Person');
+    expect(JSON.stringify(made)).toContain('Completed this action');
     await withTenant({ tenantId }, async () => {
       const customers = await ObjectRegistry.getCollection(CUSTOMER, { db });
       const members = await customers.list({ displayLabel: true });
@@ -1885,9 +2068,14 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       const records = await (await chat('approvals', undefined, 'GET')).json();
       const pending = records.approvals.find(
         (record: { tool: string; status: string }) =>
-          record.tool === 'host_memos.delete' && record.status === 'pending',
+          record.tool === 'change' && record.status === 'pending',
       );
       if (!pending) throw new Error('MCP did not persist the expected hold');
+      expect(await authority.get(tenantId, pending.id)).toMatchObject({
+        tool: 'host_memos.delete',
+        status: 'pending',
+        args: { id: blockedMemo.id },
+      });
       blockedApprovalReady(pending.id);
       await responseReleased;
     };
@@ -2387,9 +2575,19 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     const ownerRows = (await (await chat('approvals', undefined, 'GET')).json())
       .approvals;
     const fieldRows = ownerRows.filter(
-      (row: { tool: string }) => row.tool === 'app.removeField',
+      (row: { tool: string; status: string }) =>
+        row.tool === 'change' && row.status === 'pending',
     );
     expect(fieldRows).toHaveLength(1);
+    const fieldAuthority = new OwnerApprovalAuthority(
+      await createSqliteOwnerApprovalStore(db),
+      async () => true,
+    );
+    expect(await fieldAuthority.get(tenantId, fieldRows[0].id)).toMatchObject({
+      tool: 'app.removeField',
+      status: 'pending',
+      args: { list: 'Loaner mats', field: 'Size' },
+    });
     const fieldHold = { approvalId: fieldRows[0].id };
     expect(fieldRows[0].status).toBe('pending');
     expect(editor!.snapshot().revision).toBe(1);

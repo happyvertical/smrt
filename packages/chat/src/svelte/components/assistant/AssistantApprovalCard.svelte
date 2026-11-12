@@ -12,6 +12,7 @@ import type { AssistantTransport } from './assistant-transport.js';
 export interface Props {
   approval?: AssistantApprovalRequest;
   threadId?: string;
+  toolPresentation?: 'generic';
   transport?: AssistantTransport;
   /** Host-authorized presentation for an existing decision endpoint and persisted view. */
   presentation?: {
@@ -35,6 +36,7 @@ const {
   transport,
   ondecided,
   presentation,
+  toolPresentation,
   detail,
 }: Props = $props();
 const { t } = useI18n();
@@ -44,6 +46,7 @@ let view = $state<AssistantApprovalView>(
     tool: approval?.tool ?? '',
     callId: approval?.callId ?? '',
     summary: approval?.summary ?? '',
+    ...(approval?.presentation ? { presentation: approval.presentation } : {}),
     status: 'pending',
   })),
 );
@@ -130,7 +133,7 @@ async function decide(approve: boolean) {
 <div data-smrt-component="AssistantApprovalCard">
 <Card padding="sm">
   <div class="approval" aria-busy={busy}>
-    <p>{view.summary}</p>
+    <p>{toolPresentation === 'generic' ? view.presentation?.summary ?? t(M['chat.approval.review_change']) : view.summary}</p>
     <p role="status" aria-live="polite">{t(labels[view.status])}</p>
     {#if view.status === 'pending' && transport.decideApproval && transport.listApprovals}
       <div class="actions">

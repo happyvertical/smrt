@@ -30,6 +30,7 @@ import { Button } from '@happyvertical/smrt-ui/ui';
 import { type Component, type Snippet, tick, untrack } from 'svelte';
 import type { AssistantStatus } from '../../../assistant-turn-events.js';
 import type { ChatUnavailableStatus } from '../../../client.js';
+import { describeAssistantTool } from '../../../tool-summary.js';
 import { M } from '../../i18n.js';
 import ToolCallDisplay from '../agent/ToolCallDisplay.svelte';
 import AiUnavailableNotice from '../shared/AiUnavailableNotice.svelte';
@@ -161,6 +162,8 @@ export interface Props {
   toolResultComponent?: (
     message: AssistantMessage,
   ) => Component<{ message: AssistantMessage }> | undefined;
+  /** Trusted host presentation; tool execution data stays out of visible fallback text. */
+  toolPresentation?: 'generic';
   /** How an assistant message's text renders (#4505). `'text'` (default)
    * shows it verbatim, as before. `'markdown'` renders paragraphs, headings
    * (`#`–`###`), lists, fenced and inline code, bold/italic and http(s) links
@@ -272,6 +275,7 @@ const {
   threadList = true,
   toolCall,
   toolResultComponent,
+  toolPresentation,
   messageFormat = 'text',
   renderMessage,
   oncontroller,
@@ -300,6 +304,36 @@ const {
   aiSettingsHref,
 }: Props = $props();
 const { t } = useI18n();
+function toolMessageContent(message: AssistantMessage): string {
+  if (toolPresentation !== 'generic' || message.role !== 'tool')
+    return message.content;
+  const data =
+    message.toolCallData && typeof message.toolCallData === 'object'
+      ? (message.toolCallData as Record<string, unknown>)
+      : {};
+  if (
+    typeof data.label === 'string' &&
+    [
+      'Checked the app structure',
+      'Checked app history',
+      'Checked pending approvals',
+      'Checked records',
+      'Completed this action',
+      'Could not complete this action',
+    ].includes(data.label)
+  )
+    return data.label;
+  const name = typeof data.name === 'string' ? data.name : '';
+  const ok = !['error', 'refused', 'rejected', 'denied'].includes(
+    String(data.status),
+  );
+  return describeAssistantTool(
+    name,
+    undefined,
+    { ok, observation: undefined },
+    { recordLabels: 'generic' },
+  );
+}
 
 // Set when the server answered `ai_unavailable` (#4757); cleared by the next
 // successful send. Rendered as a notice with the host's settings link.
@@ -903,6 +937,7 @@ async function handleConfirmAction(requestId: string) {
                 <AssistantApprovalCard
                   approval={(message.toolCallData as { approval: import('../../../assistant-turn-events.js').AssistantApprovalRequest }).approval}
                   threadId={message.threadId}
+                  {toolPresentation}
                   {transport}
                   ondecided={() => controller.openThread(message.threadId)}
                 />
@@ -915,7 +950,7 @@ async function handleConfirmAction(requestId: string) {
                     {#if message.role === 'assistant'}
                       {@render assistantText(message, false)}
                     {:else}
-                      <p class="assistant-dock-message-content">{message.content}</p>
+                      <p class="assistant-dock-message-content">{toolMessageContent(message)}</p>
                     {/if}
                   {#if message.attachments && message.attachments.length > 0}
                     <ul
@@ -961,7 +996,7 @@ async function handleConfirmAction(requestId: string) {
                   />
                 </div>
               {/if}
-              {#if toolCall && message.toolCallData != null}
+              {#if toolPresentation !== 'generic' && toolCall && message.toolCallData != null}
                 <!-- A host's cards (a report preview, an offer) span the thread
                      under the message's text bubble. -->
                 <div class="assistant-dock-card assistant-dock-tool-call">
@@ -1001,16 +1036,18 @@ async function handleConfirmAction(requestId: string) {
             <p class="assistant-dock-tool-request-title">
               {t(M['chat.assistant_dock.tool_request_title'])}
             </p>
-            <p class="assistant-dock-tool-request-description">{request.description || request.name}</p>
+            <p class="assistant-dock-tool-request-description">{toolPresentation === 'generic' ? t(M['chat.assistant_dock.review_action']) : request.description || request.name}</p>
             {#if request.effect === 'destructive'}
               <p class="assistant-dock-tool-request-warning">
                 {t(M['chat.assistant_dock.tool_request_destructive'])}
               </p>
             {/if}
+            {#if toolPresentation !== 'generic'}
             <details class="assistant-dock-tool-request-details">
               <summary>{t(M['chat.assistant_dock.tool_request_details'])}</summary>
               <pre>{formatToolArgs(request.args)}</pre>
             </details>
+            {/if}
             <div class="assistant-dock-tool-request-actions">
               <Button type="button" size="sm" onclick={() => controller.approveToolRequest(request.id)}>
                 {t(M['chat.assistant_dock.tool_request_allow'])}

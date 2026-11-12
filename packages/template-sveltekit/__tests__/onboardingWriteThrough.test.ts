@@ -548,7 +548,7 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
         })).ok).toBe(true);
         return new Response();
       });
-      designOutput = { summary: 'Add Licence plate to Customers.', checks: ['Customers exists.'], ready: true,
+      designOutput = { summary: 'Add Licence plate to Customers.', personSummary: 'I’m checking the requested changes.', checks: ['Customers exists.'], ready: true,
         operations: [{ tool: 'app.addField', args }] };
       const admitted = await request('/api/assistant/design-runs', host.assistant.POST,
         { threadId: id, content: 'Add a licence plate field to Customers.' });
@@ -560,7 +560,9 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
       }, { timeout: 15000 });
       const pending = await (await request(`/api/assistant/threads/${id}/approvals`, host.assistant.GET)).json();
       expect(pending.approvals).toHaveLength(1);
-      expect(pending.approvals[0].tool).toBe('app.addField');
+      expect(pending.approvals[0].summary).toContain('Licence plate');
+      expect(pending.approvals[0].summary).toContain('Customers');
+      expect(pending.approvals[0].tool).toBe('change');
       const heldMessages = await request(`/api/assistant/threads/${id}/messages`, host.assistant.GET);
       expect(heldMessages.status).toBe(200);
       const heldCards = (await heldMessages.json()).items.filter((message: AssistantMessageWire) =>
@@ -570,7 +572,7 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
       const approvalMessageId = heldCards[0].id;
       expect(heldCards[0]).toMatchObject({ role: 'tool', threadId: id });
       expect(heldCards[0].toolCallData.approval).toMatchObject({
-        id: pending.approvals[0].id, tool: 'app.addField',
+        id: pending.approvals[0].id, tool: 'change',
         callId: pending.approvals[0].id, status: 'pending',
       });
       expect(Object.keys(heldCards[0].toolCallData)).toEqual(['approval']);
@@ -596,6 +598,8 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
           id: pending.approvals[0].id, callId: pending.approvals[0].id, status: 'succeeded',
         } },
       });
+      expect(completedCards[0].toolCallData.approval.summary).toContain('Licence plate');
+      expect(completedCards[0].toolCallData.approval.summary).toContain('Customers');
       expect(Object.keys(completedCards[0].toolCallData)).toEqual(['approval']);
       expect(/"(args|context|designAction|requestKey|result)"\s*:/.test(JSON.stringify(completedCards[0]))).toBe(false);
       expect(designCalls).toBe(3);

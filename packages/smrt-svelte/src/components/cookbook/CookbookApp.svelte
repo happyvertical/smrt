@@ -296,7 +296,7 @@ setCookbookContext({
   {#if assistant && !embed}
     {@const Dock = assistant.component}
     <section class="cookbook-assistant" aria-label={assistantLabel} hidden={!open}>
-      <Dock transport={assistant.transport} registry={assistant.registry} contextMode="server" visible={open} messageFormat="markdown" introduction={assistant.introduction} />
+      <Dock transport={assistant.transport} registry={assistant.registry} contextMode="server" visible={open} messageFormat="markdown" toolPresentation={assistant.toolPresentation} introduction={assistant.introduction} />
     </section>
   {/if}
 {/snippet}

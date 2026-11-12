@@ -13,6 +13,8 @@ import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
   'chat.approval.approve': 'Approve',
+  'chat.approval.review_change': 'Review this change',
+  'chat.assistant_dock.review_action': 'Review this action',
   'chat.approval.deny': 'Deny',
   'chat.approval.pending': 'Waiting for your approval',
   'chat.approval.approved': 'Approved',

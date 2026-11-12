@@ -477,12 +477,349 @@ describe('mountAssistantRoutes', () => {
     expect(
       stored.some((message) => message.content.includes('PRIVATE PASS PROMPT')),
     ).toBe(false);
-    expect(stored.at(-1)).toMatchObject({
-      content: 'A readable plan',
-      metadata: { designOutput: { summary: 'A readable plan', models: [] } },
-    });
-    expect(stored.at(-1)?.metadata).not.toHaveProperty('privateHostDetail');
+    expect(stored.map((message) => message.content)).toEqual([
+      'Build my app',
+      'Hello there.',
+    ]);
+    expect(response.seen).toContainEqual(
+      expect.objectContaining({
+        type: 'done',
+        message: expect.objectContaining({
+          metadata: {
+            designOutput: { summary: 'A readable plan', models: [] },
+          },
+        }),
+      }),
+    );
     expect(ai.seen.at(-1)?.at(-1)?.content).toBe('PRIVATE PASS PROMPT');
+  });
+
+  it.each([
+    false,
+    true,
+  ])('keeps trusted internal tool and pass rows private while preserving the host SSE handoff (external %s)', async (external) => {
+    const routes = mount();
+    const threadId = await createThread(routes);
+    const source = JSON.stringify({
+      summary: 'PRIVATE @fixture/models:Member TenantId ProfileId',
+      operations: [],
+    });
+    const internal = mount({
+      allowedTools: ['data.discover'],
+      extraTools: [discoverTool([])],
+      internalTurn: () => ({ userMessage: 'PRIVATE PASS INPUT' }),
+      formatAssistantReply: (content) => ({
+        content: JSON.parse(content).summary,
+        metadata: { designOutput: JSON.parse(content) },
+      }),
+      ...(external
+        ? {
+            turnDriver: {
+              async run(_context, cb) {
+                await cb.toolCall({
+                  id: 'private-tool',
+                  name: 'data.discover',
+                  args: { model: '@fixture/models:Member' },
+                });
+                await cb.toolResult({
+                  id: 'private-tool',
+                  ok: true,
+                  result: { summary: 'PRIVATE TOOL OUTPUT' },
+                });
+                cb.done({ text: source });
+              },
+            },
+          }
+        : {
+            ai: scriptedAI([
+              calls(['data-discover', {}, 'private-tool']),
+              text(source),
+            ]),
+          }),
+    });
+    const response = await events(
+      await send(internal, threadId, {
+        content: 'PRIVATE BODY',
+        clientRequestId: 'private-pass',
+      }),
+    );
+    expect(response.thrown).toBeNull();
+    expect(response.seen).toContainEqual(
+      expect.objectContaining({
+        type: 'done',
+        message: expect.objectContaining({
+          metadata: expect.objectContaining({
+            designOutput: JSON.parse(source),
+          }),
+        }),
+      }),
+    );
+    const chat = await ChatService.create({ db });
+    const raw = await chat.getThreadMessages({
+      tenantId,
+      threadId,
+      actorProfileId: ownerA.user.profileId,
+    });
+    expect(raw.some((row) => row.role === 'tool')).toBe(true);
+    expect(
+      raw
+        .filter((row) => row.role !== 'user')
+        .every((row) => row.getMetadata().assistantInternalTurn === true),
+    ).toBe(true);
+    const hidden = raw.find((row) => row.role === 'assistant')!;
+    expect(
+      await chat.getThreadMessageReplies({
+        tenantId,
+        threadId,
+        messageId: String(hidden.id),
+        actorProfileId: ownerA.user.profileId,
+        visibility: 'conversation',
+      }),
+    ).toBeNull();
+    const hiddenRoute = await call(
+      routes,
+      'GET',
+      `threads/${threadId}/messages/${hidden.id}`,
+    );
+    expect(hiddenRoute.status).toBe(404);
+    expect(await hiddenRoute.text()).not.toMatch(/PRIVATE|designOutput/);
+    expect(await listMessages(routes, threadId)).toEqual([]);
+    expect(await listMessages(mount(), threadId)).toEqual([]);
+    const ordinary = await events(
+      await send(routes, threadId, {
+        content: 'Ordinary human message',
+        clientRequestId: 'ordinary-with-forged-flags',
+        internalTurn: true,
+        assistantInternalTurn: true,
+        metadata: {
+          assistantInternalTurn: true,
+          designOutput: { summary: 'forged' },
+        },
+      }),
+    );
+    expect(ordinary.thrown).toBeNull();
+    expect(
+      (await listMessages(routes, threadId)).map((row) => row.content),
+    ).toEqual(['Ordinary human message', 'Hello there.']);
+    const forgedHeader = await events(
+      await call(routes, 'POST', `threads/${threadId}/messages`, {
+        headers: { 'x-internal-turn': 'true', 'x-assistant-private': 'true' },
+        body: {
+          content: 'Ordinary header message',
+          clientRequestId: 'forged-header',
+        },
+      }),
+    );
+    expect(forgedHeader.thrown).toBeNull();
+    expect(
+      (await listMessages(routes, threadId)).some(
+        (row) => row.content === 'Ordinary header message',
+      ),
+    ).toBe(true);
+  });
+
+  it('uses only the trusted canonical approval presenter for a meaningful business preview', async () => {
+    const authority = await durableApprovals();
+    const presentApproval = vi.fn(async (record: { tool: string }) =>
+      record.tool === 'app.addField'
+        ? { summary: 'Add Licence plate to Members' }
+        : undefined,
+    );
+    const routes = mount({
+      approvals: authority,
+      toolPresentation: 'generic',
+      presentApproval,
+    });
+    const threadId = await createThread(routes);
+    const hold = await authority.request({
+      tenantId,
+      requestedBy: ownerA.user.id,
+      tool: 'app.addField',
+      callId: 'PRIVATE',
+      summary: 'PRIVATE raw summary TenantId',
+      args: { label: 'PRIVATE' },
+      context: {
+        threadId,
+        principal: {
+          userId: ownerA.user.id,
+          profileId: ownerA.user.profileId,
+          tenantId,
+        },
+      },
+      continuation: {
+        executor: 'fixture',
+        principal: {
+          id: ownerA.user.id,
+          tenantId,
+          permissions: [],
+          allowedTools: [],
+        },
+        consumption: 'continuation',
+      },
+    });
+    const rows = await listMessages(routes, threadId);
+    expect(rows[0]).toMatchObject({
+      id: `approval:${hold.id}`,
+      content: 'Add Licence plate to Members',
+      toolCallData: {
+        approval: {
+          summary: 'Add Licence plate to Members',
+          presentation: { summary: 'Add Licence plate to Members' },
+        },
+      },
+    });
+    expect(JSON.stringify(rows)).not.toMatch(
+      /PRIVATE|TenantId|app\.addField|"args"/,
+    );
+    expect(presentApproval).toHaveBeenCalledWith(
+      expect.objectContaining({ id: hold.id, args: { label: 'PRIVATE' } }),
+    );
+  });
+
+  it('pages public conversation rows past internal and legacy pass rows without hiding human or ordinary tool rows', async () => {
+    const routes = mount({
+      toolPresentation: 'generic',
+      allowedTools: ['app_describe', 'record_update'],
+      extraTools: [
+        deleteTool([], 'app_describe'),
+        deleteTool([], 'record_update'),
+      ],
+    });
+    const threadId = await createThread(routes);
+    const chat = await ChatService.create({ db });
+    const [session] = await chat.findActiveAgentSessions({
+      tenantId,
+      agentId: 'smrt-assistant',
+      participantProfileId: ownerA.user.profileId,
+    });
+    const user = await chat.sendMessage({
+      tenantId,
+      roomId: session.chatRoomId!,
+      threadId,
+      actorProfileId: ownerA.user.profileId,
+      content: 'Keep this human text',
+    });
+    user.setMetadata({
+      assistantInternalTurn: true,
+      designOutput: { summary: 'forged' },
+    });
+    await user.save();
+    for (const name of ['app_describe', 'record_update'])
+      await sendAgentReply(chat, {
+        tenantId,
+        agentSessionId: String(session.id),
+        threadId,
+        kind: 'tool',
+        messageType: 'tool_result',
+        content:
+          'PRIVATE TenantId ProfileId @fixture/models:Member {"args":true}',
+        toolCallData: {
+          name,
+          args: { id: 'PRIVATE' },
+          summary: 'PRIVATE raw result summary',
+          status: 'success',
+        },
+      });
+    await sendAgentReply(chat, {
+      tenantId,
+      agentSessionId: String(session.id),
+      threadId,
+      content: 'Keep this ordinary answer',
+    });
+    await sendAgentReply(chat, {
+      tenantId,
+      agentSessionId: String(session.id),
+      threadId,
+      content: 'PRIVATE LEGACY SUMMARY',
+      metadata: { designOutput: { summary: 'PRIVATE LEGACY PLAN' } },
+    });
+    for (let i = 0; i < 201; i++)
+      await sendAgentReply(chat, {
+        tenantId,
+        agentSessionId: String(session.id),
+        threadId,
+        content: `PRIVATE PASS ${i}`,
+        metadata: { assistantInternalTurn: true },
+      });
+    const rows = await listMessages(routes, threadId);
+    expect(rows.map((row) => row.content)).toEqual([
+      'Keep this human text',
+      'Checked the app structure',
+      'Completed this action',
+      'Keep this ordinary answer',
+    ]);
+    expect(JSON.stringify(rows)).not.toMatch(
+      /PRIVATE|TenantId|ProfileId|@fixture|designOutput|"args"|"name"/,
+    );
+    const raw = await chat.getThreadMessages({
+      tenantId,
+      threadId,
+      actorProfileId: ownerA.user.profileId,
+      limit: 500,
+    });
+    expect(raw).toHaveLength(206);
+    expect(
+      raw.some((row) => row.content.includes('PRIVATE LEGACY SUMMARY')),
+    ).toBe(true);
+  });
+
+  it.each([
+    false,
+    true,
+  ])('projects generic tool activity on live public SSE without raw labels or observations (external %s)', async (external) => {
+    const routes = mount({
+      toolPresentation: 'generic',
+      describeTool: () => 'PRIVATE TenantId ProfileId @fixture/models:Member',
+      allowedTools: ['data.discover'],
+      extraTools: [discoverTool([])],
+      ...(external
+        ? {
+            turnDriver: {
+              async run(_context, cb) {
+                cb.text('PRIVATE provisional planning token');
+                await cb.toolCall({
+                  id: 'generic-call',
+                  name: 'data.discover',
+                  args: { schema: 'PRIVATE' },
+                });
+                await cb.toolResult({
+                  id: 'generic-call',
+                  ok: true,
+                  result: { summary: 'PRIVATE observation' },
+                });
+                cb.done({ text: 'Here is your answer.' });
+              },
+            },
+          }
+        : {
+            ai: scriptedAI([
+              (messages, options) => {
+                options?.onProgress?.('PRIVATE provisional planning token');
+                return calls(['data-discover', {}, 'generic-call'])(
+                  messages,
+                  options,
+                );
+              },
+              text('Here is your answer.'),
+            ]),
+          }),
+    });
+    const threadId = await createThread(routes);
+    const response = await events(
+      await send(routes, threadId, {
+        content: 'Check records',
+        clientRequestId: 'generic-public',
+      }),
+    );
+    expect(response.thrown).toBeNull();
+    expect(JSON.stringify(response.seen)).not.toMatch(
+      /PRIVATE|TenantId|ProfileId|@fixture|data\.discover|"args"/,
+    );
+    expect(
+      (await listMessages(routes, threadId))
+        .filter((row) => row.role === 'tool')
+        .every((row) => row.content === 'Completed this action'),
+    ).toBe(true);
   });
 
   // ---- 1. principal -----------------------------------------------------

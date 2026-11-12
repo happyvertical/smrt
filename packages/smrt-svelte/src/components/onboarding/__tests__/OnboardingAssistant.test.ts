@@ -17,6 +17,7 @@ describe('tool-derived assistant introduction', () => {
       props: {
         transport: { sendMessage: vi.fn() },
         registry: createDataSurfaceRegistry(),
+        toolPresentation: 'generic',
         introduction: {
           lists: ['Customers', 'Classes'],
           actions: ['read', 'customize', 'imaginary'],
@@ -31,6 +32,10 @@ describe('tool-derived assistant introduction', () => {
       screen.getByText('Ask me to find what you need.'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByTestId('assistant-dock')).toHaveAttribute(
+      'data-tool-presentation',
+      'generic',
+    );
     expect(
       screen.queryByText(
         /Profile|imaginary|Available actions|request deletion|approval/,

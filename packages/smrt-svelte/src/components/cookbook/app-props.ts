@@ -45,6 +45,7 @@ export interface CookbookAppProps
       contextMode?: 'data-surfaces' | 'server';
       visible?: boolean;
       messageFormat?: 'text' | 'markdown';
+      toolPresentation?: 'generic';
       introduction?: {
         lists: string[];
         actions: string[];
@@ -54,6 +55,8 @@ export interface CookbookAppProps
     transport: AssistantTransport;
     registry: DataSurfaceRegistry;
     label?: string;
+    /** Host-owned person-facing tool copy; raw provider history stays private. */
+    toolPresentation?: 'generic';
     introduction?: { lists: string[]; actions: string[]; configured: boolean };
   };
   /** Embedded/plugin hosts keep their content and navigation without in-app chat. */

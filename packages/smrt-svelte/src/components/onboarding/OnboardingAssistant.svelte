@@ -15,6 +15,7 @@ let {
   visible = true,
   contextMode,
   messageFormat,
+  toolPresentation,
   introduction,
 }: {
   transport: AssistantTransport;
@@ -22,6 +23,7 @@ let {
   visible?: boolean;
   contextMode?: 'server' | 'data-surfaces';
   messageFormat?: 'text' | 'markdown';
+  toolPresentation?: 'generic';
   introduction?: { lists: string[]; actions: string[]; configured: boolean };
 } = $props();
 const { t } = useI18n();
@@ -50,7 +52,7 @@ const help = $derived(
     {#if help}<p>{t(help)}</p>{/if}
   </div>
 {/if}
-<div class="dock"><AssistantDock {transport} {registry} {visible} {contextMode} {messageFormat} aiSettingsHref="/settings" oncontroller={next => { controller = next; }} /></div>
+<div class="dock"><AssistantDock {transport} {registry} {visible} {contextMode} {messageFormat} {toolPresentation} aiSettingsHref="/settings" oncontroller={next => { controller = next; }} /></div>
 {/if}
 </div>
 <style>

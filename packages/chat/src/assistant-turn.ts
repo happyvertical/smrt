@@ -323,6 +323,8 @@ export interface AssistantTurnAuthor {
   agentSessionId: string;
   tenantId: string;
   threadId?: string | null;
+  /** Trusted per-turn provenance stamped on every agent-authored row. Never request input. */
+  metadata?: Readonly<Record<string, unknown>>;
   /**
    * Maps a SUCCESSFUL server tool invocation to a persisted message, or
    * `null` to keep it out of the conversation. The default is a short summary. Failed calls go through {@link authorFailedInvocation}, which
@@ -1000,16 +1002,17 @@ async function runTurn<M>(
           ...reply.toolCallData,
           label: describe(invocation.slug, invocation.args, invocation),
         },
-        ...(failure
-          ? {
-              metadata: {
+        metadata: {
+          ...author.metadata,
+          ...(failure
+            ? {
                 toolStatus: failure.status,
                 errorKind: failure.errorKind,
                 errorCode: failure.errorCode,
                 ...(failure.recoverable ? { recoverable: true } : {}),
-              },
-            }
-          : {}),
+              }
+            : {}),
+        },
       });
       emit({ type: 'message', message: serialize(message) });
     } catch (error) {
@@ -1075,6 +1078,7 @@ async function runTurn<M>(
             messageType: 'tool_call',
             content: request.summary,
             toolCallData: { id, name: tool.slug, args, approval: request },
+            metadata: author.metadata,
           });
           emit({ type: 'message', message: serialize(message) });
         }
@@ -1324,10 +1328,13 @@ async function runTurn<M>(
         replyToMessageId: originMessageId ?? null,
         kind: 'assistant',
         content: text,
-        metadata: replyMetadataFor(
-          { stoppedReason: 'provider_error' },
-          { content: text, fallback: 'provider_error' },
-        ),
+        metadata: {
+          ...replyMetadataFor(
+            { stoppedReason: 'provider_error' },
+            { content: text, fallback: 'provider_error' },
+          ),
+          ...author.metadata,
+        },
       });
       finalMessage = serialize(message);
       emit({ type: 'message', message: finalMessage });
@@ -1466,7 +1473,7 @@ async function runTurn<M>(
       replyToMessageId: originMessageId ?? null,
       kind: 'assistant',
       content,
-      metadata: replyMetadata,
+      metadata: { ...replyMetadata, ...author.metadata },
     });
     finalMessage = serialize(message);
     emit({ type: 'message', message: finalMessage });

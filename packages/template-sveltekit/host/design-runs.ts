@@ -97,13 +97,49 @@ const outputSchema = {
     },
   },
 };
-const definitionPrefix = 'cookbook-design/v3/';
+const definitionPrefix = 'cookbook-design/v4/';
+const legacyDurablePrefix = 'cookbook-design/v3/';
+const applicableDefinitions = /^cookbook-design\/v[34]\//;
 // d3b879bef0: core app.addField inputSchema after the v2 adapter excludes
 // approvalId. Derived with core's exported stableStringify, never a copied schema.
 const v2AddFieldSchemaPin =
   '0a56ace412f0b4756eb29fb16575da602fb97316fe644ac5ea217278756be9b4';
 const fingerprint = (value: unknown) =>
   createHash('sha256').update(stableStringify(value)).digest('hex');
+
+/** Public progress is host-owned; model prose and raw checkpoint notes stay private. */
+export function presentCookbookDesignProgress(
+  event: DesignRunProgress,
+): DesignRunProgress {
+  const notes = {
+    running: 'I’m working through your request.',
+    checking: 'I’m checking the proposed changes.',
+    'waiting-approval': 'Your changes are ready for your review.',
+    stopped: 'This work is paused.',
+    failed: 'I couldn’t finish this request. Please try again.',
+    done: 'This work is complete.',
+  };
+  return {
+    runId: event.runId,
+    status: event.status,
+    pass: {
+      index: event.pass.index,
+      count: event.pass.count,
+      name:
+        event.pass.index === 1
+          ? 'Checking your request'
+          : event.pass.index === 2
+            ? 'Planning your changes'
+            : 'Checking the proposed changes',
+    },
+    note:
+      event.status === 'failed' &&
+      event.note ===
+        'No changes were applied. The design needs more information before it can propose a supported change.'
+        ? 'No changes were made. I need a little more information.'
+        : notes[event.status],
+  };
+}
 
 /**
  * Concrete cookbook workflow on inference checkpoints and the existing jobs queue.
@@ -151,11 +187,27 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
     const operations = structured
       ? ((await options.listOperations?.(ownerId, tenantId)) ?? [])
       : [];
-    const schema = structured
+    const versionedOutputSchema = definition.startsWith(definitionPrefix)
       ? {
           ...outputSchema,
+          required: [...outputSchema.required, 'personSummary'],
           properties: {
             ...outputSchema.properties,
+            personSummary: {
+              type: 'string',
+              minLength: 1,
+              maxLength: 240,
+              description:
+                'A short plain-language explanation for the person. Never include implementation details. The host validates presentation separately; this field does not grant authority.',
+            },
+          },
+        }
+      : outputSchema;
+    const schema = structured
+      ? {
+          ...versionedOutputSchema,
+          properties: {
+            ...versionedOutputSchema.properties,
             operations: {
               ...outputSchema.properties.operations,
               description:
@@ -257,7 +309,7 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
           const final = index === count - 1;
           const input = readInput(state.input);
           if (
-            definition.startsWith(definitionPrefix) &&
+            applicableDefinitions.test(definition) &&
             (state.input as { schemaPin?: unknown }).schemaPin !==
               fingerprint(schema)
           )
@@ -265,7 +317,7 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
               'The design schema changed; start a new design run',
             );
           const preview = input.profile.previewBeforeApply;
-          if (final && definition.startsWith(definitionPrefix) && !plan.ready)
+          if (final && applicableDefinitions.test(definition) && !plan.ready)
             return {
               failure:
                 'No changes were applied. The design needs more information before it can propose a supported change.',
@@ -276,7 +328,7 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
             };
           if (
             final &&
-            definition.startsWith(definitionPrefix) &&
+            applicableDefinitions.test(definition) &&
             plan.ready &&
             plan.operations.length
           ) {
@@ -366,7 +418,7 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
       async executePass(request) {
         await options.authorize(ownerId, tenantId);
         if (
-          definition.startsWith(definitionPrefix) &&
+          applicableDefinitions.test(definition) &&
           (request.input as { schemaPin?: unknown }).schemaPin !==
             fingerprint(schema)
         )
@@ -406,13 +458,14 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
             },
           }
         : {}),
-      onProgress: options.onProgress,
+      onProgress: (event) =>
+        options.onProgress?.(presentCookbookDesignProgress(event)),
     });
     return { ...workflow, validateProposal: validateOutput, schema };
   }
 
   function passCount(definition: string) {
-    const match = /^cookbook-design\/v[123]\/(\d+)$/.exec(definition);
+    const match = /^cookbook-design\/v[1234]\/(\d+)$/.exec(definition);
     if (!match) throw new Error('Design run definition changed');
     return Number(match[1]);
   }
@@ -552,7 +605,7 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
           const output = state.outputs[passCount(state.definition) - 1];
           const input = readInput(state.input);
           if (
-            !state.definition.startsWith(definitionPrefix) ||
+            !applicableDefinitions.test(state.definition) ||
             state.phase !== 'check' ||
             state.passIndex !== passCount(state.definition) - 1 ||
             !['waiting-approval', 'running', 'checking'].includes(
@@ -607,7 +660,13 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
           ) {
             const count = passCount(state.definition);
             const final = state.outputs[count - 1];
-            const upgraded = await driver(ownerId, tenantId, count);
+            const upgraded = await driver(
+              ownerId,
+              tenantId,
+              count,
+              undefined,
+              `${legacyDurablePrefix}${count}`,
+            );
             const variants = upgraded.schema.properties.operations.items as {
               oneOf?: Array<{
                 properties: { tool: { const: string }; args: unknown };
@@ -661,13 +720,23 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
             // The same current owning schema must still be offered after auth.
             if (
               fingerprint(upgraded.schema) !==
-              fingerprint((await driver(ownerId, tenantId, count)).schema)
+              fingerprint(
+                (
+                  await driver(
+                    ownerId,
+                    tenantId,
+                    count,
+                    undefined,
+                    `${legacyDurablePrefix}${count}`,
+                  )
+                ).schema,
+              )
             )
               throw new Error('The design schema changed');
             const next: DesignRunState = {
               ...state,
               revision: state.revision + 1,
-              definition: `${definitionPrefix}${count}`,
+              definition: `${legacyDurablePrefix}${count}`,
               phase: 'check',
               passIndex: count - 1,
               input: {
@@ -721,7 +790,7 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
               'The current design pass is stopping. Resume when it has stopped.',
             );
           if (
-            state.definition.startsWith(definitionPrefix) &&
+            applicableDefinitions.test(state.definition) &&
             state.phase === 'check' &&
             ['running', 'checking'].includes(state.status) &&
             state.passIndex === passCount(state.definition) - 1
@@ -823,7 +892,7 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
           const state = await run.status(id, ownerId);
           if (
             state.status !== 'waiting-approval' ||
-            !state.definition.startsWith(definitionPrefix)
+            !applicableDefinitions.test(state.definition)
           )
             return state;
           return run.resume(id, ownerId);
