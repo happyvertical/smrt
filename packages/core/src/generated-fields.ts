@@ -255,17 +255,16 @@ export function validateGeneratedFields(
 export function generatedColumnExpression(
   expression: GeneratedExpression,
 ): GeneratedExpression {
-  const map = (node: AggregateOperand): AggregateOperand => {
-    if ('col' in node) return { col: toSnakeCase(node.col) };
-    if ('value' in node) return node;
-    if ('left' in node)
-      return { ...node, left: map(node.left), right: map(node.right) };
-    if ('operands' in node)
-      return { ...node, operands: node.operands.map(map) };
-    if ('operand' in node) return { ...node, operand: map(node.operand) };
-    return { ...node, later: map(node.later), earlier: map(node.earlier) };
+  const map = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(map);
+    if (!value || typeof value !== 'object') return value;
+    if ('col' in value)
+      return { col: toSnakeCase((value as { col: string }).col) };
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [key, map(child)]),
+    );
   };
-  return map(expression);
+  return map(expression) as GeneratedExpression;
 }
 
 /** DDL cannot bind parameters. Extract SDK SQL and inline its validated literals. */

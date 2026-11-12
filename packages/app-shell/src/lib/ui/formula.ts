@@ -28,6 +28,7 @@ export function formulaWords(
       sub: '−',
       mul: '×',
       div: '÷',
+      mod: 'remainder after dividing by',
       eq: 'equals',
       ne: 'does not equal',
       lt: 'is less than',
