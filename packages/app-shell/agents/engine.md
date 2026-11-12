@@ -162,3 +162,5 @@ is documented here; the shell's tables, approvals and UI sit on top.
 - If V8 overflows its own stack inside WebAssembly, QuickJS cannot recover; the
   small QuickJS stack limit keeps its error first, and a host-level failure
   discards the WASM module instance.
+
+S1 shared Connect AI compatibility: the shell client/owner onboarding route forwards `cancel` to shared `chatgpt-cancel`. Unsupported auth SDK cancellation remains an error, not a fake successful sign-out. Existing owner/origin checks and shared readiness status are retained.

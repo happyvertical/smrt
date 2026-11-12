@@ -213,3 +213,5 @@ only approval completion or the caller checkpoint failed, a retry proves the
 applied journal result and reconciles executing to succeeded. An executing hold
 without journal proof reports an explicit unknown outcome; it is never dispatched
 again automatically. Generic owner continuations retain their at-most-once rule.
+
+S1: `requireRemovalApproval(context)` is an optional trusted host callback (default true). It can waive native removeField/removeList/undo/recipes.disable holds only for `surface: assistant`; MCP and other outside surfaces always require the existing durable approval. Host-requested holds and design-preview policy remain independent and can still require a hold. Mutations continue through the existing version editor/history and audit sink. Tests exercise opt-out assistant mutation/history versus outside MCP hold.

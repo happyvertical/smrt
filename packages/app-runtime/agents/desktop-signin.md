@@ -29,3 +29,7 @@ by name and purpose across smrt-ui, smrt-svelte, chat, core, app-runtime and
 app-shell. Integration already owns the launch mode and shared reopen wording; E3 uses that
 API and retains only its additional failure-message and relaunch regressions.
 This documentation file adds no helper, component, model or route.
+
+## Local session isolation (S1)
+
+The default cookie is `smrt_<installation digest>_sid`, derived from the application id and resolved state root. Separate local installations on 127.0.0.1 do not overwrite one another. Explicit host cookie names remain supported. Only a verified legacy `sid` session migrates to the scoped cookie; an invalid scoped cookie never falls back. Flags, domain, path and expiry are unchanged; legacy cookies are not deleted because another app may own them. `src/sveltekit.test.ts` covers two simultaneous installations, stable names, legacy migration and invalid-cookie refusal.

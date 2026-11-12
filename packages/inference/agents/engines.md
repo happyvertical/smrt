@@ -2,11 +2,11 @@
 
 ## Codex containment (owner-authorized 2026-11-12 policy)
 
-Codex 0.162.1 is usable. Enable **only `code_mode_host`** in addition to the
+Codex 0.162.1 is usable. Enable **only `code_mode_host`** (when protection is on) in addition to the
 existing modern MCP protocol feature. The host necessarily registers
 `apply_patch`; shell/unified execution and all other optional machine features
 stay disabled. Every Codex attempt (including resume/fallback) now gets a NEW
-empty 0700 `<app data>/agent-cli/run/turn-*/work` folder, removed in the existing
+empty 0700 `<engine state>/run/turn-*/work` folder, removed in the existing
 finally cleanup after completion, error, abort and timeout. Concurrent turns
 never share it. User config/rules are ignored; project document bytes are zero
 and bundled skills disabled. Schema/config files remain outside the writable
@@ -429,3 +429,21 @@ Codex cached input is already part of input_tokens and is not counted twice.
 A sessionless CLI pass records execution through `host.recordExecution`; its
 message has no session metadata. Existing hosts retain the original tool/session
 message union without fabricated session IDs.
+
+## Per-app local CLI protection (S1 owner setting)
+
+Integration hold: protection-off is a tested local prototype pending an owner boundary decision. App-tool approval gates remain enforced, but unrestricted native commands can edit the app's database files directly. The current implementation does not provide an always-enforced raw-file deletion guarantee. Either scope that guarantee to app tools with an explicit warning, or retain app-data isolation through an OS confinement design before integrating this mode.
+
+`AgentTurnOptions.protection` defaults to true; omitted means the containment documented above, unchanged. Only the verified owner settings route may persist false, after an explicit command/file risk confirmation. This is not an MCP/tool argument.
+
+With protection **off**, both engines start in persistent `<engine state>/work` (not the project/source tree). Claude Code 2.1.319 uses `--permission-mode bypassPermissions --permission-prompts none`: native operations run without a terminal prompt. Omit `--tools ""`, `--allowedTools`, `--strict-mcp-config`, `--setting-sources ""`, `--disable-slash-commands` and `--no-chrome` so the person's normal tools/config/plugins are available. The app's private `--mcp-config` still supplies its scoped endpoint by environment reference. The cookbook host sets engine state to the app data root, so its exact cwd is `<app data>/work`; protected Codex uses `<app data>/run/turn-*/work`. Other hosts may supply a dedicated engine-state subdirectory.
+
+Codex 0.162.1 off uses `sandbox_mode="danger-full-access"`, `approval_policy="never"`, `web_search="live"`; it omits the optional-feature disable list, `--ignore-user-config`, `--ignore-rules` and protected workspace overrides. This explicitly permits commands, files and network under the person's OS authority and own CLI config/plugins. Modern MCP and `code_mode_host` remain enabled for app tools. `shell_environment_policy.inherit="none"` remains forced in BOTH states: model shell commands do not inherit the app credential. Protection on retains the fresh 0700 per-attempt folder and cleanup. These flags were checked against installed `claude --help` and `codex exec --help`, not inferred.
+
+Always: strip API-key environment variables, loopback-only MCP, short-lived owner-bound token in child environment (never argv/config/logs), app tool allow-list, owner deletion policy, Stop/timeout process-group kill and credential revocation. Off-mode native events record only sanitized tool names (`agent_tool_native`), not input/output; they do not fail an otherwise valid app request. Other app MCP tools remain fail-closed. Off-mode answers buffer to a message/tool boundary and reuse `redactInferenceSecret` to prevent split credential echoes reaching UI/history. Work-profile model/effort and classified one-step fallback are unchanged. Status/preflight caches are separated by protection mode.
+
+Stub command specs, stream turns and credential-echo tests cover both modes. The shared ChatGPT connection accepts an optional SDK `begin().cancel` handle; without it, cancellation is explicitly unavailable and pending status remains truthful. Late/expired successful callbacks are signed out instead of silently reconnecting. SDK listener/state/timeout fixes belong upstream.
+
+S1 live proof used the built `s1-settings` product with the desktop sidecar environment and four harmless turns, one engine/state pair each. Claude on refused shell access (zero tool calls); Claude off used Bash for `date +%F`. Codex on reported shell unavailable; Codex off used exec_command for the same harmless date command. Product `docs/qa-live-engines.md` carries the exact prompts, requested/reported models and final validation. These checks do not exercise ChatGPT sign-in or chat; its SDK event-stream fix remains unreleased.
+
+ChatGPT failure diagnostics (V2): `reportAgentFailure('chatgpt', ...)` follows bounded own-data `cause` wrappers and records only allow-listed provider codes plus a bounded `req_` or UUID request id. It never logs error messages, account fields, response bodies, tokens or arbitrary metadata. The wire error remains the existing safe message; the correlated server reference identifies the cause. Tests exercise direct and wrapped SDK failures and rejection of secret-bearing message/account fields.

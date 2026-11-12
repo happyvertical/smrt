@@ -699,3 +699,13 @@ presentation paths. An unknown qualified identity returns no placement before
 entry matching, so two missing registrations cannot match through undefined
 values. A retained hold for an unavailable model stays a generic review caption;
 the owning plugin fixture checks this without executing or approving that hold.
+
+## S1 assistant safety composition
+
+The existing work-profile facade stores per-app owner safety choices. Reads report editability only for a verified owner session; writes/reset require that session, live owner membership and revision checks, and protection-off requires explicit confirmation. No tool exposes these settings. Both the built-in chat policy and native/model MCP dispatch read the same removal preference. Only a short-lived token bound to this host's actual thread may opt out; outside MCP/plugin/local tokens always hold. Purges stay held. Native cookbook services receive the same owner removal policy while design preview remains independent. Existing CRUD/audit execution is retained. CLI protection reaches turn specs and the same mode-specific readiness preflight; it never alters credential or cancellation boundaries.
+
+Reuse check: smrt-dev-mcp reviews and purpose/name searches covered app-runtime, chat, core, inference, preferences, smrt-svelte, template-sveltekit and app-shell, plus `docs/knowledge/intents/index.md`. No new production files/components/helpers were introduced. Extended the existing work-profile types/facade, approval policy/authority, CLI specs/parsers/preflight, failure reporter/redactor, runtime cookie, ConnectAi route/client and UI primitives.
+
+In-flight removal settings: the MCP boundary honors both the current owner preference and the running turn's existing `requiresApproval` gate. Tightening can add a hold immediately; relaxing never waives a hold already bound to that request. This prevents an effect from running and then being rejected by result authoring. CLI host tests flip the preference just before MCP execution and still require the original owner decision exactly once.
+
+The browser gate accepts `SMRT_BROWSER_TEST_PORT` to reserve an assigned loopback port. Installed Chrome is supported through `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`; this worker used port 4969.

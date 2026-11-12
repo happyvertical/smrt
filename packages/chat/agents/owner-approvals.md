@@ -143,3 +143,9 @@ pending poll cannot re-enable buttons after a newer decision. Verification and
 execution authority remain server-owned. Tests release an actual deferred card
 poll after approved/executing/terminal decision responses and preserve the
 newer caption, status and disabled decision state.
+
+## Owner removal preference
+
+`AssistantApprovalPolicy.allowRemovalsInChat` is trusted host input, resolved per authenticated turn, never from model arguments. Default is a hold. A true value skips ordinary delete/remove holds only; purge/drop/truncate/destroy and unknown destructive hints remain held. Native cookbook tools retain their own authority and independent design-preview checks. The host must never pass the opt-out for an outside MCP/plugin/local-credential request. The normal dispatch and change-history paths still execute; the preference is not an approval decision. Tests cover forged tool flags, purge effects and the CLI host's chat/outside distinction.
+
+In-flight removal settings: the MCP boundary honors both the current owner preference and the running turn's existing `requiresApproval` gate. Tightening can add a hold immediately; relaxing never waives a hold already bound to that request. This prevents an effect from running and then being rejected by result authoring. CLI host tests flip the preference just before MCP execution and still require the original owner decision exactly once.

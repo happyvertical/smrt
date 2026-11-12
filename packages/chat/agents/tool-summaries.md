@@ -151,3 +151,5 @@ Tests drive the mounted dock, preserve draft/retry/a11y, and launch both inferen
 stub engines under the exact desktop `buildSidecarEnv` composition. No desktop
 production environment policy changed. Reuse the desktop environment helper via
 a test-only import; no duplicate environment builder is introduced.
+
+S1: canonical dotted `app.describe`, `app.history`, `recipes.search` and `recipes.describe` names use the existing person-facing summary table, including durable design steps. Unknown tool payloads remain hidden. ChatGPT failures pass their cause to inference's existing correlated failure reporter; only allow-listed codes and bounded `req_` or UUID request ids are logged, never exception messages or accounts.

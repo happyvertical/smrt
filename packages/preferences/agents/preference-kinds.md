@@ -120,3 +120,5 @@ index, preferences, inference, chat, core, smrt-ui and smrt-svelte found the gen
 kind/store and the existing owner pre-built facade. This new kind reuses both;
 no new table or preference persistence layer was added. Round-trip/reset and
 owner/conflict/invalid-value assertions run in the existing SQLite/DuckDB suite.
+
+S1 extends the existing owner `work-profiles` tenant preference with `safety.requireRemovalApproval` and `safety.protectLocalCli` booleans; absent means true. Unknown safety keys are invalid. Turning protection off requires the facade's explicit `confirmUnprotectedCli` acknowledgement unless already off; owner authorization and optimistic revision checks still apply. Reset removes the override and restores both defaults. Hosts must require an owner browser session, not just a scoped API principal, and must not register preference mutation as an assistant tool.

@@ -176,3 +176,5 @@ Reuse `InferenceEngineAction`, Button and safeHref for the actual link requireme
 Component tests cover placement, disappearance after the AI step and unsafe URLs;
 product svelte-check verifies the real cross-version boundary. No type assertion,
 new action type, helper, component or dependency override is needed.
+
+S1: failed engine selection stays visible across focus/status refresh. Pending ChatGPT sign-in recovers its validated link through `chatgpt-start` after reload without reopening the system browser. The link, ten-minute expiry explanation and Cancel live inside the ChatGPT card in both presentations. `chatgpt-cancel` invokes the authenticated connection's cancellation handle; unsupported SDK cancellation returns a fixed 409 and is never shown as success. No raw remote errors/URLs enter logs. WorkProfileSettings reuses Card/Toggle/ConfirmDialog for default-on removal and local-CLI protection settings; disabling protection requires the explicit command/file risk confirmation. The ChatGPT engine choice links to Connect AI when signed out.
