@@ -681,6 +681,61 @@ describe('runToolLoop', () => {
     expect(result.invocations[0]).toMatchObject({ ok: true, rejected: false });
   });
 
+  it('uses a host vocabulary alias while retaining the canonical permission and dispatcher', async () => {
+    await grant('tool_loop_notes.read');
+    const notes = await ObjectRegistry.getCollection('ToolLoopNote', { db });
+    const note = await notes.create({ title: 'Member note' });
+    await note.save();
+    const declared = tools(['tool_loop_notes.read']).map((tool) => ({
+      ...tool,
+      functionName: 'members_read',
+    }));
+    const result = await runToolLoop({
+      ai: makeAI((_messages, options, call) => {
+        if (toolsOffered(options))
+          expect(options?.tools?.map((tool) => tool.function.name)).toEqual([
+            'members_read',
+          ]);
+        return call === 0
+          ? toolCall('members_read', { id: note.id })
+          : textResponse('Read.');
+      }),
+      db,
+      messages: [{ role: 'user', content: 'Read member' }],
+      tools: declared,
+      principal: {
+        runAsUserId: userId,
+        tenantId,
+        allowedTools: ['tool_loop_notes.read'],
+      },
+      audit: () => {},
+    });
+    expect(result.invocations).toHaveLength(1);
+    expect(result.invocations[0]).toMatchObject({
+      slug: 'tool_loop_notes.read',
+      ok: true,
+    });
+    expect(result.invocations[0].observation).toMatchObject({
+      id: note.id,
+      title: 'Member note',
+    });
+    const denied = await runToolLoop({
+      ai: makeAI((_m, _o, call) =>
+        call === 0 ? toolCall('members_read', {}) : textResponse('No.'),
+      ),
+      db,
+      messages: [{ role: 'user', content: 'Read' }],
+      tools: declared,
+      principal: { runAsUserId: userId, tenantId, allowedTools: [] },
+      audit: () => {},
+    });
+    expect(denied.invocations[0]).toMatchObject({
+      slug: 'tool_loop_notes.read',
+      ok: false,
+      rejected: true,
+    });
+  });
+
   it('withdraws disabled cookbook tools and refuses a disable during the AI call', async () => {
     let enabled = false;
     setRuntimeExposureGate({

@@ -113,6 +113,8 @@ type LoopMessage = AIMessage & { tool_call_id?: string };
 export interface ManifestTool {
   /** Catalog slug (`collection.action`) — the tool name and the permission slug. */
   slug: string;
+  /** Trusted host presentation alias; permission checks and dispatch retain `slug`. */
+  functionName?: string;
   /** Collection (permission resource), e.g. `articles`. */
   collection: string;
   /** Registry class name used to resolve the backing collection, e.g. `Article`. */
@@ -880,7 +882,7 @@ export function manifestToolToAITool(
   return {
     type: 'function',
     function: {
-      name: toolFunctionName(tool.slug),
+      name: toolFunctionName(tool.functionName ?? tool.slug),
       description:
         tool.description ??
         `Manifest operation '${tool.action}' on '${tool.collection}'.`,
@@ -1029,7 +1031,7 @@ export async function invokeManifestTool(
       assertReadArguments(tool.slug, args);
       const id = typeof args.id === 'string' ? args.id : undefined;
       if (id) {
-        const item = await collection.get(id);
+        const item = await collection.get(id, { displayLabel: true });
         return item
           ? itemToObservation(
               item,
@@ -1040,6 +1042,7 @@ export async function invokeManifestTool(
           : { found: false };
       }
       const items = await collection.list({
+        displayLabel: true,
         where: asRecord(args.where),
         limit: typeof args.limit === 'number' ? args.limit : 50,
         offset: typeof args.offset === 'number' ? args.offset : 0,
@@ -1166,7 +1169,10 @@ export async function runToolLoop(
     isManifestToolEnabled(tool, principal.tenantId),
   );
   const serverNames = new Set<string>([
-    ...tools.flatMap((tool) => [tool.slug, toolFunctionName(tool.slug)]),
+    ...tools.flatMap((tool) => [
+      tool.slug,
+      toolFunctionName(tool.functionName ?? tool.slug),
+    ]),
     ...extraTools.flatMap((tool) => [tool.slug, tool.aiTool.function.name]),
   ]);
   // Server tools win a name collision: a page cannot shadow a server tool by
@@ -1188,7 +1194,7 @@ export async function runToolLoop(
   const offered = new Map<string, ManifestTool>();
   for (const tool of tools) {
     offered.set(tool.slug, tool);
-    offered.set(toolFunctionName(tool.slug), tool);
+    offered.set(toolFunctionName(tool.functionName ?? tool.slug), tool);
   }
   // Extra (non-manifest) tools resolve by their slug OR the function name their
   // own `aiTool` definition advertises to the model.
