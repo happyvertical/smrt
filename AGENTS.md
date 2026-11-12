@@ -65,7 +65,8 @@ Use Node/pnpm versions from `package.json`. Install with `pnpm install`, then
 `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm format-check`,
 `pnpm knowledge:check --strict --format markdown`, `pnpm audit:policy`, and
 `pnpm check:node-roots` (built model roots load under plain Node, #4219;
-allow-list in its root `package.json` script).
+allow-list in its root `package.json` script). `pnpm build` also runs
+`check:manifest-paths`: a built manifest must not hold an absolute `filePath` (#4948).
 `pnpm lint`/`pnpm format-check` run Biome directly (`biome ci`, CI-pinned,
 #2710) plus the `--smrt-*` gate (#3822), not through Turbo; no package defines
 its own `lint`/`format-check` script.

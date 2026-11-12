@@ -34,6 +34,10 @@ import {
 } from '../knowledge-config.js';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
 import {
+  assertPackageRelativeFilePaths,
+  relativizeManifestFilePaths,
+} from '../manifest/file-paths.js';
+import {
   createObjectDeclarationIndex,
   selectObjectDeclarations,
   warnObjectDeclarationCollisions,
@@ -438,14 +442,19 @@ const STAMPABLE_MODULE_RE = /\.(?:ts|mts|tsx|js|mjs|jsx)$/;
 
 /**
  * The manifest a library build publishes: it records that the package stamps
- * its classes (`stampsConstructors`, #3490) when it has a scoped name.
+ * its classes (`stampsConstructors`, #3490) when it has a scoped name, and its
+ * `filePath` values are relative to the package root so the file does not
+ * depend on the build machine (#4948). It throws if one is still absolute.
  */
 export function stampedLibraryManifest(
   manifest: SmartObjectManifest,
+  packageRoot: string,
 ): SmartObjectManifest {
-  return manifest.packageName?.startsWith('@')
-    ? { ...manifest, stampsConstructors: true }
-    : manifest;
+  const portable = relativizeManifestFilePaths(manifest, packageRoot);
+  assertPackageRelativeFilePaths(portable, 'Library manifest');
+  return portable.packageName?.startsWith('@')
+    ? { ...portable, stampsConstructors: true }
+    : portable;
 }
 
 /**
@@ -1223,7 +1232,7 @@ export function smrtPlugin(
         if (isRegisterShimModuleId(id)) {
           return {
             code: generateInlineRegisterModule(
-              stampedLibraryManifest(manifest),
+              stampedLibraryManifest(manifest, projectRoot),
             ),
             map: null,
           };
@@ -1511,6 +1520,10 @@ export function smrtPlugin(
         return;
       }
 
+      // Outside the try block on purpose: an absolute `filePath` must fail the
+      // build, not be logged and swallowed with the write errors below (#4948).
+      const published = stampedLibraryManifest(manifest, projectRoot);
+
       try {
         const { writeFileSync, mkdirSync } = await import('node:fs');
         const { resolve, dirname } = await import('node:path');
@@ -1536,7 +1549,6 @@ export function smrtPlugin(
 
         // Write manifest file. The knowledge artifact hashes the manifest it
         // is given, so it must see the same stamped object the file holds.
-        const published = stampedLibraryManifest(manifest);
         publishAtomicArtifact({
           path: manifestPath,
           content: JSON.stringify(published, null, 2),
