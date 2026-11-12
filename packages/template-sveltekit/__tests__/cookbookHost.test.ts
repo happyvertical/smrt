@@ -364,9 +364,9 @@ beforeEach(async ({ task }) => {
     ),
     'utf8',
   );
-  // Both fixtures model a compatible MCP-only CLI: locked flags are accepted
-  // and MCP works with built-ins absent. This is not native Codex 0.162.1,
-  // whose code-mode host policy is refused by inference's native probe.
+  // Both fixtures accept the secured invocation and exercise actual app MCP.
+  // Claude has no built-ins; Codex enables the required code host with native
+  // sandbox containment. Inference separately tests incidental builtin items.
   const fixture = stub.replace(
     '#!/usr/bin/env node',
     `#!${process.execPath}\nObject.assign(process.env, ${JSON.stringify(Object.fromEntries([['SMRT_FORBIDDEN_STATE_BASES', process.env.SMRT_FORBIDDEN_STATE_BASES]]))});\nif (process.argv.includes('--version')) { console.log('1.2.3'); process.exit(0); }\nif (process.argv.slice(2).join(' ') === 'auth status') { console.log('{"loggedIn":true}'); process.exit(0); }\nif (process.argv.slice(2).join(' ') === 'login status') { console.log('Logged in using ChatGPT'); process.exit(0); }`,
@@ -746,6 +746,46 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     );
   }
 
+  it('resolves design and assist to the strongest ranked ChatGPT account model without choosing the first catalog entry', async () => {
+    const runtime = host.runtime;
+    await host.shutdown();
+    host.dispose();
+    host = createCookbookHost({
+      runtime,
+      app: { cookbook, catalog },
+      chatgpt: {
+        status: async () => ({ signedIn: true, signingIn: false }),
+        models: async () => [
+          { id: 'small', label: 'Small', intelligenceRank: 1 },
+          { id: 'strong', label: 'Strong', intelligenceRank: 3 },
+        ],
+        defaultModel: async () => 'strong',
+        clientOptions: vi.fn(),
+        start: vi.fn(),
+        signOut: vi.fn(),
+      },
+    });
+    await request(event('/settings/inference'), async (e) => {
+      const before = await host.workProfiles.read(e);
+      expect(
+        (
+          await host.workProfiles.write(e, {
+            settings: {
+              design: { engine: 'chatgpt' },
+              assist: { engine: 'chatgpt' },
+            },
+            revision: before.revision,
+          })
+        ).ok,
+      ).toBe(true);
+      const saved = await host.workProfiles.read(e);
+      for (const name of ['design', 'assist'])
+        expect(
+          saved.resolved.find((profile) => profile.name === name),
+        ).toMatchObject({ model: 'strong', unavailable: false });
+      return new Response();
+    });
+  });
   it('loads owner quality overrides, rejects stale saves, and resets without exposing unavailable model failures', async () => {
     await request(event('/settings/inference'), async (e) => {
       const before = await host.workProfiles.read(e);

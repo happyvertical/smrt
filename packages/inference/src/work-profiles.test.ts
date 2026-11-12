@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  nextWorkModel,
+  rankOpenAIWorkModels,
   recommendedWorkProfile,
   resolveWorkProfile,
   runWorkModelWithFallback,
@@ -39,9 +41,10 @@ describe('owner work profiles', () => {
     expect(() =>
       resolveWorkProfile({ engine: 'chatgpt', catalog: [{ id: 'unknown' }] }),
     ).toThrow('no available model');
-    expect(() => resolveWorkProfile({ engine: 'codex' })).toThrow(
-      'no available model',
-    );
+    expect(resolveWorkProfile({ engine: 'codex' }).model).toBe('gpt-6-astra');
+    expect(() =>
+      resolveWorkProfile({ engine: 'codex', catalog: [{ id: 'unknown' }] }),
+    ).toThrow('no available model');
     expect(
       resolveWorkProfile({
         engine: 'chatgpt',
@@ -150,4 +153,31 @@ it.each([
   expect(() =>
     resolveWorkProfile({ engine: 'claude-code', settings: { model } }),
   ).toThrow('Invalid work profile model');
+});
+
+it('uses reviewed OpenAI ranks only on offered models, independent of catalog order or spelling', () => {
+  const catalog = rankOpenAIWorkModels<
+    import('./work-profiles.js').WorkModelCatalogEntry
+  >([
+    { id: 'gpt-6-luna' },
+    { id: 'gpt-99-new-unknown' },
+    { id: 'gpt-6.1-sol' },
+    { id: 'gpt-6-astra' },
+  ]);
+  for (const profile of ['design', 'assist'] as const)
+    expect(
+      resolveWorkProfile({ engine: 'chatgpt', profile, catalog }).model,
+    ).toBe('gpt-6-astra');
+  expect(nextWorkModel(catalog, 'gpt-6-astra')).toBe('gpt-6.1-sol');
+  expect(nextWorkModel(catalog, 'gpt-6-luna')).toBeUndefined();
+  expect(catalog[1].intelligenceRank).toBeUndefined();
+  expect(
+    strongestWorkModel(
+      rankOpenAIWorkModels([{ id: 'gpt-6.1-sol' }, { id: 'gpt-6-luna' }]),
+    ),
+  ).toBe('gpt-6.1-sol');
+  expect(
+    rankOpenAIWorkModels([{ id: 'future', intelligenceRank: 10 }])[0]
+      .intelligenceRank,
+  ).toBe(10);
 });

@@ -98,6 +98,47 @@ export function validateWorkModel(model: string): string {
   return model;
 }
 
+/** Reviewed 2026-11-12 against https://learn.chatgpt.com/docs/models#recommended-models.
+ * App recommendation data, NOT catalog response order or inferred model-name sorting.
+ * Availability still comes from the signed-in account; unknown IDs stay unranked.
+ */
+export const OPENAI_WORK_MODEL_RANKS: Readonly<Record<string, number>> =
+  Object.freeze({
+    'gpt-6-astra': 4,
+    'gpt-6.1-sol': 3,
+    'gpt-6.1-terra': 2,
+    'gpt-6-luna': 1,
+  });
+
+export function rankOpenAIWorkModels<T extends WorkModelCatalogEntry>(
+  catalog: readonly T[],
+): T[] {
+  return catalog.map((model) => {
+    const rank = Number.isFinite(model.intelligenceRank)
+      ? model.intelligenceRank
+      : OPENAI_WORK_MODEL_RANKS[model.id];
+    return {
+      ...model,
+      ...(rank === undefined ? {} : { intelligenceRank: rank }),
+    };
+  });
+}
+
+/** One lower verified recommendation, never another connection or unknown model. */
+export function nextWorkModel(
+  catalog: readonly WorkModelCatalogEntry[],
+  requested?: string,
+): string | undefined {
+  const rank = catalog.find(
+    (model) => model.id === requested,
+  )?.intelligenceRank;
+  return rank === undefined
+    ? undefined
+    : strongestWorkModel(
+        catalog.filter((model) => (model.intelligenceRank ?? Infinity) < rank),
+      );
+}
+
 /** Only explicit intelligence metadata establishes strength; catalog order is not quality. */
 export function strongestWorkModel(
   catalog: readonly WorkModelCatalogEntry[],
@@ -135,7 +176,14 @@ export function resolveWorkProfile(input: {
     settings.model ??
     (engine === 'api'
       ? undefined
-      : (strongestWorkModel(input.catalog ?? []) ??
+      : (strongestWorkModel(
+          input.catalog ??
+            (engine === 'codex'
+              ? rankOpenAIWorkModels(
+                  Object.keys(OPENAI_WORK_MODEL_RANKS).map((id) => ({ id })),
+                )
+              : []),
+        ) ??
         (engine === 'claude-code'
           ? name === 'background' && claudeModels.includes('sonnet')
             ? 'sonnet'

@@ -1,3 +1,4 @@
+import { rankOpenAIWorkModels, strongestWorkModel } from '../work-profiles.js';
 /**
  * "Sign in with ChatGPT" connection service (host-agnostic, Node-only).
  *
@@ -60,11 +61,14 @@ export interface ChatGPTTokenSource {
 export interface ChatGPTPlanModel {
   id: string;
   label: string;
+  intelligenceRank?: number;
 }
 
 /** The slice of the provider this service uses. */
 export interface ChatGPTPlanModelLister {
-  getModels(): Promise<Array<{ id: string; name?: string }>>;
+  getModels(): Promise<
+    Array<{ id: string; name?: string; intelligenceRank?: number }>
+  >;
 }
 
 export type ChatGPTSignInErrorCode =
@@ -119,7 +123,7 @@ export interface ChatGPTPlanConnection {
   signOut(): Promise<{ remoteRevocationConfirmed: boolean }>;
   /** The signed-in account's models, newest catalog (cached for ten minutes). */
   models(): Promise<ChatGPTPlanModel[]>;
-  /** The model used when the owner has not chosen one: the catalog's first. */
+  /** Strongest ranked model offered by this account, or undefined for an unknown catalog. */
   defaultModel(): Promise<string | undefined>;
   /**
    * `getAI()` options for a `chatgpt-plan` client on the signed-in account:
@@ -342,16 +346,21 @@ export function createChatGPTPlanConnection(
               typeof import('@happyvertical/ai')['getAI']
             >[0],
           )) as unknown as ChatGPTPlanModelLister);
-      const models = (await client.getModels()).map((m) => ({
-        id: m.id,
-        label: m.name?.trim() || m.id,
-      }));
+      const models = rankOpenAIWorkModels(
+        (await client.getModels()).map((m) => ({
+          id: m.id,
+          label: m.name?.trim() || m.id,
+          ...(Number.isFinite(m.intelligenceRank)
+            ? { intelligenceRank: m.intelligenceRank }
+            : {}),
+        })),
+      );
       modelCache = { at: now(), clientId: session.clientId, models };
       return models;
     },
 
     async defaultModel() {
-      return (await connection.models())[0]?.id;
+      return strongestWorkModel(await connection.models());
     },
   };
   return connection;

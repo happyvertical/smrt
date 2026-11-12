@@ -218,6 +218,36 @@ describe('the ChatGPT plan connection', () => {
     expect((await connect(fake).status()).signedIn).toBe(false);
   });
 
+  it('ranks the signed-in catalog for automatic defaults and invalidates it after sign-out', async () => {
+    const fake = fakeManager();
+    const getModels = vi.fn(async () => [
+      { id: 'gpt-6-luna' },
+      { id: 'gpt-99-unknown' },
+      { id: 'gpt-6-astra' },
+      { id: 'gpt-6.1-sol' },
+    ]);
+    const connection = connect(fake, {
+      createClient: async () => ({ getModels }),
+    });
+    await connection.start();
+    fake.finish();
+    await settle();
+    expect(await connection.defaultModel()).toBe('gpt-6-astra');
+    expect(
+      (await connection.models()).find((model) => model.id === 'gpt-99-unknown')
+        ?.intelligenceRank,
+    ).toBeUndefined();
+    expect(getModels).toHaveBeenCalledOnce();
+    await connection.signOut();
+    await expect(connection.models()).rejects.toBeInstanceOf(
+      ChatGPTSignedOutError,
+    );
+    await connection.start();
+    fake.finish();
+    await settle();
+    await connection.models();
+    expect(getModels).toHaveBeenCalledTimes(2);
+  });
   it('lists models and builds provider options that hold a token handle only', async () => {
     const fake = fakeManager();
     const connection = connect(fake, {
@@ -225,7 +255,7 @@ describe('the ChatGPT plan connection', () => {
         expect(options.type).toBe('chatgpt-plan');
         return {
           getModels: async () => [
-            { id: 'gpt-x', name: 'GPT X' },
+            { id: 'gpt-x', name: 'GPT X', intelligenceRank: 2 },
             { id: 'gpt-y' },
           ],
         };
@@ -238,7 +268,7 @@ describe('the ChatGPT plan connection', () => {
     fake.finish();
     await settle();
     expect(await connection.models()).toEqual([
-      { id: 'gpt-x', label: 'GPT X' },
+      { id: 'gpt-x', label: 'GPT X', intelligenceRank: 2 },
       { id: 'gpt-y', label: 'gpt-y' },
     ]);
     expect(await connection.defaultModel()).toBe('gpt-x');

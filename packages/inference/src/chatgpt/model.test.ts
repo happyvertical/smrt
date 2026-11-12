@@ -221,3 +221,37 @@ it('never retries a plan refusal after streaming text', async () => {
   });
   expect(chat).toHaveBeenCalledOnce();
 });
+
+it('discovers ranked account choices for design and derives the single fallback while publishing shared wording', async () => {
+  const calls: string[] = [];
+  const onText = vi.fn();
+  const model = await createChatGPTModel({
+    connection: {
+      models: async () => [
+        { id: 'small', label: 'Small', intelligenceRank: 1 },
+        { id: 'strong', label: 'Strong', intelligenceRank: 3 },
+      ],
+      clientOptions: async (o) => ({ defaultModel: o?.model }),
+    },
+    profile: 'design',
+    toolNamespace: namespace,
+    fallback: {
+      ownerId: 'owner',
+      connectionKey: 'account:catalog:1',
+      store: { read: async () => undefined, write: vi.fn(async () => {}) },
+    },
+    createClient: async (options) => ({
+      chat: async () => {
+        calls.push(options.defaultModel as string);
+        if (options.defaultModel === 'strong')
+          throw { code: 'MODEL_ACCESS_DENIED' };
+        return { content: 'done', model: 'reported-small' };
+      },
+    }),
+  });
+  expect((await model.complete({ ...request(), onText })).text).toBe('done');
+  expect(calls).toEqual(['strong', 'small']);
+  expect(onText).toHaveBeenCalledWith(
+    expect.stringContaining('next strongest model on the same connection'),
+  );
+});

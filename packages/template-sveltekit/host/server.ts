@@ -96,7 +96,10 @@ import {
   INFERENCE_PERMISSION_DEFINITIONS,
   inferencePreferenceKind,
   locateCli,
+  nextWorkModel,
+  OPENAI_WORK_MODEL_RANKS,
   type ResolvedWorkProfile,
+  rankOpenAIWorkModels,
   recommendedWorkProfile,
   resolveWorkProfile,
   tokenCredentials,
@@ -1503,8 +1506,13 @@ export function createCookbookHost(options: CookbookHostOptions) {
       apiStatus: () => apiStatus(c),
       actions: { api: { label: 'Connect AI', href: '/settings/inference' } },
     }),
-    chatgpt: async () => ({
+    chatgpt: async (context) => ({
       connection: await chatgpt(),
+      fallback: {
+        ownerId: context.principal.userId,
+        connectionKey: `chatgpt:${JSON.stringify(await (await chatgpt()).models())}:${await (await ready()).state.engineGeneration(context.principal.tenantId, context.principal.userId)}:${(await (await ready()).workProfiles.read()).revision ?? 'recommended'}`,
+        store: (await ready()).state.fallbackStore(context.principal.tenantId),
+      },
       toolNamespace: { name: 'smrt_app', description: 'Work with this app' },
       settingsHref: '/settings',
     }),
@@ -1558,14 +1566,32 @@ export function createCookbookHost(options: CookbookHostOptions) {
                 }
               : {}),
             ...(turn.workProfile?.model &&
-            tool === 'claude-code' &&
-            ['fable', 'opus'].includes(turn.workProfile.model)
+            ((tool === 'claude-code' &&
+              ['fable', 'opus'].includes(turn.workProfile.model)) ||
+              (tool === 'codex' &&
+                nextWorkModel(
+                  rankOpenAIWorkModels(
+                    Object.keys(OPENAI_WORK_MODEL_RANKS).map((id) => ({ id })),
+                  ),
+                  turn.workProfile.model,
+                )))
               ? {
                   fallback: {
                     ownerId: context.principal.userId,
                     connectionKey: `${(await cli.cliStatus(tool)).version ?? 'unknown'}:${await host.state.engineGeneration(context.principal.tenantId, context.principal.userId)}:${(await host.workProfiles.read()).revision ?? 'recommended'}`,
                     nextModel:
-                      turn.workProfile.model === 'fable' ? 'opus' : 'sonnet',
+                      tool === 'claude-code'
+                        ? turn.workProfile.model === 'fable'
+                          ? 'opus'
+                          : 'sonnet'
+                        : nextWorkModel(
+                            rankOpenAIWorkModels(
+                              Object.keys(OPENAI_WORK_MODEL_RANKS).map(
+                                (id) => ({ id }),
+                              ),
+                            ),
+                            turn.workProfile.model,
+                          )!,
                     store: host.state.fallbackStore(context.principal.tenantId),
                   },
                 }

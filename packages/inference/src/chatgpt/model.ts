@@ -5,6 +5,7 @@ import {
   engineModelReply,
 } from '../engine-model.js';
 import {
+  nextWorkModel,
   type ResolvedWorkProfile,
   resolveWorkProfile,
   runWorkModelWithFallback,
@@ -19,7 +20,8 @@ import type { ChatGPTPlanConnection } from './connection.js';
 import { chatgptFailureNote } from './support.js';
 
 export interface ChatGPTModelOptions {
-  connection: Pick<ChatGPTPlanConnection, 'clientOptions'>;
+  connection: Pick<ChatGPTPlanConnection, 'clientOptions'> &
+    Partial<Pick<ChatGPTPlanConnection, 'models'>>;
   model?: string;
   profile?: WorkProfileName;
   settings?: WorkProfileSettings;
@@ -27,9 +29,9 @@ export interface ChatGPTModelOptions {
   fallback?: {
     ownerId: string;
     connectionKey: string;
-    nextModel: string;
+    nextModel?: string;
     store: WorkModelFallbackStore;
-    notify(message: string): void;
+    notify?(message: string): void;
   };
   recordExecution?(metadata: WorkRunMetadata): Promise<void>;
   toolNamespace: { name: string; description: string };
@@ -56,6 +58,9 @@ export interface ChatGPTModelOptions {
 export async function createChatGPTModel(
   input: ChatGPTModelOptions,
 ): Promise<EngineModel> {
+  const catalog =
+    input.catalog ??
+    (input.profile ? await input.connection.models?.() : undefined);
   const profile: ResolvedWorkProfile | undefined = input.profile
     ? resolveWorkProfile({
         profile: input.profile,
@@ -64,7 +69,7 @@ export async function createChatGPTModel(
           ...input.settings,
           ...(input.model ? { model: input.model } : {}),
         },
-        catalog: input.catalog,
+        catalog,
       })
     : undefined;
   if (profile && profile.engine !== 'chatgpt')
@@ -118,7 +123,14 @@ export async function createChatGPTModel(
         if (profile && input.fallback) {
           const outcome = await runWorkModelWithFallback({
             ...input.fallback,
+            nextModel:
+              input.fallback.nextModel ??
+              nextWorkModel(catalog ?? [], profile.model),
             profile,
+            notify: (message) => {
+              input.fallback?.notify?.(message);
+              request.onText(`${message}\n\n`);
+            },
             execute,
             isPlanModelRefusal: (error) =>
               [
