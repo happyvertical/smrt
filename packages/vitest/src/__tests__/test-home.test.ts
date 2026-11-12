@@ -1,7 +1,6 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import {
   existsSync,
-  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -11,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { guardTestStateBases, installTestHome } from '../test-home.js';
+import { installTestHome, testHomeEnvironment } from '../test-home.js';
 
 const names = [
   'HOME',
@@ -25,42 +24,33 @@ const names = [
 ];
 
 describe('test home isolation', () => {
-  it('fails the Node script runner on a child escape and still cleans its owned home', () => {
-    const root = mkdtempSync(join(tmpdir(), 'smrt-home-escape-'));
+  it('records the real account bases before a Node runner replaces its home', () => {
+    const env = { ...process.env };
+    delete env.SMRT_FORBIDDEN_STATE_BASES;
     const preload = fileURLToPath(
       new URL('../test-home-register.ts', import.meta.url),
     );
-    try {
-      const result = spawnSync(
+    const result = JSON.parse(
+      execFileSync(
         process.execPath,
         [
           '--import',
           preload,
-          '--input-type=module',
           '-e',
-          `
-        import { execFileSync } from 'node:child_process';
-        console.log(process.env.HOME);
-        execFileSync(process.execPath, ['-e', 'require("node:fs").writeFileSync(process.argv[1], "escape")', ${JSON.stringify(join(root, 'escaped-state'))}]);
-      `,
+          'console.log(JSON.stringify({home:process.env.HOME,real:require("node:os").userInfo().homedir,bases:JSON.parse(process.env.SMRT_FORBIDDEN_STATE_BASES)}))',
         ],
-        {
-          encoding: 'utf8',
-          env: {
-            ...process.env,
-            SMRT_TEST_REAL_STATE_BASES: JSON.stringify([root]),
-          },
-        },
-      );
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain(
-        'Tests wrote 1 new entries into the real state base',
-      );
-      expect(existsSync(result.stdout.trim())).toBe(false);
-      expect(existsSync(join(root, 'escaped-state'))).toBe(true);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
+        { encoding: 'utf8', env },
+      ),
+    );
+    expect(result.bases).toContain(
+      join(result.real, 'Library', 'Application Support'),
+    );
+    expect(result.bases).toContain(join(result.real, '.local', 'state'));
+    expect(result.bases).toContain(join(result.real, 'AppData', 'Local'));
+    expect(existsSync(result.home)).toBe(false);
+    expect(Object.keys(testHomeEnvironment()).sort()).toEqual(
+      [...names, 'SMRT_FORBIDDEN_STATE_BASES'].sort(),
+    );
   });
 
   it('isolates all OS paths, passes them to production children, and restores/cleans up', () => {
@@ -109,26 +99,37 @@ describe('test home isolation', () => {
     dispose(); // teardown and exit fallback are idempotent
   });
 
-  it.each([
-    '.app-123456789abc-state',
-    'unexpected-file',
-  ])('rejects child writes of %s without deleting them', (name) => {
-    const root = mkdtempSync(join(tmpdir(), 'smrt-state-guard-'));
+  it('records the original platform bases and preserves them through nested runners', () => {
+    const original = process.env.SMRT_FORBIDDEN_STATE_BASES;
+    const dispose = installTestHome();
     try {
-      writeFileSync(join(root, 'existing'), 'keep');
-      const check = guardTestStateBases([root]);
-      expect(check).not.toThrow();
-      execFileSync(process.execPath, [
-        '-e',
-        'require("node:fs").writeFileSync(process.argv[1], "child")',
-        join(root, name),
-      ]);
-      expect(check).toThrow(
-        'Tests wrote 1 new entries into the real state base',
-      );
-      expect(readFileSync(join(root, name), 'utf8')).toBe('child');
-      expect(readFileSync(join(root, 'existing'), 'utf8')).toBe('keep');
+      expect(process.env.SMRT_FORBIDDEN_STATE_BASES).toBe(original);
+      expect(JSON.parse(original ?? '[]').length).toBeGreaterThan(0);
+      expect(
+        execFileSync(
+          process.execPath,
+          ['-p', 'process.env.SMRT_FORBIDDEN_STATE_BASES'],
+          { encoding: 'utf8' },
+        ).trim(),
+      ).toBe(original);
     } finally {
+      dispose();
+    }
+  });
+
+  it('does not attribute another process writing a forbidden base to this runner', () => {
+    const root = mkdtempSync(join(tmpdir(), 'smrt-other-runner-'));
+    const original = process.env.SMRT_FORBIDDEN_STATE_BASES;
+    process.env.SMRT_FORBIDDEN_STATE_BASES = JSON.stringify([root]);
+    const dispose = installTestHome();
+    try {
+      writeFileSync(join(root, 'other-process'), 'keep');
+      expect(dispose).not.toThrow();
+      expect(readFileSync(join(root, 'other-process'), 'utf8')).toBe('keep');
+    } finally {
+      dispose();
+      if (original === undefined) delete process.env.SMRT_FORBIDDEN_STATE_BASES;
+      else process.env.SMRT_FORBIDDEN_STATE_BASES = original;
       rmSync(root, { recursive: true, force: true });
     }
   });
@@ -153,7 +154,7 @@ describe('test home isolation', () => {
         import { it, expect } from ${JSON.stringify(fileURLToPath(new URL('../../node_modules/vitest/dist/index.js', import.meta.url)))};
         import { homedir, userInfo } from 'node:os';
         import { writeFileSync } from 'node:fs';
-        import { execFileSync, spawnSync } from 'node:child_process';
+        import { execFileSync } from 'node:child_process';
         const home = homedir();
         writeFileSync(${JSON.stringify(join(root, 'home.txt'))}, home);
         it('inherits isolated home before evaluation', () => {
@@ -168,32 +169,6 @@ describe('test home isolation', () => {
       });
       const home = readFileSync(join(root, 'home.txt'), 'utf8');
       expect(existsSync(home)).toBe(false);
-      const fakeState = join(root, 'fake-state');
-      mkdirSync(fakeState);
-      writeFileSync(
-        join(root, 'home.test.mjs'),
-        `
-        import { it } from ${JSON.stringify(fileURLToPath(new URL('../../node_modules/vitest/dist/index.js', import.meta.url)))};
-        import { execFileSync } from 'node:child_process';
-        it('child escapes', () => execFileSync(process.execPath, ['-e', 'require("node:fs").writeFileSync(process.argv[1], "escape")', ${JSON.stringify(join(fakeState, '.app-123456789abc-state'))}]));
-      `,
-      );
-      const escaped = spawnSync(
-        process.execPath,
-        [vitest, 'run', '--root', root],
-        {
-          encoding: 'utf8',
-          timeout: 60_000,
-          env: {
-            ...process.env,
-            SMRT_TEST_REAL_STATE_BASES: JSON.stringify([fakeState]),
-          },
-        },
-      );
-      expect(escaped.status).toBe(1);
-      expect(escaped.stderr).toContain(
-        'Tests wrote 1 new entries into the real state base',
-      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

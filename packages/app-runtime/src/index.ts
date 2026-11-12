@@ -58,6 +58,7 @@ import {
 import {
   acquireInitializationLock,
   acquireLocalDatabase,
+  assertAllowedStateBase,
   BOOTSTRAP_TABLE,
   canonicalLocalSourceRoot,
   closeDatabaseAfterFailure,
@@ -686,6 +687,8 @@ export function resolveLocalRuntimePaths(
     runtimeHome,
     env,
   );
+  if (options.dataDirectory === undefined)
+    assertAllowedStateBase(defaultRoot, runtimePlatform);
   const root = resolve(options.dataDirectory ?? resolve(defaultRoot, appId));
   const sourceRoot = resolveSourceRoot(options);
 
@@ -736,6 +739,8 @@ function resolveWindowsRuntimePaths(
     'Local application data directory',
     WINDOWS_DERIVED_PATH_RESERVE,
   );
+  if (options.dataDirectory === undefined)
+    assertAllowedStateBase(win32.dirname(root), 'win32');
   const sourceRoot = resolveSourceRoot({ ...options, platform: 'win32' });
   if (
     sameFilesystemPath(root, runtimeHome, 'win32') ||

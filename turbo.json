@@ -27,7 +27,7 @@
     "TMP",
     "TEMP",
     "CI_TEST_TMPDIR",
-    "SMRT_TEST_REAL_STATE_BASES",
+    "SMRT_FORBIDDEN_STATE_BASES",
     "NODE_COMPILE_CACHE"
   ],
   "tasks": {

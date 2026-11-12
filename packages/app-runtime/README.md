@@ -1783,3 +1783,14 @@ external effect its state is `executing`, requiring operator reconciliation.
 Pending holds and approved but unconsumed decisions survive a restart. The generic
 approval service supplies the append-only decision audit; the host supplies effect
 and transcript authoring. See [the contract](agents/owner-approvals.md).
+
+### Test process storage boundary
+
+`SMRT_FORBIDDEN_STATE_BASES` is an opt-in JSON array of state/data base paths.
+State-root resolution and default local-data custody refuse matching bases using
+the platform's path identity rules, before creating storage. With the variable
+unset, normal path derivation is unchanged. Explicit path-derivation environment
+options do not override this inherited process boundary. Test runners use
+`@happyvertical/smrt-vitest/test-home` to install temporary homes and pass this
+variable to children, including production-mode launchers and sidecars. See
+[the test-home contract](../vitest/agents/test-home.md).

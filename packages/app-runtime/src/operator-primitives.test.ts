@@ -8,7 +8,7 @@
  * from the CLI the package is an externalized dependency a mock cannot touch.
  */
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
@@ -23,7 +23,9 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { resolveLocalRuntimePaths } from './index.js';
 import { withOperationLock } from './operation-lock.js';
 import {
   createProviderReadinessProbe,
@@ -62,10 +64,162 @@ function temporary(label: string): string {
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   fsHooks.beforeRm = undefined;
   for (const directory of directories.splice(0)) {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+describe('inherited forbidden state bases', () => {
+  it.each([
+    'darwin',
+    'linux',
+    'win32',
+  ] as const)('refuses the forbidden base under %s path rules', (platformName) => {
+    const windows = platformName === 'win32';
+    const homeDirectory = windows
+      ? 'C:\\Users\\Fixture'
+      : temporary('forbidden-home');
+    const base = windows
+      ? 'C:\\Users\\Fixture\\AppData\\Local'
+      : platformName === 'darwin'
+        ? join(homeDirectory, 'Library', 'Application Support')
+        : join(homeDirectory, '.local', 'state');
+    vi.stubEnv(
+      'SMRT_FORBIDDEN_STATE_BASES',
+      JSON.stringify([windows ? base.toUpperCase() + '\\' : base + '/.']),
+    );
+    const options = {
+      appId: 'guard-proof',
+      platformName,
+      homeDirectory,
+      dataDirectory: windows
+        ? 'C:\\Data\\Fixture'
+        : join(homeDirectory, 'data'),
+      sourceRoot: windows
+        ? 'C:\\Source\\Fixture'
+        : join(homeDirectory, 'source'),
+      environment: windows ? { LOCALAPPDATA: base } : {},
+    };
+    expect(() => resolveApplicationStateRoot(options)).toThrow(
+      'SMRT_FORBIDDEN_STATE_BASES refused application storage',
+    );
+    expect(() =>
+      resolveApplicationStateRoot({
+        ...options,
+        homeDirectory: windows
+          ? 'C:\\Isolated'
+          : join(homeDirectory, 'isolated'),
+        environment: windows ? { LOCALAPPDATA: 'C:\\Isolated\\Local' } : {},
+      }),
+    ).not.toThrow();
+    // Default application data custody derives beneath the same base on macOS/Windows.
+    if (platformName !== 'linux')
+      expect(() =>
+        resolveLocalRuntimePaths({
+          appId: options.appId,
+          platform: platformName,
+          homeDirectory,
+          sourceRoot: options.sourceRoot,
+          env: options.environment,
+        }),
+      ).toThrow('SMRT_FORBIDDEN_STATE_BASES refused application storage');
+  });
+
+  it('preserves ordinary derivation when the opt-in variable is unset', () => {
+    const directory = temporary('unguarded');
+    const options = {
+      appId: 'guard-proof',
+      homeDirectory: directory,
+      platformName: 'darwin',
+      dataDirectory: join(directory, 'data'),
+      sourceRoot: join(directory, 'source'),
+    };
+    vi.stubEnv('SMRT_FORBIDDEN_STATE_BASES', undefined);
+    const expected = resolveApplicationStateRoot(options);
+    expect(expected).toMatch(/\.guard-proof-[a-f0-9]{12}-state$/);
+    expect(
+      expected.startsWith(join(directory, 'Library', 'Application Support')),
+    ).toBe(true);
+    vi.stubEnv(
+      'SMRT_FORBIDDEN_STATE_BASES',
+      JSON.stringify([join(directory, 'Library', 'Application Support')]),
+    );
+    expect(() => resolveApplicationStateRoot(options)).toThrow(
+      'SMRT_FORBIDDEN_STATE_BASES refused application storage',
+    );
+    vi.stubEnv('SMRT_FORBIDDEN_STATE_BASES', undefined);
+    expect(resolveApplicationStateRoot(options)).toBe(expected);
+  });
+
+  it('refuses an inherited forbidden base in a production-mode child before custody writes', () => {
+    const directory = temporary('guard-child');
+    const base = join(directory, 'Library', 'Application Support');
+    vi.stubEnv('SMRT_FORBIDDEN_STATE_BASES', JSON.stringify([base]));
+    const module = pathToFileURL(
+      join(process.cwd(), 'src', 'state-root.ts'),
+    ).href;
+    const options = {
+      appId: 'guard-child',
+      homeDirectory: directory,
+      platformName: 'darwin',
+      dataDirectory: join(directory, 'data'),
+      sourceRoot: process.cwd(),
+    };
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        '--input-type=module',
+        '-e',
+        `import { prepareApplicationStateRoot } from ${JSON.stringify(module)}; prepareApplicationStateRoot(${JSON.stringify(options)});`,
+      ],
+      { encoding: 'utf8', env: { ...process.env, NODE_ENV: 'production' } },
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      'SMRT_FORBIDDEN_STATE_BASES refused application storage',
+    );
+    expect(existsSync(base)).toBe(false);
+  });
+
+  it('guards Linux default data custody but permits explicit isolated data', () => {
+    const directory = temporary('data-guard');
+    const base = join(directory, 'real-data');
+    vi.stubEnv('SMRT_FORBIDDEN_STATE_BASES', JSON.stringify([base]));
+    const options = {
+      appId: 'guard-proof',
+      platform: 'linux' as const,
+      homeDirectory: directory,
+      sourceRoot: process.cwd(),
+      env: { XDG_DATA_HOME: base },
+    };
+    expect(() => resolveLocalRuntimePaths(options)).toThrow(
+      'SMRT_FORBIDDEN_STATE_BASES refused application storage',
+    );
+    expect(() =>
+      resolveLocalRuntimePaths({
+        ...options,
+        dataDirectory: join(directory, 'isolated-data'),
+      }),
+    ).not.toThrow();
+  });
+
+  it.each([
+    '[null]',
+    'invalid-json',
+  ])('fails closed on malformed guard configuration %s', (value) => {
+    vi.stubEnv('SMRT_FORBIDDEN_STATE_BASES', value);
+    expect(() =>
+      resolveApplicationStateRoot({
+        appId: 'guard-proof',
+        dataDirectory: '/isolated/data',
+        sourceRoot: '/isolated/source',
+      }),
+    ).toThrow('SMRT_FORBIDDEN_STATE_BASES must be a JSON array');
+  });
 });
 
 describe('operation lock', () => {

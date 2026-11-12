@@ -20,13 +20,28 @@ cannot use the manifest plugin, and in Playwright. `installTestHome()` from
 teardown after all children stop. The repository's Node script tests preload
 `src/test-home-register.ts` under Node 26, so they work before building packages.
 
-The coordinator snapshots **all entry names** in the real account's macOS,
-Linux and Windows state bases and any original XDG_STATE_HOME/LOCALAPPDATA.
-Teardown fails if any new entry remains, including writes from children that
-replace their environment. `SMRT_TEST_REAL_STATE_BASES` carries those original
-bases through nested runners; never set it to hide a real base. The guard reads
-user storage but never removes anything from it. Existing files and transient
-writes that are removed before teardown are outside this snapshot guard.
+The coordinator records the replaced account/home platform bases and original
+XDG_STATE_HOME, XDG_DATA_HOME and LOCALAPPDATA in `SMRT_FORBIDDEN_STATE_BASES`, a
+JSON array of paths inherited unchanged by nested runners. The app-runtime state
+resolver and default local-data custody refuse a matching base before creating
+storage. Comparison uses existing platform path identity rules (case folding on
+macOS/Windows and normalized separators). This opt-in refusal is inert when the
+variable is absent; malformed configuration fails closed. Explicit resolver
+`environment` options cannot hide the process-tree guard.
+
+Use `testHomeEnvironment()` from `./test-home` to copy only the isolation settings
+into a clean child environment, including official SDK stdio transports (whose
+default inheritance is restricted). Keep test-owned HOME overrides within their
+own lifecycle and supply the matching XDG/Windows homes. Native inference's
+credential allow-list intentionally strips SMRT_*; the cookbook's fake CLI
+restores the guard in its fixture prelude before spawning MCP; allowed home
+settings already pass through the service.
+
+There is no real-directory snapshot or cross-process filesystem comparison.
+Other sessions' writes cannot fail this run. The guard covers runtime path
+resolution, including production-mode descendants; arbitrary filesystem writes
+that bypass these APIs are outside its scope. Never remove the guard from a
+child that can resolve local application paths.
 
 Coverage is shared across app-runtime, CLI, app-cli, desktop, local MCP,
 MCP conformance/iolaus, template runtime-profile fixtures and e2e harnesses, as
@@ -35,6 +50,7 @@ explicitly. A new runner must install the lifecycle too. Optional PostgreSQL
 and browser suites retain their normal prerequisites.
 
 Regression: `src/__tests__/test-home.test.ts` runs a real nested Vitest worker,
-production-mode children, cleanup and Node preload failure propagation. Escape
+production-mode children and cleanup. Runtime operator regressions cover refusal,
+platform rules, inherited children and unset behavior. Escape
 fixtures use disposable mock state bases; they never deliberately pollute the
 owner's real directories.
