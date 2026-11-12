@@ -299,6 +299,8 @@ async function provisionReferenceApp(
     }
     symlinkSync(source, join(appModules, entry), 'junction');
   }
+  // The copied app declares this package too; a package is not its own dependency.
+  symlinkSync(packageRoot, join(appModules, '@happyvertical', 'smrt-template-sveltekit'), 'junction');
   // `app:setup` builds through `pnpm build` → `smrt app build`, which resolves
   // `smrt` from the nearest `node_modules/.bin`; the copied app deliberately
   // never runs `pnpm install`, so the binary has to arrive through the links
