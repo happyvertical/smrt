@@ -13,10 +13,11 @@ smrt db:status               # Pending schema changes + failed migration classif
 smrt db:status --parity      # Same, plus live-schema parity (see below)
 smrt db:orphans              # agents/db-orphans.md
 smrt users:provision-owner   # Trusted PostgreSQL owner provisioning; password from private file/stdin, never argv/env (users README)
-smrt db:migrate              # agents/type-drift.md, agents/db-migrate-concurrency.md; successful non-dry runs (also in-sync) append core release/packages/schema fingerprint to _smrt_migrate_runs; stops/errors never stamp; read API none = first run (../core/agents/schema-paths.md)
+smrt db:migrate              # agents/type-drift.md, agents/db-migrate-concurrency.md; success (in-sync too) records core release/packages/schema fingerprint in _smrt_migrate_runs; stops/errors/dry runs never stamp; no record = first run (../core/agents/schema-paths.md)
 smrt db:migrate --postgres-safe # PostgreSQL concurrent-index mode (see below)
 smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...] # Force exact generated migrations in one atomic batch
-smrt db:migrate --null-orphans # agents/db-migrate-all-or-nothing.md; a stop holds the whole run
+smrt db:migrate --null-orphans # agents/db-migrate-all-or-nothing.md; stops hold the whole run
+smrt db:migrate --confirm-removed-package <name> # Repeat for each missing package; see same guide
 smrt db:migrate-uuid         # Convert schema-declared UUID text columns after data remap (incl. PG system tenant ids, #3297)
 smrt db:migrate-int8
 smrt db:migrate-null-equal-indexes # ../core/agents/null-equal-indexes.md
@@ -60,8 +61,8 @@ smrt app <op>                # App install/setup/start/migrate/worker…: agents
 
 DB target: config `database.url` > `DATABASE_URL` > `:memory:` (README).
 
-File-backed SQL/TypeScript migration generation is not supported. SMRT schema
-migrations are manifest-driven through registered objects and project manifests.
+File-backed SQL/TypeScript migration generation is unsupported. Schema migrations
+use registered objects and project manifests.
 
 `smrt test` is **deprecated** — use vitest plugin directly.
 
@@ -289,11 +290,11 @@ skipping it: agents/db-drop-framework-base-tables.md.
 
 ## Architecture
 
-- **Lazy command loading**: commands loaded on-demand via dynamic import (~100ms overhead on first use)
+- **Lazy commands**: dynamic imports (~100ms on first use)
 - **Manifest discovery**: finds `.smrt/manifest.json` + scans `node_modules/@happyvertical/smrt-*`
 - **Aggregate manifest identity**: preload/schema discovery resolve package ownership per entry (`definition.packageName` before the container), keeping dependency objects' qualified registrations
 - **Class loading order**: config.entryPoint → package.json exports['.'] → package.json main → `./dist/index.js`
-- **Object method exposure**: custom SMRT object methods auto-become CLI commands
+- **Methods**: custom SMRT object methods become CLI commands
 
 ## Key Files
 

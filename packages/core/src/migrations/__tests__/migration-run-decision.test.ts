@@ -76,13 +76,21 @@ describe('decideMigrationRun (#4927)', () => {
           { type: 'orphan_index', table: 'posts', name: 'legacy_unique' },
         ],
       }),
-    ).toEqual({ proceed: true, stops: [], heldBack: [] });
+    ).toEqual({
+      proceed: true,
+      stops: [],
+      packageStops: [],
+      notices: [],
+      heldBack: [],
+    });
   });
   it('executable and empty plans proceed with no held-back changes', () => {
     for (const changes of [[], [add]])
       expect(decideMigrationRun({ engine: 'sqlite', changes })).toEqual({
         proceed: true,
         stops: [],
+        packageStops: [],
+        notices: [],
         heldBack: [],
       });
   });

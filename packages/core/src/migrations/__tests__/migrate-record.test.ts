@@ -229,7 +229,7 @@ describe('core orchestration records successful runs (#4926)', () => {
   });
 
   it('does not stamp when any stop remains, even after other changes apply', async () => {
-    await recordSuccessfulMigrate(db, { input });
+    await recordSuccessfulMigrate(db, { input: collectMigrateRecordInput() });
     const previous = await readLastMigrateRecord(db);
     await db.query(
       'CREATE TABLE migrate_record_entries (id TEXT PRIMARY KEY NOT NULL)',
@@ -250,7 +250,7 @@ describe('core orchestration records successful runs (#4926)', () => {
   });
 
   it('does not stamp after a failed migration', async () => {
-    await recordSuccessfulMigrate(db, { input });
+    await recordSuccessfulMigrate(db, { input: collectMigrateRecordInput() });
     const previous = await readLastMigrateRecord(db);
     vi.spyOn(MigrationTracker.prototype, 'applyAll').mockRejectedValueOnce(
       new Error('migration failed'),

@@ -912,12 +912,14 @@ per-relationship query to these paths without batching or bounding it.
 `migrations/migration-run-decision.ts` is the shared run gate. Pass `changes`,
 `addedTables`, and `engine`. It returns `proceed`, `stops` (original change,
 kind, reason, message), and `heldBack` (plain description, table, optional
-column). Only `decideSchemaChange()` stops refuse a run. Reports never do.
+column). Schema stops and unconfirmed missing packages refuse a run. Reports
+never do. Package checks add `packageStops` and `notices` (see below).
 Every new table and apply change is held back if any stop remains. The CLI and
 `migrateSmrtSchemas()` both call this gate; Work-style wrappers need no local
-policy. `getPendingSchemaStatements().decision` exposes the same read-only plan.
+policy. `getPendingSchemaStatements().decision` exposes the schema-only plan.
 A refused core run returns `applied:false`, `refused:true`, `stops`, and
-`heldBack`; `unactionableChanges` and `hasManualDrift` still contain the stops.
+`heldBack`, with `packageStops` and `notices`. `unactionableChanges` and
+`hasManualDrift` still describe schema stops only.
 It does not initialize the tracker or stamp a successful migrate record.
 Proceeding/in-sync runs return `refused:false` and empty stops/heldBack.
 Ordinary execution uses `tracker.applyAll(..., {atomic:true})`. A later failure
@@ -1133,6 +1135,23 @@ and preserve history. This permanent ledger has no retention/prune task.
 or empty table: the first run under this scheme, not a schema mismatch. The latest
 row orders by `created_at`, then `id`. Call the writer on the caller's database
 handle while its migration lock is held; it also works without a tracker.
+
+`migrateSmrtSchemas()` compares the last record's packages with
+`collectMigrateRecordInput().packages` before tracker bootstrap or apply.
+Unconfirmed missing packages refuse the whole run. `packageStops` names them
+and explains that a missing declaration could loosen required columns;
+`heldBack` lists the apply changes. Pass `confirmRemovedPackages: string[]`
+with exact recorded names to confirm intentional removals. Added packages are
+fine. A successful run writes the same package list used for this comparison,
+so confirmed removals leave the next record, including on an in-sync run.
+
+`checkPackagesSeen({ recorded, current, confirmedRemoved })` is the pure check
+in `migration-run-decision.ts`. `recorded: null` means no earlier record.
+`decideMigrationRun({ packagesSeen, ... })` folds it into the all-or-nothing
+gate. Package stops are not schema change kinds. `notices` reports ignored
+confirmations for non-missing names and a skipped comparison when no record
+exists. The core migrator logs those notices and returns them to wrappers.
+`getPendingSchemaStatements().decision` covers schema changes only.
 
 The fingerprint hashes canonical sorted JSON of abstract tables, columns,
 defaults, CHECKs, physical foreign keys, indexes (including predicates and JSON

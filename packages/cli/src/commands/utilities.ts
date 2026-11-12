@@ -10,6 +10,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  collectMigrateRecordInput,
   ensureDeferredSystemTableCompatibility,
   ensureSystemTables,
   generateDDLForEngine,
@@ -18,6 +19,7 @@ import {
   ObjectRegistry,
   planForeignKeyCreation,
   planPostgresSystemTimestampMigrations,
+  readLastMigrateRecord,
   recordSuccessfulMigrate,
   SchemaComparer,
 } from '@happyvertical/smrt-core';
@@ -345,6 +347,7 @@ interface DbMigrateOptions {
   'empty-text-as-null'?: boolean;
   force?: boolean;
   'force-migration'?: string | readonly string[];
+  'confirm-removed-package'?: string | readonly string[];
   'repair-data'?: boolean;
   'upgrade-sti'?: boolean;
   'drop-indexes'?: boolean;
@@ -1740,6 +1743,12 @@ export default testManifest;
           'Force re-apply even if already applied (skip checksum validation)',
         default: false,
       },
+      'confirm-removed-package': {
+        type: 'string',
+        description:
+          'Confirm one missing package was removed on purpose. Repeat for each package.',
+        multiple: true,
+      },
       'force-migration': {
         type: 'string',
         description:
@@ -2247,16 +2256,40 @@ export default testManifest;
           verbose: Boolean(options.verbose),
         });
 
+        const recordInput = collectMigrateRecordInput();
+        const lastMigrate = await readLastMigrateRecord(db, {
+          engineHint: dbType,
+        });
+        const removedOption = options['confirm-removed-package'];
+        const confirmedRemoved =
+          typeof removedOption === 'string'
+            ? [removedOption]
+            : Array.isArray(removedOption)
+              ? removedOption
+              : [];
         const runDecision = decideMigrationRun({
           changes: diff.changes,
           addedTables: diff.added_tables,
           engine,
           resolvedStops,
+          packagesSeen: {
+            recorded:
+              lastMigrate.state === 'recorded'
+                ? lastMigrate.record.packages
+                : null,
+            current: recordInput.packages,
+            confirmedRemoved,
+          },
         });
+        for (const notice of runDecision.notices) console.log(notice);
         if (!runDecision.proceed) {
           console.log(
-            `Migrate stopped: ${runDecision.stops.length} change(s) would lose or invent data`,
+            runDecision.packageStops.length
+              ? `Migrate stopped: ${runDecision.packageStops.length} missing package(s), ${runDecision.stops.length} schema stop(s)`
+              : `Migrate stopped: ${runDecision.stops.length} change(s) would lose or invent data`,
           );
+          for (const stop of runDecision.packageStops)
+            console.log(`   ${stop.message}`);
           for (const stop of runDecision.stops) {
             console.log(`   ${stop.message} (${stop.reason})`);
             for (const sql of stop.change.advisory?.suggestedSql ?? [])
@@ -3109,7 +3142,10 @@ export default testManifest;
             stiErrorCount === 0 &&
             (applySchemaMigrations || schemaUpToDate)
           ) {
-            await recordSuccessfulMigrate(db, { engineHint: dbType });
+            await recordSuccessfulMigrate(db, {
+              engineHint: dbType,
+              input: recordInput,
+            });
           }
         }
 

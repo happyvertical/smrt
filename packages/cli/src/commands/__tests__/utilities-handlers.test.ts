@@ -162,6 +162,13 @@ function migratableDb(overrides: Record<string, unknown> = {}) {
 }
 
 vi.mock('@happyvertical/smrt-core', () => ({
+  collectMigrateRecordInput: vi.fn(() => ({
+    release: 'test',
+    packages: [],
+    fingerprint: 'fixture',
+  })),
+  readLastMigrateRecord: vi.fn(async () => ({ state: 'none' })),
+  recordSuccessfulMigrate: vi.fn(async () => {}),
   ObjectRegistry: h.registry,
   SchemaComparer: class {
     constructor(_db: unknown, options?: unknown) {

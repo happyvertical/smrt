@@ -180,6 +180,13 @@ vi.mock('@happyvertical/sql', () => ({
 }));
 
 vi.mock('@happyvertical/smrt-core', () => ({
+  collectMigrateRecordInput: vi.fn(() => ({
+    release: 'test',
+    packages: [],
+    fingerprint: 'fixture',
+  })),
+  readLastMigrateRecord: vi.fn(async () => ({ state: 'none' })),
+  recordSuccessfulMigrate: vi.fn(async () => {}),
   ObjectRegistry: {
     getAllSchemasAsDefinitions: getAllSchemasAsDefinitionsMock,
     getInitializationOrder: getInitializationOrderMock,

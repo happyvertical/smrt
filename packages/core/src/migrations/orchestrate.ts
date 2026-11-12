@@ -30,7 +30,11 @@ import {
   createMigrationDefinition,
   generateMigrationTimestamp,
 } from './generator.js';
-import { recordSuccessfulMigrate } from './migrate-record.js';
+import {
+  collectMigrateRecordInput,
+  readLastMigrateRecord,
+  recordSuccessfulMigrate,
+} from './migrate-record.js';
 import {
   decideMigrationRun,
   type MigrationRunDecision,
@@ -138,6 +142,8 @@ export interface MigrateSmrtSchemasOptions {
   emptyTextAsNull?: boolean;
   /** Explicitly allow relaxing live column constraints. */
   relaxColumns?: boolean;
+  /** Exact package removals explicitly confirmed by the caller. */
+  confirmRemovedPackages?: string[];
 }
 
 export interface MigrateSmrtSchemasResult
@@ -292,12 +298,29 @@ export async function migrateSmrtSchemas(
     emptyTextAsNull: options.emptyTextAsNull,
     relaxColumns: options.relaxColumns,
   });
-  const { stops, heldBack, proceed } = pending.decision;
+  const recordInput = collectMigrateRecordInput();
+  const last = await readLastMigrateRecord(options.db, {
+    engineHint: options.engineHint,
+  });
+  const decision = decideMigrationRun({
+    changes: pending.diff.changes,
+    addedTables: pending.diff.added_tables,
+    engine: resolveMigrationEngine(options.db, options.engineHint),
+    packagesSeen: {
+      recorded: last.state === 'recorded' ? last.record.packages : null,
+      current: recordInput.packages,
+      confirmedRemoved: options.confirmRemovedPackages ?? [],
+    },
+  });
+  const { stops, heldBack, proceed, packageStops, notices } = decision;
+  for (const notice of notices) logger.info(notice);
   if (!proceed) {
     return {
       applied: false,
       refused: true,
       stops,
+      packageStops,
+      notices,
       heldBack,
       results: [],
       statements: pending.statements,
@@ -310,6 +333,7 @@ export async function migrateSmrtSchemas(
   if (!pending.hasChanges || pending.statements.length === 0) {
     if (!pending.hasManualDrift) {
       await recordSuccessfulMigrate(options.db, {
+        input: recordInput,
         engineHint: options.engineHint,
       });
     }
@@ -317,6 +341,8 @@ export async function migrateSmrtSchemas(
       applied: false,
       refused: false,
       stops,
+      packageStops,
+      notices,
       heldBack,
       results: [],
       statements: [],
@@ -360,6 +386,7 @@ export async function migrateSmrtSchemas(
 
   if (!pending.hasManualDrift) {
     await recordSuccessfulMigrate(options.db, {
+      input: recordInput,
       engineHint: options.engineHint,
     });
   }
@@ -379,6 +406,8 @@ export async function migrateSmrtSchemas(
     applied,
     refused: false,
     stops,
+    packageStops,
+    notices,
     heldBack,
     results,
     statements: pending.statements,

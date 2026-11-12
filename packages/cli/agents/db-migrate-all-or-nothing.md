@@ -19,6 +19,27 @@ it writes no table rows. `--dry-run` prints the same refusal and exits 1.
 An ordinary run applies one atomic transaction batch. A failure in a later
 statement rolls back the earlier changes and tracker rows too.
 
+## Missing packages (#4928)
+
+Migrate compares loaded packages with the last successful migrate record.
+Every package seen last time must still be loaded. A missing package may have
+declared required columns. Without it, migrate could loosen those columns and
+let empty rows in. This stops the whole run before any write. The output names
+each unconfirmed missing package and lists every held-back change.
+
+If a package was removed on purpose, pass `--confirm-removed-package <name>`.
+Repeat the flag for each removed package. One confirmation cannot clear another
+package's stop. Names match the record exactly: `@scope/pkg`, app scopes, and
+`<unqualified>` for classes with no package. Quote `<unqualified>` in a shell.
+A confirmation for a package that is not missing prints an ignored notice.
+Added packages are fine.
+
+An older or first-run database has no earlier record. Migrate prints that the
+package comparison was skipped and that a record will be written on success.
+It proceeds. A successful run records the loaded packages, excluding confirmed
+removals, even when the schema was already current. Refused runs and dry runs
+write nothing. Dry-run shows the same missing-package stop and exits 1.
+
 ## `--null-orphans`
 
 This explicit data step stays available. It clears orphan foreign-key references
@@ -49,14 +70,18 @@ old behavior must fix all stops first, then run `db:migrate` without that flag.
 ## Application wrappers
 
 Both the CLI and `migrateSmrtSchemas()` call core's `decideMigrationRun()`.
-Work-style wrappers can read `getPendingSchemaStatements().decision`, or call
-`decideMigrationRun({ changes, addedTables, engine })` for their own preview.
+`getPendingSchemaStatements().decision` covers schema changes only. For a full
+preview, wrappers can call
+`decideMigrationRun({ changes, addedTables, engine, packagesSeen })`.
 A wrapper planning an explicit data step can pass `resolvedStops`, a set of the
 exact original changes it will resolve in the same atomic batch. It must not
 mark a stop resolved without scheduling that repair.
 
-The result contains `proceed`, `stops`, and `heldBack`. `migrateSmrtSchemas()`
+Pass `packagesSeen: { recorded, current, confirmedRemoved }` for package checks;
+use `collectMigrateRecordInput().packages` for `current`. The result contains
+`proceed`, `stops`, `packageStops`, `notices`, and `heldBack`. `migrateSmrtSchemas()`
 returns `applied:false` and `refused:true` on refusal, with those stops and held
 changes. It keeps `unactionableChanges` and `hasManualDrift` for existing callers.
 Proceeding and in-sync results have `refused:false`. Wrappers need no separate
-partial-apply policy.
+partial-apply policy. `migrateSmrtSchemas({ confirmRemovedPackages: [name], ... })`
+checks packages itself and returns the same package stops and notices.

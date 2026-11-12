@@ -6,6 +6,48 @@ import {
   type SchemaChangeVerdict,
 } from './change-kinds.js';
 
+export interface PackagesSeenInput {
+  recorded: readonly string[] | null;
+  current: readonly string[];
+  confirmedRemoved: readonly string[];
+}
+
+export interface PackagesSeenCheck {
+  state: 'no-record' | 'ok' | 'missing';
+  missing: string[];
+  unconfirmed: string[];
+  ignoredConfirmations: string[];
+}
+
+/** Exact recorded names, including app scopes and `<unqualified>`. No writes. */
+export function checkPackagesSeen(input: PackagesSeenInput): PackagesSeenCheck {
+  const current = new Set(input.current);
+  const confirmed = new Set(input.confirmedRemoved);
+  const missing = [...new Set(input.recorded ?? [])]
+    .filter((name) => !current.has(name))
+    .sort();
+  const missingSet = new Set(missing);
+  const unconfirmed = missing.filter((name) => !confirmed.has(name));
+  return {
+    state:
+      input.recorded === null
+        ? 'no-record'
+        : unconfirmed.length
+          ? 'missing'
+          : 'ok',
+    missing,
+    unconfirmed,
+    ignoredConfirmations: [...confirmed]
+      .filter((name) => !missingSet.has(name))
+      .sort(),
+  };
+}
+
+export interface MigrationPackageStop {
+  packageName: string;
+  message: string;
+}
+
 export interface MigrationRunStop<T = SchemaChangeInput> {
   change: T;
   kind: SchemaChangeVerdict['kind'];
@@ -21,6 +63,8 @@ export interface HeldBackMigration {
 
 export interface MigrationRunDecision<T = SchemaChangeInput> {
   proceed: boolean;
+  packageStops: MigrationPackageStop[];
+  notices: string[];
   stops: MigrationRunStop<T>[];
   heldBack: HeldBackMigration[];
 }
@@ -36,7 +80,23 @@ export function decideMigrationRun<T extends SchemaChangeInput>(options: {
   addedTables?: readonly { tableName: string }[];
   engine: DatabaseEngine;
   resolvedStops?: ReadonlySet<T>;
+  packagesSeen?: PackagesSeenInput;
 }): MigrationRunDecision<T> {
+  const packages = options.packagesSeen
+    ? checkPackagesSeen(options.packagesSeen)
+    : undefined;
+  const packageStops = (packages?.unconfirmed ?? []).map((packageName) => ({
+    packageName,
+    message: `Package ${packageName} was seen last time but is missing now. A package that declared required columns may be missing; the migrate could loosen them. Load the package, or pass --confirm-removed-package ${packageName} to confirm its removal.`,
+  }));
+  const notices = (packages?.ignoredConfirmations ?? []).map(
+    (name) =>
+      `Ignoring --confirm-removed-package ${name}: this package is not missing.`,
+  );
+  if (packages?.state === 'no-record')
+    notices.unshift(
+      'Package comparison skipped because no earlier migrate record exists. The record will be written after this run succeeds (not in dry-run).',
+    );
   const stops: MigrationRunStop<T>[] = [];
   const applicable: T[] = [];
   for (const change of options.changes) {
@@ -55,7 +115,8 @@ export function decideMigrationRun<T extends SchemaChangeInput>(options: {
       applicable.push(change);
     }
   }
-  if (stops.length === 0) return { proceed: true, stops: [], heldBack: [] };
+  if (stops.length === 0 && packageStops.length === 0)
+    return { proceed: true, stops: [], packageStops, notices, heldBack: [] };
 
   const addedNames = new Set(
     (options.addedTables ?? []).map((s) => s.tableName),
@@ -69,7 +130,7 @@ export function decideMigrationRun<T extends SchemaChangeInput>(options: {
     if (change.type === 'add_table' && addedNames.has(change.table)) continue;
     heldBack.push(describeChange(change));
   }
-  return { proceed: false, stops, heldBack };
+  return { proceed: false, stops, packageStops, notices, heldBack };
 }
 
 function describeChange(change: SchemaChangeInput): HeldBackMigration {
