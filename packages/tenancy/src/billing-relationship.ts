@@ -62,10 +62,10 @@ export class BillingRelationshipError extends Error {
 })
 export class BillingRelationship extends SmrtObject {
   @crossPackageRef('@happyvertical/smrt-users:Tenant')
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   childTenantId: string = '';
   @crossPackageRef('@happyvertical/smrt-users:Tenant')
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'tenant-scope' })
   resellerTenantId: string = '';
   billingOwnerMode: BillingOwnerMode = 'self';
 
