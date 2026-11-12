@@ -6,7 +6,7 @@ import {
 import { ConfirmDialog, Progress } from '@happyvertical/smrt-ui/feedback';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button, Card } from '@happyvertical/smrt-ui/ui';
-import { onMount, tick, untrack } from 'svelte';
+import { onMount, type Snippet, tick, untrack } from 'svelte';
 import { M } from '../../i18n/strings.onboarding.js';
 import ConnectAi from '../connect-ai/ConnectAi.svelte';
 import type { ConnectAiClient } from '../connect-ai/types.js';
@@ -26,6 +26,7 @@ let {
   apiKeyHref,
   oncomplete,
   backHref = '/settings',
+  aiFooter,
 }: {
   client: OnboardingClient;
   connectAi: ConnectAiClient;
@@ -36,6 +37,8 @@ let {
   apiKeyHref: string;
   oncomplete: () => void | Promise<void>;
   backHref?: string;
+  /** Host-owned alternative connection link, inside the AI step card. */
+  aiFooter?: Snippet;
 } = $props();
 const { t } = useI18n();
 let progress = $state<OnboardingState>(untrack(() => initialState));
@@ -132,10 +135,11 @@ const step = $derived(
       {#if progress.completed || progress.rerunning}<Button variant="ghost" href={backHref}>{t(M['ui.onboarding.back_settings'])}</Button>{/if}
     {:else if progress.step === 'ai'}
       <ConnectAi client={connectAi} {apiKeyHref} {headingId} onchange={(_, configured) => { ready = configured; }} />
-      <p>{t(M['ui.onboarding.skip_hint'])}</p>
+      {@render aiFooter?.()}
+      {#if !ready}<p>{t(M['ui.onboarding.skip_hint'])}</p>{/if}
       <div class="actions">
         <Button variant="ghost" disabled={busy} onclick={() => change({ action: 'back' })}>{t(M['ui.onboarding.back'])}</Button>
-        <Button variant="secondary" disabled={busy} onclick={() => change({ action: 'skip' })}>{t(M['ui.onboarding.skip'])}</Button>
+        {#if !ready}<Button variant="secondary" disabled={busy} onclick={() => change({ action: 'skip' })}>{t(M['ui.onboarding.skip'])}</Button>{/if}
         <Button disabled={busy || !ready} onclick={() => change({ action: 'continue' })}>{t(M['ui.onboarding.continue'])}</Button>
       </div>
     {:else if progress.step === 'template'}

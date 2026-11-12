@@ -1,6 +1,7 @@
 import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
+import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import type { ConnectAiClient } from '../../connect-ai/types.js';
 import FirstRunOnboarding from '../FirstRunOnboarding.svelte';
@@ -172,6 +173,7 @@ describe('FirstRunOnboarding', () => {
     expect(
       await screen.findByRole('button', { name: 'Continue' }),
     ).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Skip for now' })).toBeNull();
     expect(
       screen.queryByRole('button', { name: 'Get started' }),
     ).not.toBeInTheDocument();
@@ -224,4 +226,18 @@ it('offers Settings when revisiting a completed installation', () => {
   expect(
     screen.getByRole('link', { name: 'Back to Settings' }),
   ).toHaveAttribute('href', '/settings');
+});
+
+it('keeps a host alternative inside the AI step card and removes it on other steps', async () => {
+  const f = fixture('ai');
+  const aiFooter = createRawSnippet(() => ({
+    render: () =>
+      '<a href="/settings#own-ai">Use with your own AI in Settings</a>',
+  }));
+  render(FirstRunOnboarding, { props: { ...f.props, aiFooter } });
+  const alternative = await screen.findByRole('link', {
+    name: 'Use with your own AI in Settings',
+  });
+  expect(alternative.closest('[data-smrt-component="Card"]')).toBeTruthy();
+  expect(alternative.closest('main.onboarding')).toBeTruthy();
 });
