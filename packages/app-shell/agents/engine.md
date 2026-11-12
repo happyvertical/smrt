@@ -176,6 +176,13 @@ Renames rewrite expressions; hide/remove/type change refuse named dependents.
 Changing a calculated field's type replaces its generated column directly and
 validates the expression against the new type, without archiving derived values.
 `titleField` optionally names the record label, with first visible text as fallback.
+The expression grammar includes SDK 0.112.2 conditional, numeric, text and
+calendar functions and typed date literals. All are display-only in
+`src/lib/ui/formula.ts`; evaluation stays in the database. SQLite date inputs
+and `addDays` use the engine's normal date storage. Reference walks include
+all nested function arguments and conditional branches. Regression suites:
+`portable-calculations.test.ts` and `keyword-fields.test.ts` (all eight SQL
+keyword field names across CRUD, bulk loads, reports and calculations).
 Test design and required validation: [engine-4916-tests.md](engine-4916-tests.md).
 
 ## Definition reports (#4916)
