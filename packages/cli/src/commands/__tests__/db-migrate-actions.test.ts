@@ -105,7 +105,7 @@ describe('partitionSchemaChanges', () => {
 
     expect(migrations).toEqual([]);
     expect(manualInterventions).toEqual([
-      {
+      expect.objectContaining({
         type: 'type_upgrade',
         tableName: 'contents',
         className: 'Content',
@@ -122,7 +122,7 @@ describe('partitionSchemaChanges', () => {
           actual: 'BLOB',
         },
         sql: '-- SQLite: Type upgrade for "metadata" requires table recreation',
-      },
+      }),
     ]);
   });
 
@@ -284,7 +284,7 @@ describe('partitionSchemaChanges', () => {
 
     expect(migrations).toEqual([]);
     expect(manualInterventions).toEqual([
-      {
+      expect.objectContaining({
         type: 'type_mismatch',
         tableName: 'contents',
         className: 'Content',
@@ -293,7 +293,7 @@ describe('partitionSchemaChanges', () => {
           expected: 'TEXT',
           actual: 'INTEGER',
         },
-      },
+      }),
     ]);
   });
 

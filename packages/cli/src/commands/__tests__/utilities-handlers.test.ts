@@ -222,6 +222,8 @@ vi.mock('@happyvertical/smrt-core/migrations', async () => {
   >('@happyvertical/smrt-core/migrations');
 
   return {
+    decideSchemaChange: actual.decideSchemaChange,
+    hasExecutableSchemaSql: actual.hasExecutableSchemaSql,
     acquireMigrationLock: (...args: unknown[]) =>
       h.acquireMigrationLock(...args),
     buildConcurrentIndexPlan: actual.buildConcurrentIndexPlan,

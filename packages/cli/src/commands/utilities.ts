@@ -2179,6 +2179,7 @@ export default testManifest;
         const partitionedChanges = partitionSchemaChanges(
           diff.changes as SchemaChangeLike[],
           getClassForTable,
+          engine,
         );
         migrations.push(...partitionedChanges.migrations);
         manualInterventions.push(...partitionedChanges.manualInterventions);
@@ -2385,28 +2386,10 @@ export default testManifest;
             '⚠️  Schema drift detected that requires manual intervention:\n',
           );
           for (const change of manualInterventions) {
-            if (
-              change.type === 'add_foreign_key' ||
-              change.type === 'drop_foreign_key'
-            ) {
-              console.log(
-                `   ${change.tableName}: ${change.advisory?.message ?? change.sql?.replace(/^--\s*/, '') ?? 'foreign-key constraint requires manual repair'}`,
-              );
-              for (const sql of change.advisory?.suggestedSql ?? []) {
-                console.log(`      ${sql}`);
-              }
-              continue;
+            console.log(`   ${change.decisionMessage}`);
+            for (const sql of change.advisory?.suggestedSql ?? []) {
+              console.log(`      ${sql}`);
             }
-            if (!change.mismatch) continue;
-
-            const detail =
-              change.type === 'type_upgrade'
-                ? `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual} (cannot auto-apply on this database engine)`
-                : change.type === 'alter_column'
-                  ? `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual} (${change.alteration ?? 'alter_column'}; ${change.sql?.replace(/^--\s*/, '') ?? 'cannot auto-apply on this database engine'})`
-                  : `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual}`;
-
-            console.log(`   ${detail}`);
           }
           console.log();
           console.log(

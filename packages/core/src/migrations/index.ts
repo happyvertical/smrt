@@ -20,6 +20,7 @@ export {
   BackfillTracker,
   type BackfillTrackerOptions,
 } from './backfill-tracker.js';
+export * from './change-kinds.js';
 // Checksum utilities
 export {
   computeChecksum,

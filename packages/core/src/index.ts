@@ -478,6 +478,7 @@ export {
 } from './learning/index';
 // Static manifest (generated at build time)
 export * from './manifest/index';
+export * from './migrations/change-kinds.js';
 export type { DiffOptions } from './migrations/differ';
 // Schema comparison and migration utilities
 export {

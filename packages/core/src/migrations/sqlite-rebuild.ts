@@ -240,13 +240,24 @@ export async function planSqliteTableRebuilds(
     return changes;
   }
 
-  const block = (reason: string): SchemaChange[] => {
+  const block = (reason: string, losesData = false): SchemaChange[] => {
     logger.debug(
       `[SQLiteRebuild] Cannot rebuild ${tableName}: ${reason}; leaving ${pending.length} type upgrade(s) as manual drift`,
     );
     return changes.map((change) =>
       pending.includes(change)
-        ? { ...change, sql: blockedSql(change.name as string, reason) }
+        ? {
+            ...change,
+            kindHint:
+              change.type === 'type_upgrade'
+                ? losesData
+                  ? 'type.rebuild-data-loss'
+                  : 'type.rebuild-unavailable'
+                : losesData
+                  ? 'column.rebuild-data-loss'
+                  : 'column.rebuild-unavailable',
+            sql: blockedSql(change.name as string, reason),
+          }
         : change,
     );
   };
@@ -282,6 +293,7 @@ export async function planSqliteTableRebuilds(
         .join(
           ', ',
         )} declare a foreign key onto this table, so DROP TABLE would fire their ON DELETE actions`,
+      true,
     );
   }
 

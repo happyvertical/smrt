@@ -405,7 +405,7 @@ describe('schema orchestration', () => {
     expect(pending.unactionableChanges[0].name).toBe('score');
   });
 
-  it('surfaces a blocking orphan NOT NULL column as unactionable, keeps info notes out, executes nothing for advisories (#2369)', async () => {
+  it('reports an orphan NOT NULL column without manual drift or executable SQL (#4925)', async () => {
     await db.query(
       'CREATE TABLE documents (id TEXT PRIMARY KEY, legacy_code TEXT NOT NULL, legacy_note TEXT);',
     );
@@ -429,18 +429,15 @@ describe('schema orchestration', () => {
         .map((c) => `${c.name}:${c.advisory?.severity}`)
         .sort(),
     ).toEqual(['legacy_code:warning', 'legacy_note:info']);
-    // Only the blocking orphan is surfaced as needing an operator.
-    expect(pending.unactionableChanges.map((c) => c.name)).toEqual([
-      'legacy_code',
-    ]);
-    expect(pending.hasManualDrift).toBe(true);
+    // Retaining the column loses or invents no data, even when inserts fail.
+    expect(pending.unactionableChanges).toEqual([]);
+    expect(pending.hasManualDrift).toBe(false);
 
     const result = await migrateSmrtSchemas({ db, packageName: 'test' });
     expect(result.applied).toBe(false);
     expect(result.statements).toEqual([]);
-    expect(result.unactionableChanges.map((c) => c.name)).toEqual([
-      'legacy_code',
-    ]);
+    expect(result.unactionableChanges).toEqual([]);
+    expect(result.hasManualDrift).toBe(false);
   });
 
   it('surfaces incompatible type_mismatch changes as unactionableChanges', async () => {

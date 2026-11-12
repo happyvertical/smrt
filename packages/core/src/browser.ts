@@ -762,6 +762,7 @@ export {
 // Use the main entry point for Node.js applications that need generators
 
 export * from './external-agent-usage.js';
+export * from './migrations/change-kinds.js';
 export {
   type OperationPermissionAlias,
   resolveOperationPermissionAlias,

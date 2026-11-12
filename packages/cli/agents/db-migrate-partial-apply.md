@@ -11,6 +11,19 @@ FK advisory branches in `compareForeignKeys()`
 `renderForeignKeyAddStatements()` (`packages/core/src/schema/
 foreign-key-ddl.ts`).
 
+## What counts as manual (#4925)
+
+Core's `migrations/change-kinds.ts` owns the classification for every engine.
+`partitionSchemaChanges()` is synchronous and imports `decideSchemaChange()`
+from `@happyvertical/smrt-core/migrations`: exactly stop decisions enter
+`manualInterventions`, and report decisions enter advisories. Stop messages name
+the table and column and say whether proceeding would lose or invent data.
+Existing engine/adapter limitations are separately named in core's exported
+`UNRESOLVED_NON_DATA_STOPS`; unknown shapes stop as `unlisted`.
+Warning-level reports, including NOT NULL orphan columns and unrequested
+relaxations, do not by themselves fail migrate. A refused UUID convergence or
+invalid JSON/timestamp conversion is now a stop, even when it has no SQL.
+
 ## `--apply-unblocked`: partial apply
 
 Today's unflagged batch already excludes every individually blocked change
@@ -21,10 +34,9 @@ partition on top of that: it withholds not just the blocked changes
 themselves but anything that *depends* on one, and applies everything else.
 
 **Dependency rule.** `computeBlockedColumns()` reads every manual
-intervention's blocked `table.column` identity, plus every report-only
-`type_upgrade` **advisory** (the #2608 refused uuid convergence — the only
-producer of that shape) — an advisory-only finding never enters
-`manualInterventions` (it carries no SQL) but names a live column just as
+intervention's blocked `table.column` identity, including a refused UUID
+convergence that now enters `manualInterventions`. Its legacy advisory input
+also accepts older blocked type-upgrade findings that name a live column just as
 concretely, and a dependent index/alter/drop on that column is exactly as
 unsafe as one on a manual-intervention column (review finding, #2748: the
 advisory bucket was previously excluded, so `--apply-unblocked` did not

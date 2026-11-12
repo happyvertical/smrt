@@ -320,6 +320,36 @@ decorator-only type. A database whose column was built from the old TEXT
 expectation is not auto-cast; parity reports the drift for an explicit
 migration.
 
+### Schema change decisions (#4925)
+
+Migrate makes the database match the code without asking whenever that is safe.
+It stops only when it would lose or invent data.
+
+`src/migrations/change-kinds.ts` owns `SCHEMA_CHANGE_KINDS`, the single table of
+stable kinds and decisions for PostgreSQL, SQLite, and DuckDB (JSON uses DuckDB's
+policy). `classifySchemaChange()` identifies the shape; `decideSchemaChange()`
+returns apply, stop, or report and a message naming the table and column or
+constraint. Producer `kindHint` values distinguish refusal shapes that share
+SQL and flags; consumers never parse the human diagnosis.
+
+Apply kinds carry executable SQL. Report kinds retain data: orphan columns
+(including NOT NULL orphans that can break inserts), orphan indexes/unique
+constraints, stale defaults, unrequested relaxations, possible rename notes,
+and conversions already handled by another rebuild. Reports never set
+`unactionableChanges` or `hasManualDrift`; these now contain exactly stop
+decisions, even when a report has warning severity. Read `diff.changes` to
+show all reports. The differ's executable-DDL helper and the CLI partition use
+the same classification; a data-blocked advisory-only UUID conversion is a
+stop, not a report.
+
+Every data stop says `loses-data` or `invents-data` and explains why.
+`UNRESOLVED_NON_DATA_STOPS` records existing refusals whose engine or adapter
+support is incomplete: column alterations/rebuilds, unfinished JSON/UUID preservation
+probes, live constraints that prevent UUID conversion, foreign-key additions/replacements/removals, and a missing referenced
+parent column. These are explicit exceptions awaiting implementation, not extra
+data rules. Unknown shapes stop as `unlisted`; source-coverage and real-comparer
+tests guard against real differ output reaching that fallback.
+
 ### A SQLite type change is a table rebuild (#2370)
 
 SQLite has no `ALTER TABLE ... ALTER COLUMN ... TYPE`, so
@@ -998,8 +1028,8 @@ consumer reads `SchemaChange.column` — `partitionSchemaChanges()` in
 `@happyvertical/smrt-cli` skips an entry without one — so a conversion missing
 it would drop out of the `db:migrate` batch while `compareForeignKeys()` still
 assumed the converged type. Refused convergences carry the same column plus an
-advisory and no SQL, and the CLI routes them to the report-only advisories
-rather than to manual interventions or the tracker.
+advisory and no SQL. The CLI routes them to manual interventions with the
+table's data-loss reason; they never become executable tracker migrations.
 
 The uuid wording is gated on the manifest. Both the runtime guard and the
 status planner reach their incompatible-type branch for *any* mismatched pair,

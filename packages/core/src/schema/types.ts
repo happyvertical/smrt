@@ -3,6 +3,8 @@
  * Used for build-time schema generation and runtime table management
  */
 
+import type { SchemaChangeKindId } from '../migrations/change-kinds.js';
+
 export type SQLDataType =
   | 'TEXT'
   | 'INTEGER'
@@ -357,6 +359,8 @@ export interface SchemaChangeAdvisory {
  * Schema difference for a single change
  */
 export interface SchemaChange {
+  /** Producer hint for shapes whose data/engine refusal cannot be inferred from SQL. */
+  kindHint?: SchemaChangeKindId;
   /** Type of change */
   type:
     | 'add_table'

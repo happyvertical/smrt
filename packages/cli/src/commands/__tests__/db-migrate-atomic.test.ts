@@ -205,6 +205,8 @@ vi.mock('@happyvertical/smrt-core/migrations', async () => {
   >('@happyvertical/smrt-core/migrations');
 
   return {
+    decideSchemaChange: actual.decideSchemaChange,
+    hasExecutableSchemaSql: actual.hasExecutableSchemaSql,
     // The cross-process migration lock (#3634) has its own contract and
     // real-PostgreSQL coverage; these fixtures fake a PostgreSQL adapter with
     // no pinned sessions, so hold an inert lock here.

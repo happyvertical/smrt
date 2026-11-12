@@ -5,14 +5,13 @@
  * An executable conversion must reach the migration batch: dropping it while
  * `compareForeignKeys()` already assumed the converged type reintroduces
  * SQLSTATE 42804. A refused convergence carries an advisory and no SQL, and
- * belongs with the other report-only findings — never as a tracker migration.
+ * stops with a data-loss reason and never becomes a tracker migration.
  */
 
 import { describe, expect, it } from 'vitest';
 import {
   getUnresolvedGeneratedMigrationNames,
   partitionSchemaChanges,
-  printSchemaAdvisories,
   type SchemaChangeLike,
 } from '../db-migrate-actions.js';
 
@@ -76,15 +75,18 @@ describe('uuid convergence partitioning (#2608)', () => {
     expect(ordinary.migrations[0]?.phase).toBeUndefined();
   });
 
-  it('reports a refused convergence as an advisory, not a manual migration', () => {
+  it('stops a refused convergence because stored values cannot be preserved', () => {
     const result = partitionSchemaChanges([blocked], className);
     expect(result.migrations).toHaveLength(0);
-    expect(result.manualInterventions).toHaveLength(0);
-    expect(result.advisories).toHaveLength(1);
-    expect(result.advisories[0]?.type).toBe('type_upgrade');
-    expect(result.advisories[0]?.tableName).toBe('tags');
-    expect(result.advisories[0]?.name).toBe('id');
-    expect(result.advisories[0]?.advisory.message).toContain('blocked:');
+    expect(result.advisories).toHaveLength(0);
+    expect(result.manualInterventions).toHaveLength(1);
+    expect(result.manualInterventions[0]).toMatchObject({
+      type: 'type_upgrade',
+      tableName: 'tags',
+      column: { name: 'id' },
+      kind: 'type.uuid-blocked',
+      stopReason: { reason: 'loses-data' },
+    });
   });
 
   it('never turns a refused convergence into a tracker migration name', () => {
@@ -94,15 +96,12 @@ describe('uuid convergence partitioning (#2608)', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('prints the refusal with its manual repair', () => {
-    const lines: string[] = [];
-    printSchemaAdvisories(
-      partitionSchemaChanges([blocked], className).advisories,
-      { log: (line) => lines.push(line) },
+  it('carries the table message and preserves the manual repair SQL', () => {
+    const action = partitionSchemaChanges([blocked], className)
+      .manualInterventions[0];
+    expect(action.decisionMessage).toContain('tags.id: would lose data');
+    expect(action.advisory?.suggestedSql?.join('\n')).toContain(
+      'TYPE uuid USING',
     );
-    const output = lines.join('\n');
-    expect(output).toContain('tags.id: type upgrade blocked');
-    expect(output).toContain('mixed uuid/text');
-    expect(output).toContain('TYPE uuid USING');
   });
 });
