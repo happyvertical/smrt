@@ -21,6 +21,6 @@ export const GET: RequestHandler = guarded(async (event) => {
       },
     });
   } catch (error) {
-    throw reportFailure(error);
+    throw reportFailure(error, host.def, host.def.reports?.[name]);
   }
 });

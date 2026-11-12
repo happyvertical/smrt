@@ -93,3 +93,10 @@ available in this session. Formula wording is display-only, never evaluation.
 UI additions have no prior implementation to compare as a bug-fix base. Existing
 engine rollback, replay and approval idempotence suites remain the transaction
 evidence. Browser visual QA is delegated to the coordinator, not claimed here.
+
+Report runs preserve `RuntimeReportError` code/path across the read worker.
+`invalid_result` is explained as a value too large to show exactly, naming a
+sum's source field label and calculated input labels when available. Results,
+CSV and failed assistant runs use the same safe wording; compiler/driver text
+and stacks are never displayed. Changed-field failures retain their repair
+message. Record input limits are unchanged.

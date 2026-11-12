@@ -21,7 +21,7 @@ export const GET: RequestHandler = guarded(async (event) => {
   try {
     return json(await host.runReport(name));
   } catch (error) {
-    throw reportFailure(error);
+    throw reportFailure(error, host.def, host.def.reports?.[name]);
   }
 });
 

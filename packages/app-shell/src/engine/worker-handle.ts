@@ -1,5 +1,7 @@
 // The host's handle on one app runtime thread.
+
 import { Worker } from 'node:worker_threads';
+import { RuntimeReportError } from '@happyvertical/smrt-reports';
 import type { AppDefinition, Migration } from './definition.ts';
 import { EngineError, WorkerCrashedError } from './errors.ts';
 import type { BootInfo, WorkerOp, WorkerReply } from './worker-protocol.ts';
@@ -86,6 +88,14 @@ export class AppWorker {
     if (!p) return;
     this.pending.delete(r.id);
     if (r.ok) p.resolve(r.value);
+    else if (r.reportError)
+      p.reject(
+        new RuntimeReportError(
+          r.reportError.code,
+          r.reportError.path,
+          'Report could not run',
+        ),
+      );
     else p.reject(new AppCallError(r.error, r.user));
   }
 

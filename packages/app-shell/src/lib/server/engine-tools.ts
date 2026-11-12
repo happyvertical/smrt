@@ -8,6 +8,7 @@ import type { RecordRow } from '../ui/types.ts';
 import { runCommand } from './builder.ts';
 import { hostFor } from './host.ts';
 import { assertOwner } from './owner.ts';
+import { reportFailure } from './report-display.ts';
 import type { CallScope } from './target.ts';
 
 const string = { type: 'string' };
@@ -102,13 +103,18 @@ export async function runEngineTool(
   const owner = await assertOwner();
   if (name === 'app_runreport') {
     const host = await hostFor(scope.records);
-    const result = await host.runReport(
-      args.report as string | RuntimeReportSpec,
-      {
+    const result = await host
+      .runReport(args.report as string | RuntimeReportSpec, {
         maxRows: args.maxRows as number | undefined,
         timeoutMs: args.timeoutMs as number | undefined,
-      },
-    );
+      })
+      .catch((error) => {
+        const report =
+          typeof args.report === 'string'
+            ? host.def.reports?.[args.report]
+            : { spec: args.report as RuntimeReportSpec };
+        throw reportFailure(error, host.def, report);
+      });
     const saved = typeof args.report === 'string' ? args.report : undefined;
     const title = saved
       ? (host.describe().reports?.[saved]?.label ?? result.title)
