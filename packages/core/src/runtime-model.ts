@@ -176,10 +176,16 @@ export function runtimeModelEntry(
   // shares its parent's table and needs none.
   if (parent && ObjectRegistry.getSTIBase(def.extends!) === null) {
     for (const [name, inherited] of getOwnTableFieldsSync(parent)) {
+      // A hierarchical parent's `parentId` points at the parent's own table;
+      // the subclass has its own table, and its tree links to itself.
+      const related =
+        name === 'parentId' && inherited.related === parent.name
+          ? def.name
+          : inherited.related;
       fields[name] = {
         type: inherited.type,
         required: false,
-        ...(inherited.related ? { related: inherited.related } : {}),
+        ...(related ? { related } : {}),
       } as FieldDefinition;
     }
   }

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { field } from '../decorators/index.js';
 import { MCPGenerator } from '../generators/mcp.js';
 import { APIGenerator } from '../generators/rest.js';
+import { SmrtHierarchical } from '../hierarchical.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 import {
@@ -371,6 +372,43 @@ describe('#4871 run-time models', () => {
           .filter((t) => !before.includes(t))
           .some((t) => t.startsWith('table:')),
       ).toBe(true);
+    });
+
+    it('a subclass of a hierarchical own-table parent links its tree to its own table (#4940)', async () => {
+      // `SmrtHierarchical` reaches the registry the way it does in an app:
+      // from core's manifest, as a framework base.
+      const core = '@happyvertical/smrt-core';
+      ObjectRegistry.registerFromManifest(
+        `${core}:SmrtHierarchical`,
+        {
+          name: 'smrthierarchical',
+          className: 'SmrtHierarchical',
+          collection: 'smrthierarchicals',
+          filePath: 'hierarchical.ts',
+          fields: { parentId: { type: 'text' } },
+          methods: {},
+          decoratorConfig: {},
+          extends: 'SmrtObject',
+        } as never,
+        core,
+      );
+      @smrt({ tableName: 'rt4940_nodes' })
+      class Node4940 extends SmrtHierarchical {
+        @field() label = '';
+      }
+      const parent = qn(Node4940);
+      const q = registerRuntimeModel({
+        name: 'SubNode4940',
+        packageName: '@test/rt4940',
+        extends: parent,
+        fields: { depth: { type: 'integer' } },
+      });
+      const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
+      const table = ObjectRegistry.getTableName(q) as string;
+      expect(schemas.rt4940_nodes.columns.parent_id?.foreignKey?.table).toBe(
+        'rt4940_nodes',
+      );
+      expect(schemas[table].columns.parent_id?.foreignKey?.table).toBe(table);
     });
 
     it("a subclass that shares its parent's simple name leaves the parent family intact", async () => {
