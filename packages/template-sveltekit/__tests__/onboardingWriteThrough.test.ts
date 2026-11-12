@@ -15,6 +15,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { defaultWriterLease } from '@happyvertical/smrt-app-runtime/sveltekit';
+import type { AssistantApprovalView } from '@happyvertical/smrt-chat/assistant-turn';
+import type { AssistantMessageWire } from '@happyvertical/smrt-chat/sveltekit';
 import { readAssistantTurnStream } from '@happyvertical/smrt-chat/assistant-turn';
 // Keep external provider registrations in the snapshot: Node caches these
 // modules across generated app fixtures while each app subclass is loaded anew.
@@ -559,6 +561,20 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
       const pending = await (await request(`/api/assistant/threads/${id}/approvals`, host.assistant.GET)).json();
       expect(pending.approvals).toHaveLength(1);
       expect(pending.approvals[0].tool).toBe('app.addField');
+      const heldMessages = await request(`/api/assistant/threads/${id}/messages`, host.assistant.GET);
+      expect(heldMessages.status).toBe(200);
+      const heldCards = (await heldMessages.json()).items.filter((message: AssistantMessageWire) =>
+        (message.toolCallData?.approval as AssistantApprovalView | undefined)?.id === pending.approvals[0].id,
+      );
+      expect(heldCards).toHaveLength(1);
+      const approvalMessageId = heldCards[0].id;
+      expect(heldCards[0]).toMatchObject({ role: 'tool', threadId: id });
+      expect(heldCards[0].toolCallData.approval).toMatchObject({
+        id: pending.approvals[0].id, tool: 'app.addField',
+        callId: pending.approvals[0].id, status: 'pending',
+      });
+      expect(Object.keys(heldCards[0].toolCallData)).toEqual(['approval']);
+      expect(/"(args|context|designAction|requestKey|result)"\s*:/.test(JSON.stringify(heldCards[0]))).toBe(false);
       expect(editor!.snapshot().revision).toBe(initial.revision);
       const decision = await request(`/api/assistant/approvals/${pending.approvals[0].id}/decide`, host.assistant.POST, { approve: true });
       expect(decision.status, await decision.clone().text()).toBe(200);
@@ -568,6 +584,20 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
       }, { timeout: 15000 });
       const checkpoint = JSON.parse(String((await db!.query('SELECT payload FROM _smrt_inference_design_runs WHERE id = ?', runId)).rows[0].payload));
       expect(checkpoint.outputs).toHaveLength(3);
+      const completedMessages = await request(`/api/assistant/threads/${id}/messages`, host.assistant.GET);
+      expect(completedMessages.status).toBe(200);
+      const completedCards = (await completedMessages.json()).items.filter((message: AssistantMessageWire) =>
+        (message.toolCallData?.approval as AssistantApprovalView | undefined)?.id === pending.approvals[0].id,
+      );
+      expect(completedCards).toHaveLength(1);
+      expect(completedCards[0]).toMatchObject({
+        id: approvalMessageId, role: 'tool', threadId: id,
+        toolCallData: { approval: {
+          id: pending.approvals[0].id, callId: pending.approvals[0].id, status: 'succeeded',
+        } },
+      });
+      expect(Object.keys(completedCards[0].toolCallData)).toEqual(['approval']);
+      expect(/"(args|context|designAction|requestKey|result)"\s*:/.test(JSON.stringify(completedCards[0]))).toBe(false);
       expect(designCalls).toBe(3);
     }
     for (const phase of ['applied', 'reopened']) {

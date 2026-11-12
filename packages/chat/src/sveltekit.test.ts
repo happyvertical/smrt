@@ -23,6 +23,7 @@ import type { PrincipalRun, PrincipalTool } from '@happyvertical/smrt-agents';
 import {
   createSqliteOwnerApprovalStore,
   OwnerApprovalAuthority,
+  OwnerApprovalContinuations,
 } from '@happyvertical/smrt-app-runtime';
 import { ObjectRegistry, resolveDatabase } from '@happyvertical/smrt-core';
 import { createCookbookEngine } from '@happyvertical/smrt-core/cookbook/engine';
@@ -54,6 +55,7 @@ import {
   type AssistantTurnEvent,
   readAssistantTurnStream,
 } from './assistant-turn-events.js';
+import { sendAgentReply } from './services/ChatService.js';
 import {
   ChatClientRequestConflictError,
   ChatService,
@@ -3591,6 +3593,351 @@ describe('mountAssistantRoutes', () => {
         actor.id === ownerA.user.id && actor.tenantId === tenantId,
     );
   }
+
+  it('projects native continuation holds into the owned thread without recovery envelopes or duplicate cards', async () => {
+    const authority = await durableApprovals();
+    let routes = mount({
+      approvals: authority,
+      allowedTools: ['app.addField'],
+      extraTools: [deleteTool([], 'app.addField')],
+    });
+    const threadId = await createThread(routes);
+    const otherThread = await createThread(
+      routes,
+      ownerA,
+      'Other conversation',
+    );
+    const principal = {
+      userId: ownerA.user.id,
+      profileId: ownerA.user.profileId,
+      tenantId,
+    };
+    const input = {
+      tenantId,
+      requestedBy: ownerA.user.id,
+      tool: 'app.addField',
+      callId: 'private-recovery-call',
+      requestKey: 'private-recovery-key',
+      args: { internal: 'private-arguments' },
+      summary: 'Add Licence plate to Members',
+      context: { threadId, principal, designAction: { runId: 'private-run' } },
+      continuation: {
+        executor: 'fixture',
+        principal: {
+          id: ownerA.user.id,
+          tenantId,
+          permissions: [],
+          allowedTools: [],
+        },
+        consumption: 'continuation' as const,
+      },
+    };
+    const hold = await authority.request(input);
+    for (const context of [
+      { threadId, principal: { ...principal, userId: memberB.user.id } },
+      {
+        threadId,
+        principal: { ...principal, profileId: memberB.user.profileId },
+      },
+      { threadId, principal: { ...principal, tenantId: otherTenantId } },
+      { threadId },
+      { threadId: otherThread, principal },
+    ])
+      await authority.request({
+        ...input,
+        callId: crypto.randomUUID(),
+        requestKey: crypto.randomUUID(),
+        context,
+      });
+    await authority.request({
+      ...input,
+      requestedBy: memberB.user.id,
+      callId: crypto.randomUUID(),
+      requestKey: crypto.randomUUID(),
+    });
+    const rows = await listMessages(routes, threadId);
+    expect(rows).toEqual([
+      {
+        id: `approval:${hold.id}`,
+        threadId,
+        role: 'tool',
+        content: hold.summary,
+        createdAt: new Date(hold.createdAt).toISOString(),
+        toolCallData: {
+          approval: {
+            id: hold.id,
+            tool: hold.tool,
+            callId: hold.id,
+            summary: hold.summary,
+            status: 'pending',
+            decidedBy: null,
+            decidedAt: null,
+          },
+        },
+      },
+    ]);
+    expect(JSON.stringify(rows)).not.toMatch(
+      /private-|requestedBy|designAction|permission/,
+    );
+    const status = await call(routes, 'GET', `threads/${threadId}/approvals`);
+    expect((await status.json()).approvals).toHaveLength(1);
+    routes = mount({ approvals: await durableApprovals() });
+    expect(await listMessages(routes, threadId)).toEqual(rows);
+    const revoked = mount({
+      approvals: new OwnerApprovalAuthority(
+        await createSqliteOwnerApprovalStore(await resolveDatabase(db)),
+        async () => false,
+      ),
+    });
+    expect(await listMessages(revoked, threadId)).toEqual([]);
+    const memberThread = await createThread(routes, memberB);
+    expect(await listMessages(routes, memberThread, memberB)).toEqual([]);
+    expect(await listMessages(routes, otherThread)).toHaveLength(1);
+    expect(
+      (
+        await call(routes, 'GET', `threads/${threadId}/messages`, {
+          actor: memberB,
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await call(routes, 'GET', `threads/${threadId}/messages`, {
+          actor: ownerAElsewhere,
+        })
+      ).status,
+    ).toBe(404);
+    const chat = await ChatService.create({ tenantId, db });
+    const [session] = await chat.findActiveAgentSessions({
+      tenantId,
+      agentId: 'smrt-assistant',
+      participantProfileId: ownerA.user.profileId,
+    });
+    const persisted = await sendAgentReply(chat, {
+      tenantId,
+      agentSessionId: String(session.id),
+      threadId,
+      kind: 'tool',
+      messageType: 'tool_call',
+      content: hold.summary,
+      toolCallData: {
+        name: 'app.addField',
+        approval: {
+          id: hold.id,
+          tool: hold.tool,
+          callId: hold.id,
+          summary: hold.summary,
+        },
+      },
+    });
+    expect((await listMessages(routes, threadId)).map((row) => row.id)).toEqual(
+      [String(persisted.id)],
+    );
+    const completed = await authority.request({
+      ...input,
+      callId: 'private-result-call',
+      requestKey: 'private-result-key',
+    });
+    await authority.decide(
+      { id: ownerA.user.id, tenantId },
+      completed.id,
+      true,
+    );
+    await authority.consume(tenantId, completed.id);
+    await authority.complete(tenantId, completed.id, true, {
+      args: 'private-result-envelope',
+      requestKey: 'private-result-key',
+    });
+    const finished = await call(routes, 'GET', `threads/${threadId}/approvals`);
+    expect(JSON.stringify(await finished.json())).not.toMatch(
+      /private-|"result"|"args"/,
+    );
+    await authority.decide({ id: ownerA.user.id, tenantId }, hold.id, false);
+    const terminalRows = await listMessages(routes, threadId);
+    expect(terminalRows.map((row) => row.id)).toContain(String(persisted.id));
+    expect(terminalRows).toContainEqual(
+      expect.objectContaining({
+        id: `approval:${completed.id}`,
+        toolCallData: {
+          approval: expect.objectContaining({
+            id: completed.id,
+            status: 'succeeded',
+          }),
+        },
+      }),
+    );
+    expect(
+      await listMessages(
+        mount({ approvals: await durableApprovals() }),
+        threadId,
+      ),
+    ).toEqual(terminalRows);
+  });
+
+  it('projects native holds with continuation-only configuration through the default live-owner authority', async () => {
+    const roles = await RoleCollection.create({ db });
+    // The route fixture's application role must not impersonate a built-in slug.
+    const fixtureRole = await roles.findBySlug('member');
+    if (!fixtureRole) throw new Error('Missing fixture role');
+    fixtureRole.slug = 'fixture-member';
+    await fixtureRole.save();
+    await roles.seedSystemRoles();
+    const ownerRole = await roles.findSystemRoleBySlug('owner');
+    if (!ownerRole?.id) throw new Error('Missing canonical owner role');
+    const memberships = await MembershipCollection.create({ db });
+    const membership = await memberships.findByUserAndTenant(
+      ownerA.user.id,
+      tenantId,
+    );
+    if (!membership) throw new Error('Missing owner fixture membership');
+    const originalRole = membership.roleId;
+    membership.roleId = ownerRole.id;
+    await membership.save();
+    const authority = await durableApprovals();
+    const routes = mount({
+      approvalContinuations: new OwnerApprovalContinuations(authority, {}),
+    });
+    const threadId = await createThread(routes);
+    const hold = await authority.request({
+      tenantId,
+      requestedBy: ownerA.user.id,
+      tool: 'app.addField',
+      callId: 'private-default-call',
+      args: {},
+      summary: 'Add Licence plate',
+      context: {
+        threadId,
+        principal: {
+          userId: ownerA.user.id,
+          profileId: ownerA.user.profileId,
+          tenantId,
+        },
+      },
+      continuation: {
+        executor: 'fixture',
+        principal: {
+          id: ownerA.user.id,
+          tenantId,
+          permissions: [],
+          allowedTools: [],
+        },
+        consumption: 'continuation',
+      },
+    });
+    const pending = await call(routes, 'GET', `threads/${threadId}/approvals`);
+    expect(pending.status).toBe(200);
+    expect((await pending.json()).approvals).toHaveLength(1);
+    expect(await listMessages(routes, threadId)).toContainEqual(
+      expect.objectContaining({
+        id: `approval:${hold.id}`,
+        toolCallData: {
+          approval: expect.objectContaining({
+            id: hold.id,
+            callId: hold.id,
+            status: 'pending',
+          }),
+        },
+      }),
+    );
+    membership.roleId = originalRole;
+    await membership.save();
+    expect(await listMessages(routes, threadId)).toEqual([]);
+  });
+
+  it('keeps an older unsettled native hold beside the last 200 messages without adding historical terminal holds', async () => {
+    const database = await resolveDatabase(db);
+    const authority = new OwnerApprovalAuthority(
+      await createSqliteOwnerApprovalStore(database),
+      async () => true,
+      () => Date.now() - 60_000,
+    );
+    const routes = mount({ approvals: authority });
+    const threadId = await createThread(routes);
+    const chat = await ChatService.create({ tenantId, db });
+    const [session] = await chat.findActiveAgentSessions({
+      tenantId,
+      agentId: 'smrt-assistant',
+      participantProfileId: ownerA.user.profileId,
+    });
+    const input = {
+      tenantId,
+      requestedBy: ownerA.user.id,
+      tool: 'app.addField',
+      callId: 'native-page',
+      args: {},
+      summary: 'Review field',
+      context: {
+        threadId,
+        principal: {
+          userId: ownerA.user.id,
+          profileId: ownerA.user.profileId,
+          tenantId,
+        },
+      },
+      continuation: {
+        executor: 'fixture',
+        principal: {
+          id: ownerA.user.id,
+          tenantId,
+          permissions: [],
+          allowedTools: [],
+        },
+        consumption: 'continuation' as const,
+      },
+    };
+    const hold = await authority.request(input);
+    const terminal = await authority.request({
+      ...input,
+      callId: 'terminal-page',
+    });
+    await authority.decide(
+      { id: ownerA.user.id, tenantId },
+      terminal.id,
+      false,
+    );
+    for (let i = 0; i < 201; i++)
+      await chat.sendMessage({
+        tenantId,
+        roomId: session.chatRoomId!,
+        threadId,
+        actorProfileId: ownerA.user.profileId,
+        content: `Message ${i}`,
+      });
+    const rows = await listMessages(routes, threadId);
+    expect(rows).toHaveLength(201);
+    expect(rows[0].id).toBe(`approval:${hold.id}`);
+    expect(rows.filter((row) => row.role === 'user')).toHaveLength(200);
+    expect(rows.some((row) => row.id === `approval:${terminal.id}`)).toBe(
+      false,
+    );
+    expect(rows.map((row) => Date.parse(row.createdAt))).toEqual(
+      rows.map((row) => Date.parse(row.createdAt)).sort((a, b) => a - b),
+    );
+    const freshAuthority = await durableApprovals();
+    const recent = await freshAuthority.request({
+      ...input,
+      callId: 'recent-denied',
+    });
+    await freshAuthority.decide(
+      { id: ownerA.user.id, tenantId },
+      recent.id,
+      false,
+    );
+    const capped = await listMessages(routes, threadId);
+    expect(capped).toHaveLength(201);
+    expect(capped.filter((row) => row.role === 'user')).toHaveLength(199);
+    expect(capped).toContainEqual(
+      expect.objectContaining({
+        id: `approval:${recent.id}`,
+        toolCallData: {
+          approval: expect.objectContaining({ status: 'denied' }),
+        },
+      }),
+    );
+    expect(capped.some((row) => row.id === `approval:${terminal.id}`)).toBe(
+      false,
+    );
+  });
 
   function deleteTool(
     ran: Array<unknown>,

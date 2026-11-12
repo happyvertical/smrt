@@ -92,6 +92,33 @@ or UI is added. The template host tests exercise the real decision route after
 recreating the host and its authority, including an external MCP delete and a
 native cookbook disable.
 
+Authenticated thread message reads also project native continuation approvals
+through the existing `AssistantApprovalCard` wire shape. The message and
+approval-list routes share one owned-thread reader: tenant, requesting user,
+trusted human profile and thread must all match, and the authority rechecks
+live ownership. Missing/malformed principal bindings are excluded. A revoked
+owner can still read their ordinary conversation, without native hold projections.
+Synthetic message ids are `approval:<public approval id>`; timestamps come from
+the canonical record. Persisted cards are deduplicated by approval id. Native
+public views use that same public id for `callId` and omit arguments, recovery
+context/keys and raw results; decisions still use the existing continuation rail.
+Projection is enabled by either an explicit approval authority or configured
+continuations using the default database-backed live-owner authority. Ordinary
+chat without either option does not query the owner ledger.
+
+The existing message route has no cursor: it loads at most 200 persisted messages.
+Recent terminal native references share a 200-item historical bound with those
+messages and are excluded when older than the persisted page. Unsettled native
+holds remain visible even when older, then the merged response is chronological.
+The underlying owner authority list remains unbounded; this projection does not
+introduce a second store or claim storage pagination. Route recreation and thread
+switches reconstruct the same ids and current canonical status without writes.
+
+The existing route suite covers real SQLite native holds, malformed/foreign
+user/profile/tenant/thread bindings, revoked owner access, persisted-card dedupe,
+reload, safe succeeded/denied outcomes, and the 201-message boundary. Existing
+built-in holds retain their correlation ids and authored transcript behavior.
+
 D1 second-rebase compatibility: transport mode also works without `threadId`,
 using the existing transport's owner-list endpoint. It still verifies persisted
 state before enabling controls and reports failures. Presentation/detail mode

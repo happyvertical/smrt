@@ -1842,7 +1842,72 @@ export function mountAssistantRoutes(
       tenantId: principal.tenantId,
       limit: 200,
     });
-    return json({ items: messages.map(toAssistantMessageWire) });
+    let items = messages.map(toAssistantMessageWire);
+    if (options.approvals || options.approvalContinuations) {
+      let approvals: Awaited<ReturnType<typeof ownedThreadApprovals>> = [];
+      try {
+        approvals = await ownedThreadApprovals(context, threadId);
+      } catch (error) {
+        // Reading one's conversation does not require being a tenant owner.
+        // Only the owner-authorized projection disappears when authority is revoked.
+        if (
+          !(error instanceof OwnerApprovalError) ||
+          error.code !== 'forbidden'
+        )
+          throw error;
+      }
+      const shown = new Set(
+        items.flatMap((message) => {
+          const approval = parseObject(message.toolCallData?.approval);
+          return typeof approval?.id === 'string' ? [approval.id] : [];
+        }),
+      );
+      const oldestPersisted = items.length
+        ? Math.min(...items.map((message) => Date.parse(message.createdAt)))
+        : -Infinity;
+      const unsettled = new Set(
+        approvals
+          .filter(
+            (record) =>
+              record.continuation &&
+              ['pending', 'approved', 'executing'].includes(record.status),
+          )
+          .map((record) => record.id),
+      );
+      for (const record of approvals) {
+        if (
+          !record.continuation ||
+          (!unsettled.has(record.id) && record.createdAt < oldestPersisted) ||
+          shown.has(record.id)
+        )
+          continue;
+        const view = publicApproval(record);
+        items.push({
+          id: `approval:${record.id}`,
+          threadId,
+          role: 'tool',
+          content: view.summary,
+          createdAt: new Date(record.createdAt).toISOString(),
+          toolCallData: { approval: view },
+        });
+        shown.add(record.id);
+      }
+      // Recent native outcomes share the historical page's 200-item bound;
+      // outstanding decisions remain visible even when older than that page.
+      items.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+      const outstanding = items.filter((message) => {
+        const approval = parseObject(message.toolCallData?.approval);
+        return typeof approval?.id === 'string' && unsettled.has(approval.id);
+      });
+      const outstandingIds = new Set(outstanding.map((message) => message.id));
+      items = [
+        ...items
+          .filter((message) => !outstandingIds.has(message.id))
+          .slice(-200),
+        ...outstanding,
+      ].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+    }
+    return json({ items });
   };
 
   /**
@@ -2437,14 +2502,16 @@ export function mountAssistantRoutes(
   ) => ({
     id: record.id,
     tool: record.tool,
-    callId: record.callId,
+    callId: record.continuation ? record.id : record.callId,
     summary: record.summary,
     status: record.status,
     decidedBy: record.decidedBy,
     decidedAt: record.decidedAt,
-    ...(record.result === undefined ? {} : { result: record.result }),
+    ...(record.continuation || record.result === undefined
+      ? {}
+      : { result: record.result }),
   });
-  const listApprovals = async (
+  const ownedThreadApprovals = async (
     context: AssistantRequestContext,
     threadId: string,
   ) => {
@@ -2459,17 +2526,27 @@ export function mountAssistantRoutes(
       approvalActor(context),
       false,
     );
-    return json({
-      approvals: rows
-        .filter(
-          (r) =>
-            r.context.threadId === threadId &&
-            (r.context.principal as AssistantPrincipal).profileId ===
-              context.principal.profileId,
-        )
-        .map(publicApproval),
+    return rows.filter((record) => {
+      const principal = parseObject(record.context.principal);
+      return (
+        record.tenantId === context.principal.tenantId &&
+        record.requestedBy === context.principal.userId &&
+        record.context.threadId === threadId &&
+        principal?.userId === context.principal.userId &&
+        principal.tenantId === context.principal.tenantId &&
+        principal.profileId === context.principal.profileId
+      );
     });
   };
+  const listApprovals = async (
+    context: AssistantRequestContext,
+    threadId: string,
+  ) =>
+    json({
+      approvals: (await ownedThreadApprovals(context, threadId)).map(
+        publicApproval,
+      ),
+    });
   const decideApproval = async (
     context: AssistantRequestContext,
     id: string,

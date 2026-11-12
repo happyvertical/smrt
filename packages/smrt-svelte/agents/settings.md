@@ -29,10 +29,21 @@ to the catalog.
 `PrebuiltComponentsSettings` composes the existing preference control and restart
 link. Supply the current `enabled` value and an authorized `onsave` callback;
 failed saves restore the last persisted choice and show a fixed translated error.
-The checkbox has a visible On/Off status and a plain explanation. Optional
-existing approval views render only pending/approved/executing decisions;
-terminal outcomes belong in the approvals/history surface. The component owns
-no preference store or approval authority.
+The checkbox has a visible On/Off status and a plain explanation. New hosts mount
+`OwnerApprovalsSettings` separately near the top of Settings. Legacy optional
+`approvals`, `transport` and `ondecided` props remain supported by delegating to
+that same component. The preference control owns no store or approval authority.
+
+`OwnerApprovalsSettings` extracts the existing status filter and transport
+observation composition once. It renders the canonical chat `AssistantApprovalCard`
+for pending/approved/executing records from an authorized host loader, removes
+terminal outcomes observed through the card's existing decision or polling calls,
+and labels its empty state. It adds no poller, authority, recovery payload or
+decision route. The product and generated cookbook Settings share this export.
+Owning mounted tests retain decision/poll removal and fail-closed verification;
+legacy Prebuilt tests remain unchanged. MCP architecture/review/introspection and
+name/purpose searches found the canonical card and original composition, with no
+existing reusable titled owner settings container.
 
 ## Assistant quality
 
