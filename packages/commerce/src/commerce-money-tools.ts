@@ -1,3 +1,4 @@
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 /** Principal-bound commerce money tools for draft invoices (#3937). */
 
 import type {
@@ -598,7 +599,9 @@ export function createCommerceMoneyTools(): PrincipalTool[] {
       // Validate the complete tool input before any persistence. Collection
       // `create()` saves immediately, which would leave a blank draft line if
       // a later tax-code lookup or scalar validation refused the request.
-      const line = new InvoiceLineItem({
+      const line = new (ObjectRegistry.resolveEffectiveConstructor(
+        InvoiceLineItem,
+      ))({
         db: database,
         invoiceId,
         tenantId,

@@ -271,6 +271,16 @@ pre-push:
         Use a dependency / devDependency / @crossPackageRef indirection.
         Run: pnpm check:no-smrt-peers
 
+    direct-model-construction:
+      # #4931: smrt package sources build registered models through their
+      # collection (or the registry-resolved constructor), never `new Model()`,
+      # so an app's same-named subclass applies. Baseline may only shrink.
+      run: node scripts/check-direct-model-construction.mjs
+      fail_text: |
+        ❌ A package source builds a registered model with `new Model(...)`.
+        Use the collection's create(), or ObjectRegistry.resolveEffectiveConstructor().
+        Run: pnpm check:direct-model-construction
+
     agents-chain:
       # Instruction-chain budget (#2106, #2108): the root AGENTS.md plus every
       # AGENTS.md down to a package is handed to an agent as one additive chain,

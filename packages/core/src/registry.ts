@@ -1604,6 +1604,28 @@ export class ObjectRegistry {
   }
 
   /**
+   * The constructor a service should build for `ctor` (#4931): the app's
+   * same-named subclass when one replaced it, else `ctor` itself. Use it where
+   * a collection's `create()` does not fit; it applies the same rule as
+   * `SmrtCollection.resolveItemConstructor()`. Only a true subclass substitutes.
+   *
+   * @param ctor - The model class the service imported
+   * @returns The class to construct
+   */
+  static resolveEffectiveConstructor<T extends SmrtObjectConstructor>(
+    ctor: T,
+  ): T {
+    const effective = ObjectRegistry.getEffectiveClassByConstructor(ctor)
+      ?.constructor as unknown as T | undefined;
+    return effective &&
+      effective !== ctor &&
+      (effective as { prototype: object }).prototype instanceof
+        (ctor as unknown as { new (...args: never[]): object })
+      ? effective
+      : ctor;
+  }
+
+  /**
    * Get a registered class by its qualified name.
    * Qualified names are in format "@package/name:ClassName".
    *

@@ -1,3 +1,4 @@
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 /**
  * Publishing plan versions and pinning subscriptions to them (#4032).
  *
@@ -76,7 +77,9 @@ async function createVersion(
   version: number,
   effectiveFrom: Date,
 ): Promise<SubscriptionPlanVersion> {
-  const record = new SubscriptionPlanVersion({
+  const record = new (ObjectRegistry.resolveEffectiveConstructor(
+    SubscriptionPlanVersion,
+  ))({
     db: plan.db,
     tenantId: plan.tenantId ?? null,
     planId: String(plan.id),

@@ -1,5 +1,6 @@
 /** Incomplete supplier evidence is never a calculated or reportable Contract. */
 import { createHash } from 'node:crypto';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
 import { ISO_4217_MINOR_UNITS } from '@happyvertical/smrt-ui/currency';
@@ -249,7 +250,9 @@ export async function recordPurchasePriceObservation(input: {
     );
     if (!vendor || vendor.tenantId !== tenantId)
       throw new Error('Observed supplier must belong to active tenant');
-    const row = new PurchasePriceObservation({
+    const row = new (ObjectRegistry.resolveEffectiveConstructor(
+      PurchasePriceObservation,
+    ))({
       db,
       id,
       tenantId,

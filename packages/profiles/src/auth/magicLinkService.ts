@@ -8,7 +8,10 @@
  * - Rate limiting checks
  */
 
-import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
+import {
+  ObjectRegistry,
+  type SmrtObjectOptions,
+} from '@happyvertical/smrt-core';
 import { MagicLinkTokenCollection } from '../collections/MagicLinkTokenCollection';
 import { NostrIdentityCollection } from '../collections/NostrIdentityCollection';
 import { MagicLinkToken } from '../models/MagicLinkToken';
@@ -168,7 +171,9 @@ export function createMagicLinkService(
         let personType = await typeCollection.getBySlug('person');
         if (!personType) {
           const { ProfileType } = await import('../models/ProfileType');
-          personType = new ProfileType({
+          personType = new (ObjectRegistry.resolveEffectiveConstructor(
+            ProfileType,
+          ))({
             db,
             slug: 'person',
             name: 'Person',
@@ -179,7 +184,7 @@ export function createMagicLinkService(
         }
 
         // Create a new profile for this user (Person is an STI subclass of Profile)
-        profile = new Person({
+        profile = new (ObjectRegistry.resolveEffectiveConstructor(Person))({
           db,
           typeId: personType.id as string,
           email: normalizedEmail,
@@ -196,7 +201,9 @@ export function createMagicLinkService(
         const { NostrIdentity: NostrIdentityClass } = await import(
           '../models/NostrIdentity'
         );
-        nostrIdentity = new NostrIdentityClass({
+        nostrIdentity = new (ObjectRegistry.resolveEffectiveConstructor(
+          NostrIdentityClass,
+        ))({
           db,
           profileId: profile.id!,
           pubkey: keypair.pubkey,

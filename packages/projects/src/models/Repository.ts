@@ -374,7 +374,7 @@ export class Repository extends SmrtObject {
 
     // Create SMRT Issue from remote data
     const { Issue } = await import('./Issue');
-    const issue = new Issue({
+    const issue = new (ObjectRegistry.resolveEffectiveConstructor(Issue))({
       ...this.childOptions(),
       repositoryId,
       number: created.number,
@@ -413,7 +413,7 @@ export class Repository extends SmrtObject {
 
     // Create SMRT PullRequest from remote data
     const { PullRequest } = await import('./PullRequest');
-    const pr = new PullRequest({
+    const pr = new (ObjectRegistry.resolveEffectiveConstructor(PullRequest))({
       ...this.childOptions(),
       repositoryId,
       number: created.number,

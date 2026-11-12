@@ -1,3 +1,4 @@
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { ServiceTimeEntryCollection } from '../models/service-time-entry.js';
 import {
@@ -406,7 +407,9 @@ export class AttendanceCorrectionService {
         await persistCorrection(existing);
         target = existing;
       } else {
-        target = await new AttendanceBreak({
+        target = await new (ObjectRegistry.resolveEffectiveConstructor(
+          AttendanceBreak,
+        ))({
           db: tx.db,
           id: crypto.randomUUID(),
           _skipLoad: true,
@@ -505,7 +508,9 @@ export class AttendanceCorrectionService {
         await persistCorrection(existing);
         target = existing;
       } else {
-        target = await new AttendanceSegment({
+        target = await new (ObjectRegistry.resolveEffectiveConstructor(
+          AttendanceSegment,
+        ))({
           db: tx.db,
           id: crypto.randomUUID(),
           _skipLoad: true,
@@ -757,7 +762,9 @@ export class AttendanceCorrectionService {
         _insertOnly: true,
       });
       for (const b of breaks) {
-        const row = await new AttendanceBreak({
+        const row = await new (ObjectRegistry.resolveEffectiveConstructor(
+          AttendanceBreak,
+        ))({
           db: tx.db,
           id: crypto.randomUUID(),
           _skipLoad: true,
@@ -771,7 +778,9 @@ export class AttendanceCorrectionService {
       }
       const segmentStates: ReturnType<typeof segmentState>[] = [];
       for (const g of segments) {
-        const row = await new AttendanceSegment({
+        const row = await new (ObjectRegistry.resolveEffectiveConstructor(
+          AttendanceSegment,
+        ))({
           db: tx.db,
           id: crypto.randomUUID(),
           _skipLoad: true,
@@ -857,7 +866,9 @@ export class AttendanceCorrectionService {
           tx,
           subject,
           async (kind, punch, targetId, before, after) => {
-            const row = await new AttendanceCorrection({
+            const row = await new (ObjectRegistry.resolveEffectiveConstructor(
+              AttendanceCorrection,
+            ))({
               db: tx.db,
               id: crypto.randomUUID(),
               _skipLoad: true,
