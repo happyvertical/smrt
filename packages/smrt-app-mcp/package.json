@@ -27,7 +27,8 @@
     "CLAUDE.md",
     "README.md",
     "dist",
-    "AGENTS.md"
+    "AGENTS.md",
+    "agents"
   ],
   "scripts": {
     "build": "vite build --mode library",

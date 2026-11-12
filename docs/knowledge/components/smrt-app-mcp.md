@@ -5,10 +5,10 @@ description: "App-runtime MCP server scaffolding for SMRT apps — `createMcpApp
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-12T08:37:29Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:a004a4f1ab86cf970470f2eb2f93fe5877150a1aff49d6aa8373680c2a28a108"
+source_revision: "sha256:5e67af49151d571230b6a09f54809e7172bba2a8a730c722585ce8e3e1956c27"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-app-mcp/package.json"
@@ -16,6 +16,9 @@ sources:
   - id: "agents"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-app-mcp/AGENTS.md"
     title: "@happyvertical/smrt-app-mcp packages/smrt-app-mcp/AGENTS.md"
+  - id: "agents-2"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-app-mcp/agents/runtime-loading.md"
+    title: "@happyvertical/smrt-app-mcp packages/smrt-app-mcp/agents/runtime-loading.md"
 ---
 
 # @happyvertical/smrt-app-mcp
@@ -30,6 +33,7 @@ sources:
 ## Documentation
 
 - `packages/smrt-app-mcp/AGENTS.md`
+- `packages/smrt-app-mcp/agents/runtime-loading.md`
 
 ## Framework dependencies
 
