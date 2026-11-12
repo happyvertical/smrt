@@ -87,6 +87,7 @@
       ],
       "inputs": [
         "src/**",
+        "scripts/**",
         "!src/manifest/test-manifest.json",
         "!src/manifest/test-manifest-stub.ts",
         "!src/types/virtual-modules.d.ts",
