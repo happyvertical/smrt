@@ -1987,8 +1987,19 @@ export function createCookbookHost(options: CookbookHostOptions) {
   assistant.GET = assistantHandler;
   assistant.POST = assistantHandler;
 
-  const handle: Handle = (input) =>
-    runtime.handle({
+  const handle: Handle = (input) => {
+    // Serve the browser's conventional icon request through the shipped icon.
+    if (input.event.url.pathname === '/favicon.ico')
+      return Promise.resolve(
+        new Response(null, {
+          status: 308,
+          headers: {
+            location: '/favicon.svg',
+            'cache-control': 'public, max-age=86400',
+          },
+        }),
+      );
+    return runtime.handle({
       ...input,
       resolve: async (event, resolveOptions) => {
         origin = event.url.origin;
@@ -2019,6 +2030,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
         return input.resolve(event, resolveOptions);
       },
     });
+  };
   const session = createSessionLayoutLoad();
   const assistantToolCatalog = async (actor: {
     id: string;

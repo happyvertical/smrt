@@ -557,6 +557,15 @@ afterEach(async () => {
 });
 
 describe('local cookbook host composition (SQLite, fake model, no providers)', () => {
+  it('serves the conventional favicon request from the shipped SVG without owner authorization', async () => {
+    const response = await request(
+      event('/favicon.ico', 'GET', undefined, false),
+      async () => new Response(null, { status: 404 }),
+    );
+    expect(response.status).toBe(308);
+    expect(response.headers.get('location')).toBe('/favicon.svg');
+    expect(response.headers.get('cache-control')).toContain('public');
+  });
   it('stops the real task runner on adapter-node shutdown and detaches its listener', async () => {
     const stop = vi.spyOn(TaskRunner.prototype, 'stop');
     const before = process.listenerCount('sveltekit:shutdown');
