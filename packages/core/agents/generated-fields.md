@@ -28,14 +28,28 @@ inputs. A definition requiring multiple distinct read permissions is refused:
 the existing field policy represents only one permission. This preserves the
 restriction until conjunctions have an owning field-policy contract.
 
-All supported SDK scalar nodes are accepted: arithmetic (`div` is fractional
-and NULL on zero), comparisons, `and`/`or`/`not`, `isNull`/`isNotNull`,
-`coalesce`, `asText` and `secondsBetween`. Literals must be finite JSON scalars;
-Date instances are not portable through static JSON manifests. The SDK does
-not yet expose case/if, round/abs, scalar min/max, or further text/date nodes;
-add these in the SDK, not as a second grammar here. Its public aggregate
-builder owns rendering. Core extracts one expression projection and quotes
-its bound strings for DDL. Changes to that SDK projection format fail closed.
+All SDK 0.112.2 scalar nodes are accepted: arithmetic and comparisons,
+boolean/null/coalesce operations, `asText`, conditionals (`if`, `case`),
+`round`, `abs`, `floor`, `ceil`, `least`, `greatest`, `mod`, text functions
+(`concat`, ASCII `lower`/`upper`, `trim`, `length`, `substring`), calendar
+parts (`year`, `month`, `day`), `secondsBetween`, `daysBetween`, and `addDays`.
+Arguments and branches must have compatible types; SDK literal bounds and
+closed shapes are enforced too. Dates use JSON-safe
+`{ value: { kind: 'date' | 'datetime', iso } }` literals; JavaScript Date
+instances are refused. `div` and `mod` return NULL on zero divisors.
+
+The SDK's public `renderExpression(..., { mode: 'ddl' })` owns SQL, identifier
+quoting, literal escaping and immutability checks. There is no aggregate SQL
+scraping. Schema/manifest columns carry `generatedInputTypes` for physical
+references, preserving safe casts through migrations and parity checks.
+`VALIDATION_GENERATED_NON_IMMUTABLE` refuses unsafe generated expressions.
+SQLite temporal inputs use ISO text. PostgreSQL core datetime columns are
+TIMESTAMPTZ, so the compiler withholds the SDK's timezone-free type assertion:
+generated date operations on those columns are refused. Typed date literals
+and their composed calendar operations remain immutable. A bare typed temporal
+result targeting a PostgreSQL TIMESTAMPTZ column also requires a session-dependent
+implicit cast and is refused. `asText` of a datetime is refused because its
+representation can depend on session settings.
 
 SQLite uses VIRTUAL columns; PostgreSQL uses STORED; DuckDB uses VIRTUAL;
 the JSON adapter is refused. Normal migration and parity paths retain

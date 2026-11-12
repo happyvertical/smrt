@@ -70,6 +70,10 @@ export interface FieldUIHints {
 export interface FieldMeta {
   /** Database-owned generated column expression. */
   generated?: GeneratedExpression | true;
+  generatedInputTypes?: Record<
+    string,
+    import('@happyvertical/sql/query').ExpressionResultType
+  >;
   /** Explicit SQL type override (e.g. 'UUID') applied during schema generation. */
   sqlType?: string;
   /** Storage type for cross-package reference ids ('text' forces TEXT). */
@@ -289,6 +293,7 @@ export interface MethodDefinition {
  * Pre-generated schema column definition for manifest
  */
 export interface ManifestColumnDefinition {
+  generatedInputTypes?: FieldMeta['generatedInputTypes'];
   generated?: GeneratedExpression;
   type: string; // SQL type: TEXT, INTEGER, DECIMAL, BOOLEAN, DATETIME, JSON
   primaryKey?: boolean;

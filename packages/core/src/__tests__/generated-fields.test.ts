@@ -1,3 +1,4 @@
+// biome-ignore-all lint/suspicious/noThenProperty: SQL SDK conditionals require a non-callable then data property.
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { field } from '../decorators/index.js';
@@ -104,7 +105,7 @@ describe('database-generated fields #4915', () => {
         generated: expression,
       });
       expect(ddl).toContain(
-        `GENERATED ALWAYS AS ((qty * unit_price)) ${engine === 'postgres' ? 'STORED' : 'VIRTUAL'}`,
+        `GENERATED ALWAYS AS (("qty" * "unit_price")) ${engine === 'postgres' ? 'STORED' : 'VIRTUAL'}`,
       );
     }
     expect(() =>
@@ -457,6 +458,147 @@ describe('database-generated fields #4915', () => {
       ).toHaveProperty('ratio', null);
     });
 
+    it(`${engine}: executes every new SDK node with typed dates and mapped references`, async () => {
+      const db = await getDatabase(
+        engine === 'sqlite'
+          ? { type: 'sqlite', url: ':memory:' }
+          : { type: 'pglite' },
+      );
+      databases.push(db);
+      const n = { col: 'unitPrice' },
+        text = { col: 'label' };
+      const date = { value: { kind: 'date', iso: '2024-02-28' } } as const;
+      const next = { op: 'addDays', value: date, days: { value: 2 } } as const;
+      const cases: [
+        string,
+        'integer' | 'decimal' | 'text',
+        GeneratedExpression,
+        unknown,
+      ][] = [
+        [
+          'conditional',
+          'decimal',
+          { op: 'if', condition: { col: 'paid' }, then: { value: 0 }, else: n },
+          12.345,
+        ],
+        [
+          'branches',
+          'decimal',
+          {
+            op: 'case',
+            branches: [{ when: { col: 'paid' }, then: { value: 0 } }],
+            else: n,
+          },
+          12.345,
+        ],
+        [
+          'rounded',
+          'decimal',
+          { op: 'round', value: n, digits: { value: 2 } },
+          12.35,
+        ],
+        ['absolute', 'decimal', { op: 'abs', value: n }, 12.345],
+        ['floored', 'integer', { op: 'floor', value: n }, 12],
+        ['ceiling', 'integer', { op: 'ceil', value: n }, 13],
+        [
+          'minimum',
+          'decimal',
+          { op: 'least', operands: [n, { value: 10 }] },
+          10,
+        ],
+        [
+          'maximum',
+          'decimal',
+          { op: 'greatest', operands: [n, { value: 10 }] },
+          12.345,
+        ],
+        [
+          'remainder',
+          'decimal',
+          { op: 'mod', left: n, right: { value: 10 } },
+          2.345,
+        ],
+        [
+          'joined',
+          'text',
+          { op: 'concat', operands: [text, { value: "'$1" }] },
+          " AbC '$1",
+        ],
+        ['lowered', 'text', { op: 'lower', value: text }, ' abc '],
+        ['uppered', 'text', { op: 'upper', value: text }, ' ABC '],
+        ['trimmed', 'text', { op: 'trim', value: text }, 'AbC'],
+        ['size', 'integer', { op: 'length', value: text }, 5],
+        [
+          'part',
+          'text',
+          {
+            op: 'substring',
+            value: text,
+            start: { value: 2 },
+            length: { value: 2 },
+          },
+          'Ab',
+        ],
+        ['calendarYear', 'integer', { op: 'year', value: next }, 2024],
+        ['calendarMonth', 'integer', { op: 'month', value: next }, 3],
+        ['calendarDay', 'integer', { op: 'day', value: next }, 1],
+        [
+          'elapsedDays',
+          'integer',
+          { op: 'daysBetween', later: next, earlier: date },
+          2,
+        ],
+        [
+          'typedDatetime',
+          'integer',
+          {
+            op: 'day',
+            value: {
+              value: { kind: 'datetime', iso: '2024-02-29T23:30:00-02:00' },
+            },
+          },
+          1,
+        ],
+      ];
+      const name = registerRuntimeModel({
+        name: 'PortableFields',
+        packageName: '@test/portable',
+        fields: {
+          unitPrice: { type: 'decimal' },
+          paid: { type: 'boolean' },
+          label: { type: 'text' },
+          ...Object.fromEntries(
+            cases.map(([key, type, generated]) => [key, { type, generated }]),
+          ),
+        },
+      });
+      for (const sql of await planRuntimeModelDDL(
+        name,
+        engine,
+        async () => null,
+      ))
+        await db.query(sql);
+      const collection = await ObjectRegistry.getCollection(name, { db });
+      const row = await collection.create({
+        unitPrice: 12.345,
+        paid: false,
+        label: ' AbC ',
+      });
+      const output = row.toJSON();
+      for (const [key, , , expected] of cases) {
+        if (typeof expected === 'number')
+          expect(Number(output[key]), key).toBeCloseTo(expected, 8);
+        else expect(output[key], key).toEqual(expected);
+      }
+      await collection.update(row.id!, { paid: true, label: null });
+      const updated = (await collection.get(row.id!, {
+        cache: false,
+      }))!.toJSON();
+      expect(updated.conditional).toBe(0);
+      expect(updated.branches).toBe(0);
+      expect(updated.joined).toBeNull();
+    });
+
     it(`${engine}: adds a generated column to populated tables and changes its expression`, async () => {
       const db = await getDatabase(
         engine === 'sqlite'
@@ -628,6 +770,92 @@ describe('database-generated fields #4915', () => {
         'sqlite',
       ),
     ).toBe(false);
+  });
+
+  it('refuses nonimmutable temporal inputs and invalid new-node argument types', () => {
+    const check = (
+      generated: unknown,
+      type: 'integer' | 'text' | 'decimal' = 'integer',
+    ) =>
+      runtimeModelEntry({
+        name: 'InvalidPortable',
+        packageName: '@test/portable',
+        fields: {
+          time: { type: 'datetime' },
+          text: { type: 'text' },
+          amount: { type: 'decimal' },
+          result: { type, generated: generated as GeneratedExpression },
+        },
+      });
+    for (const expression of [
+      { op: 'day', value: { value: new Date() } },
+      { op: 'length', value: { op: 'asText', operand: { col: 'time' } } },
+    ])
+      expect(() => check(expression)).toThrow(GeneratedFieldError);
+    expect(() =>
+      compileGeneratedExpression(
+        { op: 'year', value: { col: 'time' } },
+        'postgres',
+        { time: 'datetime' },
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: 'VALIDATION_GENERATED_NON_IMMUTABLE' }),
+    );
+    for (const [expression, type] of [
+      [
+        {
+          op: 'if',
+          condition: { col: 'amount' },
+          then: { value: 1 },
+          else: { value: 0 },
+        },
+        'integer',
+      ],
+      [
+        {
+          op: 'case',
+          branches: [
+            { when: { value: true }, then: { value: 1 }, extra: true },
+          ],
+          else: { value: 0 },
+        },
+        'integer',
+      ],
+      [
+        { op: 'round', value: { col: 'amount' }, digits: { value: 13 } },
+        'decimal',
+      ],
+      [
+        { op: 'least', operands: [{ col: 'amount' }, { col: 'text' }] },
+        'decimal',
+      ],
+      [{ op: 'lower', value: { col: 'amount' } }, 'text'],
+      [
+        {
+          op: 'substring',
+          value: { col: 'text' },
+          start: { value: 0 },
+          length: { value: 1 },
+        },
+        'text',
+      ],
+      [
+        { op: 'year', value: { value: { kind: 'date', iso: '2023-02-29' } } },
+        'integer',
+      ],
+      [
+        {
+          op: 'day',
+          value: {
+            op: 'addDays',
+            value: { value: { kind: 'date', iso: '2024-01-01' } },
+            days: { value: 400000 },
+          },
+        },
+        'integer',
+      ],
+    ] as const)
+      expect(() => check(expression, type)).toThrow(GeneratedFieldError);
   });
 
   it('owns expression metadata and rejects unsupported policy combinations before refresh', () => {

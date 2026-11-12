@@ -2052,6 +2052,7 @@ export class SchemaComparer {
               actual,
               colDef.generated,
               this.engine,
+              colDef.generatedInputTypes,
             ))
           ) {
             const table = this.quoteIdentifier(tableName);

@@ -1,8 +1,9 @@
 /** Database-owned columns using the SQL SDK's closed row-expression grammar. */
 import {
   type AggregateOperand,
-  buildAggregate,
-  escapeSqlValue,
+  ExpressionError,
+  type ExpressionResultType,
+  renderExpression,
 } from '@happyvertical/sql';
 import type { FieldDefinition } from './scanner/types.js';
 import type { DatabaseEngine } from './schema/ddl/types.js';
@@ -39,6 +40,7 @@ type ResultType =
   | 'text'
   | 'boolean'
   | 'datetime'
+  | 'date'
   | 'json'
   | 'null';
 const numeric = (type: ResultType) => type === 'integer' || type === 'decimal';
@@ -121,7 +123,7 @@ export function validateGeneratedFields(
           ? 'text'
           : (input.type as ResultType);
       }
-      if ('value' in n) {
+      if ('value' in n && !('op' in n)) {
         keys('value');
         if (n.value === null) return 'null';
         if (typeof n.value === 'string' && !n.value.includes('\0'))
@@ -129,6 +131,19 @@ export function validateGeneratedFields(
         if (typeof n.value === 'boolean') return 'boolean';
         if (typeof n.value === 'number' && Number.isFinite(n.value))
           return Number.isSafeInteger(n.value) ? 'integer' : 'decimal';
+        if (
+          n.value &&
+          typeof n.value === 'object' &&
+          !(n.value instanceof Date)
+        ) {
+          const literal = n.value as Record<string, unknown>;
+          if (
+            Object.keys(literal).length === 2 &&
+            ['date', 'datetime'].includes(String(literal.kind)) &&
+            typeof literal.iso === 'string'
+          )
+            return literal.kind as 'date' | 'datetime';
+        }
         // Definitions must survive JSON manifests; Date objects do not.
         return fail('literal must be a finite JSON scalar without NUL');
       }
@@ -139,6 +154,7 @@ export function validateGeneratedFields(
           'sub',
           'mul',
           'div',
+          'mod',
           'eq',
           'ne',
           'lt',
@@ -150,10 +166,13 @@ export function validateGeneratedFields(
         keys('op', 'left', 'right');
         const left = child(n.left),
           right = child(n.right);
-        if (['add', 'sub', 'mul', 'div'].includes(String(op))) {
+        if (['add', 'sub', 'mul', 'div', 'mod'].includes(String(op))) {
           if (![left, right].every((t) => numeric(t) || t === 'null'))
             return fail('arithmetic requires numbers');
-          return op === 'div' || left === 'decimal' || right === 'decimal'
+          return op === 'div' ||
+            op === 'mod' ||
+            left === 'decimal' ||
+            right === 'decimal'
             ? 'decimal'
             : 'integer';
         }
@@ -198,6 +217,95 @@ export function validateGeneratedFields(
           fail('not requires a boolean');
         return op === 'asText' ? 'text' : 'boolean';
       }
+      const compatible = (types: ResultType[]): ResultType => {
+        const present = types.filter((t) => t !== 'null');
+        if (!present.length) return 'null';
+        if (present.every(numeric))
+          return present.includes('decimal') ? 'decimal' : 'integer';
+        if (present.some((t) => t !== present[0]))
+          fail('branches require compatible types');
+        return present[0];
+      };
+      const requireType = (
+        value: unknown,
+        kind: 'number' | 'text' | 'date' | 'boolean',
+      ) => {
+        const type = child(value);
+        if (
+          type !== 'null' &&
+          !(kind === 'number'
+            ? numeric(type)
+            : kind === 'date'
+              ? type === 'date' || type === 'datetime'
+              : type === kind)
+        )
+          fail(`${op} requires ${kind} operands`);
+        return type;
+      };
+      if (op === 'if') {
+        keys('op', 'condition', 'then', 'else');
+        requireType(n.condition, 'boolean');
+        return compatible([child(n.then), child(n.else)]);
+      }
+      if (op === 'case') {
+        keys('op', 'branches', 'else');
+        if (!Array.isArray(n.branches) || !n.branches.length)
+          return fail('case requires branches');
+        const types = n.branches.map((branch) => {
+          if (
+            !branch ||
+            typeof branch !== 'object' ||
+            Object.keys(branch).length !== 2 ||
+            !('when' in branch) ||
+            !('then' in branch)
+          )
+            return fail('invalid case branch');
+          requireType(branch.when, 'boolean');
+          return child(branch.then);
+        });
+        return compatible([...types, child(n.else)]);
+      }
+      if (op === 'least' || op === 'greatest' || op === 'concat') {
+        keys('op', 'operands');
+        if (
+          !Array.isArray(n.operands) ||
+          n.operands.length < (op === 'concat' ? 1 : 2)
+        )
+          return fail('invalid operand list');
+        const types = n.operands.map((v) =>
+          requireType(v, op === 'concat' ? 'text' : 'number'),
+        );
+        return op === 'concat' ? 'text' : compatible(types);
+      }
+      if (['round', 'abs', 'floor', 'ceil'].includes(String(op))) {
+        keys('op', 'value', ...(op === 'round' ? ['digits'] : []));
+        const type = requireType(n.value, 'number');
+        if (op === 'round') requireType(n.digits, 'number');
+        return op === 'floor' || op === 'ceil' ? 'integer' : type;
+      }
+      if (
+        ['lower', 'upper', 'trim', 'length', 'substring'].includes(String(op))
+      ) {
+        keys('op', 'value', ...(op === 'substring' ? ['start', 'length'] : []));
+        requireType(n.value, 'text');
+        if (op === 'substring') {
+          requireType(n.start, 'number');
+          requireType(n.length, 'number');
+        }
+        return op === 'length' ? 'integer' : 'text';
+      }
+      if (['year', 'month', 'day', 'addDays'].includes(String(op))) {
+        keys('op', 'value', ...(op === 'addDays' ? ['days'] : []));
+        requireType(n.value, 'date');
+        if (op === 'addDays') requireType(n.days, 'number');
+        return op === 'addDays' ? 'date' : 'integer';
+      }
+      if (op === 'daysBetween') {
+        keys('op', 'later', 'earlier');
+        requireType(n.later, 'date');
+        requireType(n.earlier, 'date');
+        return 'integer';
+      }
       if (op === 'secondsBetween') {
         keys('op', 'later', 'earlier');
         if (
@@ -216,9 +324,21 @@ export function validateGeneratedFields(
     if (
       type !== 'null' &&
       type !== field.type &&
-      !(field.type === 'decimal' && type === 'integer')
+      !(field.type === 'decimal' && type === 'integer') &&
+      !(field.type === 'datetime' && type === 'date')
     )
       fail(`expression result ${type} is incompatible with ${field.type}`);
+    const inputTypes: Record<string, ExpressionResultType> = {};
+    compileGeneratedExpression(
+      expression,
+      'sqlite',
+      Object.fromEntries(
+        [...fields].map(([key, value]) => [key, sqlExpressionType(value.type)]),
+      ),
+    );
+    for (const [key, value] of fields)
+      if (inputs.has(value))
+        inputTypes[toSnakeCase(key)] = sqlExpressionType(value.type);
     const permissions = new Set<string>();
     for (const input of [field, ...inputs]) {
       if (input.sensitive || input._meta?.sensitive) field.sensitive = true;
@@ -244,6 +364,7 @@ export function validateGeneratedFields(
     field._meta = {
       ...field._meta,
       generated: ownedExpression,
+      generatedInputTypes: inputTypes,
       readonly: true,
       ...(field.sensitive ? { sensitive: true } : {}),
       ...(field.readPermission ? { readPermission: field.readPermission } : {}),
@@ -267,10 +388,20 @@ export function generatedColumnExpression(
   return map(expression) as GeneratedExpression;
 }
 
-/** DDL cannot bind parameters. Extract SDK SQL and inline its validated literals. */
+// SQLite uses ISO text; PostgreSQL materializes core datetime as TIMESTAMPTZ.
+// The compiler must withhold timezone-free metadata on that dialect.
+function sqlExpressionType(type: string): ExpressionResultType {
+  if (type === 'integer' || type === 'decimal') return 'number';
+  if (type === 'text' || type === 'boolean' || type === 'datetime') return type;
+  if (type === 'foreignKey' || type === 'crossPackageRef') return 'text';
+  return 'unknown';
+}
+
+/** Use the SDK's public DDL renderer, including its immutability contract. */
 export function compileGeneratedExpression(
   expression: GeneratedExpression,
   engine: DatabaseEngine,
+  inputTypes: Record<string, ExpressionResultType> = {},
 ): string {
   if (engine === 'json')
     throw new GeneratedFieldError(
@@ -278,30 +409,32 @@ export function compileGeneratedExpression(
       'VALIDATION_GENERATED_DIALECT',
     );
   try {
-    const { sql, values } = buildAggregate(
-      { from: '_smrt_generated', select: [{ expr: expression, as: '_value' }] },
-      1,
-      engine,
-    );
-    const prefix = 'SELECT ',
-      suffix = ' AS _value FROM _smrt_generated GROUP BY 1';
-    if (!sql.startsWith(prefix) || !sql.endsWith(suffix))
-      throw new Error('SQL SDK expression projection shape changed');
-    // Replace before inserting strings, so literal "$1" text stays literal.
-    return sql
-      .slice(prefix.length, -suffix.length)
-      .replace(/\$(\d+)/g, (_, index: string) => {
-        const value = values[Number(index) - 1];
-        if (typeof value !== 'string' || value.includes('\0'))
-          throw new Error('Invalid DDL literal');
-        // PostgreSQL E strings make backslashes independent of session settings.
-        return engine === 'postgres'
-          ? `E'${value.replace(/\\/g, '\\\\').replace(/'/g, "''")}'`
-          : escapeSqlValue(value);
-      });
+    const rendered = renderExpression(expression, {
+      dialect: engine,
+      mode: 'ddl',
+      resolveColumn: (name) => ({
+        name,
+        type:
+          engine === 'postgres' && inputTypes[name] === 'datetime'
+            ? 'unknown'
+            : (inputTypes[name] ?? 'unknown'),
+      }),
+    });
+    if (
+      engine === 'postgres' &&
+      (rendered.resultType === 'date' || rendered.resultType === 'datetime')
+    )
+      throw new ExpressionError(
+        'NON_IMMUTABLE',
+        'Core generated datetime output would require a session-dependent TIMESTAMPTZ cast',
+      );
+    return rendered.sql;
   } catch (error) {
     throw new GeneratedFieldError(
       `Cannot compile generated expression: ${error instanceof Error ? error.message : String(error)}`,
+      error instanceof ExpressionError && error.code === 'NON_IMMUTABLE'
+        ? 'VALIDATION_GENERATED_NON_IMMUTABLE'
+        : 'VALIDATION_GENERATED_EXPRESSION',
     );
   }
 }
@@ -309,8 +442,9 @@ export function compileGeneratedExpression(
 export function generatedColumnClause(
   expression: GeneratedExpression,
   engine: DatabaseEngine,
+  inputTypes: Record<string, ExpressionResultType> = {},
 ): string {
-  return `GENERATED ALWAYS AS (${compileGeneratedExpression(expression, engine)}) ${engine === 'postgres' ? 'STORED' : 'VIRTUAL'}`;
+  return `GENERATED ALWAYS AS (${compileGeneratedExpression(expression, engine, inputTypes)}) ${engine === 'postgres' ? 'STORED' : 'VIRTUAL'}`;
 }
 
 export function rejectGeneratedInput(
@@ -400,6 +534,7 @@ export function generatedExpressionsEqual(
   actual: string,
   expression: GeneratedExpression,
   engine: DatabaseEngine,
+  inputTypes: Record<string, ExpressionResultType> = {},
 ): boolean {
   const normalize = (sql: string) =>
     sql.replace(/'(?:''|[^'])*'|"(?:""|[^"])*"|\s+/g, (token) =>
@@ -411,7 +546,7 @@ export function generatedExpressionsEqual(
     );
   return (
     normalize(actual) ===
-    normalize(compileGeneratedExpression(expression, engine))
+    normalize(compileGeneratedExpression(expression, engine, inputTypes))
   );
 }
 
@@ -427,8 +562,10 @@ export async function generatedExpressionsMatch(
   actual: string,
   expression: GeneratedExpression,
   engine: DatabaseEngine,
+  inputTypes: Record<string, ExpressionResultType> = {},
 ): Promise<boolean> {
-  if (generatedExpressionsEqual(actual, expression, engine)) return true;
+  if (generatedExpressionsEqual(actual, expression, engine, inputTypes))
+    return true;
   if (engine !== 'postgres') return false;
   const output = async (sql: string): Promise<string> => {
     const result = await db.query(
@@ -446,6 +583,6 @@ export async function generatedExpressionsMatch(
   };
   return (
     (await output(actual)) ===
-    (await output(compileGeneratedExpression(expression, engine)))
+    (await output(compileGeneratedExpression(expression, engine, inputTypes)))
   );
 }

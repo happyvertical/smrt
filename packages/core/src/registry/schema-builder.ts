@@ -1061,7 +1061,11 @@ export function generateDDLFromColumns(
 
     if (columnDef.generated !== undefined) {
       parts.push(
-        generatedColumnClause(columnDef.generated, engine ?? 'sqlite'),
+        generatedColumnClause(
+          columnDef.generated,
+          engine ?? 'sqlite',
+          columnDef.generatedInputTypes,
+        ),
       );
       if (columnDef.notNull) parts.push('NOT NULL');
       if (columnDef.unique) parts.push('UNIQUE');
@@ -1237,8 +1241,10 @@ export function fieldsToColumns(
     };
 
     const generated = generatedExpression(fieldDef);
-    if (generated !== undefined)
+    if (generated !== undefined) {
       column.generated = generatedColumnExpression(generated);
+      column.generatedInputTypes = fieldDef._meta?.generatedInputTypes;
+    }
 
     // Handle default values
     if (

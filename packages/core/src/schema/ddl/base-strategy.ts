@@ -118,7 +118,13 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
           'DuckDB generated columns do not support column constraints',
           'VALIDATION_GENERATED_DIALECT',
         );
-      parts.push(generatedColumnClause(columnDef.generated, this.engine));
+      parts.push(
+        generatedColumnClause(
+          columnDef.generated,
+          this.engine,
+          columnDef.generatedInputTypes,
+        ),
+      );
       if (columnDef.notNull) parts.push('NOT NULL');
       if (columnDef.unique) parts.push('UNIQUE');
       if (columnDef.check) parts.push(`CHECK (${columnDef.check})`);

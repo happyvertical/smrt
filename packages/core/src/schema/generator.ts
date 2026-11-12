@@ -1348,8 +1348,10 @@ export class SchemaGenerator {
       };
 
       const generated = generatedExpression(field);
-      if (generated !== undefined)
+      if (generated !== undefined) {
         columnDef.generated = generatedColumnExpression(generated);
+        columnDef.generatedInputTypes = field._meta?.generatedInputTypes;
+      }
 
       // Get default value
       if (
@@ -1710,8 +1712,10 @@ export class SchemaGenerator {
         };
 
         const generated = generatedExpression(field);
-        if (generated !== undefined)
+        if (generated !== undefined) {
           columnDef.generated = generatedColumnExpression(generated);
+          columnDef.generatedInputTypes = field._meta?.generatedInputTypes;
+        }
 
         // Get default value (but not applied in STI - defaults handled by application)
         if (
@@ -2060,8 +2064,10 @@ export class SchemaGenerator {
         };
 
         const generated = generatedExpression(field);
-        if (generated !== undefined)
+        if (generated !== undefined) {
           columnDef.generated = generatedColumnExpression(generated);
+          columnDef.generatedInputTypes = field._meta?.generatedInputTypes;
+        }
 
         // Get default value
         if (
@@ -2307,8 +2313,10 @@ export class SchemaGenerator {
       };
 
       const generated = generatedExpression(field);
-      if (generated !== undefined)
+      if (generated !== undefined) {
         columnDef.generated = generatedColumnExpression(generated);
+        columnDef.generatedInputTypes = field._meta?.generatedInputTypes;
+      }
       if (
         columnDef.generated === undefined &&
         field.default !== undefined &&
@@ -2520,7 +2528,12 @@ export class SchemaGenerator {
     for (const [name, col] of Object.entries(manifestColumns)) {
       columns[name] = {
         type: col.type as SQLDataType,
-        ...(col.generated !== undefined ? { generated: col.generated } : {}),
+        ...(col.generated !== undefined
+          ? {
+              generated: col.generated,
+              generatedInputTypes: col.generatedInputTypes,
+            }
+          : {}),
         primaryKey: col.primaryKey,
         referenceKind: col.referenceKind,
         notNull: col.notNull,
@@ -2569,7 +2582,13 @@ export class SchemaGenerator {
     for (const [columnName, columnDef] of Object.entries(columns)) {
       const parts = [`  ${quoteIdentifier(columnName)} ${columnDef.type}`];
       if (columnDef.generated !== undefined) {
-        parts.push(generatedColumnClause(columnDef.generated, 'sqlite'));
+        parts.push(
+          generatedColumnClause(
+            columnDef.generated,
+            'sqlite',
+            columnDef.generatedInputTypes,
+          ),
+        );
         if (columnDef.notNull) parts.push('NOT NULL');
         if (columnDef.unique) parts.push('UNIQUE');
         if (columnDef.check) parts.push(`CHECK (${columnDef.check})`);

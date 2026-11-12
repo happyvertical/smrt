@@ -148,6 +148,7 @@ export type ExpectedTableOrigin = 'application' | 'system';
 
 interface ExpectedColumn {
   generated?: GeneratedExpression;
+  generatedInputTypes?: ColumnDefinition['generatedInputTypes'];
   name: string;
   /** Engine-materialized type text. */
   type: string;
@@ -284,6 +285,7 @@ export async function checkLiveSchemaParity(
             actual,
             column.generated,
             engine,
+            column.generatedInputTypes,
           ))
         )
           findings.push({
@@ -412,6 +414,7 @@ function buildExpectedTables(input: {
     const columns: ExpectedColumn[] = Object.entries(schema.columns ?? {}).map(
       ([columnName, column]) => ({
         generated: column.generated,
+        generatedInputTypes: column.generatedInputTypes,
         name: columnName,
         type: strategy.mapType(column.type),
         primaryKey: column.primaryKey === true,
