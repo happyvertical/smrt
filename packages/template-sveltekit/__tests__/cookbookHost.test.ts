@@ -766,6 +766,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
         defaultModel: async () => 'strong',
         clientOptions: vi.fn(),
         start: vi.fn(),
+        cancel: vi.fn(),
         signOut: vi.fn(),
       },
     });

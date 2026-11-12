@@ -196,6 +196,13 @@ export function createShellConnectAiClient(options: {
       await chooseEngine(engine, boundFetch(signal));
     },
     startChatGPT: (signal) => startChatGPT(boundFetch(signal)),
+    async cancelChatGPT(signal) {
+      await post(
+        '/api/shell/onboarding/chatgpt',
+        { action: 'cancel' },
+        boundFetch(signal),
+      );
+    },
     errorMessage: (error) =>
       error instanceof OnboardingError
         ? error.message

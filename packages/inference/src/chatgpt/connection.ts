@@ -47,6 +47,8 @@ export interface ChatGPTSessionStore {
   begin(selectedClientId?: string): Promise<{
     authorizationUrl: string;
     callback: Promise<{ clientId: string }>;
+    /** SDK-owned cancellation and listener cleanup, when supported. */
+    cancel?: () => Promise<void>;
   }>;
   accessToken(clientId: string): Promise<string>;
   logout(clientId: string): Promise<{ remoteRevocationConfirmed: boolean }>;
@@ -119,6 +121,8 @@ export interface ChatGPTPlanConnection {
   start(): Promise<{ authorizationUrl: string }>;
   /** Signed in or not, and who. Never a token. */
   status(): Promise<ChatGPTPlanStatus>;
+  /** Cancel the SDK's pending flow; refuses honestly when the SDK lacks this API. */
+  cancel(): Promise<void>;
   /** Forget the local credentials (and ask OpenAI to revoke them). */
   signOut(): Promise<{ remoteRevocationConfirmed: boolean }>;
   /** The signed-in account's models, newest catalog (cached for ten minutes). */
@@ -214,7 +218,9 @@ export function createChatGPTPlanConnection(
     return managerPromise;
   };
 
-  let pending: { url: string; startedAt: number } | undefined;
+  let pending:
+    | { url: string; startedAt: number; cancel?: () => Promise<void> }
+    | undefined;
   let lastError: ChatGPTPlanStatus['error'];
   let activeClientId: string | undefined;
   let modelCache:
@@ -258,18 +264,30 @@ export function createChatGPTPlanConnection(
         begun.callback.catch(() => undefined);
         throw new Error('The sign-in address was not on OpenAI.');
       }
-      const mine = { url: begun.authorizationUrl, startedAt: now() };
+      const mine = {
+        url: begun.authorizationUrl,
+        startedAt: now(),
+        cancel: begun.cancel,
+      };
       pending = mine;
       begun.callback.then(
         (session) => {
-          if (pending === mine) pending = undefined;
+          if (
+            pending !== mine ||
+            now() - mine.startedAt >= CHATGPT_SIGN_IN_WINDOW_MS
+          ) {
+            void store.logout(session.clientId).catch(() => undefined);
+            return;
+          }
+          pending = undefined;
           activeClientId = session.clientId;
           modelCache = undefined;
           // One registration per account: older ones are signed out.
           void dropOthers(session.clientId);
         },
         (error: unknown) => {
-          if (pending === mine) pending = undefined;
+          if (pending !== mine) return;
+          pending = undefined;
           lastError = errorFor(signInErrorCode(error));
         },
       );
@@ -295,6 +313,19 @@ export function createChatGPTPlanConnection(
         signingIn: signingIn(),
         ...(lastError && !session ? { error: lastError } : {}),
       };
+    },
+
+    async cancel() {
+      const mine = pending;
+      if (!mine) return;
+      if (!mine.cancel)
+        throw Object.assign(
+          new Error('This auth SDK cannot cancel a pending sign-in'),
+          { code: 'chatgpt_cancel_unavailable' },
+        );
+      await mine.cancel();
+      if (pending === mine) pending = undefined;
+      lastError = undefined;
     },
 
     async signOut() {

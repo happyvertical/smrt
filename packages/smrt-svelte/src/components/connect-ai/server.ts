@@ -20,7 +20,8 @@ export interface ConnectAiServerBinding {
     ReturnType<typeof createAgentCliService>,
     'cliStatus' | 'agentLogin'
   >;
-  chatgpt: Pick<ChatGPTPlanConnection, 'status' | 'start' | 'signOut'>;
+  chatgpt: Pick<ChatGPTPlanConnection, 'status' | 'start' | 'signOut'> &
+    Partial<Pick<ChatGPTPlanConnection, 'cancel'>>;
   /** Resolve the current user's API binding through inference. Never return a key. */
   apiStatus(): Promise<InferenceEngineStatus>;
 }
@@ -188,12 +189,31 @@ export function mountConnectAiRoutes<E extends ConnectAiRequestEvent>(options: {
           return json({ result });
         }
         if (body.action === 'chatgpt-start') {
+          const before = await binding.chatgpt.status();
+          if (before.signedIn && !before.signingIn)
+            return json({ signedIn: true });
           const { authorizationUrl } = await binding.chatgpt.start();
           if (!isChatGPTAuthorizationUrl(authorizationUrl))
             return error(502, 'invalid_authorization_url');
-          const opened =
-            (await options.openBrowser?.(authorizationUrl)) ?? false;
+          const opened = before.signingIn
+            ? false
+            : ((await options.openBrowser?.(authorizationUrl)) ?? false);
           return json(opened ? { opened } : { opened, authorizationUrl });
+        }
+        if (body.action === 'chatgpt-cancel') {
+          if (!binding.chatgpt.cancel)
+            return error(409, 'chatgpt_cancel_unavailable');
+          try {
+            await binding.chatgpt.cancel();
+          } catch (cause) {
+            if (
+              (cause as { code?: unknown })?.code ===
+              'chatgpt_cancel_unavailable'
+            )
+              return error(409, 'chatgpt_cancel_unavailable');
+            throw cause;
+          }
+          return json({ ok: true });
         }
         if (body.action === 'chatgpt-sign-out') {
           const out = await binding.chatgpt.signOut();

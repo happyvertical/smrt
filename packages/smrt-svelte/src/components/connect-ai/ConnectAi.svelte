@@ -49,7 +49,9 @@ let info = $state<ConnectAiState | undefined>(untrack(() => initialState));
 let busy = $state(false);
 let failed = $state(false);
 let actionFailed = $state(false);
+let cancelUnavailable = $state(false);
 let signInUrl = $state<string | undefined>();
+let recoveredPending = false;
 let message = $state('');
 let chatgptState = $state<{
   model: string | null;
@@ -93,6 +95,8 @@ async function refresh(): Promise<void> {
       const next = await client.state(active.signal);
       if (stopped) return;
       info = next;
+      if (next.chatgpt.signingIn && !recoveredPending) await startChatGPT();
+      if (!next.chatgpt.signingIn) recoveredPending = false;
       if (presentation !== 'compact' && !actionFailed) failed = false;
       if (!next.chatgpt.signingIn && !awaitingChatGPT) signInUrl = undefined;
       onchange?.(next, engineReady(next));
@@ -155,6 +159,7 @@ async function act(action: () => Promise<unknown>) {
   busy = true;
   failed = false;
   actionFailed = false;
+  cancelUnavailable = false;
   try {
     await refreshing;
     await action();
@@ -163,8 +168,12 @@ async function act(action: () => Promise<unknown>) {
     if (!stopped) {
       failed = true;
       actionFailed = true;
+      cancelUnavailable =
+        (error as { code?: unknown })?.code === 'chatgpt_cancel_unavailable';
       if (presentation === 'compact')
-        message = client.errorMessage?.(error) ?? 'Something went wrong.';
+        message = cancelUnavailable
+          ? t(M['ui.connect_ai.cancel_unavailable'])
+          : (client.errorMessage?.(error) ?? 'Something went wrong.');
     }
   } finally {
     if (!stopped) {
@@ -176,6 +185,7 @@ async function act(action: () => Promise<unknown>) {
 }
 
 async function startChatGPT() {
+  recoveredPending = true;
   const result = await client.startChatGPT(active.signal);
   // The server checks inference's canonical authorization URL policy. Keep a
   // browser-side protocol/host guard too; no SDK/server import in this entry.
@@ -311,6 +321,7 @@ onMount(() => {
               onclick={() => (gpt.kind === 'use' ? useChatGPT() : signInChatGPT())}
             >{gpt.label}</Button>
           {/if}
+          {#if compactInfo.chatgpt.signingIn || signInUrl}{@render pendingSignIn()}{/if}
           {#if compactInfo.chatgpt?.signedIn}
             <Button type="button" class="smrt-app-shell__btn" disabled={busy} onclick={signOutOfChatGPT}>Sign out</Button>
           {/if}
@@ -320,11 +331,6 @@ onMount(() => {
         {@render toolRow(tool, compactInfo)}
       {/each}
     </ul>
-    {#if signInUrl}
-      <p class="smrt-connect-ai__api">
-        <a class="smrt-app-shell__link" href={signInUrl} target="_blank" rel="noopener noreferrer">Open the ChatGPT sign-in page<span class="smrt-app-shell__sr-only"> (opens in a new tab)</span></a>
-      </p>
-    {/if}
 
     {@const api = apiRow(compactInfo)}
     {#if api === 'in-use'}
@@ -365,7 +371,7 @@ onMount(() => {
     <ul aria-label={t(M['ui.connect_ai.options'])}>
       {#each tools as option (option.tool)}
         {#if option.tool === 'chatgpt'}
-      <li>
+      <li id="chatgpt">
         <Card>
           <div class="smrt-connect-ai__row">
             <div>
@@ -382,6 +388,7 @@ onMount(() => {
                   {t(info.chatgpt.signingIn ? M['ui.connect_ai.waiting'] : info.chatgpt.signedIn ? M['ui.connect_ai.use'] : M['ui.connect_ai.sign_in'], { tool: t(M['ui.connect_ai.chatgpt']) })}
                 </Button>
               {/if}
+              {#if info.chatgpt.signingIn || signInUrl}{@render pendingSignIn()}{/if}
               {#if info.chatgpt.signedIn}
                 <Button variant="secondary" disabled={busy} onclick={() => act(() => client.signOutChatGPT(active.signal))}>{t(M['ui.connect_ai.sign_out'])}</Button>
               {/if}
@@ -431,16 +438,13 @@ onMount(() => {
         </Card>
       </li>
     </ul>
-    {#if signInUrl}
-      <Button href={signInUrl} target="_blank" rel="noopener noreferrer" variant="secondary">{t(M['ui.connect_ai.open_sign_in'])} {t(M['ui.connect_ai.new_tab'])}</Button>
-    {/if}
     <p role="status">{t(engineReady(info) ? M['ui.connect_ai.ready'] : M['ui.connect_ai.not_ready'])}</p>
     <p>{t(M['ui.connect_ai.legal'])}</p>
     <p><a href="https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations" target="_blank" rel="noopener noreferrer">{t(M['ui.connect_ai.preview'])} {t(M['ui.connect_ai.new_tab'])}</a></p>
   {/if}
   {#if failed}
-    <p role="alert">{t(M['ui.connect_ai.error'])}</p>
-    <Button variant="secondary" disabled={busy} onclick={() => { actionFailed = false; failed = false; void refresh(); }}>{t(M['ui.connect_ai.retry'])}</Button>
+    <p role="alert">{t(cancelUnavailable ? M['ui.connect_ai.cancel_unavailable'] : M['ui.connect_ai.error'])}</p>
+    <Button variant="secondary" disabled={busy} onclick={() => { recoveredPending = false; actionFailed = false; failed = false; void refresh(); }}>{t(M['ui.connect_ai.retry'])}</Button>
   {/if}
 </section>
 
@@ -568,3 +572,15 @@ onMount(() => {
   }
 }
 </style>
+
+
+{#snippet pendingSignIn()}
+  {#if signInUrl}<Button href={signInUrl} target="_blank" rel="noopener noreferrer" variant="secondary">{t(M['ui.connect_ai.open_sign_in'])} {t(M['ui.connect_ai.new_tab'])}</Button>{/if}
+  <p>{t(M['ui.connect_ai.expiry'])}</p>
+  <Button variant="secondary" disabled={busy} onclick={() => act(async () => {
+    if (!client.cancelChatGPT) throw Object.assign(new Error('Cancellation unavailable'), { code: 'chatgpt_cancel_unavailable' });
+    await client.cancelChatGPT(active.signal);
+    signInUrl = undefined;
+    awaitingChatGPT = false;
+  })}>{t(M['ui.connect_ai.cancel_sign_in'])}</Button>
+{/snippet}

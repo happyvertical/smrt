@@ -72,6 +72,7 @@ function fakeConnection(): ChatGPTPlanConnection {
       signingIn: false,
       ...(signedIn ? { account: { label: 'owner@example.com' } } : {}),
     }),
+    cancel: vi.fn(async () => undefined),
     signOut: async () => ({ remoteRevocationConfirmed: true }),
     models: async () => [{ id: 'gpt-x', label: 'GPT X' }],
     defaultModel: async () => 'gpt-x',

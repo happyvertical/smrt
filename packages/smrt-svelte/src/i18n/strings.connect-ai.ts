@@ -41,6 +41,10 @@ export const M = defineMessages({
     'Use your own ChatGPT plan. A preview for local open source apps.',
   'ui.connect_ai.chatgpt_signed_in': 'Signed in.',
   'ui.connect_ai.sign_out': 'Sign out of ChatGPT',
+  'ui.connect_ai.expiry': 'This sign-in link expires in ten minutes.',
+  'ui.connect_ai.cancel_sign_in': 'Cancel sign-in',
+  'ui.connect_ai.cancel_unavailable':
+    'This version cannot cancel sign-in yet. Close the sign-in page and let the link expire, or finish signing in.',
   'ui.connect_ai.open_sign_in': 'Open the ChatGPT sign-in page',
   'ui.connect_ai.new_tab': '(opens in a new tab)',
   'ui.connect_ai.error':

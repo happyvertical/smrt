@@ -445,3 +445,39 @@ it.each([
   await waitFor(() => expect(api.state).toHaveBeenCalledTimes(2));
   expect(screen.getByRole('alert')).toBeVisible();
 });
+
+it.each([
+  undefined,
+  'compact',
+] as const)('recovers the pending ChatGPT link after reload, inside its card, with expiry and Cancel in %s', async (presentation) => {
+  const info = state();
+  info.chatgpt.signingIn = true;
+  const api = client(info);
+  const cancelled = vi.fn(async () => {
+    info.chatgpt.signingIn = false;
+  });
+  api.cancelChatGPT = cancelled;
+  vi.mocked(api.state).mockImplementation(async () => structuredClone(info));
+  vi.mocked(api.startChatGPT).mockResolvedValue({
+    authorizationUrl: new URL('/authorize', 'https://auth.openai.com').href,
+  });
+  render(ConnectAi, {
+    client: api,
+    presentation,
+    initialState: info,
+    apiKeyHref: '/settings',
+  });
+  const link = await screen.findByRole('link', {
+    name: /Open the ChatGPT sign-in page/,
+  });
+  expect(link.closest('li')).toHaveTextContent('ChatGPT');
+  expect(link.closest('li')).toHaveTextContent('Waiting for sign-in');
+  expect(link.closest('li')).toHaveTextContent('expires in ten minutes');
+  await userEvent.click(screen.getByRole('button', { name: 'Cancel sign-in' }));
+  expect(cancelled).toHaveBeenCalledOnce();
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('link', { name: /Open the ChatGPT sign-in page/ }),
+    ).toBeNull(),
+  );
+});

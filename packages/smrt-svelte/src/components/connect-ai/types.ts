@@ -45,6 +45,7 @@ export interface ConnectAiClient {
   errorMessage?(error: unknown): string;
   choose(engine: InferenceEngineId, signal?: AbortSignal): Promise<void>;
   startChatGPT(signal?: AbortSignal): Promise<{ authorizationUrl?: string }>;
+  cancelChatGPT?(signal?: AbortSignal): Promise<void>;
   signOutChatGPT(signal?: AbortSignal): Promise<void>;
   /** Optional host-owned ChatGPT model preference; no credentials. */
   modelState?(signal?: AbortSignal): Promise<{

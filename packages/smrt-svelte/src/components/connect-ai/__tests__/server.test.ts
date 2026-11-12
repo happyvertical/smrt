@@ -396,3 +396,30 @@ it('only opts existing hosts into selecting an unconfigured API engine and revoc
     await (await routes.POST(event({ action: 'chatgpt-sign-out' }))).json(),
   ).toEqual({ ok: true });
 });
+
+it('recovers a pending page without reopening the browser and cancels through the owner binding', async () => {
+  const { binding, setPlan } = setup();
+  setPlan({ signedIn: false, signingIn: true });
+  const open = vi.fn(async () => true);
+  const routes = mountConnectAiRoutes({
+    authorize: async () => binding,
+    openBrowser: open,
+  });
+  binding.chatgpt.cancel = vi.fn(async () =>
+    setPlan({ signedIn: false, signingIn: false }),
+  );
+  expect((await routes.POST(event({ action: 'chatgpt-start' }))).status).toBe(
+    200,
+  );
+  expect(open).not.toHaveBeenCalled();
+  expect((await routes.POST(event({ action: 'chatgpt-cancel' }))).status).toBe(
+    200,
+  );
+  expect(binding.chatgpt.cancel).toHaveBeenCalledTimes(1);
+});
+it('does not pretend to cancel when the auth SDK has no cancellation handle', async () => {
+  const { routes } = setup();
+  expect((await routes.POST(event({ action: 'chatgpt-cancel' }))).status).toBe(
+    409,
+  );
+});

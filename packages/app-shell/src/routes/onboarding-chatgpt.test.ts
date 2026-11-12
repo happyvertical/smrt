@@ -2,7 +2,15 @@
 // opens, the engine it selects, sign-out, and no token anywhere. The connection
 // is a fake (no network, no real sign-in).
 import type { ChatGPTPlanConnection } from '@happyvertical/smrt-inference/server';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { mountAssistantRoutes } from '../lib/server/assistant/routes.ts';
 import { setChatGPTConnection } from '../lib/server/chatgpt.ts';
 import { mountOnboardingRoutes } from '../lib/server/onboarding.ts';
@@ -38,6 +46,7 @@ const connection: ChatGPTPlanConnection = {
     signingIn,
     ...(signedIn ? { account: { label: 'owner@example.com' } } : {}),
   }),
+  cancel: vi.fn(async () => undefined),
   signOut: async () => {
     signedOut += 1;
     signedIn = false;
@@ -136,6 +145,12 @@ describe('signing in', () => {
     });
   });
 
+  it('forwards pending sign-in cancellation through the shared owner route', async () => {
+    await chatgpt({ action: 'start' });
+    const out = await chatgpt({ action: 'cancel' });
+    expect(out.status).toBe(200);
+    expect(connection.cancel).toHaveBeenCalledTimes(1);
+  });
   it('shows signed in once the sign-in finishes, and selects the engine', async () => {
     await chatgpt({ action: 'start' });
     signedIn = true;

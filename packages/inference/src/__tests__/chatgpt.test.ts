@@ -126,6 +126,33 @@ describe('the ChatGPT plan connection', () => {
     expect(everything).not.toContain('REFRESH');
   });
 
+  it('cancels only with an SDK handle and discards a late successful callback', async () => {
+    const fake = fakeManager();
+    const begin = fake.manager.begin.bind(fake.manager);
+    const cancel = vi.fn(async () => undefined);
+    fake.manager.begin = async () => ({ ...(await begin()), cancel });
+    const connection = connect(fake);
+    await connection.start();
+    await connection.cancel();
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect((await connection.status()).signingIn).toBe(false);
+    fake.finish();
+    await settle();
+    expect(fake.manager.logout).toHaveBeenCalledWith('client-new');
+    expect((await connection.status()).signedIn).toBe(false);
+  });
+  it('keeps a pending sign-in truthful when the installed SDK cannot cancel it', async () => {
+    const fake = fakeManager();
+    const connection = connect(fake);
+    await connection.start();
+    await expect(connection.cancel()).rejects.toMatchObject({
+      code: 'chatgpt_cancel_unavailable',
+    });
+    expect((await connection.status()).signingIn).toBe(true);
+    fake.finish();
+    await settle();
+    expect((await connection.status()).signedIn).toBe(true);
+  });
   it('refuses an authorization URL that is not on OpenAI', async () => {
     const fake = fakeManager();
     fake.setUrl('https://evil.example.com/api/accounts/authorize');

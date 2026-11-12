@@ -24,7 +24,15 @@ export function createConnectAiClient(options: {
           }
         : {}),
     });
-    if (!response.ok) throw new Error('Connect AI request failed.');
+    if (!response.ok) {
+      const detail = await response.json().catch(() => null);
+      throw Object.assign(
+        new Error('Connect AI request failed.'),
+        detail?.code === 'chatgpt_cancel_unavailable'
+          ? { code: 'chatgpt_cancel_unavailable' }
+          : {},
+      );
+    }
     return response.json() as Promise<T>;
   };
   return {
@@ -36,6 +44,9 @@ export function createConnectAiClient(options: {
       await call({ action: 'select', engine }, signal);
     },
     startChatGPT: (signal) => call({ action: 'chatgpt-start' }, signal),
+    cancelChatGPT: async (signal) => {
+      await call({ action: 'chatgpt-cancel' }, signal);
+    },
     signOutChatGPT: async (signal) => {
       await call({ action: 'chatgpt-sign-out' }, signal);
     },

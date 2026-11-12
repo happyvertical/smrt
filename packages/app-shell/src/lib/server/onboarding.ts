@@ -130,6 +130,11 @@ export function mountOnboardingRoutes(
           502,
           `${AGENT_TOOL_INFO[body.tool as 'codex' | 'claude-code'].label} did not answer. Try again.`,
         );
+      if (out.code === 'chatgpt_cancel_unavailable')
+        throw new HttpError(
+          409,
+          'This version cannot cancel the browser sign-in yet. The link expires in ten minutes.',
+        );
       if (out.code === 'engine_not_ready')
         throw new HttpError(
           409,
@@ -223,6 +228,9 @@ export function mountOnboardingRoutes(
       if (body.action === 'start') {
         const out = await sharedAction(event, { action: 'chatgpt-start' });
         return json({ result: 'login_started', ...out });
+      }
+      if (body.action === 'cancel') {
+        return json(await sharedAction(event, { action: 'chatgpt-cancel' }));
       }
       if (body.action === 'sign-out') {
         const out = await sharedAction(event, { action: 'chatgpt-sign-out' });
