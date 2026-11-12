@@ -313,14 +313,8 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
     expect(response.status, await response.clone().text()).toBe(200);
     progress = await response.json();
   }
-  expect(progress.approval.status).toBe('pending');
-  const approved = await request(
-    `/api/assistant/approvals/${progress.approvalId}/decide`,
-    (e) => host!.assistant.handle(e),
-    { approve: true },
-  );
-  expect(approved.status, await approved.clone().text()).toBe(200);
-  // The cookbook starts empty: only approving cookbook.apply enables commerce.
+  expect(progress).toMatchObject({ completed: true, step: 'done', approvalId: null, approval: null });
+  // The empty app needs only Use this template; successful apply enables commerce.
   const loaded = await request(
     '/',
     async (e) => new Response(JSON.stringify(await host!.load(e))),

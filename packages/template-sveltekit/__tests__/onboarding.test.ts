@@ -76,12 +76,19 @@ describe('durable owner first run', () => {
     expect((await change('apply')).status).toBe(409); expect((await change('restart')).status).toBe(409);
     await change('welcome');
     expect((await mount.handle(event({ action: 'skip', revision: stale }))).status).toBe(409);
+    expect((await mount.handle(event({ action: 'skip', revision: saved.revision, initialSetup: true }))).status).toBe(400);
     expect((await change('unknown')).status).toBe(400);
     expect((await mount.handle(event('{'))).status).toBe(400);
     expect((await mount.handle(event(' '.repeat(4097)))).status).toBe(413);
     expect((await mount.handle(event({ action: 'skip', revision: saved.revision }, { origin: 'https://foreign.invalid' }))).status).toBe(403);
     expect((await mount.handle(event(undefined, { user: 'other' }))).status).toBe(403);
     const owner = actor; actor = { tenantId: randomUUID(), userId: randomUUID() }; await read(); expect(saved.step).toBe('welcome'); actor = owner; await read(); expect(saved.step).toBe('ai');
+  });
+  it('derives initial setup only from durable unfinished progress, never a restart', async () => {
+    await change('welcome'); await change('skip'); await change('preview', { id: 'yoga-studio' }); await change('apply');
+    approval = 'succeeded'; await read();
+    await change('restart'); await change('preview', { id: 'yoga-studio' }); await change('apply');
+    expect(vi.mocked(options.invoke).mock.calls.filter(([, name, args]) => name === 'cookbook.apply' && args.apply).map(call => call[3])).toEqual([true, false]);
   });
   it('keeps a completed app usable when pre-built components are off, with a cancellable empty replacement picker', async () => {
     await change('welcome'); await change('skip'); await change('preview', { id: 'yoga-studio' }); await change('apply');

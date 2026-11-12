@@ -62,12 +62,17 @@ const change = async (action, extra = {}) => {
   assert.equal(response.status, 200, action + ': ' + await response.clone().text());
   onboarding = await response.json();
 };
-const approve = async () => {
+const approve = async (requiresOwnerApproval = true) => {
   await change('apply');
+  if (requiresOwnerApproval) {
   assert.equal(onboarding.approval.status, 'pending');
   const decision = await request('/api/assistant/approvals/' + onboarding.approvalId + '/decide', cookie, { approve: true });
   assert.equal(decision.status, 200);
   onboarding = await (await request('/api/onboarding', cookie)).json();
+  } else {
+    assert.equal(onboarding.approvalId, null, 'empty first run uses one confirmation');
+    assert.equal(onboarding.approval, null);
+  }
   assert.equal(onboarding.step, 'done');
   assert.equal(onboarding.completed, true);
 };
@@ -80,7 +85,7 @@ await change('skip');
 assert.equal(onboarding.step, 'template');
 await change('preview', { id: 'fresh' });
 assert.deepEqual(onboarding.preview.after, []);
-await approve();
+await approve(false);
 assert.equal((await request('/', cookie)).status, 200, 'Fresh home');
 assert.equal((await request('/api/customers', cookie)).status, 404, 'Fresh closes installed routes');
 await change('restart');

@@ -47,6 +47,7 @@ export async function createCookbookOnboarding(options: {
     actor: Actor,
     name: CookbookToolName,
     args: Record<string, unknown>,
+    initialSetup?: boolean,
   ): Promise<CookbookToolResult>;
   approval(actor: Actor, id: string): Promise<AssistantApprovalView | null>;
 }) {
@@ -270,12 +271,17 @@ export async function createCookbookOnboarding(options: {
             preview.revision !== saved.preview.revision
           )
             return json({ code: 'preview_changed' }, 409);
-          const result = await options.invoke(actor, 'cookbook.apply', {
-            id: saved.preview.id,
-            apply: true,
-            expectedRevision: preview.revision,
-            previewToken: preview.previewToken,
-          });
+          const result = await options.invoke(
+            actor,
+            'cookbook.apply',
+            {
+              id: saved.preview.id,
+              apply: true,
+              expectedRevision: preview.revision,
+              previewToken: preview.previewToken,
+            },
+            !saved.completed && !saved.rerunning,
+          );
           if (result.status === 'approval_required')
             next.approvalId = String(result.approvalId);
           else if (result.status === 'ok')

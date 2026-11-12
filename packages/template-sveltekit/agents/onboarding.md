@@ -1,5 +1,27 @@
 # First run
 
+## Browser QA follow-up test design
+
+| Behavior/invariant | Trigger and positive case | Failure/negative case | Actor, executor and runtime | Contract edge and validation |
+| --- | --- | --- | --- | --- |
+| Review/decision is visible | Keyboard preview focuses and reveals review; apply reveals pending decision | Apply failure remains actionable, no success claim | Local owner, browser DOM; no SQL | Component regression and built-app keyboard proof |
+| Single initial confirmation | Owner's server-stored unfinished first run and zero tenant list rows apply directly | Rows, restart, forged flags, changed preview or data arriving during activation retain/refuse approval shortcut | Owner/session ceiling; public collection counts on local SQLite; cookbook CAS | Core + real host regression; full package tests |
+| Step navigation | One AI heading, visible step progress, back/keep-app controls | Pending writes cannot be abandoned | Authenticated browser; no SQL | Component tests and keyboard proof |
+| Background | Full viewport in light/dark at desktop/phone widths | No differently colored area below short card | Browser theme tokens; no SQL | Built-app computed styles/screenshots |
+| Settings | Visible explained switch and unsettled decisions | Completed/denied/failed outcomes never rendered here; failed save restores toggle | Owner, existing preference CAS and approval transport, SQLite | Component + product/browser tests |
+| Introduction | Cookbook navigation order and labels, short supported help | No engine, unknown actions, technical model/tool vocabulary | Host-projected offerings; browser only | Host/component tests and built-app proof |
+
+Reuse before edits: configured MCP reviewed core, smrt-svelte and template and
+architecture context queried first-run emptiness, preview/focus, prebuilt settings,
+owner decisions and introduction. Read the intent index; name/purpose `rg`
+searched UI, Svelte, chat, core, preferences and template for step/progress,
+focus/reveal, prebuilt toggles/settings, `isAppEmpty` and approval policies.
+Extend existing onboarding/core contracts. New `PrebuiltComponentsSettings.svelte`
+composes Toggle, Button, Card, existing approval card/transport and translated
+messages; SettingsCatalog is a registry browser, not this preference editor.
+Reuse Progress for the step indicator; native focus/instant scroll is needed for
+headings (control `revealControl` always smooth-scrolls a form control).
+
 Opt in with `createCookbookApplication({ onboarding: true, ... })`. Mount
 `host.onboarding` as GET/POST `/api/onboarding`. The layout returns `onboarding`
 and `assistantIntroduction`; an authenticated local owner sees the saved welcome,
@@ -25,12 +47,14 @@ bounded JSON POST accepts only known actions and a current revision. Owner
 membership is checked on every call; cookbook tool permissions are rechecked by
 the canonical tool service. Preview labels come from the engine snapshot, including
 layout overrides/hidden items. Apply regenerates the process-local preview token
-and checks the original diff fingerprint/revision before requesting a durable
-owner approval. Approval decisions use chat's existing route/continuation. A
+and checks the original diff fingerprint/revision before applying. Unfinished first run counts the current cookbook list collections
+through the tenant-scoped public collection API. With no rows, the explicit Use
+confirmation applies directly; technical owner identity is not a person-facing
+list. Populated apps and Settings restarts request a durable owner approval. Approval decisions use chat's existing route/continuation. A
 successful terminal hold marks onboarding done on refresh, including after
 restart. Failed/denied holds retain the step and require a fresh preview to retry.
 No rows are deleted by template application; changed policies/navigation/recipes
-are still reviewed through the canonical preview and owner approval.
+are reviewed through the canonical preview, with owner approval for replacement.
 
 ## Test design
 
@@ -78,4 +102,15 @@ navigation, and activate a template before exercising effective app Profile STI
 creation, gated subtype refusal and Customer reference labels through REST.
 Customer intentionally publishes read-only MCP; the test preserves that boundary.
 The existing subclass, dispatcher and reference-picker implementations are reused.
-No new production helper or component was introduced in this follow-up.
+The earlier rebase introduced no new production helper or component.
+
+Browser QA #2 adds `PrebuiltComponentsSettings.svelte` in the owning Svelte
+settings composition. It reuses Toggle/Button/Card and AssistantApprovalCard;
+terminal outcomes stay in approval history. Its new test file uses existing
+Testing Library/userEvent and UI axe helpers (searched those names in settings,
+ConnectAi and onboarding tests). No new model, transport, store or test helper.
+Preview and pending decisions receive native focus and instant scroll; step
+progress uses UI Progress. ConnectAi accepts `headingId` to reuse its parent
+heading. Greetings use the public pure workspace `applyShellLayout` projection
+so lead lists follow the actual cookbook section ordering and wording, with
+short sentences limited to offered actions. Backgrounds fill 100dvh with tokens.

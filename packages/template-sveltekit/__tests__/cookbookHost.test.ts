@@ -510,6 +510,10 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       host.connectAi.POST,
     );
     expect(selection.status).toBe(200);
+    expect((await host.load(event('/'))).assistantIntroduction).toMatchObject({
+      configured: true,
+      lists: ['Customers'],
+    });
     const listing = await mcp();
     const name = listing.body.result.tools.find((t: { name: string }) =>
       /customer_list$/.test(t.name),
@@ -1490,7 +1494,54 @@ function json(value: unknown) {
 }
 
 describe('onboarding over real cookbook tools and owner ledger', () => {
+  it('counts only this tenant list rows, allowing Fresh with owner identity and another tenant records', async () => {
+    const foreign = await (await TenantCollection.create({ db })).create({
+      name: 'Another business',
+    });
+    await foreign.save();
+    await withTenant({ tenantId: foreign.id! }, async () => {
+      const profile = await (
+        await ObjectRegistry.getCollection(PROFILE, { db })
+      ).create({ name: 'Other member', typeId: profileTypeId });
+      await profile.save();
+      const customer = await (
+        await ObjectRegistry.getCollection(CUSTOMER, { db })
+      ).create({ profileId: profile.id });
+      await customer.save();
+    });
+    let progress = await (
+      await request(event('/api/onboarding'), host.onboarding)
+    ).json();
+    for (const change of [
+      { action: 'welcome' },
+      { action: 'skip' },
+      { action: 'preview', id: 'fresh' },
+      { action: 'apply' },
+    ]) {
+      const result = await request(
+        event('/api/onboarding', 'POST', {
+          ...change,
+          revision: progress.revision,
+        }),
+        host.onboarding,
+      );
+      expect(result.status).toBe(200);
+      progress = await result.json();
+    }
+    expect(progress).toMatchObject({
+      completed: true,
+      step: 'done',
+      approvalId: null,
+    });
+    expect((await host.cookbookApp(tenantId)).cookbook.recipes).toEqual([]);
+  });
   it('previews Fresh, creates a durable hold, applies only after an owner decision, then resumes done', async () => {
+    await withTenant({ tenantId, userId: owner.id }, async () => {
+      const customer = await (
+        await ObjectRegistry.getCollection(CUSTOMER, { db })
+      ).create({ profileId: owner.profileId });
+      await customer.save();
+    });
     const read = async () => {
       const r = await request(event('/api/onboarding'), host.onboarding);
       expect(r.status).toBe(200);
@@ -1556,8 +1607,13 @@ describe('onboarding over real cookbook tools and owner ledger', () => {
       lists: [],
     });
     expect(loaded.enabledModels).not.toContain(CUSTOMER);
+    await withTenant({ tenantId, userId: owner.id }, async () => {
+      expect(
+        await (await ObjectRegistry.getCollection(CUSTOMER, { db })).count(),
+      ).toBe(1);
+    });
   });
-  it('onboarding template approval enables the effective app subclass, STI create and linked reference labels', async () => {
+  it('empty first-run setup needs one confirmation and enables the effective app subclass, STI create and linked reference labels', async () => {
     const runtime = host.runtime;
     host.dispose();
     host = createCookbookHost({
@@ -1598,11 +1654,15 @@ describe('onboarding over real cookbook tools and owner ledger', () => {
     await advance('preview', { id: 'customers-template' });
     expect(progress.preview.after).toContain('Customers');
     await advance('apply');
-    expect(progress.approval.status).toBe('pending');
+    expect(progress).toMatchObject({
+      step: 'done',
+      completed: true,
+      approvalId: null,
+      approval: null,
+    });
     expect(
-      (await chat(`approvals/${progress.approvalId}/decide`, { approve: true }))
-        .status,
-    ).toBe(200);
+      (await (await chat('approvals', undefined, 'GET')).json()).approvals,
+    ).toEqual([]);
     const profiles = await ObjectRegistry.getCollection(PROFILE, { db });
     const before = await profiles.count();
     const made = await mcp('tools/call', {

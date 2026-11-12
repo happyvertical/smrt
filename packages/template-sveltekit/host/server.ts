@@ -100,6 +100,8 @@ import {
   readInstalledManifests,
 } from '@happyvertical/smrt-svelte/cookbook/server';
 import type { OnboardingState } from '@happyvertical/smrt-svelte/onboarding';
+import { applyShellLayout } from '@happyvertical/smrt-svelte/workspace/layout';
+import { withTenant } from '@happyvertical/smrt-tenancy';
 import type { Cookbook } from '@happyvertical/smrt-types';
 import {
   PermissionResolver,
@@ -394,8 +396,33 @@ export function createCookbookHost(options: CookbookHostOptions) {
         ).permissions.has(slug);
       },
       approvals: continuations.adapter('cookbook'),
-      // Conservative: replacing a template always needs owner approval. No unproven empty-data shortcut.
-      isAppEmpty: async () => false,
+      isAppEmpty: async (context) => {
+        if (!context.initialSetup || !context.tenantId) return false;
+        const engine = state.engineFor(context);
+        if (!engine) return false;
+        const shell = buildCookbookShell({
+          cookbook: engine.cookbook(),
+          catalog: app.catalog,
+        });
+        return withTenant(
+          { tenantId: context.tenantId, userId: context.userId ?? undefined },
+          async () => {
+            for (const id of new Set(
+              [...shell.entries.values()].map((entry) => entry.model.id),
+            )) {
+              const table = ObjectRegistry.getTableName(id);
+              if (!table) return false;
+              if (!(await db.tableExists(table))) continue;
+              const collection = await ObjectRegistry.getCollection(id, {
+                ...runtime.classOptions(id),
+                db,
+              });
+              if (await collection.count()) return false;
+            }
+            return true;
+          },
+        );
+      },
       commit: state.commit,
       audit: state.audit,
     });
@@ -437,7 +464,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
                 }
               : null;
           },
-          invoke: async (actor, name, args) => {
+          invoke: async (actor, name, args, initialSetup = false) => {
             const permissions = [
               ...(
                 await (
@@ -460,7 +487,12 @@ export function createCookbookHost(options: CookbookHostOptions) {
                 permissions: ceiling,
                 allowedTools: [name],
               },
-              () => service.invoke(name, args, { ...actor, surface: 'mcp' }),
+              () =>
+                service.invoke(name, args, {
+                  ...actor,
+                  surface: 'mcp',
+                  initialSetup,
+                }),
             );
           },
           approval: async (actor, id) => {
@@ -934,17 +966,39 @@ export function createCookbookHost(options: CookbookHostOptions) {
     const connected = connectStatus?.ok
       ? (await connectStatus.json()).configured === true
       : false;
+    const introductionShell =
+      engine && visible
+        ? buildCookbookShell({
+            cookbook: {
+              ...engine.cookbook(),
+              recipes: visible.recipes.map((recipe) => recipe.id),
+              features: visible.features,
+            },
+            catalog: host.catalog,
+          })
+        : null;
+    const navigation = introductionShell
+      ? applyShellLayout(
+          [],
+          introductionShell.navGroups,
+          undefined,
+          introductionShell.layout,
+        )
+      : null;
     return {
       ...data,
       onboarding,
       assistantIntroduction: p
         ? {
-            lists:
-              visible?.sections
-                .filter((s) => !s.hidden)
-                .flatMap((s) =>
-                  s.items.filter((i) => !i.hidden).map((i) => i.label),
-                ) ?? [],
+            lists: navigation
+              ? [
+                  ...navigation.nav,
+                  ...navigation.groups.flatMap((group) =>
+                    group.items.slice(0, 1),
+                  ),
+                  ...navigation.groups.flatMap((group) => group.items.slice(1)),
+                ].map((item) => item.label)
+              : [],
             actions: [
               ...new Set(
                 offered
