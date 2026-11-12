@@ -307,6 +307,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
   >();
   let origin: string | undefined;
   let taskRunner: TaskRunner | undefined;
+  let disposeDesignRuns: (() => void) | undefined;
   const turns = new Map<
     string,
     {
@@ -937,6 +938,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
         );
       },
     });
+    disposeDesignRuns = designRuns.dispose;
     taskRunner = new TaskRunner({
       concurrency: 1,
       queues: ['default'],
@@ -957,8 +959,40 @@ export function createCookbookHost(options: CookbookHostOptions) {
       gate,
     };
   }
-  const ready = () =>
-    (starting ??= initialize().then((value) => (current = value)));
+  let shutdownPromise: Promise<void> | undefined;
+  let stopped = false;
+  const shutdown = () =>
+    (shutdownPromise ??= (async () => {
+      // Adapter-node emits its lifecycle event after HTTP connections close.
+      // Initialization may still be finishing; stop that same runner after it
+      // starts rather than leaving newly-created polling/liveness handles alive.
+      try {
+        await starting;
+      } catch {
+        // Initialization's caller owns that failure. Teardown must still stop
+        // partially-started resources without reporting the same error twice.
+      }
+      try {
+        await taskRunner?.stop();
+      } finally {
+        stopped = true;
+        disposeDesignRuns?.();
+      }
+    })());
+  const onShutdown = () => {
+    void shutdown().catch(() => {
+      process.exitCode = 1;
+      // biome-ignore lint/suspicious/noConsole: fixed lifecycle failure, no request or credential data
+      console.error('Cookbook host shutdown failed');
+    });
+  };
+  process.once('sveltekit:shutdown', onShutdown);
+  const ready = () => {
+    if (stopped || (!starting && shutdownPromise))
+      return Promise.reject(new Error('Cookbook host is shutting down'));
+    starting ??= initialize().then((value) => (current = value));
+    return starting;
+  };
   const publishedDefinitions = new Map<
     string,
     AppModelSnapshot['webDefinitions']
@@ -2234,10 +2268,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
     init: async () => {
       await ready();
     },
-    shutdown: async () => {
-      await taskRunner?.stop();
-      current?.designRuns.dispose();
-    },
+    shutdown,
     load,
     assistant,
     connectAi,
@@ -2817,6 +2848,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
       })({ ...event, locals: { ...event.locals } });
     },
     dispose() {
+      process.removeListener('sveltekit:shutdown', onShutdown);
       current?.gate.dispose?.();
       setRuntimeExposureGate(undefined);
       setCookbookToolService(undefined);

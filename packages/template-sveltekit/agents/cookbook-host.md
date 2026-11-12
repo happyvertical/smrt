@@ -566,3 +566,20 @@ closed schemas, and delegated plugin tokens cannot write owner work profiles or
 start host design runs. Native decisions use `OwnerApprovalContinuations` and
 its canonical adapters; the design runner only schedules its deterministic
 checkpoint after the recorded native outcome.
+
+Adapter-node emits `sveltekit:shutdown` after closing HTTP connections. The host
+registers one listener for that lifecycle event and drains its existing TaskRunner
+through the same idempotent `shutdown()` used by tests. Shutdown waits for any
+in-flight initialization, stops polling and liveness via TaskRunner's normal stop
+path, and disposes the design executor. `dispose()` removes the listener with its
+other synchronous registrations; callers embedding the host must await
+`shutdown()` before closing their database. In-flight work can still read the
+initialized host while it drains; shutdown never starts a new runner, and the
+stopped host refuses subsequent startup.
+If initialization failed after creating resources, shutdown still stops the
+partially-started runner and removes the retained design executor. The original
+initialization caller owns its error; only cleanup failures reject shutdown.
+No signal handler, forced process exit, detached runner or timer unref workaround
+is added. Tests use the actual runner for idle and initialization-race shutdown,
+reject first initialization after the shutdown event, and clean a runner that
+started before initialization failed without a second failure or exit-code change.

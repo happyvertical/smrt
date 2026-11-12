@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { EventEmitter } from 'node:events';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -29,6 +30,7 @@ import {
 import { createAgentCliService } from '@happyvertical/smrt-inference/server';
 import {
   SmrtWorkerCollection,
+  TaskRunner,
   unregisterLiveWorker,
 } from '@happyvertical/smrt-jobs';
 import {
@@ -555,6 +557,101 @@ afterEach(async () => {
 });
 
 describe('local cookbook host composition (SQLite, fake model, no providers)', () => {
+  it('stops the real task runner on adapter-node shutdown and detaches its listener', async () => {
+    const stop = vi.spyOn(TaskRunner.prototype, 'stop');
+    const before = process.listenerCount('sveltekit:shutdown');
+    expect(before).toBeGreaterThan(0);
+    (process as EventEmitter).emit('sveltekit:shutdown', 'SIGTERM');
+    await host.shutdown();
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(stop.mock.contexts[0]).toBeInstanceOf(TaskRunner);
+    expect((stop.mock.contexts[0] as TaskRunner).isRunning()).toBe(false);
+    expect(process.listenerCount('sveltekit:shutdown')).toBe(before - 1);
+    await host.shutdown();
+    expect(stop).toHaveBeenCalledTimes(1);
+    await expect(host.init()).rejects.toThrow('shutting down');
+    host.dispose();
+    expect(process.listenerCount('sveltekit:shutdown')).toBe(before - 1);
+  });
+
+  it('drains a runner whose initialization overlaps adapter-node shutdown', async () => {
+    const runtime = host.runtime;
+    await host.shutdown();
+    host.dispose();
+    let reachedStart!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      reachedStart = resolve;
+    });
+    let releaseStart!: () => void;
+    const released = new Promise<void>((resolve) => {
+      releaseStart = resolve;
+    });
+    const realStart = TaskRunner.prototype.start;
+    const start = vi
+      .spyOn(TaskRunner.prototype, 'start')
+      .mockImplementationOnce(async function (this: TaskRunner) {
+        reachedStart();
+        await released;
+        return realStart.call(this);
+      });
+    const stop = vi.spyOn(TaskRunner.prototype, 'stop');
+    host = createCookbookHost({ runtime, app: { cookbook, catalog } });
+    const initializing = host.init();
+    let inFlightAccess: Promise<void> | undefined;
+    try {
+      await reached;
+      (process as EventEmitter).emit('sveltekit:shutdown', 'SIGTERM');
+      inFlightAccess = host.init();
+    } finally {
+      releaseStart();
+    }
+    await Promise.all([initializing, inFlightAccess]);
+    await host.shutdown();
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(stop.mock.contexts[0]).toBeInstanceOf(TaskRunner);
+    expect((stop.mock.contexts[0] as TaskRunner).isRunning()).toBe(false);
+    host.dispose();
+    expect(process.listenerCount('sveltekit:shutdown')).toBe(0);
+  });
+
+  it('does not initialize a new runner after adapter-node shutdown', async () => {
+    const runtime = host.runtime;
+    await host.shutdown();
+    host.dispose();
+    const start = vi.spyOn(TaskRunner.prototype, 'start');
+    host = createCookbookHost({ runtime, app: { cookbook, catalog } });
+    (process as EventEmitter).emit('sveltekit:shutdown', 'SIGTERM');
+    await expect(host.init()).rejects.toThrow('shutting down');
+    await host.shutdown();
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it('cleans a partially-started runner after failed initialization on adapter-node shutdown', async () => {
+    const runtime = host.runtime;
+    await host.shutdown();
+    host.dispose();
+    const realStart = TaskRunner.prototype.start;
+    vi.spyOn(TaskRunner.prototype, 'start').mockImplementationOnce(
+      async function (this: TaskRunner) {
+        await realStart.call(this);
+        throw new Error('Fixture initialization failed after runner start');
+      },
+    );
+    const stop = vi.spyOn(TaskRunner.prototype, 'stop');
+    host = createCookbookHost({ runtime, app: { cookbook, catalog } });
+    await expect(host.init()).rejects.toThrow(
+      'Fixture initialization failed after runner start',
+    );
+    const exitCode = process.exitCode;
+    (process as EventEmitter).emit('sveltekit:shutdown', 'SIGTERM');
+    await expect(host.shutdown()).resolves.toBeUndefined();
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(stop.mock.contexts[0]).toBeInstanceOf(TaskRunner);
+    expect((stop.mock.contexts[0] as TaskRunner).isRunning()).toBe(false);
+    expect(process.exitCode).toBe(exitCode);
+  });
+
   beforeEach(async () => {
     // These scenarios model the ordinary daily app; the separate onboarding
     // suite retains fresh progress. Seed only the fixture's owner progress.
