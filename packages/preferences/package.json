@@ -36,10 +36,10 @@
     "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",
-    "@happyvertical/sql": "catalog:"
+    "@happyvertical/sql": "catalog:",
+    "@happyvertical/smrt-inference": "workspace:*"
   },
   "devDependencies": {
-    "@happyvertical/smrt-inference": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@types/node": "24.13.6",
     "svelte": "^5.57.1",

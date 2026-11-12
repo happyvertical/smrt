@@ -100,7 +100,8 @@
     "@happyvertical/smrt-users": "workspace:*",
     "@sveltejs/kit": "^2.70.3",
     "svelte": "^5.57.1",
-    "@happyvertical/sql": ">=0.89.12"
+    "@happyvertical/sql": ">=0.89.12",
+    "@happyvertical/smrt-jobs": "workspace:*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.host.json && pnpm run typecheck && node --check index.js",
@@ -157,6 +158,7 @@
   },
   "dependencies": {
     "@happyvertical/smrt-app-cli": "workspace:*",
-    "@happyvertical/smrt-desktop": "workspace:*"
+    "@happyvertical/smrt-desktop": "workspace:*",
+    "ajv": "^8.20.0"
   }
 }
