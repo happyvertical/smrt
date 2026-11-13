@@ -5,10 +5,10 @@ description: "Provider-agnostic project management models (Issues, PRs, Reposito
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-12T20:45:28Z"
+  at: "2026-11-13T18:17:17Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:45cda087530f33b674181e8fb95d6811325859b6d11e54b12f1fa754ee774306"
+source_revision: "sha256:3fbccdfba8d53cc2f5ec2581d00cb575278cc3e5e8432f811ad433a528147f06"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/projects/package.json"
@@ -96,6 +96,8 @@ sources:
 - `ProjectIntegrationCollection` (collection `projectintegrations`, extends `SmrtCollection`)
 - `ProjectQuestion` (collection `projectquestions`, extends `SmrtPolymorphicAssociation`)
 - `ProjectQuestionCollection` (collection `projectquestions`, extends `SmrtCollection`)
+- `ProjectRepository` (collection `projectrepositories`, extends `SmrtObject`)
+- `ProjectRepositoryCollection` (collection `projectrepositories`, extends `SmrtJunction`)
 - `ProjectSpecification` (collection `projectspecifications`, extends `SmrtPolymorphicAssociation`)
 - `ProjectSpecificationCollection` (collection `projectspecifications`, extends `SmrtCollection`)
 - `PullRequest` (collection `issues`, extends `Issue`, STI table)
