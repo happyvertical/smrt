@@ -2377,14 +2377,6 @@ export class ManifestGenerator {
           ancestors: fieldLinks,
           own: Object.entries(obj.fields),
           representation: 'manifest',
-          // The one limit on an app's hardening (#4932).
-          onRequiredLoosened: (fieldName, requiredFor) => {
-            throw new ConfigurationError(
-              `${obj.className}.${fieldName} cannot be made optional. smrt needs it (${requiredFor}). ` +
-                'Keep it required, or leave the field out of the subclass.',
-              'CONFIG_REQUIRED_FIELD_LOOSENED',
-            );
-          },
         }),
       );
 

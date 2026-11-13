@@ -21,6 +21,7 @@ import type { SmrtObject } from './object.js';
 import { registerFromManifest } from './registry/class-registration.js';
 import {
   getOwnTableFieldsSync,
+  getResolvedFieldsSync,
   inheritsHierarchicalBase,
 } from './registry/inheritance-resolver.js';
 import { fieldsToColumns } from './registry/schema-builder.js';
@@ -30,6 +31,7 @@ import type {
   MethodDefinition,
   SmartObjectDefinition,
 } from './scanner/types.js';
+import { assertRequiredNotLoosened } from './schema/field-inheritance.js';
 import type { ColumnDefinition } from './schema/types.js';
 import { createQualifiedName } from './utils/qualified-names.js';
 import { toSnakeCase } from './utils.js';
@@ -176,7 +178,8 @@ export function runtimeModelEntry(
   // They are listed here, relaxed to optional, because this entry's own
   // column list is authoritative; a definition that restates one still
   // yields a single column (its own declaration wins below). An STI subclass
-  // shares its parent's table and needs none.
+  // shares its parent's table and needs none. A field smrt needs (one with
+  // `requiredFor`, #4923) keeps `required` and its reason: it is not relaxed.
   if (parent && ObjectRegistry.getSTIBase(def.extends!) === null) {
     const hierarchical = inheritsHierarchicalBase(parent);
     for (const [name, inherited] of getOwnTableFieldsSync(parent)) {
@@ -187,15 +190,24 @@ export function runtimeModelEntry(
         name === 'parentId' && hierarchical && inherited.related === parent.name
           ? def.name
           : inherited.related;
+      const requiredFor = inherited._meta?.requiredFor;
+      const keep =
+        inherited.required === true && typeof requiredFor === 'string';
       fields[name] = {
         type: inherited.type,
-        required: false,
+        required: keep,
+        ...(keep ? { _meta: { requiredFor } } : {}),
         ...(related ? { related } : {}),
       } as FieldDefinition;
     }
   }
+  // The parent's effective fields, for the one limit on loosening (#4932).
+  const parentFields = parent ? getResolvedFieldsSync(parent) : undefined;
   for (const [name, fd] of Object.entries(def.fields ?? {})) {
-    fields[name] = toFieldDefinition(fd);
+    const own = toFieldDefinition(fd);
+    const inherited = parentFields?.get(name);
+    if (inherited) assertRequiredNotLoosened(def.name, name, inherited, own);
+    fields[name] = own;
   }
   const methods: Record<string, MethodDefinition> = {};
   for (const [name, md] of Object.entries(def.methods ?? {})) {

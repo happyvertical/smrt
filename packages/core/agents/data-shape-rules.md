@@ -52,7 +52,7 @@ migrate will do before they deploy.
 |---|---|---|---|
 | 1 | `scripts/check-required-reasons.mjs` (in `pnpm lint` and CI): a required field a caller must supply states `requiredFor` or sits in `scripts/required-reasons-baseline.json`, which only shrinks | `registerMinimalRowTests()` from `@happyvertical/smrt-vitest/minimal-row`: one generated `minimal-row.generated.test.ts` per model package saves each model from its required fields alone. Known gaps sit in `packages/vitest/src/minimal-row-expected-failures.ts`, which only shrinks | None. A live database cannot show why a field is required |
 | 2 | `scripts/check-hand-written-ddl.mjs` (in `pnpm lint` and CI): hand-written `CREATE`, `ALTER` or `DROP TABLE` outside the migrator, the schema code and core's `system/` tables fails; existing ones sit in `scripts/hand-written-ddl-baseline.json`, which only shrinks | PostgreSQL: a `NOT NULL` added by hand to a column the code declares nullable is dropped by migrate (`issue-2369-postgres-column-drift.optional.test.ts`, #4897). SQLite and DuckDB: **not built yet** (#4937) | **Not built yet** (#4934): list the hand-made constraints the next migrate removes |
-| 3 | None. It is behaviour, not declaration. The one refusal is a build error (below) | `issue-4932-hardening-end-to-end.test.ts` (a stricter subclass refuses a save without the field; the own-table column is `NOT NULL`), `issue-4921-same-name-subclass.test.ts` (smrt's collections build the app's class), `issue-4932-required-loosening.test.ts` (the build refuses loosening a field smrt needs), `issue-4932-sti-hardening.test.ts` (shared-table rule as a PostgreSQL `CHECK`) | **Not built yet** (#4934): list rules declared in code that the database does not enforce, and why |
+| 3 | None. It is behaviour, not declaration. The one refusal is an error from the build, from run-time model definition, and from field resolution (below) | `issue-4932-hardening-end-to-end.test.ts` (a stricter subclass refuses a save without the field; the own-table column is `NOT NULL`), `issue-4921-same-name-subclass.test.ts` (smrt's collections build the app's class), `issue-4932-required-loosening.test.ts` (the build refuses loosening a field smrt needs), `issue-4932-runtime-required-loosening.test.ts` (run-time models and decorator subclasses refuse it too), `issue-4932-sti-hardening.test.ts` (shared-table rule as a PostgreSQL `CHECK`) | **Not built yet** (#4934): list rules declared in code that the database does not enforce, and why |
 | 4 | None | `change-kinds.test.ts`: one table, `SCHEMA_CHANGE_KINDS`, lists every kind of schema change as apply, report or stop; a kind with no entry fails. `packages-seen-orchestrate.test.ts` and `db-migrate-packages-seen.test.ts`: migrate with one package left out stops and changes nothing | **Not built yet** (#4934): show what the next migrate applies, and the packages the last migrate saw against those loaded now |
 | 5 | None | The same table: every stop says `loses-data` or `invents-data`, and its message names the table and column | **Not built yet** (#4934): show what the next migrate stops on, with row counts |
 | 6 | None | **Not built yet** (#4933): the release upgrade gate | **Not built yet** (#4934): warn when the database is older than the oldest supported release |
@@ -126,7 +126,12 @@ not loosen a field smrt needs for its own correctness**, which is a required
 field that states `requiredFor`. The build stops with
 `CONFIG_REQUIRED_FIELD_LOOSENED` and names the class and field. Keep the field
 required, or leave it out of the subclass. A field without a reason is the
-app's to loosen.
+app's to loosen. The refusal lives in the shared inheritance rule, so the
+other paths keep it: a run-time model that extends a registered class is
+refused when it is defined or registered, and a subclass registered by its
+decorator with no build is refused when the registry first resolves its
+fields (`getAllFields`), not at registration, because a parent may register
+after its child.
 
 Details of the merge rule: [schema-paths.md](schema-paths.md#field-inheritance-one-rule-one-module-4922-4940-4942).
 How collections pick the app's class: [object-runtime.md](object-runtime.md#same-named-subclass-replaces-its-parent-4921).

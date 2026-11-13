@@ -49,7 +49,8 @@ Answers to the open checks of #4869, each with a test in
    plural, or `tableName`) holding the base columns, the parent's fields
    (concrete ancestors' too, nearest declaration winning) and the subclass's
    own (#4922). `runtimeModelEntry` lists the inherited fields on the entry,
-   relaxed to optional; a definition that restates one still yields one
+   relaxed to optional, except a field smrt needs (it keeps `required` and its
+   `requiredFor`, #4932); a definition that restates one still yields one
    column, its own declaration winning. The parent's table and collection do
    not see the subclass's records. An empty subclass of such a parent is **not
    free**: it adds a table, which holds the inherited columns.
@@ -78,9 +79,10 @@ decorated class. What differs from a decorated class:
 - **A required field may be enforced only in code.** A new table gets `NOT NULL`
   for a required field. A column added to an existing table is always nullable.
   The save-time check still refuses a record without the value.
-- **No build refusal.** The one refusal of rule 3 (an app may not loosen a field
-  smrt needs) is a build error. A run-time definition does not go through the
-  build, and an inherited field in a run-time subclass's own table is listed as
-  optional (see the list above). Do not use a run-time definition to loosen a
-  field smrt requires for its own correctness.
-
+- **The one refusal still applies.** An app may not loosen a field smrt needs
+  (rule 3). `runtimeModelEntry` and `registerRuntimeModel` throw
+  `CONFIG_REQUIRED_FIELD_LOOSENED`, naming the class and field, when a
+  definition that extends a registered class restates a required field that
+  carries `requiredFor` (a required tenant field included) as optional. It is
+  the same decision the build uses (`schema/field-inheritance.ts`). Tightening,
+  or loosening a field with no reason, registers as before.
