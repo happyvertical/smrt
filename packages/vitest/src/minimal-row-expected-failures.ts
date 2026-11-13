@@ -92,27 +92,6 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       error: 'Plan version must be a positive integer',
     },
     {
-      model: '@happyvertical/smrt-video:VideoComposition',
-      field: 'title',
-      reason:
-        'Inherited Content.validateBeforeSave (content.ts:932) derives empty title from name. This is framework-maintained compatibility data, not caller-required video identity; changing the owning content package is outside this batch, so retain the populated-optional-field exception.',
-      error: 'optional field title read back populated',
-    },
-    {
-      model: '@happyvertical/smrt-video:VideoSequence',
-      field: 'title',
-      reason:
-        'Inherited Content.validateBeforeSave (content.ts:932) derives empty title from name. This is framework-maintained compatibility data, not caller-required video identity; changing the owning content package is outside this batch, so retain the populated-optional-field exception.',
-      error: 'optional field title read back populated',
-    },
-    {
-      model: '@happyvertical/smrt-video:VideoShot',
-      field: 'title',
-      reason:
-        'Inherited Content.validateBeforeSave (content.ts:932) derives empty title from name. This is framework-maintained compatibility data, not caller-required video identity; changing the owning content package is outside this batch, so retain the populated-optional-field exception.',
-      error: 'optional field title read back populated',
-    },
-    {
       model: '@happyvertical/smrt-approvals:ApprovalEvent',
       kind: 'service-only',
       field: '(service-only write)',
