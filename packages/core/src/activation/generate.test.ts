@@ -444,6 +444,10 @@ export class ${name} extends SmrtObject { constructor(options?: { metrics?: stri
     expect(readFileSync(files.path('.smrt/register.js'), 'utf8')).toContain(
       'export const activationLoaders',
     );
+    // The consumer's lazy register carries the build's stamp too (#4929).
+    expect(
+      readFileSync(files.path('.smrt/register.js'), 'utf8').split('\n')[0],
+    ).toBe("import './build-schema.js';");
     files.write('src/lib/server/smrt.ts', 'export const options = {};');
     await generateSvelteKitRoutes(files.root, manifest, {
       enabled: true,
@@ -465,6 +469,37 @@ export class ${name} extends SmrtObject { constructor(options?: { metrics?: stri
         readFileSync(files.path('.smrt/activation-manifest.json'), 'utf8'),
       ).models,
     ).toHaveProperty('@activation/unused:Unused');
+  });
+
+  it('lazy registrations import the build schema first and per-module declarations carry no stamp (#4929)', async () => {
+    const { files, manifest } = workspace();
+    const stamped = { ...manifest, schemaFingerprint: 'build-stamp' };
+    files.write('src/lib/server/smrt.ts', 'export const options = {};');
+    await generateSvelteKitRoutes(files.root, stamped, {
+      enabled: true,
+      lazyActivation: true,
+      routesDir: 'src/routes/api',
+      objectsDir: 'src/lib/objects',
+      changesRoute: { enabled: false },
+      eventsRoute: { enabled: false },
+      resourcesRoute: { enabled: false },
+    });
+    const source = readFileSync(
+      files.path('src/lib/server/smrt-register.ts'),
+      'utf8',
+    );
+    expect(source.split('\n')[0]).toBe(
+      "import '../../../.smrt/build-schema.js';",
+    );
+    const generated = generateActivationRegistration(stamped, {
+      projectRoot: files.root,
+      outputDir: files.path('src/lib/server'),
+      splitDeclarations: true,
+    });
+    expect(Object.keys(generated.files).length).toBeGreaterThan(0);
+    for (const content of Object.values(generated.files))
+      expect(content).not.toContain('build-stamp');
+    expect(generated.source).not.toContain('build-stamp');
   });
 
   it('defers route serializers and includes their static model dependencies in the graph', async () => {

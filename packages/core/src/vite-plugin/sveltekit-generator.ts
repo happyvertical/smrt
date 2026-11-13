@@ -204,6 +204,37 @@ interface GeneratedTypeReference {
  * @param qualifiedName - Class name that may be qualified (e.g., "@pkg:Class" or "Class")
  * @returns Simple class name (e.g., "Class")
  */
+/**
+ * The generated registration's first import: this app build's schema, written
+ * beside .smrt/manifest.json from the same merged manifest. Imported first so
+ * it is registered before any model module or query runs, and bundled with the
+ * app (#4929). Both the eager and the lazy-activation registration use it.
+ *
+ * The manifest writers publish the module before routes are generated. A
+ * direct generator call with no manifest written yet gets one from this
+ * manifest so the import resolves; the next manifest write replaces it.
+ */
+function buildSchemaImportFor(
+  projectRoot: string,
+  configDir: string,
+  manifest: SmartObjectManifest,
+): string {
+  const buildSchemaFile = join(projectRoot, '.smrt', BUILD_SCHEMA_MODULE);
+  const buildSchemaPath = relative(configDir, buildSchemaFile).replace(
+    /\\/g,
+    '/',
+  );
+  if (!existsSync(buildSchemaFile)) {
+    mkdirSync(join(projectRoot, '.smrt'), { recursive: true });
+    writeFileSync(
+      buildSchemaFile,
+      generateBuildSchemaModule(manifest),
+      'utf-8',
+    );
+  }
+  return `import '${buildSchemaPath.startsWith('.') ? buildSchemaPath : `./${buildSchemaPath}`}';`;
+}
+
 function extractSimpleClassName(qualifiedName: string): string {
   const colonIndex = qualifiedName.indexOf(':');
   if (colonIndex !== -1) {
@@ -1998,7 +2029,11 @@ async function generateRegistrationFile(
         path: join(smrtDir, 'activation-manifest.json'),
         content: JSON.stringify(generated.manifest, null, 2),
       },
-      { path: registrationFilePath, content: generated.source },
+      {
+        path: registrationFilePath,
+        // The build's stamp travels in the lazy registration too (#4929).
+        content: `${buildSchemaImportFor(projectRoot, configDir, manifest)}\n${generated.source}`,
+      },
     ]);
     return;
   }
@@ -2148,27 +2183,11 @@ async function generateRegistrationFile(
     .join('\n');
 
   const imports = [packageImports, localImports].filter(Boolean).join('\n');
-  // This app build's schema, written beside .smrt/manifest.json from the same
-  // merged manifest. Imported first so it is registered before any model
-  // module or query runs, and bundled with the app (#4929).
-  const buildSchemaPath = relative(
+  const buildSchemaImport = buildSchemaImportFor(
+    projectRoot,
     configDir,
-    join(projectRoot, '.smrt', BUILD_SCHEMA_MODULE),
-  ).replace(/\\/g, '/');
-  const buildSchemaImport = `import '${buildSchemaPath.startsWith('.') ? buildSchemaPath : `./${buildSchemaPath}`}';`;
-  // The manifest writers publish this module beside .smrt/manifest.json
-  // before routes are generated. A direct generator call with no manifest
-  // written yet gets one from this manifest so the import resolves; the next
-  // manifest write replaces it.
-  const buildSchemaFile = join(projectRoot, '.smrt', BUILD_SCHEMA_MODULE);
-  if (!existsSync(buildSchemaFile)) {
-    mkdirSync(join(projectRoot, '.smrt'), { recursive: true });
-    writeFileSync(
-      buildSchemaFile,
-      generateBuildSchemaModule(manifest),
-      'utf-8',
-    );
-  }
+    manifest,
+  );
   let consumerRegistrationImport = '';
   if (consumerRegistrationPaths.length > 0) {
     consumerRegistrationImport = [...new Set(consumerRegistrationPaths)]

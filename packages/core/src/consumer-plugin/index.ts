@@ -1940,7 +1940,11 @@ async function generateRegistrationFile(
         path: path.join(smrtDir, file),
         content,
       })),
-      { path: registerPath, content: generated.source },
+      {
+        path: registerPath,
+        // This app build's schema first, as in the eager register (#4929).
+        content: `import './${BUILD_SCHEMA_MODULE}';\n${generated.source}`,
+      },
       {
         path: path.join(smrtDir, 'activation-manifest.json'),
         content: JSON.stringify(generated.manifest, null, 2),
