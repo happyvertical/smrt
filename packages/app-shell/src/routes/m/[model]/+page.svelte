@@ -1,5 +1,7 @@
 <script lang="ts">
 import RecordList from '$lib/components/RecordList.svelte';
+import { fieldLabel } from '$lib/ui/fields';
+import { formulaWords } from '$lib/ui/formula';
 import { modelHref } from '$lib/ui/menu';
 import type { PageProps } from './$types';
 
@@ -22,6 +24,12 @@ const info = $derived(description?.models[data.model]);
         New {info.label.toLowerCase()}
       </a>
     </header>
+    <details class="smrt-app-shell__card"><summary>Fields</summary><dl>
+      {#each Object.entries(info.fields) as [name, field] (name)}
+        <dt>{fieldLabel(name, field)}{#if field.calculated}{' '}<small class="smrt-app-shell__muted">calculated</small>{/if}</dt>
+        <dd>{field.calculated ? formulaWords(field.calculated, info.fields) : field.type}</dd>
+      {/each}
+    </dl></details>
     <RecordList
       model={data.model}
       {description}

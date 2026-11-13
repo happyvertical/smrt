@@ -1,0 +1,256 @@
+{
+  "data": {
+    "format": 1,
+    "definition": {
+      "format": 1,
+      "name": "Reports QA",
+      "recipes": [],
+      "models": {
+        "Customer": {
+          "label": "Customers",
+          "titleField": "name",
+          "fields": {
+            "name": {
+              "type": "text",
+              "label": "Customer name"
+            }
+          }
+        },
+        "Order": {
+          "label": "Orders",
+          "fields": {
+            "title": {
+              "type": "text",
+              "label": "Order"
+            },
+            "quantity": {
+              "type": "integer",
+              "label": "Quantity"
+            },
+            "price": {
+              "type": "money",
+              "label": "Price"
+            },
+            "total": {
+              "type": "money",
+              "label": "Total",
+              "calculated": {
+                "op": "mul",
+                "left": {
+                  "col": "quantity"
+                },
+                "right": {
+                  "col": "price"
+                }
+              }
+            },
+            "customer": {
+              "type": "reference",
+              "ref": "Customer",
+              "label": "Customer"
+            },
+            "issuedAt": {
+              "type": "date",
+              "label": "Issue date"
+            },
+            "status": {
+              "type": "choice",
+              "label": "Status",
+              "choices": [
+                "paid",
+                "open",
+                "void"
+              ]
+            }
+          }
+        }
+      },
+      "reports": {
+        "salesByCustomer": {
+          "label": "Sales by customer",
+          "description": "Sales by customer for the example orders.",
+          "spec": {
+            "version": 1,
+            "title": "Sales by customer",
+            "source": "Order",
+            "dimensions": [
+              {
+                "field": "customer",
+                "as": "customer"
+              }
+            ],
+            "measures": [
+              {
+                "fn": "sum",
+                "field": "total",
+                "as": "total"
+              }
+            ],
+            "chart": {
+              "type": "bar"
+            }
+          }
+        },
+        "salesByMonth": {
+          "label": "Sales by month",
+          "description": "Sales by month for the example orders.",
+          "spec": {
+            "version": 1,
+            "title": "Sales by month",
+            "source": "Order",
+            "dimensions": [
+              {
+                "field": "issuedAt",
+                "as": "month",
+                "bucket": "month"
+              }
+            ],
+            "measures": [
+              {
+                "fn": "sum",
+                "field": "total",
+                "as": "total"
+              }
+            ],
+            "chart": {
+              "type": "line"
+            }
+          }
+        },
+        "orderSummary": {
+          "label": "Orders by customer and status",
+          "description": "Orders by customer and status for the example orders.",
+          "spec": {
+            "version": 1,
+            "title": "Orders by customer and status",
+            "source": "Order",
+            "dimensions": [
+              {
+                "field": "customer",
+                "as": "customer"
+              },
+              {
+                "field": "status",
+                "as": "status"
+              },
+              {
+                "field": "issuedAt",
+                "as": "date"
+              }
+            ],
+            "measures": [
+              {
+                "fn": "sum",
+                "field": "total",
+                "as": "total"
+              }
+            ],
+            "chart": {
+              "type": "table"
+            }
+          }
+        },
+        "emptyOrders": {
+          "label": "Void orders",
+          "description": "Void orders for the example orders.",
+          "spec": {
+            "version": 1,
+            "title": "Void orders",
+            "source": "Order",
+            "dimensions": [
+              {
+                "field": "status",
+                "as": "status"
+              }
+            ],
+            "measures": [
+              {
+                "fn": "sum",
+                "field": "total",
+                "as": "total"
+              }
+            ],
+            "chart": {
+              "type": "table"
+            },
+            "filters": [
+              {
+                "field": "status",
+                "op": "eq",
+                "value": "void"
+              }
+            ]
+          }
+        },
+        "limitedCustomers": {
+          "label": "First customer group",
+          "description": "First customer group for the example orders.",
+          "spec": {
+            "version": 1,
+            "title": "First customer group",
+            "source": "Order",
+            "dimensions": [
+              {
+                "field": "customer",
+                "as": "customer"
+              }
+            ],
+            "measures": [
+              {
+                "fn": "sum",
+                "field": "total",
+                "as": "total"
+              }
+            ],
+            "chart": {
+              "type": "table"
+            },
+            "limit": 1
+          }
+        }
+      }
+    },
+    "records": {
+      "Customer": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "name": "Acme, \"Ltd\""
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000002",
+          "name": "Birch Studio"
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000003",
+          "name": "=Formula-safe customer"
+        }
+      ],
+      "Order": [
+        {
+          "title": "Example 1",
+          "customer": "00000000-0000-4000-8000-000000000001",
+          "issuedAt": "2026-01-15T00:00:00.000Z",
+          "status": "paid",
+          "quantity": 1,
+          "price": 1250
+        },
+        {
+          "title": "Example 2",
+          "customer": "00000000-0000-4000-8000-000000000002",
+          "issuedAt": "2026-02-15T00:00:00.000Z",
+          "status": "open",
+          "quantity": 2,
+          "price": 2500
+        },
+        {
+          "title": "Example 3",
+          "customer": "00000000-0000-4000-8000-000000000003",
+          "issuedAt": "2026-03-15T00:00:00.000Z",
+          "status": "paid",
+          "quantity": 3,
+          "price": 3750
+        }
+      ]
+    }
+  }
+}

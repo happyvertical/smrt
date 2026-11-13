@@ -163,6 +163,7 @@ test('the Tricia manifest has registry ranges only and depends on the shell pack
   assert.equal(manifest.private, true);
   assert.equal(manifest.name, '@happyvertical/tricia-app');
   assert.equal(manifest.dependencies['@happyvertical/smrt-app-shell'], `^${shell.json.version}`);
+  assert.equal(manifest.dependencies['@happyvertical/smrt-app-engine'], `^${packages.get('@happyvertical/smrt-app-engine').json.version}`);
   for (const map of [manifest.dependencies, manifest.devDependencies]) {
     for (const [name, range] of Object.entries(map)) {
       assert.doesNotMatch(range, /^(?:workspace|catalog|link|file):/, `${name}: ${range}`);
@@ -176,6 +177,7 @@ test('the Tricia manifest has registry ranges only and depends on the shell pack
   const names = workspaceClosure(packages, manifest);
   for (const required of [
     '@happyvertical/smrt-app-shell',
+    '@happyvertical/smrt-app-engine',
     '@happyvertical/smrt-app-runtime',
     '@happyvertical/smrt-core',
   ]) {

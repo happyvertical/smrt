@@ -3,7 +3,11 @@ import {
   runAgentTurn as runInferenceAgentTurn,
 } from '@happyvertical/smrt-inference/server';
 import type { TurnEvent, TurnStop } from '../../assistant/events.ts';
-import { toolSummary } from '../../assistant/tool-summary.ts';
+import {
+  reportLink,
+  reportPresentation,
+  toolSummary,
+} from '../../assistant/tool-summary.ts';
 import type { AssistantThread } from '../../objects/AssistantThread.ts';
 import type { AgentTool } from '../agent-cli/tools.ts';
 import { getApprovalView } from '../approvals.ts';
@@ -64,12 +68,35 @@ export async function runAgentTurn(
         const copy = details?.copy;
         options.emit({
           ...rest,
+          ...(details?.report
+            ? {
+                report: details.report as NonNullable<
+                  Extract<TurnEvent, { type: 'tool_result' }>['report']
+                >,
+              }
+            : {}),
           ...(copy === 'live' || copy === 'draft' ? { copy } : {}),
         });
       } else options.emit(event);
     },
     host: {
-      appendMessage: (message) => appendMessage(options.thread, message),
+      appendMessage: (message) => {
+        if (
+          message.role === 'tool' &&
+          message.meta &&
+          'name' in message.meta &&
+          message.meta.name === 'app_runreport'
+        ) {
+          const { report: _report, ...meta } =
+            message.meta as typeof message.meta & { report?: unknown };
+          return appendMessage(options.thread, {
+            ...message,
+            content: meta.summary,
+            meta,
+          });
+        }
+        return appendMessage(options.thread, message);
+      },
       lastSession: () =>
         lastCliSession(options.thread.id as string, options.tool),
       async guidance() {
@@ -97,11 +124,25 @@ export async function runAgentTurn(
           ? undefined
           : structural
             ? mode.scope.structure
-            : /^(app|approval)_/.test(name)
+            : /^(app|approval)_/.test(name) && name !== 'app_runreport'
               ? undefined
               : mode.scope.records;
         if (mode?.draft && structural && ok) changedIn = mode;
-        return { summary, ...(copy ? { details: { copy } } : {}) };
+        const report = reportPresentation(name, text, ok);
+        return {
+          summary,
+          details: {
+            ...(copy ? { copy } : {}),
+            ...(report
+              ? {
+                  report,
+                  ...(reportLink(report.href)
+                    ? { reportHref: report.href }
+                    : {}),
+                }
+              : {}),
+          },
+        };
       },
       async completionNote() {
         return changedIn ? copyNote(changedIn) : null;

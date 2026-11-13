@@ -204,9 +204,9 @@ const SHELL_DROPPED_DEV = new Set(['@happyvertical/smrt-vitest', 'vitest']);
  * shell's: `workspace:*` and `catalog:` become the ranges `pnpm pack` would
  * publish (the local registry serves exactly the workspace versions), the test
  * tooling is dropped, and the shell package itself is added as a dependency.
- * The shell's build marks `@happyvertical/smrt-app-shell` external and
- * resolves its engine worker from that package at run time, so the bundle
- * must contain it as a registry package, exactly as any consumer app would.
+ * The shell externalizes its own package and the shared app engine. Its worker
+ * resolves from the engine package at runtime, so the registry closure must
+ * contain both packages, exactly as any consumer app would.
  */
 export function shellAppManifest(shell, packages, catalog, { packageName, packageManager }) {
   const resolveRange = (name, range) => {

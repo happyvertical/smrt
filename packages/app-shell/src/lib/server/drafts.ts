@@ -7,16 +7,20 @@
 // Approval pinned to the preview's digest; discarding is a direct owner action
 // from the UI and an Approval when a tool asks. All lifecycle changes run one
 // at a time (`exclusive`), so a start cannot race a publish or a discard.
+
 import { existsSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
   type AppHost,
   discardDraftDirectory,
   EngineError,
-  type PublishPreview,
+  type PublishPreview as EnginePublishPreview,
   type PublishResult,
 } from '@happyvertical/smrt-app-engine';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
+import type { ReportChange } from '../ui/reports.ts';
+import { reportChanges } from '../ui/reports.ts';
+import type { FieldDef } from '../ui/types.ts';
 import {
   type ApprovalAction,
   type PendingApproval,
@@ -61,6 +65,11 @@ export interface DraftInfo {
   /** What opening the draft's copy found: `rolled-back` = an interrupted publish was undone (publish again). */
   recovery: 'none' | 'rolled-forward' | 'rolled-back';
 }
+
+type PublishPreview = EnginePublishPreview & {
+  reportChanges?: ReportChange[];
+  fields?: Record<string, Record<string, FieldDef>>;
+};
 
 export type DraftPublishResult = Omit<PublishResult, 'snapshot'> & {
   draft: string;
@@ -220,7 +229,29 @@ export async function previewDraft(): Promise<{
   preview: PublishPreview;
 }> {
   const { host, live } = await usableSlot();
-  const preview = await live.previewPublish(host);
+  const preview: PublishPreview = await live.previewPublish(host);
+  const chain = await host.draftChain();
+  const records = new Map(
+    [chain.base, ...chain.versions].map((v) => [v.version, v]),
+  );
+  preview.fields = Object.fromEntries(
+    Object.entries(host.describe().models).map(([name, model]) => [
+      name,
+      model.fields,
+    ]),
+  );
+  preview.reportChanges = [];
+  for (const version of preview.versions) {
+    const record = records.get(version.draftVersion);
+    if (!record) continue;
+    const changes = reportChanges(
+      records.get(record.parent ?? -1)?.definition.reports ?? {},
+      record.definition.reports ?? {},
+      record.summary,
+    );
+    preview.reportChanges.push(...changes);
+    if (changes.length) version.summary = changes.map((c) => c.text).join(' ');
+  }
   return { draft: (await draftInfo()) as DraftInfo, preview };
 }
 
@@ -396,6 +427,21 @@ export async function describeCopy(target: Target) {
 export async function historyFor(target: Target) {
   const host = await hostFor(target);
   const versions = await host.versions();
+  const chain =
+    target === 'live'
+      ? await (await getLiveStore()).list()
+      : await host.draftChain().then((c) => [c.base, ...c.versions]);
+  const records = new Map(chain.map((v) => [v.version, v]));
+  for (const version of versions) {
+    const record = records.get(version.version);
+    if (!record) continue;
+    const changes = reportChanges(
+      records.get(record.parent ?? -1)?.definition.reports ?? {},
+      record.definition.reports ?? {},
+      record.summary,
+    );
+    if (changes.length) version.summary = changes.map((c) => c.text).join(' ');
+  }
   if (target === 'draft') {
     const base = host.draft?.baseVersion;
     return versions

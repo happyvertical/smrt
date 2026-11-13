@@ -16,7 +16,9 @@ import { App } from '../objects/App.ts';
 import { Approval } from '../objects/Approval.ts';
 import { collectIssuedApprovals, type PendingApproval } from './approvals.ts';
 import { runAppTool } from './builder.ts';
+import { ENGINE_TOOLS, isEngineTool, runEngineTool } from './engine-tools.ts';
 import { getShellDb, hostFor, shellDbSync } from './host.ts';
+import { HttpError } from './http.ts';
 import { runAs } from './owner.ts';
 import {
   type CallScope,
@@ -103,6 +105,10 @@ export const FIELD_DEF_SCHEMA = {
       minItems: 1,
       description: "The allowed values; only for type 'choice'",
     },
+    calculated: {
+      type: 'object',
+      description: 'Core generated expression (SQL SDK operand nodes)',
+    },
     ref: {
       type: 'string',
       description: "A model of the app; only for type 'reference'",
@@ -168,7 +174,7 @@ export async function listShellTools(
   principal: McpAppPrincipal,
 ): Promise<CatalogTool[]> {
   await getShellDb();
-  return (await shellMcpServer().listTools({ principal }))
+  const generated = (await shellMcpServer().listTools({ principal }))
     .filter((t) => !NON_TOOL_METHODS.has(t.name))
     .map(withBuilderSchema)
     .map((t) => ({
@@ -179,6 +185,21 @@ export async function listShellTools(
       side: 'shell' as const,
       risky: false,
     }));
+  return [
+    ...generated,
+    ...ENGINE_TOOLS.map((t) => ({
+      name: t.name,
+      description: t.description,
+      inputSchema: {
+        type: 'object',
+        properties: t.properties,
+        required: [...t.required],
+        additionalProperties: false,
+      },
+      side: 'shell' as const,
+      risky: false,
+    })),
+  ];
 }
 
 /** Tools of the user app on one copy, as that copy's running worker generates them. */
@@ -244,15 +265,34 @@ async function dispatchInner(
     // context; run them as the very principal that was authorized.
     // The builder methods read the copy from the scope entered here.
     return runAs({ id: principal.id, tenantId: principal.tenantId ?? '' }, () =>
-      withScope(
-        scope,
-        async () =>
-          (await shellMcpServer().callTool({
-            name: tool.name,
-            arguments: args,
-            principal,
-          })) as CatalogResponse,
-      ),
+      withScope(scope, async () => {
+        if (isEngineTool(tool.name)) {
+          try {
+            const value = await runEngineTool(tool.name, args, scope);
+            return { content: asText(value), structuredContent: value };
+          } catch (error) {
+            if (tool.name !== 'app_runreport' || !(error instanceof HttpError))
+              throw error;
+            // Only the report adapter's sanitized message crosses this boundary.
+            // Both assistant engines retain it as an error, not a report result.
+            const value = {
+              kind: 'report_failure',
+              summary: error.message,
+              error: error.message,
+            };
+            return {
+              isError: true,
+              content: asText(value),
+              structuredContent: value,
+            };
+          }
+        }
+        return (await shellMcpServer().callTool({
+          name: tool.name,
+          arguments: args,
+          principal,
+        })) as CatalogResponse;
+      }),
     );
   }
   const out = await runAppTool(tool.name, args, principal.id, scope.records);

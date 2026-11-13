@@ -127,3 +127,17 @@ The test script prepares the config for both the Node and DOM suites; it does
 not depend on a preceding uncached build.
 
 S1 shared Connect AI compatibility: the shell client/owner onboarding route forwards `cancel` to shared `chatgpt-cancel`. Unsupported auth SDK cancellation remains an error, not a fake successful sign-out. Existing owner/origin checks and shared readiness status are retained.
+
+## Definition report results (#4917)
+
+The reports package's `runtimeReportToolResultComponent` selects
+`reports.runtime.define` proposal cards only; it does not select the shell's
+`app_runreport` result. The shell's existing panel can host `ReportResult`
+directly, so it uses that shared component with the same formatting and link
+callbacks as the report page. No chat or inference changes are needed.
+The API engine passes a validated transient projection alongside its summary;
+the CLI engine uses the existing `describeResult.details` seam. The shell
+adapter removes row data before thread persistence; reopened threads keep a
+plain summary and a validated saved-report link. Ad-hoc runs have no saved link.
+Tool chips retain shared credential/SQL/path/id guards; engine catalog adapters
+supply labels for reports, calculations, loads, extraction and merges.

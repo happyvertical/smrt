@@ -162,4 +162,23 @@ describe('approval gate invariants', () => {
       else expect(t, f).not.toMatch(/'approval_decide'|decideApproval/);
     }
   });
+  it('new engine catalog adapters keep the owner, target and approval boundaries', () => {
+    const adapter =
+      files.find(([f]) => f === 'lib/server/engine-tools.ts')?.[1] ?? '';
+    expect(adapter).toMatch(/await assertOwner\(\)/);
+    expect(adapter).toMatch(/hostFor\(scope.records\)/);
+    expect(adapter).toMatch(/runCommand\(/);
+    expect(adapter).not.toMatch(/\.execute\(|approved\s*:/);
+    for (const name of [
+      'setcalculation',
+      'definereport',
+      'renamereport',
+      'removereport',
+      'loadrecords',
+      'extractmodel',
+      'mergerecords',
+      'runreport',
+    ])
+      expect(adapter).toContain(`app_${name}`);
+  });
 });
