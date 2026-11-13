@@ -67,6 +67,7 @@
       "@happyvertical/smrt-sites",
       "@happyvertical/smrt-subscriptions",
       "@happyvertical/smrt-support",
+      "@happyvertical/smrt-spreadsheets",
       "@happyvertical/smrt-tags",
       "@happyvertical/smrt-tenancy",
       "@happyvertical/smrt-timesheets",

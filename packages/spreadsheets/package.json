@@ -1,0 +1,64 @@
+{
+  "name": "@happyvertical/smrt-spreadsheets",
+  "version": "0.60.18",
+  "description": "Spreadsheet capabilities for smrt, starting with validated import plans, workbook checks and batch loading through a target adapter",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "CLAUDE.md",
+    "AGENTS.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./import": {
+      "types": "./dist/import/index.d.ts",
+      "import": "./dist/import/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js"
+    }
+  },
+  "scripts": {
+    "build": "vite build --mode library",
+    "build:watch": "vite build --mode library --watch",
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json"
+  },
+  "dependencies": {
+    "@happyvertical/spreadsheets": "catalog:",
+    "@happyvertical/sql": "catalog:"
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-vitest": "workspace:*",
+    "@types/node": "24.13.6",
+    "typescript": "6.0.3",
+    "vite": "8.1.6",
+    "vitest": "4.1.10"
+  },
+  "keywords": [
+    "smrt",
+    "spreadsheet",
+    "import",
+    "xlsx",
+    "csv"
+  ],
+  "author": "HappyVertical",
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/spreadsheets"
+  }
+}
