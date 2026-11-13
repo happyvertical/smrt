@@ -202,4 +202,69 @@ describe('migrateSmrtSchemas missing packages (#4928, SQLite)', () => {
       record: { packages: ['@app/a'] },
     });
   });
+
+  // Lazy activation and run-time model edits (#4954) migrate a table subset.
+  // Such a run is not a migrate of the build: it must not stop on a package it
+  // never loads, and must not write a record that vouches for the build.
+  it('a run limited to tables skips the package comparison and leaves the record as it was', async () => {
+    await seed();
+    const recordBefore = await readLastMigrateRecord(db);
+    const runsBefore = (await db.query('SELECT * FROM _smrt_migrate_runs')).rows
+      .length;
+    expect(
+      (await migrateSmrtSchemas({ db, packageName: '@app/a' })).refused,
+    ).toBe(true);
+    const result = await migrateSmrtSchemas({
+      db,
+      packageName: '@app/a',
+      tables: ['posts'],
+    });
+    expect(result).toMatchObject({
+      applied: true,
+      refused: false,
+      packageStops: [],
+    });
+    expect((await db.getTableSchema?.('posts'))?.columns).toHaveProperty(
+      'note',
+    );
+    expect(await readLastMigrateRecord(db)).toEqual(recordBefore);
+    expect(
+      (await db.query('SELECT * FROM _smrt_migrate_runs')).rows,
+    ).toHaveLength(runsBefore);
+  });
+
+  it('a run limited to tables writes no first record, so it cannot vouch for an unmigrated build', async () => {
+    const result = await migrateSmrtSchemas({
+      db,
+      packageName: '@app/a',
+      tables: ['posts'],
+    });
+    expect(result).toMatchObject({ applied: true, refused: false });
+    expect(result.notices).toEqual([]);
+    expect(await readLastMigrateRecord(db)).toEqual({ state: 'none' });
+  });
+
+  it('a run limited to tables is still all or nothing for its own changes', async () => {
+    await db.query(
+      'CREATE TABLE posts (id TEXT PRIMARY KEY NOT NULL, title BLOB, note TEXT)',
+    );
+    vi.mocked(ObjectRegistry.getAllSchemasAsDefinitions).mockReturnValue({
+      posts: {
+        ...structuredClone(definition),
+        columns: {
+          ...structuredClone(definition.columns),
+          title: { type: 'INTEGER' },
+        },
+      },
+      comments: { ...structuredClone(definition), tableName: 'comments' },
+    });
+    const before = await snapshot(db);
+    const result = await migrateSmrtSchemas({
+      db,
+      packageName: '@app/a',
+      tables: ['posts', 'comments'],
+    });
+    expect(result).toMatchObject({ applied: false, refused: true });
+    expect(await snapshot(db)).toBe(before);
+  });
 });

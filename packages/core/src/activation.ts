@@ -6,7 +6,10 @@ import {
   activationClosure,
 } from './activation/manifest.js';
 import { resolveMigrationEngine } from './migrations/differ.js';
-import { migrateSmrtSchemas } from './migrations/orchestrate.js';
+import {
+  assertMigrationAccepted,
+  migrateSmrtSchemas,
+} from './migrations/orchestrate.js';
 import { isFrameworkBaseClass } from './registry/framework-base-classes.js';
 import { ObjectRegistry } from './registry.js';
 import {
@@ -176,21 +179,24 @@ export function createActivationCoordinator(
           options.db,
           engine,
           async (db) =>
-            migrateSmrtSchemas({
-              db,
-              packageName: options.packageName,
-              engineHint: engine,
-              ...(engine === 'postgres'
-                ? {
-                    atomic: true,
-                    postgresSafe: false,
-                    useConcurrentIndexes: false,
-                  }
-                : {}),
-              name: `smrt_activation_${randomUUID()}`,
-              tables: closure.tables,
-              requireComplete: true,
-            }),
+            // A refused run applies nothing; never publish readiness on it.
+            assertMigrationAccepted(
+              await migrateSmrtSchemas({
+                db,
+                packageName: options.packageName,
+                engineHint: engine,
+                ...(engine === 'postgres'
+                  ? {
+                      atomic: true,
+                      postgresSafe: false,
+                      useConcurrentIndexes: false,
+                    }
+                  : {}),
+                name: `smrt_activation_${randomUUID()}`,
+                tables: closure.tables,
+                requireComplete: true,
+              }),
+            ),
         );
         // No await between successful migration and publication. A failed import,
         // diff or transaction never publishes readiness. Retry re-diffs committed DDL.

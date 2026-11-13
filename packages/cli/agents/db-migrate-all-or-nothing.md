@@ -98,6 +98,11 @@ never read `applied` as "nothing to do": call `assertMigrationAccepted(result)`
 first (it throws `MigrationRefusedError`), or print `describeMigrationRefusal()`.
 The CLI and the local runtime (`schema_migration_refused`) draw on the same stops; the local runtime words them for its two readers with `describeAppMigrationRefusal()` (no CLI instruction; the CLI output is `describeMigrationRefusal()`, unchanged). `migrateSmrtSchemas({ confirmRemovedPackages: [name], ... })`
 checks packages itself and returns the same package stops and notices.
+A run limited to `tables` (core's lazy activation and run-time model editor)
+is all or nothing for its own changes but is not a migrate of the build: it
+skips the package comparison and writes no last-migrate record, so it can
+never make an unmigrated build pass the startup check. Those callers call
+`assertMigrationAccepted` before they publish anything.
 
 ## `doctor --db`: next migrate
 
