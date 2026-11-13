@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-app-shell",
-  "version": "0.60.17",
+  "version": "0.60.18",
   "description": "A smrt app that builds and runs a person's own smrt app from definitions",
   "type": "module",
   "engines": {

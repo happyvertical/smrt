@@ -1,5 +1,23 @@
 # @happyvertical/smrt-core
 
+## 0.60.18
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - keep inherited fields in own-table subclass tables, with one inheritance rule (#4945) (core)
+  - Windows package-build env and jobs liveness-thread abort (#4947)
+  - use a same-named app subclass in smrt collections (#4939) (core)
+  - apply NOT NULL relaxation of manifest-nullable columns by default (#4902) (core)
+  
+  ### Other Changes
+  
+  - ci: run PR validation on pull_request, not pull_request_target (#4949)
+- @happyvertical/smrt-config@0.60.18
+  - @happyvertical/smrt-scanner@0.60.18
+  - @happyvertical/smrt-types@0.60.18
+
 ## 0.60.17
 
 ### Patch Changes
