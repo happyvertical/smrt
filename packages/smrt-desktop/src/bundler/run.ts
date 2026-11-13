@@ -904,6 +904,7 @@ export async function runBundle(
     // -- 6. prune_copy -----------------------------------------------------
     let removedFiles = 0;
     let removedBytes = 0;
+    const foreignNativeDirs = new Set<string>();
     await stage('prune_copy', async () => {
       // Which files do reached modules refer to? Follow the module graph over
       // the UNPRUNED install tree first, so the file rules below can never
@@ -941,6 +942,90 @@ export async function runBundle(
       const protectedPaths = relativeSet(beforePruning.protectedPaths);
       const protectedSubtrees = relativeSet(beforePruning.protectedSubtrees);
 
+      // Some native-only optional packages omit libc metadata (libsql), so
+      // pnpm installs both variants. Use actual headers, never package names
+      // or native exceptions. Direct roots, required/peer edges and ambiguous
+      // binaries stay in the tree and must pass the unchanged native gate.
+      const required = new Set(segmentation.graph.roots);
+      const optional = new Set<string>();
+      for (const pkg of segmentation.packages) {
+        if (!segmentation.result.keep.has(pkg.id)) continue;
+        for (const name of Object.keys(pkg.optionalDependencies)) {
+          const id = segmentation.graph.resolve(pkg.id, name);
+          if (id) optional.add(id);
+        }
+        for (const name of Object.keys(pkg.dependencies)) {
+          if (name in pkg.optionalDependencies) continue;
+          const id = segmentation.graph.resolve(pkg.id, name);
+          if (id) required.add(id);
+        }
+        for (const name of Object.keys(pkg.peerDependencies)) {
+          const id = segmentation.graph.resolve(pkg.id, name);
+          if (id) required.add(id);
+        }
+      }
+      for (const pkg of segmentation.packages) {
+        if (
+          !segmentation.result.keep.has(pkg.id) ||
+          required.has(pkg.id) ||
+          !optional.has(pkg.id)
+        )
+          continue;
+        if (
+          pkg.entryPaths.length !== 1 ||
+          !pkg.entryPaths[0]?.endsWith('.node')
+        )
+          continue;
+        const entryPath = `${pkg.dir}/${pkg.entryPaths[0]}`;
+        // A native entrypoint does not prove that a separately reached subpath
+        // or asset is disposable. Preserve those packages and let validation fail.
+        if (
+          [...protectedPaths].some(
+            (path) => path.startsWith(`${pkg.dir}/`) && path !== entryPath,
+          )
+        )
+          continue;
+        if (
+          [...protectedSubtrees].some(
+            (path) =>
+              path === pkg.dir ||
+              path.startsWith(`${pkg.dir}/`) ||
+              pkg.dir.startsWith(`${path}/`),
+          )
+        )
+          continue;
+        const walker = createWalker(
+          fs,
+          platform,
+          at(installModules, ...pkg.dir.split('/')),
+        );
+        for await (const entry of walker.entries()) {
+          if (entry.path !== pkg.entryPaths[0] || entry.type !== 'file')
+            continue;
+          const reader = await entry.open();
+          try {
+            const verdict = await verifyNativeFile(reader, spec, {
+              requireNative: true,
+              expectKind: 'library',
+            });
+            if (
+              !verdict.ok &&
+              verdict.info &&
+              verdict.info.libc !== 'unknown' &&
+              verdict.info.kind !== 'executable' &&
+              !verdict.info.machines.includes('other') &&
+              (verdict.reason === 'wrong_format' ||
+                verdict.reason === 'wrong_machine' ||
+                verdict.reason === 'wrong_libc')
+            ) {
+              foreignNativeDirs.add(pkg.dir);
+            }
+          } finally {
+            await reader.close();
+          }
+        }
+      }
+
       const prune = createNodeModulesFilter({
         keepSourceMaps: plan.keepSourceMaps,
         target: {
@@ -952,6 +1037,7 @@ export async function runBundle(
         removedDirs: segmentation.result.removedDirs,
         protectedPaths,
         protectedSubtrees,
+        foreignNativeDirs,
       });
       const copy = await copyTree({
         root: installModules,
@@ -990,6 +1076,7 @@ export async function runBundle(
       // nothing for the target, and `--ignore-scripts` never builds one.
       const facts: InstalledPackageFacts[] = [];
       for (const candidate of segmentation.buildCandidates) {
+        if (foreignNativeDirs.has(candidate.dir)) continue;
         facts.push({
           name: candidate.name,
           scripts: candidate.scripts,
@@ -1289,7 +1376,11 @@ export async function runBundle(
         }))
         .sort((a, b) => compare(a.path, b.path));
       const keptPackages = segmentation.packages
-        .filter((pkg) => segmentation.result.keep.has(pkg.id))
+        .filter(
+          (pkg) =>
+            segmentation.result.keep.has(pkg.id) &&
+            !foreignNativeDirs.has(pkg.dir),
+        )
         .map((pkg: InstalledPackage) => ({
           name: pkg.name,
           version: pkg.version,

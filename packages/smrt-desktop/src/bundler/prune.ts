@@ -529,6 +529,8 @@ export interface PruneOptions {
    * whose whole contents are kept, with the directories on the way. Same
    * limits as `protectedPaths`.
    */
+  /** Native-only optional package roots proven incompatible by their binary header. */
+  readonly foreignNativeDirs?: ReadonlySet<string>;
   readonly protectedSubtrees?: ReadonlySet<string>;
   readonly secrets?: SecretFilterOptions;
 }
@@ -601,7 +603,12 @@ export function classifyPrune(
     return 'removed-package';
   }
   const located = locatePackage(segments);
-  if (located === undefined || located.inner.length === 0) return undefined;
+  if (located === undefined) return undefined;
+  if (located.inner.length === 0) {
+    return entry.kind === 'dir' && options.foreignNativeDirs?.has(entry.rel)
+      ? 'foreign-native'
+      : undefined;
+  }
   const { inner, packageDir } = located;
   const name = entry.name;
   const lower = asciiLower(name);

@@ -137,3 +137,14 @@ and traced runtime assets retain their
 existing protection; a retained environment file still refuses the bundle.
 The pruning regression covers both folder spellings, referenced assets,
 entrypoints, nested runtime directories and retained-secret refusal.
+
+Native-only optional packages with a single `.node` entrypoint are checked by
+the existing bounded binary reader before pruning. A conclusive format,
+machine or libc mismatch can prune that optional package even if its publisher
+omits libc metadata (libsql publishes both Linux variants). Direct app roots,
+required dependencies, peer dependencies, mixed JavaScript entrypoints and
+separately reached subpaths/assets and unknown/malformed binary headers still
+face the unchanged native gate. This
+uses binary evidence, not package-name exemptions or native exceptions.
+The package inventory omits these pruned prebuilds, and pruning bytes/files
+remain accounted for; native exception records stay empty.

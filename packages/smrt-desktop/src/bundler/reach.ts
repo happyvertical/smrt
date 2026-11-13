@@ -101,7 +101,7 @@ export interface ReachReport extends ImportScanReport {
   readonly relativeMissing: readonly ImportFinding[];
   /**
    * Absolute, sorted paths of existing files and directories reached modules
-   * refer to by relative path; pruning must keep them.
+   * refer to by module import or relative asset path; pruning must keep them.
    */
   readonly protectedPaths: readonly string[];
   /**
@@ -612,6 +612,7 @@ export async function scanReachable(
     for (const asset of parsed.assets) protectedPaths.add(asset);
     for (const asset of parsed.assetSubtrees) protectedSubtrees.add(asset);
     for (const edge of parsed.edges) {
+      for (const target of edge.targets) protectedPaths.add(target);
       if (edge.present !== undefined) protectedPaths.add(edge.present);
       if (edge.missing === true) {
         const finding: ImportFinding = {
