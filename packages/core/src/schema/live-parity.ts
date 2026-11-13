@@ -1,3 +1,8 @@
+import {
+  type GeneratedExpression,
+  generatedExpressionsMatch,
+  readGeneratedColumns,
+} from '../generated-fields.js';
 /**
  * Live-schema parity check (#2368)
  *
@@ -61,6 +66,7 @@ export type LiveParityFindingKind =
   | 'extra_table'
   | 'missing_column'
   | 'extra_column'
+  | 'generated_expression_drift'
   | 'column_type_drift'
   | 'column_nullability_drift'
   | 'missing_index'
@@ -141,6 +147,8 @@ export interface LiveSchemaParityOptions {
 export type ExpectedTableOrigin = 'application' | 'system';
 
 interface ExpectedColumn {
+  generated?: GeneratedExpression;
+  generatedInputTypes?: ColumnDefinition['generatedInputTypes'];
   name: string;
   /** Engine-materialized type text. */
   type: string;
@@ -249,6 +257,49 @@ export async function checkLiveSchemaParity(
 
     tablesChecked++;
     const liveColumns = await readLiveColumns(db, table.name);
+    if (table.columns.some((column) => column.generated !== undefined)) {
+      const generated = await readGeneratedColumns(db, table.name, engine);
+      if (engine === 'sqlite') {
+        const { rows } = await db.query(
+          'SELECT * FROM pragma_table_xinfo($1)',
+          [table.name],
+        );
+        for (const row of rows)
+          if (generated.has(String(row.name)))
+            liveColumns.set(String(row.name), {
+              name: String(row.name),
+              type: String(row.type),
+              notNull: Boolean(row.notnull),
+              primaryKey: Boolean(row.pk),
+              hasDefault: false,
+            });
+      }
+      for (const column of table.columns) {
+        if (column.generated === undefined) continue;
+        const actual = generated.get(column.name);
+        if (
+          actual === undefined ||
+          !(await generatedExpressionsMatch(
+            db,
+            table.name,
+            actual,
+            column.generated,
+            engine,
+            column.generatedInputTypes,
+          ))
+        )
+          findings.push({
+            kind: 'generated_expression_drift',
+            severity: 'error',
+            table: table.name,
+            target: column.name,
+            origin: table.origin,
+            message: `Generated expression differs for ${table.name}.${column.name}`,
+            recommendation:
+              'Run smrt db:migrate to replace the derived column.',
+          });
+      }
+    }
     findings.push(...compareColumns(table, liveColumns, engine));
     findings.push(
       ...(await detectRenameDataPending(db, engine, table, liveColumns)),
@@ -362,6 +413,8 @@ function buildExpectedTables(input: {
 
     const columns: ExpectedColumn[] = Object.entries(schema.columns ?? {}).map(
       ([columnName, column]) => ({
+        generated: column.generated,
+        generatedInputTypes: column.generatedInputTypes,
         name: columnName,
         type: strategy.mapType(column.type),
         primaryKey: column.primaryKey === true,

@@ -1,3 +1,8 @@
+import {
+  generatedColumnClause,
+  generatedColumnExpression,
+  generatedExpression,
+} from '../generated-fields.js';
 /**
  * Schema building logic for the SMRT ObjectRegistry.
  *
@@ -130,6 +135,12 @@ function mergeRuntimeFieldColumns(
           : {}),
         ...(referenceKind ? { referenceKind } : {}),
         ...(backfill !== undefined ? { backfill } : {}),
+        ...(fieldColumns[columnName]?.generated
+          ? {
+              generated: fieldColumns[columnName].generated,
+              defaultValue: undefined,
+            }
+          : {}),
       };
     }
   }
@@ -1067,6 +1078,21 @@ export function generateDDLFromColumns(
       : columnDef.type;
     parts.push(`  ${quoteIdentifier(columnName)} ${columnType}`);
 
+    if (columnDef.generated !== undefined) {
+      parts.push(
+        generatedColumnClause(
+          columnDef.generated,
+          engine ?? 'sqlite',
+          columnDef.generatedInputTypes,
+        ),
+      );
+      if (columnDef.notNull) parts.push('NOT NULL');
+      if (columnDef.unique) parts.push('UNIQUE');
+      if (columnDef.check) parts.push(`CHECK (${columnDef.check})`);
+      columnLines.push(parts.join(' '));
+      continue;
+    }
+
     // Primary key
     if (columnDef.primaryKey) {
       parts.push('PRIMARY KEY');
@@ -1233,8 +1259,15 @@ export function fieldsToColumns(
       description: description as string | undefined,
     };
 
+    const generated = generatedExpression(fieldDef);
+    if (generated !== undefined) {
+      column.generated = generatedColumnExpression(generated);
+      column.generatedInputTypes = fieldDef._meta?.generatedInputTypes;
+    }
+
     // Handle default values
     if (
+      column.generated === undefined &&
       defaultValue !== undefined &&
       shouldEmitDefault(fieldDef, normalizedSqlType, defaultValue)
     ) {

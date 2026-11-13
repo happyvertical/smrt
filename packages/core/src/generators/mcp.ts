@@ -1,3 +1,4 @@
+import { generatedExpression } from '../generated-fields.js';
 /**
  * MCP (Model Context Protocol) server generator for smrt objects
  *
@@ -1161,10 +1162,12 @@ export class MCPGenerator {
     const schema = buildToolInputSchema(
       action,
       this.toToolFields(
-        new Map([
-          ...fields,
-          ...Object.entries(ObjectRegistry.getWriteThroughFields(objectName)),
-        ]),
+        new Map(
+          [
+            ...fields,
+            ...Object.entries(ObjectRegistry.getWriteThroughFields(objectName)),
+          ].filter(([, field]) => generatedExpression(field) === undefined),
+        ),
       ),
       customAction,
       ObjectRegistry.getConfig(objectName).idType,
@@ -1231,7 +1234,13 @@ export class MCPGenerator {
             },
             required: [
               '_meta_type',
-              ...this.toToolFields(variantFields)
+              ...this.toToolFields(
+                new Map(
+                  [...variantFields].filter(
+                    ([, field]) => generatedExpression(field) === undefined,
+                  ),
+                ),
+              )
                 .filter((field) => field.required)
                 .map((field) => field.name),
             ],
@@ -1248,7 +1257,13 @@ export class MCPGenerator {
               },
               required: [
                 'createType',
-                ...this.toToolFields(ObjectRegistry.getFields(name))
+                ...this.toToolFields(
+                  new Map(
+                    [...ObjectRegistry.getFields(name)].filter(
+                      ([, field]) => generatedExpression(field) === undefined,
+                    ),
+                  ),
+                )
                   .filter((field) => field.required)
                   .map((field) => field.name),
               ],
@@ -1391,6 +1406,7 @@ export class MCPGenerator {
   ): Record<string, ToolJsonSchema> {
     const properties: Record<string, ToolJsonSchema> = {};
     for (const [name, field] of fields) {
+      if (!publicOnly && generatedExpression(field) !== undefined) continue;
       if (
         publicOnly &&
         (field._meta?.sensitive === true || field._meta?.transient === true)
@@ -1744,6 +1760,14 @@ export class MCPGenerator {
       return {};
     }
 
+    if (objectName)
+      if (
+        [...ObjectRegistry.getFields(objectName).values()].some(
+          (field) =>
+            typeof (field.generated ?? field._meta?.generated) === 'object',
+        )
+      )
+        ObjectRegistry.assertWritableInput(objectName, data);
     const serverManaged = new Set([
       'id',
       'tenantId',
@@ -2975,6 +2999,7 @@ function applyWritablePolicy(objectName: string, data: any): Record<string, any>
       readonly.add(name);
     }
   }
+  if ([...ObjectRegistry.getFields(objectName).values()].some(field => typeof (field.generated ?? field._meta?.generated) === 'object')) ObjectRegistry.assertWritableInput(objectName, data);
   const result: Record<string, any> = {};
   for (const [key, value] of Object.entries(data as Record<string, any>)) {
     if (key.startsWith('_')) continue;

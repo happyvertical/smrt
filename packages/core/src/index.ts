@@ -1,3 +1,9 @@
+export {
+  type GeneratedExpression,
+  GeneratedFieldError,
+  rejectGeneratedInput,
+} from './generated-fields.js';
+
 /**
  * @smrt/core - Core AI agent framework with standardized collections and code generators
  *

@@ -1,3 +1,4 @@
+import { validateGeneratedFields } from '../generated-fields.js';
 /**
  * Class registration module for the SMRT ObjectRegistry.
  *
@@ -1565,6 +1566,8 @@ function registerUntracked(
         options.description = fieldDef.description;
       if (fieldDef.transient !== undefined)
         options.transient = fieldDef.transient;
+      if (fieldDef.generated !== undefined)
+        options.generated = fieldDef.generated;
 
       // Store field definition as plain object maintaining Field-like structure
       const field: RegisteredField = {
@@ -1755,6 +1758,11 @@ function registerUntracked(
       }
     }
   }
+
+  const generatedParent = findClass(buildInheritanceChain(ctor).at(-2) ?? '');
+  validateGeneratedFields(
+    new Map([...(generatedParent?.fields ?? []), ...fields]),
+  );
 
   // Handle tenantScoped configuration (Issue #688)
   // External manifests can carry tenantScoped only in decoratorConfig, so
@@ -2638,6 +2646,13 @@ function mergeManifestIntoExistingRegistration(
     }
   }
 
+  const generatedParentFields = findClass(
+    objectDef.extendsQualified ?? existing.extends ?? objectDef.extends ?? '',
+  )?.fields;
+  validateGeneratedFields(
+    new Map([...(generatedParentFields ?? []), ...existing.fields]),
+  );
+
   // An explicit core declaration remains authoritative. Otherwise a manifest
   // is authoritative even when it is silent: discard provisional decorator or
   // field-fallback tenancy so lazy manifest loading matches preloaded runtime.
@@ -2796,6 +2811,15 @@ export function registerFromManifest(
   manifestPackageName?: string,
   runtimeOptions?: RuntimeManifestRegistrationOptions,
 ): void {
+  const generatedParentEntry = findClass(
+    objectDef.extendsQualified ?? objectDef.extends ?? '',
+  );
+  validateGeneratedFields(
+    new Map([
+      ...(generatedParentEntry?.fields ?? []),
+      ...Object.entries(objectDef.fields ?? {}),
+    ]),
+  );
   // Same invalidation contract as register() (#3047).
   bumpRegistryGeneration();
   try {
@@ -3009,6 +3033,10 @@ function registerFromManifestUntracked(
       fields.set(fieldName, createFieldFromManifest(fd));
     }
   }
+
+  validateGeneratedFields(
+    new Map([...(runtimeParent ? runtimeParent.fields : []), ...fields]),
+  );
 
   // Load method definitions
   const methods = new Map<string, MethodDefinition>();

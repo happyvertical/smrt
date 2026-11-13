@@ -1,3 +1,7 @@
+import {
+  generatedExpression,
+  validateGeneratedFields,
+} from '../generated-fields.js';
 import { writeThroughFields } from '../write-through.js';
 /**
  * Manifest generator for creating service manifests from AST scan results
@@ -1397,12 +1401,17 @@ export class ManifestGenerator {
    */
   generateValidationRules(manifest: SmartObjectManifest): void {
     for (const [name, obj] of Object.entries(manifest.objects)) {
+      validateGeneratedFields(new Map(Object.entries(obj.fields)));
       const rules: ValidationRule[] = [];
       let skippedAutoPopulatedTenantRequiredRule = false;
 
       for (const [fieldName, field] of Object.entries(obj.fields)) {
         // Skip transient fields (they're not persisted, so no validation needed)
-        if (field.transient || field._meta?.transient) {
+        if (
+          field.transient ||
+          field._meta?.transient ||
+          generatedExpression(field) !== undefined
+        ) {
           continue;
         }
 
@@ -3965,14 +3974,23 @@ ${fields}
     }
 
     const schemaProperties = JSON.stringify(
-      this.generateSchemaProperties(obj.fields),
+      this.generateSchemaProperties(
+        Object.fromEntries(
+          Object.entries(obj.fields).filter(
+            ([, field]) => generatedExpression(field) === undefined,
+          ),
+        ),
+      ),
       null,
       6,
     );
 
     if (shouldInclude('create')) {
       const requiredFields = Object.entries(obj.fields)
-        .filter(([_, field]) => field.required)
+        .filter(
+          ([_, field]) =>
+            field.required && generatedExpression(field) === undefined,
+        )
         .map(([fieldName]) => fieldName);
 
       tools.push(`  {

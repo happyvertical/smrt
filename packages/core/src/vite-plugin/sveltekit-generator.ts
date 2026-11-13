@@ -415,7 +415,9 @@ function collectReadonlyFieldNames(objectDef: SmartObjectDefinition): string[] {
     const meta = (def as { _meta?: Record<string, unknown> })._meta;
     if (
       (def as { readonly?: boolean }).readonly === true ||
-      meta?.readonly === true
+      meta?.readonly === true ||
+      def.generated !== undefined ||
+      meta?.generated !== undefined
     ) {
       names.push(name);
     }
@@ -476,7 +478,8 @@ ${
   const writable = targetName ? (api && typeof api === 'object' && Array.isArray(api.writable) ? api.writable : null) : WRITABLE_ALLOWLIST;
 `
     : ''
-}  const result: Record<string, unknown> = {};
+}${dynamicTarget ? `  if (targetName && [...ObjectRegistry.getFields(targetName).values()].some(field => typeof (field.generated ?? field._meta?.generated) === 'object')) ObjectRegistry.assertWritableInput(targetName, data);\n` : Object.values(objectDef.fields).some((field) => typeof (field.generated ?? field._meta?.generated) === 'object') ? `  ObjectRegistry.assertWritableInput(${JSON.stringify(objectDef.qualifiedName ?? objectDef.className)}, data);\n` : ''}
+  const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
     if (key.startsWith('_')) continue;
     if (SERVER_MANAGED_FIELDS.includes(key)) continue;

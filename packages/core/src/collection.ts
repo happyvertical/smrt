@@ -33,6 +33,7 @@ import { EmbeddingProvider } from './embeddings/provider';
 import { EmbeddingStorage } from './embeddings/storage';
 import type { ClassEmbeddingConfig } from './embeddings/types';
 import { DatabaseError } from './errors';
+import { rejectGeneratedInput } from './generated-fields.js';
 import { buildWhere } from './host.js';
 import {
   createInterceptorContext,
@@ -4050,6 +4051,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       registered?.name ||
       instance.constructor.name;
     const fields = await ObjectRegistry.getAllFields(name);
+    rejectGeneratedInput(fields, values);
     for (const key of Object.keys(values)) {
       const definition =
         fields.get(key) ?? ObjectRegistry.getWriteThroughFields(name)[key];
@@ -4297,6 +4299,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     data: Record<string, unknown>,
     defaults: Record<string, unknown> = {},
   ): Promise<ModelType> {
+    rejectGeneratedInput(
+      ObjectRegistry.getFields(this.getResolvedItemQualifiedName()),
+      data,
+    );
+    rejectGeneratedInput(
+      ObjectRegistry.getFields(this.getResolvedItemQualifiedName()),
+      defaults,
+    );
     const logicalData = this.normalizeLogicalData(data);
     const logicalDefaults = this.normalizeLogicalData(defaults);
     let where: Record<string, unknown> = {};

@@ -1,3 +1,8 @@
+import {
+  generatedColumnClause,
+  generatedColumnExpression,
+  generatedExpression,
+} from '../generated-fields.js';
 /**
  * Schema generator for SMRT objects
  * Converts AST field definitions to database schema definitions
@@ -67,6 +72,7 @@ const syncColumns = {
  */
 interface RegistryField {
   type?: FieldDefinition['type'];
+  generated?: FieldDefinition['generated'];
   related?: string;
   required?: boolean;
   default?: unknown;
@@ -1341,8 +1347,15 @@ export class SchemaGenerator {
         description: field._meta?.description,
       };
 
+      const generated = generatedExpression(field);
+      if (generated !== undefined) {
+        columnDef.generated = generatedColumnExpression(generated);
+        columnDef.generatedInputTypes = field._meta?.generatedInputTypes;
+      }
+
       // Get default value
       if (
+        columnDef.generated === undefined &&
         field._meta?.default !== undefined &&
         this.shouldEmitDefault(columnDef.type, field._meta.default)
       ) {
@@ -1698,8 +1711,15 @@ export class SchemaGenerator {
           description: field._meta?.description,
         };
 
+        const generated = generatedExpression(field);
+        if (generated !== undefined) {
+          columnDef.generated = generatedColumnExpression(generated);
+          columnDef.generatedInputTypes = field._meta?.generatedInputTypes;
+        }
+
         // Get default value (but not applied in STI - defaults handled by application)
         if (
+          columnDef.generated === undefined &&
           field._meta?.default !== undefined &&
           this.shouldEmitDefault(columnDef.type, field._meta.default)
         ) {
@@ -2043,8 +2063,15 @@ export class SchemaGenerator {
           notNull: false,
         };
 
+        const generated = generatedExpression(field);
+        if (generated !== undefined) {
+          columnDef.generated = generatedColumnExpression(generated);
+          columnDef.generatedInputTypes = field._meta?.generatedInputTypes;
+        }
+
         // Get default value
         if (
+          columnDef.generated === undefined &&
           field.default !== undefined &&
           this.shouldEmitDefault(columnDef.type, field.default)
         ) {
@@ -2285,7 +2312,13 @@ export class SchemaGenerator {
         unique: field._meta?.unique || false,
       };
 
+      const generated = generatedExpression(field);
+      if (generated !== undefined) {
+        columnDef.generated = generatedColumnExpression(generated);
+        columnDef.generatedInputTypes = field._meta?.generatedInputTypes;
+      }
       if (
+        columnDef.generated === undefined &&
         field.default !== undefined &&
         this.shouldEmitDefault(columnDef.type, field.default)
       ) {
@@ -2495,6 +2528,12 @@ export class SchemaGenerator {
     for (const [name, col] of Object.entries(manifestColumns)) {
       columns[name] = {
         type: col.type as SQLDataType,
+        ...(col.generated !== undefined
+          ? {
+              generated: col.generated,
+              generatedInputTypes: col.generatedInputTypes,
+            }
+          : {}),
         primaryKey: col.primaryKey,
         referenceKind: col.referenceKind,
         notNull: col.notNull,
@@ -2542,6 +2581,20 @@ export class SchemaGenerator {
 
     for (const [columnName, columnDef] of Object.entries(columns)) {
       const parts = [`  ${quoteIdentifier(columnName)} ${columnDef.type}`];
+      if (columnDef.generated !== undefined) {
+        parts.push(
+          generatedColumnClause(
+            columnDef.generated,
+            'sqlite',
+            columnDef.generatedInputTypes,
+          ),
+        );
+        if (columnDef.notNull) parts.push('NOT NULL');
+        if (columnDef.unique) parts.push('UNIQUE');
+        if (columnDef.check) parts.push(`CHECK (${columnDef.check})`);
+        sql += `${parts.join(' ')},\n`;
+        continue;
+      }
 
       if (columnDef.primaryKey) {
         parts.push('PRIMARY KEY');
