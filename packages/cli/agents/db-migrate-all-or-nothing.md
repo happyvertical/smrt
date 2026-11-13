@@ -90,3 +90,42 @@ changes. It keeps `unactionableChanges` and `hasManualDrift` for existing caller
 Proceeding and in-sync results have `refused:false`. Wrappers need no separate
 partial-apply policy. `migrateSmrtSchemas({ confirmRemovedPackages: [name], ... })`
 checks packages itself and returns the same package stops and notices.
+
+## `doctor --db`: next migrate
+
+After live-schema parity, doctor prints a read-only preview of the next ordinary
+`smrt db:migrate`. It reads the loaded registry, live schema and row counts, and
+the last `_smrt_migrate_runs` record. It creates no tables and writes no records.
+An unreachable database or failed inspection is an issue, never a pass.
+
+- **Constraints made by hand that the next migrate removes** names NOT NULL,
+  default, foreign-key, index and stale `smrt_ck_` removals from the differ's
+  change kinds. Declare a constraint in code to keep it. Relaxations requiring
+  opt-in are listed separately as **kept until you opt in**.
+- **Rules in code the database is not enforcing** names required columns and
+  missing shared-table subclass checks. It explains whether migrate can add
+  the rule, existing rows break it, or the engine leaves it to save-time
+  validation. PostgreSQL reads CHECK names from `pg_constraint`.
+- **What the next migrate applies** groups apply changes by kind with counts
+  and up to ten names, then lists new tables. **Packages** compares the last
+  migrate's packages with loaded packages. Missing packages stop migrate and
+  name `--confirm-removed-package`; new packages are informational. No earlier
+  record means the first successful migrate will write one.
+- **What the next migrate stops on** uses the shared migration decision. It
+  shows kind, reason, table/column and row count. Required NULLs count NULL
+  rows; a missing required column counts table rows; foreign-key orphans use
+  the differ's detector; data-loss stops count table rows. An unreadable count
+  stays visible beside the stop. **Held back** lists changes refused with it.
+- **Database release** compares the last recorded release with
+  `OLDEST_SUPPORTED_RELEASE`, including the first upgrade to run when older.
+  Without a record its age is unknown.
+- **Schema fingerprint** shows build and database hashes side by side, twelve
+  characters normally and full values with `--verbose`. A mismatch or absent
+  record explains the production startup refusal and asks for `smrt db:migrate`.
+
+Every group prints `none` when empty. Stops and missing packages are issues;
+unenforced rules, planned constraint removals, release age and fingerprint
+mismatch are warnings. One stop holds every apply change, including unrelated
+tables. STI CHECK additions and removals are ordinary apply changes
+(`check.add`, `check.drop`); rows that already break a rule stop the run
+(`check.violated`).

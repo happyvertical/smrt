@@ -438,7 +438,12 @@ export class SmrtReportRefreshTask extends SmrtObject {
   @field({ type: 'text' })
   reportClass: string = '';
 
-  @field({ type: 'text', required: true })
+  // `backfill` on `mode` and `trigger` is the data step for databases made by
+  // 0.60.17 or earlier, where `_smrt_principal_report_refresh_tasks` lacked the
+  // inherited columns. Rows saved then were never runnable; the values only let
+  // the columns be added.
+
+  @field({ type: 'text', required: true, backfill: "'incremental'" })
   mode: ReportRefreshMode = 'incremental';
 
   @field({ type: 'text', required: true })
@@ -559,6 +564,10 @@ export class SmrtReportRefreshTask extends SmrtObject {
   ...INTERNAL_SURFACE,
 })
 export class SmrtPrincipalReportRefreshTask extends SmrtReportRefreshTask {
+  // A principal task always runs as a manual refresh (see `run` below).
+  @field({ type: 'text', required: true, backfill: "'manual'" })
+  override trigger: ReportRefreshTrigger = 'manual';
+
   override async run(
     args: ReportRefreshJobArgs = {},
     context?: JobExecutionContext,

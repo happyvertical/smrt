@@ -2272,6 +2272,10 @@ export default testManifest;
           addedTables: diff.added_tables,
           engine,
           resolvedStops,
+          recordedRelease:
+            lastMigrate.state === 'recorded'
+              ? lastMigrate.record.release
+              : null,
           packagesSeen: {
             recorded:
               lastMigrate.state === 'recorded'
@@ -2284,10 +2288,14 @@ export default testManifest;
         for (const notice of runDecision.notices) console.log(notice);
         if (!runDecision.proceed) {
           console.log(
-            runDecision.packageStops.length
-              ? `Migrate stopped: ${runDecision.packageStops.length} missing package(s), ${runDecision.stops.length} schema stop(s)`
-              : `Migrate stopped: ${runDecision.stops.length} change(s) would lose or invent data`,
+            runDecision.releaseStop
+              ? 'Migrate stopped: database release is not supported by this build'
+              : runDecision.packageStops.length
+                ? `Migrate stopped: ${runDecision.packageStops.length} missing package(s), ${runDecision.stops.length} schema stop(s)`
+                : `Migrate stopped: ${runDecision.stops.length} change(s) would lose or invent data`,
           );
+          if (runDecision.releaseStop)
+            console.log(`   ${runDecision.releaseStop.message}`);
           for (const stop of runDecision.packageStops)
             console.log(`   ${stop.message}`);
           for (const stop of runDecision.stops) {
@@ -3854,6 +3862,15 @@ export default testManifest;
             passed.push('Live schema parity');
           }
         }
+
+        const { runDoctorMigratePreviewSection } = await import(
+          './doctor-migrate-preview.js'
+        );
+        await runDoctorMigratePreviewSection(
+          { issues, warnings, passed },
+          check,
+          { verbose: options.verbose },
+        );
 
         const permissions = await runPostgresPermissions({}, true);
         for (const line of formatPermissionsOutcome(permissions))

@@ -54,6 +54,8 @@
     "check:hand-written-ddl": "node scripts/check-hand-written-ddl.mjs",
     "check:required-reasons": "node scripts/check-required-reasons.mjs",
     "check:manifest-paths": "node scripts/check-manifest-paths.mjs",
+    "check:release-upgrade": "node scripts/release-upgrade-gate.mjs check",
+    "release:snapshot": "node scripts/release-upgrade-gate.mjs save",
     "check:node-roots": "node scripts/survey-node-root-load.mjs --strict --allow=@happyvertical/smrt-products",
     "knowledge:check": "tsx scripts/check-knowledge.ts",
     "knowledge:graph": "tsx scripts/generate-knowledge-graph.ts",

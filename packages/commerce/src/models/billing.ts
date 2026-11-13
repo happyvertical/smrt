@@ -79,7 +79,7 @@ export class BillingAccount extends SmrtObject {
   @crossPackageRef('@happyvertical/smrt-users:Tenant')
   @field({ required: true, requiredFor: 'identity' })
   payerTenantId: string = '';
-  @foreignKey('Customer', { required: true, requiredFor: 'identity' })
+  @foreignKey('Customer')
   customerId: string = '';
   /** Display name sent to the provider customer. */
   name: string = '';

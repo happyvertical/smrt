@@ -60,11 +60,7 @@ async function saveWithPunchLock<T extends SmrtObject>(
 })
 export class AttendancePunch extends SmrtObject {
   @tenantId() tenantId = '';
-  @crossPackageRef('@happyvertical/smrt-profiles:Profile', {
-    required: true,
-    requiredFor: 'identity',
-  })
-  profileId = '';
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile') profileId = '';
   startedAt: Date = new Date();
   endedAt: Date | null = null;
   durationSeconds = 0;
@@ -219,11 +215,7 @@ export class AttendancePunch extends SmrtObject {
 })
 export class AttendanceBreak extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey(AttendancePunch, {
-    required: true,
-    requiredFor: 'identity',
-  })
-  punchId = '';
+  @foreignKey(AttendancePunch) punchId = '';
   startedAt: Date = new Date();
   endedAt: Date | null = null;
   paid = false;

@@ -142,6 +142,11 @@ export {
   nullEqualIndexStatements,
   preflightNullEqualIndexes,
 } from './null-equal-indexes.js';
+export {
+  checkOldestSupportedRelease,
+  compareReleases,
+  OLDEST_SUPPORTED_RELEASE,
+} from './oldest-supported.js';
 // High-level schema orchestration over ObjectRegistry
 export {
   getPendingSchemaStatements,

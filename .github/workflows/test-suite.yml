@@ -704,6 +704,9 @@ jobs:
       - name: Check Node-loadable model package roots
         run: pnpm check:node-roots
 
+      - name: Check release upgrade gate
+        run: pnpm check:release-upgrade
+
   coverage-gate:
     name: Coverage Gate
     needs: build
