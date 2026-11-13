@@ -52,7 +52,9 @@ export interface Props {
   search: (query: string) => Promise<RelationOption[]>;
   /** Optional next page for the current query; appended without losing focus or selection. */
   loadMore?: () => Promise<RelationOption[]>;
+  /** Whether another page of matches exists for the current query. */
   hasMore?: boolean;
+  /** Text on the button that loads the next page of matches. */
   moreLabel?: string;
   /** Look up the current value's label when it has not been searched yet. */
   resolve?: (id: string) => Promise<{ id: string; label: string } | null>;

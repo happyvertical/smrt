@@ -11,9 +11,13 @@ import { M } from '../../i18n.js';
 import type { AssistantTransport } from './assistant-transport.js';
 
 export interface Props {
+  /** The pending request this card asks the owner to approve or deny. */
   approval?: AssistantApprovalRequest;
+  /** Conversation the request belongs to, sent with the decision. */
   threadId?: string;
+  /** Show a plain summary in place of the tool's own name and arguments. */
   toolPresentation?: 'generic';
+  /** Connection used to send the owner's decision to the assistant. */
   transport?: AssistantTransport;
   /** Host-authorized presentation for an existing decision endpoint and persisted view. */
   presentation?: {
@@ -28,7 +32,9 @@ export interface Props {
     message?: string;
     ondecide?: (approve: boolean) => void;
   };
+  /** Extra content shown under the summary, such as what will change. */
   detail?: Snippet;
+  /** Called after the decision has been accepted, to refresh the surrounding view. */
   ondecided?: () => void | Promise<void>;
 }
 const {
