@@ -135,7 +135,11 @@ document.body.textContent = 'browser entry evaluated: PGlite SET NULL cascade (m
       minify: false,
       rollupOptions: {
         input: entry,
-        ...(cascadeProbe ? { external: ['@electric-sql/pglite'] } : {}),
+        // PGlite is the app's optional peer of @happyvertical/sql/pglite, not
+        // core's code. Its Emscripten loader imports Node built-ins behind
+        // runtime ENVIRONMENT_IS_NODE checks, so it is never bundled here;
+        // the cascade run serves the real package through an import map.
+        external: ['@electric-sql/pglite'],
         output: { entryFileNames: 'entry.js' },
       },
       target: 'es2022',
