@@ -2,8 +2,8 @@
 
 import type { Cookbook } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { createMigrationDefinition } from '../migrations/generator.js';
 import { MigrationTracker } from '../migrations/tracker.js';
+import { appModelChangesMigrations } from '../system/app-model-changes.js';
 import { runSerializedAgainstSystemTableBootstrap } from '../system/bootstrap.js';
 import { getDatabaseEngine } from '../system/compatibility.js';
 import { toSafeInteger } from '../utils/safe-integer.js';
@@ -62,34 +62,7 @@ export async function createAppModelHistory(options: {
   await runSerializedAgainstSystemTableBootstrap(db, engine, async (db) => {
     const tracker = new MigrationTracker({ db, engineHint: engine });
     const results = await tracker.applyAll(
-      [
-        createMigrationDefinition(
-          'smrt_app_model_changes_v1',
-          [
-            `CREATE TABLE IF NOT EXISTS _smrt_app_model_changes (
-      application TEXT NOT NULL, tenant_id ${engine === 'postgres' ? 'UUID' : 'TEXT'} NOT NULL, revision ${engine === 'postgres' ? 'BIGINT' : 'INTEGER'} NOT NULL,
-      request_id TEXT NOT NULL, actor TEXT NOT NULL, command TEXT NOT NULL,
-      before_doc TEXT NOT NULL, after_doc TEXT NOT NULL,
-      status TEXT NOT NULL CHECK (status IN ('pending', 'applied')),
-      undoes ${engine === 'postgres' ? 'BIGINT' : 'INTEGER'}, elapsed_ms ${engine === 'postgres' ? 'BIGINT' : 'INTEGER'},
-      PRIMARY KEY (application, tenant_id, revision),
-      UNIQUE (application, tenant_id, request_id)
-    )`,
-          ],
-          [],
-          { packageName: '@happyvertical/smrt-core', version: '1' },
-        ),
-        createMigrationDefinition(
-          'smrt_app_model_changes_v2',
-          [
-            'ALTER TABLE _smrt_app_model_changes ADD COLUMN operation_json TEXT',
-            'ALTER TABLE _smrt_app_model_changes ADD COLUMN receipt_json TEXT',
-            'ALTER TABLE _smrt_app_model_changes ADD COLUMN result_json TEXT',
-          ],
-          [],
-          { packageName: '@happyvertical/smrt-core', version: '2' },
-        ),
-      ],
+      appModelChangesMigrations(engine as 'sqlite' | 'postgres'),
       { postgresSafe: false, reconcile: false },
     );
     if (results.some((r) => !r.success))
