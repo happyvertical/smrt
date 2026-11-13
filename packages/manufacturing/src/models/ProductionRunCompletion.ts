@@ -47,7 +47,11 @@ export class ProductionRunCompletion extends SmrtObject {
 
   /** The run the units were built on. Cascade: completions belong to their run. */
   @field({ description: 'The production run this batch belongs to.' })
-  @foreignKey(ProductionRun, { required: true, onDelete: 'CASCADE' })
+  @foreignKey(ProductionRun, {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'CASCADE',
+  })
   runId: string = '';
 
   /** Units finished in this report. Decimal; greater than zero. */

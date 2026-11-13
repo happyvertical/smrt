@@ -84,7 +84,11 @@ export class ProductionRun extends SmrtObject {
    * Restrict: a bill with runs is history and is not deleted.
    */
   @field({ description: 'The list of parts this run makes from.' })
-  @foreignKey(BillOfMaterials, { required: true, onDelete: 'RESTRICT' })
+  @foreignKey(BillOfMaterials, {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'RESTRICT',
+  })
   bomId: string = '';
 
   /** Units of the bill's product to build. Decimal; greater than zero. */
