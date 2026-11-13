@@ -104,7 +104,9 @@ restrictions still cap generated routes. Apply installs and builds this host;
 Recipe validation/resolution now follows manifests' `smrtDependencies`. These
 model providers become direct app dependencies so the complete lazy reference
 graph can resolve cross-package models. The bundled host's own provider closure
-is included in its generated package.json too. Registry resolution remains the
+is included in its generated package.json too, derived from authored runtime
+package dependencies so cold parallel builds cannot omit providers whose
+manifests have not been generated yet. Registry resolution remains the
 existing authenticated, integrity-checked implementation.
 
 Reapply preserves `models` in its entirety. Existing policies win by
@@ -126,7 +128,7 @@ closure to Turbo using the existing active-Node package-manager runner. It is a
 no-op without a checkout. No machine path belongs in a committed lockfile.
 
 `template-sveltekit/__tests__/cookbookApply.test.ts` creates a second host for each
-bundled fixture with the real offline installer and apply-owned build, then
+bundled fixture with the real installer and apply-owned build, then
 boots adapter-node's SvelteKit Server in process. It checks health, anonymous
 denial, launch-secret rejection, owner sign-in, Customer REST/model page,
 settings and rendered cookbook sections. It opens no port. The existing apply

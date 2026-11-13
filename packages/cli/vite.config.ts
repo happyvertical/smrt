@@ -5,10 +5,9 @@
 // library-mode lib bundle. createPackageConfig is library-mode only.
 
 import { defineConfig } from 'vite';
-import { cpSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, readdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { declarations } from '../../scripts/declarations.js';
-import { resolveRecipeIndex } from './src/commands/cookbook/recipe-index.js';
 
 export default defineConfig({
   build: {
@@ -125,10 +124,22 @@ export default defineConfig({
         pkg.smrt = { ...pkg.smrt, cookbookHost: true };
         for (const name of ['agents', 'app-mcp', 'chat', 'types'])
           pkg.dependencies[`@happyvertical/smrt-${name}`] = pkg.dependencies['@happyvertical/smrt-core'];
-        const index = await resolveRecipeIndex({}, { dir: __dirname, registry: false });
+        // The CLI can finish before other providers on a cold parallel build.
+        // Resolve their runtime closure from authored metadata, never whichever
+        // generated manifests happen to exist when this bundle completes.
+        const dependencies = new Map<string, string[]>();
+        const packagesDir = resolve(__dirname, '..');
+        for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
+          if (!entry.isDirectory()) continue;
+          const metadata = resolve(packagesDir, entry.name, 'package.json');
+          if (!existsSync(metadata)) continue;
+          const provider = JSON.parse(readFileSync(metadata, 'utf8'));
+          dependencies.set(provider.name, Object.keys({ ...provider.dependencies, ...provider.optionalDependencies })
+            .filter((name) => name.startsWith('@happyvertical/smrt-')));
+        }
         const providers = new Set<string>(Object.keys(pkg.dependencies));
         for (const name of providers) {
-          for (const dependency of index.packages.get(name)?.manifest.smrtDependencies ?? []) {
+          for (const dependency of dependencies.get(name) ?? []) {
             providers.add(dependency);
             pkg.dependencies[dependency] ??= pkg.dependencies['@happyvertical/smrt-core'];
           }

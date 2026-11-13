@@ -1,4 +1,4 @@
-/** Real, offline second-host proof: no listeners, containers, or provider calls. */
+/** Real second-host proof: no listeners, containers, or provider calls. */
 import { execFileSync } from 'node:child_process';
 import {
   existsSync,
@@ -169,31 +169,42 @@ describe('complete bundled cookbook hosts', () => {
       expect(report.errors).toEqual([]);
       if (!report.cookbook) throw new Error('Fixture validation failed');
       const root = join(temp, `second-${name}`);
-      // The installer is the real pnpm, using the populated offline store.
+      // Real pnpm resolves external tooling; every SMRT package uses the checkout.
       // Apply performs install and build itself, including subclass generation.
+      const cliVersion = JSON.parse(
+        readFileSync(join(repository, 'packages/cli/package.json'), 'utf8'),
+      ).version;
       const oldRoot = process.env.SMRT_ROOT;
-      const oldOffline = process.env.npm_config_offline;
       process.env.SMRT_ROOT = repository;
-      process.env.npm_config_offline = 'true';
       try {
         const result = applyCookbook({
           cookbook: report.cookbook,
           packages: report.packages,
           dir: root,
-          cliVersion: '0.60.16',
+          cliVersion,
           installOutput: 'stderr',
         });
         expect(result.installed).toBe(true);
       } finally {
         if (oldRoot === undefined) delete process.env.SMRT_ROOT;
         else process.env.SMRT_ROOT = oldRoot;
-        if (oldOffline === undefined) delete process.env.npm_config_offline;
-        else process.env.npm_config_offline = oldOffline;
       }
       for (const name of report.packages)
         expect(
           existsSync(join(root, 'node_modules', name, 'package.json')),
         ).toBe(true);
+      const applied = JSON.parse(
+        readFileSync(join(root, 'package.json'), 'utf8'),
+      );
+      for (const name of Object.keys({
+        ...applied.dependencies,
+        ...applied.devDependencies,
+      })) {
+        if (name.startsWith('@happyvertical/smrt-'))
+          expect(realpathSync(join(root, 'node_modules', name))).toMatch(
+            `${realpathSync(repository)}/packages/`,
+          );
+      }
       const prepared = JSON.parse(
         readFileSync(join(root, '.smrt/host-options.json'), 'utf8'),
       );
@@ -325,7 +336,7 @@ describe('complete bundled cookbook hosts', () => {
           cookbook: report.cookbook,
           packages: report.packages,
           dir: root,
-          cliVersion: '0.60.16',
+          cliVersion,
           install: false,
           dryRun: true,
         });
@@ -333,20 +344,17 @@ describe('complete bundled cookbook hosts', () => {
           customized.models,
         );
         process.env.SMRT_ROOT = repository;
-        process.env.npm_config_offline = 'true';
         try {
           applyCookbook({
             cookbook: report.cookbook,
             packages: report.packages,
             dir: root,
-            cliVersion: '0.60.16',
+            cliVersion,
             installOutput: 'stderr',
           });
         } finally {
           if (oldRoot === undefined) delete process.env.SMRT_ROOT;
           else process.env.SMRT_ROOT = oldRoot;
-          if (oldOffline === undefined) delete process.env.npm_config_offline;
-          else process.env.npm_config_offline = oldOffline;
         }
         expect(readFileSync(modelFile, 'utf8')).toBe(edited);
         expect(JSON.parse(readFileSync(configFile, 'utf8'))).toEqual(
