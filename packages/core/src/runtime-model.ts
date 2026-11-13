@@ -21,6 +21,7 @@ import type { SmrtObject } from './object.js';
 import { registerFromManifest } from './registry/class-registration.js';
 import {
   getOwnTableFieldsSync,
+  getResolvedFieldsSync,
   inheritsHierarchicalBase,
 } from './registry/inheritance-resolver.js';
 import { fieldsToColumns } from './registry/schema-builder.js';
@@ -30,6 +31,7 @@ import type {
   MethodDefinition,
   SmartObjectDefinition,
 } from './scanner/types.js';
+import { resolveInheritedFields } from './schema/field-inheritance.js';
 import type { ColumnDefinition } from './schema/types.js';
 import { createQualifiedName } from './utils/qualified-names.js';
 import { toSnakeCase } from './utils.js';
@@ -115,13 +117,31 @@ function pluralize(name: string): string {
   return `${s}s`;
 }
 
-function toFieldDefinition(def: RuntimeFieldDefinition): FieldDefinition {
+/**
+ * A run-time field as a manifest field. The options the caller wrote are the
+ * stated ones (`_meta.__statedOptions`, as the scanner records them), so a
+ * redeclaration of a parent's field inherits the rest by the shared rule. A
+ * field with no parent to inherit from is optional unless it says otherwise.
+ */
+function toFieldDefinition(
+  def: RuntimeFieldDefinition,
+  redeclared: boolean,
+): FieldDefinition {
+  const stated = [
+    ...(def.required !== undefined ? ['required'] : []),
+    ...(def.enum ? ['enum'] : []),
+    ...(def.description ? ['description'] : []),
+    ...(def.default !== undefined ? ['default'] : []),
+  ];
   return {
     type: def.type,
-    required: def.required ?? false,
+    ...(def.required !== undefined || !redeclared
+      ? { required: def.required ?? false }
+      : {}),
     ...(def.enum ? { enum: def.enum } : {}),
     ...(def.description ? { description: def.description } : {}),
     ...(def.default !== undefined ? { default: def.default } : {}),
+    ...(redeclared ? { _meta: { __statedOptions: stated } } : {}),
   } as FieldDefinition;
 }
 
@@ -176,7 +196,8 @@ export function runtimeModelEntry(
   // They are listed here, relaxed to optional, because this entry's own
   // column list is authoritative; a definition that restates one still
   // yields a single column (its own declaration wins below). An STI subclass
-  // shares its parent's table and needs none.
+  // shares its parent's table and needs none. A field smrt needs (one with
+  // `requiredFor`, #4923) keeps `required` and its reason: it is not relaxed.
   if (parent && ObjectRegistry.getSTIBase(def.extends!) === null) {
     const hierarchical = inheritsHierarchicalBase(parent);
     for (const [name, inherited] of getOwnTableFieldsSync(parent)) {
@@ -187,15 +208,53 @@ export function runtimeModelEntry(
         name === 'parentId' && hierarchical && inherited.related === parent.name
           ? def.name
           : inherited.related;
+      const requiredFor = inherited._meta?.requiredFor;
+      const keep =
+        inherited.required === true && typeof requiredFor === 'string';
       fields[name] = {
         type: inherited.type,
-        required: false,
+        required: keep,
+        ...(keep ? { _meta: { requiredFor } } : {}),
         ...(related ? { related } : {}),
       } as FieldDefinition;
     }
   }
-  for (const [name, fd] of Object.entries(def.fields ?? {})) {
-    fields[name] = toFieldDefinition(fd);
+  // A field the definition redeclares resolves against the parent's effective
+  // fields by the one inheritance rule (`schema/field-inheritance.ts`): it
+  // inherits the options it does not state, and refuses loosening a field smrt
+  // needs (#4932, #4942).
+  const parentFields = parent ? getResolvedFieldsSync(parent) : undefined;
+  const declared = Object.entries(def.fields ?? {});
+  const redeclaredNames = new Set(
+    declared.map(([n]) => n).filter((n) => parentFields?.has(n)),
+  );
+  const own = declared.map(
+    ([name, fd]) =>
+      [name, toFieldDefinition(fd, redeclaredNames.has(name))] as const,
+  );
+  if (parent && parentFields) {
+    const resolved = resolveInheritedFields<FieldDefinition>({
+      strategy:
+        ObjectRegistry.getSTIBase(def.extends!) === null
+          ? 'own-table'
+          : 'shared-table',
+      className: def.name,
+      ancestors: [
+        {
+          name: parent.name,
+          fields: parentFields as unknown as Map<string, FieldDefinition>,
+          frameworkBase: false,
+        },
+      ],
+      own,
+      representation: 'manifest',
+    });
+    for (const [name] of own) {
+      const field = resolved.get(name);
+      if (field) fields[name] = field;
+    }
+  } else {
+    for (const [name, fd] of own) fields[name] = fd;
   }
   const methods: Record<string, MethodDefinition> = {};
   for (const [name, md] of Object.entries(def.methods ?? {})) {
