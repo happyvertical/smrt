@@ -1386,7 +1386,7 @@ Any migration stop fails the gate. The output names the table and column,
 the reason, and the work held back. Errors and a second diff that still needs
 work also fail. An old column that the build no longer declares fails if it
 holds data. A NOT NULL orphan without a default fails even if empty, because
-new code cannot insert. Ship a needed data step with the schema change.
+new code cannot insert. Ship a needed data step with the schema change. A field that was optional in the oldest supported release becomes required only together with the data step for rows that lack it.
 `leftover-columns.json` can record intended leftovers. Every entry names
 `table`, `column`, `since` and a non-empty `reason`. Review that reason as a data
 decision. Entries that match no leftover in either rehearsal fail as stale.

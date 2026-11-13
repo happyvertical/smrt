@@ -1209,4 +1209,34 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       error: 'Webhook URL must be an absolute HTTPS URL.',
       reason: 'Needs an absolute HTTPS URL; metadata only declares text.',
     },
+    {
+      model: '@happyvertical/smrt-commerce:BillingAccount',
+      field: 'customerId',
+      reason:
+        "Model validation rejects empty/default customerId: Billing accounts require a customerId. Smrt's code needs this value, but the column was optional in 0.60.17, so making it required needs a data step for old rows that hold NULL; that step is not written.",
+      error: 'Billing accounts require a customerId.',
+    },
+    {
+      model: '@happyvertical/smrt-timesheets:AttendancePunch',
+      field: 'profileId',
+      reason:
+        "Model validation rejects empty/default profileId: Attendance requires tenantId and profileId. Smrt's code needs this value, but the column was optional in 0.60.17, so making it required needs a data step for old rows that hold NULL; that step is not written.",
+      error: 'Attendance requires tenantId and profileId.',
+    },
+    {
+      model: '@happyvertical/smrt-education:LessonPage',
+      kind: 'optional-field',
+      field: 'pageKey',
+      error: 'Invalid lesson page',
+      reason:
+        "LessonPage code requires pageKey although registry metadata allows it empty/default; changing required/NOT NULL would change schema. Smrt's code needs this value, but the column was optional in 0.60.17, so making it required needs a data step for old rows that hold NULL; that step is not written.",
+    },
+    {
+      model: '@happyvertical/smrt-timesheets:AttendanceBreak',
+      kind: 'optional-field',
+      field: 'punchId',
+      error: 'Invalid attendance break.',
+      reason:
+        "AttendanceBreak code requires punchId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. Smrt's code needs this value, but the column was optional in 0.60.17, so making it required needs a data step for old rows that hold NULL; that step is not written.",
+    },
   ];

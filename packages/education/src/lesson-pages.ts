@@ -42,7 +42,7 @@ export class LessonPage extends SmrtObject {
     '';
   @foreignKey('Lesson', { required: true, requiredFor: 'identity' }) lessonId =
     '';
-  @field({ required: true, requiredFor: 'identity' }) pageKey = '';
+  pageKey = '';
   label = '';
   sortOrder = 0;
   @crossPackageRef('@happyvertical/smrt-assets:Asset', { nullable: true })
