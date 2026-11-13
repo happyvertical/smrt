@@ -650,9 +650,6 @@ export function createCookbookHost(options: CookbookHostOptions) {
         ).permissions.has(slug);
       },
       approvals: continuations.adapter('cookbook'),
-      requireRemovalApproval: async () =>
-        (await workProfiles.read()).settings.safety?.requireRemovalApproval !==
-        false,
       previewBeforeApply: async (context) => {
         if (context.designAction && context.userId && context.tenantId) {
           const saved = await createDesignRunStore({
@@ -1282,6 +1279,14 @@ export function createCookbookHost(options: CookbookHostOptions) {
         {
           ...tool,
           functionName,
+          ...(tool.action === 'delete'
+            ? {
+                annotations: {
+                  ...tool.annotations,
+                  recordDeletion: true as const,
+                },
+              }
+            : {}),
           description: `${tool.action} records in the app list ${JSON.stringify(entry.label)}.`,
         },
       ];
@@ -1371,7 +1376,16 @@ export function createCookbookHost(options: CookbookHostOptions) {
         ? [
             {
               descriptor,
-              tool,
+              tool:
+                entry && tool.action === 'delete'
+                  ? {
+                      ...tool,
+                      annotations: {
+                        ...tool.annotations,
+                        recordDeletion: true as const,
+                      },
+                    }
+                  : tool,
               generator,
               noun: placement?.noun,
             },

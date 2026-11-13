@@ -1,6 +1,7 @@
 /** Server-write policy and durable hold bridge. Host code supplies authority, never model output. */
 import type { PrincipalTool } from '@happyvertical/smrt-agents';
 import type { OwnerApprovalAuthority } from '@happyvertical/smrt-app-runtime';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { AssistantApprovalWaiter } from './assistant-turn-driver.js';
 import type { AssistantApprovalRequest } from './assistant-turn-events.js';
 import type { ManifestTool } from './tool-loop.js';
@@ -41,16 +42,55 @@ export function requiresOwnerApproval(
   const purge = values.some((value) =>
     /(?:^|[._-])(purge|drop|truncate|destroy)(?:$|[._-])/i.test(value),
   );
-  const removal = values.some((value) =>
-    /(?:^|[._-])(delete|remove)(?:$|[._-])/i.test(value),
-  );
+  // Opt-in metadata is server-owned. Names and model arguments never classify
+  // a tool as ordinary app data; extra/custom/security operations stay held.
+  const identity =
+    'action' in tool ? (tool.qualifiedName ?? tool.className) : undefined;
+  const declaration = identity ? ObjectRegistry.getClass(identity) : undefined;
+  const controlModel =
+    [
+      identity,
+      ...(declaration
+        ? ObjectRegistry.getInheritanceChain(
+            declaration.qualifiedName ?? declaration.name,
+          )
+        : []),
+      ...(declaration?.replacedQualifiedNames ?? []),
+    ].some(
+      (name) =>
+        name &&
+        [
+          '@happyvertical/smrt-users',
+          '@happyvertical/smrt-profiles',
+          '@happyvertical/smrt-tenancy',
+          '@happyvertical/smrt-secrets',
+          '@happyvertical/smrt-preferences',
+          '@happyvertical/smrt-config',
+          '@happyvertical/smrt-features',
+          '@happyvertical/smrt-app-runtime',
+          '@happyvertical/smrt-app-shell',
+          '@happyvertical/smrt-inference',
+          '@happyvertical/smrt-approvals',
+        ].includes(name.split(':')[0]),
+    ) ||
+    (!!declaration &&
+      ObjectRegistry.getConfig(declaration.qualifiedName ?? declaration.name)
+        .sensitive === true);
+  const recordDeletion =
+    !controlModel &&
+    'action' in tool &&
+    tool.action === 'delete' &&
+    tool.annotations?.recordDeletion === true &&
+    tool.annotations?.workProfile !== 'design' &&
+    typeof args.id === 'string' &&
+    args.id.trim().length > 0;
   if (purge) return true;
   // Native tools may own an independent hold (the existing explicit overrides).
   // The new chat setting itself can never waive a purge or an unknown effect.
   return (
     policy?.tools?.[tool.slug] ??
     policy?.operations?.[operation] ??
-    (policy?.allowRemovalsInChat && removal && !purge
+    (policy?.allowRemovalsInChat && recordDeletion
       ? false
       : destructiveHint ||
         destructive(operation) ||

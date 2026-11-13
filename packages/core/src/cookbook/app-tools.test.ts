@@ -2068,34 +2068,61 @@ describe('host design action durable boundary', () => {
   });
 });
 
-it.each([
-  'assistant',
-  'mcp',
-] as const)('uses the owner removal setting only for %s while preserving audit and outside holds', async (surface) => {
-  options.requireRemovalApproval = async () => false;
-  await write('app.addField', {
-    list: 'Customers',
-    label: 'Scratch',
-    kind: 'text',
+describe.each([
+  [true, true],
+  [true, false],
+  [false, true],
+  [false, false],
+])('structural approval floor: removal=%s preview=%s', (removal, preview) => {
+  it.each([
+    'assistant',
+    'mcp',
+  ] as const)('holds removals on %s with and without a durable design action', async (surface) => {
+    options.requireRemovalApproval = () => removal;
+    options.previewBeforeApply = () => preview;
+    options.requiresApproval = () => false;
+    await write('app.addField', {
+      list: 'Customers',
+      label: 'Scratch',
+      kind: 'text',
+    });
+    await write('app.addList', {
+      label: 'Gear',
+      fields: [{ label: 'Name', kind: 'text' }],
+      nameField: 'Name',
+    });
+    const before = editor.snapshot().revision;
+    const operations: [CookbookToolName, Record<string, unknown>][] = [
+      ['app.removeField', { list: 'Customers', field: 'Scratch' }],
+      ['app.removeList', { list: 'Gear' }],
+      ['app.undo', {}],
+      ['recipes.disable', { id: 'customers' }],
+    ];
+    for (const design of [false, true]) {
+      for (const [name, input] of operations) {
+        const result = await call(
+          name,
+          { ...input, expectedRevision: before },
+          {
+            ...context,
+            surface,
+            ...(design
+              ? {
+                  designAction: {
+                    application: 'c6',
+                    runId: 'floor',
+                    actionId: name,
+                  },
+                }
+              : {}),
+          },
+        );
+        expect(result.status, `${name} design=${design}`).toBe(
+          'approval_required',
+        );
+        expect(editor.snapshot().revision).toBe(before);
+        expect(await editor.history()).toHaveLength(2);
+      }
+    }
   });
-  const before = editor.snapshot().revision;
-  const result = await call(
-    'app.removeField',
-    { list: 'Customers', field: 'Scratch', expectedRevision: before },
-    { ...context, surface },
-  );
-  if (surface === 'assistant') {
-    expect(result.status).toBe('ok');
-    expect(editor.snapshot().revision).toBe(before + 1);
-    expect(await editor.history()).toHaveLength(2);
-    expect(audit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tool: 'app.removeField',
-        outcome: 'requested',
-      }),
-    );
-  } else {
-    expect(result.status).toBe('approval_required');
-    expect(editor.snapshot().revision).toBe(before);
-  }
 });

@@ -4302,7 +4302,7 @@ describe('mountAssistantRoutes', () => {
     };
   }
 
-  it('runs an owner-opted-out built-in chat removal once and persists its human tool result', async () => {
+  it('holds an unclassified extra-tool removal even when chat removal approval is off', async () => {
     const ran: unknown[] = [];
     const tool = deleteTool(ran);
     const policy = vi.fn(async () => ({ allowRemovalsInChat: true }));
@@ -4326,12 +4326,12 @@ describe('mountAssistantRoutes', () => {
     expect(result.thrown).toBeNull();
     expect(policy).toHaveBeenCalledTimes(1);
     expect(result.seen.some((event) => event.type === 'approval_needed')).toBe(
-      false,
+      true,
     );
-    expect(ran).toHaveLength(1);
+    expect(ran).toHaveLength(0);
     expect(
       (await listMessages(routes, threadId)).some(
-        (message) => message.content === 'Deleted record',
+        (message) => message.toolCallData?.approval !== undefined,
       ),
     ).toBe(true);
   });

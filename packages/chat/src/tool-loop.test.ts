@@ -575,6 +575,62 @@ describe('runToolLoop', () => {
     expect(await authority.list({ id: userId, tenantId })).toHaveLength(1);
   });
 
+  it.each([
+    false,
+    true,
+  ])('waives only a declared app-record delete when owner opt-out=%s', async (allowRemovalsInChat) => {
+    const slug = 'tool_loop_notes.delete';
+    await grant(slug);
+    const notes = await ObjectRegistry.getCollection('ToolLoopNote', { db });
+    const note = await notes.create({ title: 'Scratch record' });
+    await note.save();
+    const database = await resolveDatabase(db);
+    const authority = new OwnerApprovalAuthority(
+      await createSqliteOwnerApprovalStore(database),
+      async () => true,
+    );
+    const audit = vi.fn();
+    const turn = runAssistantTurn({
+      ai: makeAI((_messages, _options, call) =>
+        call === 0 ? toolCall(slug, { id: note.id }) : textResponse('Done.'),
+      ),
+      db,
+      userMessage: 'Delete scratch',
+      tools: tools([slug]).map((tool) => ({
+        ...tool,
+        annotations: { recordDeletion: true as const },
+      })),
+      principal: { runAsUserId: userId, tenantId, allowedTools: [slug] },
+      approvals: createAssistantApprovalBridge({
+        authority,
+        tenantId,
+        requestedBy: userId,
+        context: {},
+        policy: { allowRemovalsInChat },
+      }),
+      audit,
+    });
+    const events = [];
+    for await (const event of turn) events.push(event);
+    expect(events.some((event) => event.type === 'approval_needed')).toBe(
+      !allowRemovalsInChat,
+    );
+    expect((await notes.get(String(note.id))) === null).toBe(
+      allowRemovalsInChat,
+    );
+    expect(await authority.list({ id: userId, tenantId })).toHaveLength(
+      allowRemovalsInChat ? 0 : 1,
+    );
+    if (allowRemovalsInChat)
+      expect(audit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'chat.tool_loop',
+          actorUserId: userId,
+          tenantId,
+        }),
+      );
+  });
+
   it('stops with the final text when the model makes no tool call', async () => {
     const ai = makeAI(() => textResponse('nothing to do'));
     const result = await runToolLoop({
@@ -3037,6 +3093,7 @@ describe('server approval policy', () => {
     collection: 'notes',
     className: 'Note',
     action: 'delete',
+    annotations: { recordDeletion: true },
   };
   it('uses canonical destructive operations regardless of model-supplied flags or operation names', () => {
     expect(
@@ -3059,17 +3116,21 @@ describe('server approval policy', () => {
     expect(requiresOwnerApproval(tool, { allowRemovalsInChat: true })).toBe(
       true,
     );
-    expect(requiresOwnerApproval(tool, {}, { allowRemovalsInChat: true })).toBe(
-      false,
-    );
+    expect(
+      requiresOwnerApproval(tool, { id: 'one' }, { allowRemovalsInChat: true }),
+    ).toBe(false);
     expect(
       requiresOwnerApproval(tool, {}, { allowRemovalsInChat: false }),
     ).toBe(true);
     for (const action of ['purge', 'delete', 'remove']) {
       const candidate = { ...tool, slug: `notes.${action}`, action };
       expect(
-        requiresOwnerApproval(candidate, {}, { allowRemovalsInChat: true }),
-      ).toBe(action === 'purge');
+        requiresOwnerApproval(
+          candidate,
+          { id: 'one' },
+          { allowRemovalsInChat: true },
+        ),
+      ).toBe(action !== 'delete');
     }
     expect(
       requiresOwnerApproval(
@@ -3084,6 +3145,147 @@ describe('server approval policy', () => {
         {},
         { allowRemovalsInChat: true },
         true,
+      ),
+    ).toBe(true);
+  });
+  it('keeps declared security identities held even if a host marks them as app records', () => {
+    for (const [pkg, name] of [
+      ['users', 'User'],
+      ['profiles', 'Profile'],
+      ['users', 'ApiKey'],
+      ['users', 'Role'],
+      ['tenancy', 'Tenant'],
+      ['preferences', 'UiPreferenceRecord'],
+      ['features', 'FeatureOverride'],
+      ['app-runtime', 'Installation'],
+      ['secrets', 'Secret'],
+    ]) {
+      expect(
+        requiresOwnerApproval(
+          { ...tool, qualifiedName: `@happyvertical/smrt-${pkg}:${name}` },
+          { id: 'one' },
+          { allowRemovalsInChat: true },
+          true,
+        ),
+        `${pkg}:${name}`,
+      ).toBe(true);
+    }
+  });
+  it('keeps a control-model subclass and a sensitive model held under app names', () => {
+    const restore = snapshotObjectRegistryState();
+    try {
+      class SafetyIdentity extends SmrtObject {}
+      class BusinessLookingRecord extends SafetyIdentity {}
+      const BaseIdentity = SafetyIdentity;
+      const SameNameIdentity = class SafetyIdentity extends BaseIdentity {};
+      class PrivateSetting extends SmrtObject {}
+      ObjectRegistry.register(SafetyIdentity, {
+        packageName: '@happyvertical/smrt-users',
+      });
+      ObjectRegistry.register(BusinessLookingRecord, {
+        packageName: '@fixture/safety-app',
+      });
+      ObjectRegistry.register(SameNameIdentity, {
+        packageName: '@fixture/safety-app',
+      });
+      ObjectRegistry.register(PrivateSetting, {
+        packageName: '@fixture/safety-app',
+        sensitive: true,
+      });
+      for (const cls of [
+        BusinessLookingRecord,
+        SameNameIdentity,
+        PrivateSetting,
+      ]) {
+        const qualifiedName =
+          ObjectRegistry.getClassByConstructor(cls)?.qualifiedName;
+        expect(qualifiedName).toBeDefined();
+        expect(
+          requiresOwnerApproval(
+            { ...tool, qualifiedName },
+            { id: 'one' },
+            { allowRemovalsInChat: true },
+            true,
+          ),
+        ).toBe(true);
+      }
+    } finally {
+      restore();
+    }
+  });
+  it('never waives a design-class delete, a missing id or a model-supplied classification', () => {
+    const policy = { allowRemovalsInChat: true };
+    expect(
+      requiresOwnerApproval(
+        {
+          ...tool,
+          annotations: { ...tool.annotations, workProfile: 'design' },
+        },
+        { id: 'one' },
+        policy,
+        true,
+      ),
+    ).toBe(true);
+    for (const id of [undefined, null, '', '  ', ['one']]) {
+      expect(requiresOwnerApproval(tool, { id }, policy, true)).toBe(true);
+    }
+    expect(
+      requiresOwnerApproval(
+        { ...tool, annotations: undefined },
+        { id: 'one', annotations: { recordDeletion: true } },
+        policy,
+        true,
+      ),
+    ).toBe(true);
+    expect(requiresOwnerApproval(tool, { id: 'one' }, policy, true)).toBe(
+      false,
+    );
+  });
+  it('does not waive unknown or security removals based on a name or destructive hint', () => {
+    for (const slug of [
+      'users.delete',
+      'apiKeys.delete',
+      'roles.delete',
+      'tenants.delete',
+      'settings.remove',
+      'installations.remove',
+      'notes.deleteAll',
+    ]) {
+      const action = slug.split('.').at(-1)!;
+      expect(
+        requiresOwnerApproval(
+          {
+            ...tool,
+            annotations: undefined,
+            slug,
+            action,
+            collection: slug.split('.')[0],
+          },
+          { id: 'one' },
+          { allowRemovalsInChat: true },
+          true,
+        ),
+        slug,
+      ).toBe(true);
+    }
+    const extra = {
+      slug: 'records.remove',
+      aiTool: {} as never,
+      execute: async () => ({}),
+    };
+    expect(
+      requiresOwnerApproval(
+        extra,
+        { id: 'one', recordDeletion: true },
+        { allowRemovalsInChat: true },
+        true,
+      ),
+    ).toBe(true);
+    expect(
+      requiresOwnerApproval(
+        { ...tool, action: 'update', slug: 'notes.update' },
+        { id: 'one', operation: 'remove' },
+        { allowRemovalsInChat: true },
       ),
     ).toBe(true);
   });

@@ -117,7 +117,11 @@ export interface ManifestTool {
   /** Trusted host presentation alias; permission checks and dispatch retain `slug`. */
   functionName?: string;
   /** Trusted host metadata; never model arguments. */
-  annotations?: { workProfile?: 'design' };
+  annotations?: {
+    workProfile?: 'design';
+    /** Trusted host declaration: this canonical delete removes one app-data record. Never mark security, identity, credentials, roles, tenants, settings or installation tools. */
+    recordDeletion?: true;
+  };
   /** Collection (permission resource), e.g. `articles`. */
   collection: string;
   /** Registry class name used to resolve the backing collection, e.g. `Article`. */
