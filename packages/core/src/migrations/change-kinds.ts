@@ -137,7 +137,7 @@ export const SCHEMA_CHANGE_KINDS = {
   'column.rebuild-unavailable': {
     type: 'alter_column',
     engines: unresolved(
-      'The table rebuild cannot be planned: the table is AUTOINCREMENT (SQLite), a constraint uses a column the change drops (DuckDB), or the live definition cannot be read or rewritten.',
+      'The table rebuild cannot be planned: the table is AUTOINCREMENT (SQLite), a constraint uses a column the change drops (DuckDB), rebuilds that overlap cannot be combined or a new table references the table (DuckDB), or the live definition cannot be read or rewritten.',
     ),
   },
   'column.rebuild-data-loss': {
@@ -302,7 +302,7 @@ export const SCHEMA_CHANGE_KINDS = {
   'type.rebuild-unavailable': {
     type: 'type_upgrade',
     engines: unresolved(
-      'The table rebuild cannot be planned: the live table definition cannot be read or rewritten safely.',
+      'The table rebuild cannot be planned: the live table definition cannot be read or rewritten safely, or on DuckDB rebuilds that overlap cannot be combined or a new table references the table.',
     ),
   },
   'foreign-key.add': {
@@ -353,7 +353,7 @@ export const SCHEMA_CHANGE_KINDS = {
   'foreign-key.add-unsupported': {
     type: 'add_foreign_key',
     engines: unresolved(
-      'The table rebuild that adds the key cannot be planned: the table (or one that references it) references itself on DuckDB, is AUTOINCREMENT on SQLite, or has a definition that cannot be rewritten; the JSON adapter has no rebuild.',
+      'The table rebuild that adds the key cannot be planned: the table (or one that references it) references itself on DuckDB, rebuilds that overlap cannot be combined on DuckDB, the table is AUTOINCREMENT on SQLite, or has a definition that cannot be rewritten; the JSON adapter has no rebuild.',
     ),
   },
   'foreign-key.drop': {
@@ -372,7 +372,7 @@ export const SCHEMA_CHANGE_KINDS = {
         'The table rebuild that removes the key cannot be planned (the table is AUTOINCREMENT, or its definition cannot be rewritten).',
       ),
       duckdb: unresolvedPolicy(
-        'The table rebuild that removes the key cannot be planned (the table or one that references it references itself, or its definition cannot be rewritten).',
+        'The table rebuild that removes the key cannot be planned (the table or one that references it references itself, rebuilds that overlap cannot be combined, a new table references the table, or its definition cannot be rewritten).',
       ),
     },
   },
