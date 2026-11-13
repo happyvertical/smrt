@@ -51,13 +51,21 @@ export class GroupMember extends SmrtObject {
   /**
    * Foreign key to Group
    */
-  @foreignKey('Group', { required: true, onDelete: 'NO ACTION' })
+  @foreignKey('Group', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'NO ACTION',
+  })
   groupId?: string;
 
   /**
    * Foreign key to User
    */
-  @foreignKey('User', { required: true, onDelete: 'NO ACTION' })
+  @foreignKey('User', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'NO ACTION',
+  })
   userId?: string;
 
   constructor(options: GroupMemberOptions = {}) {

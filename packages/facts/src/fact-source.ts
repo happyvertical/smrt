@@ -17,7 +17,7 @@ import type { FactSourceOptions } from './types';
   cli: { skipApiCheck: true },
 })
 export class FactSource extends SmrtObject {
-  @foreignKey('Fact', { required: true })
+  @foreignKey('Fact', { required: true, requiredFor: 'identity' })
   factId: string = '';
 
   @field()

@@ -34,7 +34,7 @@ export interface PollOptions extends SmrtPolymorphicAssociationOptions {
 })
 export class Poll extends SmrtPolymorphicAssociation {
   @tenantId() tenantId = '';
-  @field({ required: true }) question = '';
+  @field() question = '';
   @field({ type: 'text', readonly: true }) optionsJson = '[]';
   @field({ type: 'datetime', nullable: true }) opensAt: Date | null = null;
   @field({ type: 'datetime', nullable: true }) closesAt: Date | null = null;

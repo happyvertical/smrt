@@ -36,7 +36,7 @@ export class CampaignMetricSnapshot extends SmrtObject {
   tenantId: string | null = null;
 
   @field({ description: 'The campaign these results belong to.' })
-  @foreignKey(Campaign, { required: true })
+  @foreignKey(Campaign, { required: true, requiredFor: 'identity' })
   campaignId: string = '';
 
   /** Null for campaign rollups; set for channel-scoped evidence. */
@@ -85,13 +85,14 @@ export class CampaignMetricSnapshot extends SmrtObject {
 
   /** Ingestion source such as `google_ads`, `meta`, or `rollup_job`. */
   @field({
-    required: true,
+    required: false,
     description: 'Where these results were reported from.',
   })
   source: string = '';
 
   @field({
     required: true,
+    requiredFor: 'idempotency',
     description:
       'The reference this result is filed under, so the same report is never counted twice.',
   })

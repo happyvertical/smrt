@@ -40,7 +40,7 @@ export type LoginAuditOutcome =
 })
 export class UsersLoginAuditEvent extends SmrtObject {
   /** Credential kind: `terminal-approve`, `pin`, `password`, `passkey`, … */
-  @field({ type: 'text', required: true })
+  @field({ type: 'text' })
   kind = '';
 
   @field({ type: 'text', required: true })

@@ -60,7 +60,11 @@ async function saveWithPunchLock<T extends SmrtObject>(
 })
 export class AttendancePunch extends SmrtObject {
   @tenantId() tenantId = '';
-  @crossPackageRef('@happyvertical/smrt-profiles:Profile') profileId = '';
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile', {
+    required: true,
+    requiredFor: 'identity',
+  })
+  profileId = '';
   startedAt: Date = new Date();
   endedAt: Date | null = null;
   durationSeconds = 0;
@@ -79,7 +83,7 @@ export class AttendancePunch extends SmrtObject {
     | string
     | null = null;
   /** Unique while open; closed rows retain independent non-null slots on every dialect. */
-  @field({ required: true }) openSlot = '';
+  @field({ required: true, requiredFor: 'identity' }) openSlot = '';
 
   override async save(options?: SmrtSaveOptions): Promise<this> {
     return saveWithPunchLock(this, this.id, this.tenantId, () =>
@@ -215,13 +219,17 @@ export class AttendancePunch extends SmrtObject {
 })
 export class AttendanceBreak extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey(AttendancePunch) punchId = '';
+  @foreignKey(AttendancePunch, {
+    required: true,
+    requiredFor: 'identity',
+  })
+  punchId = '';
   startedAt: Date = new Date();
   endedAt: Date | null = null;
   paid = false;
   /** Optional short consumer-owned label (`meal`, `rest`, ...); `''` when unspecified. */
   kind = '';
-  @field({ required: true }) openSlot = '';
+  @field({ required: true, requiredFor: 'identity' }) openSlot = '';
 
   override async save(options?: SmrtSaveOptions): Promise<this> {
     return saveWithPunchLock(this, this.punchId, this.tenantId, () =>
@@ -392,7 +400,7 @@ export class AttendanceSegment extends SmrtObject {
   closedReason: AttendanceSegmentCloseReason = '';
   /** Set when a replay time policy asked for review of this segment's boundary. */
   reviewRequired = false;
-  @field({ required: true }) openSlot = '';
+  @field({ required: true, requiredFor: 'identity' }) openSlot = '';
 
   override async save(options?: SmrtSaveOptions): Promise<this> {
     return saveWithPunchLock(this, this.punchId, this.tenantId, () =>
@@ -559,7 +567,8 @@ function validReplayOutcome(value: unknown): value is AttendanceReplayOutcome {
 })
 export class AttendanceReplay extends SmrtObject {
   @tenantId() tenantId = '';
-  @field({ required: true, unique: true }) replayKey = '';
+  @field({ required: true, requiredFor: 'idempotency', unique: true })
+  replayKey = '';
   @field({ type: 'text' }) content = '';
   @field({ type: 'text' }) outcome = '{}';
 

@@ -26,7 +26,7 @@ import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 })
 export class UsersPinCredential extends SmrtObject {
   /** The person this PIN signs in. */
-  @foreignKey('User', { required: true, unique: true })
+  @foreignKey('User', { required: true, requiredFor: 'identity', unique: true })
   userId = '';
 
   /** Encoded hash: `scrypt$N$r$p$saltB64$hashB64`. */

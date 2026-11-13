@@ -66,8 +66,13 @@ export class RoutingService {
   ): Promise<void> {
     // Each occurrence already on the routing may be kept once.
     const retained = new Map<string, number>();
-    for (const step of current)
-      retained.set(step.operationId, (retained.get(step.operationId) ?? 0) + 1);
+    for (const step of current) {
+      if (step.operationId)
+        retained.set(
+          step.operationId,
+          (retained.get(step.operationId) ?? 0) + 1,
+        );
+    }
     for (const input of inputs) {
       const minutes = Number(input.estimatedMinutes);
       if (!Number.isFinite(minutes) || minutes < 0)
