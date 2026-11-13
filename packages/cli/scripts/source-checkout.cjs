@@ -41,6 +41,13 @@ function configureLocalSmrt(config, projectRoot, smrtRoot) {
       overrides[pkg.name] = `link:.smrt-local/packages/${entry}`;
     }
   }
+  // The application's SQL API must be the same installed SDK that checkout
+  // core uses, not an independently resolved published starter range.
+  const sql = 'packages/core/node_modules/@happyvertical/sql';
+  if (!existsSync(join(root, sql, 'package.json'))) {
+    throw new Error('Install the SMRT checkout dependencies before using SMRT_ROOT.');
+  }
+  overrides['@happyvertical/sql'] = `link:.smrt-local/${sql}`;
   return { ...config, overrides };
 }
 

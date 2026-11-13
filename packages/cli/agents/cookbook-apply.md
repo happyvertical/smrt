@@ -118,7 +118,9 @@ AOT routes. Custom templates without that marker keep their prior lifecycle.
 `SMRT_ROOT` is the only checkout switch. The shipped pnpm hook delegates to
 `@happyvertical/smrt-cli/source-checkout` (bootstrapped from the selected checkout
 before dependencies exist). It links every framework package through a stable,
-ignored `.smrt-local` path; without the variable it returns pnpm's published
+ignored `.smrt-local` path. The app also links the SQL SDK already installed for
+checkout core, preserving SDK identity and avoiding starter-range registry lookups;
+an uninstalled checkout is refused. Without the variable it returns pnpm's published
 configuration unchanged. `smrt source build` forwards the app/workspace framework
 closure to Turbo using the existing active-Node package-manager runner. It is a
 no-op without a checkout. No machine path belongs in a committed lockfile.

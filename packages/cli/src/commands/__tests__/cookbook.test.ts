@@ -10,6 +10,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1230,5 +1231,75 @@ describe('cookbook apply refreshes agent docs (#4878)', () => {
     await run(join(work, 'bare'), { json: true });
     expect(log).toHaveBeenCalledTimes(1);
     expect(err.mock.calls.flat().join('\n')).toContain('smrt docs:agents');
+  });
+});
+
+describe('source-checkout SDK identity', () => {
+  it('links the application SQL SDK to the checkout core SDK without registry resolution', () => {
+    const root = mkdtempSync(join(tmpdir(), 'smrt-checkout-sdk-'));
+    try {
+      const checkout = join(root, 'checkout');
+      const project = join(root, 'app');
+      const core = join(checkout, 'packages/core');
+      mkdirSync(join(core, 'node_modules/@happyvertical/sql'), {
+        recursive: true,
+      });
+      mkdirSync(project);
+      writeFileSync(
+        join(core, 'package.json'),
+        JSON.stringify({ name: '@happyvertical/smrt-core' }),
+      );
+      writeFileSync(
+        join(core, 'node_modules/@happyvertical/sql/package.json'),
+        JSON.stringify({ name: '@happyvertical/sql', version: '0.112.3' }),
+      );
+      const require = createRequire(import.meta.url);
+      const {
+        configureLocalSmrt,
+      } = require('@happyvertical/smrt-cli/source-checkout');
+      const config = { overrides: { unrelated: '1.0.0' } };
+      expect(configureLocalSmrt(config, project, undefined)).toBe(config);
+      const local = configureLocalSmrt(config, project, checkout);
+      expect(local.overrides['@happyvertical/sql']).toBe(
+        'link:.smrt-local/packages/core/node_modules/@happyvertical/sql',
+      );
+      expect(local.overrides.unrelated).toBe('1.0.0');
+      const sdk = local.overrides['@happyvertical/sql'].slice('link:'.length);
+      expect(
+        JSON.parse(readFileSync(join(project, sdk, 'package.json'), 'utf8'))
+          .version,
+      ).toBe('0.112.3');
+      expect(JSON.stringify(local)).not.toContain(checkout);
+      writeFileSync(
+        join(project, 'package.json'),
+        JSON.stringify({
+          name: 'cold-sdk-consumer',
+          dependencies: { '@happyvertical/sql': '^0.89.12' },
+        }),
+      );
+      writeFileSync(
+        join(project, '.pnpmfile.cjs'),
+        `module.exports = { hooks: { updateConfig(config) { return require(${JSON.stringify(require.resolve('@happyvertical/smrt-cli/source-checkout'))}).configureLocalSmrt(config, __dirname, ${JSON.stringify(checkout)}); } } };`,
+      );
+      execFileSync('pnpm', ['install', '--offline', '--ignore-scripts'], {
+        cwd: project,
+        stdio: 'pipe',
+        timeout: 30000,
+      });
+      expect(
+        JSON.parse(
+          readFileSync(
+            join(project, 'node_modules/@happyvertical/sql/package.json'),
+            'utf8',
+          ),
+        ).version,
+      ).toBe('0.112.3');
+      rmSync(join(core, 'node_modules'), { recursive: true, force: true });
+      expect(() => configureLocalSmrt(config, project, checkout)).toThrow(
+        'Install the SMRT checkout dependencies',
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
