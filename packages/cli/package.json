@@ -28,7 +28,10 @@
       "types": "./dist/app.d.ts",
       "import": "./dist/app.js"
     },
-    "./source-checkout": "./scripts/source-checkout.cjs"
+    "./source-checkout": {
+      "require": "./scripts/source-checkout.cjs",
+      "default": "./scripts/source-checkout.cjs"
+    }
   },
   "scripts": {
     "build": "vite build",
