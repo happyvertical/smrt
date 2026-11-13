@@ -56,7 +56,7 @@ export class ProjectQuestion extends SmrtPolymorphicAssociation {
   @tenantId()
   tenantId = '';
 
-  @field({ required: true })
+  @field()
   prompt = '';
 
   answer = '';
@@ -142,8 +142,6 @@ export class ProjectQuestion extends SmrtPolymorphicAssociation {
     this.ownerId = this.ownerId.trim();
     if (!['internal', 'client'].includes(this.visibility))
       throw new TypeError('Invalid project governance visibility.');
-    if (!this.prompt)
-      throw new TypeError('Project question prompt is required.');
     if (!['open', 'answered', 'deferred', 'superseded'].includes(this.status))
       throw new TypeError('Invalid project question status.');
     if (this.ownerType && !['user', 'agent', 'system'].includes(this.ownerType))

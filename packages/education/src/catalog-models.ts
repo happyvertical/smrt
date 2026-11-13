@@ -108,7 +108,7 @@ export class CatalogAcquisition extends SmrtObject {
   selectionId = '';
   @field({ required: true, requiredFor: 'identity' }) revision = '';
   @field({ required: true, requiredFor: 'identity' }) format = '';
-  @field({ required: true }) sha256 = '';
+  @field() sha256 = '';
   attribution = '';
   notices = '';
 }

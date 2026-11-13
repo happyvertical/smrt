@@ -12,8 +12,9 @@ issue. Do not rely on it.
 
 1. **smrt requires a field only when its own code would be wrong or unsafe
    without it.** Typical cases are ids, tenant scoping, idempotency and
-   duplicate-detection keys, state a smrt service steps through, and the
-   `_smrt_*` tables. Everything else is optional. Every required field in a
+   duplicate-detection keys, state a smrt service steps through, digests and
+   hashes smrt verifies, secrets smrt authenticates with, and the `_smrt_*`
+   tables. Everything else is optional. Every required field in a
    smrt package states its reason (`requiredFor`). Every smrt model is tested
    against a row that holds only its required fields.
 2. **Shape is declared only in what an app registers with smrt:** model

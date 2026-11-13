@@ -94,6 +94,11 @@ export type FieldType =
  * - `idempotency`: smrt uses it to detect a duplicate or replayed write.
  * - `workflow-state`: a smrt service steps the row through its values.
  * - `system-table`: the field is in an internal `_smrt_*` table.
+ * - `integrity`: smrt verifies stored content against this value (a digest, a
+ *   hash or a binding), or the value is the content it verifies; empty would
+ *   break or skip that check.
+ * - `authentication`: smrt authenticates a caller by checking a secret or key
+ *   against this value.
  */
 export const REQUIRED_FOR_REASONS = [
   'identity',
@@ -101,6 +106,8 @@ export const REQUIRED_FOR_REASONS = [
   'idempotency',
   'workflow-state',
   'system-table',
+  'integrity',
+  'authentication',
 ] as const;
 
 export type RequiredForReason = (typeof REQUIRED_FOR_REASONS)[number];

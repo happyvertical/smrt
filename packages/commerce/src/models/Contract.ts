@@ -579,7 +579,7 @@ export abstract class PurchaseContract extends Contract {
 @TenantScoped({ mode: 'optional' })
 @smrt()
 export class Estimate extends SalesContract {
-  @foreignKey(Customer, { required: true })
+  @foreignKey(Customer)
   override customerId: string | null = null;
   override contractType = ContractType.ESTIMATE;
 
@@ -595,7 +595,7 @@ export class Estimate extends SalesContract {
 @TenantScoped({ mode: 'optional' })
 @smrt()
 export class Order extends SalesContract {
-  @foreignKey(Customer, { required: true })
+  @foreignKey(Customer)
   override customerId: string | null = null;
   override contractType = ContractType.ORDER;
 
@@ -631,7 +631,7 @@ export class Order extends SalesContract {
 @TenantScoped({ mode: 'optional' })
 @smrt()
 export class Lease extends SalesContract {
-  @foreignKey(Customer, { required: true })
+  @foreignKey(Customer)
   override customerId: string | null = null;
   override contractType = ContractType.LEASE;
 
@@ -647,7 +647,7 @@ export class Lease extends SalesContract {
 @TenantScoped({ mode: 'optional' })
 @smrt()
 export class Agreement extends SalesContract {
-  @foreignKey(Customer, { required: true })
+  @foreignKey(Customer)
   override customerId: string | null = null;
   override contractType = ContractType.AGREEMENT;
 
@@ -661,7 +661,7 @@ export class Agreement extends SalesContract {
 @TenantScoped({ mode: 'optional' })
 @smrt()
 export class SupplierQuote extends PurchaseContract {
-  @foreignKey(Vendor, { required: true })
+  @foreignKey(Vendor)
   override vendorId: string | null = null;
   override contractType = ContractType.SUPPLIER_QUOTE;
 
@@ -677,7 +677,7 @@ export class SupplierQuote extends PurchaseContract {
 @TenantScoped({ mode: 'optional' })
 @smrt()
 export class PurchaseOrder extends PurchaseContract {
-  @foreignKey(Vendor, { required: true })
+  @foreignKey(Vendor)
   override vendorId: string | null = null;
   override contractType = ContractType.PURCHASE_ORDER;
 
@@ -715,7 +715,7 @@ export class PurchaseOrder extends PurchaseContract {
 @TenantScoped({ mode: 'optional' })
 @smrt()
 export class WholesaleOrder extends SalesContract {
-  @foreignKey(Customer, { required: true })
+  @foreignKey(Customer)
   override customerId: string | null = null;
   override contractType = ContractType.WHOLESALE_ORDER;
 

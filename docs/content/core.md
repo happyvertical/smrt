@@ -950,6 +950,8 @@ slug: string = '';
 | `idempotency` | smrt uses it to detect a duplicate or replayed write. |
 | `workflow-state` | A smrt service steps the row through its values. |
 | `system-table` | The field is in an internal `_smrt_*` table. |
+| `integrity` | smrt verifies stored content against this value (a digest, hash or binding), or the value is the content it verifies. |
+| `authentication` | smrt authenticates a caller by checking a secret or key against this value. |
 
 The value is a string literal. It is carried in the manifest as
 `_meta.requiredFor`, so other packages and your app build can read it. An app
