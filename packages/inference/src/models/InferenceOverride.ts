@@ -59,7 +59,7 @@ function parseJson(binding: string, raw: string | null, what: string): unknown {
   ],
 })
 export class InferenceOverride extends SmrtObject {
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   binding: string = '';
 
   // Not tenant-scoped (any scope is writable through the authorized service),

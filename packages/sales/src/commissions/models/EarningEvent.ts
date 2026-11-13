@@ -114,7 +114,7 @@ export class EarningEvent extends SmrtObject {
    * Idempotency natural key. Required. Callers embed tenant/source identity
    * (see the class doc) — the framework does not synthesize it.
    */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'idempotency' })
   dedupeKey: string = '';
 
   /** Additional metadata as a JSON string. */

@@ -190,11 +190,11 @@ class FieldPolicyTenantIsolationError extends TenantIsolationError {
 })
 export class FieldPolicy extends SmrtObject {
   /** Qualified class name of the target object (`@package/name:ClassName`). */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   objectRef: string = '';
 
   /** Field name on the target object (validated against the registry). */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   fieldName: string = '';
 
   /** Scope tier this row belongs to ('app' | 'tenant' | 'user'). */
@@ -215,7 +215,7 @@ export class FieldPolicy extends SmrtObject {
    * while `tenantId`/`userId` are nullable — mirrors `PromptOverride.context`.
    * Never read it for scoping logic; `scopeType` + the typed columns own that.
    */
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
   scopeKey: string = '';
 
   /** JSON-encoded default value; NULL = inherit. JSON `null` = "default to null". */

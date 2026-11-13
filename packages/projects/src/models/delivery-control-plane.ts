@@ -31,7 +31,8 @@ const INTERNAL_SURFACES = {
 })
 export class DevelopmentRequestWorkLink extends SmrtObject {
   @tenantId() tenantId: string = '';
-  @foreignKey('DevelopmentRequest', { required: true }) requestId: string = '';
+  @foreignKey('DevelopmentRequest', { required: true, requiredFor: 'identity' })
+  requestId: string = '';
   @field({ type: 'text' }) workItemType: string = '';
   @field({ type: 'text' }) workItemId: string = '';
   @field({ type: 'text' }) canonicalStatus: string = '';
@@ -49,9 +50,10 @@ export class DevelopmentRequestWorkLink extends SmrtObject {
 })
 export class ProjectDeliveryEvent extends SmrtObject {
   @tenantId() tenantId: string = '';
-  @foreignKey('ProjectIntegration', { required: true })
+  @foreignKey('ProjectIntegration', { required: true, requiredFor: 'identity' })
   integrationId: string = '';
-  @foreignKey('DevelopmentRequest', { required: true }) requestId: string = '';
+  @foreignKey('DevelopmentRequest', { required: true, requiredFor: 'identity' })
+  requestId: string = '';
   @field({ type: 'text' }) idempotencyKey: string = '';
   sequence: number = 0;
   @field({ type: 'text' }) type: DeliveryEventType = 'work_linked';
@@ -71,7 +73,8 @@ export class ProjectDeliveryEvent extends SmrtObject {
 })
 export class PreviewApproval extends SmrtObject {
   @tenantId() tenantId: string = '';
-  @foreignKey('DevelopmentRequest', { required: true }) requestId: string = '';
+  @foreignKey('DevelopmentRequest', { required: true, requiredFor: 'identity' })
+  requestId: string = '';
   @field({ type: 'text' }) previewId: string = '';
   @field({ type: 'text' }) previewUrl: string = '';
   @field({ type: 'text' }) status:
@@ -91,7 +94,7 @@ export class PreviewApproval extends SmrtObject {
 @smrt({ tableName: 'assistance_requests', ...INTERNAL_SURFACES })
 export class AssistanceRequest extends SmrtObject {
   @tenantId() tenantId: string = '';
-  @foreignKey('ProjectIntegration', { required: true })
+  @foreignKey('ProjectIntegration', { required: true, requiredFor: 'identity' })
   integrationId: string = '';
   @field({ type: 'text' }) requesterId: string = '';
   @field({ type: 'text' }) subject: string = '';
@@ -111,8 +114,8 @@ export class AssistanceRequest extends SmrtObject {
 @smrt({ tableName: 'assistance_request_events', ...INTERNAL_SURFACES })
 export class AssistanceRequestEvent extends SmrtObject {
   @tenantId() tenantId: string = '';
-  @foreignKey('AssistanceRequest', { required: true })
-  assistanceRequestId: string = '';
+  @foreignKey('AssistanceRequest', { nullable: true })
+  assistanceRequestId: string | null = null;
   @field({ type: 'text' }) priorClassification: AssistanceClassification =
     'unclassified';
   @field({ type: 'text' }) resultingClassification: AssistanceClassification =

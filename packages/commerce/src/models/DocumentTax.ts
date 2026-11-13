@@ -53,7 +53,7 @@ export class DocumentTax extends SmrtObject {
   @field({ required: true })
   documentType: CommerceDocumentType = 'invoice';
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   documentId = '';
 
   @field({ required: true })

@@ -80,7 +80,7 @@ export class Comment extends SmrtObject {
   /**
    * When the comment was created
    */
-  createdAt: Date | null = null;
+  createdAt: Date | null = new Date();
 
   /**
    * When the comment was last updated

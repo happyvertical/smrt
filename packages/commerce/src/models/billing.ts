@@ -73,13 +73,13 @@ const STANDINGS: readonly BillingStanding[] = [
 export class BillingAccount extends SmrtObject {
   /** The tenant that issues invoices (the provider or a reseller). */
   @crossPackageRef('@happyvertical/smrt-users:Tenant')
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   sellerTenantId: string = '';
   /** The billing owner that pays them. */
   @crossPackageRef('@happyvertical/smrt-users:Tenant')
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   payerTenantId: string = '';
-  @foreignKey('Customer')
+  @foreignKey('Customer', { required: true, requiredFor: 'identity' })
   customerId: string = '';
   /** Display name sent to the provider customer. */
   name: string = '';
@@ -174,11 +174,11 @@ export class BillingAccount extends SmrtObject {
 })
 export class BillingPeriodClose extends SmrtObject {
   @crossPackageRef('@happyvertical/smrt-users:Tenant')
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'tenant-scope' })
   sellerTenantId: string = '';
   kind: BillingCloseKind = 'provider';
   @crossPackageRef('@happyvertical/smrt-users:Tenant')
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'tenant-scope' })
   payerTenantId: string = '';
   currency: string = 'USD';
   periodStart: Date = new Date(0);
@@ -271,9 +271,9 @@ export class BillingPeriodClose extends SmrtObject {
   mcp: false,
 })
 export class BillingLineSource extends SmrtObject {
-  @crossPackageRef('@happyvertical/smrt-users:Tenant')
-  @field({ required: true })
-  sellerTenantId: string = '';
+  @crossPackageRef('@happyvertical/smrt-users:Tenant', { nullable: true })
+  @field({ required: false, nullable: true })
+  sellerTenantId: string | null = null;
   @foreignKey('BillingPeriodClose')
   periodCloseId: string = '';
   sourceType: BillingLineSourceType = 'client_charge';
@@ -347,10 +347,10 @@ export interface BillingPaymentAttemptTransition {
 })
 export class BillingPaymentAttempt extends SmrtObject {
   @crossPackageRef('@happyvertical/smrt-users:Tenant')
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'tenant-scope' })
   sellerTenantId: string = '';
   @crossPackageRef('@happyvertical/smrt-users:Tenant')
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'tenant-scope' })
   payerTenantId: string = '';
   billingAccountId: string = '';
   purpose: BillingPaymentAttemptPurpose = 'credit_purchase';
@@ -359,9 +359,11 @@ export class BillingPaymentAttempt extends SmrtObject {
   /** The balance credited (`credit_purchase`). */
   spendingPolicyId: string = '';
   /** Provider (rail) name, for example `btcpay`. */
+  @field({ required: true, requiredFor: 'idempotency' })
   provider: string = '';
   /** The rail order id (checkout idempotency key) the checkout was made for. */
   orderId: string = '';
+  @field({ required: true, requiredFor: 'idempotency' })
   checkoutId: string = '';
   status: string = 'open';
   exception: string = 'none';

@@ -25,7 +25,7 @@ export class ProjectIntegrationAudit extends SmrtObject {
   @tenantId()
   tenantId: string = '';
 
-  @foreignKey('ProjectIntegration', { required: true })
+  @foreignKey('ProjectIntegration', { required: true, requiredFor: 'identity' })
   integrationId: string = '';
 
   action: ProjectIntegrationAuditAction = 'created';

@@ -103,7 +103,7 @@ export class CommissionPayout extends SmrtObject {
 
   /** The {@link Earner} being paid. Required. */
   @field({ description: 'The affiliate being paid.' })
-  @foreignKey('Earner', { required: true })
+  @foreignKey('Earner', { required: true, requiredFor: 'identity' })
   earnerId: string = '';
 
   /** Start of the settlement period this batch covers (informational). */
@@ -189,6 +189,7 @@ export class CommissionPayout extends SmrtObject {
    */
   @field({
     required: true,
+    requiredFor: 'idempotency',
     description: 'A reference that stops the same payout being made twice.',
   })
   idempotencyKey: string = '';

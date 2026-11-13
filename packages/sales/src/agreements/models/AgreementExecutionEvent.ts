@@ -27,7 +27,7 @@ export class AgreementExecutionEvent extends SmrtObject {
   @tenantId()
   tenantId: string = '';
 
-  @foreignKey('AgreementExecution', { required: true })
+  @foreignKey('AgreementExecution', { required: true, requiredFor: 'identity' })
   executionId: string = '';
 
   provider: string = '';
@@ -35,7 +35,7 @@ export class AgreementExecutionEvent extends SmrtObject {
   eventOrigin: string = 'provider_webhook';
   operationId: string = '';
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'idempotency' })
   dedupeKey: string = '';
 
   orderingKey: string = '';

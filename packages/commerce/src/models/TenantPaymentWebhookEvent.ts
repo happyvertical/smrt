@@ -50,15 +50,15 @@ export type TenantPaymentWebhookOutcome =
 })
 export class TenantPaymentWebhookEvent extends SmrtObject {
   /** Payment backend adapter id, for example `stripe`. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'idempotency' })
   backendId: string = '';
 
   /** `test` or `live`. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'idempotency' })
   environment: string = '';
 
   /** Provider event id, for example a Stripe `evt_...`. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'idempotency' })
   eventId: string = '';
 
   /** Provider event type. */
@@ -68,9 +68,9 @@ export class TenantPaymentWebhookEvent extends SmrtObject {
   endpoint: string = '';
 
   /** Tenant the event's connected account resolved to. */
-  @crossPackageRef('@happyvertical/smrt-users:Tenant')
-  @field({ required: true })
-  tenantId: string = '';
+  @crossPackageRef('@happyvertical/smrt-users:Tenant', { nullable: true })
+  @field({ required: false, nullable: true })
+  tenantId: string | null = null;
 
   /** Connected provider account the event was routed by. */
   providerAccountId: string = '';

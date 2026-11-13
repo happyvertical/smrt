@@ -62,18 +62,18 @@ export class ReferralLink extends SmrtObject {
   tenantId: string | null = null;
 
   /** The Referrer this link credits. Required. */
-  @foreignKey('Referrer', { required: true })
+  @foreignKey('Referrer', { required: true, requiredFor: 'identity' })
   referrerId: string = '';
 
   /** The ReferralProgram this link belongs to. Required. */
-  @foreignKey('ReferralProgram', { required: true })
+  @foreignKey('ReferralProgram', { required: true, requiredFor: 'identity' })
   programId: string = '';
 
   /**
    * Globally unique share code (10 lowercase-alphanumeric characters when
    * minted by `createWithUniqueCode`). Natural key.
    */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   code: string = '';
 
   /**

@@ -39,7 +39,7 @@ export class SupportInteraction extends SmrtObject {
   tenantId: string | null = null;
 
   @field({ description: 'The ticket this message belongs to.' })
-  @foreignKey('SupportCase', { required: true })
+  @foreignKey('SupportCase', { required: true, requiredFor: 'identity' })
   caseId: string = '';
 
   @field({

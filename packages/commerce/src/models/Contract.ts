@@ -134,10 +134,10 @@ export class Contract extends SmrtObject {
   }
 
   /**
-   * Tenant ID for multi-tenant isolation
-   * Nullable to support both tenant-scoped and global contracts
+   * Tenant that owns this money document and scopes its tax reads
    */
-  @tenantId({ nullable: true })
+  @tenantId({ nullable: false })
+  @field({ required: true, requiredFor: 'tenant-scope' })
   tenantId: string | null = null;
 
   /**

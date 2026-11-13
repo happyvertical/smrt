@@ -40,7 +40,7 @@ export class AgentSession extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   agentId: string = '';
 
   /**
@@ -60,7 +60,10 @@ export class AgentSession extends SmrtObject {
   @crossPackageRef('@happyvertical/smrt-profiles:Profile')
   agentProfileId: string | null = null;
 
-  @crossPackageRef('@happyvertical/smrt-profiles:Profile', { required: true })
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile', {
+    required: true,
+    requiredFor: 'identity',
+  })
   participantProfileId: string = '';
 
   @foreignKey('ChatRoom')

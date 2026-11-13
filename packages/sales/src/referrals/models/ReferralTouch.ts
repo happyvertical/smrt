@@ -45,7 +45,7 @@ export class ReferralTouch extends SmrtObject {
   code: string = '';
 
   /** The Referrer this touch credits. Required. */
-  @foreignKey('Referrer', { required: true })
+  @foreignKey('Referrer', { required: true, requiredFor: 'identity' })
   referrerId: string = '';
 
   /** The ReferralProgram the touch belongs to. */
