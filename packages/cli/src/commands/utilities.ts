@@ -3863,6 +3863,15 @@ export default testManifest;
           }
         }
 
+        const { runDoctorMigratePreviewSection } = await import(
+          './doctor-migrate-preview.js'
+        );
+        await runDoctorMigratePreviewSection(
+          { issues, warnings, passed },
+          check,
+          { verbose: options.verbose },
+        );
+
         const permissions = await runPostgresPermissions({}, true);
         for (const line of formatPermissionsOutcome(permissions))
           console.log(line);
