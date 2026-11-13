@@ -271,7 +271,9 @@ test('capture is stable and restore round trips catalogs and bookkeeping', async
   try {
     assert.equal(
       stableJSON(
-        await introspect(db, release, { modelTables: first.modelTables }),
+        await introspect(db, first.release, {
+          modelTables: first.modelTables,
+        }),
       ),
       stableJSON(first),
     );
