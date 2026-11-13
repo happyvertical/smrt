@@ -25,6 +25,26 @@ describe('Button', () => {
     expect(button).toHaveAttribute('type', 'button');
   });
 
+  it.each([
+    undefined,
+    '/home',
+  ])('can trim the historical label spacer without changing the default (%s)', (href) => {
+    const role = href ? 'link' : 'button';
+    const first = render(Button, {
+      props: { href, children: textSnippet('Approve') },
+    });
+    expect(screen.getByRole(role).textContent).toBe(' Approve');
+    first.unmount();
+    render(Button, {
+      props: {
+        href,
+        labelWhitespace: 'trim',
+        children: textSnippet('Approve'),
+      },
+    });
+    expect(screen.getByRole(role).textContent).toBe('Approve');
+  });
+
   it('fires onclick when clicked', async () => {
     const onclick = vi.fn();
     render(Button, { props: { children: textSnippet('Go'), onclick } });

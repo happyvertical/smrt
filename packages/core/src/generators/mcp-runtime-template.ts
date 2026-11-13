@@ -115,7 +115,6 @@ export interface RuntimeOptions {
    * empty registry, then loads the approved qualified type through the public
    * collection API.
    */
-  stiTargets?: Record<string, Record<string, string>>;
 
   /**
    * Default list ordering per lowercased MCP object prefix (#2367).
@@ -145,7 +144,6 @@ export function generateRuntimeBootstrap(options: RuntimeOptions = {}): string {
     customActions = {},
     taskActions = {},
     tenantScopedObjects = [],
-    stiTargets = {},
     listOrderBy = {},
     toolListCacheHint = { ttlMs: 86_400_000, cacheScope: 'private' },
   } = options;
@@ -245,9 +243,9 @@ ${indent}}`;
 
           case 'create':
             return `${indent}case '${tool.name}': {
-${indent}  const { collection, objectName: targetObjectName } = await resolveCreateTarget(${JSON.stringify(objectName)}, ${JSON.stringify(lookup)}, args, aiConfig);
+${indent}  const { collection, objectName: targetObjectName, data } = await resolveCreateTarget(${JSON.stringify(lookup)}, args, aiConfig);
 
-${indent}  const newItem = await collection.create(applyWritablePolicy(targetObjectName, args));
+${indent}  const newItem = await collection.create(applyWritablePolicy(targetObjectName, data));
 
 ${indent}  return successResult(newItem.toPublicJSON(PUBLIC_JSON_OPTIONS));
 ${indent}}`;
@@ -387,7 +385,9 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from '@happyvertical/smrt-core';
 import { normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY } from '@happyvertical/smrt-core';
+import { COOKBOOK_TOOL_NAMES, getCookbookToolService } from '@happyvertical/smrt-core/cookbook/tools';
 import { loadConfig } from '@happyvertical/smrt-config';
 ${hasTaskActions ? "import { McpTaskStore, TaskRunner } from '@happyvertical/smrt-jobs';\n" : ''}
 ${hasTenantScoped ? "import { enableTenancy, runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}
@@ -401,9 +401,17 @@ const DEBUG = ${debug};
 const TOOLS = ${toolsCode};
 const TOOL_LIST_CACHE_HINT = ${JSON.stringify(toolListCacheHint)};
 const TOOL_TARGETS: Record<string, { objectName: string; action: string; registryKey?: string }> = ${JSON.stringify(toolTargets)};
+function runtimeToolEnabled(name: string): boolean {
+  if (!hasRuntimeExposureGate()) return true;
+  const target = TOOL_TARGETS[name];
+  return !!target && isRuntimeModelEnabled(
+    ObjectRegistry.getExposureModel(target.registryKey || target.objectName),
+    { surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID },
+  );
+}
+
 const CUSTOM_ACTIONS = ${JSON.stringify(customActions)};
 const TASK_ACTIONS = ${JSON.stringify(taskActions)};
-const STI_TARGETS: Record<string, Record<string, string>> = ${JSON.stringify(stiTargets)};
 ${
   hasTenantScoped
     ? `
@@ -490,20 +498,16 @@ function applyWritablePolicy(objectName: string, data: any): Record<string, any>
 }
 
 /** Resolve an advertised STI discriminator to its registered subtype collection. */
-async function resolveCreateTarget(stiKey: string, baseObjectName: string, args: Record<string, any>, aiConfig: any) {
-  let objectName = baseObjectName;
-  const discriminator = args._meta_type;
-  const targets = STI_TARGETS[stiKey];
-  if (typeof discriminator === 'string' && targets) {
-    const target = targets[discriminator];
-    if (!target) throw new Error('Unknown STI discriminator: ' + discriminator);
-    objectName = target;
-  }
-  const collection = await ObjectRegistry.getCollection(objectName, {
+async function resolveCreateTarget(baseObjectName: string, args: Record<string, any>, aiConfig: any) {
+  const target = ObjectRegistry.resolveCreateTarget(baseObjectName, args, {
+    surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID,
+  });
+  const objectName = target.collectionName;
+  const collection = await ObjectRegistry.getCollection(target.collectionName, {
     persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
     ai: aiConfig,
   });
-  return { collection, objectName };
+  return { collection, objectName, data: target.data };
 }
 
 /**
@@ -702,6 +706,7 @@ async function handleTaskExtensionMessage(message: any): Promise<any | null> {
   try {
     const { store } = await getTaskRuntime();
     if (action) {
+      if (!runtimeToolEnabled(params.name)) return jsonRpcError(message.id, -32602, 'Unknown tool');
       if (typeof params.arguments?.id !== 'string') {
         return jsonRpcError(message.id, -32602, 'Task-enabled custom actions require an id');
       }
@@ -829,14 +834,20 @@ ${
       },
       {
         capabilities: {
-          tools: {},
+          tools: { listChanged: true },
           ${hasTaskActions ? "extensions: { 'io.modelcontextprotocol/tasks': {} }," : ''}
         },
         cacheHints: {
-          'tools/list': TOOL_LIST_CACHE_HINT,
+          'tools/list': (hasRuntimeExposureGate() || getCookbookToolService()) ? { ttlMs: 0, cacheScope: 'private' } : TOOL_LIST_CACHE_HINT,
         },
       }
     );
+
+    const unsubscribeExposure = subscribeRuntimeExposure(() => {
+      void server.sendToolListChanged().catch(() => {});
+    });
+    const previousOnClose = server.onclose;
+    server.onclose = () => { unsubscribeExposure(); previousOnClose?.(); };
 
     // Register ListTools handler
     server.setRequestHandler('tools/list', async (_request: ListToolsRequest) => {
@@ -844,8 +855,10 @@ ${
         console.error(\`[MCP] ListTools request received\`);
       }
 
+      const live = await getCookbookToolService()?.modelTools?.({surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID, userId: process.env.SMRT_MCP_USER_ID}, {ai: aiConfig, permissions: PUBLIC_JSON_OPTIONS.permissions});
+      if (live) return {tools: await live.generateTools()};
       return {
-        tools: [...TOOLS].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0),
+        tools: [...TOOLS.filter((tool) => runtimeToolEnabled(tool.name)), ...(await getCookbookToolService()?.list({ surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID, userId: process.env.SMRT_MCP_USER_ID }) ?? [])].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0),
       };
     });
 
@@ -859,6 +872,15 @@ ${
       }
 
       try {
+        const recipeName = COOKBOOK_TOOL_NAMES.find(name => name === toolName);
+        const cookbook = getCookbookToolService();
+        if (recipeName && cookbook) {
+          const result = await cookbook.invoke(recipeName, args, { surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID, userId: process.env.SMRT_MCP_USER_ID });
+          return { content: [{ type: 'text', text: result.summary }], structuredContent: result };
+        }
+        const live = await cookbook?.modelTools?.({surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID, userId: process.env.SMRT_MCP_USER_ID}, {ai: aiConfig, permissions: PUBLIC_JSON_OPTIONS.permissions});
+        if (live && !Object.hasOwn(TASK_ACTIONS, toolName)) return live.handleToolCall({method: 'tools/call', params: {name: toolName, arguments: args}});
+        if (!runtimeToolEnabled(toolName)) throw new Error('Unknown tool');
         // Static switch statement for tool execution
         const runToolBody = async () => {
           switch (toolName) {

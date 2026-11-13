@@ -1,5 +1,6 @@
 // Plain-language reading of an approval's preview and action.
-import type { ApprovalView } from './types.ts';
+import { publishLines } from './publish.ts';
+import type { ApprovalView, PublishPreview } from './types.ts';
 
 function obj(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v)
@@ -133,6 +134,7 @@ function commandLines(
         ),
       };
     }
+    case 'undoTo':
     case 'undo': {
       const fields = (Array.isArray(preview.fields) ? preview.fields : [])
         .map(obj)
@@ -165,6 +167,29 @@ export function describeApproval(view: ApprovalView): ApprovalDescription {
   };
   if (!action) return empty;
   switch (action.kind) {
+    case 'publish-draft': {
+      const p = preview as unknown as PublishPreview;
+      return {
+        ...empty,
+        lines: [
+          `Publishes “${action.draftName}”.`,
+          ...publishLines(p),
+          'Counts can change until publish. Draft records are thrown away.',
+        ],
+        blocks: p.methods.map((m) => ({
+          title: `${m.model}.${m.name}()`,
+          code: m.code,
+        })),
+      };
+    }
+    case 'discard-draft':
+      return {
+        ...empty,
+        destructive: true,
+        lines: [
+          `Discards “${action.draftName}” and its test records. Your live app stays unchanged.`,
+        ],
+      };
     case 'command':
       return commandLines(action.command, preview);
     case 'record-delete':

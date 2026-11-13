@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [svelte()],
   resolve: { conditions: ['browser'] },
   test: {
+    globalSetup: ['../vitest/src/test-home.global-setup.ts'],
     globals: true,
     environment: 'jsdom',
     include: ['src/svelte/__tests__/lead-components.test.ts', 'src/svelte/__tests__/seller-governance-components.test.ts'],

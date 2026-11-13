@@ -1,12 +1,28 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, globSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 const repoRoot = fileURLToPath(new URL('../', import.meta.url));
+
+test.before(() => {
+  // Build each package and its dependency closure, so even an existing
+  // CI dist reflects current source. Keep compilation outside the pack deadline;
+  // real pack below still runs every lifecycle hook and artifact verifier.
+  const built = spawnSync('pnpm', [
+    'exec', 'turbo', 'run', 'build',
+    '--filter=@happyvertical/smrt-template-sveltekit...',
+    '--filter=@happyvertical/smrt-cli...',
+  ], {
+    cwd: repoRoot, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
+    timeout: 600_000,
+  });
+  assert.ifError(built.error);
+  assert.equal(built.status, 0, `${built.stdout}${built.stderr}`);
+});
 
 // These packages have no verify:pack script. Match the publish validator's
 // real pnpm-pack boundary, including ordinary lifecycle hooks, rather than
@@ -21,6 +37,7 @@ for (const directory of ['template-sveltekit', 'template-site-static-json']) {
         encoding: 'utf8',
         timeout: 120_000,
       });
+      assert.ifError(packed.error);
       assert.equal(packed.status, 0, `${packed.error ?? ''}\n${packed.stdout}${packed.stderr}`);
       const tarballs = readdirSync(output).filter((file) => file.endsWith('.tgz'));
       assert.equal(tarballs.length, 1);
@@ -32,6 +49,70 @@ for (const directory of ['template-sveltekit', 'template-site-static-json']) {
       ], { cwd: repoRoot, encoding: 'utf8', timeout: 30_000 });
       assert.equal(verified.status, 0, `${verified.error ?? ''}\n${verified.stdout}${verified.stderr}`);
       assert.match(verified.stdout, /Verified packed exports/);
+    } finally {
+      rmSync(output, { recursive: true, force: true });
+    }
+  });
+}
+
+
+test('real CLI tarball retains every authored cookbook API route', () => {
+  const output = mkdtempSync(join(tmpdir(), 'smrt-cookbook-pack-'));
+  try {
+    const packed = spawnSync('pnpm', ['pack', '--pack-destination', output], {
+      cwd: join(repoRoot, 'packages/cli'), encoding: 'utf8', timeout: 180_000,
+    });
+    assert.ifError(packed.error);
+    assert.equal(packed.status, 0, `${packed.error ?? ''}\n${packed.stdout}${packed.stderr}`);
+    const tarballs = readdirSync(output).filter((file) => file.endsWith('.tgz'));
+    assert.equal(tarballs.length, 1);
+    const tarball = join(output, tarballs[0]);
+    const listed = spawnSync('tar', ['-tzf', tarball], { encoding: 'utf8' });
+    assert.equal(listed.status, 0, listed.stderr);
+    const files = new Set(listed.stdout.trim().split('\n'));
+    const prefix = 'package/dist/templates/cookbook/';
+    assert.equal(files.has(`${prefix}.gitignore`), false);
+    const ignored = spawnSync('tar', ['-xOf', tarball, `${prefix}gitignore.template`], { encoding: 'utf8' });
+    assert.equal(ignored.status, 0, ignored.stderr);
+    for (const route of ['_runtime/owner-link', 'assistant/[...path]', 'connect-ai', 'cookbook/prebuilt', 'cookbook/preferences', 'onboarding']) {
+      const path = `src/routes/api/${route}/+server.ts`;
+      assert.ok(files.has(`${prefix}${path}`), `Missing packed authored route ${path}`);
+      assert.ok(ignored.stdout.split('\n').includes(`!${path}`), `Authored route must remain tracked: ${path}`);
+    }
+  } finally {
+    rmSync(output, { recursive: true, force: true });
+  }
+});
+
+// Release shards restore dist from prepare-release, without its Turbo cache.
+// Packing must verify those artifacts rather than replace any dependency build.
+for (const directory of ['cli', 'template-sveltekit']) {
+  test(`CI pack preserves prepared artifacts with a cold cache: ${directory}`, () => {
+    const output = mkdtempSync(join(tmpdir(), 'smrt-prepared-pack-'));
+    const cache = join(output, 'cold-turbo-cache');
+    try {
+      const fingerprints = [];
+      for (const phase of ['before', 'after']) {
+        const files = globSync('packages/*/dist/**/*', { cwd: repoRoot }).sort();
+        fingerprints.push(files.flatMap((file) => {
+          const info = statSync(join(repoRoot, file), { bigint: true });
+          return info.isFile() ? [[file, info.size, info.mtimeNs]] : [];
+        }));
+        if (phase === 'before') {
+          assert.ok(fingerprints[0].length > 0, 'prepare-release artifacts exist');
+          const packed = spawnSync('pnpm', ['pack', '--pack-destination', output], {
+            cwd: join(repoRoot, 'packages', directory),
+            env: { ...process.env, CI: 'true', TURBO_CACHE_DIR: cache },
+            encoding: 'utf8', timeout: 120_000,
+          });
+          assert.ifError(packed.error);
+          assert.equal(packed.status, 0, `${packed.stdout}${packed.stderr}`);
+          assert.match(packed.stdout, /Reusing existing CI build artifacts/);
+        }
+      }
+      assert.deepEqual(fingerprints[1], fingerprints[0], 'pack must not rewrite prepared dist');
+      assert.equal(existsSync(cache), false, 'pack must not invoke Turbo');
+      assert.equal(readdirSync(output).filter((file) => file.endsWith('.tgz')).length, 1);
     } finally {
       rmSync(output, { recursive: true, force: true });
     }

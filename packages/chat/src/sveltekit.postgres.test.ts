@@ -176,7 +176,7 @@ function messagesAs(tenantId: string, threadId: string) {
     return rows(
       await db.query(
         `SELECT id, role, CAST(tenant_id AS text) AS tenant_id,
-                CAST(reply_to_message_id AS text) AS reply_to, metadata, content
+                CAST(reply_to_message_id AS text) AS reply_to, metadata, content, tool_call_data
            FROM chat_messages WHERE CAST(thread_id AS text) = $1
           ORDER BY created_at`,
         threadId,
@@ -512,11 +512,20 @@ postgresDescribe('streamed assistant turn under database-rls', () => {
       },
     ]);
 
-    // Committed under tenant A: the send, its linked reply, its outcome.
+    // The send, persisted tool result and linked reply commit under tenant A.
     const stored = await messagesAs(tenantA, threadId);
-    expect(stored.map((row) => row.role)).toEqual(['user', 'assistant']);
+    expect(stored.map((row) => row.role)).toEqual([
+      'user',
+      'tool',
+      'assistant',
+    ]);
     expect(stored.every((row) => row.tenant_id === tenantA)).toBe(true);
-    const [send, reply] = stored;
+    const [send, tool, reply] = stored;
+    expect(tool.reply_to).toBe(send.id);
+    expect(JSON.parse(String(tool.tool_call_data))).toMatchObject({
+      name: PROBE,
+      status: 'success',
+    });
     expect(reply.reply_to).toBe(send.id);
     expect(reply.content).toBe('Delayed reply.');
     expect(JSON.parse(String(send.metadata))).toMatchObject({
@@ -532,7 +541,15 @@ postgresDescribe('streamed assistant turn under database-rls', () => {
     );
     const items = ((await listed.json()) as { items: AssistantMessageWire[] })
       .items;
-    expect(items.map((item) => item.role)).toEqual(['user', 'assistant']);
+    expect(items.map((item) => item.role)).toEqual([
+      'user',
+      'tool',
+      'assistant',
+    ]);
+    expect(items[1].toolCallData).toMatchObject({
+      name: PROBE,
+      status: 'success',
+    });
     const retry = await inRequest(actor, () =>
       routes.POST(
         routeEvent('POST', `threads/${threadId}/messages`, actor, {

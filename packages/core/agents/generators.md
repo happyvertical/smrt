@@ -483,6 +483,30 @@ A host with an allow-list passes it so the duplicate-name check runs over the
 published set only: an unrelated collision among classes it never lists must
 not fail its catalog or calls (#3490). App MCP always scopes its generators.
 
+`MCPConfig.qualifyCollidingNames` is an opt-in for a host whose declared scope
+contains unrelated models with the same aliases. Before live exposure filtering,
+every tool of each colliding model gets its qualified registry identity as the
+prefix, then the existing protocol canonicalizer handles punctuation/length.
+Qualified `classNames` also reserve names for deferred, not-yet-imported models;
+effective registered replacement aliases collapse to their actual identity.
+Unique models keep their published aliases; the original name/class/action
+binding never changes. Duplicate aliases within one model and any remaining
+collision still fail closed. Keep the declared scope stable across recipe
+changes: filtering the scope to enabled models would let an old alias retarget
+another model. The cookbook host opts in over its entire installed catalog.
+Class-scope tests cover unchanged default refusal, unique aliases, qualified
+dispatch to two real SQLite collections, stable names across exposure changes,
+and stale disabled-call refusal. The host suite includes two disabled colliding
+catalog models so listing enabled tools cannot regress to a 500.
+
+`MCPConfig.snakeCaseNames` opts into the stricter lowercase snake_case grammar
+used by authored workflow adapters. The same canonicalizer preserves compliant
+names, hashes invalid names with the original identity, sanitizes the prefix and
+ensures a lowercase leading letter. Default protocol aliases remain unchanged.
+The cookbook host selects this mode before projecting descriptors as workflows.
+Its enabled-collision regression covers the actual workflow constructor; testing
+only disabled colliding models would miss this consumer grammar boundary.
+
 ## Generated route collection access (#3416)
 
 There is no generated route-access module. Every generated SvelteKit route
@@ -574,3 +598,139 @@ inlines local `$ref`/`$defs`, drops `$schema`, and removes top-level
 `anyOf`/`oneOf`/`allOf`/`not`/`enum`/`const`, keeping `required` alternatives as
 a description sentence. MCP clients keep the original schema. Test:
 `src/generators/__tests__/provider-tool-schema.test.ts`.
+
+Same-name app replacements select one effective route, collection, tool and row
+type; upstream manifest declarations remain for ancestry. See
+[app-subclasses.md](app-subclasses.md).
+
+## Shared STI create identity
+
+Runtime REST collection discovery resolves a shared collection to its effective
+STI root even when a subtype registered first. An explicit child namespace uses
+its oldest matching ancestor, so deeper descendants cannot retarget it.
+MCP's discriminator catalog walks
+qualified ancestry through registry replacements, so provider children remain
+selectable after an app replaces their same-name base. Omitted discriminators
+create the effective base; explicit MCP discriminators must name an advertised
+family member. Unknown or unrelated identities fail before any create.
+
+| Invariant | Trigger and positive case | Failure/control | Context and executor | Edge / level | Command |
+| --- | --- | --- | --- | --- | --- |
+| Shared CRUD owner | Profile/Bot and generic family, explicit branch namespaces, either registry order, base and same-name app root | Subtypes never replace base metadata | Users catalog, no database | Assistant dispatch metadata / regression | users `pnpm test` |
+| Default create | REST, MCP, CLI create handler and assistant choose Profile or generic root | Persisted discriminator is never the sibling's | Authenticated transport or authorized principal stub, one in-process SQLite handle, ordinary create lifecycle | Generated dispatch / integration | users `pnpm test` |
+| Explicit CLI selector | JSON file names a valid descendant | Unknown, unrelated and sibling identities fail before creation | CLI create handler and public collection, in-process Node/SQLite | Discriminator validation / regression | users and core `pnpm test` |
+| App root and children | Child-first REST and MCP create app Profile; explicit provider Person stays Person | Unknown/unrelated MCP discriminator writes nothing | In-process Node and SQLite for app fixture; recording collection for rejection | Qualified identity / integration and unit | core `pnpm test` |
+
+These changes select dispatch identities; mutation atomicity, rollback, SQL
+syntax, tenancy and authorization contracts remain owned by existing collection
+and transport tests. No new persistence algorithm or dialect-specific behavior
+is introduced. The cross-path fixture executes SQLite, not external services.
+
+## Live cookbook gating over AOT definitions
+
+[Runtime exposure](runtime-exposure.md) is opt-in and separate from declaration
+exposure. `MCPGenerator.generateToolDefinitions()` returns the build-time superset;
+`generateTools()` is the live per-tenant listing. Runtime REST and generated
+SvelteKit CRUD/custom actions gate before collection access; generated sync-apply
+refuses disabled targets. Generated MCP servers filter static definitions on each
+list/call and emit `notifications/tools/list_changed`. Static definitions, their
+canonical tool names, route files and web manifest hashes remain stable.
+`ObjectRegistry.getExposureModel()` resolves a collection to its effective row
+model using the existing package-qualified collection resolver. Gates preserve
+same-name replacement provenance and never substitute simple-name matches.
+
+Provider-qualified MCP class scopes follow explicit app replacement provenance;
+they never match an unrelated class with the same simple name. Generated hosts
+with an app editor reuse the live MCP generator; see [app tools](app-tools.md).
+
+## Public collection create targets (A1b)
+
+`ObjectRegistry.getCreateTargets(collectionKey, context?)` describes the effective
+`base` and its `subtypes` as exact registry `{ name, label }` choices, plus
+`polymorphic`. Labels use `ui.label`, falling back to the model name. Collection
+receivers resolve to their bound item model. Qualified declared ancestry preserves
+provider children after same-name app replacement; unrelated classes and separate
+tables never enter the family. Abstract children are excluded. Omit context only
+for AOT artifacts; live offerings pass trusted `RuntimeExposureContext` to remove
+disabled/unready children. No catalog is cached across cookbook changes.
+
+`ObjectRegistry.resolveCreateTarget(collectionKey, input, context)` validates STI
+create `createType` (qualified model id) or the compatible `_meta_type` alias. Conflicting,
+malformed, unknown, foreign and gated choices fail before writes. It returns the
+selected `name`/`label`, the `collectionName` receiver to execute, and `data` with
+selectors removed. The original receiver is preserved for omitted/base selectors;
+a selected subtype uses its exact collection. Every model keeps its ordinary
+`type` field as business data. Apply the chosen collection's writable policy to `data` afterward; default creates retain receiver restrictions.
+MCP (in-process and emitted), REST (runtime and emitted), CLI and chat share this
+API; generated MCP no longer freezes a private discriminator map. REST OpenAPI
+POST schemas advertise the same optional choices; pass `exposureContext` for live
+documentation. Existing CRUD auth, permission and tenant gates still apply.
+
+| Behavior/invariant | Reachable trigger | Positive case | Failure/control | Actor/context | Executor/transaction | Runtime/dialect | Contract edge / level | Validation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Family identity and replacement | All four create paths, provider/app fixture | Omitted selector persists effective base; explicit subtype persists child and own writable fields | Foreign/unknown/malformed/gated selectors write zero rows | Authenticated MCP/REST, CLI host and authorized principal stub; trusted tenant | Existing collection lifecycle on one SQLite handle; no new transaction algorithm | Node/SQLite | Registry → transport → persistence / integration | chat full test (`create-targets.test.ts`) |
+| Live offerings | Same MCP/chat/CLI catalog and REST OpenAPI | Exact ids and human labels agree | Disabled child absent; child namespace cannot select parent | Trusted tenant, live gate | No persistence | Node | Catalog / integration | chat full test |
+| Write policy and compatibility | Explicit subtype, legacy alias and plain model | Child writable field survives; selectors removed; STI business `type` retained | Readonly field excluded; conflicting aliases refused | Same authorized create | Existing collection and writable policy | Node/SQLite | Input boundary / regression | chat full test; core generator tests |
+| Business classification | All four paths with a Content-style STI family | `type: "article"` persists for default base and explicit `createType` child | MCP/schema/OpenAPI/CLI offerings reserve only `createType`; no flat `type` selector | Same authorized create, provider and replaced base | Same SQLite handle | Node/SQLite | Transport schema and dispatch / regression | chat `create-targets.test.ts`; emitted REST runtime test; root content API suite |
+| Users canary | Chat assistant's Profile create tool | Default Profile; explicit Bot via either selector; summary preserves type | Existing offer/execution authority tests remain | Real principal and tenant permissions | Existing SQLite chat/tool-loop fixture | Node/SQLite | Assistant → profiles / integration | chat full test (`tool-loop.test.ts`) |
+
+No PostgreSQL/DuckDB execution is claimed by these new cases; no SQL, schema,
+retry, atomicity or tenant-authority algorithm changes. Existing suites own those
+contracts. Reuse search used configured MCP `review_smrt_project` (core/chat/CLI),
+`build_context` architecture query for registry/collection STI create discovery,
+the intent index, and `rg` name/purpose searches for create targets, STI variants,
+subtype selectors and discriminator dispatch across core, chat, users, smrt-ui and
+smrt-svelte. The existing MCP ancestry walk moved into its registry owner; existing
+replacement, collection receiver and runtime exposure APIs supply its identities.
+No new production file, component, model, route or tool was introduced.
+
+Regression evidence: with the pre-change chat dispatcher restored temporarily,
+both new Profile→Bot selector canaries failed (actual Profile); the three
+selector-free Profile/Person/Bot controls passed. Restoring this implementation
+passed all five. The dispatcher file was restored before final validation.
+
+The first full-root run exposed the Content collision: `smrt-content`'s
+`contents-api.test.ts` POST create returned 400 for business `type: "article"`.
+The follow-up reserves `createType` across transports and leaves business `type`
+untouched, including on STI families; the four-path fixture reproduces that input.
+Emitted SvelteKit POST tests also call the real registry API for provider/app
+families, check the exact receiver and child writable fields, and prove invalid
+or gated selectors never reach collection creation.
+
+## Unexpected HTTP failures
+
+Both emitted SvelteKit routes and `APIGenerator.generateHandler()` preserve
+typed 4xx failures. Other failures use the server-only
+`reportUnexpectedHttpError(cause, request)` export: the framework logger receives
+a fresh `requestId`, method, pathname and bounded, redacted Error cause chain.
+Request headers, query parameters, bodies and arbitrary thrown objects are not
+logged. The 500 body contains only `error: "Internal server error"` and that
+`requestId`. Keep this helper out of the browser-safe typed-error module.
+
+Reuse check: configured smrt-dev-mcp `review_smrt_project` (core, commerce,
+smrt-web, smrt-svelte), the intent index, and `rg` queries for route errors,
+correlation/request IDs, loggers, redaction, inline writes and template activation
+across core, chat, smrt-ui, smrt-svelte and config found no shared opaque HTTP
+reporter. New `src/generators/route-error.ts` composes the existing SDK logger,
+config secret redactor and core database URL redactor. Its test file exercises
+that helper; no duplicate logger, route, model or tool is introduced.
+
+Hosted collection aliases select REST routes, not MCP class identities. The
+class-scope regression applies aliasHostedCollections to two same-name models,
+registers those distinct collections and proves default MCP still rejects the
+ambiguous alias. The existing optional canonicalizer mode then yields two valid
+workflow names with exact original identities. These are distinct protocol
+boundaries; no additional REST or MCP alias mechanism is introduced.
+
+## Runtime API discovery entry
+
+`@happyvertical/smrt-core/api-actions` exposes the existing method-name, action-set,
+custom-action and route-configuration resolvers for Node runtime discovery.
+Their implementation lives with the pure manifest projection in
+`vite-plugin/web-collections.ts`. The SvelteKit emitter re-exports those same
+bindings for compatibility; runtime consumers must use the leaf rather than the
+Vite-plugin barrel. This keeps route emission and resource discovery on one
+policy without importing the emitter, activation generator or scanner build graph.
+Existing emitter/web projection tests cover CRUD, custom receivers, withheld
+methods, replacements, collection ownership and malformed config. The published
+root/leaf guard also checks binding identity with the old build API.

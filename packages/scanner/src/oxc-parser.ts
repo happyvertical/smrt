@@ -353,6 +353,8 @@ interface Decorator extends BaseNode {
 
 interface ExportNamedDeclaration extends BaseNode {
   type: 'ExportNamedDeclaration';
+  source?: Literal | null;
+  exportKind?: string;
   declaration: Statement | null;
   specifiers: ExportSpecifier[];
 }
@@ -364,6 +366,7 @@ interface ExportDefaultDeclaration extends BaseNode {
 
 interface ExportSpecifier extends BaseNode {
   type: 'ExportSpecifier';
+  exportKind?: string;
   local: Identifier;
   exported: Identifier;
 }
@@ -595,6 +598,7 @@ export function parseFile(filePath: string): FileScanResult {
           classes.push(extracted);
         }
       }
+      resolveReplacementExports(classes, program.body);
       resolveLocalParameterAliases(classes, typeAliases);
       reportUnresolvedSpreads(ctx.unresolved, filePath, sourceText, errors);
       agentSurface = maybeExtractAgentSurface(program, sourceText, filePath);
@@ -838,6 +842,7 @@ export function parseSource(
           classes.push(extracted);
         }
       }
+      resolveReplacementExports(classes, program.body);
       resolveLocalParameterAliases(classes, typeAliases);
       reportUnresolvedSpreads(ctx.unresolved, filename, sourceText, errors);
       agentSurface = maybeExtractAgentSurface(program, sourceText, filename);
@@ -2001,6 +2006,33 @@ function extractClassDeclaration(
       ? { bodyStart: node.body.start }
       : {}),
   };
+}
+
+/** Only a local value export matching the imported parent names a replacement. */
+function resolveReplacementExports(
+  classes: RawClassDefinition[],
+  statements: Statement[],
+): void {
+  for (const node of statements) {
+    if (
+      node.type !== 'ExportNamedDeclaration' ||
+      node.source ||
+      node.exportKind === 'type'
+    )
+      continue;
+    for (const specifier of node.specifiers) {
+      if (specifier.exportKind === 'type') continue;
+      const model = classes.find(
+        (entry) => entry.className === specifier.local.name,
+      );
+      if (
+        model?.extendsSource &&
+        specifier.exported.name === model.extendsClause
+      ) {
+        model.exportName = specifier.exported.name;
+      }
+    }
+  }
 }
 
 const MODEL_DESCRIPTION_MAX = 200;

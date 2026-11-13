@@ -25,6 +25,7 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
   (single-segment collection-scoped paths; multi-segment custom paths remain
   SvelteKit-only).
 - `resolveFieldPolicy(objectRef, { tenantId, userId, db })` — merged policy
+- Portable cookbook policy resolution: [agents/cookbook-policy.md](agents/cookbook-policy.md).
 - `resolveFieldPolicyExplained(...)` — merged policy plus ordered per-layer
   contributions (code/app/tenant/user) for gear/admin UIs (#2049/#2050)
 

@@ -1,4 +1,6 @@
+import type { AssistantTransport } from '@happyvertical/smrt-chat/svelte';
 import type { Cookbook } from '@happyvertical/smrt-types';
+import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
 import {
   cleanup,
   fireEvent,
@@ -17,9 +19,11 @@ import {
   vi,
 } from 'vitest';
 import type { ShortcutEntry } from '../../overview/widgets/data.js';
+import { SHELL_ICON_PATHS } from '../../workspace/admin-shell/shell-icons.js';
 import { narrowCatalog } from '../catalog.js';
 import type { CookbookCatalog } from '../types.js';
 import Harness from './app-harness.svelte';
+import AssistantFixture from './assistant-fixture.svelte';
 import { readFixture, workspaceCatalog } from './workspace-catalog.js';
 
 let catalog: CookbookCatalog;
@@ -42,6 +46,138 @@ afterEach(() => {
 });
 
 describe('CookbookApp', () => {
+  it('owns the assistant panel and phone opener using the host transport and registry', async () => {
+    render(Harness, {
+      cookbook,
+      catalog,
+      sectionId: 'custom:shop',
+      assistant: {
+        component: AssistantFixture,
+        registry: createDataSurfaceRegistry(),
+        transport: {} as AssistantTransport,
+        toolPresentation: 'generic',
+      },
+    });
+    const dock = await screen.findByTestId('assistant-dock');
+    expect(dock.dataset.context).toBe('server');
+    expect(dock.dataset.registry).toBe('true');
+    expect(dock.dataset.transport).toBe('true');
+    expect(dock.dataset.toolPresentation).toBe('generic');
+    const toggles = screen.getAllByRole('button', { name: 'Assistant' });
+    expect(toggles.length).toBeGreaterThan(0);
+    const before = dock.dataset.visible;
+    await fireEvent.click(toggles[0]);
+    await waitFor(() => expect(dock.dataset.visible).not.toBe(before));
+  });
+
+  it('renders the assistant recipe only through the authenticated host panel', async () => {
+    const resolveExport = vi.fn(() => AssistantFixture);
+    render(Harness, {
+      cookbook: {
+        ...cookbook,
+        recipes: [...cookbook.recipes, 'chat.assistant'],
+      },
+      catalog: await workspaceCatalog(),
+      sectionId: 'custom:shop',
+      resolveExport,
+      assistant: {
+        component: AssistantFixture,
+        registry: createDataSurfaceRegistry(),
+        transport: {} as AssistantTransport,
+      },
+    });
+    await screen.findByTestId('assistant-dock');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getAllByTestId('assistant-dock')).toHaveLength(1);
+    expect(resolveExport).not.toHaveBeenCalledWith(
+      '@happyvertical/smrt-chat/svelte',
+      'AssistantDock',
+    );
+  });
+
+  it('does not mount or poll an assistant in embed/plugin mode', async () => {
+    render(Harness, {
+      cookbook,
+      catalog,
+      sectionId: 'custom:shop',
+      embed: true,
+      assistant: {
+        component: AssistantFixture,
+        registry: createDataSurfaceRegistry(),
+        transport: {} as AssistantTransport,
+      },
+    });
+    await screen.findByRole('heading', { name: 'Shop', level: 1 });
+    expect(screen.queryByTestId('assistant-dock')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Assistant' })).toBeNull();
+  });
+  it.each([
+    ['receipt', 'receipt'],
+    [undefined, 'users'],
+    ['futureHostIcon', 'folder'],
+  ] as const)('renders layout icon %s beside the entry label', async (icon, expected) => {
+    const changed = structuredClone(cookbook);
+    changed.layout ??= { version: 1 };
+    changed.layout.items = {
+      ...changed.layout.items,
+      'item:commerce:Customer': { label: 'Clients', ...(icon ? { icon } : {}) },
+    };
+    render(Harness, { cookbook: changed, catalog, sectionId: 'custom:shop' });
+    await waitFor(() => {
+      const main = document.querySelector(
+        'main[data-smrt-component="CookbookSectionPage"]',
+      ) as HTMLElement;
+      const label = within(main).getByText('Clients');
+      const link = label.closest('a');
+      expect(link?.getAttribute('href')).toBe('/m/commerce/Customer/');
+      expect(
+        link?.querySelector('[aria-hidden="true"] path')?.getAttribute('d'),
+      ).toBe(SHELL_ICON_PATHS[expected]);
+    });
+    // The drawer uses the same resolved navigation icon next to the label.
+    const drawer = document.querySelector('[data-smrt-component="TenantNav"]');
+    const link = drawer?.querySelector('a[href="/m/commerce/Customer/"]');
+    expect(link?.textContent).toContain('Clients');
+    expect(link?.querySelector('path')?.getAttribute('d')).toBe(
+      SHELL_ICON_PATHS[expected],
+    );
+  });
+
+  it('renders fileText when neither the layout nor the recipe chooses an icon', async () => {
+    const simple: CookbookCatalog = {
+      recipes: [
+        {
+          id: 'test.menu',
+          label: 'Menu',
+          models: ['@test/app:Note'],
+          nav: [{ model: '@test/app:Note', label: 'Notes' }],
+        },
+      ],
+      models: [{ id: '@test/app:Note', name: 'Note', packageId: 'app' }],
+    };
+    const doc: Cookbook = {
+      $schema: cookbook.$schema,
+      version: 1,
+      recipes: ['test.menu'],
+      features: [],
+      policies: [],
+    };
+    render(Harness, {
+      cookbook: doc,
+      catalog: simple,
+      sectionId: 'section:test.menu',
+    });
+    await waitFor(() => {
+      const link = document.querySelector(
+        'main[data-smrt-component="CookbookSectionPage"] a[href="/m/app/Note/"]',
+      );
+      expect(link?.textContent).toContain('Notes');
+      expect(link?.querySelector('path')?.getAttribute('d')).toBe(
+        SHELL_ICON_PATHS.fileText,
+      );
+    });
+  });
+
   it("lists the cookbook's sections in the sidebar and renders the section page", async () => {
     render(Harness, { cookbook, catalog, sectionId: 'custom:shop' });
 

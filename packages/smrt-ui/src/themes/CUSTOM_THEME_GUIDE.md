@@ -342,7 +342,7 @@ Every theme (presets and `createTheme()` output) must define these names. Genera
 - **inset** (1): `--smrt-inset-highlight`
 - **radius** (13): `--smrt-radius-2xl`, `--smrt-radius-3xl`, `--smrt-radius-extra-large`, `--smrt-radius-extra-small`, `--smrt-radius-full`, `--smrt-radius-large`, `--smrt-radius-lg`, `--smrt-radius-md`, `--smrt-radius-medium`, `--smrt-radius-none`, `--smrt-radius-sm`, `--smrt-radius-small`, `--smrt-radius-xl`
 - **scrollbar** (2): `--smrt-scrollbar-thumb`, `--smrt-scrollbar-track`
-- **spacing** (20): `--smrt-spacing-0`, `--smrt-spacing-0_5`, `--smrt-spacing-1`, `--smrt-spacing-10`, `--smrt-spacing-11`, `--smrt-spacing-12`, `--smrt-spacing-1_5`, `--smrt-spacing-2`, `--smrt-spacing-2xl`, `--smrt-spacing-3`, `--smrt-spacing-3xl`, `--smrt-spacing-4`, `--smrt-spacing-5`, `--smrt-spacing-6`, `--smrt-spacing-8`, `--smrt-spacing-lg`, `--smrt-spacing-md`, `--smrt-spacing-sm`, `--smrt-spacing-xl`, `--smrt-spacing-xs`
+- **spacing** (22): `--smrt-spacing-0`, `--smrt-spacing-0_5`, `--smrt-spacing-1`, `--smrt-spacing-10`, `--smrt-spacing-11`, `--smrt-spacing-12`, `--smrt-spacing-16`, `--smrt-spacing-1_5`, `--smrt-spacing-2`, `--smrt-spacing-24`, `--smrt-spacing-2xl`, `--smrt-spacing-3`, `--smrt-spacing-3xl`, `--smrt-spacing-4`, `--smrt-spacing-5`, `--smrt-spacing-6`, `--smrt-spacing-8`, `--smrt-spacing-lg`, `--smrt-spacing-md`, `--smrt-spacing-sm`, `--smrt-spacing-xl`, `--smrt-spacing-xs`
 - **state** (5): `--smrt-state-disabled`, `--smrt-state-dragged`, `--smrt-state-hover`, `--smrt-state-pressed`, `--smrt-state-selected`
 - **surface** (6): `--smrt-surface-control`, `--smrt-surface-ground`, `--smrt-surface-overlay`, `--smrt-surface-panel`, `--smrt-surface-raised`, `--smrt-surface-sunken`
 - **touch** (1): `--smrt-touch-target-min`

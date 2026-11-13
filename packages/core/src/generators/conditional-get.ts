@@ -480,6 +480,8 @@ export interface ConditionalGetRouteHelperOptions
   extends ReadCacheControlOptions {
   /** Model name used for the one-time sMaxage-neutralized warning. */
   modelName?: string;
+  /** Generated host routes honor the live exposure gate's no-store policy. */
+  runtimeExposure?: boolean;
   /**
    * Emit the v1 body-hash helper (`conditionalJson`, query-first) instead of the
    * v2 version-first `conditionalVersionedRead`. Set when the route's GET handler
@@ -566,6 +568,7 @@ export function generateConditionalGetRouteHelper(
 // the whole rendered body.
 import { createHash } from 'node:crypto';
 
+${options.runtimeExposure ? "import { hasRuntimeExposureGate as runtimeExposureGateActive } from '@happyvertical/smrt-core';" : ''}
 const READ_CACHE_CONTROL = '${cacheControl}';
 
 function bodyEtag(body: string): string {
@@ -588,13 +591,13 @@ function conditionalJson(request: Request, payload: unknown): Response {
   if (ifNoneMatchSatisfied(request.headers.get('if-none-match'), etag)) {
     return new Response(null, {
       status: 304,
-      headers: { 'cache-control': READ_CACHE_CONTROL, etag },
+      headers: { 'cache-control': ${options.runtimeExposure ? "runtimeExposureGateActive() ? 'private, no-store' : READ_CACHE_CONTROL" : 'READ_CACHE_CONTROL'}, etag },
     });
   }
   return new Response(body, {
     status: 200,
     headers: {
-      'cache-control': READ_CACHE_CONTROL,
+      'cache-control': ${options.runtimeExposure ? "runtimeExposureGateActive() ? 'private, no-store' : READ_CACHE_CONTROL" : 'READ_CACHE_CONTROL'},
       'content-type': 'application/json',
       etag,
     },
@@ -644,6 +647,7 @@ import {
   ${coreImports},
 } from '@happyvertical/smrt-core';
 
+${options.runtimeExposure ? "import { hasRuntimeExposureGate as runtimeExposureGateActive } from '@happyvertical/smrt-core';" : ''}
 const READ_CACHE_CONTROL = '${cacheControl}';
 ${manifestHashConstant}
 async function conditionalVersionedRead(
@@ -661,7 +665,7 @@ async function conditionalVersionedRead(
   const notModified = () =>
     new Response(null, {
       status: 304,
-      headers: { 'cache-control': READ_CACHE_CONTROL, etag },
+      headers: { 'cache-control': ${options.runtimeExposure ? "runtimeExposureGateActive() ? 'private, no-store' : READ_CACHE_CONTROL" : 'READ_CACHE_CONTROL'}, etag },
     });
   if (ifNoneMatchHasConcreteMatch(ifNoneMatch, etag)) {
     return notModified();
@@ -674,7 +678,7 @@ async function conditionalVersionedRead(
   return new Response(JSON.stringify(payload), {
     status: 200,
     headers: {
-      'cache-control': READ_CACHE_CONTROL,
+      'cache-control': ${options.runtimeExposure ? "runtimeExposureGateActive() ? 'private, no-store' : READ_CACHE_CONTROL" : 'READ_CACHE_CONTROL'},
       'content-type': 'application/json',
       etag,
     },

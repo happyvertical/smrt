@@ -17,6 +17,7 @@ import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { testHomeEnvironment } from '../../../../vitest/src/test-home.js';
 import { addManifest, createRecipeIndex } from '../cookbook/recipe-index.js';
 import { KITCHEN_BRIDGE } from '../kitchen/mcp/bridge.js';
 import {
@@ -611,7 +612,11 @@ describe('smrt kitchen mcp over stdio', () => {
       ],
       cwd: work,
       // No inference credentials are passed or needed.
-      env: { PATH: process.env.PATH ?? '', HOME: work },
+      env: {
+        ...testHomeEnvironment(),
+        PATH: process.env.PATH ?? '',
+        HOME: work,
+      },
       stderr: 'pipe',
     });
     client = new Client({ name: 'kitchen-test', version: '1.0.0' });
@@ -636,7 +641,11 @@ describe('smrt kitchen mcp over stdio', () => {
         join(work, 'not-built.html'),
       ],
       cwd: work,
-      env: { PATH: process.env.PATH ?? '', HOME: work },
+      env: {
+        ...testHomeEnvironment(),
+        PATH: process.env.PATH ?? '',
+        HOME: work,
+      },
       stderr: 'pipe',
     });
     const missingClient = new Client({
@@ -675,7 +684,11 @@ describe('smrt kitchen mcp over stdio', () => {
         uiFile,
       ],
       cwd: work,
-      env: { PATH: process.env.PATH ?? '', HOME: work },
+      env: {
+        ...testHomeEnvironment(),
+        PATH: process.env.PATH ?? '',
+        HOME: work,
+      },
       stderr: 'pipe',
     });
     const uiClient = new Client({
@@ -1001,7 +1014,11 @@ describe('smrt kitchen mcp over stdio', () => {
       [join(cliRoot, 'src/index.ts'), 'kitchen', 'mcp', '--no-registry'],
       {
         cwd: work,
-        env: { PATH: process.env.PATH ?? '', HOME: work },
+        env: {
+          ...testHomeEnvironment(),
+          PATH: process.env.PATH ?? '',
+          HOME: work,
+        },
         stdio: ['pipe', 'pipe', 'pipe'],
       },
     );
@@ -1061,7 +1078,11 @@ describe('smrt kitchen mcp over stdio', () => {
       ],
       {
         cwd: work,
-        env: { PATH: process.env.PATH ?? '', HOME: work },
+        env: {
+          ...testHomeEnvironment(),
+          PATH: process.env.PATH ?? '',
+          HOME: work,
+        },
         stdio: ['pipe', 'ignore', 'pipe'],
       },
     );

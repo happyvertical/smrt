@@ -103,15 +103,17 @@ export interface StartedReferenceApp {
   readonly bootstrapToken: string;
   /** Generated manifest of the copied app, used to derive the tool inventory. */
   readonly manifest: Record<string, unknown>;
+  /** Bounded, sanitized server output for an onboarding failure only. */
+  failureOutput(): string;
   stop(): Promise<void>;
 }
 
-/** Reserve a loopback port, then hand it to the app via `--strictPort`. */
+/** Reserve a loopback port (optionally SMRT_E2E_PORT), then use `--strictPort`. */
 async function reserveLoopbackPort(): Promise<number> {
   return await new Promise<number>((resolvePort, rejectPort) => {
     const probe = createServer();
     probe.on('error', rejectPort);
-    probe.listen(0, '127.0.0.1', () => {
+    probe.listen(Number(process.env.SMRT_E2E_PORT ?? 0), '127.0.0.1', () => {
       const address = probe.address();
       if (typeof address === 'string' || address === null) {
         probe.close(() => rejectPort(new Error('No loopback port available.')));
@@ -299,6 +301,8 @@ async function provisionReferenceApp(
     }
     symlinkSync(source, join(appModules, entry), 'junction');
   }
+  // The copied app declares this package too; a package is not its own dependency.
+  symlinkSync(packageRoot, join(appModules, '@happyvertical', 'smrt-template-sveltekit'), 'junction');
   // `app:setup` builds through `pnpm build` → `smrt app build`, which resolves
   // `smrt` from the nearest `node_modules/.bin`; the copied app deliberately
   // never runs `pnpm install`, so the binary has to arrive through the links
@@ -339,6 +343,9 @@ async function provisionReferenceApp(
     ...inheritedEnvironment,
     // Keep every derived state/lock/cache root inside the temporary tree.
     HOME: homeRoot,
+    USERPROFILE: homeRoot,
+    LOCALAPPDATA: join(homeRoot, 'AppData', 'Local'),
+    APPDATA: join(homeRoot, 'AppData', 'Roaming'),
     XDG_STATE_HOME: join(homeRoot, '.local', 'state'),
     SMRT_DATA_DIR: dataRoot,
     SMRT_RUNTIME_PROFILE: 'local',
@@ -435,8 +442,15 @@ async function provisionReferenceApp(
   );
   // Streams are drained but never forwarded: a dev server echoes request URLs,
   // and one of those URLs carries the single-use bootstrap token.
-  child.stdout?.resume();
-  child.stderr?.resume();
+  let serverOutput = '';
+  let outputTruncated = false;
+  const captureOutput = (chunk: Buffer): void => {
+    const combined = serverOutput + chunk.toString('utf8');
+    outputTruncated ||= combined.length > 64_000;
+    serverOutput = combined.slice(-64_000);
+  };
+  child.stdout?.on('data', captureOutput);
+  child.stderr?.on('data', captureOutput);
 
   let exited = false;
   child.on('exit', () => {
@@ -511,6 +525,18 @@ async function provisionReferenceApp(
     onboardingUrl,
     bootstrapToken,
     manifest,
+    failureOutput: () =>
+      summarizeFailureOutput(
+        (outputTruncated
+          ? serverOutput.includes('\n')
+            ? serverOutput.slice(serverOutput.indexOf('\n') + 1)
+            : ''
+          : serverOutput
+        )
+          .replaceAll(bootstrapToken, '[redacted]')
+          .replaceAll(/https?:\/\/[^\s"'<>]+/g, '[url]'),
+        temporaryRoot,
+      ),
     stop,
   };
 }

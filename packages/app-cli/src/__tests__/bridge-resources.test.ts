@@ -9,6 +9,7 @@ import {
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { createMcpHandler, Server } from '@modelcontextprotocol/server';
 import { afterEach, describe, expect, it } from 'vitest';
+import { testHomeEnvironment } from '../../../vitest/src/test-home.js';
 import { createMcpStdioBridge } from '../bridge.js';
 
 const prefix = 'SMRT_BRIDGE_RESOURCES_TEST';
@@ -117,6 +118,7 @@ describe('modern local bridge resources', () => {
   it('forwards resource metadata through an actual modern stdio client', async () => {
     const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
     const transport = new StdioClientTransport({
+      env: testHomeEnvironment(),
       command: resolve(root, '../../node_modules/.bin/tsx'),
       args: ['src/__tests__/fixtures/mcp-resource-bridge.ts'],
       cwd: root,

@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@electric-sql/pglite": "0.5.15"
+    "@electric-sql/pglite": "0.5.15",
+    "@happyvertical/sql": "0.112.3"
   }
 }

@@ -185,8 +185,10 @@ export function childLinks(
   const byId = new Map(all.map((m) => [m.id, m]));
   const parents = new Set(lineage(byId, modelId));
   if (!parents.size) return [];
+  // A classification lookup does not own the records that reference it.
+  const parent = byId.get(modelId);
   const scoped = recipes.filter((r) => r.models.includes(modelId));
-  if (!scoped.length) {
+  if (!scoped.length || (parent && plumbingReason(parent) === 'lookup')) {
     return childModels(catalog, modelId).flatMap((m) => {
       const link = linkTo(m, parents);
       return link ? [link] : [];

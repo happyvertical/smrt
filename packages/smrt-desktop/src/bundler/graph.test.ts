@@ -171,6 +171,19 @@ describe('graph on a hoisted tree', () => {
     expect(() => assertNoMissingDependencies(graph)).toThrow(BundleTreeError);
   });
 
+  it('checks the retained closure without requiring dependencies of removed packages', async () => {
+    install([
+      { name: 'a', deps: ['gone'] },
+      { name: 'b', deps: ['also-gone'] },
+    ]);
+    const graph = await graphOf(['a', 'b']);
+    expect(() => assertNoMissingDependencies(graph, new Set())).not.toThrow();
+    expect(() =>
+      assertNoMissingDependencies(graph, new Set(['node_modules/a'])),
+    ).toThrow(BundleTreeError);
+    expect(() => assertNoMissingDependencies(graph)).toThrow(BundleTreeError);
+  });
+
   it('treats an optional dependency listed twice as optional', async () => {
     install([{ name: 'a', deps: ['x'], optional: ['x'] }]);
     expect((await graphOf(['a'])).missing).toEqual([]);

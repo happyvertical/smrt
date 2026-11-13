@@ -437,10 +437,16 @@ export function assertRegistryDependencies(
 }
 
 /** Throw `unresolved_dependency` when a required dependency is not installed. */
-export function assertNoMissingDependencies(graph: DependencyGraph): void {
-  if (graph.missing.length > 0) {
+export function assertNoMissingDependencies(
+  graph: DependencyGraph,
+  retained?: ReadonlySet<string>,
+): void {
+  const missing = graph.missing.filter(
+    (item) => retained === undefined || retained.has(item.from),
+  );
+  if (missing.length > 0) {
     throw new BundleTreeError('unresolved_dependency', {
-      subjects: graph.missing.map((item) => `${item.from} -> ${item.name}`),
+      subjects: missing.map((item) => `${item.from} -> ${item.name}`),
     });
   }
 }

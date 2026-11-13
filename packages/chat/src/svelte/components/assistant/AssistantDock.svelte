@@ -30,10 +30,12 @@ import { Button } from '@happyvertical/smrt-ui/ui';
 import { type Component, type Snippet, tick, untrack } from 'svelte';
 import type { AssistantStatus } from '../../../assistant-turn-events.js';
 import type { ChatUnavailableStatus } from '../../../client.js';
+import { describeAssistantTool } from '../../../tool-summary.js';
 import { M } from '../../i18n.js';
 import ToolCallDisplay from '../agent/ToolCallDisplay.svelte';
 import AiUnavailableNotice from '../shared/AiUnavailableNotice.svelte';
 import ModelPicker from '../shared/ModelPicker.svelte';
+import AssistantApprovalCard from './AssistantApprovalCard.svelte';
 import AssistantChoiceCards from './AssistantChoiceCards.svelte';
 import AssistantComposer from './AssistantComposer.svelte';
 import AssistantQuestionForm from './AssistantQuestionForm.svelte';
@@ -160,6 +162,8 @@ export interface Props {
   toolResultComponent?: (
     message: AssistantMessage,
   ) => Component<{ message: AssistantMessage }> | undefined;
+  /** Trusted host presentation; tool execution data stays out of visible fallback text. */
+  toolPresentation?: 'generic';
   /** How an assistant message's text renders (#4505). `'text'` (default)
    * shows it verbatim, as before. `'markdown'` renders paragraphs, headings
    * (`#`–`###`), lists, fenced and inline code, bold/italic and http(s) links
@@ -271,6 +275,7 @@ const {
   threadList = true,
   toolCall,
   toolResultComponent,
+  toolPresentation,
   messageFormat = 'text',
   renderMessage,
   oncontroller,
@@ -299,6 +304,36 @@ const {
   aiSettingsHref,
 }: Props = $props();
 const { t } = useI18n();
+function toolMessageContent(message: AssistantMessage): string {
+  if (toolPresentation !== 'generic' || message.role !== 'tool')
+    return message.content;
+  const data =
+    message.toolCallData && typeof message.toolCallData === 'object'
+      ? (message.toolCallData as Record<string, unknown>)
+      : {};
+  if (
+    typeof data.label === 'string' &&
+    [
+      'Checked the app structure',
+      'Checked app history',
+      'Checked pending approvals',
+      'Checked records',
+      'Completed this action',
+      'Could not complete this action',
+    ].includes(data.label)
+  )
+    return data.label;
+  const name = typeof data.name === 'string' ? data.name : '';
+  const ok = !['error', 'refused', 'rejected', 'denied'].includes(
+    String(data.status),
+  );
+  return describeAssistantTool(
+    name,
+    undefined,
+    { ok, observation: undefined },
+    { recordLabels: 'generic' },
+  );
+}
 
 // Set when the server answered `ai_unavailable` (#4757); cleared by the next
 // successful send. Rendered as a notice with the host's settings link.
@@ -645,11 +680,11 @@ async function handleSend(
 ) {
   // Finding 4 (#2904 review, fresh cycle): controller.send()/doSend()
   // already marks the pendingSend 'failed' and rethrows on a transport
-  // error. Catch here to ALSO record it on controller.error (rendered as a
-  // dock-level banner), then rethrow so AssistantComposer's own `await
-  // onsend(...)` still sees the rejection and restores the user's draft
-  // instead of discarding it.
+  // error. The pending send owns the inline error and retry. Keep the
+  // controller's error for compatibility; the dock suppresses its duplicate.
+  // Rethrow so the composer restores the draft without adding another alert.
   try {
+    controller.setError(null);
     await controller.send(content, attachments);
     controller.setError(null);
     aiUnavailable = null;
@@ -759,8 +794,8 @@ async function handleConfirmAction(requestId: string) {
       {#if aiUnavailable}
         <AiUnavailableNotice status={aiUnavailable} settingsHref={aiSettingsHref} />
       {/if}
-      {#if controller.error}
-        <p class="smrt-assistant-dock__error" data-smrt-part="error" role="alert">
+      {#if controller.error && !controller.pendingSends.some((p) => p.status === 'failed' && p.error === controller.error)}
+        <p class="smrt-assistant-dock__error" role="alert">
           {t(M['chat.assistant_dock.error'], { message: controller.error })}
           {#if conversations === 'single' && !controller.activeThreadId}
             <Button
@@ -905,6 +940,14 @@ async function handleConfirmAction(requestId: string) {
                 <div class="smrt-assistant-dock__card" data-smrt-part="item">
                   <ResultComponent {message} />
                 </div>
+              {:else if message.role === 'tool' && message.toolCallData && typeof message.toolCallData === 'object' && 'approval' in message.toolCallData}
+                <AssistantApprovalCard
+                  approval={(message.toolCallData as { approval: import('../../../assistant-turn-events.js').AssistantApprovalRequest }).approval}
+                  threadId={message.threadId}
+                  {toolPresentation}
+                  {transport}
+                  ondecided={() => controller.openThread(message.threadId)}
+                />
               {:else}
                 <MessageBubble
                   variant={bubbleVariant(message.role)}
@@ -914,7 +957,7 @@ async function handleConfirmAction(requestId: string) {
                     {#if message.role === 'assistant'}
                       {@render assistantText(message, false)}
                     {:else}
-                      <p class="smrt-assistant-dock__message-content" data-smrt-part="message">{message.content}</p>
+                      <p class="smrt-assistant-dock__message-content">{toolMessageContent(message)}</p>
                     {/if}
                   {#if message.attachments && message.attachments.length > 0}
                     <ul
@@ -962,7 +1005,7 @@ async function handleConfirmAction(requestId: string) {
                   />
                 </div>
               {/if}
-              {#if toolCall && message.toolCallData != null}
+              {#if toolPresentation !== 'generic' && toolCall && message.toolCallData != null}
                 <!-- A host's cards (a report preview, an offer) span the thread
                      under the message's text bubble. -->
                 <div class="smrt-assistant-dock__card smrt-assistant-dock__tool-call" data-smrt-part="panel">
@@ -1003,17 +1046,19 @@ async function handleConfirmAction(requestId: string) {
             <p class="smrt-assistant-dock__tool-request-title" data-smrt-part="title">
               {t(M['chat.assistant_dock.tool_request_title'])}
             </p>
-            <p class="smrt-assistant-dock__tool-request-description" data-smrt-part="description">{request.description || request.name}</p>
+            <p class="smrt-assistant-dock__tool-request-description">{toolPresentation === 'generic' ? t(M['chat.assistant_dock.review_action']) : request.description || request.name}</p>
             {#if request.effect === 'destructive'}
               <p class="smrt-assistant-dock__tool-request-warning" data-smrt-part="description">
                 {t(M['chat.assistant_dock.tool_request_destructive'])}
               </p>
             {/if}
-            <details class="smrt-assistant-dock__tool-request-details" data-smrt-part="body">
+            {#if toolPresentation !== 'generic'}
+            <details class="smrt-assistant-dock__tool-request-details">
               <summary>{t(M['chat.assistant_dock.tool_request_details'])}</summary>
               <pre>{formatToolArgs(request.args)}</pre>
             </details>
-            <div class="smrt-assistant-dock__tool-request-actions" data-smrt-part="actions">
+            {/if}
+            <div class="smrt-assistant-dock__tool-request-actions">
               <Button type="button" size="sm" onclick={() => controller.approveToolRequest(request.id)}>
                 {t(M['chat.assistant_dock.tool_request_allow'])}
               </Button>
@@ -1101,9 +1146,9 @@ async function handleConfirmAction(requestId: string) {
                all — only 'stale' rendered above. retry(clientRequestId)
                already exists and reuses the same id, so it's the same
                affordance as the stale case. -->
-          <div class="smrt-assistant-dock__failed" data-smrt-part="error">
-            <p>{t(M['chat.assistant_dock.send_failed'])}</p>
+          <div class="smrt-assistant-dock__failed">
             {#each controller.pendingSends.filter((p) => p.status === 'failed') as pending (pending.clientRequestId)}
+              <p role="alert">{pending.error ?? t(M['chat.assistant_dock.send_failed'])}</p>
               <Button
                 type="button"
                 size="sm"
@@ -1116,9 +1161,12 @@ async function handleConfirmAction(requestId: string) {
         {/if}
       </div>
 
-      {#if controller.status.state === 'working'}
-        <div class="smrt-assistant-dock__status" data-smrt-part="status" role="status" aria-live="polite">
-          <span class="smrt-assistant-dock__status-label" data-smrt-part="label">{controller.status.label}</span>
+      {#if controller.status.state === 'working' || (controller.status.state === 'idle' && controller.status.label)}
+        <div class="smrt-assistant-dock__status" role="status" aria-live="polite">
+          <span class="smrt-assistant-dock__status-label">{controller.status.label}</span>
+          {#if controller.designRun?.status === 'stopped'}
+            <Button type="button" size="sm" variant="ghost" onclick={() => controller.resumeDesignRun()}>{t(M['chat.assistant_dock.resume_design'])}</Button>
+          {/if}
           {#if controller.status.cancellable}
             <Button type="button" size="sm" variant="ghost" onclick={() => controller.cancel()}>
               {t(M['chat.assistant_dock.stop'])}
@@ -1145,6 +1193,7 @@ async function handleConfirmAction(requestId: string) {
               () => controller.draft, (text) => controller.setDraft(text)
             }
             onsend={handleSend}
+            showSendError={false}
             onupload={transport.uploadAttachment ? handleUpload : undefined}
             disabled={!controller.activeThreadId || composerDisabled}
             placeholder={composerPlaceholder}
@@ -1166,6 +1215,7 @@ async function handleConfirmAction(requestId: string) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
+
 @layer smrt.structure {
   /* #3000: the dock sizes itself against its own container (a shell dock
   * edge can be ~250px wide) rather than the viewport. A container cannot
@@ -1582,5 +1632,4 @@ async function handleConfirmAction(requestId: string) {
     border-bottom: var(--smrt-hairline);
   }
 }
-
 </style>

@@ -16,7 +16,7 @@ const execFileAsync = promisify(execFile);
 describe('SvelteKit clean build route generation (#2313)', () => {
   const projectRoot = resolve(
     import.meta.dirname,
-    `__test-sveltekit-clean-build-${process.pid}`,
+    `__test-consumer-sveltekit-clean-build-${process.pid}`,
   );
 
   afterEach(() => {

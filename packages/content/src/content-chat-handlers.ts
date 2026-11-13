@@ -1,4 +1,4 @@
-import { type AIClientOptions, getAI } from '@happyvertical/ai';
+import type { AIClientOptions, getAI } from '@happyvertical/ai';
 import { ChatService } from '@happyvertical/smrt-chat';
 import { sendAgentReply } from '@happyvertical/smrt-chat/internal/agent-runtime';
 import {
@@ -734,7 +734,9 @@ export async function sendContentEditorChatThreadMessage(
     };
   });
 
-  const ai = await (input.getAIClient ?? getAI)(resolvedAI.clientOptions);
+  const getAIClient =
+    input.getAIClient ?? (await import('@happyvertical/ai')).getAI;
+  const ai = await getAIClient(resolvedAI.clientOptions);
 
   const fullSystemPrompt =
     typeof (session as { systemPrompt?: unknown }).systemPrompt === 'string'

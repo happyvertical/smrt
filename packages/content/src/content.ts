@@ -713,7 +713,7 @@ export interface ContentOptions extends SmrtObjectOptions {
     },
     serializers: {
       item: {
-        importPath: '$lib/server/content-api-serializers',
+        importPath: '@happyvertical/smrt-content',
         exportName: 'serializeContent',
       },
     },

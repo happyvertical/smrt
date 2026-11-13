@@ -31,6 +31,13 @@ export interface VersionStore {
   markPurged(version: number): Promise<void>;
   /** Highest version number held, or -1 when empty. */
   maxVersion(): Promise<number>;
+  /**
+   * Optional: append `records` and make `current` the current version as ONE
+   * atomic change (all or nothing). A publish uses it when present; without it
+   * the host appends one by one and a failure part-way leaves the appended
+   * records behind as unreachable history (they are never current).
+   */
+  commit?(records: VersionRecord[], current: number): Promise<void>;
 }
 
 export class MemoryVersionStore implements VersionStore {
@@ -63,5 +70,12 @@ export class MemoryVersionStore implements VersionStore {
   }
   async maxVersion() {
     return this.records.size ? Math.max(...this.records.keys()) : -1;
+  }
+  async commit(records: VersionRecord[], current: number) {
+    for (const r of records)
+      if (this.records.has(r.version))
+        throw new Error(`version ${r.version} already exists`);
+    for (const r of records) this.records.set(r.version, structuredClone(r));
+    this.cur = current;
   }
 }

@@ -216,3 +216,66 @@ describe('ShellSettingsPage', () => {
     ).toBeNull();
   });
 });
+
+describe('ShellSettingsPage sections', () => {
+  const links = () =>
+    [...page().querySelectorAll<HTMLAnchorElement>('nav a')].map((a) => [
+      a.getAttribute('data-section'),
+      a.getAttribute('href'),
+    ]);
+
+  it('lists the sections as a menu when given a basePath, host sections last', () => {
+    render(Harness, {
+      basePath: '/settings',
+      extraSections: [{ id: 'inference', label: 'Inference' }],
+    });
+    expect(links()).toEqual([
+      ['appearance', '/settings/appearance'],
+      ['account', '/settings/account'],
+      ['layout', '/settings/layout'],
+      ['inference', '/settings/inference'],
+    ]);
+    expect(part('appearance')).toBeNull();
+    expect(part('layout')).toBeNull();
+  });
+
+  it('lists the shortcuts section only when shortcuts are available', () => {
+    render(Harness, { basePath: '/settings', hotkeys: true });
+    expect(links().map(([id]) => id)).toContain('shortcuts');
+  });
+
+  it('renders one built-in section with a link back to the menu', () => {
+    render(Harness, { basePath: '/settings', section: 'layout' });
+    expect(part('layout')).not.toBeNull();
+    expect(part('appearance')).toBeNull();
+    expect(part('account')).toBeNull();
+    expect(page().querySelector('nav')).toBeNull();
+    expect(part('back')?.getAttribute('href')).toBe('/settings');
+    expect(page().querySelector('h1')?.textContent).toBe('Layout');
+  });
+
+  it('renders Appearance and Account on their own without flags', () => {
+    render(Harness, { basePath: '/settings', section: 'account' });
+    expect(part('account')?.textContent).toContain('ada@example.com');
+    expect(part('appearance')).toBeNull();
+    cleanup();
+    render(Harness, { basePath: '/settings', section: 'appearance' });
+    expect(part('appearance')).not.toBeNull();
+    expect(part('account')).toBeNull();
+  });
+
+  it('renders host content as a section page', () => {
+    render(Harness, { basePath: '/settings', withChildren: true });
+    expect(screen.getByTestId('host-section')).toBeInTheDocument();
+    expect(page().querySelector('h1')?.textContent).toBe('Host section');
+    expect(page().querySelector('nav')).toBeNull();
+    expect(part('back')?.getAttribute('href')).toBe('/settings');
+  });
+
+  it('keeps the one-page mode without a basePath', () => {
+    render(Harness, {});
+    expect(page().querySelector('nav')).toBeNull();
+    expect(part('appearance')).not.toBeNull();
+    expect(part('layout')).not.toBeNull();
+  });
+});

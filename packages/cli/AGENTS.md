@@ -345,3 +345,8 @@ Workspace roots, AGENTS.md block: `agents/docs-agents.md`. The shipped text name
   (`*`, `html`/`body` margin/padding 0, unlayered reset imports) in `src/**` CSS,
   `.svelte` styles, and root `app.css` when the project depends on smrt-ui or
   smrt-svelte. Scanner: `src/commands/cascade-layers-reset-scan.mjs`
+
+Runtime object-command discovery invalidates its cache on
+`ObjectRegistry.getGeneration()`; do not cache generated field options across
+registry changes. `src/__tests__/runtime-model-refresh.test.ts` covers both
+refreshed field options and newly registered lists.

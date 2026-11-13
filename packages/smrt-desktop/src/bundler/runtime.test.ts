@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
+import { testHomeEnvironment } from '../../../vitest/src/test-home.js';
 import { stopMeasuredProcess } from './measure.js';
 import { descendantsOf, spawnMeasuredChild } from './runtime.js';
 
@@ -101,7 +102,10 @@ posixOnly('stopping a measured sidecar', () => {
       command: process.execPath,
       args: [script],
       cwd: dir,
-      env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
+      env: {
+        ...testHomeEnvironment(),
+        PATH: process.env.PATH ?? '/usr/bin:/bin',
+      },
     });
     const grand = await waitFor(() =>
       existsSync(pidFile) && readFileSync(pidFile, 'utf8').endsWith('}')
@@ -143,7 +147,10 @@ posixOnly('stopping a measured sidecar', () => {
       command: process.execPath,
       args: ['-e', 'setInterval(()=>{},1000)'],
       cwd: dir,
-      env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
+      env: {
+        ...testHomeEnvironment(),
+        PATH: process.env.PATH ?? '/usr/bin:/bin',
+      },
     });
     expect(await child.alive?.()).toBe(true);
     await stopMeasuredProcess(
@@ -175,7 +182,7 @@ posixOnly('the measured sidecar does not outlive an interrupted CLI', () => {
         '  command: process.execPath,',
         `  args: [${JSON.stringify(script)}],`,
         `  cwd: ${JSON.stringify(dir)},`,
-        "  env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },",
+        `  env: ${JSON.stringify({ ...testHomeEnvironment(), PATH: process.env.PATH ?? '/usr/bin:/bin' })},`,
         '});',
         'setInterval(() => {}, 1000);',
         '',
@@ -237,7 +244,10 @@ posixOnly('the measured sidecar does not outlive an interrupted CLI', () => {
       command: process.execPath,
       args: ['-e', 'setInterval(()=>{},1000)'],
       cwd: dir,
-      env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
+      env: {
+        ...testHomeEnvironment(),
+        PATH: process.env.PATH ?? '/usr/bin:/bin',
+      },
     });
     expect(process.listenerCount('SIGINT')).toBe(before[1] + 1);
     expect(process.listenerCount('SIGTERM')).toBe(before[2] + 1);

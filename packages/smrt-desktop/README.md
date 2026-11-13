@@ -10,6 +10,14 @@ Owner sign-in is app-runtime's loopback onboarding URL and `claimOwner()`, and
 local MCP credentials are app-runtime's token store (`openLocalMcpTokenStore`);
 this package does not duplicate either.
 
+## Tricia
+
+[`examples/tricia`](examples/tricia/README.md) is the desktop MVP product: the
+app shell (`packages/app-shell`) with the identity `Tricia`,
+`com.happyvertical.tricia`, built and bundled by the same script
+(`wrapper/scripts/build-desktop-app.mjs --app tricia`). Release and update home:
+GitHub Releases of `happyvertical/tricia`.
+
 ## Generic example app
 
 [`examples/generic-app`](examples/generic-app/README.md) is the first app
@@ -52,7 +60,7 @@ const sidecar = parseSidecarManifest(
 
 - `version` is the number `1`. The five fields `version`, `executable`,
   `args`, `healthRoute` and `dataDirectory` are required; `env` and
-  `ownerClaimRoute` are optional. Unknown fields and versions are errors. A
+  `ownerClaimRoute` and `workingDirectory` are optional. Unknown fields and versions are errors. A
   future incompatible contract requires a new version.
 - `executable` is the logical Tauri `externalBin` basename: exactly one
   portable segment with no `/`, such as `smrt-notes-node`. The launcher owns the
@@ -63,6 +71,8 @@ const sidecar = parseSidecarManifest(
   passes the array directly as process arguments. The argument strings receive
   no shell expansion, token substitution, or path rewriting. Their
   interpretation belongs to the chosen executable.
+- `workingDirectory: "app"` optionally runs from `resources/app`; absent keeps
+  the resource root. Pair it with `args: ["build/index.js"]`.
 - `healthRoute` is a path on the supervisor-selected loopback origin.
   It begins with one slash and can be `/` or have nonempty segments containing
   only ASCII letters, digits, periods, underscores, tildes, and hyphens.
@@ -73,11 +83,13 @@ const sidecar = parseSidecarManifest(
   the wrapper opens its window on (origin plus this path, never an absolute
   URL). It follows exactly the `healthRoute` grammar and loopback rules. A
   s-m-r-t app declares app-runtime's `/api/_runtime/owner-link`
-  (`createOwnerLinkHandler`), which redirects to the one-time `/setup?token=`
-  page while the owner is unclaimed and to `/` afterwards, but only for a
-  request that carries the per-launch `?launch=<secret>` the wrapper adds (403
-  otherwise). The wrapper never sees or logs the token; claiming it belongs to
-  the runtime.
+  (`createOwnerLinkHandler`), only for a request that carries the per-launch
+  `?launch=<secret>` the wrapper adds (403 otherwise). With `autoClaim` (the
+  generic app and the shell opt in) it creates the local owner on the first
+  launch, signs the sole owner back in when the session cookie is lost, sets
+  the cookie and redirects to `/`, so there is no owner form; without it, it
+  redirects to the one-time `/setup?token=` page while the owner is unclaimed.
+  The wrapper never sees or logs a token or session; the runtime owns both.
 - `dataDirectory` is a portable path relative to Tauri's stable
   `app_local_data_dir` (the per-app, machine-local OS data root; see
   [Data root and roaming](#data-root-and-roaming)). The supervisor supplies its
@@ -101,12 +113,13 @@ Three locations are never conflated:
 
 #### Data root and roaming
 
-> **Assumed decision D7, pending owner confirmation.** The wrapper resolves the
+> **Decision D7 (owner-confirmed 2026-11-10).** The wrapper resolves the
 > sidecar data directory (`SMRT_DATA_DIR`) and its own log
 > (`<app_local_data_dir>/.desktop-wrapper/supervisor.log`) under Tauri's
 > `app_local_data_dir` on every platform, the same root the installed-product
-> contracts already use for private state. Alternative: keep Tauri's
-> `app_data_dir`, which on Windows is the roaming `%APPDATA%` profile.
+> contracts already use for private state, never Tauri's `app_data_dir` (the
+> roaming `%APPDATA%` profile on Windows). Users get their data back through
+> encrypted backups and restore (smrt#4668), not through a roaming profile.
 
 Reason: the runtime keeps SQLite files, a writer lease and process state in the
 data directory, and none of that may follow a user to another machine through a
@@ -484,6 +497,9 @@ root (or an `exclude` entry). The catalog:
 | `toolchain` (cannot be enabled) | `vite`, `rolldown`, `esbuild`, `lightningcss*`, `typescript`, `tsx`, `oxc-*`, `@oxc-parser/*`, `@oxc-transform/*`, `@oxc-resolver/*`, `@oxc-minify/*`, `@oxc-project/types`, `@types/*`, platform packages of these |
 | `google-apis` | `googleapis`, `googleapis-common` |
 | `duckdb` | `@duckdb/*` |
+| `browser` | `@happyvertical/spider`, crawler and browser automation SDKs |
+| `documents` | `@happyvertical/documents`, Kreuzberg and document parsers |
+| `local-ml` | transformer, WebLLM and ONNX runtimes |
 | `vector-sqlite` | `sqlite-vss*` |
 | `images` | `@happyvertical/images`, `sharp`, `@img/*`, `@resvg/*`, `@mediapipe/*`, `jimp`, `@jimp/*`, `satori` |
 | `ai-providers` = `ai-anthropic` + `ai-openai` + `ai-google` | `@anthropic-ai/sdk`, `openai`, `@google/genai` |
@@ -705,3 +721,6 @@ Reproduce: build the app (`pnpm install && pnpm build`), write
 `smrt-desktop.json` as above, create the bridge file, then run the
 `smrt desktop bundle` command with `--measure` (no data directory to prepare)
 and read `measurements` in `bundle-report.json`. Per-OS rows from the CI matrix are item 4's.
+
+Normal built apps, runtimeFiles, unsigned macOS packaging and headless smoke:
+[Built-app packaging](agents/built-apps.md).

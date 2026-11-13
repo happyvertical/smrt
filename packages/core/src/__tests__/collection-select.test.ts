@@ -5,7 +5,13 @@ import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection, type SmrtSelectedRow } from '../collection.js';
-import { field, foreignKey, SmrtObject, smrt } from '../index.js';
+import {
+  field,
+  foreignKey,
+  ObjectRegistry,
+  SmrtObject,
+  smrt,
+} from '../index.js';
 import { GlobalInterceptors } from '../interceptors.js';
 import { getTestDatabase } from '../testing/database.js';
 
@@ -239,6 +245,42 @@ describe('SmrtCollection.list({ select })', () => {
           `SELECT ${idSql} AS "id", "title" AS "title", "account_id" AS "accountId"`,
         );
         expect(projectionSql).not.toContain('SELECT *');
+      });
+
+      it('preserves system-field projections after registry changes with an immutable cache', async () => {
+        const row = await opportunities.create({ title: 'Identity retained' });
+        Object.defineProperty(opportunities, '_cachedFields', {
+          writable: false,
+        });
+        ObjectRegistry.invalidateInheritanceCache('ProjectionAccount');
+        expect(
+          await opportunities.list({
+            select: ['id', 'title', 'slug', 'context'],
+          }),
+        ).toEqual([
+          {
+            id: row.id,
+            title: 'Identity retained',
+            slug: row.slug,
+            context: row.context,
+          },
+        ]);
+      });
+
+      it('retains identity projections when a registered model has no declared fields', async () => {
+        const row = await opportunities.create({ title: 'Only identity' });
+        const declared = ObjectRegistry.getFields('ProjectionOpportunity');
+        const saved = new Map(declared);
+        try {
+          declared.clear();
+          ObjectRegistry.invalidateInheritanceCache('ProjectionOpportunity');
+          expect(await opportunities.list({ select: ['id'] })).toEqual([
+            { id: row.id },
+          ]);
+        } finally {
+          for (const [name, field] of saved) declared.set(name, field);
+          ObjectRegistry.invalidateInheritanceCache('ProjectionOpportunity');
+        }
       });
 
       it('supports id-only page key rows', async () => {

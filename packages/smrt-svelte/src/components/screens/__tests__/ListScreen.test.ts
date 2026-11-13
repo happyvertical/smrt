@@ -27,6 +27,7 @@ describe('ListScreen', () => {
       'Budget',
       'Done',
       'Due at',
+      'Owner',
     ]);
     const row = screen.getByRole('row', { name: /Write docs/ });
     expect(within(row).getByText('$1,250.50')).toBeInTheDocument();

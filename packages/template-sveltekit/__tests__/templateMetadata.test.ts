@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -18,7 +18,7 @@ const publishedPackageJson = JSON.parse(
   readFileSync(join(__dirname, '..', 'package.json'), 'utf8'),
 ) as { files: string[] };
 const itemSource = readFileSync(
-  join(__dirname, '..', 'template', 'src', 'lib', 'objects', 'Note.ts'),
+  join(__dirname, '..', 'examples', 'notes', 'src', 'lib', 'objects', 'Note.ts'),
   'utf8',
 );
 
@@ -75,6 +75,18 @@ describe('generated project metadata', () => {
   it('keeps scanner-visible CRUD actions literal in the decorator', () => {
     expect(itemSource.match(/include: \['list', 'get', 'create', 'update', 'delete'\]/g)).toHaveLength(3);
     expect(itemSource).not.toContain('...CRUD_ACTIONS');
+  });
+
+  it('ships no example object: the Note example is opt-in and outside the template', () => {
+    const objects = join(__dirname, '..', 'template', 'src', 'lib', 'objects');
+    expect(existsSync(join(objects, 'Note.ts'))).toBe(false);
+    expect(readFileSync(join(objects, 'index.ts'), 'utf8')).not.toMatch(
+      /^export .*\bNote\b/m,
+    );
+    expect(existsSync(join(__dirname, '..', 'template', 'src', 'routes', 'notes'))).toBe(
+      false,
+    );
+    expect(publishedPackageJson.files).toContain('examples');
   });
 
   it('registers an explicit Note collection for generated CLI commands', () => {

@@ -7,6 +7,7 @@ import {
   principalFromLocals,
   requireOwner,
 } from './owner.ts';
+import { parseTarget, type Target } from './target.ts';
 
 export const MAX_BODY_BYTES = 1_000_000;
 
@@ -75,6 +76,14 @@ export async function readJson(
   return value as Record<string, unknown>;
 }
 
+/** Like readJson, but an empty body is `{}` (for routes whose body is optional). */
+export async function readOptionalJson(
+  request: Request,
+): Promise<Record<string, unknown>> {
+  const text = await request.clone().text();
+  return text.trim() ? readJson(request) : {};
+}
+
 const ENGINE_STATUS: Record<string, number> = {
   invalid: 400,
   not_found: 404,
@@ -114,6 +123,22 @@ export function guarded<E extends EventLike>(
       return errorResponse(error);
     }
   };
+}
+
+/**
+ * The copy a `/api/shell/*` request names: the `target` query parameter
+ * (`live` or `draft`), absent = live, anything else a 400.
+ */
+export function targetOf(event: { url: URL }): Target {
+  return parseTarget(event.url.searchParams.get('target'));
+}
+
+/**
+ * The copy a `/api/app/*` request names, from the `x-shell-target` header
+ * (that route's query string belongs to the app's own REST).
+ */
+export function headerTargetOf(event: { request: Request }): Target {
+  return parseTarget(event.request.headers.get('x-shell-target'));
 }
 
 /** Segment-safe model / id parameter. */

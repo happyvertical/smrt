@@ -10,6 +10,10 @@
  *
  * Svelte-free apart from type imports, so a server load can call it.
  */
+import { parseRecipeExportRef } from '@happyvertical/smrt-core/cookbook';
+
+export { parseRecipeExportRef } from '@happyvertical/smrt-core/cookbook';
+
 import type {
   RecipeExportRef,
   RecipeSurface,
@@ -96,21 +100,6 @@ export function sectionDefaultWidget(
   return surface
     ? { id: surface.type, type: surface.type, span: 4, options: {} }
     : undefined;
-}
-
-/** Split `'<specifier>#<Name>'`; refuses relative and absolute specifiers. */
-export function parseRecipeExportRef(
-  ref: RecipeExportRef | string,
-): { specifier: string; exportName: string } | null {
-  const at = ref.lastIndexOf('#');
-  if (at <= 0 || at === ref.length - 1) return null;
-  const specifier = ref.slice(0, at);
-  const exportName = ref.slice(at + 1);
-  if (specifier.startsWith('.') || specifier.startsWith('/')) return null;
-  if (/\s/.test(specifier) || !/^[A-Za-z_$][\w$]*$/.test(exportName)) {
-    return null;
-  }
-  return { specifier, exportName };
 }
 
 function resolveRef(

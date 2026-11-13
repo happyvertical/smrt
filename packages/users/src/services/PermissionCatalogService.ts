@@ -1069,6 +1069,21 @@ export class PermissionCatalogService {
         registered,
         manifestEntry,
       );
+      // A shared STI namespace belongs to its effective root, never whichever
+      // subtype happens to be visited last. Explicit child namespaces retain
+      // their own CRUD; custom methods and field permissions remain below.
+      const registryKey = qualifiedName ?? className;
+      const ownsCrud =
+        !ObjectRegistry.getSTIBase(registryKey) ||
+        !ObjectRegistry.getInheritanceChain(registryKey).some((ancestor) => {
+          const parent = ObjectRegistry.getClass(ancestor);
+          return (
+            parent &&
+            parent !== registered &&
+            resolveCatalogCollectionName(parent, manifestEntryFor(parent)) ===
+              collection
+          );
+        });
       // Authority models catalog their full vocabulary even though their
       // generated CLI is closed or read-only (#3742).
       const catalogCliConfig =
@@ -1083,7 +1098,7 @@ export class PermissionCatalogService {
         isOperationEnabled(catalogCliConfig, 'get') ||
         isOperationEnabled(objectConfig.mcp, 'list') ||
         isOperationEnabled(objectConfig.mcp, 'get');
-      if (readExposed) {
+      if (ownsCrud && readExposed) {
         definitions.set(`${collection}.read`, {
           ...definitions.get(`${collection}.read`),
           className,
@@ -1124,7 +1139,7 @@ export class PermissionCatalogService {
           isOperationEnabled(objectConfig.api, action) ||
           isOperationEnabled(catalogCliConfig, action) ||
           isOperationEnabled(objectConfig.mcp, action);
-        if (!exposed) {
+        if (!ownsCrud || !exposed) {
           continue;
         }
 

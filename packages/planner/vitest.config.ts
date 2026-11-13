@@ -9,6 +9,7 @@ export default defineConfig({
   // the other ("Theme context not found").
   resolve: { dedupe: ['svelte', '@happyvertical/smrt-ui'] },
   test: {
+    globalSetup: ['../vitest/src/test-home.global-setup.ts'],
     projects: [
       {
         extends: true,

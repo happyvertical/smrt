@@ -24,6 +24,14 @@ export type Command =
    * caller means; the host refuses if the app has moved on since.
    */
   | { type: 'undo'; version?: number }
+  /**
+   * Undo every version after `version` (an ancestor of the current one) in one
+   * command, newest first. It needs approval when any of them has a
+   * `convertColumn` step, decided by the host from the stored versions.
+   * `from` pins the version the caller saw as current; the host refuses if the
+   * app has moved on.
+   */
+  | { type: 'undoTo'; version: number; from?: number }
   | { type: 'cleanUp'; keep: number }
   | { type: 'exportTemplate'; includeRecords?: boolean }
   | { type: 'importTemplate'; data: Template };
@@ -80,6 +88,39 @@ export function isRiskyCommand(cmd: Command): boolean {
       (m) => Object.keys(m?.methods ?? {}).length > 0,
     );
   return false;
+}
+
+/**
+ * Which commands change the app's definition, tables or history. A frozen host
+ * (see `HostOptions.frozen`) refuses every one of them; only `exportTemplate`
+ * reads. It is a total `Record` so that a new command cannot be added without
+ * deciding which side it is on.
+ */
+export const STRUCTURAL_COMMANDS: Readonly<Record<CommandType, boolean>> = {
+  defineModel: true,
+  addField: true,
+  hideField: true,
+  renameField: true,
+  removeField: true,
+  changeFieldType: true,
+  removeModel: true,
+  addMethod: true,
+  enableRecipe: true,
+  undo: true,
+  undoTo: true,
+  cleanUp: true,
+  exportTemplate: false,
+  importTemplate: true,
+};
+
+/** True unless the command is known to be read-only (an unknown type counts as structural). */
+export function isStructuralCommand(cmd: { type?: unknown }): boolean {
+  const type = cmd?.type;
+  return !(
+    typeof type === 'string' &&
+    Object.hasOwn(STRUCTURAL_COMMANDS, type) &&
+    STRUCTURAL_COMMANDS[type as CommandType] === false
+  );
 }
 
 /** Generated app tools that delete records need approval. */

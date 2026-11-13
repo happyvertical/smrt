@@ -1,52 +1,45 @@
-// The wire contract of an assistant turn, shared by the server (which sends
-// it as server-sent events) and the dock (which reduces it). Pure types and
-// helpers: no server or browser imports.
+// The wire contract shared by the server and dock. Imports are type-only;
+// the browser does not load the inference server entry.
+import type {
+  AgentTurnEvent,
+  AgentTurnStop,
+  InferenceEngineAction,
+  InferenceEngineId,
+  InferenceEngineStatus,
+} from '@happyvertical/smrt-inference/server';
 
-/** Why a turn ended. `waiting` = left an approval undecided. */
-export type TurnStop =
-  | 'complete'
-  | 'max_steps'
-  | 'max_tokens'
-  | 'timeout'
-  | 'aborted'
-  | 'waiting'
-  | 'error';
+/** API-key turns also stop at the host's model-round and token bounds. */
+export type TurnStop = AgentTurnStop | 'max_steps' | 'max_tokens';
 
 export type TurnEvent =
+  | Exclude<AgentTurnEvent, { type: 'done' | 'tool_result' | 'error' }>
   | { type: 'thread'; threadId: string }
-  | { type: 'text'; delta: string }
-  | { type: 'tool_call'; id: string; name: string; args: string }
-  | {
-      type: 'tool_result';
-      id: string;
-      name: string;
-      ok: boolean;
-      summary: string;
-    }
-  | {
-      type: 'approval_required';
-      id: string;
-      name: string;
-      approvalId: string;
-      summary: string;
-      preview: unknown;
-    }
-  | {
-      type: 'approval_decided';
-      id: string;
-      approvalId: string;
-      status: 'approved' | 'denied' | 'failed' | 'timeout';
-    }
-  | { type: 'error'; code: string; message: string }
+  | (Omit<Extract<AgentTurnEvent, { type: 'tool_result' }>, 'details'> & {
+      /** The copy the shell's tool acted on, while a draft is open. */
+      copy?: 'live' | 'draft';
+    })
+  | (Extract<AgentTurnEvent, { type: 'error' }> & {
+      /** A host route that fixes the failure, when one exists. */
+      action?: InferenceEngineAction;
+    })
   | { type: 'done'; stop: TurnStop };
 
+/**
+ * Which engine runs the assistant: `api` (an API key through smrt-inference),
+ * a local agent CLI (the person's own, signed-in `claude-code` / `codex`), or
+ * `chatgpt` (the owner's own ChatGPT plan through Sign in with ChatGPT, a
+ * preview for open source apps).
+ */
+export const ASSISTANT_ENGINES = [
+  'api',
+  'claude-code',
+  'codex',
+  'chatgpt',
+] as const;
+export type AssistantEngineId = InferenceEngineId;
+
 /** `GET /api/assistant/status`. Never carries a key, provider or endpoint. */
-export interface AssistantStatus {
-  configured: boolean;
-  /** Set when not configured: `assistant_not_configured` or `ai_unavailable`. */
-  code?: string;
-  message?: string;
-}
+export type AssistantStatus = InferenceEngineStatus;
 
 /** Body of a 503 when the assistant cannot run (not a crash). */
 export interface AssistantUnavailable extends AssistantStatus {
@@ -69,6 +62,7 @@ export interface ThreadMessage {
     ok: boolean;
     summary: string;
     approvalId?: string;
+    copy?: 'live' | 'draft';
   };
 }
 

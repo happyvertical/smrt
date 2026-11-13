@@ -69,14 +69,29 @@ lifecycle script is `smrt app <operation>`.
 
 ## 3. Define the first object
 
-The generated `src/lib/objects/Note.ts` is one required-tenant object with
-title and body fields. Its small explicit `NoteCollection`
-constructor keeps generated CLI/MCP runtime commands constructible. Its
-`@smrt()` configuration exposes CRUD to REST, MCP, WebMCP definitions, and CLI
-while using an API writable allowlist.
+A new app ships with no object: `src/lib/objects/index.ts` is an empty barrel,
+the home page is an empty state, and nothing is registered or migrated.
 
-Add objects beside Note and export them from `src/lib/objects/index.ts`.
-`vite.config.ts` already scans that directory.
+The Note example is kept outside the template, in `examples/notes/`, as an
+`src/`-shaped tree you can copy into a generated app:
+
+```bash
+cp -r packages/template-sveltekit/examples/notes/src/. my-app/src/
+```
+
+It adds `src/lib/objects/Note.ts` (a required-tenant object with title and body
+fields, a small explicit `NoteCollection` that keeps generated CLI/MCP runtime
+commands constructible, and an `@smrt()` configuration that exposes CRUD to
+REST, MCP, WebMCP definitions, and CLI with an API writable allowlist) and a
+`/notes` page. Then:
+
+1. Export it in `src/lib/objects/index.ts`:
+   `export { Note, NoteCollection } from './Note.js';`
+2. Link `/notes` from the `nav` array in `src/routes/+layout.svelte`.
+3. Run `pnpm db:migrate`.
+
+Add your own objects the same way. `vite.config.ts` already scans
+`src/lib/objects`.
 
 ## 4. Initialize or migrate the database
 
@@ -114,13 +129,13 @@ identity, Profile is person-facing metadata, Membership joins a User to a
 Tenant and Role, Role maps to Permission records, and Session publishes the
 resolved permission snapshot.
 
-The home-page form action calls `assertOperationPermission()` with that exact
+The example page's form action calls `assertOperationPermission()` with that exact
 snapshot. Provider-specific login and provisioning remain app-owned extension
 points.
 
 ## 7. Load data into a SvelteKit page
 
-The home page loads Note rows in `+page.server.ts`, returns plain serialized
+The example `/notes` page loads Note rows in `+page.server.ts`, returns plain serialized
 data, and declares `depends('smrt:notes')`. The Svelte 5 page reads hydrated
 `$props()` data and calls `invalidate('smrt:notes')` after a successful form
 mutation. It does not fetch initial data in `onMount` or `$effect`.
@@ -133,7 +148,7 @@ declared dev dependency:
 
 ```bash
 pnpm smrt objects
-pnpm smrt schema Note
+pnpm smrt schema <YourObject>
 pnpm smrt generate-mcp --no-config --no-readme
 ```
 

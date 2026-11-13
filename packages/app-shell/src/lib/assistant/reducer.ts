@@ -7,6 +7,8 @@ import type {
   TurnStop,
 } from './events.ts';
 
+import { toolSummary } from './tool-summary.ts';
+
 export type ApprovalState =
   | 'pending'
   | 'approved'
@@ -19,6 +21,7 @@ export type Item =
   | { kind: 'assistant'; id: string; text: string; streaming: boolean }
   | {
       kind: 'tool';
+      copy?: 'live' | 'draft';
       id: string;
       name: string;
       state: 'running' | 'ok' | 'error';
@@ -36,7 +39,14 @@ export type Item =
       /** Left over from an earlier turn (the turn that asked is gone). */
       detached: boolean;
     }
-  | { kind: 'note'; id: string; tone: 'error' | 'info'; text: string };
+  | {
+      kind: 'note';
+      id: string;
+      tone: 'error' | 'info';
+      text: string;
+      /** A fix for the problem ("Sign in again"), when there is one. */
+      action?: { label: string; href: string };
+    };
 
 export interface DockState {
   threadId: string | null;
@@ -46,6 +56,10 @@ export interface DockState {
   /** `unknown` until the first status answer. */
   availability: 'unknown' | 'ready' | 'unavailable';
   unavailableMessage: string;
+  /** Where to fix an unavailable assistant (a link in the dock), if anywhere. */
+  unavailableAction: { label: string; href: string } | null;
+  /** Plain-text name of the engine in effect, for the dock's caption. */
+  engineLabel: string;
   seq: number;
 }
 
@@ -56,6 +70,8 @@ export const initialState: DockState = {
   stop: null,
   availability: 'unknown',
   unavailableMessage: '',
+  unavailableAction: null,
+  engineLabel: '',
   seq: 0,
 };
 
@@ -77,7 +93,11 @@ export type Action =
       message: string;
     }
   | { type: 'note'; tone: 'error' | 'info'; text: string }
-  | { type: 'unavailable'; message: string }
+  | {
+      type: 'unavailable';
+      message: string;
+      action?: { label: string; href: string };
+    }
   | { type: 'ended' };
 
 const next = (s: DockState, prefix: string) => `${prefix}${s.seq + 1}`;
@@ -100,12 +120,21 @@ export function reduce(state: DockState, action: Action): DockState {
   switch (action.type) {
     case 'status':
       return action.status.configured
-        ? { ...state, availability: 'ready', unavailableMessage: '' }
+        ? {
+            ...state,
+            availability: 'ready',
+            unavailableMessage: '',
+            unavailableAction: null,
+            engineLabel: action.status.engineLabel ?? '',
+          }
         : {
             ...state,
             availability: 'unavailable',
             unavailableMessage:
               action.status.message ?? 'The assistant is not available.',
+            unavailableAction: action.status.action ?? null,
+            // Never claim an engine is "in use" when it cannot answer.
+            engineLabel: '',
           };
     case 'unavailable':
       return {
@@ -113,6 +142,7 @@ export function reduce(state: DockState, action: Action): DockState {
         running: false,
         availability: 'unavailable',
         unavailableMessage: action.message,
+        unavailableAction: action.action ?? state.unavailableAction,
         items: state.items.filter(
           (i) => !(i.kind === 'user' && i.id === `u${state.seq}`),
         ),
@@ -133,6 +163,8 @@ export function reduce(state: DockState, action: Action): DockState {
         ...initialState,
         availability: state.availability,
         unavailableMessage: state.unavailableMessage,
+        unavailableAction: state.unavailableAction,
+        engineLabel: state.engineLabel,
         seq: state.seq,
       };
     case 'ended':
@@ -175,7 +207,8 @@ export function reduce(state: DockState, action: Action): DockState {
             id: `m${seq}`,
             name: m.tool.name,
             state: m.tool.ok ? 'ok' : 'error',
-            summary: m.tool.summary,
+            summary: toolSummary(m.tool.name, m.tool.summary, m.tool.ok),
+            ...(m.tool.copy ? { copy: m.tool.copy } : {}),
           });
       }
       return {
@@ -301,7 +334,8 @@ function onEvent(state: DockState, e: TurnEvent): DockState {
           (i) => ({
             ...(i as Extract<Item, { kind: 'tool' }>),
             state: e.ok ? 'ok' : 'error',
-            summary: e.summary,
+            summary: toolSummary(e.name, e.summary, e.ok),
+            ...(e.copy ? { copy: e.copy } : {}),
           }),
         ),
       };
@@ -351,6 +385,7 @@ function onEvent(state: DockState, e: TurnEvent): DockState {
             id: next(state, 'n'),
             tone: 'error',
             text: e.message,
+            ...(e.action ? { action: e.action } : {}),
           },
         ],
       };

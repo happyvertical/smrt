@@ -595,7 +595,8 @@ describe('snapshot', () => {
     }
     // Every recipe on at once: still a prompt-sized document, not the catalog
     // (it grows with the catalog's recipes: 6.6k at smrt 0.56's 37, 8.3k at
-    // 0.57's 43, 11.7k at 0.57.36's 55).
+    // 0.57's 43, 11.7k at 0.57.36's 55, 13.1k once each navigation item
+    // carries its resolved icon).
     ok(controller, 'add_recipes', {
       ids: (
         commandSchemas.add_recipes.properties as {
@@ -603,7 +604,7 @@ describe('snapshot', () => {
         }
       ).ids.items.enum,
     });
-    expect(JSON.stringify(controller.snapshot()).length).toBeLessThan(13000);
+    expect(JSON.stringify(controller.snapshot()).length).toBeLessThan(14000);
   });
 });
 

@@ -27,6 +27,7 @@ import { PhoneSheet } from '@happyvertical/smrt-ui/feedback';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { onDestroy, untrack } from 'svelte';
 import { M } from '../../i18n/strings.screens.js';
+import { tryGetCookbookContext } from '../cookbook/context.js';
 import { createOverview } from '../overview/controller.svelte.js';
 import type { OverviewModelChoice } from '../overview/grid-types.js';
 import { safeHref } from '../overview/markdown.js';
@@ -55,8 +56,9 @@ import { currencyCodeField, deriveFieldRoles } from './roles.js';
 import type { RecordScreenProps } from './types.js';
 
 let {
-  definition,
-  policy = null,
+  definition: suppliedDefinition,
+  references = {},
+  policy: suppliedPolicy,
   record,
   relations = [],
   mode,
@@ -93,6 +95,16 @@ let {
   children,
 }: RecordScreenProps = $props();
 
+const cookbookContext = tryGetCookbookContext();
+const definition = $derived(
+  cookbookContext?.screenDefinition?.(suppliedDefinition) ?? suppliedDefinition,
+);
+const policy = $derived(
+  suppliedPolicy ??
+    cookbookContext?.fieldPolicy?.(definition) ??
+    cookbookContext?.fieldPolicies?.[definition.objectRef] ??
+    null,
+);
 const { t } = useI18n();
 
 /** Desktop breakpoint: the edit form sits beside the header from here up. */
@@ -114,7 +126,11 @@ const roles = $derived(deriveFieldRoles(definition));
 const viewFields = $derived(
   screenSourceError(definition, policy)
     ? []
-    : deriveScreenFields(definition, policy, { mode: 'view', include: fields }),
+    : deriveScreenFields(definition, policy, {
+        mode: 'view',
+        include: fields,
+        references,
+      }),
 );
 const header = $derived(
   deriveRecordHeader(definition, viewFields, record, roles, { title }),
@@ -327,6 +343,7 @@ function cancel(): void {
   {#if onsave}
     {#key recordId}
       <EditForm
+        {references}
         {definition}
         {policy}
         currency={recordCurrency}
@@ -357,6 +374,7 @@ function cancel(): void {
 >
   <div class="smrt-record-screen__main" data-smrt-part="body">
     <RecordHeader
+      {references}
       {definition}
       model={header}
       {record}
@@ -374,6 +392,7 @@ function cancel(): void {
       {extraActions}
     />
     <DetailScreen
+      {references}
       {definition}
       {policy}
       {record}

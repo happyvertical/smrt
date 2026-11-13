@@ -10,9 +10,11 @@ import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Badge, Button, Card } from '@happyvertical/smrt-ui/ui';
 import { onDestroy } from 'svelte';
 import { M } from '../../i18n/strings.import-export.js';
+import { tryGetCookbookContext } from '../cookbook/context.js';
 import { CsvParseError, parseTable } from './csv.js';
 import { downloadFile } from './download.js';
 import { buildExportFile, type ExportFormat } from './export.js';
+import { fieldsFromCollectionDefinition } from './fields.js';
 import { autoMapColumns, setColumnTarget } from './mapping.js';
 import type { ImportExportProps } from './props.js';
 import { buildErrorReport, type IssueMessages } from './report.js';
@@ -47,8 +49,10 @@ const ISSUE_CODES: ImportIssueCode[] = [
 ];
 
 let {
-  fields,
-  collectionLabel,
+  fields: suppliedFields,
+  definition: suppliedDefinition,
+  policy: suppliedPolicy,
+  collectionLabel: suppliedCollectionLabel,
   createRecord,
   loadRows,
   filename = 'export',
@@ -60,6 +64,21 @@ let {
   onimported,
 }: ImportExportProps = $props();
 
+const cookbookContext = tryGetCookbookContext();
+const definition = $derived(
+  suppliedDefinition &&
+    (cookbookContext?.screenDefinition?.(suppliedDefinition) ??
+      suppliedDefinition),
+);
+const policy = $derived(
+  suppliedPolicy ?? (definition && cookbookContext?.fieldPolicy?.(definition)),
+);
+const fields = $derived(
+  definition
+    ? fieldsFromCollectionDefinition(definition, { policy: policy?.fields })
+    : (suppliedFields ?? []),
+);
+const collectionLabel = $derived(suppliedCollectionLabel ?? definition?.label);
 const { t } = useI18n();
 
 const canImport = $derived(mode !== 'export' && createRecord !== undefined);

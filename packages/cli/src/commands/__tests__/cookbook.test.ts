@@ -10,12 +10,14 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Cookbook } from '@happyvertical/smrt-types';
 import { create } from 'tar';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { testHomeEnvironment } from '../../../../vitest/src/test-home.js';
 import {
   acquireTemplate,
   applyCookbook,
@@ -54,6 +56,7 @@ let template: string;
 /** Package that owns each recipe prefix in the stub manifests. */
 const PACKAGE_FOR: Record<string, string> = {
   commerce: '@happyvertical/smrt-commerce',
+  profiles: '@happyvertical/smrt-profiles',
   inventory: '@happyvertical/smrt-inventory',
   ledgers: '@happyvertical/smrt-ledgers',
   products: '@happyvertical/smrt-products',
@@ -511,6 +514,37 @@ describe('cookbook apply', () => {
     expect(readJson(join(dir, 'smrt.cookbook.json')).recipes).toContain(
       'commerce.wholesale',
     );
+  });
+
+  it('previews and preserves customized policies and app model declarations', async () => {
+    const dir = join(work, 'customized');
+    await apply('yoga-studio', dir);
+    const file = join(dir, 'smrt.cookbook.json');
+    const before = readJson(file);
+    before.models = {
+      version: 1,
+      packageName: '@fixture/custom',
+      lists: {},
+      fields: {},
+    };
+    before.policies[0] = {
+      ...before.policies[0],
+      label: 'My wording',
+      visibility: 'hidden',
+    };
+    writeFileSync(file, `${JSON.stringify(before, null, 2)}\n`);
+    const preview = await apply('bakery', dir, { dryRun: true });
+    expect(preview.result.plan.cookbookDiff.before).toEqual(before);
+    expect(preview.result.plan.cookbookDiff.after.models).toEqual(
+      before.models,
+    );
+    expect(preview.result.plan.cookbookDiff.after.policies).toContainEqual(
+      before.policies[0],
+    );
+    expect(readJson(file)).toEqual(before);
+    await apply('bakery', dir);
+    expect(readJson(file)).toEqual(preview.result.plan.cookbookDiff.after);
+    expect((await apply('bakery', dir)).result.written).toEqual([]);
   });
 
   it('applies --into an existing project', async () => {
@@ -1056,7 +1090,11 @@ applyCookbook({ cookbook: { version: 1, recipes: [], features: [], policies: [] 
     );
     const tsx = join(here, '../../../../../node_modules/.bin/tsx');
     const run = spawnSync(tsx, [script], {
-      env: { PATH: `${bin}:${process.env.PATH}`, HOME: work },
+      env: {
+        ...testHomeEnvironment(),
+        PATH: `${bin}:${process.env.PATH}`,
+        HOME: work,
+      },
       encoding: 'utf-8',
     });
     expect(run.status, run.stderr).toBe(0);
@@ -1193,5 +1231,173 @@ describe('cookbook apply refreshes agent docs (#4878)', () => {
     await run(join(work, 'bare'), { json: true });
     expect(log).toHaveBeenCalledTimes(1);
     expect(err.mock.calls.flat().join('\n')).toContain('smrt docs:agents');
+  });
+});
+
+describe('source-checkout SDK identity', () => {
+  it('bundles the complete authored provider closure independently of generated manifests', () => {
+    const bundled = acquireTemplate('bundled:sveltekit');
+    try {
+      const dependencies = readJson(
+        join(bundled.root, 'package.json'),
+      ).dependencies;
+      const packagesDir = join(fixtureDir, '../../../..');
+      const providers = new Map(
+        readdirSync(packagesDir, { withFileTypes: true })
+          .filter(
+            (entry) =>
+              entry.isDirectory() &&
+              existsSync(join(packagesDir, entry.name, 'package.json')),
+          )
+          .map((entry) =>
+            readJson(join(packagesDir, entry.name, 'package.json')),
+          )
+          .map((pkg) => [pkg.name, pkg]),
+      );
+      for (const name of Object.keys(dependencies)) {
+        const pkg = providers.get(name);
+        if (!pkg) continue;
+        for (const dependency of Object.keys({
+          ...pkg.dependencies,
+          ...pkg.optionalDependencies,
+        })) {
+          if (dependency.startsWith('@happyvertical/smrt-'))
+            expect(
+              dependencies,
+              `${name} requires ${dependency}`,
+            ).toHaveProperty(dependency);
+        }
+      }
+      expect(dependencies).toHaveProperty('@happyvertical/smrt-personas');
+    } finally {
+      bundled.cleanup();
+    }
+  });
+
+  it('links the application SQL SDK to the checkout core SDK without registry resolution', () => {
+    const root = mkdtempSync(join(tmpdir(), 'smrt-checkout-sdk-'));
+    try {
+      const checkout = join(root, 'checkout');
+      const project = join(root, 'app');
+      const core = join(checkout, 'packages/core');
+      mkdirSync(join(core, 'node_modules/@happyvertical/sql'), {
+        recursive: true,
+      });
+      mkdirSync(project);
+      writeFileSync(
+        join(core, 'package.json'),
+        JSON.stringify({
+          name: '@happyvertical/smrt-core',
+          version: '0.60.18',
+          exports: { './checkout-only': './checkout-only.cjs' },
+        }),
+      );
+      writeFileSync(
+        join(core, 'checkout-only.cjs'),
+        'module.exports = "checkout";',
+      );
+      writeFileSync(
+        join(core, 'node_modules/@happyvertical/sql/package.json'),
+        JSON.stringify({ name: '@happyvertical/sql', version: '0.112.3' }),
+      );
+      const require = createRequire(import.meta.url);
+      const {
+        configureLocalSmrt,
+      } = require('@happyvertical/smrt-cli/source-checkout');
+      const config = { overrides: { unrelated: '1.0.0' } };
+      expect(configureLocalSmrt(config, project, undefined)).toBe(config);
+      const local = configureLocalSmrt(config, project, checkout);
+      expect(local.overrides['@happyvertical/sql']).toBe(
+        'link:.smrt-local/packages/core/node_modules/@happyvertical/sql',
+      );
+      expect(local.overrides.unrelated).toBe('1.0.0');
+      const sdk = local.overrides['@happyvertical/sql'].slice('link:'.length);
+      expect(
+        JSON.parse(readFileSync(join(project, sdk, 'package.json'), 'utf8'))
+          .version,
+      ).toBe('0.112.3');
+      expect(JSON.stringify(local)).not.toContain(checkout);
+      // A previously installed release with the same version lacks the new
+      // checkout export. Version equality must never keep that release linked.
+      const published = join(root, 'published-core');
+      mkdirSync(published);
+      writeFileSync(
+        join(published, 'package.json'),
+        JSON.stringify({
+          name: '@happyvertical/smrt-core',
+          version: '0.60.18',
+          exports: {},
+        }),
+      );
+      writeFileSync(
+        join(project, 'package.json'),
+        JSON.stringify({
+          name: 'cold-sdk-consumer',
+          dependencies: {
+            '@happyvertical/smrt-core': 'file:../published-core',
+          },
+        }),
+      );
+      execFileSync('pnpm', ['install', '--offline', '--ignore-scripts'], {
+        cwd: project,
+        stdio: 'pipe',
+        timeout: 30000,
+      });
+      const consumer = createRequire(join(project, 'package.json'));
+      expect(() =>
+        consumer.resolve('@happyvertical/smrt-core/checkout-only'),
+      ).toThrow();
+      writeFileSync(
+        join(project, 'package.json'),
+        JSON.stringify({
+          name: 'cold-sdk-consumer',
+          dependencies: {
+            '@happyvertical/sql': '^0.89.12',
+            '@happyvertical/smrt-core': '0.60.18',
+          },
+        }),
+      );
+      writeFileSync(
+        join(project, '.pnpmfile.cjs'),
+        `module.exports = { hooks: { updateConfig(config) { return require(${JSON.stringify(require.resolve('@happyvertical/smrt-cli/source-checkout'))}).configureLocalSmrt(config, __dirname, ${JSON.stringify(checkout)}); } } };`,
+      );
+      // Switching this fixture from a release to checkout overrides deliberately
+      // changes its lockfile configuration, including when the suite runs in CI.
+      execFileSync(
+        'pnpm',
+        ['install', '--no-frozen-lockfile', '--offline', '--ignore-scripts'],
+        {
+          cwd: project,
+          stdio: 'pipe',
+          timeout: 30000,
+        },
+      );
+      // Resolve in a fresh consumer process, as the subsequent app build does;
+      // Node caches the old package exports after the earlier negative lookup.
+      expect(
+        execFileSync(
+          process.execPath,
+          [
+            '-e',
+            "process.stdout.write(require('@happyvertical/smrt-core/checkout-only'))",
+          ],
+          { cwd: project, encoding: 'utf8' },
+        ),
+      ).toBe('checkout');
+      expect(
+        JSON.parse(
+          readFileSync(
+            join(project, 'node_modules/@happyvertical/sql/package.json'),
+            'utf8',
+          ),
+        ).version,
+      ).toBe('0.112.3');
+      rmSync(join(core, 'node_modules'), { recursive: true, force: true });
+      expect(() => configureLocalSmrt(config, project, checkout)).toThrow(
+        'Install the SMRT checkout dependencies',
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

@@ -12,21 +12,21 @@ What is here (the rest is the template):
 
 | File | Role |
 | --- | --- |
-| `smrt-desktop.json` | Product configuration: `Generic SMRT App`, the placeholder bundle id, the health route and `sidecar.ownerClaimRoute` (`/api/_runtime/owner-link`) |
+| `smrt-desktop.json` | Product configuration: `Generic SMRT App`, the placeholder bundle id, the health route and `sidecar.ownerClaimRoute` (`/api/_runtime/owner-link`) and the acknowledged lazy imports. The default features stay off: `@happyvertical/ai` 0.111.9+ loads `openai`, `@anthropic-ai/sdk` and `@google/genai` only when a provider is created, and `@happyvertical/smrt-inference` reads its constants from `@happyvertical/ai/types`, so the bundle omits the three SDKs |
 | `overlay/src/routes/api/_runtime/owner-link/+server.ts` | Mounts app-runtime's `createOwnerLinkHandler`: the route the wrapper opens its window on |
 
 ## Build and bundle
 
 The bundler installs production dependencies from the app's lockfile and takes
 only registry packages, but this commit's workspace packages are not published.
-`wrapper/scripts/build-generic-app.mjs` therefore serves them from a throwaway
+`wrapper/scripts/build-desktop-app.mjs` therefore serves them from a throwaway
 Verdaccio on a loopback port, copies the template (`copyTemplate`), applies the
 overlay, resolves and builds the app (`smrt app build`, adapter-node) and runs
 `smrt desktop bundle` per target:
 
 ```sh
 pnpm turbo run build --filter='@happyvertical/smrt-template-sveltekit...'
-node packages/smrt-desktop/wrapper/scripts/build-generic-app.mjs \
+node packages/smrt-desktop/wrapper/scripts/build-desktop-app.mjs \
   --out "$(mktemp -d)" --targets aarch64-apple-darwin --measure
 ```
 

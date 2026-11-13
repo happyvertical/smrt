@@ -71,6 +71,42 @@ describe('verified generation snapshots', () => {
     ).toEqual(manifest);
   });
 
+  it('keeps a dependency replacement in the consumer view alongside its provider ancestry', () => {
+    const replaced: {
+      version: string;
+      timestamp: number;
+      packageName: string;
+      objects: Record<string, Record<string, unknown>>;
+    } = structuredClone(manifest);
+    replaced.objects['@fixture/dependency:ExternalThing'].decoratorConfig = {
+      tableName: 'things',
+    };
+    replaced.objects['@fixture/app:ExternalThing'] = {
+      className: 'ExternalThing',
+      packageName: '@fixture/app',
+      filePath: join(projectRoot, 'src/LocalThing.ts'),
+      extendsQualified: '@fixture/dependency:ExternalThing',
+      decoratorConfig: { tableName: 'things' },
+    };
+    const options = writeArtifact(
+      serializeSmrtGenerationSnapshot(replaced, provenance, {
+        sourceRoot: projectRoot,
+      }),
+    );
+    const view = loadVerifiedSmrtGenerationSnapshot<typeof replaced>(
+      options,
+      projectRoot,
+      'dependencies',
+    );
+    expect(Object.keys(view.objects).sort()).toEqual([
+      '@fixture/app:ExternalThing',
+      '@fixture/dependency:ExternalThing',
+    ]);
+    expect(view.objects['@fixture/app:ExternalThing'].extendsQualified).toBe(
+      '@fixture/dependency:ExternalThing',
+    );
+  });
+
   it('normalizes the workspace-relative paths emitted by manifest generation', () => {
     manifest.objects['@fixture/app:LocalThing'].filePath = 'src/LocalThing.ts';
     const options = writeArtifact();

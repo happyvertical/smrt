@@ -31,7 +31,12 @@ provisioning and the spend gate (#4759, #4760). App-author guide:
   bundle-gate browser fixture): the `_smrt_inference_overrides` model;
   generated consumer registration imports it from here.
 - `./server` (Node-only): settings service, override service, override
-  resolver, key rule, preference kind (#4754). `./svelte`: the panel.
+  resolver, key rule, preference kind (#4754); local CLI turns, ChatGPT model
+  rounds and connection diagnostics ([agents/engines.md](agents/engines.md)).
+  `./svelte`: the panel.
+- `./test-support` (Node-only): shared fake CLI installers and isolated lookup
+  dependencies for engine/host tests; fixture source is bundled, never run on
+  real credentials ([agents/engines.md](agents/engines.md)).
 - `./gate` (Node-only, #4760): the hosted spend gate and kill switch
   (below). `browser-safe.test.ts` keeps it off the root graph.
 
@@ -75,6 +80,28 @@ looked up before one is created (`@happyvertical/ai` >= 0.111.7). `./gate`'s
 always wins), tenant, entitlement, then plan spend caps; a block throws
 `InferenceUnavailableError` (`entitlement`) and writes a `blocked` usage row.
 Details: [agents/hosted.md](agents/hosted.md).
+
+## Sign in with ChatGPT (`src/chatgpt/`, `./server`)
+
+Local profile only; a PREVIEW for open source apps
+([limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)).
+`createChatGPTPlanConnection({ appName, credentialsPath })` wraps the SDK's
+`LocalChatGPTSessionManager` (`@happyvertical/auth/local`, loaded lazily): the
+SDK's own owner-only file at `credentialsPath` is the only credential store;
+smrt never reads it, and no result, log or error carries a token (status is
+`signedIn`, `signingIn`, an account label, a fixed-vocabulary error;
+`clientOptions()` hands the provider `{ accessToken }` only). `start()` returns
+the URL only after checking https on `auth.openai.com`. The resolver
+(`createChatGPTPlanResolver`, composed outside the user resolver by
+`createInferenceSettingsHost({ chatgptPlan })`) answers only calls whose
+`appliesTo` is true: `chatgpt-plan` with `source: 'byo'` when signed in,
+`unavailable: 'unconfigured'` otherwise, never an API-key fallback, never a
+default. The provider rejects `maxTokens`, sampling, `user`, response formats,
+reasoning, forced single-function `toolChoice` and `stream()` with tools; the
+caller sends none of them (`classifyChatGPTPlanFailure` names the failures).
+Guide: [docs/content/inference-settings.md](../../docs/content/inference-settings.md).
+
+[Owner work profiles and durable design runs](agents/design-runs.md).
 
 ## Config
 
@@ -195,6 +222,13 @@ app-only `transcripts` row, editable in the panel only with `appEditable`,
 applied as core's transcript app settings layer; the Usage tab shows
 transcript counts and links to a host route, never content. Details: [agents/settings.md](agents/settings.md),
 consumer guide [docs/content/inference-settings.md](../../docs/content/inference-settings.md).
+`./server` also ships the framework-free host wiring both the template and
+the app shell use: `createInferenceSettingsHost` (secret store under the
+runtime's master key, user resolver over the override resolver, settings
+service with its authorizer), `createInferenceSettingsController` (the
+panel's `load` and writes, gated on `inference.customize`; a refusal and a
+key-origin error name no key), and `saveInferenceKey` / `inferenceKeyIsSet`.
+A host supplies only its session check, preference store and routes.
 
 ## Validation
 

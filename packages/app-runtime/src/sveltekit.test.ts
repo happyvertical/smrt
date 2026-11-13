@@ -186,6 +186,7 @@ async function localRuntime(
 }
 
 interface TestEventOptions {
+  cookies?: Record<string, string>;
   sid?: string;
   headers?: Record<string, string>;
   clientAddress?: string | (() => string);
@@ -193,7 +194,7 @@ interface TestEventOptions {
 }
 
 function testEvent(url: string, options: TestEventOptions = {}) {
-  const jar = new Map<string, string>();
+  const jar = new Map<string, string>(Object.entries(options.cookies ?? {}));
   if (options.sid) jar.set('sid', options.sid);
   const setCookies: Array<{
     name: string;
@@ -521,6 +522,8 @@ describe('local SvelteKit runtime', () => {
     expect(runtime.classOptions('Membership').db).toBe(override);
     const users = await UserCollection.create(runtime.classOptions('User'));
     expect(await applicationDb(runtime)).toBe(users.db);
+    // The shared handle for services that take a DatabaseInterface.
+    expect(await runtime.database()).toBe(local.db);
   });
 
   it('keeps owner bootstrap loopback-only, single-use, and HMAC-only end to end', async () => {
@@ -628,7 +631,7 @@ describe('local SvelteKit runtime', () => {
     expect(claimed.redirect).toMatchObject({ status: 303, location: '/' });
     expect(claimEvent.setCookies).toHaveLength(1);
     expect(claimEvent.setCookies[0]).toMatchObject({
-      name: 'sid',
+      name: runtime.sessionCookie.name,
       options: {
         path: '/',
         httpOnly: true,
@@ -700,6 +703,12 @@ describe('local SvelteKit runtime', () => {
         load({ locals: { user: { id: 'u1', email: 'a@b.test' } } }).session
           .user,
       ).toEqual({ id: 'u1', email: 'a@b.test' });
+      // The runtime reads the profile name into locals.userName.
+      expect(
+        load({
+          locals: { user: { id: 'u1', email: '' }, userName: 'Will' },
+        }).session.user,
+      ).toEqual({ id: 'u1', email: '', name: 'Will' });
       expect(load({ locals: { user: null } }).session.user).toBeNull();
       expect(load({ locals: { user: { id: 'u1' } } }).session.user).toBeNull();
     });
@@ -720,12 +729,16 @@ describe('local SvelteKit runtime', () => {
     }
 
     function signOutEvent(
+      runtime: SmrtSvelteKitRuntime,
       sid: string | undefined,
       method: string,
       headers: Record<string, string>,
     ) {
       const url = 'http://127.0.0.1:5173/sign-out';
-      const event = testEvent(url, sid ? { sid } : {});
+      const event = testEvent(
+        url,
+        sid ? { cookies: { [runtime.sessionCookie.name]: sid } } : {},
+      );
       event.request = new Request(url, { method, headers });
       const deleted: string[] = [];
       const remove = event.cookies.delete;
@@ -747,12 +760,12 @@ describe('local SvelteKit runtime', () => {
       expect(before.locals.authMethod).toBe('local-bootstrap');
       expect(before.locals.sessionParent).toBeNull();
 
-      const { event, deleted } = signOutEvent(sid, 'POST', {
+      const { event, deleted } = signOutEvent(runtime, sid, 'POST', {
         origin: 'http://127.0.0.1:5173',
       });
       const response = await handler(event as never);
       expect(response.status).toBe(204);
-      expect(deleted).toEqual(['sid']);
+      expect(deleted).toEqual([runtime.sessionCookie.name]);
       const after = await runHandle(
         runtime.handle,
         testEvent('http://127.0.0.1:5173/', { sid }),
@@ -762,16 +775,16 @@ describe('local SvelteKit runtime', () => {
       expect(after.locals.sessionParent).toBeNull();
 
       // Already-gone session row: the cookie is still cleared.
-      const again = signOutEvent(sid, 'POST', {
+      const again = signOutEvent(runtime, sid, 'POST', {
         'sec-fetch-site': 'same-origin',
       });
       expect((await handler(again.event as never)).status).toBe(204);
-      expect(again.deleted).toEqual(['sid']);
+      expect(again.deleted).toEqual([runtime.sessionCookie.name]);
     });
 
     it('answers a no-JS form post with a 303 to /', async () => {
       const { runtime, sid } = await signedInRuntime('sign-out-form');
-      const { event } = signOutEvent(sid, 'POST', {
+      const { event } = signOutEvent(runtime, sid, 'POST', {
         origin: 'http://127.0.0.1:5173',
         accept: 'text/html',
       });
@@ -783,7 +796,7 @@ describe('local SvelteKit runtime', () => {
     it('rejects non-POST with 405 and cross-origin with 403 without touching the session', async () => {
       const { runtime, sid } = await signedInRuntime('sign-out-reject');
       const handler = createSignOutHandler(runtime);
-      const get = signOutEvent(sid, 'GET', {
+      const get = signOutEvent(runtime, sid, 'GET', {
         origin: 'http://127.0.0.1:5173',
       });
       const getResponse = await handler(get.event as never);
@@ -795,7 +808,7 @@ describe('local SvelteKit runtime', () => {
         { 'sec-fetch-site': 'same-site' },
         {},
       ]) {
-        const { event, deleted } = signOutEvent(sid, 'POST', headers);
+        const { event, deleted } = signOutEvent(runtime, sid, 'POST', headers);
         expect((await handler(event as never)).status).toBe(403);
         expect(deleted).toEqual([]);
       }
@@ -933,6 +946,101 @@ describe('local SvelteKit runtime', () => {
       token: '',
       link: 'missing',
     });
+  });
+
+  it('reports desktop recovery without exposing the launch secret', async () => {
+    const previous = process.env.SMRT_DESKTOP_OWNER_LINK_SECRET;
+    process.env.SMRT_DESKTOP_OWNER_LINK_SECRET = 'desktop-test-secret';
+    try {
+      const { runtime } = await localRuntime('desktop-setup-mode');
+      await runtime.init();
+      const data = await createOwnerSetupPage(runtime).load(
+        testEvent(SETUP_URL),
+      );
+      expect(data).toMatchObject({ launchMode: 'desktop', link: 'missing' });
+      expect(JSON.stringify(data)).not.toContain('desktop-test-secret');
+    } finally {
+      if (previous === undefined)
+        delete process.env.SMRT_DESKTOP_OWNER_LINK_SECRET;
+      else process.env.SMRT_DESKTOP_OWNER_LINK_SECRET = previous;
+    }
+  });
+
+  it('marks desktop signed-out setup for reopen guidance without returning a launch or invitation secret', async () => {
+    const { runtime } = await localRuntime('desktop-reopen');
+    await runtime.init();
+    const token = await bootstrapToken(runtime);
+    const previousSecret = process.env.SMRT_DESKTOP_OWNER_LINK_SECRET;
+    vi.stubEnv('SMRT_DESKTOP_OWNER_LINK_SECRET', 'private-launch-secret');
+    try {
+      const page = createOwnerSetupPage(runtime);
+      expect(await page.load(testEvent(`${SETUP_URL}?token=${token}`))).toEqual(
+        { available: true, token, link: 'ready', launchMode: 'desktop' },
+      );
+      expect(await page.load(testEvent(SETUP_URL))).toEqual({
+        available: true,
+        token: '',
+        link: 'missing',
+        launchMode: 'desktop',
+      });
+      await (await runtime.localRuntime()).claimOwner({
+        token,
+        name: 'Owner',
+        email: 'desktop@example.test',
+      });
+      for (const path of [SETUP_URL, `${SETUP_URL}?token=${token}`]) {
+        const data = await page.load(testEvent(path));
+        expect(data).toEqual({
+          available: false,
+          token: '',
+          link: 'unavailable',
+          launchMode: 'desktop',
+        });
+        expect(JSON.stringify(data)).not.toMatch(/private-launch-secret/);
+      }
+      const spentInvitation = testEvent(SETUP_URL, {
+        form: { token, name: 'Owner', email: 'desktop@example.test' },
+      });
+      const { failure } = await runAction(page, spentInvitation);
+      expect(failure).toMatchObject({
+        status: 400,
+        data: {
+          code: 'setup_invalid',
+          message:
+            'This sign-in link is no longer valid. Quit and reopen the app.',
+        },
+      });
+      const overridden = createOwnerSetupPage(runtime, {
+        messages: { setup_invalid: 'Application-specific recovery.' },
+      });
+      expect(
+        (
+          await runAction(
+            overridden,
+            testEvent(SETUP_URL, {
+              form: { token, name: 'Owner', email: 'desktop@example.test' },
+            }),
+          )
+        ).failure,
+      ).toMatchObject({ data: { message: 'Application-specific recovery.' } });
+      // Remote requests still refuse setup and never expose a token.
+      expect(
+        await page.load(testEvent(SETUP_URL, { clientAddress: '203.0.113.1' })),
+      ).toEqual({
+        available: false,
+        token: '',
+        link: 'unavailable',
+        launchMode: 'desktop',
+      });
+      const signedIn = testEvent(SETUP_URL);
+      signedIn.locals.user = { id: 'signed-in' };
+      await expect(page.load(signedIn)).rejects.toMatchObject({
+        status: 303,
+        location: '/',
+      });
+    } finally {
+      vi.stubEnv('SMRT_DESKTOP_OWNER_LINK_SECRET', previousSecret);
+    }
   });
 
   it('rejects an expired bootstrap token', async () => {
@@ -1149,6 +1257,8 @@ describe('local SvelteKit runtime', () => {
         user: {
           id: expect.any(String),
           email: 'owner@example.com',
+          // From the linked profile (the claim above names it).
+          name: expect.any(String),
         },
       },
     });
@@ -2410,5 +2520,420 @@ describe('desktop owner link', () => {
     )(linkEvent() as never);
     expect(response.status).toBe(302);
     expect(response.headers.get('location')).toBe('/');
+  });
+});
+
+describe('desktop owner link auto sign-in', () => {
+  const SECRET = 'a1b2c3'.repeat(10) + 'dead';
+  const OTHER_SECRET = 'f'.repeat(SECRET.length);
+  const LINK = `http://127.0.0.1:5173${OWNER_LINK_ROUTE}?launch=${SECRET}`;
+  const OPTIONS = { launchSecret: SECRET, autoClaim: true };
+
+  function linkEvent(
+    overrides: {
+      url?: string;
+      headers?: Record<string, string>;
+      clientAddress?: string;
+      user?: { id: string };
+    } = {},
+  ) {
+    const url = overrides.url ?? LINK;
+    const event = testEvent(url, {
+      headers: {
+        host: new URL(url).host,
+        'user-agent': 'wrapper-test',
+        ...overrides.headers,
+      },
+      clientAddress: overrides.clientAddress ?? '127.0.0.1',
+    });
+    if (overrides.user) event.locals.user = overrides.user;
+    return event;
+  }
+
+  async function ownerRows(runtime: SmrtSvelteKitRuntime) {
+    const local = await runtime.localRuntime();
+    const owners = (
+      await local.db.query(
+        `SELECT memberships.id AS membership_id, memberships.user_id, memberships.tenant_id
+         FROM memberships JOIN roles ON roles.id = memberships.role_id
+         WHERE roles.slug = 'owner'`,
+      )
+    ).rows as Array<{ user_id: string; tenant_id: string }>;
+    const users = (await local.db.query('SELECT id, email FROM users'))
+      .rows as Array<{ id: string; email: string }>;
+    const sessions = (await local.db.query('SELECT id FROM sessions'))
+      .rows as Array<{ id: string }>;
+    return { owners, users, sessions };
+  }
+
+  it('creates the owner once, sets the session cookie and redirects to /', async () => {
+    const { runtime } = await localRuntime('link-auto-create');
+    await runtime.init();
+    const handler = createOwnerLinkHandler(runtime, {
+      ...OPTIONS,
+      ownerName: 'Ada Lovelace',
+    });
+    const event = linkEvent();
+    const response = await handler(event as never);
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe('/');
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(await response.text()).toBe('');
+    expect(event.setCookies).toHaveLength(1);
+    const cookie = event.setCookies[0];
+    expect(cookie?.name).toBe(runtime.sessionCookie.name);
+    expect(cookie?.options).toMatchObject({ httpOnly: true, path: '/' });
+
+    const rows = await ownerRows(runtime);
+    expect(rows.owners).toHaveLength(1);
+    expect(rows.users).toHaveLength(1);
+    // No invented address: the owner has no email yet.
+    expect(rows.users[0]?.email ?? '').toBe('');
+    const local = await runtime.localRuntime();
+    const context = await local.restoreSession(cookie?.value as string);
+    expect(context?.user?.id).toBe(rows.owners[0]?.user_id);
+    const person = (await local.db.query('SELECT name, email FROM profiles'))
+      .rows as Array<{ name: string; email: string | null }>;
+    expect(person.map((row) => row.name)).toContain('Ada Lovelace');
+    expect(await runtime.ownerSetupLocation()).toBe('/');
+  });
+
+  it('carries the owner name (not the empty email) into the session layout', async () => {
+    const { runtime } = await localRuntime('link-auto-layout-name');
+    await runtime.init();
+    const handler = createOwnerLinkHandler(runtime, {
+      ...OPTIONS,
+      ownerName: 'Ada Lovelace',
+    });
+    const event = linkEvent();
+    await handler(event as never);
+    const sid = event.setCookies[0]?.value as string;
+    const observed = await runHandle(
+      runtime.handle,
+      testEvent('http://127.0.0.1/', { sid }),
+    );
+    expect(observed.locals.userName).toBe('Ada Lovelace');
+    expect(
+      createSessionLayoutLoad()({ locals: observed.locals }).session.user,
+    ).toMatchObject({ email: '', name: 'Ada Lovelace' });
+  });
+
+  it('names the owner after the OS account when no name is given', async () => {
+    const { runtime } = await localRuntime('link-auto-os-name');
+    await runtime.init();
+    const response = await createOwnerLinkHandler(
+      runtime,
+      OPTIONS,
+    )(linkEvent() as never);
+    expect(response.status).toBe(302);
+    const local = await runtime.localRuntime();
+    const rows = (await local.db.query('SELECT name FROM profiles'))
+      .rows as Array<{ name: string }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.name.trim()).not.toBe('');
+    expect(rows[0]?.name).not.toContain('@');
+  });
+
+  it('issues a new session for the sole owner when the request has none, and none when it has one', async () => {
+    const { runtime } = await localRuntime('link-auto-reissue');
+    await runtime.init();
+    const handler = createOwnerLinkHandler(runtime, OPTIONS);
+    const first = linkEvent();
+    await handler(first as never);
+    const before = await ownerRows(runtime);
+    const userId = before.owners[0]?.user_id as string;
+
+    // The session cookie was lost: a new session for the same owner.
+    const lost = linkEvent();
+    const reissued = await handler(lost as never);
+    expect(reissued.status).toBe(302);
+    expect(reissued.headers.get('location')).toBe('/');
+    expect(lost.setCookies).toHaveLength(1);
+    expect(lost.setCookies[0]?.value).not.toBe(first.setCookies[0]?.value);
+    const after = await ownerRows(runtime);
+    expect(after.owners).toHaveLength(1);
+    expect(after.users).toHaveLength(1);
+    expect(after.sessions.length).toBe(before.sessions.length + 1);
+    const local = await runtime.localRuntime();
+    expect(
+      (await local.restoreSession(lost.setCookies[0]?.value as string))?.user
+        ?.id,
+    ).toBe(userId);
+
+    // A valid owner session: nothing is issued.
+    const signedIn = linkEvent({ user: { id: userId } });
+    const kept = await handler(signedIn as never);
+    expect(kept.headers.get('location')).toBe('/');
+    expect(signedIn.setCookies).toHaveLength(0);
+    expect((await ownerRows(runtime)).sessions).toHaveLength(
+      after.sessions.length,
+    );
+
+    // A session of someone else is not the owner's: a new owner session.
+    const stranger = linkEvent({ user: { id: 'someone-else' } });
+    await handler(stranger as never);
+    expect(stranger.setCookies).toHaveLength(1);
+  });
+
+  it('creates exactly one owner for concurrent first requests', async () => {
+    const { runtime } = await localRuntime('link-auto-concurrent');
+    await runtime.init();
+    const handler = createOwnerLinkHandler(runtime, OPTIONS);
+    const events = Array.from({ length: 6 }, () => linkEvent());
+    const responses = await Promise.all(
+      events.map((event) => handler(event as never)),
+    );
+    for (const response of responses) {
+      expect(response.status).toBe(302);
+      expect(response.headers.get('location')).toBe('/');
+    }
+    const rows = await ownerRows(runtime);
+    expect(rows.owners).toHaveLength(1);
+    expect(rows.users).toHaveLength(1);
+    const local = await runtime.localRuntime();
+    for (const event of events) {
+      expect(event.setCookies).toHaveLength(1);
+      expect(
+        (await local.restoreSession(event.setCookies[0]?.value as string))?.user
+          ?.id,
+      ).toBe(rows.owners[0]?.user_id);
+    }
+  });
+
+  it('creates nothing and answers 403 for every failed gate', async () => {
+    const { runtime } = await localRuntime('link-auto-refused');
+    await runtime.init();
+    const withUrl = (query: string) =>
+      `http://127.0.0.1:5173${OWNER_LINK_ROUTE}${query}`;
+    const handler = createOwnerLinkHandler(runtime, OPTIONS);
+    const events = [
+      linkEvent({ url: withUrl('') }),
+      linkEvent({ url: withUrl('?launch=') }),
+      linkEvent({ url: withUrl(`?launch=${OTHER_SECRET}`) }),
+      linkEvent({ url: withUrl(`?launch=${SECRET.slice(0, -1)}`) }),
+      linkEvent({ headers: { host: 'evil.example' } }),
+      linkEvent({ headers: { origin: 'https://evil.example' } }),
+      linkEvent({ headers: { 'sec-fetch-site': 'cross-site' } }),
+      linkEvent({ clientAddress: '10.0.0.5' }),
+      linkEvent({
+        url: `http://203.0.113.7:5173${OWNER_LINK_ROUTE}?launch=${SECRET}`,
+      }),
+    ];
+    for (const event of events) {
+      const response = await handler(event as never);
+      expect(response.status).toBe(403);
+      expect(response.headers.get('location')).toBeNull();
+      expect(await response.text()).toBe('');
+      expect(event.setCookies).toHaveLength(0);
+    }
+    const noSecret = createOwnerLinkHandler(runtime, {
+      autoClaim: true,
+      launchSecret: null,
+    });
+    expect((await noSecret(linkEvent() as never)).status).toBe(403);
+    const rows = await ownerRows(runtime);
+    expect(rows.owners).toHaveLength(0);
+    expect(rows.users).toHaveLength(0);
+    expect(rows.sessions).toHaveLength(0);
+  });
+
+  it('keeps the setup redirect and creates nothing when autoClaim is off', async () => {
+    const { runtime } = await localRuntime('link-auto-off');
+    await runtime.init();
+    const event = linkEvent();
+    const response = await createOwnerLinkHandler(runtime, {
+      launchSecret: SECRET,
+    })(event as never);
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')?.startsWith('/setup?token=')).toBe(
+      true,
+    );
+    expect(event.setCookies).toHaveLength(0);
+    expect((await ownerRows(runtime)).owners).toHaveLength(0);
+  });
+
+  it('issues no session outside the local profile', async () => {
+    const runtime = createSmrtSvelteKitRuntime({
+      runtime: resolveApplicationRuntime({ profile: 'self-hosted' }),
+      env: { NODE_ENV: 'development' },
+    });
+    const event = linkEvent();
+    const response = await createOwnerLinkHandler(
+      runtime,
+      OPTIONS,
+    )(event as never);
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe('/');
+    expect(event.setCookies).toHaveLength(0);
+  });
+
+  it('refuses to be built on a runtime that cannot sign the owner in', () => {
+    expect(() =>
+      createOwnerLinkHandler(
+        { ownerSetupLocation: async () => '/' },
+        { autoClaim: true },
+      ),
+    ).toThrow(/signInLocalOwner/);
+  });
+
+  it('fails closed with no session when the owner is not exactly one active owner', async () => {
+    const { runtime } = await localRuntime('link-auto-fail-closed');
+    await runtime.init();
+    const handler = createOwnerLinkHandler(runtime, OPTIONS);
+    await handler(linkEvent() as never);
+    const local = await runtime.localRuntime();
+
+    // Several active owners.
+    const owner = (await ownerRows(runtime)).owners[0] as {
+      user_id: string;
+      tenant_id: string;
+    };
+    const roleRow = (
+      await local.db.query(`SELECT id FROM roles WHERE slug = 'owner'`)
+    ).rows[0] as { id: string };
+    const membership = (
+      await local.db.query(
+        `SELECT * FROM memberships WHERE user_id = ?`,
+        owner.user_id,
+      )
+    ).rows[0] as Record<string, unknown>;
+    const clone = {
+      ...membership,
+      id: '00000000-0000-4000-8000-0000000000aa',
+      user_id: '00000000-0000-4000-8000-0000000000bb',
+      slug: 'second-owner',
+      role_id: roleRow.id,
+    };
+    const columns = Object.keys(clone);
+    // A second owner row for a user that does not exist is enough to make the
+    // owner ambiguous; suspend the foreign-key check for the fixture insert.
+    await local.db.query('PRAGMA foreign_keys = OFF');
+    await local.db.query(
+      `INSERT INTO memberships (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+      ...Object.values(clone),
+    );
+    await local.db.query('PRAGMA foreign_keys = ON');
+    const sessionsBefore = (await ownerRows(runtime)).sessions.length;
+    const several = linkEvent();
+    const severalResponse = await handler(several as never);
+    expect(severalResponse.status).toBe(302);
+    expect(severalResponse.headers.get('location')).toBe('/');
+    expect(several.setCookies).toHaveLength(0);
+    await local.db.query(
+      `DELETE FROM memberships WHERE id = ?`,
+      '00000000-0000-4000-8000-0000000000aa',
+    );
+
+    // No active owner but a spent invitation: nothing is created.
+    await local.db.query(
+      `UPDATE memberships SET status = 'suspended' WHERE user_id = ?`,
+      owner.user_id,
+    );
+    const none = linkEvent();
+    const noneResponse = await handler(none as never);
+    expect(noneResponse.status).toBe(302);
+    expect(noneResponse.headers.get('location')).toBe('/');
+    expect(none.setCookies).toHaveLength(0);
+    const rows = await ownerRows(runtime);
+    expect(rows.sessions).toHaveLength(sessionsBefore);
+    expect(rows.users).toHaveLength(1);
+  });
+
+  it('keeps the session id and tokens out of logs, bodies and headers', async () => {
+    const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map(
+      (method) => vi.spyOn(console, method).mockImplementation(() => {}),
+    );
+    try {
+      const { runtime } = await localRuntime('link-auto-logs');
+      await runtime.init();
+      const handler = createOwnerLinkHandler(runtime, OPTIONS);
+      const event = linkEvent();
+      const response = await handler(event as never);
+      const sid = event.setCookies[0]?.value as string;
+      const refused = await handler(
+        linkEvent({
+          url: `http://127.0.0.1:5173${OWNER_LINK_ROUTE}?launch=${OTHER_SECRET}`,
+        }) as never,
+      );
+      for (const r of [response, refused]) {
+        expect(await r.text()).toBe('');
+        const headers = JSON.stringify([...r.headers]);
+        expect(headers).not.toContain(sid);
+        expect(headers).not.toContain(SECRET);
+      }
+      for (const spy of spies) {
+        const logged = JSON.stringify(spy.mock.calls);
+        expect(logged).not.toContain(sid);
+        expect(logged).not.toContain(SECRET);
+        expect(logged).not.toContain(OTHER_SECRET);
+      }
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+});
+
+describe('app-scoped session cookies', () => {
+  it('isolates two installations on one browser host and migrates only a verified legacy session', async () => {
+    const apps = [];
+    for (const label of ['cookie-first', 'cookie-second']) {
+      const { runtime, dataDirectory, sourceRoot } = await localRuntime(label, {
+        appId: 'shared-app',
+      });
+      await runtime.init();
+      const claim = testEvent(SETUP_URL, {
+        form: {
+          token: await bootstrapToken(runtime),
+          name: 'Owner',
+          email: 'owner@example.com',
+        },
+      });
+      await runAction(createOwnerSetupPage(runtime), claim);
+      const cookie = claim.setCookies[0];
+      expect(cookie.name).toBe(runtime.sessionCookie.name);
+      expect(cookie.name).toMatch(/^smrt_[a-f0-9]{24}_sid$/);
+      const reopened = createSmrtSvelteKitRuntime({
+        appId: 'shared-app',
+        dataDirectory,
+        sourceRoot,
+        runtime: LOCAL,
+      });
+      expect(reopened.sessionCookie.name).toBe(cookie.name);
+      apps.push({ runtime, cookie });
+    }
+    expect(apps[0].cookie.name).not.toBe(apps[1].cookie.name);
+    const jar = Object.fromEntries(
+      apps.map(({ cookie }) => [cookie.name, cookie.value]),
+    );
+    jar.sid = apps[1].cookie.value;
+    for (const { runtime, cookie } of apps) {
+      const observed = await runHandle(
+        runtime.handle,
+        testEvent('http://127.0.0.1:4960/', { cookies: jar }),
+      );
+      expect(observed.locals.sessionId).toBe(cookie.value);
+    }
+    const legacy = testEvent('http://127.0.0.1:4961/', {
+      sid: apps[0].cookie.value,
+    });
+    expect(
+      (await runHandle(apps[0].runtime.handle, legacy)).locals.sessionId,
+    ).toBe(apps[0].cookie.value);
+    expect(legacy.setCookies).toEqual([apps[0].cookie]);
+    const foreign = testEvent('http://127.0.0.1:4961/', {
+      sid: apps[1].cookie.value,
+    });
+    expect(
+      (await runHandle(apps[0].runtime.handle, foreign)).locals.user,
+    ).toBeNull();
+    expect(foreign.setCookies).toEqual([]);
+    const invalidNew = testEvent('http://127.0.0.1:4961/', {
+      sid: apps[0].cookie.value,
+      cookies: { [apps[0].cookie.name]: 'invalid' },
+    });
+    expect(
+      (await runHandle(apps[0].runtime.handle, invalidNew)).locals.user,
+    ).toBeNull();
+    expect(invalidNew.setCookies).toEqual([]);
   });
 });

@@ -1333,7 +1333,9 @@ export class SchemaGenerator {
         type: sqlType,
         referenceKind: this.getReferenceKind(field),
         // If _meta.nullable is true, the field can be null regardless of required
-        notNull: field._meta?.nullable ? false : field._meta?.required || false,
+        notNull: field._meta?.nullable
+          ? false
+          : Boolean(field.required ?? field._meta?.required),
         primaryKey: field._meta?.primaryKey || false,
         unique: field._meta?.unique || false,
         description: field._meta?.description,

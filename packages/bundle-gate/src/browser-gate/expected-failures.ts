@@ -126,14 +126,6 @@ export const EXPECTED_BROWSER_FAILURES: Record<string, ExpectedFailure> = {
     issue: '#3624, #3626',
     reason: 'node:crypto/async_hooks; core migrations',
   },
-  '@happyvertical/smrt-video': {
-    issue: '#3627',
-    reason: 'documents/spider SDK graph; CJS parse error',
-  },
-  '@happyvertical/smrt-voice': {
-    issue: '#3627',
-    reason: 'documents/spider SDK graph; CJS parse error',
-  },
   '@happyvertical/smrt-webhooks': {
     issue: '#3717',
     reason:

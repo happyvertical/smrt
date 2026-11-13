@@ -1,3 +1,9 @@
+export {
+  type AssistantWorkProfileOptions,
+  assertWorkProfileTool,
+  WorkProfileEscalation,
+} from './work-profile.js';
+
 /**
  * @happyvertical/smrt-chat
  *
@@ -62,6 +68,7 @@ export {
   chatUnavailableBody,
   chatUnconfiguredBody,
 } from './ai-unavailable.js';
+export * from './assistant-approvals.js';
 // Streamed assistant turn over the tool loop, with browser-executed tools
 // (#2908). The wire types are browser-safe (`./assistant-turn` subpath).
 export {
@@ -86,6 +93,7 @@ export {
   runAssistantTurn,
   SESSION_CONTINUATIONS_FIELD,
 } from './assistant-turn.js';
+export type * from './assistant-turn-driver.js';
 export * from './assistant-turn-events.js';
 export {
   acceptAppliedChange,
@@ -312,6 +320,12 @@ export {
   toolFailureAuditMetadata,
   toolFailureRecord,
 } from './tool-loop.js';
+export {
+  type AssistantToolOutcome,
+  type DescribeAssistantTool,
+  describeAssistantTool,
+  toolSummary,
+} from './tool-summary.js';
 // Types
 export type {
   AgentSessionOptions,
@@ -334,7 +348,6 @@ export type {
   VoiceSessionOptions,
   VoiceSessionStatus,
 } from './types.js';
-
 // UI metadata (no Svelte dependency - import ./svelte for components)
 export { CHAT_MODULE_META, CHAT_UI_SLOTS } from './ui.js';
 export {

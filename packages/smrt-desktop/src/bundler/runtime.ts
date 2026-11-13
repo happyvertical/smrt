@@ -258,6 +258,7 @@ export function spawnMeasuredChild(
       child.kill('SIGKILL');
     });
     return {
+      pid,
       kill: (signal) => {
         child.kill(signal);
       },
@@ -295,6 +296,7 @@ export function spawnMeasuredChild(
     signal('SIGKILL');
   });
   return {
+    pid,
     async kill(name) {
       await refresh();
       signal(name);

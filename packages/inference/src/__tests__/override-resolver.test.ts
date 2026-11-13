@@ -62,6 +62,30 @@ describe('createInferenceOverrideResolver', () => {
     });
   });
 
+  it('reads its database options lazily, once, when given a function', async () => {
+    let calls = 0;
+    resolver = createInferenceOverrideResolver({
+      db: () => {
+        calls += 1;
+        return { db };
+      },
+      ttlMs: 0,
+    });
+    expect(calls).toBe(0);
+    await admin.setTierOverride({
+      tier: 'good',
+      scopeType: 'app',
+      scopeId: APP,
+      target: { provider: 'openai', model: 'gpt-lazy' },
+    });
+    expect((await resolve('good')).target).toEqual({
+      provider: 'openai',
+      model: 'gpt-lazy',
+    });
+    await resolve('good');
+    expect(calls).toBe(1);
+  });
+
   it('binds app rows, then allowed tenant rows', async () => {
     await admin.setTierOverride({
       tier: 'good',

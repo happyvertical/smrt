@@ -1,14 +1,18 @@
 /**
  * `/api/app/<route>` passes through to the user app's generated REST (the
  * worker's own routes, e.g. `/api/app/chores` -> `/api/chores`). Owner
- * session required. A DELETE does not run: it becomes an Approval and the
- * response is 202 `{ status: 'pending_approval', approvalId, summary, preview }`.
+ * session required. The copy is named by the `x-shell-target: live|draft`
+ * header (default `live`; the query string here belongs to the app's own
+ * REST). On live a DELETE does not run: it becomes an Approval and the
+ * response is 202 `{ status: 'pending_approval', approvalId, summary, preview }`;
+ * on the draft it runs.
  */
 
 import { isPending, runRest } from '$lib/server/builder';
 import {
   guarded,
   HttpError,
+  headerTargetOf,
   json,
   MAX_BODY_BYTES,
   ownerOf,
@@ -51,6 +55,7 @@ const handle: RequestHandler = guarded(async (event) => {
   const out = await runRest(
     { method, url: appUrl(event.params.path ?? '', event.url.search), body },
     owner.id,
+    headerTargetOf(event),
   );
   if (isPending(out)) return json(out, 202);
   return new Response(out.body, {

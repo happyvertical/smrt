@@ -28,7 +28,12 @@ export type {
   MeasureSeams,
   SpawnRequest,
 } from './measure.js';
-export { measureBundle, median, summarizeSeries } from './measure.js';
+export {
+  measureBundle,
+  median,
+  stopMeasuredProcess,
+  summarizeSeries,
+} from './measure.js';
 export type {
   NodePinProvenance,
   NodePinVerification,

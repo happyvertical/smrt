@@ -56,6 +56,7 @@ export function buildNavSections(
 ): (RecipeNavSection & { recipes: Recipe[] })[] {
   const out = new Map<string, RecipeNavSection & { recipes: Recipe[] }>();
   for (const recipe of recipes) {
+    if (!recipe.nav.length) continue;
     const nav = navSectionOf(recipe);
     const existing = out.get(nav.id);
     if (existing) existing.recipes.push(recipe);

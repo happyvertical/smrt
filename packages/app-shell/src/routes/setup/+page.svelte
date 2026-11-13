@@ -8,4 +8,16 @@ let { data, form }: PageProps = $props();
 
 <svelte:head><title>Set up your local application</title></svelte:head>
 
-<OwnerSetupForm {data} {form} {enhance} title="s-m-r-t app" />
+{#if data.desktop}
+  <main class="smrt-app-shell__page" data-owner-setup="desktop">
+    <div class="smrt-app-shell__card">
+      <h1>Quit and reopen the app</h1>
+      <p class="smrt-app-shell__muted">
+        The desktop app signs you in on its own. If you see this page, quit
+        the app and open it again.
+      </p>
+    </div>
+  </main>
+{:else}
+  <OwnerSetupForm {data} {form} {enhance} title="s-m-r-t app" />
+{/if}

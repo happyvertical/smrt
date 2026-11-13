@@ -4,6 +4,8 @@
  * Provides utilities for testing SMRT objects in isolation.
  * The main export is `getTestDatabase()` which creates an in-memory
  * database with all registered schemas pre-created.
+ * `snapshotObjectRegistryState()` isolates sequential registry-mutating fixtures;
+ * its restore callback is test cleanup, not a production application lifecycle API.
  *
  * @example
  * ```typescript
@@ -24,3 +26,4 @@ export {
   type StubNotificationsHandle,
   stubNotifications,
 } from './notifications-stub.js';
+export { snapshotObjectRegistryState } from './registry-state.js';

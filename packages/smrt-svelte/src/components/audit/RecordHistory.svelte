@@ -1,4 +1,4 @@
-<script lang="ts">
+<script lang="ts" generics="Entry extends RecordHistoryEntry = AuditHistoryEntry">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n/strings.audit.js';
 import type {
@@ -7,11 +7,12 @@ import type {
   AuditHistoryEntry,
   AuditResourceHref,
   AuditValueFormatter,
+  RecordHistoryEntry,
 } from './types.js';
 
-interface Props {
+export interface Props<Entry extends RecordHistoryEntry = AuditHistoryEntry> {
   /** Authorized entries. This component never fetches or authorizes records. */
-  entries: AuditHistoryEntry[];
+  entries: Entry[];
   /** Optional resource identity for a per-record page. Both must be supplied together. */
   resourceType?: string;
   /** Limits entries to this record identifier when supplied with resourceType. */
@@ -23,15 +24,15 @@ interface Props {
   /** Overrides the translated accessible label for the history section. */
   label?: string;
   /** Resolves friendly resource text for each authorized entry. */
-  resourceLabel?: AuditEntryLabel;
+  resourceLabel?: AuditEntryLabel<Entry>;
   /** Resolves an already-authorized local or HTTP(S) destination for each entry. */
-  resourceHref?: AuditResourceHref;
+  resourceHref?: AuditResourceHref<Entry>;
   /** Resolves friendly action text for each authorized entry. */
-  actionLabel?: AuditEntryLabel;
+  actionLabel?: AuditEntryLabel<Entry>;
   /** Resolves friendly field text for each authorized entry change. */
-  fieldLabel?: AuditFieldLabel;
+  fieldLabel?: AuditFieldLabel<Entry>;
   /** Formats before/after values as escaped text. */
-  formatValue?: AuditValueFormatter;
+  formatValue?: AuditValueFormatter<Entry>;
 }
 let {
   entries,
@@ -45,16 +46,24 @@ let {
   actionLabel,
   fieldLabel,
   formatValue,
-}: Props = $props();
+}: Props<Entry> = $props();
 const { locale, t } = useI18n();
 const visible = $derived(
-  entries
-    .filter(
+  (() => {
+    const authorized = entries.filter(
       (entry) =>
         (!resourceType || entry.resourceType === resourceType) &&
         (!resourceId || entry.resourceId === resourceId),
-    )
-    .toSorted((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt)),
+    );
+    // Without dates the host is the only chronology authority; keep its order.
+    return authorized.every((entry) => typeof entry.occurredAt === 'string')
+      ? authorized.toSorted((a, b) =>
+          typeof a.occurredAt === 'string' && typeof b.occurredAt === 'string'
+            ? Date.parse(b.occurredAt) - Date.parse(a.occurredAt)
+            : 0,
+        )
+      : authorized;
+  })(),
 );
 function defaultDisplay(value: unknown): string {
   if (typeof value === 'string') return value;
@@ -69,8 +78,8 @@ function defaultDisplay(value: unknown): string {
   }
 }
 function entryLabel(
-  resolver: AuditEntryLabel | undefined,
-  entry: AuditHistoryEntry,
+  resolver: AuditEntryLabel<Entry> | undefined,
+  entry: Entry,
   fallback: string,
 ): string {
   if (!resolver) return fallback;
@@ -83,7 +92,7 @@ function entryLabel(
     return fallback;
   }
 }
-function changedFieldLabel(field: string, entry: AuditHistoryEntry): string {
+function changedFieldLabel(field: string, entry: Entry): string {
   if (!fieldLabel) return field;
   try {
     const resolved = fieldLabel(field, entry);
@@ -94,7 +103,7 @@ function changedFieldLabel(field: string, entry: AuditHistoryEntry): string {
 }
 function display(
   value: unknown,
-  entry: AuditHistoryEntry,
+  entry: Entry,
   field: string,
   side: 'before' | 'after',
 ): string {
@@ -114,7 +123,7 @@ function hasUrlControlCharacter(value: string): boolean {
     return codePoint <= 0x1f || codePoint === 0x7f;
   });
 }
-function safeResourceHref(entry: AuditHistoryEntry): string | null {
+function safeResourceHref(entry: Entry): string | null {
   if (!resourceHref) return null;
   let resolved: unknown;
   try {
@@ -156,11 +165,10 @@ function date(value: string): string {
       {@const resolvedResourceHref = safeResourceHref(entry)}
       <li>
         <p>
-          <strong>{entry.actorLabel ?? entry.profileId}</strong>
-          · {entryLabel(actionLabel, entry, entry.action)} ·
+          {#if entry.actorLabel || entry.profileId}<strong>{entry.actorLabel ?? entry.profileId}</strong> · {' '}{/if}{entryLabel(actionLabel, entry, entry.action)} ·
           {#if resolvedResourceHref}<a href={resolvedResourceHref}>{resolvedResourceLabel}</a>{:else}{resolvedResourceLabel}{/if}
         </p>
-        <time datetime={entry.occurredAt} data-smrt-part="meta">{date(entry.occurredAt)}</time>
+        {#if entry.occurredAt}<time datetime={entry.occurredAt} data-smrt-part="meta">{date(entry.occurredAt)}</time>{/if}
         {#if entry.onBehalfOfId}<p>{t(M['ui.audit.behalf'], { actor: entry.onBehalfOfId })}</p>{/if}
         {#if entry.reason}<p>{t(M['ui.audit.reason'], { reason: entry.reason })}</p>{/if}
         {#if entry.changes && Object.keys(entry.changes).length}
@@ -181,6 +189,7 @@ function date(value: string): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
+
 @layer smrt.structure {
   .smrt-record-history__root > ol {
     display: grid;
@@ -245,5 +254,4 @@ function date(value: string): string {
     background: var(--smrt-color-surface-container-low);
   }
 }
-
 </style>

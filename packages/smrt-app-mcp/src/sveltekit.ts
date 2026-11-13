@@ -29,11 +29,6 @@
  */
 
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
-import {
-  classifyInboundRequest,
-  createMcpHandler,
-  isJsonContentType,
-} from '@modelcontextprotocol/server';
 import type {
   McpDeploymentProfile,
   McpLocalTokenPrincipal,
@@ -51,11 +46,7 @@ import {
   McpAccessError,
 } from './errors.js';
 import { stampVerifiedIdentity } from './identity.js';
-import {
-  createMcpProtocolServerForRequest,
-  MCP_TASKS_EXTENSION,
-  type McpProtocolRequestOptions,
-} from './protocol.js';
+import type { McpProtocolRequestOptions } from './protocol.js';
 import type {
   CallToolInput,
   McpAppPrincipal,
@@ -647,6 +638,11 @@ function mountMcpRouteWith(
       event.request,
     );
     if (taskResponse) return taskResponse;
+    const [{ createMcpHandler }, { createMcpProtocolServerForRequest }] =
+      await Promise.all([
+        import('@modelcontextprotocol/server'),
+        import('./protocol.js'),
+      ]);
     const handler = createMcpHandler(
       () =>
         createMcpProtocolServerForRequest(
@@ -947,6 +943,13 @@ async function maybeHandleTaskRequest(
   // 2026 request envelope is known-good. In particular, never enqueue durable
   // work for malformed envelopes, unsupported revisions, or non-JSON bodies.
   // The fallback handler owns its wire-exact error response for those cases.
+  const [
+    { isJsonContentType, classifyInboundRequest },
+    { MCP_TASKS_EXTENSION },
+  ] = await Promise.all([
+    import('@modelcontextprotocol/server'),
+    import('./protocol.js'),
+  ]);
   if (!isJsonContentType(request.headers.get('content-type'))) return null;
   const classification = classifyInboundRequest({
     httpMethod: request.method,

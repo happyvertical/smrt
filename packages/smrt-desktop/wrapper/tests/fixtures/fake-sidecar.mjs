@@ -66,6 +66,30 @@ if (mode === 'always-exit') {
   console.error('fatal: configured to fail');
   leave(2);
 }
+if (mode === 'node-runtime-error') {
+  const frame = 'file:///D:/a/_temp/smrt-launch-smoke-AbCdEf/target/debug/app/node_modules/@happyvertical/smrt-app-runtime/dist/chunks/src-runtime.js:37:17';
+  console.error(frame);
+  console.error('    throw new LocalRuntimeError(code, message);');
+  console.error('          ^');
+  console.error('LocalRuntimeError: fixture startup refusal at D:\\a\\_temp\\ordinary-very-long-directory-name-that-is-not-a-token');
+  for (let n = 0; n < 12; n++) console.error('    at fixtureFrame' + n + ' (' + frame + ')');
+  console.error("{\n  code: 'invalid_configuration'\n}\n\nNode.js " + process.version);
+  leave(1);
+}
+if (['stderr-failure', 'stderr-success', 'stderr-mixed-failure'].includes(mode)) {
+  console.log('private stdout must stay out of the log');
+  if (mode !== 'stderr-mixed-failure') {
+    for (let n = 0; n < 50; n++) {
+      console.error(n === 15 ? 'diagnostic window boundary' : `diagnostic line ${n}`);
+    }
+  }
+  console.error('Authorization: Bearer x');
+  console.error('http://127.0.0.1/setup?launch=unknown-sensitive-value');
+  console.error(process.env.DIAGNOSTIC_TEST_SECRET);
+  console.error(`${'x '.repeat(198)}${process.env.DIAGNOSTIC_TEST_SECRET}`);
+  console.error('Error: Local application data directory is not a safe Windows path: longer than 130 UTF-16 units');
+  leave(mode === 'stderr-success' ? 0 : 7);
+}
 
 process.on('SIGTERM', () => {
   mark('sigterm');

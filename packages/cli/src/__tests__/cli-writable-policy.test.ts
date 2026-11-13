@@ -8,8 +8,10 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  crossPackageRef,
   field,
   getTestDatabase,
+  ObjectRegistry,
   SmrtCollection,
   SmrtObject,
   smrt,
@@ -34,6 +36,28 @@ class CliWritablePolicyRows extends SmrtCollection<CliWritablePolicyRow> {
   static readonly _itemClass = CliWritablePolicyRow;
 }
 
+@smrt({ idType: 'text' })
+class CliInlineContact extends SmrtObject {
+  @field({ required: true }) name = '';
+  @field() email = '';
+}
+@smrt({
+  idType: 'text',
+  api: { include: ['list', 'get', 'create', 'update'] },
+  cli: true,
+  writeThrough: { contactId: { fields: ['name', 'email'] } },
+  display: { label: { via: 'contactId', field: 'name', fallback: 'Unnamed' } },
+})
+class CliInlineCustomer extends SmrtObject {
+  @crossPackageRef('@happyvertical/smrt-cli:CliInlineContact') contactId = '';
+}
+
+class CliInlineCustomers extends SmrtCollection<CliInlineCustomer> {
+  static readonly _itemClass = CliInlineCustomer;
+}
+class CliInlineContacts extends SmrtCollection<CliInlineContact> {
+  static readonly _itemClass = CliInlineContact;
+}
 describe('generated CLI write policy', () => {
   let db: DatabaseInterface;
   let dir: string;
@@ -50,6 +74,46 @@ describe('generated CLI write policy', () => {
   afterEach(async () => {
     vi.restoreAllMocks();
     await db?.close?.();
+  });
+
+  it('creates and edits a named linked record through ordinary CLI flags', async () => {
+    await getTestDatabase({
+      db,
+      classes: ['CliInlineCustomer', 'CliInlineContact'],
+    });
+    await CliInlineCustomers.create({ db });
+    await CliInlineContacts.create({ db });
+    const handler = new CLIGenerator(
+      { prompt: false, colors: false },
+      { db },
+    ).generateHandler();
+    await handler([
+      'cliinlinecustomer:create',
+      '--name',
+      'CLI Member',
+      '--email',
+      'cli@example.test',
+    ]);
+    const customers = await ObjectRegistry.getCollection('CliInlineCustomer', {
+      db,
+    });
+    const created = await customers.list({ displayLabel: true });
+    expect(created).toHaveLength(1);
+    expect(created[0].toJSON().displayLabel).toBe('CLI Member');
+    await handler([
+      'cliinlinecustomer:update',
+      String(created[0].id),
+      '--name',
+      'CLI Updated',
+    ]);
+    expect(
+      (
+        await customers.get(String(created[0].id), {
+          displayLabel: true,
+          cache: false,
+        })
+      )?.toJSON().name,
+    ).toBe('CLI Updated');
   });
 
   it('drops non-writable fields from --from-file create and update', async () => {

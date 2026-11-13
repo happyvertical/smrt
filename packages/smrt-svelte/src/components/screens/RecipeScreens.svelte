@@ -17,13 +17,16 @@
 import { Alert } from '@happyvertical/smrt-ui/feedback';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
-import { untrack } from 'svelte';
+import { type Component, untrack } from 'svelte';
 import { M } from '../../i18n/strings.screens.js';
+import { tryGetCookbookContext } from '../cookbook/context.js';
+import { parseRecipeExportRef } from '../overview/recipe-widgets.js';
 import EditForm from './EditForm.svelte';
 import { screenTitles } from './fields.js';
 import ListScreen from './ListScreen.svelte';
 import RecordScreen from './RecordScreen.svelte';
 import { deriveScreenRelations } from './relations.js';
+import { createRecipeScreenReferences } from './source.js';
 import type {
   RecipeScreensProps,
   RecipeScreensSource,
@@ -34,8 +37,12 @@ import type {
 } from './types.js';
 
 let {
-  definition,
-  policy = null,
+  entryId,
+  surfacePath,
+  surfaceProps = {},
+  definition: suppliedDefinition,
+  references,
+  policy: suppliedPolicy,
   source,
   view = $bindable<RecipeScreenView>('list'),
   recordId = $bindable<string | null>(null),
@@ -50,7 +57,62 @@ let {
   record: recordProps = {},
 }: RecipeScreensProps = $props();
 
+const cookbookContext = tryGetCookbookContext();
+const definition = $derived(
+  cookbookContext?.screenDefinition?.(suppliedDefinition, entryId) ??
+    suppliedDefinition,
+);
+const policy = $derived(
+  suppliedPolicy ??
+    cookbookContext?.fieldPolicy?.(definition) ??
+    cookbookContext?.fieldPolicies?.[definition.objectRef] ??
+    null,
+);
+let surfaceComponent = $state.raw<Component<Record<string, unknown>> | null>(
+  null,
+);
+const routeSurface = $derived.by(() => {
+  if (!cookbookContext || (view !== 'list' && !surfacePath)) return undefined;
+  const entry = entryId
+    ? cookbookContext.shell.entries.get(entryId)
+    : [...cookbookContext.shell.entries.values()].find(
+        (e) =>
+          e.model.id === definition.objectRef ||
+          definition.replacedQualifiedNames?.includes(e.model.id),
+      );
+  return cookbookContext.shell.routes.find(
+    (route) =>
+      route.recipeId === entry?.recipeId &&
+      route.path === (surfacePath ?? entry?.path),
+  );
+});
+$effect(() => {
+  const ref = routeSurface && parseRecipeExportRef(routeSurface.export);
+  const resolve = cookbookContext?.resolveExport;
+  surfaceComponent = null;
+  if (!ref || !resolve) return;
+  let cancelled = false;
+  void Promise.resolve(resolve(ref.specifier, ref.exportName))
+    .then((loaded) => {
+      const value =
+        loaded && typeof loaded === 'object' && 'default' in loaded
+          ? loaded.default
+          : loaded;
+      if (!cancelled && typeof value === 'function')
+        surfaceComponent = value as Component<Record<string, unknown>>;
+    })
+    .catch(() => {
+      /* The generic screen is the unavailable-surface fallback. */
+    });
+  return () => {
+    cancelled = true;
+  };
+});
+
 const { t } = useI18n();
+const referenceSources = $derived(
+  references ?? createRecipeScreenReferences(definitions ?? {}),
+);
 
 const titles = $derived(screenTitles(definition));
 const idField = $derived(definition.idField ?? 'id');
@@ -155,7 +217,11 @@ async function update(values: Record<string, unknown>): Promise<void> {
   if (recordId === null) return;
   saving = true;
   try {
-    await source.update?.(recordId, values);
+    const updated = await source.update?.(recordId, values);
+    // A same-id view does not retrigger the get effect. Refresh its snapshot
+    // explicitly so a successful inline edit is visible immediately.
+    fetched = source.get ? await source.get(recordId) : updated;
+    fetchSettled = true;
     await refresh();
     navigate('view', recordId);
   } finally {
@@ -177,8 +243,12 @@ async function remove(): Promise<void> {
 </script>
 
 <div class="smrt-recipe-screens" data-smrt-component="RecipeScreens">
-  {#if view === 'create' && allowCreate}
-          <EditForm
+  {#if surfaceComponent && routeSurface}
+    {@const Surface = surfaceComponent}
+    <Surface {definition} {policy} {source} {view} {recordId} {...surfaceProps} />
+  {:else if view === 'create' && allowCreate}
+    <EditForm
+        references={referenceSources}
         {definition}
         {policy}
         {currency}
@@ -191,6 +261,7 @@ async function remove(): Promise<void> {
     {#if current}
       {#key definition.objectRef}
         <RecordScreen
+          references={referenceSources}
           {definition}
           {policy}
           {currency}
@@ -217,6 +288,7 @@ async function remove(): Promise<void> {
     {/if}
   {:else}
     <ListScreen
+      references={referenceSources}
       {definition}
       {policy}
       {rows}
