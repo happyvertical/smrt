@@ -78,6 +78,7 @@ describe('decideMigrationRun (#4927)', () => {
       }),
     ).toEqual({
       proceed: true,
+      releaseStop: null,
       stops: [],
       packageStops: [],
       notices: [],
@@ -88,6 +89,7 @@ describe('decideMigrationRun (#4927)', () => {
     for (const changes of [[], [add]])
       expect(decideMigrationRun({ engine: 'sqlite', changes })).toEqual({
         proceed: true,
+        releaseStop: null,
         stops: [],
         packageStops: [],
         notices: [],

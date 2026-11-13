@@ -1303,3 +1303,54 @@ Jobs' `ensureSchema` call prepares terminal-event compatibility storage only;
 it does not replace a whole-schema production migrate. The smrt-vitest schema
 builders are test-only. Direct SQL/adapter `createTable` calls are low-level DDL;
 production applications must finish with a successful whole-schema migrate.
+
+## Release upgrade gate
+
+Repository files in `packages/core/release-upgrade/` record the upgrade promise.
+`snapshots/<release>.json` saves every smrt-owned PostgreSQL table as it was
+created by that release's own migrator. It includes columns, constraints,
+indexes, and system bookkeeping rows. `modelTables` records which tables the
+old release declared as models. This includes models named `_smrt_*`; the
+prefix alone does not make a table bookkeeping. `oldest-supported.json` names the oldest
+release we support. The first saved schema is the first supported release.
+Capture normalises bookkeeping timestamps, generated UUIDs, execution times,
+and the migration actor;
+these values must not make two captures of the same build differ.
+
+The release maintainer runs `pnpm release:snapshot` after publishing, on the
+built release checkout, and commits the resulting snapshot. To capture a built
+older checkout, run `node scripts/release-upgrade-gate.mjs save --root <checkout>`.
+Keep the oldest snapshot and the two newest others. A first-hop snapshot named
+by a floor move is also kept while that decision needs it.
+
+Run `pnpm build` and `pnpm check:release-upgrade` locally. The full-mode knowledge
+PR job runs the gate after the build. It rehearses the newest saved release at
+or before this build's version, and the oldest supported release. When these
+are the same file it runs once. Each rehearsal restores the old physical schema
+in PGlite and seeds one minimal row per model table. Only old required columns
+without defaults are filled, with deterministic primary keys. Foreign keys and
+enum checks guide seed values. Unseedable tables print warnings and a seeded
+table count; a warning alone does not fail the gate.
+
+Any migration stop fails the gate. The output names the table and column,
+the reason, and the work held back. Errors and a second diff that still needs
+work also fail. An old column that the build no longer declares fails if it
+holds data. A NOT NULL orphan without a default fails even if empty, because
+new code cannot insert. Ship a needed data step with the schema change.
+`leftover-columns.json` can record intended leftovers. Every entry names
+`table`, `column`, `since` and a non-empty `reason`. Review that reason as a data
+decision. Entries that match no leftover in either rehearsal fail as stale.
+
+Migrate refuses a database whose last migrate record is older than the floor.
+It names the supported release and the first upgrade to run. A database without
+a record is a first run under this scheme and proceeds. To move the floor, run
+`node scripts/release-upgrade-gate.mjs move-oldest --to <release>
+--upgrade-first-to <release> --reason "<why old upgrade code can be removed>"`
+on one shell line. Both releases must have saved snapshots. The command appends
+the previous record to `history` and records the release older databases must
+upgrade to first. Move it when old upgrade code must be deleted, never because
+time passed. Review and commit that decision with the code deletion.
+
+P8: the release workflow is not wired to this gate yet. A release job cannot be
+verified without publishing. This change supplies a tested command and a PR
+job; a later verified release change must wire the publishing path.

@@ -1,0 +1,7 @@
+{
+  "release": "0.60.17",
+  "snapshot": "snapshots/0.60.17.json",
+  "decision": "First release whose schema was saved for the gate; saved by the #4933 work of the #4920 train.",
+  "recordedAt": "2026-11-12",
+  "history": []
+}

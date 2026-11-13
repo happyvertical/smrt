@@ -1,10 +1,12 @@
 /** Whole-run policy shared by the CLI and application migration wrappers. */
+
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import {
   decideSchemaChange,
   type SchemaChangeInput,
   type SchemaChangeVerdict,
 } from './change-kinds.js';
+import { checkOldestSupportedRelease } from './oldest-supported.js';
 
 export interface PackagesSeenInput {
   recorded: readonly string[] | null;
@@ -63,6 +65,7 @@ export interface HeldBackMigration {
 
 export interface MigrationRunDecision<T = SchemaChangeInput> {
   proceed: boolean;
+  releaseStop: { message: string } | null;
   packageStops: MigrationPackageStop[];
   notices: string[];
   stops: MigrationRunStop<T>[];
@@ -81,7 +84,14 @@ export function decideMigrationRun<T extends SchemaChangeInput>(options: {
   engine: DatabaseEngine;
   resolvedStops?: ReadonlySet<T>;
   packagesSeen?: PackagesSeenInput;
+  recordedRelease?: string | null;
 }): MigrationRunDecision<T> {
+  const releaseCheck = checkOldestSupportedRelease(
+    options.recordedRelease ?? null,
+  );
+  const releaseStop = releaseCheck.ok
+    ? null
+    : { message: releaseCheck.message };
   const packages = options.packagesSeen
     ? checkPackagesSeen(options.packagesSeen)
     : undefined;
@@ -115,8 +125,15 @@ export function decideMigrationRun<T extends SchemaChangeInput>(options: {
       applicable.push(change);
     }
   }
-  if (stops.length === 0 && packageStops.length === 0)
-    return { proceed: true, stops: [], packageStops, notices, heldBack: [] };
+  if (stops.length === 0 && packageStops.length === 0 && !releaseStop)
+    return {
+      proceed: true,
+      releaseStop,
+      stops: [],
+      packageStops,
+      notices,
+      heldBack: [],
+    };
 
   const addedNames = new Set(
     (options.addedTables ?? []).map((s) => s.tableName),
@@ -130,7 +147,14 @@ export function decideMigrationRun<T extends SchemaChangeInput>(options: {
     if (change.type === 'add_table' && addedNames.has(change.table)) continue;
     heldBack.push(describeChange(change));
   }
-  return { proceed: false, stops, packageStops, notices, heldBack };
+  return {
+    proceed: false,
+    releaseStop,
+    stops,
+    packageStops,
+    notices,
+    heldBack,
+  };
 }
 
 function describeChange(change: SchemaChangeInput): HeldBackMigration {

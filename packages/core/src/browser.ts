@@ -776,6 +776,11 @@ export {
 } from './migrations/migrate-record.js';
 export * from './migrations/migration-run-decision.js';
 export {
+  checkOldestSupportedRelease,
+  compareReleases,
+  OLDEST_SUPPORTED_RELEASE,
+} from './migrations/oldest-supported.js';
+export {
   computeManifestSchemaFingerprint,
   computeSchemaFingerprint,
 } from './migrations/schema-fingerprint.js';

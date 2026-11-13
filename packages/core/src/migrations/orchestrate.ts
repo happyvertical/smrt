@@ -306,13 +306,15 @@ export async function migrateSmrtSchemas(
     changes: pending.diff.changes,
     addedTables: pending.diff.added_tables,
     engine: resolveMigrationEngine(options.db, options.engineHint),
+    recordedRelease: last.state === 'recorded' ? last.record.release : null,
     packagesSeen: {
       recorded: last.state === 'recorded' ? last.record.packages : null,
       current: recordInput.packages,
       confirmedRemoved: options.confirmRemovedPackages ?? [],
     },
   });
-  const { stops, heldBack, proceed, packageStops, notices } = decision;
+  const { stops, heldBack, proceed, packageStops, releaseStop, notices } =
+    decision;
   for (const notice of notices) logger.info(notice);
   if (!proceed) {
     return {
@@ -320,6 +322,7 @@ export async function migrateSmrtSchemas(
       refused: true,
       stops,
       packageStops,
+      releaseStop,
       notices,
       heldBack,
       results: [],
@@ -342,6 +345,7 @@ export async function migrateSmrtSchemas(
       refused: false,
       stops,
       packageStops,
+      releaseStop,
       notices,
       heldBack,
       results: [],
@@ -407,6 +411,7 @@ export async function migrateSmrtSchemas(
     refused: false,
     stops,
     packageStops,
+    releaseStop,
     notices,
     heldBack,
     results,
