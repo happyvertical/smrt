@@ -14,8 +14,10 @@ import {
 } from './db-command-utils.js';
 import {
   classifyTypeUpgradeSql,
+  listAlteration,
   partitionSchemaChanges,
   printSchemaAdvisories,
+  resolveSchemaChangeEngine,
   type SchemaChangeLike,
 } from './db-migrate-actions.js';
 import { resolvePostgresTimestampMigration } from './postgres-timestamp-migration.js';
@@ -231,6 +233,8 @@ export const dbDiffCommand: CLICommand = {
         relaxColumns: Boolean(options['relax-columns']),
         postgresTimestampMigration,
         emptyTextAsNull: Boolean(options['empty-text-as-null']),
+        // The engine the command decides changes with is the engine it reads.
+        engineHint: dbType,
       });
 
       const diff = await comparer.compare(schemaDefinitions);
@@ -258,10 +262,7 @@ export const dbDiffCommand: CLICommand = {
       // "up to date" line.
       // The table of change kinds differs by engine for a few kinds (#4937),
       // so name the engine the diff was read from.
-      const partitionEngine =
-        (['postgres', 'sqlite', 'duckdb', 'json'] as const).find(
-          (candidate) => candidate === dbType,
-        ) ?? (String(dbType) === 'pglite' ? 'postgres' : 'sqlite');
+      const partitionEngine = resolveSchemaChangeEngine(String(dbType));
       const { advisories, manualInterventions } = partitionSchemaChanges(
         diff.changes as SchemaChangeLike[],
         (tableName) => tableName,
@@ -323,10 +324,12 @@ export const dbDiffCommand: CLICommand = {
       // The table decides execution, including comment-only rebuild refusals
       // and warning reports. Reports are printed through advisories below.
       const typeUpgrades = allTypeUpgrades.filter(
-        (change) => classifyTypeUpgradeSql(change) === 'executable',
+        (change) =>
+          classifyTypeUpgradeSql(change, partitionEngine) === 'executable',
       );
       const unappliedTypeUpgrades = allTypeUpgrades.filter(
-        (change) => classifyTypeUpgradeSql(change) === 'manual',
+        (change) =>
+          classifyTypeUpgradeSql(change, partitionEngine) === 'manual',
       );
       const typeMismatches = diff.changes.filter(
         (c) => c.type === 'type_mismatch',
@@ -355,14 +358,17 @@ export const dbDiffCommand: CLICommand = {
       // by db:migrate; comment-only ones need a manual step (SQLite, or live
       // NULLs blocking SET NOT NULL). Report-only relaxations print with the
       // advisories below.
+      // The table of change kinds, read for this engine, puts each alteration
+      // in exactly one list: automatic here, manual here, or a report printed
+      // with the advisories (#4934).
       const columnAlterations = diff.changes.filter(
-        (c) => c.type === 'alter_column' && (c.sql || c.sqlStatements),
+        (c) => c.type === 'alter_column',
       );
       const autoAlterations = columnAlterations.filter(
-        (c) => classifyTypeUpgradeSql(c) === 'executable',
+        (c) => listAlteration(c, partitionEngine) === 'automatic',
       );
       const manualAlterations = columnAlterations.filter(
-        (c) => classifyTypeUpgradeSql(c) === 'manual',
+        (c) => listAlteration(c, partitionEngine) === 'manual',
       );
       if (autoAlterations.length > 0) {
         console.log(

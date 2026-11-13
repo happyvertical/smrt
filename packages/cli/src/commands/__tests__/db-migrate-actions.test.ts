@@ -27,6 +27,7 @@ describe('partitionSchemaChanges', () => {
         },
       ],
       (tableName) => `${tableName}:Class`,
+      'sqlite',
     );
 
     expect(manualInterventions).toEqual([]);
@@ -74,6 +75,7 @@ describe('partitionSchemaChanges', () => {
         },
       ],
       () => 'AdCampaign',
+      'sqlite',
     );
 
     expect(manualInterventions).toEqual([]);
@@ -101,6 +103,7 @@ describe('partitionSchemaChanges', () => {
         },
       ],
       () => 'Content',
+      'sqlite',
     );
 
     expect(migrations).toEqual([]);
@@ -154,6 +157,7 @@ describe('partitionSchemaChanges', () => {
         },
       ],
       () => 'Content',
+      'sqlite',
     );
 
     expect(manualInterventions).toEqual([]);
@@ -180,6 +184,7 @@ describe('partitionSchemaChanges', () => {
         },
       ],
       () => 'Content',
+      'sqlite',
     );
 
     expect(migrations).toEqual([]);
@@ -213,6 +218,7 @@ describe('partitionSchemaChanges', () => {
         },
       ],
       () => 'Tenant',
+      'sqlite',
     );
 
     expect(manualInterventions).toEqual([]);
@@ -245,6 +251,7 @@ describe('partitionSchemaChanges', () => {
         },
       ],
       () => 'Tenant',
+      'sqlite',
     );
 
     expect(migrations[0]?.renamedFrom).toBe('tenants_slug_context_idx');
@@ -261,6 +268,7 @@ describe('partitionSchemaChanges', () => {
         },
       ],
       () => 'Tenant',
+      'sqlite',
     );
 
     expect(migrations).toHaveLength(0);
@@ -280,6 +288,7 @@ describe('partitionSchemaChanges', () => {
         },
       ],
       () => 'Content',
+      'sqlite',
     );
 
     expect(migrations).toEqual([]);
@@ -321,6 +330,7 @@ describe('partitionSchemaChanges', () => {
     const result = partitionSchemaChanges(
       [executable, manual],
       (table) => `${table}:Class`,
+      'sqlite',
     );
 
     expect(result.migrations).toEqual([
@@ -355,7 +365,11 @@ describe('partitionSchemaChanges', () => {
       ],
     };
 
-    const result = partitionSchemaChanges([replacement], () => 'Child');
+    const result = partitionSchemaChanges(
+      [replacement],
+      () => 'Child',
+      'sqlite',
+    );
 
     expect(result.manualInterventions).toEqual([]);
     expect(result.migrations).toEqual([
@@ -384,6 +398,7 @@ describe('partitionSchemaChanges', () => {
         },
       ],
       () => 'Child',
+      'sqlite',
     );
 
     expect(result.migrations).toEqual([]);
@@ -457,15 +472,18 @@ describe('failed migration classification', () => {
     };
     const typeUpgradeName = getSyntheticMigrationNameForChange(typeUpgrade);
     if (!typeUpgradeName) throw new Error('expected type-upgrade migration id');
-    const unresolvedNames = getUnresolvedGeneratedMigrationNames([
-      {
-        type: 'add_column',
-        table: 'contents',
-        name: 'script_text',
-        column: { type: 'TEXT' },
-      },
-      typeUpgrade,
-    ]);
+    const unresolvedNames = getUnresolvedGeneratedMigrationNames(
+      [
+        {
+          type: 'add_column',
+          table: 'contents',
+          name: 'script_text',
+          column: { type: 'TEXT' },
+        },
+        typeUpgrade,
+      ],
+      'sqlite',
+    );
 
     expect(
       summarizeFailedMigrations(
@@ -529,14 +547,17 @@ describe('failed migration classification', () => {
     // both the unresolved-set builder and the failed-migration record).
     const failedSql =
       'DROP INDEX IF EXISTS "tenants_slug_context_meta_type_idx"';
-    const unresolvedNames = getUnresolvedGeneratedMigrationNames([
-      {
-        type: 'drop_index',
-        table: 'tenants',
-        name: 'tenants_slug_context_meta_type_idx',
-        sql: failedSql,
-      },
-    ]);
+    const unresolvedNames = getUnresolvedGeneratedMigrationNames(
+      [
+        {
+          type: 'drop_index',
+          table: 'tenants',
+          name: 'tenants_slug_context_meta_type_idx',
+          sql: failedSql,
+        },
+      ],
+      'sqlite',
+    );
 
     // The unresolved set should contain exactly one drop_index_* entry.
     const dropEntries = [...unresolvedNames].filter((n) =>
@@ -562,45 +583,54 @@ describe('failed migration classification', () => {
     // Same shape twice → same id. Different shape (drift) → different id.
     // This is the property that lets MigrationTracker apply repeat repairs
     // without "checksum mismatch" errors.
-    const idA = getUnresolvedGeneratedMigrationNames([
-      {
-        type: 'add_index',
-        table: 'tenants',
-        name: 'tenants_slug_context_meta_type_idx',
-        index: {
+    const idA = getUnresolvedGeneratedMigrationNames(
+      [
+        {
+          type: 'add_index',
+          table: 'tenants',
           name: 'tenants_slug_context_meta_type_idx',
-          columns: ['slug', 'context', '_meta_type'],
-          unique: true,
+          index: {
+            name: 'tenants_slug_context_meta_type_idx',
+            columns: ['slug', 'context', '_meta_type'],
+            unique: true,
+          },
+          sql: 'CREATE UNIQUE INDEX "x" ON "y" ("a", "b", "c")',
         },
-        sql: 'CREATE UNIQUE INDEX "x" ON "y" ("a", "b", "c")',
-      },
-    ]);
-    const idASame = getUnresolvedGeneratedMigrationNames([
-      {
-        type: 'add_index',
-        table: 'tenants',
-        name: 'tenants_slug_context_meta_type_idx',
-        index: {
+      ],
+      'sqlite',
+    );
+    const idASame = getUnresolvedGeneratedMigrationNames(
+      [
+        {
+          type: 'add_index',
+          table: 'tenants',
           name: 'tenants_slug_context_meta_type_idx',
-          columns: ['slug', 'context', '_meta_type'],
-          unique: true,
+          index: {
+            name: 'tenants_slug_context_meta_type_idx',
+            columns: ['slug', 'context', '_meta_type'],
+            unique: true,
+          },
+          sql: 'CREATE UNIQUE INDEX "x" ON "y" ("a", "b", "c")',
         },
-        sql: 'CREATE UNIQUE INDEX "x" ON "y" ("a", "b", "c")',
-      },
-    ]);
-    const idDrifted = getUnresolvedGeneratedMigrationNames([
-      {
-        type: 'add_index',
-        table: 'tenants',
-        name: 'tenants_slug_context_meta_type_idx',
-        index: {
+      ],
+      'sqlite',
+    );
+    const idDrifted = getUnresolvedGeneratedMigrationNames(
+      [
+        {
+          type: 'add_index',
+          table: 'tenants',
           name: 'tenants_slug_context_meta_type_idx',
-          columns: ['slug', 'context', '_meta_type'],
-          unique: false, // ← shape drifted
+          index: {
+            name: 'tenants_slug_context_meta_type_idx',
+            columns: ['slug', 'context', '_meta_type'],
+            unique: false, // ← shape drifted
+          },
+          sql: 'CREATE INDEX "x" ON "y" ("a", "b", "c")',
         },
-        sql: 'CREATE INDEX "x" ON "y" ("a", "b", "c")',
-      },
-    ]);
+      ],
+      'sqlite',
+    );
 
     expect([...idA]).toEqual([...idASame]);
     expect([...idA]).not.toEqual([...idDrifted]);

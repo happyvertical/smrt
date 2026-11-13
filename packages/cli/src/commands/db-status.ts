@@ -28,6 +28,9 @@ import {
 import {
   classifyTypeUpgradeSql,
   getUnresolvedGeneratedMigrationNames,
+  listAlteration,
+  resolveSchemaChangeEngine,
+  type SchemaChangeEngineName,
   summarizeFailedMigrations,
 } from './db-migrate-actions.js';
 import { affectedOrphanCounts, formatOrphanCountLine } from './db-orphans.js';
@@ -228,27 +231,30 @@ export async function checkTenantIdUuidPreconditions(input: {
   ];
 }
 
-export function summarizeSchemaDiff(diff: {
-  added_tables: Array<{ tableName: string }>;
-  changes: Array<{
-    type: string;
-    table: string;
-    name?: string;
-    mismatch?: {
-      expected: string;
-      actual: string;
-    };
-    alteration?: string;
-    foreignKey?: {
-      column: string;
-      referencesTable: string;
-      referencesColumn: string;
-    };
-    advisory?: { severity: 'warning' | 'info'; message: string };
-    sql?: string;
-    sqlStatements?: string[];
-  }>;
-}): StatusDrift[] {
+export function summarizeSchemaDiff(
+  diff: {
+    added_tables: Array<{ tableName: string }>;
+    changes: Array<{
+      type: string;
+      table: string;
+      name?: string;
+      mismatch?: {
+        expected: string;
+        actual: string;
+      };
+      alteration?: string;
+      foreignKey?: {
+        column: string;
+        referencesTable: string;
+        referencesColumn: string;
+      };
+      advisory?: { severity: 'warning' | 'info'; message: string };
+      sql?: string;
+      sqlStatements?: string[];
+    }>;
+  },
+  engine: SchemaChangeEngineName,
+): StatusDrift[] {
   const drift: StatusDrift[] = [];
 
   for (const schema of diff.added_tables) {
@@ -299,7 +305,7 @@ export function summarizeSchemaDiff(diff: {
       }
 
       case 'type_upgrade':
-        switch (classifyTypeUpgradeSql(change)) {
+        switch (classifyTypeUpgradeSql(change, engine)) {
           case 'executable':
             drift.push({
               name: `${change.table}.${change.name ?? '(unknown)'}`,
@@ -347,7 +353,10 @@ export function summarizeSchemaDiff(diff: {
           change.alteration === 'set_not_null' ||
           change.alteration === 'drop_not_null'
             ? 'nullability_drift'
-            : 'default_drift';
+            : change.alteration === 'set_check' ||
+                change.alteration === 'drop_check'
+              ? 'check_drift'
+              : 'default_drift';
         const hasSql = Boolean(change.sql || change.sqlStatements?.length);
         if (!hasSql && change.advisory) {
           if (change.advisory.severity !== 'warning') break; // note, not drift
@@ -356,7 +365,11 @@ export function summarizeSchemaDiff(diff: {
             type: driftType,
             recommendation: change.advisory.message,
           });
-        } else if (classifyTypeUpgradeSql(change) === 'executable') {
+        } else if (listAlteration(change, engine) === 'report') {
+          // The table of change kinds says this engine only reports it (for
+          // example the shared-table CHECK on SQLite): not drift.
+          break;
+        } else if (listAlteration(change, engine) === 'automatic') {
           drift.push({
             name,
             type: driftType,
@@ -532,6 +545,9 @@ export const dbStatusCommand: CLICommand = {
         '@happyvertical/smrt-core/migrations'
       );
 
+      // The table of change kinds differs by engine for a few kinds (#4934),
+      // so every classification below names the engine the diff was read from.
+      const engine = resolveSchemaChangeEngine(String(dbType));
       const tracker = new MigrationTracker({ db });
       await tracker.initialize();
 
@@ -621,9 +637,10 @@ export const dbStatusCommand: CLICommand = {
       if (typeof db.getTableSchema === 'function') {
         comparer = new SchemaComparer(db, {
           emptyTextAsNull: Boolean(options['empty-text-as-null']),
+          engineHint: dbType,
         });
         diff = await comparer.compare(manifestSchemas);
-        status.drift = summarizeSchemaDiff(diff);
+        status.drift = summarizeSchemaDiff(diff, engine);
         status.notes = summarizeSchemaNotes(diff);
         status.preconditions = [
           ...(await checkTenantIdUuidPreconditions({
@@ -640,7 +657,7 @@ export const dbStatusCommand: CLICommand = {
         ];
         status.failedMigrations = summarizeFailedMigrations(
           failed,
-          getUnresolvedGeneratedMigrationNames(diff.changes),
+          getUnresolvedGeneratedMigrationNames(diff.changes, engine),
         );
 
         // 8b. Optional live-schema parity (#2368). The diff above answers
@@ -709,6 +726,7 @@ export const dbStatusCommand: CLICommand = {
       const failedAssessments = assessFailedMigrations(
         failed,
         typeof db.getTableSchema === 'function' ? diff : null,
+        engine,
       );
       status.migrations.failed = {
         total: failedAssessments.length,

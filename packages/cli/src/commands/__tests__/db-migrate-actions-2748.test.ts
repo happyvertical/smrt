@@ -166,6 +166,7 @@ describe('partitionSchemaChanges propagates FK orphan metadata (#2748)', () => {
         },
       ],
       (tableName) => `${tableName}:Class`,
+      'sqlite',
     );
 
     expect(manualInterventions).toHaveLength(1);
@@ -198,6 +199,7 @@ describe('partitionSchemaChanges propagates FK orphan metadata (#2748)', () => {
         },
       ],
       (tableName) => `${tableName}:Class`,
+      'sqlite',
     );
 
     expect(migrations).toHaveLength(1);
