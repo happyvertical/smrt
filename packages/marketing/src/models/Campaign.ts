@@ -68,12 +68,13 @@ export class Campaign extends SmrtObject {
   /** Stable caller-defined key used by CRM/referral systems. */
   @field({
     required: true,
+    requiredFor: 'identity',
     description:
       'A short reference of your own for this campaign, kept the same once it is in use.',
   })
   campaignKey: string = '';
 
-  @field({ required: true, description: 'What the campaign is called.' })
+  @field({ required: false, description: 'What the campaign is called.' })
   name: string = '';
 
   /** Open objective key such as `awareness` or `demand_generation`. */
