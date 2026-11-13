@@ -50,7 +50,8 @@ The four snapshot options are atomic: supplying any one requires all four.
 | Command | Description |
 |---------|------------|
 | `smrt db:status` | Show pending schema changes and classify failed migration history |
-| `smrt db:migrate` | Apply pending migrations and record the build schema fingerprint |
+| `smrt db:migrate` | Apply pending migrations and record the build schema fingerprint. All or nothing: if any change would lose or invent data, or a package seen last time is not loaded, it applies none and says what it held back ([guide](agents/db-migrate-all-or-nothing.md)) |
+| `smrt db:migrate --confirm-removed-package <name>` | Confirm that a package seen by the last migrate was removed on purpose. Repeat for each package. `--apply-unblocked` no longer exists |
 | `smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...]` | Force one or more exact generated migrations in one atomic batch while preserving every other guard |
 | `smrt db:migrate-uuid` | Convert schema-declared UUID text columns to native PostgreSQL uuid after data has been remapped |
 | `smrt db:migrate-int8` | Widen legacy pre-#2373 int4 columns to BIGINT after reviewing the maintenance-window preflight |

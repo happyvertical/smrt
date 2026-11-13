@@ -53,6 +53,7 @@ export class LotStockLevel extends SmrtObject {
   /** The {@link Lot} this row tracks. */
   @foreignKey(Lot, {
     required: true,
+    requiredFor: 'identity',
     onDelete: 'RESTRICT',
     onUpdate: 'RESTRICT',
     // DuckDB cannot enforce the constraint; the id is never rewritten.
@@ -65,7 +66,11 @@ export class LotStockLevel extends SmrtObject {
   skuId: string = '';
 
   /** Plain string reference to the {@link InventoryLocation}. */
-  @field({ required: true, description: 'Where the lot is kept.' })
+  @field({
+    required: true,
+    requiredFor: 'identity',
+    description: 'Where the lot is kept.',
+  })
   locationId: string = '';
 
   /** Logical state, same vocabulary as {@link StockLevel.state}. */

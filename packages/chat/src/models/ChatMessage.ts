@@ -31,7 +31,7 @@ export class ChatMessage extends SmrtObject {
   @tenantId()
   tenantId: string = '';
 
-  @foreignKey('ChatRoom', { required: true })
+  @foreignKey('ChatRoom', { required: true, requiredFor: 'identity' })
   @field({ description: 'The room in which this message was sent.' })
   roomId: string = '';
   @foreignKey('ChatThread')
@@ -40,7 +40,10 @@ export class ChatMessage extends SmrtObject {
       'The discussion thread containing this message, when there is one.',
   })
   threadId: string | null = null;
-  @crossPackageRef('@happyvertical/smrt-profiles:Profile', { required: true })
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile', {
+    required: true,
+    requiredFor: 'identity',
+  })
   @field({ description: 'The person or assistant who sent this message.' })
   senderProfileId: string = '';
   @foreignKey('AgentSession')

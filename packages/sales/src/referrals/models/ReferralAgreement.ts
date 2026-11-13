@@ -77,11 +77,11 @@ export class ReferralAgreement extends SmrtObject {
   tenantId: string | null = null;
 
   /** The Referrer bound by this agreement. Required. */
-  @foreignKey('Referrer', { required: true })
+  @foreignKey('Referrer', { required: true, requiredFor: 'identity' })
   referrerId: string = '';
 
   /** The ReferralProgram the agreement applies to. Required. */
-  @foreignKey('ReferralProgram', { required: true })
+  @foreignKey('ReferralProgram', { required: true, requiredFor: 'identity' })
   programId: string = '';
 
   /** Monotonic version within `(referrerId, programId)`. */

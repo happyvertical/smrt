@@ -129,7 +129,11 @@ export class SmrtJobEvent extends SmrtObject {
   // index, and retained job identifier, but do not install a physical FK or
   // app-side delete action that would make the documented retention sweep
   // impossible (#2375, #2413).
-  @foreignKey('SmrtJob', { required: true, constraint: false })
+  @foreignKey('SmrtJob', {
+    required: true,
+    requiredFor: 'identity',
+    constraint: false,
+  })
   jobId: string = '';
 
   @field({ type: 'text', required: true, default: 'log' })
@@ -144,7 +148,7 @@ export class SmrtJobEvent extends SmrtObject {
   @field({ type: 'integer', nullable: true })
   progress: number | null = null;
 
-  @field({ type: 'text', required: true, default: '' })
+  @field({ type: 'text', default: '' })
   message: string = '';
 
   @field({ type: 'json' })

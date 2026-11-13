@@ -1787,7 +1787,7 @@ export default testManifest;
       'relax-columns': {
         type: 'boolean',
         description:
-          'Apply constraint relaxations the manifest implies: DROP NOT NULL / DROP DEFAULT on live columns stricter than the manifest, and DROP NOT NULL on orphan NOT NULL columns (PostgreSQL/DuckDB). Off by default, except that PostgreSQL always drops NOT NULL from a column the manifest declares nullable; every relaxation is reported.',
+          'Apply constraint relaxations the manifest implies: DROP DEFAULT on live columns stricter than the manifest, and DROP NOT NULL on orphan NOT NULL columns. Off by default, except that every engine always drops NOT NULL from a column the manifest declares nullable; every relaxation is reported.',
         default: false,
       },
       'apply-unblocked': {

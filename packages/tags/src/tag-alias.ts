@@ -26,6 +26,7 @@ export class TagAlias extends SmrtObject {
 
   @field({
     required: true,
+    requiredFor: 'identity',
     description: 'Another name or a translation people may use for the tag.',
   })
   alias: string = ''; // Alternative name or translation

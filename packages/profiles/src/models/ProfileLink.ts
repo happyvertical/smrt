@@ -91,7 +91,11 @@ export class ProfileLink extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @foreignKey('Profile', { required: true, onDelete: 'CASCADE' })
+  @foreignKey('Profile', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'CASCADE',
+  })
   profileId = '';
 
   /** One of {@link PROFILE_LINK_PLATFORMS}. */

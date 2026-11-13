@@ -59,7 +59,10 @@ export class NotificationOptOut extends SmrtObject {
   tenantId = '';
 
   /** The person who opted out (`smrt-users:User`, uuid). */
-  @crossPackageRef('@happyvertical/smrt-users:User', { required: true })
+  @crossPackageRef('@happyvertical/smrt-users:User', {
+    required: true,
+    requiredFor: 'identity',
+  })
   recipientUserId = '';
 
   /** Channel opted out of; only `email` today. */
@@ -67,7 +70,7 @@ export class NotificationOptOut extends SmrtObject {
   channel: NotificationDeliveryChannel = 'email';
 
   /** `*` or a host key such as `project:<uuid>`. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   scope = '';
 
   /** When the opt-out took effect; null once the person opted back in. */

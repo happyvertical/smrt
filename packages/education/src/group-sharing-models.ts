@@ -78,16 +78,16 @@ export class EducationGroup extends SmrtObject {
   @tenantId() tenantId = '';
   name = '';
   active = true;
-  @crossPackageRef('@happyvertical/smrt-users:User', { required: true })
-  creatorUserId = '';
-  @crossPackageRef('@happyvertical/smrt-profiles:Profile', { required: true })
-  creatorProfileId = '';
+  @crossPackageRef('@happyvertical/smrt-users:User', { nullable: true })
+  creatorUserId: string | null = null;
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile', { nullable: true })
+  creatorProfileId: string | null = null;
   constructor(options: Record<string, unknown> = {}) {
     super(options);
     applyOptions(this, options);
   }
   override async save(options: SmrtSaveOptions = {}): Promise<this> {
-    required(this.name, this.creatorUserId, this.creatorProfileId);
+    required(this.name);
     await immutable(this, {
       creator_user_id: this.creatorUserId,
       creator_profile_id: this.creatorProfileId,
@@ -111,16 +111,32 @@ export class EducationGroupCollection extends SmrtCollection<EducationGroup> {
 @smrt({ tableName: 'group_learner_invitations', ...closed })
 export class GroupLearnerInvitation extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('EducationGroup', { required: true, onDelete: 'RESTRICT' })
+  @foreignKey('EducationGroup', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'RESTRICT',
+  })
   groupId = '';
-  @crossPackageRef('@happyvertical/smrt-users:Tenant', { required: true })
+  @crossPackageRef('@happyvertical/smrt-users:Tenant', {
+    required: true,
+    requiredFor: 'tenant-scope',
+  })
   familyTenantId = '';
   // Deliberately opaque: no FK/existence check may reveal another family's learner.
-  @field({ type: 'text', sqlType: 'UUID', required: true }) learnerId = '';
-  @crossPackageRef('@happyvertical/smrt-users:User', { required: true })
+  @field({
+    type: 'text',
+    sqlType: 'UUID',
+    required: true,
+    requiredFor: 'identity',
+  })
+  learnerId = '';
+  @crossPackageRef('@happyvertical/smrt-users:User', {
+    required: true,
+    requiredFor: 'identity',
+  })
   invitedParentUserId = '';
-  @crossPackageRef('@happyvertical/smrt-users:User', { required: true })
-  creatorUserId = '';
+  @crossPackageRef('@happyvertical/smrt-users:User', { nullable: true })
+  creatorUserId: string | null = null;
   expiresAt = new Date(0);
   status: GroupLearnerInvitationStatus = 'pending';
   @foreignKey('GroupLearnerMembership', {
@@ -139,7 +155,6 @@ export class GroupLearnerInvitation extends SmrtObject {
       this.familyTenantId,
       this.learnerId,
       this.invitedParentUserId,
-      this.creatorUserId,
     );
     date(this.expiresAt);
     if (
@@ -209,12 +224,16 @@ export class GroupLearnerInvitationCollection extends SmrtCollection<GroupLearne
 })
 export class GroupLearnerMembership extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('EducationGroup', { required: true, onDelete: 'RESTRICT' })
+  @foreignKey('EducationGroup', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'RESTRICT',
+  })
   groupId = '';
   @foreignKey('Learner', { required: true, onDelete: 'RESTRICT' }) learnerId =
     '';
-  @crossPackageRef('@happyvertical/smrt-users:User', { required: true })
-  consentParentUserId = '';
+  @crossPackageRef('@happyvertical/smrt-users:User', { nullable: true })
+  consentParentUserId: string | null = null;
   status: GroupLearnerMembershipStatus = 'active';
   @field({ min: 1, required: true }) policyVersion = 1;
   constructor(options: Record<string, unknown> = {}) {
@@ -222,7 +241,7 @@ export class GroupLearnerMembership extends SmrtObject {
     applyOptions(this, options);
   }
   override async save(options: SmrtSaveOptions = {}): Promise<this> {
-    required(this.groupId, this.learnerId, this.consentParentUserId);
+    required(this.groupId, this.learnerId);
     positive(this.policyVersion);
     if (!['active', 'revoked'].includes(this.status))
       throw new Error('Invalid membership state');
@@ -256,14 +275,15 @@ export class GroupSharingPolicy extends SmrtObject {
   @tenantId() tenantId = '';
   @foreignKey('GroupLearnerMembership', {
     required: true,
+    requiredFor: 'identity',
     onDelete: 'RESTRICT',
   })
   membershipId = '';
   @field({ min: 1, required: true }) version = 1;
   @field({ min: 1, max: 1, required: true }) schemaVersion = 1;
   @field({ type: 'text', required: true }) policyJson = '{}';
-  @crossPackageRef('@happyvertical/smrt-users:User', { required: true })
-  actorUserId = '';
+  @crossPackageRef('@happyvertical/smrt-users:User', { nullable: true })
+  actorUserId: string | null = null;
   recordedAt = new Date();
   constructor(options: Record<string, unknown> = {}) {
     super(options);
@@ -278,7 +298,7 @@ export class GroupSharingPolicy extends SmrtObject {
     this.policyJson = canonicalGroupSharingPolicy(value);
   }
   override async save(options: SmrtSaveOptions = {}): Promise<this> {
-    required(this.membershipId, this.actorUserId);
+    required(this.membershipId);
     positive(this.version);
     date(this.recordedAt);
     if (this.schemaVersion !== 1)
@@ -306,24 +326,34 @@ export class GroupRevisionComment extends SmrtObject {
   @tenantId() tenantId = '';
   @foreignKey('GroupLearnerMembership', {
     required: true,
+    requiredFor: 'identity',
     onDelete: 'RESTRICT',
   })
   membershipId = '';
   @foreignKey('Learner', { required: true, onDelete: 'RESTRICT' }) learnerId =
     '';
-  @foreignKey('LessonActivity', { required: true, onDelete: 'RESTRICT' })
+  @foreignKey('LessonActivity', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'RESTRICT',
+  })
   activityId = '';
-  @foreignKey('WorkAttempt', { required: true, onDelete: 'RESTRICT' })
+  @foreignKey('WorkAttempt', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'RESTRICT',
+  })
   attemptId = '';
   @foreignKey('WorkAssessmentRevision', {
     required: true,
+    requiredFor: 'identity',
     onDelete: 'RESTRICT',
   })
   revisionId = '';
-  @crossPackageRef('@happyvertical/smrt-users:User', { required: true })
-  authorUserId = '';
-  @crossPackageRef('@happyvertical/smrt-profiles:Profile', { required: true })
-  authorProfileId = '';
+  @crossPackageRef('@happyvertical/smrt-users:User', { nullable: true })
+  authorUserId: string | null = null;
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile', { nullable: true })
+  authorProfileId: string | null = null;
   body = '';
   recordedAt = new Date();
   childVisible = false;
@@ -342,8 +372,6 @@ export class GroupRevisionComment extends SmrtObject {
       this.activityId,
       this.attemptId,
       this.revisionId,
-      this.authorUserId,
-      this.authorProfileId,
       this.body,
     );
     date(this.recordedAt);
@@ -412,13 +440,27 @@ export class GroupRevisionCommentCollection extends SmrtCollection<GroupRevision
 })
 export class GroupLearnerRosterEntry extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('EducationGroup', { required: true, onDelete: 'RESTRICT' })
+  @foreignKey('EducationGroup', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'RESTRICT',
+  })
   groupId = '';
-  @crossPackageRef('@happyvertical/smrt-users:Tenant', { required: true })
+  @crossPackageRef('@happyvertical/smrt-users:Tenant', {
+    required: true,
+    requiredFor: 'tenant-scope',
+  })
   familyTenantId = '';
-  @field({ type: 'text', sqlType: 'UUID', required: true }) learnerId = '';
+  @field({
+    type: 'text',
+    sqlType: 'UUID',
+    required: true,
+    requiredFor: 'identity',
+  })
+  learnerId = '';
   @foreignKey('GroupLearnerMembership', {
     required: true,
+    requiredFor: 'identity',
     onDelete: 'RESTRICT',
   })
   membershipId = '';

@@ -12,165 +12,53 @@ export interface MinimalRowExpectedFailure {
 export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
   [
     {
-      model: '@happyvertical/smrt-commerce:Agreement',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:BillingAccount',
-      field: 'customerId',
-      reason:
-        'Model validation rejects empty/default customerId: Billing accounts require a customerId.',
-      error: 'Billing accounts require a customerId.',
-    },
-    {
       model: '@happyvertical/smrt-commerce:BillingPeriodClose',
       field: 'periodEnd',
       reason:
-        'Model validation rejects empty/default periodEnd: A billing period must end after it starts.',
+        'The real epoch defaults satisfy required metadata, but billing/period-close.ts reads the stored end to select carried-forward credits; periodEnd must be later than periodStart, a cross-field date rule that requiredFor cannot express.',
       error: 'A billing period must end after it starts.',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:Cart',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:Contract',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:Estimate',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
     },
     {
       model: '@happyvertical/smrt-commerce:Invoice',
       field: 'tenantId',
       reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:Lease',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:LicenseSale',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:Order',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
+        'Invoice money calculation scopes tax reads by tenantId, so tenant-scope fits. A required declaration makes the legacy-money upgrade fixture fail on invoices.tenant_id NOT NULL; correcting that fixture exceeds the permitted test edits, so retain this finding pending that coordinated change.',
       error: 'Commerce money documents require a tenant',
     },
     {
       model: '@happyvertical/smrt-commerce:PaymentAllocation',
       field: 'amount',
       reason:
-        'Model validation rejects empty/default amount: PaymentAllocation amount must be a positive number',
+        'PaymentAllocation.save() requires a positive safe-integer amount and adds it to both balance caps; the real zero initializer already satisfies required metadata, and none of the five reasons describes a positive monetary amount.',
       error: 'PaymentAllocation amount must be a positive number',
     },
     {
       model: '@happyvertical/smrt-commerce:Payout',
       field: 'paymentId',
       reason:
-        'Model validation rejects empty/default paymentId: a paymentId is required \u2014 a payout must reference the source Payment that funded it (use createFromPayment()).',
+        'Payout.assertCappedBySourcePayment() loads paymentId and caps remittance by the source Payment. Identity fits, but the plain-string reference cannot supply a resolvable parent in a minimal row; changing the reference contract or fixture is outside this declaration-only audit.',
       error:
         'a paymentId is required \u2014 a payout must reference the source Payment that funded it (use createFromPayment()).',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:ProductionOrder',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:PurchaseOrder',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:SupplierQuote',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
     },
     {
       model: '@happyvertical/smrt-commerce:TaxComponent',
       field: 'name',
       reason:
-        'Model validation rejects empty/default name: Tax component requires a nonempty name',
+        'The name is copied into immutable tax snapshots and DocumentTax rejects empty component snapshots; no reason value describes display/snapshot content. Removing the save guard needs a review of those readers, outside declaration-only edits.',
       error: 'Tax component requires a nonempty name',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:WholesaleOrder',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
-    },
-    {
-      model: '@happyvertical/smrt-content:Article',
-      field: 'title',
-      reason:
-        'Content.validateBeforeSave() copies required name into optional title; persisted title differs from its empty initialized value.',
-      error: 'optional field title read back populated',
-    },
-    {
-      model: '@happyvertical/smrt-content:Content',
-      field: 'title',
-      reason:
-        'Content.validateBeforeSave() copies required name into optional title; persisted title differs from its empty initialized value.',
-      error: 'optional field title read back populated',
-    },
-    {
-      model: '@happyvertical/smrt-content:ContentDocument',
-      field: 'title',
-      reason:
-        'Content.validateBeforeSave() copies required name into optional title; persisted title differs from its empty initialized value.',
-      error: 'optional field title read back populated',
-    },
-    {
-      model: '@happyvertical/smrt-content:Mirror',
-      field: 'title',
-      reason:
-        'Content.validateBeforeSave() copies required name into optional title; persisted title differs from its empty initialized value.',
-      error: 'optional field title read back populated',
     },
     {
       model: '@happyvertical/smrt-education:EducationGroup',
       field: 'name',
       reason:
-        'Model validation rejects empty/default name: Group sharing requires exact identity',
+        'name reaches the empty-name guard at packages/education/src/group-sharing-models.ts:90; packages/education/src/group-sharing-service.ts:52 only displays the name. Retain conservatively until the parent guard and other optional inputs in this minimal-row graph can be audited together; the guard alone is not identity evidence.',
       error: 'Group sharing requires exact identity',
     },
     {
       model: '@happyvertical/smrt-expenses:Expense',
       field: 'currency',
       reason:
-        "Model validation rejects empty/default currency: currency must be a three-letter ISO 4217 code (for example 'USD'), got ''.",
+        'Expense totals group by currency (ExpenseCollection.ts:346), and commitment/refund guards compare it (Expense.ts:1198,1332); no requiredFor value describes a monetary unit. Keep this exception pending that decision.',
       error:
         "currency must be a three-letter ISO 4217 code (for example 'USD'), got ''.",
     },
@@ -178,21 +66,14 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       model: '@happyvertical/smrt-facts:Fact',
       field: 'catalogSearch',
       reason:
-        'The persistence normalizer fills catalogSearch from required text; the stored search column differs from its empty default.',
+        'Fact.normalizePersistenceData derives catalogSearch from serialized text (fact.ts:142-149); the helper expects optional defaults to survive, but this read-only column must be recomputed for correct catalog queries. It is not caller-required.',
       error: 'optional field catalogSearch read back populated',
-    },
-    {
-      model: '@happyvertical/smrt-ledgers:Ledger',
-      field: 'name',
-      reason:
-        'Model validation rejects empty/default name: Ledger name is required',
-      error: 'Ledger name is required',
     },
     {
       model: '@happyvertical/smrt-manufacturing:ProductionRun',
       field: 'targetQty',
       reason:
-        'Validation requires targetQty > 0 although the field is optional with a default of zero.',
+        'ProductionRun.validateBeforeSave rejects targetQty = 0 (ProductionRun.ts); the real decimal initializer is outside this audit, and no reason value expresses a positive planning quantity. Retain the domain-value exception.',
       error: 'A production run needs a target quantity greater than zero.',
     },
     {
@@ -204,60 +85,11 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
         'Notification requires exactly one matching typed recipient and reserved protected email policy for profiles.',
     },
     {
-      model: '@happyvertical/smrt-projects:Comment',
-      field: 'createdAt',
-      reason:
-        'Nullable createdAt shadows the framework created_at timestamp; validation rejects the missing framework timestamp.',
-      error: "Required field 'created_at' is missing for Comment",
-    },
-    {
-      model: '@happyvertical/smrt-subscriptions:PriceBook',
-      field: 'bookKey',
-      reason:
-        'Model validation rejects empty/default bookKey: Price books require a bookKey.',
-      error: 'Price books require a bookKey.',
-    },
-    {
       model: '@happyvertical/smrt-subscriptions:SubscriptionPlanVersion',
       field: 'version',
       reason:
-        'Model validation rejects empty/default version: Plan version must be a positive integer',
+        'Version must be a positive contiguous sequence for an existing plan (SubscriptionPlanVersion.validateBeforeSave); required alone accepts the real initializer 0 and cannot encode the next-version or parent-plan rules.',
       error: 'Plan version must be a positive integer',
-    },
-    {
-      model: '@happyvertical/smrt-timesheets:AttendancePunch',
-      field: 'profileId',
-      reason:
-        'Model validation rejects empty/default profileId: Attendance requires tenantId and profileId.',
-      error: 'Attendance requires tenantId and profileId.',
-    },
-    {
-      model: '@happyvertical/smrt-video:VideoComposition',
-      field: 'title',
-      reason:
-        'Content.validateBeforeSave() copies required name into optional title; persisted title differs from its empty initialized value.',
-      error: 'optional field title read back populated',
-    },
-    {
-      model: '@happyvertical/smrt-video:VideoSequence',
-      field: 'title',
-      reason:
-        'Content.validateBeforeSave() copies required name into optional title; persisted title differs from its empty initialized value.',
-      error: 'optional field title read back populated',
-    },
-    {
-      model: '@happyvertical/smrt-video:VideoShot',
-      field: 'title',
-      reason:
-        'Content.validateBeforeSave() copies required name into optional title; persisted title differs from its empty initialized value.',
-      error: 'optional field title read back populated',
-    },
-    {
-      model: '@happyvertical/smrt-voice:VoiceOutput',
-      field: 'title',
-      reason:
-        'Content.validateBeforeSave() copies required name into optional title; persisted title differs from its empty initialized value.',
-      error: 'optional field title read back populated',
     },
     {
       model: '@happyvertical/smrt-approvals:ApprovalEvent',
@@ -299,7 +131,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'tenantId',
       error: 'Commerce money documents require a tenant',
       reason:
-        'ContractLineItem code requires tenantId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'Contract money recomputation scopes tax reads by tenantId. Requiring this field alone exposed the omitted contractId (Money parent id must be a nonempty identifier); that unassigned parent field blocks removing this ledger entry under declaration-only scope.',
     },
     {
       model: '@happyvertical/smrt-commerce:DocumentTax',
@@ -342,7 +174,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'tenantId',
       error: 'Commerce money documents require a tenant',
       reason:
-        'InvoiceLineItem code requires tenantId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'Invoice money recomputation scopes tax reads by tenantId. Requiring this field alone exposed the omitted invoiceId (Invoice  was not found); that unassigned parent field blocks removing this ledger entry under declaration-only scope.',
     },
     {
       model: '@happyvertical/smrt-commerce:PurchasePriceObservation',
@@ -358,7 +190,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'code, name',
       error: 'Tax code requires a nonempty code and name',
       reason:
-        'TaxCode code requires code, name although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'code is a tenant conflict key and lookup identity, while name is snapshot/display content with no matching reason. The combined save guard and taxable-component requirement prevent this model passing after a code-only declaration; retain the combined finding pending a wider guard/fixture audit.',
     },
     {
       model: '@happyvertical/smrt-commerce:TaxSummaryReport',
@@ -386,20 +218,12 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
         'TenantPaymentDispute writes are owned by handleConnectedPaymentWebhook; its owner must run once against a minimal row.',
     },
     {
-      model: '@happyvertical/smrt-commerce:BillingPaymentAttempt',
-      kind: 'optional-field',
-      field: 'provider, checkoutId',
-      error: 'Payment attempts require a provider and checkoutId.',
-      reason:
-        'BillingPaymentAttempt code requires provider, checkoutId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
-    },
-    {
       model: '@happyvertical/smrt-content:ContentContributionType',
       kind: 'optional-field',
       field: 'promotion',
       error: 'must define promotion.targetContentType.',
       reason:
-        'ContentContributionType code requires promotion although registry metadata allows it empty/default; changing required/NOT NULL would change schema. promotion must contain targetContentType. ',
+        'packages/content/src/content-contribution-type.ts:210 and content-contribution.ts:595 require nested promotion.targetContentType to choose the promoted Content subtype. A required string only forbids empty JSON text, not a missing nested target; no reason names promotion configuration, so retain pending a nested-rule/default decision outside declaration-only scope.',
     },
     {
       model: '@happyvertical/smrt-education:CourseRevision',
@@ -407,7 +231,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'CourseRevision.authorUserId is checked by the save guard (course-authoring-models.ts:117) and returned as provenance (course-authoring-service.ts:1461); no key or authorization read was found. Keep until the provenance guard is decided; none of the five reasons justifies that read alone.',
     },
     {
       model: '@happyvertical/smrt-education:LessonRevision',
@@ -415,7 +239,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'lessonKey',
       error: 'Lesson revision requires a lesson key',
       reason:
-        'packages/education/src/course-authoring-models.ts: LessonRevision requires nonempty lessonKey although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'LessonRevision.lessonKey identifies a conflict-key member (course-authoring-models.ts:147), but a trial required declaration exposed the next optional title guard. Keep the original finding pending a coordinated decision on the remaining guards; the model has not been shown to pass.',
     },
     {
       model: '@happyvertical/smrt-education:CourseDraftHead',
@@ -423,7 +247,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'headRevisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path headRevisionId.authorUserId reaches the CourseRevision save guard (course-authoring-models.ts:117); its only observed later author read is provenance (course-authoring-service.ts:1461). Keep pending the provenance-guard decision; no identity or authorization dependency was found for the author.',
     },
     {
       model: '@happyvertical/smrt-education:CourseRelease',
@@ -431,7 +255,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'revisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path revisionId.authorUserId reaches the CourseRevision save guard (course-authoring-models.ts:117); its only observed later author read is provenance (course-authoring-service.ts:1461). Keep pending the provenance-guard decision; the model still fails.',
     },
     {
       model: '@happyvertical/smrt-education:ReleasedLesson',
@@ -439,7 +263,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'releaseId.revisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path releaseId.revisionId.authorUserId reaches the CourseRevision save guard (course-authoring-models.ts:117); author is only returned as provenance (course-authoring-service.ts:1461). Nullable section metadata does not repair this independent parent failure.',
     },
     {
       model: '@happyvertical/smrt-education:CourseArchiveDecision',
@@ -447,7 +271,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'actorUserId',
       error: 'Archive decision requires an actor',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseArchiveDecision requires nonempty actorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'actorUserId is checked by the save guard (course-authoring-models.ts:414) and returned in archive history (course-authoring-service.ts:1773), with no authorization or conflict-key read. Keep pending a decision on the provenance-only guard; display alone does not establish a requiredFor reason.',
     },
     {
       model: '@happyvertical/smrt-education:CourseVisibilityChange',
@@ -455,7 +279,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'actorUserId',
       error: 'Visibility change requires an actor',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseVisibilityChange requires nonempty actorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'actorUserId is checked by the save guard (course-authoring-models.ts:465); setVisibility replays by requestKey, visibility and delegationId (course-authoring-service.ts:2528), without reading the stored actor. Keep pending a decision on the provenance-only guard; no permitted reason was established.',
     },
     {
       model: '@happyvertical/smrt-education:CourseCoverChange',
@@ -463,7 +287,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'actorUserId',
       error: 'Cover change requires an actor',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseCoverChange requires nonempty actorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'actorUserId is checked by the save guard (course-authoring-models.ts:518); setCover replays by requestKey, assetId and delegationId (course-authoring-service.ts:2741), without reading the stored actor. Keep pending a decision on the provenance-only guard; no permitted reason was established.',
     },
     {
       model: '@happyvertical/smrt-education:CourseDiscardTombstone',
@@ -471,7 +295,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'actorUserId',
       error: 'Discard requires an actor',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseDiscardTombstone requires nonempty actorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'actorUserId is checked by the save guard (course-authoring-models.ts:565); discard replay checks request_key and delegation_id (course-authoring-service.ts:2889), without reading the stored actor. Keep pending a decision on the provenance-only guard; no permitted reason was established.',
     },
     {
       model: '@happyvertical/smrt-education:EnrollmentReleasePin',
@@ -489,7 +313,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'actorUserId',
       error: 'Upgrade choice requires an actor',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseUpgradeChoice requires nonempty actorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'The stored actor is reauthorized for automatic upgrades (course-authoring-service.ts:3382-3430), so identity applies; a trial required declaration exposed requestKey and policyBasis guards. Keep the original finding until those guards are audited together; the model has not been shown to pass.',
     },
     {
       model: '@happyvertical/smrt-education:EnrollmentAutoUpgradeSkip',
@@ -526,7 +350,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'bundleIdentity',
       error: 'Bundle requires an identity',
       reason:
-        'packages/education/src/course-bundle-models.ts: CourseBundleImport requires nonempty bundleIdentity although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'bundleIdentity is the replay key (course-bundle-service.ts:963-966; course-bundle-models.ts:65), but a trial required declaration exposed the optional readerId guard. Keep pending a coordinated decision on the remaining import guards; the model has not been shown to pass.',
     },
     {
       model: '@happyvertical/smrt-education:CourseBundleMember',
@@ -534,7 +358,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'importId.bundleIdentity',
       error: 'Bundle requires an identity',
       reason:
-        'packages/education/src/course-bundle-models.ts: CourseBundleImport requires nonempty bundleIdentity although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path importId.bundleIdentity reaches the import replay identity (course-bundle-models.ts:65); making it required exposes the parent readerId guard. Keep until the import guards are audited together; this child has not been shown to pass.',
     },
     {
       model: '@happyvertical/smrt-education:CourseBundleRendering',
@@ -542,7 +366,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'importId.bundleIdentity',
       error: 'Bundle requires an identity',
       reason:
-        'packages/education/src/course-bundle-models.ts: CourseBundleImport requires nonempty bundleIdentity although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path importId.bundleIdentity reaches the import replay identity (course-bundle-models.ts:65); making it required exposes the parent readerId guard. Keep until the import guards are audited together; this child has not been shown to pass.',
     },
     {
       model: '@happyvertical/smrt-education:CourseBundleAttachment',
@@ -550,7 +374,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'importId.bundleIdentity',
       error: 'Bundle requires an identity',
       reason:
-        'packages/education/src/course-bundle-models.ts: CourseBundleImport requires nonempty bundleIdentity although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path importId.bundleIdentity reaches the import replay identity (course-bundle-models.ts:65); making it required exposes the parent readerId guard. Keep until the import guards are audited together; this child has not been shown to pass.',
     },
     {
       model: '@happyvertical/smrt-education:CourseBundleAudienceChoice',
@@ -558,7 +382,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'importId.bundleIdentity',
       error: 'Bundle requires an identity',
       reason:
-        'packages/education/src/course-bundle-models.ts: CourseBundleImport requires nonempty bundleIdentity although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path importId.bundleIdentity reaches the import replay identity (course-bundle-models.ts:65); making it required exposes the parent readerId guard. Keep until the import guards are audited together; this child has not been shown to pass.',
     },
     {
       model: '@happyvertical/smrt-education:CourseBundlePlacement',
@@ -566,7 +390,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'key',
       error: 'Placement requires a key',
       reason:
-        'packages/education/src/course-bundle-models.ts: CourseBundlePlacement requires nonempty key although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'key identifies the placement conflict key (course-bundle-models.ts:458) and the part reconciliation lookup (course-bundle-service.ts:2083); a trial required declaration exposed the optional title guard. Keep until that guard is decided; the model has not been shown to pass.',
     },
     {
       model: '@happyvertical/smrt-education:CourseBundleUnit',
@@ -574,7 +398,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'unitKey',
       error: 'Unit requires a key',
       reason:
-        'packages/education/src/course-bundle-models.ts: CourseBundleUnit requires nonempty unitKey although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'unitKey identifies the transaction lock row (course-bundle-service.ts:2357-2361), but a trial required declaration exposed the optional derived courseId guard. Keep until that guard is decided; the model has not been shown to pass.',
     },
     {
       model: '@happyvertical/smrt-education:CourseBundleSupersession',
@@ -582,7 +406,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'importId.bundleIdentity',
       error: 'Bundle requires an identity',
       reason:
-        'packages/education/src/course-bundle-models.ts: CourseBundleImport requires nonempty bundleIdentity although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path importId.bundleIdentity reaches the import replay identity (course-bundle-models.ts:65); making it required exposes the parent readerId guard. Keep until the import guards are audited together; this child has not been shown to pass.',
     },
     {
       model: '@happyvertical/smrt-education:CourseGenerationJob',
@@ -590,7 +414,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'baseRevisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path baseRevisionId.authorUserId reaches the empty author guard at packages/education/src/course-authoring-models.ts:117. That guard alone does not justify requiredFor; retain pending audit of the parent snapshot guards, outside this batch.',
     },
     {
       model: '@happyvertical/smrt-education:CourseGenerationEvent',
@@ -598,7 +422,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'jobId.baseRevisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path jobId.baseRevisionId.authorUserId reaches the empty author guard at packages/education/src/course-authoring-models.ts:117. That guard alone does not justify requiredFor; retain pending audit of the parent snapshot guards, outside this batch.',
     },
     {
       model: '@happyvertical/smrt-education:CourseProposal',
@@ -606,7 +430,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'jobId.baseRevisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path jobId.baseRevisionId.authorUserId reaches the empty author guard at packages/education/src/course-authoring-models.ts:117. That guard alone does not justify requiredFor; retain pending audit of the parent snapshot guards, outside this batch.',
     },
     {
       model: '@happyvertical/smrt-education:CourseProposalDecision',
@@ -614,7 +438,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'proposalId.jobId.baseRevisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path proposalId.jobId.baseRevisionId.authorUserId reaches the empty author guard at packages/education/src/course-authoring-models.ts:117. That guard alone does not justify requiredFor; retain pending audit of the parent snapshot guards, outside this batch.',
     },
     {
       model: '@happyvertical/smrt-education:CourseGenerationBriefRecord',
@@ -622,7 +446,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'jobId.baseRevisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path jobId.baseRevisionId.authorUserId reaches the empty author guard at packages/education/src/course-authoring-models.ts:117. That guard alone does not justify requiredFor; retain pending audit of the parent snapshot guards, outside this batch.',
     },
     {
       model: '@happyvertical/smrt-education:CourseReview',
@@ -630,7 +454,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'revisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path revisionId.authorUserId reaches the empty author guard at packages/education/src/course-authoring-models.ts:117. That guard alone does not justify requiredFor; retain pending audit of the parent snapshot guards, outside this batch.',
     },
     {
       model: '@happyvertical/smrt-education:CourseReviewFinding',
@@ -638,7 +462,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'reviewId.revisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path reviewId.revisionId.authorUserId reaches the empty author guard at packages/education/src/course-authoring-models.ts:117. That guard alone does not justify requiredFor; retain pending audit of the parent snapshot guards, outside this batch.',
     },
     {
       model: '@happyvertical/smrt-education:CourseReviewOutdatedMarker',
@@ -646,7 +470,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'reviewId.revisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path reviewId.revisionId.authorUserId reaches the empty author guard at packages/education/src/course-authoring-models.ts:117. That guard alone does not justify requiredFor; retain pending audit of the parent snapshot guards, outside this batch.',
     },
     {
       model: '@happyvertical/smrt-education:CourseFindingResolution',
@@ -654,7 +478,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'findingId.reviewId.revisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path findingId.reviewId.revisionId.authorUserId reaches the empty author guard at packages/education/src/course-authoring-models.ts:117. That guard alone does not justify requiredFor; retain pending audit of the parent snapshot guards, outside this batch.',
     },
     {
       model: '@happyvertical/smrt-education:EnrollmentParentNote',
@@ -672,7 +496,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'assetId, intakeId.ownerProfileId',
       error: 'Family original ownership mismatch',
       reason:
-        'FamilyIntakeAsset code requires assetId, intakeId.ownerProfileId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'family-intake-models.ts save checks an existing private asset against the intake tenant and owner profile. A required flag alone cannot provide that cross-row ownership match; retain until minimal-row setup can represent the exact shared owner.',
     },
     {
       model: '@happyvertical/smrt-education:GroupLearnerInvitation',
@@ -680,7 +504,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'groupId.name',
       error: 'Group sharing requires exact identity',
       reason:
-        'EducationGroup identity guard requires nonempty name despite optional metadata. Required-parent path: groupId.',
+        'groupId.name reaches the empty-name guard at packages/education/src/group-sharing-models.ts:90; packages/education/src/group-sharing-service.ts:52 only displays the name. Retain conservatively until the parent guard and other optional inputs in this minimal-row graph can be audited together; the guard alone is not identity evidence.',
     },
     {
       model: '@happyvertical/smrt-education:GroupLearnerMembership',
@@ -688,7 +512,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'groupId.name',
       error: 'Group sharing requires exact identity',
       reason:
-        'EducationGroup identity guard requires nonempty name despite optional metadata. Required-parent path: groupId.',
+        'groupId.name reaches the empty-name guard at packages/education/src/group-sharing-models.ts:90; packages/education/src/group-sharing-service.ts:52 only displays the name. Retain conservatively until the parent guard and other optional inputs in this minimal-row graph can be audited together; the guard alone is not identity evidence.',
     },
     {
       model: '@happyvertical/smrt-education:GroupSharingPolicy',
@@ -696,7 +520,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'membershipId.groupId.name',
       error: 'Group sharing requires exact identity',
       reason:
-        'EducationGroup identity guard requires nonempty name despite optional metadata. Required-parent path: membershipId.groupId.',
+        'membershipId.groupId.name reaches the empty-name guard at packages/education/src/group-sharing-models.ts:90; packages/education/src/group-sharing-service.ts:52 only displays the name. Retain conservatively until the parent guard and other optional inputs in this minimal-row graph can be audited together; the guard alone is not identity evidence.',
     },
     {
       model: '@happyvertical/smrt-education:GroupRevisionComment',
@@ -704,7 +528,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'membershipId.groupId.name',
       error: 'Group sharing requires exact identity',
       reason:
-        'EducationGroup identity guard requires nonempty name despite optional metadata. Required-parent path: membershipId.groupId.',
+        'membershipId.groupId.name reaches the empty-name guard at packages/education/src/group-sharing-models.ts:90; packages/education/src/group-sharing-service.ts:52 only displays the name. Retain conservatively until the parent guard and other optional inputs in this minimal-row graph can be audited together; the guard alone is not identity evidence.',
     },
     {
       model: '@happyvertical/smrt-education:GroupLearnerRosterEntry',
@@ -712,7 +536,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'groupId.name',
       error: 'Group sharing requires exact identity',
       reason:
-        'EducationGroup identity guard requires nonempty name despite optional metadata. Required-parent path: groupId.',
+        'groupId.name reaches the empty-name guard at packages/education/src/group-sharing-models.ts:90; packages/education/src/group-sharing-service.ts:52 only displays the name. Retain conservatively until the parent guard and other optional inputs in this minimal-row graph can be audited together; the guard alone is not identity evidence.',
     },
     {
       model: '@happyvertical/smrt-education:LessonProgressTransition',
@@ -822,15 +646,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'provider, videoId, title',
       error: 'Invalid external video reference',
       reason:
-        'LessonExternalVideo code requires provider, videoId, title although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
-    },
-    {
-      model: '@happyvertical/smrt-education:LessonPage',
-      kind: 'optional-field',
-      field: 'pageKey',
-      error: 'Invalid lesson page',
-      reason:
-        'LessonPage code requires pageKey although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'lesson-assets.ts save requires a supported provider, an 11-character YouTube id and a bounded nonempty title; submission-service.ts uses the provider/id for the embed URL. Generic required text does not supply this domain identity, and no allowed reason describes the title-content rule; retain pending a domain-value decision.',
     },
     {
       model: '@happyvertical/smrt-education:WorkCompletionDecision',
@@ -901,7 +717,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'intakeItemId',
       error: 'Extraction requires an intake item',
       reason:
-        'packages/education/src/question-extraction-models.ts: QuestionExtractionRecord requires nonempty intakeItemId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'packages/education/src/question-extraction-service.ts:230-234 keys preserve replays by tenant, intakeItemId and analysisAttemptId; question-extraction-models.ts:117-122 also demands attempt, source identity, digests and actor. Keep this first-failure entry until those optional prerequisites are audited together; promoting intakeItemId alone exposes a different unledgered failure.',
     },
     {
       model: '@happyvertical/smrt-education:ExtractedQuestionLink',
@@ -909,7 +725,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'extractionId.intakeItemId',
       error: 'Extraction requires an intake item',
       reason:
-        'packages/education/src/question-extraction-models.ts: QuestionExtractionRecord requires nonempty intakeItemId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'packages/education/src/question-extraction-service.ts:230-234 keys parent extraction replays by intakeItemId and attempt; question-extraction-models.ts:117-122 demands additional optional parent values. Keep the nested first-failure entry until the parent prerequisite chain is audited together.',
     },
     {
       model: '@happyvertical/smrt-education:LearningObjective',
@@ -917,7 +733,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'externalKey',
       error: 'Objective requires a key',
       reason:
-        'packages/education/src/question-models.ts: LearningObjective requires nonempty externalKey although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'packages/education/src/question-authoring-service.ts:778-781 resolves objective identity by tenant and externalKey; question-models.ts:96-97 also demands optional author and requestKey. Keep this first-failure entry pending coordinated audit of those remaining prerequisites; declaring externalKey alone does not make the minimal row pass.',
     },
     {
       model: '@happyvertical/smrt-education:LearningObjectiveRevision',
@@ -925,7 +741,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'objectiveId.externalKey',
       error: 'Objective requires a key',
       reason:
-        'packages/education/src/question-models.ts: LearningObjective requires nonempty externalKey although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'packages/education/src/question-authoring-service.ts:778-781 resolves the parent objective by externalKey; question-models.ts:96-97 demands further optional parent values. Keep the nested first-failure entry until the objective prerequisite chain is audited together.',
     },
     {
       model: '@happyvertical/smrt-education:Question',
@@ -933,7 +749,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'createdByUserId',
       error: 'Question requires an author',
       reason:
-        'packages/education/src/question-models.ts: Question requires nonempty createdByUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'packages/education/src/question-models.ts:204 requires author attribution, but repository readers do not use createdByUserId for lookup, authorization or replay; :205 then demands optional requestKey. Keep the entry pending a decision on the author-attribution invariant and audit of the remaining guard; none of the five reasons clearly names attribution alone.',
     },
     {
       model: '@happyvertical/smrt-education:QuestionRevision',
@@ -941,7 +757,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'questionId.createdByUserId',
       error: 'Question requires an author',
       reason:
-        'packages/education/src/question-models.ts: Question requires nonempty createdByUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'packages/education/src/question-models.ts:204 requires parent Question author attribution, with no downstream identity, authorization or replay use found; :205 also requires optional requestKey. Keep this nested entry pending the parent attribution decision and remaining-guard audit.',
     },
     {
       model: '@happyvertical/smrt-education:QuestionResponse',
@@ -958,7 +774,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'lessonRevisionId',
       error: 'Question record parent ownership mismatch',
       reason:
-        'GeneratedPrintable code requires lessonRevisionId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'packages/education/src/question-models.ts:451 loads lessonRevisionId under the tenant as provenance, but this plain text field has no relationship metadata for the minimal-row parent builder. Keep the entry pending a decision on representing or supplying that exact revision; removing the ownership check would weaken provenance.',
     },
     {
       model: '@happyvertical/smrt-education:Submission',
@@ -1102,7 +918,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       error:
         "currency must be a three-letter ISO 4217 code (for example 'USD'), got ''.",
       reason:
-        'Expense guard requires nonempty currency despite optional metadata. Required-parent path: sourceExpenseId.',
+        'The Expense parent needs currency for per-currency totals and commitment/refund comparisons (ExpenseCollection.ts:346; Expense.ts:1198,1332); no requiredFor value describes a monetary unit. Required-parent path: sourceExpenseId.',
     },
     {
       model: '@happyvertical/smrt-expenses:ExpenseAllocationPortion',
@@ -1111,7 +927,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       error:
         "currency must be a three-letter ISO 4217 code (for example 'USD'), got ''.",
       reason:
-        'Expense guard requires nonempty currency despite optional metadata. Required-parent path: sourceExpenseId.',
+        'The Expense parent needs currency for per-currency totals and commitment/refund comparisons (ExpenseCollection.ts:346; Expense.ts:1198,1332); no requiredFor value describes a monetary unit. Required-parent path: sourceExpenseId.',
     },
     {
       model: '@happyvertical/smrt-expenses:ExpenseAllocationBilling',
@@ -1120,7 +936,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       error:
         "currency must be a three-letter ISO 4217 code (for example 'USD'), got ''.",
       reason:
-        'Expense guard requires nonempty currency despite optional metadata. Required-parent path: sourceExpenseId.',
+        'The Expense parent needs currency for per-currency totals and commitment/refund comparisons (ExpenseCollection.ts:346; Expense.ts:1198,1332); no requiredFor value describes a monetary unit. Required-parent path: sourceExpenseId.',
     },
     {
       model: '@happyvertical/smrt-expenses:ExpenseReceipt',
@@ -1129,7 +945,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       error:
         "currency must be a three-letter ISO 4217 code (for example 'USD'), got ''.",
       reason:
-        'Expense guard requires nonempty currency despite optional metadata. Required-parent path: expenseId.',
+        'The Expense parent needs currency for per-currency totals and commitment/refund comparisons (ExpenseCollection.ts:346; Expense.ts:1198,1332); no requiredFor value describes a monetary unit. Required-parent path: expenseId.',
     },
     {
       model: '@happyvertical/smrt-fields:FieldPolicy',
@@ -1221,7 +1037,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'journalId',
       error: 'Journal entry requires an accessible parent journal',
       reason:
-        'JournalEntry code requires journalId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'JournalEntry.save loads and locks its parent journal before checking its account scope and nonzero debit/credit. Promoting journalId alone exposes the independent optional accountId failure; the combined parent/account/amount fixture contract remains undecided, with the original error retained.',
     },
     {
       model: '@happyvertical/smrt-manufacturing:ProductionRunCompletion',
@@ -1229,7 +1045,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'runId.targetQty',
       error: 'A production run needs a target quantity greater than zero.',
       reason:
-        'ProductionRun requires positive targetQty despite optional metadata. Required-parent path: runId.',
+        'The required runId parent cannot save with its real targetQty = 0 initializer (ProductionRun.validateBeforeSave); this is the parent planning-quantity exception, not a missing run identity. No reason value expresses that positive quantity.',
     },
     {
       model: '@happyvertical/smrt-playbooks:PlaybookOverride',
@@ -1260,7 +1076,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'actorType, actorId',
       error: 'Project specification actor is required.',
       reason:
-        'ProjectSpecification code requires actorType, actorId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'packages/projects/src/models/ProjectSpecification.ts:68-72 requires a valid actor type and nonempty actor id together, but stored actors are provenance only: project-specification-service.ts:74 authorizes the incoming actor.canManage, never these fields. No demonstrated stored-row dependency supports a reason; retain pending a decision on the runtime guard outside declaration-only scope.',
     },
     {
       model: '@happyvertical/smrt-prompts:PromptOverride',
@@ -1323,7 +1139,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'planId',
       error: 'Subscription plan is unavailable',
       reason:
-        'TenantSubscription code requires planId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'Save dereferences planId for pricing and version pinning, so identity fits. Requiring planId exposes optional planVersionId being auto-populated (minimal-row contract); that unassigned field needs a coordinated fix before this model passes and the entry can be removed.',
     },
     {
       model: '@happyvertical/smrt-subscriptions:CreditGrant',
@@ -1332,7 +1148,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       error:
         'Credit grant amounts must be nonzero integer minor units (cents).',
       reason:
-        'CreditGrant code requires amount although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'CreditGrant.validateBeforeSave requires a nonzero signed integer amount and a balance policy of the same tenant and currency; required alone accepts initializer 0 and cannot express this compound credit rule.',
     },
     {
       model: '@happyvertical/smrt-timesheets:AttendanceCorrection',
@@ -1344,20 +1160,12 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
         'AttendanceCorrection writes are owned by AttendanceCorrectionService; its owner must run once against a minimal row.',
     },
     {
-      model: '@happyvertical/smrt-timesheets:AttendanceBreak',
-      kind: 'optional-field',
-      field: 'punchId',
-      error: 'Invalid attendance break.',
-      reason:
-        'AttendanceBreak code requires punchId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
-    },
-    {
       model: '@happyvertical/smrt-timesheets:AttendanceSegment',
       kind: 'optional-field',
       field: 'punchId, workRefType, workRefId',
       error: 'Invalid attendance work segment.',
       reason:
-        'AttendanceSegment code requires punchId, workRefType, workRefId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'Segments require a tenant-owned punch, matching parent profileId, and paired work identity; continueSegment reuses stored references. A single-field promotion does not express the parent-derived profile or resume contract. Retain this coupled-field exception pending a complete minimal fixture contract.',
     },
     {
       model: '@happyvertical/smrt-timesheets:AttendanceReplay',
@@ -1365,7 +1173,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'outcome',
       error: 'Invalid stored attendance replay outcome.',
       reason:
-        'AttendanceReplay code requires outcome although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'AttendanceReplay.getOutcome fails closed on a receipt lacking a clientId and exactly one success punchId or refusal error. The real JSON initializer {} is outside this audit; no field-level required flag expresses that outcome shape.',
     },
     {
       model: '@happyvertical/smrt-timesheets:PeriodTimecard',

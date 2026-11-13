@@ -62,6 +62,7 @@ export class ProductVariant extends SmrtObject {
    */
   @field({
     required: true,
+    requiredFor: 'identity',
     description: 'The product this choice belongs to.',
   })
   productId: string = '';
@@ -72,6 +73,7 @@ export class ProductVariant extends SmrtObject {
    */
   @field({
     required: true,
+    requiredFor: 'identity',
     description: 'What the product varies by, for example size or color.',
   })
   axisName: string = '';

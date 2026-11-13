@@ -128,14 +128,14 @@ describe('doctor next migrate (#4934)', () => {
       'Next migrate removes constraints made by hand',
     );
   });
-  it('SQLite relaxation is kept until opt in, not claimed as removed', async () => {
+  it('SQLite now removes a hand-made NOT NULL, as PostgreSQL does', async () => {
     await db.query('DROP TABLE items');
     await db.query(
       'CREATE TABLE items (id TEXT PRIMARY KEY, code TEXT NOT NULL)',
     );
     const { report } = await preview();
-    expect(report.removed).toEqual([]);
-    expect(report.kept.join()).toContain('items.code: drop not null');
+    expect(report.removed.join()).toContain('items.code');
+    expect(report.stops).toEqual([]);
   });
   it('lists a hand-made redundant index not declared in code', async () => {
     await db.query('CREATE INDEX hand_idx ON items(id)');
@@ -150,11 +150,11 @@ describe('doctor next migrate (#4934)', () => {
     expect(out).toContain('column.set-not-null: 1');
     expect(report.stops).toEqual([]);
   });
-  it('explains SQLite cannot yet tighten an existing nullable column in place', async () => {
+  it('SQLite tightens an existing nullable column with no rows', async () => {
     schemas.items.columns.code.notNull = true;
     const { report } = await preview();
-    expect(report.rules.join()).toContain('the next migrate stops:');
-    expect(report.stops.join()).toContain('column.alter-unsupported');
+    expect(report.rules.join()).toContain('the next migrate sets NOT NULL');
+    expect(report.stops).toEqual([]);
   });
   it('DuckDB subclass rules stay enforced at save time', async () => {
     await db.close?.();
@@ -304,10 +304,10 @@ describe('doctor next migrate (#4934)', () => {
     // The shared table of change kinds decides: adding the rule applies, and
     // rows that already break it stop the run.
     if (violated) {
-      expect(report.stops.join()).toContain('check.rows-violate');
+      expect(report.stops.join()).toContain('check.violated');
     } else {
       expect(report.stops).toEqual([]);
-      expect(Object.keys(report.apply)).toContain('check.set');
+      expect(Object.keys(report.apply)).toContain('check.add');
     }
     if (!violated) {
       await db.query(

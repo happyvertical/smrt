@@ -47,7 +47,7 @@ export class AuditLog extends SmrtObject {
   /**
    * The profile who performed the action
    */
-  @foreignKey('Profile', { required: true })
+  @foreignKey('Profile', { required: true, requiredFor: 'identity' })
   profileId?: string;
 
   /**

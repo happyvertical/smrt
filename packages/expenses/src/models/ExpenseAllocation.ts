@@ -66,7 +66,11 @@ export class ExpenseAllocationRevision extends SmrtObject {
   hasSupplierTax: boolean | null = null;
   basisEqualsGross = false;
   @tenantId() tenantId = '';
-  @foreignKey('Expense', { required: true, onDelete: 'RESTRICT' })
+  @foreignKey('Expense', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'RESTRICT',
+  })
   sourceExpenseId = '';
   @foreignKey('ExpenseAllocationRevision', {
     nullable: true,
@@ -82,10 +86,10 @@ export class ExpenseAllocationRevision extends SmrtObject {
   @field({ type: 'integer' })
   amountMinor = 0;
   currency = '';
-  @crossPackageRef('@happyvertical/smrt-profiles:Profile', { required: true })
-  reviewedByProfileId = '';
-  @crossPackageRef('@happyvertical/smrt-users:User', { required: true })
-  reviewedByUserId = '';
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile', { nullable: true })
+  reviewedByProfileId: string | null = null;
+  @crossPackageRef('@happyvertical/smrt-users:User', { nullable: true })
+  reviewedByUserId: string | null = null;
   reviewEvidence = '';
   constructor(options: ExpenseAllocationRevisionOptions = {}) {
     super(options);
@@ -158,10 +162,15 @@ export interface ExpenseAllocationPortionOptions extends SmrtObjectOptions {
 })
 export class ExpenseAllocationPortion extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Expense', { required: true, onDelete: 'RESTRICT' })
+  @foreignKey('Expense', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'RESTRICT',
+  })
   sourceExpenseId = '';
   @foreignKey('ExpenseAllocationRevision', {
     required: true,
+    requiredFor: 'identity',
     onDelete: 'RESTRICT',
   })
   revisionId = '';
@@ -238,10 +247,15 @@ export interface ExpenseAllocationBillingOptions extends SmrtObjectOptions {
 })
 export class ExpenseAllocationBilling extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Expense', { required: true, onDelete: 'RESTRICT' })
+  @foreignKey('Expense', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'RESTRICT',
+  })
   sourceExpenseId = '';
   @foreignKey('ExpenseAllocationPortion', {
     required: true,
+    requiredFor: 'identity',
     onDelete: 'RESTRICT',
   })
   portionId = '';

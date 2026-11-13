@@ -99,7 +99,11 @@ const COMPENSATION_FIELDS = [
 })
 export class ServiceChargeSnapshot extends SmrtObject {
   @tenantId({ nullable: true }) tenantId: string | null = null;
-  @foreignKey('ServiceTimeEntry', { required: true }) timeEntryId: string = '';
+  @foreignKey('ServiceTimeEntry', {
+    required: true,
+    requiredFor: 'identity',
+  })
+  timeEntryId: string = '';
   /**
    * Client charge in **integer minor units** of {@link currency} — `$19.99` is
    * `1999`. The `= 0` initializer is load-bearing: SMRT maps an integer literal
@@ -168,7 +172,11 @@ export class ServiceChargeSnapshot extends SmrtObject {
 })
 export class ServiceCompensationSnapshot extends SmrtObject {
   @tenantId({ nullable: true }) tenantId: string | null = null;
-  @foreignKey('ServiceTimeEntry', { required: true }) timeEntryId: string = '';
+  @foreignKey('ServiceTimeEntry', {
+    required: true,
+    requiredFor: 'identity',
+  })
+  timeEntryId: string = '';
   /**
    * Provider earning in **integer minor units** of {@link currency} (#2401).
    *

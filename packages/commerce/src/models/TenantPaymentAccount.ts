@@ -158,7 +158,7 @@ export class TenantPaymentAccount extends SmrtObject {
   environment: TenantPaymentEnvironment = 'test';
 
   /** Provider account id, for example a Stripe `acct_...`. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   providerAccountId: string = '';
 
   /** Derived standing; see {@link TenantPaymentAccountStatus}. */

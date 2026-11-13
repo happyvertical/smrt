@@ -42,10 +42,14 @@
  *
  * The one limit on loosening: a field that is required and carries
  * `requiredFor` (smrt's own code is wrong without it) may not become
- * optional. The build reports it through `onRequiredLoosened` (#4932).
+ * optional. {@link resolveInheritedFields} refuses it with
+ * `CONFIG_REQUIRED_FIELD_LOOSENED` (#4932), so the build, the registry and
+ * run-time models all refuse by this one decision, {@link requiredLoosenedReason}.
  *
  * Methods merge by a different rule and are not part of this.
  */
+
+import { ConfigurationError } from '../errors.js';
 
 /** The slice of a field this module reads. */
 export interface InheritableField {
@@ -87,18 +91,6 @@ export interface ResolveInheritedFieldsInput<F extends InheritableField> {
   /** The class's own declared fields, applied last. */
   own: Iterable<readonly [string, F]>;
   representation: FieldRepresentation;
-  /**
-   * Called when a redeclaration makes a field optional that smrt requires for
-   * its own correctness: the inherited field is required and carries
-   * `requiredFor` (#4923). The one limit on what an app may loosen (#4932).
-   * The build throws here; the registry does not pass it.
-   */
-  onRequiredLoosened?: (
-    fieldName: string,
-    requiredFor: string,
-    inherited: F,
-    resolved: F,
-  ) => void;
   /** Called when a replacement changes a field's type (a developer warning). */
   onTypeMismatch?: (
     fieldName: string,
@@ -106,6 +98,40 @@ export interface ResolveInheritedFieldsInput<F extends InheritableField> {
     ownType: string,
     inherited: F,
   ) => void;
+}
+
+/**
+ * The one decision for "this redeclaration loosens a field smrt needs": the
+ * inherited field is required and carries `requiredFor` (#4923), and the
+ * resolved field is not required. Returns the reason, or undefined when the
+ * change is allowed (#4932).
+ */
+export function requiredLoosenedReason(
+  inherited: InheritableField,
+  resolved: InheritableField,
+): string | undefined {
+  const reason = inherited._meta?.requiredFor;
+  return typeof reason === 'string' &&
+    inherited.required === true &&
+    resolved.required !== true
+    ? reason
+    : undefined;
+}
+
+/** Refuse a loosened field smrt needs, naming the class and field. */
+export function assertRequiredNotLoosened(
+  className: string,
+  fieldName: string,
+  inherited: InheritableField,
+  resolved: InheritableField,
+): void {
+  const reason = requiredLoosenedReason(inherited, resolved);
+  if (reason === undefined) return;
+  throw new ConfigurationError(
+    `${className}.${fieldName} cannot be made optional. smrt needs it (${reason}). ` +
+      'Keep it required, or leave the field out of the subclass.',
+    'CONFIG_REQUIRED_FIELD_LOOSENED',
+  );
 }
 
 const HIERARCHICAL_BASE = 'SmrtHierarchical';
@@ -336,15 +362,7 @@ export function resolveInheritedFields<F extends InheritableField>(
       input.onTypeMismatch(name, inherited.type, incoming.type, inherited);
     }
     const resolved = fillMissing(inherited, incoming, representation);
-    const reason = inherited._meta?.requiredFor;
-    if (
-      input.onRequiredLoosened &&
-      typeof reason === 'string' &&
-      inherited.required === true &&
-      resolved.required !== true
-    ) {
-      input.onRequiredLoosened(name, reason, inherited, resolved);
-    }
+    assertRequiredNotLoosened(className, name, inherited, resolved);
     return resolved;
   };
 

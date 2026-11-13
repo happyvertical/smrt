@@ -6,6 +6,10 @@ Package orientation, the cross-module invariants, and the traps that apply
 before editing anything live in [../AGENTS.md](../AGENTS.md) — read that first;
 it links the relevant runtime and generation contracts.
 
+The data shape rules these paths implement (required only with a reason, harden
+by subclass, migrate all or nothing) and how each is kept are in
+[data-shape-rules.md](data-shape-rules.md).
+
 ## Four entry points, two of which ship
 
 `src/schema/generator.ts` exposes four index-emitting entry points. Their columns and indexes must agree for the same class.
@@ -407,6 +411,50 @@ parent column. These are explicit exceptions awaiting implementation, not extra
 data rules. Unknown shapes stop as `unlisted`; source-coverage and real-comparer
 tests guard against real differ output reaching that fallback.
 
+### The three engines apply the same kinds (#4937)
+
+Every kind that applies on PostgreSQL applies on SQLite and DuckDB too. The
+table records, per engine, what is still different and why. This is the whole
+list:
+
+| Difference | Engines | Why |
+|---|---|---|
+| Shared-table `CHECK` (`check.*`) | PostgreSQL only | SQLite and DuckDB keep the rule in smrt's save-time check (#4932). DuckDB cannot add a constraint to a table and gives a `CHECK` no name. |
+| Removing a foreign key (`foreign-key.drop-unavailable`) | PostgreSQL stops | The SQL adapter does not give the live PostgreSQL constraint name. SQLite and DuckDB rebuild the table instead. |
+| Table declared `AUTOINCREMENT` | SQLite stops (`column.rebuild-unavailable`) | The rebuild would lose the sequence. |
+| Table that references itself | DuckDB stops, when the change needs a rebuild | DuckDB cannot copy rows into a table whose key points at itself in one statement. A plain `ALTER` still works there. |
+| A constraint on a dropped column | DuckDB stops | The rebuild cannot keep a table constraint that names a dropped column. |
+| Any rebuild | JSON adapter stops | It is DuckDB-backed but has no rebuild. |
+
+How each engine gets there:
+
+- **SQLite** rebuilds the table (below) for a type, `NOT NULL`, default,
+  foreign key add, replace or remove, and a required column with a backfill.
+  One rebuild carries every change of a table: the plan is built from the live
+  definition, so a second plan would undo the first. `MigrationTracker` turns
+  foreign keys off around it and checks them again before the commit, so a table
+  other tables reference no longer stops the run. Dropping a column drops the
+  indexes that cover it first, as PostgreSQL does.
+- **DuckDB** (`src/migrations/duckdb-rebuild.ts`) refuses `ALTER` when the table
+  has an index, when another table has a key onto it, and after an `UPDATE` in
+  the same transaction. It also has no `ADD CONSTRAINT`. A change that works
+  with `ALTER` once the indexes are out of the way is wrapped in `DROP INDEX`
+  and `CREATE INDEX`. Any other change rebuilds the table, and every table that
+  references it, in the migration's transaction: copy to staging tables, drop,
+  create again from the live definitions, copy back, replay the indexes. DuckDB
+  DDL is transactional, so a failure rolls every table back.
+- **Atomic.** A rebuild that fails part-way leaves every table, row, index and
+  foreign-key setting as it was. `sqlite-parity` and `duckdb-parity` tests fail
+  a rebuild mid-way and compare the database before and after.
+- Dropping `NOT NULL` from a manifest-nullable column applies by default on all
+  three engines. A stale default and an orphan `NOT NULL` still need
+  `relaxColumns`.
+
+`packages/cli/src/commands/__tests__/db-migrate-engine-parity.test.ts` runs one
+scenario table on SQLite, DuckDB and PostgreSQL (PGlite). Each scenario gives
+its outcome per engine, and a test fails if a scenario differs by engine without
+an entry in its `DIFFERENCES` list.
+
 ### A SQLite type change is a table rebuild (#2370)
 
 SQLite has no `ALTER TABLE ... ALTER COLUMN ... TYPE`, so
@@ -433,14 +481,17 @@ Four properties of that module are load-bearing; keep them if you touch it:
   affinity on insert — the same conversion a fresh table performs. An explicit
   cast is worse: non-numeric TEXT cast to REAL/INTEGER silently becomes `0`,
   and an ISO timestamp cast to NUMERIC-affinity `DATETIME` becomes its year.
-- **It refuses when any table has a foreign key onto the target and
-  `PRAGMA foreign_keys` is ON** (the SMRT adapter's default). `DROP TABLE`
+- **Called on its own, it refuses when any table has a foreign key onto the
+  target and `PRAGMA foreign_keys` is ON** (the SMRT adapter's default). The
+  differ passes `foreignKeysSuspended` (#4937), because it runs the plan in
+  `MigrationTracker`, which turns foreign keys off and checks them before the
+  commit. Only a caller that runs the plan some other way meets the refusal. `DROP TABLE`
   performs an implicit `DELETE FROM` that fires `ON DELETE CASCADE` on
   children, and `defer_foreign_keys` defers constraint *checks*, not FK
   *actions* — verified: the child rows go. The target's own self-reference
   counts, because the staging table copies that clause and becomes a child of
   the table being dropped (verified: a two-row self-referencing table finishes
-  the rebuild holding one row). Such a column stays manual drift.
+  the rebuild holding one row). Under the tracker (#4937) the rows are kept.
 - **`PRAGMA legacy_alter_table` brackets the rename**, because SQLite ≥ 3.25
   re-parses the schema on `ALTER TABLE ... RENAME` and a view still pointing at
   the just-dropped table makes it fail outright. It is restored immediately
@@ -453,27 +504,25 @@ classifies as no-ops.
 
 ### Explicit SQLite NOT NULL relaxation (#4413)
 
-`relaxColumns: true` / `smrt db:migrate --relax-columns` also supports removing
-an ordinary inline `NOT NULL` clause on a manifest-declared column. The local
-application entry point forwards `smrt app migrate --relax-columns` under its
-existing operation lock and refuses a live application writer. The programmatic
-`migrateSmrtSchemas` / `getPendingSchemaStatements` entry points accept the same
-explicit `relaxColumns` option. On SQLite the default remains advisory (PostgreSQL relaxes `NOT NULL` by default, see above); this does not relax
-orphan columns or change SQLite defaults/tightening behavior.
+Removing an ordinary inline `NOT NULL` clause from a manifest-nullable column
+applies by default on SQLite, as on PostgreSQL (#4937); it used to need
+`relaxColumns: true` / `smrt db:migrate --relax-columns`. The flag still
+controls a stale default and an orphan `NOT NULL` column. The local application
+entry point forwards `smrt app migrate --relax-columns` under its existing
+operation lock and refuses a live application writer.
 
 The rebuild preserves live DDL, indexes/triggers and assigned rowids. Named
 NOT NULL constraints, `ON CONFLICT`, AUTOINCREMENT tables, primary/generated target columns, missing
 clauses and tables shadowing every rowid alias refuse rather than guessing.
-A nullable-relaxation rebuild emits `PRAGMA foreign_keys = OFF` as a tracker
-handoff: `MigrationTracker` suspends FK enforcement **before** opening its
+Every rebuild the differ plans emits `PRAGMA foreign_keys = OFF` as a tracker
+handoff (#4937; at first only the nullable relaxation did): `MigrationTracker` suspends FK enforcement **before** opening its
 transaction, verifies suspension on both the base and transaction connection,
 and checks `PRAGMA foreign_key_check` before commit. This avoids inbound FK
 `ON DELETE` actions and preserves referencing rows. An active borrowed transaction
 that cannot suspend enforcement, a mismatched transaction connection or an
 adapter without transactions refuses. FK and legacy rename settings are restored
 in `finally`, including after rollback. Run this maintenance operation with
-exclusive access to the SQLite connection. Type-only rebuilds retain the older
-inbound-FK refusal described above.
+exclusive access to the SQLite connection.
 
 ## What the differ compares (#2369)
 
@@ -481,13 +530,16 @@ inbound-FK refusal described above.
 type, then — unless the type itself is drifting — its nullability and default,
 and always reports what it will not touch:
 
-- **Strengthening** (`SET NOT NULL`, `SET DEFAULT`) is executable on
-  PostgreSQL/DuckDB. `SET NOT NULL` is preceded by an `UPDATE … WHERE c IS NULL`
-  backfill of the manifest default; without a default the live data is probed
+- **Strengthening** (`SET NOT NULL`, `SET DEFAULT`) is executable on all three
+  engines (SQLite by table rebuild, DuckDB by rebuild or index wrap, #4937).
+  `SET NOT NULL` is preceded by an `UPDATE … WHERE c IS NULL`
+  backfill of the manifest default (a DuckDB rebuild copies with `COALESCE`
+  instead, because DuckDB refuses an `ALTER` after an `UPDATE`); without a default the live data is probed
   and, if NULLs exist, the change is reported (comment SQL + `advisory`) instead
   of emitting an ALTER that would abort the atomic batch.
-- **Relaxing.** On PostgreSQL the migrator drops `NOT NULL` from a column the
-  manifest declares nullable by default, with no flag and no opt-out (#4897). It
+- **Relaxing.** On every engine the migrator drops `NOT NULL` from a column the
+  manifest declares nullable by default, with no flag and no opt-out (#4897,
+  #4937). It
   loses no data and rejects no row, and the manifest is already trusted to
   tighten columns (`SET NOT NULL`), so a package release that relaxes a column
   must not strand consumers on `manual_migration_required`. The owner's
@@ -497,11 +549,9 @@ and always reports what it will not touch:
   `Altered column <table>.<column> (drop_not_null)`, and `migrateSmrtSchemas` /
   `getPendingSchemaStatements` return it in `relaxedColumns` (the former also
   logs one `Relaxed <table>.<column>` line each). This covers nullability only.
-  `DROP DEFAULT`, orphan `DROP NOT NULL`, DuckDB (which rejects `ALTER COLUMN`
-  on indexed tables) and the SQLite rebuild remain report-only advisories until
-  the caller passes `relaxColumns` (`db:migrate --relax-columns`); a stricter
-  live column on those engines, and any other kind of drift, is never changed
-  silently.
+  `DROP DEFAULT` and orphan `DROP NOT NULL` remain report-only advisories until
+  the caller passes `relaxColumns` (`db:migrate --relax-columns`); any other
+  kind of drift is never changed silently.
 - **Orphans** — DB columns absent from the manifest, DB tables no manifest
   declares (`SchemaDiff.orphan_tables`), and unclaimed `*_key` unique constraint
   indexes — are always reported. A NOT NULL orphan without a default is a

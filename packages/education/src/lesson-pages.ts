@@ -38,9 +38,11 @@ export function validLessonPageKey(value: unknown): value is string {
 })
 export class LessonPage extends SmrtObject {
   @tenantId({ nullable: true }) tenantId: string | null = null;
-  @foreignKey('Course', { required: true }) courseId = '';
-  @foreignKey('Lesson', { required: true }) lessonId = '';
-  pageKey = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
+  @foreignKey('Lesson', { required: true, requiredFor: 'identity' }) lessonId =
+    '';
+  @field({ required: true, requiredFor: 'identity' }) pageKey = '';
   label = '';
   sortOrder = 0;
   @crossPackageRef('@happyvertical/smrt-assets:Asset', { nullable: true })

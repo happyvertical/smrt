@@ -50,7 +50,7 @@ async function requireParentTenant(
 @smrt({ tableStrategy: 'sti', ...closed })
 export class Course extends SmrtObject {
   @tenantId({ nullable: true }) tenantId: string | null = null;
-  @field({ required: true }) title = '';
+  @field() title = '';
   summary = '';
   description = '';
   sourceKey = 'manual';
@@ -185,8 +185,9 @@ export class AuthoredCourse extends Course {
 @smrt({ ...closed })
 export class CourseSection extends SmrtObject {
   @tenantId({ nullable: true }) tenantId: string | null = null;
-  @foreignKey('Course', { required: true }) courseId = '';
-  @field({ required: true }) title = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
+  @field() title = '';
   sortOrder = 0;
   constructor(options: Record<string, unknown> = {}) {
     super(options);
@@ -217,8 +218,9 @@ export class CourseSection extends SmrtObject {
 @smrt({ tableStrategy: 'sti', ...closed })
 export class Lesson extends SmrtObject {
   @tenantId({ nullable: true }) tenantId: string | null = null;
-  @foreignKey('CourseSection', { required: true }) sectionId = '';
-  @field({ required: true }) title = '';
+  @foreignKey('CourseSection', { required: true, requiredFor: 'identity' })
+  sectionId = '';
+  @field() title = '';
   body = '';
   sortOrder = 0;
   estimatedMinutes = 0;

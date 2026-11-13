@@ -39,12 +39,12 @@ export interface ContentGovernanceAssignmentOptions extends SmrtObjectOptions {
   cli: { skipApiCheck: true },
 })
 export class ContentGovernanceAssignment extends SmrtObject {
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   key = '';
 
   label = '';
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   contentType = '';
 
   contentVariant = '';

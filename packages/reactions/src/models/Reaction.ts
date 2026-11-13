@@ -26,7 +26,10 @@ import { assertParticipationWrite } from '../write-authority.js';
 })
 export class Reaction extends SmrtPolymorphicAssociation {
   @tenantId() tenantId = '';
-  @crossPackageRef('@happyvertical/smrt-profiles:Profile', { required: true })
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile', {
+    required: true,
+    requiredFor: 'identity',
+  })
   actorProfileId = '';
   @field({ required: true }) kind: ReactionKind = 'like';
   constructor(

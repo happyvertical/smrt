@@ -34,30 +34,42 @@ export class ReferralClickOperation extends SmrtObject {
   tenantId: string | null = null;
 
   /** Full SHA-256 of the exact caller replay key. */
-  @field({ required: true, readonly: true })
+  @field({ required: true, requiredFor: 'idempotency', readonly: true })
   keyHash!: string;
 
   /** Link whose counter this operation increments. */
-  @field({ sqlType: 'UUID', required: true, readonly: true, indexed: true })
+  @field({
+    sqlType: 'UUID',
+    required: true,
+    requiredFor: 'idempotency',
+    readonly: true,
+    indexed: true,
+  })
   linkId!: string;
 
   /** Immutable touch created by this operation in the same transaction. */
   // Deliberately not an FK: the fence is inserted before the touch. Atomic
   // commit plus replay verification preserves the relationship.
-  @field({ sqlType: 'UUID', required: true, readonly: true, indexed: true })
+  @field({
+    sqlType: 'UUID',
+    required: true,
+    requiredFor: 'idempotency',
+    readonly: true,
+    indexed: true,
+  })
   touchId!: string;
 
   /** Hash of the normalized link, attribution, timestamp, and evidence intent. */
-  @field({ required: true, readonly: true })
+  @field({ required: true, requiredFor: 'idempotency', readonly: true })
   intentHash!: string;
 
   /** Hash of caller evidence before Sales-owned envelope fields are applied. */
-  @field({ required: true, readonly: true })
+  @field({ required: true, requiredFor: 'idempotency', readonly: true })
   callerEvidenceHash!: string;
 
   /** ISO instant supplied by the caller, or empty when recordClick chose now. */
-  @field({ required: true, readonly: true })
-  requestedOccurredAt!: string;
+  @field({ readonly: true })
+  requestedOccurredAt: string = '';
 
   constructor(options: ReferralClickOperationOptions = {}) {
     super(options);

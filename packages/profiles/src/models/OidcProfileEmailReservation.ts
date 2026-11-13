@@ -19,10 +19,20 @@ export interface OidcProfileEmailReservationOptions extends SmrtObjectOptions {
   cli: false,
 })
 export class OidcProfileEmailReservation extends SmrtObject {
-  @foreignKey('Profile', { required: true, unique: true })
+  @foreignKey('Profile', {
+    required: true,
+    requiredFor: 'identity',
+    unique: true,
+  })
   profileId?: string;
 
-  @field({ type: 'text', required: true, unique: true, readonly: true })
+  @field({
+    type: 'text',
+    required: true,
+    requiredFor: 'identity',
+    unique: true,
+    readonly: true,
+  })
   emailKey: string = '';
 
   constructor(options: OidcProfileEmailReservationOptions = {}) {

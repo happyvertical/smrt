@@ -79,15 +79,15 @@ export class Agreement extends SmrtObject {
   tenantId: string | null = null;
 
   /** Open application-defined agreement kind, e.g. `revenue_share`. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   kind: string = '';
 
   /** Canonical JSON {@link AgreementParty}; order is semantically meaningful. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   partyA: string = '';
 
   /** Canonical JSON {@link AgreementParty}; order is semantically meaningful. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   partyB: string = '';
 
   /** Monotonic version within tenant, kind, and ordered counterparties. */

@@ -71,6 +71,7 @@ export class Sku extends SmrtObject {
    */
   @field({
     required: true,
+    requiredFor: 'identity',
     description: 'The product this item is a version of.',
   })
   productId: string = '';
@@ -83,6 +84,7 @@ export class Sku extends SmrtObject {
    */
   @field({
     required: true,
+    requiredFor: 'identity',
     description:
       'The short code that identifies this exact item, such as a UPC or part number.',
   })

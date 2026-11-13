@@ -28,11 +28,40 @@ const stop = (reason: SchemaChangeStopReason, why: string) =>
   engines({ decision: 'stop', reason, why });
 const unresolved = (exception: string) =>
   engines({ decision: 'stop', exception, why: exception });
+const applyPolicy = (why: string): SchemaChangePolicy => ({
+  decision: 'apply',
+  why,
+});
+const reportPolicy = (why: string): SchemaChangePolicy => ({
+  decision: 'report',
+  why,
+});
+const unresolvedPolicy = (exception: string): SchemaChangePolicy => ({
+  decision: 'stop',
+  exception,
+  why: exception,
+});
 
 /**
  * Migrate makes the database match the code whenever that is safe.
  * It stops only when it would lose or invent data; unresolved exceptions below
  * preserve existing refusals until their engine/adapter support is implemented.
+ *
+ * Every kind that applies on PostgreSQL applies on SQLite and DuckDB too
+ * (#4937). SQLite rebuilds the table where it has no ALTER (NOT NULL, default,
+ * foreign key, column type). DuckDB moves the indexes out of ALTER's way and
+ * rebuilds the table where ALTER cannot do the change. The entries below say,
+ * per engine, what stays different and why:
+ *
+ * - PostgreSQL alone adds the shared-table CHECK (`check.*`). The rule stays in
+ *   smrt's save-time check on the other two engines (#4932).
+ * - PostgreSQL alone cannot remove a foreign key (`foreign-key.drop-unavailable`):
+ *   the SQL adapter does not give it the live constraint name.
+ * - SQLite cannot rebuild a table declared AUTOINCREMENT: the rebuild would
+ *   lose the sequence.
+ * - DuckDB cannot rebuild a table that references itself: it cannot copy rows
+ *   into a table whose foreign key points at itself in one statement.
+ * - The JSON adapter (DuckDB-backed) has no rebuild.
  */
 export const SCHEMA_CHANGE_KINDS = {
   'table.add': {
@@ -87,27 +116,10 @@ export const SCHEMA_CHANGE_KINDS = {
     type: 'alter_column',
     engines: apply('Remove the stale default without replacing stored values.'),
   },
-  'check.set': {
-    type: 'alter_column',
-    engines: apply(
-      'Add the declared shared-table rule once no live row breaks it.',
-    ),
-  },
-  'check.rows-violate': {
-    type: 'alter_column',
-    engines: stop(
-      'invents-data',
-      'Live rows of a class that requires this column hold NULL.',
-    ),
-  },
-  'check.drop': {
-    type: 'alter_column',
-    engines: apply('Remove the undeclared smrt-owned CHECK constraint.'),
-  },
   'column.relaxation-report': {
     type: 'alter_column',
     engines: report(
-      'The relaxation has not been opted into; existing values stay unchanged.',
+      'A stale default or an orphan NOT NULL has not been opted into (relaxColumns); existing values stay unchanged.',
     ),
   },
   'column.rebuild-covered': {
@@ -119,21 +131,61 @@ export const SCHEMA_CHANGE_KINDS = {
   'column.alter-unsupported': {
     type: 'alter_column',
     engines: unresolved(
-      'The engine cannot alter this column in place and the rebuild planner does not support this alteration.',
+      'The engine cannot alter this column in place and no table rebuild was planned for it (the JSON adapter has no rebuild).',
     ),
   },
   'column.rebuild-unavailable': {
     type: 'alter_column',
     engines: unresolved(
-      'The SQLite rebuild planner cannot safely read or rewrite this column while preserving the live table.',
+      'The table rebuild cannot be planned: the table is AUTOINCREMENT (SQLite), a constraint uses a column the change drops (DuckDB), or the live definition cannot be read or rewritten.',
     ),
   },
   'column.rebuild-data-loss': {
     type: 'alter_column',
     engines: stop(
       'loses-data',
-      'Dropping the rebuild target with foreign keys enabled can delete referencing rows.',
+      'A caller that runs the rebuild without MigrationTracker would drop the target with foreign keys enabled, and that can delete referencing rows.',
     ),
+  },
+  'check.add': {
+    type: 'alter_column',
+    engines: {
+      postgres: applyPolicy(
+        'Add the missing shared-table CHECK after proving no stored row breaks it.',
+      ),
+      sqlite: reportPolicy(
+        'SQLite carries no shared-table CHECK: the rule stays in smrt save-time check.',
+      ),
+      duckdb: reportPolicy(
+        'DuckDB carries no shared-table CHECK: it cannot add one to a table and gives it no name; the rule stays in smrt save-time check.',
+      ),
+    },
+  },
+  'check.violated': {
+    type: 'alter_column',
+    engines: {
+      postgres: {
+        decision: 'stop',
+        reason: 'invents-data',
+        why: 'Stored rows break the shared-table CHECK and need a value that smrt cannot choose.',
+      },
+      sqlite: reportPolicy(
+        'SQLite carries no shared-table CHECK: the rule stays in smrt save-time check.',
+      ),
+      duckdb: reportPolicy(
+        'DuckDB carries no shared-table CHECK: the rule stays in smrt save-time check.',
+      ),
+    },
+  },
+  'check.drop': {
+    type: 'alter_column',
+    engines: {
+      postgres: applyPolicy(
+        'Drop the undeclared shared-table CHECK; rows are unchanged.',
+      ),
+      sqlite: reportPolicy('SQLite carries no shared-table CHECK to drop.'),
+      duckdb: reportPolicy('DuckDB carries no shared-table CHECK to drop.'),
+    },
   },
   'column.orphan': {
     type: 'orphan_column',
@@ -244,13 +296,13 @@ export const SCHEMA_CHANGE_KINDS = {
     type: 'type_upgrade',
     engines: stop(
       'loses-data',
-      'Dropping the rebuild target with foreign keys enabled can delete referencing rows.',
+      'A caller that runs the rebuild without MigrationTracker would drop the target with foreign keys enabled, and that can delete referencing rows.',
     ),
   },
   'type.rebuild-unavailable': {
     type: 'type_upgrade',
     engines: unresolved(
-      'The SQLite rebuild planner cannot read or rewrite the live table definition safely.',
+      'The table rebuild cannot be planned: the live table definition cannot be read or rewritten safely.',
     ),
   },
   'foreign-key.add': {
@@ -295,13 +347,13 @@ export const SCHEMA_CHANGE_KINDS = {
   'foreign-key.conflicting': {
     type: 'add_foreign_key',
     engines: unresolved(
-      'A foreign key exists with a different target or action and the planner cannot safely identify and replace it.',
+      'A PostgreSQL foreign key exists with a different target or action and the planner cannot safely identify and replace it. SQLite and DuckDB never report this: the table rebuild that adds the declared key replaces the old one.',
     ),
   },
   'foreign-key.add-unsupported': {
     type: 'add_foreign_key',
     engines: unresolved(
-      'SQLite needs a foreign-key table rebuild that is not implemented here; DuckDB cannot ADD CONSTRAINT in place.',
+      'The table rebuild that adds the key cannot be planned: the table (or one that references it) references itself on DuckDB, is AUTOINCREMENT on SQLite, or has a definition that cannot be rewritten; the JSON adapter has no rebuild.',
     ),
   },
   'foreign-key.drop': {
@@ -313,24 +365,15 @@ export const SCHEMA_CHANGE_KINDS = {
   'foreign-key.drop-unavailable': {
     type: 'drop_foreign_key',
     engines: {
-      postgres: {
-        decision: 'stop',
-        why: 'The SQL adapter does not expose the live PostgreSQL constraint name.',
-        exception:
-          'The SQL adapter does not expose the live PostgreSQL constraint name.',
-      },
-      sqlite: {
-        decision: 'stop',
-        why: 'Removing the foreign key needs a table rebuild that is not implemented here.',
-        exception:
-          'Removing the foreign key needs a table rebuild that is not implemented here.',
-      },
-      duckdb: {
-        decision: 'stop',
-        why: 'DuckDB cannot drop this foreign key in place and no rebuild is implemented here.',
-        exception:
-          'DuckDB cannot drop this foreign key in place and no rebuild is implemented here.',
-      },
+      postgres: unresolvedPolicy(
+        'The SQL adapter does not expose the live PostgreSQL constraint name.',
+      ),
+      sqlite: unresolvedPolicy(
+        'The table rebuild that removes the key cannot be planned (the table is AUTOINCREMENT, or its definition cannot be rewritten).',
+      ),
+      duckdb: unresolvedPolicy(
+        'The table rebuild that removes the key cannot be planned (the table or one that references it references itself, or its definition cannot be rewritten).',
+      ),
     },
   },
 } as const satisfies Record<string, SchemaChangeKind>;
@@ -341,17 +384,18 @@ export type SchemaChangeKindId = keyof typeof SCHEMA_CHANGE_KINDS;
 export const UNRESOLVED_NON_DATA_STOPS = Object.entries(
   SCHEMA_CHANGE_KINDS,
 ).flatMap(([kind, entry]) =>
-  Object.entries(entry.engines).flatMap(([engine, policy]) =>
-    'exception' in policy
+  Object.entries(entry.engines).flatMap(([engine, policy]) => {
+    const exception = (policy as SchemaChangePolicy).exception;
+    return exception
       ? [
           {
             kind: kind as SchemaChangeKindId,
             engine: engine as SchemaChangeEngine,
-            reason: policy.exception,
+            reason: exception,
           },
         ]
-      : [],
-  ),
+      : [];
+  }),
 );
 
 /** Structural input also accepts the CLI's lightweight schema projection. */
@@ -439,12 +483,14 @@ export function classifySchemaChange(
         return 'type.rebuild-unavailable';
       return 'unlisted';
     case 'alter_column':
+      if (change.alteration === 'set_check')
+        return executable ? 'check.add' : 'check.violated';
+      if (change.alteration === 'drop_check')
+        return executable ? 'check.drop' : 'unlisted';
       if (change.mismatch?.actual === '(column not added)')
         return 'column.required-missing';
       if (noop) return 'column.rebuild-covered';
       if (!executable) {
-        if (change.alteration === 'set_check' && change.advisory)
-          return 'check.rows-violate';
         if (change.alteration === 'set_not_null' && change.advisory)
           return 'column.required-nulls';
         if (
@@ -471,10 +517,6 @@ export function classifySchemaChange(
           return 'column.set-default';
         case 'drop_default':
           return 'column.drop-default';
-        case 'set_check':
-          return 'check.set';
-        case 'drop_check':
-          return 'check.drop';
         default:
           return 'unlisted';
       }

@@ -59,7 +59,8 @@ function noDelete(): never {
 })
 export class TutorSession extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
   @field({ type: 'text', nullable: true }) enrollmentId: string | null = null;
   @field({ type: 'text', nullable: true }) lessonId: string | null = null;
   audience: TutorAudience = 'learner';
@@ -133,8 +134,10 @@ export class TutorSessionCollection extends SmrtCollection<TutorSession> {
 })
 export class TutorSessionClosure extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('TutorSession', { required: true }) sessionId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
+  @foreignKey('TutorSession', { required: true, requiredFor: 'identity' })
+  sessionId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
   actorUserId = '';
   closedAt = new Date();
   constructor(options: Record<string, unknown> = {}) {
@@ -180,8 +183,10 @@ export class TutorSessionClosureCollection extends SmrtCollection<TutorSessionCl
 })
 export class TutorExchange extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('TutorSession', { required: true }) sessionId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
+  @foreignKey('TutorSession', { required: true, requiredFor: 'identity' })
+  sessionId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
   sequence = 1;
   role: TutorExchangeRole = 'learner';
   @field({ type: 'text' }) text = '';

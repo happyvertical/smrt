@@ -38,7 +38,7 @@ export class AssetAssociation extends SmrtPolymorphicAssociation {
   tenantId: string | null = null;
 
   /** FK to Asset.id */
-  @foreignKey('Asset', { required: true })
+  @foreignKey('Asset', { required: true, requiredFor: 'identity' })
   @field({ description: 'The file attached to the related record.' })
   assetId = '';
 

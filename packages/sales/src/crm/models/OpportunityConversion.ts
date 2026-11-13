@@ -53,18 +53,18 @@ export class OpportunityConversion extends SmrtObject {
   tenantId: string | null = null;
 
   /** The won opportunity that converted. Required. */
-  @foreignKey('Opportunity', { required: true })
+  @foreignKey('Opportunity', { required: true, requiredFor: 'identity' })
   opportunityId: string = '';
 
   /**
    * Downstream record kind — OPEN string: `'client'`, `'project'`,
    * `'contract'`, `'subscription'`, … Required.
    */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   targetKind: string = '';
 
   /** Identifier of the downstream record within `targetKind`. Required. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   targetId: string = '';
 
   /** Optional human-readable note about the conversion. */

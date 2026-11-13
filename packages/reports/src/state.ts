@@ -71,10 +71,10 @@ export class SmrtReportRun extends SmrtObject {
   @field({ type: 'text', required: true })
   scopeKey: string = 'global';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'system-table' })
   reportClass: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text' })
   sourceClass: string = '';
 
   @field({ type: 'text', required: true })
@@ -154,13 +154,13 @@ export class SmrtReportWatermark extends SmrtObject {
   @field({ type: 'text', required: true })
   scopeKey: string = 'global';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'system-table' })
   reportClass: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'system-table' })
   sourceClass: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'system-table' })
   watermarkColumn: string = '';
 
   @field({ type: 'text', nullable: true })
@@ -187,7 +187,7 @@ export class SmrtReportLock extends SmrtObject {
   @field({ type: 'text', required: true })
   scopeKey: string = 'global';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'system-table' })
   reportClass: string = '';
 
   @field({ type: 'text', nullable: true })
@@ -220,12 +220,13 @@ export class SmrtReportSchedule extends SmrtObject {
   @field({ type: 'text', required: true })
   scopeKey: string = 'global';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'system-table' })
   reportClass: string = '';
 
   @field({
     type: 'text',
     required: true,
+    requiredFor: 'system-table',
     description:
       'When the report refreshes, as a cron schedule such as 0 6 * * * for 6 am daily.',
   })

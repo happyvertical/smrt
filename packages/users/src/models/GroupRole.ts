@@ -47,13 +47,13 @@ export class GroupRole extends SmrtObject {
   /**
    * Foreign key to Group
    */
-  @foreignKey('Group', { required: true })
+  @foreignKey('Group', { required: true, requiredFor: 'identity' })
   groupId?: string;
 
   /**
    * Foreign key to Role
    */
-  @foreignKey('Role', { required: true })
+  @foreignKey('Role', { required: true, requiredFor: 'identity' })
   roleId?: string;
 
   constructor(options: GroupRoleOptions = {}) {

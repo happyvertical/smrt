@@ -16,6 +16,11 @@ system timestamp conversion, `--repair-data`, and the successful migrate record
 are skipped. A PostgreSQL session advisory lock can be taken while planning;
 it writes no table rows. `--dry-run` prints the same refusal and exits 1.
 
+On every engine the run is the same (#4937). SQLite and DuckDB rebuild a table
+where they have no `ALTER` for the change, inside the same transaction; the
+list of what still differs, with reasons, is in core's `schema-paths.md` under
+"The three engines apply the same kinds".
+
 An ordinary run applies one atomic transaction batch. A failure in a later
 statement rolls back the earlier changes and tracker rows too.
 
@@ -122,5 +127,5 @@ Every group prints `none` when empty. Stops and missing packages are issues;
 unenforced rules, planned constraint removals, release age and fingerprint
 mismatch are warnings. One stop holds every apply change, including unrelated
 tables. STI CHECK additions and removals are ordinary apply changes
-(`check.set`, `check.drop`); rows that already break a rule stop the run
-(`check.rows-violate`).
+(`check.add`, `check.drop`); rows that already break a rule stop the run
+(`check.violated`).

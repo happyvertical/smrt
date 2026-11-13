@@ -105,7 +105,7 @@ export class Feedback extends SmrtObject {
   tenantId: string | null = null;
 
   /** The persona this signal judges. */
-  @foreignKey('AgentPersona', { required: true })
+  @foreignKey('AgentPersona', { required: true, requiredFor: 'identity' })
   personaId: string = '';
 
   /** Canonical agent class the persona configures (denormalised for queries). */
@@ -139,7 +139,7 @@ export class Feedback extends SmrtObject {
    * Correlation-id back to the thing this signal judges — the AI call,
    * dispatch, or job id. Required so a signal is always traceable to its cause.
    */
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
   correlationId: string = '';
 
   /**
