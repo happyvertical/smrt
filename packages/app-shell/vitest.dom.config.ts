@@ -7,7 +7,7 @@ import { defineConfig } from 'vitest/config';
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
 export default defineConfig({
-  plugins: [svelte({ hot: false })],
+  plugins: [svelte()],
   resolve: {
     conditions: ['browser'],
     alias: {

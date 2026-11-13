@@ -118,3 +118,10 @@ in welcome and settings, preserving the same preflight-backed Tricia handler,
 model preference and composer refresh. DOM expectations retain real ready status
 and assert the shared order instead of the superseded settings-only disclosure.
 Codex containment is owned by inference (`agents/engines.md`), never a shell shim.
+
+`pnpm test` first runs `svelte-kit sync`: the DOM suite needs the generated
+`.svelte-kit/tsconfig.json` even when Turbo restores only built output. A cold
+checkout without that config otherwise fails in dependency optimization before
+any component test runs (Rolldown's runtime cannot resolve `node:module`).
+The test script prepares the config for both the Node and DOM suites; it does
+not depend on a preceding uncached build.
