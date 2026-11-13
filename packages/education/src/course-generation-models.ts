@@ -30,8 +30,10 @@ import { COURSE_GENERATION_STATUSES } from './course-generation-contracts.js';
 })
 export class CourseGenerationJob extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
-  @foreignKey('CourseRevision', { required: true }) baseRevisionId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
+  @foreignKey('CourseRevision', { required: true, requiredFor: 'identity' })
+  baseRevisionId = '';
   requestKey = '';
   payloadDigest = '';
   @field({ type: 'text' }) instruction = '';
@@ -82,8 +84,13 @@ export class CourseGenerationJobCollection extends SmrtCollection<CourseGenerati
 })
 export class CourseGenerationEvent extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('CourseGenerationJob', { required: true }) jobId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
+  @foreignKey('CourseGenerationJob', {
+    required: true,
+    requiredFor: 'identity',
+  })
+  jobId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
   sequence = 1;
   status = 'queued';
   provider = '';
@@ -144,10 +151,17 @@ export class CourseGenerationEventCollection extends SmrtCollection<CourseGenera
 })
 export class CourseProposal extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('CourseGenerationJob', { required: true }) jobId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
-  @foreignKey('CourseRevision', { required: true }) baseRevisionId = '';
-  @foreignKey('CourseRevision', { required: true }) resultRevisionId = '';
+  @foreignKey('CourseGenerationJob', {
+    required: true,
+    requiredFor: 'identity',
+  })
+  jobId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
+  @foreignKey('CourseRevision', { required: true, requiredFor: 'identity' })
+  baseRevisionId = '';
+  @foreignKey('CourseRevision', { required: true, requiredFor: 'identity' })
+  resultRevisionId = '';
   @field({ type: 'text' }) rationale = '';
   @field({ type: 'text' }) proposalJson = '{}';
   @field({ type: 'text' }) planJson = '[]';
@@ -190,8 +204,10 @@ export class CourseProposalCollection extends SmrtCollection<CourseProposal> {
 })
 export class CourseProposalDecision extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('CourseProposal', { required: true }) proposalId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
+  @foreignKey('CourseProposal', { required: true, requiredFor: 'identity' })
+  proposalId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
   decision = 'accepted';
   @field({ type: 'text' }) fieldsJson = '[]';
   @field({ type: 'text', nullable: true }) resultRevisionId: string | null =
@@ -241,8 +257,13 @@ export class CourseProposalDecisionCollection extends SmrtCollection<CoursePropo
 })
 export class CourseGenerationBriefRecord extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('CourseGenerationJob', { required: true }) jobId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
+  @foreignKey('CourseGenerationJob', {
+    required: true,
+    requiredFor: 'identity',
+  })
+  jobId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
   target = 'course';
   subject = '';
   category = '';

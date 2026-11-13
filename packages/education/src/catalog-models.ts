@@ -16,19 +16,19 @@ const closed = { api: false, mcp: false, cli: false } as const;
 /** Globally visible provider registration. Hosts configure adapters and credentials out of band. */
 @smrt({ ...closed })
 export class CatalogProvider extends SmrtObject {
-  @field({ required: true }) providerId = '';
-  @field({ required: true }) name = '';
+  @field() providerId = '';
+  @field() name = '';
   active = true;
 }
 
 /** A provider-native record. Rows are intentionally not merged across providers. */
 @smrt({ ...closed })
 export class CatalogResource extends SmrtObject {
-  @field({ required: true }) providerId = '';
-  @field({ required: true }) stableId = '';
-  @field({ required: true }) revision = '';
+  @field({ required: true, requiredFor: 'identity' }) providerId = '';
+  @field({ required: true, requiredFor: 'identity' }) stableId = '';
+  @field({ required: true, requiredFor: 'identity' }) revision = '';
   canonicalUrl = '';
-  @field({ required: true }) title = '';
+  @field() title = '';
   suppliedDescription = '';
   author = '';
   subjects = '[]';
@@ -71,7 +71,7 @@ export class CatalogResource extends SmrtObject {
 @smrt({ ...closed })
 export class CatalogSyncState extends SmrtObject {
   /** Provider-owned stable key, not an internal provider row ID. */
-  @field({ required: true }) providerId = '';
+  @field({ required: true, requiredFor: 'identity' }) providerId = '';
   cursor = '';
   /** Persists across interrupted pages so terminal withdrawal is safe on resume. */
   runId = '';
@@ -88,9 +88,10 @@ export class CatalogSyncState extends SmrtObject {
 @smrt({ ...closed })
 export class CatalogSelection extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('CatalogResource', { required: true }) resourceId = '';
-  @field({ required: true }) selectedByUserId = '';
-  @field({ required: true }) selectedRevision = '';
+  @foreignKey('CatalogResource', { required: true, requiredFor: 'identity' })
+  resourceId = '';
+  @field() selectedByUserId = '';
+  @field({ required: true, requiredFor: 'identity' }) selectedRevision = '';
 }
 
 /** A pinned, tenant-owned acquisition record. Bytes belong in a host storage service. */
@@ -98,10 +99,15 @@ export class CatalogSelection extends SmrtObject {
 @smrt({ ...closed })
 export class CatalogAcquisition extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('CatalogResource', { required: true }) resourceId = '';
-  @foreignKey('CatalogSelection', { required: true }) selectionId = '';
-  @field({ required: true }) revision = '';
-  @field({ required: true }) format = '';
+  @foreignKey('CatalogResource', { required: true, requiredFor: 'identity' })
+  resourceId = '';
+  @foreignKey('CatalogSelection', {
+    required: true,
+    requiredFor: 'idempotency',
+  })
+  selectionId = '';
+  @field({ required: true, requiredFor: 'identity' }) revision = '';
+  @field({ required: true, requiredFor: 'identity' }) format = '';
   @field({ required: true }) sha256 = '';
   attribution = '';
   notices = '';

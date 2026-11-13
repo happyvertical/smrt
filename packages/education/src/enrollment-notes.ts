@@ -52,9 +52,14 @@ export function validateEnrollmentNote(text: string, requestKey: string): void {
 })
 export class EnrollmentParentNote extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Enrollment', { required: true }) enrollmentId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
-  @crossPackageRef('@happyvertical/smrt-users:User', { required: true })
+  @foreignKey('Enrollment', { required: true, requiredFor: 'identity' })
+  enrollmentId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
+  @crossPackageRef('@happyvertical/smrt-users:User', {
+    required: true,
+    requiredFor: 'identity',
+  })
   authorUserId = '';
   authorLabel = 'Parent';
   text = '';

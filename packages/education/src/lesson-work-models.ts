@@ -28,7 +28,8 @@ function optionsFor(target: object, options: Record<string, unknown>) {
 })
 export class LessonActivity extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
   @field({ type: 'text', required: true, default: 'identified' })
   captureKind = 'identified';
   @foreignKey('WorkbookPhotoIntake', { nullable: true }) photoIntakeId:
@@ -37,9 +38,17 @@ export class LessonActivity extends SmrtObject {
   // Explicit NO ACTION: these are now the natural key, which would otherwise
   // default to CASCADE and differ from the deployed foreign keys. Learning
   // history is never removed by deleting its enrollment or lesson.
-  @foreignKey('Enrollment', { required: true, onDelete: 'NO ACTION' })
+  @foreignKey('Enrollment', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'NO ACTION',
+  })
   enrollmentId = '';
-  @foreignKey('Lesson', { required: true, onDelete: 'NO ACTION' })
+  @foreignKey('Lesson', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'NO ACTION',
+  })
   lessonId = '';
   constructor(options: Record<string, unknown> = {}) {
     super(options);
@@ -127,11 +136,16 @@ export class LessonActivityCollection extends SmrtCollection<LessonActivity> {
 })
 export class LessonWorkFiling extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
-  @foreignKey('LessonActivity', { required: true }) sourceActivityId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
-  @foreignKey('Enrollment', { required: true }) enrollmentId = '';
-  @foreignKey('Lesson', { required: true }) lessonId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
+  @foreignKey('LessonActivity', { required: true, requiredFor: 'identity' })
+  sourceActivityId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' })
+  courseId = '';
+  @foreignKey('Enrollment', { required: true, requiredFor: 'identity' })
+  enrollmentId = '';
+  @foreignKey('Lesson', { required: true, requiredFor: 'identity' })
+  lessonId = '';
   @foreignKey('LessonPage', { nullable: true }) lessonPageId: string | null =
     null;
   @foreignKey('LessonWorkFiling', { nullable: true }) previousRevisionId:
@@ -220,9 +234,12 @@ export class LessonWorkFilingCollection extends SmrtCollection<LessonWorkFiling>
 })
 export class WorkAttempt extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
-  @foreignKey('LessonActivity', { required: true }) activityId = '';
-  @foreignKey('Submission', { required: true }) submissionId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
+  @foreignKey('LessonActivity', { required: true, requiredFor: 'identity' })
+  activityId = '';
+  @foreignKey('Submission', { required: true, requiredFor: 'identity' })
+  submissionId = '';
   @foreignKey('WorkAttempt', { nullable: true }) previousAttemptId:
     | string
     | null = null;
@@ -307,8 +324,10 @@ export class WorkAttemptCollection extends SmrtCollection<WorkAttempt> {
 })
 export class WorkAssessmentRevision extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
-  @foreignKey('WorkAttempt', { required: true }) attemptId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
+  @foreignKey('WorkAttempt', { required: true, requiredFor: 'identity' })
+  attemptId = '';
   requestKey = '';
   requestDigest = '';
   kind = 'ai';
@@ -388,9 +407,15 @@ export class WorkAssessmentRevisionCollection extends SmrtCollection<WorkAssessm
 })
 export class WorkFeedbackRelease extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
-  @foreignKey('WorkAttempt', { required: true }) attemptId = '';
-  @foreignKey('WorkAssessmentRevision', { required: true }) revisionId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
+  @foreignKey('WorkAttempt', { required: true, requiredFor: 'identity' })
+  attemptId = '';
+  @foreignKey('WorkAssessmentRevision', {
+    required: true,
+    requiredFor: 'identity',
+  })
+  revisionId = '';
   @foreignKey('WorkAssessmentRevision', { nullable: true }) expectedHeadId:
     | string
     | null = null;
@@ -443,9 +468,15 @@ export class WorkFeedbackReleaseCollection extends SmrtCollection<WorkFeedbackRe
 })
 export class WorkFeedbackDelivery extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
-  @foreignKey('WorkAttempt', { required: true }) attemptId = '';
-  @foreignKey('WorkAssessmentRevision', { required: true }) revisionId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
+  @foreignKey('WorkAttempt', { required: true, requiredFor: 'identity' })
+  attemptId = '';
+  @foreignKey('WorkAssessmentRevision', {
+    required: true,
+    requiredFor: 'identity',
+  })
+  revisionId = '';
   actorUserId = '';
   requestKey = '';
   recordedAt = new Date();

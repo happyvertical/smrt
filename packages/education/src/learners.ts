@@ -44,9 +44,15 @@ async function immutableIdentity(
 @smrt({ ...closed })
 export class Learner extends SmrtObject {
   @tenantId() tenantId = '';
-  @crossPackageRef('@happyvertical/smrt-users:User', { required: true })
+  @crossPackageRef('@happyvertical/smrt-users:User', {
+    required: true,
+    requiredFor: 'identity',
+  })
   userId = '';
-  @crossPackageRef('@happyvertical/smrt-profiles:Profile', { required: true })
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile', {
+    required: true,
+    requiredFor: 'identity',
+  })
   profileId = '';
   displayName = '';
   birthDate: Date | null = null;
@@ -129,8 +135,9 @@ export class Learner extends SmrtObject {
 @smrt({ ...closed, tableName: 'curricula' })
 export class Curriculum extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
-  @field({ required: true }) title = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
+  @field() title = '';
   startsOn: Date | null = null;
   endsOn: Date | null = null;
   status: 'planned' | 'active' | 'completed' | 'archived' = 'planned';
@@ -167,9 +174,12 @@ export type EnrollmentStatus =
 })
 export class Enrollment extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Curriculum', { required: true }) curriculumId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
+  @foreignKey('Curriculum', { required: true, requiredFor: 'identity' })
+  curriculumId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
   status: EnrollmentStatus = 'planned';
   startedAt: Date | null = null;
   completedAt: Date | null = null;
@@ -234,9 +244,12 @@ export type LessonProgressStatus =
 })
 export class LessonProgress extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Enrollment', { required: true }) enrollmentId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
-  @foreignKey('Lesson', { required: true }) lessonId = '';
+  @foreignKey('Enrollment', { required: true, requiredFor: 'identity' })
+  enrollmentId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
+  @foreignKey('Lesson', { required: true, requiredFor: 'identity' }) lessonId =
+    '';
   status: LessonProgressStatus = 'not_started';
   startedAt: Date | null = null;
   completedAt: Date | null = null;

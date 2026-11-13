@@ -64,7 +64,8 @@ export class FamilyIntakeCollection extends SmrtCollection<FamilyIntake> {
 })
 export class FamilyIntakeAsset extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('FamilyIntake', { required: true }) intakeId = '';
+  @foreignKey('FamilyIntake', { required: true, requiredFor: 'identity' })
+  intakeId = '';
   @crossPackageRef('@happyvertical/smrt-assets:Asset') assetId = '';
   name = '';
   mimeType = '';
@@ -113,7 +114,8 @@ export class FamilyIntakeAssetCollection extends SmrtCollection<FamilyIntakeAsse
 })
 export class FamilyIntakeDecision extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('FamilyIntake', { required: true }) intakeId = '';
+  @foreignKey('FamilyIntake', { required: true, requiredFor: 'identity' })
+  intakeId = '';
   requestKey = '';
   sequence = 0;
   actorUserId = '';
