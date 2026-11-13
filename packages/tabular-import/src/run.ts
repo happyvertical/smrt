@@ -1,8 +1,9 @@
 import type { Workbook } from '@happyvertical/spreadsheets';
 import { checkLoaded, checkPlan, type ImportFacts } from './checks.js';
 import { ImportRunError } from './errors.js';
+import { WorkBudget } from './evaluate.js';
 import { type Finding, hasErrors } from './findings.js';
-import type { ImportLimits } from './limits.js';
+import { DEFAULT_IMPORT_LIMITS, type ImportLimits } from './limits.js';
 import { admit, planLoad } from './load.js';
 import { type ImportPlan, validatePlan } from './plan.js';
 import type { ImportTarget } from './target.js';
@@ -37,7 +38,17 @@ export async function runImport(
   const plan = validatePlan(options.plan);
   admit(options.workbook, options.limits, plan);
 
-  const planned = checkPlan(plan, options.workbook, undefined, options.limits);
+  // One ceiling for every step: checking, planning and verifying.
+  const budget = new WorkBudget(
+    options.limits?.maxWork ?? DEFAULT_IMPORT_LIMITS.maxWork,
+  );
+  const planned = checkPlan(
+    plan,
+    options.workbook,
+    undefined,
+    options.limits,
+    budget,
+  );
   if (!planned.ok) {
     return {
       ok: false,
@@ -64,6 +75,7 @@ export async function runImport(
   const load = planLoad(plan, options.workbook, {
     batchSize: options.batchSize,
     limits: options.limits,
+    budget,
   });
   for (const table of load.order) loaded[table] = 0;
   for (const batch of load.batches()) {
@@ -76,6 +88,7 @@ export async function runImport(
     options.workbook,
     options.target,
     planned.facts,
+    budget,
   );
   const findings = [...planned.findings, ...verified.findings];
   return {

@@ -142,11 +142,13 @@ function validDate(year: number, month: number, day: number): boolean {
 /**
  * Turns one workbook cell into the value a plan field stores, or refuses with
  * a code. Nothing is guessed: a value that does not fit is refused, never
- * rounded, truncated or reinterpreted.
+ * rounded, truncated or reinterpreted. A caller reading many cells passes the
+ * field's choices as a set, so matching stays constant-time per cell.
  */
 export function coerceCell(
   cell: Cell | undefined,
   field: PlanField,
+  choiceSet?: ReadonlySet<string>,
 ): CoerceResult {
   const c = cell ?? EMPTY;
   if (c.type === 'error') {
@@ -236,7 +238,8 @@ export function coerceCell(
           : c.type === 'number'
             ? numberText(c)
             : String(c.value);
-      if (field.choices?.includes(text)) return { ok: true, value: text };
+      if (choiceSet ? choiceSet.has(text) : field.choices?.includes(text))
+        return { ok: true, value: text };
       return failure('not-choice', `"${text}" is not one of the choices`);
     }
   }

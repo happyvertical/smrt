@@ -1,4 +1,4 @@
-import type { Workbook } from '@happyvertical/spreadsheets';
+import type { Sheet, Workbook } from '@happyvertical/spreadsheets';
 import { range as parseA1Range } from '@happyvertical/spreadsheets';
 import { ImportRunError } from './errors.js';
 import {
@@ -6,6 +6,7 @@ import {
   evaluatePlan,
   lastOccupiedRow,
   type PlannedRecord,
+  WorkBudget,
 } from './evaluate.js';
 import { FindingSink } from './findings.js';
 import { DEFAULT_IMPORT_LIMITS, type ImportLimits } from './limits.js';
@@ -59,9 +60,20 @@ export function admit(
       { maxRowsPerTable, rows },
     );
   };
+  // Scanned once per sheet per call: many tables may share one sheet.
+  const lastRows = new Map<Sheet, number>();
+  const lastRowOf = (sheet: Sheet): number => {
+    let known = lastRows.get(sheet);
+    if (known === undefined) {
+      known = lastOccupiedRow(sheet);
+      lastRows.set(sheet, known);
+    }
+    return known;
+  };
   if (plan) {
+    const sheets = new Map(workbook.sheets.map((sheet) => [sheet.name, sheet]));
     for (const table of plan.tables) {
-      const sheet = workbook.sheets.find((s) => s.name === table.source.sheet);
+      const sheet = sheets.get(table.source.sheet);
       if (!sheet) continue;
       let box: ReturnType<typeof parseA1Range>;
       try {
@@ -70,14 +82,14 @@ export function admit(
         continue;
       }
       const first = Math.max(table.source.headerRow + 1, box.start.row);
-      const last = Math.min(box.end.row, lastOccupiedRow(sheet));
+      const last = Math.min(box.end.row, lastRowOf(sheet));
       const rows = last - first + 1;
       if (rows > maxRowsPerTable) over(`Table "${table.key}"`, rows);
     }
     return;
   }
   for (const sheet of workbook.sheets) {
-    const rows = lastOccupiedRow(sheet);
+    const rows = lastRowOf(sheet);
     if (rows > maxRowsPerTable) over(`Sheet "${sheet.name}"`, rows);
   }
 }
@@ -91,7 +103,12 @@ export function admit(
 export function planLoad(
   plan: ImportPlan,
   workbook: Workbook,
-  options: { batchSize?: number; limits?: Partial<ImportLimits> } = {},
+  options: {
+    batchSize?: number;
+    limits?: Partial<ImportLimits>;
+    /** Share one budget across the steps of one import. */
+    budget?: WorkBudget;
+  } = {},
 ): LoadPlan {
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
   if (!Number.isSafeInteger(batchSize) || batchSize < 1) {
@@ -102,7 +119,8 @@ export function planLoad(
     plan,
     workbook,
     sink,
-    options.limits?.maxWork ?? DEFAULT_IMPORT_LIMITS.maxWork,
+    options.budget ??
+      new WorkBudget(options.limits?.maxWork ?? DEFAULT_IMPORT_LIMITS.maxWork),
   );
   const unreadable = [...tables.values()].filter((t) => !t.readable);
   if (unreadable.length > 0) {

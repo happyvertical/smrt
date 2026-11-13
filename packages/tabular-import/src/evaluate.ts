@@ -48,16 +48,11 @@ export function lastOccupiedRow(sheet: Sheet): number {
 
 type IndexedRows = Array<[number, ReadonlyMap<number, Cell>]>;
 
-/**
- * State of one evaluation call: the occupied rows of each sheet, read once,
- * and the work spent so far. Nothing outlives the call, so a workbook that
- * changes between calls is always read afresh.
- */
-class Evaluation {
-  private readonly rows = new Map<Sheet, IndexedRows>();
-  private used = 0;
+/** Spends work units against one ceiling; shared by every step of one import. */
+export class WorkBudget {
+  used = 0;
 
-  constructor(private readonly maxWork: number) {}
+  constructor(readonly maxWork: number) {}
 
   charge(units: number): void {
     this.used += units;
@@ -68,6 +63,41 @@ class Evaluation {
         { maxWork: this.maxWork },
       );
     }
+  }
+}
+
+/**
+ * State of one evaluation call: the occupied rows of each sheet, and the
+ * lookups that do not depend on a row, resolved once. Nothing outlives the
+ * call, so a workbook that changes between calls is always read afresh.
+ */
+class Evaluation {
+  private readonly rows = new Map<Sheet, IndexedRows>();
+  /** table key -> field key -> field. */
+  readonly fields = new Map<string, Map<string, PlanField>>();
+  /** Fields with choices -> their choices as a set. */
+  readonly choiceSets = new Map<PlanField, ReadonlySet<string>>();
+
+  constructor(
+    plan: ImportPlan,
+    readonly budget: WorkBudget,
+  ) {
+    for (const table of plan.tables) {
+      budget.charge(1 + table.fields.length);
+      const byKey = new Map<string, PlanField>();
+      for (const field of table.fields) {
+        byKey.set(field.key, field);
+        if (field.choices) {
+          budget.charge(field.choices.length);
+          this.choiceSets.set(field, new Set(field.choices));
+        }
+      }
+      this.fields.set(table.key, byKey);
+    }
+  }
+
+  charge(units: number): void {
+    this.budget.charge(units);
   }
 
   occupied(sheet: Sheet): IndexedRows {
@@ -134,23 +164,18 @@ export function evaluatePlan(
   plan: ImportPlan,
   workbook: Workbook,
   sink: FindingSink,
-  maxWork: number = DEFAULT_MAX_WORK,
+  budget: WorkBudget = new WorkBudget(DEFAULT_MAX_WORK),
 ): Map<string, EvaluatedTable> {
-  const evaluation = new Evaluation(maxWork);
-  const tables = new Map(plan.tables.map((table) => [table.key, table]));
+  const evaluation = new Evaluation(plan, budget);
   const result = new Map<string, EvaluatedTable>();
   for (const table of plan.tables) {
-    result.set(
-      table.key,
-      evaluateTable(table, tables, workbook, sink, evaluation),
-    );
+    result.set(table.key, evaluateTable(table, workbook, sink, evaluation));
   }
   return result;
 }
 
 function evaluateTable(
   table: PlanTable,
-  tables: ReadonlyMap<string, PlanTable>,
   workbook: Workbook,
   sink: FindingSink,
   evaluation: Evaluation,
@@ -236,6 +261,17 @@ function evaluateTable(
     ...(field.column !== undefined ? [field.column] : []),
     ...(field.reference?.columns ?? []),
   ]);
+  evaluation.charge(1 + table.fields.length + mapped.size);
+  // Everything that does not depend on the row is resolved here, once.
+  const keyFieldsOf = new Map<PlanField, Array<PlanField | undefined>>();
+  for (const field of readFields) {
+    if (!field.reference) continue;
+    const target = evaluation.fields.get(field.reference.table);
+    keyFieldsOf.set(
+      field,
+      field.reference.by.map((key) => target?.get(key)),
+    );
+  }
   const seen = new Set<string>();
   const unmapped = new Map<number, { count: number; formula: boolean }>();
 
@@ -313,18 +349,19 @@ function evaluateTable(
         const parts: unknown[] = [];
         let blanks = 0;
         let failed = false;
+        const keyFields = keyFieldsOf.get(field) ?? [];
         field.reference.columns.forEach((column, index) => {
-          const keyField = tables
-            .get(field.reference?.table ?? '')
-            ?.fields.find(
-              (candidate) => candidate.key === field.reference?.by[index],
-            );
+          const keyField = keyFields[index];
           const cell = rowCells.get(column);
           if (!keyField) {
             failed = true;
             return;
           }
-          const coerced = coerceCell(cell, keyField);
+          const coerced = coerceCell(
+            cell,
+            keyField,
+            evaluation.choiceSets.get(keyField),
+          );
           if (!coerced.ok) {
             failed = true;
             refuse(
@@ -383,7 +420,7 @@ function evaluateTable(
           continue;
         }
       }
-      const coerced = coerceCell(cell, field);
+      const coerced = coerceCell(cell, field, evaluation.choiceSets.get(field));
       if (!coerced.ok) {
         refuse(
           'coerce-failed',
@@ -423,6 +460,7 @@ function evaluateTable(
     }
     out.rows.push(record);
   }
+  evaluation.charge(unmapped.size);
   out.read = total;
   out.skipped += total - occupied;
 

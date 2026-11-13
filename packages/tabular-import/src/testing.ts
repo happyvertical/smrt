@@ -83,6 +83,10 @@ function fromStored(field: PlanField | undefined, value: unknown): unknown {
 interface TableDefinition {
   table: PlanTable;
   fields: Map<string, PlanField>;
+  /** Fields that hold a stored value (everything but generated columns). */
+  stored: PlanField[];
+  /** The insert statement, built once per table. */
+  insertSql: string;
 }
 
 export async function createSqliteReferenceTarget(
@@ -102,10 +106,12 @@ export async function createSqliteReferenceTarget(
     return found;
   };
 
-  const columnSql = (field: PlanField, table: PlanTable): string => {
+  const columnSql = (
+    field: PlanField,
+    siblings: ReadonlyMap<string, PlanField>,
+  ): string => {
     const name = quote(field.key);
     if (field.calculated !== undefined) {
-      const siblings = new Map(table.fields.map((f) => [f.key, f]));
       const rendered = renderExpression(field.calculated, {
         dialect: 'sqlite',
         mode: 'ddl',
@@ -163,10 +169,11 @@ export async function createSqliteReferenceTarget(
       const byKey = new Map(plan.tables.map((table) => [table.key, table]));
       for (const key of loadOrder(plan)) {
         const table = byKey.get(key) as PlanTable;
+        const siblings = new Map(table.fields.map((f) => [f.key, f]));
         const columns = [
           `${quote(ROW_ID)} INTEGER PRIMARY KEY AUTOINCREMENT`,
           `${quote(SOURCE_ROW)} INTEGER NOT NULL`,
-          ...table.fields.map((field) => columnSql(field, table)),
+          ...table.fields.map((field) => columnSql(field, siblings)),
         ];
         await db.query(`CREATE TABLE ${quote(key)} (${columns.join(', ')})`);
         if (table.lookupKey) {
@@ -174,9 +181,13 @@ export async function createSqliteReferenceTarget(
             `CREATE UNIQUE INDEX ${quote(`ux_${key}_lookup`)} ON ${quote(key)} (${table.lookupKey.map(quote).join(', ')})`,
           );
         }
+        const stored = table.fields.filter((f) => f.calculated === undefined);
+        const names = [SOURCE_ROW, ...stored.map((f) => f.key)];
         definitions.set(key, {
           table,
-          fields: new Map(table.fields.map((field) => [field.key, field])),
+          fields: siblings,
+          stored,
+          insertSql: `INSERT INTO ${quote(key)} (${names.map(quote).join(', ')}) VALUES (${names.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING ${quote(ROW_ID)} AS id`,
         });
       }
       for (const report of plan.reports ?? []) reports.push(report);
@@ -190,11 +201,8 @@ export async function createSqliteReferenceTarget(
       const added: Array<[string, number]> = [];
       await db.transaction(async (tx) => {
         for (const record of batch.records) {
-          const columns = [SOURCE_ROW];
           const values: unknown[] = [record.sourceRow];
-          for (const field of def.table.fields) {
-            if (field.calculated !== undefined) continue;
-            columns.push(field.key);
+          for (const field of def.stored) {
             if (field.reference) {
               const ref = record.references[field.key];
               if (!ref) {
@@ -212,10 +220,7 @@ export async function createSqliteReferenceTarget(
             }
             values.push(toStored(record.values[field.key]));
           }
-          const result = await tx.query(
-            `INSERT INTO ${quote(batch.table)} (${columns.map(quote).join(', ')}) VALUES (${columns.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING ${quote(ROW_ID)} AS id`,
-            values,
-          );
+          const result = await tx.query(def.insertSql, values);
           if (def.table.lookupKey) {
             const key = def.table.lookupKey.map(
               (name) => record.values[name] ?? null,

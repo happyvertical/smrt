@@ -18,6 +18,7 @@ export {
   ImportRunError,
   type ImportRunErrorCode,
 } from './errors.js';
+export { WorkBudget } from './evaluate.js';
 export {
   type Finding,
   type FindingCode,

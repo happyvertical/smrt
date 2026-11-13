@@ -10,6 +10,7 @@ import {
   evaluatePlan,
   keyText,
   type PlannedRecord,
+  WorkBudget,
 } from './evaluate.js';
 import { type Finding, FindingSink, hasErrors } from './findings.js';
 import { DEFAULT_IMPORT_LIMITS, type ImportLimits } from './limits.js';
@@ -42,6 +43,8 @@ export interface CheckResult {
 
 export interface PlanCheckResult extends CheckResult {
   facts: ImportFacts;
+  /** Work units this check spent against `maxWork`. */
+  work: number;
 }
 
 const SUMMED: ReadonlySet<string> = new Set(['number', 'integer', 'money']);
@@ -88,6 +91,7 @@ function columnSum(
 function crossChecks(
   tables: ReadonlyMap<string, EvaluatedTable>,
   sink: FindingSink,
+  budget: WorkBudget,
 ): void {
   const keyIndex = new Map<string, Set<string>>();
   for (const evaluated of tables.values()) {
@@ -95,12 +99,16 @@ function crossChecks(
     if (!table.lookupKey) continue;
     const keys = new Set<string>();
     const firstRow = new Map<string, number>();
+    const columnOf = new Map(table.fields.map((f) => [f.key, f.column]));
+    budget.charge(
+      1 + table.fields.length + evaluated.rows.length * table.lookupKey.length,
+    );
     for (const row of evaluated.rows) {
       const parts = table.lookupKey.map((key) => row.values[key] ?? null);
       const blankIndex = parts.indexOf(null);
       if (blankIndex >= 0) {
         const field = table.lookupKey[blankIndex];
-        const column = table.fields.find((f) => f.key === field)?.column;
+        const column = columnOf.get(field);
         sink.add({
           code: 'lookup-key-blank',
           severity: 'error',
@@ -141,6 +149,7 @@ function crossChecks(
     for (const field of table.fields) {
       if (!field.reference) continue;
       const known = keyIndex.get(field.reference.table) ?? new Set<string>();
+      budget.charge(1 + evaluated.rows.length);
       for (const row of evaluated.rows) {
         const ref = row.references[field.key];
         if (!ref || known.has(keyText(ref.key))) continue;
@@ -172,15 +181,13 @@ export function checkPlan(
   workbook: Workbook,
   _profile?: WorkbookProfile,
   limits: Partial<ImportLimits> = {},
+  budget: WorkBudget = new WorkBudget(
+    limits.maxWork ?? DEFAULT_IMPORT_LIMITS.maxWork,
+  ),
 ): PlanCheckResult {
   const sink = new FindingSink();
-  const tables = evaluatePlan(
-    plan,
-    workbook,
-    sink,
-    limits.maxWork ?? DEFAULT_IMPORT_LIMITS.maxWork,
-  );
-  crossChecks(tables, sink);
+  const tables = evaluatePlan(plan, workbook, sink, budget);
+  crossChecks(tables, sink, budget);
 
   const facts: ImportFacts = { tables: {}, sums: {} };
   for (const [key, evaluated] of tables) {
@@ -193,6 +200,7 @@ export function checkPlan(
     const sums: Record<string, number> = {};
     for (const field of evaluated.table.fields) {
       if (field.column === undefined || !SUMMED.has(field.type)) continue;
+      budget.charge(1 + evaluated.rows.length);
       const sum = columnSum(evaluated.rows, field);
       if (!sum.safe) {
         sink.add({
@@ -208,7 +216,7 @@ export function checkPlan(
     facts.sums[key] = sums;
   }
   const findings = sink.list();
-  return { ok: !hasErrors(findings), findings, facts };
+  return { ok: !hasErrors(findings), findings, facts, work: budget.used };
 }
 
 function relativelyEqual(a: number, b: number, tolerance = 1e-9): boolean {
@@ -316,6 +324,7 @@ export async function checkLoaded(
   workbook: Workbook,
   target: ImportTarget,
   facts: ImportFacts,
+  budget: WorkBudget = new WorkBudget(DEFAULT_IMPORT_LIMITS.maxWork),
 ): Promise<CheckResult> {
   const sink = new FindingSink();
   for (const table of plan.tables) {
@@ -352,7 +361,7 @@ export async function checkLoaded(
         });
       }
     }
-    await checkCalculated(table, workbook, target, sink);
+    await checkCalculated(table, workbook, target, sink, budget);
   }
   const findings = sink.list();
   return { ok: !hasErrors(findings), findings };
@@ -363,12 +372,19 @@ async function checkCalculated(
   workbook: Workbook,
   target: ImportTarget,
   sink: FindingSink,
+  budget: WorkBudget,
 ): Promise<void> {
   const sheet = workbook.sheets.find((s) => s.name === table.source.sheet);
-  for (const field of table.fields) {
-    if (field.calculated === undefined) continue;
-    const column = field.cachedColumn;
-    for await (const row of target.values(table.key, [field.key])) {
+  const calculated = table.fields.filter((f) => f.calculated !== undefined);
+  if (calculated.length === 0) return;
+  // One pass over the stored rows for every calculated field of the table.
+  for await (const row of target.values(
+    table.key,
+    calculated.map((f) => f.key),
+  )) {
+    budget.charge(1 + calculated.length);
+    for (const field of calculated) {
+      const column = field.cachedColumn;
       const actual = row.values[field.key];
       const shown =
         actual === null || actual === undefined

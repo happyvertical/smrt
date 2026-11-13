@@ -41,6 +41,11 @@ name either. No `@smrt()` objects, no tables, no Svelte.
   range width x height, and spends from `maxWork` (`DEFAULT_MAX_WORK`); over it,
   `work-over-limit`. Row indexes live for one evaluation call, never across calls:
   a workbook is mutable and is re-read every time.
+- Anything that does not depend on a row (field-by-key maps, reference key fields,
+  choice sets, column lists, insert SQL) is resolved once before rows are visited;
+  never `.find`/`.includes` over plan data inside a row or cell loop. Every
+  per-row, per-cell and per-reference unit is charged to one `WorkBudget` that
+  `runImport` shares across checking, planning and verifying.
 - `checkLoaded` value-checks every calculated integer, money and number field
   (`calculated-invalid`: not a whole safe integer / not finite) with or without a
   `cachedColumn`. Integer and money comparisons are exact; tolerance is for `number`.
