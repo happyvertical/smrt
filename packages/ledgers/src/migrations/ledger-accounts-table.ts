@@ -10,16 +10,20 @@
  * references at `accounts`, and leaves messaging rows where they are.
  *
  * Operator sequence (maintenance window, PostgreSQL):
- *   1. `smrt db:migrate` — creates `ledger_accounts` from the manifest. It
- *      reports, and does not apply, the retargeted `journal_entries.account_id`
- *      foreign key while the old one still points at `accounts`.
- *   2. `smrt db:migrate-ledger-accounts` — this module.
- *   3. `smrt db:migrate` — adds the foreign keys onto `ledger_accounts`.
+ *   1. `smrt db:migrate-ledger-accounts` — this module. It creates
+ *      `ledger_accounts` from the manifest when it is missing, copies the
+ *      rows and detaches the old foreign keys.
+ *   2. `smrt db:migrate` — adds the foreign keys onto `ledger_accounts`.
+ *
+ * The move comes first because `db:migrate` is all or nothing: while a
+ * foreign key still points at `accounts` it refuses to run at all, so it
+ * cannot be the step that creates the new table.
  */
 
 import { detectEngine, ObjectRegistry } from '@happyvertical/smrt-core';
 import {
   BackfillTracker,
+  createRegisteredTables,
   type DatabaseInterface,
 } from '@happyvertical/smrt-core/migrations';
 
@@ -357,10 +361,14 @@ export async function migrateLedgerAccountsTable(
 
   const shape = await readLegacyShape(db);
   if (!shape) return noop();
-  const target = await db.getTableSchema?.(LEDGER_ACCOUNTS_TABLE);
+  let target = await db.getTableSchema?.(LEDGER_ACCOUNTS_TABLE);
+  if (!target) {
+    await createRegisteredTables(db, [LEDGER_ACCOUNTS_TABLE], 'postgres');
+    target = await db.getTableSchema?.(LEDGER_ACCOUNTS_TABLE);
+  }
   if (!target) {
     throw new LedgerAccountsTableMoveError(
-      `"${LEDGER_ACCOUNTS_TABLE}" does not exist; run db:migrate before moving ledger accounts`,
+      `"${LEDGER_ACCOUNTS_TABLE}" could not be created from the registered models; register the ledger models and rerun`,
     );
   }
   const legacy = await db.getTableSchema?.(LEGACY_ACCOUNTS_TABLE);

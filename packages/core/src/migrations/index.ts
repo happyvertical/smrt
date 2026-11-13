@@ -149,6 +149,7 @@ export {
 } from './oldest-supported.js';
 // High-level schema orchestration over ObjectRegistry
 export {
+  createRegisteredTables,
   getPendingSchemaStatements,
   type MigrateSmrtSchemasOptions,
   type MigrateSmrtSchemasResult,

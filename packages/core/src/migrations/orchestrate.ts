@@ -490,6 +490,35 @@ export function collectStatementsFromDiff(
 }
 
 /**
+ * Create the named registered tables, and only those, when they are missing.
+ * For an operator data step that has to run before `migrateSmrtSchemas`
+ * because the full migrate is all or nothing and a stop elsewhere would keep
+ * the table from being created (for example the ledger accounts move, #3098).
+ * Existing tables are left alone; the next full migrate reconciles them.
+ *
+ * @returns the statements that ran, in order.
+ */
+export async function createRegisteredTables(
+  db: DatabaseInterface,
+  tables: readonly string[],
+  engineHint?: DatabaseEngine,
+): Promise<string[]> {
+  const strategy = getDDLStrategy(resolveMigrationEngine(db, engineHint));
+  const schemas = ObjectRegistry.getAllSchemasAsDefinitions({ tables });
+  const statements: string[] = [];
+  for (const table of tables) {
+    const schema = schemas[table];
+    if (!schema || (await db.getTableSchema?.(table))) continue;
+    statements.push(
+      strategy.generateCreateTable(schema),
+      ...strategy.generateIndexes(schema),
+    );
+  }
+  for (const statement of statements) await db.query(statement);
+  return statements;
+}
+
+/**
  * Only stops need intervention. Warning-level reports (including orphan NOT
  * NULL columns and unrequested relaxations) never set hasManualDrift (#4925).
  * @internal
