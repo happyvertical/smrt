@@ -39,6 +39,10 @@ if (!result.ok) console.table(result.findings);
 structure, loads every batch, and runs `checkLoaded`. If `checkPlan` reports
 errors nothing is written. Errors thrown by your target are never caught.
 
+A row is blank only when every mapped column, reference column and calculated
+`cachedColumn` is blank. Calculated-only tables need at least one `cachedColumn`
+to establish their rows; otherwise `validatePlan` throws `no-row-source`.
+
 ### Typing
 
 Every cell is typed by one rule (`coerceCell`) and refused when it does not fit:
@@ -61,6 +65,10 @@ and, for every calculated field with a `cachedColumn`, the target's value
 against the workbook's cached result, row by row. That is how a translated
 formula is proven.
 
+Integer and money sums use exact BigInt accumulation; only the final total
+must fit a safe integer. Number comparisons reject non-finite values before
+applying relative tolerance, including when comparing a calculated cache.
+
 If `ok` is false after a load, the target holds a draft that failed its proof:
 discard it. This package does not undo or recreate anything.
 
@@ -69,6 +77,8 @@ discard it. This package does not undo or recreate anything.
 Implement `ImportTarget` (`describe`, `applyStructure`, `load`, `count`, `sum`,
 `values`). `load` resolves references by lookup key and is all-or-nothing per
 batch. The target keeps each record's `sourceRow`.
+`sum` returns money in minor units and preserves unsafe integer/money totals as
+`bigint`, so verification reports a mismatch rather than losing precision.
 
 For tests there is a reference target on real in-process SQLite:
 

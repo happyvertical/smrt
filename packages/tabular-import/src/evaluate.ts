@@ -257,10 +257,8 @@ function evaluateTable(
   const readFields = table.fields.filter(
     (field) => field.column !== undefined || field.reference,
   );
-  const sources = readFields.flatMap((field) => [
-    ...(field.column !== undefined ? [field.column] : []),
-    ...(field.reference?.columns ?? []),
-  ]);
+  // Cached calculated cells also establish row presence.
+  const sources = [...mapped];
   evaluation.charge(1 + table.fields.length + mapped.size);
   // Everything that does not depend on the row is resolved here, once.
   const keyFieldsOf = new Map<PlanField, Array<PlanField | undefined>>();

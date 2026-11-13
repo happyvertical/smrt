@@ -13,6 +13,7 @@ export type ImportPlanErrorCode =
   | 'invalid-value'
   | 'invalid-source'
   | 'field-source'
+  | 'no-row-source'
   | 'unknown-field'
   | 'unknown-table'
   | 'reference-mismatch'

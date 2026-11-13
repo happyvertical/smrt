@@ -245,10 +245,30 @@ export async function createSqliteReferenceTarget(
       return Number(result.rows[0].n);
     },
 
-    async sum(table: string, field: string): Promise<number> {
+    async sum(table: string, field: string): Promise<number | bigint> {
       const def = definition(table);
-      if (!def.fields.has(field)) {
+      const planField = def.fields.get(field);
+      if (!planField) {
         throw new Error(`"${table}" has no field "${field}".`);
+      }
+      if (planField.type === 'integer' || planField.type === 'money') {
+        // SQLite SUM can overflow int64 before later values cancel it out.
+        let total = 0n;
+        for await (const row of target.values(table, [field])) {
+          const value = row.values[field];
+          if (value === null || value === undefined) continue;
+          if (
+            typeof value !== 'bigint' &&
+            (typeof value !== 'number' || !Number.isSafeInteger(value))
+          ) {
+            return Number.NaN;
+          }
+          total += BigInt(value);
+        }
+        return total <= BigInt(Number.MAX_SAFE_INTEGER) &&
+          total >= BigInt(Number.MIN_SAFE_INTEGER)
+          ? Number(total)
+          : total;
       }
       const result = await db.query(
         `SELECT SUM(${quote(field)}) AS total FROM ${quote(table)}`,

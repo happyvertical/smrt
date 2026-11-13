@@ -482,6 +482,20 @@ function validateTable(
   const fields = fieldList.map((item, index) =>
     validateField(item, `${path}.fields[${index}]`, limits),
   );
+  if (
+    !fields.some(
+      (field) =>
+        field.column !== undefined ||
+        field.reference !== undefined ||
+        field.cachedColumn !== undefined,
+    )
+  ) {
+    fail(
+      'no-row-source',
+      `${path}.fields`,
+      'a table needs a column, reference column or cachedColumn to establish rows',
+    );
+  }
   const byKey = new Map<string, PlanField>();
   fields.forEach((field, index) => {
     if (byKey.has(field.key)) {

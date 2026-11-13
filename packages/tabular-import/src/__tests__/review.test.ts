@@ -2,8 +2,10 @@ import { createSheet, createWorkbook } from '@happyvertical/spreadsheets';
 import { describe, expect, it, vi } from 'vitest';
 import {
   type AggregateOperand,
+  checkLoaded,
   checkPlan,
   type ImportPlan,
+  ImportPlanError,
   type ImportTarget,
   runImport,
   validatePlan,
@@ -19,6 +21,222 @@ import {
 
 const col = (name: string): AggregateOperand => ({ col: name });
 const lit = (value: number): AggregateOperand => ({ value });
+
+describe('calculated-only tables establish rows from their cached columns', () => {
+  const plan = () =>
+    planOf([
+      {
+        key: 't',
+        label: 'T',
+        source: { sheet: 'S', range: 'A1:B6', headerRow: 1 },
+        fields: [
+          {
+            key: 'constant',
+            label: 'Constant',
+            type: 'number',
+            calculated: lit(7),
+            cachedColumn: 1,
+          },
+        ],
+      },
+    ]);
+
+  it.each([
+    7, 8,
+  ])('loads formula rows and verifies a cache of %s', async (cached) => {
+    const target = await createSqliteReferenceTarget();
+    try {
+      const result = await runImport({
+        plan: plan(),
+        workbook: workbookOf(
+          sheetOf('S', [
+            ['Constant', 'Unmapped'],
+            [{ formula: '=7', value: cached }],
+            [],
+            [null, 'does not establish a row'],
+            [{ formula: '=7', value: cached }],
+            [{ formula: '=7', value: cached }],
+          ]),
+        ),
+        target,
+      });
+      expect(result.loaded).toEqual({ t: 3 });
+      expect(result.facts.tables.t).toMatchObject({ planned: 3, skipped: 2 });
+      expect(await target.count('t')).toBe(3);
+      expect(result.ok).toBe(cached === 7);
+      const mismatches = result.findings.filter(
+        (finding) => finding.code === 'calculated-mismatch',
+      );
+      expect(mismatches.map((finding) => finding.row)).toEqual(
+        cached === 7 ? [] : [2, 5, 6],
+      );
+    } finally {
+      await target.close();
+    }
+  });
+
+  it('refuses a table with no column, reference column or cached column', () => {
+    const input = plan();
+    delete input.tables[0].fields[0].cachedColumn;
+    expect(() => validatePlan(input)).toThrowError(ImportPlanError);
+    expect(() => validatePlan(input)).toThrowError(
+      expect.objectContaining({
+        code: 'no-row-source',
+        path: 'tables[0].fields',
+      }),
+    );
+  });
+});
+
+describe('exact sums survive large intermediate totals', () => {
+  it.each([
+    'integer',
+    'money',
+  ] as const)('surfaces an unsafe final %s sum as a mismatch', async (type) => {
+    const plan = planOf([
+      {
+        key: 't',
+        label: 'T',
+        source: { sheet: 'S', range: 'A1:A3', headerRow: 1 },
+        fields: [
+          {
+            key: 'x',
+            label: 'X',
+            type,
+            column: 1,
+            ...(type === 'money'
+              ? { money: { currency: 'USD', scale: 2 } }
+              : {}),
+          },
+        ],
+      },
+    ]);
+    const workbook = workbookOf(sheetOf('S', [['X'], [0], [0]]));
+    const target = await createSqliteReferenceTarget();
+    try {
+      const loaded = await runImport({ plan, workbook, target });
+      expect(loaded.ok).toBe(true);
+      await target.db.query('UPDATE "t" SET "x" = 9000000000000000');
+      expect(await target.sum('t', 'x')).toBe(18_000_000_000_000_000n);
+      const verified = await checkLoaded(plan, workbook, target, loaded.facts);
+      expect(verified.ok).toBe(false);
+      expect(verified.findings).toMatchObject([
+        { code: 'sum-mismatch', table: 't', field: 'x', expected: 0 },
+      ]);
+    } finally {
+      await target.close();
+    }
+  });
+
+  it('cancels 1,025 positive money amounts with 1,025 negatives exactly', async () => {
+    const plan = planOf([
+      {
+        key: 't',
+        label: 'T',
+        source: { sheet: 'S', range: 'A1:A2051', headerRow: 1 },
+        fields: [
+          {
+            key: 'amount',
+            label: 'Amount',
+            type: 'money',
+            money: { currency: 'USD', scale: 2 },
+            column: 1,
+          },
+        ],
+      },
+    ]);
+    const workbook = workbookOf(
+      sheetOf('S', [
+        ['Amount'],
+        ...Array.from({ length: 1025 }, () => [90_000_000_000_000]),
+        ...Array.from({ length: 1025 }, () => [-90_000_000_000_000]),
+      ]),
+    );
+    const planned = checkPlan(plan, workbook);
+    expect(planned.ok).toBe(true);
+    expect(planned.facts.sums.t.amount).toBe(0);
+    const target = await createSqliteReferenceTarget();
+    try {
+      const result = await runImport({ plan, workbook, target });
+      expect(result.ok).toBe(true);
+      expect(result.findings).toEqual([]);
+      expect(result.loaded).toEqual({ t: 2050 });
+      expect(await target.sum('t', 'amount')).toBe(0);
+    } finally {
+      await target.close();
+    }
+  });
+});
+
+describe('number comparisons reject non-finite values', () => {
+  it.each([Infinity, NaN])('reports a sum mismatch for %s', async (actual) => {
+    const plan = planOf([
+      {
+        key: 't',
+        label: 'T',
+        source: { sheet: 'S', range: 'A1:A2', headerRow: 1 },
+        fields: [{ key: 'x', label: 'X', type: 'number', column: 1 }],
+      },
+    ]);
+    const target = await createSqliteReferenceTarget();
+    vi.spyOn(target, 'sum').mockResolvedValue(actual);
+    try {
+      const result = await runImport({
+        plan,
+        workbook: workbookOf(sheetOf('S', [['X'], [1]])),
+        target,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.findings).toMatchObject([
+        { code: 'sum-mismatch', table: 't', field: 'x', expected: 1, actual },
+      ]);
+    } finally {
+      await target.close();
+    }
+  });
+
+  it.each([
+    Infinity,
+    NaN,
+  ])('rejects a non-finite calculated cache of %s', async (cached) => {
+    const plan = planOf([
+      {
+        key: 't',
+        label: 'T',
+        source: { sheet: 'S', range: 'A1:B2', headerRow: 1 },
+        fields: [
+          { key: 'x', label: 'X', type: 'number', column: 1 },
+          {
+            key: 'y',
+            label: 'Y',
+            type: 'number',
+            calculated: col('x'),
+            cachedColumn: 2,
+          },
+        ],
+      },
+    ]);
+    const target = await createSqliteReferenceTarget();
+    try {
+      const result = await runImport({
+        plan,
+        workbook: workbookOf(
+          sheetOf('S', [
+            ['X', 'Y'],
+            [1, cached],
+          ]),
+        ),
+        target,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.findings).toMatchObject([
+        { code: 'calculated-mismatch', field: 'y', actual: 1 },
+      ]);
+    } finally {
+      await target.close();
+    }
+  });
+});
 
 describe('sparse workbooks stay inside the work bound', () => {
   const sparse = () => {

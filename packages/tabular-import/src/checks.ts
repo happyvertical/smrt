@@ -220,6 +220,7 @@ export function checkPlan(
 }
 
 function relativelyEqual(a: number, b: number, tolerance = 1e-9): boolean {
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
   if (a === b) return true;
   return Math.abs(a - b) <= tolerance * Math.max(Math.abs(a), Math.abs(b));
 }

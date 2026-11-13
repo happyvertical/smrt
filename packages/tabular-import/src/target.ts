@@ -28,8 +28,8 @@ export interface ImportTarget {
   /** Resolves references by lookup key. All or nothing per batch. */
   load(batch: LoadBatch): Promise<{ loaded: number }>;
   count(table: string): Promise<number>;
-  /** Money in minor units. */
-  sum(table: string, field: string): Promise<number>;
+  /** Money in minor units. Integer/money totals beyond the safe range stay bigint. */
+  sum(table: string, field: string): Promise<number | bigint>;
   /** Stored values in source-row order, calculated fields included. */
   values(
     table: string,
