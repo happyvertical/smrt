@@ -838,11 +838,12 @@ export class SmrtObject extends SmrtClass {
           own.tenantId
         )
           throw new Error('Write-through edits require the same tenant');
+        // Blank form inputs select an existing record without editing it.
+        // Clearing fields is intentional only while retaining the current link.
         if (
-          !this._persisted &&
-          Object.values(values).every(
-            (v) => v === '' || v === null || v === undefined,
-          )
+          (!this._persisted ||
+            own[via] !== this._writeThroughOriginalLinks[via]) &&
+          !hasInlineEdits
         )
           continue;
         const permitted = await collection.list({

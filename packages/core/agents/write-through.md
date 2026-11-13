@@ -20,6 +20,8 @@ save/write guards still apply. Inline mutation requires the exact same tenant,
 including null ownership. An existing selection and inline edits are mutually
 exclusive during create/relink, so stale form values cannot rename another person.
 Bare legacy links retain their existing contract; these rules protect inline edits.
+Blank scalar and virtual inputs preserve the selected target during create or
+relink. Clearing an inline field remains intentional when keeping the current link.
 
 The owning source model can implement `writeThroughDefaults()`,
 `readWriteThroughVirtual()` and `saveWriteThroughVirtual()` for declared
