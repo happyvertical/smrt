@@ -1,4 +1,9 @@
-/** Shared isolated SDK/PGlite fixture for Node parity and browser execution QA. */
+/**
+ * Shared isolated SDK/PGlite fixture for Node parity and browser execution QA.
+ * When the workspace SDK advances, update fixtures/pglite-peer/package.json
+ * and its pnpm-workspace.yaml release-age exclusions, then regenerate via
+ * `pnpm --dir packages/core/scripts/fixtures/pglite-peer install --lockfile-only`.
+ */
 import { execFile } from 'node:child_process';
 import { copyFile, mkdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
