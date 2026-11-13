@@ -31,7 +31,12 @@ export type PasskeyChallengePurpose = 'authentication' | 'registration';
 })
 export class UsersPasskeyChallenge extends SmrtObject {
   /** sha256 hex of the consumed challenge (base64url string). Unique. */
-  @field({ type: 'text', required: true, unique: true })
+  @field({
+    type: 'text',
+    required: true,
+    requiredFor: 'identity',
+    unique: true,
+  })
   challengeHash = '';
 
   /** `authentication` or `registration`. */

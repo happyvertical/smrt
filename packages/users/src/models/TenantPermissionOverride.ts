@@ -78,13 +78,21 @@ export class TenantPermissionOverride extends SmrtObject {
   /**
    * Foreign key to Tenant
    */
-  @foreignKey('Tenant', { required: true, onDelete: 'NO ACTION' })
+  @foreignKey('Tenant', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'NO ACTION',
+  })
   tenantId?: string;
 
   /**
    * Foreign key to Permission
    */
-  @foreignKey('Permission', { required: true, onDelete: 'NO ACTION' })
+  @foreignKey('Permission', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'NO ACTION',
+  })
   permissionId?: string;
 
   /**

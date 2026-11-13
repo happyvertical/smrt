@@ -38,7 +38,12 @@ export class UsersCliAuthRequest extends SmrtObject {
    * Indexed: `findByUserCode()` looks requests up by this column (#2364,
    * epic #2382 finding A3).
    */
-  @field({ type: 'text', required: true, unique: true })
+  @field({
+    type: 'text',
+    required: true,
+    requiredFor: 'identity',
+    unique: true,
+  })
   userCode = '';
 
   /**
@@ -47,7 +52,12 @@ export class UsersCliAuthRequest extends SmrtObject {
    * Indexed: `findByDeviceCodeHash()` — the CLI's poll loop — looks requests
    * up by this column (#2364, epic #2382 finding A3).
    */
-  @field({ type: 'text', required: true, unique: true })
+  @field({
+    type: 'text',
+    required: true,
+    requiredFor: 'identity',
+    unique: true,
+  })
   deviceCodeHash = '';
 
   /** Lifecycle state — `pending` → `approved` → `consumed`, or `expired`. */
