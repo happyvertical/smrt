@@ -9,8 +9,12 @@
 // Draft: `AppDraftVersion` rows of one draft plus that draft's own pointer
 // (`AppDraft.currentVersion`). Its first row is the live base the draft was
 // copied from.
+
+import type {
+  VersionRecord,
+  VersionStore,
+} from '@happyvertical/smrt-app-engine';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import type { VersionRecord, VersionStore } from '../../engine/index.ts';
 import { type App, AppCollection } from '../objects/App.ts';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
 import {

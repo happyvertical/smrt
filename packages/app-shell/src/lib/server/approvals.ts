@@ -5,8 +5,8 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
+import type { Command, Plan } from '@happyvertical/smrt-app-engine';
 import { OwnerApprovalError } from '@happyvertical/smrt-app-runtime';
-import type { Command, Plan } from '../../engine/index.ts';
 import { type Approval, ApprovalCollection } from '../objects/Approval.ts';
 import { shellApprovalAuthority } from './approval-store.ts';
 import { discardNow, publishApproved } from './drafts.ts';

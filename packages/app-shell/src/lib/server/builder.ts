@@ -10,7 +10,7 @@ import {
   type Command,
   EngineError,
   isStructuralCommand,
-} from '../../engine/index.ts';
+} from '@happyvertical/smrt-app-engine';
 import {
   type ApprovalAction,
   type PendingApproval,

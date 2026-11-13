@@ -1,4 +1,4 @@
-import type { ExecuteResult } from '../../engine/index.ts';
+import type { ExecuteResult } from '@happyvertical/smrt-app-engine';
 
 type PublicResult<T> = T extends unknown ? Omit<T, 'snapshot'> : never;
 export type PublicExecuteResult = PublicResult<ExecuteResult>;

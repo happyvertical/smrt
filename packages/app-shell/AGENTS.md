@@ -3,7 +3,7 @@
 An ordinary smrt app (SvelteKit + adapter-node, app-runtime **local** profile)
 that builds and runs a person's own smrt app from a versioned JSON definition,
 for one person: the owner. Epic #4867; this package is #4872. The engine is
-documented in [agents/engine.md](agents/engine.md) (it must not import
+documented in [shared engine](../app-engine/agents/engine.md) (it must not import
 SvelteKit or `src/lib`). README has the route and JSON contracts.
 
 Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md](agents/shared-pieces.md).
@@ -12,7 +12,7 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
 
 | Path | What |
 |---|---|
-| `src/engine/` | `AppHost`, worker thread, migrations, QuickJS sandbox, drafts (`forkDraft`/`previewPublish`/`publishDraft`/`undoTo`, frozen host, draft-only `autoApprove`; see engine.md "Drafts"). Finished and tested on its own. |
+| `../app-engine/src/` | `AppHost`, worker thread, migrations, QuickJS sandbox, drafts (`forkDraft`/`previewPublish`/`publishDraft`/`undoTo`, frozen host, draft-only `autoApprove`; see engine.md "Drafts"). Finished and tested on its own. |
 | `src/lib/objects/` | Shell models (`objectsDir` in `vite.config.ts`): `App`, `AppVersion`, `Approval`, `AssistantThread`, `AssistantMessage`. |
 | `src/lib/server/smrt.ts` | `createSmrtSvelteKitRuntime`, `prepareDatabase`, `configureShell`. |
 | `src/lib/server/registry.ts` | The ONE startup registration path (permissions, preference kinds); `smrt.ts` imports it before the runtime. app-runtime grants newly registered permissions to an existing owner on every start. `registry.test.ts` guards it. |
@@ -135,7 +135,7 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
 
 `vitest run` then `vitest run -c vitest.dom.config.ts` (the layout's jsdom component tests, `*.dom.test.ts`, over smrt-svelte's built `dist`; rebuild smrt-svelte first). Node suite: in-process, SQLite, temp dirs; `test-support.ts` seeds an owner
 and a member; it opens the real driver because the vitest setup would
-pre-create tables). `pnpm build` (tsc engine, `svelte-kit sync`, `vite build`;
+pre-create tables). `pnpm build` (tsc models, `svelte-kit sync`, `vite build`;
 the smrt() plugin generates `src/routes/api/{apps,approvals,_changes,_events,
 _resources}`: git-ignored) and `pnpm typecheck` must pass. The `smrt()` plugin
 needs the models in `src/lib/objects`, set via `objectsDir`.

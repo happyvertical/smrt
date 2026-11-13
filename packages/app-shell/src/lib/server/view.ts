@@ -3,8 +3,9 @@
 // `assistant` preference. The UI reads it to pick what to show; EVERY request
 // still names its copy (target.ts): this value is only what the server uses
 // when it must choose for the owner (the assistant's record tools).
+
+import { EngineError } from '@happyvertical/smrt-app-engine';
 import { createPreferenceStore } from '@happyvertical/smrt-preferences';
-import { EngineError } from '../../engine/index.ts';
 import { asSettingsOwner } from './agent-cli/service.ts';
 import {
   ASSISTANT_PREFERENCE_KIND,

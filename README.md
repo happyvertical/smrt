@@ -180,6 +180,7 @@ Status legend:
 | [`smrt-cli`](./packages/cli/README.md) | Stable | Developer CLI, schema commands, generation, and knowledge tooling. |
 | [`smrt-app-cli`](./packages/app-cli/README.md) | Preview | Reusable branded application CLI and stdio MCP bridge. |
 | [`smrt-app-runtime`](./packages/app-runtime/README.md) | Preview | Validated local, self-hosted, and cloud composition with safe bootstrap, provider diagnostics, and profile-selected workers. |
+| [`smrt-app-engine`](./packages/app-engine/README.md) | Preview | Shared definition-driven app engine: isolated workers, migrations, sandboxed methods and reversible drafts. |
 | [`smrt-app-shell`](./packages/app-shell/README.md) | Preview | An ordinary smrt app that builds and runs a person's own smrt app from definitions: versioned changes with undo, owner approvals, sandboxed code methods, MCP and an assistant. |
 | [`smrt-workbench`](./packages/smrt-workbench/README.md) | Preview | CWD-scoped package and project workbench for docs, APIs, routes, previews, and knowledge. |
 | [`smrt-workbench-host`](./packages/smrt-workbench/host/README.md) | Internal | Private SvelteKit browser host bundled with the workbench package. |

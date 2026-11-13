@@ -17,7 +17,7 @@
 // generates REST and MCP from). It is entered only by `withScope`, at the
 // request entries, and reads as `live` when nothing entered it.
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { EngineError } from '../../engine/index.ts';
+import { EngineError } from '@happyvertical/smrt-app-engine';
 
 export const TARGETS = ['live', 'draft'] as const;
 export type Target = (typeof TARGETS)[number];

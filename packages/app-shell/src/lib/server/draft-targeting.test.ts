@@ -3,8 +3,8 @@
 // draft's auto-approval is never reachable for live; nothing routes to the
 // wrong data file.
 import { join } from 'node:path';
+import { AppHost, MemoryVersionStore } from '@happyvertical/smrt-app-engine';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { AppHost, MemoryVersionStore } from '../../engine/index.ts';
 import { App } from '../objects/App.ts';
 import { listApprovalViews } from './approvals.ts';
 import { assistantScope } from './assistant/scope.ts';

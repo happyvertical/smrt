@@ -1,5 +1,5 @@
+import { EMPTY_APP, type VersionRecord } from '@happyvertical/smrt-app-engine';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { EMPTY_APP, type VersionRecord } from '../../engine/index.ts';
 import { App } from '../objects/App.ts';
 import { closeHost, getHost } from './host.ts';
 import { runAs } from './owner.ts';

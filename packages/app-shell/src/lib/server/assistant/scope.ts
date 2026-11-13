@@ -11,7 +11,7 @@
 //
 // A draft that cannot be opened counts as no usable draft: structure stays on
 // live and is refused there, by name, while the draft is open.
-import { STRUCTURAL_COMMANDS } from '../../../engine/index.ts';
+import { STRUCTURAL_COMMANDS } from '@happyvertical/smrt-app-engine';
 import { getDraftSlot } from '../host.ts';
 import { isOwner, type Principal } from '../owner.ts';
 import { type CallScope, LIVE_SCOPE, type Target } from '../target.ts';

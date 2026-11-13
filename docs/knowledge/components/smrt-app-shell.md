@@ -5,10 +5,10 @@ description: "A smrt app that builds and runs a person's own smrt app from defin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-13T04:10:05Z"
+  at: "2026-11-13T22:11:00Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:2445edd6a4f92db89897f7464b8a63649d319d2fa008afeea8d4a2717593c783"
+source_revision: "sha256:39746aaa39795c0ed9a98b3d6863c778b71a2147c37e3c59716f4c7134a7c62b"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/package.json"
@@ -17,9 +17,6 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/AGENTS.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/AGENTS.md"
   - id: "agents-2"
-    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/engine.md"
-    title: "@happyvertical/smrt-app-shell packages/app-shell/agents/engine.md"
-  - id: "agents-3"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/shared-pieces.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/shared-pieces.md"
 ---
@@ -36,11 +33,11 @@ sources:
 ## Documentation
 
 - `packages/app-shell/AGENTS.md`
-- `packages/app-shell/agents/engine.md`
 - `packages/app-shell/agents/shared-pieces.md`
 
 ## Framework dependencies
 
+- [smrt-app-engine](/components/smrt-app-engine.md)
 - [smrt-app-mcp](/components/smrt-app-mcp.md)
 - [smrt-app-runtime](/components/smrt-app-runtime.md)
 - [smrt-chat](/components/smrt-chat.md)
@@ -65,8 +62,6 @@ sources:
 ## Exports
 
 - `.`
-- `./engine`
-- `./engine/worker`
 - `./manifest`
 
 ## Models

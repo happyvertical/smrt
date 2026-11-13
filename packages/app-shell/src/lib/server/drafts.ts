@@ -15,7 +15,7 @@ import {
   EngineError,
   type PublishPreview,
   type PublishResult,
-} from '../../engine/index.ts';
+} from '@happyvertical/smrt-app-engine';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
 import {
   type ApprovalAction,

@@ -3,8 +3,8 @@
 // approvals. In-process SQLite, real workers, no network.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { EMPTY_APP, type VersionRecord } from '@happyvertical/smrt-app-engine';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { EMPTY_APP, type VersionRecord } from '../../engine/index.ts';
 import { App } from '../objects/App.ts';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
 import { AppDraftVersionCollection } from '../objects/AppDraftVersion.ts';

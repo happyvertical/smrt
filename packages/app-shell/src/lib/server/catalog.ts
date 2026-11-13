@@ -1,16 +1,17 @@
 // The merged tool catalog: the shell's generated tools (App builder methods,
 // Approval.decide/pending) plus the user app's generated tools, one namespace.
 // Listing and dispatch only; WHO may see or call them is policy.ts.
+
+import {
+  FIELD_NAME_PATTERN,
+  FIELD_TYPES,
+  isRiskyTool,
+} from '@happyvertical/smrt-app-engine';
 import {
   createDefaultMcpAppServer,
   type McpAppPrincipal,
   type McpAppServer,
 } from '@happyvertical/smrt-app-mcp';
-import {
-  FIELD_NAME_PATTERN,
-  FIELD_TYPES,
-  isRiskyTool,
-} from '../../engine/index.ts';
 import { App } from '../objects/App.ts';
 import { Approval } from '../objects/Approval.ts';
 import { collectIssuedApprovals, type PendingApproval } from './approvals.ts';

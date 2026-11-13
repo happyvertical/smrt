@@ -9,9 +9,7 @@ function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
     if (statSync(p).isDirectory()) {
-      // `src/engine` is the standalone engine; a route may be named `engine`.
-      if (name === 'node_modules' || (name === 'engine' && dir === root))
-        continue;
+      if (name === 'node_modules') continue;
       walk(p, out);
     } else if (/\.(ts|svelte)$/.test(name) && !/\.test\.ts$/.test(name))
       out.push(p);

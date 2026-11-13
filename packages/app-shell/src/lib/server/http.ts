@@ -1,6 +1,6 @@
 // Shared plumbing for the shell's JSON routes: owner session required,
 // same-origin for writes, bounded JSON bodies, errors without internals.
-import { EngineError } from '../../engine/index.ts';
+import { EngineError } from '@happyvertical/smrt-app-engine';
 import {
   PolicyError,
   type Principal,

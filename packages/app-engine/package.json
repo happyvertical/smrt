@@ -1,0 +1,63 @@
+{
+  "version": "0.60.18",
+  "type": "module",
+  "engines": {
+    "node": ">=26.0.0"
+  },
+  "author": "HappyVertical",
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "name": "@happyvertical/smrt-app-engine",
+  "description": "Shared definition-driven app engine with worker isolation, migrations and reversible drafts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./worker": {
+      "import": "./dist/app-worker.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "agents"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist",
+    "prepack": "node ../../scripts/prepack-package.js"
+  },
+  "dependencies": {
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-profiles": "workspace:*",
+    "@happyvertical/sql": "catalog:",
+    "quickjs-emscripten": "0.31.0"
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-vitest": "workspace:*",
+    "@types/node": "24.13.6",
+    "typescript": "6.0.3",
+    "vite": "8.3.3",
+    "vitest": "4.1.10"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/app-engine"
+  },
+  "keywords": [
+    "smrt",
+    "app-engine",
+    "local-first"
+  ]
+}

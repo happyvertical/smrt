@@ -1,5 +1,5 @@
+import { FIELD_TYPES } from '@happyvertical/smrt-app-engine';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { FIELD_TYPES } from '../../engine/index.ts';
 import { call, drive, say, scripted } from './assistant/test-helpers.ts';
 import { createShellMcpServer } from './mcp-server.ts';
 import { toolsFor } from './policy.ts';

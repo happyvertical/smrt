@@ -125,3 +125,5 @@ checkout without that config otherwise fails in dependency optimization before
 any component test runs (Rolldown's runtime cannot resolve `node:module`).
 The test script prepares the config for both the Node and DOM suites; it does
 not depend on a preceding uncached build.
+
+S1 shared Connect AI compatibility: the shell client/owner onboarding route forwards `cancel` to shared `chatgpt-cancel`. Unsupported auth SDK cancellation remains an error, not a fake successful sign-out. Existing owner/origin checks and shared readiness status are retained.

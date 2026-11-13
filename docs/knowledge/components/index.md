@@ -6,6 +6,7 @@
 * [@happyvertical/smrt-analytics](/components/smrt-analytics.md) - Analytics integration models for SMRT framework
 * [@happyvertical/smrt-android](/components/smrt-android.md) - Android Compose foundation for SMRT mobile apps: MobileTheme design tokens, the bottom-tab shell scaffold bound to smrt-mobile's MobileShellState, and the native platform adapters (ML Kit barcode, speech transcription, Gemini Nano on-device LLM, device capabilities, SQLDelight driver, Keystore auth storage, Custom Tabs auth launcher)
 * [@happyvertical/smrt-app-cli](/components/smrt-app-cli.md) - Reusable CLI factory for SMRT apps — branded `<name> <resource> <command>` CLI + stdio MCP bridge with decorator-driven resource discovery
+* [@happyvertical/smrt-app-engine](/components/smrt-app-engine.md) - Shared definition-driven app engine with worker isolation, migrations and reversible drafts
 * [@happyvertical/smrt-app-mcp](/components/smrt-app-mcp.md) - App-runtime MCP server scaffolding for SMRT apps — `createMcpAppServer` plus transport adapters (SvelteKit today) for exposing a SMRT app's MCP surface over HTTP.
 * [@happyvertical/smrt-app-runtime](/components/smrt-app-runtime.md) - Validated local, self-hosted, and cloud runtime composition for s-m-r-t applications
 * [@happyvertical/smrt-app-shell](/components/smrt-app-shell.md) - A smrt app that builds and runs a person's own smrt app from definitions

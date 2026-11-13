@@ -11,8 +11,14 @@
     "rewriteRelativeImportExtensions": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": false,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["src/engine/**/*.ts", "src/lib/objects/index.ts"],
-  "exclude": ["src/engine/**/*.test.ts"]
+  "include": [
+    "src/lib/objects/index.ts"
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
+  ]
 }

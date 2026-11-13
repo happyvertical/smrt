@@ -8,7 +8,7 @@ owner's approval, and every change is versioned and can be undone.
 ```
 smrt-app-shell (SvelteKit + adapter-node, app-runtime local profile)
 ├── shell.db (the app-runtime database)  users, sessions, App, AppVersion, Approval
-├── src/engine                           AppHost: worker thread, migrations, sandbox
+├── ../app-engine/src                    Shared AppHost: worker thread, migrations, sandbox
 └── <data root>/user-app/                app.db, snapshots (plain files; the newest 20 `method-*` are kept, clean up prunes old migration ones)
 ```
 
@@ -469,8 +469,8 @@ Approval and holds the turn; it never applies.
 
 The engine can run a second host, a draft, over a copy of the live data and
 later replay the draft's changes onto live. Rules and failure behaviour are in
-[agents/engine.md](agents/engine.md); the API on `AppHost` (exported from
-`src/engine`):
+[agents/engine.md](../app-engine/agents/engine.md); the API on `AppHost` (exported from
+`@happyvertical/smrt-app-engine`):
 
 ```ts
 const live = await AppHost.open(dir, { store });
@@ -508,7 +508,7 @@ pnpm --filter @happyvertical/smrt-app-shell build
 pnpm --filter @happyvertical/smrt-app-shell typecheck
 ```
 
-See [AGENTS.md](AGENTS.md) for the invariants and [agents/engine.md](agents/engine.md) for the engine.
+See [AGENTS.md](AGENTS.md) for the invariants and [agents/engine.md](../app-engine/agents/engine.md) for the engine.
 
 ### Draft UI
 

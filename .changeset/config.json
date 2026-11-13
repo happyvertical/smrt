@@ -10,6 +10,7 @@
       "@happyvertical/smrt-analytics",
       "@happyvertical/smrt-android",
       "@happyvertical/smrt-app-cli",
+      "@happyvertical/smrt-app-engine",
       "@happyvertical/smrt-app-mcp",
       "@happyvertical/smrt-app-runtime",
     "@happyvertical/smrt-app-shell",

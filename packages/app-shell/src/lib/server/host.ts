@@ -14,13 +14,12 @@
 // `getDraftSlot()`, which callers reach by naming the copy (see target.ts).
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   AppHost,
   discardDraftDirectory,
   EngineError,
-} from '../../engine/index.ts';
+} from '@happyvertical/smrt-app-engine';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
 import { publish } from './events.ts';
 import type { Target } from './target.ts';
@@ -99,13 +98,7 @@ export function dataRoot(): Promise<string> {
 function workerUrl(): URL | string {
   const configured = requireContext().workerUrl;
   if (configured) return configured;
-  // From source (dev, tests) the worker sits next to the engine; from a build
-  // it is the package's published engine worker.
-  const local = new URL('../../engine/app-worker.ts', import.meta.url);
-  if (existsSync(fileURLToPath(local))) return local;
-  return new URL(
-    import.meta.resolve('@happyvertical/smrt-app-shell/engine/worker'),
-  );
+  return new URL(import.meta.resolve('@happyvertical/smrt-app-engine/worker'));
 }
 
 /** Republish a host's events on the bus, tagged with the copy they came from. */

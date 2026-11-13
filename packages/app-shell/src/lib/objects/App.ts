@@ -1,15 +1,15 @@
 import {
+  type Command,
+  EngineError,
+  type FieldDef,
+  type MethodDef,
+} from '@happyvertical/smrt-app-engine';
+import {
   field,
   SmrtCollection,
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import {
-  type Command,
-  EngineError,
-  type FieldDef,
-  type MethodDef,
-} from '../../engine/index.ts';
 import { type BuilderResult, runCommand } from '../server/builder.ts';
 import {
   describeCopy,
