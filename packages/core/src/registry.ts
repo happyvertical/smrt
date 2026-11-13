@@ -3030,6 +3030,14 @@ export class ObjectRegistry {
               columns: [...(indexDef.columns || [])],
             })) || [],
           triggers: [],
+          // Shared-table class rules (#4932).
+          ...(manifestEntry.schema.checks?.length
+            ? {
+                checks: manifestEntry.schema.checks.map((check) => ({
+                  ...check,
+                })),
+              }
+            : {}),
           foreignKeys: [],
           dependencies: [],
           version: manifestEntry.schema.version || '',

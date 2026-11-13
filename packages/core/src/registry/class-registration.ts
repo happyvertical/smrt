@@ -43,6 +43,7 @@ import type {
   ColumnDefinition,
   IndexDefinition,
   SchemaDefinition,
+  TableCheckDefinition,
 } from '../schema/types.js';
 import { tableNameFromClass, toSnakeCase } from '../utils';
 import {
@@ -644,6 +645,30 @@ function buildManifestCollisionInputs(args: {
   // an objectDef.qualifiedName fallback when packageName is omitted —
   // deriving from packageName alone would miss that case and misroute the
   // coexistence rows. See PR #1140 review (Copilot P1 at line 287).
+}
+
+/**
+ * The shared-table class rules (#4932) a manifest schema carries, copied.
+ * Registration must keep them: the migration plan is built from the registry.
+ */
+function manifestChecksOf(schema: { checks?: TableCheckDefinition[] }): {
+  checks?: TableCheckDefinition[];
+} {
+  return schema.checks?.length
+    ? { checks: schema.checks.map((check) => ({ ...check })) }
+    : {};
+}
+
+/** Union of two check lists by name, the first of each name kept. */
+function mergedChecks(
+  existing: TableCheckDefinition[] | undefined,
+  incoming: TableCheckDefinition[] | undefined,
+): { checks?: TableCheckDefinition[] } {
+  const merged = [...(existing ?? [])];
+  for (const check of incoming ?? []) {
+    if (!merged.some((known) => known.name === check.name)) merged.push(check);
+  }
+  return merged.length > 0 ? { checks: merged } : {};
 }
 
 /**
@@ -1896,6 +1921,9 @@ function registerUntracked(
           jsonPath: idx.jsonPath,
         })) || [],
       triggers: [],
+      // Shared-table class rules (#4932) must survive registration, or the
+      // migration plan built from the registry never creates them.
+      ...manifestChecksOf(manifestEntry.schema),
       tableName: manifestEntry.schema.tableName || tableName,
       // Cast manifest columns to ColumnDefinition (same shape, TypeScript just needs help)
       columns: cloneManifestSchemaColumns(manifestEntry.schema.columns),
@@ -2653,6 +2681,7 @@ function mergeManifestIntoExistingRegistration(
           jsonPath: idx.jsonPath,
         })) || [],
       triggers: [],
+      ...manifestChecksOf(objectDef.schema),
       tableName: objectDef.schema.tableName || manifestTableName,
       columns: cloneManifestSchemaColumns(objectDef.schema.columns),
       foreignKeys: [],
@@ -2677,6 +2706,7 @@ function mergeManifestIntoExistingRegistration(
         manifestSchema.indexes,
       ),
       packageName: packageName || existing.schema?.packageName,
+      ...mergedChecks(existing.schema?.checks, manifestSchema.checks),
     };
   } else if (!existing.schema) {
     existing.schema = {
@@ -2968,6 +2998,7 @@ function registerFromManifestUntracked(
           jsonPath: idx.jsonPath,
         })) || [],
       triggers: [],
+      ...manifestChecksOf(objectDef.schema),
       tableName: objectDef.schema.tableName,
       columns: cloneManifestSchemaColumns(objectDef.schema.columns),
       foreignKeys: [],

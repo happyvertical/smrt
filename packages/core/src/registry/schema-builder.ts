@@ -32,6 +32,7 @@ import type {
   IndexDefinition,
   SchemaDefinition,
   SQLDataType,
+  TableCheckDefinition,
 } from '../schema/types.js';
 import { classnameToTablename, toSnakeCase } from '../utils';
 import { sha256Hex } from '../utils/sha256.js';
@@ -418,6 +419,8 @@ interface MergedTableSchema {
   tableName: string;
   columns: Record<string, ColumnDefinition>;
   indexes: IndexDefinition[];
+  /** Shared-table class rules from the contributors' manifests (#4932). */
+  checks: TableCheckDefinition[];
   ddl: string;
   isSTI: boolean;
   conflictColumns: string[];
@@ -781,6 +784,7 @@ function buildMergedTableSchemas(
             ...columnsToUse,
           },
           indexes: [],
+          checks: [],
           ddl: registered.schema?.ddl || '',
           isSTI,
           conflictColumns,
@@ -797,6 +801,15 @@ function buildMergedTableSchemas(
       }
 
       applyContributorForeignKeys(tableSchema, contributor, contributorFields);
+
+      // Merge class rules (#4932), keeping the first of each name. The
+      // manifest of the shared table's base carries them; without this the
+      // migration plan, built from this merge, never created the constraint.
+      for (const check of registered.schema?.checks ?? []) {
+        if (!tableSchema.checks.some((known) => known.name === check.name)) {
+          tableSchema.checks.push({ ...check });
+        }
+      }
 
       // Merge indexes, keeping the first definition of each name.
       const schemaIndexes = registered.schema?.indexes;
@@ -1063,6 +1076,7 @@ export function getAllSchemasAsDefinitions(options?: {
         tableSchema.conflictColumns,
       ),
       triggers: [],
+      ...(tableSchema.checks.length > 0 ? { checks: tableSchema.checks } : {}),
       foreignKeys,
       version: '',
       dependencies: foreignKeys

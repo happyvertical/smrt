@@ -8,14 +8,16 @@
  * DDL text per engine and the migration differ with a scripted catalog.
  */
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SchemaComparer } from '../migrations/differ.js';
+import { ObjectRegistry } from '../registry.js';
 import { ManifestGenerator } from '../scanner/manifest-generator.js';
 import type {
   FieldDefinition,
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
+import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getDDLStrategy } from './ddl/index.js';
 import { manifestSchemaToDefinition } from './manifest-schema.js';
 import { STI_CHECK_PREFIX, stiHardeningChecks } from './sti-hardening.js';
@@ -301,5 +303,32 @@ describe('shared-table check in the migration differ (#4932)', () => {
       }) as unknown as Probe
     ).compareTableChecks(TABLE, definition);
     expect(changes).toEqual([]);
+  });
+});
+
+describe('the registry keeps the shared-table check (#4932)', () => {
+  let restore: () => void;
+  beforeEach(() => {
+    restore = snapshotObjectRegistryState();
+  });
+  afterEach(() => restore());
+
+  it('a manifest registered into the registry still plans the constraint', () => {
+    const manifest = build([
+      def('Doc4932', optionalTitle),
+      def(
+        'StrictDoc4932',
+        { title: { type: 'text', required: true } },
+        'Doc4932',
+      ),
+    ]);
+    for (const [key, object] of Object.entries(manifest.objects)) {
+      ObjectRegistry.registerFromManifest(key, object, PKG);
+    }
+    const planned = ObjectRegistry.getAllSchemasAsDefinitions()[TABLE];
+    expect(planned.checks).toHaveLength(1);
+    expect(planned.checks?.[0].expression).toContain(
+      `_meta_type NOT IN ('${PKG}:StrictDoc4932')`,
+    );
   });
 });
