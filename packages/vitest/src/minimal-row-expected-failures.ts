@@ -127,13 +127,6 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       error: 'optional field title read back populated',
     },
     {
-      model: '@happyvertical/smrt-voice:VoiceOutput',
-      field: 'title',
-      reason:
-        'Content.validateBeforeSave() copies required name into optional title; persisted title differs from its empty initialized value.',
-      error: 'optional field title read back populated',
-    },
-    {
       model: '@happyvertical/smrt-approvals:ApprovalEvent',
       kind: 'service-only',
       field: '(service-only write)',

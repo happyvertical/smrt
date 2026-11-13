@@ -108,7 +108,7 @@ export class DirectiveProposal extends SmrtObject {
   tenantId: string = '';
 
   /** The persona whose instructions this proposal would rewrite. */
-  @foreignKey('AgentPersona', { required: true })
+  @foreignKey('AgentPersona', { required: true, requiredFor: 'identity' })
   personaId: string = '';
 
   /** Canonical agent class the persona configures (denormalised for queries). */
