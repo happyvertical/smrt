@@ -950,6 +950,8 @@ slug: string = '';
 | `idempotency` | smrt uses it to detect a duplicate or replayed write. |
 | `workflow-state` | A smrt service steps the row through its values. |
 | `system-table` | The field is in an internal `_smrt_*` table. |
+| `integrity` | smrt checks stored content against this value (a digest, a hash or a binding), or the value is the content it checks. |
+| `authentication` | smrt authenticates a caller by checking a secret or key against this value. |
 | `integrity` | smrt verifies stored content against this value (a digest, hash or binding), or the value is the content it verifies. |
 | `authentication` | smrt authenticates a caller by checking a secret or key against this value. |
 
@@ -967,8 +969,8 @@ holds a real value (`= 0`, `= false`, `= 'active'`) already satisfies it. A
 initializer and no `?`). The check fails on such a field in `packages/*/src`
 that has no reason and is not in `scripts/required-reasons-baseline.json`, and
 it names the file, class and field. A required `@tenantId()` is explained by
-itself: it is `tenant-scope`. The baseline lists the fields that had no reason
-when the check began. It may only shrink: give a field a reason or make it
+itself: it is `tenant-scope`. The baseline lists the fields that have no reason.
+It is empty now, and it may only shrink: give a field a reason or make it
 optional, then run `node scripts/check-required-reasons.mjs --prune`. The
 check does not judge whether a reason is true; review does that. It reads
 decorated properties only, so a plain property that the scanner infers as

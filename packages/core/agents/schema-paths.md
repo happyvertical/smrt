@@ -587,10 +587,11 @@ and always reports what it will not touch:
   DuckDB/JSON build them as full indexes, so they are probed there (#3015).
   DuckDB refuses `ALTER COLUMN` while any index depends on the table, so its
   `SET NOT NULL` is bracketed by `DROP INDEX`/recreate from `duckdb_indexes().sql`.
-- **SQLite** has no `ALTER COLUMN`: nullability/default alterations are manual
-  (comment SQL → `db:migrate` exit 1), except a NOT NULL tightening with a
-  declared `backfill`, which the rebuild performs (`COALESCE(col, backfill)`
-  in the copy). The rebuild otherwise consumes `type_upgrade` placeholders.
+- **SQLite** has no `ALTER COLUMN`: a nullability or default alteration is a
+  table rebuild (#4937, see "The three engines apply the same kinds"). A NOT NULL
+  tightening with a declared `backfill` is performed by the same rebuild
+  (`COALESCE(col, backfill)` in the copy), which also consumes `type_upgrade`
+  placeholders.
 - Defaults compare through `canonicalizeDefault()`, which folds engine
   renderings (`'x'::text`, `CAST('t' AS BOOLEAN)`, `CURRENT_TIMESTAMP` vs
   `now()`) by manifest type; an unclassifiable rendering skips the comparison
