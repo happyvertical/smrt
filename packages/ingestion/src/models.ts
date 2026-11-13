@@ -49,7 +49,7 @@ export class IntakeItem extends SmrtObject {
   @field({ type: 'text', required: true, requiredFor: 'identity' })
   sourceId: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text' })
   sourceVersion: string = '';
 
   @field({ type: 'text', required: true, requiredFor: 'identity' })
@@ -79,7 +79,7 @@ export class IntakeItem extends SmrtObject {
   @field({ type: 'integer', required: true })
   fence: number = 0;
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text' })
   leaseToken: string = '';
 
   @field({ type: 'datetime', nullable: true })
@@ -107,7 +107,7 @@ export class IntakeItem extends SmrtObject {
   submitterId: string = '';
 
   /** `<kind>:<id>` of the lifecycle owner for owner-bound retention; '' otherwise. */
-  @field({ type: 'text', required: true, default: '' })
+  @field({ type: 'text', default: '' })
   ownerKey: string = '';
 
   @field({ type: 'json', required: true })
@@ -165,16 +165,16 @@ export class IntakeEvidence extends SmrtObject {
   @field({ type: 'text', required: true, requiredFor: 'workflow-state' })
   state: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text' })
   contentHash: string = '';
 
   @field({ type: 'integer', required: true })
   byteLength: number = 0;
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text' })
   mediaType: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text' })
   sourceUri: string = '';
 
   @field({ type: 'json', required: true })
@@ -231,7 +231,7 @@ export class IntakeAnalysis extends SmrtObject {
   @field({ type: 'text', required: true, requiredFor: 'workflow-state' })
   state: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'integrity' })
   inputDigest: string = '';
 
   @field({ type: 'json', required: true })
@@ -291,13 +291,13 @@ export class IntakeAnalysisAttempt extends SmrtObject {
   @field({ type: 'text', required: true, requiredFor: 'workflow-state' })
   state: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text' })
   leaseToken: string = '';
 
   @field({ type: 'datetime', nullable: true })
   leaseUntil: Date | null = null;
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text' })
   outputDigest: string = '';
 
   @field({ type: 'text' })
@@ -410,7 +410,7 @@ export class IntakeAction extends SmrtObject {
   @field({ type: 'integer', required: true })
   fence: number = 0;
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text' })
   resultDigest: string = '';
 
   @field({ type: 'json', required: true })
@@ -466,7 +466,7 @@ export class IntakeProposal extends SmrtObject {
   @field({ type: 'integer', required: true })
   revision: number = 0;
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'integrity' })
   bindingHash: string = '';
 
   @field({ type: 'json', required: true })
@@ -519,7 +519,7 @@ export class IntakeReviewDecision extends SmrtObject {
   @field({ type: 'integer', required: true })
   reviewVersion: number = 0;
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'integrity' })
   bindingHash: string = '';
 
   @field({ type: 'text', required: true, requiredFor: 'workflow-state' })
@@ -576,10 +576,10 @@ export class IntakeExecution extends SmrtObject {
   @field({ type: 'text', required: true, requiredFor: 'workflow-state' })
   state: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'integrity' })
   bindingHash: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text' })
   resultDigest: string = '';
 
   @field({ type: 'text', required: true, requiredFor: 'idempotency' })
