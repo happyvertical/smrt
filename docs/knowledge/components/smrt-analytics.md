@@ -5,10 +5,10 @@ description: "Analytics integration models for SMRT framework"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T22:32:35Z"
+  at: "2026-11-13T17:44:32Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:da9625dcc5cd080352c83d4a4df595e3fe351beae9958b165611bfccf341f60f"
+source_revision: "sha256:2a5d43d02ab7c8fb5d86757d6e9559bf7ac6b4d955c0e5bcba3a188318636194"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/analytics/package.json"
@@ -19,6 +19,9 @@ sources:
   - id: "agents-2"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/analytics/agents/browser.md"
     title: "@happyvertical/smrt-analytics packages/analytics/agents/browser.md"
+  - id: "agents-3"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/analytics/agents/observability.md"
+    title: "@happyvertical/smrt-analytics packages/analytics/agents/observability.md"
 ---
 
 # @happyvertical/smrt-analytics
@@ -34,6 +37,7 @@ sources:
 
 - `packages/analytics/AGENTS.md`
 - `packages/analytics/agents/browser.md`
+- `packages/analytics/agents/observability.md`
 
 ## Framework dependencies
 
@@ -55,6 +59,7 @@ sources:
 - `./browser`
 - `./manifest`
 - `./manifest.json`
+- `./observability`
 - `./playground`
 - `./svelte`
 - `./ui`

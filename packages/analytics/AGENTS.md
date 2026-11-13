@@ -102,3 +102,11 @@ The isolated `./browser` subpath owns the optional browser tracker and Matomo
 HTTP adapter; it must never import model registration or the server SDK.
 The optional `smrt-ui/analytics` context connects shared component standard
 events to the configured provider. See [browser contract](agents/browser.md).
+
+## OpenObserve stream reader (#4908)
+
+The server-only `./observability` subpath reads the
+`default/project_observability` stream (latest row per project, time window)
+with a credential resolved from the secrets store at call time; never export it
+through the root or `./browser` barrels, and never log credentials. See
+[observability contract](agents/observability.md).
