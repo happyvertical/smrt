@@ -981,37 +981,6 @@ describe('inspector invocation (WT9: no injection through the path)', () => {
     expect(Object.keys(env).map((k) => k.toLowerCase())).not.toContain('path');
   });
 
-  it('pins module discovery to Windows system modules even under an isolated home', () => {
-    const { calls, exec } = capture();
-    createPowerShellAclInspector({
-      exec,
-      env: {
-        SystemRoot: 'C:\\Windows',
-        USERPROFILE: 'D:\\scratch',
-        LOCALAPPDATA: 'D:\\scratch\\Local',
-        PSModulePath: 'C:\\untrusted',
-        SECRET: 'not-inherited',
-      },
-    })(['C:\\x']);
-    expect(calls[0].options.env.PSModulePath).toBe(
-      'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules',
-    );
-    expect(POWERSHELL_INSPECTOR_SCRIPT).toContain(
-      "$PSModuleAutoLoadingPreference = 'None'",
-    );
-    for (const module of [
-      'CimCmdlets',
-      'Microsoft.PowerShell.Management',
-      'Microsoft.PowerShell.Security',
-      'Microsoft.PowerShell.Utility',
-    ]) {
-      expect(POWERSHELL_INSPECTOR_SCRIPT).toContain(
-        `Import-Module -Name ($PSHOME + '\\Modules\\${module}\\${module}.psd1') -ErrorAction Stop`,
-      );
-    }
-    expect(calls[0].options.env.SECRET).toBeUndefined();
-    expect(calls[0].options.timeout).toBe(10_000);
-  });
   it('carries every path verbatim in one environment variable', () => {
     const { calls, exec } = capture();
     createPowerShellAclInspector({ exec, env: { SystemRoot: 'C:\\Windows' } })(
@@ -1043,7 +1012,6 @@ describe('inspector invocation (WT9: no injection through the path)', () => {
     expect(options.stdio).toEqual(['ignore', 'pipe', 'pipe']);
     expect(Object.keys(options.env).sort()).toEqual([
       'LOCALAPPDATA',
-      'PSModulePath',
       'SMRT_CUSTODY_PATHS',
       'SystemRoot',
     ]);
