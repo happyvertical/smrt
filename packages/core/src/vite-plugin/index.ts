@@ -13,6 +13,7 @@ import type {
   DomainKnowledgeConfig,
   DomainKnowledgeManifest,
 } from '@happyvertical/smrt-types';
+import { computeManifestSchemaFingerprint } from '../migrations/schema-fingerprint.js';
 import type {
   SmrtDevServer,
   SmrtResolvedConfig,
@@ -853,6 +854,7 @@ export function smrtPlugin(
 
       const manifestPath = resolve(smrtDir, 'manifest.json');
       const merged = mergeExternalManifestEntries(m, manifestPath);
+      merged.schemaFingerprint = computeManifestSchemaFingerprint(merged);
       publishAtomicArtifact({
         path: manifestPath,
         content: JSON.stringify(merged, null, 2),

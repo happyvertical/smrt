@@ -1,3 +1,5 @@
+import type { DatabaseInterface } from '@happyvertical/sql';
+
 /**
  * Cache for verified table existence checks.
  *
@@ -44,4 +46,38 @@ export function markTableVerified(dbUrl: string, tableName: string): void {
  */
 export function resetVerifiedTables(): void {
   verifiedTablesByUrl.clear();
+}
+
+const memoryVerificationKeys = new WeakMap<DatabaseInterface, string>();
+let nextMemoryVerificationId = 0;
+
+export function getVerificationKey(db: DatabaseInterface): string {
+  const dbWithConfig = db as DatabaseInterface & {
+    dbid?: string;
+    config?: { dbid?: string; url?: string };
+  };
+
+  const dbid = dbWithConfig.dbid || dbWithConfig.config?.dbid;
+  if (dbid) {
+    return dbid;
+  }
+
+  const dbUrl = db.url || dbWithConfig.config?.url;
+  if (
+    dbUrl &&
+    dbUrl !== ':memory:' &&
+    dbUrl !== 'memory' &&
+    dbUrl !== 'file::memory:'
+  ) {
+    return dbUrl;
+  }
+
+  let memoryKey = memoryVerificationKeys.get(db);
+  if (!memoryKey) {
+    nextMemoryVerificationId += 1;
+    memoryKey = `memory:${nextMemoryVerificationId}`;
+    memoryVerificationKeys.set(db, memoryKey);
+  }
+
+  return memoryKey;
 }

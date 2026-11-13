@@ -690,6 +690,8 @@ export interface ManifestUISelector {
 }
 
 export interface SmartObjectManifest {
+  /** Expected whole schema of this artifact, using computeSchemaFingerprint. */
+  schemaFingerprint?: string;
   version: string;
   /** Always {@link MANIFEST_TIMESTAMP} for build-output manifests. */
   timestamp: number;

@@ -162,6 +162,13 @@ function migratableDb(overrides: Record<string, unknown> = {}) {
 }
 
 vi.mock('@happyvertical/smrt-core', () => ({
+  collectMigrateRecordInput: vi.fn(() => ({
+    release: 'test',
+    packages: [],
+    fingerprint: 'fixture',
+  })),
+  readLastMigrateRecord: vi.fn(async () => ({ state: 'none' })),
+  recordSuccessfulMigrate: vi.fn(async () => {}),
   ObjectRegistry: h.registry,
   SchemaComparer: class {
     constructor(_db: unknown, options?: unknown) {
@@ -222,6 +229,9 @@ vi.mock('@happyvertical/smrt-core/migrations', async () => {
   >('@happyvertical/smrt-core/migrations');
 
   return {
+    decideSchemaChange: actual.decideSchemaChange,
+    decideMigrationRun: actual.decideMigrationRun,
+    hasExecutableSchemaSql: actual.hasExecutableSchemaSql,
     acquireMigrationLock: (...args: unknown[]) =>
       h.acquireMigrationLock(...args),
     buildConcurrentIndexPlan: actual.buildConcurrentIndexPlan,
@@ -760,7 +770,7 @@ describe('utility command handlers', () => {
 
     await requireCommandHandler(utilityCommands['db:migrate'])([], {});
 
-    expect(order).toEqual(['acquire', 'initialize', 'compare', 'release']);
+    expect(order).toEqual(['acquire', 'compare', 'initialize', 'release']);
     expect(acquireMigrationLock).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ engineHint: 'sqlite', timeoutMs: 15 * 60_000 }),
@@ -1344,7 +1354,7 @@ describe('utility command handlers', () => {
     await requireCommandHandler(utilityCommands['db:migrate'])([], {});
 
     const out = logged();
-    expect(out).toContain('requires manual intervention');
+    expect(out).toContain('Migrate stopped:');
     expect(out).toContain('contents.count');
     // manual intervention should drive a non-zero exit
     expect(process.exitCode).toBe(1);
@@ -1371,7 +1381,7 @@ describe('utility command handlers', () => {
     await requireCommandHandler(utilityCommands['db:migrate'])([], {});
 
     const out = logged();
-    expect(out).toContain('requires manual intervention');
+    expect(out).toContain('Migrate stopped:');
     expect(out).toContain('children');
     expect(out).toContain(
       'does not expose the live PostgreSQL constraint name',

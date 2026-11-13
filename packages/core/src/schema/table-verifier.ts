@@ -1,40 +1,12 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { DatabaseError } from '../errors.js';
-import { isTableVerified, markTableVerified } from '../table-cache.js';
-
-const memoryVerificationKeys = new WeakMap<DatabaseInterface, string>();
-let nextMemoryVerificationId = 0;
-
-function getVerificationKey(db: DatabaseInterface): string {
-  const dbWithConfig = db as DatabaseInterface & {
-    dbid?: string;
-    config?: { dbid?: string; url?: string };
-  };
-
-  const dbid = dbWithConfig.dbid || dbWithConfig.config?.dbid;
-  if (dbid) {
-    return dbid;
-  }
-
-  const dbUrl = db.url || dbWithConfig.config?.url;
-  if (
-    dbUrl &&
-    dbUrl !== ':memory:' &&
-    dbUrl !== 'memory' &&
-    dbUrl !== 'file::memory:'
-  ) {
-    return dbUrl;
-  }
-
-  let memoryKey = memoryVerificationKeys.get(db);
-  if (!memoryKey) {
-    nextMemoryVerificationId += 1;
-    memoryKey = `memory:${nextMemoryVerificationId}`;
-    memoryVerificationKeys.set(db, memoryKey);
-  }
-
-  return memoryKey;
-}
+import { assertDatabaseMigratedForBuild } from '../migrations/startup-guard.js';
+import { getDatabaseEngine } from '../system/compatibility.js';
+import {
+  getVerificationKey,
+  isTableVerified,
+  markTableVerified,
+} from '../table-cache.js';
 
 /**
  * Verify that a model table already exists.
@@ -47,7 +19,11 @@ export async function verifyPersistenceTable(
   db: DatabaseInterface,
   tableName: string,
   className: string,
+  engineHint?: string,
 ): Promise<void> {
+  await assertDatabaseMigratedForBuild(db, {
+    engineHint: getDatabaseEngine(db, engineHint),
+  });
   const verificationKey = getVerificationKey(db);
   if (isTableVerified(verificationKey, tableName)) {
     return;

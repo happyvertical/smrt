@@ -20,6 +20,7 @@ export {
   BackfillTracker,
   type BackfillTrackerOptions,
 } from './backfill-tracker.js';
+export * from './change-kinds.js';
 // Checksum utilities
 export {
   computeChecksum,
@@ -94,6 +95,15 @@ export {
   preflightIntegerWidthWidening,
   widenIntegerColumnsToBigInt,
 } from './integer-width.js';
+export {
+  collectMigrateRecordInput,
+  type LastMigrateRecord,
+  type MigrateRecord,
+  type MigrateRecordInput,
+  type MigrateRecordOptions,
+  readLastMigrateRecord,
+  recordSuccessfulMigrate,
+} from './migrate-record.js';
 // Cross-process serialization of db:migrate runs (#3634)
 export {
   type AcquireMigrationLockOptions,
@@ -105,6 +115,7 @@ export {
   MigrationLockTimeoutError,
   MigrationLockUnsupportedError,
 } from './migration-lock.js';
+export * from './migration-run-decision.js';
 // Money major-units → integer minor-units rescale (#2401)
 export {
   buildMinorUnitsStatements,
@@ -154,6 +165,10 @@ export {
   type LegacyQualifiedNameTarget,
   legacyQualifiedNamesBackfillName,
 } from './qualified-name-aliases.js';
+export {
+  computeManifestSchemaFingerprint,
+  computeSchemaFingerprint,
+} from './schema-fingerprint.js';
 // SQLite table rebuild (type changes SQLite cannot ALTER in place)
 export {
   type BuildSqliteRebuildStatementsInput,
@@ -166,6 +181,7 @@ export {
   type SqliteTableRebuildPlan,
   sqliteRebuildPlaceholderSql,
 } from './sqlite-rebuild.js';
+export { assertDatabaseMigratedForBuild } from './startup-guard.js';
 // Core classes
 export {
   buildConcurrentIndexPlan,

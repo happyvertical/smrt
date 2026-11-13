@@ -22,6 +22,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -29,6 +30,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { computeManifestSchemaFingerprint } from '../migrations/schema-fingerprint.js';
 import { smrtPlugin } from './index.js';
 
 function getHook(plugin: any, name: string) {
@@ -168,7 +170,12 @@ export class Gizmo extends SmrtObject {
 
   it('seeds a manifest containing the scanned objects', () => {
     // configResolved writes the local manifest to .smrt/manifest.json.
-    expect(existsSync(join(projectRoot, '.smrt', 'manifest.json'))).toBe(true);
+    const path = join(projectRoot, '.smrt', 'manifest.json');
+    expect(existsSync(path)).toBe(true);
+    const emitted = JSON.parse(readFileSync(path, 'utf8'));
+    expect(emitted.schemaFingerprint).toBe(
+      computeManifestSchemaFingerprint(emitted),
+    );
   });
 
   it('generates the routes module', async () => {

@@ -85,9 +85,16 @@ vi.mock('@happyvertical/smrt-core', () => ({
   collectForeignKeyOrphanCounts: collectForeignKeyOrphanCountsMock,
 }));
 
-vi.mock('@happyvertical/smrt-core/migrations', () => ({
-  MigrationTracker: MigrationTrackerMock,
-}));
+vi.mock('@happyvertical/smrt-core/migrations', async () => {
+  const actual = await vi.importActual<
+    typeof import('@happyvertical/smrt-core/migrations')
+  >('@happyvertical/smrt-core/migrations');
+  return {
+    MigrationTracker: MigrationTrackerMock,
+    decideSchemaChange: actual.decideSchemaChange,
+    hasExecutableSchemaSql: actual.hasExecutableSchemaSql,
+  };
+});
 
 import { getSyntheticMigrationNameForChange } from '../db-migrate-actions.js';
 import {

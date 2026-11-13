@@ -3,6 +3,8 @@
  * Used for build-time schema generation and runtime table management
  */
 
+import type { SchemaChangeKindId } from '../migrations/change-kinds.js';
+
 export type SQLDataType =
   | 'TEXT'
   | 'INTEGER'
@@ -375,6 +377,8 @@ export interface SchemaChangeAdvisory {
  * Schema difference for a single change
  */
 export interface SchemaChange {
+  /** Producer hint for shapes whose data/engine refusal cannot be inferred from SQL. */
+  kindHint?: SchemaChangeKindId;
   /** Type of change */
   type:
     | 'add_table'
@@ -460,11 +464,8 @@ export interface SchemaChange {
    * True on an advisory-only `add_foreign_key` change specifically blocked
    * because this engine cannot express the constraint at all (SQLite
    * requires a table rebuild; DuckDB has no `ALTER TABLE ADD CONSTRAINT`)
-   * (#2748). Unlike `orphanBlocked` or a type-conflict advisory, this
-   * reason says nothing about the column's own state — a caller (`db:migrate
-   * --apply-unblocked`) must not treat the child column as a dependency
-   * blocker for it, since no rerun on this engine ever resolves it and doing
-   * so would withhold unrelated DDL on that column permanently.
+   * (#2748). This is an engine limitation, not a row-data condition that
+   * `--null-orphans` can resolve. It still stops the whole migration run.
    */
   engineUnsupported?: boolean;
   /**

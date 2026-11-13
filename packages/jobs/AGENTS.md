@@ -28,7 +28,7 @@ has no tenant filter; opt into that sweep only in an authorized maintenance host
 `ClaimReadyOptions` and `ListReadyOptions` accept the same tenant scope. Queue
 lease advertising remains queue-level; it does not prove per-tenant availability.
 
-1. `start()` calls `assertReady()` (fail fast if `_smrt_workers` unmigrated), registers a seeded `SmrtWorker` lease, and adds its worker key to the process-global live set — all **before** polling
+1. `start()` checks the build migrate fingerprint, then calls `assertReady()` (fail fast if `_smrt_workers` unmigrated), registers a seeded `SmrtWorker` lease, and adds its worker key to the process-global live set — all **before** polling
 2. Polls `claimReady()` to atomically claim at most the free slots (`concurrency - active`) of pending jobs (`runAt <= NOW`, ordered by `priority DESC, runAt ASC, created_at ASC, id ASC`). On PostgreSQL the candidates come from a `MATERIALIZED` CTE joined to the UPDATE; never claim with `WHERE id IN (SELECT … LIMIT n FOR UPDATE SKIP LOCKED)` — a nested-loop semi join rescans it per outer row and takes the whole backlog (#3145). The runner also never starts more than the free slots and returns any surplus claim to `pending` with its attempt restored
 3. Claim sets `status='running'`, `workerId=<incarnation key>`, heartbeat/start timestamps, and increments `attempts`
 4. Resolves class via `ObjectRegistry.getClass(objectType)`. Object-bound jobs
@@ -231,5 +231,5 @@ the framework retention sweep in `@happyvertical/smrt-core`.
 - **Result storage**: `resultPointer` is just a string — app must implement result backend
 - **Lazy builder**: `background()` returns builder — nothing happens until `enqueue()`
 - **wait() is polling**: JobHandle.wait() polls DB every 100ms (configurable)
-- **Migrate before start()**: `TaskRunner.start()` throws if `_smrt_workers` is missing — run `smrt db:migrate` after upgrading. Tables are never created at runtime.
+- **Migrate before start()**: Both runners call core's `assertDatabaseMigratedForBuild` before polling (policy: [schema paths](../core/agents/schema-paths.md)). A missing or different record refuses production start; development warns, test databases are exempt, and the emergency override is logged. `TaskRunner.start()` throws if `_smrt_workers` is missing — run `smrt db:migrate` after upgrading. Tables are never created at runtime.
 - **Recovery is liveness-based**: don't reintroduce heartbeat-threshold recovery; a blocked event loop must not look dead (see Worker liveness section, #1474)

@@ -261,3 +261,15 @@ happyvertical/smrt#4920). SQLite ordinary inline NOT NULL
 relaxation uses the tracker-owned atomic rebuild; see the core schema-paths
 contract for unsupported shapes and FK validation. Unknown migrate options fail
 before touching local custody or starting the child command.
+
+Production persistence and task/schedule worker starts require the last migrate
+fingerprint to match the loaded build. Run `smrt db:migrate` (or `smrt app
+migrate`) before starting the new code. An old copy that restarts after migrate
+will be refused; rolling code back without the database also refuses startup.
+`SMRT_ALLOW_UNMIGRATED_START=1` is the logged emergency override. Development
+warns once; `NODE_ENV=test` and core test databases are exempt. See core's
+[schema paths](../../core/agents/schema-paths.md).
+
+Deprecated `smrt db:setup` prepares tables and missing columns for
+development/test fixtures. It is not a production migration command and does
+not stamp a whole-build migrate record. Use `smrt db:migrate` for production provisioning.

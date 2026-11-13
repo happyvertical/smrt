@@ -764,6 +764,22 @@ export {
 // Use the main entry point for Node.js applications that need generators
 
 export * from './external-agent-usage.js';
+export * from './migrations/change-kinds.js';
+export {
+  collectMigrateRecordInput,
+  type LastMigrateRecord,
+  type MigrateRecord,
+  type MigrateRecordInput,
+  type MigrateRecordOptions,
+  readLastMigrateRecord,
+  recordSuccessfulMigrate,
+} from './migrations/migrate-record.js';
+export * from './migrations/migration-run-decision.js';
+export {
+  computeManifestSchemaFingerprint,
+  computeSchemaFingerprint,
+} from './migrations/schema-fingerprint.js';
+export { assertDatabaseMigratedForBuild } from './migrations/startup-guard.js';
 export {
   type OperationPermissionAlias,
   resolveOperationPermissionAlias,

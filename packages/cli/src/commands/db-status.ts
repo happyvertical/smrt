@@ -299,7 +299,7 @@ export function summarizeSchemaDiff(diff: {
       }
 
       case 'type_upgrade':
-        switch (classifyTypeUpgradeSql(change.sql)) {
+        switch (classifyTypeUpgradeSql(change)) {
           case 'executable':
             drift.push({
               name: `${change.table}.${change.name ?? '(unknown)'}`,
@@ -356,7 +356,7 @@ export function summarizeSchemaDiff(diff: {
             type: driftType,
             recommendation: change.advisory.message,
           });
-        } else if (classifyTypeUpgradeSql(change.sql) === 'executable') {
+        } else if (classifyTypeUpgradeSql(change) === 'executable') {
           drift.push({
             name,
             type: driftType,

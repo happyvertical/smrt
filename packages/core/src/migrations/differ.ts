@@ -79,6 +79,7 @@ import {
   type UuidConvergencePlan,
 } from '../schema/uuid-convergence.js';
 import { getDatabaseEngine } from '../system/compatibility.js';
+import { decideSchemaChange, hasExecutableSchemaSql } from './change-kinds.js';
 import {
   planSqliteTableRebuilds,
   sqliteBackfillPlaceholderSql,
@@ -339,12 +340,9 @@ export function isInfoOnlyChange(change: SchemaChange): boolean {
  * `ALTER COLUMN` the engine cannot perform in place).
  */
 export function isManualOrAdvisoryChange(change: SchemaChange): boolean {
-  if (change.type === 'type_mismatch') return true;
-  if (isAdvisoryOnlyChange(change)) return true;
-  const statements = change.sqlStatements ?? (change.sql ? [change.sql] : []);
   return (
-    statements.length > 0 &&
-    statements.every((statement) => statement.trim().startsWith('--'))
+    decideSchemaChange(change, 'sqlite').decision !== 'apply' ||
+    !hasExecutableSchemaSql(change)
   );
 }
 
@@ -655,6 +653,7 @@ export class SchemaComparer {
    * query.
    */
   private indexPredicateCache: Map<string, Map<string, string>> | null = null;
+  private invalidIndexNames = new Set<string>();
 
   /**
    * Cross-table batch queries stay bounded regardless of schema shape: this
@@ -707,6 +706,7 @@ export class SchemaComparer {
     this.liveSchemas.clear();
     this.renameDataPendingCache = null;
     this.indexPredicateCache = null;
+    this.invalidIndexNames.clear();
 
     // #2878 review: `renameDataPendingCache` is populated below for the
     // duration of this call only. The `finally` clears it again on the way
@@ -811,6 +811,7 @@ export class SchemaComparer {
       this.plannedTables.clear();
       this.renameDataPendingCache = null;
       this.indexPredicateCache = null;
+      this.invalidIndexNames.clear();
     }
   }
 
@@ -914,6 +915,9 @@ export class SchemaComparer {
             change.name,
             change.column,
             reason,
+            change.kindHint === 'column.rebuild-data-loss'
+              ? change.kindHint
+              : 'column.rebuild-unavailable',
           ),
         );
         notAdded.add(change.name);
@@ -1107,18 +1111,21 @@ export class SchemaComparer {
    */
   private async precomputeIndexPredicates(): Promise<void> {
     this.indexPredicateCache = null;
+    this.invalidIndexNames.clear();
     if (this.engine !== 'postgres') return;
     try {
       const result = await this.db.query(
-        `SELECT tablename, indexname, indexdef FROM pg_indexes WHERE schemaname = 'public'`,
+        `SELECT tablename, indexname, indexdef, (SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass(format('%I.%I', schemaname, indexname))) AS is_valid FROM pg_indexes WHERE schemaname = 'public'`,
       );
       const cache = new Map<string, Map<string, string>>();
       for (const row of result.rows as {
         tablename?: string;
         indexname?: string;
         indexdef?: string;
+        is_valid?: boolean;
       }[]) {
         if (!row.tablename || !row.indexname || !row.indexdef) continue;
+        if (row.is_valid === false) this.invalidIndexNames.add(row.indexname);
         const predicate = extractIndexPredicate(row.indexdef);
         if (!predicate) continue;
         let predicates = cache.get(row.tablename);
@@ -1359,6 +1366,12 @@ export class SchemaComparer {
       const [first] = block.targets.length > 0 ? block.targets : block.nodes;
       changes.push({
         type: 'type_upgrade',
+        kindHint:
+          block.cause === 'live-constraints'
+            ? 'type.uuid-constraints-unavailable'
+            : block.cause === 'probe-unavailable'
+              ? 'type.uuid-probe-unavailable'
+              : 'type.uuid-blocked',
         table: first?.table ?? '',
         name: first?.column,
         column: manifestColumn(first?.table ?? '', first?.column ?? ''),
@@ -1660,6 +1673,7 @@ export class SchemaComparer {
       if (sameColumn && !replacement) {
         changes.push({
           type: 'add_foreign_key',
+          kindHint: 'foreign-key.conflicting',
           table: tableName,
           name: foreignKeyConstraintName(tableName, foreignKey),
           foreignKey,
@@ -1743,6 +1757,20 @@ export class SchemaComparer {
         const suggestedSql = renderUuidConvergenceRepairHint(textNodes);
         changes.push({
           type: 'add_foreign_key',
+          kindHint: this.uuidConvergence?.blocks.some(
+            (block) =>
+              (block.cause === 'live-constraints' ||
+                block.cause === 'probe-unavailable') &&
+              block.nodes.some(
+                (node) =>
+                  (node.table === tableName &&
+                    node.column === foreignKey.column) ||
+                  (node.table === foreignKey.referencesTable &&
+                    node.column === foreignKey.referencesColumn),
+              ),
+          )
+            ? 'foreign-key.type-convergence-unavailable'
+            : 'foreign-key.incompatible-types',
           table: tableName,
           name: foreignKeyConstraintName(tableName, foreignKey),
           foreignKey,
@@ -1802,6 +1830,9 @@ export class SchemaComparer {
         if (!parentColumn || !childEmpty) {
           changes.push({
             type: 'add_foreign_key',
+            kindHint: !parentColumn
+              ? 'foreign-key.parent-column-missing'
+              : 'foreign-key.parent-data-missing',
             table: tableName,
             name: foreignKeyConstraintName(tableName, foreignKey),
             foreignKey,
@@ -2174,6 +2205,7 @@ export class SchemaComparer {
             } else {
               changes.push({
                 type: 'type_upgrade',
+                kindHint: 'type.narrow-float',
                 table: tableName,
                 name: colName,
                 column: colDef,
@@ -2390,6 +2422,7 @@ export class SchemaComparer {
           ) {
             changes.push({
               type: 'type_upgrade',
+              kindHint: 'type.default-relaxation-report',
               table: tableName,
               name: colName,
               column: colDef,
@@ -2431,6 +2464,7 @@ export class SchemaComparer {
           ) {
             changes.push({
               type: 'type_upgrade',
+              kindHint: 'type.preservation-unverified',
               table: tableName,
               name: colName,
               column: colDef,
@@ -2448,6 +2482,7 @@ export class SchemaComparer {
           } else if (jsonUpgradeCandidate && jsonProbe?.status === 'dirty') {
             changes.push({
               type: 'type_upgrade',
+              kindHint: 'type.invalid-json',
               table: tableName,
               name: colName,
               column: colDef,
@@ -2505,6 +2540,7 @@ export class SchemaComparer {
           ) {
             changes.push({
               type: 'type_upgrade',
+              kindHint: 'type.default-relaxation-report',
               table: tableName,
               name: colName,
               column: colDef,
@@ -2547,6 +2583,7 @@ export class SchemaComparer {
           ) {
             changes.push({
               type: 'type_upgrade',
+              kindHint: 'type.invalid-timestamp',
               table: tableName,
               name: colName,
               column: colDef,
@@ -3706,8 +3743,8 @@ export class SchemaComparer {
           sql: sqliteBackfillPlaceholderSql(colName),
         });
       } else if (!this.supportsAlterColumn()) {
-        changes.push(
-          this.buildAlterColumnChange({
+        changes.push({
+          ...this.buildAlterColumnChange({
             tableName,
             colName,
             colDef,
@@ -3716,7 +3753,11 @@ export class SchemaComparer {
             actual: 'NULL',
             statements: null,
           }),
-        );
+          ...(!hasManifestDefault &&
+          (await this.columnHasNulls(tableName, colName))
+            ? { kindHint: 'column.required-nulls' as const }
+            : {}),
+        });
       } else if (backfillNeeded && colDef.backfill) {
         // #3008: fill the NULLs from the declared per-row backfill, then
         // tighten — the recovery path for a column an older db:migrate
@@ -3896,7 +3937,7 @@ export class SchemaComparer {
   }
 
   /**
-   * Describe a DB column that has no manifest counterpart. Blocking when it
+   * Describe a DB column that has no manifest counterpart. Warn when it
    * is NOT NULL without a default: ORM inserts never supply it, so every
    * insert fails with a not-null violation while `db:status` would otherwise
    * say the schema is in sync (#2369).
@@ -4176,6 +4217,7 @@ export class SchemaComparer {
     for (const idx of dbSchema.indexes) {
       const unique = idx.unique ?? false;
       dbIndexesByName.set(idx.name, { columns: idx.columns, unique });
+      if (this.invalidIndexNames.has(idx.name)) continue;
       const signature = this.getIndexSignature(
         idx.columns,
         unique,
@@ -4230,7 +4272,7 @@ export class SchemaComparer {
         // here; if the json path itself changes, the index name changes
         // too (we encode the field name into it), so a name match is a
         // stronger guarantee than the column list for this index family.
-        if (isJsonPathIndex(idx)) {
+        if (isJsonPathIndex(idx) && !this.invalidIndexNames.has(idx.name)) {
           continue;
         }
 
@@ -4239,7 +4281,10 @@ export class SchemaComparer {
           dbByName.unique,
           dbPredicateFor(idx.name),
         );
-        if (dbSignature === manifestSignature) {
+        if (
+          dbSignature === manifestSignature &&
+          !this.invalidIndexNames.has(idx.name)
+        ) {
           continue; // Same name, same shape — nothing to do.
         }
 
@@ -5391,6 +5436,7 @@ export class SchemaComparer {
     colName: string,
     colDef: ColumnDefinition,
     reason?: string,
+    kindHint?: SchemaChange['kindHint'],
   ): SchemaChange {
     const quotedTable = this.quoteIdentifier(tableName);
     const quotedCol = this.quoteIdentifier(colName);
@@ -5402,6 +5448,7 @@ export class SchemaComparer {
       : 'Declare a per-row backfill on the field, e.g. @field({ required: true, backfill: "\'row:\' || id" }), or a default, then rerun db:migrate.';
     return {
       type: 'alter_column',
+      ...(kindHint ? { kindHint } : {}),
       table: tableName,
       name: colName,
       column: colDef,

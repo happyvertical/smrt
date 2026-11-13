@@ -257,8 +257,8 @@ What the database does with a stricter subclass field:
 Extend `src/schema/schema-path-parity.test.ts` for every generator change;
 manifest, registry, and merged migration schemas must agree. Inspect regenerated
 `dist/manifest.json` and schemas across affected packages, not only decorators.
-Runtime `verifyPersistenceTable()` checks table existence only. Database drift
-checks compare with generated artifacts; they cannot detect an omission shared
+Runtime `verifyPersistenceTable()` checks the migrate record and table existence.
+Database drift checks compare with generated artifacts; they cannot detect an omission shared
 by those artifacts. Use `smrt doctor --db` / `db:status --parity` for live parity.
 
 Every new query predicate needs its index or an explicit reason none is needed.
@@ -376,6 +376,36 @@ same value), so a runtime-only numeric field must declare
 decorator-only type. A database whose column was built from the old TEXT
 expectation is not auto-cast; parity reports the drift for an explicit
 migration.
+
+### Schema change decisions (#4925)
+
+Migrate makes the database match the code without asking whenever that is safe.
+It stops only when it would lose or invent data.
+
+`src/migrations/change-kinds.ts` owns `SCHEMA_CHANGE_KINDS`, the single table of
+stable kinds and decisions for PostgreSQL, SQLite, and DuckDB (JSON uses DuckDB's
+policy). `classifySchemaChange()` identifies the shape; `decideSchemaChange()`
+returns apply, stop, or report and a message naming the table and column or
+constraint. Producer `kindHint` values distinguish refusal shapes that share
+SQL and flags; consumers never parse the human diagnosis.
+
+Apply kinds carry executable SQL. Report kinds retain data: orphan columns
+(including NOT NULL orphans that can break inserts), orphan indexes/unique
+constraints, stale defaults, unrequested relaxations, possible rename notes,
+and conversions already handled by another rebuild. Reports never set
+`unactionableChanges` or `hasManualDrift`; these now contain exactly stop
+decisions, even when a report has warning severity. Read `diff.changes` to
+show all reports. The differ's executable-DDL helper and the CLI partition use
+the same classification; a data-blocked advisory-only UUID conversion is a
+stop, not a report.
+
+Every data stop says `loses-data` or `invents-data` and explains why.
+`UNRESOLVED_NON_DATA_STOPS` records existing refusals whose engine or adapter
+support is incomplete: column alterations/rebuilds, unfinished JSON/UUID preservation
+probes, live constraints that prevent UUID conversion, foreign-key additions/replacements/removals, and a missing referenced
+parent column. These are explicit exceptions awaiting implementation, not extra
+data rules. Unknown shapes stop as `unlisted`; source-coverage and real-comparer
+tests guard against real differ output reaching that fallback.
 
 ### A SQLite type change is a table rebuild (#2370)
 
@@ -935,21 +965,30 @@ query, and `db:status` seeds the orphan report with
 `SchemaComparer.getLiveSchemaSnapshot()`. Never add a per-table or
 per-relationship query to these paths without batching or bounding it.
 
-**Partial apply and opt-in orphan disposition (#2748).** The batch an
-unflagged `db:migrate` attempts already excludes every blocked change (a
-FK-with-orphans, a manual `type_upgrade`/`alter_column`) — those never leave
-`SchemaDiff.changes` as executable SQL, so they never enter the atomic
-tracker batch on their own. `--apply-unblocked` adds a second, opt-in
-safety layer on top of that exclusion: the CLI partitions the remaining
-"safe" bucket by *dependency*, not just by whether a change is individually
-blocked. `computeBlockedColumns()` (`packages/cli/src/commands/
-db-migrate-actions.ts`) reads every manual intervention's blocked
-`table.column` identity; `partitionUnblockedMigrations()` then withholds any
-`add_index`/`add_foreign_key`/`alter_column`/`drop_column` that reads or
-writes one of those columns (an index on a column whose type upgrade is
-blocked, or a FK whose child *or* parent column is blocked) and applies
-everything else through the normal transaction/tracker path. Off by
-default: without the flag, the batch stays exactly what it always was.
+**All-or-nothing migrate (#4927).** `decideMigrationRun()` in
+`migrations/migration-run-decision.ts` is the shared run gate. Pass `changes`,
+`addedTables`, and `engine`. It returns `proceed`, `stops` (original change,
+kind, reason, message), and `heldBack` (plain description, table, optional
+column). Schema stops and unconfirmed missing packages refuse a run. Reports
+never do. Package checks add `packageStops` and `notices` (see below).
+Every new table and apply change is held back if any stop remains. The CLI and
+`migrateSmrtSchemas()` both call this gate; Work-style wrappers need no local
+policy. `getPendingSchemaStatements().decision` exposes the schema-only plan.
+A refused core run returns `applied:false`, `refused:true`, `stops`, and
+`heldBack`, with `packageStops` and `notices`. `unactionableChanges` and
+`hasManualDrift` still describe schema stops only.
+It does not initialize the tracker or stamp a successful migrate record.
+Proceeding/in-sync runs return `refused:false` and empty stops/heldBack.
+Ordinary execution uses `tracker.applyAll(..., {atomic:true})`. A later failure
+rolls back the whole batch. PostgreSQL concurrent-index mode is the declared
+exception: non-index changes commit first and a rerun completes the indexes.
+The batched PostgreSQL index read includes `pg_index.indisvalid`; an INVALID
+index cannot satisfy a declaration by name or signature and is planned again.
+A stop still refuses that mode before any writes. The CLI also defers tracker
+bootstrap and system timestamp conversion until after the decision. Its lock
+uses session advisory locks on PostgreSQL and writes no table rows; other
+engines need no lock. Removed `--apply-unblocked` fails before connecting.
+See [CLI contract](../../cli/agents/db-migrate-all-or-nothing.md).
 
 The FK-orphan advisory branch in `compareForeignKeys()` (`migrations/
 differ.ts`) tags its `SchemaChange` with `orphanBlocked: true` and
@@ -962,7 +1001,9 @@ differ's own suggested `UPDATE ... SET <column> = NULL` (from
 rendered — never re-derived), then rebuilds the `ADD CONSTRAINT NOT VALID` +
 `VALIDATE CONSTRAINT` pair via the shared `renderForeignKeyAddStatements()`
 helper (`schema/foreign-key-ddl.ts`, also used by the differ's own safe-add
-branch) and adds it through the normal tracker path. A NOT NULL child column
+branch) and adds it through the normal atomic tracker batch. The exact original
+change is included in `resolvedStops` for the shared gate. Any other stop
+holds back both this UPDATE and the FK. A NOT NULL child column
 keeps the unconditional "Manual repair required" refusal — nulling isn't an
 option and the flag never deletes rows. `planOrphanDispositions()` fails
 closed (routes to "not nullable"/no-op) if an orphan-blocked change is
@@ -976,9 +1017,8 @@ alone (review, #2748). A manifest relaxed to nullable while the live column
 has not converged yet — the same drift `--relax-columns` handles for plain
 columns — would otherwise report `nullable: true` from the manifest side
 only, and `--null-orphans` would attempt an `UPDATE` PostgreSQL rejects
-outright (`23502`), failing the whole atomic batch instead of refusing just
-that one relationship. Nullable only when both sides agree; a real
-NOT NULL on either side keeps the unconditional refusal.
+outright (`23502`). The whole run now refuses before writes. Nullable only
+when both sides agree; a real NOT NULL on either side keeps the unconditional refusal.
 
 ### Pre-R11 `text` ids converge to `uuid` before any FK statement (#2608)
 
@@ -1055,8 +1095,8 @@ consumer reads `SchemaChange.column` — `partitionSchemaChanges()` in
 `@happyvertical/smrt-cli` skips an entry without one — so a conversion missing
 it would drop out of the `db:migrate` batch while `compareForeignKeys()` still
 assumed the converged type. Refused convergences carry the same column plus an
-advisory and no SQL, and the CLI routes them to the report-only advisories
-rather than to manual interventions or the tracker.
+advisory and no SQL. The CLI routes them to manual interventions with the
+table's data-loss reason; they never become executable tracker migrations.
 
 The uuid wording is gated on the manifest. Both the runtime guard and the
 status planner reach their incompatible-type branch for *any* mismatched pair,
@@ -1139,6 +1179,48 @@ Adding live trigger generation requires a migration rollout design.
 `_smrt_signals` and database-persisted registry APIs are retired; see
 `RETIRED_SYSTEM_TABLES` in `src/system/schema.ts`.
 
+## Successful migrate record (#4926)
+
+`migrations/migrate-record.ts` owns `_smrt_migrate_runs`, provisioned by
+`ensureSystemTables` (system schema 1.16.0). A successful whole-schema migrate,
+including an already-current database, records the core release, sorted unique
+packages seen in the registry, and `computeSchemaFingerprint(schemas)`. Classes
+without a package use `<unqualified>`. Failed, stopped, and dry runs never stamp
+it. Identical release/packages/fingerprint skip the insert; changed values append
+and preserve history. This permanent ledger has no retention/prune task.
+`readLastMigrateRecord` is SELECT-only and returns `state: 'none'` for an absent
+or empty table: the first run under this scheme, not a schema mismatch. The latest
+row orders by `created_at`, then `id`. Call the writer on the caller's database
+handle while its migration lock is held; it also works without a tracker.
+
+`migrateSmrtSchemas()` compares the last record's packages with
+`collectMigrateRecordInput().packages` before tracker bootstrap or apply.
+Unconfirmed missing packages refuse the whole run. `packageStops` names them
+and explains that a missing declaration could loosen required columns;
+`heldBack` lists the apply changes. Pass `confirmRemovedPackages: string[]`
+with exact recorded names to confirm intentional removals. Added packages are
+fine. A successful run writes the same package list used for this comparison,
+so confirmed removals leave the next record, including on an in-sync run.
+
+`checkPackagesSeen({ recorded, current, confirmedRemoved })` is the pure check
+in `migration-run-decision.ts`. `recorded: null` means no earlier record.
+`decideMigrationRun({ packagesSeen, ... })` folds it into the all-or-nothing
+gate. Package stops are not schema change kinds. `notices` reports ignored
+confirmations for non-missing names and a skipped comparison when no record
+exists. The core migrator logs those notices and returns them to wrappers.
+`getPendingSchemaStatements().decision` covers schema changes only.
+
+The fingerprint hashes canonical sorted JSON of abstract tables, columns,
+defaults, CHECKs, physical foreign keys, indexes (including predicates and JSON
+paths), and triggers. Defaults use the shared DDL formatter; nested JSON keys
+are canonicalized. Presentation metadata, source paths, version hashes,
+timestamps and registration order do not participate. Build tooling can call
+this pure browser-safe function on the build manifest's schema definitions;
+the runtime calls the same function on `getAllSchemasAsDefinitions()`. Build
+manifests carry this value as `schemaFingerprint`. Both manifest writers
+recompute it after merging local and consumed declarations. The schema-path
+parity test compares the stamp with the loaded registry for the same declarations.
+
 ## PostgreSQL migration execution
 
 `MigrationTracker.applyAll({ atomic: true })` sets local lock/statement timeouts
@@ -1178,3 +1260,46 @@ names; validation is memoized by registry generation and binding configuration.
 Configuration must load before first database use and stay
 fixed for that process. This is not an implicit data migration; see
 [consumer table bindings](../../../docs/content/table-bindings.md).
+
+## Migrate before runtime starts (#4929)
+
+`assertDatabaseMigratedForBuild(db, { engineHint })` is exported from core.
+Load all declarations before calling it. It reads the last migrate record and
+compares it with `computeSchemaFingerprint` over the loaded registry. It never
+creates schema or runs migrations. Collection queries and object persistence call
+it beside their table check in `verifyPersistenceTable()`. TaskRunner and
+ScheduleRunner call it before starting their loops. Successful starts share one
+record read per database key per process, including concurrent first uses.
+Refusals are not cached as successes. The declarations must stay fixed after start.
+System bootstrap, migrate, doctor and db:status do not call this guard.
+
+Production refuses a missing record or a different fingerprint and names
+`smrt db:migrate`. The error shows short expected/found fingerprints. An old
+copy of the app that restarts after a migrate will not come back up. Rolling
+code back without the database will not start either. Stop old copies before
+migrating and start the matching build after the migrate succeeds.
+
+`NODE_ENV=development` (also the unset default used by the CLI) warns once per
+database and starts. `NODE_ENV=test` is a quiet exemption, to keep existing
+log assertions and test fixtures stable. Handles successfully prepared by
+`getTestDatabase()` are marked in a module-owned WeakSet and exempt even in
+production mode. The mark belongs to that handle, not every database at its URL.
+
+For an emergency, `SMRT_ALLOW_UNMIGRATED_START=1` starts anyway. It logs once
+per database per process, including when fingerprints match. The warning names
+the override and the expected/found values. Other values do not override.
+
+Whole-schema provisioning is `db:migrate` or `migrateSmrtSchemas`; both record
+success, including an in-sync run. `smrt app install/setup/migrate` use the CLI
+migrate path. The local app-runtime's first-run `createSchema` hook and its
+`migrateSchemas()` callback use the core migrator, so they also record success.
+The app-shell's additive `prepareShellSchema` and content's `bootstrapSchema`
+hook are local/development bootstraps, not production migration entry points.
+The deprecated `db:setup`, `ensureSchema`, and `SchemaManager.ensureTable(s)`
+fill in missing tables and columns. They do not reconcile all existing
+constraints or prove the whole registry matches. They must not provision
+production databases or stamp that claim.
+Jobs' `ensureSchema` call prepares terminal-event compatibility storage only;
+it does not replace a whole-schema production migrate. The smrt-vitest schema
+builders are test-only. Direct SQL/adapter `createTable` calls are low-level DDL;
+production applications must finish with a successful whole-schema migrate.

@@ -14,7 +14,6 @@ import {
 } from './db-command-utils.js';
 import {
   classifyTypeUpgradeSql,
-  isAdvisoryOnlyChangeLike,
   partitionSchemaChanges,
   printSchemaAdvisories,
   type SchemaChangeLike,
@@ -314,14 +313,13 @@ export const dbDiffCommand: CLICommand = {
       const allTypeUpgrades = diff.changes.filter(
         (c) => c.type === 'type_upgrade',
       );
-      // Advisory-only upgrades (refusals, dirty probes, duplicate-key and
-      // preservation_unverified blocks) never reach db:migrate's statement
-      // stream, so they must not be listed as auto-applied (#3042).
+      // The table decides execution, including comment-only rebuild refusals
+      // and warning reports. Reports are printed through advisories below.
       const typeUpgrades = allTypeUpgrades.filter(
-        (c) => !isAdvisoryOnlyChangeLike(c),
+        (change) => classifyTypeUpgradeSql(change) === 'executable',
       );
-      const unappliedTypeUpgrades = allTypeUpgrades.filter((c) =>
-        isAdvisoryOnlyChangeLike(c),
+      const unappliedTypeUpgrades = allTypeUpgrades.filter(
+        (change) => classifyTypeUpgradeSql(change) === 'manual',
       );
       const typeMismatches = diff.changes.filter(
         (c) => c.type === 'type_mismatch',
@@ -354,10 +352,10 @@ export const dbDiffCommand: CLICommand = {
         (c) => c.type === 'alter_column' && (c.sql || c.sqlStatements),
       );
       const autoAlterations = columnAlterations.filter(
-        (c) => classifyTypeUpgradeSql(c.sql) === 'executable',
+        (c) => classifyTypeUpgradeSql(c) === 'executable',
       );
       const manualAlterations = columnAlterations.filter(
-        (c) => classifyTypeUpgradeSql(c.sql) !== 'executable',
+        (c) => classifyTypeUpgradeSql(c) === 'manual',
       );
       if (autoAlterations.length > 0) {
         console.log(

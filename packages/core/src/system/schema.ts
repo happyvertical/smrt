@@ -1313,6 +1313,19 @@ CREATE TABLE IF NOT EXISTS _smrt_sync_tombstones (
 );
 `;
 
+/** Permanent, append-only successful whole-schema migrate ledger (#4926). */
+export const CREATE_SMRT_MIGRATE_RUNS_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_migrate_runs (
+  id TEXT PRIMARY KEY,
+  release TEXT NOT NULL,
+  packages TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_smrt_migrate_runs_latest
+  ON _smrt_migrate_runs(created_at, id);
+`;
+
 /**
  * All system table creation statements
  */
@@ -1320,6 +1333,7 @@ export const ALL_SYSTEM_TABLES = [
   CREATE_SMRT_CONTEXTS_TABLE,
   CREATE_SMRT_MIGRATIONS_TABLE,
   CREATE_SMRT_SCHEMA_MIGRATIONS_TABLE,
+  CREATE_SMRT_MIGRATE_RUNS_TABLE,
   CREATE_SMRT_BACKFILLS_TABLE,
   CREATE_SMRT_RUN_ONCE_CLAIMS_TABLE,
   CREATE_SMRT_EMBEDDINGS_TABLE,
@@ -1511,7 +1525,8 @@ function toPostgresTenantUuid(ddl: string): string {
  * 1.15.0 adds the `_smrt_ai_transcripts` table and the `call_id` columns
  * (with indexes) on `_smrt_ai_usage` and `_smrt_ai_usage_outcomes` (#4780).
  */
-export const SMRT_SCHEMA_VERSION = '1.15.0';
+// 1.16.0 adds the successful whole-schema migrate ledger (#4926).
+export const SMRT_SCHEMA_VERSION = '1.16.0';
 
 /**
  * Canonical form of the system DDL that {@link SMRT_SCHEMA_DDL_CHECKSUMS} covers.
@@ -1564,4 +1579,6 @@ export const SMRT_SCHEMA_DDL_CHECKSUMS: Readonly<Record<string, string>> =
       '4dc0c5f170ebe54ce1322bd42e42e042d8893f2b4588809c19c77f17479c15b3',
     '1.15.0':
       '6a1a58c1b2f137d8a1e3378f667587074dd6d1049c8d2f119427ff1232c0323b',
+    '1.16.0':
+      '8f7f6a9f5a7f3d28ac4858841a665328698a06467bcab4a8d2055cc651db263a',
   });

@@ -10,6 +10,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  collectMigrateRecordInput,
   ensureDeferredSystemTableCompatibility,
   ensureSystemTables,
   generateDDLForEngine,
@@ -18,6 +19,8 @@ import {
   ObjectRegistry,
   planForeignKeyCreation,
   planPostgresSystemTimestampMigrations,
+  readLastMigrateRecord,
+  recordSuccessfulMigrate,
   SchemaComparer,
 } from '@happyvertical/smrt-core';
 import type {
@@ -49,20 +52,15 @@ import { dbGenerateCommand } from './db-generate.js';
 import { dbHistoryCommand } from './db-history.js';
 import { dbMaterializeTenantHierarchyCommand } from './db-materialize-tenant-hierarchy.js';
 import {
-  computeBlockedColumns,
-  computeOrphanOnlyBlockedColumns,
-  filterUnresolvedOrphanDispositions,
   getSyntheticMigrationNameForAction,
   type MigrationAction,
   orphanCountSql,
   partitionSchemaChanges,
-  partitionUnblockedMigrations,
   planOrphanDispositions,
   printSchemaAdvisories,
   type SchemaChangeLike,
   shouldApplySchemaMigrations,
   shouldFailDbMigrate,
-  type WithheldMigration,
 } from './db-migrate-actions.js';
 import { dbMigrateAgentScheduleSlugsCommand } from './db-migrate-agent-schedule-slugs.js';
 import { dbMigrateInt8Command } from './db-migrate-int8.js';
@@ -237,25 +235,6 @@ async function countOrphanRows(
 }
 
 /**
- * One-line identity for a migration action withheld under
- * `--apply-unblocked`, for the withheld-changes report (#2748).
- */
-function describeWithheldMigrationAction(action: MigrationAction): string {
-  switch (action.type) {
-    case 'add_index':
-      return `${action.tableName}: index ${action.index?.name ?? '(unnamed)'}`;
-    case 'add_foreign_key':
-      return `${action.tableName}: foreign key on ${action.foreignKey?.column ?? '(unknown column)'}`;
-    case 'alter_column':
-      return `${action.tableName}.${action.columnName ?? action.column?.name ?? '(unknown column)'}: ${action.alteration ?? 'alter_column'}`;
-    case 'drop_column':
-      return `${action.tableName}.${action.columnName ?? '(unknown column)'}: drop column`;
-    default:
-      return `${action.tableName}: ${action.type}`;
-  }
-}
-
-/**
  * Run the framework's deferred system-table compatibility pass after
  * `db:migrate` has created the tables it reshapes (issue #2376).
  *
@@ -368,6 +347,7 @@ interface DbMigrateOptions {
   'empty-text-as-null'?: boolean;
   force?: boolean;
   'force-migration'?: string | readonly string[];
+  'confirm-removed-package'?: string | readonly string[];
   'repair-data'?: boolean;
   'upgrade-sti'?: boolean;
   'drop-indexes'?: boolean;
@@ -1763,6 +1743,12 @@ export default testManifest;
           'Force re-apply even if already applied (skip checksum validation)',
         default: false,
       },
+      'confirm-removed-package': {
+        type: 'string',
+        description:
+          'Confirm one missing package was removed on purpose. Repeat for each package.',
+        multiple: true,
+      },
       'force-migration': {
         type: 'string',
         description:
@@ -1807,8 +1793,7 @@ export default testManifest;
       'apply-unblocked': {
         type: 'boolean',
         description:
-          'Withhold only the executable changes that depend on a blocked item (an index or foreign key on a column whose type upgrade is blocked, a foreign key whose orphan rows block it), instead of the default of applying every executable change regardless of dependency. A withheld change is reported with the blocked column it depends on. Off by default: every executable change in the batch still applies even when other items need manual intervention -- this flag makes that dependency-unsafe subset stop applying, it does not add anything that was previously withheld.',
-        default: false,
+          'Removed: migrate is all or nothing now; partial apply is gone.',
       },
       'null-orphans': {
         type: 'boolean',
@@ -1824,6 +1809,14 @@ export default testManifest;
       },
     },
     handler: async (_args: string[], options: DbMigrateOptions) => {
+      // Kept declared so this parser reaches the custom removal message.
+      if (options['apply-unblocked'] !== undefined) {
+        console.error(
+          '--apply-unblocked was removed: migrate is all or nothing now; partial apply is gone. See packages/cli/agents/db-migrate-all-or-nothing.md',
+        );
+        process.exitCode = 1;
+        return;
+      }
       console.log('\n🔄 Migrating database schema...\n');
 
       let db: DatabaseInterface | undefined;
@@ -2003,29 +1996,21 @@ export default testManifest;
           }
         }
 
-        // MigrationTracker bootstraps framework-owned tables and deliberately
-        // rejects legacy timezone-naive system columns. Apply the same
-        // explicit UTC confirmation to those tables first so the documented
-        // one-shot PostgreSQL migration path can reach schema comparison.
-        const systemTimestampPreview =
-          postgresTimestampMigration && isDryRun
-            ? await planPostgresSystemTimestampMigrations(
-                db,
-                postgresTimestampMigration,
-                dbType,
-              )
-            : [];
-        if (postgresTimestampMigration && !isDryRun) {
-          await migratePostgresSystemTimestamps(
-            db,
-            postgresTimestampMigration,
-            dbType,
-          );
-        }
+        // Preview system conversions without writes. Tracker bootstrap rejects
+        // legacy naive timestamps, so convert them after the run decision and
+        // before initializing the tracker.
+        const systemTimestampPreview = postgresTimestampMigration
+          ? await planPostgresSystemTimestampMigrations(
+              db,
+              postgresTimestampMigration,
+              dbType,
+            )
+          : [];
 
-        // 7.5. Initialize MigrationTracker for tracking applied migrations
+        // 7.5. Configure the tracker; initialization waits for the run decision.
         const {
           buildConcurrentIndexPlan,
+          decideMigrationRun,
           MigrationTracker,
           parsePostgresTimeoutMs,
           shortChecksum,
@@ -2054,16 +2039,13 @@ export default testManifest;
           statementTimeout,
           useConcurrentIndexes: concurrentIndexMode,
         });
-        if (!isDryRun) {
-          await tracker.initialize();
-        }
 
         if (options.verbose) {
           const engine = tracker.getEngine();
           console.log(
             isDryRun
               ? `Migration tracker preview configured (engine: ${engine})`
-              : `Migration tracker initialized (engine: ${engine})`,
+              : `Migration tracker configured (engine: ${engine})`,
           );
           if (engine === 'postgres') {
             console.log(
@@ -2179,37 +2161,20 @@ export default testManifest;
         const partitionedChanges = partitionSchemaChanges(
           diff.changes as SchemaChangeLike[],
           getClassForTable,
+          engine,
         );
         migrations.push(...partitionedChanges.migrations);
         manualInterventions.push(...partitionedChanges.manualInterventions);
         const advisories = partitionedChanges.advisories;
 
-        // #2748: opt-in orphan-FK disposition. Runs before the
-        // `--apply-unblocked` partition below so a relationship this
-        // resolves is no longer a "blocked column" a dependent index/FK
-        // gets withheld for.
-        //
-        // Fails closed (review): the orphan-count probe is never
-        // best-effort here. A probe failure means the differ's detector SQL
-        // hit an unexpected shape, and this disposition must report and
-        // withhold rather than proceed to null anything with an unverified
-        // count. The UPDATE and the ADD CONSTRAINT are combined into ONE
-        // migration action applied atomically through the normal tracker
-        // path (review) — nulling orphan references outside that
-        // transaction would let a later failure in the same batch roll
-        // back the FK add while leaving the just-nulled rows committed,
-        // silently splitting a promised single disposition into two.
+        // Explicit orphan disposition is planned without writing data. Its
+        // UPDATE and FK add join the atomic batch only if no stop remains.
+        const resolvedStops = new Set<(typeof diff.changes)[number]>();
         const pendingOrphanDispositions: {
           tableName: string;
           column: string;
           countSql: string;
           beforeCount: number;
-          // The exact combined null+add-FK `MigrationAction` this
-          // disposition pushed into `migrations` (review, #2748):
-          // `--apply-unblocked` can still withhold it below if the FK's
-          // *parent* column is separately blocked, and this reference is
-          // how the post-apply report tells "resolved" from "withheld"
-          // instead of reporting success for a migration that never ran.
           action: MigrationAction;
         }[] = [];
         if (options['null-orphans']) {
@@ -2245,14 +2210,15 @@ export default testManifest;
                 );
               }
 
-              // Resolved (or, on --dry-run, would-resolve): drop the
-              // manual-intervention entry and add one combined migration
-              // (null the orphans, then add the FK) so downstream previews
-              // and --apply-unblocked's dependency computation see the
-              // identical partition on --dry-run and a real apply (review,
-              // #2748) — not just the same textual "would apply" line.
-              // Actual execution still only happens outside --dry-run,
-              // through the normal transaction/tracker path below.
+              // Remember the exact original change for the core decision.
+              const original = diff.changes.find(
+                (change) =>
+                  change.type === 'add_foreign_key' &&
+                  change.orphanBlocked &&
+                  change.table === item.tableName &&
+                  change.foreignKey?.column === item.column,
+              );
+              if (original) resolvedStops.add(original);
               const index = manualInterventions.indexOf(item.action);
               if (index >= 0) manualInterventions.splice(index, 1);
               const combinedAction: MigrationAction = {
@@ -2269,63 +2235,97 @@ export default testManifest;
                 ],
               };
               migrations.push(combinedAction);
-              if (!isDryRun) {
-                pendingOrphanDispositions.push({
-                  tableName: item.tableName,
-                  column: item.column,
-                  countSql,
-                  beforeCount,
-                  action: combinedAction,
-                });
-              }
+              pendingOrphanDispositions.push({
+                tableName: item.tableName,
+                column: item.column,
+                countSql,
+                beforeCount,
+                action: combinedAction,
+              });
             }
             console.log();
           }
         }
 
-        // #2748: opt-in partial apply. Off by default — every executable
-        // change in `migrations` still applies regardless of dependency
-        // (review finding: the prior comment here claimed the unflagged
-        // batch is "all-or-nothing", but `shouldApplySchemaMigrations()`
-        // never gates on `manualInterventions`, so an unrelated safe DDL
-        // and even a dependent one both apply unflagged; only the blocked
-        // items themselves never enter `migrations`). When set, split the
-        // safe/executable bucket into changes independent of every blocked
-        // column (applied normally) and changes that depend on one (an
-        // index/FK on a column whose type upgrade is blocked, or on a
-        // still-orphan-blocked FK's column) — those stay withheld and are
-        // reported like every other manual intervention.
-        let withheldForDependency: WithheldMigration[] = [];
-        if (options['apply-unblocked']) {
-          const blockedColumns = computeBlockedColumns(
-            manualInterventions,
-            advisories,
-          );
-          const orphanOnlyBlockedColumns =
-            computeOrphanOnlyBlockedColumns(manualInterventions);
-          const partition = partitionUnblockedMigrations(
-            migrations,
-            blockedColumns,
-            orphanOnlyBlockedColumns,
-          );
-          withheldForDependency = partition.withheld;
-          migrations.length = 0;
-          migrations.push(...partition.applied);
+        // 9b. Report-only advisories (#2369): orphan columns / stale unique
+        // constraints / relaxations not opted into. Printed every run so a
+        // NOT NULL orphan that breaks inserts is never silent; they do not
+        // fail the command by themselves.
+        printSchemaAdvisories(advisories, {
+          orphanTables: diff.orphan_tables ?? [],
+          verbose: Boolean(options.verbose),
+        });
 
-          // A --null-orphans disposition's combined null+add-FK migration
-          // can itself be withheld here (its parent column separately
-          // blocked) even though it already resolved out of
-          // `manualInterventions` above. Drop it from the pending list so
-          // the post-apply report doesn't print a ✓ resolution for a
-          // migration that never ran — it's already covered by the
-          // "🔒 Withheld" listing below (review, #2748).
-          const stillPending = filterUnresolvedOrphanDispositions(
-            pendingOrphanDispositions,
-            withheldForDependency,
+        const recordInput = collectMigrateRecordInput();
+        const lastMigrate = await readLastMigrateRecord(db, {
+          engineHint: dbType,
+        });
+        const removedOption = options['confirm-removed-package'];
+        const confirmedRemoved =
+          typeof removedOption === 'string'
+            ? [removedOption]
+            : Array.isArray(removedOption)
+              ? removedOption
+              : [];
+        const runDecision = decideMigrationRun({
+          changes: diff.changes,
+          addedTables: diff.added_tables,
+          engine,
+          resolvedStops,
+          packagesSeen: {
+            recorded:
+              lastMigrate.state === 'recorded'
+                ? lastMigrate.record.packages
+                : null,
+            current: recordInput.packages,
+            confirmedRemoved,
+          },
+        });
+        for (const notice of runDecision.notices) console.log(notice);
+        if (!runDecision.proceed) {
+          console.log(
+            runDecision.packageStops.length
+              ? `Migrate stopped: ${runDecision.packageStops.length} missing package(s), ${runDecision.stops.length} schema stop(s)`
+              : `Migrate stopped: ${runDecision.stops.length} change(s) would lose or invent data`,
           );
-          pendingOrphanDispositions.length = 0;
-          pendingOrphanDispositions.push(...stillPending);
+          for (const stop of runDecision.packageStops)
+            console.log(`   ${stop.message}`);
+          for (const stop of runDecision.stops) {
+            console.log(`   ${stop.message} (${stop.reason})`);
+            for (const sql of stop.change.advisory?.suggestedSql ?? [])
+              console.log(`      ${sql}`);
+          }
+          console.log('Held back (nothing was applied):');
+          for (const held of runDecision.heldBack)
+            console.log(`   ${held.description}`);
+          for (const pending of pendingOrphanDispositions)
+            console.log(
+              `   Null orphan references ${pending.tableName}.${pending.column}`,
+            );
+          for (const step of systemTimestampPreview)
+            console.log(`   Convert system timestamps: ${step.tableName}`);
+          if (repairData)
+            console.log(
+              '   --repair-data was skipped because the migration was refused.',
+            );
+          if (isDryRun)
+            console.log(
+              'Dry-run: this migration would be refused (no changes made).',
+            );
+          process.exitCode = 1;
+          return;
         }
+
+        // No migration writes, including system bootstrap, precede the gate.
+        if (postgresTimestampMigration && !isDryRun) {
+          await migratePostgresSystemTimestamps(
+            db,
+            postgresTimestampMigration,
+            dbType,
+          );
+        }
+
+        if (!isDryRun) await tracker.initialize();
 
         // #2608: the pre-R11 `text` -> `uuid` convergence has to run before
         // every `CREATE TABLE` in this batch — `planForeignKeyCreation()` only
@@ -2379,70 +2379,11 @@ export default testManifest;
 
         console.log();
 
-        // 9. Report non-executable drift that still needs manual intervention
-        if (manualInterventions.length > 0) {
-          console.log(
-            '⚠️  Schema drift detected that requires manual intervention:\n',
-          );
-          for (const change of manualInterventions) {
-            if (
-              change.type === 'add_foreign_key' ||
-              change.type === 'drop_foreign_key'
-            ) {
-              console.log(
-                `   ${change.tableName}: ${change.advisory?.message ?? change.sql?.replace(/^--\s*/, '') ?? 'foreign-key constraint requires manual repair'}`,
-              );
-              for (const sql of change.advisory?.suggestedSql ?? []) {
-                console.log(`      ${sql}`);
-              }
-              continue;
-            }
-            if (!change.mismatch) continue;
-
-            const detail =
-              change.type === 'type_upgrade'
-                ? `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual} (cannot auto-apply on this database engine)`
-                : change.type === 'alter_column'
-                  ? `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual} (${change.alteration ?? 'alter_column'}; ${change.sql?.replace(/^--\s*/, '') ?? 'cannot auto-apply on this database engine'})`
-                  : `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual}`;
-
-            console.log(`   ${detail}`);
-          }
-          console.log();
-          console.log(
-            '   Manual migration required (backup, recreate, restore as needed).\n',
-          );
-        }
-
-        // 9a. Report changes withheld under --apply-unblocked because they
-        // depend on one of the manual interventions above (#2748).
-        if (withheldForDependency.length > 0) {
-          console.log(
-            `🔒 Withheld — depends on a blocked change (--apply-unblocked, ${withheldForDependency.length}):\n`,
-          );
-          for (const { action, dependsOn, reason } of withheldForDependency) {
-            console.log(
-              `   ${describeWithheldMigrationAction(action)}: depends on ${dependsOn} (${reason})`,
-            );
-          }
-          console.log();
-        }
-
-        // 9b. Report-only advisories (#2369): orphan columns / stale unique
-        // constraints / relaxations not opted into. Printed every run so a
-        // NOT NULL orphan that breaks inserts is never silent; they do not
-        // fail the command by themselves.
-        printSchemaAdvisories(advisories, {
-          orphanTables: diff.orphan_tables ?? [],
-          verbose: Boolean(options.verbose),
-        });
-
         // 10. Handle no migrations needed
         const tablesCreated = diff.added_tables.length > 0;
         const schemaUpToDate =
           migrations.length === 0 &&
           manualInterventions.length === 0 &&
-          withheldForDependency.length === 0 &&
           !tablesCreated &&
           systemTimestampPreview.length === 0;
 
@@ -3163,8 +3104,7 @@ export default testManifest;
 
         if (
           shouldFailDbMigrate({
-            manualInterventionCount:
-              manualInterventions.length + withheldForDependency.length,
+            manualInterventionCount: runDecision.stops.length,
             tableErrorCount,
             migrationErrorCount: errorCount,
             stiErrorCount,
@@ -3174,7 +3114,7 @@ export default testManifest;
           process.exitCode = 1;
         }
 
-        if (!isDryRun) {
+        if (!isDryRun && errorCount === 0 && stiErrorCount === 0) {
           // Fail the run if the lock was lost during apply, so the caller
           // retries against a converged schema instead of reporting success
           // for a run that was not serialized (#3634).
@@ -3195,6 +3135,18 @@ export default testManifest;
               db,
             }),
           );
+          if (
+            manualInterventions.length === 0 &&
+            tableErrorCount === 0 &&
+            errorCount === 0 &&
+            stiErrorCount === 0 &&
+            (applySchemaMigrations || schemaUpToDate)
+          ) {
+            await recordSuccessfulMigrate(db, {
+              engineHint: dbType,
+              input: recordInput,
+            });
+          }
         }
 
         console.log('💡 Next steps:');

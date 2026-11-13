@@ -35,7 +35,7 @@
     "clean": "rm -rf dist",
     "dev": "npm run build:watch",
     "test": "vitest run",
-    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run --no-file-parallelism src/commands/__tests__/db-migrate-uuid.test.ts src/commands/__tests__/db-migrate-force-postgres.test.ts src/commands/__tests__/sti-upgrade.test.ts src/commands/__tests__/db-migrate-partial-apply-postgres.test.ts src/commands/__tests__/db-migrate-concurrent-postgres.test.ts src/app/__tests__/portability-json-postgres.test.ts src/app/__tests__/cloud-migration.test.ts",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run --no-file-parallelism src/commands/__tests__/db-migrate-uuid.test.ts src/commands/__tests__/db-migrate-force-postgres.test.ts src/commands/__tests__/sti-upgrade.test.ts src/commands/__tests__/db-migrate-postgres-safe.optional.test.ts src/commands/__tests__/db-migrate-concurrent-postgres.test.ts src/app/__tests__/portability-json-postgres.test.ts src/app/__tests__/cloud-migration.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.typecheck.json && tsc -p tsconfig.test.json",
     "cli": "tsx src/index.ts"
@@ -67,6 +67,7 @@
     "yaml": "^2.9.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
     "@modelcontextprotocol/client": "2.3.1",
     "@types/node": "24.13.6",
     "tsx": "^4.23.13",

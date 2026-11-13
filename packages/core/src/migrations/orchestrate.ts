@@ -10,6 +10,7 @@
  * database is a no-op (the diff is empty, no statements are generated,
  * `applied: false` is returned).
  */
+
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { ObjectRegistry } from '../registry.js';
@@ -17,6 +18,7 @@ import { getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import { planForeignKeyCreation } from '../schema/foreign-key-planner.js';
 import type { MigrationResult, SchemaChange } from '../schema/types.js';
+import { decideSchemaChange, isCommentOnlySql } from './change-kinds.js';
 import {
   generateSchemaDiff,
   getSQLFromChanges,
@@ -28,6 +30,15 @@ import {
   createMigrationDefinition,
   generateMigrationTimestamp,
 } from './generator.js';
+import {
+  collectMigrateRecordInput,
+  readLastMigrateRecord,
+  recordSuccessfulMigrate,
+} from './migrate-record.js';
+import {
+  decideMigrationRun,
+  type MigrationRunDecision,
+} from './migration-run-decision.js';
 import { MigrationTracker } from './tracker.js';
 
 const logger = createLogger({ level: 'info' });
@@ -131,18 +142,22 @@ export interface MigrateSmrtSchemasOptions {
   emptyTextAsNull?: boolean;
   /** Explicitly allow relaxing live column constraints. */
   relaxColumns?: boolean;
+  /** Exact package removals explicitly confirmed by the caller. */
+  confirmRemovedPackages?: string[];
 }
 
-export interface MigrateSmrtSchemasResult {
+export interface MigrateSmrtSchemasResult
+  extends Omit<MigrationRunDecision<SchemaChange>, 'proceed'> {
+  /** True when any stop refused the entire run, before tracker bootstrap. */
+  refused: boolean;
   applied: boolean;
   results: MigrationResult[];
   statements: string[];
   schemaCount: number;
   /**
-   * Schema changes the orchestrator detected but cannot apply automatically
-   * (incompatible type mismatches, SQLite type upgrades that require table
-   * recreation, etc.). Empty when the schema is fully reconciled. Inspect
-   * this to surface a "manual migration required" warning in CLI output.
+   * Exactly the stop decisions from change-kinds.ts. Reports, including
+   * warning-level orphan columns and unrequested relaxations, are excluded.
+   * Inspect diff.changes for those reports even when this array is empty.
    */
   unactionableChanges: SchemaChange[];
   /**
@@ -160,6 +175,7 @@ export interface MigrateSmrtSchemasResult {
 }
 
 export interface PendingSchemaStatementsResult {
+  decision: MigrationRunDecision<SchemaChange>;
   diff: Awaited<ReturnType<typeof generateSchemaDiff>>;
   statements: string[];
   schemaCount: number;
@@ -224,9 +240,17 @@ export async function getPendingSchemaStatements(
     relaxColumns: options.relaxColumns,
   });
   const statements = collectStatementsFromDiff(diff, db, options.engineHint);
-  const unactionableChanges = collectUnactionableChanges(diff);
+  const unactionableChanges = collectUnactionableChanges(
+    diff,
+    resolveMigrationEngine(db, options.engineHint),
+  );
   return {
     diff,
+    decision: decideMigrationRun({
+      changes: diff.changes,
+      addedTables: diff.added_tables,
+      engine: resolveMigrationEngine(db, options.engineHint),
+    }),
     schemaCount: Object.keys(schemas).length,
     statements,
     hasChanges: hasActionableChanges(diff),
@@ -261,15 +285,9 @@ export async function getPendingSchemaStatements(
  * `failed` row in `_smrt_schema_migrations` per attempt. Pass an explicit
  * `name` if you want to overwrite the same record across retries.
  *
- * **Note on `unactionableChanges`:** the differ can detect schema drift
- * the migration step can't auto-resolve — incompatible type mismatches,
- * SQLite type widening that needs table recreation, etc. Those changes
- * appear in `result.unactionableChanges` and are NOT applied (the
- * statements list is filtered to executable DDL only). When the diff
- * contains *only* unactionable changes, the function returns
- * `applied: false` with a populated `unactionableChanges` so callers can
- * surface a "manual migration required" signal. Without inspecting that
- * field, the result would look indistinguishable from "already in sync."
+ * A stop refuses the whole run before tracker bootstrap. `refused`, `stops`,
+ * and `heldBack` expose that decision directly; wrappers need no policy of
+ * their own. `unactionableChanges` and `hasManualDrift` remain available.
  */
 export async function migrateSmrtSchemas(
   options: MigrateSmrtSchemasOptions,
@@ -280,9 +298,52 @@ export async function migrateSmrtSchemas(
     emptyTextAsNull: options.emptyTextAsNull,
     relaxColumns: options.relaxColumns,
   });
-  if (!pending.hasChanges || pending.statements.length === 0) {
+  const recordInput = collectMigrateRecordInput();
+  const last = await readLastMigrateRecord(options.db, {
+    engineHint: options.engineHint,
+  });
+  const decision = decideMigrationRun({
+    changes: pending.diff.changes,
+    addedTables: pending.diff.added_tables,
+    engine: resolveMigrationEngine(options.db, options.engineHint),
+    packagesSeen: {
+      recorded: last.state === 'recorded' ? last.record.packages : null,
+      current: recordInput.packages,
+      confirmedRemoved: options.confirmRemovedPackages ?? [],
+    },
+  });
+  const { stops, heldBack, proceed, packageStops, notices } = decision;
+  for (const notice of notices) logger.info(notice);
+  if (!proceed) {
     return {
       applied: false,
+      refused: true,
+      stops,
+      packageStops,
+      notices,
+      heldBack,
+      results: [],
+      statements: pending.statements,
+      schemaCount: pending.schemaCount,
+      unactionableChanges: pending.unactionableChanges,
+      hasManualDrift: pending.hasManualDrift,
+      relaxedColumns: [],
+    };
+  }
+  if (!pending.hasChanges || pending.statements.length === 0) {
+    if (!pending.hasManualDrift) {
+      await recordSuccessfulMigrate(options.db, {
+        input: recordInput,
+        engineHint: options.engineHint,
+      });
+    }
+    return {
+      applied: false,
+      refused: false,
+      stops,
+      packageStops,
+      notices,
+      heldBack,
       results: [],
       statements: [],
       schemaCount: pending.schemaCount,
@@ -311,6 +372,7 @@ export async function migrateSmrtSchemas(
   );
 
   const results = await tracker.applyAll([migration], {
+    atomic: true,
     postgresSafe: options.postgresSafe ?? true,
     reconcile: options.reconcile ?? true,
   });
@@ -320,6 +382,13 @@ export async function migrateSmrtSchemas(
     throw failed.error instanceof Error
       ? failed.error
       : new Error(String(failed.error ?? `Migration ${failed.name} failed`));
+  }
+
+  if (!pending.hasManualDrift) {
+    await recordSuccessfulMigrate(options.db, {
+      input: recordInput,
+      engineHint: options.engineHint,
+    });
   }
 
   const applied = results.some(
@@ -335,6 +404,11 @@ export async function migrateSmrtSchemas(
 
   return {
     applied,
+    refused: false,
+    stops,
+    packageStops,
+    notices,
+    heldBack,
     results,
     statements: pending.statements,
     schemaCount: pending.schemaCount,
@@ -411,82 +485,15 @@ export function collectStatementsFromDiff(
 }
 
 /**
- * True if `sql` contains no executable DDL — only line comments (`--`)
- * and/or block comments (`/* … *​/`). Used to discard advisory comments
- * the differ emits when a column upgrade can't be performed in place
- * (e.g. SQLite type widening). Defensive: strips block comments first so
- * a future differ that emits `/* type_upgrade: no-op *​/` doesn't slip
- * through.
+ * Only stops need intervention. Warning-level reports (including orphan NOT
+ * NULL columns and unrequested relaxations) never set hasManualDrift (#4925).
+ * @internal
  */
-function isCommentOnlySql(sql: string): boolean {
-  // Strip /* ... */ block comments (non-greedy, spans newlines).
-  const withoutBlockComments = sql.replace(/\/\*[\s\S]*?\*\//g, '');
-  const lines = withoutBlockComments
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-  if (lines.length === 0) return sql.trim().length > 0;
-  return lines.every((line) => line.startsWith('--'));
-}
-
-/**
- * True if `sql` is an advisory comment that says *nothing needs to happen* —
- * as opposed to one that says a human has to act.
- *
- * The differ emits both kinds. "This SQLite column already stores JSON as
- * TEXT" and "#2370: this column is rebuilt together with its sibling" are
- * no-ops; "requires table recreation" / "blocked: …" are real manual drift.
- * Treating the first kind as drift makes a fully auto-repairable migration
- * report `hasManualDrift: true`.
- *
- * Keep in sync with `classifyTypeUpgradeSql`'s `noop` arm in
- * `@happyvertical/smrt-cli` (`src/commands/db-migrate-actions.ts`), which
- * applies the same rule on the CLI side.
- */
-function isNoOpAdvisorySql(sql: string): boolean {
-  const trimmed = sql.trim();
-  return (
-    /no change needed/i.test(trimmed) || /already stores .* as /i.test(trimmed)
-  );
-}
-
-/**
- * Surface changes the differ produced but that the migrator cannot apply
- * automatically — `type_mismatch` entries (the differ explicitly gives up on
- * these), `type_upgrade`/`alter_column` entries whose generated SQL is
- * advisory-comment-only (a SQLite rebuild that would be unsafe, an in-place
- * constraint change SQLite cannot perform), and warning-level report-only
- * advisories (an orphan NOT NULL column that will break inserts, a required
- * column that could not be enforced, a stale unique constraint, a relaxation
- * the caller has not opted into). Info-level advisories (a harmless orphan
- * column, a stale default) and comments that mean "already handled" (the
- * no-op advisories a table rebuild leaves on covered siblings, #2370) are
- * deliberately excluded so `hasManualDrift` keeps meaning "something needs
- * an operator". Callers use this to distinguish "schema is in sync" from
- * "schema is drifted but we can't fix it from here".
- */
-function collectUnactionableChanges(
+export function collectUnactionableChanges(
   diff: Awaited<ReturnType<typeof generateSchemaDiff>>,
+  engine: DatabaseEngine = 'sqlite',
 ): SchemaChange[] {
-  const unactionable: SchemaChange[] = [];
-  for (const change of diff.changes) {
-    if (change.type === 'type_mismatch') {
-      unactionable.push(change);
-      continue;
-    }
-    const statements = change.sqlStatements ?? (change.sql ? [change.sql] : []);
-    if (statements.length === 0) {
-      if (change.advisory?.severity === 'warning') {
-        unactionable.push(change);
-      }
-      continue;
-    }
-    if (
-      statements.every((stmt) => isCommentOnlySql(stmt.trim())) &&
-      !statements.every((stmt) => isNoOpAdvisorySql(stmt))
-    ) {
-      unactionable.push(change);
-    }
-  }
-  return unactionable;
+  return diff.changes.filter(
+    (change) => decideSchemaChange(change, engine).decision === 'stop',
+  );
 }

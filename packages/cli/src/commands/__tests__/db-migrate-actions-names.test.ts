@@ -334,20 +334,23 @@ describe('partitionSchemaChanges index + guard branches', () => {
     expect(manualInterventions).toEqual([]);
   });
 
-  it('skips malformed add_index/drop_index/add_column/type changes', () => {
+  it('refuses unlisted malformed changes instead of silently discarding them', () => {
     const { migrations, manualInterventions } = partitionSchemaChanges(
       [
-        { type: 'add_index', table: 'widgets' }, // no index → skipped
-        { type: 'drop_index', table: 'widgets' }, // no name → skipped
-        { type: 'add_column', table: 'widgets' }, // no name/column → skipped
-        { type: 'type_mismatch', table: 'widgets' }, // no name/mismatch → skipped
-        { type: 'type_upgrade', table: 'widgets', name: 'x' }, // no mismatch → skipped
-      ] as any,
+        { type: 'add_index', table: 'widgets' },
+        { type: 'drop_index', table: 'widgets' },
+        { type: 'add_column', table: 'widgets' },
+        { type: 'type_mismatch', table: 'widgets' },
+        { type: 'type_upgrade', table: 'widgets', name: 'x' },
+      ],
       getClassForTable,
     );
 
     expect(migrations).toEqual([]);
-    expect(manualInterventions).toEqual([]);
+    expect(manualInterventions).toHaveLength(5);
+    expect(
+      manualInterventions.filter((action) => action.kind === 'unlisted'),
+    ).toHaveLength(4);
   });
 
   it('routes a type_mismatch into manual interventions', () => {

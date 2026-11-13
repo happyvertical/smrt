@@ -352,7 +352,10 @@ export class SchemaManager {
   }
 
   /**
-   * Create multiple tables with dependency ordering
+   * Create multiple tables with dependency ordering. Low-level development/test
+   * provisioning only: this fills missing tables/columns but does not reconcile
+   * all existing constraints or attest to the whole registry. Production
+   * provisioning uses migrateSmrtSchemas/db:migrate.
    *
    * @param schemas - Array of schema definitions
    */

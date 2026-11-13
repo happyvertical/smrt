@@ -480,6 +480,7 @@ export {
 } from './learning/index';
 // Static manifest (generated at build time)
 export * from './manifest/index';
+export * from './migrations/change-kinds.js';
 export type { DiffOptions } from './migrations/differ';
 // Schema comparison and migration utilities
 export {
@@ -490,6 +491,21 @@ export {
   isManualOrAdvisoryChange,
   SchemaComparer,
 } from './migrations/differ';
+export {
+  collectMigrateRecordInput,
+  type LastMigrateRecord,
+  type MigrateRecord,
+  type MigrateRecordInput,
+  type MigrateRecordOptions,
+  readLastMigrateRecord,
+  recordSuccessfulMigrate,
+} from './migrations/migrate-record.js';
+export * from './migrations/migration-run-decision.js';
+export {
+  computeManifestSchemaFingerprint,
+  computeSchemaFingerprint,
+} from './migrations/schema-fingerprint.js';
+export { assertDatabaseMigratedForBuild } from './migrations/startup-guard.js';
 export * from './object';
 export {
   type OperationPermissionAlias,
