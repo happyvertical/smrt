@@ -54,6 +54,14 @@ follows the same rule.
 
 ## How a Node-only dependency stays out
 
+The Node host exports synchronous query helpers from `@happyvertical/sql/query`.
+Its existing asynchronous `getDatabase` seam imports the SQL factory on first
+use, preserving the SDK's options, results and rejection. Importing the host
+alone does not resolve the SQL root or its providers. Opening SQLite still
+loads the installed SDK's public root, which statically imports `pg`; removing
+that last provider requires an SDK lazy factory or public SQLite-only factory.
+Do not reach into hashed SDK chunks to bypass the published boundary.
+
 Never import it statically from a module the browser graph reaches. Pick one:
 
 | Need | Use |
@@ -80,9 +88,20 @@ not emit it), and a `browser` mapping; `browser-field.test.ts` checks all three.
 - The embedded write queue runs unqueued without async-local state; its only
   browser database, PGlite, serializes statements itself.
 - `smrt-config`'s browser loader resolves to `{}`; use `setConfig()`.
-- The whole browser entry does not yet evaluate unbundled: several modules
-  read `process.env` at module scope, and `@happyvertical/utils` imports
-  CommonJS `pluralize` itself (#4534).
+- With bare-dependency discovery disabled, the whole browser entry still cannot
+  evaluate: several modules
+  depend on `@happyvertical/utils`, which imports CommonJS `pluralize` itself
+  (#4534). Native core modules work with standard Vite dependency discovery;
+  the SDK's bare dependencies still require Vite's normal optimization.
+
+The native-dev harness retains its original naming/no-discovery fixture and adds
+a separate public-root/registry/manifest fixture with normal Vite dependency
+discovery. That fixture asserts there is no `process` global, constructs a public
+object, performs optional manifest discovery, and proves strict registry errors
+remain enabled. Browser-reachable environment reads use optional
+`globalThis.process?.env` access; missing Node debug/test flags stay absent rather
+than being simulated. Node flags remain live and retain their existing meanings.
+Filesystem-only discovery still uses the existing Node-host capability guard.
 
 Legacy STI discovery uses the same Node-host capability before resolving installed
 or workspace package paths (#4766). Without a filesystem, uncached optional

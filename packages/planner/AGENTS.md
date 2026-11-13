@@ -76,3 +76,7 @@ the merge-group Publish Dry Run runs the same gate).
 Exempt from `smrtVitestPlugin()` (`scripts/check-standards.mjs`): the planner
 declares no `@smrt()` classes and its tests must consume the built packages as a
 consumer does. `app` in `files` is a build output for the same reason as above.
+
+Browser gates accept `PLANNER_TEST_PORT` (preview/packed HTTP server) and
+`PLANNER_TEST_VITE_PORT` (live-preview Vite server) for reserved-port sessions;
+omitting them retains ephemeral ports. `CHROME_PATH` selects the browser binary.

@@ -8,6 +8,10 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { SmrtCollection } from '../collection';
 import {
+  COOKBOOK_TOOL_NAMES,
+  getCookbookToolService,
+} from '../cookbook/tools.js';
+import {
   type McpGetSerializer,
   resolveMcpGetSerializer,
 } from '../mcp-serializer.js';
@@ -24,9 +28,17 @@ import type {
   ApiSerializerReference,
   RegisteredClass,
 } from '../registry/types.js';
+import {
+  isRuntimeModelEnabled,
+  type RuntimeExposureContext,
+  subscribeRuntimeExposure,
+} from '../runtime-exposure.js';
 import type { FieldDefinition, MethodDefinition } from '../scanner/types.js';
 import { resolveDisplayLabelField } from '../ui-metadata.js';
-import { isQualifiedName } from '../utils/qualified-names.js';
+import {
+  isQualifiedName,
+  parseQualifiedName,
+} from '../utils/qualified-names.js';
 import {
   buildCustomActionInvocationArgs,
   type CustomActionFailure,
@@ -153,6 +165,14 @@ export interface MCPConfig {
    * or calls (#3490). Duplicate tool names within the scope still fail.
    */
   classNames?: readonly string[];
+  /**
+   * Qualify all tools of models whose aliases collide inside classNames.
+   * Names are chosen before live exposure filtering, so recipe changes cannot
+   * retarget an alias. Omitted, duplicate aliases still fail closed.
+   */
+  qualifyCollidingNames?: boolean;
+  /** Use lowercase snake_case aliases for consumers with a stricter tool grammar. */
+  snakeCaseNames?: boolean;
 }
 
 export const MCP_STABLE_CATALOG_TTL_MS = 86_400_000;
@@ -500,9 +520,12 @@ export class MCPGenerator {
     this.context = context;
   }
 
-  /**
-   * Get server name
-   */
+  /** Subscribe a protocol host to live catalog invalidations; unsubscribe on close. */
+  onToolsListChanged(listener: () => void): () => void {
+    return subscribeRuntimeExposure(listener);
+  }
+
+  /** Get server name. */
   get name(): string | undefined {
     return this.config.name;
   }
@@ -518,6 +541,34 @@ export class MCPGenerator {
    * Generate all available tools from registered objects
    */
   async generateTools(): Promise<MCPTool[]> {
+    const tools = await this.generateToolDefinitions({
+      surface: 'mcp',
+      tenantId: this.context.tenantId,
+    });
+    const modelTools = tools.filter((tool) =>
+      isRuntimeModelEnabled(
+        ObjectRegistry.getExposureModel(
+          this.toolTarget(tool).registryKey ?? this.toolTarget(tool).objectName,
+        ),
+        { surface: 'mcp', tenantId: this.context.tenantId },
+      ),
+    );
+    const recipeTools =
+      (await getCookbookToolService()?.list({
+        surface: 'mcp',
+        tenantId: this.context.tenantId,
+        userId: this.context.user?.id,
+      })) ?? [];
+    const names = new Set(modelTools.map((tool) => tool.name));
+    if (recipeTools.some((tool) => names.has(tool.name)))
+      throw new Error('Cookbook tool name collision');
+    return [...modelTools, ...recipeTools];
+  }
+
+  /** AOT superset unless an explicit live exposure context is supplied. */
+  async generateToolDefinitions(
+    exposureContext?: RuntimeExposureContext,
+  ): Promise<MCPTool[]> {
     const tools: MCPTool[] = [];
     const registeredClasses = ObjectRegistry.getAllClasses();
     const scope = this.resolveClassScope(registeredClasses);
@@ -578,12 +629,69 @@ export class MCPGenerator {
         simpleName,
         shouldInclude,
         key,
+        exposureContext,
       );
       tools.push(...objectTools);
     }
 
+    if (this.config.qualifyCollidingNames) {
+      const owners = new Map<string, Set<string>>();
+      for (const tool of tools) {
+        const target = this.toolTarget(tool);
+        const owner =
+          registeredClasses.get(target.registryKey ?? '')?.qualifiedName ??
+          target.registryKey ??
+          target.objectName;
+        const entries = owners.get(tool.name) ?? new Set<string>();
+        entries.add(owner);
+        owners.set(tool.name, entries);
+      }
+      const collisions = new Set(
+        [...owners.values()]
+          .filter((entries) => entries.size > 1)
+          .flatMap((entries) => [...entries]),
+      );
+      // Reserve deferred declarations too: enabling a not-yet-imported model
+      // must not rename another model that already published an alias.
+      const declaredOwners = new Map<string, Set<string>>();
+      const byIdentity = new Map<string, RegisteredClass>();
+      for (const info of registeredClasses.values()) {
+        for (const id of [
+          info.qualifiedName,
+          ...(info.replacedQualifiedNames ?? []),
+        ]) {
+          if (id) byIdentity.set(id.toLowerCase(), info);
+        }
+      }
+      for (const requested of this.config.classNames ?? []) {
+        if (!isQualifiedName(requested)) continue;
+        const info = byIdentity.get(requested.toLowerCase());
+        const owner = info?.qualifiedName ?? requested;
+        const name = (
+          info?.name ?? parseQualifiedName(requested).className
+        ).toLowerCase();
+        const entries = declaredOwners.get(name) ?? new Set<string>();
+        entries.add(owner);
+        declaredOwners.set(name, entries);
+      }
+      for (const entries of declaredOwners.values()) {
+        if (entries.size > 1)
+          for (const owner of entries) collisions.add(owner);
+      }
+      for (const tool of tools) {
+        const target = this.toolTarget(tool);
+        const owner =
+          registeredClasses.get(target.registryKey ?? '')?.qualifiedName ??
+          target.registryKey ??
+          target.objectName;
+        if (collisions.has(owner)) {
+          tool.name = `${owner.toLowerCase()}_${target.action}`;
+        }
+      }
+    }
     const names = canonicalMcpToolNames(
       tools.map((tool) => ({ name: tool.name, target: this.toolTarget(tool) })),
+      this.config.snakeCaseNames,
     );
     tools.forEach((tool, index) => {
       tool.name = names[index];
@@ -610,7 +718,14 @@ export class MCPGenerator {
         const candidate = qualified
           ? (info.qualifiedName ?? key)
           : info.name || key;
-        if (candidate.toLowerCase() === wanted) matches.add(info);
+        if (
+          candidate.toLowerCase() === wanted ||
+          (qualified &&
+            info.replacedQualifiedNames?.some(
+              (id) => id.toLowerCase() === wanted,
+            ))
+        )
+          matches.add(info);
       }
       if (matches.size > 1) {
         const names = [...matches]
@@ -643,6 +758,7 @@ export class MCPGenerator {
     displayName: string,
     shouldInclude: (endpoint: string) => boolean,
     registryKey: string = displayName,
+    exposureContext?: RuntimeExposureContext,
   ): Promise<MCPTool[]> {
     // Every registry lookup below goes through the exact registration.
     const objectName = registryKey;
@@ -684,7 +800,13 @@ export class MCPGenerator {
       tools.push({
         name: `${lowerName}_create`,
         description: describeAction('create', displayName, labelField),
-        inputSchema: this.buildInputSchema(objectName, 'create', fields),
+        inputSchema: this.buildInputSchema(
+          objectName,
+          'create',
+          fields,
+          undefined,
+          exposureContext,
+        ),
         outputSchema: this.buildOutputSchema(objectName, 'create', fields),
         annotations: mcpToolAnnotations('create'),
       });
@@ -1034,22 +1156,52 @@ export class MCPGenerator {
     action: string,
     fields: Map<string, FieldDefinition>,
     customAction?: CustomActionMetadata,
+    exposureContext?: RuntimeExposureContext,
   ): ToolJsonSchema {
     const schema = buildToolInputSchema(
       action,
-      this.toToolFields(fields),
+      this.toToolFields(
+        new Map([
+          ...fields,
+          ...Object.entries(ObjectRegistry.getWriteThroughFields(objectName)),
+        ]),
+      ),
       customAction,
       ObjectRegistry.getConfig(objectName).idType,
     );
     if (action !== 'create' && action !== 'update') return schema;
 
-    const variants = this.getStiVariants(objectName);
+    const catalog = ObjectRegistry.getCreateTargets(
+      objectName,
+      exposureContext,
+    );
+    const variants = catalog.polymorphic
+      ? [catalog.base, ...catalog.subtypes].map((target) => ({
+          name: target.name,
+          discriminator: target.name,
+          label: target.label,
+        }))
+      : [];
     if (variants.length === 0) return schema;
 
     const properties = {
       ...((schema.properties as Record<string, ToolJsonSchema> | undefined) ??
         {}),
+      ...(action === 'create'
+        ? {
+            createType: {
+              type: 'string',
+              enum: variants.map((variant) => variant.name),
+              description:
+                'Optional createType target: ' +
+                variants
+                  .map((variant) => `${variant.name} (${variant.label})`)
+                  .join(', '),
+            },
+          }
+        : {}),
       _meta_type: {
+        enum: variants.map((variant) => variant.name),
         type: 'string',
         description:
           'Optional STI discriminator. When provided for create, selects the declared subtype.',
@@ -1059,10 +1211,20 @@ export class MCPGenerator {
       ...schema,
       properties,
       oneOf: [
-        { not: { required: ['_meta_type'] } },
+        {
+          not: {
+            anyOf: [
+              { required: ['_meta_type'] },
+              ...(action === 'create' ? [{ required: ['createType'] }] : []),
+            ],
+          },
+        },
         ...variants.map(({ name, discriminator }) => {
           const variantFields = ObjectRegistry.getFields(name);
           return {
+            ...(action === 'create'
+              ? { not: { required: ['createType'] } }
+              : {}),
             properties: {
               ...this.buildFieldSchemaProperties(variantFields),
               _meta_type: { const: discriminator },
@@ -1075,6 +1237,23 @@ export class MCPGenerator {
             ],
           };
         }),
+        ...(action === 'create'
+          ? variants.map(({ name, discriminator }) => ({
+              properties: {
+                ...this.buildFieldSchemaProperties(
+                  ObjectRegistry.getFields(name),
+                ),
+                createType: { const: discriminator },
+                _meta_type: { const: discriminator },
+              },
+              required: [
+                'createType',
+                ...this.toToolFields(ObjectRegistry.getFields(name))
+                  .filter((field) => field.required)
+                  .map((field) => field.name),
+              ],
+            }))
+          : []),
       ],
     });
   }
@@ -1179,7 +1358,13 @@ export class MCPGenerator {
   ): ToolJsonSchema {
     const properties = this.buildFieldSchemaProperties(fields, true);
 
-    const variants = this.getStiVariants(objectName);
+    const catalog = ObjectRegistry.getCreateTargets(objectName);
+    const variants = catalog.polymorphic
+      ? [catalog.base, ...catalog.subtypes].map((target) => ({
+          name: target.name,
+          discriminator: target.name,
+        }))
+      : [];
     if (variants.length > 0) {
       return {
         oneOf: variants.map(({ name, discriminator }) => ({
@@ -1220,67 +1405,30 @@ export class MCPGenerator {
   }
 
   /**
-   * The STI subtypes a create may select, each bound to its exact registry
-   * entry (`name` is its registry key). A subtype is the base itself or a
-   * class whose constructor descends from the base's, or — for manifest-only
-   * entries — whose inheritance chain names the base's qualified identity.
-   * Never resolved by simple name: two packages may declare same-named
-   * subtypes of one base (#3490).
-   */
-  private getStiVariants(objectName: string): Array<{
-    name: string;
-    discriminator: string;
-    classInfo: RegisteredClass;
-  }> {
-    if (ObjectRegistry.getTableStrategy(objectName) !== 'sti') return [];
-
-    const base = ObjectRegistry.getClass(objectName);
-    if (!base) return [];
-    const baseKeys = new Set(
-      [objectName, base.qualifiedName].filter(
-        (name): name is string => typeof name === 'string',
-      ),
-    );
-    const isStub = (info: RegisteredClass) =>
-      (info.constructor as { _isManifestStub?: boolean })._isManifestStub ===
-      true;
-    const variants = new Map<
-      string,
-      { name: string; discriminator: string; classInfo: RegisteredClass }
-    >();
-    const seen = new Set<RegisteredClass>();
-    for (const [key, info] of ObjectRegistry.getAllClasses()) {
-      if (seen.has(info)) continue;
-      seen.add(info);
-      const descends =
-        info === base ||
-        (!isStub(info) &&
-          !isStub(base) &&
-          info.constructor.prototype instanceof base.constructor) ||
-        ((isStub(info) || isStub(base)) &&
-          ObjectRegistry.getInheritanceChain(key).some((ancestor) =>
-            baseKeys.has(ancestor),
-          ));
-      if (!descends) continue;
-      const discriminator = info.qualifiedName || info.name || key;
-      variants.set(discriminator, {
-        name: key,
-        discriminator,
-        classInfo: info,
-      });
-    }
-    return Array.from(variants.values()).sort((left, right) =>
-      left.discriminator.localeCompare(right.discriminator),
-    );
-  }
-
-  /**
    * Handle MCP tool calls
    */
   async handleToolCall(request: MCPRequest): Promise<MCPResponse> {
     const { name, arguments: args } = request.params;
 
     try {
+      const cookbook = getCookbookToolService();
+      const context = {
+        surface: 'mcp' as const,
+        tenantId: this.context.tenantId,
+        userId: this.context.user?.id,
+      };
+      const recipeName = COOKBOOK_TOOL_NAMES.find(
+        (candidate) => candidate === name,
+      );
+      if (cookbook && recipeName) {
+        // The service audits refused calls as well as accepted ones; never
+        // bypass its authority boundary just because the caller cannot list it.
+        const result = await cookbook.invoke(recipeName, args, context);
+        return {
+          content: [{ type: 'text', text: result.summary }],
+          structuredContent: result,
+        };
+      }
       // Check if tool exists
       const availableTools = await this.generateTools();
       const tool = availableTools.find((candidate) => candidate.name === name);
@@ -1673,25 +1821,22 @@ export class MCPGenerator {
   ): Promise<unknown> {
     let targetCollection = collection;
     let targetObjectName = objectName;
-    if (
-      action === 'create' &&
-      objectName &&
-      typeof args._meta_type === 'string'
-    ) {
-      const variant = this.getStiVariants(objectName).find(
-        (candidate) => candidate.discriminator === args._meta_type,
-      );
-      if (!variant) {
-        throw new Error(`Unknown STI discriminator: ${args._meta_type}`);
+    if (action === 'create' && objectName) {
+      const target = ObjectRegistry.resolveCreateTarget(objectName, args, {
+        surface: 'mcp',
+        tenantId: this.context.tenantId,
+      });
+      args = target.data;
+      if (target.collectionName !== objectName) {
+        const classInfo = ObjectRegistry.getClass(target.name);
+        if (!classInfo)
+          throw new Error(`Create target '${target.name}' is not registered`);
+        targetCollection = await this.getCollection(
+          target.collectionName,
+          classInfo,
+        );
       }
-      // The discriminator selects a registration, not a name: create
-      // through that exact entry, still registered under its key.
-      const classInfo = variant.classInfo;
-      if (ObjectRegistry.getAllClasses().get(variant.name) !== classInfo) {
-        throw new Error(`STI subtype '${variant.name}' is not registered`);
-      }
-      targetCollection = await this.getCollection(variant.name, classInfo);
-      targetObjectName = variant.name;
+      targetObjectName = target.collectionName;
     }
 
     const mutating = action !== 'list' && action !== 'get';
@@ -2225,7 +2370,7 @@ export class MCPGenerator {
       );
     } else {
       // Generate single-file server with static tools
-      const tools = await this.generateTools();
+      const tools = await this.generateToolDefinitions();
       const tenantScopedObjects = await this.tenantScopedObjectNames(tools);
       const hasTenantScopedTools =
         tenantScopedObjects.length > 0 ||
@@ -2245,7 +2390,6 @@ export class MCPGenerator {
         taskActions: await this.runtimeTaskActions(tools),
         tenantScopedObjects,
         listOrderBy: this.runtimeListOrderBy(tools),
-        stiTargets: this.runtimeStiTargets(tools),
         toolListCacheHint: resolveMCPToolListCacheHint(
           this.config.cache?.toolsList,
           hasTenantScopedTools,
@@ -2400,31 +2544,6 @@ export class MCPGenerator {
     return orderings;
   }
 
-  private runtimeStiTargets(
-    tools: MCPTool[],
-  ): Record<string, Record<string, string>> {
-    const targets: Record<string, Record<string, string>> = {};
-
-    for (const tool of tools) {
-      const target = this.toolTarget(tool);
-      if (target.action !== 'create') continue;
-      const objectPrefix = target.objectName.toLowerCase();
-      const owner = this.toolClass(tool);
-      if (!owner) continue;
-      const variants = this.getStiVariants(owner.key);
-      if (variants.length === 0) continue;
-
-      targets[objectPrefix] = Object.fromEntries(
-        variants.map((variant) => [
-          variant.discriminator,
-          variant.discriminator,
-        ]),
-      );
-    }
-
-    return targets;
-  }
-
   /**
    * Generate modular MCP server structure
    *
@@ -2468,7 +2587,7 @@ export class MCPGenerator {
     await writeGeneratedFile(configPath, configCode, language);
     console.log(`✅ Generated config: ${configPath}`);
 
-    const generatedTools = await this.generateTools();
+    const generatedTools = await this.generateToolDefinitions();
 
     // Generate tools module with tool definitions
     const toolsPath = resolve(toolsDir, `index${extension}`);
@@ -2553,7 +2672,7 @@ export const tools: Array<{
     indent: string = '    ',
     generatedTools?: MCPTool[],
   ): Promise<string> {
-    const tools = generatedTools ?? (await this.generateTools());
+    const tools = generatedTools ?? (await this.generateToolDefinitions());
 
     const switchCases = (
       await Promise.all(
@@ -2608,9 +2727,9 @@ ${indent}}`;
 
             case 'create':
               return `${indent}case '${tool.name}': {
-${indent}  const { collection, objectName: targetObjectName } = await resolveCreateTarget(${JSON.stringify(objectName)}, ${JSON.stringify(lookup)}, args, aiConfig);
+${indent}  const { collection, objectName: targetObjectName, data } = await resolveCreateTarget(${JSON.stringify(lookup)}, args, aiConfig);
 
-${indent}  const newItem = await collection.create(applyWritablePolicy(targetObjectName, args));
+${indent}  const newItem = await collection.create(applyWritablePolicy(targetObjectName, data));
 
 ${indent}  return successResult(newItem.toPublicJSON(PUBLIC_JSON_OPTIONS));
 ${indent}}`;
@@ -2763,9 +2882,8 @@ ${indent}}`;
   private async generateHandlersFile(
     tenantScopedObjects: string[] = [],
   ): Promise<string> {
-    const tools = await this.generateTools();
+    const tools = await this.generateToolDefinitions();
     const switchCases = await this.generateToolSwitchCases('        ', tools);
-    const stiTargets = this.runtimeStiTargets(tools);
     const toolTargets = this.runtimeToolTargets(tools);
     const getSerializers = this.runtimeGetSerializers(tools);
     const tenantScopedSet = Array.from(
@@ -2789,6 +2907,8 @@ ${indent}}`;
  */
 
 import { ObjectRegistry, normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY } from '@happyvertical/smrt-core';
+import { hasRuntimeExposureGate, isRuntimeModelEnabled } from '@happyvertical/smrt-core';
+import { COOKBOOK_TOOL_NAMES, getCookbookToolService } from '@happyvertical/smrt-core/cookbook/tools';
 ${hasTenantScoped ? "import { enableTenancy, runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}${
   hasTenantScoped
     ? `
@@ -2803,6 +2923,15 @@ const MCP_ALLOW_CROSS_TENANT = process.env.SMRT_MCP_ALLOW_CROSS_TENANT === 'true
 }
 
 const TOOL_TARGETS: Record<string, { objectName: string; action: string; registryKey?: string }> = ${JSON.stringify(toolTargets)};
+export function runtimeToolEnabled(name: string): boolean {
+  if (!hasRuntimeExposureGate()) return true;
+  const target = TOOL_TARGETS[name];
+  return !!target && isRuntimeModelEnabled(
+    ObjectRegistry.getExposureModel(target.registryKey || target.objectName),
+    { surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID },
+  );
+}
+
 const PUBLIC_JSON_OPTIONS = {
   permissions: (process.env.SMRT_MCP_PERMISSIONS || '')
     .split(',')
@@ -2810,7 +2939,6 @@ const PUBLIC_JSON_OPTIONS = {
     .filter(Boolean),
 };
 const GET_SERIALIZERS: Record<string, { importPath: string; exportName: string }> = ${JSON.stringify(getSerializers)};
-const STI_TARGETS: Record<string, Record<string, string>> = ${JSON.stringify(stiTargets)};
 
 async function serializeGetResult(toolName: string, item: any): Promise<any> {
   const reference = GET_SERIALIZERS[toolName];
@@ -2859,20 +2987,16 @@ function applyWritablePolicy(objectName: string, data: any): Record<string, any>
 }
 
 /** Resolve an advertised STI discriminator to its registered subtype collection. */
-async function resolveCreateTarget(stiKey: string, baseObjectName: string, args: Record<string, any>, aiConfig: any) {
-  let objectName = baseObjectName;
-  const discriminator = args._meta_type;
-  const targets = STI_TARGETS[stiKey];
-  if (typeof discriminator === 'string' && targets) {
-    const target = targets[discriminator];
-    if (!target) throw new Error('Unknown STI discriminator: ' + discriminator);
-    objectName = target;
-  }
-  const collection = await ObjectRegistry.getCollection(objectName, {
+async function resolveCreateTarget(baseObjectName: string, args: Record<string, any>, aiConfig: any) {
+  const target = ObjectRegistry.resolveCreateTarget(baseObjectName, args, {
+    surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID,
+  });
+  const objectName = target.collectionName;
+  const collection = await ObjectRegistry.getCollection(target.collectionName, {
     persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
     ai: aiConfig,
   });
-  return { collection, objectName };
+  return { collection, objectName, data: target.data };
 }
 
 /**
@@ -2935,6 +3059,15 @@ export async function handleToolCall(
   aiConfig: any = {}
 ) {
   try {
+    const recipeName = COOKBOOK_TOOL_NAMES.find(tool => tool === name);
+    const cookbook = getCookbookToolService();
+    if (recipeName && cookbook) {
+      const result = await cookbook.invoke(recipeName, toolArguments, { surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID, userId: process.env.SMRT_MCP_USER_ID });
+      return successResult(result, result.summary);
+    }
+    const live = await cookbook?.modelTools?.({surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID, userId: process.env.SMRT_MCP_USER_ID}, {ai: aiConfig, permissions: PUBLIC_JSON_OPTIONS.permissions});
+    if (live) return live.handleToolCall({method: 'tools/call', params: {name, arguments: toolArguments}});
+    if (!runtimeToolEnabled(name)) throw new Error('Unknown tool');
     const args = toolArguments;
 
     const runToolBody = async () => {
@@ -3003,7 +3136,9 @@ import { loadConfig } from '@happyvertical/smrt-config';
 
 import { SERVER_NAME, SERVER_VERSION, DEBUG } from './config${extension}';
 import { tools } from './tools/index${extension}';
-import { handleToolCall } from './handlers/index${extension}';
+import { handleToolCall, runtimeToolEnabled } from './handlers/index${extension}';
+import { getCookbookToolService } from '@happyvertical/smrt-core/cookbook/tools';
+import { hasRuntimeExposureGate, subscribeRuntimeExposure } from '@happyvertical/smrt-core';
 
 const TOOL_LIST_CACHE_HINT = ${JSON.stringify(toolListCacheHint)};
 
@@ -3039,13 +3174,19 @@ export async function createServer() {
       },
       {
         capabilities: {
-          tools: {},
+          tools: { listChanged: true },
         },
         cacheHints: {
-          'tools/list': TOOL_LIST_CACHE_HINT,
+          'tools/list': (hasRuntimeExposureGate() || getCookbookToolService()) ? { ttlMs: 0, cacheScope: 'private' } : TOOL_LIST_CACHE_HINT,
         },
       }
     );
+
+    const unsubscribeExposure = subscribeRuntimeExposure(() => {
+      void server.sendToolListChanged().catch(() => {});
+    });
+    const previousOnClose = server.onclose;
+    server.onclose = () => { unsubscribeExposure(); previousOnClose?.(); };
 
     // Register ListTools handler
     server.setRequestHandler('tools/list', async () => {
@@ -3053,8 +3194,10 @@ export async function createServer() {
         console.error(\`[MCP] ListTools request received\`);
       }
 
+      const live = await getCookbookToolService()?.modelTools?.({surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID, userId: process.env.SMRT_MCP_USER_ID}, {ai: aiConfig, permissions: (process.env.SMRT_MCP_PERMISSIONS || '').split(',').map(p => p.trim()).filter(Boolean)});
+      if (live) return {tools: await live.generateTools()};
       return {
-        tools: [...tools].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0),
+        tools: [...tools.filter((tool) => runtimeToolEnabled(tool.name)), ...(await getCookbookToolService()?.list({ surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID, userId: process.env.SMRT_MCP_USER_ID }) ?? [])].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0),
       };
     });
 

@@ -12,9 +12,14 @@ import { field, foreignKey } from '../decorators/index.js';
 import { createGeneratedCollectionAccess } from '../generated-collection-access.js';
 import { MCPGenerator } from '../generators/mcp.js';
 import { APIGenerator } from '../generators/rest.js';
+import { reportUnexpectedHttpError } from '../generators/route-error.js';
 import { normalizeTypedHttpError } from '../generators/typed-http-error.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
+import {
+  hasRuntimeExposureGate,
+  isRuntimeModelEnabled,
+} from '../runtime-exposure.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { getTestDatabase } from '../testing/database.js';
 import { generateSvelteKitRoutes } from '../vite-plugin/sveltekit-generator.js';
@@ -495,7 +500,10 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
       shared[key] = {
         records,
         createGeneratedCollectionAccess,
+        isRuntimeModelEnabled,
+        hasRuntimeExposureGate,
         normalizeTypedHttpError,
+        reportUnexpectedHttpError,
       };
       try {
         await generateSvelteKitRoutes(
@@ -569,7 +577,7 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
                     if (args.path === '@happyvertical/smrt-core')
                       return {
                         contents:
-                          'const host = globalThis[Symbol.for("smrt.issue3460.generated-route")]; export const createGeneratedCollectionAccess = host.createGeneratedCollectionAccess; export const normalizeTypedHttpError = host.normalizeTypedHttpError;',
+                          'const host = globalThis[Symbol.for("smrt.issue3460.generated-route")]; export const isRuntimeModelEnabled = host.isRuntimeModelEnabled; export const hasRuntimeExposureGate = host.hasRuntimeExposureGate; export const createGeneratedCollectionAccess = host.createGeneratedCollectionAccess; export const normalizeTypedHttpError = host.normalizeTypedHttpError; export const reportUnexpectedHttpError = host.reportUnexpectedHttpError;',
                         loader: 'js',
                       };
                     if (args.path.endsWith('smrt-register'))
@@ -604,6 +612,7 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
           DELETE(event: {
             locals: object;
             params: { id: string };
+            request: Request;
           }): Promise<Response>;
         };
         const event = () => ({
@@ -660,6 +669,9 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
             await emitted.DELETE({
               locals: {},
               params: { id: row.id as string },
+              request: new Request('http://localhost/api/record', {
+                method: 'DELETE',
+              }),
             })
           ).status,
         ).toBe(200);

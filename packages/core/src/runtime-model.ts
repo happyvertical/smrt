@@ -9,31 +9,49 @@
  * class. A run-time model may extend a real registered class
  * (`extends: '@pkg:Profile'`): the app-subclass rule of #4869.
  *
- * The registry only adds. Re-registering a changed definition never removes a
- * field and keeps the first exposure config, so a host that edits models
- * builds a fresh registry (a worker or process) per definition.
+ * Explicit refresh/replacement supports the versioned app model editor.
+ * Storage is additive; migrations and host publication remain separate.
  *
  * @module
  */
 
 import type { DatabaseEngine } from './migrations/types.js';
 import type { SmrtObject } from './object.js';
-import { registerFromManifest } from './registry/class-registration.js';
+import {
+  ensureTenantScopedField,
+  normalizeTenantScopedConfig,
+  registerFromManifest,
+} from './registry/class-registration.js';
 import {
   getOwnTableFieldsSync,
   getResolvedFieldsSync,
   inheritsHierarchicalBase,
 } from './registry/inheritance-resolver.js';
 import { fieldsToColumns } from './registry/schema-builder.js';
+import type { RegisteredField, SmartObjectConfig } from './registry/types.js';
 import { ObjectRegistry } from './registry.js';
 import type {
   FieldDefinition,
+  FieldUIHints,
   MethodDefinition,
   SmartObjectDefinition,
 } from './scanner/types.js';
 import { resolveInheritedFields } from './schema/field-inheritance.js';
 import type { ColumnDefinition } from './schema/types.js';
-import { createQualifiedName } from './utils/qualified-names.js';
+import {
+  displayLabelFieldProblem,
+  FIELD_UI_FORMAT_TYPES,
+  FIELD_UI_WIDGET_TYPES,
+  isFieldUIFormat,
+  isFieldUIWidget,
+  resolveDisplayLabelField,
+  resolveDisplayLabelProjection,
+} from './ui-metadata.js';
+import {
+  createQualifiedName,
+  isQualifiedName,
+  parseQualifiedName,
+} from './utils/qualified-names.js';
 import { toSnakeCase } from './utils.js';
 
 const quoteIdentifier = (id: string) => `"${id.replace(/"/g, '""')}"`;
@@ -45,7 +63,9 @@ export type RuntimeFieldType =
   | 'decimal'
   | 'boolean'
   | 'datetime'
-  | 'json';
+  | 'json'
+  | 'foreignKey'
+  | 'crossPackageRef';
 
 export interface RuntimeFieldDefinition {
   type: RuntimeFieldType;
@@ -54,6 +74,10 @@ export interface RuntimeFieldDefinition {
   enum?: string[];
   description?: string;
   default?: unknown;
+  /** Qualified target model for a reference, as on manifest fields. */
+  related?: string;
+  /** The same presentation hints as @field({ ui }). No storage/security effect. */
+  ui?: FieldUIHints;
 }
 
 export interface RuntimeMethodDefinition {
@@ -82,6 +106,9 @@ export interface RuntimeModelDefinition {
    * when it has one.
    */
   extends?: string;
+  /** Explicit same-name app replacement, sharing its effective parent's table. */
+  replaces?: boolean;
+  tenantScoped?: SmartObjectConfig['tenantScoped'];
   /**
    * Natural conflict key (field names). Defaults to `['id']`: run-time
    * records have no natural key, so the default (slug, context) upsert key,
@@ -93,6 +120,9 @@ export interface RuntimeModelDefinition {
   api?: string[];
   /** Generated MCP actions. Defaults to the same, plus every method. */
   mcp?: string[];
+  /** Presentation metadata, using the normal model/manifest contract. */
+  ui?: SmartObjectConfig['ui'];
+  display?: SmartObjectConfig['display'];
 }
 
 /**
@@ -106,6 +136,8 @@ const WIRE_TYPE: Record<RuntimeFieldType, string> = {
   boolean: 'boolean',
   datetime: 'string',
   json: 'object',
+  foreignKey: 'string',
+  crossPackageRef: 'string',
 };
 
 const CRUD = ['list', 'get', 'create', 'update', 'delete'];
@@ -127,21 +159,50 @@ function toFieldDefinition(
   def: RuntimeFieldDefinition,
   redeclared: boolean,
 ): FieldDefinition {
+  if (
+    (def.type === 'foreignKey' || def.type === 'crossPackageRef') &&
+    (typeof def.related !== 'string' || !isQualifiedName(def.related))
+  ) {
+    throw new Error(
+      `Run-time ${def.type} field requires a qualified related model`,
+    );
+  }
+  const widget = def.ui?.widget;
+  if (
+    widget !== undefined &&
+    (!isFieldUIWidget(widget) ||
+      !FIELD_UI_WIDGET_TYPES[widget].includes(def.type))
+  ) {
+    throw new Error(`Invalid ui.widget ${String(widget)} for ${def.type}`);
+  }
+  const format = def.ui?.format;
+  if (
+    format !== undefined &&
+    (!isFieldUIFormat(format) ||
+      !FIELD_UI_FORMAT_TYPES[format].includes(def.type))
+  ) {
+    throw new Error(`Invalid ui.format ${String(format)} for ${def.type}`);
+  }
   const stated = [
     ...(def.required !== undefined ? ['required'] : []),
     ...(def.enum ? ['enum'] : []),
     ...(def.description ? ['description'] : []),
     ...(def.default !== undefined ? ['default'] : []),
   ];
+  const meta = {
+    ...(def.ui ? { ui: { ...def.ui } } : {}),
+    ...(redeclared ? { __statedOptions: stated } : {}),
+  };
   return {
     type: def.type,
     ...(def.required !== undefined || !redeclared
       ? { required: def.required ?? false }
       : {}),
-    ...(def.enum ? { enum: def.enum } : {}),
+    ...(def.enum ? { enum: [...def.enum] } : {}),
     ...(def.description ? { description: def.description } : {}),
     ...(def.default !== undefined ? { default: def.default } : {}),
-    ...(redeclared ? { _meta: { __statedOptions: stated } } : {}),
+    ...(def.related ? { related: def.related } : {}),
+    ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
   } as FieldDefinition;
 }
 
@@ -190,20 +251,41 @@ export function runtimeModelEntry(
       `Run-time model ${qualifiedName} extends ${parentKey}, which is not registered`,
     );
   }
+  if (
+    def.replaces &&
+    (!parent ||
+      parent.name !== def.name ||
+      (parent.packageName === def.packageName &&
+        parent.qualifiedName !== qualifiedName))
+  ) {
+    throw new Error(
+      'Runtime replacement requires a registered same-name upstream model',
+    );
+  }
+  const parentTable = parentKey
+    ? ObjectRegistry.getTableName(parentKey)
+    : undefined;
+  const parentSchema =
+    def.replaces && parentTable
+      ? ObjectRegistry.getAllSchemasAsDefinitions({ tables: [parentTable] })[
+          parentTable
+        ]
+      : undefined;
   const fields: Record<string, FieldDefinition> = {};
-  // A subclass of a one-table-per-class parent has a table of its own that
-  // also holds the parent's fields, concrete ancestors' included (#4922).
-  // They are listed here, relaxed to optional, because this entry's own
-  // column list is authoritative; a definition that restates one still
-  // yields a single column (its own declaration wins below). An STI subclass
-  // shares its parent's table and needs none. A field smrt needs (one with
-  // `requiredFor`, #4923) keeps `required` and its reason: it is not relaxed.
-  if (parent && ObjectRegistry.getSTIBase(def.extends!) === null) {
-    const hierarchical = inheritsHierarchicalBase(parent);
+  // Independent tables carry concrete ancestors' fields through the shared
+  // inheritance rule (#4922). A replacement keeps its provider's storage and
+  // requiredness. An ordinary subclass of a one-table-per-class parent lists
+  // the copied fields relaxed to optional, because this entry's own column
+  // list is authoritative; a definition that restates one still yields a
+  // single column (its own declaration wins below). A field smrt needs (one
+  // with `requiredFor`, #4923) keeps `required` and its reason in both cases:
+  // it is not relaxed. An STI subclass shares its parent's table and needs none.
+  if (
+    parent &&
+    (def.replaces || ObjectRegistry.getSTIBase(parentKey!) === null)
+  ) {
+    const hierarchical = !def.replaces && inheritsHierarchicalBase(parent);
     for (const [name, inherited] of getOwnTableFieldsSync(parent)) {
-      // A hierarchical parent's `parentId` points at the parent's own table;
-      // the subclass has its own table, and its tree links to itself. A
-      // foreign key a concrete class declared itself keeps its target.
       const related =
         name === 'parentId' && hierarchical && inherited.related === parent.name
           ? def.name
@@ -212,19 +294,42 @@ export function runtimeModelEntry(
       const keep =
         inherited.required === true && typeof requiredFor === 'string';
       fields[name] = {
+        ...inherited,
         type: inherited.type,
-        required: keep,
-        ...(keep ? { _meta: { requiredFor } } : {}),
+        required: def.replaces
+          ? (inherited.required ?? inherited._meta?.required ?? false)
+          : keep,
         ...(related ? { related } : {}),
+        ...(inherited._meta
+          ? {
+              _meta: {
+                ...inherited._meta,
+                ...(inherited._meta.ui
+                  ? { ui: { ...inherited._meta.ui } }
+                  : {}),
+              },
+            }
+          : {}),
       } as FieldDefinition;
     }
   }
   // A field the definition redeclares resolves against the parent's effective
   // fields by the one inheritance rule (`schema/field-inheritance.ts`): it
   // inherits the options it does not state, and refuses loosening a field smrt
-  // needs (#4932, #4942).
+  // needs (#4932, #4942). A replacement redeclares the same way.
   const parentFields = parent ? getResolvedFieldsSync(parent) : undefined;
   const declared = Object.entries(def.fields ?? {});
+  for (const [name, fd] of declared) {
+    if (
+      fd.type === 'foreignKey' &&
+      fd.related &&
+      parseQualifiedName(fd.related).packageName !== def.packageName
+    ) {
+      throw new Error(
+        `Run-time field ${name}: use crossPackageRef across packages`,
+      );
+    }
+  }
   const redeclaredNames = new Set(
     declared.map(([n]) => n).filter((n) => parentFields?.has(n)),
   );
@@ -235,7 +340,7 @@ export function runtimeModelEntry(
   if (parent && parentFields) {
     const resolved = resolveInheritedFields<FieldDefinition>({
       strategy:
-        ObjectRegistry.getSTIBase(def.extends!) === null
+        ObjectRegistry.getSTIBase(parentKey!) === null
           ? 'own-table'
           : 'shared-table',
       className: def.name,
@@ -256,7 +361,17 @@ export function runtimeModelEntry(
   } else {
     for (const [name, fd] of own) fields[name] = fd;
   }
-  const methods: Record<string, MethodDefinition> = {};
+  const tenantScoped = def.tenantScoped ?? parent?.config.tenantScoped;
+  const scopedFields = new Map<string, RegisteredField>(
+    Object.entries(fields).map(([name, field]) => [name, { ...field }]),
+  );
+  ensureTenantScopedField(
+    scopedFields,
+    normalizeTenantScopedConfig(tenantScoped),
+  );
+  Object.assign(fields, Object.fromEntries(scopedFields));
+  const methods: Record<string, MethodDefinition> =
+    def.replaces && parent ? Object.fromEntries(parent.methods) : {};
   for (const [name, md] of Object.entries(def.methods ?? {})) {
     methods[name] = {
       name,
@@ -277,7 +392,8 @@ export function runtimeModelEntry(
   // A subclass shares an STI parent's table. Any other parent's table belongs
   // to the parent alone, so the subclass gets its own.
   const sharesParentTable =
-    !!parent && ObjectRegistry.getSTIBase(parentKey!) !== null;
+    !!parent &&
+    (def.replaces || ObjectRegistry.getSTIBase(parentKey!) !== null);
   const tableName =
     def.tableName ??
     (sharesParentTable
@@ -290,11 +406,53 @@ export function runtimeModelEntry(
   const conflictColumns = def.conflictColumns ?? (parent ? undefined : ['id']);
   const mcp = [...CRUD, ...Object.keys(methods)];
   const decoratorConfig: Record<string, unknown> = {
-    ...(sharesParentTable ? {} : { tableName }),
+    ...(def.replaces ? parent?.config : {}),
+    ...(tenantScoped ? { tenantScoped } : {}),
+    ...(sharesParentTable && !def.replaces ? {} : { tableName }),
     ...(conflictColumns ? { conflictColumns } : {}),
-    api: { include: def.api ?? CRUD },
-    mcp: { include: def.mcp ?? mcp },
+    api: def.api
+      ? { include: def.api }
+      : def.replaces
+        ? parent?.config.api
+        : { include: CRUD },
+    mcp: def.mcp
+      ? { include: def.mcp }
+      : def.replaces
+        ? parent?.config.mcp
+        : { include: mcp },
+    ...(def.ui ? { ui: { ...def.ui } } : {}),
+    ...(def.display ? { display: { ...def.display } } : {}),
   };
+  const label = (decoratorConfig.display as SmartObjectConfig['display'])
+    ?.label;
+  const displayLabelProjection = resolveDisplayLabelProjection(label);
+  if (typeof label === 'string') {
+    const problem = displayLabelFieldProblem(fields, label);
+    if (problem) {
+      throw new Error(
+        `Run-time model ${qualifiedName}: display.label ${problem}`,
+      );
+    }
+  }
+  if (displayLabelProjection) {
+    decoratorConfig.display = {
+      ...(decoratorConfig.display as SmartObjectConfig['display']),
+      label: { ...displayLabelProjection },
+    };
+    const via = fields[displayLabelProjection.via];
+    if (!via?.related || !['foreignKey', 'crossPackageRef'].includes(via.type))
+      throw new Error('Runtime display projection requires an own reference');
+    const targetFields = Object.fromEntries(
+      ObjectRegistry.getFields(via.related),
+    );
+    const problem = displayLabelFieldProblem(
+      targetFields,
+      displayLabelProjection.field,
+    );
+    if (problem)
+      throw new Error(`Runtime display projection target: ${problem}`);
+  }
+  const displayLabelField = resolveDisplayLabelField(fields, label);
   const entry: SmartObjectDefinition = {
     name: def.name.toLowerCase(),
     className: def.name,
@@ -304,21 +462,55 @@ export function runtimeModelEntry(
     filePath: `runtime-model:${qualifiedName}`,
     fields,
     methods,
+    ...(displayLabelField ? { displayLabelField } : {}),
+    ...(displayLabelProjection ? { displayLabelProjection } : {}),
     decoratorConfig:
       decoratorConfig as SmartObjectDefinition['decoratorConfig'],
     ...(parent
       ? { extends: parentSimple, extendsQualified: parentKey }
       : { extends: 'SmrtObject' }),
   };
-  if (!sharesParentTable) {
+  if (!sharesParentTable || def.replaces) {
     const columns = {
       ...baseColumns(false, 'UUID'),
       ...fieldsToColumns(new Map(Object.entries(fields))),
+      ...(parentSchema?.columns ?? {}),
+      // A replacement's own fields win over the provider's columns, as
+      // resolved above: a redeclared field keeps what it does not state.
+      ...(def.replaces
+        ? fieldsToColumns(
+            new Map(
+              Object.keys(def.fields ?? {}).map((name) => [name, fields[name]]),
+            ),
+          )
+        : {}),
     };
+    // fieldsToColumns accepts physical table names. Runtime references name
+    // registered models, whose physical tables may be explicitly configured.
+    for (const [name, field] of Object.entries(fields)) {
+      if (
+        field.type !== 'foreignKey' ||
+        !field.related ||
+        field._meta?.__tenancy?.isTenantIdField
+      )
+        continue;
+      const foreignKey = columns[toSnakeCase(name)]?.foreignKey;
+      if (!foreignKey) continue;
+      const targetTable =
+        field.related === qualifiedName || field.related === def.name
+          ? tableName
+          : ObjectRegistry.getTableName(field.related);
+      if (!targetTable) {
+        throw new Error(
+          `Run-time reference target ${field.related} must be registered first`,
+        );
+      }
+      foreignKey.table = targetTable;
+    }
     entry.schema = {
       tableName,
       ddl: '',
-      indexes: [],
+      indexes: parentSchema?.indexes ?? [],
       triggers: [],
       foreignKeys: [],
       dependencies: [],
@@ -330,6 +522,12 @@ export function runtimeModelEntry(
 }
 
 export interface RegisterRuntimeModelOptions {
+  refresh?: boolean;
+  /** Host-side validators; definitions remain portable JSON. */
+  fieldValidators?: Record<
+    string,
+    (value: unknown, instance: SmrtObject) => boolean | Promise<boolean>
+  >;
   /**
    * Functions to set on the model's prototype, by method name. Each should
    * also be declared in `definition.methods`, so the generated MCP tool
@@ -352,9 +550,18 @@ export function registerRuntimeModel(
   options: RegisterRuntimeModelOptions = {},
 ): string {
   const entry = runtimeModelEntry(def);
+  for (const [name, validate] of Object.entries(
+    options.fieldValidators ?? {},
+  )) {
+    if (!entry.fields[name])
+      throw new Error(`Unknown runtime validator field ${name}`);
+    entry.fields[name]._meta = { ...entry.fields[name]._meta, validate };
+  }
   const qualifiedName = entry.qualifiedName as string;
   registerFromManifest(qualifiedName, entry, def.packageName, {
     extendsRegistered: def.extends,
+    replaceParent: def.replaces,
+    refreshRuntime: options.refresh,
   });
   const registered = ObjectRegistry.getClass(qualifiedName);
   if (!registered) {

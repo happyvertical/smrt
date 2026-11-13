@@ -1,3 +1,4 @@
+import { isDesktopWrapper } from '$lib/server/desktop';
 import { DEPENDS } from '$lib/ui/events';
 import { loadRecords } from '$lib/ui/load';
 import type { PageServerLoad } from './$types';
@@ -12,7 +13,12 @@ export const load: PageServerLoad = async ({ parent, depends, fetch }) => {
     await Promise.all(
       Object.keys(description.models).map(async (model) => {
         try {
-          const rows = await loadRecords(fetch, model, COUNT_LIMIT);
+          const rows = await loadRecords(
+            fetch,
+            model,
+            COUNT_LIMIT,
+            description.mode,
+          );
           counts[model] = {
             count: rows.length,
             capped: rows.length >= COUNT_LIMIT,
@@ -23,5 +29,6 @@ export const load: PageServerLoad = async ({ parent, depends, fetch }) => {
       }),
     );
   }
-  return { counts };
+  // The signed-out card words its way back in differently under the wrapper.
+  return { counts, desktop: isDesktopWrapper() };
 };

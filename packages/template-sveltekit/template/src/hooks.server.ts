@@ -10,6 +10,11 @@
  * Configure the runtime in `$lib/server/smrt`.
  */
 
+import { installInferenceOverrides } from '$lib/server/settings';
 import { runtime } from '$lib/server/smrt';
 
 export const { handle, init } = runtime;
+
+// Tier bindings, aliases and fusions saved on the Inference settings page
+// apply to every inference call (lazy: the database resolves in `init`).
+installInferenceOverrides();

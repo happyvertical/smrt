@@ -8,6 +8,41 @@ Chat rooms, DMs, threads, and agent conversations for the s-m-r-t framework. Sup
 pnpm add @happyvertical/smrt-chat
 ```
 
+## Assistant turn drivers
+
+The assistant uses its existing model/tool loop by default. Supply an `ai`
+client or per-request factory for a model adapter, or a `turnDriver` for an
+external agent that owns its loop:
+
+```ts
+import { mountAssistantRoutes } from '@happyvertical/smrt-chat/sveltekit';
+
+export const { GET, POST } = mountAssistantRoutes({
+  turnDriver: {
+    async run(context, progress) {
+      // A host adapter forwards the agent's callbacks and AbortSignal.
+      context.signal.throwIfAborted();
+      progress.text('Hello from your agent.');
+      progress.done({ text: 'Hello from your agent.' });
+    },
+  },
+  allowedTools: [],
+});
+```
+
+`resolveTurnDriver(ctx)` selects a driver per authenticated request/user.
+Chat keeps thread/message persistence, tool allow-lists, the dock's streaming
+format and stop behavior. Drivers receive history, the new user message,
+system guidance, thread identity, principal, offered server tools and an abort
+signal. Await tool-call/result callbacks to author their transcript. The
+`approvalNeeded` callback and `waitForApproval` host hook reserve the durable
+owner-approval integration; without a hook approval is denied. Durable approval
+storage and UI are not implemented by this seam.
+
+See [turn-driver contracts and callback example](agents/turn-drivers.md),
+including MCP authorization responsibilities, engine status, and browser
+continuation limits.
+
 ## Data-surface bridge security
 
 The `./data-surface-bridge` entry point is the server half of the browser data-
@@ -393,3 +428,46 @@ the voice helpers.
 
 See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
 and contributor guidance.
+
+### Durable approvals for server tools
+
+`mountAssistantRoutes` holds destructive server calls by default (delete/remove/
+destroy/purge/drop/truncate, including extra tools). A built-in turn persists a
+pending approval in its thread, streams `approval_needed`, and ends with
+`stoppedReason: 'approval'`. It makes no further model call. Approve executes the
+saved tool with its original principal and arguments after live permission and
+offering checks, then authors the result. Deny authors a refusal. Model-supplied
+`approved` values have no effect on this gate.
+
+The default authority uses app-runtime's SQLite envelope adapter over the existing
+smrt-approvals ledger; include its models in normal database migrations. Supply
+`approvals` for another store/host authority. `approvalPolicy.tools` and
+`approvalPolicy.operations` explicitly override the default per tool or canonical
+operation; e.g. `{ tools: { 'invoices.update': true } }` also holds updates.
+Direct `runAssistantTurn` callers supply `createAssistantApprovalBridge`; a
+protected call without one fails closed. This does not change low-level
+`runToolLoop` or persona conversation policy, which remain host integration APIs.
+
+Owner-only routes: `GET approvals` (tenant-wide pending summaries), `GET threads/:threadId/approvals` and
+`POST approvals/:id/decide` with `{ approve: boolean }`, under the same mount.
+Thread reads keep their ownership checks; owner decision uses the saved requester's thread binding and cannot read arbitrary thread history. Tenant and mutation-origin checks match the
+other routes. They return only the public approval projection. The default owner
+check requires the active user's active direct membership in the canonical system
+owner role. A second decision is 409. A failed consumed effect cannot be replayed.
+
+`createAssistantHttpTransport` supplies the approval methods; `AssistantDock`
+automatically renders `AssistantApprovalCard` for persisted holds, with translated,
+keyboard-accessible Approve/Deny controls and persisted outcomes. External drivers
+use their existing `approvalNeeded` callback: chat creates the canonical request,
+persists/streams it, and waits for the same authority before returning approval.
+Drivers must honor denial and execute through the original principal's live,
+permission-bound host/MCP adapter. See [approval details](agents/owner-approvals.md).
+
+Runtime cookbook gating is opt-in through
+[smrt-core runtime exposure](../core/agents/runtime-exposure.md). Generated
+manifest operations keep their AOT declarations, but live offerings and calls
+must also pass the current tenant's cookbook and host preference gate.
+
+Saved manifest calls recheck runtime exposure when approved. A disabled or
+unreadable model gate records a terminal refused result without running the tool;
+approval lists retain only the original public hold summary.

@@ -13,7 +13,7 @@ import {
   symlink,
   writeFile,
 } from 'node:fs/promises';
-import { platform, tmpdir, userInfo } from 'node:os';
+import { homedir, platform, tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { JobHandle, SmrtJobCollection } from '@happyvertical/smrt-jobs';
@@ -181,7 +181,7 @@ afterEach(async () => {
   initializationLockPaths.clear();
 });
 
-const accountHome = userInfo().homedir;
+const isolatedHome = homedir();
 
 async function localDirectories(label: string, parent = tmpdir()) {
   const temporaryRoot = await mkdtemp(join(parent, `smrt-local-${label}-`));
@@ -1629,8 +1629,8 @@ describe('local application runtime', () => {
 
   it('serializes initialization beside the data when /tmp reads as owned by an unmapped user (#3877)', async () => {
     // Only the legacy lease ancestry is untrusted; application data stays trusted.
-    // The account home, not HOME: test-home.setup.ts points HOME into /tmp.
-    const directories = await localDirectories('lease-userns', accountHome);
+    // The shared test home is outside /tmp, in smrt-vitest's owned cache.
+    const directories = await localDirectories('lease-userns', isolatedHome);
     const temporaryLockPath = await initializationLockPath(
       directories.dataDirectory,
     );
@@ -1675,7 +1675,7 @@ describe('local application runtime', () => {
   it('waits for a live legacy /tmp lease even when /tmp reads as owned by an unmapped user (#3877)', async () => {
     const directories = await localDirectories(
       'lease-userns-legacy',
-      accountHome,
+      isolatedHome,
     );
     const temporaryLockPath = await initializationLockPath(
       directories.dataDirectory,

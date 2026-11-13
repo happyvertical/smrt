@@ -205,6 +205,13 @@ picker. Option shape is `RelationOption` — `{ id, label, detail? }`.
   `onquery`, `status`, `busy`, `invalid`, `describedby`, `optionContent`) are
   generic and default to the previous behaviour.
 
+For paged remote results, provide `loadMore(): Promise<RelationOption[]>`,
+`hasMore`, and a translated `moreLabel`. The next-page action stays inside the
+combobox's focus boundary and is reachable with Tab; options use Arrow keys and
+Enter. Results append by ID, a new query discards an old page, and a failed page
+keeps existing results. `Combobox.footer` is the shared action slot beneath its
+listbox.
+
 ### MultiSelect form submission
 
 A named `MultiSelect` submits one hidden native input per selected option value,

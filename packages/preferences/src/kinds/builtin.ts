@@ -5,10 +5,17 @@
  */
 import { getPreferenceKind, registerPreferenceKind } from '../kinds.js';
 import { overviewPreferenceKind } from './overview.js';
+import { prebuiltComponentsPreferenceKind } from './prebuilt-components.js';
 import { shellLayoutPreferenceKind } from './shell-layout.js';
+import { workProfilesPreferenceKind } from './work-profiles.js';
 
 export function ensureBuiltinPreferenceKinds(): void {
-  for (const kind of [overviewPreferenceKind, shellLayoutPreferenceKind]) {
+  for (const kind of [
+    workProfilesPreferenceKind,
+    overviewPreferenceKind,
+    shellLayoutPreferenceKind,
+    prebuiltComponentsPreferenceKind,
+  ]) {
     if (!getPreferenceKind(kind.kind)) registerPreferenceKind(kind);
   }
 }

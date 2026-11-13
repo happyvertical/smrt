@@ -20,6 +20,7 @@ export type LocalRuntimeErrorCode =
   | 'owner_unavailable'
   | 'schema_creation_failed'
   | 'schema_migration_refused'
+  | 'secret_master_key_unavailable'
   | 'unsafe_public_exposure';
 
 /** Stable, secret-free local-runtime failure. */

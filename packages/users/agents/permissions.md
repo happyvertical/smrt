@@ -115,6 +115,15 @@ STI base's), so an STI subtype resolves its STI base's collection
 bundle decorated before its manifest loads (#3125). Hand-written mutations in form
 handlers, endpoints, CLI and jobs use assertOperationPermission(). It requires
 catalog presence then resolves permissions, throwing fail-closed by default.
+Shared STI CRUD catalog entries name the effective base model, independent of
+registration order. Subtypes cannot overwrite `profiles.create` (formerly Bot
+when Bot registered last). An explicit child collection keeps its own CRUD,
+and deeper descendants sharing that namespace cannot replace its owner;
+child custom actions and field permissions are still catalogued. Same-name app
+replacements supply the effective base identity through the public registry.
+`sti-create-dispatch.test.ts` exercises real Profile/Bot and a generic family
+through REST, MCP, CLI's create handler and assistant manifest dispatch on SQLite;
+`permission-catalog.test.ts` checks reversed order and app replacement metadata.
 Use onDeny: 'return', checkOperationPermission or hasOperationPermission only
 when the caller handles a structured/boolean denial.
 
@@ -230,3 +239,13 @@ introduced. Metadata registration and catalog sync do not grant a user, role,
 tenant or resource permission. Existing persisted grants/current authority checks
 remain required. Use the public portable entry rather than private service paths
 when a model package needs declarations without the server runtime.
+
+### Runtime resource discovery imports
+
+`src/sveltekit/resource-list-handler.ts` imports shared action/name policy from
+`@happyvertical/smrt-core/api-actions`, not the Vite-plugin barrel. This is the
+same implementation re-exported by the route generator; permissions, wireability,
+custom-action receiver resolution and paths are unchanged. The existing resource
+handler suite retains positive and refusal coverage, and its fresh-Node published
+entry guard rejects Vite route-emitter/activation-generator loads. No SQL executor,
+transaction, authentication or tenant-boundary behavior changes in this import fix.

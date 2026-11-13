@@ -481,3 +481,62 @@ describe('option and containment checks', () => {
     expect(issued).toEqual([]);
   });
 });
+
+describe('owner-issued plugin credentials', () => {
+  it('verifies a private existing credential and never remints after revocation', async () => {
+    await withStub();
+    const runtime = await import('@happyvertical/smrt-app-runtime');
+    const verify = vi.fn(async () => ({ scopes: ['notes:read'] }));
+    const issue = vi.fn();
+    const close = vi.fn(async () => {});
+    const openStore = vi
+      .spyOn(runtime, 'openLocalMcpTokenStore')
+      .mockResolvedValue({ verify, issue, close } as never);
+    const credentialPath = join(scratch, 'private-plugin.json');
+    writeFileSync(credentialPath, JSON.stringify({ token: TOKEN }), {
+      mode: 0o600,
+    });
+    try {
+      const run = start({ credentialPath, issueToken: undefined });
+      await send(run, { cmd: 'info' });
+      run.stdin.end();
+      expect(await run.result).toBe(0);
+      expect(verify).toHaveBeenCalledWith(TOKEN);
+      expect(issue).not.toHaveBeenCalled();
+      expect(run.stdout.text + run.stderr.text).not.toContain(TOKEN);
+      verify.mockResolvedValueOnce(null as never);
+      const revoked = start({ credentialPath, issueToken: undefined });
+      expect(await revoked.result).toBe(
+        LAUNCHER_FAILURES.token_unavailable.exitCode,
+      );
+      expect(issue).not.toHaveBeenCalled();
+      expect(close).toHaveBeenCalledTimes(2);
+    } finally {
+      openStore.mockRestore();
+    }
+  });
+  itPosix('refuses a shared or symlinked credential file', async () => {
+    await withStub();
+    const runtime = await import('@happyvertical/smrt-app-runtime');
+    const verify = vi.fn();
+    const openStore = vi
+      .spyOn(runtime, 'openLocalMcpTokenStore')
+      .mockResolvedValue({ verify, close: async () => {} } as never);
+    const shared = join(scratch, 'shared-plugin.json');
+    writeFileSync(shared, JSON.stringify({ token: TOKEN }), { mode: 0o644 });
+    const linked = join(scratch, 'linked-plugin.json');
+    symlinkSync(shared, linked);
+    try {
+      for (const credentialPath of [shared, linked]) {
+        const run = start({ credentialPath, issueToken: undefined });
+        expect(await run.result).toBe(
+          LAUNCHER_FAILURES.token_unavailable.exitCode,
+        );
+        expect(run.stderr.text).not.toContain(TOKEN);
+      }
+      expect(verify).not.toHaveBeenCalled();
+    } finally {
+      openStore.mockRestore();
+    }
+  });
+});

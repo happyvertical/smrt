@@ -269,3 +269,13 @@ export interface RecipeDefinition {
    */
   demo?: RecipeDemo;
 }
+
+/** Live host projection for lazy surfaces; recipe ids are published after activation. */
+export interface RecipeSurfaceLoadContext {
+  /** Current screen-visible recipe ids, never the installed AOT catalog. */
+  recipes?: readonly string[];
+  /** Trusted tenant for the server's readiness/exposure gate. */
+  tenantId?: string | null;
+  /** A generated per-surface loader binds this to its owning recipe. */
+  recipeId?: string;
+}

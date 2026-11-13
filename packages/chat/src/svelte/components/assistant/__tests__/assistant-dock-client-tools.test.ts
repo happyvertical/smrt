@@ -462,6 +462,49 @@ describe('dock browser tools (#2908)', () => {
     await sending;
     expect(tools.executed).toHaveLength(1);
   });
+  it('keeps generic browser-tool confirmation free of raw descriptions, names and argument details', async () => {
+    const tool = {
+      ...DELETE_TOOL,
+      description: 'PRIVATE TenantId ProfileId @fixture/models:Member',
+    };
+    const transport = suspendingTransport([
+      {
+        id: 'c1',
+        name: tool.name,
+        args: { id: 'PRIVATE JSON' },
+        effect: 'destructive',
+      },
+    ]);
+    const tools = pageTools([tool]);
+    let controller:
+      | ReturnType<typeof createAssistantDockController>
+      | undefined;
+    const view = render(AssistantDock, {
+      props: {
+        transport,
+        registry: createDataSurfaceRegistry(),
+        pageTools: tools,
+        toolPresentation: 'generic',
+        oncontroller: (value) => {
+          controller = value;
+        },
+      },
+    });
+    await until(() => Boolean(controller));
+    await controller?.openThread('t1');
+    const sending = controller?.send('Delete this record');
+    expect(await screen.findByText('Review this action')).toBeTruthy();
+    expect(view.container.textContent).not.toMatch(
+      /PRIVATE|TenantId|ProfileId|@fixture|articles_delete/,
+    );
+    expect(
+      view.container.querySelector('.assistant-dock-tool-request-details'),
+    ).toBeNull();
+    expect(screen.getByText("This can't be undone.")).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: "Don't allow" }));
+    await sending;
+    expect(tools.executed).toEqual([]);
+  });
 });
 
 describe('readAssistantTurnResult (#2908)', () => {

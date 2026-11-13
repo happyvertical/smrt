@@ -94,6 +94,7 @@ export interface AssistantClientToolResult {
 
 /** Why a turn finished. */
 export type AssistantTurnStopReason =
+  | 'approval'
   | 'stop'
   | 'max_steps'
   /** The turn's token or time budget ran out (`maxTurnTokens`/`maxTurnMs`). */
@@ -112,10 +113,47 @@ export type AssistantTurnStopReason =
   /** A model call failed and the host's `providerErrorFallback` answered (#4454). */
   | 'provider_error';
 
+/** A server-owned approval reference; authority and storage belong to the host. */
+export interface AssistantApprovalRequest {
+  id: string;
+  tool: string;
+  callId: string;
+  summary: string;
+  /** Optional host-authored business preview, supplied by the authenticated presentation seam. */
+  presentation?: { summary: string };
+}
+
+// Public projection only: never send the principal/arguments recovery envelope to the browser.
+export interface AssistantApprovalView extends AssistantApprovalRequest {
+  status: import('@happyvertical/smrt-app-runtime').OwnerApprovalStatus;
+  decidedBy?: string | null;
+  decidedAt?: number | null;
+}
+
+/**
+ * Reconcile same-hold browser presentation when canonical reads overlap.
+ * This grants no execution authority; server verification remains mandatory.
+ * The first terminal view wins, and unrelated hold identities never merge.
+ */
+export function reconcileAssistantApprovalView(
+  current: AssistantApprovalView | undefined,
+  next: AssistantApprovalView,
+): AssistantApprovalView {
+  if (!current) return next;
+  if (current.id !== next.id) return current;
+  const active = ['pending', 'approved', 'executing'];
+  const previousRank = active.indexOf(current.status);
+  const nextRank = active.indexOf(next.status);
+  if (previousRank < 0 || (nextRank >= 0 && nextRank < previousRank))
+    return current;
+  return next;
+}
+
 /** One event of a streamed assistant turn. `M` is the host's message shape. */
 export type AssistantTurnEvent<M = Record<string, unknown>> =
   | { type: 'status'; status: AssistantStatus }
   | { type: 'token'; text: string }
+  | { type: 'approval_needed'; approval: AssistantApprovalRequest }
   | { type: 'step'; step: AssistantTurnStep }
   | { type: 'message'; message: M }
   | {
@@ -125,6 +163,8 @@ export type AssistantTurnEvent<M = Record<string, unknown>> =
     }
   | {
       type: 'done';
+      /** Durable design run accepted by the authenticated host. */
+      runId?: string;
       message?: M;
       stoppedReason: AssistantTurnStopReason;
       /**

@@ -5,10 +5,10 @@ description: "Image asset management with AI-powered categorization, search, edi
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-08T17:58:04Z"
+  at: "2026-11-12T05:53:42Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:d1c52a86c79f7779a4d7485ed81e9e0ea3243227870394fb3733bd8968fac23f"
+source_revision: "sha256:7c5a570d95cd96f36568bb2e045c19e9e16bbce36935705ea9c35a82f03be6c4"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/images/package.json"
@@ -16,6 +16,9 @@ sources:
   - id: "agents"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/images/AGENTS.md"
     title: "@happyvertical/smrt-images packages/images/AGENTS.md"
+  - id: "agents-2"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/images/agents/optional-loading.md"
+    title: "@happyvertical/smrt-images packages/images/agents/optional-loading.md"
 ---
 
 # @happyvertical/smrt-images
@@ -30,6 +33,7 @@ sources:
 ## Documentation
 
 - `packages/images/AGENTS.md`
+- `packages/images/agents/optional-loading.md`
 
 ## Framework dependencies
 

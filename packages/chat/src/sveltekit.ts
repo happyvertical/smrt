@@ -1,3 +1,35 @@
+import type {
+  ResolvedWorkProfile,
+  WorkProfileName,
+  WorkRunMetadata,
+} from '@happyvertical/smrt-inference';
+
+export {
+  type AssistantWorkProfileOptions,
+  assertWorkProfileTool,
+  WorkProfileEscalation,
+} from './work-profile.js';
+
+import {
+  executeAsPrincipal,
+  PrincipalToolNotAllowedError,
+} from '@happyvertical/smrt-agents';
+import {
+  createSqliteOwnerApprovalStore,
+  isApprovalOwner,
+  OwnerApprovalAuthority,
+  OwnerApprovalError,
+} from '@happyvertical/smrt-app-runtime';
+import {
+  type AssistantApprovalBridge,
+  type AssistantApprovalPolicy,
+  createAssistantApprovalBridge,
+} from './assistant-approvals.js';
+import { sendAgentReply } from './services/ChatService.js';
+import {
+  type DescribeAssistantTool,
+  describeAssistantTool,
+} from './tool-summary.js';
 /**
  * Mountable SvelteKit routes for the AssistantDock (#3368).
  *
@@ -59,6 +91,8 @@ import {
   toAIClientOptions,
 } from '@happyvertical/smrt-config';
 import {
+  ObjectRegistry,
+  resolveDatabase,
   resolveInferenceTarget,
   type SmrtClassOptions,
 } from '@happyvertical/smrt-core';
@@ -66,6 +100,7 @@ import { withTenant } from '@happyvertical/smrt-tenancy';
 import {
   getCurrentSessionPermissionContext,
   getRequestScopedDatabase,
+  PermissionResolver,
 } from '@happyvertical/smrt-users';
 import { chatUnavailableBody, chatUnconfiguredBody } from './ai-unavailable.js';
 import {
@@ -73,6 +108,7 @@ import {
   type AssistantContinuationStore,
   type AssistantTurnErrorLogger,
   type AssistantTurnState,
+  AssistantTurnUserError,
   type AuthoredToolReply,
   createAssistantTurnResponse,
   createSessionContinuationStore,
@@ -80,6 +116,13 @@ import {
   type ProviderErrorFallback,
   runAssistantTurn,
 } from './assistant-turn.js';
+import type {
+  AssistantApprovalWaiter,
+  AssistantTurnDriver,
+} from './assistant-turn-driver.js';
+
+export type * from './assistant-turn-driver.js';
+
 import type { AssistantTurnEvent } from './assistant-turn-events.js';
 import { MAX_CHAT_STREAM_CONTENT_LENGTH } from './chat-stream.js';
 import type { AgentSession } from './models/AgentSession.js';
@@ -96,6 +139,7 @@ import {
   buildManifestToolCatalog,
   type ClientToolResultInput,
   FALLBACK_HISTORY_PLACEHOLDER,
+  invokeManifestTool,
   isFallbackReply,
   MAX_CLIENT_TOOL_RESULT_CHARS,
   MAX_CLIENT_TOOLS,
@@ -149,6 +193,8 @@ export type AssistantPrincipalResolver = (
 
 /** What every per-request option callback receives. */
 export interface AssistantRequestContext {
+  /** Server-selected profile; never populated from request input. */
+  workProfile?: ResolvedWorkProfile;
   event: AssistantRouteEvent;
   principal: AssistantPrincipal;
   /**
@@ -242,6 +288,51 @@ export interface AssistantRouteBoundPrincipal {
 
 /** Options for {@link mountAssistantRoutes}. */
 export interface MountAssistantRoutesOptions {
+  deferDesignTurn?: AssistantRouteValue<boolean>;
+  /** Trusted detached pass binding, never a request body flag. Does not author a user message. */
+  internalTurn?(
+    context: AssistantRequestContext,
+  ):
+    | { userMessage: string; originMessageId?: string }
+    | undefined
+    | Promise<{ userMessage: string; originMessageId?: string } | undefined>;
+  /** Authenticated host selection; request body profile values are never accepted. */
+  resolveWorkProfile?(
+    context: AssistantRequestContext,
+    name?: WorkProfileName,
+  ): Promise<ResolvedWorkProfile>;
+  designTools?: readonly string[];
+  onWorkRun?(metadata: WorkRunMetadata): void;
+  formatAssistantReply?(
+    content: string,
+    context: AssistantRequestContext,
+  ): { content: string; metadata?: Record<string, unknown> };
+  onDesignEscalation?(
+    context: AssistantRequestContext,
+    input: Parameters<
+      NonNullable<
+        import('./work-profile.js').AssistantWorkProfileOptions['onDesignEscalation']
+      >
+    >[0],
+  ): Promise<{ runId: string; message?: string }>;
+  /** External loop; omitted uses the built-in model/tool loop. */
+  turnDriver?: AssistantTurnDriver;
+  /** Resolved once per send/resume, before writes. Undefined selects `turnDriver`. */
+  resolveTurnDriver?: (
+    context: AssistantRequestContext & { model?: string },
+  ) =>
+    | AssistantTurnDriver
+    | undefined
+    | Promise<AssistantTurnDriver | undefined>;
+  /** C3 seam: host persists and waits for an owner decision; absent fails closed. */
+  waitForApproval?: AssistantApprovalWaiter;
+  /** Host authority override; default uses the runtime database and live owner membership. */
+  approvals?: AssistantRouteValue<OwnerApprovalAuthority>;
+  /** Shared non-thread tool continuations; the host binds original-principal executors. */
+  approvalContinuations?: AssistantRouteValue<
+    import('@happyvertical/smrt-app-runtime').OwnerApprovalContinuations
+  >;
+  approvalPolicy?: AssistantRouteValue<AssistantApprovalPolicy>;
   /**
    * The AI client, or a factory called once per turn. Omitted, each turn
    * builds a client from the principal's stored inference binding (#4756,
@@ -255,10 +346,10 @@ export interface MountAssistantRoutesOptions {
    * error, not a fallback.
    */
   ai?:
-    | AIInterface
+    | Pick<AIInterface, 'chat'>
     | ((
         context: AssistantRequestContext & { model?: string },
-      ) => AIInterface | Promise<AIInterface>);
+      ) => Pick<AIInterface, 'chat'> | Promise<Pick<AIInterface, 'chat'>>);
   /**
    * Database for chat persistence, the tool catalog and the principal run:
    * a fixed value, or a resolver called once per request (and once more
@@ -363,9 +454,15 @@ export interface MountAssistantRoutesOptions {
    * committed late as `failed`. Default 60 s.
    */
   turnStartTimeoutMs?: number;
-  describeTool?: (name: string, args?: Record<string, unknown>) => string;
+  describeTool?: DescribeAssistantTool;
+  /** Trusted host presentation. Tool payloads stay in storage/provider history, not public messages. */
+  toolPresentation?: 'generic';
+  /** Trusted presentation of an authorized canonical hold; never reads model-selected UI flags. */
+  presentApproval?(
+    record: import('@happyvertical/smrt-app-runtime').OwnerApproval,
+  ): { summary: string } | undefined | Promise<{ summary: string } | undefined>;
   /**
-   * Persist a server tool invocation into the thread (default: none). Its
+   * Persist a successful server tool invocation (default: short summary). Its
    * tool name must be on `allowedTools`, which is mirrored onto the session.
    */
   authorInvocation?: (invocation: ToolInvocation) => AuthoredToolReply | null;
@@ -443,6 +540,11 @@ export interface AssistantThreadWire {
 
 /** Message as the routes send it (chronological in lists). */
 export interface AssistantMessageWire {
+  /** Explicit host design output and sanitized execution accounting only. */
+  metadata?: {
+    workRun?: unknown;
+    designRunId?: string;
+  };
   id: string;
   threadId: string;
   content: string;
@@ -597,7 +699,7 @@ let configLoad: Promise<unknown> | undefined;
  * reaches `config({ usage: { handlers } })`, not `_smrt_ai_usage`, because a
  * turn's request database does not outlive the turn.
  */
-async function configuredAssistantAI(
+export async function configuredAssistantAI(
   context: AssistantRequestContext,
 ): Promise<AIInterface> {
   if (getConfig() === null) {
@@ -628,6 +730,7 @@ async function configuredAssistantAI(
         ...(base ? { base } : {}),
         tenantId: principal.tenantId,
         className: 'AssistantRoute',
+        ...(context.workProfile ? { tier: context.workProfile.tier } : {}),
         usage: { className: 'AssistantRoute', tenantId: principal.tenantId },
         // smrt-chat stores the conversation itself: never a second copy in
         // `_smrt_ai_transcripts` (#4780, owner decision).
@@ -638,7 +741,10 @@ async function configuredAssistantAI(
   // Imported per turn, as the dev routes do: mounting (and SvelteKit's
   // build-time route analysis) never loads a provider SDK.
   const { getAI } = await import('@happyvertical/ai');
-  return getAI(resolved.options as Parameters<typeof getAI>[0]);
+  return getAI({
+    ...resolved.options,
+    ...(context.workProfile?.model ? { model: context.workProfile.model } : {}),
+  } as Parameters<typeof getAI>[0]);
 }
 
 /**
@@ -825,6 +931,16 @@ export function toAssistantMessageWire(
     createdAt: toIso(message.created_at) ?? new Date(0).toISOString(),
     ...(attachments.length > 0 ? { attachments } : {}),
     ...(toolCallData ? { toolCallData } : {}),
+    ...(metadata && ('workRun' in metadata || 'designRunId' in metadata)
+      ? {
+          metadata: {
+            ...('workRun' in metadata ? { workRun: metadata.workRun } : {}),
+            ...(typeof metadata.designRunId === 'string'
+              ? { designRunId: metadata.designRunId }
+              : {}),
+          },
+        }
+      : {}),
     ...(clientRequestId ? { clientRequestId } : {}),
   };
 }
@@ -839,6 +955,9 @@ function isAuthorizationFailure(error: unknown): boolean {
 // ---------------------------------------------------------------------------
 
 type RouteMatch =
+  | { route: 'owner-approvals' }
+  | { route: 'approvals'; threadId: string }
+  | { route: 'decide-approval'; id: string }
   | { route: 'threads' }
   | { route: 'thread-messages'; threadId: string }
   | { route: 'thread-resume'; threadId: string }
@@ -846,6 +965,9 @@ type RouteMatch =
   | { route: 'actions'; phase: 'preview' | 'apply' };
 
 const ROUTE_METHODS: Record<RouteMatch['route'], readonly string[]> = {
+  'owner-approvals': ['GET'],
+  approvals: ['GET'],
+  'decide-approval': ['POST'],
   threads: ['GET', 'POST'],
   'thread-messages': ['GET', 'POST'],
   'thread-resume': ['POST'],
@@ -856,6 +978,11 @@ const ROUTE_METHODS: Record<RouteMatch['route'], readonly string[]> = {
 function matchRoute(segments: string[]): RouteMatch | null {
   const [a, b, c, ...rest] = segments;
   if (rest.length > 0) return null;
+  if (a === 'approvals' && b === undefined) return { route: 'owner-approvals' };
+  if (a === 'threads' && b && c === 'approvals')
+    return { route: 'approvals', threadId: b };
+  if (a === 'approvals' && b && c === 'decide')
+    return { route: 'decide-approval', id: b };
   if (a === 'threads' && b === undefined) return { route: 'threads' };
   if (a === 'threads' && b && c === 'messages') {
     return { route: 'thread-messages', threadId: b };
@@ -928,6 +1055,47 @@ export function mountAssistantRoutes(
   const maxBody = options.maxBodyBytes ?? DEFAULT_ASSISTANT_MAX_BODY_BYTES;
   const maxContent = options.maxContentLength ?? MAX_CHAT_STREAM_CONTENT_LENGTH;
   const historyLimit = Math.max(0, options.historyLimit ?? 20);
+  const internalRequests = new WeakSet<Request>();
+  const publicMessage = (message: ChatMessage): AssistantMessageWire => {
+    const wire = toAssistantMessageWire(message);
+    if (options.toolPresentation !== 'generic' || wire.role !== 'tool')
+      return wire;
+    const approval = parseObject(wire.toolCallData?.approval);
+    if (typeof approval?.id === 'string')
+      return {
+        ...wire,
+        content: 'Review this change',
+        toolCallData: {
+          approval: {
+            id: approval.id,
+            tool: 'change',
+            callId: approval.id,
+            summary: 'Review this change',
+          },
+        },
+      };
+    const tool = wire.toolCallData;
+    const name =
+      typeof tool?.name === 'string'
+        ? tool.name
+        : typeof tool?.tool === 'string'
+          ? tool.tool
+          : '';
+    const ok = !['error', 'refused', 'rejected', 'denied'].includes(
+      String(tool?.status),
+    );
+    const label = describeAssistantTool(
+      name,
+      undefined,
+      { ok, observation: undefined },
+      { recordLabels: 'generic' },
+    );
+    return {
+      ...wire,
+      content: label,
+      toolCallData: { label, status: ok ? 'success' : 'error' },
+    };
+  };
   const checkOrigin = options.checkOrigin ?? true;
   const trustedOrigins = options.trustedOrigins ?? [];
   const resolvePrincipal: AssistantPrincipalResolver =
@@ -1067,7 +1235,7 @@ export function mountAssistantRoutes(
   const resolveAI = async (
     context: AssistantRequestContext,
     model: string | undefined,
-  ): Promise<AIInterface> => {
+  ): Promise<Pick<AIInterface, 'chat'>> => {
     try {
       const ai =
         typeof aiSource === 'function'
@@ -1195,13 +1363,35 @@ export function mountAssistantRoutes(
     context: AssistantRequestContext,
     body: Record<string, unknown>,
   ) => {
-    const model = resolveModel(body.model);
+    const workProfile = await options.resolveWorkProfile?.(context);
+    context = { ...context, workProfile };
+    const model = workProfile?.model ?? resolveModel(body.model);
     const allowedTools = await allowedToolsFor(context);
     const clientTools = sanitizeClientToolDeclarations(
       body.clientTools,
       options.clientToolAllowList ?? [],
     );
-    const ai = await resolveAI(context, model);
+    let turnDriver: AssistantTurnDriver | undefined;
+    try {
+      turnDriver =
+        (await options.resolveTurnDriver?.({ ...context, model })) ??
+        options.turnDriver;
+      if (turnDriver && typeof turnDriver.run !== 'function') {
+        throw new Error('The turn driver has no run method.');
+      }
+    } catch (error) {
+      const unavailable = unavailableRouteError(error);
+      if (unavailable) throw unavailable;
+      if (error instanceof AssistantTurnUserError)
+        throw new AssistantRouteError(503, error.code, error.message);
+      safeLog(error);
+      throw new AssistantRouteError(
+        503,
+        'assistant_unavailable',
+        'The assistant is unavailable right now. Please try again later.',
+      );
+    }
+    const ai = turnDriver ? undefined : await resolveAI(context, model);
     // The turn stops when the request is aborted OR the response body is
     // cancelled (a client that left), whichever the adapter reports.
     const abort = new AbortController();
@@ -1212,7 +1402,15 @@ export function mountAssistantRoutes(
         once: true,
       });
     }
-    return { abort, ai, model, allowedTools, clientTools };
+    return {
+      abort,
+      ai,
+      turnDriver,
+      model,
+      allowedTools,
+      clientTools,
+      workProfile,
+    };
   };
   type PreparedTurn = Awaited<ReturnType<typeof prepareTurn>>;
 
@@ -1245,7 +1443,7 @@ export function mountAssistantRoutes(
     );
     // Mirror the allow-list onto the session so the authoring gate
     // (`sendAgentReply`) agrees with the loop's offer gate.
-    if (options.authorInvocation && mirror) {
+    if (mirror) {
       const current = session.getAllowedTools();
       if (
         current.length !== allowedTools.length ||
@@ -1259,6 +1457,41 @@ export function mountAssistantRoutes(
         });
       }
     }
+    const approvalPolicy = await resolveValue(options.approvalPolicy, context);
+    let bridge: Promise<AssistantApprovalBridge> | undefined;
+    const bridgeFor = () =>
+      (bridge ??= authorityFor(context).then(async (authority) =>
+        createAssistantApprovalBridge({
+          authority,
+          tenantId: principal.tenantId,
+          requestedBy: principal.userId,
+          policy: approvalPolicy,
+          context: JSON.parse(
+            JSON.stringify({
+              principal,
+              permissionCeiling: principal.permissions ?? [
+                ...(
+                  await (
+                    await PermissionResolver.create({ ...(db ? { db } : {}) })
+                  ).resolvePermissions(principal.userId, principal.tenantId)
+                ).permissions,
+              ],
+              threadId: String(thread.id),
+              agentSessionId: String(session.id),
+              driver: prepared.turnDriver ? 'external' : 'builtin',
+              allowedTools,
+            }),
+          ),
+        }),
+      ));
+    const approvals: AssistantApprovalBridge = {
+      policy: approvalPolicy,
+      request: async (call) => (await bridgeFor()).request(call),
+      wait: async (request, driverContext) =>
+        (await bridgeFor()).wait!(request, driverContext),
+      complete: async (request, ok, result) =>
+        (await bridgeFor()).complete!(request, ok, result),
+    };
     const continuations = continuationStoreFor(context, chat, session);
     return {
       abort,
@@ -1269,6 +1502,61 @@ export function mountAssistantRoutes(
       continuationKey: String(thread.id),
       turn: {
         ai,
+        turnDriver: prepared.turnDriver,
+        workProfile: prepared.workProfile,
+        deferDesignTurn: await resolveValue(options.deferDesignTurn, context),
+        designTools: options.designTools,
+        resolveWorkProfileRuntime: async (workProfile: ResolvedWorkProfile) => {
+          const nextContext = { ...context, workProfile };
+          const turnDriver =
+            (await options.resolveTurnDriver?.({
+              ...nextContext,
+              model: workProfile.model,
+            })) ?? options.turnDriver;
+          return {
+            turnDriver,
+            ai: turnDriver
+              ? undefined
+              : await resolveAI(nextContext, workProfile.model),
+          };
+        },
+        onWorkRun: options.onWorkRun,
+        ...(options.formatAssistantReply
+          ? {
+              formatAssistantReply: (content: string) =>
+                options.formatAssistantReply!(content, context),
+            }
+          : {}),
+        ...(options.onDesignEscalation
+          ? {
+              onDesignEscalation: (
+                input: Parameters<
+                  NonNullable<
+                    import('./work-profile.js').AssistantWorkProfileOptions['onDesignEscalation']
+                  >
+                >[0],
+              ) => options.onDesignEscalation!(context, input),
+            }
+          : {}),
+        ...(options.resolveWorkProfile
+          ? {
+              resolveWorkProfile: (name: WorkProfileName) =>
+                options.resolveWorkProfile!(context, name),
+            }
+          : {}),
+        waitForApproval: options.waitForApproval,
+        approvalPolicy,
+        approvals:
+          prepared.turnDriver &&
+          (options.waitForApproval || prepared.turnDriver.waitForApproval) &&
+          !options.approvals
+            ? undefined
+            : approvals,
+        thread: {
+          id: String(thread.id),
+          roomId: String(session.chatRoomId),
+          agentSessionId: String(session.id),
+        },
         principal: {
           runAsUserId: principal.userId,
           tenantId: principal.tenantId,
@@ -1331,13 +1619,31 @@ export function mountAssistantRoutes(
           : {}),
         ...(options.describeTool ? { describeTool: options.describeTool } : {}),
         onError: safeLog,
-        serializeMessage: (message: unknown) =>
-          toAssistantMessageWire(message as ChatMessage),
+        serializeMessage: (message: unknown) => {
+          if (!internalRequests.has(context.event.request))
+            return publicMessage(message as ChatMessage);
+          const wire = toAssistantMessageWire(message as ChatMessage);
+          const metadata = parseObject((message as ChatMessage).metadata);
+          return {
+            ...wire,
+            ...(metadata && 'designOutput' in metadata
+              ? {
+                  metadata: {
+                    ...wire.metadata,
+                    designOutput: metadata.designOutput,
+                  },
+                }
+              : {}),
+          };
+        },
         author: {
           chatService: chat,
           agentSessionId: String(session.id),
           tenantId: principal.tenantId,
           threadId: String(thread.id),
+          ...(internalRequests.has(context.event.request)
+            ? { metadata: { assistantInternalTurn: true } }
+            : {}),
           ...(options.authorInvocation
             ? { authorInvocation: options.authorInvocation }
             : {}),
@@ -1352,16 +1658,78 @@ export function mountAssistantRoutes(
   const stream = (
     events: AsyncGenerator<AssistantTurnEvent<AssistantMessageWire>, unknown>,
     abort: AbortController,
+    internalTurn = false,
   ) =>
-    createAssistantTurnResponse(events, {
-      ...(options.heartbeatMs !== undefined
-        ? { heartbeatMs: options.heartbeatMs }
-        : {}),
-      onError: safeLog,
-      // A cancelled body cancels the turn, even when the adapter never
-      // aborts the request signal on disconnect.
-      onCancel: () => abort.abort(),
-    });
+    createAssistantTurnResponse(
+      (async function* () {
+        for await (const event of events) {
+          if (internalTurn || options.toolPresentation !== 'generic') {
+            yield event;
+            continue;
+          }
+          // Provisional model text may describe internal work before the host
+          // formats its final answer. The persisted answer remains public.
+          if (event.type === 'token') continue;
+          if (event.type === 'step' && event.step.kind !== 'thinking') {
+            const step = event.step;
+            const label = describeAssistantTool(
+              step.tool,
+              undefined,
+              step.kind === 'tool_result'
+                ? { ok: step.ok, observation: undefined }
+                : undefined,
+              { recordLabels: 'generic' },
+            );
+            yield {
+              ...event,
+              step: {
+                ...step,
+                tool: 'change',
+                label:
+                  step.kind === 'tool_call' ? 'Working on this action' : label,
+                ...(step.kind === 'tool_result' ? { error: undefined } : {}),
+              },
+            };
+          } else if (event.type === 'status') {
+            yield {
+              ...event,
+              status: {
+                ...event.status,
+                label:
+                  event.status.state === 'working'
+                    ? 'Working on your request'
+                    : event.status.state === 'done'
+                      ? 'Done'
+                      : event.status.state === 'error'
+                        ? 'Could not complete this request'
+                        : null,
+              },
+            };
+          } else if (event.type === 'approval_needed') {
+            yield {
+              ...event,
+              approval: {
+                id: event.approval.id,
+                callId: event.approval.id,
+                tool: 'change',
+                summary: 'Review this change',
+              },
+            };
+          } else if (event.type === 'error') {
+            yield { ...event, error: 'Could not complete this request.' };
+          } else yield event;
+        }
+      })(),
+      {
+        ...(options.heartbeatMs !== undefined
+          ? { heartbeatMs: options.heartbeatMs }
+          : {}),
+        onError: safeLog,
+        // A cancelled body cancels the turn, even when the adapter never
+        // aborts the request signal on disconnect.
+        onCancel: () => abort.abort(),
+      },
+    );
 
   type TurnSetup = Awaited<ReturnType<typeof turnSetup>>;
   type TurnEvent = AssistantTurnEvent<AssistantMessageWire>;
@@ -1390,18 +1758,20 @@ export function mountAssistantRoutes(
     ) => AsyncGenerator<TurnEvent, unknown>,
     durableSend?: string,
   ): Promise<Response> => {
+    const internalTurn = internalRequests.has(context.event.request);
     const transaction = requestTransaction();
     if (!transaction) {
       return stream(
         detached(first, pump(start(chat, setup))).events,
         prepared.abort,
+        internalTurn,
       );
     }
     const isActive = transaction.isActive;
     if (!runtime || typeof isActive !== 'function') {
       const turn = detached(first, pump(start(chat, setup)));
       await turn.settled;
-      return stream(turn.events, prepared.abort);
+      return stream(turn.events, prepared.abort, internalTurn);
     }
     const { principal } = context;
     // The request's authority, frozen before the response returns (an empty
@@ -1537,7 +1907,11 @@ export function mountAssistantRoutes(
         });
       }
     };
-    return stream(detached(first, ownLifetime).events, prepared.abort);
+    return stream(
+      detached(first, ownLifetime).events,
+      prepared.abort,
+      internalTurn,
+    );
   };
 
   // ---- route bodies ------------------------------------------------------
@@ -1595,8 +1969,74 @@ export function mountAssistantRoutes(
       actorProfileId: principal.profileId,
       tenantId: principal.tenantId,
       limit: 200,
+      visibility: 'conversation',
     });
-    return json({ items: messages.map(toAssistantMessageWire) });
+    let items = messages.map(publicMessage);
+    if (options.approvals || options.approvalContinuations) {
+      let approvals: Awaited<ReturnType<typeof ownedThreadApprovals>> = [];
+      try {
+        approvals = await ownedThreadApprovals(context, threadId);
+      } catch (error) {
+        // Reading one's conversation does not require being a tenant owner.
+        // Only the owner-authorized projection disappears when authority is revoked.
+        if (
+          !(error instanceof OwnerApprovalError) ||
+          error.code !== 'forbidden'
+        )
+          throw error;
+      }
+      const shown = new Set(
+        items.flatMap((message) => {
+          const approval = parseObject(message.toolCallData?.approval);
+          return typeof approval?.id === 'string' ? [approval.id] : [];
+        }),
+      );
+      const oldestPersisted = items.length
+        ? Math.min(...items.map((message) => Date.parse(message.createdAt)))
+        : -Infinity;
+      const unsettled = new Set(
+        approvals
+          .filter(
+            (record) =>
+              record.continuation &&
+              ['pending', 'approved', 'executing'].includes(record.status),
+          )
+          .map((record) => record.id),
+      );
+      for (const record of approvals) {
+        if (
+          !record.continuation ||
+          (!unsettled.has(record.id) && record.createdAt < oldestPersisted) ||
+          shown.has(record.id)
+        )
+          continue;
+        const view = await publicApproval(record);
+        items.push({
+          id: `approval:${record.id}`,
+          threadId,
+          role: 'tool',
+          content: view.summary,
+          createdAt: new Date(record.createdAt).toISOString(),
+          toolCallData: { approval: view },
+        });
+        shown.add(record.id);
+      }
+      // Recent native outcomes share the historical page's 200-item bound;
+      // outstanding decisions remain visible even when older than that page.
+      items.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+      const outstanding = items.filter((message) => {
+        const approval = parseObject(message.toolCallData?.approval);
+        return typeof approval?.id === 'string' && unsettled.has(approval.id);
+      });
+      const outstandingIds = new Set(outstanding.map((message) => message.id));
+      items = [
+        ...items
+          .filter((message) => !outstandingIds.has(message.id))
+          .slice(-200),
+        ...outstanding,
+      ].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+    }
+    return json({ items });
   };
 
   /**
@@ -1619,6 +2059,7 @@ export function mountAssistantRoutes(
       messageId,
       actorProfileId: principal.profileId,
       tenantId: principal.tenantId,
+      visibility: 'conversation',
     });
     const anchor = stored?.message;
     if (
@@ -1628,8 +2069,8 @@ export function mountAssistantRoutes(
     ) {
       return null;
     }
-    const userMessage = toAssistantMessageWire(anchor);
-    const after = stored.replies.map(toAssistantMessageWire);
+    const userMessage = publicMessage(anchor);
+    const after = stored.replies.map(publicMessage);
     const assistantMessage = [...after]
       .reverse()
       .find((message) => message.role === 'assistant');
@@ -1778,6 +2219,65 @@ export function mountAssistantRoutes(
     const session = await findSession(chat, principal);
     const thread = await requireOwnThread(chat, principal, session, threadId);
     if (!session?.chatRoomId) throw notFound();
+
+    const internal = await options.internalTurn?.(context);
+    if (internal) {
+      if (!internal.userMessage.trim())
+        throw badRequest('The pass input is empty.');
+      if (internal.originMessageId) {
+        const original = await chat.getThreadMessageReplies({
+          threadId,
+          messageId: internal.originMessageId,
+          actorProfileId: principal.profileId,
+          tenantId: principal.tenantId,
+        });
+        if (
+          original?.message?.role !== 'user' ||
+          original.message.senderProfileId !== principal.profileId
+        )
+          throw notFound();
+      }
+      internalRequests.add(context.event.request);
+      const prepared = await prepareTurn(context, body);
+      const setup = await turnSetup(context, chat, session, thread, prepared);
+      const earlier =
+        historyLimit > 0
+          ? await chat.getThreadMessages({
+              threadId,
+              actorProfileId: principal.profileId,
+              tenantId: principal.tenantId,
+              limit: historyLimit,
+              roles: HISTORY_REPLAY_ROLES,
+            })
+          : [];
+      const history: AIMessage[] = earlier
+        .filter(
+          (message) => message.role === 'user' || message.role === 'assistant',
+        )
+        .map((message) => ({
+          role: message.role as 'user' | 'assistant',
+          content:
+            message.role === 'assistant' && isFallbackReply(message)
+              ? FALLBACK_HISTORY_PLACEHOLDER
+              : message.content,
+        }));
+      return respondWithTurn(
+        context,
+        chat,
+        session,
+        thread,
+        prepared,
+        setup,
+        null,
+        (_turnChat, turnSetupFor) =>
+          runAssistantTurn<AssistantMessageWire>({
+            ...turnSetupFor.turn,
+            history,
+            userMessage: internal.userMessage,
+            originMessageId: internal.originMessageId,
+          }),
+      );
+    }
 
     // The reservation is the user message's deterministic primary key, scoped
     // to tenant, room, thread, actor and clientRequestId: the database's
@@ -2106,6 +2606,279 @@ export function mountAssistantRoutes(
     }
   };
 
+  // Approval identity/arguments come exclusively from the saved server envelope.
+  const authorityFor = async (context: AssistantRequestContext) => {
+    const supplied = await resolveValue(options.approvals, context);
+    if (supplied) return supplied;
+    const configured = await dbFor(context);
+    const db = configured
+      ? await resolveDatabase(configured)
+      : (
+          await ObjectRegistry.getCollection(
+            '@happyvertical/smrt-chat:AgentSession',
+            {},
+          )
+        ).db;
+    return new OwnerApprovalAuthority(
+      await createSqliteOwnerApprovalStore(db),
+      (actor) => isApprovalOwner(db, actor),
+    );
+  };
+  const approvalActor = (context: AssistantRequestContext) => ({
+    id: context.principal.userId,
+    tenantId: context.principal.tenantId,
+  });
+  const publicApproval = async (
+    record: import('@happyvertical/smrt-app-runtime').OwnerApproval,
+  ) => {
+    const presentation =
+      options.toolPresentation === 'generic'
+        ? await options.presentApproval?.(record)
+        : undefined;
+    return {
+      id: record.id,
+      tool: options.toolPresentation === 'generic' ? 'change' : record.tool,
+      callId:
+        record.continuation || options.toolPresentation === 'generic'
+          ? record.id
+          : record.callId,
+      summary:
+        options.toolPresentation === 'generic'
+          ? (presentation?.summary ?? 'Review this change')
+          : record.summary,
+      ...(presentation
+        ? { presentation: { summary: presentation.summary } }
+        : {}),
+      status: record.status,
+      decidedBy: record.decidedBy,
+      decidedAt: record.decidedAt,
+      ...(options.toolPresentation === 'generic' ||
+      record.continuation ||
+      record.result === undefined
+        ? {}
+        : { result: record.result }),
+    };
+  };
+  const ownedThreadApprovals = async (
+    context: AssistantRequestContext,
+    threadId: string,
+  ) => {
+    const chat = await chatFor(context);
+    await requireOwnThread(
+      chat,
+      context.principal,
+      await findSession(chat, context.principal),
+      threadId,
+    );
+    const rows = await (await authorityFor(context)).list(
+      approvalActor(context),
+      false,
+    );
+    return rows.filter((record) => {
+      const principal = parseObject(record.context.principal);
+      return (
+        record.tenantId === context.principal.tenantId &&
+        record.requestedBy === context.principal.userId &&
+        record.context.threadId === threadId &&
+        principal?.userId === context.principal.userId &&
+        principal.tenantId === context.principal.tenantId &&
+        principal.profileId === context.principal.profileId
+      );
+    });
+  };
+  const listApprovals = async (
+    context: AssistantRequestContext,
+    threadId: string,
+  ) =>
+    json({
+      approvals: await Promise.all(
+        (await ownedThreadApprovals(context, threadId)).map(publicApproval),
+      ),
+    });
+  const decideApproval = async (
+    context: AssistantRequestContext,
+    id: string,
+  ) => {
+    const body = await readJsonObject(context.event.request, maxBody);
+    if (typeof body.approve !== 'boolean')
+      throw badRequest('Choose approve or deny.');
+    const authority = await authorityFor(context);
+    await authority.authorize(approvalActor(context));
+    const record = await authority.get(context.principal.tenantId, id);
+    if (!record) throw notFound();
+    if (record.continuation) {
+      const continuations = await resolveValue(
+        options.approvalContinuations,
+        context,
+      );
+      if (!continuations) throw notFound();
+      return json({
+        approval: await publicApproval(
+          await continuations.decide(approvalActor(context), id, body.approve),
+        ),
+      });
+    }
+    const original = record.context.principal as unknown as AssistantPrincipal;
+    const originalContext: AssistantRequestContext = {
+      event: context.event,
+      principal: original,
+    };
+    const chat = await chatFor(originalContext);
+    const session = await findSession(chat, original);
+    const threadId = String(record.context.threadId);
+    await requireOwnThread(chat, original, session, threadId);
+    if (!session || String(session.id) !== record.context.agentSessionId)
+      throw notFound();
+    let decision = await authority.decide(
+      approvalActor(context),
+      id,
+      body.approve,
+    );
+    const authorResult = async (
+      content: string,
+      ok: boolean,
+      refused = false,
+      label = content,
+    ) =>
+      sendAgentReply(chat, {
+        tenantId: original.tenantId,
+        agentSessionId: String(session.id),
+        threadId,
+        replyToMessageId:
+          typeof record.context.originMessageId === 'string'
+            ? record.context.originMessageId
+            : null,
+        kind: 'tool',
+        messageType: 'tool_result',
+        content,
+        toolCallData: {
+          id: record.callId,
+          name: record.tool,
+          args: record.args,
+          status: refused ? 'refused' : ok ? 'success' : 'error',
+          approvalId: id,
+          label,
+        },
+      });
+    if (decision.status === 'denied') {
+      await authorResult(
+        'The owner denied this tool call. It did not run.',
+        false,
+      );
+      await sendAgentReply(chat, {
+        tenantId: original.tenantId,
+        agentSessionId: String(session.id),
+        threadId,
+        kind: 'assistant',
+        messageType: 'text',
+        content: 'The owner denied this tool call. It did not run.',
+        metadata: { approvalId: id, approvalStatus: 'denied' },
+      });
+    } else if (
+      decision.status === 'approved' &&
+      record.context.driver === 'builtin'
+    ) {
+      await authority.consume(original.tenantId, id);
+      let result: unknown;
+      let ok = false;
+      let refused = false;
+      try {
+        // Re-resolve offerings and permissions: the original ceiling can only shrink.
+        const allowed = (await allowedToolsFor(originalContext)).filter(
+          (name) =>
+            (record.context.allowedTools as string[]).includes(name) &&
+            session.getAllowedTools().includes(name),
+        );
+        const db = await dbFor(originalContext);
+        const resolver = await PermissionResolver.create({
+          ...(db ? { db } : {}),
+        });
+        const live = (
+          await resolver.resolvePermissions(original.userId, original.tenantId)
+        ).permissions;
+        const permissions = [...live].filter((permission) =>
+          (record.context.permissionCeiling as string[]).includes(permission),
+        );
+        const extra = [
+          ...((await resolveValue(options.extraTools, originalContext)) ?? []),
+        ];
+        const tools = await manifestToolsFor(
+          originalContext,
+          allowed,
+          extra,
+          db,
+        );
+        result = await executeAsPrincipal(
+          {
+            principal: {
+              runAsUserId: original.userId,
+              tenantId: original.tenantId,
+              allowedTools: allowed,
+            },
+            ...(db ? { db } : {}),
+            permissions,
+            postgresRls: options.postgresRls,
+            audit: options.audit,
+          },
+          async (run) => {
+            run.assertToolAllowed(record.tool);
+            const tool = tools.find((tool) => tool.slug === record.tool);
+            if (tool)
+              return invokeManifestTool(run, tool, record.args, {
+                db: run.context.database ?? db,
+              });
+            const custom = extra.find((tool) => tool.slug === record.tool);
+            if (!custom)
+              throw new Error('The approved tool is no longer offered.');
+            return custom.execute({
+              run,
+              args: record.args,
+              db: run.context.database ?? db,
+            });
+          },
+        );
+        ok = !(
+          result &&
+          typeof result === 'object' &&
+          'isError' in result &&
+          result.isError === true
+        );
+      } catch (error) {
+        safeLog(error);
+        refused = error instanceof PrincipalToolNotAllowedError;
+        result = {
+          ...(refused ? { status: 'refused' } : {}),
+          error: 'The approved tool could not run.',
+        };
+      }
+      // Complete before authoring: transcript failure must never make effects retryable.
+      await authority.complete(original.tenantId, id, ok, result);
+      const completed = await authority.get(original.tenantId, id);
+      if (!completed) throw notFound();
+      decision = completed;
+      let label = describeAssistantTool(record.tool, record.args, {
+        ok,
+        observation: completed.result,
+      });
+      try {
+        label =
+          options.describeTool?.(record.tool, record.args, {
+            ok,
+            observation: completed.result,
+          }) || label;
+      } catch {
+        // A host display callback cannot undo an already completed effect.
+      }
+      await authorResult(
+        ok ? label : JSON.stringify(completed.result ?? null),
+        ok,
+        refused,
+        label,
+      );
+    }
+    return json({ approval: await publicApproval(decision) });
+  };
+
   // ---- dispatch ----------------------------------------------------------
 
   const handle: AssistantRouteHandler = async (event) => {
@@ -2156,6 +2929,26 @@ export function mountAssistantRoutes(
       }
       const context: AssistantRequestContext = { event, principal };
       switch (match.route) {
+        case 'owner-approvals':
+          return json({
+            approvals: await Promise.all(
+              (
+                await (
+                  await authorityFor(context)
+                ).list(approvalActor(context), false)
+              ).map(publicApproval),
+            ),
+          });
+        case 'approvals':
+          return await listApprovals(
+            context,
+            requireId(match.threadId, 'thread id'),
+          );
+        case 'decide-approval':
+          return await decideApproval(
+            context,
+            requireId(match.id, 'approval id'),
+          );
         case 'threads':
           return method === 'GET'
             ? await listThreads(context)
@@ -2177,6 +2970,17 @@ export function mountAssistantRoutes(
           return await runAction(context, match.phase);
       }
     } catch (error) {
+      if (error instanceof OwnerApprovalError)
+        return json(
+          { error: error.message, code: error.code },
+          error.code === 'forbidden'
+            ? 403
+            : error.code === 'not_found'
+              ? 404
+              : error.code === 'invalid_request'
+                ? 400
+                : 409,
+        );
       if (error instanceof AssistantRouteError) return errorResponse(error);
       if (isAuthorizationFailure(error)) return errorResponse(notFound());
       safeLog(error);

@@ -163,6 +163,17 @@ const loadedInvoiceStatus = new WeakMap<Invoice, InvoiceStatus>();
  */
 @TenantScoped({ mode: 'optional' })
 @smrt({
+  display: {
+    list: [
+      'invoiceNumber',
+      'customerId',
+      'status',
+      'totalAmount',
+      'issueDate',
+      'dueDate',
+    ],
+    label: 'invoiceNumber',
+  },
   // ROOT FIX (S5 audit #1390 round 4): the generated create/update surface may
   // only set the billing-document descriptors (who/when/identifiers). The
   // derived/integrity amounts (`subtotal`, `taxAmount`, `totalAmount`,

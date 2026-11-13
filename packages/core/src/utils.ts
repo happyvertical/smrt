@@ -12,7 +12,7 @@ import { toSafeBooleanInteger, toSafeInteger } from './utils/safe-integer.js';
 // formatDataJs' debug traces are gated by DEBUG_STI, so the level must allow
 // debug when it's set (a fixed 'info' would filter them out and break the flag).
 const logger = createLogger({
-  level: process.env.DEBUG_STI ? 'debug' : 'info',
+  level: globalThis.process?.env?.DEBUG_STI ? 'debug' : 'info',
 });
 
 export {
@@ -381,7 +381,7 @@ export function formatDataJs<
 >(data: T, fields?: Record<string, { type?: string }>): T {
   const normalizedData: Record<string, unknown> = {};
 
-  if (process.env.DEBUG_STI) {
+  if (globalThis.process?.env?.DEBUG_STI) {
     logger.debug('[formatDataJs] Input data', {
       hasMetaData: !!data._meta_data,
       metaType: data._meta_type,
@@ -403,7 +403,7 @@ export function formatDataJs<
         ? JSON.parse(data._meta_data)
         : (data._meta_data as Record<string, unknown>);
 
-    if (process.env.DEBUG_STI) {
+    if (globalThis.process?.env?.DEBUG_STI) {
       logger.debug('[formatDataJs] Merging _meta_data', {
         metaDataKeys: Object.keys(metaData),
         metaData,
@@ -442,7 +442,7 @@ export function formatDataJs<
       mergedData[key] = value;
     }
 
-    if (process.env.DEBUG_STI) {
+    if (globalThis.process?.env?.DEBUG_STI) {
       logger.debug('[formatDataJs] After merge, data keys', {
         keys: Object.keys(mergedData),
       });
@@ -528,7 +528,7 @@ export function formatDataJs<
     }
   }
 
-  if (process.env.DEBUG_STI) {
+  if (globalThis.process?.env?.DEBUG_STI) {
     logger.debug('[formatDataJs] Output normalizedData', {
       keys: Object.keys(normalizedData),
       metaType: normalizedData._meta_type,

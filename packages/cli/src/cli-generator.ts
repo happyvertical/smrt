@@ -21,6 +21,11 @@ import {
   ObjectRegistry,
 } from '@happyvertical/smrt-core';
 import { loadLocalTestManifestSync } from '@happyvertical/smrt-core/manifest';
+import {
+  hasRuntimeExposureGate,
+  isRuntimeModelEnabled,
+  type RuntimeExposureModel,
+} from '@happyvertical/smrt-core/runtime-exposure';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   type Command,
@@ -170,6 +175,8 @@ export interface CLIConfig {
 }
 
 export interface CLIContext {
+  /** Trusted host-selected tenant; never inferred from command arguments. */
+  tenantId?: string;
   db?: DatabaseInterface;
   /**
    * Opaque AI client passed through to collection/instance configs. The
@@ -219,6 +226,7 @@ export interface CLIOptionConfig extends OptionConfig {
 // only the final occurrence, so the local wrapper below restores the complete
 // argv selection for explicitly repeatable options.
 export interface CLICommand extends Omit<Command, 'options'> {
+  runtimeModel?: RuntimeExposureModel;
   options?: Record<string, CLIOptionConfig>;
 }
 
@@ -499,6 +507,7 @@ export class CLIGenerator {
   private commandCache: CLICommand[] | null = null;
   /** Lazy-loaded cache for object commands (key: objectName lowercase) */
   private objectCommandsCache = new Map<string, CLICommand[]>();
+  private objectCommandsGeneration = -1;
   /** Set of registered object names (lowercase) for quick lookup */
   private registeredObjectNames: Set<string> | null = null;
   /** Whether manifest/classes have been loaded */
@@ -915,12 +924,16 @@ export class CLIGenerator {
     objectName: string,
   ): Promise<CLICommand[]> {
     const lowerName = objectName.toLowerCase();
+    const generation = ObjectRegistry.getGeneration();
+    if (this.objectCommandsGeneration !== generation) {
+      this.objectCommandsCache.clear();
+      this.objectCommandsGeneration = generation;
+    }
 
     // Return cached commands if available
     const cachedCommands = this.objectCommandsCache.get(lowerName);
-    if (cachedCommands) {
-      return cachedCommands;
-    }
+    // Live create choices can change without a registry generation change.
+    if (cachedCommands && !hasRuntimeExposureGate()) return cachedCommands;
 
     // Find the actual registered class (may have different casing)
     // Issue #951: Match by simple name (info.name), not the qualified map key
@@ -943,10 +956,23 @@ export class CLIGenerator {
     const classInfo = registeredClasses.get(matchedKey);
     const commands = await this.generateObjectCommands(actualName, classInfo);
 
+    // Metadata loading during generation can itself advance the registry.
+    this.objectCommandsGeneration = ObjectRegistry.getGeneration();
     // Cache the commands
     this.objectCommandsCache.set(lowerName, commands);
 
-    return commands;
+    if (!hasRuntimeExposureGate()) return commands;
+    return commands.filter((command) =>
+      isRuntimeModelEnabled(
+        ObjectRegistry.getExposureModel(
+          command.runtimeModel?.qualifiedName ?? objectName,
+        ),
+        {
+          surface: 'cli',
+          tenantId: this.context.tenantId,
+        },
+      ),
+    );
   }
 
   /**
@@ -966,11 +992,6 @@ export class CLIGenerator {
 
     // Ensure manifest is loaded so we know what objects exist
     await this.ensureManifestLoaded();
-
-    // Check if this is a known object
-    if (!this.registeredObjectNames?.has(objectName.toLowerCase())) {
-      return undefined;
-    }
 
     // Get commands for this object (lazy generation)
     const objectCommands = await this.getObjectCommandsLazy(objectName);
@@ -1189,12 +1210,34 @@ export class CLIGenerator {
         'from-file': { type: 'string', description: 'create from JSON file' },
       };
 
-      // Add field options
-      const fields = ObjectRegistry.getFields(objectName);
+      const targets = ObjectRegistry.getCreateTargets(objectName, {
+        surface: 'cli',
+        tenantId: this.context.tenantId,
+      });
+      if (targets.polymorphic) {
+        options.createType = {
+          type: 'string',
+          description:
+            'createType target: ' +
+            [targets.base, ...targets.subtypes]
+              .map((target) => `${target.name} (${target.label})`)
+              .join(', '),
+        };
+      }
+      // Include subtype fields so an explicit create type can receive its own input.
+      const fields = new Map(
+        [targets.base, ...targets.subtypes].flatMap((target) => [
+          ...ObjectRegistry.getFields(target.name),
+          ...Object.entries(ObjectRegistry.getWriteThroughFields(target.name)),
+        ]),
+      );
       for (const [fieldName, field] of fields) {
         const optionName = fieldName.replace(/_/g, '-');
         const description =
-          field.options?.description || `${objectName} ${fieldName}`;
+          (field as { options?: { description?: string } }).options
+            ?.description ||
+          field.description ||
+          `${objectName} ${fieldName}`;
         options[optionName] = { type: 'string', description };
       }
 
@@ -1220,11 +1263,17 @@ export class CLIGenerator {
       };
 
       // Add field options
-      const fields = ObjectRegistry.getFields(objectName);
+      const fields = new Map([
+        ...ObjectRegistry.getFields(objectName),
+        ...Object.entries(ObjectRegistry.getWriteThroughFields(objectName)),
+      ]);
       for (const [fieldName, field] of fields) {
         const optionName = fieldName.replace(/_/g, '-');
         const description =
-          field.options?.description || `${objectName} ${fieldName}`;
+          (field as { options?: { description?: string } }).options
+            ?.description ||
+          field.description ||
+          `${objectName} ${fieldName}`;
         options[optionName] = { type: 'string', description };
       }
 
@@ -1417,7 +1466,28 @@ export class CLIGenerator {
       });
     }
 
-    return commands;
+    const runtimeModel = _classInfo;
+    return commands.map((command) => ({
+      ...command,
+      runtimeModel,
+      handler: async (...args) => {
+        if (
+          hasRuntimeExposureGate() &&
+          !isRuntimeModelEnabled(
+            ObjectRegistry.getExposureModel(
+              runtimeModel?.qualifiedName ?? objectName,
+            ),
+            {
+              surface: 'cli',
+              tenantId: this.context.tenantId,
+            },
+          )
+        ) {
+          throw new Error('Unknown command');
+        }
+        return command.handler?.(...args);
+      },
+    }));
   }
 
   /**
@@ -2272,6 +2342,15 @@ export class CLIGenerator {
   ): Promise<void> {
     try {
       let data: Record<string, unknown> = {};
+      const context = {
+        surface: 'cli' as const,
+        tenantId: this.context.tenantId,
+      };
+      const initialTarget = ObjectRegistry.resolveCreateTarget(
+        objectName,
+        { createType: options.createType },
+        context,
+      );
 
       // Declared kebab option ('from-file') arrives verbatim from parseCliArgs;
       // keep the camel fallback for handler-direct callers.
@@ -2283,10 +2362,15 @@ export class CLIGenerator {
         data = JSON.parse(content);
       } else if (options.interactive && this.config.prompt) {
         // Interactive mode
-        data = await this.promptForFields(objectName, {});
+        data = await this.promptForFields(initialTarget.collectionName, {});
       } else {
         // From command line options
-        const fields = ObjectRegistry.getFields(objectName);
+        const fields = new Map([
+          ...ObjectRegistry.getFields(initialTarget.collectionName),
+          ...Object.entries(
+            ObjectRegistry.getWriteThroughFields(initialTarget.collectionName),
+          ),
+        ]);
         for (const [fieldName] of fields) {
           const optionName = fieldName.replace(/_/g, '-');
           if (options[optionName] !== undefined) {
@@ -2295,13 +2379,17 @@ export class CLIGenerator {
         }
       }
 
-      // The STI discriminator selects the subtype; it is not a field write.
-      const metaType = data._meta_type;
-      data = this.applyWritablePolicy(objectName, data);
-      if (typeof metaType === 'string') data._meta_type = metaType;
+      const target = ObjectRegistry.resolveCreateTarget(
+        objectName,
+        options.createType === undefined
+          ? data
+          : { ...data, createType: options.createType },
+        context,
+      );
+      data = this.applyWritablePolicy(target.collectionName, target.data);
       const spinner = this.createSpinner(`Creating ${objectName}...`);
 
-      const collection = await this.getCollection(objectName);
+      const collection = await this.getCollection(target.collectionName);
       const result = await collection.create(data);
 
       spinner.succeed(`Created ${objectName} with ID: ${result.id}`);
@@ -2352,7 +2440,10 @@ export class CLIGenerator {
         );
       } else {
         // From command line options
-        const fields = ObjectRegistry.getFields(objectName);
+        const fields = new Map([
+          ...ObjectRegistry.getFields(objectName),
+          ...Object.entries(ObjectRegistry.getWriteThroughFields(objectName)),
+        ]);
         for (const [fieldName] of fields) {
           const optionName = fieldName.replace(/_/g, '-');
           if (options[optionName] !== undefined) {

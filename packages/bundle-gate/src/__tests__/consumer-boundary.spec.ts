@@ -60,6 +60,10 @@ const fixture = (name: string) => path.resolve(here, 'fixtures', name);
  */
 const FORBIDDEN_PROVIDER_MODULES = [
   // SDK wrappers whose roots statically import the heavy vendors.
+  '@happyvertical/documents',
+  '@happyvertical/spider',
+  '@kreuzberg/node',
+  '@huggingface/transformers',
   '@happyvertical/email',
   '@happyvertical/messages',
   '@happyvertical/files',
@@ -90,6 +94,7 @@ const RUNTIME_EXTERNAL = [
   '@duckdb/node-api',
   '@duckdb/node-bindings',
   'sharp',
+  '@resvg/resvg-js',
   'bufferutil',
   'utf-8-validate',
 ];
@@ -218,6 +223,15 @@ async function buildConsumerFixture(
 const megabytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 
 describe('consumer bundle boundary (#1978/#1980)', () => {
+  it('ordinary content imports do not reach document extraction or messaging providers', async () => {
+    const result = await buildConsumerFixture(fixture('consumer-content.ts'));
+    expect(formatHits(result.hits)).toBe('');
+    expect(result.bundledModuleIds.filter(matchForbidden)).toEqual([]);
+    console.log(
+      `[bundle-gate] content server output: total ${megabytes(result.totalBytes)}`,
+    );
+  }, 120000);
+
   it('provider-neutral chat/persona/message imports never reach messaging-provider SDKs and stay within budget', async () => {
     const result = await buildConsumerFixture(fixture('consumer-neutral.ts'));
 

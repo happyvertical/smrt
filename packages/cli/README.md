@@ -493,3 +493,8 @@ If compiled classes cannot be loaded, the CLI falls back to manifest-only mode (
 - `@happyvertical/smrt-config` -- configuration loading
 - `@happyvertical/smrt-app-runtime` -- local storage custody and runtime composition for `smrt app`
 - `@happyvertical/smrt-scanner` -- AST scanning for metadata extraction
+
+Runtime cookbook gating is opt-in through
+[smrt-core runtime exposure](../core/agents/runtime-exposure.md). Generated
+manifest operations keep their AOT declarations, but live offerings and calls
+must also pass the current tenant's cookbook and host preference gate.

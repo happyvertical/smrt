@@ -5,6 +5,35 @@ const SEMVER =
 const PORTABLE_SEGMENT = /^[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*$/;
 const WINDOWS_DEVICE = /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i;
 
+/** Secret-free setup for an owner-authorized local stdio launcher. */
+export function generateLocalMcpSetup(input: {
+  name: string;
+  command: string;
+  args: string[];
+}) {
+  if (
+    !PLUGIN_NAME.test(input.name) ||
+    !input.command ||
+    [input.command, ...input.args].some((value) => /[\r\n\0]/u.test(value))
+  )
+    throw new Error('Invalid local MCP launcher configuration');
+  const entry = { command: input.command, args: input.args };
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+  return {
+    claudeCode: `claude mcp add --transport stdio --scope local ${quote(input.name)} -- ${[input.command, ...input.args].map(quote).join(' ')}`,
+    claudeDesktop: JSON.stringify(
+      { mcpServers: { [input.name]: entry } },
+      null,
+      2,
+    ),
+    mcpJson: JSON.stringify({ mcpServers: { [input.name]: entry } }, null, 2),
+    codex: `[mcp_servers.${input.name}]\ncommand = ${JSON.stringify(input.command)}\nargs = ${JSON.stringify(input.args)}\n`,
+    chatgpt:
+      'ChatGPT remote connectors cannot reach this local loopback app. ChatGPT desktop local execution is not verified for this app; the MCP Apps and OpenAI view adapters alone do not connect it. Use Codex, Claude Code or Claude Desktop here.',
+    entry,
+  };
+}
+
 export interface DesktopPluginLauncher {
   /** Platform of the packaged executable. */
   readonly platform: 'darwin' | 'win32' | 'linux';

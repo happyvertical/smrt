@@ -8,6 +8,7 @@
  * same rule a freshly generated one is.
  */
 import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { setRuntimeExposureGate } from '@happyvertical/smrt-core/runtime-exposure';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CLIGenerator } from '../cli-generator.js';
 
@@ -69,6 +70,7 @@ describe('CLI commands of a collection over a closed model', () => {
     vi.spyOn(cli as any, 'tryLoadUserClasses').mockResolvedValue(undefined);
   });
   afterEach(() => {
+    setRuntimeExposureGate(undefined);
     vi.restoreAllMocks();
     ObjectRegistry.clear();
   });
@@ -91,6 +93,38 @@ describe('CLI commands of a collection over a closed model', () => {
     const prefix = `${PKG}:${itemName}Collection:`.toLowerCase();
     return generated.map((command) => command.name.slice(prefix.length)).sort();
   }
+
+  it('filters a cached model command per tenant and guards a retained handler', async () => {
+    ObjectRegistry.registerPackageManifest(
+      manifest('Token', { cli: { include: ['list'] } }) as never,
+    );
+    const tenantCli = new CLIGenerator({ prompt: false }, { tenantId: 'a' });
+    const access = tenantCli as unknown as {
+      getObjectCommandsLazy(
+        name: string,
+      ): Promise<
+        Array<{ name: string; handler(...args: unknown[]): Promise<unknown> }>
+      >;
+    };
+    let enabled = false;
+    setRuntimeExposureGate({
+      isEnabled: (model, context) =>
+        enabled &&
+        model.qualifiedName === `${PKG}:Token` &&
+        context.tenantId === 'a',
+    });
+    expect(await access.getObjectCommandsLazy('Token')).toEqual([]);
+    enabled = true;
+    const visible = await access.getObjectCommandsLazy('Token');
+    expect(visible.map((command) => command.name)).toContain('token:list');
+    const retained = visible.find((command) => command.name === 'token:list');
+    enabled = false;
+    expect(await access.getObjectCommandsLazy('Token')).toEqual([]);
+    await expect(retained?.handler([], {})).rejects.toThrow('Unknown command');
+    expect(
+      ObjectRegistry.getExposureModel(`${PKG}:TokenCollection`)?.qualifiedName,
+    ).toBe(`${PKG}:Token`);
+  });
 
   it('publishes nothing when the model turns the CLI off', async () => {
     expect(await commands('Secret', { cli: false })).toEqual([]);

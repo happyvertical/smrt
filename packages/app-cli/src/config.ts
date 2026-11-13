@@ -48,6 +48,8 @@ export interface CliConfig {
  *  - `${PREFIX}_CLI_CONFIG` (overrides config file path)
  */
 export interface CliConfigContext {
+  /** Explicit private config path for an application-generated connection. */
+  configPath?: string;
   /**
    * Uppercase prefix for env vars and the app's namespaced config dir.
    * Example: `WILLGRIFFIN` → reads `WILLGRIFFIN_SERVER_URL`, defaults the
@@ -120,6 +122,7 @@ function normalizeServerUrl(context: CliConfigContext, value: string): string {
 }
 
 function configFilePath(context: CliConfigContext): string {
+  if (context.configPath) return context.configPath;
   const override = process.env[`${context.envPrefix}_CLI_CONFIG`];
   if (override) return override;
   const slug = context.appSlug ?? context.envPrefix.toLowerCase();

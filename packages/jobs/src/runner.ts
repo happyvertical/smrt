@@ -5,7 +5,7 @@ import './__smrt-register__.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { EventEmitter } from 'node:events';
 import { Worker } from 'node:worker_threads';
-import { fromConfig, type RetryDecision } from '@happyvertical/jobs';
+import type { RetryDecision } from '@happyvertical/jobs';
 import { createLogger } from '@happyvertical/logger';
 import {
   assertDatabaseMigratedForBuild,
@@ -1234,6 +1234,7 @@ export class TaskRunner extends EventEmitter {
    */
   private async handleJobError(job: SmrtJob, error: Error): Promise<void> {
     if (error instanceof McpTaskSuspendedError) return;
+    const { fromConfig } = await import('@happyvertical/jobs');
     const strategy = fromConfig(job.retryStrategy);
     const decision: RetryDecision = strategy.shouldRetry(job.attempts, error);
 

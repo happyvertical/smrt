@@ -9,7 +9,9 @@ function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
     if (statSync(p).isDirectory()) {
-      if (name === 'node_modules' || name === 'engine') continue;
+      // `src/engine` is the standalone engine; a route may be named `engine`.
+      if (name === 'node_modules' || (name === 'engine' && dir === root))
+        continue;
       walk(p, out);
     } else if (/\.(ts|svelte)$/.test(name) && !/\.test\.ts$/.test(name))
       out.push(p);
@@ -67,7 +69,37 @@ describe('approval gate invariants', () => {
     );
     expect(custom.length).toBeGreaterThanOrEqual(9);
     for (const [f, t] of custom)
-      expect(/ownerOf\(|createShellMcpServer\(/.test(t), f).toBe(true);
+      expect(
+        /ownerOf\(|createShellMcpServer\(|onboardingRoutes\./.test(t),
+        f,
+      ).toBe(true);
+  });
+
+  it('every onboarding route is a one-line delegate, and each handler checks the owner', () => {
+    const routes = files.filter(([f]) =>
+      /^routes\/api\/shell\/onboarding\/(.*\/)?\+server\.ts$/.test(f),
+    );
+    expect(routes.length).toBe(6);
+    for (const [f, t] of routes)
+      expect(t, f).toMatch(
+        /onboardingRoutes\.(state|connect|engine|chatgptState|chatgpt|complete|skip)\(/,
+      );
+    const impl = files.find(([f]) => f === 'lib/server/onboarding.ts');
+    expect((impl?.[1].match(/await ownerOf\(event\)/g) ?? []).length).toBe(7);
+  });
+
+  it('the agent CLI engine never decides approvals or sets `approved`', () => {
+    for (const [f, t] of files.filter(
+      ([f]) =>
+        f.startsWith('lib/server/agent-cli/') ||
+        f === 'lib/server/assistant/agent-turn.ts' ||
+        f === 'lib/server/assistant/model.ts' ||
+        f === 'lib/server/chatgpt.ts' ||
+        f === 'lib/server/onboarding.ts',
+    ))
+      expect(t, f).not.toMatch(
+        /decideApproval|approved\s*:\s*true|'approval_decide'/,
+      );
   });
 
   it('every assistant route is a one-line delegate, and each handler checks the owner', () => {
@@ -81,11 +113,52 @@ describe('approval gate invariants', () => {
     expect((impl?.[1].match(/await ownerOf\(event\)/g) ?? []).length).toBe(4);
   });
 
+  it('only host.ts turns on `autoApprove`, and only for a draft copy', () => {
+    const offenders = files
+      .filter(
+        ([f, text]) =>
+          f !== 'lib/server/host.ts' && /autoApprove\s*:\s*true/.test(text),
+      )
+      .map(([f]) => f);
+    expect(offenders).toEqual([]);
+    const host = files.find(([f]) => f === 'lib/server/host.ts')?.[1] ?? '';
+    // exactly one site, inside the function that opens a draft's host
+    expect(host.match(/autoApprove\s*:\s*true/g)?.length).toBe(1);
+    expect(host).toMatch(
+      /export function openDraftHost[\s\S]{0,400}autoApprove: true/,
+    );
+  });
+
+  it('no request path reaches a host without naming the copy (hostFor, never getHost)', () => {
+    const named = [
+      'lib/server/builder.ts',
+      'lib/server/catalog.ts',
+      'lib/objects/App.ts',
+      'routes/api/shell/describe/+server.ts',
+      'routes/api/shell/history/+server.ts',
+      'routes/api/shell/undo/+server.ts',
+      'routes/api/shell/undo-to/+server.ts',
+      'routes/api/shell/records/[model]/+server.ts',
+      'routes/api/shell/records/[model]/[id]/+server.ts',
+      'routes/api/app/[...path]/+server.ts',
+    ];
+    for (const f of named) {
+      const text = files.find(([name]) => name === f)?.[1];
+      expect(text, f).toBeTruthy();
+      expect(text, f).not.toMatch(/\bgetHost\(/);
+    }
+    // and each of the routes reads the copy from the request
+    for (const f of named.filter((n) => n.startsWith('routes/')))
+      expect(files.find(([name]) => name === f)?.[1], f).toMatch(
+        /targetOf\(|headerTargetOf\(|requestRecordDelete/,
+      );
+  });
+
   it('the assistant never decides approvals or reads a login', () => {
     for (const [f, t] of files.filter(([f]) =>
       f.startsWith('lib/server/assistant/'),
     )) {
-      if (f.endsWith('turn.ts'))
+      if (f === 'lib/server/assistant/turn.ts')
         // only the deny list may name it
         expect(t.match(/'approval_decide'/g)?.length ?? 0).toBe(1);
       else expect(t, f).not.toMatch(/'approval_decide'|decideApproval/);

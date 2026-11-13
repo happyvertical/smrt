@@ -1,3 +1,4 @@
+import { WorkProfileEscalation } from './work-profile.js';
 /**
  * ToolLoop — a bounded `tool_call → observe → respond` agentic loop over the
  * SMRT manifest operation surface (L3 of the learning-agents epic, #1891).
@@ -61,6 +62,7 @@ import {
   type SmrtObject,
   ValidationError,
 } from '@happyvertical/smrt-core';
+import { isRuntimeModelEnabled } from '@happyvertical/smrt-core/runtime-exposure';
 import {
   OperationPermissionError,
   PermissionCatalogService,
@@ -112,6 +114,14 @@ type LoopMessage = AIMessage & { tool_call_id?: string };
 export interface ManifestTool {
   /** Catalog slug (`collection.action`) — the tool name and the permission slug. */
   slug: string;
+  /** Trusted host presentation alias; permission checks and dispatch retain `slug`. */
+  functionName?: string;
+  /** Trusted host metadata; never model arguments. */
+  annotations?: {
+    workProfile?: 'design';
+    /** Trusted host declaration: this canonical delete removes one app-data record. Never mark security, identity, credentials, roles, tenants, settings or installation tools. */
+    recordDeletion?: true;
+  };
   /** Collection (permission resource), e.g. `articles`. */
   collection: string;
   /** Registry class name used to resolve the backing collection, e.g. `Article`. */
@@ -128,6 +138,8 @@ export interface ManifestTool {
  * The record of one tool invocation attempt in a loop turn.
  */
 export interface ToolInvocation {
+  /** A held call has a durable request, not a successful tool effect. */
+  approvalId?: string;
   /** The tool name the model asked for. */
   slug: string;
   /**
@@ -223,6 +235,7 @@ export type ToolLoopStopReason =
   | 'repeated_calls'
   | 'no_tools'
   | 'client_tools'
+  | 'approval'
   | 'cancelled'
   | 'empty'
   | 'timeout';
@@ -318,6 +331,8 @@ export interface ToolLoopResult {
   invocations: ToolInvocation[];
   /** The full working transcript (input messages + assistant/tool turns). */
   messages: AIMessage[];
+  /** False if any completion omitted token usage; totalTokens remains the known numeric subtotal. */
+  usageKnown?: boolean;
   /** Total tokens reported by the AI boundary, when available. */
   totalTokens: number;
   /**
@@ -361,7 +376,7 @@ export interface ToolExecutionContext {
  */
 export interface ToolLoopOptions {
   /** The AI boundary (the only thing mocked in tests). */
-  ai: AIInterface;
+  ai: Pick<AIInterface, 'chat'>;
   /** The initial conversation messages (system / history / user). */
   messages: AIMessage[];
   /** The manifest operations available this turn (already allow-list-filtered). */
@@ -394,8 +409,11 @@ export interface ToolLoopOptions {
   model?: string;
   /** Sampling temperature. */
   temperature?: number;
+  reasoning?: ChatOptions['reasoning'];
   /** Max tokens per completion. */
   maxTokens?: number;
+  /** Host-selected maximum serialized server observation size. */
+  toolResultChars?: number;
   /** Tool-choice behaviour while tools are offered. Default `'auto'`. */
   toolChoice?: ChatOptions['toolChoice'];
   /**
@@ -404,7 +422,16 @@ export interface ToolLoopOptions {
    * dispatches through the ObjectRegistry. Tests inject a stub to exercise loop
    * mechanics without a backing object.
    */
+  beforeToolExecution?: (tool: ManifestTool | PrincipalTool) => void;
   executeTool?: (ctx: ToolExecutionContext) => Promise<unknown>;
+  /** Trusted host gate, before ANY server tool execution (including extra tools). */
+  holdTool?: (call: {
+    id: string;
+    tool: ManifestTool | PrincipalTool;
+    args: Record<string, unknown>;
+    permissions: readonly string[];
+    authorize: () => Promise<void>;
+  }) => Promise<{ id: string; summary: string } | undefined>;
   /** Notified after each tool invocation (for streaming/telemetry). */
   onInvocation?: (invocation: ToolInvocation) => void | Promise<void>;
   /**
@@ -476,6 +503,10 @@ export interface ToolLoopOptions {
    * attribution (e.g. a per-tenant ledger). Never changes the loop.
    */
   onUsage?: (usage: ToolLoopUsage) => void;
+  /** At least one completion omitted valid token counts. */
+  onUsageUnknown?: () => void;
+  /** Exact model reported by a completion, independent of whether usage is available. */
+  onModel?: (model: string) => void;
   /**
    * Token sink for live streaming (#1936). When set, each `ai.chat` round is run
    * with `stream: true` and the model's text deltas are forwarded here as they
@@ -733,13 +764,19 @@ export function buildManifestToolCatalog(
  * / update schemas are enriched with the object's declared field names (tool arg
  * schemas come from field metadata) when the registry can supply them.
  */
-function toolParameters(tool: ManifestTool): Record<string, unknown> {
-  const fieldProps = (): Record<string, unknown> => {
+function toolParameters(
+  tool: ManifestTool,
+  tenantId?: string | null,
+): Record<string, unknown> {
+  const fieldProps = (targetTool = tool): Record<string, unknown> => {
     const props: Record<string, unknown> = {};
     try {
-      const registryKey = registryKeyFor(tool);
-      const policy = writablePolicyFor(tool);
-      for (const [name, field] of ObjectRegistry.getFields(registryKey)) {
+      const registryKey = registryKeyFor(targetTool);
+      const policy = writablePolicyFor(targetTool);
+      for (const [name, field] of new Map([
+        ...ObjectRegistry.getFields(registryKey),
+        ...Object.entries(ObjectRegistry.getWriteThroughFields(registryKey)),
+      ])) {
         // Create/update offer exactly the fields that the execution path can
         // write. The core helper owns all mass-assignment filtering rules.
         if (!(name in applySyncWritablePolicy({ [name]: true }, policy))) {
@@ -751,7 +788,8 @@ function toolParameters(tool: ManifestTool): Record<string, unknown> {
           description:
             field.description ??
             field._meta?.description ??
-            field.options?.description ??
+            (field as { options?: { description?: string | null } }).options
+              ?.description ??
             undefined,
           default: field.default ?? field._meta?.default,
           maxLength: field.maxLength,
@@ -788,8 +826,31 @@ function toolParameters(tool: ManifestTool): Record<string, unknown> {
         },
         additionalProperties: false,
       };
-    case 'create':
-      return { type: 'object', properties: fieldProps() };
+    case 'create': {
+      const properties = fieldProps();
+      const catalog = ObjectRegistry.getCreateTargets(registryKeyFor(tool), {
+        surface: 'assistant',
+        tenantId,
+      });
+      if (catalog.polymorphic) {
+        const choices = [catalog.base, ...catalog.subtypes];
+        for (const choice of choices)
+          Object.assign(
+            properties,
+            fieldProps({ ...tool, qualifiedName: choice.name }),
+          );
+        properties.createType = {
+          type: 'string',
+          enum: choices.map((choice) => choice.name),
+          description:
+            'Optional createType target: ' +
+            choices
+              .map((choice) => `${choice.name} (${choice.label})`)
+              .join(', '),
+        };
+      }
+      return { type: 'object', properties };
+    }
     case 'update':
       return {
         type: 'object',
@@ -832,15 +893,18 @@ export function toolFunctionName(slug: string): string {
  * name is the provider-safe rendering of the catalog slug
  * ({@link toolFunctionName}), so the model can only ever name a real operation.
  */
-export function manifestToolToAITool(tool: ManifestTool): AITool {
+export function manifestToolToAITool(
+  tool: ManifestTool,
+  tenantId?: string | null,
+): AITool {
   return {
     type: 'function',
     function: {
-      name: toolFunctionName(tool.slug),
+      name: toolFunctionName(tool.functionName ?? tool.slug),
       description:
         tool.description ??
         `Manifest operation '${tool.action}' on '${tool.collection}'.`,
-      parameters: toolParameters(tool),
+      parameters: toolParameters(tool, tenantId),
     },
   };
 }
@@ -923,6 +987,17 @@ async function itemToObservation(
       : item;
 }
 
+/** Check the effective model identity using the authenticated assistant tenant. */
+export function isManifestToolEnabled(
+  tool: ManifestTool,
+  tenantId?: string | null,
+): boolean {
+  return isRuntimeModelEnabled(
+    ObjectRegistry.getExposureModel(tool.qualifiedName ?? tool.className),
+    { surface: 'assistant', tenantId },
+  );
+}
+
 /**
  * Execute a manifest operation in-process ("side door") under the principal.
  *
@@ -942,6 +1017,9 @@ export async function invokeManifestTool(
 ): Promise<unknown> {
   // Gate 1: fail-closed allow-list (defense-in-depth behind the offer gate).
   run.assertToolAllowed(tool.slug);
+  if (!isManifestToolEnabled(tool, run.context.tenantId)) {
+    throw new PrincipalToolNotAllowedError(tool.slug);
+  }
   // Reserved: a stored runtime report is never written through the generic
   // manifest dispatcher, whatever the allow-list says (the catalog filter above
   // is the offer half; the model layer is the final refusal).
@@ -954,8 +1032,15 @@ export async function invokeManifestTool(
   // Operate against the principal context's database so RLS (when on) and tenant
   // auto-filtering bound the query; fall back to the supplied handle otherwise.
   const db = (run.context.database ?? options.db) as SmrtClassOptions['db'];
+  const target =
+    tool.action === 'create'
+      ? ObjectRegistry.resolveCreateTarget(registryKeyFor(tool), args, {
+          surface: 'assistant',
+          tenantId: run.context.tenantId,
+        })
+      : undefined;
   const collection = await ObjectRegistry.getCollection(
-    registryKeyFor(tool),
+    target?.collectionName ?? registryKeyFor(tool),
     db ? { db } : {},
   );
 
@@ -964,7 +1049,7 @@ export async function invokeManifestTool(
       assertReadArguments(tool.slug, args);
       const id = typeof args.id === 'string' ? args.id : undefined;
       if (id) {
-        const item = await collection.get(id);
+        const item = await collection.get(id, { displayLabel: true });
         return item
           ? itemToObservation(
               item,
@@ -975,6 +1060,7 @@ export async function invokeManifestTool(
           : { found: false };
       }
       const items = await collection.list({
+        displayLabel: true,
         where: asRecord(args.where),
         limit: typeof args.limit === 'number' ? args.limit : 50,
         offset: typeof args.offset === 'number' ? args.offset : 0,
@@ -983,7 +1069,13 @@ export async function invokeManifestTool(
     }
     case 'create': {
       const item = (await collection.create(
-        writableToolInput(tool, args),
+        writableToolInput(
+          {
+            ...tool,
+            qualifiedName: target?.collectionName ?? tool.qualifiedName,
+          },
+          target?.data ?? args,
+        ),
       )) as unknown as OperableItem;
       await item.save();
       return itemToObservation(item, run);
@@ -1058,7 +1150,7 @@ export async function runToolLoop(
   const {
     ai,
     messages,
-    tools,
+    tools: declaredTools,
     extraTools = [],
     principal,
     db,
@@ -1091,8 +1183,14 @@ export async function runToolLoop(
   } = options;
   const maxRepeatedCalls = resolveMaxRepeatedCalls(maxRepeatedCallsOption);
 
+  const tools = declaredTools.filter((tool) =>
+    isManifestToolEnabled(tool, principal.tenantId),
+  );
   const serverNames = new Set<string>([
-    ...tools.flatMap((tool) => [tool.slug, toolFunctionName(tool.slug)]),
+    ...tools.flatMap((tool) => [
+      tool.slug,
+      toolFunctionName(tool.functionName ?? tool.slug),
+    ]),
     ...extraTools.flatMap((tool) => [tool.slug, tool.aiTool.function.name]),
   ]);
   // Server tools win a name collision: a page cannot shadow a server tool by
@@ -1104,7 +1202,7 @@ export async function runToolLoop(
     }
   }
   const aiTools = [
-    ...tools.map(manifestToolToAITool),
+    ...tools.map((tool) => manifestToolToAITool(tool, principal.tenantId)),
     ...extraTools.map((tool) => tool.aiTool),
     ...[...offeredClient.values()].map(clientToolToAITool),
   ];
@@ -1114,7 +1212,7 @@ export async function runToolLoop(
   const offered = new Map<string, ManifestTool>();
   for (const tool of tools) {
     offered.set(tool.slug, tool);
-    offered.set(toolFunctionName(tool.slug), tool);
+    offered.set(toolFunctionName(tool.functionName ?? tool.slug), tool);
   }
   // Extra (non-manifest) tools resolve by their slug OR the function name their
   // own `aiTool` definition advertises to the model.
@@ -1174,6 +1272,7 @@ export async function runToolLoop(
       };
       let executedRounds = Math.max(0, Math.floor(initialSteps));
       let totalTokens = 0;
+      let usageKnown = true;
       let response: AIResponse;
       const cancelled = (): ToolLoopResult => ({
         content: '',
@@ -1182,6 +1281,7 @@ export async function runToolLoop(
         invocations,
         messages: working,
         totalTokens,
+        usageKnown,
         pendingClientToolCalls: [],
       });
       const timedOut = (
@@ -1194,6 +1294,7 @@ export async function runToolLoop(
         invocations,
         messages: working,
         totalTokens,
+        usageKnown,
         pendingClientToolCalls: [],
         ...(emptyRetried ? { emptyRetried } : {}),
         ...(capReason ? { capReason } : {}),
@@ -1226,10 +1327,18 @@ export async function runToolLoop(
         let result: AIResponse;
         try {
           result = await ai.chat(callMessages, {
+            ...(options.reasoning ? { reasoning: options.reasoning } : {}),
             model,
             temperature,
             maxTokens,
-            tools: withTools ? aiTools : undefined,
+            tools: withTools
+              ? aiTools.filter((aiTool) => {
+                  const tool = offered.get(aiTool.function.name);
+                  return (
+                    !tool || isManifestToolEnabled(tool, principal.tenantId)
+                  );
+                })
+              : undefined,
             toolChoice: withTools ? toolChoice : 'none',
             ...(requestTimeoutMs !== undefined
               ? { timeout: requestTimeoutMs }
@@ -1246,13 +1355,37 @@ export async function runToolLoop(
           if (isModelTimeoutError(error)) return 'timeout';
           throw error;
         }
-        totalTokens += result.usage?.totalTokens ?? 0;
+        if (result.model) {
+          try {
+            options.onModel?.(result.model);
+          } catch {
+            /* Accounting never breaks a turn. */
+          }
+        }
+        const usage = result.usage;
+        const validCount = (value: unknown): value is number =>
+          typeof value === 'number' && Number.isFinite(value) && value >= 0;
+        const roundTokens = validCount(usage?.totalTokens)
+          ? usage.totalTokens
+          : validCount(usage?.promptTokens) &&
+              validCount(usage?.completionTokens)
+            ? usage.promptTokens + usage.completionTokens
+            : undefined;
+        if (roundTokens === undefined) {
+          usageKnown = false;
+          try {
+            options.onUsageUnknown?.();
+          } catch {
+            /* Accounting never breaks a turn. */
+          }
+        }
+        totalTokens += roundTokens ?? 0;
         if (result.usage && onUsage) {
           try {
             onUsage({
               promptTokens: result.usage.promptTokens ?? 0,
               completionTokens: result.usage.completionTokens ?? 0,
-              totalTokens: result.usage.totalTokens ?? 0,
+              totalTokens: roundTokens ?? 0,
               ...(result.model || model
                 ? { model: result.model ?? model }
                 : {}),
@@ -1385,12 +1518,28 @@ export async function runToolLoop(
             invocations,
             messages: working,
             totalTokens,
+            usageKnown,
             pendingClientToolCalls: [],
             ...(emptyRetried ? { emptyRetried } : {}),
             ...(capReason ? { capReason } : {}),
             ...(reasoning ? { reasoning } : {}),
             ...(contentFromReasoning ? { contentFromReasoning } : {}),
           };
+        }
+
+        // Preflight the whole batch before any call in it executes. A restart
+        // retains completed earlier rounds, so their writes are never replayed.
+        try {
+          for (const call of toolCalls) {
+            const tool =
+              offered.get(call.function.name) ??
+              offeredExtra.get(call.function.name);
+            if (tool) options.beforeToolExecution?.(tool);
+          }
+        } catch (error) {
+          if (error instanceof WorkProfileEscalation)
+            error.messages = [...working];
+          throw error;
         }
 
         // Record the assistant's tool-call turn before appending observations.
@@ -1401,6 +1550,7 @@ export async function runToolLoop(
         });
 
         const pendingClient: PendingClientToolCall[] = [];
+        let approvalHeld = false;
         for (const call of toolCalls) {
           const requestedName = call.function.name;
           const parsedArgs = parseToolArguments(call.function.arguments);
@@ -1537,18 +1687,40 @@ export async function runToolLoop(
             };
           } else {
             try {
-              const observation = await (tool
-                ? executeTool
-                  ? executeTool({ run, tool, args, db })
-                  : invokeManifestTool(run, tool, args, { db })
-                : // biome-ignore lint/style/noNonNullAssertion: extraTool is defined in this branch (tool is falsy).
-                  extraTool!.execute({ run, args, db }));
+              if (tool && !isManifestToolEnabled(tool, principal.tenantId)) {
+                throw new PrincipalToolNotAllowedError(tool.slug);
+              }
+              const hold = await options.holdTool?.({
+                id: call.id,
+                tool: tool ?? extraTool!,
+                args,
+                permissions: run.permissions,
+                authorize: async () => {
+                  run.assertToolAllowed(slug);
+                  if (tool)
+                    await run.assertOperation(tool.collection, tool.action);
+                },
+              });
+              approvalHeld ||= !!hold;
+              const observation = hold
+                ? {
+                    status: 'pending_approval',
+                    approvalId: hold.id,
+                    summary: hold.summary,
+                  }
+                : await (tool
+                    ? executeTool
+                      ? executeTool({ run, tool, args, db })
+                      : invokeManifestTool(run, tool, args, { db })
+                    : // biome-ignore lint/style/noNonNullAssertion: extraTool is defined in this branch (tool is falsy).
+                      extraTool!.execute({ run, args, db }));
               invocation = {
                 slug,
                 args,
                 ok: true,
                 rejected: false,
                 observation,
+                ...(hold ? { approvalId: hold.id } : {}),
               };
             } catch (error) {
               const kind =
@@ -1572,6 +1744,7 @@ export async function runToolLoop(
           // call can be persisted with the exact text it was shown (#4383).
           invocation.modelContent = serverObservationContent(
             invocation.observation,
+            options.toolResultChars,
           );
           invocations.push(invocation);
           if ((tool || extraTool) && !isReadOnlyTool(tool, extraTool)) {
@@ -1614,14 +1787,15 @@ export async function runToolLoop(
             await auditFailure(invocation);
           }
           await onInvocation?.(invocation);
-          onStep?.({
-            type: 'tool_result',
-            callId: call.id,
-            slug,
-            ok: invocation.ok,
-            rejected: invocation.rejected,
-            ...(invocation.error ? { error: invocation.error } : {}),
-          });
+          if (!invocation.approvalId)
+            onStep?.({
+              type: 'tool_result',
+              callId: call.id,
+              slug,
+              ok: invocation.ok,
+              rejected: invocation.rejected,
+              ...(invocation.error ? { error: invocation.error } : {}),
+            });
           working.push({
             role: 'tool',
             name: requestedName,
@@ -1639,6 +1813,18 @@ export async function runToolLoop(
 
         executedRounds += 1;
         if (signal?.aborted) return cancelled();
+        if (approvalHeld) {
+          return {
+            content: 'Waiting for owner approval.',
+            steps: executedRounds,
+            stoppedReason: 'approval',
+            invocations,
+            messages: working,
+            totalTokens,
+            usageKnown,
+            pendingClientToolCalls: [],
+          };
+        }
         if (pendingClient.length > 0) {
           return {
             content: response.content ?? '',
@@ -1647,6 +1833,7 @@ export async function runToolLoop(
             invocations,
             messages: working,
             totalTokens,
+            usageKnown,
             pendingClientToolCalls: pendingClient,
           };
         }
@@ -2095,7 +2282,10 @@ export const SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER =
   'add a filter, project fewer fields, request a smaller page, or use a count.]';
 
 /** Serialize a server observation for the transcript, bounded. */
-function serverObservationContent(observation: unknown): string {
+function serverObservationContent(
+  observation: unknown,
+  maxChars = MAX_SERVER_TOOL_OBSERVATION_CHARS,
+): string {
   let serialized: string;
   try {
     // A tool that returns nothing observes `null`, not a missing content.
@@ -2104,8 +2294,8 @@ function serverObservationContent(observation: unknown): string {
     // Circular or BigInt-bearing results: report, never echo them.
     return JSON.stringify({ error: 'unserializable_result' });
   }
-  return serialized.length > MAX_SERVER_TOOL_OBSERVATION_CHARS
-    ? `${sliceOnCodePoint(serialized, MAX_SERVER_TOOL_OBSERVATION_CHARS)}${SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER}`
+  return serialized.length > maxChars
+    ? `${sliceOnCodePoint(serialized, maxChars)}${SERVER_TOOL_OBSERVATION_TRUNCATED_MARKER}`
     : serialized;
 }
 

@@ -99,7 +99,7 @@ const URL_USERINFO =
 
 /** Query/parameter credential (`?token=…`); group 2 is the value span. */
 const QUERY_CREDENTIAL =
-  /([?&;](?:token|password|secret|key|access_token)=)([^&\s"'<>]+)/dgi;
+  /([?&;](?:token|password|secret|key|access_token|launch)=)([^&\s"'<>]+)/dgi;
 
 /** Bearer token; group 2 is the token span (8+ characters unless strict). */
 const BEARER = /\b(Bearer\s+)([A-Za-z0-9._~+/=-]{8,})/dg;

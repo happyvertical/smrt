@@ -9,6 +9,7 @@
 // Self-register this package's manifest before the decorator fires (#1132).
 import './__smrt-register__.js';
 
+export * from './models/DesignRunRecord.js';
 export {
   APP_INFERENCE_SCOPE_ID,
   InferenceOverride,

@@ -35,6 +35,8 @@ export interface CookbookPolicyRow {
   label?: string | null;
   displayOrder?: number | null;
   locked?: boolean | null;
+  /** Read-only record value; independent of locking policy customization. */
+  readOnly?: boolean | null;
 }
 
 /** Structural copy of smrt-svelte's `ShellLayoutSection`. */
@@ -46,7 +48,11 @@ export interface CookbookLayoutSection {
 
 /** Structural copy of smrt-svelte's `ShellLayoutItem`. */
 export interface CookbookLayoutItem {
+  /** Singular name used by create and edit screens. */
+  singularLabel?: string;
   label?: string;
+  /** Shell icon name: 1–64 ASCII letters, digits, `_` or `-`, starting with a letter. */
+  icon?: string;
   description?: string;
 }
 
@@ -120,6 +126,42 @@ export interface CookbookTheme {
   customCss?: string;
 }
 
+/** Portable, versioned app model declarations. Labels/visibility of fields stay in policies. */
+export interface CookbookModels {
+  version: 1;
+  /** Identity of the app that owns the generated/runtime classes. */
+  packageName: string;
+  lists: Record<string, CookbookCustomList>;
+  /** Upstream qualified model identity -> additional app-subclass fields. */
+  fields: Record<string, Record<string, CookbookModelField>>;
+}
+
+export interface CookbookModelField {
+  type:
+    | 'text'
+    | 'longText'
+    | 'integer'
+    | 'decimal'
+    | 'money'
+    | 'date'
+    | 'datetime'
+    | 'boolean'
+    | 'choice'
+    | 'reference';
+  /** Money's ISO currency code; stored in a companion <field>Currency column. */
+  currency?: string;
+  choices?: string[];
+  /** Qualified installed model or the name of another list in this section. */
+  target?: string;
+}
+
+export interface CookbookCustomList {
+  label: string;
+  icon: string;
+  displayField: string;
+  fields: Record<string, CookbookModelField>;
+}
+
 export interface Cookbook {
   $schema: string;
   version: 1;
@@ -133,6 +175,8 @@ export interface Cookbook {
   /** Extra models (qualified names) no recipe covers. Absent reads as `[]`. */
   features: string[];
   policies: CookbookPolicyRow[];
+  /** App-owned custom lists and fields; absent preserves existing applications. */
+  models?: CookbookModels;
   /** Surfaces switched off per qualified model name. */
   exposure?: Record<string, CookbookExposureSurface[]>;
   layout?: CookbookLayout;

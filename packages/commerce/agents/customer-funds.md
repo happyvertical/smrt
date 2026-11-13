@@ -94,3 +94,7 @@ journals, both modes, direct-path protections, dates, finality evidence,
 conservation, invoice-credit interaction, retries, caller rollback and a real
 PostgreSQL post-journal write fault plus refund/application race. Run PostgreSQL
 through the standard managed database wrapper; never use an application's schema.
+
+The isolated PostgreSQL fixture also declares the existing Profile and
+ProfileType schemas: a named Customer writes its contact fields through to its
+linked Profile. Fixture bootstrap supplies those tables explicitly.

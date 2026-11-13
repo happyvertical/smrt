@@ -1,4 +1,5 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { isPerConnectionMemoryUrl } from './utils/database-url.js';
 
 /**
  * Cache for verified table existence checks.
@@ -63,12 +64,7 @@ export function getVerificationKey(db: DatabaseInterface): string {
   }
 
   const dbUrl = db.url || dbWithConfig.config?.url;
-  if (
-    dbUrl &&
-    dbUrl !== ':memory:' &&
-    dbUrl !== 'memory' &&
-    dbUrl !== 'file::memory:'
-  ) {
+  if (dbUrl && !isPerConnectionMemoryUrl(dbUrl)) {
     return dbUrl;
   }
 

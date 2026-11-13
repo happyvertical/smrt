@@ -426,3 +426,65 @@ describe('RelationInput accessibility', () => {
     await expectNoA11yViolations(container);
   });
 });
+
+describe('RelationInput pagination', () => {
+  it('keeps the next-page action keyboard reachable and appends unique choices without losing focus', async () => {
+    const more = vi.fn(async () => [CUSTOMERS[0], CUSTOMERS[1]]);
+    const { container } = render(RelationInput, {
+      props: props({
+        search: async () => [CUSTOMERS[0]],
+        loadMore: more,
+        hasMore: true,
+        moreLabel: 'More customers',
+      }),
+    });
+    await userEvent.click(combo());
+    await screen.findByRole('option', { name: /Acme/ });
+    await userEvent.tab();
+    expect(
+      screen.getByRole('button', { name: 'More customers' }),
+    ).toHaveFocus();
+    await userEvent.keyboard('{Enter}');
+    await screen.findByRole('option', { name: /Globex/ });
+    expect(screen.getAllByRole('option')).toHaveLength(2);
+    expect(combo()).toHaveFocus();
+    await expectNoA11yViolations(container);
+  });
+
+  it('discards an old next page after a new query and reports a failed next page', async () => {
+    let finish!: (rows: RelationOption[]) => void;
+    const more = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      )
+      .mockRejectedValueOnce(new Error('offline'));
+    render(RelationInput, {
+      props: props({
+        search: async () => [CUSTOMERS[0]],
+        loadMore: more,
+        hasMore: true,
+        moreLabel: 'More customers',
+      }),
+    });
+    await userEvent.click(combo());
+    await screen.findByRole('option', { name: /Acme/ });
+    await userEvent.click(
+      screen.getByRole('button', { name: 'More customers' }),
+    );
+    await userEvent.type(combo(), 'new');
+    finish([CUSTOMERS[1]]);
+    await waitFor(() => expect(combo()).not.toHaveAttribute('aria-busy'));
+    expect(screen.queryByRole('option', { name: /Globex/ })).toBeNull();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'More customers' }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('Search failed'),
+    );
+    expect(screen.getByRole('option', { name: /Acme/ })).toBeInTheDocument();
+  });
+});

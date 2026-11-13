@@ -23,9 +23,12 @@ and method surfaces of a decorated class.
   tool passes declared parameters positionally; `registerRuntimeModel` wraps
   each function so it receives one object of those parameters (`this` is the
   record).
-- **The registry only adds.** Re-registering never removes a field and keeps
-  the first exposure config. A host that edits models builds a fresh registry
-  (worker or process) per definition.
+- **Defaults.** Synthesized runtime constructors copy declared field defaults
+  per instance, preserving parent property initializers and explicit options.
+  They read current registry metadata so additive refresh defaults apply too.
+- **Additive refresh.** Default registration keeps the first exposure config.
+  Explicit `refresh: true` refreshes runtime metadata and validators; it never
+  drops storage. The [app model editor](app-models.md) owns versioned edits.
 - **Sync columns.** Entry columns include `_sync_origin_device_id` and
   `_sync_revision`; deletes read them.
 - **Tables are not created for you.** Run `planRuntimeModelDDL` output in the
@@ -72,10 +75,13 @@ The rules are in [data-shape-rules.md](data-shape-rules.md). A run-time
 definition is shape that the app registers, so it counts under rule 2 like a
 decorated class. What differs from a decorated class:
 
-- **Migrate never sees it.** `db:migrate` plans from classes in the build. The
-  host applies the `planRuntimeModelDDL` statements itself, so rules 4 to 7
-  (apply when safe, stop to avoid losing data, all or nothing) do not cover
-  these tables. The host decides when to apply them.
+- **`db:migrate` never sees it.** `db:migrate` plans from classes in the build.
+  The host applies run-time tables with `migrateSmrtSchemas({ tables })`, a run
+  limited to those tables: it is all or nothing for its own changes (a stop
+  refuses it; check with `assertMigrationAccepted`), but it does not compare
+  the build's packages and writes no last-migrate record. So a run-time edit
+  never changes what the startup check compares: the build's stamp covers the
+  build's manifest only, and the record is written only by a full migrate.
 - **A required field may be enforced only in code.** A new table gets `NOT NULL`
   for a required field. A column added to an existing table is always nullable.
   The save-time check still refuses a record without the value.
@@ -89,3 +95,66 @@ decorated class. What differs from a decorated class:
   by the same rule as a built subclass, type-change rule included. It is
   the same decision the build uses (`schema/field-inheritance.ts`). Tightening,
   or loosening a field with no reason, registers as before.
+
+## Reference and presentation definitions (A4 prerequisites)
+
+`RuntimeFieldType` also accepts `foreignKey` and `crossPackageRef`. Supply
+`related` as a qualified model identity. Use `foreignKey` within the app and
+`crossPackageRef` across package boundaries, as for decorated models. A physical
+FK target must already be registered; its registry table binding, including an
+explicit `tableName`, is used rather than deriving a table from the qualified
+name. Cross-package references retain relationship metadata without a DDL FK.
+
+`RuntimeFieldDefinition.ui` uses the existing `FieldUIHints` contract, stored
+at `_meta.ui`. Invalid widget/type and format/type combinations fail before
+registration. `RuntimeModelDefinition.ui` carries model label/icon/description;
+`display.label` selects an own scalar field and rejects missing/reference fields.
+`runtimeModelEntry()` resolves `displayLabelField` and defaults it by the normal
+`name`, `title`, `label`, `code` rule. These are manifest inputs; publishing an
+entry does not rewrite an already-generated web module or mounted route.
+
+| Person's field | Existing runtime definition |
+| --- | --- |
+| Text / long text | `text` / `text` with `ui.widget: 'textarea'` |
+| Whole number / decimal | `integer` / `decimal` |
+| Money and currency | `integer` with `ui.format: 'money'`, plus a `text` currency-code field with `ui.widget: 'currency'` |
+| Date / date-time | `datetime` with `ui.format: 'date'` / `'datetime'` |
+| Yes/no / single choice | `boolean` / `text` with `enum` |
+| Reference | `foreignKey` or `crossPackageRef` with `related` |
+
+For schema application, register the definitions, then call the existing
+`migrateSmrtSchemas({ db, packageName, ... })` from `smrt-core/migrations`.
+Inspect `hasManualDrift` and refuse activation if it is true, and pass the
+result to `assertMigrationAccepted` (a refused run applies nothing). Do not execute
+`planRuntimeModelDDL()` statements directly as an app-editing shortcut. The
+migration differ/tracker owns transactions, ordering and migration records.
+The SQLite test uses this path, checks its tracking row and a no-op second
+migration, and exercises the generated REST handler without a listening server.
+
+## Same-name replacement and versioned editing
+
+Explicit `replaces: true` requires a registered same-name `extends` target.
+It follows the existing app replacement lineage, preserves the provider's real
+constructor/methods, tenancy and table (including CTI), and publishes the app's
+qualified identity as effective. Old provider identities resolve to it.
+Omitting `replaces` retains the coexistence behavior described above. Inherited
+fields resolve through the shared `schema/field-inheritance.ts` rule, including
+unmerged provider ancestry. Replacements keep inherited requiredness and UI
+metadata; only independent own-table subclasses rebind framework tree links.
+
+`registerRuntimeModel(def, { refresh: true, fieldValidators })` refreshes
+metadata for an existing runtime definition. Custom validators use the record's
+database executor; reference checks therefore retain transaction and tenant
+context. Registry generation invalidates collection field caches and live
+REST/MCP/CLI definitions.
+
+Use [`createAppModelEditor()`](app-models.md), exported from `./app-models`,
+for the person's versioned fields/lists. It supplies the cookbook source,
+tracked migrations, host-owned history, pending recovery, policy operations,
+manifest/web projections and publication readiness gate. Low-level registry
+registration alone still does not rewrite static route files or web modules.
+
+Executable coverage: `src/__tests__/runtime-model.test.ts`,
+`runtime-model-presentation.test.ts`, `same-name-app-subclass.test.ts`,
+and `app-model-editor.test.ts`. All use in-process SQLite; PostgreSQL/DuckDB
+editor activation and packaged desktop behavior are unverified.

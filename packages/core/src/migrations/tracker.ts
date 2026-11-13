@@ -818,6 +818,7 @@ export class MigrationTracker {
 
           const txTracker = new MigrationTracker({
             db: txDb,
+            engineHint: this.dbEngine,
             lockTimeout: this.options.lockTimeout,
             statementTimeout: this.options.statementTimeout,
             useConcurrentIndexes: false,

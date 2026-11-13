@@ -1550,6 +1550,36 @@ function normalizeFilesystemIdentity(
     : normalized;
 }
 
+/** Opt-in process-tree boundary; explicit path/environment overrides cannot bypass it. */
+export function assertAllowedStateBase(
+  base: string,
+  runtimePlatform: NodeJS.Platform,
+): void {
+  const configured = process.env.SMRT_FORBIDDEN_STATE_BASES;
+  if (configured === undefined) return;
+  let bases: unknown;
+  try {
+    bases = JSON.parse(configured);
+  } catch {
+    throw new Error(
+      'SMRT_FORBIDDEN_STATE_BASES must be a JSON array of nonempty paths.',
+    );
+  }
+  if (
+    !Array.isArray(bases) ||
+    bases.some((entry) => typeof entry !== 'string' || !entry)
+  ) {
+    throw new Error(
+      'SMRT_FORBIDDEN_STATE_BASES must be a JSON array of nonempty paths.',
+    );
+  }
+  if (bases.some((entry) => sameFilesystemPath(base, entry, runtimePlatform))) {
+    throw new Error(
+      `SMRT_FORBIDDEN_STATE_BASES refused application storage in ${base}. Pass the isolated HOME, XDG_STATE_HOME and LOCALAPPDATA to every child process.`,
+    );
+  }
+}
+
 export function defaultApplicationDataRoot(
   runtimePlatform: NodeJS.Platform,
   runtimeHome: string,

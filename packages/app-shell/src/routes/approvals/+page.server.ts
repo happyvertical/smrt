@@ -5,10 +5,11 @@ import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ parent, depends, fetch }) => {
   depends(DEPENDS.approvals);
-  needOwner((await parent()).description);
+  const description = needOwner((await parent()).description);
   const { approvals } = await loadApi<{ approvals: ApprovalView[] }>(
     fetch,
     '/api/shell/approvals',
+    'live',
   );
   return { approvals };
 };

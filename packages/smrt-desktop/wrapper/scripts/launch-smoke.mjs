@@ -2,7 +2,7 @@
 // Launch smoke for the generic desktop app (smrt#4835).
 //
 // Runs an already built, UNSIGNED wrapper binary against a bundle made by
-// `smrt desktop bundle` (see build-generic-app.mjs) and checks, from an EMPTY
+// `smrt desktop bundle` (see build-desktop-app.mjs) and checks, from an EMPTY
 // data directory, that:
 //   1. the wrapper starts the sidecar and logs the ready origin;
 //   2. the sidecar's health route answers 200 (the app created its schema on
@@ -10,20 +10,23 @@
 //   3. the owner link route answers 403 with an empty body to a loopback
 //      request that lacks the per-launch secret (the secret is known only to
 //      the wrapper window and the sidecar, so this script cannot redirect),
-//      answers 403 to a wrong secret and to a foreign Host, and the /setup
-//      page loads;
+//      answers 403 to a wrong secret and to a foreign Host, and the /setup and
+//      home pages load without an owner form or a terminal command (the
+//      window itself is signed in by the owner link, which this script cannot
+//      follow without the secret);
 //   4. the wrapper log shows the window origin and route and contains no
 //      secret-looking 64-hex string, no `launch=` query and no token;
 //   5. the wrapper quits on request and no process of the sidecar is left.
 //
 //   node launch-smoke.mjs --wrapper <exe> --bundle <bundle dir> \
-//     --triple <rust triple> [--timeout-ms 120000] [--keep]
+//     --triple <rust triple> [--timeout-ms 120000] [--keep] [--identifier <id>]
 //
 // Linux needs a display: run it under `xvfb-run -a`. The wrapper is the
 // debug/no-bundle binary; the bundle's resources and sidecar are placed next
 // to a copy of it in a `target/debug` layout, which is where a non-installed
 // Tauri build looks for them (see STAGE_RUN_DIR).
 
+import { randomBytes } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import {
   chmodSync,
@@ -41,8 +44,11 @@ import {
 import http from 'node:http';
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
+import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { boundedTail, redactSecrets } from '../../../cli/src/app/errors.ts';
+import { installTestHome } from '../../../vitest/src/test-home.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wrapperDir = resolve(here, '..');
@@ -66,6 +72,28 @@ export function appLocalDataDir({ platform, env, home, identifier }) {
   }
   const base = env.XDG_DATA_HOME || join(home, '.local', 'share');
   return join(base, identifier);
+}
+
+/** Standard OS log location, matching Tauri's app_log_dir. */
+export function appLogDir({ platform, env, home, identifier }) {
+  if (platform === 'darwin') return join(home, 'Library', 'Logs', identifier);
+  return join(appLocalDataDir({ platform, env, home, identifier }), 'logs');
+}
+
+/**
+ * The identifier the wrapper under test was built with: `tauri.conf.json`'s
+ * unless `--identifier` says otherwise. A debug wrapper built with another
+ * identifier (the `identifier` key of the `TAURI_CONFIG` environment variable
+ * at build time) gets its own data directory and its own single-instance socket
+ * (`/tmp/<identifier>_si.sock`), so it can run next to another debug wrapper;
+ * a second launch with the same identifier forwards to the first and exits.
+ */
+export function wrapperIdentifier(configIdentifier, override) {
+  if (override === undefined) return configIdentifier;
+  if (!/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(override)) {
+    throw new Error('--identifier must be a reverse-domain identifier');
+  }
+  return override;
 }
 
 /** The origin from the wrapper log's `sidecar ready origin=...` line. */
@@ -110,7 +138,7 @@ export function redact(text, secrets) {
   for (const secret of secrets) {
     if (secret) out = out.split(secret).join('[redacted]');
   }
-  return out;
+  return redactSecrets(out, process.env, { strict: true });
 }
 
 /**
@@ -173,11 +201,22 @@ function parseArgs(argv) {
     else if (flag === '--triple') options.triple = value();
     else if (flag === '--timeout-ms') options.timeoutMs = Number(value());
     else if (flag === '--keep') options.keep = true;
+    else if (flag === '--identifier') options.identifier = value();
+    else if (flag === '--sidecar-only') options.sidecarOnly = true;
+    else if (flag === '--list-route') options.listRoute = value();
+    else if (flag === '--record-route') options.recordRoute = value();
+    else if (flag === '--record-json') options.recordJson = value();
+    else if (flag === '--report') options.report = value();
+    else if (flag === '--data-parent') options.dataParent = value();
+    else if (flag === '--database-file') options.databaseFile = value();
+    else if (flag === '--sign-out-route') options.signOutRoute = value();
     else throw new Error(`unknown argument ${flag}`);
   }
-  for (const required of ['wrapper', 'bundle', 'triple']) {
+  for (const required of options.sidecarOnly ? ['bundle', 'triple', 'listRoute', 'dataParent'] : ['wrapper', 'bundle', 'triple']) {
     if (!options[required]) throw new Error(`--${required} is required`);
   }
+  if (options.databaseFile && !/^[A-Za-z0-9_-]+\.(?:sqlite|db)$/.test(options.databaseFile)) throw new Error('--database-file must be a database basename');
+  if (Boolean(options.recordRoute) !== Boolean(options.recordJson)) throw new Error('--record-route and --record-json must be used together');
   return options;
 }
 
@@ -228,13 +267,13 @@ function listProcesses() {
   return { text: result.stdout ?? '', format: 'ps' };
 }
 
-async function waitFor(check, timeoutMs, what) {
+async function waitFor(check, timeoutMs, what, pollMs = 500) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const value = await check();
     if (value) return value;
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
-    await sleep(500);
+    await sleep(pollMs);
   }
 }
 
@@ -254,8 +293,133 @@ function directoryHasFiles(dir) {
   }
 }
 
+/** Exercise the actual manifest/executable without a display or vendor calls. */
+export async function smokeSidecar(options) {
+  const { buildSidecarEnv } = await import('../../dist/index.js');
+  const { createNodeMeasureSeams, stopMeasuredProcess } = await import('../../dist/bundler.js');
+  const seams = createNodeMeasureSeams();
+  const bundle = resolve(options.bundle);
+  const report = JSON.parse(readFileSync(join(bundle, 'bundle-report.json'), 'utf8'));
+  const manifest = JSON.parse(readFileSync(join(bundle, 'resources/sidecar-manifest.json'), 'utf8'));
+  const resources = join(bundle, 'resources');
+  const plan = stagePlan({ productId: report.product.productId, triple: options.triple, windows: process.platform === 'win32' });
+  mkdirSync(options.dataParent, { recursive: true, mode: 0o700 });
+  const scratch = realpathSync(mkdtempSync(join(options.dataParent, 'sidecar-smoke-')));
+  const data = join(scratch, 'data');
+  const results = [];
+  let recordId;
+  let child;
+  let failure;
+  try {
+    for (let run = 0; run < 2; run += 1) {
+      const port = await seams.freePort();
+      if (port <= 4900) throw new Error('the free port must be above 4900');
+      const secret = randomBytes(32).toString('hex');
+      const origin = `http://127.0.0.1:${port}`;
+      const env = buildSidecarEnv(manifest, { port, dataDirectory: data, ownerLinkSecret: secret }, {});
+      // Keep custody state and CLI detection in the owned smoke tree on every OS.
+      env.SMRT_FORBIDDEN_STATE_BASES = process.env.SMRT_FORBIDDEN_STATE_BASES;
+      env.HOME = scratch;
+      env.USERPROFILE = scratch;
+      env.XDG_STATE_HOME = join(scratch, '.local', 'state');
+      env.LOCALAPPDATA = join(scratch, 'AppData', 'Local');
+      env.APPDATA = join(scratch, 'AppData', 'Roaming');
+      env.PATH = process.env.PATH;
+      const started = seams.now();
+      child = seams.spawn({ command: join(bundle, plan.sidecarFrom), args: manifest.args, cwd: manifest.workingDirectory === 'app' ? join(resources, 'app') : resources, env });
+      let exited = false;
+      child.exit.then(() => { exited = true; });
+      await waitFor(async () => {
+        if (exited) throw new Error('packaged sidecar exited before health');
+        return (await seams.health(`${origin}${manifest.healthRoute}`, 500)) === 200;
+      }, options.timeoutMs ?? 120000, 'packaged sidecar health', 20);
+      const firstHttpMs = seams.now() - started;
+      let tableCount;
+      if (options.databaseFile) {
+        const { DatabaseSync } = await import('node:sqlite');
+        const database = new DatabaseSync(join(data, options.databaseFile), { readOnly: true });
+        try {
+          tableCount = Number(database.prepare("SELECT count(*) AS count FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").get().count);
+        } finally { database.close(); }
+      }
+      const request = async (path, init = {}) => {
+        try {
+          return await fetch(`${origin}${path}`, { redirect: 'manual', signal: AbortSignal.timeout(30000), ...init });
+        } catch {
+          throw new Error('packaged sidecar request failed');
+        }
+      };
+      const signedOut = await request('/setup');
+      const signedOutHtml = await signedOut.text();
+      if (signedOut.status !== 200 || !/reopen (?:the )?(?:desktop )?app/i.test(signedOutHtml) || /pnpm\s|name="(?:email|token)"/.test(signedOutHtml)) throw new Error('desktop signed-out page must offer reopen guidance without terminal commands or a setup form');
+      if ((await request(manifest.ownerClaimRoute)).status !== 403) throw new Error('owner link accepted a missing secret');
+      const owner = await request(`${manifest.ownerClaimRoute}?launch=${secret}`);
+      if (owner.status !== 302) throw new Error('owner link did not sign in');
+      const cookie = owner.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ');
+      if (!cookie) throw new Error('owner session cookie missing');
+      const headers = { cookie };
+      if ((await request('/setup', { headers })).status !== 303) throw new Error('owner remained on setup after launch sign-in');
+      let landing = await request('/', { headers });
+      for (let redirects = 0; redirects < 5 && [302, 303, 307, 308].includes(landing.status); redirects += 1) {
+        const location = landing.headers.get('location');
+        if (!location || new URL(location, origin).origin !== origin || new URL(location, origin).pathname === '/setup') throw new Error('owner launch redirected back to setup or outside the app');
+        landing = await request(new URL(location, origin).pathname + new URL(location, origin).search, { headers });
+      }
+      if (landing.status !== 200 || /data-owner-setup="desktop"/.test(await landing.text())) throw new Error('owner did not reach the app after launch');
+      const interactionChecks = await options.verify?.({
+        run: run + 1,
+        dataDirectory: data,
+        request: (path, init = {}) => request(path, { ...init, headers: { ...headers, origin, ...init.headers } }),
+      });
+      const list = await request(options.listRoute, { headers });
+      if (list.status !== 200) throw new Error('authenticated REST list failed');
+      await list.arrayBuffer();
+      if (options.recordRoute) {
+        if (run === 0) {
+          const created = await request(options.recordRoute, { method: 'POST', headers: { ...headers, 'content-type': 'application/json', origin }, body: options.recordJson });
+          if (![200, 201].includes(created.status)) throw new Error(`persistence probe create failed (${created.status})`);
+          const body = await created.json();
+          recordId = body.data?.id ?? body.id;
+          if (typeof recordId !== 'string') throw new Error('persistence probe id missing');
+        } else {
+          const persisted = await request(`${options.recordRoute}/${encodeURIComponent(recordId)}`, { headers });
+          if (persisted.status !== 200) throw new Error('record was lost after relaunch');
+          const body = await persisted.json();
+          if ((body.data?.id ?? body.id) !== recordId) throw new Error('relaunch returned a different record');
+        }
+      }
+      await sleep(5000);
+      const rss = spawnSync('ps', ['-o', 'rss=', '-p', String(child.pid)], { encoding: 'utf8' });
+      if (run === 0 && options.signOutRoute) {
+        const signedOut = await request(options.signOutRoute, { method: 'POST', headers: { ...headers, origin } });
+        if (![204, 303].includes(signedOut.status)) throw new Error('owner sign-out failed');
+        const setup = await request('/setup', { headers });
+        if (setup.status !== 200 || !/reopen (?:the )?(?:desktop )?app/i.test(await setup.text())) throw new Error('signed-out owner did not receive reopen guidance');
+        if (![401, 403, 404].includes((await request(options.listRoute, { headers })).status)) throw new Error('signed-out session retained REST access');
+      }
+      results.push({ run: run + 1, firstHttpMs: Math.round(firstHttpMs), idleRssKiB: Number(rss.stdout.trim()), tableCount, health: 200, ownerSession: true, restList: 200, signedOutReopen: true, launchReachedApp: true, ...(run === 0 && options.signOutRoute ? { signedOutSessionRevoked: true } : {}), ...(interactionChecks ? { interactionChecks } : {}) });
+      await stopMeasuredProcess(child, seams, 10000);
+      const exitInfo = await child.exit;
+      if (exitInfo?.signal === 'SIGKILL' || !(exitInfo?.code === 0 || exitInfo?.signal === 'SIGTERM')) throw new Error('sidecar did not shut down gracefully');
+      child = undefined;
+      if ((await seams.health(`${origin}${manifest.healthRoute}`, 500)) !== undefined) throw new Error('sidecar still responds after shutdown');
+    }
+  } catch (error) {
+    failure = error;
+  } finally {
+    if (child) await stopMeasuredProcess(child, seams, 10000);
+    if (!options.keep) rmSync(scratch, { recursive: true, force: true });
+  }
+  if (failure) throw failure;
+  const result = { target: options.triple, runs: results, cleanShutdown: true, persistedRecord: Boolean(recordId), firstWindowMs: null };
+  if (options.report) writeFileSync(options.report, `${JSON.stringify(result, null, 2)}\n`);
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+  if (options.sidecarOnly) return smokeSidecar(options);
   const windows = process.platform === 'win32';
   const bundle = resolve(options.bundle);
   const report = JSON.parse(readFileSync(join(bundle, 'bundle-report.json'), 'utf8'));
@@ -264,7 +428,7 @@ async function main() {
     readFileSync(join(bundle, 'resources', 'sidecar-manifest.json'), 'utf8'),
   );
   const tauriConfig = JSON.parse(readFileSync(join(wrapperDir, 'tauri.conf.json'), 'utf8'));
-  const identifier = tauriConfig.identifier;
+  const identifier = wrapperIdentifier(tauriConfig.identifier, options.identifier);
 
   const dataRoot = appLocalDataDir({
     platform: process.platform,
@@ -294,7 +458,8 @@ async function main() {
     chmodSync(join(runDir, plan.sidecarTo), 0o755);
   }
 
-  const logPath = join(dataRoot, '.desktop-wrapper', 'supervisor.log');
+  const logRoot = appLogDir({ platform: process.platform, env: process.env, home: homedir(), identifier });
+  const logPath = join(logRoot, 'supervisor.log');
   const secrets = [];
   let stderrTail = '';
   let child;
@@ -307,8 +472,9 @@ async function main() {
       windowsHide: true,
     });
     // The wrapper prints one line to stderr when it cannot start at all.
-    child.stderr.on('data', (chunk) => {
-      stderrTail = `${stderrTail}${chunk}`.slice(-4000);
+    // Redact complete lines before bounding: a pipe chunk may split a token.
+    createInterface({ input: child.stderr }).on('line', (line) => {
+      stderrTail = boundedTail(`${stderrTail}${redact(line, secrets)}\n`, 4000);
     });
     let exited = null;
     child.on('exit', (code, signal) => {
@@ -364,9 +530,23 @@ async function main() {
     }
     console.log('owner link: 403 for a foreign Host');
 
+    // The window signs the owner in on its own (the owner link creates the
+    // owner and a session; a person never fills in a form), so a visitor
+    // without a session sees no owner form and no terminal command, only the
+    // "quit and reopen" wording. This script has no session, so it can only
+    // observe those two pages, not the signed-in shell.
     const setup = await get(origin, '/setup');
     if (setup.status !== 200) throw new Error(`/setup answered ${setup.status}`);
-    console.log('setup page: 200');
+    if (/pnpm /.test(setup.body) || /name="email"/.test(setup.body)) {
+      throw new Error('/setup shows an owner form or a terminal command under the desktop wrapper');
+    }
+    console.log('setup page: 200, no owner form and no terminal command');
+
+    const home = await get(origin, '/');
+    if (home.status !== 200 || /pnpm /.test(home.body)) {
+      throw new Error(`/ answered ${home.status} or shows a terminal command under the desktop wrapper`);
+    }
+    console.log('home page: 200, no terminal command');
 
     const log = readIfExists(logPath);
     if (
@@ -409,7 +589,7 @@ async function main() {
   } catch (error) {
     failure = error;
     const log = readIfExists(logPath);
-    if (log) console.error(`--- wrapper log ---\n${redact(log, secrets)}`);
+    if (log) console.error(`--- wrapper log tail ---\n${boundedTail(redact(log, secrets), 8192)}`);
     if (stderrTail) {
       console.error(`--- wrapper stderr ---\n${redact(stderrTail, secrets)}`);
     }
@@ -420,6 +600,7 @@ async function main() {
     if (!options.keep) {
       rmSync(stage, { recursive: true, force: true });
       rmSync(dataRoot, { recursive: true, force: true });
+      rmSync(logRoot, { recursive: true, force: true });
     }
   }
   if (failure) {
@@ -430,7 +611,10 @@ async function main() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
+  // The wrapper derives OS data/log paths too, before it starts its sidecar.
+  // Even --keep never retains the temporary home or one-time owner links.
+  const disposeTestHome = installTestHome();
+  main().finally(disposeTestHome).catch((error) => {
     console.error(`launch-smoke: ${error.message}`);
     process.exit(1);
   });

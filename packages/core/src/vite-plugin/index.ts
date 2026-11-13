@@ -6,6 +6,7 @@
 export { smrtAssetUrlCompatibility } from './asset-url-compatibility.js';
 
 import { existsSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
@@ -91,6 +92,7 @@ import {
 import {
   buildWebMcpToolDefinitions,
   generateWebModule,
+  renderRecipeSurfaceDeclarations,
   selectWebCollectionEntries,
 } from './web-collections.js';
 import { buildWorkerRegistration } from './worker-registration.js';
@@ -186,6 +188,8 @@ export interface SmrtPluginOptions {
   experimentalFastScanner?: boolean;
   /** SvelteKit route auto-generation options */
   svelteKit?: {
+    /** Opt-in deferred registration for SQLite activation hosts; match smrtConsumer. */
+    lazyActivation?: boolean;
     /** Enable SvelteKit route generation (default: false) */
     enabled: boolean;
     /** Output directory for generated routes (default: 'src/routes/api') */
@@ -808,6 +812,7 @@ export function smrtPlugin(
     currentManifest: SmartObjectManifest,
   ): Promise<void> {
     const routeOptions = {
+      lazyActivation: svelteKit.lazyActivation,
       enabled: svelteKit.enabled,
       routesDir: svelteKit.routesDir || 'src/routes/api',
       objectsDir: svelteKit.objectsDir || 'src/lib/objects',
@@ -1238,7 +1243,7 @@ export function smrtPlugin(
             configPath: svelteKit.configPath,
             configFileName: svelteKit.configFileName,
           });
-          return injected === null ? null : { code: injected, map: null };
+          if (injected !== null) return { code: injected, map: null };
         }
         // Library builds only: inline the scanned manifest into the package's
         // __smrt-register__ shim so the published dist registers field metadata
@@ -1249,8 +1254,23 @@ export function smrtPlugin(
         // #1507). Dev/test flows are untouched: the vitest plugin populates
         // manifests through its own path, and non-library builds keep the
         // original shim.
-        if (!config?.build?.lib || !manifest) {
-          return null;
+        if (!manifest) return null;
+        // Lazy app constructors also need explicit identity before activation's
+        // metadata upgrade; inferring it reads the full project superset.
+        if (!config?.build?.lib) {
+          const cleanId = id.split('?')[0];
+          const packageName = manifest.packageName;
+          const ownsSource =
+            svelteKit.lazyActivation &&
+            Object.values(manifest.objects).some(
+              (object) =>
+                object.packageName === packageName &&
+                object.filePath &&
+                resolve(projectRoot, object.filePath) === resolve(cleanId),
+            );
+          return ownsSource && !isRegisterShimModuleId(id)
+            ? stampPackageModule(code, id, manifest)
+            : null;
         }
         if (isRegisterShimModuleId(id)) {
           return {
@@ -1425,7 +1445,7 @@ export function smrtPlugin(
       return null;
     },
 
-    async load(id) {
+    async load(id, loadOptions) {
       // Load virtual modules (strip the \0 prefix)
       const cleanId = id.startsWith('\0') ? id.slice(1) : id;
 
@@ -1468,6 +1488,8 @@ export function smrtPlugin(
           // Web collection definitions for the browser client data runtime
           // (@happyvertical/smrt-web, #1761)
           return generateWebModule(manifest, {
+            ssr: loadOptions?.ssr,
+            lazyActivation: svelteKit.lazyActivation,
             kebabRoutes: svelteKit.kebabRoutes ?? false,
           });
 
@@ -2016,7 +2038,7 @@ function generateClientModeTypes(manifest: SmartObjectManifest): string {
   for (const { interfaceName, obj: objectMeta } of selectObjectDeclarations(
     manifest,
   )) {
-    const fields = objectMeta.fields || {};
+    const fields = { ...objectMeta.fields, ...objectMeta.writeThroughFields };
     const propertyLines: string[] = [];
 
     for (const [fieldName, fieldDef] of Object.entries(fields)) {
@@ -2516,6 +2538,8 @@ declare module '@happyvertical/smrt-virt-web' {
     name: string;
     /** Canonical qualified model identity (\`@package/name:ClassName\`) for policy APIs. */
     objectRef: string;
+    /** Provider identities replaced by this effective app model. */
+    replacedQualifiedNames?: readonly string[];
     className: string;
     endpoint: string;
     idField: string;
@@ -2533,6 +2557,7 @@ declare module '@happyvertical/smrt-virt-web' {
 ${webCollectionInterface}
   }
 
+  ${renderRecipeSurfaceDeclarations(manifest)}
   export const collectionDefinitions: SmrtWebCollectionDefinitions;
   /** Every API-backed WebMCP tool, independent of list materialization. */
   export const webMcpToolDefinitions: readonly WebMcpToolDefinition[];
@@ -2744,9 +2769,19 @@ function getDefaultUIModule(): string {
     const __dirname = dirname(fileURLToPath(import.meta.url));
 
     // Load template file (works in both src and dist)
-    const templatePath = join(__dirname, 'templates/default-ui.js');
-
-    return readFileSync(templatePath, 'utf-8').trim();
+    const templatePath = join(__dirname, 'templates/default-ui.ts');
+    // Resolve native tooling on demand, as activation generation does; the
+    // public core root must remain loadable when compiler tooling is excluded.
+    const { transformSync } = createRequire(import.meta.url)(
+      'oxc-transform',
+    ) as typeof import('oxc-transform');
+    const transformed = transformSync(
+      templatePath,
+      readFileSync(templatePath, 'utf-8'),
+    );
+    if (transformed.errors.length)
+      throw new Error('Invalid default UI template');
+    return transformed.code.trim();
   } catch (error) {
     console.error('[smrt] Error loading UI template:', error);
     // Fallback to minimal UI

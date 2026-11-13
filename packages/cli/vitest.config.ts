@@ -15,6 +15,7 @@ export default defineConfig({
     },
   },
   test: {
+    globalSetup: ['../vitest/src/test-home.global-setup.ts'],
     globals: true,
     environment: 'node',
     pool: 'forks',

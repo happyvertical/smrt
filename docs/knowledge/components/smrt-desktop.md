@@ -5,10 +5,10 @@ description: "Versioned sidecar manifest, the runtime bundler and the assistant-
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-13T18:28:13Z"
+  at: "2026-11-13T21:00:09Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:853f8cee7723354f672205eb30cb341f7cca575588e83c5104f37cf66a0ac4e7"
+source_revision: "sha256:38a05a9408fab6e6a32724f591a8f7e86c46f755c12d9a9de0e88861fd34a7f8"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-desktop/package.json"
@@ -19,6 +19,9 @@ sources:
   - id: "agents-2"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-desktop/README.md"
     title: "@happyvertical/smrt-desktop packages/smrt-desktop/README.md"
+  - id: "agents-3"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-desktop/agents/built-apps.md"
+    title: "@happyvertical/smrt-desktop packages/smrt-desktop/agents/built-apps.md"
 ---
 
 # @happyvertical/smrt-desktop
@@ -34,6 +37,7 @@ sources:
 
 - `packages/smrt-desktop/AGENTS.md`
 - `packages/smrt-desktop/README.md`
+- `packages/smrt-desktop/agents/built-apps.md`
 
 ## Framework dependencies
 

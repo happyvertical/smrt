@@ -1,13 +1,28 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it, vi } from 'vitest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const routesDir = join(__dirname, '..', 'template', 'src', 'routes');
+// The Notes page is the opt-in example (`examples/notes`), not part of the
+// template; the template's own home page is an empty state.
+const routesDir = join(__dirname, '..', 'examples', 'notes', 'src', 'routes', 'notes');
+const templateRoutesDir = join(__dirname, '..', 'template', 'src', 'routes');
 
-describe('home page server-load convention', () => {
+describe('template home page', () => {
+  it('is an empty state with no object, load, or create form', () => {
+    const home = readFileSync(join(templateRoutesDir, '+page.svelte'), 'utf8');
+    expect(existsSync(join(templateRoutesDir, '+page.server.ts'))).toBe(false);
+    expect(home).toContain('<EmptyState');
+    expect(home).not.toMatch(/note/i);
+    expect(readFileSync(join(templateRoutesDir, '+layout.svelte'), 'utf8')).not.toMatch(
+      /Notes/,
+    );
+  });
+});
+
+describe('example notes page server-load convention', () => {
   const pageServer = readFileSync(join(routesDir, '+page.server.ts'), 'utf8');
   const page = readFileSync(join(routesDir, '+page.svelte'), 'utf8');
 
@@ -30,9 +45,9 @@ describe('home page server-load convention', () => {
   });
 });
 
-describe('home page server load and action', () => {
+describe('example notes page server load and action', () => {
   it('does not query tenant data for an anonymous request', async () => {
-    const { load } = await import('../template/src/routes/+page.server.js');
+    const { load } = await import('../examples/notes/src/routes/notes/+page.server.js');
     const depends = vi.fn();
     const result = await load({
       depends,
@@ -53,7 +68,7 @@ describe('home page server load and action', () => {
   });
 
   it('rejects an anonymous create before reading the request body or database', async () => {
-    const { actions } = await import('../template/src/routes/+page.server.js');
+    const { actions } = await import('../examples/notes/src/routes/notes/+page.server.js');
     const result = (await actions.create({
       request: new Request('http://localhost/?/create', {
         method: 'POST',

@@ -48,6 +48,7 @@ export default defineConfig({
   globalTimeout: 30 * 60_000,
   outputDir: artifactRoot,
   // Removes that temporary root when the run ends.
+  globalSetup: '../vitest/src/test-home.global-setup.ts',
   globalTeardown: './e2e/support/globalTeardown.ts',
   use: {
     // Onboarding carries a single-use bootstrap token in a URL. A trace, a

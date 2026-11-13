@@ -115,6 +115,23 @@ describe('dock reducer', () => {
     expect(s.items[0]).toMatchObject({ detached: true, state: 'pending' });
   });
 
+  it('keeps the fix an error offers ("Sign in again") on its note', () => {
+    const s = run([
+      { type: 'send', text: 'x' },
+      ev({
+        type: 'error',
+        code: 'chatgpt_session_revoked',
+        message: 'Your ChatGPT sign-in is no longer valid.',
+        action: { label: 'Sign in again', href: '/settings/assistant#chatgpt' },
+      }),
+    ]);
+    expect(s.items.at(-1)).toMatchObject({
+      kind: 'note',
+      tone: 'error',
+      action: { label: 'Sign in again', href: '/settings/assistant#chatgpt' },
+    });
+  });
+
   it('turns stream errors into notes and loads stored threads', () => {
     let s = run([
       { type: 'send', text: 'x' },
@@ -166,6 +183,34 @@ describe('dock reducer', () => {
     expect(s.availability).toBe('ready');
   });
 
+  it('carries the engine caption and the link that fixes an unavailable assistant', () => {
+    let s = reduce(initialState, {
+      type: 'status',
+      status: {
+        configured: false,
+        engine: 'claude-code',
+        engineLabel: 'Claude Code',
+        code: 'agent_cli_signed_out',
+        message: 'Claude Code is not signed in.',
+        action: { label: 'Set up the assistant', href: '/welcome' },
+      },
+    });
+    expect(s).toMatchObject({
+      availability: 'unavailable',
+      // An engine that cannot answer is not "in use".
+      engineLabel: '',
+      unavailableAction: { href: '/welcome' },
+    });
+    s = reduce(s, { type: 'reset' });
+    expect(s.unavailableAction).toMatchObject({ href: '/welcome' });
+    s = reduce(s, {
+      type: 'status',
+      status: { configured: true, engineLabel: 'Claude Code' },
+    });
+    expect(s).toMatchObject({ availability: 'ready', unavailableAction: null });
+    expect(s.engineLabel).toBe('Claude Code');
+  });
+
   it('labels tools and stops plainly', () => {
     expect(toolLabel('app_addfield')).toBe('Addfield');
     expect(toolLabel('chore_create')).toBe('Chore create');
@@ -187,5 +232,42 @@ describe('announcement', () => {
     expect(announcement(state)).toBe('The assistant replied.');
     expect(announcement(state)).not.toContain('chores');
     expect(announcement(initialState)).toBe('');
+  });
+});
+
+describe('tool copy metadata', () => {
+  it('preserves the copy on streamed and reopened tool results', () => {
+    const state = run([
+      ev({ type: 'tool_call', id: 'one', name: 'app_removefield', args: '{}' }),
+      ev({
+        type: 'tool_result',
+        id: 'one',
+        name: 'app_removefield',
+        ok: true,
+        summary: 'Removed field',
+        copy: 'draft',
+      }),
+    ]);
+    expect(state.items[0]).toMatchObject({ kind: 'tool', copy: 'draft' });
+    const reopened = reduce(initialState, {
+      type: 'loaded',
+      threadId: 'thread',
+      messages: [
+        {
+          id: 'one',
+          seq: 1,
+          role: 'tool',
+          content: '',
+          tool: {
+            id: 'one',
+            name: 'chore_create',
+            ok: true,
+            summary: 'Created',
+            copy: 'live',
+          },
+        },
+      ],
+    });
+    expect(reopened.items[0]).toMatchObject({ kind: 'tool', copy: 'live' });
   });
 });

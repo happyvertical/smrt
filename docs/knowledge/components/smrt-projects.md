@@ -5,7 +5,7 @@ description: "Provider-agnostic project management models (Issues, PRs, Reposito
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-13T15:23:14Z"
+  at: "2026-11-13T18:17:17Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:3fbccdfba8d53cc2f5ec2581d00cb575278cc3e5e8432f811ad433a528147f06"

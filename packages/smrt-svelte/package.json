@@ -183,6 +183,33 @@
       "svelte": "./dist/mcp-apps/index.js",
       "import": "./dist/mcp-apps/index.js",
       "default": "./dist/mcp-apps/index.js"
+    },
+    "./connect-ai": {
+      "types": "./dist/components/connect-ai/index.d.ts",
+      "svelte": "./dist/components/connect-ai/index.js",
+      "import": "./dist/components/connect-ai/index.js",
+      "default": "./dist/components/connect-ai/index.js"
+    },
+    "./connect-ai/server": {
+      "types": "./dist/components/connect-ai/server.d.ts",
+      "import": "./dist/components/connect-ai/server.js",
+      "default": "./dist/components/connect-ai/server.js"
+    },
+    "./cookbook/surfaces": {
+      "types": "./dist/components/cookbook/surfaces.d.ts",
+      "import": "./dist/components/cookbook/surfaces.js",
+      "default": "./dist/components/cookbook/surfaces.js"
+    },
+    "./connect-ai/client": {
+      "types": "./dist/components/connect-ai/client.d.ts",
+      "import": "./dist/components/connect-ai/client.js",
+      "default": "./dist/components/connect-ai/client.js"
+    },
+    "./onboarding": {
+      "types": "./dist/components/onboarding/index.d.ts",
+      "svelte": "./dist/components/onboarding/index.js",
+      "import": "./dist/components/onboarding/index.js",
+      "default": "./dist/components/onboarding/index.js"
     }
   },
   "files": [
@@ -228,6 +255,8 @@
   },
   "dependencies": {
     "@happyvertical/logger": "catalog:",
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-fields": "workspace:*",
     "@happyvertical/smrt-languages": "workspace:*",
     "@happyvertical/smrt-mcp-apps": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
@@ -235,7 +264,9 @@
     "@happyvertical/smrt-web": "workspace:*",
     "@tanstack/db": "^1.0.0-rc.1",
     "@tanstack/svelte-db": "^1.0.0-rc.1",
-    "esm-env": "^1.2.2"
+    "esm-env": "^1.2.2",
+    "@happyvertical/smrt-chat": "workspace:*",
+    "@happyvertical/smrt-inference": "workspace:*"
   },
   "peerDependencies": {
     "@happyvertical/speech": ">=0.102.5",
@@ -268,9 +299,7 @@
   },
   "devDependencies": {
     "@happyvertical/smrt-agents": "workspace:*",
-    "@happyvertical/smrt-chat": "workspace:*",
     "@happyvertical/smrt-content": "workspace:*",
-    "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-reports": "workspace:*",
     "@happyvertical/smrt-scanner": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",

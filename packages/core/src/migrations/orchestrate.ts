@@ -86,6 +86,12 @@ export function collectRelaxedColumns(
 
 export interface MigrateSmrtSchemasOptions {
   db: DatabaseInterface;
+  /**
+   * Accepted for callers written before #4927. Every run is one atomic batch
+   * (tracked DDL and its marker together, safe inside a caller-owned
+   * transaction); `false` does not turn that off.
+   */
+  atomic?: boolean;
   /** Stored on the migration record so the audit log shows which app applied it. */
   packageName: string;
   /**
@@ -146,6 +152,10 @@ export interface MigrateSmrtSchemasOptions {
   relaxColumns?: boolean;
   /** Exact package removals explicitly confirmed by the caller. */
   confirmRemovedPackages?: string[];
+  /** Opt-in physical-table subset, including its FK closure. Omitted keeps eager behavior. */
+  tables?: Iterable<string>;
+  /** Refuse the entire plan before executing DDL when manual drift remains. */
+  requireComplete?: boolean;
 }
 
 export interface MigrateSmrtSchemasResult
@@ -251,9 +261,12 @@ export async function getPendingSchemaStatements(
     emptyTextAsNull?: boolean;
     /** Explicitly allow relaxing live column constraints. */
     relaxColumns?: boolean;
+    tables?: Iterable<string>;
   } = {},
 ): Promise<PendingSchemaStatementsResult> {
-  const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
+  const schemas = ObjectRegistry.getAllSchemasAsDefinitions(
+    options.tables ? { tables: options.tables } : undefined,
+  );
   // Forward engineHint into the diff itself so the SchemaComparer's
   // existing-table SQL (ALTER/index drift) uses the same DDL strategy
   // we use for newly-added tables — otherwise the two halves of the
@@ -323,8 +336,18 @@ export async function migrateSmrtSchemas(
     postgresTimestampMigration: options.postgresTimestampMigration,
     emptyTextAsNull: options.emptyTextAsNull,
     relaxColumns: options.relaxColumns,
+    tables: options.tables,
   });
-  const recordInput = collectMigrateRecordInput();
+  if (options.requireComplete && pending.hasManualDrift) {
+    throw new Error('SMRT activation requires a manual schema migration');
+  }
+  // A run limited to `tables` (lazy activation, run-time model edits) migrates
+  // part of the schema, not the build: it does not compare the build's
+  // packages and writes no last-migrate record, so it can neither stop on a
+  // package it was never meant to load nor vouch for tables it did not touch
+  // (#4926, #4928, #4929). Its own changes are still all or nothing.
+  const partial = options.tables !== undefined;
+  const recordInput = partial ? undefined : collectMigrateRecordInput();
   const last = await readLastMigrateRecord(options.db, {
     engineHint: options.engineHint,
   });
@@ -333,11 +356,13 @@ export async function migrateSmrtSchemas(
     addedTables: pending.diff.added_tables,
     engine: resolveMigrationEngine(options.db, options.engineHint),
     recordedRelease: last.state === 'recorded' ? last.record.release : null,
-    packagesSeen: packagesSeenInput(
-      recordInput,
-      last,
-      options.confirmRemovedPackages ?? [],
-    ),
+    packagesSeen: recordInput
+      ? packagesSeenInput(
+          recordInput,
+          last,
+          options.confirmRemovedPackages ?? [],
+        )
+      : undefined,
   });
   const { stops, heldBack, proceed, packageStops, releaseStop, notices } =
     decision;
@@ -360,7 +385,7 @@ export async function migrateSmrtSchemas(
     };
   }
   if (!pending.hasChanges || pending.statements.length === 0) {
-    if (!pending.hasManualDrift) {
+    if (recordInput && !pending.hasManualDrift) {
       await recordSuccessfulMigrate(options.db, {
         input: recordInput,
         engineHint: options.engineHint,
@@ -402,6 +427,8 @@ export async function migrateSmrtSchemas(
   );
 
   const results = await tracker.applyAll([migration], {
+    // Always one atomic batch (#4927). `options.atomic` is kept for callers
+    // that already pass `true`; it cannot turn atomic apply off.
     atomic: true,
     postgresSafe: options.postgresSafe ?? true,
     reconcile: options.reconcile ?? true,
@@ -414,7 +441,7 @@ export async function migrateSmrtSchemas(
       : new Error(String(failed.error ?? `Migration ${failed.name} failed`));
   }
 
-  if (!pending.hasManualDrift) {
+  if (recordInput && !pending.hasManualDrift) {
     await recordSuccessfulMigrate(options.db, {
       input: recordInput,
       engineHint: options.engineHint,

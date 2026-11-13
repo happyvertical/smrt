@@ -104,7 +104,7 @@ describe('Issue #1540 (2b): writable-field allowlist on generated routes', () =>
       'const body: unknown = await request.json();',
     );
     expect(collectionRoute).toContain(
-      'const data = applyWritablePolicy(body);',
+      'const data = applyWritablePolicy(target.data, target.collectionName',
     );
     expect(itemRoute).toContain('const body: unknown = await request.json();');
     expect(itemRoute).toContain('const data = applyWritablePolicy(body);');

@@ -186,6 +186,10 @@ export function buildCommandTools(catalog: EngineCatalog): CommandTool[] {
             description: 'A different label.',
             maxLength: 120,
           },
+          readOnly: {
+            type: ['boolean', 'null'],
+            description: 'Prevent editing the record value; null inherits.',
+          },
           help: {
             type: ['string', 'null'],
             description: 'Help text under the field.',

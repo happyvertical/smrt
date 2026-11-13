@@ -186,3 +186,41 @@ fixed USD, not the record's `currency`. The line-item FKs
 `FulfillmentLineItem.fulfillmentId`) carry `role: 'items'`, so record pages
 render them as a line-items table with a totals block;
 `src/__tests__/money-hints-manifest.test.ts` pins both.
+
+
+## Customer display name through Profile (B1b)
+
+Customer declares `display.label: { via: 'profileId', field: 'name', fallback:
+'Unnamed customer' }`. The profiles package owns the human name; commerce does
+not copy it. Core's scoped one-hop display projection supplies `displayLabel`
+on collection and REST list/get DTOs and emits it as the web definition's
+read-only `displayLabelField`. Screens' existing reference source searches,
+sorts and resolves Customers through that definition, without requiring a
+separate exposed Profile endpoint. A missing/invisible Profile returns
+`Unnamed customer`, never its id or the word Profile. See
+[core collection reads](../../core/agents/collection-reads.md#linked-display-names).
+
+`src/__tests__/customer-display-projection.test.ts` exercises the actual
+Customer/Profile models on SQLite with tenancy enabled, generated REST,
+manifest-derived definitions, and `createRecipeScreenReferences`; it checks
+name search/sort, get labels, fallback, rename freshness, and one joined SELECT
+per reference-search page.
+
+## Inline Customer contact fields
+
+Ordinary `CustomerCollection.create({ name, email, phone })` and
+`update(id, { name, email, phone })` use core's declared
+[write-through lifecycle](../../core/agents/write-through.md). The name/email live
+on the linked Profile; phone uses Profile metadata. The Customer and contact save
+atomically under the same tenant. For an existing contact, provide `profileId`
+without inline edits. Shared cookbook forms expose the same fields at the top,
+with the existing picker available under Advanced. No separate Profile screen is
+needed. This does not replace the server's authenticated principal or the
+existing contacts/address adapters described above.
+
+Blank or whitespace-only inline phone values mean no phone: create skips
+metadata, and edit removes an existing phone with `Profile.removeMetadata()`.
+Both operations stay in the parent write-through transaction. Profile metadata
+values remain required; never save an empty metadata row for an optional form
+control. The regression includes name/email-only onboarding creates and a
+phone-removal rollback when saving the Customer fails.

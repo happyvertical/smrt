@@ -142,6 +142,11 @@ export default defineConfig({
         find: /^@happyvertical\/smrt-ui\/i18n$/,
         replacement: resolve(__dirname, '../../smrt-ui/src/i18n/index.ts'),
       },
+      {
+        // These dependency-free browser entries are also consumed from source.
+        find: /^@happyvertical\/smrt-web\/(ai|webmcp-tool-names|webmcp-page-tools)$/,
+        replacement: resolve(__dirname, '../../smrt-web/src/$1.ts'),
+      },
     ],
   },
   plugins: [smrtPlaygroundVitePlugin({ mode: 'workspace' }), sveltekit()],

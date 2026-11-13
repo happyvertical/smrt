@@ -97,8 +97,8 @@ declare global {
  * @see https://github.com/happyvertical/smrt/issues/782
  */
 export const VERBOSE_ENABLED =
-  process.env.SMRT_VERBOSE === 'true' ||
-  (process.env.DEBUG?.includes('smrt') ?? false);
+  globalThis.process?.env?.SMRT_VERBOSE === 'true' ||
+  (globalThis.process?.env?.DEBUG?.includes('smrt') ?? false);
 
 // verboseLog() is gated by VERBOSE_ENABLED, so the level must allow debug when
 // it's set (a fixed 'info' would filter the trace out and break SMRT_VERBOSE).

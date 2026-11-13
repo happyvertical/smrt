@@ -18,8 +18,10 @@
   // can't match (the template's own tsconfig.json extends the `.svelte-kit/`
   // stub and is not what gets discovered for files imported from tests).
   "include": [
+    "host/**/*.ts",
     "__tests__/**/*.ts",
     "fixtures/**/*.ts",
+    "examples/**/*.ts",
     "template/src/**/*.ts"
   ]
 }

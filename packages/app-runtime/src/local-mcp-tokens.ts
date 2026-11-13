@@ -144,6 +144,9 @@ export interface LocalMcpTokenPrincipal {
   /** Frozen: token scopes ∩ live permissions at verification. */
   readonly scopes: readonly string[];
   readonly tenantBinding: 'direct';
+  /** Secret-free credential provenance; label is chosen by the owner on issue. */
+  readonly clientName?: string;
+  readonly tokenId?: string;
   /** @internal Token provenance brand; see {@link LOCAL_MCP_TOKEN_PRINCIPAL}. */
   readonly [LOCAL_MCP_TOKEN_PRINCIPAL]: true;
 }
@@ -176,8 +179,15 @@ export interface LocalMcpDesktopOwnerSession {
 
 /** Owner-scoped local MCP token operations. */
 export interface LocalMcpTokenStore {
+  /** Read-only check for the exact sole active local owner, not any tenant owner. */
+  isOwnerSession?(
+    session: Pick<LocalMcpDesktopOwnerSession, 'userId' | 'tenantId'>,
+  ): Promise<boolean>;
   /** Mint a token bound to the local owner's user and tenant. */
-  issue(input: IssueLocalMcpTokenInput): Promise<IssuedLocalMcpToken>;
+  issue(
+    input: IssueLocalMcpTokenInput,
+    ownerSession?: Pick<LocalMcpDesktopOwnerSession, 'userId' | 'tenantId'>,
+  ): Promise<IssuedLocalMcpToken>;
   /** Manage one desktop slot as the sole active local owner. */
   manageDesktopCredential?(
     session: LocalMcpDesktopOwnerSession,
@@ -366,8 +376,24 @@ export function createLocalMcpTokenStore(
     }
   };
 
+  const resolveOwnerSession = async ({
+    userId,
+    tenantId,
+  }: Pick<LocalMcpDesktopOwnerSession, 'userId' | 'tenantId'>) => {
+    const owner = await deps.findOwner(db, true);
+    if (!owner || owner.userId !== userId || owner.tenantId !== tenantId)
+      return null;
+    const users = await UserCollection.create({ db });
+    const user = await users.get({ id: owner.userId });
+    const held = await livePermissions(owner.userId, owner.tenantId);
+    return user?.isActive() && held ? { owner, held } : null;
+  };
+
   return Object.freeze<LocalMcpTokenStore>({
-    async issue(input: IssueLocalMcpTokenInput): Promise<IssuedLocalMcpToken> {
+    async isOwnerSession(session) {
+      return (await resolveOwnerSession(session)) !== null;
+    },
+    async issue(input, ownerSession): Promise<IssuedLocalMcpToken> {
       // Own plain data only: inherited or poisoned fields never set scopes,
       // lifetime or label.
       let fields: object;
@@ -407,14 +433,20 @@ export function createLocalMcpTokenStore(
         'holder',
         fail,
       );
-      const owner = await deps.findOwner(db);
+      const binding = ownerSession
+        ? await resolveOwnerSession(ownerSession)
+        : null;
+      if (ownerSession && !binding)
+        throw fail('owner_unavailable', 'The local owner session is required.');
+      const owner = binding?.owner ?? (await deps.findOwner(db));
       if (!owner) {
         throw fail(
           'owner_unavailable',
           'No local owner exists yet; finish owner setup before issuing MCP tokens.',
         );
       }
-      const held = await livePermissions(owner.userId, owner.tenantId);
+      const held =
+        binding?.held ?? (await livePermissions(owner.userId, owner.tenantId));
       const missing = scopes.filter((scope) => !held?.has(scope));
       if (missing.length > 0) {
         throw fail(
@@ -499,16 +531,11 @@ export function createLocalMcpTokenStore(
       const id = `${request.id.slice(0, 14)}8${request.id.slice(15)}`;
       const { userId, tenantId, permissions } = session;
       const allowed = new Set(permissions);
-      const owner = await deps.findOwner(db, true);
-      if (!owner || owner.userId !== userId || owner.tenantId !== tenantId) {
+      const binding = await resolveOwnerSession({ userId, tenantId });
+      if (!binding) {
         throw fail('owner_unavailable', 'The local owner session is required.');
       }
-      const users = await UserCollection.create({ db });
-      const user = await users.get({ id: owner.userId });
-      const held = await livePermissions(owner.userId, owner.tenantId);
-      if (!user?.isActive() || !held) {
-        throw fail('owner_unavailable', 'The local owner session is required.');
-      }
+      const { owner, held } = binding;
 
       const created = now();
       const createdAt = created.toISOString();
@@ -661,7 +688,7 @@ export function createLocalMcpTokenStore(
       // Reject garbage before any secret read or database access.
       if (typeof token !== 'string' || !TOKEN_PATTERN.test(token)) return null;
       const result = await db.query(
-        `SELECT id, user_id, tenant_id, scopes, sliding, expires_at,
+        `SELECT id, user_id, tenant_id, scopes, label, sliding, expires_at,
                 last_used_at, revoked_at
          FROM ${LOCAL_MCP_TOKEN_TABLE}
          WHERE token_hash = ?
@@ -692,7 +719,7 @@ export function createLocalMcpTokenStore(
       const held = await livePermissions(userId, tenantId);
       if (!held) return null;
       if (isRenewable(row)) await slideExpiry(String(row.id), row);
-      return Object.freeze({
+      const principal = {
         id: userId,
         tenantId,
         kind: 'human' as const,
@@ -700,7 +727,17 @@ export function createLocalMcpTokenStore(
         scopes: Object.freeze(scopes.filter((scope) => held.has(scope))),
         tenantBinding: 'direct' as const,
         [LOCAL_MCP_TOKEN_PRINCIPAL]: true as const,
-      });
+      };
+      // Provenance is readable by the trusted host without changing the
+      // serialized principal contract or being copied into permission inputs.
+      return Object.freeze(
+        Object.defineProperties(principal, {
+          tokenId: { value: String(row.id) },
+          clientName: {
+            value: typeof row.label === 'string' ? row.label : undefined,
+          },
+        }),
+      );
     },
   });
 }

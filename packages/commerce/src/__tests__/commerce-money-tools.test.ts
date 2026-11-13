@@ -1,4 +1,5 @@
 import type { PrincipalRun, PrincipalTool } from '@happyvertical/smrt-agents';
+import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import {
   disableTenancy,
   enableTenancy,
@@ -190,6 +191,10 @@ beforeEach(async () => {
     ],
   });
   db = isolated.db as unknown as DatabaseInterface;
+  await getTestDatabase({
+    db,
+    classes: ['@happyvertical/smrt-profiles:Profile'],
+  });
   enableTenancy();
   await activateV2(TENANT_A);
 }, 120_000);

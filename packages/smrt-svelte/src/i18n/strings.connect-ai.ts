@@ -1,0 +1,74 @@
+import { defineMessages } from '@happyvertical/smrt-ui/i18n';
+
+export const M = defineMessages({
+  'ui.connect_ai.tool_host_policy':
+    'This Codex version cannot start the app tool host. Update Codex, then check again.',
+  'ui.connect_ai.unusable': 'Installed, but not usable in this app.',
+  'ui.connect_ai.working_directory':
+    'The local AI needs a writable temporary directory. Check the app permissions, then retry.',
+  'ui.connect_ai.runtime_unavailable':
+    'The local AI cannot start in this app. Check its executable and Node installation, then retry.',
+  'ui.connect_ai.cli_invocation':
+    'The local AI does not accept the required secure options. Update the CLI, then retry.',
+  'ui.connect_ai.title': 'Connect AI',
+  'ui.connect_ai.compact_loading':
+    'Looking for the AI you can use on this computer…',
+  'ui.connect_ai.model': 'Model',
+  'ui.connect_ai.compact_sign_out': 'Sign out',
+  'ui.connect_ai.compact_api_saved':
+    "An API key (saved here, or found in this computer's settings).",
+  'ui.connect_ai.compact_api_available': 'You also have an API key available.',
+  'ui.connect_ai.compact_legal_before':
+    "Claude Code runs the app you already have installed, signed in the way its maker requires. Sign in with ChatGPT uses OpenAI's own sign-in page, a",
+  'ui.connect_ai.compact_preview': 'preview for open source apps',
+  'ui.connect_ai.compact_legal_after':
+    '. Either bills your own account, and this app never sees your password.',
+  'ui.connect_ai.compact_advanced':
+    'Advanced: use an API key or another provider',
+  'ui.connect_ai.compact_install_context': 'for {tool} (opens in a new tab)',
+  'ui.connect_ai.loading': 'Checking the AI available on this computer…',
+  'ui.connect_ai.options': 'Your AI',
+  'ui.connect_ai.missing': 'Not installed on this computer.',
+  'ui.connect_ai.signed_out': 'Installed, not signed in.',
+  'ui.connect_ai.signed_in': 'Ready in this app.',
+  'ui.connect_ai.ready_version': 'Ready in this app, version {version}.',
+  'ui.connect_ai.unknown': 'Installed, but it did not answer.',
+  'ui.connect_ai.install': 'How to install {tool}',
+  'ui.connect_ai.use': 'Use my {tool}',
+  'ui.connect_ai.sign_in': 'Sign in with {tool}',
+  'ui.connect_ai.waiting': 'Waiting for sign-in…',
+  'ui.connect_ai.in_use': 'In use',
+  'ui.connect_ai.retry': 'Check again',
+  'ui.connect_ai.api': 'API key',
+  'ui.connect_ai.api_saved': 'An API key is configured.',
+  'ui.connect_ai.api_missing': 'Save a key in AI settings.',
+  'ui.connect_ai.save_key': 'Save an API key',
+  'ui.connect_ai.use_key': 'Use my API key',
+  'ui.connect_ai.recommended_model': 'Recommended model',
+  'ui.connect_ai.chatgpt': 'ChatGPT',
+  'ui.connect_ai.claude': 'Claude Code',
+  'ui.connect_ai.codex': 'Codex',
+  'ui.connect_ai.chatgpt_recommended':
+    'Recommended for using your OpenAI plan: sign in with ChatGPT.',
+  'ui.connect_ai.codex_description':
+    'An alternative if you already use the Codex CLI.',
+  'ui.connect_ai.chatgpt_description':
+    'Use your own ChatGPT plan. A preview for local open source apps.',
+  'ui.connect_ai.chatgpt_signed_in': 'Signed in.',
+  'ui.connect_ai.sign_out': 'Sign out of ChatGPT',
+  'ui.connect_ai.expiry': 'This sign-in link expires in ten minutes.',
+  'ui.connect_ai.cancel_sign_in': 'Cancel sign-in',
+  'ui.connect_ai.cancel_unavailable':
+    'This version cannot cancel sign-in yet. Close the sign-in page and let the link expire, or finish signing in.',
+  'ui.connect_ai.open_sign_in': 'Open the ChatGPT sign-in page',
+  'ui.connect_ai.new_tab': '(opens in a new tab)',
+  'ui.connect_ai.error':
+    'Could not connect AI. Check your connection and try again.',
+  'ui.connect_ai.sign_in_error': 'Sign-in did not finish. Try again.',
+  'ui.connect_ai.ready': 'The assistant is ready.',
+  'ui.connect_ai.not_ready': 'Nothing connected yet.',
+  'ui.connect_ai.legal':
+    'Claude Code and Codex use your own installed CLI and its vendor sign-in, billed to your account. In-app Claude subscription login is not offered; this app does not collect or proxy CLI credentials.',
+  'ui.connect_ai.preview':
+    'Sign in with ChatGPT uses OpenAI’s own sign-in page. Preview limitations apply.',
+});

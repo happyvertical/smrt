@@ -35,6 +35,7 @@ export default defineConfig({
     },
   },
   test: {
+    globalSetup: ['../vitest/src/test-home.global-setup.ts'],
     // Include all test file types.
     //
     // `test:postgres` runs this same config with the positional filter

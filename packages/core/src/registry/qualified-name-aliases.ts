@@ -35,6 +35,7 @@ import {
 import { recordRegistryDiagnostic } from './diagnostics';
 import { getRegistryGeneration } from './generation';
 import { getClasses } from './shared-state';
+import { findReplacement, replacedDeclarations } from './subtype-lineage';
 import type { RegisteredClass } from './types';
 
 export {
@@ -111,8 +112,9 @@ function getAliasIndex(): Map<string, RegisteredClass> {
   }
 
   const byAlias = new Map<string, RegisteredClass>();
-  for (const [key, entry] of classes) {
-    for (const alias of readPreviousQualifiedNames(entry.config)) {
+  for (const [key, declaration] of [...replacedDeclarations(), ...classes]) {
+    const entry = findReplacement(key) ?? declaration;
+    for (const alias of readPreviousQualifiedNames(declaration.config)) {
       // A live class always wins over an alias (registration refuses the
       // collision; this guards registries assembled before that check ran).
       if (classes.has(alias)) continue;
@@ -261,6 +263,22 @@ export function assertQualifiedNameAliasesAvailable(
   }
 
   const classes = getClasses();
+  if (seen.size === 0) {
+    // The overwhelmingly common case has no aliases on either side. Inspect
+    // values without allocating a key/value tuple and identity arrays for every
+    // class at every registration. An existing declaration still takes the
+    // complete collision path below, including source-only identities.
+    let existingAliases = false;
+    for (const other of classes.values()) {
+      if (other === replacing || sameClass(other, entry)) continue;
+      const previous = other.config?.previousQualifiedNames;
+      if (Array.isArray(previous) && previous.length > 0) {
+        existingAliases = true;
+        break;
+      }
+    }
+    if (!existingAliases) return;
+  }
   // Identities a registration answers to: its qualified name, its key, and
   // `<packageName>:<name>` (a source registration can sit under a simple key
   // before its qualified promotion).
@@ -274,7 +292,7 @@ export function assertQualifiedNameAliasesAvailable(
   for (const [key, other] of classes) {
     if (other === replacing || sameClass(other, entry)) continue;
     const otherName = ownName(other, key);
-    for (const identity of identities(other, key)) {
+    for (const identity of seen.size > 0 ? identities(other, key) : []) {
       if (seen.has(identity)) {
         throw collision(
           `${self} declares previousQualifiedNames "${identity}", but "${identity}" is a live registered class. ` +
@@ -283,6 +301,7 @@ export function assertQualifiedNameAliasesAvailable(
         );
       }
     }
+    if (other.config?.previousQualifiedNames === undefined) continue;
     const otherAliases = readPreviousQualifiedNames(other.config);
     if (otherAliases.length === 0) continue;
     for (const alias of otherAliases) {

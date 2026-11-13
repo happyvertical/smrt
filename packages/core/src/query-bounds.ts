@@ -233,3 +233,31 @@ export const DEFAULT_LIST_ORDER_BY: readonly string[] = [
 export function buildDefaultListOrderBy(primaryKeyField = 'id'): string[] {
   return ['created_at DESC', `${primaryKeyField} ASC`];
 }
+
+/** REST bracket operators shared by runtime and generated list routes. */
+export function parseRestListWhere(
+  params: URLSearchParams,
+): Record<string, string | string[]> {
+  const where: Record<string, string | string[]> = {};
+  const operators: Record<string, string> = {
+    gt: '>',
+    gte: '>=',
+    lt: '<',
+    lte: '<=',
+    ne: '!=',
+    in: 'in',
+    like: 'like',
+  };
+  for (const [key, value] of params.entries()) {
+    if (['limit', 'offset', 'orderBy'].includes(key)) continue;
+    const match = key.match(/^(.+)\[(.+)\]$/);
+    if (match) {
+      const [, field, operator] = match;
+      where[`${field} ${operators[operator] || operator}`] =
+        operator === 'in' ? value.split(',') : value;
+    } else {
+      where[key] = value;
+    }
+  }
+  return where;
+}

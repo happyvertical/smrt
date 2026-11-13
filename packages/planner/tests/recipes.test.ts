@@ -137,10 +137,11 @@ describe('recipe resolution', () => {
     expect(withRequirements(['commerce.sales'], recipesById)).toEqual([
       'commerce.customers',
       'commerce.sales',
+      'profiles.identity',
     ]);
     expect(
       withRequirements(['commerce.purchases', 'commerce.vendors'], recipesById),
-    ).toEqual(['commerce.purchases', 'commerce.vendors']);
+    ).toEqual(['commerce.purchases', 'commerce.vendors', 'profiles.identity']);
     expect(withRequirements(['nope'], recipesById)).toEqual([]);
   });
 
@@ -417,7 +418,11 @@ describe('recipe state', () => {
 
   it('adding Sales adds Customers, and Customers cannot then be removed', () => {
     recipeState.add('commerce.sales');
-    expect(recipeState.ids).toEqual(['commerce.customers', 'commerce.sales']);
+    expect(recipeState.ids).toEqual([
+      'commerce.customers',
+      'commerce.sales',
+      'profiles.identity',
+    ]);
     expect(recipeState.requiredBy('commerce.customers')).toEqual([
       'commerce.sales',
     ]);
@@ -425,6 +430,8 @@ describe('recipe state', () => {
     expect(recipeState.has('commerce.customers')).toBe(true);
     recipeState.remove('commerce.sales');
     recipeState.remove('commerce.customers');
+    expect(recipeState.ids).toEqual(['profiles.identity']);
+    recipeState.remove('profiles.identity');
     expect(recipeState.ids).toEqual([]);
   });
 

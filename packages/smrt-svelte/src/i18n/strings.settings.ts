@@ -1,6 +1,8 @@
 import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
+  'ui.settings.owner_approvals': 'Approvals',
+  'ui.settings.owner_approvals_empty': 'No changes are waiting for approval.',
   'ui.settings_catalog.search': 'Search settings',
   'ui.settings_catalog.search_action': 'Search',
   'ui.settings_catalog.results': 'Settings results',

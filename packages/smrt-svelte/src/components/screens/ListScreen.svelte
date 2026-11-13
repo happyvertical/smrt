@@ -5,7 +5,7 @@
  *
  * Columns are the policy's basic-tier scalar fields in policy order (override
  * with `columns`). Hidden fields, fields outside the policy, and long text /
- * JSON / raw reference columns never appear by default. The screen is
+ * JSON columns never appear by default. The screen is
  * transport-neutral: the caller supplies `rows` and handles `onselect`,
  * `oncreate` and `onretry`.
  */
@@ -16,11 +16,14 @@ import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { EmptyState, PageHeader } from '@happyvertical/smrt-ui/layout';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n/strings.screens.js';
+import { tryGetCookbookContext } from '../cookbook/context.js';
 import {
   deriveScreenFields,
   screenSourceError,
   screenTitles,
 } from './fields.js';
+import { useScreenReferenceLabels } from './reference-labels.svelte.js';
+import { screenReferenceId } from './references.js';
 import type {
   ListScreenProps,
   ScreenCollectionDefinition,
@@ -30,8 +33,9 @@ import type {
 import { compareScreenValues, formatScreenValue } from './values.js';
 
 let {
-  definition,
-  policy = null,
+  definition: suppliedDefinition,
+  references = {},
+  policy: suppliedPolicy,
   rows,
   title,
   description,
@@ -50,6 +54,16 @@ let {
   extraActions,
 }: ListScreenProps = $props();
 
+const cookbookContext = tryGetCookbookContext();
+const definition = $derived(
+  cookbookContext?.screenDefinition?.(suppliedDefinition) ?? suppliedDefinition,
+);
+const policy = $derived(
+  suppliedPolicy ??
+    cookbookContext?.fieldPolicy?.(definition) ??
+    cookbookContext?.fieldPolicies?.[definition.objectRef] ??
+    null,
+);
 const { t } = useI18n();
 
 const titles = $derived(screenTitles(definition));
@@ -67,6 +81,13 @@ const fields = $derived(
       }),
 );
 
+const referenceNames = useScreenReferenceLabels(() => ({
+  definition,
+  fields,
+  rows,
+  references,
+}));
+
 type DisplayRow = Record<string, unknown> & { __raw: ScreenRecord };
 
 const formatContext = $derived({
@@ -80,11 +101,12 @@ const displayRows = $derived<DisplayRow[]>(
   rows.map((row) => {
     const display: DisplayRow = { __raw: row };
     for (const field of fields) {
-      display[field.name] = formatScreenValue(
-        field,
-        row[field.name],
-        formatContext,
-      );
+      const id = screenReferenceId(row[field.name]);
+      display[field.name] =
+        field.kind === 'reference' && id
+          ? (referenceNames.label(field, id) ??
+            t(M['ui.screens.reference_unavailable']))
+          : formatScreenValue(field, row[field.name], formatContext);
     }
     return display;
   }),
@@ -103,7 +125,11 @@ const tableColumns = $derived<DataTableColumn<DisplayRow>[]>(
         ? ('right' as const)
         : ('left' as const),
     sortFn: (a, b, direction) =>
-      compareScreenValues(a.__raw[field.name], b.__raw[field.name], direction),
+      compareScreenValues(
+        field.kind === 'reference' ? a[field.name] : a.__raw[field.name],
+        field.kind === 'reference' ? b[field.name] : b.__raw[field.name],
+        direction,
+      ),
   })),
 );
 

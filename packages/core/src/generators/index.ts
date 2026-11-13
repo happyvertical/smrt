@@ -117,6 +117,7 @@ export {
   createRestServer,
   startRestServer,
 } from './rest';
+export { reportUnexpectedHttpError } from './route-error';
 export type { OpenAPIConfig } from './swagger';
 // Swagger/OpenAPI documentation utilities
 export {

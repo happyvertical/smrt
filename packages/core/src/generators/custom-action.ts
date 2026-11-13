@@ -110,6 +110,7 @@ export const FRAMEWORK_LIFECYCLE_METHOD_NAMES: ReadonlySet<string> = new Set([
   'loadFromId',
   'loadFromSlug',
   'markAsPersisted',
+  'hydrateWriteThrough',
   'requireInsertOnSave',
   'withTransaction',
   // `evaluate()` is a framework decision-provider operation. Unlike the

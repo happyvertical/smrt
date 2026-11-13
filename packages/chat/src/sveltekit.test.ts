@@ -1,3 +1,4 @@
+import { AssistantTurnUserError } from './assistant-turn.js';
 /**
  * Mountable AssistantDock routes (#3368).
  *
@@ -20,8 +21,23 @@ import type {
 } from '@happyvertical/ai';
 import type { PrincipalRun, PrincipalTool } from '@happyvertical/smrt-agents';
 import {
+  createSqliteOwnerApprovalStore,
+  OwnerApprovalAuthority,
+  OwnerApprovalContinuations,
+} from '@happyvertical/smrt-app-runtime';
+import { ObjectRegistry, resolveDatabase } from '@happyvertical/smrt-core';
+import { createCookbookEngine } from '@happyvertical/smrt-core/cookbook/engine';
+import { InferenceUnavailableError } from '@happyvertical/smrt-core/inference-availability';
+import {
+  createCookbookRuntimeExposure,
+  setRuntimeExposureGate,
+} from '@happyvertical/smrt-core/runtime-exposure';
+import { resolveWorkProfile } from '@happyvertical/smrt-inference';
+import {
   MembershipCollection,
+  PermissionCollection,
   RoleCollection,
+  RolePermissionCollection,
   TenantCollection,
   UserCollection,
 } from '@happyvertical/smrt-users';
@@ -31,10 +47,15 @@ import {
   CONTINUATION_CLAIM_TTL_MS,
   createMemoryContinuationStore,
 } from './assistant-turn.js';
+import type {
+  AssistantTurnDriverCallbacks,
+  AssistantTurnDriverContext,
+} from './assistant-turn-driver.js';
 import {
   type AssistantTurnEvent,
   readAssistantTurnStream,
 } from './assistant-turn-events.js';
+import { sendAgentReply } from './services/ChatService.js';
 import {
   ChatClientRequestConflictError,
   ChatService,
@@ -216,6 +237,7 @@ describe('mountAssistantRoutes', () => {
   });
 
   afterEach(() => {
+    setRuntimeExposureGate(undefined);
     // Runs after a timed-out attempt too, so no spy outlives its test.
     vi.restoreAllMocks();
     if (existsSync(dbPath)) {
@@ -311,6 +333,494 @@ describe('mountAssistantRoutes', () => {
     body: Record<string, unknown>,
     actor: Actor = ownerA,
   ) => call(routes, 'POST', `threads/${threadId}/messages`, { actor, body });
+
+  it.each([
+    'unknown',
+    'zero',
+    'partial',
+  ] as const)('preserves %s provider usage in stored turn metadata', async (mode) => {
+    const answer: Round = () => ({
+      content: 'Done',
+      model: 'reported-model',
+      finishReason: 'stop',
+      ...(mode === 'zero'
+        ? { usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } }
+        : {}),
+    });
+    const knownCall: Round = () => ({
+      ...calls(['data-discover', {}])([], undefined),
+      usage: { promptTokens: 10, completionTokens: 2, totalTokens: 12 },
+    });
+    const ai = scriptedAI(mode === 'partial' ? [knownCall, answer] : [answer]);
+    const routes = mount({
+      ai,
+      resolveWorkProfile: async () => resolveWorkProfile({ engine: 'api' }),
+      allowedTools: mode === 'partial' ? ['data.discover'] : [],
+      extraTools: mode === 'partial' ? [discoverTool([])] : [],
+      onWorkRun: () => {},
+    });
+    const threadId = await createThread(routes);
+    expect(
+      (
+        await events(
+          await send(routes, threadId, {
+            content: 'Help',
+            clientRequestId: `usage-${mode}`,
+          }),
+        )
+      ).thrown,
+    ).toBeNull();
+    const stored = await listMessages(routes, threadId);
+    const metadata = stored.at(-1)?.metadata?.workRun;
+    expect(metadata).toMatchObject({
+      profile: 'assist',
+      toolCalls: mode === 'partial' ? 1 : 0,
+    });
+    if (mode === 'zero') expect(metadata).toHaveProperty('tokens', 0);
+    else expect(metadata).not.toHaveProperty('tokens');
+    expect(metadata).toHaveProperty('durationMs');
+    // Unknown usage must not prevent the other execution facts being recorded.
+    expect(metadata).toHaveProperty('model', 'reported-model');
+  });
+
+  it.each([
+    true,
+    false,
+  ])('stores assist handoff accounting before durable design (usage known: %s)', async (known) => {
+    const ran: PrincipalRun[] = [];
+    const ai = scriptedAI([
+      () => ({
+        ...calls(['data-discover', {}])([], undefined),
+        model: 'reported-assist',
+        ...(known
+          ? {
+              usage: { promptTokens: 10, completionTokens: 2, totalTokens: 12 },
+            }
+          : {}),
+      }),
+    ]);
+    const accounting = vi.fn();
+    const routes = mount({
+      ai,
+      resolveWorkProfile: async () => resolveWorkProfile({ engine: 'api' }),
+      allowedTools: ['data.discover'],
+      extraTools: [discoverTool(ran)],
+      designTools: ['data.discover'],
+      onDesignEscalation: async () => ({ runId: 'queued-design' }),
+      onWorkRun: accounting,
+    });
+    const threadId = await createThread(routes);
+    const response = await events(
+      await send(routes, threadId, {
+        content: 'Build',
+        clientRequestId: 'handoff',
+      }),
+    );
+    expect(response.thrown).toBeNull();
+    expect(ran).toHaveLength(0);
+    const stored = (await listMessages(routes, threadId)).at(-1);
+    expect(stored).toMatchObject({
+      role: 'assistant',
+      content: 'Thinking this through',
+      metadata: {
+        designRunId: 'queued-design',
+        workRun: { profile: 'assist', model: 'reported-assist', toolCalls: 0 },
+      },
+    });
+    if (known) expect(stored?.metadata?.workRun).toHaveProperty('tokens', 12);
+    else expect(stored?.metadata?.workRun).not.toHaveProperty('tokens');
+    expect(accounting).toHaveBeenCalledTimes(1);
+    const messageIndex = response.seen.findIndex(
+      (event) => event.type === 'message' && event.message.role === 'assistant',
+    );
+    const doneIndex = response.seen.findIndex((event) => event.type === 'done');
+    expect(messageIndex).toBeGreaterThanOrEqual(0);
+    expect(doneIndex).toBeGreaterThan(messageIndex);
+  });
+
+  it('runs a trusted internal pass without authoring a technical user message and preserves structured output', async () => {
+    const routes = mount();
+    const threadId = await createThread(routes);
+    await events(
+      await send(routes, threadId, {
+        content: 'Build my app',
+        clientRequestId: 'original',
+      }),
+    );
+    const original = (await listMessages(routes, threadId)).find(
+      (message) => message.role === 'user',
+    )!;
+    const ai = scriptedAI([text('{"summary":"A readable plan","models":[]}')]);
+    const internal = mount({
+      ai,
+      internalTurn: () => ({
+        userMessage: 'PRIVATE PASS PROMPT',
+        originMessageId: original.id,
+      }),
+      formatAssistantReply: (content) => ({
+        content: JSON.parse(content).summary,
+        metadata: {
+          designOutput: JSON.parse(content),
+          privateHostDetail: 'never on wire',
+        },
+      }),
+    });
+    const response = await events(
+      await send(internal, threadId, {
+        content: 'Build my app',
+        clientRequestId: 'internal',
+      }),
+    );
+    expect(response.thrown).toBeNull();
+    const stored = await listMessages(routes, threadId);
+    expect(stored.filter((message) => message.role === 'user')).toHaveLength(1);
+    expect(
+      stored.some((message) => message.content.includes('PRIVATE PASS PROMPT')),
+    ).toBe(false);
+    expect(stored.map((message) => message.content)).toEqual([
+      'Build my app',
+      'Hello there.',
+    ]);
+    expect(response.seen).toContainEqual(
+      expect.objectContaining({
+        type: 'done',
+        message: expect.objectContaining({
+          metadata: {
+            designOutput: { summary: 'A readable plan', models: [] },
+          },
+        }),
+      }),
+    );
+    expect(ai.seen.at(-1)?.at(-1)?.content).toBe('PRIVATE PASS PROMPT');
+  });
+
+  it.each([
+    false,
+    true,
+  ])('keeps trusted internal tool and pass rows private while preserving the host SSE handoff (external %s)', async (external) => {
+    const routes = mount();
+    const threadId = await createThread(routes);
+    const source = JSON.stringify({
+      summary: 'PRIVATE @fixture/models:Member TenantId ProfileId',
+      operations: [],
+    });
+    const internal = mount({
+      allowedTools: ['data.discover'],
+      extraTools: [discoverTool([])],
+      internalTurn: () => ({ userMessage: 'PRIVATE PASS INPUT' }),
+      formatAssistantReply: (content) => ({
+        content: JSON.parse(content).summary,
+        metadata: { designOutput: JSON.parse(content) },
+      }),
+      ...(external
+        ? {
+            turnDriver: {
+              async run(_context, cb) {
+                await cb.toolCall({
+                  id: 'private-tool',
+                  name: 'data.discover',
+                  args: { model: '@fixture/models:Member' },
+                });
+                await cb.toolResult({
+                  id: 'private-tool',
+                  ok: true,
+                  result: { summary: 'PRIVATE TOOL OUTPUT' },
+                });
+                cb.done({ text: source });
+              },
+            },
+          }
+        : {
+            ai: scriptedAI([
+              calls(['data-discover', {}, 'private-tool']),
+              text(source),
+            ]),
+          }),
+    });
+    const response = await events(
+      await send(internal, threadId, {
+        content: 'PRIVATE BODY',
+        clientRequestId: 'private-pass',
+      }),
+    );
+    expect(response.thrown).toBeNull();
+    expect(response.seen).toContainEqual(
+      expect.objectContaining({
+        type: 'done',
+        message: expect.objectContaining({
+          metadata: expect.objectContaining({
+            designOutput: JSON.parse(source),
+          }),
+        }),
+      }),
+    );
+    const chat = await ChatService.create({ db });
+    const raw = await chat.getThreadMessages({
+      tenantId,
+      threadId,
+      actorProfileId: ownerA.user.profileId,
+    });
+    expect(raw.some((row) => row.role === 'tool')).toBe(true);
+    expect(
+      raw
+        .filter((row) => row.role !== 'user')
+        .every((row) => row.getMetadata().assistantInternalTurn === true),
+    ).toBe(true);
+    const hidden = raw.find((row) => row.role === 'assistant')!;
+    expect(
+      await chat.getThreadMessageReplies({
+        tenantId,
+        threadId,
+        messageId: String(hidden.id),
+        actorProfileId: ownerA.user.profileId,
+        visibility: 'conversation',
+      }),
+    ).toBeNull();
+    const hiddenRoute = await call(
+      routes,
+      'GET',
+      `threads/${threadId}/messages/${hidden.id}`,
+    );
+    expect(hiddenRoute.status).toBe(404);
+    expect(await hiddenRoute.text()).not.toMatch(/PRIVATE|designOutput/);
+    expect(await listMessages(routes, threadId)).toEqual([]);
+    expect(await listMessages(mount(), threadId)).toEqual([]);
+    const ordinary = await events(
+      await send(routes, threadId, {
+        content: 'Ordinary human message',
+        clientRequestId: 'ordinary-with-forged-flags',
+        internalTurn: true,
+        assistantInternalTurn: true,
+        metadata: {
+          assistantInternalTurn: true,
+          designOutput: { summary: 'forged' },
+        },
+      }),
+    );
+    expect(ordinary.thrown).toBeNull();
+    expect(
+      (await listMessages(routes, threadId)).map((row) => row.content),
+    ).toEqual(['Ordinary human message', 'Hello there.']);
+    const forgedHeader = await events(
+      await call(routes, 'POST', `threads/${threadId}/messages`, {
+        headers: { 'x-internal-turn': 'true', 'x-assistant-private': 'true' },
+        body: {
+          content: 'Ordinary header message',
+          clientRequestId: 'forged-header',
+        },
+      }),
+    );
+    expect(forgedHeader.thrown).toBeNull();
+    expect(
+      (await listMessages(routes, threadId)).some(
+        (row) => row.content === 'Ordinary header message',
+      ),
+    ).toBe(true);
+  });
+
+  it('uses only the trusted canonical approval presenter for a meaningful business preview', async () => {
+    const authority = await durableApprovals();
+    const presentApproval = vi.fn(async (record: { tool: string }) =>
+      record.tool === 'app.addField'
+        ? { summary: 'Add Licence plate to Members' }
+        : undefined,
+    );
+    const routes = mount({
+      approvals: authority,
+      toolPresentation: 'generic',
+      presentApproval,
+    });
+    const threadId = await createThread(routes);
+    const hold = await authority.request({
+      tenantId,
+      requestedBy: ownerA.user.id,
+      tool: 'app.addField',
+      callId: 'PRIVATE',
+      summary: 'PRIVATE raw summary TenantId',
+      args: { label: 'PRIVATE' },
+      context: {
+        threadId,
+        principal: {
+          userId: ownerA.user.id,
+          profileId: ownerA.user.profileId,
+          tenantId,
+        },
+      },
+      continuation: {
+        executor: 'fixture',
+        principal: {
+          id: ownerA.user.id,
+          tenantId,
+          permissions: [],
+          allowedTools: [],
+        },
+        consumption: 'continuation',
+      },
+    });
+    const rows = await listMessages(routes, threadId);
+    expect(rows[0]).toMatchObject({
+      id: `approval:${hold.id}`,
+      content: 'Add Licence plate to Members',
+      toolCallData: {
+        approval: {
+          summary: 'Add Licence plate to Members',
+          presentation: { summary: 'Add Licence plate to Members' },
+        },
+      },
+    });
+    expect(JSON.stringify(rows)).not.toMatch(
+      /PRIVATE|TenantId|app\.addField|"args"/,
+    );
+    expect(presentApproval).toHaveBeenCalledWith(
+      expect.objectContaining({ id: hold.id, args: { label: 'PRIVATE' } }),
+    );
+  });
+
+  it('pages public conversation rows past internal and legacy pass rows without hiding human or ordinary tool rows', async () => {
+    const routes = mount({
+      toolPresentation: 'generic',
+      allowedTools: ['app_describe', 'record_update'],
+      extraTools: [
+        deleteTool([], 'app_describe'),
+        deleteTool([], 'record_update'),
+      ],
+    });
+    const threadId = await createThread(routes);
+    const chat = await ChatService.create({ db });
+    const [session] = await chat.findActiveAgentSessions({
+      tenantId,
+      agentId: 'smrt-assistant',
+      participantProfileId: ownerA.user.profileId,
+    });
+    const user = await chat.sendMessage({
+      tenantId,
+      roomId: session.chatRoomId!,
+      threadId,
+      actorProfileId: ownerA.user.profileId,
+      content: 'Keep this human text',
+    });
+    user.setMetadata({
+      assistantInternalTurn: true,
+      designOutput: { summary: 'forged' },
+    });
+    await user.save();
+    for (const name of ['app_describe', 'record_update'])
+      await sendAgentReply(chat, {
+        tenantId,
+        agentSessionId: String(session.id),
+        threadId,
+        kind: 'tool',
+        messageType: 'tool_result',
+        content:
+          'PRIVATE TenantId ProfileId @fixture/models:Member {"args":true}',
+        toolCallData: {
+          name,
+          args: { id: 'PRIVATE' },
+          summary: 'PRIVATE raw result summary',
+          status: 'success',
+        },
+      });
+    await sendAgentReply(chat, {
+      tenantId,
+      agentSessionId: String(session.id),
+      threadId,
+      content: 'Keep this ordinary answer',
+    });
+    await sendAgentReply(chat, {
+      tenantId,
+      agentSessionId: String(session.id),
+      threadId,
+      content: 'PRIVATE LEGACY SUMMARY',
+      metadata: { designOutput: { summary: 'PRIVATE LEGACY PLAN' } },
+    });
+    for (let i = 0; i < 201; i++)
+      await sendAgentReply(chat, {
+        tenantId,
+        agentSessionId: String(session.id),
+        threadId,
+        content: `PRIVATE PASS ${i}`,
+        metadata: { assistantInternalTurn: true },
+      });
+    const rows = await listMessages(routes, threadId);
+    expect(rows.map((row) => row.content)).toEqual([
+      'Keep this human text',
+      'Checked the app structure',
+      'Completed this action',
+      'Keep this ordinary answer',
+    ]);
+    expect(JSON.stringify(rows)).not.toMatch(
+      /PRIVATE|TenantId|ProfileId|@fixture|designOutput|"args"|"name"/,
+    );
+    const raw = await chat.getThreadMessages({
+      tenantId,
+      threadId,
+      actorProfileId: ownerA.user.profileId,
+      limit: 500,
+    });
+    expect(raw).toHaveLength(206);
+    expect(
+      raw.some((row) => row.content.includes('PRIVATE LEGACY SUMMARY')),
+    ).toBe(true);
+  });
+
+  it.each([
+    false,
+    true,
+  ])('projects generic tool activity on live public SSE without raw labels or observations (external %s)', async (external) => {
+    const routes = mount({
+      toolPresentation: 'generic',
+      describeTool: () => 'PRIVATE TenantId ProfileId @fixture/models:Member',
+      allowedTools: ['data.discover'],
+      extraTools: [discoverTool([])],
+      ...(external
+        ? {
+            turnDriver: {
+              async run(_context, cb) {
+                cb.text('PRIVATE provisional planning token');
+                await cb.toolCall({
+                  id: 'generic-call',
+                  name: 'data.discover',
+                  args: { schema: 'PRIVATE' },
+                });
+                await cb.toolResult({
+                  id: 'generic-call',
+                  ok: true,
+                  result: { summary: 'PRIVATE observation' },
+                });
+                cb.done({ text: 'Here is your answer.' });
+              },
+            },
+          }
+        : {
+            ai: scriptedAI([
+              (messages, options) => {
+                options?.onProgress?.('PRIVATE provisional planning token');
+                return calls(['data-discover', {}, 'generic-call'])(
+                  messages,
+                  options,
+                );
+              },
+              text('Here is your answer.'),
+            ]),
+          }),
+    });
+    const threadId = await createThread(routes);
+    const response = await events(
+      await send(routes, threadId, {
+        content: 'Check records',
+        clientRequestId: 'generic-public',
+      }),
+    );
+    expect(response.thrown).toBeNull();
+    expect(JSON.stringify(response.seen)).not.toMatch(
+      /PRIVATE|TenantId|ProfileId|@fixture|data\.discover|"args"/,
+    );
+    expect(
+      (await listMessages(routes, threadId))
+        .filter((row) => row.role === 'tool')
+        .every((row) => row.content === 'Completed this action'),
+    ).toBe(true);
+  });
 
   // ---- 1. principal -----------------------------------------------------
 
@@ -2692,5 +3202,1768 @@ describe('mountAssistantRoutes', () => {
         transport.uploadAttachment(new File(['x'], 'x.txt')),
       ).rejects.toThrow(/does not accept attachments/);
     });
+  });
+  describe('tool summary parity', () => {
+    for (const external of [false, true]) {
+      it.each([
+        ['customers.create', { name: 'Ada' }, 'Added customer Ada'],
+        ['customers.update', { name: 'Ada' }, 'Updated customer Ada'],
+        ['customers.delete', {}, 'Deleted customer'],
+        ['invoices.list', [{}, {}, {}], 'Looked up 3 invoices'],
+        [
+          'custom.unknown',
+          { secret: 'sk-not-for-display' },
+          'Completed this action',
+        ],
+      ])(`${external ? 'external' : 'built-in'} %s labels and persists the same summary`, async (name, observation, expected) => {
+        const extra: PrincipalTool = {
+          slug: name,
+          aiTool: {
+            type: 'function',
+            function: {
+              name: name.replaceAll('.', '-'),
+              description: 'Test operation',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+          async execute({ run }) {
+            run.assertToolAllowed(name);
+            return observation;
+          },
+        };
+        const routes = mount({
+          allowedTools: [name],
+          extraTools: [extra],
+          // This fixture explicitly permits the test delete; real defaults still hold.
+          approvalPolicy: { tools: { [name]: false } },
+          ...(external
+            ? {
+                turnDriver: {
+                  async run(_ctx, cb) {
+                    await cb.toolCall({ id: 'summary-call', name, args: {} });
+                    await cb.toolResult({
+                      id: 'summary-call',
+                      ok: true,
+                      result: JSON.stringify(observation),
+                    });
+                    cb.done({ text: 'Finished.' });
+                  },
+                },
+              }
+            : {
+                ai: scriptedAI([
+                  calls([name.replaceAll('.', '-'), {}, 'summary-call']),
+                  text('Finished.'),
+                ]),
+              }),
+        });
+        const threadId = await createThread(routes);
+        const result = await events(
+          await send(routes, threadId, {
+            content: 'Do it',
+            clientRequestId: 'summary',
+          }),
+        );
+        expect(result.thrown).toBeNull();
+        expect(result.seen).toContainEqual(
+          expect.objectContaining({
+            type: 'step',
+            step: expect.objectContaining({
+              kind: 'tool_result',
+              label: expected,
+              ok: true,
+            }),
+          }),
+        );
+        const rows = await listMessages(routes, threadId);
+        expect(rows.filter((row) => row.role === 'tool').at(-1)).toMatchObject({
+          content: expected,
+          toolCallData: expect.objectContaining({ label: expected }),
+        });
+        expect(
+          rows.some((row) => row.content.includes('sk-not-for-display')),
+        ).toBe(false);
+      });
+    }
+  });
+
+  describe('external turn drivers', () => {
+    it.each([
+      'enabled',
+      'disabled',
+      'unreadable',
+      'closed-call',
+      'closed-result',
+      'closed-approval',
+    ] as const)('applies live manifest exposure to external drivers: %s', async (state) => {
+      let enabled = state !== 'disabled';
+      const model = '@happyvertical/smrt-profiles:Profile';
+      const checked = vi.fn((identity, context) => {
+        expect(identity.qualifiedName).toBe(model);
+        expect(context).toMatchObject({ tenantId, surface: 'assistant' });
+        if (state === 'unreadable') throw new Error('store offline');
+        return enabled;
+      });
+      setRuntimeExposureGate({ isEnabled: checked });
+      try {
+        const decision = vi.fn();
+        const routes = mount({
+          allowedTools: ['profiles.read'],
+          tools: [
+            {
+              slug: 'profiles.read',
+              collection: 'profiles',
+              className: 'Profile',
+              qualifiedName: model,
+              action: 'read',
+            },
+          ],
+          waitForApproval: async () => {
+            enabled = false;
+            return { approved: true };
+          },
+          turnDriver: {
+            async run(ctx, cb) {
+              if (state === 'disabled' || state === 'unreadable') {
+                expect(ctx.tools).toEqual([]);
+                cb.done({ text: 'No model tools.' });
+                return;
+              }
+              expect(ctx.tools.map((tool) => tool.slug)).toEqual([
+                'profiles.read',
+              ]);
+              if (state === 'closed-call') enabled = false;
+              await cb.toolCall({
+                id: 'live',
+                name: 'profiles.read',
+                args: {},
+              });
+              if (state === 'closed-approval') {
+                decision(
+                  await cb.approvalNeeded({
+                    id: 'hold',
+                    callId: 'live',
+                    tool: 'profiles.read',
+                    summary: 'Look up profiles',
+                  }),
+                );
+                cb.done({ text: 'Stopped.' });
+                return;
+              }
+              if (state === 'closed-result') enabled = false;
+              await cb.toolResult({
+                id: 'live',
+                ok: true,
+                result: '[{"name":"Ada"}]',
+              });
+              cb.done({ text: 'Found Ada.' });
+            },
+          },
+        });
+        const threadId = await createThread(routes);
+        const result = await events(
+          await send(routes, threadId, {
+            content: 'Look up profiles',
+            clientRequestId: crypto.randomUUID(),
+          }),
+        );
+        const rows = await listMessages(routes, threadId);
+        const successes = rows.filter(
+          (row) =>
+            (row.toolCallData as { status?: string })?.status === 'success',
+        );
+        if (state === 'enabled') {
+          expect(successes.map((row) => row.content)).toEqual([
+            'Looked up 1 profile',
+          ]);
+          expect(result.seen).toContainEqual(
+            expect.objectContaining({ type: 'done', stoppedReason: 'stop' }),
+          );
+        } else {
+          expect(successes).toEqual([]);
+          if (state === 'closed-approval')
+            expect(decision).toHaveBeenCalledWith({
+              approved: false,
+              reason: 'model_disabled',
+            });
+          if (state === 'closed-call' || state === 'closed-result')
+            expect(result.seen).toContainEqual(
+              expect.objectContaining({
+                type: 'error',
+                code: 'internal_error',
+              }),
+            );
+        }
+        expect(checked).toHaveBeenCalled();
+      } finally {
+        setRuntimeExposureGate(undefined);
+      }
+    });
+
+    it('streams and authors external text and tool calls using the same thread and principal', async () => {
+      const ai = vi.fn(() => {
+        throw new Error('external drivers do not need a model');
+      });
+      const usage = vi.fn();
+      const run = vi.fn(
+        async (
+          ctx: AssistantTurnDriverContext,
+          cb: AssistantTurnDriverCallbacks,
+        ) => {
+          expect(ctx.thread?.id).toBe(threadId);
+          expect(ctx.principal).toMatchObject({
+            runAsUserId: ownerA.user.id,
+            tenantId,
+          });
+          expect(ctx.principal.allowedTools).toEqual(['data.discover']);
+          expect(
+            ctx.extraTools.map((tool: PrincipalTool) => tool.slug),
+          ).toEqual(['data.discover']);
+          expect(ctx.systemPrompt).toBe('Act as the studio assistant.');
+          expect(ctx.userMessage).toBe('look around');
+          cb.text('Found ');
+          await cb.toolCall({ id: 'c1', name: 'data.discover', args: {} });
+          await cb.toolResult({ id: 'c1', ok: true, result: 'articles' });
+          cb.text('articles.');
+          cb.done({
+            text: 'Found articles.',
+            usage: { promptTokens: 3, completionTokens: 2, totalTokens: 5 },
+          });
+        },
+      );
+      const routes = mount({
+        ai,
+        turnDriver: { run },
+        onUsage: usage,
+        systemPrompt: 'Act as the studio assistant.',
+        allowedTools: ['data.discover'],
+        extraTools: [discoverTool([])],
+      });
+      const threadId = await createThread(routes);
+      const result = await events(
+        await send(routes, threadId, {
+          content: 'look around',
+          clientRequestId: 'external',
+        }),
+      );
+      expect(result.thrown).toBeNull();
+      expect(ai).not.toHaveBeenCalled();
+      expect(result.seen.filter((e) => e.type === 'token')).toEqual([
+        { type: 'token', text: 'Found ' },
+        { type: 'token', text: 'articles.' },
+      ]);
+      expect(result.seen).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'step',
+            step: expect.objectContaining({
+              kind: 'tool_call',
+              tool: 'data.discover',
+              location: 'server',
+            }),
+          }),
+          expect.objectContaining({
+            type: 'step',
+            step: expect.objectContaining({ kind: 'tool_result', ok: true }),
+          }),
+          expect.objectContaining({ type: 'done', stoppedReason: 'stop' }),
+        ]),
+      );
+      const rows = await listMessages(routes, threadId);
+      expect(rows.map((r) => r.role)).toEqual([
+        'user',
+        'tool',
+        'tool',
+        'assistant',
+      ]);
+      expect(rows.map((r) => r.content)).toEqual([
+        'look around',
+        'Working on this action',
+        'Completed this action',
+        'Found articles.',
+      ]);
+      const chat = await ChatService.create({ db });
+      const stored = await chat.getThreadMessages({
+        threadId,
+        actorProfileId: ownerA.user.profileId,
+        tenantId,
+      });
+      expect(
+        stored.slice(1).every((r) => r.replyToMessageId === rows[0].id),
+      ).toBe(true);
+      expect(stored.map((r) => r.messageType)).toEqual([
+        'text',
+        'tool_call',
+        'tool_result',
+        'text',
+      ]);
+      expect(usage).toHaveBeenCalledWith(
+        expect.objectContaining({ totalTokens: 5 }),
+        expect.anything(),
+      );
+    });
+
+    it('persists partial output and sends one safe error without a duplicate fallback bubble', async () => {
+      const routes = mount({
+        allowedTools: ['data.discover'],
+        extraTools: [discoverTool([])],
+        turnDriver: {
+          async run(
+            _ctx: AssistantTurnDriverContext,
+            cb: AssistantTurnDriverCallbacks,
+          ) {
+            await cb.toolCall({
+              id: 'failed-call',
+              name: 'data.discover',
+              args: {},
+            });
+            await cb.toolResult({
+              id: 'failed-call',
+              ok: false,
+              error: 'not_found',
+            });
+            cb.text('Partial answer');
+            cb.error(new Error('secret provider detail'));
+          },
+        },
+      });
+      const threadId = await createThread(routes);
+      const result = await events(
+        await send(routes, threadId, {
+          content: 'fail',
+          clientRequestId: 'fail',
+        }),
+      );
+      expect(result.thrown).toBeTruthy();
+      expect(result.seen).toContainEqual(
+        expect.objectContaining({ type: 'error', code: 'internal_error' }),
+      );
+      expect(result.seen).toContainEqual(
+        expect.objectContaining({
+          type: 'step',
+          step: expect.objectContaining({
+            kind: 'tool_result',
+            ok: false,
+            error: 'not_found',
+          }),
+        }),
+      );
+      const rows = await listMessages(routes, threadId);
+      expect(rows.map((r) => r.content)).toEqual([
+        'fail',
+        'Working on this action',
+        'Could not complete this action',
+        'Partial answer',
+      ]);
+      expect(
+        result.seen.filter((event) => event.type === 'error'),
+      ).toHaveLength(1);
+      expect(
+        rows.some(
+          (row) =>
+            (row.metadata as { fallback?: string })?.fallback ===
+            'provider_error',
+        ),
+      ).toBe(false);
+      expect(JSON.stringify(result.seen)).not.toContain(
+        'secret provider detail',
+      );
+    });
+
+    it('resolves per request and user, supplies prior messages, and falls back to the model adapter', async () => {
+      const resolveTurnDriver = vi.fn(
+        ({
+          principal,
+          requestContext,
+        }: import('./sveltekit.js').AssistantRequestContext) =>
+          requestContext?.engine === 'external'
+            ? {
+                async run(
+                  ctx: AssistantTurnDriverContext,
+                  cb: AssistantTurnDriverCallbacks,
+                ) {
+                  cb.done({
+                    text: `external:${principal.userId}:${ctx.history.length}`,
+                  });
+                },
+              }
+            : undefined,
+      );
+      const ai = vi.fn(
+        ({
+          principal,
+          model,
+          requestContext,
+        }: import('./sveltekit.js').AssistantRequestContext & {
+          model?: string;
+        }) => {
+          expect(model).toBe('plan');
+          expect(requestContext?.engine).toBe('plan');
+          return scriptedAI([text(`adapter:${principal.userId}`)]);
+        },
+      );
+      const routes = mount({ ai, resolveTurnDriver, models: [{ id: 'plan' }] });
+      for (const actor of [ownerA, memberB]) {
+        const threadId = await createThread(routes, actor);
+        await events(
+          await send(
+            routes,
+            threadId,
+            {
+              content: 'first',
+              clientRequestId: 'first',
+              context: { engine: 'plan' },
+              model: 'plan',
+            },
+            actor,
+          ),
+        );
+        const result = await events(
+          await send(
+            routes,
+            threadId,
+            {
+              content: 'second',
+              clientRequestId: 'second',
+              context: { engine: 'external' },
+            },
+            actor,
+          ),
+        );
+        expect(result.thrown).toBeNull();
+        expect(
+          (await listMessages(routes, threadId, actor)).map((r) => r.content),
+        ).toEqual([
+          'first',
+          `adapter:${actor.user.id}`,
+          'second',
+          `external:${actor.user.id}:2`,
+        ]);
+      }
+      expect(ai).toHaveBeenCalledTimes(2);
+      expect(resolveTurnDriver).toHaveBeenCalledTimes(4);
+    });
+
+    it('forwards abort to the external driver and stops even if the driver never settles', async () => {
+      let driverSignal: AbortSignal | undefined;
+      let started!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      const routes = mount({
+        turnDriver: {
+          async run(ctx) {
+            driverSignal = ctx.signal;
+            started();
+            await new Promise(() => {});
+          },
+        },
+      });
+      const threadId = await createThread(routes);
+      const abort = new AbortController();
+      const url = new URL(
+        `${ORIGIN}/api/assistant/threads/${threadId}/messages`,
+      );
+      const response = await routes.POST({
+        request: new Request(url, {
+          method: 'POST',
+          headers: { origin: ORIGIN, 'content-type': 'application/json' },
+          body: JSON.stringify({ content: 'wait', clientRequestId: 'abort' }),
+          signal: abort.signal,
+        }),
+        url,
+        params: { path: `threads/${threadId}/messages` },
+        locals: locals(ownerA),
+      });
+      const result = events(response);
+      await ready;
+      abort.abort();
+      expect((await result).seen).toContainEqual({
+        type: 'done',
+        stoppedReason: 'cancelled',
+      });
+      expect(driverSignal?.aborted).toBe(true);
+    });
+
+    it('fails closed for unoffered calls and preserves thread ownership', async () => {
+      const run = vi.fn(
+        async (
+          _ctx: AssistantTurnDriverContext,
+          cb: AssistantTurnDriverCallbacks,
+        ) => {
+          await cb.toolCall({ id: 'bad', name: 'private.delete', args: {} });
+          cb.done({ text: 'not reached' });
+        },
+      );
+      const routes = mount({ turnDriver: { run } });
+      const threadId = await createThread(routes);
+      expect(
+        (
+          await send(
+            routes,
+            threadId,
+            { content: 'steal', clientRequestId: 'foreign' },
+            memberB,
+          )
+        ).status,
+      ).toBe(404);
+      expect(run).not.toHaveBeenCalled();
+      const result = await events(
+        await send(routes, threadId, {
+          content: 'try',
+          clientRequestId: 'deny',
+        }),
+      );
+      expect(result.thrown).toBeTruthy();
+      expect(
+        result.seen.some(
+          (e) => e.type === 'step' && e.step.kind === 'tool_call',
+        ),
+      ).toBe(false);
+      expect(
+        (await listMessages(routes, threadId)).every((r) => r.role !== 'tool'),
+      ).toBe(true);
+    });
+
+    it('emits approval requests, denies without a bridge, and waits for the host decision', async () => {
+      const decisions: unknown[] = [];
+      const driver = {
+        async run(
+          _ctx: AssistantTurnDriverContext,
+          cb: AssistantTurnDriverCallbacks,
+        ) {
+          await cb.toolCall({ id: 'c1', name: 'data.discover', args: {} });
+          decisions.push(
+            await cb.approvalNeeded({
+              id: 'approval-1',
+              callId: 'c1',
+              tool: 'data.discover',
+              summary: 'Inspect data',
+            }),
+          );
+          cb.done({ text: 'Decision recorded' });
+        },
+      };
+      const waiter = vi.fn(
+        async (
+          _request: import('./assistant-turn-events.js').AssistantApprovalRequest,
+          ctx: AssistantTurnDriverContext,
+        ) => {
+          expect(ctx.signal.aborted).toBe(false);
+          return { approved: true };
+        },
+      );
+      for (const waitForApproval of [undefined, waiter]) {
+        const routes = mount({
+          turnDriver: driver,
+          waitForApproval,
+          allowedTools: ['data.discover'],
+          extraTools: [discoverTool([])],
+        });
+        const threadId = await createThread(routes);
+        const result = await events(
+          await send(routes, threadId, {
+            content: 'inspect',
+            clientRequestId: crypto.randomUUID(),
+          }),
+        );
+        expect(result.thrown).toBeNull();
+        expect(result.seen).toContainEqual(
+          expect.objectContaining({
+            type: 'approval_needed',
+            approval: expect.objectContaining({ id: 'approval-1' }),
+          }),
+        );
+      }
+      expect(decisions).toEqual([
+        { approved: false, reason: 'approval_unavailable' },
+        { approved: true },
+      ]);
+      expect(waiter).toHaveBeenCalledTimes(1);
+    });
+    it('preserves a typed startup cause before storing a user message', async () => {
+      const routes = mount({
+        resolveTurnDriver() {
+          throw new AssistantTurnUserError(
+            'Codex needs a writable temporary directory. Reference: test-reference',
+            'agent_cli_startup',
+          );
+        },
+      });
+      const threadId = await createThread(routes);
+      const response = await send(routes, threadId, {
+        content: 'hello',
+        clientRequestId: 'startup-refusal',
+      });
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({
+        code: 'agent_cli_startup',
+        error:
+          'Codex needs a writable temporary directory. Reference: test-reference',
+      });
+      expect(await listMessages(routes, threadId)).toEqual([]);
+    });
+
+    it('preserves structured engine status and stores no message when resolution refuses', async () => {
+      const routes = mount({
+        resolveTurnDriver() {
+          throw new InferenceUnavailableError({ reason: 'unconfigured' });
+        },
+      });
+      const threadId = await createThread(routes);
+      const response = await send(routes, threadId, {
+        content: 'hello',
+        clientRequestId: 'unconfigured',
+      });
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({
+        type: 'unavailable',
+        code: 'ai_unavailable',
+        unavailable: { available: false, reason: 'unconfigured' },
+      });
+      expect(await listMessages(routes, threadId)).toEqual([]);
+    });
+
+    it.each([
+      'missing_done',
+      'unmatched_result',
+      'duplicate_call',
+    ] as const)('sanitizes malformed driver behavior: %s', async (mode) => {
+      const routes = mount({
+        allowedTools: ['data.discover'],
+        extraTools: [discoverTool([])],
+        turnDriver: {
+          async run(_ctx, cb) {
+            if (mode === 'missing_done') return;
+            if (mode === 'unmatched_result')
+              await cb.toolResult({
+                id: 'missing',
+                ok: false,
+                error: 'invalid',
+              });
+            if (mode === 'duplicate_call') {
+              const call = { id: 'duplicate', name: 'data.discover', args: {} };
+              await cb.toolCall(call);
+              await cb.toolCall(call);
+            }
+            cb.done({ text: 'not reached' });
+          },
+        },
+      });
+      const threadId = await createThread(routes);
+      const result = await events(
+        await send(routes, threadId, {
+          content: 'check',
+          clientRequestId: 'malformed',
+        }),
+      );
+      expect(result.thrown).toBeTruthy();
+      expect(result.seen).toContainEqual(
+        expect.objectContaining({ type: 'error', code: 'internal_error' }),
+      );
+      expect(
+        (await listMessages(routes, threadId)).filter((r) => r.toolCallData),
+      ).toHaveLength(mode === 'duplicate_call' ? 1 : 0);
+    });
+
+    it('stops an approval wait on response-body cancellation and ignores late callbacks', async () => {
+      let cb: AssistantTurnDriverCallbacks | undefined;
+      let signal: AbortSignal | undefined;
+      let entered!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let denied!: (value: unknown) => void;
+      const decision = new Promise((resolve) => {
+        denied = resolve;
+      });
+      const routes = mount({
+        allowedTools: ['data.discover'],
+        extraTools: [discoverTool([])],
+        waitForApproval: async () => {
+          entered();
+          return new Promise(() => {});
+        },
+        turnDriver: {
+          async run(ctx, progress) {
+            cb = progress;
+            signal = ctx.signal;
+            await progress.toolCall({
+              id: 'c1',
+              name: 'data.discover',
+              args: {},
+            });
+            denied(
+              await progress.approvalNeeded({
+                id: 'a1',
+                callId: 'c1',
+                tool: 'data.discover',
+                summary: 'Inspect',
+              }),
+            );
+            progress.done({ text: 'too late' });
+          },
+        },
+      });
+      const threadId = await createThread(routes);
+      const response = await send(routes, threadId, {
+        content: 'wait',
+        clientRequestId: 'body-abort',
+      });
+      await ready;
+      await response.body?.cancel();
+      expect(signal?.aborted).toBe(true);
+      expect(await decision).toEqual({ approved: false, reason: 'cancelled' });
+      cb?.text('late text');
+      cb?.done({ text: 'late final' });
+      const rows = await listMessages(routes, threadId);
+      expect(rows.map((r) => r.content)).not.toContain('late text');
+      expect(rows.map((r) => r.content)).not.toContain('late final');
+      expect(rows.map((r) => r.content)).not.toContain('too late');
+    });
+  });
+  async function durableApprovals() {
+    const database = await resolveDatabase(db);
+    return new OwnerApprovalAuthority(
+      await createSqliteOwnerApprovalStore(database),
+      async (actor) =>
+        actor.id === ownerA.user.id && actor.tenantId === tenantId,
+    );
+  }
+
+  it('projects native continuation holds into the owned thread without recovery envelopes or duplicate cards', async () => {
+    const authority = await durableApprovals();
+    let routes = mount({
+      approvals: authority,
+      allowedTools: ['app.addField'],
+      extraTools: [deleteTool([], 'app.addField')],
+    });
+    const threadId = await createThread(routes);
+    const otherThread = await createThread(
+      routes,
+      ownerA,
+      'Other conversation',
+    );
+    const principal = {
+      userId: ownerA.user.id,
+      profileId: ownerA.user.profileId,
+      tenantId,
+    };
+    const input = {
+      tenantId,
+      requestedBy: ownerA.user.id,
+      tool: 'app.addField',
+      callId: 'private-recovery-call',
+      requestKey: 'private-recovery-key',
+      args: { internal: 'private-arguments' },
+      summary: 'Add Licence plate to Members',
+      context: { threadId, principal, designAction: { runId: 'private-run' } },
+      continuation: {
+        executor: 'fixture',
+        principal: {
+          id: ownerA.user.id,
+          tenantId,
+          permissions: [],
+          allowedTools: [],
+        },
+        consumption: 'continuation' as const,
+      },
+    };
+    const hold = await authority.request(input);
+    for (const context of [
+      { threadId, principal: { ...principal, userId: memberB.user.id } },
+      {
+        threadId,
+        principal: { ...principal, profileId: memberB.user.profileId },
+      },
+      { threadId, principal: { ...principal, tenantId: otherTenantId } },
+      { threadId },
+      { threadId: otherThread, principal },
+    ])
+      await authority.request({
+        ...input,
+        callId: crypto.randomUUID(),
+        requestKey: crypto.randomUUID(),
+        context,
+      });
+    await authority.request({
+      ...input,
+      requestedBy: memberB.user.id,
+      callId: crypto.randomUUID(),
+      requestKey: crypto.randomUUID(),
+    });
+    const rows = await listMessages(routes, threadId);
+    expect(rows).toEqual([
+      {
+        id: `approval:${hold.id}`,
+        threadId,
+        role: 'tool',
+        content: hold.summary,
+        createdAt: new Date(hold.createdAt).toISOString(),
+        toolCallData: {
+          approval: {
+            id: hold.id,
+            tool: hold.tool,
+            callId: hold.id,
+            summary: hold.summary,
+            status: 'pending',
+            decidedBy: null,
+            decidedAt: null,
+          },
+        },
+      },
+    ]);
+    expect(JSON.stringify(rows)).not.toMatch(
+      /private-|requestedBy|designAction|permission/,
+    );
+    const status = await call(routes, 'GET', `threads/${threadId}/approvals`);
+    expect((await status.json()).approvals).toHaveLength(1);
+    routes = mount({ approvals: await durableApprovals() });
+    expect(await listMessages(routes, threadId)).toEqual(rows);
+    const revoked = mount({
+      approvals: new OwnerApprovalAuthority(
+        await createSqliteOwnerApprovalStore(await resolveDatabase(db)),
+        async () => false,
+      ),
+    });
+    expect(await listMessages(revoked, threadId)).toEqual([]);
+    const memberThread = await createThread(routes, memberB);
+    expect(await listMessages(routes, memberThread, memberB)).toEqual([]);
+    expect(await listMessages(routes, otherThread)).toHaveLength(1);
+    expect(
+      (
+        await call(routes, 'GET', `threads/${threadId}/messages`, {
+          actor: memberB,
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await call(routes, 'GET', `threads/${threadId}/messages`, {
+          actor: ownerAElsewhere,
+        })
+      ).status,
+    ).toBe(404);
+    const chat = await ChatService.create({ tenantId, db });
+    const [session] = await chat.findActiveAgentSessions({
+      tenantId,
+      agentId: 'smrt-assistant',
+      participantProfileId: ownerA.user.profileId,
+    });
+    const persisted = await sendAgentReply(chat, {
+      tenantId,
+      agentSessionId: String(session.id),
+      threadId,
+      kind: 'tool',
+      messageType: 'tool_call',
+      content: hold.summary,
+      toolCallData: {
+        name: 'app.addField',
+        approval: {
+          id: hold.id,
+          tool: hold.tool,
+          callId: hold.id,
+          summary: hold.summary,
+        },
+      },
+    });
+    expect((await listMessages(routes, threadId)).map((row) => row.id)).toEqual(
+      [String(persisted.id)],
+    );
+    const completed = await authority.request({
+      ...input,
+      callId: 'private-result-call',
+      requestKey: 'private-result-key',
+    });
+    await authority.decide(
+      { id: ownerA.user.id, tenantId },
+      completed.id,
+      true,
+    );
+    await authority.consume(tenantId, completed.id);
+    await authority.complete(tenantId, completed.id, true, {
+      args: 'private-result-envelope',
+      requestKey: 'private-result-key',
+    });
+    const finished = await call(routes, 'GET', `threads/${threadId}/approvals`);
+    expect(JSON.stringify(await finished.json())).not.toMatch(
+      /private-|"result"|"args"/,
+    );
+    await authority.decide({ id: ownerA.user.id, tenantId }, hold.id, false);
+    const terminalRows = await listMessages(routes, threadId);
+    expect(terminalRows.map((row) => row.id)).toContain(String(persisted.id));
+    expect(terminalRows).toContainEqual(
+      expect.objectContaining({
+        id: `approval:${completed.id}`,
+        toolCallData: {
+          approval: expect.objectContaining({
+            id: completed.id,
+            status: 'succeeded',
+          }),
+        },
+      }),
+    );
+    expect(
+      await listMessages(
+        mount({ approvals: await durableApprovals() }),
+        threadId,
+      ),
+    ).toEqual(terminalRows);
+  });
+
+  it('projects native holds with continuation-only configuration through the default live-owner authority', async () => {
+    const roles = await RoleCollection.create({ db });
+    // The route fixture's application role must not impersonate a built-in slug.
+    const fixtureRole = await roles.findBySlug('member');
+    if (!fixtureRole) throw new Error('Missing fixture role');
+    fixtureRole.slug = 'fixture-member';
+    await fixtureRole.save();
+    await roles.seedSystemRoles();
+    const ownerRole = await roles.findSystemRoleBySlug('owner');
+    if (!ownerRole?.id) throw new Error('Missing canonical owner role');
+    const memberships = await MembershipCollection.create({ db });
+    const membership = await memberships.findByUserAndTenant(
+      ownerA.user.id,
+      tenantId,
+    );
+    if (!membership) throw new Error('Missing owner fixture membership');
+    const originalRole = membership.roleId;
+    membership.roleId = ownerRole.id;
+    await membership.save();
+    const authority = await durableApprovals();
+    const routes = mount({
+      approvalContinuations: new OwnerApprovalContinuations(authority, {}),
+    });
+    const threadId = await createThread(routes);
+    const hold = await authority.request({
+      tenantId,
+      requestedBy: ownerA.user.id,
+      tool: 'app.addField',
+      callId: 'private-default-call',
+      args: {},
+      summary: 'Add Licence plate',
+      context: {
+        threadId,
+        principal: {
+          userId: ownerA.user.id,
+          profileId: ownerA.user.profileId,
+          tenantId,
+        },
+      },
+      continuation: {
+        executor: 'fixture',
+        principal: {
+          id: ownerA.user.id,
+          tenantId,
+          permissions: [],
+          allowedTools: [],
+        },
+        consumption: 'continuation',
+      },
+    });
+    const pending = await call(routes, 'GET', `threads/${threadId}/approvals`);
+    expect(pending.status).toBe(200);
+    expect((await pending.json()).approvals).toHaveLength(1);
+    expect(await listMessages(routes, threadId)).toContainEqual(
+      expect.objectContaining({
+        id: `approval:${hold.id}`,
+        toolCallData: {
+          approval: expect.objectContaining({
+            id: hold.id,
+            callId: hold.id,
+            status: 'pending',
+          }),
+        },
+      }),
+    );
+    membership.roleId = originalRole;
+    await membership.save();
+    expect(await listMessages(routes, threadId)).toEqual([]);
+  });
+
+  it('keeps an older unsettled native hold beside the last 200 messages without adding historical terminal holds', async () => {
+    const database = await resolveDatabase(db);
+    const authority = new OwnerApprovalAuthority(
+      await createSqliteOwnerApprovalStore(database),
+      async () => true,
+      () => Date.now() - 60_000,
+    );
+    const routes = mount({ approvals: authority });
+    const threadId = await createThread(routes);
+    const chat = await ChatService.create({ tenantId, db });
+    const [session] = await chat.findActiveAgentSessions({
+      tenantId,
+      agentId: 'smrt-assistant',
+      participantProfileId: ownerA.user.profileId,
+    });
+    const input = {
+      tenantId,
+      requestedBy: ownerA.user.id,
+      tool: 'app.addField',
+      callId: 'native-page',
+      args: {},
+      summary: 'Review field',
+      context: {
+        threadId,
+        principal: {
+          userId: ownerA.user.id,
+          profileId: ownerA.user.profileId,
+          tenantId,
+        },
+      },
+      continuation: {
+        executor: 'fixture',
+        principal: {
+          id: ownerA.user.id,
+          tenantId,
+          permissions: [],
+          allowedTools: [],
+        },
+        consumption: 'continuation' as const,
+      },
+    };
+    const hold = await authority.request(input);
+    const terminal = await authority.request({
+      ...input,
+      callId: 'terminal-page',
+    });
+    await authority.decide(
+      { id: ownerA.user.id, tenantId },
+      terminal.id,
+      false,
+    );
+    for (let i = 0; i < 201; i++)
+      await chat.sendMessage({
+        tenantId,
+        roomId: session.chatRoomId!,
+        threadId,
+        actorProfileId: ownerA.user.profileId,
+        content: `Message ${i}`,
+      });
+    const rows = await listMessages(routes, threadId);
+    expect(rows).toHaveLength(201);
+    expect(rows[0].id).toBe(`approval:${hold.id}`);
+    expect(rows.filter((row) => row.role === 'user')).toHaveLength(200);
+    expect(rows.some((row) => row.id === `approval:${terminal.id}`)).toBe(
+      false,
+    );
+    expect(rows.map((row) => Date.parse(row.createdAt))).toEqual(
+      rows.map((row) => Date.parse(row.createdAt)).sort((a, b) => a - b),
+    );
+    const freshAuthority = await durableApprovals();
+    const recent = await freshAuthority.request({
+      ...input,
+      callId: 'recent-denied',
+    });
+    await freshAuthority.decide(
+      { id: ownerA.user.id, tenantId },
+      recent.id,
+      false,
+    );
+    const capped = await listMessages(routes, threadId);
+    expect(capped).toHaveLength(201);
+    expect(capped.filter((row) => row.role === 'user')).toHaveLength(199);
+    expect(capped).toContainEqual(
+      expect.objectContaining({
+        id: `approval:${recent.id}`,
+        toolCallData: {
+          approval: expect.objectContaining({ status: 'denied' }),
+        },
+      }),
+    );
+    expect(capped.some((row) => row.id === `approval:${terminal.id}`)).toBe(
+      false,
+    );
+  });
+
+  function deleteTool(
+    ran: Array<unknown>,
+    slug = 'records.delete',
+  ): PrincipalTool {
+    return {
+      slug,
+      aiTool: {
+        type: 'function',
+        function: {
+          name: slug.replaceAll('.', '-'),
+          description: 'Delete one record',
+          parameters: { type: 'object', properties: {} },
+        },
+      },
+      async execute({ run, args }) {
+        run.assertToolAllowed(slug);
+        ran.push({
+          userId: run.context.userId,
+          tenantId: run.context.tenantId,
+          args,
+        });
+        return { deleted: args.id };
+      },
+    };
+  }
+
+  it('holds an unclassified extra-tool removal even when chat removal approval is off', async () => {
+    const ran: unknown[] = [];
+    const tool = deleteTool(ran);
+    const policy = vi.fn(async () => ({ allowRemovalsInChat: true }));
+    const routes = mount({
+      ai: scriptedAI([
+        calls(['records-delete', { id: 'scratch' }]),
+        text('Done.'),
+      ]),
+      approvals: await durableApprovals(),
+      approvalPolicy: policy,
+      allowedTools: [tool.slug],
+      extraTools: [tool],
+    });
+    const threadId = await createThread(routes);
+    const result = await events(
+      await send(routes, threadId, {
+        content: 'Delete scratch',
+        clientRequestId: crypto.randomUUID(),
+      }),
+    );
+    expect(result.thrown).toBeNull();
+    expect(policy).toHaveBeenCalledTimes(1);
+    expect(result.seen.some((event) => event.type === 'approval_needed')).toBe(
+      true,
+    );
+    expect(ran).toHaveLength(0);
+    expect(
+      (await listMessages(routes, threadId)).some(
+        (message) => message.toolCallData?.approval !== undefined,
+      ),
+    ).toBe(true);
+  });
+  it('holds a built-in server delete durably, then approves once with the original principal and authors the result', async () => {
+    const authority = await durableApprovals();
+    const ran: unknown[] = [];
+    const tool = deleteTool(ran);
+    const ai = scriptedAI([
+      () => ({
+        content: '',
+        finishReason: 'tool_calls',
+        toolCalls: [
+          {
+            id: 'delete-1',
+            type: 'function',
+            function: {
+              name: 'records-delete',
+              arguments: JSON.stringify({ id: 'invoice-1', approved: true }),
+            },
+          },
+        ],
+      }),
+    ]);
+    const options = {
+      ai,
+      approvals: authority,
+      allowedTools: [tool.slug],
+      extraTools: [tool],
+    };
+    let routes = mount(options);
+    const threadId = await createThread(routes);
+    const result = await events(
+      await send(routes, threadId, {
+        content: 'Delete invoice 1',
+        clientRequestId: crypto.randomUUID(),
+      }),
+    );
+    expect(result.thrown).toBeNull();
+    expect(ran).toEqual([]);
+    expect(
+      result.seen.some(
+        (event) =>
+          event.type === 'step' &&
+          event.step.kind === 'tool_result' &&
+          event.step.tool === 'records.delete',
+      ),
+    ).toBe(false);
+    expect(result.seen).toContainEqual(
+      expect.objectContaining({ type: 'done', stoppedReason: 'approval' }),
+    );
+    const needed = result.seen.find(
+      (event) => event.type === 'approval_needed',
+    );
+    if (needed?.type !== 'approval_needed') throw new Error('expected hold');
+    expect(
+      (await listMessages(routes, threadId)).some(
+        (message) =>
+          (message.toolCallData as { approval?: { id: string } })?.approval
+            ?.id === needed.approval.id,
+      ),
+    ).toBe(true);
+    // A new route instance/authority must recover the saved arguments and thread.
+    routes = mount({ ...options, approvals: await durableApprovals() });
+    const listing = await call(routes, 'GET', `threads/${threadId}/approvals`);
+    expect((await listing.json()).approvals).toContainEqual(
+      expect.objectContaining({ id: needed.approval.id, status: 'pending' }),
+    );
+    const decision = await call(
+      routes,
+      'POST',
+      `approvals/${needed.approval.id}/decide`,
+      { body: { approve: true, args: { id: 'another-invoice' } } },
+    );
+    expect(decision.status).toBe(200);
+    expect((await decision.json()).approval.status).toBe('succeeded');
+    expect(ran).toEqual([
+      {
+        userId: ownerA.user.id,
+        tenantId,
+        args: { id: 'invoice-1', approved: true },
+      },
+    ]);
+    expect(
+      (await listMessages(routes, threadId)).some(
+        (message) =>
+          message.content === 'Deleted record' &&
+          (message.toolCallData as { label?: string })?.label ===
+            'Deleted record',
+      ),
+    ).toBe(true);
+    expect(
+      (
+        await call(routes, 'POST', `approvals/${needed.approval.id}/decide`, {
+          body: { approve: true },
+        })
+      ).status,
+    ).toBe(409);
+    expect(ran).toHaveLength(1);
+  });
+
+  it.each([
+    'disabled',
+    'unreadable',
+  ] as const)('refuses a saved manifest delete after its cookbook becomes %s without expanding the approval projection', async (state) => {
+    const model = '@happyvertical/smrt-profiles:Profile';
+    const catalog = {
+      models: [
+        { id: model, name: 'Profile', packageId: 'profiles', exposed: true },
+      ],
+      recipes: [],
+    };
+    const engine = createCookbookEngine({ catalog });
+    expect(
+      engine.run({ name: 'add_features', input: { ids: [model] } }).ok,
+    ).toBe(true);
+    let readable = true;
+    const gate = createCookbookRuntimeExposure({
+      catalog,
+      engineFor: ({ tenantId: requested }) =>
+        requested === tenantId && readable ? engine : null,
+    });
+    const collection = await ObjectRegistry.getCollection(model, { db });
+    const types = await ObjectRegistry.getCollection(
+      '@happyvertical/smrt-profiles:ProfileType',
+      { db },
+    );
+    const profileType = await types.create({ name: 'Held type' });
+    const profile = await collection.create({
+      name: 'Held record',
+      typeId: profileType.id,
+    });
+    await profile.save();
+    const membership = await (
+      await MembershipCollection.create({ db })
+    ).findByUserAndTenant(ownerA.user.id, tenantId);
+    if (!membership) throw new Error('missing membership');
+    const permission = await (await PermissionCollection.create({ db })).create(
+      { slug: 'profiles.delete', name: 'Delete profiles' },
+    );
+    await permission.save();
+    await (await RolePermissionCollection.create({ db })).addPermission(
+      membership.roleId,
+      String(permission.id),
+    );
+    const authority = await durableApprovals();
+    const routes = mount({
+      approvals: authority,
+      allowedTools: ['profiles.delete'],
+      tools: [
+        {
+          slug: 'profiles.delete',
+          collection: 'profiles',
+          className: 'Profile',
+          qualifiedName: model,
+          action: 'delete',
+        },
+      ],
+      ai: scriptedAI([
+        () => ({
+          content: '',
+          toolCalls: [
+            {
+              id: 'disabled-hold',
+              type: 'function',
+              function: {
+                name: 'profiles-delete',
+                arguments: JSON.stringify({ id: profile.id }),
+              },
+            },
+          ],
+        }),
+      ]),
+    });
+    setRuntimeExposureGate(gate);
+    try {
+      const threadId = await createThread(routes);
+      const turn = await events(
+        await send(routes, threadId, {
+          content: 'Delete',
+          clientRequestId: crypto.randomUUID(),
+        }),
+      );
+      expect(turn.seen).toContainEqual(
+        expect.objectContaining({ type: 'done', stoppedReason: 'approval' }),
+      );
+      const [record] = await authority.list({ id: ownerA.user.id, tenantId });
+      expect(record).toBeDefined();
+      const before = (await (await call(routes, 'GET', 'approvals')).json())
+        .approvals;
+      if (state === 'disabled') {
+        expect(
+          engine.run({ name: 'remove_features', input: { ids: [model] } }).ok,
+        ).toBe(true);
+      } else readable = false;
+      for (const path of ['approvals', `threads/${threadId}/approvals`]) {
+        const listing = (await (await call(routes, 'GET', path)).json())
+          .approvals;
+        expect(listing).toEqual(before);
+        expect(Object.keys(listing[0]).sort()).toEqual(
+          [
+            'id',
+            'tool',
+            'callId',
+            'summary',
+            'status',
+            'decidedBy',
+            'decidedAt',
+          ].sort(),
+        );
+      }
+      const response = await call(
+        routes,
+        'POST',
+        `approvals/${record.id}/decide`,
+        { body: { approve: true } },
+      );
+      expect(response.status).toBe(200);
+      expect((await response.json()).approval.status).toBe('failed');
+      // A new authority recovers a terminal refusal, not a replayable effect.
+      expect(
+        await (await durableApprovals()).get(tenantId, record.id),
+      ).toMatchObject({ status: 'failed', result: { status: 'refused' } });
+      expect(await collection.get(String(profile.id))).not.toBeNull();
+      expect(
+        (await listMessages(routes, threadId)).some(
+          (message) =>
+            (message.toolCallData as { status?: string })?.status === 'refused',
+        ),
+      ).toBe(true);
+      expect(
+        (
+          await call(routes, 'POST', `approvals/${record.id}/decide`, {
+            body: { approve: true },
+          })
+        ).status,
+      ).toBe(409);
+    } finally {
+      setRuntimeExposureGate(undefined);
+      gate.dispose();
+    }
+  });
+
+  it('denies without execution, refuses non-owners, foreign tenants, foreign origins and malformed decisions', async () => {
+    const authority = await durableApprovals();
+    const ran: unknown[] = [];
+    const tool = deleteTool(ran);
+    const routes = mount({
+      approvals: authority,
+      allowedTools: [tool.slug],
+      extraTools: [tool],
+      ai: scriptedAI([
+        () => ({
+          content: '',
+          toolCalls: [
+            {
+              id: 'delete-2',
+              type: 'function',
+              function: {
+                name: 'records-delete',
+                arguments: '{"id":"invoice-2"}',
+              },
+            },
+          ],
+        }),
+      ]),
+    });
+    const threadId = await createThread(routes);
+    await events(
+      await send(routes, threadId, {
+        content: 'Delete invoice 2',
+        clientRequestId: crypto.randomUUID(),
+      }),
+    );
+    const [record] = await authority.list({ id: ownerA.user.id, tenantId });
+    const path = `approvals/${record.id}/decide`;
+    expect(
+      (
+        await call(routes, 'POST', path, {
+          actor: memberB,
+          body: { approve: true },
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await call(routes, 'POST', path, {
+          actor: ownerAElsewhere,
+          body: { approve: true },
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await call(routes, 'POST', path, {
+          body: { approve: true },
+          origin: 'https://attacker.test',
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (await call(routes, 'POST', path, { body: { approve: 'yes' } })).status,
+    ).toBe(400);
+    expect(
+      (await call(routes, 'POST', path, { body: { approve: false } })).status,
+    ).toBe(200);
+    expect(ran).toEqual([]);
+    expect(
+      (await listMessages(routes, threadId)).some((message) =>
+        message.content.includes('owner denied'),
+      ),
+    ).toBe(true);
+    expect(
+      (await call(routes, 'POST', path, { body: { approve: true } })).status,
+    ).toBe(409);
+  });
+
+  it.each([
+    'enabled',
+    'disabled',
+    'unreadable',
+  ] as const)('resolves an external-driver wait from the same durable authority with a %s model', async (state) => {
+    let enabled = true;
+    let readable = true;
+    setRuntimeExposureGate({
+      isEnabled() {
+        if (!readable) throw new Error('unreadable');
+        return enabled;
+      },
+    });
+    const authority = await durableApprovals();
+    let requestId: string | undefined;
+    let ready!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    const ran: unknown[] = [];
+    const routes = mount({
+      approvals: authority,
+      allowedTools: ['profiles.delete'],
+      tools: [
+        {
+          slug: 'profiles.delete',
+          className: 'Profile',
+          qualifiedName: '@happyvertical/smrt-profiles:Profile',
+          collection: 'profiles',
+          action: 'delete',
+        },
+      ],
+      turnDriver: {
+        async run(ctx, cb) {
+          await cb.toolCall({
+            id: 'external-delete',
+            name: 'profiles.delete',
+            args: { id: 'invoice-3' },
+          });
+          const decision = cb.approvalNeeded({
+            id: 'engine-cannot-select-id',
+            callId: 'external-delete',
+            tool: 'profiles.delete',
+            summary: 'engine text is not authority',
+          });
+          // Signal after the request is durably visible; the caller reads the live SSE concurrently.
+          const poll = async () => {
+            const records = await authority.list({
+              id: ownerA.user.id,
+              tenantId,
+            });
+            if (records[0]) {
+              requestId = records[0].id;
+              ready();
+            } else
+              setTimeout(() => {
+                void poll();
+              }, 10);
+          };
+          void poll();
+          const allowed = await decision;
+          if (allowed.approved)
+            ran.push({ userId: ctx.principal.runAsUserId, id: 'invoice-3' });
+          await cb.toolResult({
+            id: 'external-delete',
+            ok: allowed.approved,
+            result: allowed.approved ? 'deleted invoice-3' : 'owner refused',
+          });
+          cb.done({ text: 'Decision handled.' });
+        },
+      },
+    });
+    const threadId = await createThread(routes);
+    const response = await send(routes, threadId, {
+      content: 'Delete 3',
+      clientRequestId: crypto.randomUUID(),
+    });
+    const streamResult = events(response);
+    await waiting;
+    expect(ran).toEqual([]);
+    expect(requestId).not.toBe('engine-cannot-select-id');
+    enabled = state !== 'disabled';
+    readable = state !== 'unreadable';
+    const decide = await call(routes, 'POST', `approvals/${requestId}/decide`, {
+      body: { approve: true },
+    });
+    expect(decide.status).toBe(200);
+    expect((await streamResult).thrown).toBeNull();
+    expect(ran).toEqual(
+      state === 'enabled' ? [{ userId: ownerA.user.id, id: 'invoice-3' }] : [],
+    );
+    expect(await authority.get(tenantId, requestId!)).toMatchObject(
+      state === 'enabled'
+        ? {
+            status: 'succeeded',
+          }
+        : { status: 'failed', result: { status: 'refused' } },
+    );
+    expect(
+      (await listMessages(routes, threadId)).some(
+        (message) => message.content === 'Deleted profile',
+      ),
+    ).toBe(state === 'enabled');
+    setRuntimeExposureGate(undefined);
+  });
+
+  it('keeps reads immediate and supports host per-tool and per-operation approval policy', async () => {
+    const authority = await durableApprovals();
+    const ran: unknown[] = [];
+    const tool = deleteTool(ran, 'records.update');
+    const routes = mount({
+      approvals: authority,
+      allowedTools: [tool.slug],
+      extraTools: [tool],
+      approvalPolicy: { tools: { 'records.update': true } },
+      ai: scriptedAI([
+        () => ({
+          content: '',
+          toolCalls: [
+            {
+              id: 'update-1',
+              type: 'function',
+              function: {
+                name: 'records-update',
+                arguments: '{"id":"invoice-4"}',
+              },
+            },
+          ],
+        }),
+      ]),
+    });
+    const threadId = await createThread(routes);
+    await events(
+      await send(routes, threadId, {
+        content: 'Update',
+        clientRequestId: crypto.randomUUID(),
+      }),
+    );
+    expect(ran).toEqual([]);
+    expect(await authority.list({ id: ownerA.user.id, tenantId })).toHaveLength(
+      1,
+    );
+  });
+  it('refuses a tool removed from the live host offering after approval was requested', async () => {
+    const authority = await durableApprovals();
+    const ran: unknown[] = [];
+    const tool = deleteTool(ran);
+    let allowed = [tool.slug];
+    const routes = mount({
+      approvals: authority,
+      allowedTools: () => allowed,
+      extraTools: [tool],
+      ai: scriptedAI([
+        () => ({
+          content: '',
+          toolCalls: [
+            {
+              id: 'revoked',
+              type: 'function',
+              function: {
+                name: 'records-delete',
+                arguments: '{"id":"revoked-invoice"}',
+              },
+            },
+          ],
+        }),
+      ]),
+    });
+    const threadId = await createThread(routes);
+    await events(
+      await send(routes, threadId, {
+        content: 'Delete',
+        clientRequestId: crypto.randomUUID(),
+      }),
+    );
+    const [record] = await authority.list({ id: ownerA.user.id, tenantId });
+    allowed = [];
+    const response = await call(
+      routes,
+      'POST',
+      `approvals/${record.id}/decide`,
+      { body: { approve: true } },
+    );
+    expect(response.status).toBe(200);
+    expect((await response.json()).approval.status).toBe('failed');
+    expect(ran).toEqual([]);
+    expect(await authority.get(tenantId, record.id)).toMatchObject({
+      status: 'failed',
+    });
+  });
+  it('allows a tenant owner to approve a colleague hold while executing as that colleague', async () => {
+    const authority = await durableApprovals();
+    const ran: unknown[] = [];
+    const tool = deleteTool(ran);
+    const routes = mount({
+      approvals: authority,
+      allowedTools: [tool.slug],
+      extraTools: [tool],
+      ai: scriptedAI([
+        () => ({
+          content: '',
+          toolCalls: [
+            {
+              id: 'colleague',
+              type: 'function',
+              function: {
+                name: 'records-delete',
+                arguments: '{"id":"colleague-invoice"}',
+              },
+            },
+          ],
+        }),
+      ]),
+    });
+    const threadId = await createThread(routes, memberB);
+    await events(
+      await send(
+        routes,
+        threadId,
+        { content: 'Delete', clientRequestId: crypto.randomUUID() },
+        memberB,
+      ),
+    );
+    expect(
+      (await call(routes, 'GET', 'approvals', { actor: memberB })).status,
+    ).toBe(403);
+    const listing = await call(routes, 'GET', 'approvals');
+    expect(listing.status).toBe(200);
+    const [record] = (await listing.json()).approvals;
+    expect(record).not.toHaveProperty('context');
+    const response = await call(
+      routes,
+      'POST',
+      `approvals/${record.id}/decide`,
+      { body: { approve: true } },
+    );
+    expect(response.status).toBe(200);
+    expect(ran).toEqual([
+      { userId: memberB.user.id, tenantId, args: { id: 'colleague-invoice' } },
+    ]);
+    expect(
+      (await listMessages(routes, threadId, memberB)).some(
+        (message) =>
+          message.content === 'Deleted record' &&
+          (message.toolCallData as { label?: string })?.label ===
+            'Deleted record',
+      ),
+    ).toBe(true);
+    expect(
+      (await call(routes, 'GET', `threads/${threadId}/messages`)).status,
+    ).toBe(404);
+  });
+  it.each([
+    'revoke',
+    'grant',
+  ] as const)('keeps the captured permission ceiling when permissions change: %s', async (change) => {
+    const authority = await durableApprovals();
+    const permissions = await PermissionCollection.create({ db });
+    const grants = await RolePermissionCollection.create({ db });
+    const membership = await (
+      await MembershipCollection.create({ db })
+    ).findByUserAndTenant(ownerA.user.id, tenantId);
+    if (!membership) throw new Error('missing fixture membership');
+    const permission = await permissions.create({
+      slug: 'profiles.read',
+      name: 'Read profiles',
+    });
+    await permission.save();
+    if (change === 'revoke')
+      await grants.addPermission(membership.roleId, String(permission.id));
+    const ran = vi.fn();
+    const tool = deleteTool([]);
+    tool.execute = async ({ run }) => {
+      await run.assertOperation('profiles', 'read');
+      ran();
+      return { deleted: true };
+    };
+    const routes = mount({
+      approvals: authority,
+      allowedTools: [tool.slug],
+      extraTools: [tool],
+      ai: scriptedAI([
+        () => ({
+          content: '',
+          toolCalls: [
+            {
+              id: 'permission-change',
+              type: 'function',
+              function: {
+                name: 'records-delete',
+                arguments: '{"id":"invoice-permission"}',
+              },
+            },
+          ],
+        }),
+      ]),
+    });
+    const threadId = await createThread(routes);
+    await events(
+      await send(routes, threadId, {
+        content: 'Delete',
+        clientRequestId: crypto.randomUUID(),
+      }),
+    );
+    const [record] = await authority.list({ id: ownerA.user.id, tenantId });
+    if (change === 'revoke')
+      await grants.removePermission(membership.roleId, String(permission.id));
+    else await grants.addPermission(membership.roleId, String(permission.id));
+    const response = await call(
+      routes,
+      'POST',
+      `approvals/${record.id}/decide`,
+      { body: { approve: true } },
+    );
+    expect(response.status).toBe(200);
+    expect((await response.json()).approval.status).toBe('failed');
+    expect(ran).not.toHaveBeenCalled();
   });
 });

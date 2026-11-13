@@ -10,7 +10,7 @@
  */
 
 import { createHash, createHmac, randomBytes } from 'node:crypto';
-import { homedir, platform } from 'node:os';
+import { homedir, platform, userInfo } from 'node:os';
 import { parse, resolve, win32 } from 'node:path';
 import {
   type ResolvedApplicationRuntime,
@@ -32,6 +32,7 @@ import {
   PasswordCredentialService,
   type PasswordPolicyOptions,
   RoleCollection,
+  RolePermissionCollection,
   SessionCollection,
   SessionService,
   type Tenant,
@@ -60,6 +61,7 @@ import {
 import {
   acquireInitializationLock,
   acquireLocalDatabase,
+  assertAllowedStateBase,
   BOOTSTRAP_TABLE,
   canonicalLocalSourceRoot,
   closeDatabaseAfterFailure,
@@ -75,6 +77,7 @@ import {
   validateApplicationSecret,
   validateLocalStorageCustody,
   windowsSecureFileCustody,
+  withLocalInitializationLock,
 } from './local-custody.js';
 import {
   deriveLocalInstallationIdentity,
@@ -94,9 +97,15 @@ import {
   prepareLocalSchema,
 } from './local-schema.js';
 import {
+  loadOrCreateSecretMasterKey,
+  localVaultKeyStore,
+  secretMasterKeyUnavailable,
+} from './local-secret-master-key.js';
+import {
   applicationStateRootSource,
   prepareApplicationStateRoot,
 } from './state-root.js';
+import type { VaultKeyStore } from './vault-key-store.js';
 import {
   validateWindowsApplicationId,
   validateWindowsPath,
@@ -136,6 +145,10 @@ export {
   type PrepareDatabaseContext,
   SCHEMA_CREATION_FAILED_MESSAGE,
 } from './local-schema.js';
+export {
+  defaultLocalVaultKeyDirectory,
+  SECRET_MASTER_KEY_ITEM,
+} from './local-secret-master-key.js';
 export * from './operation-lock.js';
 export {
   ORIGIN_FILE,
@@ -240,6 +253,13 @@ export interface LocalApplicationRuntimeOptions
   ownerTenant?: LocalOwnerTenantOptions;
   /** Server-only policy shared with the application password sign-in service. */
   passwordPolicy?: PasswordPolicyOptions;
+  /**
+   * Custody for the secrets master key (see
+   * {@link LocalApplicationRuntime.secretMasterKey}). Defaults to an
+   * owner-only file store beside the data root; the desktop wrapper injects an
+   * OS keychain provider through this seam.
+   */
+  vaultKeyStore?: VaultKeyStore;
   /** Testable clock. */
   now?: () => Date;
 }
@@ -585,6 +605,37 @@ export interface LocalOwnerClaimResult {
   readonly sessionId: string;
 }
 
+/** Input of {@link LocalApplicationRuntime.signInOwner}. */
+export interface SignInLocalOwnerInput {
+  /**
+   * Display name for an owner created by this call. Defaults to the OS
+   * account's user name (`Owner` when none is readable). Ignored when the
+   * owner already exists.
+   */
+  readonly name?: string;
+  /**
+   * The user id of the request's valid session, if any. When it is the sole
+   * owner, no new session is issued.
+   */
+  readonly currentUserId?: string | null;
+  readonly userAgent?: string;
+  readonly ipAddress?: string;
+}
+
+/** Result of {@link LocalApplicationRuntime.signInOwner}. */
+export interface LocalOwnerSignInResult {
+  /**
+   * `claimed`: the owner did not exist and was created with a session.
+   * `session_issued`: the sole owner exists and got a new session.
+   * `session_present`: the caller's session already belongs to the owner.
+   */
+  readonly outcome: 'claimed' | 'session_issued' | 'session_present';
+  readonly userId: string;
+  readonly tenantId: string;
+  /** The new session id, or null for `session_present`. Never log it. */
+  readonly sessionId: string | null;
+}
+
 export type LocalBootstrapStatus =
   | 'available'
   | 'expired'
@@ -651,6 +702,8 @@ export function resolveLocalRuntimePaths(
     runtimeHome,
     env,
   );
+  if (options.dataDirectory === undefined)
+    assertAllowedStateBase(defaultRoot, runtimePlatform);
   const root = resolve(options.dataDirectory ?? resolve(defaultRoot, appId));
   const sourceRoot = resolveSourceRoot(options);
 
@@ -701,6 +754,8 @@ function resolveWindowsRuntimePaths(
     'Local application data directory',
     WINDOWS_DERIVED_PATH_RESERVE,
   );
+  if (options.dataDirectory === undefined)
+    assertAllowedStateBase(win32.dirname(root), 'win32');
   const sourceRoot = resolveSourceRoot({ ...options, platform: 'win32' });
   if (
     sameFilesystemPath(root, runtimeHome, 'win32') ||
@@ -806,6 +861,7 @@ export async function initializeLocalApplicationRuntime(
     }
     await ensureBootstrapTable(db);
     await ensureLocalMcpTokenTable(db);
+    await grantNewPermissionsToExistingOwner(db);
 
     const runtime = new InitializedLocalApplicationRuntime({
       db,
@@ -818,6 +874,7 @@ export async function initializeLocalApplicationRuntime(
       paidCapabilities: options.paidCapabilities === true,
       ownerTenant,
       passwordPolicy: options.passwordPolicy,
+      vaultKeyStore: options.vaultKeyStore,
       identity,
       now: options.now ?? (() => new Date()),
       canonicalSourceRoot,
@@ -887,6 +944,7 @@ interface LocalApplicationRuntimeState {
   paidCapabilities: boolean;
   ownerTenant: ResolvedOwnerTenant;
   passwordPolicy?: PasswordPolicyOptions;
+  vaultKeyStore?: VaultKeyStore;
   now: () => Date;
   canonicalSourceRoot: string;
 }
@@ -902,6 +960,17 @@ export interface LocalApplicationRuntime {
   ensureBootstrapInvitation(): Promise<LocalOwnerBootstrapInvitation | null>;
   rotateBootstrapInvitation(): Promise<LocalOwnerBootstrapInvitation>;
   claimOwner(input: ClaimLocalOwnerInput): Promise<LocalOwnerClaimResult>;
+  /**
+   * Desktop sign-in without a form: the caller has already proven it is the
+   * local person (the wrapper's launch secret on a loopback request) and this
+   * method trusts that. Creates the owner through the same claim transaction as
+   * {@link claimOwner} when none exists (with no email), issues a new session
+   * for the sole active owner when one does, and does nothing when
+   * `currentUserId` is already that owner. Calls are serialized per process.
+   * Fails closed with `owner_unavailable` unless exactly one active owner
+   * exists. Optional only so structural test doubles stay valid.
+   */
+  signInOwner?(input: SignInLocalOwnerInput): Promise<LocalOwnerSignInResult>;
   restoreSession(
     sessionId: string,
   ): ReturnType<SessionService['loadSessionContext']>;
@@ -914,6 +983,19 @@ export interface LocalApplicationRuntime {
    * callers fail closed.
    */
   readonly mcpTokens?: LocalMcpTokenStore;
+  /**
+   * The application secrets master key as 64 hex characters, for
+   * `SecretService.create({ masterKeyProvider })` in `@happyvertical/smrt-secrets`
+   * and nothing else. The first call creates a random key in the vault key
+   * store (under the data root's initialization lock, so concurrent processes
+   * agree) and every later call, in this process or after a restart, loads
+   * the same one. The user never sees or types it. Never log, return from a
+   * route, or persist it. Fails with `secret_master_key_unavailable`, naming
+   * no key material, when the store cannot be read or holds a malformed item;
+   * it never falls back to a generated or default key. Optional only so
+   * structural test doubles stay valid.
+   */
+  secretMasterKey?(): Promise<string>;
 }
 
 class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
@@ -931,6 +1013,8 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
   private readonly now: () => Date;
   private readonly canonicalSourceRoot: string;
   private readonly identity: LocalInstallationIdentity;
+  private readonly vaultKeyStore?: VaultKeyStore;
+  private masterKey?: Promise<string>;
 
   constructor(state: LocalApplicationRuntimeState) {
     this.db = state.db;
@@ -946,6 +1030,7 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
     this.now = state.now;
     this.canonicalSourceRoot = state.canonicalSourceRoot;
     this.identity = state.identity;
+    this.vaultKeyStore = state.vaultKeyStore;
     this.mcpTokens = localMcpTokenStore(
       state.db,
       state.paths,
@@ -958,6 +1043,20 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
    * Issue the first short-lived owner invitation when none is active.
    * Repeated startup never rotates an unexpired token or duplicates an owner.
    */
+  secretMasterKey(): Promise<string> {
+    this.masterKey ??= withLocalInitializationLock(this.paths.root, () =>
+      loadOrCreateSecretMasterKey(
+        localVaultKeyStore(this.paths.root, this.vaultKeyStore),
+      ),
+    ).catch((error: unknown) => {
+      this.masterKey = undefined;
+      throw error instanceof LocalRuntimeError
+        ? error
+        : secretMasterKeyUnavailable();
+    });
+    return this.masterKey;
+  }
+
   async ensureBootstrapInvitation(): Promise<LocalOwnerBootstrapInvitation | null> {
     if (await findExistingOwner(this.db)) return null;
     const current = await readBootstrapRow(this.db);
@@ -1012,7 +1111,90 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
   async claimOwner(
     input: ClaimLocalOwnerInput,
   ): Promise<LocalOwnerClaimResult> {
-    validateOwnerInput(input);
+    return this.claimOwnerRecords(input, false);
+  }
+
+  private ownerSignInQueue: Promise<unknown> = Promise.resolve();
+
+  signInOwner(input: SignInLocalOwnerInput): Promise<LocalOwnerSignInResult> {
+    const run = this.ownerSignInQueue.then(
+      () => this.signInOwnerSerialized(input),
+      () => this.signInOwnerSerialized(input),
+    );
+    this.ownerSignInQueue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async signInOwnerSerialized(
+    input: SignInLocalOwnerInput,
+  ): Promise<LocalOwnerSignInResult> {
+    const unavailable = () =>
+      new LocalRuntimeError(
+        'owner_unavailable',
+        'Exactly one active local owner is required.',
+      );
+    let owners = await findActiveOwners(this.db);
+    if (owners.length === 0) {
+      // Reuse the claim transaction: a fresh invitation whose plaintext never
+      // leaves this call, consumed immediately.
+      const invitation = await this.rotateBootstrapInvitation();
+      const claimed = await this.claimOwnerRecords(
+        {
+          token: invitation.token,
+          name: input.name?.trim() || defaultOwnerName(),
+          email: '',
+          userAgent: input.userAgent,
+          ipAddress: input.ipAddress,
+        },
+        true,
+      );
+      owners = await findActiveOwners(this.db);
+      if (owners.length !== 1 || owners[0]?.userId !== claimed.userId) {
+        throw unavailable();
+      }
+      return Object.freeze({
+        outcome: 'claimed' as const,
+        userId: claimed.userId,
+        tenantId: claimed.tenantId,
+        sessionId: claimed.sessionId,
+      });
+    }
+    const owner = owners[0];
+    if (owners.length !== 1 || !owner) throw unavailable();
+    const users = await UserCollection.create({ db: this.db });
+    const user = await users.get(owner.userId);
+    if (!user || user.status !== UserStatus.ACTIVE) throw unavailable();
+    if (input.currentUserId && input.currentUserId === owner.userId) {
+      return Object.freeze({
+        outcome: 'session_present' as const,
+        userId: owner.userId,
+        tenantId: owner.tenantId,
+        sessionId: null,
+      });
+    }
+    const sessions = await SessionCollection.create({ db: this.db });
+    const session = await sessions.createSession({
+      userId: owner.userId,
+      tenantId: owner.tenantId,
+      ttl: this.sessionTtlSeconds,
+      userAgent: input.userAgent,
+      ipAddress: input.ipAddress,
+      data: { localOwner: true },
+      authMethod: 'local-bootstrap',
+    });
+    return Object.freeze({
+      outcome: 'session_issued' as const,
+      userId: owner.userId,
+      tenantId: owner.tenantId,
+      sessionId: requireId(session.id, 'Session'),
+    });
+  }
+
+  private async claimOwnerRecords(
+    input: ClaimLocalOwnerInput,
+    allowNoEmail: boolean,
+  ): Promise<LocalOwnerClaimResult> {
+    validateOwnerInput(input, allowNoEmail);
     if (await findExistingOwner(this.db)) {
       throw new LocalRuntimeError(
         'bootstrap_claimed',
@@ -1076,6 +1258,7 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
         this.ownerTenant,
         this.identity,
         this.passwordPolicy,
+        allowNoEmail,
       );
     });
   }
@@ -1206,6 +1389,7 @@ async function createLocalOwnerRecords(
   ownerTenant: ResolvedOwnerTenant,
   identity: LocalInstallationIdentity,
   passwordPolicy?: PasswordPolicyOptions,
+  allowNoEmail = false,
 ): Promise<LocalOwnerClaimResult> {
   // Resolve the tenant before writing anything: `Tenant` upserts on its slug,
   // so creating over an existing slug would replace that row with a new id
@@ -1223,9 +1407,10 @@ async function createLocalOwnerRecords(
     );
   }
   const users = await UserCollection.create({ db });
+  const ownerEmail = input.email.trim();
   if (
     (await users.get(identity.ownerId)) ||
-    (await users.findByEmail(input.email.trim()))
+    (ownerEmail && (await users.findByEmail(ownerEmail)))
   ) {
     throw new LocalRuntimeError(
       'owner_identity_conflict',
@@ -1251,7 +1436,9 @@ async function createLocalOwnerRecords(
     typeId: requireId(personType.id, 'Person profile type'),
     tenantId: null,
     name: input.name.trim(),
-    email: input.email.trim(),
+    // No email yet (desktop sign-in): leave the Profile email unset so its
+    // lookup key stays null instead of reserving an invented address.
+    ...(ownerEmail ? { email: ownerEmail } : {}),
   });
   await person.initialize();
   person.requireInsertOnSave({ preserveDerivedSlug: true });
@@ -1261,7 +1448,7 @@ async function createLocalOwnerRecords(
     id: identity.ownerId,
     _insertOnly: true,
     profileId: requireId(person.id, 'Person'),
-    email: input.email.trim(),
+    email: ownerEmail,
     status: UserStatus.ACTIVE,
     lastLoginAt: new Date(),
   });
@@ -1394,25 +1581,76 @@ function resolveOwnerTenant(
   });
 }
 
+async function findActiveOwners(
+  db: DatabaseInterface,
+): Promise<readonly ExistingOwner[]> {
+  const roles = await RoleCollection.create({ db });
+  const ownerRole = await roles.findSystemRoleBySlug(DEFAULT_ROLE_SLUGS.OWNER);
+  if (!ownerRole?.id) return [];
+  const memberships = await MembershipCollection.create({ db });
+  const ownerMemberships = await memberships.findByRole(ownerRole.id);
+  return ownerMemberships
+    .filter(
+      (membership) =>
+        membership.status === MembershipStatus.ACTIVE &&
+        typeof membership.userId === 'string' &&
+        typeof membership.tenantId === 'string',
+    )
+    .map((membership) => ({
+      userId: membership.userId as string,
+      tenantId: membership.tenantId as string,
+    }));
+}
+
+/**
+ * Upgrade path for an owner claimed before a permission existed. Claiming
+ * seeds the owner role over the catalog registered at that moment, so a
+ * permission an app registers in a later release (the shell's `assistant.use`,
+ * a template's `prompts.customize`) had no Permission row and no owner grant,
+ * and nothing granted it on later starts. Each start now adds the catalog
+ * slugs that have no Permission row yet to the system `owner` role. Slugs that
+ * already have a row are never re-granted (a removal stays removed) and no
+ * other role is touched. Registrations must run before the runtime starts.
+ */
+async function grantNewPermissionsToExistingOwner(
+  db: DatabaseInterface,
+): Promise<void> {
+  if (!(await findExistingOwner(db))) return;
+  const grants = await RolePermissionCollection.create({ db });
+  await grants.seedNewCatalogPermissions({
+    roleSlugs: [DEFAULT_ROLE_SLUGS.OWNER],
+  });
+}
+
 async function findExistingOwner(
   db: DatabaseInterface,
   requireUnique = false,
 ): Promise<ExistingOwner | null> {
-  const roles = await RoleCollection.create({ db });
-  const ownerRole = await roles.findSystemRoleBySlug(DEFAULT_ROLE_SLUGS.OWNER);
-  if (!ownerRole?.id) return null;
-  const memberships = await MembershipCollection.create({ db });
-  const ownerMemberships = await memberships.findByRole(ownerRole.id);
-  const activeOwners = ownerMemberships.filter(
-    (membership) =>
-      membership.status === MembershipStatus.ACTIVE &&
-      typeof membership.userId === 'string' &&
-      typeof membership.tenantId === 'string',
-  );
+  const activeOwners = await findActiveOwners(db);
   const active = activeOwners[0];
   return active && (!requireUnique || activeOwners.length === 1)
-    ? { userId: active.userId as string, tenantId: active.tenantId as string }
+    ? active
     : null;
+}
+
+/**
+ * The OS account's user name, for an owner created without a form. Never an
+ * email address; `Owner` when the account name cannot be read.
+ */
+function defaultOwnerName(): string {
+  let raw = '';
+  try {
+    raw = userInfo().username;
+  } catch {
+    // No passwd entry (containers): fall back to the environment.
+  }
+  raw ||= process.env.USER || process.env.USERNAME || '';
+  const cleaned = Array.from(raw)
+    .filter((char) => char >= ' ' && char !== '\u007f')
+    .join('')
+    .trim()
+    .slice(0, 80);
+  return cleaned || 'Owner';
 }
 
 async function throwBootstrapClaimFailure(
@@ -1519,8 +1757,15 @@ function validateSessionTtl(value: number): number {
   return value;
 }
 
-function validateOwnerInput(input: ClaimLocalOwnerInput): void {
-  if (!input.token || !input.name.trim() || !input.email.trim()) {
+function validateOwnerInput(
+  input: ClaimLocalOwnerInput,
+  allowNoEmail = false,
+): void {
+  if (
+    !input.token ||
+    !input.name.trim() ||
+    (!allowNoEmail && !input.email.trim())
+  ) {
     throw new LocalRuntimeError(
       'bootstrap_invalid',
       'Owner bootstrap requires a token, name, and email address.',
@@ -1589,3 +1834,5 @@ function requireId(value: unknown, label: string): string {
   }
   return value;
 }
+
+export * from './owner-approvals.js';

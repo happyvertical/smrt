@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { ShortcutEntry } from '../../overview/widgets/data.js';
 import { createCookbookRegistry } from '../registry.js';
+import {
+  resolveExport as emptyExport,
+  recipeSurfaces as emptySurfaces,
+} from '../surfaces.js';
 
 const sections = [
   {
@@ -68,5 +72,12 @@ describe('createCookbookRegistry shortcuts loader (#3888)', () => {
     });
     expect(data.items.map((i) => i.label)).toEqual(['Orders', 'Customers']);
     expect(data.items.every((i) => i.count === undefined)).toBe(true);
+  });
+});
+
+describe('plain-host installed-surface fallback', () => {
+  it('has no component imports and returns undefined for an unknown export', async () => {
+    expect(emptySurfaces).toEqual({});
+    expect(await emptyExport('@uninstalled/recipe', 'Surface')).toBeUndefined();
   });
 });

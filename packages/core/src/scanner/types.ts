@@ -505,6 +505,8 @@ export interface AgentManifest {
 // ── Core manifest types ─────────────────────────────────────────────────
 
 export interface SmartObjectDefinition {
+  /** Effective same-name subclass; this entry remains only as a declared ancestor. */
+  replacedBy?: string;
   /**
    * Qualified name in format "@package/name:ClassName"
    * This is the PRIMARY KEY for manifest lookups.
@@ -628,7 +630,12 @@ export interface SmartObjectDefinition {
    * `name`/`title`/`label`/`code` when undeclared. Absent when the model has no
    * usable own field (it should ship a selector instead).
    */
+  writeThroughFields?: Record<string, FieldDefinition>;
+
   displayLabelField?: string;
+
+  /** Read-only one-hop label, resolved by collection reads before pagination. */
+  displayLabelProjection?: import('../ui-metadata.js').DisplayLabelProjection;
 
   /**
    * Auto-generated agent manifest

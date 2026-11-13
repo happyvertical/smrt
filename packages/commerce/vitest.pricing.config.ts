@@ -4,5 +4,5 @@ import { smrtVitestPlugin } from '../vitest/src/index.ts';
 export default defineConfig({
   root: new URL('.', import.meta.url).pathname,
   plugins: [smrtVitestPlugin(), svelte()],
-  test: { environment: 'node', include: ['test-support/pricing-*.spec.ts'], fileParallelism: false, pool: 'forks' },
+  test: { environment: 'node', testTimeout: 30000, hookTimeout: 30000, include: ['test-support/pricing-*.spec.ts'], fileParallelism: false, pool: 'forks' },
 });

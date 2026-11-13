@@ -52,9 +52,9 @@ export type ManifestLoadOptions = {
  */
 export function isTestEnvironment(): boolean {
   return (
-    process.env.NODE_ENV === 'test' ||
-    process.env.VITEST === 'true' ||
-    process.env.JEST_WORKER_ID !== undefined
+    globalThis.process?.env?.NODE_ENV === 'test' ||
+    globalThis.process?.env?.VITEST === 'true' ||
+    globalThis.process?.env?.JEST_WORKER_ID !== undefined
   );
 }
 
@@ -67,7 +67,7 @@ export function isTestEnvironment(): boolean {
  * test suite instead of leaking those fixtures into every consumer test run.
  */
 export function getCurrentPackageName(): string | null {
-  const explicitPackageName = process.env.npm_package_name;
+  const explicitPackageName = globalThis.process?.env?.npm_package_name;
   if (explicitPackageName) {
     return explicitPackageName;
   }

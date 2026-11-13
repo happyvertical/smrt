@@ -75,6 +75,85 @@ Covered by core's `runtime-model.test.ts` and engine `profile-subclass.test.ts`.
   params, code), so what the owner approves is what is shown; a template with
   more than 200,000 characters of method code is refused as unreviewable.
 
+## Drafts (draft then publish)
+
+A draft is a second `AppHost` over a COPY of the live data in its own
+directory; publishing replays its changes onto the live data. The engine side
+is documented here; the shell's tables, approvals and UI sit on top.
+
+- **Frozen host.** `HostOptions.frozen` / `host.setFrozen(bool)`: `plan` and
+  `execute` of every command in `STRUCTURAL_COMMANDS` (all but
+  `exportTemplate`, incl. `undo`, `cleanUp`, `importTemplate`) throw
+  `EngineError('refused')`; an unknown command type counts as structural.
+  `STRUCTURAL_COMMANDS` is a total `Record<CommandType, boolean>`, so a new
+  command must pick a side. Records, reports, the app's tools and REST keep
+  working. The shell freezes the live host while a draft is open.
+- **`autoApprove`** (risky commands, `_delete` tools, REST `DELETE`) is read
+  once at construction into a `#private` field: no setter. `AppHost.open`
+  refuses it unless the directory holds the engine's draft marker
+  (`.smrt-draft.json`, written only by `forkDraft`) naming a different live
+  directory. A live directory never has a marker.
+- **`live.forkDraft(draftDir, { store })`** (queue, calls drained): worker op
+  `copyTo(path)` is `VACUUM INTO` (one consistent state, no -wal/-shm needed).
+  The call creates `draftDir` (must not exist, must not be/contain/lie inside
+  live), copies `app.db`, writes the marker, seeds the EMPTY draft store with
+  a copy of live's current record (the draft's BASE, same version number; not
+  a draft version) and returns a draft host (`host.draft` is the marker,
+  `autoApprove` on). Failure removes only the directory it just created. A
+  draft can neither fork nor `undo` below its base. Draft versions are
+  numbered `maxVersion + 1` in the draft store. `draft.discard()` closes the
+  host and deletes its directory, only if it holds the marker, is not a symlink
+  and does not contain the live directory (`discardDraftDirectory(dir)` does the
+  same for an orphan). A restart reopens a draft with
+  `AppHost.open(dir, { store, autoApprove: true })`.
+- **Publish** (`publish.ts` helpers, `host.ts` orchestration). `live.previewPublish(draft)`
+  returns a `PublishPreview`: per-version steps and SQL, definition diff, archive
+  counts and EVERY method in full, from a rehearsal on a fresh copy of the CURRENT
+  live data (live only waits while the copy is taken); `digest` pins the draft's
+  chain. `live.publishDraft(draft, { author, approved: true, expect: digest, draftName? })`
+  refuses without `approved`, without the digest, if the chain or the app it
+  started from changed, or if a `.prepublish` file is lying around. Inside the
+  queue, calls drained: copy live, replay each draft version in order (one short
+  worker per version, its stored definition and steps, the number it will get in
+  live; so add-then-rename works), write the result as ONE file (`VACUUM INTO`),
+  copy the old data to `snapshots/<ts>-0-migrate-prepublish.db`, write
+  `publish-journal.json`, retire the live worker, rename `app.db` (+ `-wal`,
+  `-shm`, `-journal`; main file last) to `<name>.prepublish`, rename the new file
+  in, start the worker, write the versions to the store, then remove journal,
+  asides and rehearsal. The versions are N ordinary live versions numbered after
+  the store's HIGHEST (live may sit on an undone branch), parent-chained,
+  summaries tagged `[draft: name] ...`; archives are keyed by those numbers so
+  `undo` works. Draft records are not carried. Any failure before the store is
+  written renames the asides back (live's `app.db` is byte-for-byte what it
+  was, same version) and restarts the old app; `onStage` lets tests fail each
+  stage. Use a store with the optional atomic `commit(records, current)`; without
+  it a failure mid-append leaves unreachable orphan versions. The queue is held
+  until then, so nothing writes to the new file before the commit.
+- **Boot reconcile** (`reconcilePublish`, every `AppHost.open`, before the app
+  starts; result in `host.recovery`): a journal whose `finalVersion` is the
+  store's current only needs its leftovers removed; any other journal is ROLLED
+  BACK (asides restored, the new file removed), not forward: nothing could have
+  written to the new file, and the draft stays open to publish again. An
+  unreadable journal refuses to start rather than guess. Stray
+  `publish-rehearsal-*` directories are removed.
+- **`undoTo`** is a command (`{ type: 'undoTo', version, from? }`, structural, so
+  frozen hosts refuse it): the same step as `undo` repeated newest first for
+  every version after `version` on the current path, one plan, one decision.
+  It is `risky` (approval) when any of them has a `convertColumn` step, with the
+  summed `countOverwrites` preview; a purged version in the span refuses it
+  before anything changes. Each step is its own consistent state, so a failure
+  part-way leaves the app at the version reached and the error says
+  "undid k of n". `from` pins the current version as `undo`'s pin does.
+- **Undo over a re-added name.** Undoing an add or a define keeps its column or
+  table (data is never dropped by an undo). So when a removal is undone after
+  the same field or model was added again, the archived values go back into the
+  column that is there, and an EMPTY table of the model's name is dropped so the
+  archived table (with its rows) can return; a table holding rows is never
+  dropped and the undo stops with the database's own message.
+- **Queued calls.** `onApp` (records, tools, REST) waits until the change queue
+  is idle and stable, then runs in the same synchronous step; it counts
+  in-flight calls so a change can wait for them (needed for consistent copies).
+
 ## Lessons
 
 - A worker must not be terminated while `@happyvertical/sql`'s startup HMAC key
@@ -83,3 +162,5 @@ Covered by core's `runtime-model.test.ts` and engine `profile-subclass.test.ts`.
 - If V8 overflows its own stack inside WebAssembly, QuickJS cannot recover; the
   small QuickJS stack limit keeps its error first, and a host-level failure
   discards the WASM module instance.
+
+S1 shared Connect AI compatibility: the shell client/owner onboarding route forwards `cancel` to shared `chatgpt-cancel`. Unsupported auth SDK cancellation remains an error, not a fake successful sign-out. Existing owner/origin checks and shared readiness status are retained.

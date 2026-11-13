@@ -6,10 +6,11 @@ import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ parent, depends, fetch }) => {
   depends(DEPENDS.history);
-  needOwner((await parent()).description);
+  const description = needOwner((await parent()).description);
   const { versions } = await loadApi<{ versions: VersionInfo[] }>(
     fetch,
     '/api/shell/history',
+    description.mode,
   );
   return { versions: newestFirst(versions) };
 };

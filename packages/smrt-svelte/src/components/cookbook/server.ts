@@ -17,6 +17,7 @@ import {
 } from './catalog.js';
 import type { CookbookCatalog } from './types.js';
 
+export type { CookbookAppProps } from './app-props.js';
 export { buildCookbookShell } from './build.js';
 export {
   type CookbookManifest,

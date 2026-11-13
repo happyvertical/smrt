@@ -563,6 +563,11 @@ export class FieldPolicy extends SmrtObject {
       );
     }
 
+    if (this.defaultValue !== null && fieldDef.readonly === true) {
+      throw new Error(
+        `Policy defaults cannot target read-only field ${this.objectRef}.${this.fieldName}`,
+      );
+    }
     if (this.defaultValue !== null) {
       this.validateDefaultAgainstSecurityRail(fieldDef);
       const parsed = this.parseDefaultValueOrThrow();

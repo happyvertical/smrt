@@ -9,7 +9,10 @@
  * `buildCookbookShell`, keeps layout and overview edits in memory, and hands
  * each edit to `oncookbookchange` for the host to persist.
  */
+import { resolveCookbookFieldPolicy } from '@happyvertical/smrt-fields/policy';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { createRawSnippet, mount, unmount, untrack } from 'svelte';
+import { M } from '../../i18n/strings.workspace.js';
 import AppShell from '../app/AppShell.svelte';
 import type { ShellSlotItem } from '../app/slot-item.js';
 import { parseRecipeExportRef } from '../overview/recipe-widgets.js';
@@ -23,18 +26,24 @@ import {
   isShellLayoutEmpty,
   type ShellLayout,
 } from '../workspace/admin-shell/layout.js';
+import type { CookbookAppProps } from './app-props.js';
 import { applyCookbookTheme } from './brand-theme.js';
-import { buildCookbookShell, humanize, pluralize } from './build.js';
+import { buildCookbookShell, cookbookScreenDefinition } from './build.js';
 import { type CookbookContext, setCookbookContext } from './context.js';
-import { createCookbookRegistry } from './registry.js';
-import type { CookbookAppProps } from './types.js';
+import {
+  createCookbookRegistry,
+  resolveInstalledRecipeExport,
+} from './registry.js';
 
 let {
   cookbook,
   catalog,
+  fieldPolicies,
+  assistant,
+  embed = false,
   loaders,
   widgetContext,
-  resolveExport,
+  resolveExport: suppliedResolveExport,
   oncookbookchange,
   recipeOrder,
   entryPath,
@@ -44,8 +53,24 @@ let {
   navMode = 'sections-with-items',
   slotItems = [],
   children,
+  panel,
+  panelEnabled,
+  panelToggle,
+  panelLabel,
   ...shellProps
 }: CookbookAppProps = $props();
+const { t } = useI18n();
+const assistantLabel = $derived(
+  assistant?.label ?? t(M['ui.cookbook.assistant']),
+);
+
+const resolveExport = $derived(
+  suppliedResolveExport ??
+    ((specifier: string, exportName: string) =>
+      resolveInstalledRecipeExport(specifier, exportName, {
+        recipes: cookbook.recipes,
+      })),
+);
 
 const shell = $derived(
   buildCookbookShell({
@@ -140,6 +165,8 @@ $effect(() => {
   void (async () => {
     const items: ShellSlotItem[] = [];
     for (const widget of widgets) {
+      // This recipe needs authenticated transport/registry bindings supplied by the host panel.
+      if (widget.recipeId === 'chat.assistant') continue;
       const ref = parseRecipeExportRef(widget.export);
       if (!ref) continue;
       try {
@@ -187,13 +214,28 @@ const models = $derived.by(() => {
     seen.add(entry.model.id);
     choices.push({
       value: entry.model.id,
-      label: pluralize(humanize(entry.model.name)),
+      label: entry.label,
     });
   }
   return choices;
 });
 
 setCookbookContext({
+  get resolveExport() {
+    return resolveExport;
+  },
+  fieldPolicy(definition) {
+    return (
+      fieldPolicies?.[definition.objectRef] ??
+      resolveCookbookFieldPolicy(definition, cookbook)
+    );
+  },
+  get fieldPolicies() {
+    return fieldPolicies;
+  },
+  screenDefinition(definition, entryId) {
+    return cookbookScreenDefinition(shell, definition, entryId);
+  },
   get shell() {
     return shell;
   },
@@ -220,6 +262,17 @@ setCookbookContext({
 
 <AppShell
   {...shellProps}
+  panel={assistant && !embed ? assistantPanel : panel}
+  panelEnabled={assistant ? !embed : panelEnabled}
+  panelToggle={assistant ? (embed ? false : { label: assistantLabel }) : panelToggle}
+  panelLabel={assistant ? assistantLabel : panelLabel}
+  webmcp={assistant && shellProps.webmcp !== false ? {
+    ...(typeof shellProps.webmcp === 'object' ? shellProps.webmcp : {}),
+    ui: {
+      ...(typeof shellProps.webmcp === 'object' && typeof shellProps.webmcp.ui === 'object' ? shellProps.webmcp.ui : {}),
+      dataSurfaceRegistry: assistant.registry,
+    },
+  } : shellProps.webmcp}
   title={shell.title}
   {navMode}
   navGroups={shell.navGroups}
@@ -238,3 +291,29 @@ setCookbookContext({
 >
   {@render children()}
 </AppShell>
+
+{#snippet assistantPanel({ open }: { open: boolean })}
+  {#if assistant && !embed}
+    {@const Dock = assistant.component}
+    <section class="smrt-cookbook-app__cookbook-assistant" aria-label={assistantLabel} hidden={!open}>
+      <Dock transport={assistant.transport} registry={assistant.registry} contextMode="server" visible={open} messageFormat="markdown" toolPresentation={assistant.toolPresentation} introduction={assistant.introduction} />
+    </section>
+  {/if}
+{/snippet}
+
+<style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+
+@layer smrt.structure {
+  .smrt-cookbook-app__cookbook-assistant {
+    height: 100%;
+    min-height: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-cookbook-app__cookbook-assistant {
+    color: var(--smrt-color-on-surface);
+  }
+}
+</style>

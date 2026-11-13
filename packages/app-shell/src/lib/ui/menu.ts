@@ -7,17 +7,24 @@ export interface MenuItem {
   label: string;
   icon: string;
   description?: string;
-  badge?: number | null;
-  attention?: boolean;
+}
+
+/** An item of the user menu (Approvals, History), caller-owned destinations. */
+export interface UserMenuItem {
+  id: string;
+  href: string;
+  label: string;
+  badge: number | null;
+  badgeLabel?: string;
 }
 
 export function modelHref(model: string): string {
   return `/m/${encodeURIComponent(model)}`;
 }
 
+/** The side menu: Home and what the app (the assistant) has built. */
 export function buildMenu(
   description: Pick<Description, 'models'> | null,
-  pending = 0,
 ): MenuItem[] {
   const items: MenuItem[] = [
     { id: 'home', href: '/', label: 'Home', icon: 'home' },
@@ -29,20 +36,25 @@ export function buildMenu(
       label: model.label || name,
       icon: 'book',
     });
-  items.push({
-    id: 'approvals',
-    href: '/approvals',
-    label: 'Approvals',
-    icon: 'done',
-    description: 'Changes waiting for your decision',
-    badge: pending > 0 ? pending : null,
-    attention: pending > 0,
-  });
-  items.push({
-    id: 'history',
-    href: '/history',
-    label: 'History',
-    icon: 'undo',
-  });
   return items;
+}
+
+/**
+ * The user menu's destinations, in order: Approvals (badged with the number
+ * waiting, nothing when none) and History. They are not side menu entries.
+ */
+export function userMenuItems(pending = 0): UserMenuItem[] {
+  const waiting = pending > 0 ? Math.floor(pending) : 0;
+  return [
+    {
+      id: 'approvals',
+      href: '/approvals',
+      label: 'Approvals',
+      badge: waiting || null,
+      ...(waiting
+        ? { badgeLabel: `${waiting} waiting for your decision` }
+        : {}),
+    },
+    { id: 'history', href: '/history', label: 'History', badge: null },
+  ];
 }

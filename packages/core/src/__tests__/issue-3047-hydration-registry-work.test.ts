@@ -172,4 +172,27 @@ describe('smrt#3047: simple-name lookups are indexed', () => {
     expect(ObjectRegistry.getClass('Issue3047Late')).toBeUndefined();
     expect(ObjectRegistry.findClassesByName('Issue3047Late')).toHaveLength(0);
   });
+
+  it('single-class relationship lookup does not inspect unrelated field metadata', () => {
+    const unrelated = getClasses().get(fillerKeys[0])!;
+    const fields = unrelated.fields;
+    Object.defineProperty(unrelated, 'fields', {
+      configurable: true,
+      get() {
+        throw new Error('unrelated field metadata was inspected');
+      },
+    });
+    try {
+      expect(ObjectRegistry.getRelationships('Issue3047Widget')).toEqual([]);
+      expect(() => ObjectRegistry.getRelationshipMap()).toThrow(
+        'unrelated field metadata was inspected',
+      );
+    } finally {
+      Object.defineProperty(unrelated, 'fields', {
+        configurable: true,
+        value: fields,
+        writable: true,
+      });
+    }
+  });
 });

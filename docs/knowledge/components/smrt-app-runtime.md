@@ -5,10 +5,10 @@ description: "Validated local, self-hosted, and cloud runtime composition for s-
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-13T18:28:13Z"
+  at: "2026-11-13T21:00:09Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:453d5706694d1afc85d4808d53eb7d1b82310bcc8baf9a3e8a81ac3953695bdc"
+source_revision: "sha256:f56a3aa74bc9b3bf7014b55bba51c1a6498fa1fcb417dc8f01b3b4792dd43985"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/package.json"
@@ -20,8 +20,17 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/README.md"
     title: "@happyvertical/smrt-app-runtime packages/app-runtime/README.md"
   - id: "agents-3"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/agents/desktop-signin.md"
+    title: "@happyvertical/smrt-app-runtime packages/app-runtime/agents/desktop-signin.md"
+  - id: "agents-4"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/agents/local-schema.md"
     title: "@happyvertical/smrt-app-runtime packages/app-runtime/agents/local-schema.md"
+  - id: "agents-5"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/agents/owner-approvals.md"
+    title: "@happyvertical/smrt-app-runtime packages/app-runtime/agents/owner-approvals.md"
+  - id: "agents-6"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/agents/windows-custody.md"
+    title: "@happyvertical/smrt-app-runtime packages/app-runtime/agents/windows-custody.md"
 ---
 
 # @happyvertical/smrt-app-runtime
@@ -37,10 +46,14 @@ sources:
 
 - `packages/app-runtime/AGENTS.md`
 - `packages/app-runtime/README.md`
+- `packages/app-runtime/agents/desktop-signin.md`
 - `packages/app-runtime/agents/local-schema.md`
+- `packages/app-runtime/agents/owner-approvals.md`
+- `packages/app-runtime/agents/windows-custody.md`
 
 ## Framework dependencies
 
+- [smrt-approvals](/components/smrt-approvals.md)
 - [smrt-config](/components/smrt-config.md)
 - [smrt-core](/components/smrt-core.md)
 - [smrt-jobs](/components/smrt-jobs.md)

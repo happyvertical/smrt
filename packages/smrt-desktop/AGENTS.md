@@ -46,6 +46,12 @@ secret, a real updater key, a gpg-verified Node pin and a non-placeholder
 product identity. Never add a default, fallback or generated value for any of
 them; the owner inputs still missing are listed in `wrapper/README.md`.
 
+`examples/tricia/smrt-desktop.json` is the Tricia product (the app shell,
+`packages/app-shell`); `wrapper/scripts/build-desktop-app.mjs --app tricia`
+copies the shell's source into an app tree and installs the packed shell as a
+dependency (the shell build marks it external). The shell itself carries no
+product identity. Do not add signing or updater values to the example.
+
 The plugin launcher lives in `src/launcher` behind the Node-only `./launcher`
 entry (the root must never import it; `exports.test.ts` enforces that). It is a
 thin client of app-runtime: the `origin.json` reader (`readOriginFile`) and
@@ -62,3 +68,5 @@ repo forbids inter-smrt peers) used only by `./launcher`.
 
 From this directory, run `npm run build`, `npm run typecheck`, and
 `smrt test src`.
+
+Normal built-app packaging: [agents/built-apps.md](agents/built-apps.md).

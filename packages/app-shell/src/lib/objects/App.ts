@@ -11,8 +11,16 @@ import {
   type MethodDef,
 } from '../../engine/index.ts';
 import { type BuilderResult, runCommand } from '../server/builder.ts';
-import { getHost } from '../server/host.ts';
+import {
+  describeCopy,
+  historyFor,
+  previewDraft,
+  requestDiscard,
+  requestPublish,
+  startDraft,
+} from '../server/drafts.ts';
 import { assertOwner } from '../server/owner.ts';
+import { currentScope } from '../server/target.ts';
 
 // The decorator config must be a literal: the smrt() scanner reads it
 // statically (a shared constant would be invisible to it and every generated
@@ -60,9 +68,13 @@ function str(value: unknown, what: string): string {
 
 const FIELD_EXAMPLE = "{type: 'integer'}";
 
+/**
+ * Run a builder command on the copy the REQUEST named (`withScope`, entered by
+ * the REST route or the tool dispatch; all-live when nothing entered it).
+ */
 async function run(command: Command): Promise<BuilderResult> {
   const owner = await assertOwner();
-  return runCommand(command, owner.id);
+  return runCommand(command, owner.id, currentScope().structure);
 }
 
 /**
@@ -92,6 +104,11 @@ async function run(command: Command): Promise<BuilderResult> {
       'importTemplate',
       'describe',
       'history',
+      'undoTo',
+      'startDraft',
+      'previewPublish',
+      'publishDraft',
+      'discardDraft',
     ],
   },
   mcp: {
@@ -111,6 +128,11 @@ async function run(command: Command): Promise<BuilderResult> {
       'importTemplate',
       'describe',
       'history',
+      'undoTo',
+      'startDraft',
+      'previewPublish',
+      'publishDraft',
+      'discardDraft',
     ],
   },
   cli: {
@@ -130,6 +152,11 @@ async function run(command: Command): Promise<BuilderResult> {
       'importTemplate',
       'describe',
       'history',
+      'undoTo',
+      'startDraft',
+      'previewPublish',
+      'publishDraft',
+      'discardDraft',
     ],
   },
   operationPermissions: {
@@ -148,6 +175,11 @@ async function run(command: Command): Promise<BuilderResult> {
     importTemplate: { action: 'update' },
     describe: { action: 'read' },
     history: { action: 'read' },
+    undoTo: { action: 'update' },
+    startDraft: { action: 'update' },
+    previewPublish: { action: 'read' },
+    publishDraft: { action: 'update' },
+    discardDraft: { action: 'update' },
   },
 })
 export class App extends SmrtObject {
@@ -310,16 +342,64 @@ export class App extends SmrtObject {
     });
   }
 
+  /**
+   * Undo every change after `version` in one step (the history leading to now).
+   * Waits for the owner's approval when any of them converted a field's type.
+   * "Undo this publish": pass the version before the publish's first one.
+   */
+  static async undoTo(version: number) {
+    const n = Number(version);
+    if (!Number.isInteger(n))
+      throw new EngineError('version must be a whole number', 'invalid');
+    return run({ type: 'undoTo', version: n });
+  }
+
+  /**
+   * Start a draft: a test copy of the app (with its records) to build in while
+   * the live app keeps working. Live structure is frozen until the draft is
+   * published or discarded. One draft at a time.
+   */
+  static async startDraft(name?: string) {
+    const owner = await assertOwner();
+    return startDraft(name, owner.id);
+  }
+
+  /**
+   * Preview publishing the open draft: what changes, the SQL, every method's
+   * code, and a digest. Read only.
+   */
+  static async previewPublish() {
+    await assertOwner();
+    return (await previewDraft()).preview;
+  }
+
+  /**
+   * Publish the open draft's changes to the live app. ALWAYS waits for the
+   * owner's approval (`pending_approval`); it applies only if the draft is
+   * unchanged since this preview. Pass `expect` (the preview's digest) to
+   * refuse a draft that changed since you looked.
+   */
+  static async publishDraft(expect?: string) {
+    const owner = await assertOwner();
+    return requestPublish(expect, owner.id);
+  }
+
+  /** Throw the open draft away (waits for the owner's approval). The live app is not changed. */
+  static async discardDraft() {
+    const owner = await assertOwner();
+    return requestDiscard(owner.id);
+  }
+
   /** The models, fields and methods of the app now. */
   static async describe() {
     await assertOwner();
-    return (await getHost()).describe();
+    return describeCopy(currentScope().structure);
   }
 
   /** Every version of the app, newest last. */
   static async history() {
     await assertOwner();
-    return (await getHost()).versions();
+    return historyFor(currentScope().structure);
   }
 }
 

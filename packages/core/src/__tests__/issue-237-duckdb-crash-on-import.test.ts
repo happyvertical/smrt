@@ -9,6 +9,7 @@
  * Database initialization should only happen when explicitly calling `.create()` or `.initialize()`.
  */
 
+import { execFileSync } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtObject } from '../object.js';
 import { smrt } from '../registry.js';
@@ -29,6 +30,59 @@ vi.mock('@happyvertical/sql', async () => {
 });
 
 describe('Issue #237: DuckDB crash on import', () => {
+  it('defers SQL and selected AI SDK loading until use, preserving missing SDK errors', () => {
+    const host = new URL('../host.ts', import.meta.url).href;
+    const output = execFileSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '--eval',
+        `
+          import assert from 'node:assert/strict';
+          import { registerHooks } from 'node:module';
+          let attempts = 0;
+          const providers = [];
+          const missing = Object.assign(new Error('SQL SDK missing'), {
+            code: 'ERR_MODULE_NOT_FOUND',
+          });
+          registerHooks({ resolve(specifier, context, next) {
+            if (specifier === 'openai') {
+              providers.push(specifier);
+              throw missing;
+            }
+            if (/^(?:@anthropic-ai\\/sdk|@google\\/genai|@aws-sdk\\/client-bedrock-runtime)(?:\\/|$)/.test(specifier)) {
+              throw new Error('unselected provider imported');
+            }
+            if (specifier === '@happyvertical/sql') {
+              attempts++;
+              throw missing;
+            }
+            return next(specifier, context);
+          }});
+          const host = await import(${JSON.stringify(host)});
+          assert.equal(attempts, 0);
+          assert.equal(host.buildWhere({ id: 1 }).values[0], 1);
+          await assert.rejects(host.getDatabase({ type: 'sqlite', url: ':memory:' }),
+            error => error === missing);
+          assert.equal(attempts, 1);
+          const sdk = await host.importAI();
+          const ai = await sdk.getAI({ type: 'openai', apiKey: 'diagnostic-not-a-secret', maxRetries: 0 });
+          assert.equal(providers.length, 0);
+          await assert.rejects(ai.chat([{ role: 'user', content: 'diagnostic' }]), error => {
+            assert.equal(error.code, 'INITIALIZATION_ERROR');
+            assert.match(error.message, /openai.*could not be loaded/);
+            assert.equal(error.cause, missing);
+            return true;
+          });
+          assert.deepEqual(providers, ['openai']);
+          console.log('lazy SQL boundary passed');
+        `,
+      ],
+      { encoding: 'utf8' },
+    );
+    expect(output).toContain('lazy SQL boundary passed');
+  });
+
   beforeEach(() => {
     getDatabaseSpy.mockClear();
   });

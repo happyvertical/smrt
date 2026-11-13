@@ -45,6 +45,7 @@ import {
   requireForeignKeyAction,
 } from '../schema/foreign-key-policy.js';
 import { shortenIdentifier } from '../schema/index-utils.js';
+import { inspectTableSchema } from '../schema/inspection.js';
 import { STI_CHECK_PREFIX } from '../schema/sti-hardening.js';
 import {
   isEmptyTextOnlyProbe,
@@ -1172,7 +1173,7 @@ export class SchemaComparer {
     tableName: string,
   ): Promise<SqlTableSchemaInfo | null | undefined> {
     const schema = unquoteIndexColumns(
-      await this.db.getTableSchema?.(tableName),
+      await inspectTableSchema(this.db, tableName, this.engine),
     );
     if (
       schema &&
@@ -1255,6 +1256,7 @@ export class SchemaComparer {
   private async getLiveSchema(
     tableName: string,
   ): Promise<SqlTableSchemaInfo | undefined> {
+    if (!this.db.getTableSchema && this.engine !== 'postgres') return undefined;
     if (this.liveSchemas.has(tableName)) {
       return this.liveSchemas.get(tableName) ?? undefined;
     }
@@ -1285,7 +1287,11 @@ export class SchemaComparer {
    * `introspectionConcurrency` introspections in flight on the pool.
    */
   private async prefetchLiveSchemas(tableNames: string[]): Promise<void> {
-    if (typeof this.db.getTableSchema !== 'function') return;
+    if (
+      typeof this.db.getTableSchema !== 'function' &&
+      this.engine !== 'postgres'
+    )
+      return;
     const pending = tableNames.filter(
       (tableName) => !this.liveSchemas.has(tableName),
     );

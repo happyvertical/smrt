@@ -5,10 +5,10 @@ description: "Vitest plugin for automatic cross-package manifest loading in SMRT
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-12T22:05:23Z"
+  at: "2026-11-13T21:00:09Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:9811e2dc820e199567f6ef3a047abc6ebc358c098843d937a0c8b1055fca42e4"
+source_revision: "sha256:2a150ef515c83a8df3b3c79d27f08614ef241fc3b413910e5f5200f8acae140b"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/vitest/package.json"
@@ -16,6 +16,9 @@ sources:
   - id: "agents"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/vitest/AGENTS.md"
     title: "@happyvertical/smrt-vitest packages/vitest/AGENTS.md"
+  - id: "agents-2"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/vitest/agents/test-home.md"
+    title: "@happyvertical/smrt-vitest packages/vitest/agents/test-home.md"
 ---
 
 # @happyvertical/smrt-vitest
@@ -30,6 +33,7 @@ sources:
 ## Documentation
 
 - `packages/vitest/AGENTS.md`
+- `packages/vitest/agents/test-home.md`
 
 ## Framework dependencies
 
@@ -47,3 +51,5 @@ sources:
 - `./setup`
 - `./svelte`
 - `./svelte-setup`
+- `./test-home`
+- `./test-home/global-setup`

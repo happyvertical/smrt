@@ -140,6 +140,8 @@ surface during development. Override with `SMRT_VITEST_RETRY=<n>`.
 Packages that don't use `smrtVitestPlugin` (notably `cli`, plus `core`) set the
 same `retry` policy inline in their own `vitest.config.ts`.
 
+Test home/state isolation and the real-state-base guard: [agents/test-home.md](agents/test-home.md).
+
 ## Test Database Utilities
 
 PostgreSQL isolated factories provision all canonical framework-owned system

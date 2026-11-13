@@ -30,6 +30,24 @@ import {
   parseCliCommandArgs,
 } from '../cli-generator.js';
 
+// This suite stubs registry metadata instead of registering model constructors.
+// Supply the matching plain-model create catalog at that same boundary.
+beforeEach(() => {
+  vi.spyOn(ObjectRegistry, 'getCreateTargets').mockImplementation((name) => ({
+    base: { name, label: name },
+    subtypes: [],
+    polymorphic: false,
+  }));
+  vi.spyOn(ObjectRegistry, 'resolveCreateTarget').mockImplementation(
+    (name, input) => ({
+      name,
+      label: name,
+      collectionName: name,
+      data: input as Record<string, unknown>,
+    }),
+  );
+});
+
 /** Minimal in-memory collection backed by a Map (not a mocked DB adapter). */
 function makeMemoryCollection(seed: Array<Record<string, any>> = []) {
   const store = new Map<string, any>();

@@ -1425,7 +1425,8 @@ fixed for that process. This is not an implicit data migration; see
 It compares the build's stamp (`resolveBuildSchema()`, above) with the last
 migrate record. It never reads the live registry, so lazy imports, a worker
 loading a subset of packages, installed packages the app never imports and
-run-time models (`planRuntimeModelDDL`) do not affect it. It never
+run-time models (`planRuntimeModelDDL`, `migrateSmrtSchemas({ tables })`) do
+not affect it. It never
 creates schema or runs migrations. Collection queries and object persistence call
 it beside their table check in `verifyPersistenceTable()`. TaskRunner and
 ScheduleRunner call it before starting their loops. Successful starts share one
@@ -1458,7 +1459,9 @@ per database per process, including when fingerprints match. The warning names
 the override and the expected/found values. Other values do not override.
 
 Whole-schema provisioning is `db:migrate` or `migrateSmrtSchemas`; both record
-success, including an in-sync run. `smrt app install/setup/migrate` use the CLI
+success, including an in-sync run. A run limited to `tables` (lazy activation,
+run-time model edits) is not a whole-schema migrate: it skips the package
+comparison and records nothing. `smrt app install/setup/migrate` use the CLI
 migrate path. The local app-runtime's first-run `createSchema` hook and its
 `migrateSchemas()` callback use the core migrator, so they also record success.
 The app-shell's additive `prepareShellSchema` and content's `bootstrapSchema`
@@ -1533,3 +1536,9 @@ time passed. Review and commit that decision with the code deletion.
 P8: the release workflow is not wired to this gate yet. A release job cannot be
 verified without publishing. This change supplies a tested command and a PR
 job; a later verified release change must wire the publishing path.
+
+Fallback registry aggregation includes `_sync_origin_device_id` and
+`_sync_revision` even without a generated manifest schema. Migration-created
+source-only models must support the same tracked delete path as compiled models.
+The fallback id-type regression also asserts these columns; the plugin fixture
+exercises delete after owner approval against a fresh runtime database.

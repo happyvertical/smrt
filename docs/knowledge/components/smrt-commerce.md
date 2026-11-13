@@ -5,10 +5,10 @@ description: "Commerce models for the SMRT framework - contracts, fulfillments, 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-13T01:53:57Z"
+  at: "2026-11-13T21:00:09Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:fc6864bb1bb8180b150f06011a1e1559827d68a25c234fbfeafcbf126182dbb5"
+source_revision: "sha256:b69d297d85a62bf7b9022c57e93f432d5ce7b0a0861c9f413f897b85fac467d2"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/package.json"
@@ -130,6 +130,7 @@ sources:
 - [smrt-jobs](/components/smrt-jobs.md)
 - [smrt-ledgers](/components/smrt-ledgers.md)
 - [smrt-products](/components/smrt-products.md)
+- [smrt-profiles](/components/smrt-profiles.md)
 - [smrt-reports](/components/smrt-reports.md)
 - [smrt-subscriptions](/components/smrt-subscriptions.md)
 - [smrt-svelte](/components/smrt-svelte.md)
@@ -238,8 +239,10 @@ sources:
 - `contract_list`: list on `@happyvertical/smrt-commerce:Contract`
 - `contractlineitem_get`: get on `@happyvertical/smrt-commerce:ContractLineItem`
 - `contractlineitem_list`: list on `@happyvertical/smrt-commerce:ContractLineItem`
+- `customer_create`: create on `@happyvertical/smrt-commerce:Customer`
 - `customer_get`: get on `@happyvertical/smrt-commerce:Customer`
 - `customer_list`: list on `@happyvertical/smrt-commerce:Customer`
+- `customer_update`: update on `@happyvertical/smrt-commerce:Customer`
 - `documenttax_get`: get on `@happyvertical/smrt-commerce:DocumentTax`
 - `documenttax_list`: list on `@happyvertical/smrt-commerce:DocumentTax`
 - `estimate_get`: get on `@happyvertical/smrt-commerce:Estimate`

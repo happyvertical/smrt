@@ -28,6 +28,7 @@ import type {
   DeclaredIndexDefinition,
   SchemaDefinition,
 } from '../schema/types.js';
+import type { DisplayLabelProjection } from '../ui-metadata';
 
 /**
  * Type for any constructor function that extends SmrtObject.
@@ -924,20 +925,26 @@ export interface SmartObjectConfig {
 
   /**
    * How a record of this model is named for people and assistants (#3599).
-   * Own fields only — no paths into other packages; a model whose label lives
-   * elsewhere ships a selector component (`ModuleUISlot.selects`) instead.
+   * An own scalar field or a one-hop projection through a declared reference.
    *
    * @example
    * ```typescript
    * @smrt({ display: { label: 'orderNumber' } })
    * ```
    */
+  /** Inline create/edit fields delegated to their linked owning model. */
+  writeThrough?: import('../write-through.js').WriteThroughConfig;
+
   display?: {
     /**
-     * Name of an own, non-sensitive field. When omitted the first of `name`,
-     * `title`, `label`, `code` that exists is used. Validated at build time.
+     * Own public scalar field, or one declared reference hop with a fallback.
+     * When omitted, the first usable `name`/`title`/`label`/`code` is used.
      */
-    label?: string;
+    label?: string | DisplayLabelProjection;
+    /** Default list columns, after the display label. */
+    list?: string[];
+    /** Read-only display targets for existing plain-text references; no storage/FK change. */
+    references?: Record<string, string>;
   };
 
   /**

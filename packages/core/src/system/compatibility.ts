@@ -1,4 +1,5 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { usesPostgresDialect } from '../embedded-write-queue.js';
 import { detectEngine } from '../schema/ddl/index.js';
 import {
   CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
@@ -83,6 +84,7 @@ export function getDatabaseEngine(
   db: DatabaseInterface,
   typeHint?: string,
 ): ReturnType<typeof detectEngine> {
+  if (!typeHint && usesPostgresDialect(db)) return 'postgres';
   const dbWithConfig = db as DatabaseWithConfig;
   return detectEngine(
     getDatabaseUrl(db),

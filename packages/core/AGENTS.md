@@ -29,9 +29,13 @@ and repository rules.
 | `src/system/registry-snapshot.ts` | Sanitized plain-JSON projection of the booted `ObjectRegistry` for the smrt-dev-mcp runtime dev-plane (#1831); never constructors, validators, values, or absolute paths | [agents/registry-snapshot.md](agents/registry-snapshot.md) |
 | `src/registry/qualified-name-aliases.ts`, `src/migrations/qualified-name-aliases.ts` | Model moves: `previousQualifiedNames` aliases, deprecation, doctor counts, opt-in backfill (#3338) | [agents/model-moves.md](agents/model-moves.md) |
 | `src/run-once.ts` | Shared idempotency seam: insert-only claim + caller work in one transaction, replay on retry, typed in-flight/unknown-outcome answers (#3080) | [agents/run-once.md](agents/run-once.md) |
+| `src/registry/subtype-lineage.ts`, `src/manifest/model-replacements.ts` | Same-name app model replacement; preserve declared ancestry while resolving I/O to the app | [agents/app-subclasses.md](agents/app-subclasses.md) |
 | `src/runtime-model.ts` | Run-time models from data: `runtimeModelEntry()`, `registerRuntimeModel()`, `planRuntimeModelDDL()`, run-time subclasses of registered classes (#4871, #4869 checks) | [agents/runtime-model.md](agents/runtime-model.md) |
 | `src/recipe.ts`, `../scanner/src/recipes.ts` | `SmrtRecipe`: declared user-facing units (models, nav, `requires`, curation `options`) collected into manifest and knowledge `recipes` (#3590) | [agents/recipes.md](agents/recipes.md) |
+| `src/runtime-exposure.ts`, `src/activation.ts`, `src/activation/`, `ObjectRegistry.getExposureModel()` | Opt-in cookbook exposure; SQLite/PostgreSQL activation defers imports/registration and migrates the enabled physical-table closure | [agents/runtime-exposure.md](agents/runtime-exposure.md) |
 | `src/cookbook/` | Cookbook v1 document: browser-safe validate/migrate, JSON Schema (`./cookbook`, `./cookbook/v1.schema.json`; #3748) | [agents/cookbook.md](agents/cookbook.md) |
+| `src/cookbook/tools.ts` | Recipe and [app customization](agents/app-tools.md) MCP/assistant tools, owner approvals and host storage | [agents/cookbook-tools.md](agents/cookbook-tools.md) |
+| `src/app-models.ts`, `src/cookbook/model-{editor,history}.ts` | Versioned app fields/lists: runtime replacement, tracked migrations, SQLite/PostgreSQL history, host publication | [agents/app-models.md](agents/app-models.md) |
 | `src/cookbook/engine/` | Headless cookbook command engine: typed commands, idempotent retries, atomic batches, receipts, tool schemas (`./cookbook/engine`; #3753) | [agents/cookbook-engine.md](agents/cookbook-engine.md) |
 | `src/inference.ts`, `getAiClient(tier?)`, `src/inference-target.ts`, `src/inference-availability.ts`, `src/inference-capabilities.ts`, `src/inference-gate.ts` | Inference tiers (`cheap`…`best`, `auto`), `inference` config, `setInferenceResolver()` / `setInferenceExecutor()` seams, per-tier clients and usage tags, fusion kind and run seams (#4750, #4752, #4753); raw-client bindings `resolveInferenceTarget()` (#4756); mode and typed `AI_UNAVAILABLE`, status probe and `_inference` route (#4757); capability detection and recorded fallbacks (#4758); hosted gate seam `setInferenceGate()` (#4760) | [agents/inference.md](agents/inference.md) |
 | `src/browser.ts`, `src/host.ts`, `src/host.browser.ts` | Browser entry that builds and evaluates without Node-only modules: host seam, `package.json#browser` swaps, `pnpm test:browser` (#2838) | [agents/browser-entry.md](agents/browser-entry.md) |
@@ -262,3 +266,7 @@ The PostgreSQL lane is required for numeric types, UUID casts, conflict targets,
 timestamps, and migrations. Tests generate their manifest before Vitest; restart
 watch mode after adding decorated classes. Documentation-only changes need
 instruction-chain and knowledge freshness checks, not the runtime test suite.
+
+Inline linked create/edit and display-only references: [write-through](agents/write-through.md).
+
+PostgreSQL capability matrix, transaction inspection and live DDL: [agents/postgres-parity.md](agents/postgres-parity.md).

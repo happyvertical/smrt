@@ -66,6 +66,7 @@ import {
 } from './assistant-question.js';
 import type {
   AssistantAttachmentRef,
+  AssistantDesignRun,
   AssistantMessage,
   AssistantSendMessageResult,
   AssistantThreadSummary,
@@ -94,6 +95,8 @@ export interface AssistantPendingSend {
   threadId: string;
   content: string;
   status: AssistantPendingSendStatus;
+  /** Safe transport failure, owned by this send's retry presentation. */
+  error?: string;
   sentAt: number;
   attachments?: AssistantAttachmentRef[];
 }
@@ -364,6 +367,8 @@ export interface AssistantDockControllerOptions {
 }
 
 export interface AssistantDockController {
+  readonly designRun: AssistantDesignRun | undefined;
+  resumeDesignRun(): Promise<void>;
   readonly threads: AssistantThreadSummary[];
   /** Whether the current context's conversation list is still loading. */
   readonly threadsLoading: boolean;
@@ -542,6 +547,7 @@ export function createAssistantDockController(
   let threads = $state<AssistantThreadSummary[]>([]);
   let threadsLoading = $state(true);
   let activeThreadId = $state<string | null>(null);
+  let designRun = $state<AssistantDesignRun | undefined>();
   let messages = $state<AssistantMessage[]>([]);
   let answeredQuestions = $state<Record<string, AssistantQuestionAnswer>>({});
   let pendingSends = $state<AssistantPendingSend[]>([]);
@@ -984,6 +990,7 @@ export function createAssistantDockController(
     threads = [];
     threadsLoading = true;
     activeThreadId = null;
+    designRun = undefined;
     messages = [];
     answeredQuestions = {};
     pendingSends = [];
@@ -1098,6 +1105,34 @@ export function createAssistantDockController(
     );
   }
 
+  async function refreshDesignRun(threadId: string, epoch = contextEpoch) {
+    if (!options.transport.designRun) return;
+    const fresh = await options.transport.designRun(threadId);
+    if (!disposed && epoch === contextEpoch && activeThreadId === threadId)
+      designRun = fresh;
+  }
+
+  async function resumeDesignRun() {
+    const id = designRun?.runId;
+    const threadId = activeThreadId;
+    const epoch = contextEpoch;
+    if (
+      !id ||
+      !threadId ||
+      designRun?.status !== 'stopped' ||
+      !options.transport.resumeDesignRun
+    )
+      return;
+    try {
+      const fresh = await options.transport.resumeDesignRun(id);
+      if (!disposed && epoch === contextEpoch && activeThreadId === threadId)
+        designRun = fresh;
+    } catch (cause) {
+      if (!disposed && epoch === contextEpoch)
+        error = cause instanceof Error ? cause.message : String(cause);
+    }
+  }
+
   async function pollTick() {
     if (disposed || !isVisible() || !activeThreadId) return;
     markStalePendingSends();
@@ -1115,6 +1150,7 @@ export function createAssistantDockController(
     let fresh: AssistantMessage[];
     try {
       fresh = await options.transport.loadMessages(threadId);
+      await refreshDesignRun(threadId, epoch);
     } catch (err) {
       // F3 (#2904 review): dispose() can run while this await is in flight.
       if (disposed || epoch !== contextEpoch) return;
@@ -1136,7 +1172,12 @@ export function createAssistantDockController(
       error = null;
     }
     messages = fresh;
-    const hasProcessing = pendingSends.some((p) => p.status === 'processing');
+    const hasProcessing =
+      pendingSends.some((p) => p.status === 'processing') ||
+      !!(
+        designRun &&
+        ['running', 'checking', 'waiting-approval'].includes(designRun.status)
+      );
     resetPollInterval(hasProcessing);
     // A pending send is resolved once its message appears in the thread
     // followed by an assistant/tool reply (#2904 review finding A):
@@ -1309,6 +1350,14 @@ export function createAssistantDockController(
       )
         return;
       activeThreadId = threadId;
+      designRun = undefined;
+      await refreshDesignRun(threadId, epoch);
+      if (
+        disposed ||
+        requestId !== openThreadRequestId ||
+        epoch !== contextEpoch
+      )
+        return;
       messages = fresh;
       error = null;
     } catch (err) {
@@ -1475,7 +1524,11 @@ export function createAssistantDockController(
       if (!disposed && epoch === contextEpoch) {
         pendingSends = pendingSends.map((p) =>
           p.clientRequestId === clientRequestId
-            ? { ...p, status: 'failed' as const }
+            ? {
+                ...p,
+                status: 'failed' as const,
+                error: error instanceof Error ? error.message : String(error),
+              }
             : p,
         );
       }
@@ -1525,7 +1578,25 @@ export function createAssistantDockController(
             };
   }
 
-  function cancel() {
+  function cancel(includeDurable = true) {
+    if (includeDurable && designRun && options.transport.stopDesignRun) {
+      const epoch = contextEpoch;
+      const threadId = activeThreadId;
+      void options.transport
+        .stopDesignRun(designRun.runId)
+        .then((fresh) => {
+          if (
+            !disposed &&
+            epoch === contextEpoch &&
+            activeThreadId === threadId
+          )
+            designRun = fresh;
+        })
+        .catch((cause) => {
+          if (!disposed && epoch === contextEpoch)
+            error = cause instanceof Error ? cause.message : String(cause);
+        });
+    }
     const turn = turnAbort;
     if (!turn) return;
     if (runCore && !runCore.stoppedReason) {
@@ -1593,6 +1664,10 @@ export function createAssistantDockController(
         if (event.message.role === 'assistant') streamingText = '';
         return;
       case 'done':
+        if (event.runId && activeThreadId)
+          void refreshDesignRun(activeThreadId).catch((cause) => {
+            error = cause instanceof Error ? cause.message : String(cause);
+          });
         streamingText = '';
         {
           // A capped turn is continuable even when it then ended `empty`
@@ -1878,6 +1953,18 @@ export function createAssistantDockController(
   }
 
   function computeStatus(): AssistantStatus {
+    if (designRun && designRun.status !== 'done')
+      return {
+        state:
+          designRun.status === 'stopped' || designRun.status === 'failed'
+            ? 'idle'
+            : 'working',
+        label: `Thinking this through · ${designRun.pass.name} (${designRun.pass.index}/${designRun.pass.count})${designRun.note ? ` · ${designRun.note}` : ''}`,
+        cancellable:
+          designRun.status === 'running' ||
+          designRun.status === 'checking' ||
+          designRun.status === 'waiting-approval',
+      };
     if (turnActive && runCore?.state === 'paused') {
       return { state: 'working', label: 'Paused', cancellable: true };
     }
@@ -2038,6 +2125,7 @@ export function createAssistantDockController(
     if (!pending) return;
     // Cycle-4 final finding 1: same epoch discipline as doSend() itself.
     const epoch = contextEpoch;
+    error = null;
     try {
       await doSend(
         pending.threadId,
@@ -2426,7 +2514,7 @@ export function createAssistantDockController(
     // re-arm the timer or double-unsubscribe.
     if (disposed) return;
     disposed = true;
-    cancel();
+    cancel(false);
     stopStatusEffect?.();
     stopRunEffect?.();
     stopPolling();
@@ -2437,6 +2525,10 @@ export function createAssistantDockController(
   }
 
   return {
+    get designRun() {
+      return designRun;
+    },
+    resumeDesignRun,
     get threads() {
       return threads;
     },

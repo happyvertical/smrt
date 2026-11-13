@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { installTestHome } from '../../../vitest/src/test-home.ts';
 import test from 'node:test';
 import {
   appLocalDataDir,
+  appLogDir,
   CARGO_LOCK,
   containsLaunchSecretShape,
   STAGE_RUN_DIR,
@@ -11,7 +18,20 @@ import {
   redact,
   stagePlan,
   tokenFromSetupLocation,
+  wrapperIdentifier,
 } from './launch-smoke.mjs';
+
+test('the wrapper identifier is the configured one unless a valid override is given', () => {
+  const configured = 'placeholder.invalid.smrt-desktop-wrapper';
+  assert.equal(wrapperIdentifier(configured, undefined), configured);
+  assert.equal(
+    wrapperIdentifier(configured, 'com.happyvertical.tricia.debug'),
+    'com.happyvertical.tricia.debug',
+  );
+  for (const bad of ['', 'nodots', '../x', 'a/b.c', 'a b.c', '.a.b']) {
+    assert.throws(() => wrapperIdentifier(configured, bad), /reverse-domain/, bad);
+  }
+});
 
 test('the data root follows the platform conventions of Tauri app_local_data_dir', () => {
   const identifier = 'placeholder.invalid.smrt-desktop-wrapper';
@@ -80,6 +100,66 @@ test('redact removes every occurrence of every secret', () => {
   );
 });
 
+test('smoke failure output uses the CLI credential and launch-link redactor', () => {
+  const output = redact([
+    'Error: data path exceeds the length budget',
+    'Authorization: Bearer x',
+    'http://127.0.0.1/setup?launch=unknown-launch-value&token=unknown-token-value',
+    'https://user:password@example.invalid/path',
+  ].join('\n'), []);
+  assert.ok(output.includes('Error: data path exceeds the length budget'));
+  assert.ok(output.includes('Bearer [redacted]'));
+  for (const secret of ['unknown-launch-value', 'unknown-token-value', 'user:password']) {
+    assert.ok(!output.includes(secret));
+  }
+});
+
+test('a failed wrapper prints only a redacted, bounded log tail and handles split stderr credentials', {
+  skip: process.platform === 'win32', // The fixture is a POSIX executable script.
+}, () => {
+  const root = mkdtempSync(join(tmpdir(), 'smrt-smoke-failure-'));
+  const script = new URL('./launch-smoke.mjs', import.meta.url);
+  const bundle = join(root, 'bundle');
+  const wrapper = join(root, 'wrapper');
+  try {
+    mkdirSync(join(bundle, 'resources'), { recursive: true });
+    mkdirSync(join(bundle, 'binaries'));
+    writeFileSync(join(bundle, 'bundle-report.json'), JSON.stringify({ product: { productId: 'fixture' } }));
+    writeFileSync(join(bundle, 'resources', 'sidecar-manifest.json'), JSON.stringify({
+      healthRoute: '/health', ownerClaimRoute: '/claim',
+    }));
+    writeFileSync(join(bundle, 'binaries', 'fixture-node-test-triple'), 'unused sidecar fixture');
+    writeFileSync(wrapper, `#!/usr/bin/env node
+      import { mkdirSync, writeFileSync } from 'node:fs';
+      import { join } from 'node:path';
+      import { appLogDir } from ${JSON.stringify(script.href)};
+      const log = appLogDir({ platform: process.platform, env: process.env,
+        home: process.env.HOME, identifier: 'placeholder.invalid.smrt-desktop-wrapper' });
+      mkdirSync(log, { recursive: true });
+      writeFileSync(join(log, 'supervisor.log'), 'old-head-marker\\n' + 'ordinary diagnostic\\n'.repeat(1000)
+        + 'http://127.0.0.1/setup?launch=unknown-launch-value\\nrecent-diagnostic\\n');
+      process.stderr.write('Bearer split-');
+      setTimeout(() => process.stderr.end('credential-suffix\\n'), 30);
+      process.exitCode = 7;
+    `, { mode: 0o700 });
+    const result = spawnSync(process.execPath, [fileURLToPath(script),
+      '--wrapper', wrapper, '--bundle', bundle, '--triple', 'test-triple', '--timeout-ms', '10000',
+    ], { encoding: 'utf8', timeout: 15000 });
+    assert.ifError(result.error);
+    assert.equal(result.status, 1);
+    assert.ok(result.stderr.includes('--- wrapper log tail ---'));
+    assert.ok(result.stderr.includes('recent-diagnostic'));
+    assert.ok(result.stderr.includes('Bearer [redacted]'));
+    for (const forbidden of ['old-head-marker', 'unknown-launch-value', 'credential-suffix']) {
+      assert.ok(!result.stderr.includes(forbidden), forbidden);
+    }
+    const tail = result.stderr.split('--- wrapper log tail ---\n')[1].split('--- wrapper stderr ---')[0];
+    assert.ok(Buffer.byteLength(tail.trimEnd()) <= 8192);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('processes of the bundle are found from ps and from the Windows listing', () => {
   const ps = [
     '  100 /usr/sbin/cron',
@@ -131,4 +211,26 @@ test('a 64-hex run is the shape of the launch secret', () => {
     ),
     false,
   );
+});
+
+
+test('macOS logs use Library Logs independently of application data', () => {
+  assert.equal(appLogDir({ platform: 'darwin', env: {}, home: '/Users/u', identifier: 'com.test.app' }), '/Users/u/Library/Logs/com.test.app');
+});
+
+
+test('the isolated Windows profile bases exist before Tauri resolves first-run data and log paths', () => {
+  const dispose = installTestHome();
+  try {
+    const identifier = 'com.happyvertical.smoke-test';
+    const options = { platform: 'win32', env: process.env, home: process.env.HOME, identifier };
+    assert.ok(existsSync(process.env.LOCALAPPDATA));
+    assert.ok(existsSync(process.env.APPDATA));
+    const data = appLocalDataDir(options);
+    assert.equal(data, join(process.env.LOCALAPPDATA, identifier));
+    assert.equal(appLogDir(options), join(data, 'logs'));
+    assert.equal(existsSync(data), false, 'creating OS bases must preserve a fresh app installation');
+  } finally {
+    dispose();
+  }
 });

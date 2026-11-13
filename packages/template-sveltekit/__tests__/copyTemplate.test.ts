@@ -37,9 +37,10 @@ describe('copyTemplate', () => {
       true,
     );
     expect(existsSync(join(tempDir, 'src', 'app.d.ts'))).toBe(true);
+    // The home page is a static empty state; there is no example object.
     expect(
       existsSync(join(tempDir, 'src', 'routes', '+page.server.ts')),
-    ).toBe(true);
+    ).toBe(false);
     expect(existsSync(join(tempDir, 'src', 'routes', '+page.svelte'))).toBe(
       true,
     );

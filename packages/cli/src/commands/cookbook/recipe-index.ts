@@ -76,6 +76,7 @@ export function createRecipeIndex(): RecipeIndex {
 export interface ManifestLike {
   packageName?: string;
   packageVersion?: string;
+  smrtDependencies?: string[];
   objects?: Record<string, { fields?: Record<string, unknown> | unknown[] }>;
   recipes?: Array<{
     id?: string;
@@ -352,6 +353,7 @@ export function neededPackages(
       packages.add(candidatePackageForRecipe(id));
       continue;
     }
+    packages.add(entry.packageName);
     queue.push(...entry.requires, ...entry.requiresAny.flat());
   }
   for (const ref of [
@@ -360,6 +362,11 @@ export function neededPackages(
   ]) {
     const pkg = packageOfQualifiedName(ref);
     if (pkg) packages.add(pkg);
+  }
+  for (const name of packages) {
+    for (const dependency of index.packages.get(name)?.manifest
+      .smrtDependencies ?? [])
+      packages.add(dependency);
   }
   return [...packages].filter(
     (name) => !index.packages.has(name) && !index.missing.has(name),

@@ -708,6 +708,15 @@ Not yet provided: hosted HTTP routes, a durable hosted link store, unlinking.
 
 ### Local MCP tokens
 
+`store.isOwnerSession({ userId, tenantId })` is a read-only check for the exact
+sole active local owner. It reuses the desktop credential owner's canonical
+identity, membership and permission check; it never issues a session or token.
+Use it before exposing installation-wide local credential settings. A tenant
+owner role alone does not identify the installation owner; ambiguous ownership
+fails closed. Legacy custom stores may omit this capability.
+Pass that same actor as `issue(input, ownerSession)` to recheck the binding at
+issuance and avoid minting for a different owner if ownership changes meanwhile.
+
 `openLocalMcpTokenStore()` (and `smrt app token`) issue owner-bound, scoped
 bearer tokens; only a domain-separated HMAC keyed by the installation secret is
 stored. Credentials renew themselves instead of expiring on a short clock:
@@ -739,6 +748,46 @@ smrt app token --scopes notes.read --holder laptop   # renewable, rotates laptop
 smrt app token --scopes notes.read --expires 7d      # fixed lifetime
 smrt app token list | revoke <id> | revoke-holder <holder>
 ```
+
+### Secrets master key
+
+`smrt-secrets` seals every stored secret (an inference provider key, for
+one) under an application master key, which a desktop or other local app has
+no environment to carry. The local runtime creates it instead, on first use,
+and keeps it in the vault key store; the user never sees or types it.
+
+```ts
+// Local profile: the runtime owns the key. Elsewhere it returns null and
+// SMRT_SECRET_MASTER_KEY is the only source.
+const secrets = await SecretService.create({
+  db: await runtime.database(),
+  masterKeyProvider: () => runtime.secretMasterKey(),
+});
+```
+
+- `runtime.secretMasterKey()` (SvelteKit runtime) and
+  `LocalApplicationRuntime.secretMasterKey()` return 64 hex characters for
+  `SecretService.create({ masterKeyProvider })` and nothing else. Never log
+  it, return it from a route, or keep it.
+- **Once, then reused.** The first call creates 32 random bytes as the vault
+  key store item `smrt-secrets.master-key`, under the data root's
+  initialization lock so concurrent processes agree. Every later call, and
+  every restart, loads the same one.
+- **Env wins.** `SecretService` asks the provider only when
+  `SMRT_SECRET_MASTER_KEY` is unset. On a deployed profile the method returns
+  `null`; the runtime never generates a key outside the local profile.
+- **Custody seam.** The default store is `createFileVaultKeyStore` on an
+  owner-only `.smrt-keys-<data directory name>` directory beside the data
+  root (never inside it, so exports and backups of the root exclude it).
+  Pass `vaultKeyStore` to `initializeLocalApplicationRuntime` or
+  `createSmrtSvelteKitRuntime` to inject another provider, such as the
+  desktop wrapper's OS keychain.
+- **Fails closed.** A store that cannot be read, or an item that is not 32
+  bytes, rejects with `LocalRuntimeError` code `secret_master_key_unavailable`,
+  whose message names no key material or path. A malformed item is never
+  replaced: a new key would orphan every secret the old one sealed. Losing
+  the item loses the stored secrets (a key re-entered afterwards is stored
+  under a new master key).
 
 ### Origin file
 
@@ -961,6 +1010,37 @@ token is only in `Location`, which the desktop wrapper's webview follows and the
 wrapper never reads or logs. The secret and the query string are never logged
 or echoed, and the runtime writes no access log. `runtime.ownerSetupLocation()`
 is the underlying method; never log or serialize its result.
+
+##### `autoClaim`: no form, never locked out
+
+`createOwnerLinkHandler(runtime, { autoClaim: true })` (opt-in; default off, so
+other consumers keep the `/setup` redirect above) uses the launch secret as the
+proof that the local person is at the keyboard and signs them in directly. After
+every check above passes (secret, loopback peer, own-origin Host and `Origin`,
+local profile), `runtime.signInLocalOwner()` runs serialized per process:
+
+- no owner yet: the owner is created through the same `claimOwner()` transaction
+  (Person, User, Tenant, owner Role and Membership, Session) with a fresh
+  invitation that never leaves the call, then the `smrt app` hand-off files are
+  removed;
+- an owner exists and the request carries no session of that owner (the cookie
+  was lost): a new session is issued for the sole active owner;
+- the request already carries the owner's session: nothing is issued.
+
+The handler sets the session cookie with the `/setup` attributes and answers
+`302` to `/`. Anything but exactly one active owner (none after a spent
+invitation, several memberships with the owner role, an inactive user) fails
+closed with `owner_unavailable`: no session is issued and the handler redirects
+to `/`, which shows the signed-out page. Outside the `local` profile it issues
+nothing. Concurrent first requests create one owner. The terminal flow
+(`smrt app setup`/`open`/`recover`, `/setup?token=`) is unchanged.
+
+The auto-created owner has no email: `User.email` is `''` (its unique
+`emailKey` stays `NULL`, so nothing collides or reserves an address) and the
+Person profile has no email. The name is `autoClaim`'s `ownerName` option,
+else the OS account's user name, else `Owner`. Neither is a secret. The owner
+adds a real name or email later; the shell does not yet have an Account editor
+for that.
 
 Password-based applications should pass `{ requirePassword: true }` to
 `createOwnerSetupPage` and include a password field in their setup form. The
@@ -1701,3 +1781,35 @@ Losing only the recovery code freezes the account without losing data. Prompt
 the family to confirm the code periodically with `checkRecoverySecret`, and
 tell them up front what a restart costs: a new code, a fresh backup history,
 and every other device re-enrolled.
+
+## Durable owner tool approvals
+
+`OwnerApprovalAuthority` is a host boundary for tool-call holds, backed by an
+`OwnerApprovalStore`. `createSqliteOwnerApprovalStore(db)` is the default adapter:
+it **reuses smrt-approvals `ApprovalService`** for decisions, expiry, the human
+actor ledger, revision binding and single-use consumption. The runtime-owned
+`_smrt_owner_tool_holds` table stores only the immutable tool/principal/arguments
+recovery envelope and execution result. Include smrt-approvals in normal schema
+migrations before serving; the adapter never creates application model schema.
+
+Construct the authority with a mandatory live owner check (normally
+`actor => isApprovalOwner(db, actor)`). Request from trusted host code, list/decide
+with the authenticated human actor, consume before effects, and complete with the
+result. Never offer authority methods as model tools or accept a request body as
+the saved principal. Default expiry is 15 minutes (configurable 1 minute–24 hours).
+A consumed call is never retried automatically: after a process crash during an
+external effect its state is `executing`, requiring operator reconciliation.
+Pending holds and approved but unconsumed decisions survive a restart. The generic
+approval service supplies the append-only decision audit; the host supplies effect
+and transcript authoring. See [the contract](agents/owner-approvals.md).
+
+### Test process storage boundary
+
+`SMRT_FORBIDDEN_STATE_BASES` is an opt-in JSON array of state/data base paths.
+State-root resolution and default local-data custody refuse matching bases using
+the platform's path identity rules, before creating storage. With the variable
+unset, normal path derivation is unchanged. Explicit path-derivation environment
+options do not override this inherited process boundary. Test runners use
+`@happyvertical/smrt-vitest/test-home` to install temporary homes and pass this
+variable to children, including production-mode launchers and sidecars. See
+[the test-home contract](../vitest/agents/test-home.md).

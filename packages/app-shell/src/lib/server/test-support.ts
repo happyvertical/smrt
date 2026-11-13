@@ -16,8 +16,12 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { vi } from 'vitest';
 import '../objects/index.ts';
 import { configureShell, resetShell } from './host.ts';
+import { resetShellInference } from './inference.ts';
 import { type Principal, runAs, setOwnerCheck } from './owner.ts';
 import { prepareShellSchema } from './schema.ts';
+
+/** The secrets master key tests seal under (never a real key). */
+export const TEST_MASTER_KEY = 'cd'.repeat(32);
 
 export interface ShellHarness {
   dir: string;
@@ -74,6 +78,8 @@ export async function openShell(): Promise<ShellHarness> {
   configureShell({
     db: async () => db,
     dataRoot: async () => dir,
+    // A fixed test key stands in for the runtime's vault-held master key.
+    secretMasterKey: async () => TEST_MASTER_KEY,
   });
   return {
     dir,
@@ -82,6 +88,7 @@ export async function openShell(): Promise<ShellHarness> {
     member: { id: ids.member, tenantId: tenant.id as string },
     stranger: { id: 'u-stranger', tenantId: tenant.id as string },
     async close() {
+      resetShellInference();
       await resetShell();
       setOwnerCheck(null);
       rmSync(dir, { recursive: true, force: true });

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { SecretService } from '@happyvertical/smrt-secrets';
@@ -637,8 +638,22 @@ describe('smrt-social models', () => {
       // Cross-package targets carry no DDL FK constraint and no value import.
       expect(relationship?.type).toBe('crossPackageRef');
       expect(relationship?.targetClass).toBe(
-        '@happyvertical/smrt-video:VideoContent',
+        '@happyvertical/smrt-video:VideoShot',
       );
+      const social = JSON.parse(
+        readFileSync(new URL('../dist/manifest.json', import.meta.url), 'utf8'),
+      );
+      const video = JSON.parse(
+        readFileSync(
+          new URL('../../video/dist/manifest.json', import.meta.url),
+          'utf8',
+        ),
+      );
+      const target =
+        social.objects['@happyvertical/smrt-social:SocialPost'].fields
+          .videoContentId.related;
+      expect(target).toBe(relationship?.targetClass);
+      expect(video.objects[target]).toBeDefined();
     });
   });
 

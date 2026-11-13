@@ -3,6 +3,8 @@
   "files": {
     "includes": [
       "packages/*/src/**/*.{js,ts,tsx,jsx,svelte}",
+      "packages/template-sveltekit/host/**/*.{js,ts,svelte}",
+      "packages/template-sveltekit/__tests__/cookbook*.test.ts",
       "packages/ingestion/evaluation/**/*.{mjs,ts,json}",
       "packages/smrt-svelte/e2e/**/*.{js,ts,svelte}",
       "packages/smrt-playground/e2e/*.{mjs,ts}",

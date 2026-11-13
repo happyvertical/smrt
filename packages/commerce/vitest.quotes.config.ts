@@ -7,7 +7,7 @@ export default defineConfig({
   root: new URL('.', import.meta.url).pathname,
   plugins: [smrtVitestPlugin(), svelte()],
   test: {
-    environment: 'node',
+    environment: 'node', testTimeout: 30000, hookTimeout: 30000,
     include: ['test-support/quote-*.spec.ts'],
     fileParallelism: false,
     pool: 'forks',

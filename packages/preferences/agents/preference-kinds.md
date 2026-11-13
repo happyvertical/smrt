@@ -77,3 +77,48 @@ and `createShellSettingsPreferences` (the server half of the shell's
 `ShellSettingsAdapter`: `read(surfaceId)` merges tenant and user with
 `mergeShellSettingsDelta`; `write(surfaceId, delta, { scope?, revision? })`
 is last-writer-wins only when the revision is omitted).
+
+## Pre-built components
+
+`createPrebuiltComponentsPreference({store,isOwner})` wraps the existing generic
+store for the one tenant-wide `pre-built-components` / `app` preference,
+`{enabled: boolean}`. The facade checks live owner membership on writes and the
+store additionally requires `recipes.configure`. Personal tiers are invalid;
+there is no user override. The default is enabled after a successful load with
+no stored preference. Unknown tenants, malformed rows and unreadable storage
+remain disabled. `write(enabled, revision)` uses the existing revision CAS.
+
+Load/refresh before serving and after external changes. Connect its synchronous
+`isEnabled(tenantId)` to the core cookbook runtime gate's host predicate. Writes
+and `invalidate(tenantId)` call `notifyRuntimeExposureChanged`, so MCP hosts emit
+`tools/list_changed`. Invalidation closes the cached value until the next good
+read; multiple host processes must propagate invalidation. Hosts should expose
+this facade to owner settings, not a generic kind/surface write endpoint.
+The core [server tools](../../core/agents/cookbook-tools.md) use this same gate
+for offering and execution, including retained tools and approval resume.
+
+The permission registry reads the shared cookbook tool names from core's
+browser-safe `./cookbook` entry. Do not import the server-only `./cookbook/tools`
+adapter from this model package root: even a metadata import makes its
+`node:crypto` dependency reachable to browser bundlers. The preferences suite
+reuses bundle-gate's browser build and ownership attribution to guard this edge.
+
+## Assistant work profiles
+
+`createWorkProfilesPreference({store,isOwner})` owns the tenant-wide
+`work-profiles` / `assistant` kind. Its sparse design, assist and background
+settings contain engine, model, effort, budgets, automatic escalation and preview
+preferences. Inference owns recommendations and resolution; this package imports
+only its types, preserving the dependency direction. Missing settings resolve to
+recommendations. `write(settings,revision)` and `reset(revision)` both check the
+live owner plus `inference.customize`, and retain store CAS. User-tier overrides,
+unknown fields (including approval/CLI authority), malformed budgets and models
+are refused. Reads return validation issues without rewriting stored data.
+
+Reuse inventory: MCP architecture context and name/purpose searches of the intent
+index, preferences, inference, chat, core, smrt-ui and smrt-svelte found the generic
+kind/store and the existing owner pre-built facade. This new kind reuses both;
+no new table or preference persistence layer was added. Round-trip/reset and
+owner/conflict/invalid-value assertions run in the existing SQLite/DuckDB suite.
+
+S1 extends the existing owner `work-profiles` tenant preference with `safety.requireRemovalApproval` and `safety.protectLocalCli` booleans; absent means true. Unknown safety keys are invalid. Turning protection off requires the facade's explicit `confirmUnprotectedCli` acknowledgement unless already off; owner authorization and optimistic revision checks still apply. Reset removes the override and restores both defaults. Hosts must require an owner browser session, not just a scoped API principal, and must not register preference mutation as an assistant tool.

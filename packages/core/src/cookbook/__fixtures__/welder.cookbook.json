@@ -15,7 +15,8 @@
     "events.calendar",
     "inventory.stock",
     "ledgers.bookkeeping",
-    "products.simple"
+    "products.simple",
+    "profiles.identity"
   ],
   "features": [],
   "policies": [

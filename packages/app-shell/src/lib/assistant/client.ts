@@ -1,6 +1,7 @@
 // Browser calls for the dock. The turn is a streamed POST; Stop aborts the
 // fetch, which the server sees as a disconnect and ends the turn.
 
+import { targetPath } from '../ui/target.ts';
 import type { ApprovalView } from '../ui/types.ts';
 import type {
   AssistantStatus,
@@ -16,6 +17,7 @@ export class UnavailableError extends Error {
   constructor(
     message: string,
     readonly code: string,
+    readonly action?: { label: string; href: string },
   ) {
     super(message);
   }
@@ -33,7 +35,7 @@ export class AssistantRequestError extends Error {
 async function getJson<T>(path: string, doFetch: Fetch): Promise<T> {
   let response: Response;
   try {
-    response = await doFetch(path);
+    response = await doFetch(targetPath(path, 'live'));
   } catch {
     throw new AssistantRequestError(0, 'Could not reach the app.');
   }
@@ -82,11 +84,14 @@ export async function answerApproval(
 ): Promise<{ status: 'approved' | 'denied' | 'failed'; error?: string }> {
   let response: Response;
   try {
-    response = await doFetch(`/api/shell/approvals/${encodeURIComponent(id)}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ approve }),
-    });
+    response = await doFetch(
+      targetPath(`/api/shell/approvals/${encodeURIComponent(id)}`, 'live'),
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ approve }),
+      },
+    );
   } catch {
     throw new AssistantRequestError(0, 'Could not reach the app.');
   }
@@ -114,7 +119,7 @@ export async function streamTurn(
 ): Promise<void> {
   let response: Response;
   try {
-    response = await doFetch('/api/assistant/turn', {
+    response = await doFetch(targetPath('/api/assistant/turn', 'live'), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -132,11 +137,13 @@ export async function streamTurn(
       type?: string;
       code?: string;
       error?: string;
+      action?: { label: string; href: string };
     } | null;
     if (response.status === 503 && body?.type === 'unavailable')
       throw new UnavailableError(
         body.error ?? 'The assistant is not available.',
         body.code ?? 'unavailable',
+        body.action,
       );
     throw new AssistantRequestError(
       response.status,

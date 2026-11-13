@@ -108,3 +108,9 @@ ported in `__tests__/engine.test.ts` (`SCRIPT`) over a data catalog.
 6. MCP/Kitchen (#3752, done): `smrt kitchen mcp` holds one engine per plan id and
    serves `engine.batchTool`'s schema as `run_commands`; the plan reaches disk
    as `smrt.cookbook.json` through `cookbook apply` (`cli/agents/kitchen.md`).
+
+## Installed app server tools
+
+[Cookbook tools](cookbook-tools.md) adapts this engine to tenant-scoped owner
+operations, durable approval holds and audited host storage, with one shared
+schema set for MCP and assistant tools. The engine remains transport-independent.

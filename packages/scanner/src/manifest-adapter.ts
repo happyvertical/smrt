@@ -730,7 +730,7 @@ export class ManifestAdapter {
       extends: classDef.extendsClause || undefined,
       ...(extendsQualified ? { extendsQualified } : {}),
       extendsTypeArg: classDef.extendsTypeArg || undefined,
-      exportName: classDef.className,
+      exportName: classDef.exportName ?? classDef.className,
       collectionExportName: `${classDef.className}Collection`,
       staticProperties,
     };

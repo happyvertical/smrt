@@ -524,6 +524,36 @@ describe('schema orchestration', () => {
     expect(pending.unactionableChanges[0].name).toBe('score');
   });
 
+  it('requireComplete refuses manual drift before executing even the actionable part of a plan', async () => {
+    // An incompatible type change is manual drift (a stop, #4925); an orphan
+    // NOT NULL column no longer is (see the next test).
+    await db.query('CREATE TABLE documents (id TEXT PRIMARY KEY, score BLOB)');
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+      documents: {
+        ...makeDocumentSchema(),
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          score: { type: 'INTEGER' },
+        },
+      },
+      new_documents: { ...makeDocumentSchema(), tableName: 'new_documents' },
+    });
+    await expect(
+      migrateSmrtSchemas({
+        db,
+        packageName: '@fixture/app',
+        requireComplete: true,
+      }),
+    ).rejects.toThrow(/manual schema migration/);
+    expect(
+      (
+        await db.query(
+          "SELECT name FROM sqlite_master WHERE name = 'new_documents'",
+        )
+      ).rows,
+    ).toEqual([]);
+  });
+
   it('reports an orphan NOT NULL column without manual drift or executable SQL (#4925)', async () => {
     await db.query(
       'CREATE TABLE documents (id TEXT PRIMARY KEY, legacy_code TEXT NOT NULL, legacy_note TEXT);',

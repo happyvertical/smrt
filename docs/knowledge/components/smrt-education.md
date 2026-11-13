@@ -5,7 +5,7 @@ description: "Tenant-aware learning catalog models and authorized catalog access
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-13T00:04:49Z"
+  at: "2026-11-13T21:00:09Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:d98238587210c3f8993677c7f54d83d08c1bbed2d67902c2310e97652822f80c"
