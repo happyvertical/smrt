@@ -524,6 +524,26 @@ adapter without transactions refuses. FK and legacy rename settings are restored
 in `finally`, including after rollback. Run this maintenance operation with
 exclusive access to the SQLite connection.
 
+A caller that runs the returned statements itself (`getPendingSchemaStatements().statements`,
+`getSQLFromDiff`, `planSqliteTableRebuilds`, `buildSqliteRebuildStatements`) in
+its own transaction cannot suspend enforcement: `PRAGMA foreign_keys = OFF` does
+nothing inside a transaction, so `DROP TABLE` would delete the rows of children
+that cascade (verified by `issue-4937-rebuild-caller-executes.test.ts`, which
+failed before the guard: the child rows went). Every plan for a table that other
+tables reference therefore starts with the guard from
+`sqliteForeignKeyGuardStatements()`: an INSERT into a temporary table whose
+CHECK fails, with the reason as the constraint name, when `pragma_foreign_keys`
+is 1. It runs ahead of every statement that changes data, passes under the
+tracker (enforcement is off by then), and the caller's transaction rolls back.
+The planner reads the references whether or not enforcement is on for the
+planning connection. `buildSqliteRebuildStatements` takes `inboundReferences`;
+leaving it out means "not checked" and adds the guard; pass `[]` only after
+checking that nothing references the table. A caller outside any transaction
+runs the marker, which turns enforcement off on that connection until it sets it
+back. The data-loss change kinds (`column.rebuild-data-loss`,
+`type.rebuild-data-loss`) are still produced by a direct planner call without
+`foreignKeysSuspended`; the differ never produces them.
+
 ## What the differ compares (#2369)
 
 `SchemaComparer` (`src/migrations/differ.ts`) compares each manifest column's

@@ -88,6 +88,29 @@ export const SQLITE_REBUILD_TABLE_PREFIX = '_smrt_rebuild_';
 /** Executable handoff to MigrationTracker: suspend FKs outside its transaction. */
 export const SQLITE_RELAX_REBUILD_MARKER = 'PRAGMA foreign_keys = OFF';
 
+/** Why the guard below refuses; it is the name of the constraint that fails. */
+const SQLITE_REBUILD_GUARD_REASON =
+  'smrt table rebuild refused: foreign keys are on, so DROP TABLE would delete rows of child tables. Run it through MigrationTracker (smrt db:migrate), which turns foreign keys off outside its transaction';
+
+/**
+ * The statements that make a rebuild of a referenced table refuse to run where
+ * foreign keys are on (#4937). `PRAGMA foreign_keys = OFF` does nothing inside a
+ * transaction, so a caller that runs a plan itself in its own transaction would
+ * `DROP TABLE` the parent with `ON DELETE` actions live and lose child rows.
+ * The first statement that cannot be skipped is a failing INSERT, ahead of
+ * every statement that changes data. The tracker has foreign keys off by then,
+ * so the guard passes there.
+ */
+export function sqliteForeignKeyGuardStatements(): string[] {
+  const guard = quoteIdentifier('_smrt_rebuild_guard');
+  return [
+    `DROP TABLE IF EXISTS temp.${guard}`,
+    `CREATE TEMP TABLE ${guard} ("foreign_keys" INTEGER CONSTRAINT ${quoteIdentifier(SQLITE_REBUILD_GUARD_REASON)} CHECK ("foreign_keys" = 0))`,
+    `INSERT INTO temp.${guard} ("foreign_keys") SELECT "foreign_keys" FROM pragma_foreign_keys`,
+    `DROP TABLE temp.${guard}`,
+  ];
+}
+
 /**
  * The advisory SQL the differ emits for a SQLite type upgrade it cannot
  * perform with an `ALTER TABLE`. `planSqliteTableRebuilds` replaces it with an
@@ -524,6 +547,7 @@ export async function planSqliteTableRebuildsWithConstraints(
     removeForeignKeyColumns,
     appendConstraints,
     preserveRowid: newOperations,
+    inboundReferences: context.inboundReferences,
   });
 
   if (!plan) {
@@ -655,9 +679,9 @@ async function readSqliteRebuildContext(
     await db.query('PRAGMA legacy_alter_table'),
   );
 
-  const inboundReferences = foreignKeysEnabled
-    ? await readInboundForeignKeys(db, tableName)
-    : [];
+  // Read whether or not enforcement is on for this connection: the statements
+  // may run on another one (#4937).
+  const inboundReferences = await readInboundForeignKeys(db, tableName);
 
   return {
     createTableSql,
@@ -749,6 +773,14 @@ export interface BuildSqliteRebuildStatementsInput {
   appendConstraints?: string[];
   /** Copy `rowid` across too, so rows keep their identity (default: only for relaxations). */
   preserveRowid?: boolean;
+  /**
+   * The tables that declare a foreign key onto this one (itself included when
+   * it references itself). When any exist, or when this is left out because the
+   * caller has not looked, the plan starts with the guard that refuses to run
+   * where foreign keys are on (#4937). Pass `[]` only after checking that
+   * nothing references the table.
+   */
+  inboundReferences?: string[];
 }
 
 /** A column a rebuild appends to the table (#3008). */
@@ -848,7 +880,12 @@ export function buildSqliteRebuildStatements(
     ...appendColumns.map((column) => column.copyExpression),
   ].join(', ');
 
+  const guard =
+    input.inboundReferences === undefined || input.inboundReferences.length > 0
+      ? sqliteForeignKeyGuardStatements()
+      : [];
   const statements = [
+    ...guard,
     // Deferred FK enforcement survives the window where the table is absent.
     // Unlike `PRAGMA foreign_keys`, this one is honored inside a transaction
     // and resets itself at COMMIT/ROLLBACK.
