@@ -82,3 +82,48 @@ export interface SiteAgentBindingOptions {
   createdAt?: Date;
   updatedAt?: Date;
 }
+
+/**
+ * Role a domain plays for a project
+ */
+export type DomainRole =
+  | 'production'
+  | 'staging'
+  | 'preview'
+  | 'mail'
+  | 'redirect'
+  | 'other';
+
+/** Options for constructing a DnsZone instance */
+export interface DnsZoneOptions {
+  id?: string;
+  tenantId?: string;
+  /** Apex name, e.g. "happyvertical.com" */
+  name?: string;
+  notes?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+/** Options for constructing a Domain instance */
+export interface DomainOptions {
+  id?: string;
+  tenantId?: string;
+  zoneId?: string;
+  /** Fully qualified hostname, e.g. "work.happyvertical.com" */
+  hostname?: string;
+  notes?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+/** Options for constructing a ProjectDomain instance */
+export interface ProjectDomainOptions {
+  id?: string;
+  tenantId?: string;
+  domainId?: string;
+  projectId?: string;
+  role?: DomainRole;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
