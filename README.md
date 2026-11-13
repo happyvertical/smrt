@@ -251,6 +251,7 @@ Status legend:
 | [`smrt-facts`](./packages/facts/README.md) | Stable | Knowledge facts, provenance, confidence, and evolution. |
 | [`smrt-sites`](./packages/sites/README.md) | Stable | Site lifecycle and agent bindings. |
 | [`smrt-properties`](./packages/properties/README.md) | Stable | Digital properties and hierarchical content/ad zones. |
+| [`smrt-spreadsheets`](./packages/spreadsheets/README.md) | Preview | Spreadsheet capabilities for smrt, starting with validated import plans, workbook checks and batch loading through a target adapter. |
 | [`smrt-tags`](./packages/tags/README.md) | Stable | Context-scoped hierarchical tags and aliases. |
 | [`smrt-secrets`](./packages/secrets/README.md) | Stable | Tenant envelope encryption, rotation, and audit. |
 | [`smrt-vault-relay`](./packages/vault-relay/README.md) | Experimental | Blind encrypted-snapshot relay with device-signed requests, gated by `backup.vault`. |

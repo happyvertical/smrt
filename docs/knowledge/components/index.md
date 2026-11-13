@@ -66,6 +66,7 @@
 * [@happyvertical/smrt-secrets](/components/smrt-secrets.md) - Per-tenant secret management with envelope encryption for SMRT
 * [@happyvertical/smrt-sites](/components/smrt-sites.md) - Site lifecycle management for multi-tenant SMRT networks
 * [@happyvertical/smrt-social](/components/smrt-social.md) - Social media account management for multi-platform publishing in the SMRT ecosystem
+* [@happyvertical/smrt-spreadsheets](/components/smrt-spreadsheets.md) - Spreadsheet capabilities for smrt, starting with validated import plans, workbook checks and batch loading through a target adapter
 * [@happyvertical/smrt-subscriptions](/components/smrt-subscriptions.md) - Tenant subscriptions, entitlement resolution, usage thresholds, and subscription UI for SMRT
 * [@happyvertical/smrt-support](/components/smrt-support.md) - AI-first Support Cases: channel-neutral intake, lifecycle, routing, service targets, and service time for the SMRT framework
 * [@happyvertical/smrt-svelte](/components/smrt-svelte.md) - Svelte 5 components for SMRT user management - auth, users, tenants, roles, permissions, groups
