@@ -48,7 +48,7 @@ export class DesignRunRecord extends SmrtObject {
     return execute(this, args, context);
   }
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   ownerId: string = '';
 
   @field({ sqlType: 'UUID', nullable: true })
@@ -58,6 +58,6 @@ export class DesignRunRecord extends SmrtObject {
   revision: number = 0;
 
   /** JSON text avoids driver-specific JSON materialization on read/CAS. */
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'workflow-state' })
   payload: string = '';
 }
