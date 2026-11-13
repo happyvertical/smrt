@@ -106,7 +106,11 @@ a **trusted server-only integration seam** and must preserve those requirements.
 `x-smrt-signature` is `sha256=<hex HMAC-SHA256(secret, timestamp + '.' + body)>`,
 where timestamp is the exact `x-smrt-timestamp` header and body is the exact
 persisted UTF-8 request body. Verify in constant time, bound timestamp age, and
-deduplicate the delivery ID. Keys require at least 32 bytes of entropy-bearing
+deduplicate the delivery ID. `verifyWebhookSignature({ secret, body, timestamp,
+signature, toleranceMs? })` does the constant-time compare and a 5-minute
+replay window (secret may be an array during rotation; the sender signs with one secret; `body` may be a string or `Uint8Array`; the timestamp must be the emitted `YYYY-MM-DDTHH:mm:ss.sssZ` form) and returns
+`{ ok: true }` or `{ ok: false, reason: 'malformed' | 'expired' | 'mismatch' }`;
+`signWebhookPayload` is the matching signer. Keys require at least 32 bytes of entropy-bearing
 secret material (generate them cryptographically; length alone is not entropy).
 
 Secrets and payloads are durable sensitive data: use protected database access,
