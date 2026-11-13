@@ -1,6 +1,7 @@
 import {
   type GeneratedExpression,
   GeneratedFieldError,
+  generatedExpression,
   validateGeneratedFields,
 } from './generated-fields.js';
 /**
@@ -27,8 +28,8 @@ import {
   normalizeTenantScopedConfig,
   registerFromManifest,
 } from './registry/class-registration.js';
-import { isFrameworkBaseClass } from './registry/framework-base-classes.js';
 import {
+  getEffectiveFieldsSync,
   getOwnTableFieldsSync,
   inheritsHierarchicalBase,
 } from './registry/inheritance-resolver.js';
@@ -41,7 +42,6 @@ import type {
   MethodDefinition,
   SmartObjectDefinition,
 } from './scanner/types.js';
-import { resolveInheritedFields } from './schema/field-inheritance.js';
 import type { ColumnDefinition } from './schema/types.js';
 import {
   displayLabelFieldProblem,
@@ -264,33 +264,25 @@ export function runtimeModelEntry(
         ]
       : undefined;
   const fields: Record<string, FieldDefinition> = {};
-  // Use main's shared inheritance rule for both table strategies. STI children
-  // also need inherited generated metadata on writes and generated surfaces.
+  // Keep ordinary STI fields on their declaring class, as before #4915.
+  // Copy only generated metadata needed by output/write consumers; validation
+  // below resolves dependencies from the complete effective parent ancestry.
   if (parent) {
     const sharedTable = ObjectRegistry.getSTIBase(parentKey!) !== null;
-    const inheritedFields = sharedTable
-      ? resolveInheritedFields({
-          strategy: 'shared-table',
-          className: parent.name,
-          ancestors: ObjectRegistry.getInheritanceChain(parentKey!)
-            .filter((key) => key !== parentKey)
-            .map((key) => ObjectRegistry.getClass(key)!)
-            .filter(Boolean)
-            .map((ancestor) => ({
-              name: ancestor.name,
-              fields: ancestor.fields,
-              frameworkBase: isFrameworkBaseClass(
-                ancestor.name,
-                ancestor.packageName,
-              ),
-            })),
-          own: parent.fields,
-          representation: 'registry',
-        })
-      : getOwnTableFieldsSync(parent);
+    const inheritedFields =
+      sharedTable && !def.replaces
+        ? getEffectiveFieldsSync(parent)
+        : getOwnTableFieldsSync(parent);
     const hierarchical =
       !def.replaces && !sharedTable && inheritsHierarchicalBase(parent);
     for (const [name, inherited] of inheritedFields) {
+      if (
+        sharedTable &&
+        !def.replaces &&
+        generatedExpression(inherited) === undefined
+      )
+        continue;
+
       const related =
         name === 'parentId' && hierarchical && inherited.related === parent.name
           ? def.name
@@ -339,7 +331,7 @@ export function runtimeModelEntry(
   Object.assign(fields, Object.fromEntries(scopedFields));
   validateGeneratedFields(
     new Map([
-      ...(parent ? ObjectRegistry.getFields(parentKey!) : []),
+      ...(parent ? getEffectiveFieldsSync(parent) : []),
       ...Object.entries(fields),
     ]),
   );

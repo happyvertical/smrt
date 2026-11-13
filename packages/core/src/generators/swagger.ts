@@ -54,6 +54,7 @@ export function generateOpenAPISpec(config: OpenAPIConfig = {}): OpenAPISpec {
     serverUrl = 'http://localhost:3000',
   } = config;
 
+  const inputNames = generatedInputSchemaNames();
   const spec = {
     openapi: '3.0.3',
     info: { title, version, description },
@@ -67,7 +68,7 @@ export function generateOpenAPISpec(config: OpenAPIConfig = {}): OpenAPISpec {
           bearerFormat: 'JWT',
         },
       },
-      schemas: generateSchemas(),
+      schemas: generateSchemas(inputNames),
       responses: {
         ValidationError: {
           description: 'Validation error',
@@ -96,7 +97,7 @@ export function generateOpenAPISpec(config: OpenAPIConfig = {}): OpenAPISpec {
         },
       },
     },
-    paths: generatePaths(basePath, config.exposureContext),
+    paths: generatePaths(basePath, config.exposureContext, inputNames),
   };
 
   return spec;
@@ -105,7 +106,39 @@ export function generateOpenAPISpec(config: OpenAPIConfig = {}): OpenAPISpec {
 /**
  * Generate schemas for all registered objects
  */
-function generateSchemas(): Record<string, OpenAPISchemaObject> {
+/** Allocate only generated write shapes, reserving every real model/list name. */
+function generatedInputSchemaNames(): Map<string, string> {
+  const classes = ObjectRegistry.getAllClasses();
+  const reserved = new Set<string>();
+  for (const [key, info] of classes) {
+    const name = info.name || key;
+    reserved.add(name);
+    reserved.add(`${name}List`);
+  }
+  const names = new Map<string, string>();
+  for (const [key, info] of [...classes].sort(([left], [right]) =>
+    left.localeCompare(right),
+  )) {
+    if (
+      ObjectRegistry.getConfig(key).api === false ||
+      ![...ObjectRegistry.getFields(key).values()].some(
+        (field) => generatedExpression(field) !== undefined,
+      )
+    )
+      continue;
+    const stem = `${info.name || key}Input`;
+    let name = stem,
+      suffix = 2;
+    while (reserved.has(name)) name = `${stem}${suffix++}`;
+    reserved.add(name);
+    names.set(key, name);
+  }
+  return names;
+}
+
+function generateSchemas(
+  inputNames: Map<string, string>,
+): Record<string, OpenAPISchemaObject> {
   const schemas: Record<string, OpenAPISchemaObject> = {};
   const registeredClasses = ObjectRegistry.getAllClasses();
 
@@ -121,7 +154,8 @@ function generateSchemas(): Record<string, OpenAPISchemaObject> {
       continue;
     }
     schemas[name] = generateObjectSchema(name);
-    schemas[`${name}Input`] = generateObjectSchema(name, true);
+    const inputName = inputNames.get(key);
+    if (inputName) schemas[inputName] = generateObjectSchema(name, true);
     schemas[`${name}List`] = {
       type: 'object',
       properties: {
@@ -239,7 +273,8 @@ function fieldToOpenAPISchema(field: FieldDefinition): OpenAPISchemaObject {
  */
 function generatePaths(
   basePath: string,
-  exposureContext?: RuntimeExposureContext,
+  exposureContext: RuntimeExposureContext | undefined,
+  inputNames: Map<string, string>,
 ): Record<string, OpenAPIPathItem> {
   const paths: Record<string, OpenAPIPathItem> = {};
   const registeredClasses = ObjectRegistry.getAllClasses();
@@ -255,6 +290,7 @@ function generatePaths(
       continue;
     // Issue #951: Use simple name, not the qualified map key
     const name = classInfo.name || key;
+    const inputName = inputNames.get(key) ?? name;
     const pluralName = pluralize(name.toLowerCase());
     const objectPath = `${basePath}/${pluralName}`;
 
@@ -322,7 +358,7 @@ function generatePaths(
       const createSchema = targets.polymorphic
         ? {
             allOf: [
-              { $ref: `#/components/schemas/${name}Input` },
+              { $ref: `#/components/schemas/${inputName}` },
               {
                 type: 'object',
                 properties: {
@@ -339,7 +375,7 @@ function generatePaths(
               },
             ],
           }
-        : { $ref: `#/components/schemas/${name}Input` };
+        : { $ref: `#/components/schemas/${inputName}` };
       paths[objectPath].post = {
         summary: `Create ${name}`,
         tags: [name],
@@ -396,7 +432,7 @@ function generatePaths(
           required: true,
           content: {
             'application/json': {
-              schema: { $ref: `#/components/schemas/${name}Input` },
+              schema: { $ref: `#/components/schemas/${inputName}` },
             },
           },
         },

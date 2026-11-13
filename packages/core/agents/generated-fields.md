@@ -108,7 +108,8 @@ Application tables are still created only by explicit schema planning.
 
 `planRuntimeModelDDL` remains additive: it adds missing generated columns but
 does not replace an existing expression. Use the ordinary migration differ
-for expression changes. It needs column-name introspection from
+for expression changes. DuckDB existing-table additions are refused here as
+well, before any statements are returned. It needs column-name introspection from
 `pragma_table_xinfo`, not `pragma_table_info`, on SQLite.
 
 Persistence rejects supplied generated inputs, strips generated columns after
@@ -127,3 +128,24 @@ Tests: `src/__tests__/generated-fields.test.ts` runs SQLite persistence in
 `pnpm test` and PostgreSQL persistence in `pnpm test:pglite`, using the existing
 isolated SDK/PGlite fixture. Neither a core PGlite devDependency nor an external
 PostgreSQL server is needed.
+
+
+For models without generated fields, manifests, DDL, migration diffs, OpenAPI
+and generated source retain their pre-PR shape. Ordinary STI parent fields stay
+on their declaring class; only inherited generated metadata is copied for the
+new output/write contract. Dependency validation uses effective ancestry without
+turning ordinary inherited unique fields into new child declarations.
+
+OpenAPI creates an input component only for a model with generated fields. It
+prefers `<Model>Input`, reserving real model and list component names first, then
+uses deterministic numeric suffixes on collision (`OrderInput2`, etc.). Create
+and update reference the same allocated component. Plain models retain their
+original component references.
+
+`src/__tests__/generated-fields-compatibility.test.ts` compares exact byte
+digests with checked-in expectations captured from `origin/main` at
+`b16fc4c9075e50a6410a6039e1df295a42473c26`. It covers a plain model and a
+three-level STI hierarchy with a middle-class unique field, including a live
+migration diff against the captured SQLite deployment. The fixture includes
+OpenAPI, monolithic/modular MCP and every generated SvelteKit TypeScript file;
+no output normalization is applied. See the fixture's provenance document.
