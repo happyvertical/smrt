@@ -26,8 +26,10 @@ statement rolls back the earlier changes and tracker rows too.
 
 ## Missing packages (#4928)
 
-Migrate compares loaded packages with the last successful migrate record.
-Every package seen last time must still be loaded. A missing package may have
+Migrate compares the packages that own tables in the app's build (its project
+manifest) with the last successful migrate record, so the CLI, an in-app
+`migrateSmrtSchemas`, a dev install and a production install compare the same
+list. Every package seen last time must still be in the build. A missing package may have
 declared required columns. Without it, migrate could loosen those columns and
 let empty rows in. This stops the whole run before any write. The output names
 each unconfirmed missing package and lists every held-back change.
@@ -82,8 +84,11 @@ A wrapper planning an explicit data step can pass `resolvedStops`, a set of the
 exact original changes it will resolve in the same atomic batch. It must not
 mark a stop resolved without scheduling that repair.
 
-Pass `packagesSeen: { recorded, current, confirmedRemoved }` for package checks;
-use `collectMigrateRecordInput().packages` for `current`. The result contains
+For package checks pass `packagesSeen: packagesSeenInput(collectMigrateRecordInput(),
+await readLastMigrateRecord(db), confirmedRemoved)`. Both come from the app's
+build (its project manifest; see core `schema-paths.md`, "The build's schema"),
+so every writer and every install compares the same package list. A build
+package whose tables the run has not loaded is a stop no confirmation clears. The result contains
 `proceed`, `stops`, `packageStops`, `notices`, and `heldBack`. `migrateSmrtSchemas()`
 returns `applied:false` and `refused:true` on refusal, with those stops and held
 changes. It keeps `unactionableChanges` and `hasManualDrift` for existing callers.
@@ -119,7 +124,7 @@ An unreachable database or failed inspection is an issue, never a pass.
 - **Database release** compares the last recorded release with
   `OLDEST_SUPPORTED_RELEASE`, including the first upgrade to run when older.
   Without a record its age is unknown.
-- **Schema fingerprint** shows build and database hashes side by side, twelve
+- **Schema fingerprint** shows the build's stamp and the database's hash side by side, twelve
   characters normally and full values with `--verbose`. A mismatch or absent
   record explains the production startup refusal and asks for `smrt db:migrate`.
 

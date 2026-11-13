@@ -1,6 +1,7 @@
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../collection.js';
+import { registerBuildSchema } from '../migrations/build-schema.js';
 import {
   collectMigrateRecordInput,
   readLastMigrateRecord,
@@ -61,6 +62,8 @@ function register(extra = false) {
     _manifest: manifest,
     _manifestKey: KEY,
   });
+  // The build is this manifest: startup reads its stamp (rv1).
+  registerBuildSchema(manifest);
 }
 
 describe.each([
@@ -85,6 +88,7 @@ describe.each([
   afterEach(async () => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
+    registerBuildSchema(undefined);
     restore();
     await db.close?.();
   });

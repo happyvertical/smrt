@@ -47,17 +47,29 @@ Read this before you upgrade a deployed app.
   works as an explicit data step. `--postgres-safe` is the one exception:
   table changes commit first, indexes build after, and a rerun finishes the
   indexes. Details: [`db-migrate-all-or-nothing.md`](https://github.com/happyvertical/smrt/blob/main/packages/cli/agents/db-migrate-all-or-nothing.md).
-- **Migrate stops on a missing package.** It remembers the packages it saw
-  last time. If one is not loaded now, migrate stops before it writes anything,
-  because the missing package may have declared columns as required and migrate
-  would loosen them. If you removed the package on purpose, run
+- **Migrate stops on a missing package.** It remembers the packages that own
+  tables in your app's build (its project manifest, `.smrt/manifest.json` or
+  `dist/manifest.json`). If a package left the build, migrate stops before it
+  writes anything, because the package may have declared columns as required
+  and migrate would loosen them. If you removed the package on purpose, run
   `smrt db:migrate --confirm-removed-package <name>`, once for each package.
-  The first migrate on a database with no record only prints a notice and
-  writes the record.
+  If a package is still in the build but the run did not load its tables (an
+  in-app `migrateSmrtSchemas` that has not imported it), migrate stops too;
+  load it or run `smrt db:migrate`. Packages installed but not in the build do
+  not count, so a development install and a production install agree. The
+  first migrate on a database with no record only prints a notice and writes
+  the record.
 - **Production start refuses a database that was not migrated for the build.**
-  The app compares the schema its build expects with the one the last migrate
-  recorded. If they differ, or there is no record, it does not start and the
-  error names `smrt db:migrate`. After you upgrade smrt, run `smrt db:migrate`
+  The app compares the schema fingerprint stamped in its build's project
+  manifest with the one the last migrate recorded. What the process has
+  imported so far does not matter, so a worker or a lazily loaded package
+  starts normally. If they differ, or there is no record, it does not start and
+  the error names `smrt db:migrate`. The build carries its own schema stamp:
+  the generated registration bundles `.smrt/build-schema.js`, so a deployed app
+  needs no manifest file. A process that does not load the generated
+  registration (a plain script) needs `SMRT_BUILD_MANIFEST` set to the build's
+  `.smrt/manifest.json`, or that file in its working directory; otherwise it is
+  refused. After you upgrade smrt, run `smrt db:migrate`
   once before you start the new build. An old copy that restarts after the
   migrate is refused too, and so is code rolled back without its database.
   For an emergency, set `SMRT_ALLOW_UNMIGRATED_START=1`; the app starts and

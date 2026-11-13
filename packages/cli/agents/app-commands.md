@@ -263,7 +263,11 @@ validation. Unknown migrate options fail
 before touching local custody or starting the child command.
 
 Production persistence and task/schedule worker starts require the last migrate
-fingerprint to match the loaded build. Run `smrt db:migrate` (or `smrt app
+fingerprint to match the build's stamp. The stamp is bundled with the app's
+generated registration (`.smrt/build-schema.js`, also in
+`.smrt/runtime/register.js`); a process without it reads the project manifest
+under the working directory or `SMRT_BUILD_MANIFEST`. The SvelteKit runtime
+checks at start. Run `smrt db:migrate` (or `smrt app
 migrate`) before starting the new code. An old copy that restarts after migrate
 will be refused; rolling code back without the database also refuses startup.
 `SMRT_ALLOW_UNMIGRATED_START=1` is the logged emergency override. Development

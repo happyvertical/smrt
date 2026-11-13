@@ -32,6 +32,7 @@ import {
 } from './generator.js';
 import {
   collectMigrateRecordInput,
+  packagesSeenInput,
   readLastMigrateRecord,
   recordSuccessfulMigrate,
 } from './migrate-record.js';
@@ -307,11 +308,11 @@ export async function migrateSmrtSchemas(
     addedTables: pending.diff.added_tables,
     engine: resolveMigrationEngine(options.db, options.engineHint),
     recordedRelease: last.state === 'recorded' ? last.record.release : null,
-    packagesSeen: {
-      recorded: last.state === 'recorded' ? last.record.packages : null,
-      current: recordInput.packages,
-      confirmedRemoved: options.confirmRemovedPackages ?? [],
-    },
+    packagesSeen: packagesSeenInput(
+      recordInput,
+      last,
+      options.confirmRemovedPackages ?? [],
+    ),
   });
   const { stops, heldBack, proceed, packageStops, releaseStop, notices } =
     decision;

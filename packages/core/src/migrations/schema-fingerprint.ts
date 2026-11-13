@@ -4,6 +4,7 @@ import type { SmartObjectManifest } from '../scanner/types.js';
 import { schemaForeignKeys } from '../schema/foreign-key-ddl.js';
 import {
   collectManifestTables,
+  type ManifestSchemaLike,
   ManifestTableConflictError,
 } from '../schema/manifest-schema.js';
 import { formatDefaultValue } from '../schema/sql-identifiers.js';
@@ -115,18 +116,23 @@ export function computeSchemaFingerprint(
 export function computeManifestSchemaFingerprint(
   manifest: Pick<SmartObjectManifest, 'objects'>,
 ): string {
-  const entries = Object.entries(manifest.objects).flatMap(
-    ([source, object]) =>
-      object.schema &&
-      !object.collectionOf &&
-      !isFrameworkBaseClass(object.className, object.packageName)
-        ? [{ source, schema: object.schema }]
-        : [],
-  );
   return computeSchemaFingerprint(
-    [...collectManifestTables(entries).values()].map(
+    [...collectManifestTables(manifestTableEntries(manifest)).values()].map(
       (table) => table.definition,
     ),
+  );
+}
+
+/** The manifest entries that own a table (the build schema uses the same filter). */
+export function manifestTableEntries(
+  manifest: Pick<SmartObjectManifest, 'objects'>,
+): Array<{ source: string; schema: ManifestSchemaLike }> {
+  return Object.entries(manifest.objects).flatMap(([source, object]) =>
+    object.schema &&
+    !object.collectionOf &&
+    !isFrameworkBaseClass(object.className, object.packageName)
+      ? [{ source, schema: object.schema }]
+      : [],
   );
 }
 
@@ -136,8 +142,8 @@ export function computeManifestSchemaFingerprint(
  *
  * Decision (#4929 integration): generating a manifest must not fail because
  * its fingerprint cannot be computed. The startup guard compares the build's
- * fingerprint to the database's record, and with no fingerprint it has
- * nothing to compare and skips; provisioning still refuses the same conflict
+ * fingerprint to the database's record; with no fingerprint it has nothing to
+ * compare and refuses in production (rv1). Provisioning refuses the same conflict
  * with the same message (it merges the same contributors), so a real defect
  * is never hidden, and a partial scan (a package's own sources without its
  * dependencies, a test-inclusive scan) still generates. `onConflict` receives

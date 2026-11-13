@@ -14,7 +14,9 @@
  */
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import {
+  computeSchemaFingerprint,
   ObjectRegistry,
+  registerBuildSchema,
   type SchemaDefinition,
 } from '@happyvertical/smrt-core';
 import {
@@ -155,6 +157,14 @@ describe.skipIf(!pgUrl)(
       vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockImplementation(
         () => schemas,
       );
+      // The app's build is exactly these two tables (rv1): migrate records,
+      // and production start reads, the build's stamp.
+      registerBuildSchema({
+        fingerprint: computeSchemaFingerprint(schemas),
+        tables: { [existing]: ['@app/4927'], [created]: ['@app/4927'] },
+        packages: ['@app/4927'],
+        source: 'registered',
+      });
       vi.spyOn(ObjectRegistry, 'getInitializationOrder').mockReturnValue(
         Object.keys(schemas),
       );
@@ -168,6 +178,7 @@ describe.skipIf(!pgUrl)(
     });
     afterEach(async () => {
       vi.unstubAllEnvs();
+      registerBuildSchema(undefined);
       await clearRecords();
       await db.query(`DROP TABLE IF EXISTS "${created}" CASCADE`);
       await db.query(`DROP TABLE IF EXISTS "${existing}" CASCADE`);

@@ -17,6 +17,10 @@ import { resolveFileKnowledgeConfig } from '../knowledge-config.js';
 import { selectObjectDeclarations } from '../manifest/object-declarations.js';
 import { manifestExportCandidates } from '../manifest/package-manifest-exports.js';
 import { isTestArtifactManifest } from '../manifest/test-artifacts.js';
+import {
+  BUILD_SCHEMA_MODULE,
+  generateBuildSchemaModule,
+} from '../migrations/build-schema.js';
 import { tryComputeManifestSchemaFingerprint } from '../migrations/schema-fingerprint.js';
 import { generateDeclarations } from '../prebuild/index.js';
 import type {
@@ -1820,8 +1824,17 @@ async function saveAggregatedManifest(
           projectRoot,
           merged.packageName ?? packageJson?.name,
         );
+    // The app's build module, from the same merged manifest in the same
+    // publish, so its description is the one migrate reads (#4929).
+    const buildSchemaModule = {
+      path: path.join(smrtDir, BUILD_SCHEMA_MODULE),
+      content: generateBuildSchemaModule(
+        merged as unknown as SmartObjectManifest,
+      ),
+    };
     if (knowledgeConfig.enabled === false) {
       publishArtifactFiles([
+        buildSchemaModule,
         { path: manifestPath, content: JSON.stringify(merged, null, 2) },
       ]);
       return;
@@ -1840,6 +1853,7 @@ async function saveAggregatedManifest(
     // with ordinary filesystem operations, so the next generation remains the
     // freshness repair path for that distinct failure mode.
     publishArtifactFiles([
+      buildSchemaModule,
       { path: knowledgePath, content: JSON.stringify(knowledge, null, 2) },
       { path: manifestPath, content: JSON.stringify(merged, null, 2) },
     ]);
@@ -2166,8 +2180,10 @@ async function generateRegistrationFile(
     }
 
     const logicalName = def.className || exportName;
+    // The build's stamp stays in .smrt/manifest.json only (#4929).
+    const { schemaFingerprint: _buildStamp, ...registrationBase } = manifest;
     registrationManifests[objectName] = {
-      ...manifest,
+      ...registrationBase,
       packageName: def.packageName,
       packageVersion: def.packageVersion || manifest.packageVersion,
       objects: { [objectName]: def },
@@ -2307,6 +2323,8 @@ if (${viteOnlyNamespaceBindings.has(namespaceBinding) ? 'SMRT_VITE_RUNTIME && ' 
  * Generated at: ${new Date().toISOString()}
  */
 
+// This app build's schema first: startup compares its stamp (#4929).
+import './${BUILD_SCHEMA_MODULE}';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 ${transitiveNamespaces.size > 0 ? "import { registerHooks } from 'node:module';" : ''}
 

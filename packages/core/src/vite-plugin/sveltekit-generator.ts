@@ -33,6 +33,10 @@ import {
   type WireabilityOptions,
 } from '../generators/custom-action.js';
 import {
+  BUILD_SCHEMA_MODULE,
+  generateBuildSchemaModule,
+} from '../migrations/build-schema.js';
+import {
   buildDefaultListOrderBy,
   DEFAULT_LIST_LIMIT,
   MAX_LIST_LIMIT,
@@ -2137,6 +2141,27 @@ async function generateRegistrationFile(
     .join('\n');
 
   const imports = [packageImports, localImports].filter(Boolean).join('\n');
+  // This app build's schema, written beside .smrt/manifest.json from the same
+  // merged manifest. Imported first so it is registered before any model
+  // module or query runs, and bundled with the app (#4929).
+  const buildSchemaPath = relative(
+    configDir,
+    join(projectRoot, '.smrt', BUILD_SCHEMA_MODULE),
+  ).replace(/\\/g, '/');
+  const buildSchemaImport = `import '${buildSchemaPath.startsWith('.') ? buildSchemaPath : `./${buildSchemaPath}`}';`;
+  // The manifest writers publish this module beside .smrt/manifest.json
+  // before routes are generated. A direct generator call with no manifest
+  // written yet gets one from this manifest so the import resolves; the next
+  // manifest write replaces it.
+  const buildSchemaFile = join(projectRoot, '.smrt', BUILD_SCHEMA_MODULE);
+  if (!existsSync(buildSchemaFile)) {
+    mkdirSync(join(projectRoot, '.smrt'), { recursive: true });
+    writeFileSync(
+      buildSchemaFile,
+      generateBuildSchemaModule(manifest),
+      'utf-8',
+    );
+  }
   let consumerRegistrationImport = '';
   if (consumerRegistrationPaths.length > 0) {
     consumerRegistrationImport = [...new Set(consumerRegistrationPaths)]
@@ -2224,9 +2249,12 @@ async function generateRegistrationFile(
         : undefined;
     }
   }
+  // Per-module copies of the manifest never carry the build's stamp: startup
+  // reads it from the project manifest, never from a registered copy (#4929).
+  const { schemaFingerprint: _buildStamp, ...registrationBase } = manifest;
   const collectionMetadataLiteral = JSON.stringify(
     JSON.stringify({
-      ...manifest,
+      ...registrationBase,
       objects: Object.fromEntries(collectionMetadata),
     }),
   );
@@ -2246,7 +2274,7 @@ async function generateRegistrationFile(
         [
           className,
           {
-            ...manifest,
+            ...registrationBase,
             packageName,
             objects: {
               [className]: portableObjectManifest(projectRoot, objectDef),
@@ -2333,6 +2361,7 @@ async function generateRegistrationFile(
  * it upgrades bundled runtimes to deterministic qualified registrations.
  */
 
+${buildSchemaImport}
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 
 ${consumerRegistrationImport}

@@ -1265,9 +1265,8 @@ Adding live trigger generation requires a migration rollout design.
 
 `migrations/migrate-record.ts` owns `_smrt_migrate_runs`, provisioned by
 `ensureSystemTables` (system schema 1.16.0). A successful whole-schema migrate,
-including an already-current database, records the core release, sorted unique
-packages seen in the registry, and `computeSchemaFingerprint(schemas)`. Classes
-without a package use `<unqualified>`. Failed, stopped, and dry runs never stamp
+including an already-current database, records the core release, the build's
+packages and fingerprint (below). Failed, stopped, and dry runs never stamp
 it. Identical release/packages/fingerprint skip the insert; changed values append
 and preserve history. This permanent ledger has no retention/prune task.
 `readLastMigrateRecord` is SELECT-only and returns `state: 'none'` for an absent
@@ -1275,8 +1274,40 @@ or empty table: the first run under this scheme, not a schema mismatch. The late
 row orders by `created_at`, then `id`. Call the writer on the caller's database
 handle while its migration lock is held; it also works without a tracker.
 
-`migrateSmrtSchemas()` compares the last record's packages with
-`collectMigrateRecordInput().packages` before tracker bootstrap or apply.
+### The build's schema (rv1)
+
+`migrations/build-schema.ts`. The build is the app's project manifest: the
+first of `PROJECT_MANIFEST_PATHS` (`dist/manifest.json`, `.smrt/manifest.json`,
+`src/manifest/manifest.json`), the file `smrt db:migrate` already requires.
+`describeManifestSchema(manifest)` gives its stamp (`schemaFingerprint`), its
+tables with their owning packages, and the packages that contribute tables
+(framework base classes and collections own none). `resolveBuildSchema()` finds
+it: a registered build, else the file in `SMRT_BUILD_MANIFEST`, else the project
+manifest under the working directory. Under `NODE_ENV=test` only the first two
+count. A build is registered by `registerBuildSchema(manifest)` (CLI discovery
+registers the project manifest it found) or by the app's generated
+`.smrt/build-schema.js`: both manifest writers publish it with
+`.smrt/manifest.json` from the same merged manifest
+(`generateBuildSchemaModule`), and it sets the `BUILD_SCHEMA_GLOBAL` slot without
+importing anything. The generated `smrt-register.ts` (so the server bundle and
+`.smrt/runtime/register.js`) and the consumer's `.smrt/register.js` import it
+first, so a deployed app knows its build with no file and no variable. Library
+`dist` output carries neither the module nor a stamp.
+
+`collectMigrateRecordInput(build = resolveBuildSchema())` is the one input for
+both writers (CLI and `migrateSmrtSchemas`): `fingerprint` is
+`computeSchemaFingerprint` over the planned schema restricted to the build's
+tables (equal to the stamp when declarations agree), `packages` is the build's
+list. So the CLI, the app's own migrate, a dev install and a production install
+all record the same values. A build table the run has not planned is an
+unconfirmable package stop ("part of this build, but this run has not loaded
+its tables"). All tables planned but a different shape (installed packages
+newer than the build) proceeds with a notice that the build will be refused
+until rebuilt. With no build, the whole planned schema and every registered
+class's package are recorded, as before.
+
+`migrateSmrtSchemas()` and the CLI pass `packagesSeenInput(current, last,
+confirmed)` to `decideMigrationRun()` before tracker bootstrap or apply.
 Unconfirmed missing packages refuse the whole run. `packageStops` names them
 and explains that a missing declaration could loosen required columns;
 `heldBack` lists the apply changes. Pass `confirmRemovedPackages: string[]`
@@ -1296,12 +1327,13 @@ The fingerprint hashes canonical sorted JSON of abstract tables, columns,
 defaults, CHECKs, physical foreign keys, indexes (including predicates and JSON
 paths), and triggers. Defaults use the shared DDL formatter; nested JSON keys
 are canonicalized. Presentation metadata, source paths, version hashes,
-timestamps and registration order do not participate. Build tooling can call
-this pure browser-safe function on the build manifest's schema definitions;
-the runtime calls the same function on `getAllSchemasAsDefinitions()`. Build
-manifests carry this value as `schemaFingerprint`. Both manifest writers
-recompute it after merging local and consumed declarations. The schema-path
-parity test compares the stamp with the loaded registry for the same declarations.
+timestamps and registration order do not participate. Manifest writers stamp it
+as `schemaFingerprint` after merging local and consumed declarations; the
+schema-path parity test compares the stamp with the registry for the same
+declarations. Only a project manifest's stamp is read. Registered copies leave
+it out: per-class manifests in generated `smrt-register.ts`, the consumer's
+`.smrt/register.js`, and library inline register shims. A manifest whose
+contributors disagree on a shared index has no stamp (generation warns).
 
 ## PostgreSQL migration execution
 
@@ -1346,14 +1378,24 @@ fixed for that process. This is not an implicit data migration; see
 ## Migrate before runtime starts (#4929)
 
 `assertDatabaseMigratedForBuild(db, { engineHint })` is exported from core.
-Load all declarations before calling it. It reads the last migrate record and
-compares it with `computeSchemaFingerprint` over the loaded registry. It never
+It compares the build's stamp (`resolveBuildSchema()`, above) with the last
+migrate record. It never reads the live registry, so lazy imports, a worker
+loading a subset of packages, installed packages the app never imports and
+run-time models (`planRuntimeModelDDL`) do not affect it. It never
 creates schema or runs migrations. Collection queries and object persistence call
 it beside their table check in `verifyPersistenceTable()`. TaskRunner and
 ScheduleRunner call it before starting their loops. Successful starts share one
 record read per database key per process, including concurrent first uses.
-Refusals are not cached as successes. The declarations must stay fixed after start.
+Refusals are not cached as successes.
 System bootstrap, migrate, doctor and db:status do not call this guard.
+The SvelteKit app runtime's `ready()` (its `init` gate) runs the check at
+start. A process that loads no generated registration (a plain script, a Vite
+app without SvelteKit route generation) finds its build only by
+`SMRT_BUILD_MANIFEST` or the working directory's project manifest. A cached
+start remembers the registered build; a later registration checks again, so a
+query that ran before the registration never fixes the answer. A build with no
+stamp, or no build at all, refuses in production (warns in development):
+migrate refuses the same index conflict, so no database can be migrated for it.
 
 Production refuses a missing record or a different fingerprint and names
 `smrt db:migrate`. The error shows short expected/found fingerprints. An old

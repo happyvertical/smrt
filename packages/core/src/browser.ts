@@ -764,6 +764,20 @@ export {
 // Use the main entry point for Node.js applications that need generators
 
 export * from './external-agent-usage.js';
+export {
+  BUILD_MANIFEST_ENV,
+  BUILD_SCHEMA_GLOBAL,
+  BUILD_SCHEMA_MODULE,
+  type BuildSchema,
+  describeManifestSchema,
+  generateBuildSchemaModule,
+  PROJECT_MANIFEST_PATHS,
+  readBuildSchemaFile,
+  readProjectBuildSchema,
+  registerBuildSchema,
+  registeredBuildSchema,
+  resolveBuildSchema,
+} from './migrations/build-schema.js';
 export * from './migrations/change-kinds.js';
 export {
   collectMigrateRecordInput,
@@ -771,8 +785,10 @@ export {
   type MigrateRecord,
   type MigrateRecordInput,
   type MigrateRecordOptions,
+  packagesSeenInput,
   readLastMigrateRecord,
   recordSuccessfulMigrate,
+  type UnloadedBuildPackage,
 } from './migrations/migrate-record.js';
 export * from './migrations/migration-run-decision.js';
 export {
@@ -783,6 +799,7 @@ export {
 export {
   computeManifestSchemaFingerprint,
   computeSchemaFingerprint,
+  manifestTableEntries,
   tryComputeManifestSchemaFingerprint,
 } from './migrations/schema-fingerprint.js';
 export { assertDatabaseMigratedForBuild } from './migrations/startup-guard.js';

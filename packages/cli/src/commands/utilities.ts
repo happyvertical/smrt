@@ -17,6 +17,7 @@ import {
   isQualifiedName,
   migratePostgresSystemTimestamps,
   ObjectRegistry,
+  packagesSeenInput,
   planForeignKeyCreation,
   planPostgresSystemTimestampMigrations,
   readLastMigrateRecord,
@@ -2276,14 +2277,11 @@ export default testManifest;
             lastMigrate.state === 'recorded'
               ? lastMigrate.record.release
               : null,
-          packagesSeen: {
-            recorded:
-              lastMigrate.state === 'recorded'
-                ? lastMigrate.record.packages
-                : null,
-            current: recordInput.packages,
+          packagesSeen: packagesSeenInput(
+            recordInput,
+            lastMigrate,
             confirmedRemoved,
-          },
+          ),
         });
         for (const notice of runDecision.notices) console.log(notice);
         if (!runDecision.proceed) {

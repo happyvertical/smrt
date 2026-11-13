@@ -20,6 +20,20 @@ export {
   BackfillTracker,
   type BackfillTrackerOptions,
 } from './backfill-tracker.js';
+export {
+  BUILD_MANIFEST_ENV,
+  BUILD_SCHEMA_GLOBAL,
+  BUILD_SCHEMA_MODULE,
+  type BuildSchema,
+  describeManifestSchema,
+  generateBuildSchemaModule,
+  PROJECT_MANIFEST_PATHS,
+  readBuildSchemaFile,
+  readProjectBuildSchema,
+  registerBuildSchema,
+  registeredBuildSchema,
+  resolveBuildSchema,
+} from './build-schema.js';
 export * from './change-kinds.js';
 // Checksum utilities
 export {
@@ -101,8 +115,10 @@ export {
   type MigrateRecord,
   type MigrateRecordInput,
   type MigrateRecordOptions,
+  packagesSeenInput,
   readLastMigrateRecord,
   recordSuccessfulMigrate,
+  type UnloadedBuildPackage,
 } from './migrate-record.js';
 // Cross-process serialization of db:migrate runs (#3634)
 export {
@@ -174,6 +190,7 @@ export {
 export {
   computeManifestSchemaFingerprint,
   computeSchemaFingerprint,
+  manifestTableEntries,
   tryComputeManifestSchemaFingerprint,
 } from './schema-fingerprint.js';
 // SQLite table rebuild (type changes SQLite cannot ALTER in place)
