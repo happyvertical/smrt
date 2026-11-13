@@ -5,10 +5,10 @@ description: "Shared definition-driven app engine with worker isolation, migrati
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-13T22:11:00Z"
+  at: "2026-11-13T22:17:26Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:60b0180140171e5eec26cdd13d5716c8e0b94be17554f2cf93c7c23bdc895762"
+source_revision: "sha256:1bb3fa45cfe9ef57bc432459abacd6be68c7084e54c9c2ebf122eb141b58aca1"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-engine/package.json"
@@ -39,6 +39,7 @@ sources:
 
 - [smrt-core](/components/smrt-core.md)
 - [smrt-profiles](/components/smrt-profiles.md)
+- [smrt-reports](/components/smrt-reports.md)
 - [smrt-vitest](/components/smrt-vitest.md)
 
 ## SDK dependencies
@@ -48,4 +49,5 @@ sources:
 ## Exports
 
 - `.`
+- `./formula`
 - `./worker`

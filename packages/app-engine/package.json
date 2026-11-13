@@ -21,6 +21,10 @@
     },
     "./worker": {
       "import": "./dist/app-worker.js"
+    },
+    "./formula": {
+      "types": "./dist/formula.d.ts",
+      "import": "./dist/formula.js"
     }
   },
   "files": [
@@ -40,6 +44,7 @@
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-profiles": "workspace:*",
+    "@happyvertical/smrt-reports": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "quickjs-emscripten": "0.31.0"
   },

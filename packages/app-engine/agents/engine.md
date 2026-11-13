@@ -19,7 +19,7 @@ adds) and swaps it in once it is ready. The engine must not import SvelteKit,
 - **Migrations** (`app-runtime.ts`) run in one transaction in the new worker,
   reading through the transaction handle. Destructive ones retire the old worker
   first and restart the old definition if the new one fails. They are
-  SQLite-shaped (`RENAME/DROP COLUMN`, `VACUUM INTO`, `pragma_table_info`);
+  SQLite-shaped (`RENAME/DROP COLUMN`, `VACUUM INTO`, `pragma_table_xinfo`);
   Postgres is future work.
 - **Column storage.** No column-type history: re-adding a field checks the real
   column's storage family. Text defaults can be `''`, so counts and archives use
@@ -162,3 +162,83 @@ is documented here; the shell's tables, approvals and UI sit on top.
 - If V8 overflows its own stack inside WebAssembly, QuickJS cannot recover; the
   small QuickJS stack limit keeps its error first, and a host-level failure
   discards the WASM module instance.
+
+## Calculated fields (#4916)
+
+`FieldDef.calculated` uses core's `GeneratedExpression` (SQL SDK operand data).
+`addField` and `setCalculation` validate through `runtimeModelEntry` at plan
+time; hidden inputs and generated-to-generated references are rejected by core.
+SQLite owns the VIRTUAL column. Writes use the common coercer and generated core
+surfaces reject inputs. `setCalculation` replaces the column transactionally;
+clearing creates an empty writable column. Converting a writable field archives
+its originals and is risky. Undo restores those originals or the old expression.
+Renames rewrite expressions; hide/remove/type change refuse named dependents.
+Changing a calculated field's type replaces its generated column directly and
+validates the expression against the new type, without archiving derived values.
+`titleField` optionally names the record label, with first visible text as fallback.
+The expression grammar includes SDK 0.112.2 conditional, numeric, text and
+calendar functions and typed date literals. All are display-only in
+`src/formula.ts`; evaluation stays in the database. SQLite date inputs
+and `addDays` use the engine's normal date storage. Reference walks include
+all nested function arguments and conditional branches. Regression suites:
+`portable-calculations.test.ts` and `keyword-fields.test.ts` (all eight SQL
+keyword field names across CRUD, bulk loads, reports and calculations).
+Test design and required validation: [engine-4916-tests.md](engine-4916-tests.md).
+
+## Definition reports (#4916)
+
+`reports?: Record<string, { label?, description?, spec: RuntimeReportSpec }>`
+is additive format 1 data, never the RuntimeReport table. `defineReport`,
+`renameReport`, `removeReport` are structural commands. Defining compiles with
+smrt-reports against the app's own visible fields; boot revalidates saved specs.
+Renames rewrite field references; destructive field changes list report dependents.
+`host.runReport(nameOrSpec, { maxRows?, timeoutMs? })` works frozen or in drafts.
+The SQL compiler/runner supplies bounded aggregates on app.db, tenantId null.
+Defaults: 1000 rows, 5000 ms; allowed ceilings: 1000 rows, 10000 ms. A dedicated
+read worker is terminated on query timeout, without killing the app worker.
+Columns carry money/date/choice hints. Reference dimension columns add
+`reference` and `labelColumn`; rows carry that label next to the original id,
+resolved in one query per target model, using titleField or first visible text.
+The server catalog's engine-tools adapter calls the same owner check and builder
+path; app_runreport names the records target, builder commands the structure target.
+
+## Atomic bulk loads (#4916)
+
+`loadRecords { model, rows, mode: 'insert'|'upsert', key?, references? }`
+is structural. Upsert requires visible writable key fields; updates of existing
+rows require approval outside a draft. `references[field] = { model, by }`
+resolves lookup values with one query per target model. The dry-run preview
+returns insert/update/unchanged/rejected counts and up to 100 zero-based row,
+field, reason problems, never whole rows. Rejected input refuses the entire load.
+Bounds: 10,000 rows and 8 MiB total JSON command data per call. Calculated input is refused.
+Preparation uses the record coercer, then collection writes use bounded
+100-record SDK savepoint scopes inside the one migration transaction. Releasing
+a savepoint never commits the outer transaction; a later-batch failure rolls
+back all earlier batches and archives. Each scope uses core
+`withCallerOwnedDatabaseTransaction` so record hooks and validation stay intact. Original raw rows (including nulls and timestamps) and
+inserted ids are journaled in `_archive` for exact undo. Every load has a
+pre-migration snapshot and stable per-command ids, so draft publish replays the
+load against current live keys and lookup data rather than copying draft rows.
+Undo of a data migration requires approval because it can replace newer data.
+
+## Extracting a column (#4916)
+
+`extractModel { model, field, into, titleField?, normalize? }` is structural and
+risky: text/choice values become references, originals remain archived for undo.
+A new target has a required text title field (`name` by default); an existing
+target matches its titleField or first visible text. Exact matching is default;
+`normalize: true` trims and compares case-insensitively. The preview reports
+rows/distinct/folded/create/matched counts. Empty values retain their exact
+storage. Ambiguous existing labels refuse the command. Undo restores originals
+and deletes only created target rows, refusing surviving references (including
+hidden references) added since extraction. Publish extracts current live values.
+
+## Merging records (#4916)
+
+`mergeRecords { model, keep, merge: ids[], fields?: { [field]: 'keep' | id } }`
+is structural and always risky (1–1000 distinct merged ids). The plan lists
+reference counts by app model, including hidden reference fields. Every reference
+to a removed id is repointed to keep; chosen writable values survive on keep.
+Full raw originals of affected rows are archived before updates/removals. Undo
+restores them and refuses if a removed id has since been reused. Draft publish
+recomputes affected references on current live data. No arbitrary SQL is accepted.

@@ -6,6 +6,9 @@ Shared definition-driven app engine for shells and other products. The package n
 
 - `src/index.ts`: public AppHost, definition, command, migration, sandbox and version-store contracts.
 - `src/app-worker.ts`: isolated worker entry, published as `./worker`.
+- `src/formula.ts`: display-only portable expression wording over host-supplied field labels.
+- `src/tool-definitions.ts`: transport-neutral tool schemas; hosts authorize and dispatch.
+- `src/reports.ts`, `data-migrations.ts`, `extract-model.ts`, `merge-records.ts`: shared bounded reports and atomic reversible record migrations.
 - `src/host.ts`: host queue, worker lifecycle, structural changes and drafts.
 - [Engine contracts](agents/engine.md): persistence, approvals, sandbox limits, publish and recovery.
 

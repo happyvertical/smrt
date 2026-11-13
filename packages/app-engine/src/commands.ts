@@ -1,10 +1,20 @@
+import type { LoadRecordsCommand } from './data-migrations.ts';
 // Builder operations are commands. `plan` says what one would do without
 // changing anything; `execute` applies it. Risky commands are refused unless
 // the caller passes `approved: true`: the lowest-layer enforcement of the
 // approval gate (a preview only advises).
-import type { AppDefinition, FieldDef, MethodDef } from './definition.ts';
+import type { AppDefinition, FieldDef, MethodDef, Step } from './definition.ts';
+import type { ExtractModelCommand } from './extract-model.ts';
+import type { MergeRecordsCommand } from './merge-records.ts';
+import type { ReportDef } from './reports.ts';
 
 export type Command =
+  | MergeRecordsCommand
+  | ExtractModelCommand
+  | LoadRecordsCommand
+  | { type: 'defineReport'; name: string; definition: ReportDef }
+  | { type: 'renameReport'; from: string; to: string }
+  | { type: 'removeReport'; name: string }
   | {
       type: 'defineModel';
       name: string;
@@ -12,6 +22,12 @@ export type Command =
       fields?: Record<string, FieldDef>;
     }
   | { type: 'addField'; model: string; field: string; definition: FieldDef }
+  | {
+      type: 'setCalculation';
+      model: string;
+      field: string;
+      calculated: FieldDef['calculated'] | null;
+    }
   | { type: 'hideField'; model: string; field: string }
   | { type: 'renameField'; model: string; from: string; to: string }
   | { type: 'removeField'; model: string; field: string }
@@ -71,18 +87,32 @@ export const RISKY_COMMANDS: ReadonlySet<CommandType> = new Set<CommandType>([
   'addMethod',
   'removeField',
   'removeModel',
+  'extractModel',
+  'mergeRecords',
   'changeFieldType',
+  'setCalculation',
   'cleanUp',
 ]);
 
 /** A migration step whose down path overwrites newer data with archived originals. */
-export function overwritesOnUndo(step: { op: string }): boolean {
-  return step.op === 'convertColumn';
+export function overwritesOnUndo(step: Step): boolean {
+  if (step.op === 'calculation')
+    return (
+      !!(step.from && !step.from.calculated) ||
+      !!(step.to && !step.to.calculated)
+    );
+  return (
+    step.op === 'convertColumn' ||
+    step.op === 'loadRecords' ||
+    step.op === 'extractModel' ||
+    step.op === 'mergeRecords'
+  );
 }
 
 /** Static risk of a command. `undo` is decided by the host from the stored version. */
 export function isRiskyCommand(cmd: Command): boolean {
   if (RISKY_COMMANDS.has(cmd.type)) return true;
+  if (cmd.type === 'loadRecords') return cmd.mode === 'upsert';
   if (cmd.type === 'importTemplate')
     return Object.values(cmd.data?.definition?.models ?? {}).some(
       (m) => Object.keys(m?.methods ?? {}).length > 0,
@@ -97,8 +127,15 @@ export function isRiskyCommand(cmd: Command): boolean {
  * deciding which side it is on.
  */
 export const STRUCTURAL_COMMANDS: Readonly<Record<CommandType, boolean>> = {
+  defineReport: true,
+  renameReport: true,
+  removeReport: true,
+  mergeRecords: true,
+  extractModel: true,
+  loadRecords: true,
   defineModel: true,
   addField: true,
+  setCalculation: true,
   hideField: true,
   renameField: true,
   removeField: true,

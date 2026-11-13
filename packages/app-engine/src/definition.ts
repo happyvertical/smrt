@@ -1,9 +1,16 @@
 // The user app's definition: plain, versioned JSON. The engine turns it into
 // run-time smrt models (core's `registerRuntimeModel`) and table changes.
-import type {
-  RuntimeFieldType,
-  RuntimeModelDefinition,
+import {
+  type GeneratedExpression,
+  type RuntimeFieldType,
+  type RuntimeModelDefinition,
+  runtimeModelEntry,
 } from '@happyvertical/smrt-core';
+import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
+import type { LoadRecordsCommand } from './data-migrations.ts';
+import type { ExtractModelCommand } from './extract-model.ts';
+import type { MergeRecordsCommand } from './merge-records.ts';
+import type { ReportDef } from './reports.ts';
 
 export const USER_PKG = '@local/app';
 export const FORMAT = 1;
@@ -27,6 +34,8 @@ export interface FieldDef {
   /** For `reference`: the name of another model of the app. */
   ref?: string;
   hidden?: boolean;
+  /** Database-owned same-row expression from core / the SQL SDK. */
+  calculated?: GeneratedExpression;
 }
 
 export interface MethodParamDef {
@@ -46,6 +55,7 @@ export interface MethodDef {
 
 export interface ModelDef {
   label?: string;
+  titleField?: string;
   /**
    * Qualified name of a shipped model this app model extends (the app-subclass
    * rule: `Profile` extends `@happyvertical/smrt-profiles:Profile`). The
@@ -62,6 +72,7 @@ export interface AppDefinition {
   /** Shipped SMRT packages turned on. Only `profiles` for now. */
   recipes: string[];
   models: Record<string, ModelDef>;
+  reports?: Record<string, ReportDef>;
 }
 
 export const EMPTY_APP: AppDefinition = {
@@ -379,8 +390,29 @@ export function validate(def: unknown): string[] {
         errs.push(
           `${at}: reference needs ref to a model of the app (have: ${names.join(', ') || 'none'})`,
         );
+      if (
+        fd.calculated !== undefined &&
+        !['number', 'integer', 'money', 'boolean', 'text', 'date'].includes(
+          fd.type,
+        )
+      )
+        errs.push(`${at}: this type cannot be calculated`);
       if (fd.label !== undefined && typeof fd.label !== 'string')
         errs.push(`${at}: label must be text`);
+    }
+    if (
+      md.titleField !== undefined &&
+      (typeof md.titleField !== 'string' ||
+        !visible({ ...builtIn, ...md.fields })[md.titleField])
+    )
+      errs.push(`${m}: titleField must name a visible field`);
+    try {
+      // The public core entry builder validates expressions without registering
+      // anything in this process. Include the shipped fields for same-row refs.
+      const rt = toRuntimeModel(m, { fields: { ...builtIn, ...md.fields } });
+      runtimeModelEntry(rt);
+    } catch (e) {
+      errs.push(`${m}: ${(e as Error).message}`);
     }
     const methods = md.methods ?? {};
     if (!isObj(methods)) {
@@ -420,6 +452,38 @@ export function validate(def: unknown): string[] {
           );
       }
     }
+  }
+  if (d.reports !== undefined) {
+    if (!isObj(d.reports)) errs.push('reports must be an object');
+    else
+      for (const [name, report] of Object.entries(d.reports)) {
+        if (!isValidFieldName(name)) errs.push(`report ${name}: invalid name`);
+        try {
+          if (
+            !isObj(report) ||
+            (report.label !== undefined && typeof report.label !== 'string') ||
+            (report.description !== undefined &&
+              typeof report.description !== 'string')
+          )
+            throw new Error('invalid report');
+          const spec = parseRuntimeReportSpec(report.spec);
+          const model = d.models[spec.source];
+          if (!model) throw new Error('unknown source');
+          const fields = {
+            ...builtInFields(spec.source, model),
+            ...visible(model.fields),
+          };
+          for (const f of [
+            ...spec.dimensions,
+            ...spec.measures,
+            ...spec.filters,
+          ])
+            if (f.field && !Object.hasOwn(fields, f.field))
+              throw new Error(`unknown field '${f.field}'`);
+        } catch (e) {
+          errs.push(`report ${name}: ${(e as Error).message}`);
+        }
+      }
   }
   return errs;
 }
@@ -476,7 +540,13 @@ export function describeApp(def: AppDefinition, version: number) {
       ),
     };
   }
-  return { name: def.name, version, recipes: def.recipes, models };
+  return {
+    name: def.name,
+    version,
+    recipes: def.recipes,
+    models,
+    reports: def.reports ?? {},
+  };
 }
 
 export interface DescribedModel {
@@ -502,7 +572,11 @@ export function toRuntimeModel(
   for (const [f, fd] of Object.entries(visible(md.fields))) {
     fields[f] = {
       type: runtimeType(fd.type),
-      required: !!fd.required && !md.extends,
+      required: !!fd.required && !md.extends && !fd.calculated,
+      ...(fd.calculated !== undefined ? { generated: fd.calculated } : {}),
+      ...(fd.type === 'money' || fd.type === 'date'
+        ? { ui: { format: fd.type === 'money' ? 'money' : 'date' } }
+        : {}),
       ...(fd.type === 'choice' && fd.choices ? { enum: fd.choices } : {}),
       ...(fd.label ? { description: fd.label } : {}),
     };
@@ -537,6 +611,21 @@ export function toRuntimeModel(
  * need no step: the app runtime adds what the definition lacks.
  */
 export type Step =
+  | { op: 'mergeRecords'; command: MergeRecordsCommand }
+  | {
+      op: 'extractModel';
+      command: ExtractModelCommand;
+      from: FieldDef;
+      seed: string;
+    }
+  | { op: 'loadRecords'; command: LoadRecordsCommand; seed: string }
+  | {
+      op: 'calculation';
+      table: string;
+      column: string;
+      from?: FieldDef;
+      to?: FieldDef;
+    }
   | { op: 'renameColumn'; table: string; from: string; to: string }
   /** Values are archived first, so undo can put them back. */
   | {
@@ -630,6 +719,8 @@ export type Coerced =
  * References are only checked for shape here; the runtime checks the target.
  */
 export function coerceValue(fd: FieldDef, v: unknown): Coerced {
+  if (fd.calculated !== undefined)
+    return { ok: false, error: 'is calculated and read-only' };
   if (v === null || v === undefined) return { ok: true, value: null };
   const bad = (what: string): Coerced => ({
     ok: false,
