@@ -1,6 +1,6 @@
 /**
  * DomainService - Cross-collection domain helpers: domains by zone,
- * by project, and unassigned.
+ * by project, and unassigned. Every helper is scoped to one tenant.
  */
 
 import type { DomainCollection } from '../collections/DomainCollection';
@@ -22,29 +22,35 @@ export class DomainService {
     this.links = options.links;
   }
 
-  /** All domains under a zone */
-  async domainsByZone(zoneId: string): Promise<Domain[]> {
-    return this.domains.findByZone(zoneId);
+  /** All of a tenant's domains under a zone */
+  async domainsByZone(tenantId: string, zoneId: string): Promise<Domain[]> {
+    return this.domains.list({ where: { tenantId, zoneId } });
   }
 
-  /** Domains linked to a project, optionally restricted to one role */
+  /** A tenant's domains linked to a project, optionally for one role */
   async domainsByProject(
+    tenantId: string,
     projectId: string,
     role?: DomainRole,
   ): Promise<Domain[]> {
-    const links = (await this.links.findByProject(projectId)).filter(
-      (l) => !role || l.role === role,
-    );
-    const ids = new Set(links.map((l) => l.domainId));
-    if (ids.size === 0) return [];
-    return (await this.domains.list({})).filter((d) => ids.has(d.id as string));
+    const links = await this.links.list({
+      where: role ? { tenantId, projectId, role } : { tenantId, projectId },
+    });
+    const ids = [...new Set(links.map((l) => l.domainId))];
+    if (ids.length === 0) return [];
+    return this.domains.list({ where: { tenantId, id: ids } });
   }
 
-  /** Domains with no project link */
-  async unassignedDomains(): Promise<Domain[]> {
-    const linked = new Set((await this.links.list({})).map((l) => l.domainId));
-    return (await this.domains.list({})).filter(
-      (d) => !linked.has(d.id as string),
-    );
+  /** A tenant's domains with no project link */
+  async unassignedDomains(tenantId: string): Promise<Domain[]> {
+    const linked = [
+      ...new Set(
+        (await this.links.list({ where: { tenantId } })).map((l) => l.domainId),
+      ),
+    ];
+    if (linked.length === 0) return this.domains.list({ where: { tenantId } });
+    return this.domains.list({
+      where: { tenantId, 'id not in': linked },
+    });
   }
 }

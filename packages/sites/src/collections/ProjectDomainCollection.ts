@@ -3,6 +3,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import type { Domain } from '../models/Domain';
 import { ProjectDomain } from '../models/ProjectDomain';
 import type { DomainRole } from '../types';
 
@@ -21,18 +22,35 @@ export class ProjectDomainCollection extends SmrtCollection<ProjectDomain> {
     return this.list({ where: { role } });
   }
 
-  /** Link a domain to a project with a role; idempotent per (domain, project, role) */
+  /**
+   * Link a domain to a project with a role; idempotent per
+   * (domain, project, role). The link's tenant is taken from the domain;
+   * an explicit `tenantId` that differs from it is rejected.
+   */
   async assign(
-    tenantId: string,
-    domainId: string,
+    domain: Domain,
     projectId: string,
     role: DomainRole = 'production',
+    tenantId?: string,
   ): Promise<ProjectDomain> {
+    if (tenantId !== undefined && tenantId !== domain.tenantId) {
+      throw new Error(
+        `Tenant mismatch: domain ${domain.id} belongs to tenant ${domain.tenantId}, not ${tenantId}`,
+      );
+    }
+    const domainId = domain.id as string;
     const existing = (
-      await this.list({ where: { domainId, projectId, role } })
+      await this.list({
+        where: { tenantId: domain.tenantId, domainId, projectId, role },
+      })
     )[0];
     if (existing) return existing;
-    const link = await this.create({ tenantId, domainId, projectId, role });
+    const link = await this.create({
+      tenantId: domain.tenantId,
+      domainId,
+      projectId,
+      role,
+    });
     await link.save();
     return link;
   }

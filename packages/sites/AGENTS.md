@@ -7,7 +7,7 @@ Multi-tenant site lifecycle management with agent bindings.
 - **Site**: `domain` (unique per tenant), `tier` (free/standard/premium), `portalConfig` JSON, database connection, `provisioningStatus`/`provisioningTimestamp`. Status: draft/active/suspended/archived.
 - **SiteAgentBinding**: junction linking sites to agent classes. Per-site `config` overrides and `priority` ordering. `conflictColumns: ['site_id', 'agent_class']`.
 
-- **DnsZone** (`dns_zones`, apex `name`), **Domain** (`domains`, `zoneId` FK + `hostname`), **ProjectDomain** (`project_domains`, `domainId` FK, `projectId` `@crossPackageRef('@happyvertical/smrt-projects:Project')`, `role`). Named `DnsZone` because smrt-properties already registers `Zone`. `DomainService`: `domainsByZone()`, `domainsByProject(projectId, role?)`, `unassignedDomains()`; `ProjectDomainCollection.assign()` is idempotent. `Site.domain` stays a string.
+- **DnsZone** (`dns_zones`, apex `name`), **Domain** (`domains`, `zoneId` FK + `hostname`), **ProjectDomain** (`project_domains`, `domainId` FK, `projectId` `@crossPackageRef('@happyvertical/smrt-projects:Project')`, `role`). Named `DnsZone` because smrt-properties already registers `Zone`. `DomainService`: `domainsByZone(tenantId, zoneId)`, `domainsByProject(tenantId, projectId, role?)`, `unassignedDomains(tenantId)`; `ProjectDomainCollection.assign(domain, projectId, role?, tenantId?)` is idempotent, takes the tenant from the domain, and rejects a mismatched `tenantId`. `Site.domain` stays a string.
 
 ## SiteService
 

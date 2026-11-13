@@ -63,10 +63,10 @@ Sites progress through four statuses: `draft` -> `active` -> `suspended` -> `arc
 
 ```typescript
 const service = new DomainService({ domains, links });
-await links.assign(tenantId, domain.id, projectId, 'production'); // idempotent
-await service.domainsByZone(zone.id);
-await service.domainsByProject(projectId, 'staging'); // role optional
-await service.unassignedDomains(); // domains with no project link
+await links.assign(domain, projectId, 'production'); // idempotent; tenant from the domain
+await service.domainsByZone(tenantId, zone.id);
+await service.domainsByProject(tenantId, projectId, 'staging'); // role optional
+await service.unassignedDomains(tenantId); // domains with no project link
 ```
 
 `Site.domain` remains a plain string; it is not yet linked to `Domain`.
