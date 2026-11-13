@@ -45,8 +45,13 @@ function def(
   } as SmartObjectDefinition;
 }
 
-/** The table's schema, with or without the hardening subclass. */
+/**
+ * The table's schema, with or without the hardening subclass. The registry
+ * holds one version of the code at a time, so each call starts it afresh: the
+ * migration plan is built from what is registered, as in a real deployment.
+ */
 function schemaFor(hardened: boolean): SchemaDefinition {
+  resetRegistry();
   const manifest = new ManifestGenerator().generateManifest(
     [
       {
@@ -71,6 +76,8 @@ function schemaFor(hardened: boolean): SchemaDefinition {
   return ObjectRegistry.getAllSchemasAsDefinitions()[TABLE];
 }
 
+let resetRegistry = () => {};
+
 describe.skipIf(!pgUrl)('#4932 shared-table class rule on PostgreSQL', () => {
   let db: Awaited<ReturnType<typeof getDatabase>>;
   let restore: () => void;
@@ -85,6 +92,10 @@ describe.skipIf(!pgUrl)('#4932 shared-table class rule on PostgreSQL', () => {
   });
   beforeEach(async () => {
     restore = snapshotObjectRegistryState();
+    resetRegistry = () => {
+      restore();
+      restore = snapshotObjectRegistryState();
+    };
     await db.query(`DROP TABLE IF EXISTS "${TABLE}"`);
   });
   afterEach(() => restore());

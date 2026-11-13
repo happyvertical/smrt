@@ -197,11 +197,10 @@ unrelated messaging `Account`; an app with both packages got one union table
 whose rows each package read as its own. An existing database moves its ledger
 accounts once, in a PostgreSQL maintenance window:
 
-1. `smrt db:migrate` — creates `ledger_accounts`. It reports, and does not
-   apply, the `journal_entries.account_id` foreign key while the old one still
-   points at `accounts`.
-2. `smrt db:migrate-ledger-accounts --dry-run`, then without `--dry-run` —
-   copies every ledger row (ids, hierarchy and metadata unchanged) into
+1. `smrt db:migrate-ledger-accounts --dry-run`, then without `--dry-run` —
+   creates `ledger_accounts` when it is missing (`db:migrate` cannot go first:
+   it is all or nothing, and the `journal_entries.account_id` foreign key that
+   still points at `accounts` stops it), copies every ledger row (ids, hierarchy and metadata unchanged) into
    `ledger_accounts`, detaches the ledger foreign keys from `accounts`, and
    deletes the moved rows, in one locked transaction. Messaging rows (those
    with an STI discriminator) stay. Before writing anything it refuses a row
@@ -211,7 +210,7 @@ accounts once, in a PostgreSQL maintenance window:
    `migrateLedgerAccountsTable(db)` / `planLedgerAccountsTableMove(db)` from
    this package — call it with the application's models registered, as the
    CLI does.
-3. `smrt db:migrate` — adds the foreign keys against `ledger_accounts`.
+2. `smrt db:migrate` — adds the foreign keys against `ledger_accounts`.
 
 Afterwards `accounts` is either empty (ledgers only — drop it when nothing else
 uses it) or holds only messaging accounts plus the unused ledger columns

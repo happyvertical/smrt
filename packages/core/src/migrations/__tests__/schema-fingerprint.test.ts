@@ -419,7 +419,9 @@ describe('a table whose contributors disagree on an index (#4929)', () => {
       collection: `${className.toLowerCase()}s`,
       decoratorConfig: {
         tableName: 'shared_rows',
-        ...(tenantScoped ? { tenantScoped: { mode: 'optional' } } : {}),
+        ...(tenantScoped
+          ? { tenantScoped: { mode: 'optional' as const } }
+          : {}),
       },
     });
     let manifest: SmartObjectManifest | undefined;

@@ -5,6 +5,7 @@ import { ObjectRegistry } from '../../registry.js';
 import type { SchemaDefinition } from '../../schema/types.js';
 import { computeChecksum } from '../checksum.js';
 import {
+  createRegisteredTables,
   getPendingSchemaStatements,
   migrateSmrtSchemas,
 } from '../orchestrate.js';
@@ -673,5 +674,36 @@ describe('schema orchestration', () => {
       output.filter((line) => line.includes('Relaxed notes.body')),
     ).toHaveLength(1);
     await db.query("INSERT INTO notes (id, body) VALUES ('n1', NULL)");
+  });
+
+  it('createRegisteredTables creates only the named missing tables', async () => {
+    await db.query('CREATE TABLE present (id TEXT PRIMARY KEY);');
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockImplementation(
+      (options?: { tables?: Iterable<string> }) => {
+        const all = {
+          documents: makeDocumentSchema(),
+          present: { ...makeDocumentSchema(), tableName: 'present' },
+          other: { ...makeDocumentSchema(), tableName: 'other' },
+        };
+        const wanted = new Set(options?.tables ?? Object.keys(all));
+        return Object.fromEntries(
+          Object.entries(all).filter(([name]) => wanted.has(name)),
+        );
+      },
+    );
+
+    const ran = await createRegisteredTables(
+      db,
+      ['documents', 'present'],
+      'sqlite',
+    );
+
+    expect(ran.some((sql) => sql.includes('"documents"'))).toBe(true);
+    expect(ran.some((sql) => sql.includes('"present"'))).toBe(false);
+    expect(await db.getTableSchema?.('documents')).toBeTruthy();
+    expect(await db.getTableSchema?.('other')).toBeFalsy();
+    expect(await createRegisteredTables(db, ['documents'], 'sqlite')).toEqual(
+      [],
+    );
   });
 });
