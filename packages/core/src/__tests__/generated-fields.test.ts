@@ -968,3 +968,22 @@ describe('database-generated fields #4915', () => {
     expect(ObjectRegistry.getFields(name).has('total')).toBe(true);
   });
 });
+
+describe('generated column introspection #4915', () => {
+  it('reads a generated column declared with a parameterised type', async () => {
+    const { readGeneratedColumns } = await import('../generated-fields.js');
+    const db = {
+      async query() {
+        return {
+          rows: [
+            {
+              sql: 'CREATE TABLE t (qty INTEGER, "total" DECIMAL(18,3) GENERATED ALWAYS AS ((qty * 2)) VIRTUAL, plain NUMERIC(10, 2))',
+            },
+          ],
+        };
+      },
+    };
+    const columns = await readGeneratedColumns(db, 't', 'duckdb');
+    expect([...columns]).toEqual([['total', '(qty * 2)']]);
+  });
+});

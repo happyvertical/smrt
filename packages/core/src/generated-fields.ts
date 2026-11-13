@@ -499,7 +499,7 @@ export async function readGeneratedColumns(
   const result = new Map<string, string>();
   // Match a generated clause by balanced parentheses, respecting SQL quotes.
   const pattern =
-    /(?:"((?:[^"]|"")+)"|\b([A-Za-z_]\w*))\s+\w+\s+(?:NOT NULL\s+)?GENERATED\s+ALWAYS\s+AS\s*\(/gi;
+    /(?:"((?:[^"]|"")+)"|\b([A-Za-z_]\w*))\s+\w+(?:\s*\(\s*\d+(?:\s*,\s*\d+)?\s*\))?\s+(?:NOT NULL\s+)?GENERATED\s+ALWAYS\s+AS\s*\(/gi;
   for (let match = pattern.exec(ddl); match; match = pattern.exec(ddl)) {
     let depth = 1,
       quote = '',
