@@ -1446,6 +1446,7 @@ built release checkout, and commits the resulting snapshot. To capture a built
 older checkout, run `node scripts/release-upgrade-gate.mjs save --root <checkout>`.
 Keep the oldest snapshot and the two newest others. A first-hop snapshot named
 by a floor move is also kept while that decision needs it.
+Each release saves its snapshot with `pnpm release:snapshot`; the 0.60.18 snapshot was saved after the fact because 0.60.18 was published before the gate existed.
 
 Run `pnpm build` and `pnpm check:release-upgrade` locally. The full-mode knowledge
 PR job runs the gate after the build. It rehearses the newest saved release at
