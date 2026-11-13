@@ -96,6 +96,39 @@ const postgresShapes: Array<[SchemaChangeKindId, SchemaChange]> = [
     },
   ],
   [
+    'check.set',
+    {
+      type: 'alter_column',
+      table: 'items',
+      name: 'code',
+      alteration: 'set_check',
+      sqlStatements: [
+        'ALTER TABLE items ADD CONSTRAINT smrt_ck_a CHECK (code IS NOT NULL)',
+      ],
+    },
+  ],
+  [
+    'check.rows-violate',
+    {
+      type: 'alter_column',
+      table: 'items',
+      name: 'code',
+      alteration: 'set_check',
+      sql: '-- items.code is required for some classes but live rows hold NULL',
+      advisory: { severity: 'warning', message: 'Fill them first.' },
+    },
+  ],
+  [
+    'check.drop',
+    {
+      type: 'alter_column',
+      table: 'items',
+      name: 'smrt_ck_a',
+      alteration: 'drop_check',
+      sqlStatements: ['ALTER TABLE items DROP CONSTRAINT IF EXISTS smrt_ck_a'],
+    },
+  ],
+  [
     'type.narrow-float',
     {
       type: 'type_upgrade',

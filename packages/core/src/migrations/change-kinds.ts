@@ -87,6 +87,23 @@ export const SCHEMA_CHANGE_KINDS = {
     type: 'alter_column',
     engines: apply('Remove the stale default without replacing stored values.'),
   },
+  'check.set': {
+    type: 'alter_column',
+    engines: apply(
+      'Add the declared shared-table rule once no live row breaks it.',
+    ),
+  },
+  'check.rows-violate': {
+    type: 'alter_column',
+    engines: stop(
+      'invents-data',
+      'Live rows of a class that requires this column hold NULL.',
+    ),
+  },
+  'check.drop': {
+    type: 'alter_column',
+    engines: apply('Remove the undeclared smrt-owned CHECK constraint.'),
+  },
   'column.relaxation-report': {
     type: 'alter_column',
     engines: report(
@@ -426,6 +443,8 @@ export function classifySchemaChange(
         return 'column.required-missing';
       if (noop) return 'column.rebuild-covered';
       if (!executable) {
+        if (change.alteration === 'set_check' && change.advisory)
+          return 'check.rows-violate';
         if (change.alteration === 'set_not_null' && change.advisory)
           return 'column.required-nulls';
         if (
@@ -452,6 +471,10 @@ export function classifySchemaChange(
           return 'column.set-default';
         case 'drop_default':
           return 'column.drop-default';
+        case 'set_check':
+          return 'check.set';
+        case 'drop_check':
+          return 'check.drop';
         default:
           return 'unlisted';
       }
