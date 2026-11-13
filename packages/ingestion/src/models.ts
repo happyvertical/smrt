@@ -445,19 +445,22 @@ export class IntakeAction extends SmrtObject {
 export class IntakeProposal extends SmrtObject {
   @tenantId()
   tenantId: string = '';
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'tenant-scope' })
   confidentialScopeId: string = '';
 
-  @foreignKey('IntakeItem', { required: true })
+  @foreignKey('IntakeItem', { required: true, requiredFor: 'identity' })
   itemId: string = '';
 
-  @foreignKey('IntakeAction', { required: true })
+  @foreignKey('IntakeAction', { required: true, requiredFor: 'identity' })
   actionId: string = '';
 
-  @foreignKey('IntakeAnalysis', { required: true })
+  @foreignKey('IntakeAnalysis', { required: true, requiredFor: 'identity' })
   analysisId: string = '';
 
-  @foreignKey('IntakeAnalysisAttempt', { required: true })
+  @foreignKey('IntakeAnalysisAttempt', {
+    required: true,
+    requiredFor: 'identity',
+  })
   analysisAttemptId: string = '';
 
   @field({ type: 'integer', required: true })
@@ -501,16 +504,16 @@ export class IntakeProposal extends SmrtObject {
 export class IntakeReviewDecision extends SmrtObject {
   @tenantId()
   tenantId: string = '';
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'tenant-scope' })
   confidentialScopeId: string = '';
 
-  @foreignKey('IntakeItem', { required: true })
+  @foreignKey('IntakeItem', { required: true, requiredFor: 'identity' })
   itemId: string = '';
 
-  @foreignKey('IntakeAction', { required: true })
+  @foreignKey('IntakeAction', { required: true, requiredFor: 'identity' })
   actionId: string = '';
 
-  @foreignKey('IntakeProposal', { required: true })
+  @foreignKey('IntakeProposal', { required: true, requiredFor: 'identity' })
   proposalId: string = '';
 
   @field({ type: 'integer', required: true })
@@ -519,7 +522,7 @@ export class IntakeReviewDecision extends SmrtObject {
   @field({ type: 'text', required: true })
   bindingHash: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'workflow-state' })
   decision: string = '';
 
   @field({ type: 'json', required: true })
