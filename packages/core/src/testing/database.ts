@@ -38,6 +38,7 @@ import { SchemaGenerator } from '../schema/generator.js';
 import type { SchemaDefinition } from '../schema/types.js';
 import { ensureLegacySystemTableCompatibility } from '../system/compatibility.js';
 import { getSystemTableDDL } from '../system/schema.js';
+import { markPreparedTestDatabase } from './database-exemption.js';
 
 type TestDatabaseConnectionOptions = Parameters<typeof getDatabase>[0] & {
   __smrtSkipVitestSchemaPreparation?: boolean;
@@ -461,6 +462,7 @@ export async function getTestDatabase(
         emptyRegistryMessage,
       );
     }
+    markPreparedTestDatabase(db);
     return db;
   }
 
@@ -687,6 +689,7 @@ export async function getTestDatabase(
     }
   }
 
+  markPreparedTestDatabase(db);
   return db;
 }
 

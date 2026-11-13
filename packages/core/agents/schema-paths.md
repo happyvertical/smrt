@@ -200,8 +200,8 @@ module; the two agree because core's rule is nearest-wins as well.
 Extend `src/schema/schema-path-parity.test.ts` for every generator change;
 manifest, registry, and merged migration schemas must agree. Inspect regenerated
 `dist/manifest.json` and schemas across affected packages, not only decorators.
-Runtime `verifyPersistenceTable()` checks table existence only. Database drift
-checks compare with generated artifacts; they cannot detect an omission shared
+Runtime `verifyPersistenceTable()` checks the migrate record and table existence.
+Database drift checks compare with generated artifacts; they cannot detect an omission shared
 by those artifacts. Use `smrt doctor --db` / `db:status --parity` for live parity.
 
 Every new query predicate needs its index or an explicit reason none is needed.
@@ -1160,7 +1160,9 @@ are canonicalized. Presentation metadata, source paths, version hashes,
 timestamps and registration order do not participate. Build tooling can call
 this pure browser-safe function on the build manifest's schema definitions;
 the runtime calls the same function on `getAllSchemasAsDefinitions()`. Build
-output and startup enforcement are separate follow-up work.
+manifests carry this value as `schemaFingerprint`. Both manifest writers
+recompute it after merging local and consumed declarations. The schema-path
+parity test compares the stamp with the loaded registry for the same declarations.
 
 ## PostgreSQL migration execution
 
@@ -1201,3 +1203,46 @@ names; validation is memoized by registry generation and binding configuration.
 Configuration must load before first database use and stay
 fixed for that process. This is not an implicit data migration; see
 [consumer table bindings](../../../docs/content/table-bindings.md).
+
+## Migrate before runtime starts (#4929)
+
+`assertDatabaseMigratedForBuild(db, { engineHint })` is exported from core.
+Load all declarations before calling it. It reads the last migrate record and
+compares it with `computeSchemaFingerprint` over the loaded registry. It never
+creates schema or runs migrations. Collection queries and object persistence call
+it beside their table check in `verifyPersistenceTable()`. TaskRunner and
+ScheduleRunner call it before starting their loops. Successful starts share one
+record read per database key per process, including concurrent first uses.
+Refusals are not cached as successes. The declarations must stay fixed after start.
+System bootstrap, migrate, doctor and db:status do not call this guard.
+
+Production refuses a missing record or a different fingerprint and names
+`smrt db:migrate`. The error shows short expected/found fingerprints. An old
+copy of the app that restarts after a migrate will not come back up. Rolling
+code back without the database will not start either. Stop old copies before
+migrating and start the matching build after the migrate succeeds.
+
+`NODE_ENV=development` (also the unset default used by the CLI) warns once per
+database and starts. `NODE_ENV=test` is a quiet exemption, to keep existing
+log assertions and test fixtures stable. Handles successfully prepared by
+`getTestDatabase()` are marked in a module-owned WeakSet and exempt even in
+production mode. The mark belongs to that handle, not every database at its URL.
+
+For an emergency, `SMRT_ALLOW_UNMIGRATED_START=1` starts anyway. It logs once
+per database per process, including when fingerprints match. The warning names
+the override and the expected/found values. Other values do not override.
+
+Whole-schema provisioning is `db:migrate` or `migrateSmrtSchemas`; both record
+success, including an in-sync run. `smrt app install/setup/migrate` use the CLI
+migrate path. The local app-runtime's first-run `createSchema` hook and its
+`migrateSchemas()` callback use the core migrator, so they also record success.
+The app-shell's additive `prepareShellSchema` and content's `bootstrapSchema`
+hook are local/development bootstraps, not production migration entry points.
+The deprecated `db:setup`, `ensureSchema`, and `SchemaManager.ensureTable(s)`
+fill in missing tables and columns. They do not reconcile all existing
+constraints or prove the whole registry matches. They must not provision
+production databases or stamp that claim.
+Jobs' `ensureSchema` call prepares terminal-event compatibility storage only;
+it does not replace a whole-schema production migrate. The smrt-vitest schema
+builders are test-only. Direct SQL/adapter `createTable` calls are low-level DDL;
+production applications must finish with a successful whole-schema migrate.

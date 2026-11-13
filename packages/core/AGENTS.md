@@ -1,6 +1,6 @@
 # @happyvertical/smrt-core
 
-Foundation ORM, registry, schema/code generation, AI integration, and DispatchBus.
+ORM, registry, schema/code generation, AI, and DispatchBus.
 Read the module for the subsystem being edited; root AGENTS covers shared model
 and repository rules.
 
@@ -105,7 +105,7 @@ and repository rules.
   Bootstrap uses a transaction-scoped advisory lock, taken only when the
   PostgreSQL schema version is not yet stamped: inside a caller's transaction it
   is held until that transaction ends (#2868). Application tables still require migrations;
-  runtime table verification checks existence only.
+  runtime verification checks table existence and the last migrate fingerprint.
 - Manifest generation fails closed on scanner errors, including unresolved
   decorator spreads. Never emit partial, default-open registration.
 - Generated registration repairs bundled class identity using the exact imported

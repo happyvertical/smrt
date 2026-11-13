@@ -50,6 +50,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { foreignKey } from '../decorators/index.js';
 import { normalizeIndexPredicate } from '../migrations/differ.js';
+import { computeSchemaFingerprint } from '../migrations/schema-fingerprint.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 import { ManifestGenerator } from '../scanner/manifest-generator.js';
@@ -847,6 +848,20 @@ describe('schema path parity (#2359)', () => {
 
     // 3. What `smrt db:migrate` compares against the live database.
     migrateSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
+  });
+
+  it('stamps the exact runtime fingerprint for the same build declarations (#4929)', () => {
+    const schemas = ObjectRegistry.getAllSchemasAsDefinitions({
+      tables: manifestSchemas.keys(),
+    });
+    expect(manifest.schemaFingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(manifest.schemaFingerprint).toBe(computeSchemaFingerprint(schemas));
+    const changed = structuredClone(schemas);
+    const first = Object.values(changed)[0];
+    first.columns.stamp_regression = { type: 'TEXT' };
+    expect(manifest.schemaFingerprint).not.toBe(
+      computeSchemaFingerprint(changed),
+    );
   });
 
   afterAll(() => {

@@ -165,7 +165,10 @@ export {
   type LegacyQualifiedNameTarget,
   legacyQualifiedNamesBackfillName,
 } from './qualified-name-aliases.js';
-export { computeSchemaFingerprint } from './schema-fingerprint.js';
+export {
+  computeManifestSchemaFingerprint,
+  computeSchemaFingerprint,
+} from './schema-fingerprint.js';
 // SQLite table rebuild (type changes SQLite cannot ALTER in place)
 export {
   type BuildSqliteRebuildStatementsInput,
@@ -178,6 +181,7 @@ export {
   type SqliteTableRebuildPlan,
   sqliteRebuildPlaceholderSql,
 } from './sqlite-rebuild.js';
+export { assertDatabaseMigratedForBuild } from './startup-guard.js';
 // Core classes
 export {
   buildConcurrentIndexPlan,

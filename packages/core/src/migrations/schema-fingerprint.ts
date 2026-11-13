@@ -1,5 +1,8 @@
 /** Engine-neutral database shape. Safe to call in build tooling and browsers. */
+import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
+import type { SmartObjectManifest } from '../scanner/types.js';
 import { schemaForeignKeys } from '../schema/foreign-key-ddl.js';
+import { collectManifestTables } from '../schema/manifest-schema.js';
 import { formatDefaultValue } from '../schema/sql-identifiers.js';
 import type { SchemaDefinition } from '../schema/types.js';
 import { sha256Hex } from '../utils/sha256.js';
@@ -103,4 +106,23 @@ export function computeSchemaFingerprint(
   // STI manifests can repeat the identical shared-table definition.
   const uniqueTables = [...new Set(tables.map(canonicalJson))].sort();
   return sha256Hex(`[${uniqueTables.join(',')}]`);
+}
+
+/** Build-only projection of the same declarations used by the runtime hash. */
+export function computeManifestSchemaFingerprint(
+  manifest: Pick<SmartObjectManifest, 'objects'>,
+): string {
+  const entries = Object.entries(manifest.objects).flatMap(
+    ([source, object]) =>
+      object.schema &&
+      !object.collectionOf &&
+      !isFrameworkBaseClass(object.className, object.packageName)
+        ? [{ source, schema: object.schema }]
+        : [],
+  );
+  return computeSchemaFingerprint(
+    [...collectManifestTables(entries).values()].map(
+      (table) => table.definition,
+    ),
+  );
 }

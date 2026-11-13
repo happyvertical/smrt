@@ -17,6 +17,7 @@ import { resolveFileKnowledgeConfig } from '../knowledge-config.js';
 import { selectObjectDeclarations } from '../manifest/object-declarations.js';
 import { manifestExportCandidates } from '../manifest/package-manifest-exports.js';
 import { isTestArtifactManifest } from '../manifest/test-artifacts.js';
+import { computeManifestSchemaFingerprint } from '../migrations/schema-fingerprint.js';
 import { generateDeclarations } from '../prebuild/index.js';
 import type {
   SmartObjectDefinition,
@@ -99,6 +100,7 @@ class AmbiguousProviderGraphError extends Error {}
  * JSON read at the package boundary.
  */
 interface ConsumerManifest {
+  schemaFingerprint?: string;
   version: string;
   timestamp: number;
   packageName?: string;
@@ -1791,6 +1793,10 @@ async function saveAggregatedManifest(
         // Unreadable/corrupt existing file — fall back to a plain write.
       }
     }
+
+    merged.schemaFingerprint = computeManifestSchemaFingerprint(
+      merged as unknown as SmartObjectManifest,
+    );
 
     // smrtPlugin writes the local knowledge artifact before this consumer
     // plugin merges external package entries into the same manifest. Refresh

@@ -773,7 +773,11 @@ export {
   recordSuccessfulMigrate,
 } from './migrations/migrate-record.js';
 export * from './migrations/migration-run-decision.js';
-export { computeSchemaFingerprint } from './migrations/schema-fingerprint.js';
+export {
+  computeManifestSchemaFingerprint,
+  computeSchemaFingerprint,
+} from './migrations/schema-fingerprint.js';
+export { assertDatabaseMigratedForBuild } from './migrations/startup-guard.js';
 export {
   type OperationPermissionAlias,
   resolveOperationPermissionAlias,

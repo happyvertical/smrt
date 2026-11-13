@@ -50,7 +50,7 @@ The four snapshot options are atomic: supplying any one requires all four.
 | Command | Description |
 |---------|------------|
 | `smrt db:status` | Show pending schema changes and classify failed migration history |
-| `smrt db:migrate` | Apply pending migrations |
+| `smrt db:migrate` | Apply pending migrations and record the build schema fingerprint |
 | `smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...]` | Force one or more exact generated migrations in one atomic batch while preserving every other guard |
 | `smrt db:migrate-uuid` | Convert schema-declared UUID text columns to native PostgreSQL uuid after data has been remapped |
 | `smrt db:migrate-int8` | Widen legacy pre-#2373 int4 columns to BIGINT after reviewing the maintenance-window preflight |
@@ -326,6 +326,14 @@ app's `package.json` scripts are one-liners:
 | `smrt app migrate` | Establish local storage custody, then `smrt db:migrate`, under the operation lock |
 | `smrt app worker [task\|schedule]` | Deployed: imports `.smrt/runtime/register.js`, then runs the jobs runner until SIGTERM. The kind defaults to `task`; any other value is a usage error before anything starts |
 | `smrt app dev\|build\|vite [args]` | Run the app's installed Vite with `.env` loaded (shell wins); `build` validates `./mcp-apps` first |
+
+Production persistence and task/schedule workers require the last migrate record
+to match the loaded build. Finish `smrt db:migrate` before starting new code.
+An old copy that restarts after migrate will not start, and rolling code back
+without the database also refuses startup. `SMRT_ALLOW_UNMIGRATED_START=1` is a
+logged emergency override. Development warns once. `NODE_ENV=test` and databases
+made by `getTestDatabase()` are exempt. Deprecated `db:setup` is only for
+development/test fixtures; it does not stamp a whole-build record.
 
 **Windows (smrt#4837).** The local runtime opens its SQLite database on
 Windows through `@happyvertical/sql`'s `windowsCustody.verify` (the runtime's
