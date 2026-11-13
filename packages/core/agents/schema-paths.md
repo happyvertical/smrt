@@ -435,6 +435,8 @@ list:
 | Table declared `AUTOINCREMENT` | SQLite stops (`column.rebuild-unavailable`) | The rebuild would lose the sequence. |
 | Table that references itself | DuckDB stops, when the change needs a rebuild | DuckDB cannot copy rows into a table whose key points at itself in one statement. A plain `ALTER` still works there. |
 | A constraint on a dropped column | DuckDB stops | The rebuild cannot keep a table constraint that names a dropped column. |
+| Two tables that would reference each other | DuckDB stops (the rebuild's kind, "overlap and cannot be combined") | DuckDB can create neither table first, and has no `ADD CONSTRAINT`. |
+| A new table that references a table the migration alters or rebuilds | DuckDB stops (the rebuild's kind, "new table") | The new table is created first, and DuckDB then refuses to alter or drop the table it references. Adding a plain column still works. |
 | Any rebuild | JSON adapter stops | It is DuckDB-backed but has no rebuild. |
 
 How each engine gets there:
@@ -454,6 +456,22 @@ How each engine gets there:
   references it, in the migration's transaction: copy to staging tables, drop,
   create again from the live definitions, copy back, replay the indexes. DuckDB
   DDL is transactional, so a failure rolls every table back.
+- **One DuckDB rebuild per connected group** (`combineDuckDbRebuilds`). Rebuilds
+  whose groups share a table, counting keys a rebuild adds, become one plan:
+  each table is created once in its final shape and filled once from its old
+  rows, backfills included. Every other change to a table of the group runs
+  after it; a table the rebuild starts to reference takes its changes before
+  it. The diff order does not change the result. Planned one table at a time,
+  a parent's rebuild created a changed child again from its old definition and
+  lost the change while the migrate succeeded (rv4,
+  `issue-4937-overlapping-rebuilds.test.ts`). Rebuilds that cannot be combined
+  stop the whole migration before anything runs.
+- **The DuckDB rebuild checks itself** before its staging tables are dropped:
+  for every table of the group it compares the columns, indexes, foreign keys
+  and row count with what the plan meant to build, and fails the transaction
+  with the differences. SQLite has no such check: its rebuild touches one table,
+  copies every column in one `INSERT ... SELECT`, and has no `error()` function
+  to fail a transaction from SQL; `MigrationTracker` checks its foreign keys.
 - **Atomic.** A rebuild that fails part-way leaves every table, row, index and
   foreign-key setting as it was. `sqlite-parity` and `duckdb-parity` tests fail
   a rebuild mid-way and compare the database before and after.

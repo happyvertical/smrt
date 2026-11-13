@@ -81,7 +81,11 @@ import {
 } from '../schema/uuid-convergence.js';
 import { getDatabaseEngine } from '../system/compatibility.js';
 import { decideSchemaChange, hasExecutableSchemaSql } from './change-kinds.js';
-import { planDuckDbTableChanges } from './duckdb-rebuild.js';
+import {
+  combineDuckDbRebuilds,
+  type DuckDbRebuildPlan,
+  planDuckDbTableChanges,
+} from './duckdb-rebuild.js';
 import {
   planSqliteTableRebuildsWithConstraints,
   sqliteBackfillPlaceholderSql,
@@ -660,6 +664,14 @@ export class SchemaComparer {
    */
   private indexPredicateCache: Map<string, Map<string, string>> | null = null;
   private invalidIndexNames = new Set<string>();
+  /**
+   * DuckDB table rebuilds planned in this `compare()` run, by table, so
+   * overlapping ones can be combined into one plan (#4937). Same lifetime as
+   * {@link renameDataPendingCache}.
+   */
+  private duckDbRebuilds = new Map<string, DuckDbRebuildPlan>();
+  /** DuckDB rebuilds refused because they overlap and cannot be combined. */
+  private duckDbBlockedRebuilds = new Map<string, string>();
 
   /**
    * Cross-table batch queries stay bounded regardless of schema shape: this
@@ -713,6 +725,8 @@ export class SchemaComparer {
     this.renameDataPendingCache = null;
     this.indexPredicateCache = null;
     this.invalidIndexNames.clear();
+    this.duckDbRebuilds.clear();
+    this.duckDbBlockedRebuilds.clear();
 
     // #2878 review: `renameDataPendingCache` is populated below for the
     // duration of this call only. The `finally` clears it again on the way
@@ -793,6 +807,12 @@ export class SchemaComparer {
         }
       }
 
+      if (this.engine === 'duckdb')
+        diff.changes = await this.combineDuckDbRebuilds(
+          diff.changes,
+          manifestSchemas,
+        );
+
       // Orphan tables are always reported (never silently retained); the
       // executable DROP TABLE stays opt-in via `includeDroppedTables` (#2369).
       const orphanTables: string[] = [];
@@ -818,7 +838,56 @@ export class SchemaComparer {
       this.renameDataPendingCache = null;
       this.indexPredicateCache = null;
       this.invalidIndexNames.clear();
+      this.duckDbRebuilds.clear();
+      this.duckDbBlockedRebuilds.clear();
     }
+  }
+
+  /**
+   * Combine DuckDB rebuilds whose groups share a table into one plan (#4937),
+   * see {@link combineDuckDbRebuilds}. Rebuilds that cannot be combined are
+   * planned again as stops, so the migration stops before anything runs.
+   */
+  private async combineDuckDbRebuilds(
+    changes: SchemaChange[],
+    manifestSchemas: Record<string, SchemaDefinition>,
+  ): Promise<SchemaChange[]> {
+    const plannedReferences = this.duckDbPlannedReferences();
+    const first = combineDuckDbRebuilds(
+      changes,
+      [...this.duckDbRebuilds.values()],
+      plannedReferences,
+    );
+    if (first.blocked.size === 0) return first.changes;
+    let replanned = changes;
+    this.duckDbBlockedRebuilds = new Map(first.blocked);
+    for (const tableName of first.blocked.keys()) {
+      const fresh = await this.compareTable(
+        tableName,
+        manifestSchemas[tableName],
+        manifestSchemas,
+      );
+      const found = replanned.findIndex((change) => change.table === tableName);
+      const rest = replanned.filter((change) => change.table !== tableName);
+      const at = found === -1 ? rest.length : found;
+      replanned = [...rest.slice(0, at), ...fresh, ...rest.slice(at)];
+    }
+    // The refused sets are whole, so the rest combine as before.
+    return combineDuckDbRebuilds(
+      replanned,
+      [...this.duckDbRebuilds.values()],
+      plannedReferences,
+    ).changes;
+  }
+
+  /** The foreign keys of the tables this run creates, child to parent. */
+  private duckDbPlannedReferences(): Array<{ child: string; parent: string }> {
+    return [...this.plannedTables].flatMap(([child, schema]) =>
+      schemaForeignKeysForEngine(schema, 'duckdb').map((foreignKey) => ({
+        child,
+        parent: foreignKey.referencesTable,
+      })),
+    );
   }
 
   /** Reject unsupported identities before introspection or migration planning. */
@@ -941,10 +1010,14 @@ export class SchemaComparer {
                 `CREATE UNIQUE INDEX ${this.quoteIdentifier(uniqueColumnIndexName(tableName, change.name))} ON ${this.quoteIdentifier(tableName)} (${this.quoteIdentifier(change.name)})`,
               ]
             : [],
+        blockRebuild: this.duckDbBlockedRebuilds.get(tableName),
+        plannedReferences: this.duckDbPlannedReferences(),
       });
       plannedColumnChanges = planned.changes;
       foreignKeyChanges = planned.constraintChanges;
       planInConstraints = planned.planInConstraints;
+      if (planned.rebuild) this.duckDbRebuilds.set(tableName, planned.rebuild);
+      else this.duckDbRebuilds.delete(tableName);
     }
     // #3008: an `add_column` the SQLite rebuild planner had to refuse is
     // left as comment-only SQL; report it as the same "column not added"
