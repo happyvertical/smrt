@@ -7,14 +7,6 @@
     "packages/commerce/src/models/Contract.ts#Order.customerId",
     "packages/commerce/src/models/Contract.ts#PurchaseOrder.vendorId",
     "packages/commerce/src/models/Contract.ts#SupplierQuote.vendorId",
-    "packages/commerce/src/models/Contract.ts#WholesaleOrder.customerId",
-    "packages/education/src/catalog-models.ts#CatalogAcquisition.sha256",
-    "packages/messages/src/models/NotificationDelivery.ts#NotificationDelivery.href",
-    "packages/messages/src/models/NotificationDelivery.ts#NotificationDelivery.subject",
-    "packages/messages/src/models/NotificationDelivery.ts#NotificationDelivery.textBody",
-    "packages/projects/src/models/ProjectDecision.ts#ProjectDecision.question",
-    "packages/projects/src/models/ProjectQuestion.ts#ProjectQuestion.prompt",
-    "packages/projects/src/models/ProjectSpecification.ts#ProjectSpecification.title",
-    "packages/sales/src/commissions/models/EarningEvent.ts#EarningEvent.eventKind"
+    "packages/commerce/src/models/Contract.ts#WholesaleOrder.customerId"
   ]
 }

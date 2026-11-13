@@ -66,7 +66,7 @@ export class EarningEvent extends SmrtObject {
    * `EARNING_EVENT_KINDS` for the recommended vocabulary. Plan components
    * match on this via their `trigger`.
    */
-  @field({ required: true })
+  @field()
   eventKind: string = '';
 
   /** When the commercial event occurred (not when it was ingested). */
