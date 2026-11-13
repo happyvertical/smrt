@@ -690,6 +690,17 @@ test('test matrices retain the hosted three-shard parallelism', () => {
   }
 });
 
+test('core shards build the exported screen and reference-label fixture providers', () => {
+  const workflow = readFileSync(path.join(workflowsDir, 'test-suite.yml'), 'utf8').split('\n');
+  for (const job of ['affected-core-tests', 'test-core']) {
+    const lines = jobBlock(workflow, job).join('\n');
+    const build = lines.slice(lines.indexOf('- name: Build core'), lines.indexOf('- name: Restore core'));
+    for (const pkg of ['smrt-core', 'smrt-web', 'smrt-products']) {
+      assert.ok(build.includes(`--filter='@happyvertical/${pkg}...'`), `${job} must build ${pkg} and its dependencies`);
+    }
+  }
+});
+
 test('matrix checks reject missing jobs and use the final job boundary', () => {
   const missingJob = ['jobs:', '  another-matrix:', '      max-parallel: 3'];
   assert.throws(() => jobBlock(missingJob, 'test-core'), /test-core must declare a job block/);

@@ -272,8 +272,11 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build core dependency closure
-        run: pnpm turbo run build --filter='@happyvertical/smrt-core...'
+      - name: Build core and integration fixture dependencies
+        # The subclass screen and inventory label fixtures load these package exports.
+        run: >-
+          pnpm turbo run build --filter='@happyvertical/smrt-core...'
+          --filter='@happyvertical/smrt-web...' --filter='@happyvertical/smrt-products...'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -777,8 +780,11 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build core dependency closure
-        run: pnpm turbo run build --filter='@happyvertical/smrt-core...'
+      - name: Build core and integration fixture dependencies
+        # The subclass screen and inventory label fixtures load these package exports.
+        run: >-
+          pnpm turbo run build --filter='@happyvertical/smrt-core...'
+          --filter='@happyvertical/smrt-web...' --filter='@happyvertical/smrt-products...'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
