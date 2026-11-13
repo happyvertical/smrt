@@ -48,34 +48,6 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       error: 'Tax component requires a nonempty name',
     },
     {
-      model: '@happyvertical/smrt-content:Article',
-      field: 'title',
-      reason:
-        'Content.validateBeforeSave() copies required name into optional title; persisted title differs from its empty initialized value.',
-      error: 'optional field title read back populated',
-    },
-    {
-      model: '@happyvertical/smrt-content:Content',
-      field: 'title',
-      reason:
-        'Content.validateBeforeSave() copies required name into optional title; persisted title differs from its empty initialized value.',
-      error: 'optional field title read back populated',
-    },
-    {
-      model: '@happyvertical/smrt-content:ContentDocument',
-      field: 'title',
-      reason:
-        'Content.validateBeforeSave() copies required name into optional title; persisted title differs from its empty initialized value.',
-      error: 'optional field title read back populated',
-    },
-    {
-      model: '@happyvertical/smrt-content:Mirror',
-      field: 'title',
-      reason:
-        'Content.validateBeforeSave() copies required name into optional title; persisted title differs from its empty initialized value.',
-      error: 'optional field title read back populated',
-    },
-    {
       model: '@happyvertical/smrt-education:EducationGroup',
       field: 'name',
       reason:
@@ -118,13 +90,6 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
         'Validation requires exactly one typed recipient (user or profile). Neither column can be required alone, so the entry stays (#4935, P9). A populated recipientUserId advances through CRUD.',
       error:
         'Notification requires exactly one matching typed recipient and reserved protected email policy for profiles.',
-    },
-    {
-      model: '@happyvertical/smrt-projects:Comment',
-      field: 'createdAt',
-      reason:
-        'Nullable createdAt shadows the framework created_at timestamp; validation rejects the missing framework timestamp.',
-      error: "Required field 'created_at' is missing for Comment",
     },
     {
       model: '@happyvertical/smrt-subscriptions:PriceBook',
@@ -307,7 +272,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'promotion',
       error: 'must define promotion.targetContentType.',
       reason:
-        'ContentContributionType code requires promotion although registry metadata allows it empty/default; changing required/NOT NULL would change schema. promotion must contain targetContentType. ',
+        'packages/content/src/content-contribution-type.ts:210 and content-contribution.ts:595 require nested promotion.targetContentType to choose the promoted Content subtype. A required string only forbids empty JSON text, not a missing nested target; no reason names promotion configuration, so retain pending a nested-rule/default decision outside declaration-only scope.',
     },
     {
       model: '@happyvertical/smrt-education:CourseRevision',
@@ -1168,7 +1133,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'actorType, actorId',
       error: 'Project specification actor is required.',
       reason:
-        'ProjectSpecification code requires actorType, actorId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'packages/projects/src/models/ProjectSpecification.ts:68-72 requires a valid actor type and nonempty actor id together, but stored actors are provenance only: project-specification-service.ts:74 authorizes the incoming actor.canManage, never these fields. No demonstrated stored-row dependency supports a reason; retain pending a decision on the runtime guard outside declaration-only scope.',
     },
     {
       model: '@happyvertical/smrt-prompts:PromptOverride',

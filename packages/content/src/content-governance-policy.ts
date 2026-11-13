@@ -35,7 +35,7 @@ export interface ContentGovernancePolicyOptions extends SmrtObjectOptions {
   cli: { skipApiCheck: true },
 })
 export class ContentGovernancePolicy extends SmrtObject {
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   key = '';
 
   label = '';
