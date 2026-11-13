@@ -336,7 +336,77 @@ function firstCheckLiteral(table, col) {
     }
   }
 }
-export async function seed(db, snapshot) {
+const emptySeedPlan = () => ({ suppliedRows: [], emptyByDesign: [] });
+const seedFileName = (release) => `seed/${release}.json`;
+const isRecord = (value) =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+/**
+ * The checked-in escape for tables the generic seeder cannot fill (rule 6 wants
+ * rows in every rehearsal database). `suppliedRows`: a real minimal row for a
+ * table the generic row cannot satisfy. `emptyByDesign`: a table that must stay
+ * empty. Each entry has a reason. A stale entry is a failure (see `seed`).
+ */
+export function validateSeedPlan(plan = emptySeedPlan(), label = 'seed plan') {
+  if (!isRecord(plan))
+    throw new Error(`${label} must be an object with suppliedRows and emptyByDesign`);
+  const { suppliedRows = [], emptyByDesign = [], ...unknown } = plan;
+  if (Object.keys(unknown).length)
+    throw new Error(`${label} has unknown key(s): ${Object.keys(unknown).join(', ')}`);
+  if (!Array.isArray(suppliedRows) || !Array.isArray(emptyByDesign))
+    throw new Error(`${label}: suppliedRows and emptyByDesign must be arrays`);
+  const seen = new Set();
+  const named = (entry, kind) => {
+    if (
+      !isRecord(entry) ||
+      !(typeof entry.table === 'string' && entry.table.trim()) ||
+      !(typeof entry.reason === 'string' && entry.reason.trim())
+    )
+      throw new Error(`${label}: each ${kind} entry needs a table and a non-empty reason`);
+    if (seen.has(entry.table))
+      throw new Error(`${label}: table ${entry.table} is listed twice`);
+    seen.add(entry.table);
+  };
+  for (const entry of suppliedRows) {
+    named(entry, 'suppliedRows');
+    if (!isRecord(entry.row) || !Object.keys(entry.row).length)
+      throw new Error(`${label}: the row for ${entry.table} must be a non-empty object of column values`);
+  }
+  for (const entry of emptyByDesign) named(entry, 'emptyByDesign');
+  return { suppliedRows, emptyByDesign };
+}
+
+/** The seed plan checked in for one snapshot; absent means both lists are empty. */
+export function readSeedPlan(directory, release) {
+  const file = path.join(directory, seedFileName(release));
+  return existsSync(file)
+    ? validateSeedPlan(readJSON(file), seedFileName(release))
+    : emptySeedPlan();
+}
+
+/** A seed file whose snapshot is gone is stale; so is one with no release name. */
+export function validateSeedFiles(directory, versions) {
+  const folder = path.join(directory, 'seed');
+  if (!existsSync(folder)) return;
+  for (const name of readdirSync(folder).filter((n) => n.endsWith('.json'))) {
+    if (!versions.includes(name.slice(0, -5)))
+      throw new Error(
+        `Stale seed file seed/${name}: there is no snapshot for ${name.slice(0, -5)}. Delete it.`,
+      );
+  }
+}
+
+/**
+ * Put one row in every model table of the snapshot (rule 6: a rehearsal on empty
+ * tables proves nothing). Returns `seedFailures`, one line per problem, each
+ * naming the table and the database error. Nothing here is a warning: a table
+ * that did not get a row, a seeded reference that could not be aligned or that
+ * points at no row, and a stale plan entry all fail the gate.
+ */
+export async function seed(db, snapshot, plan = emptySeedPlan()) {
+  const { suppliedRows, emptyByDesign } = validateSeedPlan(plan);
+  const supplied = new Map(suppliedRows.map((entry) => [entry.table, entry]));
+  const empty = new Map(emptyByDesign.map((entry) => [entry.table, entry]));
   const rows = {};
   const models = snapshot.modelTables ? new Set(snapshot.modelTables) : null;
   const values = new Map();
@@ -379,24 +449,67 @@ export async function seed(db, snapshot) {
   for (const [name, row] of Object.entries(rows))
     for (const col of Object.keys(row))
       row[col] = values.get(find(`${name}.${col}`)) ?? row[col];
-  const seedWarnings = [];
+  const seedFailures = [];
   let seededTables = 0;
   const insertedRows = new Map();
+  const planFile = seedFileName(snapshot.release);
+  for (const entry of [...supplied.values(), ...empty.values()])
+    if (!rows[entry.table])
+      seedFailures.push(
+        `${entry.table}: stale entry in ${planFile}: it is not a model table of smrt ${snapshot.release}. Remove it.`,
+      );
+  for (const entry of supplied.values()) {
+    const known = snapshot.tables[entry.table]?.columns ?? {};
+    for (const column of Object.keys(entry.row))
+      if (rows[entry.table] && !known[column])
+        seedFailures.push(
+          `${entry.table}.${column}: stale supplied row in ${planFile}: the snapshot has no such column. Fix or remove it.`,
+        );
+  }
   await db.query('SET session_replication_role = replica');
   try {
     for (const [name, row] of Object.entries(rows)) {
+      const table = snapshot.tables[name];
+      let inserted;
+      let genericError;
       try {
-        const inserted = await insertRow(
-          db,
-          name,
-          row,
-          snapshot.tables[name],
-          true,
+        inserted = await insertRow(db, name, row, table, true);
+      } catch (error) {
+        genericError = error;
+      }
+      if (!genericError) {
+        // The generic row works, so the plan entry is no longer needed.
+        if (supplied.has(name))
+          seedFailures.push(
+            `${name}: stale supplied row in ${planFile}: the generic seeder now seeds this table. Remove the entry.`,
+          );
+        if (empty.has(name))
+          seedFailures.push(
+            `${name}: stale emptyByDesign entry in ${planFile}: the table accepts a seeded row. Remove the entry.`,
+          );
+        insertedRows.set(name, inserted.rows[0]);
+        seededTables++;
+        continue;
+      }
+      if (empty.has(name)) continue;
+      const entry = supplied.get(name);
+      if (!entry) {
+        seedFailures.push(
+          `${name}: could not seed a row: ${genericError.message}. Supply a minimal row in ${planFile} or list the table as emptyByDesign with a reason.`,
         );
+        continue;
+      }
+      if (Object.keys(entry.row).some((column) => !table.columns[column]))
+        continue; // already reported as stale above
+      try {
+        inserted = await insertRow(db, name, entry.row, table, true);
+        rows[name] = entry.row;
         insertedRows.set(name, inserted.rows[0]);
         seededTables++;
       } catch (error) {
-        seedWarnings.push(`${name}: ${error.message}`);
+        seedFailures.push(
+          `${name}: the supplied row in ${planFile} could not be inserted: ${error.message} (the generic row failed with: ${genericError.message})`,
+        );
       }
     }
     // Defaults are evaluated by PostgreSQL. Resolve required references to
@@ -431,15 +544,45 @@ export async function seed(db, snapshot) {
           values,
         );
       } catch (error) {
-        seedWarnings.push(
+        seedFailures.push(
           `${name}: could not align seeded foreign keys: ${error.message}`,
         );
+      }
+    }
+    // Foreign keys are not enforced while seeding (replica role), so confirm the
+    // rows would survive if they were: no seeded reference may point at nothing.
+    for (const [name, table] of Object.entries(snapshot.tables)) {
+      if (!insertedRows.has(name)) continue;
+      for (const fk of table.constraints ?? []) {
+        if (fk.type !== 'f') continue;
+        const join = fk.columns
+          .map(
+            (column, i) =>
+              `p.${quote(fk.referencesColumns[i])} = c.${quote(column)}`,
+          )
+          .join(' AND ');
+        const present = fk.columns
+          .map((column) => `c.${quote(column)} IS NOT NULL`)
+          .join(' AND ');
+        try {
+          const { rows: dangling } = await db.query(
+            `SELECT 1 FROM ${quote(name)} c WHERE ${present} AND NOT EXISTS (SELECT 1 FROM ${quote(fk.referencesTable)} p WHERE ${join}) LIMIT 1`,
+          );
+          if (dangling.length)
+            seedFailures.push(
+              `${name}.${fk.columns.join(',')}: the seeded value points at no row in ${fk.referencesTable} (${fk.name})`,
+            );
+        } catch (error) {
+          seedFailures.push(
+            `${name}.${fk.columns.join(',')}: could not check the seeded reference to ${fk.referencesTable}: ${error.message}`,
+          );
+        }
       }
     }
   } finally {
     await db.query('SET session_replication_role = origin');
   }
-  return { seededTables, seedWarnings };
+  return { seededTables, seedFailures };
 }
 
 function describeStops(result) {
@@ -480,6 +623,7 @@ export async function rehearse({
   root,
   build,
   leftovers = [],
+  seedPlan,
   createDb,
   inspect,
   checkStaleLeftovers = true,
@@ -490,7 +634,7 @@ export async function rehearse({
   const failures = [];
   const matchedLeftovers = new Set();
   let seededTables = 0;
-  let seedWarnings = [];
+  let seedFailures = [];
   let db;
   let planned;
   try {
@@ -498,8 +642,15 @@ export async function rehearse({
       `${label}: restoring ${Object.keys(snapshot.tables).length} table(s)`,
     );
     db = await restore(snapshot, { root, createDb });
-    ({ seededTables, seedWarnings } = await seed(db, snapshot));
+    ({ seededTables, seedFailures } = await seed(db, snapshot, seedPlan));
     onProgress(`${label}: seeded ${seededTables} table(s)`);
+    // Rule 6: a table that holds no row proves nothing. The upgrade still runs
+    // below so one run reports every problem, but the gate cannot pass.
+    failures.push(
+      ...seedFailures.map(
+        (failure) => `Seeding smrt ${snapshot.release}: ${failure}`,
+      ),
+    );
     onProgress(`${label}: applying the upgrade`);
     const result = await build.migrateSmrtSchemas({
       db,
@@ -618,7 +769,7 @@ export async function rehearse({
     release: snapshot.release,
     failures,
     seededTables,
-    seedWarnings,
+    seedFailures,
     matchedLeftovers: [...matchedLeftovers],
     ok: failures.length === 0,
   };
@@ -687,8 +838,11 @@ export function prune(directory, oldest, compare) {
   const record = readJSON(path.join(directory, 'oldest-supported.json'));
   if (record.upgradeFirstTo) keep.add(record.upgradeFirstTo);
   for (const version of versions)
-    if (!keep.has(version))
+    if (!keep.has(version)) {
       unlinkSync(path.join(directory, `snapshots/${version}.json`));
+      const plan = path.join(directory, seedFileName(version));
+      if (existsSync(plan)) unlinkSync(plan);
+    }
   return [...keep].sort(compare);
 }
 export function moveOldest({
@@ -760,6 +914,7 @@ export async function check({
   const leftovers = validateLeftovers(
     readJSON(path.join(directory, 'leftover-columns.json')),
   );
+  validateSeedFiles(directory, versions);
   const results = [];
   for (const release of selected) {
     const snapshot = readJSON(
@@ -772,14 +927,13 @@ export async function check({
       root,
       build,
       leftovers,
+      seedPlan: readSeedPlan(directory, release),
       label: release,
       checkStaleLeftovers: false,
       onProgress: report,
     });
     results.push(result);
     report(`${release}: seeded ${result.seededTables} table(s)`);
-    for (const warning of result.seedWarnings)
-      report(`Seed warning: ${warning}`);
     for (const failure of result.failures)
       report(`FAIL ${release}: ${failure}`);
   }
@@ -806,5 +960,12 @@ export async function save({ root, directory }) {
     path.join(directory, `snapshots/${snapshot.release}.json`),
     stableJSON(snapshot),
   );
+  // Every snapshot has its seed plan, empty until a table needs an entry.
+  mkdirSync(path.join(directory, 'seed'), { recursive: true });
+  if (!existsSync(path.join(directory, seedFileName(snapshot.release))))
+    writeFileSync(
+      path.join(directory, seedFileName(snapshot.release)),
+      stableJSON(emptySeedPlan()),
+    );
   return { snapshot, kept: prune(directory, oldest.release, compare) };
 }

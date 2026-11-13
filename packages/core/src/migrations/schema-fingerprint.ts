@@ -94,6 +94,23 @@ export function computeSchemaFingerprint(
         ].sort(),
       })),
     ),
+    // Table-level rules (an STI subclass making a shared field required). A
+    // build whose only schema change is a new rule must get a new stamp, or
+    // production starts before migrate has installed the constraint. The key
+    // is left out when there are no rules so builds without any keep their
+    // stamp. Only the declared name and expression count: the name carries a
+    // hash of the rule, `columns` only says what the expression reads, and
+    // nothing here depends on how PostgreSQL rewrites a stored expression.
+    ...((schema.checks ?? []).length > 0
+      ? {
+          checks: sorted(
+            (schema.checks ?? []).map((check) => ({
+              name: check.name,
+              expression: check.expression.trim().replace(/\s+/g, ' '),
+            })),
+          ),
+        }
+      : {}),
     triggers: sorted(
       (schema.triggers ?? []).map((trigger) => ({
         name: trigger.name,
