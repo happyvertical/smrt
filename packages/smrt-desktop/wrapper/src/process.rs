@@ -5,10 +5,9 @@
 //! (see `app.rs`); [`StdLauncher`] drives the same logic with
 //! `std::process` for the integration tests and headless harnesses.
 //!
-//! Child output is kept in a bounded in-memory tail only. It is used to
-//! classify startup failures (address in use, lease held) and is never
-//! written to the log file unless explicitly opted in, because a runtime may
-//! print one-time secrets.
+//! Raw output stays in a bounded in-memory tail for failure classification.
+//! Separate redacted tails suppress sensitive lines before truncation; only
+//! those diagnostics can reach the log, including stderr on non-zero exits.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::io::{self, BufRead, BufReader, Read};
@@ -96,12 +95,102 @@ impl ExitLatch {
 #[derive(Clone, Default)]
 pub struct OutputTail {
     lines: Arc<Mutex<VecDeque<String>>>,
+    secret_values: Arc<Vec<String>>,
+    redact: bool,
 }
 
 impl OutputTail {
+    /// Capture diagnostics without retaining secret-bearing lines. The native
+    /// wrapper cannot load the CLI's Node redactor; use the same credential
+    /// categories, conservatively suppressing entire lines before truncation.
+    pub fn redacted(env: &BTreeMap<String, String>) -> Self {
+        let secret_values = env
+            .iter()
+            .filter(|(name, _)| {
+                name.to_ascii_uppercase().split('_').any(|part| {
+                    matches!(
+                        part,
+                        "URL"
+                            | "DSN"
+                            | "TOKEN"
+                            | "SECRET"
+                            | "PASSWORD"
+                            | "PASSWD"
+                            | "KEY"
+                            | "CREDENTIAL"
+                            | "CREDENTIALS"
+                            | "AUTH"
+                    )
+                })
+            })
+            .flat_map(|(_, value)| {
+                value
+                    .lines()
+                    .filter(|line| !line.is_empty())
+                    .map(str::to_owned)
+            })
+            .collect();
+        Self {
+            secret_values: Arc::new(secret_values),
+            redact: true,
+            ..Self::default()
+        }
+    }
+
+    fn diagnostic_line(&self, line: &str) -> String {
+        if !self.redact {
+            return line.to_owned();
+        }
+        let lower = line.to_ascii_lowercase();
+        let credential = lower
+            .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+            .any(|word| {
+                matches!(
+                    word,
+                    "token"
+                        | "secret"
+                        | "password"
+                        | "passwd"
+                        | "credentials"
+                        | "credential"
+                        | "authorization"
+                        | "api_key"
+                        | "apikey"
+                        | "access_token"
+                        | "refresh_token"
+                        | "private_key"
+                        | "launch"
+                )
+            });
+        let opaque_token = line
+            .split(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
+            .any(|part| part.len() >= 32);
+        if self
+            .secret_values
+            .iter()
+            .any(|value| value.len() >= 8 && line.contains(value))
+            || lower.split_whitespace().any(|word| word == "bearer")
+            || (credential && (line.contains('=') || line.contains(':')))
+            || (line.contains("://")
+                && (line.contains('@') || line.contains('?') || line.contains('#')))
+            || opaque_token
+        {
+            "[redacted sensitive sidecar output]".into()
+        } else {
+            // Strictly redact short values too, without losing the whole error
+            // to an auth flag such as SMRT_AUTH_ENABLED=1.
+            let mut result = line.to_owned();
+            for value in self.secret_values.iter().filter(|value| value.len() < 8) {
+                result = result.replace(value, "[redacted]");
+            }
+            result
+        }
+    }
+
     /// Append one line (truncated, control characters replaced).
     pub fn push(&self, line: &str) {
-        let mut cleaned: String = line
+        let mut cleaned: String = self
+            .diagnostic_line(line)
             .chars()
             .map(|c| if c.is_control() { ' ' } else { c })
             .collect();
@@ -139,6 +228,14 @@ pub trait ManagedChild: Send {
     fn force_kill(&mut self) -> io::Result<()>;
     /// Recent output lines, oldest first.
     fn output_tail(&self) -> Vec<String>;
+    /// Redacted stderr only. Custom launchers default to no diagnostics.
+    fn stderr_tail(&self) -> Vec<String> {
+        Vec::new()
+    }
+    /// Redacted stdout/stderr for the legacy diagnostic opt-in.
+    fn diagnostic_tail(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// Everything needed to start one sidecar attempt.
@@ -256,13 +353,27 @@ struct StdChild {
     child: std::process::Child,
     latch: ExitLatch,
     tail: OutputTail,
+    stderr: OutputTail,
+    diagnostics: OutputTail,
 }
 
-fn pump(reader: impl Read + Send + 'static, tail: OutputTail) {
+fn pump(
+    reader: impl Read + Send + 'static,
+    tail: OutputTail,
+    stderr: Option<OutputTail>,
+    diagnostics: OutputTail,
+) {
     thread::spawn(move || {
         for line in BufReader::new(reader).split(b'\n') {
             match line {
-                Ok(bytes) => tail.push(&String::from_utf8_lossy(&bytes)),
+                Ok(bytes) => {
+                    let line = String::from_utf8_lossy(&bytes);
+                    tail.push(&line);
+                    diagnostics.push(&line);
+                    if let Some(stderr) = &stderr {
+                        stderr.push(&line);
+                    }
+                }
                 Err(_) => break,
             }
         }
@@ -285,17 +396,21 @@ impl Launcher for StdLauncher {
             .stderr(Stdio::piped())
             .spawn()?;
         let tail = OutputTail::default();
+        let diagnostics = OutputTail::redacted(&plan.env);
+        let stderr = OutputTail::redacted(&plan.env);
         if let Some(out) = child.stdout.take() {
-            pump(out, tail.clone());
+            pump(out, tail.clone(), None, diagnostics.clone());
         }
         if let Some(err) = child.stderr.take() {
-            pump(err, tail.clone());
+            pump(err, tail.clone(), Some(stderr.clone()), diagnostics.clone());
         }
         Ok(Box::new(StdChild {
             pid: child.id(),
             child,
             latch: ExitLatch::default(),
             tail,
+            stderr,
+            diagnostics,
         }))
     }
 }
@@ -366,6 +481,12 @@ impl ManagedChild for StdChild {
     fn output_tail(&self) -> Vec<String> {
         self.tail.snapshot()
     }
+    fn stderr_tail(&self) -> Vec<String> {
+        self.stderr.snapshot()
+    }
+    fn diagnostic_tail(&self) -> Vec<String> {
+        self.diagnostics.snapshot()
+    }
 }
 
 #[cfg(test)]
@@ -408,6 +529,38 @@ mod tests {
         assert!(tail.snapshot().last().unwrap().len() <= OUTPUT_LINE_BYTES);
         tail.push("a\u{1b}[31mred\r");
         assert!(!tail.snapshot().last().unwrap().contains('\u{1b}'));
+    }
+
+    #[test]
+    fn diagnostic_tail_redacts_before_truncation_and_preserves_useful_errors() {
+        let env = BTreeMap::from([("APP_SECRET".into(), "known-sensitive-value".into())]);
+        let tail = OutputTail::redacted(&env);
+        for line in [
+            "Authorization: Bearer x".into(),
+            "https://127.0.0.1/setup?launch=unknown-value".into(),
+            "https://user:pass@server/path".into(),
+            "Token=unknown-value".into(),
+            "ab".repeat(32),
+            format!("{}known-sensitive-value", "x ".repeat(198)),
+        ] {
+            tail.push(&line);
+        }
+        assert!(tail
+            .snapshot()
+            .iter()
+            .all(|line| line == "[redacted sensitive sidecar output]"));
+        tail.push("Error: Local application data directory is not a safe Windows path: longer than 130 UTF-16 units");
+        assert!(tail.snapshot().last().unwrap().contains("longer than 130"));
+        tail.push(&format!("\u{1b}{}", "é ".repeat(OUTPUT_LINE_BYTES)));
+        let last = tail.snapshot().pop().unwrap();
+        assert!(last.len() <= OUTPUT_LINE_BYTES);
+        assert!(!last.chars().any(char::is_control));
+        let short = OutputTail::redacted(&BTreeMap::from([("AUTH_ENABLED".into(), "1".into())]));
+        short.push("Error: path longer than 130 UTF-16 units");
+        assert_eq!(
+            short.snapshot(),
+            ["Error: path longer than [redacted]30 UTF-[redacted]6 units"]
+        );
     }
 
     #[test]

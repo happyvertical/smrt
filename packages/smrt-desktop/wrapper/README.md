@@ -88,10 +88,15 @@ inspect, repair or delete either file. Specifically:
   startup failure that follows the normal backoff and says so in the tray.
   Matching is on those documented runtime phrases; keep
   `LEASE_PHRASES` in `src/supervisor.rs` aligned if they change.
-- The child's output is used for classification only. It stays in memory and
-  is not written to the log (a runtime may print one-time secrets). Set
-  `SMRT_DESKTOP_LOG_SIDECAR_OUTPUT=1` to log a truncated tail of it when a start
-  fails while debugging.
+- Raw child output stays in memory for classification. Non-zero exits log the
+  last ten stderr lines, each capped at 400 bytes. Secret-bearing environment
+  values, bearer credentials, sensitive assignments, credential/query URLs and
+  opaque tokens suppress the entire line **before** truncation. Short secret
+  environment values are replaced in place, so an auth flag cannot erase an
+  entire error. Stdout stays
+  private unless `SMRT_DESKTOP_LOG_SIDECAR_OUTPUT=1` enables the same redacted
+  diagnostic tail. The existing capped, rotating supervisor log is unchanged.
+  The launch smoke prints its last 8 KiB on failure through the CLI redactor.
 
 ## Bind-release race
 

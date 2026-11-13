@@ -273,8 +273,8 @@ pub struct SupervisorConfig {
     /// process that grabbed the chosen port answers the first probe while the
     /// child is still starting and about to die of `EADDRINUSE`.
     pub confirm_window: Duration,
-    /// Log the (truncated) child output tail when a start fails. Off by
-    /// default because a runtime may print one-time secrets.
+    /// Include redacted stdout as well as stderr when a start fails. Off by
+    /// default; non-zero exits always log the last ten redacted stderr lines.
     pub log_failure_output: bool,
 }
 
@@ -654,8 +654,12 @@ impl Core {
         let tail = child.output_tail();
         let kind = classify_exit(exit, &tail);
         if self.params.config.log_failure_output {
-            for line in tail.iter().rev().take(10).rev() {
+            for line in child.diagnostic_tail().iter().rev().take(10).rev() {
                 self.log().warn(&format!("sidecar output: {line}"));
+            }
+        } else if exit.code != Some(0) {
+            for line in child.stderr_tail().iter().rev().take(10).rev() {
+                self.log().warn(&format!("sidecar stderr: {line}"));
             }
         }
         kind

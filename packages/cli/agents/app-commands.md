@@ -74,7 +74,7 @@ Agent docs (#4878): `install` runs `docs:agents`, `dev` refreshes a missing or s
   `{schemaVersion:1,status:'error',code:'operation-failed',message,recovery,secretValuesIncluded:false}`
   plus `runtimeCode` when a `LocalRuntimeError` carries one
   (`migration_failed` + `MIGRATION_FAILED_MESSAGE`). Messages pass through
-  `redactSecrets()` (secret-named env values, URL userinfo, `token=`, Bearer;
+  `redactSecrets()` (secret-named env values, URL userinfo, `token=`/`launch=`, Bearer;
   every span is found on the raw text and the union masked at once, so a
   literal value never splits a structural match; existing `[redacted]`
   markers are opaque, so a second pass neither corrupts nor grows text).

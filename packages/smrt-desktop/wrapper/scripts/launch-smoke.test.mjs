@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { installTestHome } from '../../../vitest/src/test-home.ts';
 import test from 'node:test';
 import {
@@ -95,6 +98,66 @@ test('redact removes every occurrence of every secret', () => {
     redact('a SECRET b SECRET c other', ['SECRET', '', 'other']),
     'a [redacted] b [redacted] c [redacted]',
   );
+});
+
+test('smoke failure output uses the CLI credential and launch-link redactor', () => {
+  const output = redact([
+    'Error: data path exceeds the length budget',
+    'Authorization: Bearer x',
+    'http://127.0.0.1/setup?launch=unknown-launch-value&token=unknown-token-value',
+    'https://user:password@example.invalid/path',
+  ].join('\n'), []);
+  assert.ok(output.includes('Error: data path exceeds the length budget'));
+  assert.ok(output.includes('Bearer [redacted]'));
+  for (const secret of ['unknown-launch-value', 'unknown-token-value', 'user:password']) {
+    assert.ok(!output.includes(secret));
+  }
+});
+
+test('a failed wrapper prints only a redacted, bounded log tail and handles split stderr credentials', {
+  skip: process.platform === 'win32', // The fixture is a POSIX executable script.
+}, () => {
+  const root = mkdtempSync(join(tmpdir(), 'smrt-smoke-failure-'));
+  const script = new URL('./launch-smoke.mjs', import.meta.url);
+  const bundle = join(root, 'bundle');
+  const wrapper = join(root, 'wrapper');
+  try {
+    mkdirSync(join(bundle, 'resources'), { recursive: true });
+    mkdirSync(join(bundle, 'binaries'));
+    writeFileSync(join(bundle, 'bundle-report.json'), JSON.stringify({ product: { productId: 'fixture' } }));
+    writeFileSync(join(bundle, 'resources', 'sidecar-manifest.json'), JSON.stringify({
+      healthRoute: '/health', ownerClaimRoute: '/claim',
+    }));
+    writeFileSync(join(bundle, 'binaries', 'fixture-node-test-triple'), 'unused sidecar fixture');
+    writeFileSync(wrapper, `#!/usr/bin/env node
+      import { mkdirSync, writeFileSync } from 'node:fs';
+      import { join } from 'node:path';
+      import { appLogDir } from ${JSON.stringify(script.href)};
+      const log = appLogDir({ platform: process.platform, env: process.env,
+        home: process.env.HOME, identifier: 'placeholder.invalid.smrt-desktop-wrapper' });
+      mkdirSync(log, { recursive: true });
+      writeFileSync(join(log, 'supervisor.log'), 'old-head-marker\\n' + 'ordinary diagnostic\\n'.repeat(1000)
+        + 'http://127.0.0.1/setup?launch=unknown-launch-value\\nrecent-diagnostic\\n');
+      process.stderr.write('Bearer split-');
+      setTimeout(() => process.stderr.end('credential-suffix\\n'), 30);
+      process.exitCode = 7;
+    `, { mode: 0o700 });
+    const result = spawnSync(process.execPath, [fileURLToPath(script),
+      '--wrapper', wrapper, '--bundle', bundle, '--triple', 'test-triple', '--timeout-ms', '10000',
+    ], { encoding: 'utf8', timeout: 15000 });
+    assert.ifError(result.error);
+    assert.equal(result.status, 1);
+    assert.ok(result.stderr.includes('--- wrapper log tail ---'));
+    assert.ok(result.stderr.includes('recent-diagnostic'));
+    assert.ok(result.stderr.includes('Bearer [redacted]'));
+    for (const forbidden of ['old-head-marker', 'unknown-launch-value', 'credential-suffix']) {
+      assert.ok(!result.stderr.includes(forbidden), forbidden);
+    }
+    const tail = result.stderr.split('--- wrapper log tail ---\n')[1].split('--- wrapper stderr ---')[0];
+    assert.ok(Buffer.byteLength(tail.trimEnd()) <= 8192);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('processes of the bundle are found from ps and from the Windows listing', () => {

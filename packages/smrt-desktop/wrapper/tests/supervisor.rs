@@ -576,6 +576,58 @@ fn a_squatter_answering_the_first_probe_is_never_published_as_ready() {
 }
 
 #[test]
+fn nonzero_exit_logs_only_the_bounded_redacted_stderr_tail_by_default() {
+    let node = node_or_skip!();
+    for mode in ["stderr-failure", "stderr-success", "stderr-mixed-failure"] {
+        let h = start(
+            &node,
+            Options {
+                mode,
+                extra_env: vec![("DIAGNOSTIC_TEST_SECRET", "known-sensitive-value")],
+                recovery: RecoveryPolicy {
+                    max_restarts: 0,
+                    ..fast_recovery()
+                },
+                ..Options::default()
+            },
+        );
+        h.wait_failed();
+        h.supervisor.shutdown();
+        let log = h.log_text();
+        assert!(!log.contains("private stdout"));
+        assert!(!log.contains("Bearer x"));
+        assert!(!log.contains("known-sensitive-value"));
+        assert!(!log.contains("unknown-sensitive-value"));
+        assert!(!log.contains("?launch="));
+        let lines: Vec<_> = log
+            .lines()
+            .filter(|line| line.contains("sidecar stderr:"))
+            .collect();
+        if mode != "stderr-success" {
+            let count = if mode == "stderr-mixed-failure" {
+                5
+            } else {
+                10
+            };
+            assert_eq!(lines.len(), count, "{log}");
+            if count == 10 {
+                assert!(lines[0].contains("diagnostic line 45"));
+            }
+            assert!(lines
+                .last()
+                .unwrap()
+                .contains("Local application data directory"));
+            assert!(log.contains("[redacted sensitive sidecar output]"));
+        } else {
+            assert!(
+                lines.is_empty(),
+                "clean exits should not expose diagnostics"
+            );
+        }
+    }
+}
+
+#[test]
 fn a_held_lease_is_a_retryable_startup_failure_with_backoff() {
     let node = node_or_skip!();
     let h = start(
@@ -598,8 +650,11 @@ fn a_held_lease_is_a_retryable_startup_failure_with_backoff() {
         .collect();
     assert_eq!(reasons.len(), 2);
     assert!(reasons.iter().all(|r| r.contains("lease")), "{reasons:?}");
-    // The raw child output is never surfaced or logged by default.
-    assert!(!h.log_text().contains("99999"));
+    // Non-zero exits now include the bounded, redacted stderr by default.
+    assert!(h.log_text().contains("sidecar stderr:"));
+    assert!(h
+        .log_text()
+        .contains("Another application writer is active"));
     h.supervisor.shutdown();
 }
 

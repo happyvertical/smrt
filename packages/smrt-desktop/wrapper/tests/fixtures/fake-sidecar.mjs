@@ -66,6 +66,18 @@ if (mode === 'always-exit') {
   console.error('fatal: configured to fail');
   leave(2);
 }
+if (['stderr-failure', 'stderr-success', 'stderr-mixed-failure'].includes(mode)) {
+  console.log('private stdout must stay out of the log');
+  if (mode !== 'stderr-mixed-failure') {
+    for (let n = 0; n < 50; n++) console.error(`diagnostic line ${n}`);
+  }
+  console.error('Authorization: Bearer x');
+  console.error('http://127.0.0.1/setup?launch=unknown-sensitive-value');
+  console.error(process.env.DIAGNOSTIC_TEST_SECRET);
+  console.error(`${'x '.repeat(198)}${process.env.DIAGNOSTIC_TEST_SECRET}`);
+  console.error('Error: Local application data directory is not a safe Windows path: longer than 130 UTF-16 units');
+  leave(mode === 'stderr-success' ? 0 : 7);
+}
 
 process.on('SIGTERM', () => {
   mark('sigterm');

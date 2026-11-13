@@ -60,6 +60,8 @@ struct TauriChild {
     child: Option<CommandChild>,
     latch: ExitLatch,
     tail: OutputTail,
+    stderr: OutputTail,
+    diagnostics: OutputTail,
 }
 
 impl Launcher for TauriLauncher {
@@ -84,14 +86,26 @@ impl Launcher for TauriLauncher {
         let (mut events, child) = command.spawn().map_err(to_io)?;
         let latch = ExitLatch::default();
         let tail = OutputTail::default();
+        let diagnostics = OutputTail::redacted(&plan.env);
+        let reader_diagnostics = diagnostics.clone();
+        let stderr = OutputTail::redacted(&plan.env);
+        let reader_stderr = stderr.clone();
         let (reader_latch, reader_tail) = (latch.clone(), tail.clone());
         thread::Builder::new()
             .name("smrt-sidecar-events".into())
             .spawn(move || {
                 while let Some(event) = events.blocking_recv() {
                     match event {
-                        CommandEvent::Stdout(bytes) | CommandEvent::Stderr(bytes) => {
-                            reader_tail.push(&String::from_utf8_lossy(&bytes));
+                        CommandEvent::Stdout(bytes) => {
+                            let line = String::from_utf8_lossy(&bytes);
+                            reader_tail.push(&line);
+                            reader_diagnostics.push(&line);
+                        }
+                        CommandEvent::Stderr(bytes) => {
+                            let line = String::from_utf8_lossy(&bytes);
+                            reader_tail.push(&line);
+                            reader_stderr.push(&line);
+                            reader_diagnostics.push(&line);
                         }
                         CommandEvent::Error(_) => reader_tail.push("process event error"),
                         CommandEvent::Terminated(payload) => {
@@ -114,6 +128,8 @@ impl Launcher for TauriLauncher {
             child: Some(child),
             latch,
             tail,
+            stderr,
+            diagnostics,
         }))
     }
 }
@@ -147,6 +163,12 @@ impl ManagedChild for TauriChild {
 
     fn output_tail(&self) -> Vec<String> {
         self.tail.snapshot()
+    }
+    fn stderr_tail(&self) -> Vec<String> {
+        self.stderr.snapshot()
+    }
+    fn diagnostic_tail(&self) -> Vec<String> {
+        self.diagnostics.snapshot()
     }
 }
 

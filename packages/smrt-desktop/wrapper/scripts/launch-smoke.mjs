@@ -44,8 +44,10 @@ import {
 import http from 'node:http';
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
+import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { boundedTail, redactSecrets } from '../../../cli/src/app/errors.ts';
 import { installTestHome } from '../../../vitest/src/test-home.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -136,7 +138,7 @@ export function redact(text, secrets) {
   for (const secret of secrets) {
     if (secret) out = out.split(secret).join('[redacted]');
   }
-  return out;
+  return redactSecrets(out, process.env, { strict: true });
 }
 
 /**
@@ -470,8 +472,9 @@ async function main() {
       windowsHide: true,
     });
     // The wrapper prints one line to stderr when it cannot start at all.
-    child.stderr.on('data', (chunk) => {
-      stderrTail = `${stderrTail}${chunk}`.slice(-4000);
+    // Redact complete lines before bounding: a pipe chunk may split a token.
+    createInterface({ input: child.stderr }).on('line', (line) => {
+      stderrTail = boundedTail(`${stderrTail}${redact(line, secrets)}\n`, 4000);
     });
     let exited = null;
     child.on('exit', (code, signal) => {
@@ -586,7 +589,7 @@ async function main() {
   } catch (error) {
     failure = error;
     const log = readIfExists(logPath);
-    if (log) console.error(`--- wrapper log ---\n${redact(log, secrets)}`);
+    if (log) console.error(`--- wrapper log tail ---\n${boundedTail(redact(log, secrets), 8192)}`);
     if (stderrTail) {
       console.error(`--- wrapper stderr ---\n${redact(stderrTail, secrets)}`);
     }
