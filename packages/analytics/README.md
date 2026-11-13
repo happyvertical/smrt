@@ -155,3 +155,11 @@ and contributor guidance.
 ## Browser tracking
 
 Use the isolated `@happyvertical/smrt-analytics/browser` entry for opt-in browser/SPA tracking and the Matomo adapter. Shared components emit static standard events through the optional `@happyvertical/smrt-ui/analytics` context. See [browser integration and privacy contract](agents/browser.md).
+
+## OpenObserve project metrics (server-only)
+
+`@happyvertical/smrt-analytics/observability` exports `OpenObserveStreamReader`
+for the `default/project_observability` stream: `latestPerProject()` and
+`queryWindow()` return typed per-project snapshots and collector records. The read-only
+credential comes from your secrets store at call time and never reaches a
+client bundle. See [agents/observability.md](agents/observability.md).
