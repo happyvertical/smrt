@@ -1036,9 +1036,13 @@ describe('vault relay target', () => {
       const relay = relayWithSigner();
       const target = make(relay);
       await target.put((await seal(root, 1n)).request());
+      // A fixed replacement can equal the random ciphertext byte. Flip a bit.
       relay.relay.tamper.chunkBytes = (bytes, index) =>
         index === 1
-          ? Buffer.concat([bytes.subarray(0, -1), Buffer.from('x')])
+          ? Buffer.concat([
+              bytes.subarray(0, -1),
+              Buffer.from([bytes.readUInt8(bytes.length - 1) ^ 1]),
+            ])
           : bytes;
       expect((await failure(collect(target.get('1')))).code).toBe('integrity');
       relay.relay.tamper.chunkBytes = undefined;
