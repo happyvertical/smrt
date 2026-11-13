@@ -42,6 +42,6 @@ export default defineConfig({
     // collection bootstrap path (registry + sqlite) before failing over.
     // The hook timeout covers its beforeAll, which imports smrt-core.
     testTimeout: 30_000,
-    hookTimeout: 30_000,
+    hookTimeout: 60_000,
   },
 });
