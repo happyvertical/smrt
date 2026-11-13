@@ -435,7 +435,7 @@ export class SmrtReportRefreshTask extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text' })
   reportClass: string = '';
 
   @field({ type: 'text', required: true })

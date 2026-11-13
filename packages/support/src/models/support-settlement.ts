@@ -40,7 +40,10 @@ export class SupportCharge extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @foreignKey('ServiceTimeEntry', { required: true })
+  @foreignKey('ServiceTimeEntry', {
+    required: true,
+    requiredFor: 'idempotency',
+  })
   timeEntryId: string = '';
 
   @foreignKey('SupportCase')
@@ -117,7 +120,10 @@ export class SupportCompensation extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @foreignKey('ServiceTimeEntry', { required: true })
+  @foreignKey('ServiceTimeEntry', {
+    required: true,
+    requiredFor: 'idempotency',
+  })
   timeEntryId: string = '';
 
   @foreignKey('SupportSpecialist')

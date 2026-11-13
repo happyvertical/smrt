@@ -55,6 +55,7 @@ export class ApprovalPolicy extends SmrtObject {
   @field({
     type: 'text',
     required: true,
+    requiredFor: 'identity',
     description: 'The sort of approval these rules apply to.',
   })
   kind: string = '';

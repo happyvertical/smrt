@@ -47,7 +47,7 @@ export class SupportServiceTarget extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @foreignKey('SupportCase', { required: true })
+  @foreignKey('SupportCase', { required: true, requiredFor: 'identity' })
   caseId: string = '';
 
   @field({ type: 'text' })
@@ -210,7 +210,7 @@ export class SupportEscalation extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @foreignKey('SupportCase', { required: true })
+  @foreignKey('SupportCase', { required: true, requiredFor: 'identity' })
   caseId: string = '';
 
   /** Escalation level applied (1-based, follows the plan's policy steps). */

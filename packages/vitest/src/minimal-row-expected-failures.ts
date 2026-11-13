@@ -92,17 +92,10 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
         'Notification requires exactly one matching typed recipient and reserved protected email policy for profiles.',
     },
     {
-      model: '@happyvertical/smrt-subscriptions:PriceBook',
-      field: 'bookKey',
-      reason:
-        'Model validation rejects empty/default bookKey: Price books require a bookKey.',
-      error: 'Price books require a bookKey.',
-    },
-    {
       model: '@happyvertical/smrt-subscriptions:SubscriptionPlanVersion',
       field: 'version',
       reason:
-        'Model validation rejects empty/default version: Plan version must be a positive integer',
+        'Version must be a positive contiguous sequence for an existing plan (SubscriptionPlanVersion.validateBeforeSave); required alone accepts the real initializer 0 and cannot encode the next-version or parent-plan rules.',
       error: 'Plan version must be a positive integer',
     },
     {
@@ -1196,7 +1189,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'planId',
       error: 'Subscription plan is unavailable',
       reason:
-        'TenantSubscription code requires planId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'Save dereferences planId for pricing and version pinning, so identity fits. Requiring planId exposes optional planVersionId being auto-populated (minimal-row contract); that unassigned field needs a coordinated fix before this model passes and the entry can be removed.',
     },
     {
       model: '@happyvertical/smrt-subscriptions:CreditGrant',
@@ -1205,7 +1198,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       error:
         'Credit grant amounts must be nonzero integer minor units (cents).',
       reason:
-        'CreditGrant code requires amount although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'CreditGrant.validateBeforeSave requires a nonzero signed integer amount and a balance policy of the same tenant and currency; required alone accepts initializer 0 and cannot express this compound credit rule.',
     },
     {
       model: '@happyvertical/smrt-timesheets:AttendanceCorrection',
