@@ -1324,10 +1324,25 @@ exists. The core migrator logs those notices and returns them to wrappers.
 `getPendingSchemaStatements().decision` covers schema changes only.
 
 The fingerprint hashes canonical sorted JSON of abstract tables, columns,
-defaults, CHECKs, physical foreign keys, indexes (including predicates and JSON
-paths), and triggers. Defaults use the shared DDL formatter; nested JSON keys
-are canonicalized. Presentation metadata, source paths, version hashes,
-timestamps and registration order do not participate. Manifest writers stamp it
+defaults, column CHECKs, table-level CHECKs (shared-table rules, by name and
+whitespace-normalized expression, left out of the JSON when a table has none),
+physical foreign keys, indexes (including predicates and JSON paths), and
+triggers. It is computed from declarations, never read back from a catalog, so
+how PostgreSQL rewrites a stored expression cannot change it. Defaults use the
+shared DDL formatter; nested JSON keys are canonicalized. Presentation
+metadata, source paths, version hashes, timestamps and registration order do
+not participate. What is left out and why: `referenceKind`, `backfill`,
+column/index/trigger `description`, a check's `columns`, `ddl` (unless the
+table has no columns), `version`, `dependencies`, `packageName`, `baseClass`;
+none is a statement migrate runs. `migrations/__tests__/schema-fingerprint.test.ts`
+lists every attribute of the schema definition as a `Record` over its keys, so
+a new attribute does not compile until someone decides, and checks each
+decision. A new shared-table rule changes the stamp (#4929, #4932): the build
+is refused until migrate has installed the rule. The stamp is computed by the
+same function in the manifest writers, the generated build module, the migrate
+record and startup, so all move together. Release-upgrade snapshots hold no
+stamps. A stamp is never compared across smrt versions except through a fresh
+migrate: after upgrading smrt, rebuild and run migrate before starting. Manifest writers stamp it
 as `schemaFingerprint` after merging local and consumed declarations; the
 schema-path parity test compares the stamp with the registry for the same
 declarations. Only a project manifest's stamp is read. Registered copies leave
