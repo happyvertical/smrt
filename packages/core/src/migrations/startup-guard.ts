@@ -3,7 +3,11 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { DatabaseError } from '../errors.js';
 import { getVerificationKey } from '../table-cache.js';
 import { isPreparedTestDatabase } from '../testing/database-exemption.js';
-import { BUILD_MANIFEST_ENV, resolveBuildSchema } from './build-schema.js';
+import {
+  BUILD_MANIFEST_ENV,
+  registeredBuildSchema,
+  resolveBuildSchema,
+} from './build-schema.js';
 import {
   type MigrateRecordOptions,
   readLastMigrateRecord,
@@ -12,14 +16,21 @@ import {
 const logger = createLogger({ level: 'info' });
 // Keep in-flight work too: concurrent first queries share the same read.
 // Rejections are removed so a refusal never becomes a successful start.
-const starts = new Map<string, Promise<void>>();
+// Each entry remembers the registered build it was checked under: a build
+// registered after it (the app's generated build module loading after an
+// early query) means the answer must be worked out again.
+const starts = new Map<
+  string,
+  { build: object | undefined; start: Promise<void> }
+>();
 
 /**
  * SELECT-only startup gate, once per database per process. Compares the
- * build's stamp (`resolveBuildSchema()`: a registered build, the file named by
- * `SMRT_BUILD_MANIFEST`, or the project manifest under the working directory)
- * with the last migrate record. What the process has imported does not
- * matter. Never call from system bootstrap, migration, or diagnostic paths.
+ * build's stamp (`resolveBuildSchema()`: the build module the app's generated
+ * registration loads, the file named by `SMRT_BUILD_MANIFEST`, or the project
+ * manifest under the working directory) with the last migrate record. What
+ * the process has imported does not matter. Never call from system bootstrap,
+ * migration, or diagnostic paths.
  */
 export async function assertDatabaseMigratedForBuild(
   db: DatabaseInterface,
@@ -33,15 +44,16 @@ export async function assertDatabaseMigratedForBuild(
   )
     return;
   const key = getVerificationKey(db);
-  let start = starts.get(key);
-  if (!start) {
-    start = check(db, options);
-    starts.set(key, start);
+  const build = registeredBuildSchema();
+  let entry = starts.get(key);
+  if (!entry || entry.build !== build) {
+    entry = { build, start: check(db, options) };
+    starts.set(key, entry);
   }
   try {
-    await start;
+    await entry.start;
   } catch (error) {
-    if (starts.get(key) === start) starts.delete(key);
+    if (starts.get(key) === entry) starts.delete(key);
     throw error;
   }
 }
@@ -59,8 +71,9 @@ async function check(
       `found ${found ? found.slice(0, 12) : 'no migrate record'}. `
     : build
       ? `Database migration check: this build carries no schema fingerprint (${build.missingReason ?? 'not stamped'}; ${build.source}). `
-      : 'Database migration check: no build schema found. Start from the project root that holds the build manifest ' +
-        `(.smrt/manifest.json or dist/manifest.json), set ${BUILD_MANIFEST_ENV} to its path, or call registerBuildSchema() with it. `;
+      : "Database migration check: no build schema found. Load the app's generated registration " +
+        '(src/lib/server/smrt-register.ts, .smrt/register.js or .smrt/runtime/register.js, which import .smrt/build-schema.js) ' +
+        `before the first query, or set ${BUILD_MANIFEST_ENV} to the build's .smrt/manifest.json. `;
   // The override is audited even when the fingerprints already match.
   if (
     typeof process !== 'undefined' &&

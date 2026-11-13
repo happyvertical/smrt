@@ -15,6 +15,10 @@ import {
   resolveApplicationRuntime,
 } from '@happyvertical/smrt-config';
 import {
+  computeSchemaFingerprint,
+  registerBuildSchema,
+} from '@happyvertical/smrt-core';
+import {
   disableTenancy,
   getCurrentTenant,
   withSystemContext,
@@ -1243,6 +1247,50 @@ describe('local SvelteKit runtime', () => {
       bindHost: '127.0.0.1',
       backgroundJobs: false,
     });
+  });
+
+  it('is ready in production only for the build its database was migrated for (#4929)', async () => {
+    const directories = await localDirectories('rule7');
+    const initializeLocal = vi.fn(
+      (await import('./index.js')).initializeLocalApplicationRuntime,
+    );
+    // The bundled registration's build: no app tables, so the first-run
+    // schema step records exactly this stamp.
+    const build = {
+      fingerprint: computeSchemaFingerprint([]),
+      tables: {},
+      packages: [],
+      source: 'bundled build',
+    };
+    registerBuildSchema(build);
+    // Restore only these two afterwards: unstubbing everything would also drop
+    // the suite's own environment stubs.
+    const saved = {
+      NODE_ENV: process.env.NODE_ENV,
+      SMRT_ALLOW_UNMIGRATED_START: process.env.SMRT_ALLOW_UNMIGRATED_START,
+    };
+    process.env.NODE_ENV = 'production';
+    process.env.SMRT_ALLOW_UNMIGRATED_START = '';
+    try {
+      const runtime = composeSmrtSvelteKitRuntime(
+        { ...directories, runtime: LOCAL, env: { HOST: '127.0.0.1' } },
+        { initializeLocal },
+      );
+      openRuntimes.push(runtime);
+      await expect(runtime.ready()).resolves.toBeUndefined();
+      // A newer build loaded into the same process is checked again.
+      registerBuildSchema({ ...build, fingerprint: 'f'.repeat(64) });
+      await expect(runtime.ready()).rejects.toMatchObject({
+        code: 'DB_MIGRATION_REQUIRED',
+        message: expect.stringContaining('smrt db:migrate'),
+      });
+    } finally {
+      registerBuildSchema(undefined);
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
   });
 
   it('fails closed on migration failure with the stable code and stays retryable', async () => {

@@ -1282,10 +1282,17 @@ first of `PROJECT_MANIFEST_PATHS` (`dist/manifest.json`, `.smrt/manifest.json`,
 `describeManifestSchema(manifest)` gives its stamp (`schemaFingerprint`), its
 tables with their owning packages, and the packages that contribute tables
 (framework base classes and collections own none). `resolveBuildSchema()` finds
-it: a registered build (`registerBuildSchema(manifest)`; CLI discovery
-registers the project manifest it found), else the file in
-`SMRT_BUILD_MANIFEST`, else the project manifest under the working directory.
-Under `NODE_ENV=test` only the first two count.
+it: a registered build, else the file in `SMRT_BUILD_MANIFEST`, else the project
+manifest under the working directory. Under `NODE_ENV=test` only the first two
+count. A build is registered by `registerBuildSchema(manifest)` (CLI discovery
+registers the project manifest it found) or by the app's generated
+`.smrt/build-schema.js`: both manifest writers publish it with
+`.smrt/manifest.json` from the same merged manifest
+(`generateBuildSchemaModule`), and it sets the `BUILD_SCHEMA_GLOBAL` slot without
+importing anything. The generated `smrt-register.ts` (so the server bundle and
+`.smrt/runtime/register.js`) and the consumer's `.smrt/register.js` import it
+first, so a deployed app knows its build with no file and no variable. Library
+`dist` output carries neither the module nor a stamp.
 
 `collectMigrateRecordInput(build = resolveBuildSchema())` is the one input for
 both writers (CLI and `migrateSmrtSchemas`): `fingerprint` is
@@ -1381,11 +1388,14 @@ ScheduleRunner call it before starting their loops. Successful starts share one
 record read per database key per process, including concurrent first uses.
 Refusals are not cached as successes.
 System bootstrap, migrate, doctor and db:status do not call this guard.
-A process must find its build: run from the project root that holds the
-manifest, set `SMRT_BUILD_MANIFEST`, or call `registerBuildSchema()` with the
-bundled manifest. A build with no stamp, or no build at all, refuses in
-production (warns in development): migrate refuses the same index conflict, so
-no database can be migrated for it.
+The SvelteKit app runtime's `ready()` (its `init` gate) runs the check at
+start. A process that loads no generated registration (a plain script, a Vite
+app without SvelteKit route generation) finds its build only by
+`SMRT_BUILD_MANIFEST` or the working directory's project manifest. A cached
+start remembers the registered build; a later registration checks again, so a
+query that ran before the registration never fixes the answer. A build with no
+stamp, or no build at all, refuses in production (warns in development):
+migrate refuses the same index conflict, so no database can be migrated for it.
 
 Production refuses a missing record or a different fingerprint and names
 `smrt db:migrate`. The error shows short expected/found fingerprints. An old

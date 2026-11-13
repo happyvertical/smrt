@@ -7,6 +7,7 @@
  * it upgrades bundled runtimes to deterministic qualified registrations.
  */
 
+import '../../../.smrt/build-schema.js';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 
 import '../../../.smrt/register.js';

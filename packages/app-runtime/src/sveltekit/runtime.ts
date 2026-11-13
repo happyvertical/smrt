@@ -26,6 +26,7 @@ import {
   resolveEffectiveApplicationRuntime,
 } from '@happyvertical/smrt-config';
 import {
+  assertDatabaseMigratedForBuild,
   ObjectRegistry,
   type SmrtClassOptions,
   type SmrtCollection,
@@ -832,11 +833,14 @@ export function composeSmrtSvelteKitRuntime(
 
   const ready = async (): Promise<void> => {
     const runtime = await resolvedRuntime();
-    if (runtime.profile === 'local') {
-      await localRuntime();
-      return;
-    }
-    await deployedRuntime();
+    const { db } =
+      runtime.profile === 'local'
+        ? await localRuntime()
+        : await deployedRuntime();
+    // Rule 7 (#4929): this build serves only a database migrated for it. The
+    // build's schema comes from its bundled registration; the check runs once
+    // per database and refuses in production, naming smrt db:migrate.
+    await assertDatabaseMigratedForBuild(db);
   };
 
   const configurationFingerprint = (): string =>

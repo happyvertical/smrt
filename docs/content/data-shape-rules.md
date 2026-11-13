@@ -64,9 +64,12 @@ Read this before you upgrade a deployed app.
   manifest with the one the last migrate recorded. What the process has
   imported so far does not matter, so a worker or a lazily loaded package
   starts normally. If they differ, or there is no record, it does not start and
-  the error names `smrt db:migrate`. Start the app from its project root, or set
-  `SMRT_BUILD_MANIFEST` to the manifest's path, or call `registerBuildSchema()`
-  with the bundled manifest; a process that cannot find its build is refused. After you upgrade smrt, run `smrt db:migrate`
+  the error names `smrt db:migrate`. The build carries its own schema stamp:
+  the generated registration bundles `.smrt/build-schema.js`, so a deployed app
+  needs no manifest file. A process that does not load the generated
+  registration (a plain script) needs `SMRT_BUILD_MANIFEST` set to the build's
+  `.smrt/manifest.json`, or that file in its working directory; otherwise it is
+  refused. After you upgrade smrt, run `smrt db:migrate`
   once before you start the new build. An old copy that restarts after the
   migrate is refused too, and so is code rolled back without its database.
   For an emergency, set `SMRT_ALLOW_UNMIGRATED_START=1`; the app starts and

@@ -766,12 +766,16 @@ export {
 export * from './external-agent-usage.js';
 export {
   BUILD_MANIFEST_ENV,
+  BUILD_SCHEMA_GLOBAL,
+  BUILD_SCHEMA_MODULE,
   type BuildSchema,
   describeManifestSchema,
+  generateBuildSchemaModule,
   PROJECT_MANIFEST_PATHS,
   readBuildSchemaFile,
   readProjectBuildSchema,
   registerBuildSchema,
+  registeredBuildSchema,
   resolveBuildSchema,
 } from './migrations/build-schema.js';
 export * from './migrations/change-kinds.js';

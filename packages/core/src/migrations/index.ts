@@ -22,12 +22,16 @@ export {
 } from './backfill-tracker.js';
 export {
   BUILD_MANIFEST_ENV,
+  BUILD_SCHEMA_GLOBAL,
+  BUILD_SCHEMA_MODULE,
   type BuildSchema,
   describeManifestSchema,
+  generateBuildSchemaModule,
   PROJECT_MANIFEST_PATHS,
   readBuildSchemaFile,
   readProjectBuildSchema,
   registerBuildSchema,
+  registeredBuildSchema,
   resolveBuildSchema,
 } from './build-schema.js';
 export * from './change-kinds.js';

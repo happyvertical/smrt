@@ -8,6 +8,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../../collection.js';
@@ -21,8 +22,10 @@ import type {
 import { snapshotObjectRegistryState } from '../../test-utils.js';
 import {
   describeManifestSchema,
+  generateBuildSchemaModule,
   readProjectBuildSchema,
   registerBuildSchema,
+  registeredBuildSchema,
 } from '../build-schema.js';
 import {
   collectMigrateRecordInput,
@@ -467,5 +470,69 @@ describe('the build schema decides migrate records and startup (rv1)', () => {
       fingerprint: buildManifest([A]).schemaFingerprint,
       build: { source: 'registered', unloaded: [] },
     });
+  });
+
+  /** Load the app's generated build module, as its registration does. */
+  async function loadBuildModule(manifest: SmartObjectManifest): Promise<void> {
+    const path = join(dir, `build-schema-${crypto.randomUUID()}.js`);
+    writeFileSync(path, generateBuildSchemaModule(manifest));
+    await import(pathToFileURL(path).href);
+  }
+
+  it("the app's generated build module registers describeManifestSchema of its manifest", async () => {
+    const manifest = buildManifest([A, B]);
+    await loadBuildModule(manifest);
+    expect(registeredBuildSchema()).toEqual(
+      describeManifestSchema(manifest, 'bundled build'),
+    );
+  });
+
+  it('with only the build module loaded (no file, no variable): refused before migrate, starts after', async () => {
+    vi.stubEnv('SMRT_BUILD_MANIFEST', '');
+    const manifest = buildManifest([A, B]);
+    await loadBuildModule(manifest);
+    newProcess(A);
+    await expect(assertDatabaseMigratedForBuild(db)).rejects.toMatchObject({
+      code: 'DB_MIGRATION_REQUIRED',
+      message: expect.stringContaining('smrt db:migrate'),
+    });
+    newProcess(A, B);
+    await migrateSmrtSchemas({ db, packageName: 'rv1-app' });
+    newProcess(A);
+    const app = await newDatabaseHandle();
+    try {
+      await expect(assertDatabaseMigratedForBuild(app)).resolves.toBe(
+        undefined,
+      );
+    } finally {
+      await app.close?.();
+    }
+  });
+
+  it('a query before the build module loads never fixes the answer for the process', async () => {
+    const v1 = buildManifest([A, B]);
+    registerBuildSchema(v1);
+    newProcess(A, B);
+    await migrateSmrtSchemas({ db, packageName: 'rv1-app' });
+    registerBuildSchema(undefined);
+    vi.stubEnv('SMRT_BUILD_MANIFEST', join(dir, 'missing.json'));
+    const app = await newDatabaseHandle();
+    try {
+      // No build yet: refused (and not cached), then the module arrives.
+      await expect(assertDatabaseMigratedForBuild(app)).rejects.toThrow(
+        'no build schema found',
+      );
+      await loadBuildModule(v1);
+      await expect(assertDatabaseMigratedForBuild(app)).resolves.toBe(
+        undefined,
+      );
+      // A success under one build is checked again when another registers.
+      await loadBuildModule(buildManifest([A, B], [B]));
+      await expect(assertDatabaseMigratedForBuild(app)).rejects.toThrow(
+        'smrt db:migrate',
+      );
+    } finally {
+      await app.close?.();
+    }
   });
 });
