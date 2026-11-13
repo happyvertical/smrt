@@ -5,10 +5,10 @@ description: "The smrt planner as a mountable Svelte component with a typed comm
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-11T15:00:30Z"
+  at: "2026-11-13T15:00:45Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:b3d2c250b2318ee4052e7f0ae44f04be59e48caf6483730c35f212da6170b866"
+source_revision: "sha256:5b3315887191835b245dd95577bba8937a61916c5524cca7f4a664bbab7ea4c5"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/planner/package.json"
