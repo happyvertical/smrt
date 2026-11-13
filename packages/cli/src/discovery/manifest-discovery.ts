@@ -14,6 +14,9 @@ import type { SmartObjectDefinition } from '@happyvertical/smrt-core';
 import {
   isRefusedTestArtifact,
   ObjectRegistry,
+  PROJECT_MANIFEST_PATHS,
+  readBuildSchemaFile,
+  registerBuildSchema,
 } from '@happyvertical/smrt-core';
 import { glob } from 'tinyglobby';
 import { resolveManifestEntryPackageName } from './manifest-identity.js';
@@ -149,9 +152,8 @@ async function findProjectManifests(
 ): Promise<DiscoveredManifest[]> {
   const discovered: DiscoveredManifest[] = [];
   const candidates = [
-    'dist/manifest.json',
-    '.smrt/manifest.json',
-    'src/manifest/manifest.json',
+    // The build's project manifest locations, in the order startup reads them.
+    ...PROJECT_MANIFEST_PATHS,
     'dist/static-manifest.js',
     'static-manifest.js',
     'manifest.json',
@@ -391,6 +393,12 @@ export async function autoDiscoverAndLoad(
       });
     }
   }
+
+  // The project manifest is the app's build: migrate records, and startup
+  // checks, the schema it describes (#4929, #4928). A legacy `.js` project
+  // manifest or none at all leaves no build registered.
+  const project = manifests.find((manifest) => manifest.source === 'project');
+  registerBuildSchema(project ? readBuildSchemaFile(project.path) : undefined);
 
   return {
     discovered: manifests,

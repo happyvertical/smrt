@@ -329,7 +329,8 @@ app's `package.json` scripts are one-liners:
 | `smrt app dev\|build\|vite [args]` | Run the app's installed Vite with `.env` loaded (shell wins); `build` validates `./mcp-apps` first |
 
 Production persistence and task/schedule workers require the last migrate record
-to match the loaded build. Finish `smrt db:migrate` before starting new code.
+to match the build's stamp in its project manifest (found under the working
+directory, or named by `SMRT_BUILD_MANIFEST`). Finish `smrt db:migrate` before starting new code.
 An old copy that restarts after migrate will not start, and rolling code back
 without the database also refuses startup. `SMRT_ALLOW_UNMIGRATED_START=1` is a
 logged emergency override. Development warns once. `NODE_ENV=test` and databases

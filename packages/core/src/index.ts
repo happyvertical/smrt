@@ -480,6 +480,16 @@ export {
 } from './learning/index';
 // Static manifest (generated at build time)
 export * from './manifest/index';
+export {
+  BUILD_MANIFEST_ENV,
+  type BuildSchema,
+  describeManifestSchema,
+  PROJECT_MANIFEST_PATHS,
+  readBuildSchemaFile,
+  readProjectBuildSchema,
+  registerBuildSchema,
+  resolveBuildSchema,
+} from './migrations/build-schema.js';
 export * from './migrations/change-kinds.js';
 export type { DiffOptions } from './migrations/differ';
 // Schema comparison and migration utilities
@@ -509,6 +519,7 @@ export {
 export {
   computeManifestSchemaFingerprint,
   computeSchemaFingerprint,
+  manifestTableEntries,
   tryComputeManifestSchemaFingerprint,
 } from './migrations/schema-fingerprint.js';
 export { assertDatabaseMigratedForBuild } from './migrations/startup-guard.js';

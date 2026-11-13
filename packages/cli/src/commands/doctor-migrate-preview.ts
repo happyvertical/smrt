@@ -210,11 +210,19 @@ export async function buildMigratePreview(
     );
   const age = checkOldestSupportedRelease(recorded?.release ?? null);
   if (!age.ok) report.warnings.push(age.message);
-  if (recorded?.fingerprint !== current.fingerprint)
+  // Startup compares the build's stamp, so the doctor does too (#4929).
+  const expected = current.build
+    ? current.build.fingerprint
+    : current.fingerprint;
+  if (!expected)
+    report.warnings.push(
+      'This build carries no schema fingerprint: it will refuse to start in production.',
+    );
+  else if (recorded?.fingerprint !== expected)
     report.warnings.push(
       recorded
         ? 'Schema fingerprint differs: this build will refuse to start in production until `smrt db:migrate` runs.'
-        : `Database migration check: expected ${current.fingerprint.slice(0, 12)}, found no migrate record. Run smrt db:migrate before starting this build. A restarted old copy or code rolled back without its database is refused for the same reason.`,
+        : `Database migration check: expected ${expected.slice(0, 12)}, found no migrate record. Run smrt db:migrate before starting this build. A restarted old copy or code rolled back without its database is refused for the same reason.`,
     );
   report.issues = report.issues.map(redactDatabaseUrlsInText);
   report.warnings = report.warnings.map(redactDatabaseUrlsInText);
@@ -335,14 +343,19 @@ export function formatMigratePreview(
   );
   const hash = (value: string) =>
     options.verbose ? `${value.slice(0, 12)} (${value})` : value.slice(0, 12);
+  // The build's stamp is what startup compares (#4929).
+  const build = report.current.build
+    ? report.current.build.fingerprint
+    : report.current.fingerprint;
   group('Schema fingerprint', [
-    `Build: ${hash(report.current.fingerprint)}; database: ${recorded ? hash(recorded.fingerprint) : 'no migrate record'}`,
-    recorded?.fingerprint === report.current.fingerprint
+    `Build: ${build ? hash(build) : 'none'}; database: ${recorded ? hash(recorded.fingerprint) : 'no migrate record'}`,
+    build && recorded?.fingerprint === build
       ? 'matches'
       : (report.warnings.find(
           (warning) =>
             warning.startsWith('Schema fingerprint') ||
-            warning.startsWith('Database migration check'),
+            warning.startsWith('Database migration check') ||
+            warning.startsWith('This build carries'),
         ) ?? ''),
   ]);
   return lines.map(redactDatabaseUrlsInText);

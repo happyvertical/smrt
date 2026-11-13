@@ -2166,8 +2166,10 @@ async function generateRegistrationFile(
     }
 
     const logicalName = def.className || exportName;
+    // The build's stamp stays in .smrt/manifest.json only (#4929).
+    const { schemaFingerprint: _buildStamp, ...registrationBase } = manifest;
     registrationManifests[objectName] = {
-      ...manifest,
+      ...registrationBase,
       packageName: def.packageName,
       packageVersion: def.packageVersion || manifest.packageVersion,
       objects: { [objectName]: def },

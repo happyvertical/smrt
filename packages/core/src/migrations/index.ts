@@ -20,6 +20,16 @@ export {
   BackfillTracker,
   type BackfillTrackerOptions,
 } from './backfill-tracker.js';
+export {
+  BUILD_MANIFEST_ENV,
+  type BuildSchema,
+  describeManifestSchema,
+  PROJECT_MANIFEST_PATHS,
+  readBuildSchemaFile,
+  readProjectBuildSchema,
+  registerBuildSchema,
+  resolveBuildSchema,
+} from './build-schema.js';
 export * from './change-kinds.js';
 // Checksum utilities
 export {
@@ -174,6 +184,7 @@ export {
 export {
   computeManifestSchemaFingerprint,
   computeSchemaFingerprint,
+  manifestTableEntries,
   tryComputeManifestSchemaFingerprint,
 } from './schema-fingerprint.js';
 // SQLite table rebuild (type changes SQLite cannot ALTER in place)

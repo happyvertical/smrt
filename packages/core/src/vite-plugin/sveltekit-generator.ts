@@ -2224,9 +2224,12 @@ async function generateRegistrationFile(
         : undefined;
     }
   }
+  // Per-module copies of the manifest never carry the build's stamp: startup
+  // reads it from the project manifest, never from a registered copy (#4929).
+  const { schemaFingerprint: _buildStamp, ...registrationBase } = manifest;
   const collectionMetadataLiteral = JSON.stringify(
     JSON.stringify({
-      ...manifest,
+      ...registrationBase,
       objects: Object.fromEntries(collectionMetadata),
     }),
   );
@@ -2246,7 +2249,7 @@ async function generateRegistrationFile(
         [
           className,
           {
-            ...manifest,
+            ...registrationBase,
             packageName,
             objects: {
               [className]: portableObjectManifest(projectRoot, objectDef),

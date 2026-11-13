@@ -1,0 +1,162 @@
+/**
+ * The build's schema: the one value `smrt db:migrate`, `migrateSmrtSchemas`
+ * and the startup check all read (#4929, #4928).
+ *
+ * "The build" is the app's project manifest, the first of
+ * {@link PROJECT_MANIFEST_PATHS} under the project root. Its
+ * `schemaFingerprint` is the stamp. Startup compares that stamp with the last
+ * migrate record and never looks at the live registry, so what a process has
+ * imported so far does not matter. Migrate records the fingerprint of its
+ * planned schema restricted to the build's tables and the build's package
+ * list, which equal the stamp and the same list by construction.
+ */
+import { existsSync, join, readFileSync } from '../manifest/node-host.js';
+import { isRefusedTestArtifact } from '../manifest/test-artifacts.js';
+import type { SmartObjectManifest } from '../scanner/types.js';
+import {
+  manifestTableEntries,
+  tryComputeManifestSchemaFingerprint,
+} from './schema-fingerprint.js';
+
+/**
+ * Project manifest locations, in the order `smrt db:migrate` reads them (its
+ * schema contract accepts only these). Startup reads the same order, so both
+ * sides read the same file.
+ */
+export const PROJECT_MANIFEST_PATHS = [
+  'dist/manifest.json',
+  '.smrt/manifest.json',
+  'src/manifest/manifest.json',
+] as const;
+
+/** Environment variable naming the build's project manifest file. */
+export const BUILD_MANIFEST_ENV = 'SMRT_BUILD_MANIFEST';
+
+export interface BuildSchema {
+  /** The build's stamp; undefined when the build could not compute one. */
+  fingerprint?: string;
+  /** Why there is no fingerprint (for the startup message). */
+  missingReason?: string;
+  /** Each table of the build, with the packages that contribute to it. */
+  tables: Record<string, string[]>;
+  /** Packages that contribute tables to the build, sorted. */
+  packages: string[];
+  /** Where the build schema came from (a path, or `registered`). */
+  source: string;
+}
+
+type ManifestLike = Pick<SmartObjectManifest, 'objects'> &
+  Partial<Pick<SmartObjectManifest, 'packageName' | 'schemaFingerprint'>>;
+
+function entryPackage(
+  key: string,
+  object: { packageName?: string },
+  manifestPackage?: string,
+): string {
+  if (object.packageName) return object.packageName;
+  const separator = key.lastIndexOf(':');
+  if (separator > 0) return key.slice(0, separator);
+  return manifestPackage ?? '<unqualified>';
+}
+
+/** Describe a project manifest as the build's schema. Pure; no I/O. */
+export function describeManifestSchema(
+  manifest: ManifestLike,
+  source = 'manifest',
+): BuildSchema {
+  const tables: Record<string, Set<string>> = {};
+  for (const { source: key, schema } of manifestTableEntries(manifest)) {
+    const hasColumns = Object.keys(schema.columns ?? {}).length > 0;
+    const ddl = typeof schema.ddl === 'string' ? schema.ddl.trim() : '';
+    if (!schema.tableName || (!hasColumns && !ddl)) continue;
+    tables[schema.tableName] ??= new Set();
+    tables[schema.tableName].add(
+      entryPackage(key, manifest.objects[key], manifest.packageName),
+    );
+  }
+  let missingReason: string | undefined;
+  // Read the stamp. A manifest written before stamps existed gets the value
+  // from the same function the generator uses.
+  const fingerprint =
+    manifest.schemaFingerprint ??
+    tryComputeManifestSchemaFingerprint(manifest, (error) => {
+      missingReason = error.message;
+    });
+  const byTable = Object.fromEntries(
+    Object.entries(tables)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([table, owners]) => [table, [...owners].sort()]),
+  );
+  return {
+    ...(fingerprint ? { fingerprint } : {}),
+    ...(missingReason ? { missingReason } : {}),
+    tables: byTable,
+    packages: [...new Set(Object.values(byTable).flat())].sort(),
+    source,
+  };
+}
+
+const REGISTERED = Symbol.for('@happyvertical/smrt-core:build-schema');
+type Slot = { [REGISTERED]?: BuildSchema };
+
+/**
+ * Register the build's schema for this process: the project manifest object
+ * (for a bundle that ships no files, import the same `.smrt/manifest.json`)
+ * or a described {@link BuildSchema}. `undefined` clears it. The CLI
+ * registers the project manifest it discovered.
+ */
+export function registerBuildSchema(
+  build: ManifestLike | BuildSchema | undefined,
+): void {
+  const slot = globalThis as Slot;
+  if (!build) {
+    delete slot[REGISTERED];
+    return;
+  }
+  slot[REGISTERED] =
+    'objects' in build ? describeManifestSchema(build, 'registered') : build;
+}
+
+/** Read a project manifest file. Undefined when absent, unreadable or a test artifact. */
+export function readBuildSchemaFile(path: string): BuildSchema | undefined {
+  try {
+    if (!existsSync(path)) return undefined;
+    const manifest = JSON.parse(readFileSync(path, 'utf-8')) as ManifestLike;
+    if (
+      !manifest?.objects ||
+      typeof manifest.objects !== 'object' ||
+      isRefusedTestArtifact(manifest, path)
+    )
+      return undefined;
+    return describeManifestSchema(manifest, path);
+  } catch {
+    return undefined;
+  }
+}
+
+/** The first project manifest under `projectRoot`, in the CLI's order. */
+export function readProjectBuildSchema(
+  projectRoot: string,
+): BuildSchema | undefined {
+  for (const candidate of PROJECT_MANIFEST_PATHS) {
+    const build = readBuildSchemaFile(join(projectRoot, candidate));
+    if (build) return build;
+  }
+  return undefined;
+}
+
+/**
+ * This process's build schema: a registered one, else the file named by
+ * `SMRT_BUILD_MANIFEST`, else the project manifest under the working
+ * directory. Under `NODE_ENV=test` only the first two count, so a package's
+ * test run never takes the package's own manifest for an app build.
+ */
+export function resolveBuildSchema(): BuildSchema | undefined {
+  const registered = (globalThis as Slot)[REGISTERED];
+  if (registered) return registered;
+  if (typeof process === 'undefined' || !process.env) return undefined;
+  const named = process.env[BUILD_MANIFEST_ENV];
+  if (named) return readBuildSchemaFile(named);
+  if (process.env.NODE_ENV === 'test') return undefined;
+  return readProjectBuildSchema(process.cwd());
+}

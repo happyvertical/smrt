@@ -8,15 +8,28 @@ import {
   runSerializedAgainstSystemTableBootstrap,
 } from '../system/bootstrap.js';
 import { getDatabaseEngine, tableExists } from '../system/compatibility.js';
+import { type BuildSchema, resolveBuildSchema } from './build-schema.js';
 import { computeSchemaFingerprint } from './schema-fingerprint.js';
 
 export interface MigrateRecordInput {
   release: string;
   packages: string[];
   fingerprint: string;
+  /**
+   * The build this run was compared with (absent when no build was found).
+   * Never written to the record.
+   */
+  build?: {
+    source: string;
+    /** The build's stamp, when it has one. */
+    fingerprint?: string;
+  };
 }
 
-export interface MigrateRecord extends MigrateRecordInput {
+export interface MigrateRecord {
+  release: string;
+  packages: string[];
+  fingerprint: string;
   createdAt: string;
 }
 
@@ -28,20 +41,43 @@ export interface MigrateRecordOptions {
   engineHint?: DatabaseEngine;
 }
 
-/** Unqualified application classes are recorded under `<unqualified>`. */
-export function collectMigrateRecordInput(): MigrateRecordInput {
+function packageOf(name: string): string {
+  const separator = name.lastIndexOf(':');
+  return separator > 0 ? name.slice(0, separator) : '<unqualified>';
+}
+
+/**
+ * What a successful migrate records. `fingerprint` is the planned schema
+ * restricted to the build's tables, which equals the build's stamp when the
+ * declarations agree, whatever else this process loaded (#4929). With no
+ * build (see `resolveBuildSchema`), the whole planned schema, as before.
+ * `packages` is the package of every registered class.
+ */
+export function collectMigrateRecordInput(
+  build: BuildSchema | undefined = resolveBuildSchema(),
+): MigrateRecordInput {
+  const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
   const packages = new Set<string>();
-  for (const [key, registered] of ObjectRegistry.getAllClasses()) {
-    const name = registered.qualifiedName ?? key;
-    const separator = name.lastIndexOf(':');
-    packages.add(separator > 0 ? name.slice(0, separator) : '<unqualified>');
-  }
+  for (const [key, registered] of ObjectRegistry.getAllClasses())
+    packages.add(packageOf(registered.qualifiedName ?? key));
+  if (!build)
+    return {
+      release: corePackage.version,
+      packages: [...packages].sort(),
+      fingerprint: computeSchemaFingerprint(schemas),
+    };
   return {
     release: corePackage.version,
     packages: [...packages].sort(),
     fingerprint: computeSchemaFingerprint(
-      ObjectRegistry.getAllSchemasAsDefinitions(),
+      Object.keys(build.tables).flatMap((table) =>
+        schemas[table] ? [schemas[table]] : [],
+      ),
     ),
+    build: {
+      source: build.source,
+      ...(build.fingerprint ? { fingerprint: build.fingerprint } : {}),
+    },
   };
 }
 
@@ -112,7 +148,12 @@ export async function recordSuccessfulMigrate(
           const createdAt = new Date(
             Math.max(Date.now(), previousTime + 1),
           ).toISOString();
-          const record = { ...input, packages, createdAt };
+          const record = {
+            release: input.release,
+            fingerprint: input.fingerprint,
+            packages,
+            createdAt,
+          };
           const id = crypto.randomUUID();
           const serializedPackages = JSON.stringify(packages);
           await scopedDb.execute`
