@@ -245,6 +245,41 @@ const postgresShapes: Array<[SchemaChangeKindId, SchemaChange]> = [
       },
     },
   ],
+  // #4932 shapes: the shared-table CHECK changes the differ emits.
+  [
+    'check.add',
+    {
+      type: 'alter_column',
+      table: 'items',
+      name: 'title',
+      alteration: 'set_check',
+      mismatch: { expected: 'CHECK (x)', actual: '(none)' },
+      sqlStatements: ['ALTER TABLE items ADD CONSTRAINT smrt_ck_x CHECK (x)'],
+    },
+  ],
+  [
+    'check.violated',
+    {
+      type: 'alter_column',
+      table: 'items',
+      name: 'title',
+      alteration: 'set_check',
+      mismatch: { expected: 'CHECK (x)', actual: '(none)' },
+      sql: '-- items.title is required for some classes but live rows hold NULL',
+      advisory: { severity: 'warning', message: 'Live rows break the rule.' },
+    },
+  ],
+  [
+    'check.drop',
+    {
+      type: 'alter_column',
+      table: 'items',
+      name: 'smrt_ck_x',
+      alteration: 'drop_check',
+      mismatch: { expected: '(not declared)', actual: 'smrt_ck_x' },
+      sqlStatements: ['ALTER TABLE items DROP CONSTRAINT IF EXISTS smrt_ck_x'],
+    },
+  ],
 ];
 
 describe('schema change policy coverage (#4925)', () => {

@@ -118,6 +118,25 @@ export const SCHEMA_CHANGE_KINDS = {
       'Dropping the rebuild target with foreign keys enabled can delete referencing rows.',
     ),
   },
+  'check.add': {
+    type: 'alter_column',
+    engines: apply(
+      'Add the missing shared-table CHECK after proving no stored row breaks it.',
+    ),
+  },
+  'check.violated': {
+    type: 'alter_column',
+    engines: stop(
+      'invents-data',
+      'Stored rows break the shared-table CHECK and need a value that smrt cannot choose.',
+    ),
+  },
+  'check.drop': {
+    type: 'alter_column',
+    engines: apply(
+      'Drop the undeclared shared-table CHECK; rows are unchanged.',
+    ),
+  },
   'column.orphan': {
     type: 'orphan_column',
     engines: report(
@@ -422,6 +441,10 @@ export function classifySchemaChange(
         return 'type.rebuild-unavailable';
       return 'unlisted';
     case 'alter_column':
+      if (change.alteration === 'set_check')
+        return executable ? 'check.add' : 'check.violated';
+      if (change.alteration === 'drop_check')
+        return executable ? 'check.drop' : 'unlisted';
       if (change.mismatch?.actual === '(column not added)')
         return 'column.required-missing';
       if (noop) return 'column.rebuild-covered';
