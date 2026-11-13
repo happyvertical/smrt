@@ -714,3 +714,10 @@ The workspace prepack hook builds the template dependency closure through Turbo,
 then builds and verifies the host with the shared package prepack script. This
 ships the declared `dist/host/*` exports from a source checkout without a prior
 build; packing runs inside the workspace, where Turbo and the shared script live.
+
+The bundled-template integration fixtures declare commerce, inventory and events
+as test dependencies, so a template-only dependency build includes their real
+recipe manifests. The lazy onboarding fixture links only this declared runtime
+closure, using the desktop build script's existing `readWorkspacePackages` /
+`workspaceClosure` functions. It must not link every workspace package: doing
+so makes unrelated, unbuilt activation imports a prerequisite for M5.

@@ -151,7 +151,9 @@
     "@happyvertical/smrt-reports": "workspace:*",
     "@happyvertical/smrt-agents": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
-    "@happyvertical/smrt-commerce": "workspace:*"
+    "@happyvertical/smrt-commerce": "workspace:*",
+    "@happyvertical/smrt-events": "workspace:*",
+    "@happyvertical/smrt-inventory": "workspace:*"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org",

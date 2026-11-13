@@ -5,7 +5,6 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  readdirSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -45,6 +44,10 @@ import {
 } from '@modelcontextprotocol/server';
 import { build } from 'esbuild';
 import { afterEach, expect, it, vi } from 'vitest';
+import {
+  readWorkspacePackages,
+  workspaceClosure,
+} from '../../smrt-desktop/wrapper/scripts/build-desktop-app.mjs';
 import { createCookbookApplication, createCookbookHost } from '../host/server.js';
 import { createCookbookHostState } from '../host/state.js';
 
@@ -118,14 +121,15 @@ it.each(
 )('creates a typed contact through generated REST and assistant after fresh $id onboarding with lazy activation ($structuralPath)', async (template) => {
   restoreRegistry = snapshotObjectRegistryState();
   root = mkdtempSync(join(realpathSync(tmpdir()), 'smrt-onboard-write-'));
-  const packages = resolve(import.meta.dirname, '../..');
+  const workspace = readWorkspacePackages(resolve(import.meta.dirname, '../../..'));
+  const fixtureManifest = JSON.parse(
+    readFileSync(resolve(import.meta.dirname, '../package.json'), 'utf8'),
+  );
   const manifests: SmartObjectManifest[] = [];
   mkdirSync(join(root, 'node_modules/@happyvertical'), { recursive: true });
-  for (const directory of readdirSync(packages)) {
-    const pkg = join(packages, directory);
-    if (!existsSync(join(pkg, 'package.json'))) continue;
-    const info = JSON.parse(readFileSync(join(pkg, 'package.json'), 'utf8'));
-    if (!info.name?.startsWith('@happyvertical/')) continue;
+  // Model an installed test runtime, not every unrelated package in the checkout.
+  for (const name of workspaceClosure(workspace, fixtureManifest)) {
+    const { dir: pkg, json: info } = workspace.get(name)!;
     symlinkSync(pkg, join(root, 'node_modules', info.name));
     const file = resolveManifestPath(info.name, root);
     if (file)

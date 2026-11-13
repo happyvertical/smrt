@@ -4288,9 +4288,15 @@ importers:
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
+      '@happyvertical/smrt-events':
+        specifier: workspace:*
+        version: link:../events
       '@happyvertical/smrt-inference':
         specifier: workspace:*
         version: link:../inference
+      '@happyvertical/smrt-inventory':
+        specifier: workspace:*
+        version: link:../inventory
       '@happyvertical/smrt-jobs':
         specifier: workspace:*
         version: link:../jobs
