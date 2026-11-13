@@ -300,7 +300,7 @@ createDefaultMcpAppServer({
   `outcome: 'allowed' | 'denied' | 'error'`, `errorCode?`, `argumentKeys`,
   `occurredAt`): argument key names only, never values. A tool result with
   `isError` records `error`, or `denied` for `forbidden`, `confirm_required` and
-  access-denial codes. Sink failures go to `onToolCallHookError`.
+  access-denial codes. Sink failures go to `onToolCallHookError`. Anonymous 401/404 calls are audited too when a persistent sink is configured, so hosts should rate-limit the endpoint. Scopes make `tools/list` principal-dependent, so its cache hint is forced `private` whenever any scope is declared.
 - **Persistent store.** `createSmrtMcpAuditStore({ smrtOptions })` (subpath
   `./audit-store`, registers the tenant-scoped `McpCallAudit` model, table
   `smrt_mcp_call_audits`) is a sink with `list({ tenantId, principalId?, tool?,

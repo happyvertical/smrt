@@ -895,8 +895,10 @@ export function createMcpAppServer(
     const publicPatterns = getPublicPatterns();
     const isSafePublicCatalog =
       !toolPolicy &&
+      scopeRules.length === 0 &&
       tools.every(
         ({ tool, identity }) =>
+          requiredScopesFor(tool).length === 0 &&
           isPublicMcpTool(tool, publicPatterns) &&
           identity !== undefined &&
           !isTenantScopedTool(identity),
