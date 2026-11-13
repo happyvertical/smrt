@@ -5,10 +5,10 @@ description: "Site lifecycle management for multi-tenant SMRT networks"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-13T15:28:10Z"
+  at: "2026-11-13T15:36:07Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:55617427f29e032db67d5504797797ab8d0e7d9ba44aa6b975f8517cb152a3fe"
+source_revision: "sha256:fc63b2a26e980c8463008e3839f1e5fbe7a4d9bdd4b876e515e205ce0e7ed81f"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/sites/package.json"
@@ -55,7 +55,7 @@ sources:
 - `Domain` (collection `domains`, extends `SmrtObject`)
 - `DomainCollection` (collection `domains`, extends `SmrtCollection`)
 - `ProjectDomain` (collection `projectdomains`, extends `SmrtObject`)
-- `ProjectDomainCollection` (collection `projectdomains`, extends `SmrtCollection`)
+- `ProjectDomainCollection` (collection `projectdomains`, extends `SmrtJunction`)
 - `Site` (collection `sites`, extends `SmrtObject`)
 - `SiteAgentBinding` (collection `siteagentbindings`, extends `SmrtObject`)
 - `SiteAgentBindingCollection` (collection `siteagentbindings`, extends `SmrtCollection`)
