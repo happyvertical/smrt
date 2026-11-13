@@ -77,6 +77,11 @@ export function installTestHome(): () => void {
     APPDATA: join(home, 'AppData', 'Roaming'),
     LOCALAPPDATA: join(home, 'AppData', 'Local'),
   };
+  // SHGetKnownFolderPath verifies profile-relative AppData paths before Tauri
+  // can create its app directory. Create only bases owned by this new home.
+  for (const directory of [environment.LOCALAPPDATA, environment.APPDATA]) {
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+  }
   const original = Object.fromEntries(
     Object.keys(environment).map((name) => [name, process.env[name]]),
   );

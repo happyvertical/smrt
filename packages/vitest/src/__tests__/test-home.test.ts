@@ -102,6 +102,13 @@ describe('test home isolation', () => {
         true,
       );
       expect(home).not.toBe(before[0]);
+      // Windows SHGetKnownFolderPath verifies profile-relative AppData paths
+      // before Tauri can append an app identifier or create its data directory.
+      for (const name of ['LOCALAPPDATA', 'APPDATA']) {
+        const base = process.env[name];
+        expect(base, name).toBeTruthy();
+        expect(existsSync(base as string), name).toBe(true);
+      }
       const childHome = execFileSync(
         process.execPath,
         [

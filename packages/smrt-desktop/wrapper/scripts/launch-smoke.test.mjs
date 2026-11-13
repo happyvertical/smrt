@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { installTestHome } from '../../../vitest/src/test-home.ts';
 import test from 'node:test';
 import {
   appLocalDataDir,
@@ -150,4 +153,21 @@ test('a 64-hex run is the shape of the launch secret', () => {
 
 test('macOS logs use Library Logs independently of application data', () => {
   assert.equal(appLogDir({ platform: 'darwin', env: {}, home: '/Users/u', identifier: 'com.test.app' }), '/Users/u/Library/Logs/com.test.app');
+});
+
+
+test('the isolated Windows profile bases exist before Tauri resolves first-run data and log paths', () => {
+  const dispose = installTestHome();
+  try {
+    const identifier = 'com.happyvertical.smoke-test';
+    const options = { platform: 'win32', env: process.env, home: process.env.HOME, identifier };
+    assert.ok(existsSync(process.env.LOCALAPPDATA));
+    assert.ok(existsSync(process.env.APPDATA));
+    const data = appLocalDataDir(options);
+    assert.equal(data, join(process.env.LOCALAPPDATA, identifier));
+    assert.equal(appLogDir(options), join(data, 'logs'));
+    assert.equal(existsSync(data), false, 'creating OS bases must preserve a fresh app installation');
+  } finally {
+    dispose();
+  }
 });

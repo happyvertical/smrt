@@ -3,7 +3,13 @@
 `smrtVitestPlugin()` prepends `test-home.global-setup` to root and inline-project
 `globalSetup`. It installs HOME, USERPROFILE, XDG state/data/config/cache homes,
 LOCALAPPDATA and APPDATA
-before test modules and workers start. The installed Playwright browser binary
+before test modules and workers start. Both profile-relative AppData bases are
+created before publishing the environment: Windows `SHGetKnownFolderPath` verifies
+these directories ([Win32 verification contract](https://learn.microsoft.com/en-us/windows/win32/api/shlobj_core/ne-shlobj_core-known_folder_flag)),
+so a nonexistent redirected profile base makes Tauri's
+`app_local_data_dir()` fail with `unknown path` before the wrapper reads resources.
+Only directories within the newly owned test home are created; real OS bases and
+the forbidden-state guard are preserved. The installed Playwright browser binary
 cache is resolved before replacing HOME/XDG paths and retained through
 `PLAYWRIGHT_BROWSERS_PATH`; an explicit caller path (including `0`) wins.
 This preserves installed test prerequisites while app state stays isolated. Production-mode children inherit them,
