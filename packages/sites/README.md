@@ -57,6 +57,20 @@ Sites progress through four statuses: `draft` -> `active` -> `suspended` -> `arc
 
 `SiteAgentBinding` is a junction table linking sites to agent classes. Each binding has a `priority` (higher values execute first), an `enabled` flag, and optional per-site `config` overrides stored as JSON. The `bindAgent()` method upserts -- updating config if a binding already exists, creating one if not. `findEnabled()` returns bindings sorted by priority descending.
 
+### Zones, domains, and project links
+
+`DnsZone` is an apex (`example.com`); `Domain` is one hostname under a zone (`work.example.com`, FK `zoneId`); `ProjectDomain` links a domain to a project with a `role` (`production`, `staging`, `preview`, `mail`, `redirect`, `other`). One zone hosts many projects. `projectId` is a `@crossPackageRef` to `@happyvertical/smrt-projects:Project` (no package dependency). The zone model is `DnsZone`, not `Zone`, because `@happyvertical/smrt-properties` already registers a `Zone`.
+
+```typescript
+const service = new DomainService({ domains, links });
+await links.assign(tenantId, domain.id, projectId, 'production'); // idempotent
+await service.domainsByZone(zone.id);
+await service.domainsByProject(projectId, 'staging'); // role optional
+await service.unassignedDomains(); // domains with no project link
+```
+
+`Site.domain` remains a plain string; it is not yet linked to `Domain`.
+
 ### Portal configuration
 
 Sites store theme, branding, and navigation settings in `portalConfig` as JSON. Use `getPortalConfig()`/`setPortalConfig()` for type-safe access. Both models require tenant context (`@TenantScoped({ mode: 'required' })`).

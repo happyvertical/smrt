@@ -5,10 +5,10 @@ description: "Site lifecycle management for multi-tenant SMRT networks"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-13T15:20:11Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:e957a649b560c73fb0d275f97490b43c8c067f7cf9d267514cd9a6a82ee8b936"
+source_revision: "sha256:39269769a9b9681dbb86d481f4bd9ddb731f32b8bf7965be006ca922a888d2fe"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/sites/package.json"
@@ -50,6 +50,12 @@ sources:
 
 ## Models
 
+- `DnsZone` (collection `dnszones`, extends `SmrtObject`)
+- `DnsZoneCollection` (collection `dnszones`, extends `SmrtCollection`)
+- `Domain` (collection `domains`, extends `SmrtObject`)
+- `DomainCollection` (collection `domains`, extends `SmrtCollection`)
+- `ProjectDomain` (collection `projectdomains`, extends `SmrtObject`)
+- `ProjectDomainCollection` (collection `projectdomains`, extends `SmrtCollection`)
 - `Site` (collection `sites`, extends `SmrtObject`)
 - `SiteAgentBinding` (collection `siteagentbindings`, extends `SmrtObject`)
 - `SiteAgentBindingCollection` (collection `siteagentbindings`, extends `SmrtCollection`)
@@ -57,6 +63,12 @@ sources:
 
 ## MCP tools
 
+- `dnszone_get`: get on `@happyvertical/smrt-sites:DnsZone`
+- `dnszone_list`: list on `@happyvertical/smrt-sites:DnsZone`
+- `domain_get`: get on `@happyvertical/smrt-sites:Domain`
+- `domain_list`: list on `@happyvertical/smrt-sites:Domain`
+- `projectdomain_get`: get on `@happyvertical/smrt-sites:ProjectDomain`
+- `projectdomain_list`: list on `@happyvertical/smrt-sites:ProjectDomain`
 - `site_create`: create on `@happyvertical/smrt-sites:Site`
 - `site_get`: get on `@happyvertical/smrt-sites:Site`
 - `site_list`: list on `@happyvertical/smrt-sites:Site`
