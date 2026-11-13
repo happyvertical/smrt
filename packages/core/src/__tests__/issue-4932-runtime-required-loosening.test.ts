@@ -21,6 +21,7 @@ class OwnParent4932 extends SmrtObject {
   @field({ required: true, requiredFor: 'tenant-scope' }) tenantId = '';
   @field() note = '';
   @field({ required: true }) title = '';
+  @field({ default: 'a' }) kind = 'a';
 }
 
 @smrt({ tableStrategy: 'sti', tableName: 'rt4932_shared_parents' })
@@ -111,6 +112,49 @@ describe('#4932 run-time models keep the limit on loosening', () => {
     // A required field with no reason is still listed as optional (it is the
     // app's to loosen, and the column list of a new table is authoritative).
     expect(entry.fields.title.required).toBe(false);
+  });
+
+  describe('options the redeclaration does not state are inherited (#4942)', () => {
+    it('keeps required and requiredFor when required is not stated', async () => {
+      const name = registerRuntimeModel(
+        sub(qn(OwnParent4932), {
+          code: { type: 'text', description: 'Our code' },
+        }),
+      );
+      const fields = await ObjectRegistry.getAllFields(name);
+      expect(fields.get('code')?.required).toBe(true);
+      expect(fields.get('code')?._meta?.requiredFor).toBe('identity');
+      const entry = runtimeModelEntry(
+        sub(qn(OwnParent4932), { code: { type: 'text' } }),
+      );
+      expect(entry.fields.code.required).toBe(true);
+    });
+
+    it('does the same for a shared-table parent', () => {
+      expect(() =>
+        registerRuntimeModel(
+          sub(qn(SharedParent4932), { code: { type: 'text' } }),
+        ),
+      ).not.toThrow();
+    });
+
+    it('keeps required on an ordinary required field', () => {
+      const entry = runtimeModelEntry(
+        sub(qn(OwnParent4932), { title: { type: 'text' } }),
+      );
+      expect(entry.fields.title.required).toBe(true);
+    });
+
+    it('keeps a default it does not state, and drops them on a type change', () => {
+      const same = runtimeModelEntry(
+        sub(qn(OwnParent4932), { kind: { type: 'text', description: 'Kind' } }),
+      );
+      expect(same.fields.kind.default).toBe('a');
+      const changed = runtimeModelEntry(
+        sub(qn(OwnParent4932), { kind: { type: 'integer' } }),
+      );
+      expect(changed.fields.kind.default).toBeUndefined();
+    });
   });
 
   it('registers an empty subclass of an own-table parent and resolves its fields', async () => {

@@ -83,6 +83,9 @@ decorated class. What differs from a decorated class:
   (rule 3). `runtimeModelEntry` and `registerRuntimeModel` throw
   `CONFIG_REQUIRED_FIELD_LOOSENED`, naming the class and field, when a
   definition that extends a registered class restates a required field that
-  carries `requiredFor` (a required tenant field included) as optional. It is
+  carries `requiredFor` (a required tenant field included) as optional. Only a
+  definition that states `required: false` loosens: a redeclared field inherits
+  every option it leaves out (`required`, `requiredFor`, `enum`, `default`, ...),
+  by the same rule as a built subclass, type-change rule included. It is
   the same decision the build uses (`schema/field-inheritance.ts`). Tightening,
   or loosening a field with no reason, registers as before.
