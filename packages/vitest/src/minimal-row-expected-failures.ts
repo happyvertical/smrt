@@ -12,124 +12,40 @@ export interface MinimalRowExpectedFailure {
 export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
   [
     {
-      model: '@happyvertical/smrt-commerce:Agreement',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:BillingAccount',
-      field: 'customerId',
-      reason:
-        'Model validation rejects empty/default customerId: Billing accounts require a customerId.',
-      error: 'Billing accounts require a customerId.',
-    },
-    {
       model: '@happyvertical/smrt-commerce:BillingPeriodClose',
       field: 'periodEnd',
       reason:
-        'Model validation rejects empty/default periodEnd: A billing period must end after it starts.',
+        'The real epoch defaults satisfy required metadata, but billing/period-close.ts reads the stored end to select carried-forward credits; periodEnd must be later than periodStart, a cross-field date rule that requiredFor cannot express.',
       error: 'A billing period must end after it starts.',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:Cart',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:Contract',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:Estimate',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
     },
     {
       model: '@happyvertical/smrt-commerce:Invoice',
       field: 'tenantId',
       reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:Lease',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:LicenseSale',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:Order',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
+        'Invoice money calculation scopes tax reads by tenantId, so tenant-scope fits. A required declaration makes the legacy-money upgrade fixture fail on invoices.tenant_id NOT NULL; correcting that fixture exceeds the permitted test edits, so retain this finding pending that coordinated change.',
       error: 'Commerce money documents require a tenant',
     },
     {
       model: '@happyvertical/smrt-commerce:PaymentAllocation',
       field: 'amount',
       reason:
-        'Model validation rejects empty/default amount: PaymentAllocation amount must be a positive number',
+        'PaymentAllocation.save() requires a positive safe-integer amount and adds it to both balance caps; the real zero initializer already satisfies required metadata, and none of the five reasons describes a positive monetary amount.',
       error: 'PaymentAllocation amount must be a positive number',
     },
     {
       model: '@happyvertical/smrt-commerce:Payout',
       field: 'paymentId',
       reason:
-        'Model validation rejects empty/default paymentId: a paymentId is required \u2014 a payout must reference the source Payment that funded it (use createFromPayment()).',
+        'Payout.assertCappedBySourcePayment() loads paymentId and caps remittance by the source Payment. Identity fits, but the plain-string reference cannot supply a resolvable parent in a minimal row; changing the reference contract or fixture is outside this declaration-only audit.',
       error:
         'a paymentId is required \u2014 a payout must reference the source Payment that funded it (use createFromPayment()).',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:ProductionOrder',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:PurchaseOrder',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:SupplierQuote',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
     },
     {
       model: '@happyvertical/smrt-commerce:TaxComponent',
       field: 'name',
       reason:
-        'Model validation rejects empty/default name: Tax component requires a nonempty name',
+        'The name is copied into immutable tax snapshots and DocumentTax rejects empty component snapshots; no reason value describes display/snapshot content. Removing the save guard needs a review of those readers, outside declaration-only edits.',
       error: 'Tax component requires a nonempty name',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:WholesaleOrder',
-      field: 'tenantId',
-      reason:
-        'The model declares optional tenancy, but its money-document save guard requires a tenant.',
-      error: 'Commerce money documents require a tenant',
     },
     {
       model: '@happyvertical/smrt-content:Article',
@@ -299,7 +215,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'tenantId',
       error: 'Commerce money documents require a tenant',
       reason:
-        'ContractLineItem code requires tenantId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'Contract money recomputation scopes tax reads by tenantId. Requiring this field alone exposed the omitted contractId (Money parent id must be a nonempty identifier); that unassigned parent field blocks removing this ledger entry under declaration-only scope.',
     },
     {
       model: '@happyvertical/smrt-commerce:DocumentTax',
@@ -342,7 +258,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'tenantId',
       error: 'Commerce money documents require a tenant',
       reason:
-        'InvoiceLineItem code requires tenantId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'Invoice money recomputation scopes tax reads by tenantId. Requiring this field alone exposed the omitted invoiceId (Invoice  was not found); that unassigned parent field blocks removing this ledger entry under declaration-only scope.',
     },
     {
       model: '@happyvertical/smrt-commerce:PurchasePriceObservation',
@@ -358,7 +274,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'code, name',
       error: 'Tax code requires a nonempty code and name',
       reason:
-        'TaxCode code requires code, name although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'code is a tenant conflict key and lookup identity, while name is snapshot/display content with no matching reason. The combined save guard and taxable-component requirement prevent this model passing after a code-only declaration; retain the combined finding pending a wider guard/fixture audit.',
     },
     {
       model: '@happyvertical/smrt-commerce:TaxSummaryReport',
@@ -384,14 +300,6 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       error: 'Disputes are written only by connected-payments commands',
       reason:
         'TenantPaymentDispute writes are owned by handleConnectedPaymentWebhook; its owner must run once against a minimal row.',
-    },
-    {
-      model: '@happyvertical/smrt-commerce:BillingPaymentAttempt',
-      kind: 'optional-field',
-      field: 'provider, checkoutId',
-      error: 'Payment attempts require a provider and checkoutId.',
-      reason:
-        'BillingPaymentAttempt code requires provider, checkoutId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
     },
     {
       model: '@happyvertical/smrt-content:ContentContributionType',
