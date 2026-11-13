@@ -420,10 +420,14 @@ export function compileGeneratedExpression(
     );
   try {
     if (engine === 'postgres') {
-      const inspect = (value: unknown, depth = 0): void => {
-        if (depth > 24)
-          throw new GeneratedFieldError('Expression exceeds depth 24');
-        if (!value || typeof value !== 'object') return;
+      // Operand arrays are containers, not expression depth. Leave grammar
+      // bounds to the validator/renderer while scanning every reachable node.
+      const pending: unknown[] = [expression];
+      const seen = new Set<object>();
+      while (pending.length) {
+        const value = pending.pop();
+        if (!value || typeof value !== 'object' || seen.has(value)) continue;
+        seen.add(value);
         const node = value as Record<string, unknown>;
         if (
           node.kind === 'datetime' ||
@@ -433,9 +437,8 @@ export function compileGeneratedExpression(
             'NON_IMMUTABLE',
             'PostgreSQL generated expressions cannot contain datetime columns or literals (TIMESTAMPTZ casts depend on session settings)',
           );
-        for (const child of Object.values(node)) inspect(child, depth + 1);
-      };
-      inspect(expression);
+        pending.push(...Object.values(node));
+      }
     }
     const rendered = renderExpression(expression, {
       dialect: engine,

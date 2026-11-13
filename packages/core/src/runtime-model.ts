@@ -596,6 +596,12 @@ export async function planRuntimeModelDDL(
   const statements: string[] = [];
   for (const [column, def] of Object.entries(definition.columns)) {
     if (names.has(column)) continue;
+    if (engine === 'duckdb' && def.generated !== undefined)
+      throw new GeneratedFieldError(
+        `DuckDB cannot add generated column ${table}.${column} to an existing table; migrate to a new table explicitly`,
+        'VALIDATION_GENERATED_DIALECT',
+        column,
+      );
     // A column added to an existing table is nullable and without a NOT NULL
     // default requirement: existing rows have no value for it.
     const fragment = strategy.generateColumnDefinition(column, {

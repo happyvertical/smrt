@@ -1539,6 +1539,65 @@ describe('database-generated fields #4915', () => {
     });
   }
 
+  for (const engine of persistenceEngines) {
+    it(`#4972 round2 item2: ${engine} accepts supported expression depth with nested operand arrays`, async () => {
+      let generated: GeneratedExpression = { col: 'qty' };
+      for (let i = 0; i < 14; i++)
+        generated = { op: 'coalesce', operands: [generated, { value: 0 }] };
+      const name = registerRuntimeModel({
+        name: 'NestedGenerated',
+        packageName: '@test/generated',
+        fields: {
+          qty: { type: 'integer' },
+          total: { type: 'integer', generated },
+        },
+      });
+      const db = await getTestDatabase({
+        type: engine === 'sqlite' ? 'sqlite' : 'pglite',
+        classes: [],
+        includeSystemTables: false,
+      });
+      databases.push(db);
+      for (const sql of await planRuntimeModelDDL(
+        name,
+        engine,
+        async () => null,
+      ))
+        await db.query(sql);
+      const collection = await ObjectRegistry.getCollection(name, { db });
+      expect((await collection.create({ qty: 5 })).toJSON()).toHaveProperty(
+        'total',
+        5,
+      );
+    });
+  }
+
+  it('#4972 round2 item1: runtime DDL planning also refuses DuckDB generated additions', async () => {
+    const db = await getDatabase({ type: 'duckdb', url: ':memory:' });
+    databases.push(db);
+    await db.query('CREATE TABLE duck_runtime_generated (qty INTEGER)');
+    await db.query('INSERT INTO duck_runtime_generated (qty) VALUES (5)');
+    const name = registerRuntimeModel({
+      name: 'DuckRuntimeGenerated',
+      packageName: '@test/generated',
+      tableName: 'duck_runtime_generated',
+      fields: {
+        qty: { type: 'integer' },
+        total: { type: 'integer', generated: { col: 'qty' } },
+      },
+    });
+    await expect(
+      planRuntimeModelDDL(name, 'duckdb', async (table) =>
+        Object.keys((await db.getTableSchema!(table))!.columns),
+      ),
+    ).rejects.toMatchObject({ code: 'VALIDATION_GENERATED_DIALECT' });
+    expect(
+      Number(
+        (await db.query('SELECT qty FROM duck_runtime_generated')).rows[0].qty,
+      ),
+    ).toBe(5);
+  });
+
   it('validates the closed grammar, reference rules, result types and bounds', () => {
     const check = (
       generated: unknown,
