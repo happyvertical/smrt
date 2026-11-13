@@ -62,6 +62,7 @@ export class StockLevel extends SmrtObject {
   /** Plain string reference to the {@link Sku} this row tracks. */
   @field({
     required: true,
+    requiredFor: 'identity',
     description: 'The item being counted.',
   })
   skuId: string = '';
@@ -69,6 +70,7 @@ export class StockLevel extends SmrtObject {
   /** Plain string reference to the {@link InventoryLocation} this row tracks. */
   @field({
     required: true,
+    requiredFor: 'identity',
     description: 'Where the stock is kept.',
   })
   locationId: string = '';

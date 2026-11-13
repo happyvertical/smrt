@@ -57,6 +57,7 @@ export class LotCorrection extends SmrtObject {
   /** The lot that was corrected. */
   @foreignKey(Lot, {
     required: true,
+    requiredFor: 'identity',
     onDelete: 'RESTRICT',
     onUpdate: 'RESTRICT',
     // DuckDB cannot enforce the constraint; the id is never rewritten.
@@ -83,7 +84,6 @@ export class LotCorrection extends SmrtObject {
   /** Why the correction was made. Required, at most 1000 characters. */
   @field({
     type: 'text',
-    required: true,
     maxLength: 1000,
     description: 'Why it was corrected.',
   })

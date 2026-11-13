@@ -21,7 +21,7 @@ export class ChatThread extends SmrtObject {
   @tenantId()
   tenantId: string = '';
 
-  @foreignKey('ChatRoom', { required: true })
+  @foreignKey('ChatRoom', { required: true, requiredFor: 'identity' })
   @field({ description: 'The room containing this discussion thread.' })
   roomId: string = '';
   // Nullable FK (S5 #1392): a thread can be opened WITHOUT a root message (e.g.

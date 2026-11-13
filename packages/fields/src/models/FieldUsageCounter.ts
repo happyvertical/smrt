@@ -110,11 +110,11 @@ export interface FieldUsageCounterOptions extends SmrtObjectOptions {
 })
 export class FieldUsageCounter extends SmrtObject {
   /** Qualified class name of the target object (`@package/name:ClassName`). */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   objectRef: string = '';
 
   /** Field name on the target object. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   fieldName: string = '';
 
   /**
@@ -126,7 +126,7 @@ export class FieldUsageCounter extends SmrtObject {
   tenantId?: string;
 
   /** UTC day bucket (`YYYY-MM-DD`); lexicographic order is time order. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   period: string = '';
 
   /**
