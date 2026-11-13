@@ -91,12 +91,14 @@ inspect, repair or delete either file. Specifically:
 - Raw child output stays in memory for classification. Non-zero exits log the
   last 40 stderr lines, each capped at 400 bytes, so a normal Node uncaught
   stack does not push its error message out of the diagnostic. Secret-bearing environment
-  values, bearer/basic credential values, sensitive assignments and URLs with
+  values of at least eight characters, bearer/basic credentials, cookie and
+  authorization headers, assignments whose keys end in token/secret/password/
+  passwd/key (including camelCase and environment names), and URLs with
   userinfo or credential query parameters are masked as spans **before**
-  truncation. Overlapping spans are merged against the original text, including
-  short environment values. Bare 64-hex launch-secret shapes are masked; ordinary
-  long names and hashes in file paths are preserved. Scoped file URLs containing
-  `@happyvertical` are not URL userinfo. Error classes, messages and stack paths
+  truncation. Overlapping spans are merged against the original text. All 64+ hex
+  secret shapes are masked, including inside paths; ordinary names and short build
+  chunk hashes stay readable. Scoped file URLs containing `@happyvertical` are not
+  URL userinfo. Error classes, messages and stack paths
   therefore survive redaction. Each launch also records its working and data
   paths through the same redactor, without arguments or environment maps. Stdout stays
   private unless `SMRT_DESKTOP_LOG_SIDECAR_OUTPUT=1` enables the same redacted

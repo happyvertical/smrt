@@ -104,7 +104,7 @@
     "@happyvertical/smrt-jobs": "workspace:*"
   },
   "scripts": {
-    "prepack": "pnpm exec turbo run build --filter=@happyvertical/smrt-template-sveltekit^... && node ../../scripts/prepack-package.js",
+    "prepack": "node ../../scripts/prepack-package.js",
     "build": "tsc -p tsconfig.host.json && pnpm run typecheck && node --check index.js",
     "test": "vitest run",
     "test:e2e": "pnpm exec playwright test --config playwright.config.ts",

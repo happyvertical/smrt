@@ -710,10 +710,11 @@ In-flight removal settings: the MCP boundary honors both the current owner prefe
 
 The browser gate accepts `SMRT_BROWSER_TEST_PORT` to reserve an assigned loopback port. Installed Chrome is supported through `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`; this worker used port 4969.
 
-The workspace prepack hook builds the template dependency closure through Turbo,
-then builds and verifies the host with the shared package prepack script. This
-ships the declared `dist/host/*` exports from a source checkout without a prior
-build; packing runs inside the workspace, where Turbo and the shared script live.
+The shared prepack script verifies and reuses prepared CI artifacts without
+building dependency closures. Outside CI it builds and verifies the host itself;
+its dependencies must already be built. The real CLI/template tarball tests build
+both closures in `test.before`. Release shards restore `dist` without `.turbo`;
+packing preserves the prepared exports and all dependency artifacts.
 
 The bundled-template integration fixtures declare commerce, inventory and events
 as test dependencies, so a template-only dependency build includes their real

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, globSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +9,7 @@ import test from 'node:test';
 const repoRoot = fileURLToPath(new URL('../', import.meta.url));
 
 test.before(() => {
-  // Build each package and its prepack dependency closure, so even an existing
+  // Build each package and its dependency closure, so even an existing
   // CI dist reflects current source. Keep compilation outside the pack deadline;
   // real pack below still runs every lifecycle hook and artifact verifier.
   const built = spawnSync('pnpm', [
@@ -83,3 +83,38 @@ test('real CLI tarball retains every authored cookbook API route', () => {
     rmSync(output, { recursive: true, force: true });
   }
 });
+
+// Release shards restore dist from prepare-release, without its Turbo cache.
+// Packing must verify those artifacts rather than replace any dependency build.
+for (const directory of ['cli', 'template-sveltekit']) {
+  test(`CI pack preserves prepared artifacts with a cold cache: ${directory}`, () => {
+    const output = mkdtempSync(join(tmpdir(), 'smrt-prepared-pack-'));
+    const cache = join(output, 'cold-turbo-cache');
+    try {
+      const fingerprints = [];
+      for (const phase of ['before', 'after']) {
+        const files = globSync('packages/*/dist/**/*', { cwd: repoRoot }).sort();
+        fingerprints.push(files.flatMap((file) => {
+          const info = statSync(join(repoRoot, file), { bigint: true });
+          return info.isFile() ? [[file, info.size, info.mtimeNs]] : [];
+        }));
+        if (phase === 'before') {
+          assert.ok(fingerprints[0].length > 0, 'prepare-release artifacts exist');
+          const packed = spawnSync('pnpm', ['pack', '--pack-destination', output], {
+            cwd: join(repoRoot, 'packages', directory),
+            env: { ...process.env, CI: 'true', TURBO_CACHE_DIR: cache },
+            encoding: 'utf8', timeout: 120_000,
+          });
+          assert.ifError(packed.error);
+          assert.equal(packed.status, 0, `${packed.stdout}${packed.stderr}`);
+          assert.match(packed.stdout, /Reusing existing CI build artifacts/);
+        }
+      }
+      assert.deepEqual(fingerprints[1], fingerprints[0], 'pack must not rewrite prepared dist');
+      assert.equal(existsSync(cache), false, 'pack must not invoke Turbo');
+      assert.equal(readdirSync(output).filter((file) => file.endsWith('.tgz')).length, 1);
+    } finally {
+      rmSync(output, { recursive: true, force: true });
+    }
+  });
+}

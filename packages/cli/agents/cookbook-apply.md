@@ -136,8 +136,11 @@ suite covers dry-run, customization retention and idempotency; the template
 subclass suite checks exclusive-create preservation and path confinement.
 
 
-The workspace prepack hook builds the CLI dependency closure through Turbo, then
-builds and verifies the CLI with the shared package prepack script.
+The shared prepack script verifies and reuses prepared CI artifacts; it never
+builds dependency closures. Outside CI it builds and verifies the CLI itself.
+The real tarball tests build both CLI and template closures in `test.before`,
+before packing. Release shards restore prepared `dist` without a Turbo cache;
+packing must preserve those artifacts, including dependencies packed later.
 The CLI bundle ships only `gitignore.template`, never a literal nested `.gitignore`
 (which pnpm pack would use to drop authored API routes). The overlay copier adds
 exceptions for every authored cookbook API route so generated apps track them.

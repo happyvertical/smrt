@@ -126,7 +126,7 @@ impl OutputTail {
             .flat_map(|(_, value)| {
                 value
                     .lines()
-                    .filter(|line| !line.is_empty())
+                    .filter(|line| line.chars().count() >= 8)
                     .map(str::to_owned)
             })
             .collect();
@@ -152,10 +152,11 @@ impl OutputTail {
         // Match credential values, not a keyword elsewhere on an error line.
         // Authority userinfo ends before the first slash: @scope in a file://
         // stack frame or an HTTP path is not a credential.
-        static PATTERNS: OnceLock<[regex::Regex; 3]> = OnceLock::new();
+        static PATTERNS: OnceLock<[regex::Regex; 4]> = OnceLock::new();
         let patterns = PATTERNS.get_or_init(|| [
             regex::Regex::new(r"(?i)\b(?:Bearer|Basic)\s+([A-Za-z0-9._~+/=-]+)").unwrap(),
-            regex::Regex::new(r#"(?i)\b(?:token|secret|password|passwd|credentials?|api_key|apikey|access_token|refresh_token|private_key|client_secret|launch|key)\b["']?\s*[:=]\s*(?:"([^"]*)"|'([^']*)'|([^\s"'&;<>{},)]+))"#).unwrap(),
+            regex::Regex::new(r#"(?i)\b(?:\w*(?:token|secret|password|passwd|key)|credentials?|launch)\b["']?\s*[:=]\s*(?:"([^"]*)"|'([^']*)'|([^\s"'&;<>{},)]+))"#).unwrap(),
+            regex::Regex::new(r#"(?i)\b(?:set-cookie|cookie|authorization)\b["']?\s*[:=]\s*(?:"([^"]*)"|'([^']*)'|([^\r\n]+))"#).unwrap(),
             regex::Regex::new(r#"(?i)\b([a-z][a-z0-9+.-]*://(?:[^/\s@'"]+@[^\s"'<>)]*|[^\s"'<>)]*[?&;#](?:token|password|secret|key|api_key|access_token|refresh_token|id_token|session_token|client_secret|launch|code|state|signature|sig)=[^\s"'<>)]*))"#).unwrap(),
         ]);
         for pattern in patterns {
@@ -167,19 +168,14 @@ impl OutputTail {
                 }
             }
         }
-        // The launch secret is 64 hex characters. Do not infer a token from
-        // an arbitrary long function/directory name, or redact a hash filename.
+        // A 64+ hex run can carry a launch secret even inside a path. Keep
+        // surrounding paths and ordinary short build chunk hashes readable.
         static HEX: OnceLock<regex::Regex> = OnceLock::new();
         for value in HEX
-            .get_or_init(|| regex::Regex::new(r"\b[0-9a-fA-F]{64}\b").unwrap())
+            .get_or_init(|| regex::Regex::new(r"[0-9a-fA-F]{64,}").unwrap())
             .find_iter(line)
         {
-            let path_character = |c: char| matches!(c, '/' | '\\' | '.' | '-' | '_');
-            if !line[..value.start()].ends_with(path_character)
-                && !line[value.end()..].starts_with(path_character)
-            {
-                spans.push((value.start(), value.end()));
-            }
+            spans.push((value.start(), value.end()));
         }
         // Merge overlapping matches against the original bytes. A short env
         // value must not split a bearer/URL match or rewrite a redaction marker.
@@ -542,10 +538,131 @@ mod tests {
     }
 
     #[test]
+    fn access_token_camel_case_is_redacted() {
+        let tail = OutputTail::redacted(&BTreeMap::new());
+        tail.push("accessToken: 'stored-access'");
+        assert_eq!(tail.snapshot(), ["accessToken: '[redacted]'"]);
+    }
+
+    #[test]
+    fn refresh_token_camel_case_is_redacted() {
+        let tail = OutputTail::redacted(&BTreeMap::new());
+        tail.push("refreshToken: 'stored-refresh'");
+        assert_eq!(tail.snapshot(), ["refreshToken: '[redacted]'"]);
+    }
+
+    #[test]
+    fn id_token_camel_case_is_redacted() {
+        let tail = OutputTail::redacted(&BTreeMap::new());
+        tail.push(r#""idToken":"stored-id""#);
+        assert_eq!(tail.snapshot(), [r#""idToken":"[redacted]""#]);
+    }
+
+    #[test]
+    fn client_secret_camel_case_is_redacted() {
+        let tail = OutputTail::redacted(&BTreeMap::new());
+        tail.push(r#"clientSecret: "stored-client""#);
+        assert_eq!(tail.snapshot(), [r#"clientSecret: "[redacted]""#]);
+    }
+
+    #[test]
+    fn session_token_camel_case_is_redacted() {
+        let tail = OutputTail::redacted(&BTreeMap::new());
+        tail.push("sessionToken=stored-session");
+        assert_eq!(tail.snapshot(), ["sessionToken=[redacted]"]);
+    }
+
+    #[test]
+    fn suffix_keys_cover_environment_style_names_and_quoted_values() {
+        let tail = OutputTail::redacted(&BTreeMap::new());
+        for (line, expected) in [
+            (
+                "OPENAI_API_KEY=fixture-provider",
+                "OPENAI_API_KEY=[redacted]",
+            ),
+            (
+                "SMRT_LAUNCH_SECRET=fixture-launch",
+                "SMRT_LAUNCH_SECRET=[redacted]",
+            ),
+            (
+                r#""CUSTOM_PASSWORD":"with spaces""#,
+                r#""CUSTOM_PASSWORD":"[redacted]""#,
+            ),
+            (
+                "customPasswd: 'stored-password'",
+                "customPasswd: '[redacted]'",
+            ),
+            (
+                r#"encryptionKey: "stored-key""#,
+                r#"encryptionKey: "[redacted]""#,
+            ),
+            ("notASecretSuffix: readable", "notASecretSuffix: readable"),
+        ] {
+            tail.push(line);
+            assert_eq!(tail.snapshot().last().unwrap(), expected, "{line}");
+        }
+    }
+
+    #[test]
+    fn cookie_headers_are_redacted_including_multiple_cookie_values() {
+        let tail = OutputTail::redacted(&BTreeMap::new());
+        tail.push("Cookie: session=stored-session; csrf=stored-csrf");
+        assert_eq!(tail.snapshot(), ["Cookie: [redacted]"]);
+        tail.push("Set-Cookie: session=stored-session; Path=/; HttpOnly, other=stored-other");
+        assert_eq!(tail.snapshot().last().unwrap(), "Set-Cookie: [redacted]");
+        tail.push(
+            r#""cookie": "session=stored-session; csrf=stored-csrf", path: "C:\\app\\src.js""#,
+        );
+        assert_eq!(
+            tail.snapshot().last().unwrap(),
+            r#""cookie": "[redacted]", path: "C:\\app\\src.js""#
+        );
+    }
+
+    #[test]
+    fn authorization_headers_are_redacted_with_any_scheme_or_none() {
+        let tail = OutputTail::redacted(&BTreeMap::new());
+        for value in [
+            "stored-bare",
+            "DPoP stored-dpop",
+            "Bearer stored-bearer",
+            "Basic stored-basic",
+        ] {
+            tail.push(&format!("Authorization: {value}"));
+            assert_eq!(tail.snapshot().last().unwrap(), "Authorization: [redacted]");
+        }
+        tail.push(r#"authorization: 'stored-bare', code: 'invalid_configuration'"#);
+        assert_eq!(
+            tail.snapshot().last().unwrap(),
+            r#"authorization: '[redacted]', code: 'invalid_configuration'"#
+        );
+    }
+
+    #[test]
+    fn hex_secrets_are_redacted_after_path_and_filename_separators() {
+        let tail = OutputTail::redacted(&BTreeMap::new());
+        for separator in ["/", ".", "-", "_", "\\"] {
+            tail.push(&format!(
+                "Error at /app/secret{separator}{} failed",
+                "ab".repeat(32)
+            ));
+            assert_eq!(
+                tail.snapshot().last().unwrap(),
+                &format!("Error at /app/secret{separator}[redacted] failed")
+            );
+        }
+        tail.push("    at preflight (file:///D:/app/chunks/src-DshfJZdH.js:37:17)");
+        assert_eq!(
+            tail.snapshot().last().unwrap(),
+            "    at preflight (file:///D:/app/chunks/src-DshfJZdH.js:37:17)"
+        );
+    }
+
+    #[test]
     fn node_runtime_errors_keep_messages_and_windows_file_url_frames() {
         let tail = OutputTail::redacted(&BTreeMap::new());
         let frame = "file:///D:/a/_temp/smrt-launch-smoke-ABCdef/target/debug/app/node_modules/@happyvertical/smrt-app-runtime/dist/chunks/src-runtime.js:37:17";
-        let path = format!("D:\\a\\_temp\\{}\\runtime", "a".repeat(64));
+        let path = r"D:\a\_temp\app\build\chunks\src-DshfJZdH.js";
         let dump = [
             frame.to_owned(),
             "    throw new LocalRuntimeError('invalid_configuration', message);".into(),
@@ -582,7 +699,7 @@ mod tests {
         assert_eq!(
             &lines[..5],
             [
-                "Authorization: Bearer [redacted]",
+                "Authorization: [redacted]",
                 "[redacted]",
                 "[redacted]",
                 "Token=[redacted]",
@@ -603,25 +720,44 @@ mod tests {
         short.push("Error: path longer than 130 UTF-16 units");
         assert_eq!(
             short.snapshot(),
-            ["Error: path longer than [redacted]30 UTF-[redacted]6 units"]
+            ["Error: path longer than 130 UTF-16 units"]
+        );
+    }
+
+    #[test]
+    fn literal_environment_values_require_eight_characters_but_named_secrets_do_not() {
+        let tail = OutputTail::redacted(&BTreeMap::from([
+            ("APP_SECRET".into(), "1234567".into()),
+            ("OTHER_SECRET".into(), "12345678".into()),
+        ]));
+        tail.push("Error 1234567 at line 1; detail 12345678");
+        assert_eq!(
+            tail.snapshot(),
+            ["Error 1234567 at line 1; detail [redacted]"]
+        );
+        tail.push("sessionToken: 'x'");
+        assert_eq!(
+            tail.snapshot().last().unwrap(),
+            "sessionToken: '[redacted]'"
         );
     }
 
     #[test]
     fn credential_spans_merge_without_exposing_quoted_or_overlapping_values() {
-        let tail = OutputTail::redacted(&BTreeMap::from([("APP_SECRET".into(), "short".into())]));
-        tail.push(r#"Error: "password": "with spaces", 'token': 'short-value', Authorization: Bearer short-value; next"#);
+        let tail =
+            OutputTail::redacted(&BTreeMap::from([("APP_SECRET".into(), "valuepart".into())]));
+        tail.push(r#"Error: "password": "with spaces", 'token': 'short-valuepart', Authorization: Bearer short-valuepart; next"#);
         assert_eq!(
             tail.snapshot(),
             [
-                r#"Error: "password": "[redacted]", 'token': '[redacted]', Authorization: Bearer [redacted]; next"#,
+                r#"Error: "password": "[redacted]", 'token': '[redacted]', Authorization: [redacted]"#,
             ]
         );
         tail.push("Error: launch=secret-value failed at D:\\a\\_temp\\ordinary-very-long-directory-name-that-is-not-a-token\\runtime");
         assert_eq!(tail.snapshot().last().unwrap(),
             "Error: launch=[redacted] failed at D:\\a\\_temp\\ordinary-very-long-directory-name-that-is-not-a-token\\runtime");
         tail.push(
-            "Failed request https://example.invalid/@happyvertical/pkg?token=short-value&ok=1",
+            "Failed request https://example.invalid/@happyvertical/pkg?token=short-valuepart&ok=1",
         );
         assert_eq!(tail.snapshot().last().unwrap(), "Failed request [redacted]");
     }
