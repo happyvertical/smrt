@@ -300,6 +300,12 @@ export interface RequestJsonOptions {
   requireAuth?: boolean;
   /** Override the server URL for this request. */
   serverUrl?: string;
+  /**
+   * Explicit bearer token for this request (for example read from an env var
+   * the operator named). Takes precedence over the stored login token and is
+   * never persisted.
+   */
+  token?: string;
   /** Override the fetch implementation (tests). */
   fetch?: typeof fetch;
   /**
@@ -392,7 +398,11 @@ export async function requestJsonResult<T = unknown>(
     context,
     options.serverUrl ?? (await getServerUrl(context, config)),
   );
-  const token = await getStoredToken(context, config, serverUrl);
+  // An explicit token only travels over HTTPS or loopback, whatever the source
+  // of the server URL (flag, env, or stored config).
+  if (options.token) assertSecureServerUrl(serverUrl);
+  const token =
+    options.token || (await getStoredToken(context, config, serverUrl));
   const headers = new Headers(init.headers);
 
   if (options.requireAuth && options.auth !== false && !token) {
