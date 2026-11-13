@@ -30,3 +30,16 @@ user's SID is a machine `S-1-5-21-…-500` SID (`trustedPrincipals`);
 unverified on a real runner. `windows-custody.test.ts` runs anywhere;
 `windows-custody.win32.test.ts` runs only in the advisory
 `app-runtime-windows.yml` job.
+
+The inspector disables PowerShell module auto-loading and imports only the
+system CimCmdlets, Management, Security and Utility modules from `$PSHOME/Modules`.
+Its allow-listed environment pins `PSModulePath` to that system directory;
+isolated test homes must not trigger discovery through user or ProgramFiles
+module trees before the first ACL query. The cross-platform invocation test
+checks these imports, hostile inherited module paths, key stripping and the
+unchanged 10-second process bound. This addresses cold module discovery as a
+possible cause of CI's empty-output inspector timeouts; the actual DACL tests
+still require a Windows runner to establish that the timeout is resolved.
+
+`Get-Acl` belongs to the explicitly imported Security module, not Management
+([Windows PowerShell 5.1 reference](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.security/get-acl?view=powershell-5.1)).

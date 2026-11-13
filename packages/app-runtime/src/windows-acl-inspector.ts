@@ -61,6 +61,11 @@ export const CUSTODY_PATHS_VARIABLE = 'SMRT_CUSTODY_PATHS';
 export const POWERSHELL_INSPECTOR_SCRIPT = [
   "$ErrorActionPreference = 'Stop'",
   'try {',
+  "  $PSModuleAutoLoadingPreference = 'None'",
+  "  Import-Module -Name ($PSHOME + '\\Modules\\CimCmdlets\\CimCmdlets.psd1') -ErrorAction Stop",
+  "  Import-Module -Name ($PSHOME + '\\Modules\\Microsoft.PowerShell.Management\\Microsoft.PowerShell.Management.psd1') -ErrorAction Stop",
+  "  Import-Module -Name ($PSHOME + '\\Modules\\Microsoft.PowerShell.Security\\Microsoft.PowerShell.Security.psd1') -ErrorAction Stop",
+  "  Import-Module -Name ($PSHOME + '\\Modules\\Microsoft.PowerShell.Utility\\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop",
   "  $who = & ($env:SystemRoot + '\\System32\\whoami.exe') /user /fo csv /nh",
   "  $sid = ($who -split ',')[-1].Trim([char]34)",
   '  $drives = @{}',
@@ -285,6 +290,9 @@ export function createPowerShellAclInspector(
     const parent = options.env ?? process.env;
     const file = powershellExecutable(parent);
     const env = buildInspectorEnvironment(paths, parent);
+    // Cold isolated homes have no module cache. Do not search user/ProgramFiles
+    // module trees (large on CI); load only the three fixed OS modules above.
+    env.PSModulePath = win32.join(win32.dirname(file), 'Modules');
     let stdout: string;
     try {
       stdout = exec(file, POWERSHELL_INSPECTOR_ARGV, {
