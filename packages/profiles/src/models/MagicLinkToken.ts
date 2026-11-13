@@ -51,7 +51,7 @@ export class MagicLinkToken extends SmrtObject {
   /**
    * Link to the NostrIdentity this token is for
    */
-  @foreignKey('NostrIdentity', { required: true })
+  @foreignKey('NostrIdentity', { required: true, requiredFor: 'identity' })
   nostrIdentityId?: string;
 
   /**
