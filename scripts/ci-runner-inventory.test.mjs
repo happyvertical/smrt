@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
@@ -717,4 +718,26 @@ test('matrix checks reject missing jobs and use the final job boundary', () => {
     () => assert.ok(jobBlock(finalJob, 'test-core').includes('      max-parallel: 3'), 'test-core must use all hosted shards'),
     /test-core must use all hosted shards/,
   );
+});
+
+test('Windows custody installs every package scheduled by its build and manifest tasks', () => {
+  const workflow = parseDocument(readFileSync(path.join(workflowsDir, 'app-runtime-windows.yml'), 'utf8')).toJS();
+  const steps = workflow.jobs.custody.steps;
+  const install = steps.find(({ name }) => name === 'Install dependencies').run;
+  const filters = [...install.matchAll(/--filter(?:=|\s+)(?:"([^"]+)"|'([^']+)'|(\S+))/g)]
+    .flatMap((match) => ['--filter', match[1] ?? match[2] ?? match[3]]);
+  assert.ok(filters.length > 0, 'the custody install must select a package closure');
+  const options = { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 };
+  const installed = new Set(JSON.parse(execFileSync('pnpm', ['ls', '--depth', '-1', '--json', ...filters], options)).map(({ name }) => name));
+  const builds = steps.filter(({ run }) => run?.startsWith('pnpm turbo run '));
+  assert.equal(builds.length, 3, 'check both build steps and core test-manifest generation');
+  for (const { name, run } of builds) {
+    const args = run.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g).slice(2)
+      .map((arg) => arg.replace(/['"]/g, ''));
+    const plan = JSON.parse(execFileSync(path.join(repoRoot, 'node_modules/.bin/turbo'), [...args, '--dry=json'], options));
+    assert.ok(plan.tasks.length > 0, `${name} must schedule tasks`);
+    for (const task of plan.tasks) {
+      assert.ok(installed.has(task.package), `${name}: ${task.taskId} has no installed dependency closure`);
+    }
+  }
 });
