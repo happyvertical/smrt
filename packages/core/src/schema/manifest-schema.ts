@@ -205,6 +205,53 @@ export interface CollectedManifestTable {
   sources: string[];
 }
 
+/** One index as a reader would say it: columns, uniqueness, filter. */
+function describeIndexShape(
+  index: SchemaDefinition['indexes'][number],
+): string {
+  const target = index.jsonPath
+    ? `${index.jsonPath.column} path ${index.jsonPath.path}`
+    : `(${index.columns.join(', ')})`;
+  return `${index.unique ? 'unique ' : ''}${target}${
+    index.where ? ` where ${index.where}` : ''
+  }`;
+}
+
+/**
+ * Two classes that share a table declare the same index name differently.
+ * Thrown while merging a table's contributors; the message names both classes
+ * and what each declares so the reader can change one of them.
+ */
+export class ManifestTableConflictError extends Error {
+  readonly tableName: string;
+  readonly indexName: string;
+  readonly existing: string;
+  readonly incoming: string;
+
+  constructor(details: {
+    tableName: string;
+    indexName: string;
+    existing: string;
+    incoming: string;
+    existingShape: string;
+    incomingShape: string;
+  }) {
+    super(
+      `Conflicting manifest index definitions for ${details.tableName}.${details.indexName}: ` +
+        `${details.existing} declares it as ${details.existingShape} but ` +
+        `${details.incoming} declares it as ${details.incomingShape}. ` +
+        `Both classes write to table "${details.tableName}"; give one of them a different table ` +
+        "or make their indexes agree. If one of them should be a subclass stored in the other's table, " +
+        "check that its parent package is listed in the scan's smrtDependencies.",
+    );
+    this.name = 'ManifestTableConflictError';
+    this.tableName = details.tableName;
+    this.indexName = details.indexName;
+    this.existing = details.existing;
+    this.incoming = details.incoming;
+  }
+}
+
 /**
  * Deterministic STI merge of two structured definitions: existing columns
  * win, new columns are appended, indexes are deduplicated by name.
@@ -212,6 +259,8 @@ export interface CollectedManifestTable {
 export function mergeSchemaDefinitionInto(
   target: SchemaDefinition,
   incoming: SchemaDefinition,
+  /** Who contributed each side, for the error message (`Package:Class`). */
+  contributors?: { existing: string; incoming: string },
 ): void {
   for (const [name, column] of Object.entries(incoming.columns)) {
     if (!(name in target.columns)) {
@@ -237,9 +286,14 @@ export function mergeSchemaDefinitionInto(
         index.nullsNotDistinct !== undefined &&
         existing.nullsNotDistinct !== index.nullsNotDistinct)
     ) {
-      throw new Error(
-        `Conflicting manifest index definitions for ${target.tableName}.${index.name}; regenerate all contributing package manifests before provisioning.`,
-      );
+      throw new ManifestTableConflictError({
+        tableName: target.tableName,
+        indexName: index.name,
+        existing: contributors?.existing ?? 'an earlier contributor',
+        incoming: contributors?.incoming ?? 'a later contributor',
+        existingShape: describeIndexShape(existing),
+        incomingShape: describeIndexShape(index),
+      });
     }
     if (index.nullsNotDistinct !== undefined)
       existing.nullsNotDistinct = index.nullsNotDistinct;
@@ -316,7 +370,10 @@ export function collectManifestTables(
       continue;
     }
 
-    mergeSchemaDefinitionInto(existing.definition, definition);
+    mergeSchemaDefinitionInto(existing.definition, definition, {
+      existing: existing.sources.join(' / '),
+      incoming: source,
+    });
     existing.structured = existing.structured && hasColumns;
     existing.legacyDdl = existing.legacyDdl
       ? ddl

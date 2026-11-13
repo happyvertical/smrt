@@ -11,7 +11,11 @@ import { manifestSchemaToDefinition } from '../../schema/manifest-schema.js';
 import type { SchemaDefinition } from '../../schema/types.js';
 import { snapshotObjectRegistryState } from '../../test-utils.js';
 import { collectMigrateRecordInput } from '../migrate-record.js';
-import { computeSchemaFingerprint } from '../schema-fingerprint.js';
+import {
+  computeManifestSchemaFingerprint,
+  computeSchemaFingerprint,
+  tryComputeManifestSchemaFingerprint,
+} from '../schema-fingerprint.js';
 
 function schema(): SchemaDefinition {
   return {
@@ -365,5 +369,69 @@ describe('whole-schema fingerprint (#4926)', () => {
       declaration('LocalOnly', '', { name: { type: 'text' } }),
     );
     expect(collectMigrateRecordInput().packages).toEqual(['<unqualified>']);
+  });
+});
+
+describe('a table whose contributors disagree on an index (#4929)', () => {
+  const table = (className: string, unique: boolean) => ({
+    name: className,
+    className,
+    packageName: '@scope/pkg',
+    schema: {
+      tableName: 'shared_rows',
+      columns: {
+        id: { type: 'UUID', primaryKey: true },
+        slug: { type: 'TEXT' },
+      },
+      indexes: [{ name: 'shared_rows_slug_idx', columns: ['slug'], unique }],
+      foreignKeys: [],
+      dependencies: [],
+    },
+  });
+  const conflicting = {
+    objects: {
+      '@scope/pkg:Alpha': table('Alpha', true),
+      '@scope/pkg:Beta': table('Beta', false),
+    },
+  } as unknown as SmartObjectManifest;
+
+  it('names both classes and what each declares', () => {
+    expect(() => computeManifestSchemaFingerprint(conflicting)).toThrow(
+      /@scope\/pkg:Alpha declares it as unique \(slug\) but @scope\/pkg:Beta declares it as \(slug\)/,
+    );
+  });
+
+  it('does not fail manifest generation; the fingerprint is left out', () => {
+    const warnings: string[] = [];
+    expect(
+      tryComputeManifestSchemaFingerprint(conflicting, (error) =>
+        warnings.push(error.message),
+      ),
+    ).toBeUndefined();
+    expect(warnings).toHaveLength(1);
+
+    const sharedTable = (className: string, tenantScoped: boolean) => ({
+      ...declaration(className, '@fixture/shared', {
+        code: { type: 'text', default: '' },
+      }),
+      name: className.toLowerCase(),
+      className,
+      collection: `${className.toLowerCase()}s`,
+      decoratorConfig: {
+        tableName: 'shared_rows',
+        ...(tenantScoped ? { tenantScoped: { mode: 'optional' } } : {}),
+      },
+    });
+    let manifest: SmartObjectManifest | undefined;
+    expect(() => {
+      manifest = new ManifestGenerator().generateManifest([
+        {
+          filePath: '/fixture',
+          errors: [],
+          objects: [sharedTable('Alpha', false), sharedTable('Beta', true)],
+        },
+      ]);
+    }).not.toThrow();
+    expect(manifest?.schemaFingerprint).toBeUndefined();
   });
 });

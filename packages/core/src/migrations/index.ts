@@ -168,6 +168,7 @@ export {
 export {
   computeManifestSchemaFingerprint,
   computeSchemaFingerprint,
+  tryComputeManifestSchemaFingerprint,
 } from './schema-fingerprint.js';
 // SQLite table rebuild (type changes SQLite cannot ALTER in place)
 export {

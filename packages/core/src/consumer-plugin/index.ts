@@ -17,7 +17,7 @@ import { resolveFileKnowledgeConfig } from '../knowledge-config.js';
 import { selectObjectDeclarations } from '../manifest/object-declarations.js';
 import { manifestExportCandidates } from '../manifest/package-manifest-exports.js';
 import { isTestArtifactManifest } from '../manifest/test-artifacts.js';
-import { computeManifestSchemaFingerprint } from '../migrations/schema-fingerprint.js';
+import { tryComputeManifestSchemaFingerprint } from '../migrations/schema-fingerprint.js';
 import { generateDeclarations } from '../prebuild/index.js';
 import type {
   SmartObjectDefinition,
@@ -1794,8 +1794,10 @@ async function saveAggregatedManifest(
       }
     }
 
-    merged.schemaFingerprint = computeManifestSchemaFingerprint(
+    merged.schemaFingerprint = tryComputeManifestSchemaFingerprint(
       merged as unknown as SmartObjectManifest,
+      (error) =>
+        console.warn(`[smrt] No schema fingerprint written: ${error.message}`),
     );
 
     // smrtPlugin writes the local knowledge artifact before this consumer

@@ -2,7 +2,10 @@
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { schemaForeignKeys } from '../schema/foreign-key-ddl.js';
-import { collectManifestTables } from '../schema/manifest-schema.js';
+import {
+  collectManifestTables,
+  ManifestTableConflictError,
+} from '../schema/manifest-schema.js';
 import { formatDefaultValue } from '../schema/sql-identifiers.js';
 import type { SchemaDefinition } from '../schema/types.js';
 import { sha256Hex } from '../utils/sha256.js';
@@ -125,4 +128,32 @@ export function computeManifestSchemaFingerprint(
       (table) => table.definition,
     ),
   );
+}
+
+/**
+ * Fingerprint for a build artifact, or `undefined` when two classes sharing a
+ * table disagree about an index.
+ *
+ * Decision (#4929 integration): generating a manifest must not fail because
+ * its fingerprint cannot be computed. The startup guard compares the build's
+ * fingerprint to the database's record, and with no fingerprint it has
+ * nothing to compare and skips; provisioning still refuses the same conflict
+ * with the same message (it merges the same contributors), so a real defect
+ * is never hidden, and a partial scan (a package's own sources without its
+ * dependencies, a test-inclusive scan) still generates. `onConflict` receives
+ * the plain-words error so the caller can warn.
+ */
+export function tryComputeManifestSchemaFingerprint(
+  manifest: Pick<SmartObjectManifest, 'objects'>,
+  onConflict?: (error: ManifestTableConflictError) => void,
+): string | undefined {
+  try {
+    return computeManifestSchemaFingerprint(manifest);
+  } catch (error) {
+    if (error instanceof ManifestTableConflictError) {
+      onConflict?.(error);
+      return undefined;
+    }
+    throw error;
+  }
 }
