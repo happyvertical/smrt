@@ -11,6 +11,12 @@ name: Fork PR Approval
 # their workflow runs. A new push is a new SHA without that status, so approval
 # never carries over; the label is also removed. See .github/CI.md,
 # "External fork PRs".
+#
+# GitHub blocks `pull_request_target` on public repositories from 2026-12-02
+# unless an Actions event policy allows it (#4881). This file and
+# merge-queue-watchdog.yml are the only allowed ones; without the policy fork
+# PRs cannot be approved (the gate fails closed) and the guard below posts no
+# result, so maintainers check .github/ changes by hand. See .github/CI.md.
 on:
   pull_request_target:
     branches: [main]

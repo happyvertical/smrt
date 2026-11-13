@@ -11,7 +11,8 @@ compensation stay separate. Since #3288 the shared `ServiceTimeEntry` class
 is owned by `smrt-timesheets` (smrt-projects re-exports it); this package's
 subtype extends it directly, adds `caseId` / `specialistId` (frozen on
 approval via `frozenFieldNames()`), and restates the shared fields for
-isolated manifest scanning. Every import uses the unchanged
+isolated manifest scanning (no longer required for the table definition,
+#4922, but harmless: each column stays single). Every import uses the unchanged
 `service_time_entries` table, so no data is duplicated. Keep the subtype a
 direct child of the timesheets entry: a third same-named level on the table
 breaks single-table-family resolution.

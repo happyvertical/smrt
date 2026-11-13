@@ -332,14 +332,22 @@ describe('inheritance-resolver: mergeFieldConfigs', () => {
     );
   });
 
-  it('takes the strictest numeric min/max from parent and child _meta', () => {
-    const merged = mergeFieldConfigs(
+  it('the nearer declaration decides numeric min/max, widening or narrowing (#4940)', () => {
+    // The app owns its shape: a child may loosen a bound as well as tighten it.
+    const widened = mergeFieldConfigs(
+      { type: 'integer', _meta: { min: 10, max: 80 } },
+      { type: 'integer', _meta: { min: 0, max: 100 } },
+      'amount',
+    );
+    expect(widened._meta?.min).toBe(0);
+    expect(widened._meta?.max).toBe(100);
+    const narrowed = mergeFieldConfigs(
       { type: 'integer', _meta: { min: 0, max: 100 } },
       { type: 'integer', _meta: { min: 10, max: 80 } },
       'amount',
     );
-    expect(merged._meta?.min).toBe(10); // larger min = stricter lower bound
-    expect(merged._meta?.max).toBe(80); // smaller max = stricter upper bound
+    expect(narrowed._meta?.min).toBe(10);
+    expect(narrowed._meta?.max).toBe(80);
   });
 
   it('combines parent and child validators (both must pass)', async () => {
@@ -361,13 +369,21 @@ describe('inheritance-resolver: mergeFieldConfigs', () => {
     expect(childValidate).toHaveBeenCalled();
   });
 
-  it('ORs the unique flag (unique if either parent or child says so)', () => {
-    const merged = mergeFieldConfigs(
-      { type: 'text', _meta: { unique: false } },
-      { type: 'text', _meta: { unique: true } },
-      'email',
-    );
-    expect(merged._meta?.unique).toBe(true);
+  it('the nearer declaration decides `unique`: a bare redeclaration drops it (#4940)', () => {
+    expect(
+      mergeFieldConfigs(
+        { type: 'text', _meta: { unique: true } },
+        { type: 'text', _meta: {} },
+        'email',
+      )._meta?.unique,
+    ).toBeUndefined();
+    expect(
+      mergeFieldConfigs(
+        { type: 'text', _meta: { unique: false } },
+        { type: 'text', _meta: { unique: true } },
+        'email',
+      )._meta?.unique,
+    ).toBe(true);
   });
 
   it('preserves __tenancy with parent (decorator) precedence', () => {
@@ -404,7 +420,7 @@ describe('inheritance-resolver: mergeFieldConfigs', () => {
 });
 
 describe('inheritance-resolver: end-to-end constraint merge via getAllFields', () => {
-  it('applies the strictest numeric constraints from the chain', async () => {
+  it("applies the nearest declaration's numeric constraints from the chain", async () => {
     const fields = await getAllFields('IRConstraintChild');
     const amount = present(fields.get('amount'));
     expect(amount).toBeDefined();

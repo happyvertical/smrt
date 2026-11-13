@@ -642,6 +642,26 @@ function buildFixtureManifest(): SmartObjectManifest {
     ),
   );
 
+  // Own-table subclass of a concrete own-table class (#4922): its table holds
+  // the parent's columns, the override's NOT NULL and its own column.
+  add(
+    objectDef('ParityOwnBase', {
+      label: { type: 'text', required: true },
+      note: { type: 'text', _meta: { nullable: true } },
+    }),
+  );
+  add(
+    objectDef(
+      'ParityOwnChild',
+      {
+        note: { type: 'text', required: true },
+        extra: { type: 'integer', default: 0 },
+      },
+      {},
+      'ParityOwnBase',
+    ),
+  );
+
   return {
     version: '1.0.0',
     timestamp: 0,
@@ -865,6 +885,8 @@ describe('schema path parity (#2359)', () => {
     'parity_tickets',
     'parity_rooms',
     'parity_events',
+    'parity_own_bases',
+    'parity_own_children',
   ];
 
   /** The class whose key the table upserts on (STI root or the class). */
@@ -885,6 +907,8 @@ describe('schema path parity (#2359)', () => {
     parity_tickets: 'ParityTicket',
     parity_rooms: 'ParityRoom',
     parity_events: 'ParityEvent',
+    parity_own_bases: 'ParityOwnBase',
+    parity_own_children: 'ParityOwnChild',
   };
 
   it('backs `ObjectRegistry.getConflictColumns()` with exactly one unique index on every path (unique index == conflict target, #2360)', () => {
@@ -1099,6 +1123,24 @@ describe('schema path parity (#2359)', () => {
       idx(table)
         .map((i) => i.name)
         .sort();
+
+    it('own-table subclass: inherited columns, overridden NOT NULL and own column on every path (#4922)', () => {
+      for (const [path, schemas] of [
+        ['manifest', manifestSchemas],
+        ['registry', registrySchemas],
+      ] as const) {
+        const child = schemas.get('parity_own_children');
+        expect(Object.keys(child?.columns ?? {})).toEqual(
+          expect.arrayContaining(['label', 'note', 'extra']),
+        );
+        expect(child?.columns.label.notNull).toBe(true);
+        expect(child?.columns.note.notNull, `${path} note`).toBe(true);
+      }
+      expect(migrateSchemas.parity_own_children.columns.label.notNull).toBe(
+        true,
+      );
+      expect(migrateSchemas.parity_own_bases.columns.note.notNull).toBeFalsy();
+    });
 
     it('plain CTI: the (slug, context) conflict index and the list-ordering index', () => {
       expect(names('parity_plains')).toEqual([

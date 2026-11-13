@@ -5,10 +5,10 @@ description: "Shared playground discovery, runtime, and host components for SMRT
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-12T19:19:24Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:85a6fd112b8cf4a0bff1a44f0de0bf0e49bf6a380e9e71c262d0aca5a4c0650c"
+source_revision: "sha256:fe12481207c0216d6a544ef496f6dbc1de11cdbbb923e094687ac42d28ce6b82"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-playground/package.json"

@@ -5,8 +5,10 @@
  * Fork PRs never run with trusted credentials before merge. Their code is
  * validated in the sandboxed `Fork PR Validation` workflow (`pull_request`,
  * read-only token, no secrets). The required contexts `Required CI` and
- * `postgres-required` come from the trusted `pull_request_target` workflows,
- * which only run this script from the base revision.
+ * `postgres-required` run on `pull_request` (#4881) and, for a fork PR, run
+ * only this script, checked out from the PR's base commit. Their YAML is the
+ * fork's merge commit, so the gate holds while the fork leaves `.github/`
+ * alone, which `guard` reports before anyone approves the fork's runs.
  *
  *   guard    Runs on every fork PR push. Fails when the PR touches
  *            `.github/` (or its file list is incomplete), so maintainers see

@@ -22,6 +22,10 @@ import {
   normalizeTenantScopedConfig,
   registerFromManifest,
 } from './registry/class-registration.js';
+import {
+  getOwnTableFieldsSync,
+  inheritsHierarchicalBase,
+} from './registry/inheritance-resolver.js';
 import { fieldsToColumns } from './registry/schema-builder.js';
 import type { RegisteredField, SmartObjectConfig } from './registry/types.js';
 import { ObjectRegistry } from './registry.js';
@@ -245,21 +249,26 @@ export function runtimeModelEntry(
         ]
       : undefined;
   const fields: Record<string, FieldDefinition> = {};
-  // A subclass of a one-table-per-class parent has a table of its own that
-  // holds only its own fields, so the inherited ones are declared again on it
-  // (#4869). An STI subclass shares its parent's table and needs none.
+  // Independent tables carry concrete ancestors' fields through the shared
+  // inheritance rule (#4922). Replacements keep their provider's storage and
+  // requiredness; ordinary subclasses relax the copied fields to optional.
   if (
     parent &&
-    (def.replaces || ObjectRegistry.getSTIBase(def.extends!) === null)
+    (def.replaces || ObjectRegistry.getSTIBase(parentKey!) === null)
   ) {
-    for (const [name, inherited] of ObjectRegistry.getFields(def.extends!)) {
+    const hierarchical = !def.replaces && inheritsHierarchicalBase(parent);
+    for (const [name, inherited] of getOwnTableFieldsSync(parent)) {
+      const related =
+        name === 'parentId' && hierarchical && inherited.related === parent.name
+          ? def.name
+          : inherited.related;
       fields[name] = {
         ...inherited,
         type: inherited.type,
         required: def.replaces
           ? (inherited.required ?? inherited._meta?.required ?? false)
           : false,
-        ...(inherited.related ? { related: inherited.related } : {}),
+        ...(related ? { related } : {}),
         ...(inherited._meta
           ? {
               _meta: {
@@ -421,7 +430,10 @@ export function runtimeModelEntry(
         continue;
       const foreignKey = columns[toSnakeCase(name)]?.foreignKey;
       if (!foreignKey) continue;
-      const targetTable = ObjectRegistry.getTableName(field.related);
+      const targetTable =
+        field.related === qualifiedName || field.related === def.name
+          ? tableName
+          : ObjectRegistry.getTableName(field.related);
       if (!targetTable) {
         throw new Error(
           `Run-time reference target ${field.related} must be registered first`,

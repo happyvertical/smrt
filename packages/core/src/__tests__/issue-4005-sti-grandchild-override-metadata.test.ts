@@ -104,7 +104,7 @@ describe('STI grandchild override metadata (#4005)', () => {
     expect(field.required).toBe(false);
   });
 
-  it('preserves inherited storage options while composing nearer metadata', () => {
+  it('the nearest declaration decides storage options; metadata composes (#4940)', () => {
     const manifest = fixture();
     manifest.objects[`${pkg}:Contract4005`].fields.contractType.required = true;
     manifest.objects[`${pkg}:SalesContract4005`].fields.contractType = {
@@ -116,7 +116,9 @@ describe('STI grandchild override metadata (#4005)', () => {
     manifest.objects[`${pkg}:Order4005`].fields = {};
     new ManifestGenerator().mergeInheritedFields(manifest);
     const field = manifest.objects[`${pkg}:Order4005`].fields.contractType;
-    expect(field.required).toBe(true);
+    // SalesContract's declaration is nearer than Contract's: its
+    // `required: false` stands (it used to be overridden by the oldest owner).
+    expect(field.required).toBe(false);
     expect(field.enum).toEqual(['order']);
     expect(field.description).toBe('A sales contract.');
   });

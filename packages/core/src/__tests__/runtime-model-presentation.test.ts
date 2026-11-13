@@ -118,6 +118,54 @@ describe('runtime model presentation and references (A4 prerequisites)', () => {
     ).toThrow('sensitive');
   });
 
+  it('uses the shared ancestor rule for runtime CTI copies and same-name replacements', () => {
+    const ancestor = runtimeModelEntry({
+      packageName: '@fixture/a4-provider',
+      name: 'Ancestor',
+      fields: {
+        title: { type: 'text', required: true, ui: { widget: 'textarea' } },
+        kind: { type: 'text', enum: ['base'], description: 'Base kind' },
+      },
+    });
+    ObjectRegistry.registerFromManifest(ancestor.qualifiedName!, ancestor);
+    // An unmerged provider manifest is a real lazy-loading input: it carries
+    // only its own declarations, not a pre-expanded copy of its ancestors.
+    const parent = {
+      ...runtimeModelEntry({
+        packageName: '@fixture/a4-provider',
+        name: 'Provider',
+        fields: {
+          kind: { type: 'text', enum: ['near'], description: 'Near kind' },
+        },
+      }),
+      extends: 'Ancestor',
+      extendsQualified: ancestor.qualifiedName,
+    };
+    ObjectRegistry.registerFromManifest(parent.qualifiedName!, parent);
+    for (const replaces of [false, true]) {
+      const child = runtimeModelEntry({
+        packageName: '@fixture/a4-app',
+        name: replaces ? 'Provider' : 'Independent',
+        extends: parent.qualifiedName,
+        replaces,
+        fields: { extra: { type: 'integer' } },
+      });
+      expect(child.fields.title.required).toBe(replaces);
+      expect(child.fields.title._meta?.ui?.widget).toBe('textarea');
+      expect(child.fields.kind._meta).toMatchObject({
+        enum: ['near'],
+        description: 'Near kind',
+      });
+      expect(child.schema?.columns.title?.notNull).toBe(replaces);
+      expect(child.schema?.columns.extra).toBeDefined();
+      expect(child.schema?.tableName).toBe(
+        replaces ? 'providers' : 'independents',
+      );
+      child.fields.title._meta!.ui!.widget = 'email';
+      expect(ancestor.fields.title._meta?.ui?.widget).toBe('textarea');
+    }
+  });
+
   it.each([
     { type: 'decimal', ui: { format: 'money' } },
     { type: 'boolean', ui: { widget: 'textarea' } },

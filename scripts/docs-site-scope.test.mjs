@@ -138,7 +138,7 @@ test('Required CI fails on a selected docs build that did not succeed', () => {
   const env = {};
   for (const name of Object.keys(step.env)) env[name] = 'success';
   Object.assign(env, {
-    EVENT_NAME: 'pull_request_target',
+    EVENT_NAME: 'pull_request',
     PUBLISH_DRY_RUN: 'skipped',
     VISUAL_SELECTED: 'false',
     VISUAL_RESULT: 'skipped',

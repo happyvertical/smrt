@@ -5,10 +5,10 @@ description: "AI-first Support Cases: channel-neutral intake, lifecycle, routing
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T22:32:35Z"
+  at: "2026-11-12T23:43:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:edc8d537a20c409e61e152b5d25d64638eb5064be6684765e2f32ec6d5389019"
+source_revision: "sha256:00390b98e4c9a392563b3a05c881f0426250c25a1c3d4977358fe88a42769dd8"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/support/package.json"
