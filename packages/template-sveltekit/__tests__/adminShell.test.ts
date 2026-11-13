@@ -33,7 +33,6 @@ describe('application shell', () => {
     expect(layout).not.toContain('subtitle=');
     expect(layout).not.toContain('tenantLabel');
     expect(layout).not.toContain('appPanelDocs');
-    expect(layout).toContain("icon: 'book'");
     expect(layout).toContain("icon: 'settings'");
   });
 
@@ -52,14 +51,16 @@ describe('application shell', () => {
     expect(layout).toContain('phoneTabBar');
     expect(layout).toContain("chrome={!page.route.id?.startsWith('/setup')}");
     expect(layout).not.toContain('TODO(');
-    expect(read('settings/+page.svelte')).toContain(
-      '<ShellSettingsPage onSignOut={signOut} />',
+    expect(read('settings/[section=settingsSection]/+page.svelte')).toContain(
+      'onSignOut={signOut}',
     );
-    expect(read('../lib/sign-out.ts')).toContain("method: 'POST'");
+    expect(read('../lib/sign-out.ts')).toContain('@happyvertical/smrt-template-sveltekit/host/sveltekit-client');
+    const client = readFileSync(join(__dirname, '..', 'host', 'sveltekit-client.ts'), 'utf8');
+    expect(client).toContain("method: 'POST'");
     expect(read('sign-out/+server.ts')).toContain(
       'export const POST = createSignOutHandler(runtime)',
     );
-    expect(read('../lib/sign-out.ts')).toContain('if (!response.ok)');
+    expect(client).toContain('if (!response.ok)');
   });
 
   it('mounts the shipped owner setup form over the runtime action', () => {
@@ -72,7 +73,15 @@ describe('application shell', () => {
   });
 
   it('mounts the shipped settings page inside the shell', () => {
-    expect(read('settings/+page.svelte')).toContain('<ShellSettingsPage');
+    expect(read('settings/+page.svelte')).toContain(
+      '<ShellSettingsPage basePath="/settings"',
+    );
+    const section = read('settings/[section=settingsSection]/+page.svelte');
+    expect(section).toContain('<ShellSettingsPage');
+    expect(section).toContain('section={page.params.section');
+    expect(read('../params/settingsSection.ts')).toContain(
+      'isShellSettingsSection',
+    );
   });
 });
 

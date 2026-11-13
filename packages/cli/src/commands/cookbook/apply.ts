@@ -1,9 +1,4 @@
-/**
- * `smrt cookbook apply` engine (#3748): create or update a project from a
- * validated cookbook. Writes configuration only (package.json dependencies,
- * `smrt.cookbook.json`, and the project name for a new project); never sample
- * data and never anything else in the project.
- */
+/** Create or update a cookbook app, preserving authored models, policies and source. */
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
@@ -19,10 +14,11 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Cookbook } from '@happyvertical/smrt-types';
 
 export const COOKBOOK_CONFIG_FILE = 'smrt.cookbook.json';
-export const DEFAULT_TEMPLATE = 'github:happyvertical/smrt-start';
+export const DEFAULT_TEMPLATE = 'bundled:sveltekit';
 
 const DEP_SECTIONS = [
   'dependencies',
@@ -120,6 +116,8 @@ export interface ApplyPlan {
   /** Template repository metadata not copied into the new project (#4239). */
   skippedTemplateFiles: string[];
   config: 'create' | 'update' | 'unchanged';
+  /** Exact before/after document preview; app customizations take precedence. */
+  cookbookDiff: { before: Cookbook | null; after: Cookbook };
 }
 
 export interface ApplyResult {
@@ -143,6 +141,8 @@ function readPackageJson(dir: string): { json: PackageJson; raw: string } {
   if (!existsSync(file)) {
     throw new ApplyError(`No package.json in ${dir}`);
   }
+  if (!lstatSync(file).isFile())
+    throw new ApplyError('Application package.json must be a regular file');
   const raw = readFileSync(file, 'utf-8');
   try {
     return { json: JSON.parse(raw) as PackageJson, raw };
@@ -337,6 +337,18 @@ export function listLocalTemplateFiles(dir: string): string[] | undefined {
 
 /** Resolve a template to a directory: a local path as-is, a git source shallow-fetched. */
 export function acquireTemplate(spec: string): AcquiredTemplate {
+  if (spec === DEFAULT_TEMPLATE) {
+    let root = dirname(fileURLToPath(import.meta.url));
+    while (!existsSync(join(root, 'dist/templates/cookbook/package.json'))) {
+      const parent = dirname(root);
+      if (parent === root)
+        throw new ApplyError(
+          'Bundled cookbook template is missing; rebuild smrt-cli',
+        );
+      root = parent;
+    }
+    return { root: join(root, 'dist/templates/cookbook'), cleanup() {} };
+  }
   const parsed = parseTemplateSpec(spec);
   if (parsed.kind === 'local') {
     if (!existsSync(join(parsed.path, 'package.json'))) {
@@ -410,6 +422,11 @@ export function nextSteps(
     steps.push(`cd ${rel.startsWith('..') ? resolve(dir) : rel || '.'}`);
   }
   if (!installed) steps.push(`${pm} install`);
+  if ((json.smrt as { cookbookHost?: boolean } | undefined)?.cookbookHost) {
+    if (!installed) steps.push(`${run} build`);
+    steps.push(`${run} app:start`, `${run} app:open`);
+    return steps;
+  }
   steps.push(
     scripts['app:setup'] ? `${run} app:setup` : 'npx smrt app setup',
     scripts['app:doctor'] ? `${run} app:doctor` : 'npx smrt doctor',
@@ -458,7 +475,6 @@ function copyTemplate(template: AcquiredTemplate, targetDir: string): void {
 export function applyCookbook(options: ApplyOptions): ApplyResult {
   const cwd = options.cwd ?? process.cwd();
   const spec = options.template ?? DEFAULT_TEMPLATE;
-  const configText = renderJson(options.cookbook);
 
   // Decide new vs update.
   let mode: 'new' | 'update';
@@ -556,6 +572,28 @@ export function applyCookbook(options: ApplyOptions): ApplyResult {
     }
 
     const configFile = join(targetDir, COOKBOOK_CONFIG_FILE);
+    if (existsSync(configFile) && !lstatSync(configFile).isFile())
+      throw new ApplyError('Application cookbook must be a regular file');
+    const before: Cookbook | null =
+      mode === 'update' && existsSync(configFile)
+        ? JSON.parse(readFileSync(configFile, 'utf8'))
+        : null;
+    // Reapply selects recipes, never replaces the person's model extensions or
+    // policy edits. Incoming policies fill only previously unconfigured fields.
+    const policies = new Map(
+      (options.cookbook.policies ?? []).map((row) => [
+        `${row.objectRef}\0${row.fieldName}`,
+        row,
+      ]),
+    );
+    for (const row of before?.policies ?? [])
+      policies.set(`${row.objectRef}\0${row.fieldName}`, row);
+    const after: Cookbook = {
+      ...options.cookbook,
+      ...(before?.models ? { models: before.models } : {}),
+      policies: [...policies.values()],
+    };
+    const configText = renderJson(after);
     const config: ApplyPlan['config'] =
       mode === 'update' && existsSync(configFile)
         ? readFileSync(configFile, 'utf-8') === configText
@@ -591,6 +629,7 @@ export function applyCookbook(options: ApplyOptions): ApplyResult {
       removedLockfiles,
       skippedTemplateFiles,
       config,
+      cookbookDiff: { before, after },
     };
 
     // The package.json that results, for next steps and the write.
@@ -623,6 +662,11 @@ export function applyCookbook(options: ApplyOptions): ApplyResult {
     if (mode === 'new') {
       mkdirSync(targetDir, { recursive: true });
       copyTemplate(template as AcquiredTemplate, targetDir);
+      const ignore = join(targetDir, 'gitignore.template');
+      if (spec === DEFAULT_TEMPLATE && existsSync(ignore)) {
+        writeFileSync(join(targetDir, '.gitignore'), readFileSync(ignore));
+        rmSync(ignore);
+      }
       written.push(`${targetDir} (from template)`);
       for (const file of removedLockfiles) {
         rmSync(join(targetDir, file), { force: true });
@@ -647,7 +691,14 @@ export function applyCookbook(options: ApplyOptions): ApplyResult {
 
     let installed = false;
     if (wantInstall) {
-      const result = spawnSync(pm, ['install'], {
+      const pnpmEntry =
+        pm === 'pnpm' && process.env.npm_execpath?.includes('pnpm')
+          ? process.env.npm_execpath
+          : undefined;
+      const command = pnpmEntry ? process.execPath : pm;
+      const args = (tail: string[]) =>
+        pnpmEntry ? [pnpmEntry, ...tail] : tail;
+      const result = spawnSync(command, args(['install']), {
         cwd: targetDir,
         stdio:
           options.installOutput === 'stderr' ? ['ignore', 2, 2] : 'inherit',
@@ -658,6 +709,20 @@ export function applyCookbook(options: ApplyOptions): ApplyResult {
         );
       }
       installed = true;
+      if (
+        (mode === 'new' && spec === DEFAULT_TEMPLATE) ||
+        (nextJson.smrt as { cookbookHost?: boolean } | undefined)?.cookbookHost
+      ) {
+        const built = spawnSync(command, args(['run', 'build']), {
+          cwd: targetDir,
+          stdio:
+            options.installOutput === 'stderr' ? ['ignore', 2, 2] : 'inherit',
+        });
+        if (built.status !== 0)
+          throw new ApplyError(
+            'Cookbook host build failed; inspect the build output before starting it',
+          );
+      }
     }
     return {
       plan,

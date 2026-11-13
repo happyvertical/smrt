@@ -36,6 +36,10 @@ export {
   type ProjectQuestionOptions,
 } from './ProjectQuestion';
 export {
+  ProjectRepository,
+  type ProjectRepositoryOptions,
+} from './ProjectRepository';
+export {
   ProjectSpecification,
   type ProjectSpecificationOptions,
 } from './ProjectSpecification.js';

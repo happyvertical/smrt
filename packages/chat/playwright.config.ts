@@ -1,6 +1,6 @@
 import { defineConfig } from '@playwright/test';
 
-const port = 4174;
+const port = Number(process.env.SMRT_CHAT_E2E_PORT ?? 4174);
 const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({

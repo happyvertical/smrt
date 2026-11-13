@@ -14,6 +14,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { engineLabel } from '../index.js';
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -76,6 +77,31 @@ it('the root graph covers the executor and config', () => {
       'executor.ts',
       'config.ts',
       'provider-config.ts',
+      'engine-id.ts',
+      'agent-cli/tools.ts',
     ]),
   );
+});
+
+it('exports shared human engine labels from the browser-safe root', () => {
+  expect(
+    ['claude-code', 'codex', 'chatgpt', 'api'].map((engine) =>
+      engineLabel(engine as Parameters<typeof engineLabel>[0]),
+    ),
+  ).toEqual(['Claude Code', 'Codex', 'ChatGPT', 'your API key']);
+  expect(graph('index.ts')).not.toContain('engine-status.ts');
+});
+
+it('server engine code never imports a host or approval authority', () => {
+  const files = graph('server.ts').filter((name) =>
+    /^(agent-cli\/|chatgpt\/model|engine-)/.test(name),
+  );
+  expect(files.length).toBeGreaterThan(10);
+  for (const name of files) {
+    const source = readFileSync(join(SRC, name), 'utf8');
+    expect(source, name).not.toMatch(
+      /from ['"]@happyvertical\/smrt-(app-shell|chat|app-runtime)/,
+    );
+    expect(source, name).not.toMatch(/decideApproval|approved\s*:\s*true/);
+  }
 });

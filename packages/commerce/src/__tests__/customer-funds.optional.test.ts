@@ -12,6 +12,8 @@ it.skipIf(!isPostgresAvailable())(
     const isolated = await createIsolatedTestDbFromManifest({
       includeObjects: [
         'Customer',
+        'Profile',
+        'ProfileType',
         'Contract',
         'Invoice',
         'InvoiceLineItem',

@@ -1,6 +1,7 @@
 # @happyvertical/smrt-jobs
 
 Background job execution with persistent queue, scheduling, and fluent builder API.
+Retry SDK import boundary: [provider loading](agents/provider-loading.md).
 
 ## Architecture
 

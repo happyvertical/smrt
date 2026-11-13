@@ -1,3 +1,4 @@
+import { testHomeEnvironment } from '../../vitest/src/test-home.js';
 /**
  * Local MCP client credentials end to end (#3413).
  *
@@ -105,7 +106,7 @@ async function withBridge<T>(
       '--name=local-e2e',
       '--version=1.0.0',
     ],
-    env: {
+    env: { ...testHomeEnvironment(),
       PATH: process.env.PATH ?? '',
       HOME: state.root,
       [`${PREFIX}_SERVER_URL`]: state.baseUrl,

@@ -725,6 +725,34 @@ describe('definition-derived fetchers', () => {
     await collection.cleanup();
   });
 
+  it('retains only a validated server reference on 5xx errors, including delete', async () => {
+    const requestId = 'f62aa6e4-e74b-441f-8c30-96f83b88c1d1';
+    for (const id of [requestId, 'secret-not-a-reference']) {
+      const fetchers = createDefinitionFetchers(
+        productDefinition('references'),
+        '/api',
+        (async () =>
+          Response.json(
+            { error: 'private detail', requestId: id, stack: 'private stack' },
+            { status: 500 },
+          )) as typeof fetch,
+      );
+      for (const call of [
+        () => fetchers.create({}),
+        () => fetchers.delete('1'),
+      ]) {
+        const failure = await call().catch((error) => error);
+        expect(failure.requestId).toBe(
+          id === requestId ? requestId : undefined,
+        );
+        expect(failure.payload).toBeUndefined();
+        expect(failure.publicMessage).toBeUndefined();
+        expect(JSON.stringify(failure)).not.toContain('private');
+        expect(failure.message).not.toContain('private');
+      }
+    }
+  });
+
   it('retains typed 4xx failure detail for actionable client errors', async () => {
     const failure = {
       ok: false,
@@ -746,6 +774,7 @@ describe('definition-derived fetchers', () => {
       name: 'SmrtWebRequestError',
       status: 403,
       code: 'policy_locked',
+      publicMessage: failure.message,
       payload: { error: failure },
     });
     expect((error as Error).message).toContain(failure.message);

@@ -2,6 +2,7 @@
 // user id, so a thread id from another user is a 404, never a leak.
 import type { AIMessage, AIToolCall } from '@happyvertical/ai';
 import type { ThreadMessage, ThreadSummary } from '../../assistant/events.ts';
+import { toolSummary } from '../../assistant/tool-summary.ts';
 import {
   type AssistantMessage,
   AssistantMessageCollection,
@@ -72,7 +73,8 @@ export interface NewMessage {
   content: string;
   toolCalls?: AIToolCall[];
   toolCallId?: string;
-  meta?: ThreadMessage['tool'];
+  /** A tool chip, or (assistant messages) `{ cliSession: { tool, id } }`. */
+  meta?: ThreadMessage['tool'] | { cliSession: { tool: string; id: string } };
 }
 
 export async function appendMessage(
@@ -131,7 +133,14 @@ export async function viewMessages(threadId: string): Promise<ThreadMessage[]> {
       seq: m.seq,
       role: m.role,
       content: m.role === 'tool' ? '' : m.content,
-      ...(m.role === 'tool' && tool ? { tool } : {}),
+      ...(m.role === 'tool' && tool
+        ? {
+            tool: {
+              ...tool,
+              summary: toolSummary(tool.name, tool.summary, tool.ok),
+            },
+          }
+        : {}),
     });
   }
   return out;
@@ -177,4 +186,22 @@ export async function historyFor(threadId: string): Promise<AIMessage[]> {
   // The window may start mid-exchange: begin at the first user message.
   const first = out.findIndex((m) => m.role === 'user');
   return first <= 0 ? out : out.slice(first);
+}
+
+/**
+ * The local agent CLI's own session id for this thread (stored on the last
+ * assistant message of a turn that ran through `tool`), so the next turn can
+ * resume it. `null` for a thread that never ran through that tool.
+ */
+export async function lastCliSession(
+  threadId: string,
+  tool: string,
+): Promise<string | null> {
+  for (const m of (await rows(threadId)).reverse()) {
+    if (m.role !== 'assistant') continue;
+    const meta = parse<{ cliSession?: { tool?: string; id?: string } }>(m.meta);
+    if (meta?.cliSession?.tool === tool && meta.cliSession.id)
+      return meta.cliSession.id;
+  }
+  return null;
 }

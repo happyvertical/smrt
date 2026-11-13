@@ -14,7 +14,7 @@ import {
   serializeSidecarManifest,
 } from '../sidecar-manifest.js';
 import { BUNDLE_STAGES, BundleError } from './errors.js';
-import { machoThin } from './native/testing/native-fixtures.js';
+import { elf, machoThin } from './native/testing/native-fixtures.js';
 import { nodeTreeFs, type TreeFs } from './paths.js';
 import {
   assertVerifiedNodePin,
@@ -224,6 +224,134 @@ describe('runBundle layout', () => {
     expect(report.natives.map((n) => n.path)).toEqual([
       'binaries/smrt-start-node-x86_64-pc-windows-msvc.exe',
     ]);
+  });
+
+  it('prunes conclusively foreign native-only optional packages without package-name exemptions', async () => {
+    const item = fixture({
+      dependencies: { a: '^1.0.0' },
+      packages: [
+        {
+          name: 'a',
+          optionalDependencies: {
+            'foreign-addon': '^1.0.0',
+            'matching-addon': '^1.0.0',
+          },
+          files: {
+            'index.js':
+              "import 'matching-addon'; if (process.platform === 'linux') await import('foreign-addon'); export default 1;",
+          },
+        },
+        {
+          name: 'foreign-addon',
+          main: 'index.node',
+          files: { 'index.node': elf({ needed: ['libc.musl-x86_64.so.1'] }) },
+        },
+        {
+          name: 'matching-addon',
+          main: 'index.node',
+          files: { 'index.node': machoThin({ cpu: 'arm64', filetype: 8 }) },
+        },
+      ],
+    });
+    const { report } = await runBundle(await item.plan(), item.seams());
+    const files = readTree(item.outDir);
+    expect(
+      [...files.keys()].some((path) => path.includes('/foreign-addon/')),
+    ).toBe(false);
+    expect(
+      files.has('resources/app/node_modules/matching-addon/index.node'),
+    ).toBe(true);
+    expect(report.pruned.files).toBeGreaterThanOrEqual(2);
+    expect(report.nativeExceptions).toEqual([]);
+    expect(report.packages.map((pkg) => pkg.name)).toEqual([
+      'a',
+      'matching-addon',
+    ]);
+  });
+
+  it.each([
+    'required',
+    'direct',
+    'peer',
+    'shared-required',
+    'mixed-entrypoints',
+    'malformed',
+    'unknown-libc',
+    'unknown-machine',
+    'executable',
+    'referenced-subpath',
+    'referenced-assets',
+  ])('keeps the native refusal for an %s addon', async (kind) => {
+    const item = fixture({
+      dependencies: {
+        a: '^1.0.0',
+        ...(kind === 'direct' ? { addon: '^1.0.0' } : {}),
+      },
+      packages: [
+        {
+          name: 'a',
+          ...(kind === 'required'
+            ? { dependencies: { addon: '^1.0.0' } }
+            : {
+                optionalDependencies: { addon: '^1.0.0' },
+                ...(kind === 'shared-required'
+                  ? { dependencies: { b: '^1.0.0' } }
+                  : {}),
+              }),
+          files: {
+            'index.js':
+              kind === 'referenced-subpath'
+                ? "import 'addon/helper.js'; export default 1;"
+                : kind === 'referenced-assets'
+                  ? "export default new URL('../addon/', import.meta.url);"
+                  : 'export default 1;',
+            ...(kind === 'peer'
+              ? {
+                  'package.json': JSON.stringify({
+                    name: 'a',
+                    version: '1.0.0',
+                    type: 'module',
+                    main: 'index.js',
+                    optionalDependencies: { addon: '^1.0.0' },
+                    peerDependencies: { addon: '^1.0.0' },
+                  }),
+                }
+              : {}),
+          },
+        },
+        ...(kind === 'shared-required'
+          ? [
+              {
+                name: 'b',
+                dependencies: { addon: '^1.0.0' },
+                files: { 'index.js': 'export default 1;' },
+              },
+            ]
+          : []),
+        {
+          name: 'addon',
+          main: kind === 'mixed-entrypoints' ? 'index.js' : 'index.node',
+          files: {
+            'index.js': "export const addon = () => import('./index.node');",
+            'helper.js': 'export const helper = true;',
+            'index.node':
+              kind === 'malformed'
+                ? Buffer.from('not a native file')
+                : kind === 'unknown-libc'
+                  ? elf({ needed: ['libunknown.so'] })
+                  : kind === 'unknown-machine'
+                    ? machoThin({ cpu: 1234, filetype: 8 })
+                    : machoThin({
+                        cpu: 'x86_64',
+                        filetype: kind === 'executable' ? 2 : 8,
+                      }),
+          },
+        },
+      ],
+    });
+    const error = await failure(runBundle(await item.plan(), item.seams()));
+    expect(error.stage).toBe('natives');
+    expect(error.exitCode).toBe(5);
   });
 
   it('refuses a macOS native when the target is Windows', async () => {
@@ -1706,5 +1834,73 @@ describe('files written around the measured start', () => {
       expect(error.stage, name).toBe('measure');
       assertNothingLeft(item);
     }
+  });
+});
+
+describe('built cookbook app resources', () => {
+  it('launches relative to app, retains discovery metadata and copies only declared runtime data', async () => {
+    const item = fixture({
+      config: {
+        sidecar: { workingDirectory: 'app', args: ['build/index.js'] },
+        runtimeFiles: ['smrt.cookbook.json'],
+      },
+    });
+    writeFileSync(join(item.appDir, 'smrt.cookbook.json'), '{"version":1}');
+    writeFileSync(join(item.appDir, 'private-source.ts'), 'never copied');
+    const result = await runBundle(await item.plan(), item.seams());
+    const tree = readTree(item.outDir);
+    expect(tree.has('resources/app/smrt.cookbook.json')).toBe(true);
+    expect(tree.has('resources/app/private-source.ts')).toBe(false);
+    const manifest = parseSidecarManifest(
+      readFileSync(
+        join(item.outDir, 'resources/sidecar-manifest.json'),
+        'utf8',
+      ),
+    );
+    expect(manifest.workingDirectory).toBe('app');
+    expect(
+      JSON.parse(
+        readFileSync(join(item.outDir, 'resources/app/package.json'), 'utf8'),
+      ).dependencies.a,
+    ).toBeDefined();
+    expect(result.report.files.count).toBeGreaterThan(0);
+  });
+  it('refuses missing or secret runtime files and never publishes partial output', async () => {
+    for (const file of ['missing.json', '.env']) {
+      const item = fixture({ config: { runtimeFiles: [file] } });
+      if (file === '.env') writeFileSync(join(item.appDir, file), 'private');
+      if (file === '.env') await expect(item.plan()).rejects.toThrow();
+      else await failure(runBundle(await item.plan(), item.seams()));
+      assertNothingLeft(item);
+    }
+  });
+});
+
+describe('disabled dependency closure validation', () => {
+  it('prunes a disabled package with a missing dependency but refuses the same kept package', async () => {
+    const options = {
+      packages: [
+        { name: 'a', files: { 'index.js': 'export default 1;' } },
+        {
+          name: 'googleapis',
+          version: '170.0.0',
+          dependencies: { missing: '1.0.0' },
+          files: { 'index.js': 'export default 2;' },
+        },
+      ],
+    };
+    const disabled = fixture(options);
+    await expect(
+      runBundle(await disabled.plan(), disabled.seams()),
+    ).resolves.toBeDefined();
+    const enabled = fixture({
+      ...options,
+      config: { features: { default: ['google-apis'] } },
+    });
+    const error = await failure(
+      runBundle(await enabled.plan(), enabled.seams()),
+    );
+    expect(error.code).toBe('unresolved_dependency');
+    assertNothingLeft(enabled);
   });
 });

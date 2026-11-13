@@ -1,5 +1,6 @@
 /** Shape of the setup route's `load` data. */
 export interface OwnerSetupData {
+  launchMode?: 'desktop' | 'cli';
   /** False (with an empty token) when setup is not offered. */
   available: boolean;
   /** Single-use bootstrap token carried from the setup link. */

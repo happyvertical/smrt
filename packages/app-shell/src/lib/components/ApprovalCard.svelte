@@ -1,10 +1,18 @@
 <script lang="ts">
+import { AssistantApprovalCard } from '@happyvertical/smrt-chat/svelte';
+import { Button } from '@happyvertical/smrt-ui';
 import { describeApproval, failureText, statusLabel } from '$lib/ui/approvals';
-import { fullTime, timeAgo } from '$lib/ui/format';
+import {
+  authorName,
+  fullTime,
+  type OwnerProfile,
+  timeAgo,
+} from '$lib/ui/format';
 import type { ApprovalView } from '$lib/ui/types';
 
 interface Props {
   approval: ApprovalView;
+  owner?: OwnerProfile | null;
   /** Set while this card's decision is being sent. */
   busy?: boolean;
   /** Message from the last attempt on this card (404, 409, ...). */
@@ -12,9 +20,15 @@ interface Props {
   ondecide?: (approve: boolean) => void;
 }
 
-let { approval, busy = false, message = '', ondecide }: Props = $props();
+let {
+  approval,
+  owner = null,
+  busy = false,
+  message = '',
+  ondecide,
+}: Props = $props();
 
-const detail = $derived(describeApproval(approval));
+const description = $derived(describeApproval(approval));
 const failed = $derived(failureText(approval));
 const pending = $derived(approval.status === 'pending');
 const uid = $derived(`ap-${approval.id}`);
@@ -27,18 +41,18 @@ const badge = $derived(
 );
 </script>
 
-<article class="smrt-app-shell__card" aria-labelledby="{uid}-title" data-smrt-component="ApprovalCard">
-  <header class="smrt-approval-card__top" data-smrt-part="header">
-    <h3 id="{uid}-title">{approval.summary}</h3>
-    <span class="smrt-app-shell__badge {badge}" data-smrt-part="badge">{statusLabel(approval.status)}</span>
-  </header>
-
-  {#each detail.lines as line, i (i)}
-    <p class:smrt-approval-card__warn={detail.destructive && i === detail.lines.length - 1} data-smrt-part="description">{line}</p>
+<AssistantApprovalCard presentation={{
+  id: approval.id, summary: approval.summary,
+  statusLabel: statusLabel(approval.status), badgeClass: badge,
+  pending, busy, message, ondecide, busyLabel: 'Working…', headingSize: '1.0625rem',
+}}>
+{#snippet detail()}
+  {#each description.lines as line, i (i)}
+    <p class:smrt-approval-card__warn={description.destructive && i === description.lines.length - 1}>{line}</p>
   {/each}
 
-  {#each detail.blocks as block, i (i)}
-    <p class="smrt-app-shell__muted" id="{uid}-code-{i}" data-smrt-part="description">Code for {block.title}</p>
+  {#each description.blocks as block, i (i)}
+    <p class="smrt-app-shell__muted" id="{uid}-code-{i}">Code for {block.title}</p>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard scrolling of long code) -->
     <pre class="smrt-app-shell__code" tabindex="0" aria-labelledby="{uid}-code-{i}" data-smrt-part="code"><code>{block.code}</code></pre>
   {/each}
@@ -47,70 +61,31 @@ const badge = $derived(
     Asked <time datetime={approval.createdAt} title={fullTime(approval.createdAt)}
       >{timeAgo(approval.createdAt)}</time
     >{#if approval.requestedBy}
-      by {approval.requestedBy}{/if}{#if !pending && approval.decidedAt}
+      {' by '}{authorName(approval.requestedBy, owner)}{/if}{#if !pending && approval.decidedAt}
       · {statusLabel(approval.status).toLowerCase()}
       <time datetime={approval.decidedAt} title={fullTime(approval.decidedAt)}
         >{timeAgo(approval.decidedAt)}</time
       >{#if approval.decidedBy}
-        by {approval.decidedBy}{/if}{/if}
+        {' by '}{authorName(approval.decidedBy, owner)}{/if}{/if}
   </p>
 
-  {#if failed}<p class="smrt-app-shell__alert smrt-app-shell__alert-error" data-smrt-part="status">{failed}</p>{/if}
-  {#if message}<p class="smrt-app-shell__alert smrt-app-shell__alert-error" role="alert" data-smrt-part="status">{message}</p>{/if}
-
-  {#if pending && ondecide}
-    <div class="smrt-app-shell__actions" data-smrt-part="actions">
-      <button
-        type="button"
-        class="smrt-app-shell__btn smrt-app-shell__btn-primary"
-        disabled={busy}
-        onclick={() => ondecide(true)} data-smrt-part="trigger"
-      >
-        {busy ? 'Working…' : 'Approve'}<span class="smrt-approval-card__sr-only" data-smrt-part="label">: {approval.summary}</span>
-      </button>
-      <button
-        type="button"
-        class="smrt-app-shell__btn"
-        disabled={busy}
-        onclick={() => ondecide(false)} data-smrt-part="trigger"
-      >
-        Deny<span class="smrt-approval-card__sr-only" data-smrt-part="label">: {approval.summary}</span>
-      </button>
-    </div>
+  {#if failed}<p class="smrt-app-shell__alert smrt-app-shell__alert-error">{failed}</p>{/if}
+  {#if approval.status === 'failed' && approval.action?.kind === 'publish-draft'}
+    <Button variant="secondary" href="/draft/review">Review again</Button>
   {/if}
-</article>
+{/snippet}
+</AssistantApprovalCard>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 
 @layer smrt.structure {
-  .smrt-approval-card__top {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--smrt-spacing-sm, 0.5rem);
-  }
-  h3 {
-    margin: 0;
-  }
   p {
     margin: var(--smrt-spacing-sm, 0.5rem) 0;
-  }
-  .smrt-approval-card__sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
 }
 
 @layer smrt.theme {
-  h3 {
-    font-size: 1.0625rem;
-  }
   .smrt-approval-card__warn {
     font-weight: 600;
   }

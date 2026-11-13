@@ -29,3 +29,20 @@ export function fullTime(iso: string | null | undefined): string {
 export function newestFirst<T extends { version: number }>(rows: T[]): T[] {
   return [...rows].sort((a, b) => b.version - a.version);
 }
+
+export interface OwnerProfile {
+  id: string;
+  name?: string | null;
+}
+
+/** Human attribution for this single-owner shell, without exposing user ids. */
+export function authorName(
+  author: string,
+  owner?: OwnerProfile | null,
+): string {
+  if (!author) return '';
+  if (author === 'engine') return 'engine';
+  if (author === 'assistant') return 'the assistant';
+  if (author === owner?.id) return owner.name?.trim() || 'the owner';
+  return 'the owner';
+}

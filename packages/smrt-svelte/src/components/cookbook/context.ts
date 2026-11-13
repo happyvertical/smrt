@@ -1,12 +1,24 @@
 import { getContext, setContext } from 'svelte';
 import type { OverviewModelChoice } from '../overview/grid-types.js';
+import type { RecipeExportResolver } from '../overview/recipe-widgets.js';
 import type { WidgetComponents, WidgetRegistry } from '../overview/registry.js';
 import type { OverviewOverride } from '../overview/types.js';
+import type {
+  ScreenCollectionDefinition,
+  ScreenPolicy,
+} from '../screens/types.js';
 import type { CookbookShell } from './types.js';
 
 /** What `CookbookApp` shares with `CookbookSectionPage` below it. */
 export interface CookbookContext {
   readonly shell: CookbookShell;
+  readonly resolveExport?: RecipeExportResolver;
+  fieldPolicy?(definition: ScreenCollectionDefinition): ScreenPolicy;
+  readonly fieldPolicies?: Readonly<Record<string, ScreenPolicy>>;
+  screenDefinition?(
+    definition: ScreenCollectionDefinition,
+    entryId?: string,
+  ): ScreenCollectionDefinition;
   /** `null` until the recipe widgets are registered. */
   readonly registry: WidgetRegistry | null;
   readonly components: WidgetComponents;

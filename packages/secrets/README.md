@@ -8,7 +8,7 @@ Per-tenant secret management with envelope encryption for the s-m-r-t framework.
 pnpm add @happyvertical/smrt-secrets
 ```
 
-Requires the `SMRT_SECRET_MASTER_KEY` environment variable (64 hex characters) as the AMK.
+Requires the `SMRT_SECRET_MASTER_KEY` environment variable (64 hex characters) as the AMK, or a `masterKeyProvider` (below) where the process has no environment to read it from.
 
 ## Usage
 
@@ -67,7 +67,27 @@ AMK (env var, 256-bit)
        └─ encrypts secret value (stored as JSON envelope)
 ```
 
-The AMK is loaded from `SMRT_SECRET_MASTER_KEY` (configurable via `amkEnvVar` option). Each tenant gets its own TDEK on first secret storage. TDEKs are stored in wrapped form -- they can only be unwrapped using the AMK. Secret values are encrypted by the unwrapped TDEK and persisted as `EncryptedEnvelope` JSON.
+The AMK is loaded from `SMRT_SECRET_MASTER_KEY` (configurable via `amkEnvVar` option). The environment variable always wins. Each tenant gets its own TDEK on first secret storage. TDEKs are stored in wrapped form -- they can only be unwrapped using the AMK. Secret values are encrypted by the unwrapped TDEK and persisted as `EncryptedEnvelope` JSON.
+
+### Master key from a provider
+
+A local or desktop app has no environment to carry the AMK. Pass
+`masterKeyProvider` (an async function returning 64 hex characters or the 32
+raw bytes) and the service asks it only when the environment variable is
+unset. There is no default key: with neither source, creation fails with the
+usual `Application Master Key not found` error, and a provider that returns
+`null` does the same. The provided key is never logged and never appears in
+an error. In an app on `@happyvertical/smrt-app-runtime`'s local profile, pass
+`runtime.secretMasterKey()` (see that package's README); the runtime creates
+and keeps the key so the user never sees it.
+
+```ts
+const secrets = await SecretService.create({
+  db,
+  masterKeyProvider: () => runtime.secretMasterKey(),
+});
+```
+
 
 ### Key rotation
 
@@ -133,7 +153,7 @@ The `Secret` and `TenantKey` models have no API or MCP exposure to prevent accid
 
 ### Key Types
 
-`SecretServiceOptions`, `StoreSecretOptions`, `RetrievedSecret`, `DiagnoseTenantSecretKeyDriftOptions`, `SecretKeyDriftReport`, `SecretKeyDriftIssue`, `RepairTenantSecretKeyDriftOptions`, `SecretKeyDriftRepairResult`, `ListSecretsOptions`, `ListAuditLogsOptions`, `SecretStatus`, `SecretAuditAction`, `SecretAuditResult`, `TenantKeyStatus`, `ApplicationMasterKey`, `EncryptedEnvelope`, `TenantDataEncryptionKey`, `SecretStore`
+`SecretServiceOptions`, `SecretMasterKeyProvider`, `StoreSecretOptions`, `RetrievedSecret`, `DiagnoseTenantSecretKeyDriftOptions`, `SecretKeyDriftReport`, `SecretKeyDriftIssue`, `RepairTenantSecretKeyDriftOptions`, `SecretKeyDriftRepairResult`, `ListSecretsOptions`, `ListAuditLogsOptions`, `SecretStatus`, `SecretAuditAction`, `SecretAuditResult`, `TenantKeyStatus`, `ApplicationMasterKey`, `EncryptedEnvelope`, `TenantDataEncryptionKey`, `SecretStore`
 
 ## Dependencies
 

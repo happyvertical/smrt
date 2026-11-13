@@ -17,6 +17,15 @@
       "@happyvertical/smrt-types/*": ["./packages/types/src/*"],
       "@happyvertical/smrt-core": ["./packages/core/src/index.ts"],
       "@happyvertical/smrt-core/*": ["./packages/core/src/*"],
+      "@happyvertical/smrt-tenancy/decorators": [
+        "./packages/tenancy/src/decorators.ts"
+      ],
+      "@happyvertical/smrt-users/permission-registry": [
+        "./packages/users/src/permission-registry.ts"
+      ],
+      "@happyvertical/smrt-profiles/internal/oidc-provisioning": [
+        "./packages/profiles/src/internal/oidc-provisioning.ts"
+      ],
       "@happyvertical/smrt-svelte": ["./packages/smrt-svelte/src/index.ts"],
       "@happyvertical/smrt-svelte/*": [
         "./packages/smrt-svelte/src/components/*/index.ts",

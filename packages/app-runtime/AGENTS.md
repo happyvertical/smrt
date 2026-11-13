@@ -27,40 +27,20 @@ Application infrastructure composition for the validated runtime profiles in
   if its root is an existing real directory owned by another uid. Acquire in that order; never make the
   lease location configurable per process — every process sharing a data root
   must derive the same lease.
+- `secretMasterKey()` (`src/local-secret-master-key.ts`) is the smrt-secrets
+  master key for the local profile: created once in the `VaultKeyStore`
+  (default file store in a `.smrt-keys-<root name>` sibling of the data root,
+  injectable via `vaultKeyStore`), under the initialization lock. Hex for
+  `SecretService.create({ masterKeyProvider })` only; errors carry no key,
+  path or cause. Deployed profiles return `null` (env var only); never add a
+  generated or default key outside the local profile.
 - Filesystem custody (preflight, data-root and lease construction, markers, the
   application secret, no-follow opens) lives in `src/local-custody.ts`; it is
   internal (not exported from the package). `index.ts` only composes it into the
   public entry points. `LocalRuntimeError` lives in `src/local-runtime-error.ts`.
-- Windows has its own custody rule (README "Windows", smrt#4837), because Node
-  has no `O_NOFOLLOW`, uid, mode bits, or DACL access there: `windows-paths.ts`
-  (lexical), `windows-sddl.ts` (SDDL access decision), `windows-acl-inspector.ts`
-  (fixed-argv PowerShell, paths in the environment, ASCII JSON out, every
-  failure a refusal; no "unverified" mode), `windows-custody.ts` (synchronous
-  chain walk, creation with post-create re-inspection and rollback, bigint
-  identity). `windows-acl-lock.ts` (smrt#4843): a directory the runtime itself
-  creates (every component the call creates, intermediate ones included;
-  never one that already existed) is
-  locked at once through `WindowsCustodyRuntime.lockDirectory` (fixed-argv
-  `icacls.exe /inheritance:r /grant:r *user/SY/BA (OI)(CI)F`, path one argv
-  element) and then verified by the unchanged rule; a lock failure removes it.
-  The create-then-lock race is documented as a residual in the README; a
-  pre-existing directory is never re-permissioned and its refusal names the
-  extra principal. The fake machine's `lockMode` defaults to `record` so older
-  tests keep the inherited DACL; use `apply` to model icacls. Default root is `%LOCALAPPDATA%` only, never APPDATA or home.
-  Everything runs through `WindowsCustodyRuntime`; tests inject
-  `test-support/windows-fake-runtime.ts` with `runWithCustodyContext`
-  (`custody-context.ts`), never a public option. SQLite acquisition on Windows
-  runs through the SDK's `secureFile.windowsCustody.verify`
-  (`createWindowsDatabaseVerifier`, `windowsSecureFileCustody`; every place
-  that opens the secure database spreads it into `secureFile`); it throws, the
-  rule is unchanged. `smrt app backup|export|import` stay refused on Windows
-  for destination custody (packages/cli). Lease, state root,
-  `validateLocalDatabaseStorage` and acquisition work. SDDL writes the built-in RID-500
-  Administrator as `LA`: it is trusted (`ALIAS:LA`) only when the current
-  user's SID is a machine `S-1-5-21-…-500` SID (`trustedPrincipals`);
-  unverified on a real runner. `windows-custody.test.ts` runs anywhere;
-  `windows-custody.win32.test.ts` runs only in the advisory
-  `app-runtime-windows.yml` job.
+- Windows has its own custody rule (README "Windows", smrt#4837): Node has no
+  `O_NOFOLLOW`, uid, mode bits or DACL access there. Module map, `icacls`
+  locking, test seams and the SDDL rule: [agents/windows-custody.md](agents/windows-custody.md).
 - First start (smrt#4835, `src/local-schema.ts`): with `createSchema` the
   local runtime creates its schema before serving, inside the initialization
   lock (plus the web writer lease), via the framework's `migrateSmrtSchemas`
@@ -251,7 +231,9 @@ Application infrastructure composition for the validated runtime profiles in
 - In an RLS request `classOptions()`/`databaseConfig()` return the
   transaction-bound request db (class `db` overrides win). Anything that
   outlives a request (session service, tenant selector) must use the base
-  config, never these.
+  config, never these. `runtime.database()` is the same rule for a service
+  that takes a `DatabaseInterface` (preference store): the request db in an
+  RLS request, else the runtime's own handle; never close it.
 - The local writer lease defaults to `defaultWriterLease()` (root
   `acquireWriterLease` over `prepareApplicationStateRoot`, presenting
   `SMRT_OPERATION_INSTANCE`); `acquireWriterLease` replaces it, `false` opts
@@ -274,8 +256,17 @@ Application infrastructure composition for the validated runtime profiles in
   request origin, then `destroySessionCookie` with the runtime's cookie
   name/path/domain (cookie cleared even if the session row is gone); 204, or
   303 to `/` when the request accepts HTML.
+- `createOwnerLinkHandler(runtime, { autoClaim: true })` (opt-in) signs the
+  desktop person in after every launch-secret/loopback check via
+  `runtime.signInLocalOwner` -> `LocalApplicationRuntime.signInOwner`
+  (serialized): creates the owner through `claimOwner`'s transaction with an
+  internal invitation and no email (`User.email = ''`, `emailKey` null), else
+  issues a session for the sole active owner unless the request has it;
+  anything but exactly one active owner fails closed (`owner_unavailable`, no
+  session, redirect `/`). Never add a second owner-creation path.
 - Owner setup re-checks loopback peer and loopback URL host per request and
   returns only fixed `{ code, message }` failures.
+- Desktop signed-out recovery: [agents/desktop-signin.md](agents/desktop-signin.md).
 - `verifyLocalMcpToken` (local only) and `resolveMcpPrincipal` (hosted only:
   issuer/subject → `oidc_identities` → exactly one active user with exactly
   one active direct membership, else `null`) are the runtime's MCP credential
@@ -348,3 +339,10 @@ pnpm --filter @happyvertical/smrt-app-runtime build
 pnpm --filter @happyvertical/smrt-app-runtime test
 pnpm --filter @happyvertical/smrt-app-runtime typecheck
 ```
+
+## Owner tool approvals
+
+`src/owner-approvals.ts` composes the existing smrt-approvals ledger with a host
+recovery envelope and owner check. Contract and validation:
+[agents/owner-approvals.md](agents/owner-approvals.md). Never expose its authority
+methods to a model or create its application schema on request.

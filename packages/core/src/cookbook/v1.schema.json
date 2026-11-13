@@ -6,6 +6,43 @@
   "type": "object",
   "required": ["version", "recipes", "policies"],
   "properties": {
+    "models": {
+      "type": "object",
+      "required": [
+        "version",
+        "packageName",
+        "lists",
+        "fields"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "packageName": {
+          "type": "string",
+          "pattern": "^@[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$"
+        },
+        "lists": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Z][A-Za-z0-9]{0,63}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/appModelList"
+          }
+        },
+        "fields": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^@[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*:[A-Z][A-Za-z0-9]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/appModelFields"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "$schema": {
       "enum": [
         "https://s-m-r-t.dev/schemas/cookbook/v1.json",
@@ -36,6 +73,266 @@
   },
   "additionalProperties": true,
   "$defs": {
+    "appModelField": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "text",
+            "longText",
+            "integer",
+            "decimal",
+            "money",
+            "date",
+            "datetime",
+            "boolean",
+            "choice",
+            "reference"
+          ]
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "choices": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "target": {
+          "type": "string",
+          "pattern": "^(@[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*:)?[A-Z][A-Za-z0-9]*$"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "money"
+              }
+            }
+          },
+          "then": {
+            "properties": { "currency": {} },
+            "required": [
+              "currency"
+            ]
+          },
+          "else": {
+            "not": {
+              "properties": { "currency": {} },
+              "required": [
+                "currency"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "choice"
+              }
+            }
+          },
+          "then": {
+            "properties": { "choices": {} },
+            "required": [
+              "choices"
+            ]
+          },
+          "else": {
+            "not": {
+              "properties": { "choices": {} },
+              "required": [
+                "choices"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "reference"
+              }
+            }
+          },
+          "then": {
+            "properties": { "target": {} },
+            "required": [
+              "target"
+            ]
+          },
+          "else": {
+            "not": {
+              "properties": { "target": {} },
+              "required": [
+                "target"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "appModelFields": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][A-Za-z0-9]{0,63}$",
+        "not": {
+          "enum": [
+            "__proto__",
+            "prototype",
+            "constructor",
+            "id",
+            "slug",
+            "context",
+            "tenantId",
+            "displayLabel",
+            "createdAt",
+            "updatedAt",
+            "metaType",
+            "metaData",
+            "_meta_type",
+            "_meta_data",
+            "abstract",
+            "arguments",
+            "await",
+            "boolean",
+            "break",
+            "byte",
+            "case",
+            "catch",
+            "char",
+            "class",
+            "const",
+            "continue",
+            "debugger",
+            "default",
+            "delete",
+            "do",
+            "double",
+            "else",
+            "enum",
+            "eval",
+            "export",
+            "extends",
+            "false",
+            "final",
+            "finally",
+            "float",
+            "for",
+            "function",
+            "goto",
+            "if",
+            "implements",
+            "import",
+            "in",
+            "instanceof",
+            "int",
+            "interface",
+            "let",
+            "long",
+            "native",
+            "new",
+            "null",
+            "package",
+            "private",
+            "protected",
+            "public",
+            "return",
+            "short",
+            "static",
+            "super",
+            "switch",
+            "synchronized",
+            "this",
+            "throw",
+            "throws",
+            "transient",
+            "true",
+            "try",
+            "typeof",
+            "var",
+            "void",
+            "volatile",
+            "while",
+            "with",
+            "yield",
+            "save",
+            "initialize",
+            "toJSON",
+            "toPublicJSON",
+            "then",
+            "select",
+            "from",
+            "to",
+            "where",
+            "table",
+            "column",
+            "group",
+            "order",
+            "insert",
+            "update",
+            "values",
+            "join",
+            "limit",
+            "offset",
+            "drop",
+            "alter",
+            "create",
+            "index",
+            "primary",
+            "foreign",
+            "key",
+            "references"
+          ]
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/appModelField"
+      }
+    },
+    "appModelList": {
+      "type": "object",
+      "required": [
+        "label",
+        "icon",
+        "displayField",
+        "fields"
+      ],
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "\\S"
+        },
+        "icon": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+        },
+        "displayField": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9]{0,63}$"
+        },
+        "fields": {
+          "$ref": "#/$defs/appModelFields"
+        }
+      },
+      "additionalProperties": false
+    },
     "stringList": { "type": "array", "items": { "type": "string" } },
     "policyRow": {
       "type": "object",
@@ -49,7 +346,8 @@
         "help": { "type": ["string", "null"] },
         "label": { "type": ["string", "null"] },
         "displayOrder": { "type": ["number", "null"] },
-        "locked": { "type": ["boolean", "null"] }
+        "locked": { "type": ["boolean", "null"] },
+        "readOnly": { "type": ["boolean", "null"] }
       },
       "additionalProperties": true
     },
@@ -78,7 +376,17 @@
         },
         "items": {
           "type": "object",
-          "additionalProperties": { "type": "object" }
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "icon": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+              }
+            },
+            "additionalProperties": true
+          }
         },
         "panels": {
           "type": "object",

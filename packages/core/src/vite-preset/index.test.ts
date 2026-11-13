@@ -14,6 +14,10 @@ import type { Plugin } from 'vite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { smrtConsumer } from '../consumer-plugin/index.js';
 import { smrtPlugin } from '../vite-plugin/index.js';
+import type {
+  SmrtHookContext,
+  SmrtVitePlugin,
+} from '../vite-plugin/plugin-contract.js';
 import { SMRT_PRESET_DEFAULTS, smrt } from './index.js';
 
 type AnyPlugin = Plugin & Record<string, any>;
@@ -69,6 +73,29 @@ export class Item extends SmrtObject {
 describe('smrt() Vite preset', () => {
   let root: string;
   let cwd: string;
+  it('passes one snapshot to both producer and consumer plugins', async () => {
+    const generationSnapshot = {
+      path: 'missing.json',
+      provenance: 'host-test',
+      sha256: 'invalid',
+      sourceRoot: root,
+    };
+    const plugins = (await smrt({
+      projectRoot: root,
+      packages: ['@test/pkg'],
+      expose: [],
+      generationSnapshot,
+    })) as AnyPlugin[];
+    const producer = plugins.find(
+      (plugin) => plugin.name === 'smrt-auto-service',
+    )!;
+    expect(producer.api.options.generationSnapshot).toBe(generationSnapshot);
+    const consumer = plugins.find((plugin) => plugin.name === 'smrt-consumer')!;
+    await callHook(consumer, 'configResolved', { root, build: {}, plugins });
+    await expect(callHook(consumer, 'buildStart', {})).rejects.toThrow(
+      /sha256/,
+    );
+  });
 
   const writeProvider = (name = '@test/pkg', manifest = true) => {
     const dir = join(root, 'node_modules', ...name.split('/'));
@@ -179,6 +206,7 @@ describe('smrt() Vite preset', () => {
       const plugins = (await smrt({ packages: [] })) as AnyPlugin[];
       const shared = plugins.find((p) => p.name === 'smrt:shared-runtime');
       expect(shared).toBeDefined();
+      expect(shared?.config).toMatchObject({ order: 'post' });
       expect(
         callHook(shared as AnyPlugin, 'config', {}, { command: 'build' }),
       ).toEqual({
@@ -224,22 +252,86 @@ describe('smrt() Vite preset', () => {
       ).toBeUndefined();
     });
 
-    it('keeps normal development SSR externalization while deduping Kit', async () => {
+    it('removes only the broad runtime root added by dependency crawling', async () => {
+      const shared = (await smrt({ packages: [] })).find(
+        (plugin) => plugin.name === 'smrt:shared-runtime',
+      ) as AnyPlugin;
+      const user = {
+        ssr: {
+          external: [
+            '@test/native',
+            '@happyvertical/smrt-app-runtime',
+            '@happyvertical/smrt-app-runtime/sveltekit-runtime',
+            '@happyvertical/smrt-app-runtime-extra',
+            '@test/other',
+          ],
+        },
+      };
+      callHook(shared, 'config', user, { command: 'serve' });
+      expect(user.ssr.external).toEqual([
+        '@test/native',
+        '@happyvertical/smrt-app-runtime/sveltekit-runtime',
+        '@happyvertical/smrt-app-runtime-extra',
+        '@test/other',
+      ]);
+      expect(() =>
+        callHook(
+          shared,
+          'config',
+          { ssr: { external: true } },
+          { command: 'serve' },
+        ),
+      ).toThrow('Use an explicit external package list');
+    });
+
+    it('compiles development wrappers while retaining the native backend', async () => {
       const shared = (await smrt({ packages: [] })).find(
         (p) => p.name === 'smrt:shared-runtime',
       ) as AnyPlugin;
       expect(callHook(shared, 'config', {}, { command: 'serve' })).toEqual({
         resolve: { dedupe: ['@sveltejs/kit'] },
+        ssr: {
+          noExternal: ['@happyvertical/smrt-app-runtime'],
+          external: ['@happyvertical/smrt-app-runtime/sveltekit-runtime'],
+        },
       });
+      const resolve = vi
+        .fn()
+        .mockResolvedValue({ id: '/app/runtime/dist/index.js' });
+      const context = { resolve } as unknown as SmrtHookContext;
+      const hook = shared.resolveId as SmrtVitePlugin['resolveId'];
+      if (!hook) throw new Error('Missing shared runtime resolver');
+      const resolveId = typeof hook === 'function' ? hook : hook.handler;
       expect(
-        callHook(
-          shared,
-          'resolveId',
+        await resolveId.call(
+          context,
           '@happyvertical/smrt-app-runtime',
+          '/app/entry.js',
+          { ssr: true },
+        ),
+      ).toEqual({ id: '/app/runtime/dist/index.js' });
+      expect(resolve).toHaveBeenCalledWith(
+        '@happyvertical/smrt-app-runtime',
+        '/app/entry.js',
+        { ssr: true, skipSelf: true },
+      );
+      expect(
+        await resolveId.call(
+          context,
+          '@happyvertical/smrt-app-runtime/sveltekit',
           undefined,
           { ssr: true },
         ),
       ).toBeUndefined();
+      expect(
+        await resolveId.call(
+          context,
+          '@happyvertical/smrt-app-runtime',
+          undefined,
+          { ssr: false },
+        ),
+      ).toBeUndefined();
+      expect(resolve).toHaveBeenCalledTimes(1);
     });
 
     it('omits the decorator plugin when decorators is false', async () => {

@@ -24,6 +24,44 @@ afterEach(() => {
 });
 
 describe('OwnerSetupForm', () => {
+  it.each([
+    'missing',
+    'expired',
+    'unavailable',
+  ])('shows desktop reopen guidance for %s without exposing tokens, forms or terminal commands', async (link) => {
+    await render({
+      data: {
+        available: true,
+        token: 'must-not-render',
+        link,
+        launchMode: 'desktop',
+      },
+      form: { message: 'Run pnpm app:recover' },
+    });
+    expect(container.textContent).toContain('Reopen the desktop app');
+    expect(
+      container.querySelector('[data-owner-setup="desktop"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('form,input,code')).toBeNull();
+    expect(container.textContent).not.toMatch(/pnpm|must-not-render/);
+  });
+
+  it('preserves an explicit unclaimed invitation for manual owner-link consumers', async () => {
+    await render({
+      data: {
+        available: true,
+        token: 'manual-token',
+        link: 'ready',
+        launchMode: 'desktop',
+      },
+    });
+    expect(container.querySelector('form')).not.toBeNull();
+    expect(
+      container.querySelector('input[name="token"]')?.getAttribute('value'),
+    ).toBe('manual-token');
+    expect(container.querySelector('[data-owner-setup="desktop"]')).toBeNull();
+  });
+
   it('renders the setup contract: POST form, hidden token, name and email fields', async () => {
     await render({ data: { available: true, token: 'tok-123' } });
     const form = container.querySelector('form') as HTMLFormElement;
@@ -146,7 +184,10 @@ describe('OwnerSetupForm', () => {
       const commands = [...container.querySelectorAll('code')].map(
         (c) => c.textContent,
       );
-      expect(commands).toEqual(['pnpm app:open', 'pnpm app:recover']);
+      expect(commands).toEqual([
+        'smrt app open',
+        'smrt app stop; smrt app recover; smrt app start; smrt app open',
+      ]);
       unmount(component as never);
       component = undefined;
       container.innerHTML = '';
@@ -170,4 +211,13 @@ describe('OwnerSetupForm', () => {
       container.querySelector('[data-smrt-component="Card"]'),
     ).not.toBeNull();
   });
+});
+
+it('explains desktop sign-in without terminal scripts', async () => {
+  await render({
+    data: { available: false, token: '', launchMode: 'desktop' },
+  });
+  expect(container.textContent).toContain('Reopen the desktop app');
+  expect(container.textContent).not.toContain('pnpm');
+  expect(container.querySelector('form')).toBeNull();
 });

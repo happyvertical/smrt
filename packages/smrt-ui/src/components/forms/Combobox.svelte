@@ -55,6 +55,8 @@ export interface Props {
    * every keystroke. Pair with `filter={false}` and fresh `options`.
    */
   onquery?: (query: string) => void;
+  /** Extra actions below the listbox, kept inside its focus boundary. */
+  footer?: Snippet;
   /**
    * Message announced politely to assistive technology while the list is open
    * ("Searching…", "3 results", "No results"). It is also shown inside the
@@ -87,6 +89,7 @@ let {
   valueLabel,
   filter = true,
   onquery,
+  footer,
   status,
   busy = false,
   invalid = false,
@@ -341,14 +344,35 @@ useControlRegistration(() => {
   <input bind:this={inputEl} id={inputId} role="combobox" autocomplete="off" {placeholder} {disabled} required={required && !value} aria-required={required ? 'true' : undefined} value={query}
     aria-expanded={open} aria-controls={listId} aria-busy={busy ? 'true' : undefined} aria-invalid={invalid ? 'true' : undefined} aria-describedby={describedby} aria-autocomplete="list" aria-activedescendant={open && filtered[activeIndex] ? `${listId}-${activeIndex}` : undefined}
     onfocus={openList} onclick={openList} oninput={handleInput} onkeydown={handleKeydown} />
-  {#if open && filtered.length}<div id={listId} class="smrt-combobox__options" data-smrt-part="panel" role="listbox">{#each filtered as option, index (option.value)}<button id={`${listId}-${index}`} type="button" role="option"
-      aria-selected={String(option.value) === value} class:smrt-combobox__active={index === activeIndex} data-smrt-part="option" disabled={option.disabled} onpointerdown={(event) => event.preventDefault()} onclick={() => commit(option, true)}>{#if optionContent}{@render optionContent(option)}{:else}{option.label}{/if}</button>{/each}</div>
-  {:else if open && status}<div class="smrt-combobox__options smrt-combobox__empty" data-smrt-part="panel" aria-hidden="true">{status}</div>{/if}
+  {#if open && (filtered.length || status || footer)}
+    <div class="smrt-combobox__options" data-smrt-part="panel">
+      {#if filtered.length}
+        <div id={listId} class="smrt-combobox__option-list" role="listbox" data-smrt-part="list">
+          {#each filtered as option, index (option.value)}
+            <button id={`${listId}-${index}`} type="button" role="option" tabindex="-1"
+              aria-selected={String(option.value) === value} class:smrt-combobox__active={index === activeIndex}
+              data-smrt-part="option"
+              disabled={option.disabled} onpointerdown={(event) => event.preventDefault()}
+              onclick={() => commit(option, true)}>
+              {#if optionContent}{@render optionContent(option)}{:else}{option.label}{/if}
+            </button>
+          {/each}
+        </div>
+      {:else if status}
+        <div class="smrt-combobox__empty" aria-hidden="true">{status}</div>
+      {/if}
+      {#if footer}{@render footer()}{/if}
+    </div>
+  {/if}
   {#if status !== undefined}<div class="smrt-combobox__status" data-smrt-part="status" role="status" aria-live="polite">{open ? status : ''}</div>{/if}
 </div>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
+
 @layer smrt.structure {
+  .smrt-combobox__option-list {
+    display: grid;
+  }
   .smrt-combobox__root {
     position: relative;
     display: grid;
@@ -371,7 +395,7 @@ useControlRegistration(() => {
   .smrt-combobox__options button {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
   }
-  .smrt-combobox__options.smrt-combobox__empty {
+  .smrt-combobox__empty {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
   }
   .smrt-combobox__status {
@@ -416,7 +440,7 @@ useControlRegistration(() => {
   .smrt-combobox__options button.smrt-combobox__active {
     background: var(--smrt-color-secondary-container);
   }
-  .smrt-combobox__options.smrt-combobox__empty {
+  .smrt-combobox__empty {
     color: var(--smrt-color-on-surface-variant);
   }
   .smrt-combobox__status {
@@ -427,5 +451,4 @@ useControlRegistration(() => {
     outline-offset: 4px;
   }
 }
-
 </style>

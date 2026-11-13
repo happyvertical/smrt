@@ -17,7 +17,7 @@
  * call-time `provider` layer; the doctor builds no SDK clients, so it reads
  * that layer only through `sdkCapabilities`.
  */
-import { AI_PROVIDER_TYPES } from '@happyvertical/ai';
+import { AI_PROVIDER_TYPES } from '@happyvertical/ai/types';
 import {
   getDefaultAIKeyEnvName,
   redactBaseUrl,

@@ -74,7 +74,6 @@ const NUMBER_NAME = /(^|[a-z])Number$|^number$/;
  * `name` is what it is called.
  */
 export function identifierField(model: CatalogModel): CatalogField | undefined {
-  if (labelFields(model).some((name) => name !== 'code')) return undefined;
   const own = model.fields.filter((f) => !f.system);
   const roles = deriveFieldRoles({
     objectRef: model.id,
@@ -91,6 +90,8 @@ export function identifierField(model: CatalogModel): CatalogField | undefined {
     ),
   });
   const name = fieldWithRole(roles, 'identifier');
+  if (labelFields(model).some((label) => label !== 'code' && label !== name))
+    return undefined;
   return name ? own.find((f) => f.name === name) : undefined;
 }
 

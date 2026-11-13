@@ -13,7 +13,7 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TenantCollection } from '../../users/src/index.js';
 import { clearFieldPolicyCache } from './cache.js';
 import { FieldPolicyCollection } from './collections/FieldPolicyCollection.js';
@@ -22,6 +22,7 @@ import {
   resolveFieldPolicy,
   resolveFieldPolicyExplained,
 } from './field-policy-resolver.js';
+import { resolveCookbookFieldPolicy } from './policy.js';
 import type {
   ExplainedObjectFieldPolicy,
   FieldPolicyTenantHierarchyLoader,
@@ -162,6 +163,183 @@ describe('resolveFieldPolicy', () => {
     }
   });
 
+  it('enumerates commerce Customer -> Profile displayLabel for relabel/hide policies without making it writable', async () => {
+    const { CustomerCollection } = await import(
+      '../../commerce/src/collections/CustomerCollection.js'
+    );
+    const { ProfileCollection, ProfileTypeCollection } = await import(
+      '../../profiles/src/index.js'
+    );
+    const { deriveScreenFields } = await import(
+      '../../smrt-svelte/src/components/screens/fields.js'
+    );
+    const { buildWebCollectionDefinition } = await import(
+      '../../core/src/vite-plugin/web-collections.js'
+    );
+    const { manifestEntry } = await import(
+      '../../core/src/registry/__tests__/helpers/consumer-workspace.js'
+    );
+    const { resolveDisplayLabelProjection, resolveDisplayLabelField } =
+      await import('@happyvertical/smrt-core/ui-metadata');
+    const database = await getTestDatabase({
+      classes: ['Customer', 'Profile', 'ProfileType', 'FieldPolicy'],
+    });
+    try {
+      const customers = await CustomerCollection.create({ db: database });
+      const profiles = await ProfileCollection.create({ db: database });
+      const types = await ProfileTypeCollection.create({ db: database });
+      const type = await types.create({ name: 'Person' });
+      if (!type.id) throw new Error('Profile type fixture id missing');
+      const profile = await profiles.create({
+        typeId: type.id,
+        name: 'Maya Policy Canary',
+      });
+      if (!profile.id) throw new Error('Profile fixture id missing');
+      await customers.create({ profileId: profile.id });
+      const customerRef = '@happyvertical/smrt-commerce:Customer';
+      const registeredFields = Object.fromEntries(
+        await ObjectRegistry.getAllFields(customerRef),
+      );
+      const label = ObjectRegistry.getConfig(customerRef).display?.label;
+      const tableName = ObjectRegistry.getTableName(customerRef);
+      if (!tableName) throw new Error('Customer fixture table missing');
+      const object = manifestEntry({
+        className: 'Customer',
+        packageName: '@happyvertical/smrt-commerce',
+        filePath: 'src/models/Customer.ts',
+        tableName,
+        fields: registeredFields,
+      });
+      object.displayLabelProjection = resolveDisplayLabelProjection(label);
+      object.displayLabelField = resolveDisplayLabelField(
+        registeredFields,
+        label,
+      );
+      const manifest = {
+        version: '1.0.0',
+        timestamp: 0,
+        packageName: '@happyvertical/smrt-commerce',
+        objects: { [customerRef]: object },
+      };
+      const definition = buildWebCollectionDefinition(
+        {
+          obj: object,
+          collection: 'customers',
+          actions: ['list', 'get', 'create', 'update'],
+        },
+        manifest,
+      );
+      const cookbook = {
+        policies: [
+          {
+            objectRef: definition.objectRef,
+            fieldName: 'displayLabel',
+            scopeType: 'app' as const,
+            label: 'Client name',
+            readOnly: false,
+          },
+        ],
+      };
+      const resolved = await resolveFieldPolicy(definition.objectRef, {
+        db: database,
+        cookbook,
+      });
+      const portable = resolveCookbookFieldPolicy(definition, cookbook);
+      expect(resolved.fields.displayLabel).toEqual(
+        portable.fields.displayLabel,
+      );
+      expect(resolved.fields.displayLabel).toMatchObject({
+        label: 'Client name',
+        readOnly: true,
+        hasDefault: false,
+      });
+      expect(
+        deriveScreenFields(definition, resolved, { mode: 'list' }).find(
+          (field) => field.name === 'displayLabel',
+        )?.label,
+      ).toBe('Client name');
+      expect(
+        deriveScreenFields(definition, resolved, { mode: 'edit' }).some(
+          (field) => field.name === 'displayLabel',
+        ),
+      ).toBe(false);
+      expect(
+        (await customers.list({ displayLabel: true })).map(
+          (customer) => customer.toJSON().displayLabel,
+        ),
+      ).toContain('Maya Policy Canary');
+      const hidden = await resolveFieldPolicy(definition.objectRef, {
+        db: database,
+        cookbook: {
+          policies: [{ ...cookbook.policies[0], visibility: 'hidden' }],
+        },
+      });
+      expect(hidden.fields.displayLabel).toMatchObject({
+        visibility: 'hidden',
+        readOnly: true,
+      });
+      expect(
+        deriveScreenFields(definition, hidden, { mode: 'list' }).some(
+          (field) => field.name === 'displayLabel',
+        ),
+      ).toBe(false);
+      await expect(
+        resolveFieldPolicy(definition.objectRef, {
+          cookbook: {
+            policies: [{ ...cookbook.policies[0], defaultValue: '"forged"' }],
+          },
+        }),
+      ).rejects.toThrow(/read-only/);
+      const rows = await FieldPolicyCollection.create({ db: database });
+      await seedPolicies(async () => {
+        await rows.create({
+          objectRef: definition.objectRef,
+          fieldName: 'displayLabel',
+          scopeType: 'app',
+          label: 'Saved client name',
+        });
+        await expect(
+          rows.create({
+            objectRef: definition.objectRef,
+            fieldName: 'displayLabel',
+            scopeType: 'app',
+            defaultValueRaw: 'forged',
+          }),
+        ).rejects.toThrow(/read-only/);
+      });
+      expect(
+        (await resolveFieldPolicy(definition.objectRef, { db: database }))
+          .fields.displayLabel.label,
+      ).toBe('Saved client name');
+      const target = ObjectRegistry.resolveRelationshipTarget(
+        definition.objectRef,
+        'profileId',
+      );
+      const originalFields = ObjectRegistry.getAllFields;
+      const restrictedTarget = vi
+        .spyOn(ObjectRegistry, 'getAllFields')
+        .mockImplementation(async (ref) => {
+          const fields = new Map(
+            await originalFields.call(ObjectRegistry, ref),
+          );
+          if (ref === target)
+            fields.set('name', { ...fields.get('name')!, sensitive: true });
+          return fields;
+        });
+      try {
+        await expect(
+          resolveFieldPolicy(definition.objectRef, {
+            cookbook: { policies: [] },
+          }),
+        ).rejects.toThrow(/sensitive/);
+      } finally {
+        restrictedTarget.mockRestore();
+      }
+    } finally {
+      await database.close?.();
+    }
+  });
+
   it('rejects unknown objectRefs', async () => {
     await expect(
       resolveFieldPolicy('@test/nowhere:Nope', { db }),
@@ -199,6 +377,196 @@ describe('resolveFieldPolicy', () => {
     expect(resolved.fields.id).toBeUndefined();
     expect(resolved.fields.slug).toBeUndefined();
     expect(resolved.fields.context).toBeUndefined();
+  });
+
+  it('resolves active raw cookbook rows through the same kernel without poisoning cached reads', async () => {
+    const original = await resolveFieldPolicy(objectRef, { db });
+    const cookbook = {
+      policies: [
+        {
+          objectRef,
+          fieldName: 'summary',
+          visibility: 'hidden' as const,
+          label: 'Private summary',
+          defaultValue: '"USD"',
+          readOnly: true,
+        },
+        { objectRef, fieldName: 'subtitle', defaultValue: 'null' },
+      ],
+    };
+    const resolved = await resolveFieldPolicy(objectRef, { db, cookbook });
+    expect(resolved.fields.summary).toMatchObject({
+      visibility: 'hidden',
+      label: 'Private summary',
+      defaultValue: 'USD',
+      readOnly: true,
+    });
+    expect(resolved.fields.subtitle).toMatchObject({
+      hasDefault: true,
+      defaultValue: null,
+    });
+    const definition = {
+      objectRef,
+      fields: Object.fromEntries(await ObjectRegistry.getAllFields(objectRef)),
+    };
+    const portable = resolveCookbookFieldPolicy(definition, cookbook);
+    expect(portable.fields.summary).toEqual(resolved.fields.summary);
+    expect(portable.fields.subtitle).toEqual(resolved.fields.subtitle);
+    expect(portable.fields.secret).toBeUndefined();
+    expect(portable.fields.id).toBeUndefined();
+    expect(await resolveFieldPolicy(objectRef, { db })).toEqual(original);
+    const changed = await resolveFieldPolicy(objectRef, {
+      db,
+      cookbook: {
+        policies: [
+          { ...cookbook.policies[0], defaultValue: '"EUR"', readOnly: false },
+        ],
+      },
+    });
+    expect(changed.fields.summary).toMatchObject({
+      defaultValue: 'EUR',
+      readOnly: false,
+    });
+  });
+
+  it('uses the live effective identity provenance for server cookbook rows', async () => {
+    const alias = '@test/provider:Doc';
+    const provenance = vi
+      .spyOn(ObjectRegistry, 'getExposureModel')
+      .mockReturnValue({
+        ...ObjectRegistry.getClassByQualifiedName(objectRef)!,
+        replacedQualifiedNames: [alias],
+      });
+    try {
+      const cookbook = {
+        policies: [
+          {
+            objectRef: alias,
+            fieldName: 'summary',
+            label: 'Provider label',
+            readOnly: true,
+            defaultValue: '"USD"',
+          },
+          { objectRef, fieldName: 'summary', label: 'App label' },
+        ],
+      };
+      const server = await resolveFieldPolicy(objectRef, { cookbook });
+      const browser = resolveCookbookFieldPolicy(
+        {
+          objectRef,
+          replacedQualifiedNames: [alias],
+          fields: {
+            summary: {
+              type: 'text',
+              default: '',
+              ui: { basic: true, group: 'main', order: 2 },
+            },
+          },
+        },
+        cookbook,
+      );
+      expect(server.fields.summary).toEqual(browser.fields.summary);
+      expect(server.fields.summary).toMatchObject({
+        label: 'App label',
+        readOnly: true,
+        defaultValue: 'USD',
+      });
+    } finally {
+      provenance.mockRestore();
+    }
+  });
+
+  it('merges only proven provider identities, with sparse effective-app overrides', () => {
+    const definition = {
+      objectRef: '@test/app:Doc',
+      replacedQualifiedNames: [objectRef],
+      fields: { summary: { type: 'text', default: '' } },
+    };
+    const cookbook = {
+      policies: [
+        {
+          objectRef: definition.objectRef,
+          fieldName: 'summary',
+          label: 'App label',
+          readOnly: false,
+        },
+        {
+          objectRef,
+          fieldName: 'summary',
+          label: 'Provider label',
+          visibility: 'hidden' as const,
+          defaultValue: '"preserved"',
+          readOnly: true,
+        },
+        {
+          objectRef: '@other/package:Doc',
+          fieldName: 'summary',
+          defaultValue: '"WRONG"',
+        },
+      ],
+    };
+    expect(
+      resolveCookbookFieldPolicy(definition, cookbook).fields.summary,
+    ).toMatchObject({
+      visibility: 'hidden',
+      label: 'App label',
+      defaultValue: 'preserved',
+      readOnly: false,
+    });
+    expect(
+      resolveCookbookFieldPolicy(
+        { ...definition, replacedQualifiedNames: [] },
+        cookbook,
+      ).fields.summary,
+    ).toMatchObject({
+      visibility: 'basic',
+      label: 'App label',
+      defaultValue: '',
+    });
+  });
+
+  it('rejects semantic default type errors in raw cookbook rows', async () => {
+    const definition = {
+      objectRef,
+      fields: Object.fromEntries(await ObjectRegistry.getAllFields(objectRef)),
+    };
+    const cookbook = {
+      policies: [
+        { objectRef, fieldName: 'priority', defaultValue: '"not an integer"' },
+      ],
+    };
+    expect(() => resolveCookbookFieldPolicy(definition, cookbook)).toThrow(
+      /must be an integer/,
+    );
+    await expect(
+      resolveFieldPolicy(objectRef, { db, cookbook }),
+    ).rejects.toThrow(/must be an integer/);
+  });
+
+  it('keeps required visibility safety, ignores unknown fields and preserves seed defaults after malformed encoded input', async () => {
+    const definition = {
+      objectRef,
+      fields: Object.fromEntries(await ObjectRegistry.getAllFields(objectRef)),
+    };
+    const resolved = resolveCookbookFieldPolicy(definition, {
+      policies: [
+        { objectRef, fieldName: 'title', visibility: 'hidden' },
+        { objectRef, fieldName: 'priority', defaultValue: '{broken' },
+        { objectRef, fieldName: 'notDeclared', defaultValue: '"no"' },
+        {
+          objectRef: '@other/model:Other',
+          fieldName: 'summary',
+          visibility: 'hidden',
+        },
+      ],
+    });
+    expect(resolved.fields.title).toMatchObject({
+      visibility: 'basic',
+      visibilityForced: true,
+    });
+    expect(resolved.fields.priority.defaultValue).toBe(3);
+    expect(resolved.fields.notDeclared).toBeUndefined();
+    expect(resolved.fields.summary.visibility).toBe('basic');
   });
 
   it('resolves defaults and visibility through app, tenant, and user tiers', async () => {

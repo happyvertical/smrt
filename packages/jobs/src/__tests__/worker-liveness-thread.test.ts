@@ -117,9 +117,20 @@ describe('off-loop liveness (Stage 2)', () => {
 
       const workerKey = (runner as unknown as { workerKey: string }).workerKey;
       const before = await readLease(db, workerKey);
-      await sleep(180);
-      const after = await readLease(db, workerKey);
-      expect(after && before && after > before).toBe(true);
+      // Observe a real renewal within the lease budget; scheduler latency is
+      // not bounded to a fixed 180ms during the monorepo's concurrent tests.
+      await expect
+        .poll(
+          async () => {
+            const after = await readLease(db, workerKey);
+            return Boolean(after && before && after > before);
+          },
+          { timeout: 2_000, interval: 25 },
+        )
+        .toBe(true);
+      expect(
+        (runner as unknown as { leaseTimer: unknown }).leaseTimer,
+      ).toBeNull();
     } finally {
       await runner.stop();
     }

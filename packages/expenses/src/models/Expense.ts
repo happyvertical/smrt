@@ -82,8 +82,6 @@ import {
 
 const authorizedPayable = new WeakMap<Expense, string>();
 
-const PROFILE = '@happyvertical/smrt-profiles:Profile';
-
 /**
  * Legal review moves, keyed by the persisted status. Only the dedicated
  * methods perform them; `save()` refuses a review-field change they did not
@@ -274,7 +272,7 @@ export class Expense extends SmrtObject {
   recordedAt: Date | null = null;
 
   /** Profile that recorded the expense. */
-  @crossPackageRef(PROFILE)
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
   recordedByProfileId: string | null = null;
 
   /** Company, named person (profile), or named third party (paidByName). */
@@ -282,7 +280,7 @@ export class Expense extends SmrtObject {
   paidBy: ExpensePayer = 'company';
 
   /** Profile that paid out of pocket; required when `paidBy` is `person`. */
-  @crossPackageRef(PROFILE)
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
   paidByProfileId: string | null = null;
 
   /** Optional commerce vendor the cost was paid to. */
@@ -307,7 +305,7 @@ export class Expense extends SmrtObject {
   reviewStatus: ExpenseReviewStatus = 'unreviewed';
 
   /** Profile that made the current review decision. */
-  @crossPackageRef(PROFILE, { readonly: true })
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile', { readonly: true })
   reviewedByProfileId: string | null = null;
 
   /** When the current review decision was made. */

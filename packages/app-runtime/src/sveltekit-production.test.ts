@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -48,17 +49,48 @@ it('preserves runtime redirects and action failures across a production SvelteKi
     join(installed, 'node_modules'),
     'dir',
   );
+  // Model an app whose installed Kit peer context differs from the runtime's.
+  // A fixture nested under app-runtime otherwise inherits its own Kit and
+  // silently misses the copied-template development redirect regression.
+  mkdirSync(join(root, 'node_modules/@sveltejs'), { recursive: true });
+  const appKit = resolve(
+    import.meta.dirname,
+    '../../template-sveltekit/node_modules/@sveltejs/kit',
+  );
+  symlinkSync(appKit, join(root, 'node_modules/@sveltejs/kit'), 'dir');
+  expect(realpathSync(appKit)).not.toBe(
+    realpathSync(resolve(import.meta.dirname, '../node_modules/@sveltejs/kit')),
+  );
+  // Svelte's real dependency crawler externalizes ordinary dependencies of
+  // Svelte packages in dev. A direct runtime-only dependency does not trigger
+  // that path and misses the template's full-plugin composition regression.
+  write(
+    'node_modules/@fixture/svelte-host/package.json',
+    JSON.stringify({
+      name: '@fixture/svelte-host',
+      version: '1.0.0',
+      type: 'module',
+      exports: {
+        '.': { svelte: './Widget.svelte', default: './Widget.svelte' },
+      },
+      dependencies: { '@happyvertical/smrt-app-runtime': '*' },
+    }),
+  );
+  write('node_modules/@fixture/svelte-host/Widget.svelte', '<p>Host</p>');
   write(
     'package.json',
     JSON.stringify({
       name: '@fixture/production-runtime',
       type: 'module',
       private: true,
-      dependencies: Object.fromEntries(
-        ['app-runtime', 'config', 'core', 'profiles', 'tenancy', 'users'].map(
-          (name) => ['@happyvertical/smrt-' + name, '*'],
+      dependencies: {
+        '@fixture/svelte-host': '1.0.0',
+        ...Object.fromEntries(
+          ['app-runtime', 'config', 'core', 'profiles', 'tenancy', 'users'].map(
+            (name) => ['@happyvertical/smrt-' + name, '*'],
+          ),
         ),
-      ),
+      },
     }),
   );
   const adapter = pathToFileURL(
@@ -80,6 +112,10 @@ it('preserves runtime redirects and action failures across a production SvelteKi
     '<html><head>%sveltekit.head%</head><body>%sveltekit.body%</body></html>',
   );
   write('src/routes/+page.svelte', '<h1>Production fixture</h1>');
+  write(
+    'src/native-probe.js',
+    `export { LocalRuntimeError } from '@happyvertical/smrt-app-runtime'; export { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit-runtime';`,
+  );
   write('src/routes/setup/+page.svelte', '<h1>Setup</h1>');
   write(
     'src/routes/setup/+page.server.js',
@@ -144,8 +180,24 @@ const server = await createServer({ server: { host: '127.0.0.1', port: 0 } });
 try {
   await server.listen();
   const origin = 'http://127.0.0.1:' + server.httpServer.address().port;
-  const response = await fetch(origin + '/setup?signed-in', { redirect: 'manual' });
-  console.log(JSON.stringify({ status: response.status, location: response.headers.get('location') }));
+  const results = [];
+  for (const [path, body, html] of [
+    ['/setup?signed-in', null],
+    ['/setup', 'token=fixture&name=Owner&email=owner%40example.test'],
+    ['/setup', ''],
+    ['/setup', 'token=fixture&name=Conflict&email=owner%40example.test'],
+    ['/setup', 'token=fixture&name=Owner&email=owner%40example.test', true]
+  ]) {
+    const response = await fetch(origin + path, { redirect: 'manual', ...(body === null ? {} : {
+      method: 'POST', headers: { origin, 'content-type': 'application/x-www-form-urlencoded', accept: html ? 'text/html' : 'application/json', ...(html ? {} : { 'x-sveltekit-action': 'true' }) }, body
+    }) });
+    const action = body !== null && !html ? await response.json() : null;
+    results.push({ status: response.status, location: response.headers.get('location'), cookie: response.headers.has('set-cookie'), action });
+  }
+  const nativeRoot = await import('@happyvertical/smrt-app-runtime');
+  const viteRuntime = await server.ssrLoadModule('/src/native-probe.js');
+  const nativeBackend = await import('@happyvertical/smrt-app-runtime/sveltekit-runtime');
+  console.log(JSON.stringify({ runtimeExternal: server.config.ssr.external.includes('@happyvertical/smrt-app-runtime'), nativeRootShared: nativeRoot.LocalRuntimeError === viteRuntime.LocalRuntimeError, nativeBackendShared: nativeBackend.createSmrtSvelteKitRuntime === viteRuntime.createSmrtSvelteKitRuntime, results }));
 } finally { await server.close(); }
 `,
   );
@@ -154,13 +206,23 @@ try {
     timeout: 30000,
     maxBuffer: 1024 * 1024,
   });
-  expect(
-    JSON.parse(devProbe.stdout.trim().split('\n').at(-1) as string),
-    devProbe.stderr,
-  ).toEqual({
-    status: 303,
-    location: '/',
-  });
+  const devProbeResult = JSON.parse(
+    devProbe.stdout.trim().split('\n').at(-1) as string,
+  );
+  expect(devProbeResult.runtimeExternal, devProbe.stderr).toBe(false);
+  expect(devProbeResult.nativeRootShared, devProbe.stderr).toBe(true);
+  expect(devProbeResult.nativeBackendShared, devProbe.stderr).toBe(true);
+  expect(devProbeResult.results, devProbe.stderr).toMatchObject([
+    { status: 303, location: '/' },
+    {
+      status: 200,
+      cookie: true,
+      action: { type: 'redirect', status: 303, location: '/' },
+    },
+    { status: 200, cookie: false, action: { type: 'failure', status: 400 } },
+    { status: 200, cookie: false, action: { type: 'failure', status: 409 } },
+    { status: 303, cookie: true, location: '/' },
+  ]);
   const viteCli = resolve(
     import.meta.dirname,
     '../node_modules/vite/bin/vite.js',

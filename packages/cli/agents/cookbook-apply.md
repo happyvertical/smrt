@@ -37,7 +37,7 @@ object that is not in its package's manifest, or a policy field the object lacks
 
 - **New project** (default): `[dir]` (or the slug of `cookbook.name`) must be absent or empty. The template is
   copied (`--template <path|github:owner/repo[#ref]|git URL>`, default
-  `github:happyvertical/smrt-start`, unpinned; a remote template is shallow-fetched, `.git` dropped,
+  the release-bundled `bundled:sveltekit`; an explicit remote template is shallow-fetched, `.git` dropped,
   and its commit printed). A local template that is a git checkout contributes only tracked plus
   untracked-but-unignored files (`git ls-files -co --exclude-standard`), so git-ignored generated output
   (e.g. a stale `src/routes/api/notes`) never reaches the project; uncommitted edits still apply, which
@@ -53,7 +53,7 @@ object that is not in its package's manifest, or a policy field the object lacks
 - **Existing project**: `--into [dir]`, or re-running on a directory that already holds `smrt.cookbook.json`.
 - **Writes**: missing packages (from the recipes, features and policies) into `dependencies`,
   sorted; `smrt.cookbook.json` (the validated, normalized cookbook); for a new project, the smrt pin
-  below. Nothing else. No sample data.
+  below. The bundled host also prepares customization subclasses and its verified lazy snapshot during its automatic build. No sample data.
 - **Versions**: the cookbook carries none (epic #3747). smrt releases in lockstep, so a **new project**
   runs this CLI's release, not the template's (#4055; the default template pinned the 0.55 line that
   GHSA-gq3p-p48q-9q54 covers): every `@happyvertical/smrt-*` registry range in the template's
@@ -70,7 +70,7 @@ object that is not in its package's manifest, or a policy field the object lacks
   project already uses for `@happyvertical/smrt-core`, else the CLI's version (exact for a release).
   Already-declared packages are never changed there. Removing a recipe does not remove its package.
 - **Idempotent**: re-applying leaves an identical project untouched; an edited cookbook updates the
-  config file and adds packages without rewriting anything else.
+  selection and adds packages, preserving existing app models, policies and source edits.
 - `--dry-run` prints the plan (no writes; a remote template is still fetched to a temp dir).
   `--no-install` skips `<pm> install` (pnpm, or npm/yarn by lockfile). `--json` prints the plan.
 - **Agent docs** (#4878): after a non-dry-run apply (new or `--into`) the handler runs the
@@ -83,5 +83,65 @@ object that is not in its package's manifest, or a policy field the object lacks
 ## Intake contract (smrt-start#4, app shell #3749)
 
 `smrt.cookbook.json` at the project root is the cookbook, verbatim v1. An app reads it at
-startup/setup to select recipes, apply policies and layout/theme. The CLI only places
-dependencies and the file; the project is responsible for acting on it.
+startup/setup to select recipes, apply policies and layout/theme. The bundled host is wired by apply and built automatically after install; explicit custom templates remain responsible for consuming it.
+
+## Complete local cookbook host (D2)
+
+The default is now `bundled:sveltekit`, shipped inside the CLI release at
+`dist/templates/cookbook`. CLI build copies the canonical template and its
+`template-sveltekit/cookbook-template` overlay; it never maintains a second
+hand-authored base template or fetches an unpinned starter. Explicit local/git
+`--template` sources retain their existing copy behavior.
+
+The bundled host mounts `createCookbookApplication`, local owner setup and
+launch-secret sign-in, Connect AI, settings, assistant, MCP, cookbook preferences,
+sections and model screens. `cookbookHostVite` prepares the verified snapshot,
+generates same-name customization subclasses with exclusive-create writes,
+exposes the installed recipe superset and enables lazy activation. Provider API
+restrictions still cap generated routes. Apply installs and builds this host;
+`--no-install` explicitly defers those operations. No provider account is needed.
+
+Recipe validation/resolution now follows manifests' `smrtDependencies`. These
+model providers become direct app dependencies so the complete lazy reference
+graph can resolve cross-package models. The bundled host's own provider closure
+is included in its generated package.json too, derived from authored runtime
+package dependencies so cold parallel builds cannot omit providers whose
+manifests have not been generated yet. Registry resolution remains the
+existing authenticated, integrity-checked implementation.
+
+Reapply preserves `models` in its entirety. Existing policies win by
+`(objectRef, fieldName)`; incoming policies fill only unconfigured fields.
+Generated subclasses are never overwritten, including files the person edited.
+`--dry-run --json` reports `plan.cookbookDiff.before` and `.after` without writes;
+it also retains the package addition/pin preview. A host marked
+`smrt.cookbookHost: true` rebuilds after apply so newly installed providers get
+AOT routes. Custom templates without that marker keep their prior lifecycle.
+
+`SMRT_ROOT` is the only checkout switch. The shipped pnpm hook delegates to
+`@happyvertical/smrt-cli/source-checkout` (bootstrapped from the selected checkout
+before dependencies exist). It links every framework package through a stable,
+ignored `.smrt-local` path. The app also links the SQL SDK already installed for
+checkout core, preserving SDK identity and avoiding starter-range registry lookups;
+an uninstalled checkout is refused. Without the variable it returns pnpm's published
+configuration unchanged. `smrt source build` forwards the app/workspace framework
+closure to Turbo using the existing active-Node package-manager runner. It is a
+no-op without a checkout. No machine path belongs in a committed lockfile.
+
+`template-sveltekit/__tests__/cookbookApply.test.ts` creates a second host for each
+bundled fixture with the real installer and apply-owned build, then
+boots adapter-node's SvelteKit Server in process. It checks health, anonymous
+denial, launch-secret rejection, owner sign-in, Customer REST/model page,
+settings and rendered cookbook sections. It opens no port. The existing apply
+suite covers dry-run, customization retention and idempotency; the template
+subclass suite checks exclusive-create preservation and path confinement.
+
+
+The shared prepack script verifies and reuses prepared CI artifacts; it never
+builds dependency closures. Outside CI it builds and verifies the CLI itself.
+The real tarball tests build both CLI and template closures in `test.before`,
+before packing. Release shards restore prepared `dist` without a Turbo cache;
+packing must preserve those artifacts, including dependencies packed later.
+The CLI bundle ships only `gitignore.template`, never a literal nested `.gitignore`
+(which pnpm pack would use to drop authored API routes). The overlay copier adds
+exceptions for every authored cookbook API route so generated apps track them.
+The real CLI tarball regression checks both packed routes and these exceptions.

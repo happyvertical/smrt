@@ -419,6 +419,13 @@ async function generateWhenReady(
   const registrationPaths = consumerRegistrationPaths(
     registrationContributions,
   );
+  if (
+    new Set(
+      registrationContributions.map(({ options }) => !!options.lazyActivation),
+    ).size > 1
+  ) {
+    throw new Error('SMRT producer and consumer must agree on lazyActivation');
+  }
   const options = {
     ...mergeOptions(contributions),
     ...(registrationPaths.length > 0
@@ -454,7 +461,10 @@ async function generateWhenReady(
       ),
     ),
     mergeManifests(
-      registrationContributions.map(({ routeManifest }) => routeManifest),
+      registrationContributions.map(
+        ({ routeManifest, semanticManifest, options }) =>
+          options.lazyActivation ? semanticManifest : routeManifest,
+      ),
     ),
     hooks,
   );

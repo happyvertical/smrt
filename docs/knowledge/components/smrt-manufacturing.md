@@ -5,7 +5,7 @@ description: "Bills of materials, cost rollup, and production-order operations f
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-10T22:32:35Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:009a2c3092f06d4543853b3774161c934d436463b81dcfa0cb708abecf74b643"

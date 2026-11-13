@@ -169,7 +169,9 @@ export function deriveFieldRoles(
   const entries = Object.entries(definition.fields).filter(
     ([name]) => !name.startsWith('_') && !name.startsWith('$'),
   );
-  const hasDisplay = entries.some(([, d]) => d.display === true);
+  const hasDisplay = entries.some(
+    ([name, d]) => d.display === true || name === definition.displayLabelField,
+  );
   for (const [name, fieldDefinition] of entries) {
     const roles = new Set<FieldRole>();
     const explicit = explicitRoles(fieldDefinition);
@@ -190,7 +192,11 @@ export function deriveFieldRoles(
     ) {
       roles.add('date');
     }
-    if (fieldDefinition.display === true) roles.add('title');
+    if (
+      fieldDefinition.display === true ||
+      name === definition.displayLabelField
+    )
+      roles.add('title');
     out[name] = ordered(roles);
   }
   if (!hasDisplay && !Object.values(out).some((r) => r.includes('title'))) {

@@ -24,6 +24,8 @@ export interface Props extends Omit<HTMLButtonAttributes, 'class' | 'href'> {
   href?: string;
   /** Snippet for button content */
   children?: Snippet;
+  /** Retain the historical spacer before content, or trim it for an exact label contract. */
+  labelWhitespace?: 'preserve' | 'trim';
   /** Full width button */
   fullWidth?: boolean;
   /** Loading state */
@@ -58,6 +60,7 @@ const {
   class: className = '',
   onclick,
   children,
+  labelWhitespace = 'preserve',
   // Anchor-mode attributes pulled out of `rest` so they are only ever applied
   // in link mode below — in button mode they are dropped, matching the doc and
   // avoiding invalid `<button target=...>` HTML (PR #1608 review).
@@ -133,8 +136,7 @@ function handleClick(event: MouseEvent) {
   >
     {#if loading}
       <span class="smrt-button__spinner" aria-hidden="true" data-smrt-part="spinner"></span>
-    {/if}
-    <span class="smrt-button__content" class:smrt-button__loading={loading} data-smrt-part="label">
+    {/if}{labelWhitespace === 'preserve' ? ' ' : ''}<span class="smrt-button__content" class:smrt-button__loading={loading} data-smrt-part="label">
       {@render children?.()}
     </span>
   </a>
@@ -151,8 +153,7 @@ function handleClick(event: MouseEvent) {
   >
     {#if loading}
       <span class="smrt-button__spinner" aria-hidden="true" data-smrt-part="spinner"></span>
-    {/if}
-    <span class="smrt-button__content" class:smrt-button__loading={loading} data-smrt-part="label">
+    {/if}{labelWhitespace === 'preserve' ? ' ' : ''}<span class="smrt-button__content" class:smrt-button__loading={loading} data-smrt-part="label">
       {@render children?.()}
     </span>
   </button>

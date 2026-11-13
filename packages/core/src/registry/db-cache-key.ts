@@ -39,6 +39,7 @@
  */
 
 import { isDatabaseInterface } from '../database.js';
+import { isPerConnectionMemoryUrl } from '../embedded-write-queue.js';
 import { applyPostgresRuntimeTimeouts } from '../postgres-timeouts.js';
 import { sha256Hex } from '../utils/sha256.js';
 import { getDbInstanceIds, getNextDbId, setNextDbId } from './shared-state.js';
@@ -283,13 +284,11 @@ export function resolveCollectionDbCacheKey(db: unknown): string | undefined {
   // collection cache agrees with the pool/db identity those paths assume.
   const rawUrl = typeof config.url === 'string' ? config.url : '';
   const canUseMemory =
-    !config.type || config.type === 'sqlite' || config.type === 'json';
-  if (
-    rawUrl === ':memory:' ||
-    rawUrl === 'memory' ||
-    rawUrl === 'file::memory:' ||
-    (!rawUrl && canUseMemory)
-  ) {
+    !config.type ||
+    config.type === 'sqlite' ||
+    config.type === 'json' ||
+    config.type === 'pglite';
+  if (isPerConnectionMemoryUrl(rawUrl) || (!rawUrl && canUseMemory)) {
     return instanceKey(db);
   }
 

@@ -49,9 +49,9 @@ const preview = createHttpServer(async (request, response) => {
   }
   response.writeHead(404).end();
 });
-await new Promise((resolve) => preview.listen(0, '127.0.0.1', resolve));
+await new Promise((resolve) => preview.listen(Number(process.env.PLANNER_TEST_PORT ?? 0), '127.0.0.1', resolve));
 const previewPort = preview.address().port;
-const vite = await createViteServer({ server: { host: '127.0.0.1', port: 0 } });
+const vite = await createViteServer({ server: { host: '127.0.0.1', port: Number(process.env.PLANNER_TEST_VITE_PORT ?? 0), strictPort: Boolean(process.env.PLANNER_TEST_VITE_PORT) } });
 await vite.listen();
 origin = `http://127.0.0.1:${vite.httpServer.address().port}`;
 const executablePath = chromeExecutable('the live preview browser test');

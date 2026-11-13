@@ -207,7 +207,8 @@ export interface SessionLayoutData {
 /**
  * The only user fields the layout data ever carries. `name` appears only when
  * `locals.user` carries one (the `User` model itself has no name; it lives on
- * the linked profile), so consumers fall back to `email`.
+ * the linked profile): the runtime reads it into `locals.userName`, so a
+ * desktop owner (a name, an empty email) still has one here.
  */
 export interface SessionLayoutUser {
   readonly id: string;
@@ -215,9 +216,13 @@ export interface SessionLayoutUser {
   readonly name?: string;
 }
 
-function layoutUser(user: unknown): SessionLayoutUser | null {
+function layoutUser(
+  user: unknown,
+  profileName?: unknown,
+): SessionLayoutUser | null {
   if (!user || typeof user !== 'object') return null;
-  const { id, email, name } = user as Record<string, unknown>;
+  const { id, email } = user as Record<string, unknown>;
+  const name = (user as { name?: unknown }).name || profileName;
   if (typeof id !== 'string' || typeof email !== 'string') return null;
   return {
     id,
@@ -236,6 +241,7 @@ export function createSessionLayoutLoad(): (event: {
   return ({ locals }) => {
     const value = locals as {
       user?: unknown;
+      userName?: unknown;
       tenantId?: string | null;
       selectedTenantSlug?: string | null;
     };
@@ -244,7 +250,7 @@ export function createSessionLayoutLoad(): (event: {
         authenticated: Boolean(value.user),
         activeTenantId: value.tenantId ?? null,
         selectedTenantSlug: value.selectedTenantSlug ?? null,
-        user: layoutUser(value.user),
+        user: layoutUser(value.user, value.userName),
       },
     };
   };

@@ -22,6 +22,7 @@ import {
 } from '../../../client.js';
 import {
   type AssistantAttachmentRef,
+  type AssistantDesignRun,
   type AssistantMessage,
   type AssistantMessageWire,
   type AssistantResumeTurnInput,
@@ -50,6 +51,8 @@ export interface AssistantHttpOptions {
 
 /** Options for {@link createAssistantHttpTransport}. */
 export interface AssistantHttpTransportOptions extends AssistantHttpOptions {
+  /** Enable authenticated host design-run status and control routes. */
+  designRuns?: boolean;
   /** When set, the dock renders `ModelPicker`; the server checks the choice. */
   models?: ModelOption[];
   /**
@@ -186,7 +189,13 @@ export function createAssistantHttpTransport(
   const threadPath = (threadId: string, leaf: string) =>
     `/threads/${encodeURIComponent(threadId)}/${leaf}`;
 
-  return createSmrtAssistantTransport({
+  const readDesignRun = async (
+    response: Response,
+  ): Promise<AssistantDesignRun | undefined> => {
+    if (!response.ok) throw await failure(response);
+    return ((await response.json()) as { run?: AssistantDesignRun }).run;
+  };
+  const transport = createSmrtAssistantTransport({
     readEndpoint: base,
     token: '',
     fetchImpl: ((url: string | URL | Request, init?: RequestInit) =>
@@ -252,6 +261,41 @@ export function createAssistantHttpTransport(
       },
     },
   });
+  return {
+    ...transport,
+    ...(options.designRuns
+      ? {
+          designRun: (threadId: string) =>
+            request(
+              `${base}/design-runs?threadId=${encodeURIComponent(threadId)}`,
+            ).then(readDesignRun),
+          stopDesignRun: (runId: string) =>
+            postJson(`/design-runs/${encodeURIComponent(runId)}/stop`, {}).then(
+              readDesignRun,
+            ),
+          resumeDesignRun: (runId: string) =>
+            postJson(
+              `/design-runs/${encodeURIComponent(runId)}/resume`,
+              {},
+            ).then(readDesignRun),
+        }
+      : {}),
+    async listApprovals(threadId) {
+      const response = await request(
+        `${base}${threadId ? threadPath(threadId, 'approvals') : '/approvals'}`,
+      );
+      if (!response.ok) throw await failure(response);
+      return (await response.json()).approvals;
+    },
+    async decideApproval(id, approve) {
+      const response = await postJson(
+        `/approvals/${encodeURIComponent(id)}/decide`,
+        { approve },
+      );
+      if (!response.ok) throw await failure(response);
+      return (await response.json()).approval;
+    },
+  };
 }
 
 /** Options for {@link createAssistantHttpActionClient}. */

@@ -8,7 +8,7 @@ function expose(app: McpAppState) {
 }
 </script>
 <McpAppsBridge
-  hostOrigin="http://127.0.0.1:47851"
+  hostOrigin={window.location.origin}
   appInfo={{ name: 'Bridge component fixture', version: '1' }}
   title="Items"
   description="Review the items your signed-in tenant authorizes."

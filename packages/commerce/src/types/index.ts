@@ -398,6 +398,9 @@ export interface AccountingInvoiceInput {
  * Constructor options for {@link Customer}.
  */
 export interface CustomerOptions extends SmrtObjectOptions {
+  name?: string;
+  email?: string;
+  phone?: string;
   tenantId?: string | null;
   profileId?: string;
   creditLimit?: number;

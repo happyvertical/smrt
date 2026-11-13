@@ -1,3 +1,4 @@
+import { getRegistryGeneration } from '../registry/generation.js';
 /**
  * High-performance REST API generator for smrt objects using Node.js HTTP server
  *
@@ -6,7 +7,7 @@
 
 import http from 'node:http';
 import { getTableVersion } from '../change-feed';
-import type { SmrtCollection } from '../collection';
+import type { SmrtCollection, SmrtCollectionOptions } from '../collection';
 import {
   isTenantScopedClassResolved,
   resolveDispatchTenantScope,
@@ -14,6 +15,7 @@ import {
 import type { PublicJsonOptions, SmrtObject } from '../object';
 import {
   buildDefaultListOrderBy,
+  parseRestListWhere,
   resolveListLimit,
   resolveListOffset,
 } from '../query-bounds';
@@ -25,6 +27,10 @@ import type {
   RegisteredField,
   SmrtObjectConstructor,
 } from '../registry/types';
+import {
+  hasRuntimeExposureGate,
+  isRuntimeModelEnabled,
+} from '../runtime-exposure.js';
 import type {
   FieldDefinition,
   MethodDefinition,
@@ -37,6 +43,10 @@ import {
   type SyncApplyOp,
   type SyncApplyTarget,
 } from '../sync/apply';
+import {
+  DISPLAY_LABEL_FIELD,
+  resolveDisplayLabelProjection,
+} from '../ui-metadata';
 import { computeWebManifestHash } from '../vite-plugin/web-collections';
 import { handleChangesRoute } from './changes-route';
 import {
@@ -68,6 +78,7 @@ import {
   PLAYBOOK_PREFLIGHT_ROUTE_SEGMENT,
   type PlaybookPreflightProvider,
 } from './preflight-route';
+import { reportUnexpectedHttpError } from './route-error';
 import { normalizeTypedHttpError } from './typed-http-error';
 
 export interface APIConfig {
@@ -131,6 +142,7 @@ export interface APIConfig {
 }
 
 export interface APIContext {
+  tenantId?: string;
   db?: unknown;
   ai?: unknown;
   user?: {
@@ -162,6 +174,12 @@ function registeredFieldsToManifest(
         ? { readPermission: field.readPermission }
         : {}),
       ...(field._meta !== undefined ? { _meta: field._meta } : {}),
+      ...((field.sensitive ?? field._meta?.sensitive) === true
+        ? { sensitive: true }
+        : {}),
+      ...((field.transient ?? field._meta?.transient) === true
+        ? { transient: true }
+        : {}),
     };
   }
   return result;
@@ -188,14 +206,28 @@ function runtimeObjectDefinition(
   info: RegisteredClass,
 ): SmartObjectDefinition {
   const className = info.name || key;
+  const displayLabelProjection = resolveDisplayLabelProjection(
+    ObjectRegistry.getConfig(key).display?.label,
+  );
   return {
+    ...(ObjectRegistry.getConfig(key).writeThrough
+      ? { writeThroughFields: ObjectRegistry.getWriteThroughFields(key) }
+      : {}),
+    ...(displayLabelProjection
+      ? { displayLabelProjection, displayLabelField: DISPLAY_LABEL_FIELD }
+      : {}),
     className,
     name: className.toLowerCase(),
     collection: info.collection || pluralizeRuntimeCollectionName(className),
     filePath: info.sourceFilePath || '',
     fields: registeredFieldsToManifest(info.inheritedFields || info.fields),
     methods: registeredMethodsToManifest(info.inheritedMethods || info.methods),
-    decoratorConfig: info.config || {},
+    // Replacement selection needs physical identity even when the provider's
+    // decorator leaves its table name implicit.
+    decoratorConfig: {
+      ...info.config,
+      ...(info.schema?.tableName ? { tableName: info.schema.tableName } : {}),
+    },
     ...(info.qualifiedName ? { qualifiedName: info.qualifiedName } : {}),
     ...(info.packageName ? { packageName: info.packageName } : {}),
     ...(info.visibility ? { visibility: info.visibility } : {}),
@@ -210,9 +242,9 @@ function runtimeObjectDefinition(
  * (#1862). This mirrors the Vite/SvelteKit source (`computeWebManifestHash`)
  * but builds the manifest from `ObjectRegistry` for APIGenerator deployments.
  */
-export function computeRuntimeWebManifestHash(
+export function getRuntimeManifest(
   classes: Iterable<[string, RegisteredClass]> = ObjectRegistry.getAllClasses(),
-): string {
+): SmartObjectManifest {
   const objects: SmartObjectManifest['objects'] = {};
   const seen = new Set<RegisteredClass>();
   for (const [key, info] of classes) {
@@ -220,12 +252,22 @@ export function computeRuntimeWebManifestHash(
     seen.add(info);
     const manifestKey = info.qualifiedName || key;
     objects[manifestKey] = runtimeObjectDefinition(key, info);
+    for (const previous of info.replacedQualifiedNames ?? []) {
+      const declaration = ObjectRegistry.getDeclaredClass(previous);
+      if (declaration)
+        objects[previous] = {
+          ...runtimeObjectDefinition(previous, declaration),
+          replacedBy: manifestKey,
+        };
+    }
   }
-  return computeWebManifestHash({
-    version: 'runtime',
-    timestamp: 0,
-    objects,
-  });
+  return { version: 'runtime', timestamp: 0, objects };
+}
+
+export function computeRuntimeWebManifestHash(
+  classes: Iterable<[string, RegisteredClass]> = ObjectRegistry.getAllClasses(),
+): string {
+  return computeWebManifestHash(getRuntimeManifest(classes));
 }
 
 /**
@@ -236,6 +278,7 @@ export class APIGenerator {
   private collections = new Map<string, SmrtCollection<SmrtObject>>();
   private context: APIContext;
   private runtimeManifestHash: string | undefined;
+  private manifestGeneration = -1;
 
   constructor(config: APIConfig = {}, context: APIContext = {}) {
     this.config = {
@@ -415,7 +458,19 @@ export class APIGenerator {
    * Generate fetch handler function (for serverless environments)
    */
   generateHandler(): (req: Request) => Promise<Response> {
-    return (req) => this.handleRequest(req);
+    return async (req) => {
+      try {
+        return await this.handleRequest(req);
+      } catch (cause) {
+        const failure = normalizeTypedHttpError(cause);
+        if (failure)
+          return this.createJsonResponse({ error: failure }, failure.status);
+        return this.createJsonResponse(
+          reportUnexpectedHttpError(cause, req),
+          500,
+        );
+      }
+    };
   }
 
   /**
@@ -541,6 +596,15 @@ export class APIGenerator {
 
       const objectName = this.getCollectionObjectName(collection) || objectType;
 
+      if (
+        !isRuntimeModelEnabled(ObjectRegistry.getExposureModel(objectName), {
+          surface: 'rest',
+          tenantId: this.context.tenantId,
+          request: req,
+        })
+      ) {
+        return this.createErrorResponse(404, 'Not found');
+      }
       // Apply auth middleware if configured
       if (this.config.authMiddleware) {
         const authCheck = this.config.authMiddleware(
@@ -580,6 +644,15 @@ export class APIGenerator {
       );
     }
 
+    if (
+      !isRuntimeModelEnabled(classInfo, {
+        surface: 'rest',
+        tenantId: this.context.tenantId,
+        request: req,
+      })
+    ) {
+      return this.createErrorResponse(404, 'Not found');
+    }
     // Apply auth middleware if configured
     if (this.config.authMiddleware) {
       const authCheck = this.config.authMiddleware(
@@ -688,8 +761,10 @@ export class APIGenerator {
       if (failure) {
         return this.createJsonResponse({ error: failure }, failure.status);
       }
-      console.error('API Error:', error);
-      return this.createErrorResponse(500, 'Internal server error');
+      return this.createJsonResponse(
+        reportUnexpectedHttpError(error, req),
+        500,
+      );
     }
   }
 
@@ -1217,14 +1292,20 @@ export class APIGenerator {
   ): Promise<Response> {
     const cacheControl = this.resolveReadCachePolicy(objectName);
 
-    if (this.hasReadPermissionFields(objectName)) {
-      // Field-level read permissions make the response body vary by caller
-      // permissions, so the validator must cover the redacted body returned to
-      // this caller rather than only the table version.
+    const displayLabel = !!(
+      objectName &&
+      resolveDisplayLabelProjection(
+        ObjectRegistry.getConfig(objectName).display?.label,
+      )
+    );
+    if (this.hasReadPermissionFields(objectName) || displayLabel) {
+      // Caller-specific fields and linked names can change without a parent
+      // table write. Validate the actual public body in both cases.
       const scope = this.resolveTenantReadScope(objectName);
-      const object = scope
-        ? await collection.get({ id, ...scope })
-        : await collection.get(id);
+      const filter = scope ? { id, ...scope } : id;
+      const object = displayLabel
+        ? await collection.get(filter, { displayLabel: true })
+        : await collection.get(filter);
       if (!object) {
         return this.createErrorResponse(404, 'Object not found');
       }
@@ -1295,6 +1376,12 @@ export class APIGenerator {
     const limit = resolveListLimit(params.get('limit'));
     const offset = resolveListOffset(params.get('offset'));
 
+    const displayLabel = !!(
+      objectName &&
+      resolveDisplayLabelProjection(
+        ObjectRegistry.getConfig(objectName).display?.label,
+      )
+    );
     const buildPayload = async () => {
       // #2367: the default ordering carries a primary-key tiebreak. Rows sharing
       // a `created_at` tick tie under `created_at DESC` alone, and a tie leaves
@@ -1305,41 +1392,14 @@ export class APIGenerator {
         ? orderByParam
         : this.resolveDefaultListOrderBy(objectName);
 
-      // Build where clause from query params
-      // Convert REST-style operators (price[gt]) to SQL-style (price >)
-      const where: Record<string, string | string[]> = {};
-      for (const [key, value] of params.entries()) {
-        if (!['limit', 'offset', 'orderBy'].includes(key)) {
-          // Parse REST operator format: field[operator]
-          const match = key.match(/^(.+)\[(.+)\]$/);
-          if (match) {
-            const field = match[1];
-            const operator = match[2];
-            // Map REST operators to SQL operators
-            const operatorMap: Record<string, string> = {
-              gt: '>',
-              gte: '>=',
-              lt: '<',
-              lte: '<=',
-              ne: '!=',
-              in: 'in',
-              like: 'like',
-            };
-            const sqlOperator = operatorMap[operator] || operator;
-            const sqlKey = `${field} ${sqlOperator}`;
-            // Handle 'in' operator - convert comma-separated string to array
-            where[sqlKey] = operator === 'in' ? value.split(',') : value;
-          } else {
-            where[key] = value;
-          }
-        }
-      }
+      const where = parseRestListWhere(params);
 
       // #1782: fail closed to global (NULL-tenant) rows for a public/anonymous
       // read of a tenant-scoped model with no active tenant context.
       const scopedWhere = this.applyTenantReadScope(objectName, where);
 
       const objects = await collection.list({
+        ...(displayLabel ? { displayLabel: true } : {}),
         where:
           scopedWhere && Object.keys(scopedWhere).length > 0
             ? scopedWhere
@@ -1352,9 +1412,13 @@ export class APIGenerator {
       return objects.map((object: SmrtObject) => this.toPublicData(object));
     };
 
-    if (this.hasReadPermissionFields(objectName)) {
-      // Field-level read permissions make the response body vary by caller
-      // permissions, so use the v1 body-hash path over the redacted payload.
+    if (
+      this.hasReadPermissionFields(objectName) ||
+      (objectName &&
+        typeof ObjectRegistry.getConfig(objectName).display?.label === 'object')
+    ) {
+      // Hash the public payload: permissions and linked-table writes can
+      // change it without advancing the parent table version.
       return conditionalJsonResponse(req, await buildPayload(), cacheControl);
     }
 
@@ -1374,32 +1438,7 @@ export class APIGenerator {
     params: URLSearchParams,
     objectName?: string,
   ): Promise<Response> {
-    // Build where clause from query params (same logic as handleList)
-    const where: Record<string, string | string[]> = {};
-    for (const [key, value] of params.entries()) {
-      // Parse REST operator format: field[operator]
-      const match = key.match(/^(.+)\[(.+)\]$/);
-      if (match) {
-        const field = match[1];
-        const operator = match[2];
-        // Map REST operators to SQL operators
-        const operatorMap: Record<string, string> = {
-          gt: '>',
-          gte: '>=',
-          lt: '<',
-          lte: '<=',
-          ne: '!=',
-          in: 'in',
-          like: 'like',
-        };
-        const sqlOperator = operatorMap[operator] || operator;
-        const sqlKey = `${field} ${sqlOperator}`;
-        // Handle 'in' operator - convert comma-separated string to array
-        where[sqlKey] = operator === 'in' ? value.split(',') : value;
-      } else {
-        where[key] = value;
-      }
-    }
+    const where = parseRestListWhere(params);
 
     // #1782: a count leaks cross-tenant cardinality just as a list leaks rows,
     // so apply the same fail-closed global scope for anonymous tenant reads.
@@ -1423,8 +1462,26 @@ export class APIGenerator {
     req: Request,
     objectName?: string,
   ): Promise<Response> {
-    const data = this.applyWritablePolicy(objectName, await req.json());
-    const object = await collection.create({ ...data, _skipLoad: true });
+    const body = await req.json();
+    let targetName = objectName;
+    let data = body;
+    if (objectName) {
+      const target = ObjectRegistry.resolveCreateTarget(objectName, body, {
+        surface: 'rest',
+        tenantId: this.context.tenantId,
+        request: req,
+      });
+      targetName = target.collectionName;
+      if (target.collectionName !== objectName) {
+        const info = ObjectRegistry.getClass(targetName);
+        if (!info)
+          return this.createErrorResponse(404, 'Create target unavailable');
+        collection = await this.getCollection(info);
+      }
+      data = target.data;
+    }
+    const writable = this.applyWritablePolicy(targetName, data);
+    const object = await collection.create({ ...writable, _skipLoad: true });
     return this.createJsonResponse(this.toPublicData(object), 201);
   }
 
@@ -1518,13 +1575,28 @@ export class APIGenerator {
       // Same canonical-`collection` match as the CRUD path so a client and the
       // batch contract resolve identical segments (#1794).
       const info = this.findClassByCollectionSegment(objectSegment);
-      if (info) {
+      if (
+        info &&
+        isRuntimeModelEnabled(info, {
+          surface: 'rest',
+          tenantId: this.context.tenantId,
+          request: req,
+        })
+      ) {
         collection = await this.getCollection(info);
         objectName = info.name;
       }
     }
 
-    if (!collection || !objectName) {
+    if (
+      !collection ||
+      !objectName ||
+      !isRuntimeModelEnabled(ObjectRegistry.getExposureModel(objectName), {
+        surface: 'rest',
+        tenantId: this.context.tenantId,
+        request: req,
+      })
+    ) {
       return null;
     }
 
@@ -1587,30 +1659,12 @@ export class APIGenerator {
   private async getCollection(
     classInfo: RegisteredClass,
   ): Promise<SmrtCollection<SmrtObject>> {
-    if (!this.collections.has(classInfo.name)) {
-      // `collectionConstructor` is typed optional on RegisteredClass, but the
-      // auto-discovery path only reaches here for classes that declare one.
-      // Narrow to the non-optional constructor type before instantiating.
-      const ctor = classInfo.collectionConstructor as NonNullable<
-        RegisteredClass['collectionConstructor']
-      >;
-      const collection = new ctor({
-        ai: this.context.ai,
-        db: this.context.db,
-      });
-      // Await initialize() so the auto-discovered collection is actually usable
-      // (its DB is wired). Without this, list()/get() throw "Database accessed
-      // before initialization" — a latent bug that was masked while the
-      // generated client's plural URLs never matched the singular-only
-      // auto-discovery segment (#1794). The explicit-registerCollection() path
-      // receives an already-initialized collection from the caller, so this
-      // only affects the auto-discovery factory.
-      await collection.initialize();
-      this.collections.set(classInfo.name, collection);
-    }
-    const collection = this.collections.get(classInfo.name);
-    if (!collection) throw new Error(`Collection ${classInfo.name} not found`);
-    return collection;
+    return ObjectRegistry.getCollection(
+      classInfo.qualifiedName ?? classInfo.name,
+      { ai: this.context.ai, db: this.context.db } as Parameters<
+        typeof ObjectRegistry.getCollection
+      >[1],
+    );
   }
 
   /**
@@ -1649,6 +1703,10 @@ export class APIGenerator {
         writable = (apiConfig as { writable: string[] }).writable;
       }
 
+      if (
+        typeof ObjectRegistry.getConfig(objectName).display?.label === 'object'
+      )
+        readonly.add('displayLabel');
       for (const [name, def] of ObjectRegistry.getFields(objectName)) {
         if (def && (def.readonly === true || def._meta?.readonly === true)) {
           readonly.add(name);
@@ -1693,6 +1751,7 @@ export class APIGenerator {
    * because the body varies by caller permissions.
    */
   private resolveReadCachePolicy(objectName: string | undefined): string {
+    if (hasRuntimeExposureGate()) return 'private, no-store';
     const config = objectName
       ? ObjectRegistry.getConfig(objectName)
       : undefined;
@@ -1830,6 +1889,11 @@ export class APIGenerator {
   private resolveManifestHash(): string {
     if (this.config.manifestHash !== undefined) {
       return this.config.manifestHash;
+    }
+    const generation = getRegistryGeneration();
+    if (this.manifestGeneration !== generation) {
+      this.runtimeManifestHash = undefined;
+      this.manifestGeneration = generation;
     }
     this.runtimeManifestHash ??= computeRuntimeWebManifestHash();
     return this.runtimeManifestHash;
@@ -1985,7 +2049,21 @@ export class APIGenerator {
       if (isFrameworkBaseClass(info.name || key, info.packageName)) continue;
       // Primary match: the canonical manifest `collection` segment.
       if (info.collection === segment) {
-        return info;
+        // Collections and their row models share a URL. All downstream gates,
+        // policy checks and execution must use the effective row identity,
+        // independent of registration order.
+        const model = ObjectRegistry.getExposureModel(
+          info.qualifiedName || key,
+        );
+        if (!model) continue;
+        const registryKey = model.qualifiedName || model.name;
+        if (ObjectRegistry.getSTIBase(registryKey)) {
+          const owner = ObjectRegistry.getInheritanceChain(registryKey)
+            .map((ancestor) => ObjectRegistry.getClass(ancestor))
+            .find((ancestor) => ancestor?.collection === segment);
+          if (owner) return owner;
+        }
+        return model;
       }
       // Back-compat fallback for classes registered without a `collection`
       // (inline/test stubs): derive the plural segment from the simple name and
@@ -1995,7 +2073,9 @@ export class APIGenerator {
         !info.collection &&
         this.pluralize((info.name || key).toLowerCase()) === segment
       ) {
-        return info;
+        return (
+          ObjectRegistry.getExposureModel(info.qualifiedName || key) ?? null
+        );
       }
     }
     return null;

@@ -1,5 +1,24 @@
 import { SmrtRecipe } from '@happyvertical/smrt-core';
 import { AuditLog } from './models/AuditLog.js';
+import { Profile } from './models/Profile.js';
+import { ProfileType } from './models/ProfileType.js';
+
+/** Identity prerequisites for recipes that create people or organizations. */
+export class ProfileIdentityRecipe extends SmrtRecipe {
+  static id = 'profiles.identity';
+  static label = 'People and organizations';
+  static summary =
+    'Name and classify the people and organizations you work with.';
+  static help = './help/identity.md';
+  static section = {
+    id: 'people',
+    label: 'People',
+    icon: 'users',
+    description: 'The people and organizations your business works with.',
+  };
+  static models = [Profile, ProfileType];
+  static nav = [];
+}
 
 /** Authorized record history in the application activity feed. */
 export class AuditLogRecipe extends SmrtRecipe {

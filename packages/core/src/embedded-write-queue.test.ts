@@ -79,6 +79,17 @@ describe('withEmbeddedWriteQueue', () => {
     expect(order).toEqual(['A-start', 'B', 'A-end']);
   });
 
+  it.each([
+    'memory://',
+    'memory://named?cache=shared',
+  ])('does not serialize independent PGlite memory databases (%s)', async (url) => {
+    expect(await raceTwoWrites({ url }, { url })).toEqual([
+      'A-start',
+      'B',
+      'A-end',
+    ]);
+  });
+
   it('treats a bare `file::memory:` URL (no query string) as per-instance', async () => {
     const order = await raceTwoWrites(
       { url: 'file::memory:' },

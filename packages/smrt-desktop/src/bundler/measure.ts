@@ -18,6 +18,7 @@
  * same `buildSidecarEnv` the Rust wrapper mirrors.
  */
 
+import { join } from 'node:path';
 import {
   buildSidecarEnv,
   type SidecarManifestV1,
@@ -26,6 +27,8 @@ import { BundleError } from './errors.js';
 import type { BundleMeasurements, SeriesStats } from './report.js';
 
 export interface MeasureChild {
+  /** Host process id, when available, for resource measurements. */
+  readonly pid?: number;
   /**
    * Signal the child AND everything it started: on POSIX the child is a
    * process group leader and the whole group, plus the descendants seen in
@@ -200,7 +203,10 @@ async function timeOneStart(
   const child = seams.spawn({
     command: request.executablePath,
     args: request.sidecar.args,
-    cwd: request.resourcesDir,
+    cwd:
+      request.sidecar.workingDirectory === 'app'
+        ? join(request.resourcesDir, 'app')
+        : request.resourcesDir,
     env,
   });
   let exited = false;
@@ -248,7 +254,10 @@ export async function measureBundle(
   const nodeVersionOutput = await seams.version({
     command: request.executablePath,
     args: ['--version'],
-    cwd: request.resourcesDir,
+    cwd:
+      request.sidecar.workingDirectory === 'app'
+        ? join(request.resourcesDir, 'app')
+        : request.resourcesDir,
     env: request.baseEnv,
   });
 

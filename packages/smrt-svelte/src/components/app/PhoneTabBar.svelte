@@ -38,6 +38,16 @@ interface Props {
   budget: number;
   /** The dock toggle that gets a tab; without one a "Tools" tab opens the right edge when it has tools. */
   dockToggle?: DockToggle;
+  /**
+   * A tab for the docked panel (`AppShell` `panel` + `panelToggle`): pressed
+   * while the panel view is open. Takes the dock tab's place in the budget.
+   */
+  panelTab?: {
+    label: string;
+    icon: string;
+    open: boolean;
+    toggle: () => void;
+  };
   /** Renders host icon names. */
   iconComponent?: Component<{ name: string; size?: number }>;
 }
@@ -47,6 +57,7 @@ let {
   currentHref = '',
   budget,
   dockToggle,
+  panelTab,
   iconComponent,
 }: Props = $props();
 
@@ -57,7 +68,9 @@ const dock = useShellDock();
 const toolsTab = $derived(
   !dockToggle && shell.isEdgeShown('right') && shell.focusTools.length > 0,
 );
-const hasDockTab = $derived(Boolean(dockToggle) || toolsTab);
+const hasDockTab = $derived(
+  Boolean(dockToggle) || toolsTab || Boolean(panelTab),
+);
 const plan = $derived(planPhoneTabs(entries, budget, hasDockTab));
 
 function dockIcon(toggle: DockToggle): string {
@@ -138,6 +151,20 @@ const items = $derived.by(() => {
       expanded: shell.panels.right === 'expanded',
       controls: 'smrt-admin-shell-right-panel',
       onclick: openTools,
+    });
+  }
+  if (panelTab) {
+    out.push({
+      id: 'panel',
+      label: panelTab.label,
+      iconName:
+        isShellIconName(panelTab.icon) || iconComponent
+          ? panelTab.icon
+          : SHELL_DEFAULT_TOOL_ICON,
+      active: panelTab.open,
+      expanded: panelTab.open,
+      controls: 'smrt-admin-shell-panel-panel',
+      onclick: () => panelTab.toggle(),
     });
   }
   if (plan.more) {

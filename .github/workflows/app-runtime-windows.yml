@@ -89,9 +89,10 @@ jobs:
       # so the secret is never written to disk, and a trap deletes the file
       # when this step ends however it ends. HOME/.npmrc is not touched.
       #
-      # Filtered to the package and its dependency closure: the rest of the
-      # monorepo (native addons, Playwright) is neither needed nor expected to
-      # install on Windows.
+      # Install the package closure plus core's explicit test-manifest provider.
+      # Turbo task dependencies can reach packages outside pnpm's dependency
+      # graph: core#generate:test builds smrt-web before restoring the manifest.
+      # Keep both closures installed without installing unrelated applications.
       - name: Install dependencies
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -106,7 +107,7 @@ jobs:
             echo "//npm.pkg.github.com/:always-auth=true"
           } > "${userconfig}"
           export NPM_CONFIG_USERCONFIG="${userconfig}"
-          pnpm install --frozen-lockfile --filter "@happyvertical/smrt-app-runtime..."
+          pnpm install --frozen-lockfile --filter "@happyvertical/smrt-app-runtime..." --filter "@happyvertical/smrt-web..."
 
       # Fails the job if the install step left a registry credential behind,
       # before any step that runs pull-request code.

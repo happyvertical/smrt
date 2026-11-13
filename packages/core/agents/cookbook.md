@@ -43,6 +43,29 @@ ignored while it is present. `primaryColor` instead TINTS the current preset by
 overriding only the derived primary colours (`derivePrimaryOverrides`). The
 cookbook has no `primaryColor` field and the shell never passes one.
 
+## Navigation item icons
+
+`layout.items["item:<package>:<Model>[:<key>]"].icon` optionally overrides
+that entry's recipe icon. Use a built-in shell name such as `receipt`, `users`,
+`shoppingBag` or `fileText`. Icons are data, never SVG/HTML or URLs: the validator
+and JSON Schema require 1–64 ASCII characters, starting with a letter, followed
+by letters, digits, `_` or `-`. Unknown safe names remain portable for host icon
+renderers; the shell uses its fallback glyph when it cannot resolve one.
+
+```json
+{
+  "version": 1,
+  "items": {
+    "item:commerce:Customer": { "label": "Clients", "icon": "users" }
+  }
+}
+```
+
+Put this object under `layout`. Without an override, the recipe icon stays;
+entries with no recipe icon use `fileText`. No cookbook version bump is needed.
+The command engine includes the resolved icon in `snapshot().sections[].items[]`
+and retains overrides through import, export, recovery and item renames.
+
 ## Rules
 
 - Versioning: add optional fields within `version: 1`; readers keep and ignore
@@ -73,8 +96,7 @@ cookbook has no `primaryColor` field and the shell never passes one.
 `smrt cookbook validate <file|url>` and `smrt cookbook apply <file|url> [dir]`
 (`packages/cli/agents/cookbook-apply.md`) are the consumers. Apply writes
 `smrt.cookbook.json` at the project root, plus the packages the recipes,
-features and policies need, into `package.json`. The file is the cookbook
-verbatim (legacy `$schema` rewritten); apps read it, apply does not interpret it.
+features and policies need, into `package.json`. New hosts receive the normalized cookbook (legacy `$schema` rewritten); reapply preserves app-owned models and existing field policies. The CLI bundled host composes and builds the public template services automatically.
 `policies` is required by the validator (use `[]`). The cookbook carries no package
 versions, so apply uses the project's smrt line.
 
@@ -105,3 +127,22 @@ its own namespace and is untouched.
 
 The command engine (`@happyvertical/smrt-core/cookbook/engine`) is the one place
 that changes a cookbook: see [cookbook-engine.md](cookbook-engine.md).
+
+## App-owned models
+
+Optional `models: { version: 1, packageName, lists, fields }` carries portable
+app model definitions. Existing cookbooks remain unchanged. Lists declare
+label, icon, displayField and fields; `fields` maps qualified provider identities
+to app-subclass additions. Labels/hidden fields stay in `policies`.
+The validator, JSON Schema, canonical import/export and engine catalogs share
+this contract. See [app model editor](app-models.md) for activation and history.
+
+## Record read-only metadata and export references
+
+`CookbookPolicyRow.readOnly?: boolean | null` prevents editing the record value;
+`locked` continues to govern policy customization. The v1 validator/JSON Schema
+retain true/false/null and reject other values. The command engine's `set_policy`
+sets or clears readOnly without affecting other row keys. smrt-fields owns
+resolution of these raw rows, including defaults and required-field safety.
+`parseRecipeExportRef` is browser-safe under `./cookbook`; it is the parser
+shared by the manifest-driven web emitter and smrt-svelte recipe widgets.

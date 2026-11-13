@@ -63,6 +63,37 @@ function entry(rel: string, kind: FilterEntry['kind'] = 'file'): FilterEntry {
   };
 }
 
+describe('unused scaffold templates', () => {
+  it.each([
+    'template',
+    'templates',
+  ])('prunes an unused package-root %s directory, without pruning referenced assets', (folder) => {
+    const dir = `@scope/pkg/${folder}`;
+    const filter = createNodeModulesFilter();
+    expect(filter.filter(entry(dir, 'dir'))).toBe('skip');
+    const protectedPaths = new Set([`${dir}/runtime.txt`]);
+    expect(
+      classifyPrune(entry(dir, 'dir'), { protectedPaths }),
+    ).toBeUndefined();
+    expect(
+      classifyPrune(entry(dir, 'dir'), {
+        entryPaths: new Map([['@scope/pkg', [`${folder}/index.js`]]]),
+      }),
+    ).toBeUndefined();
+    const secret = createNodeModulesFilter({
+      protectedPaths: new Set([`${dir}/.env.example`]),
+    });
+    expect(secret.filter(entry(dir, 'dir'))).toBe('keep');
+    expect(() => secret.filter(entry(`${dir}/.env.example`))).toThrow(
+      BundleTreeError,
+    );
+    // A nested application asset directory is never classified by this root-only rule.
+    expect(
+      classifyPrune(entry(`@scope/pkg/lib/${folder}`, 'dir')),
+    ).toBeUndefined();
+  });
+});
+
 describe('locatePackage', () => {
   it('finds the innermost package, scoped or nested', () => {
     expect(locatePackage(['a', 'lib', 'x.js'])).toEqual({
@@ -82,6 +113,35 @@ describe('locatePackage', () => {
 });
 
 describe('collectEntryPaths', () => {
+  it('does not mistake declared copied resources for runtime roots', () => {
+    const manifest = {
+      main: './index.js',
+      exports: { '.': './index.js', './template/*': './template/*' },
+      smrt: { resourceExports: ['./template/*'] },
+    };
+    expect(collectEntryPaths(manifest)).toEqual(['index.js']);
+    const filter = createNodeModulesFilter({
+      entryPaths: new Map([['@scope/pkg', collectEntryPaths(manifest)]]),
+    });
+    expect(filter.filter(entry('@scope/pkg/template', 'dir'))).toBe('skip');
+    // Invalid or conditional resource declarations never hide runtime roots.
+    expect(
+      collectEntryPaths({
+        ...manifest,
+        exports: { './template/*': { import: './template/*.js' } },
+      }),
+    ).toEqual(['index.js', 'template']);
+    expect(
+      collectEntryPaths({ ...manifest, smrt: { resourceExports: ['./*'] } }),
+    ).toEqual(['index.js', 'template']);
+    // Actual imports still protect a resource, irrespective of its declaration.
+    const reached = createNodeModulesFilter({
+      entryPaths: new Map([['@scope/pkg', collectEntryPaths(manifest)]]),
+      protectedPaths: new Set(['@scope/pkg/template/runtime.js']),
+    });
+    expect(reached.filter(entry('@scope/pkg/template', 'dir'))).toBe('keep');
+  });
+
   it('collects main, module, bin and every exports string', () => {
     expect(
       collectEntryPaths({

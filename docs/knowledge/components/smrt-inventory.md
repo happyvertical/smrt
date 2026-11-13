@@ -5,10 +5,10 @@ description: "Multi-location stock tracking for the SMRT framework — Sku, Inve
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-11T16:32:59Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:8215be0deec6d9089a5554cc8588937dde2e061cb55f8f3f91e94440e785406d"
+source_revision: "sha256:28c18302458e79d5835af4573950dadb509a86c3b1b05da29a7b4676a03913b3"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/inventory/package.json"
@@ -34,6 +34,7 @@ sources:
 ## Framework dependencies
 
 - [smrt-core](/components/smrt-core.md)
+- [smrt-products](/components/smrt-products.md)
 - [smrt-tenancy](/components/smrt-tenancy.md)
 - [smrt-ui](/components/smrt-ui.md)
 - [smrt-vitest](/components/smrt-vitest.md)

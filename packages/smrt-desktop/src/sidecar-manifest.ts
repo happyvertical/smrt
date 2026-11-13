@@ -13,6 +13,8 @@ export interface SidecarManifestV1 {
   /** Logical Tauri `externalBin` basename: one portable segment, no suffix. */
   readonly executable: string;
   readonly args: readonly string[];
+  /** Run a normal built app from resources/app; absent keeps the resource root. */
+  readonly workingDirectory?: 'app';
   readonly healthRoute: string;
   readonly dataDirectory: string;
   /** Extra environment for the sidecar. Reserved names are rejected. */
@@ -43,6 +45,7 @@ const requiredKeys = [
 const optionalKeys = [
   'env',
   'ownerClaimRoute',
+  'workingDirectory',
 ] as const satisfies readonly (keyof SidecarManifestV1)[];
 const manifestKeys: ReadonlySet<string> = new Set([
   ...requiredKeys,
@@ -146,6 +149,11 @@ export function parseSidecarManifest(json: string): SidecarManifestV1 {
     healthRoute,
     dataDirectory,
   };
+  if (Object.hasOwn(record, 'workingDirectory')) {
+    if (record.workingDirectory !== 'app')
+      throw new Error('Sidecar manifest workingDirectory must be app');
+    manifest.workingDirectory = 'app';
+  }
   if (Object.hasOwn(record, 'env')) {
     // fromEntries defines own properties, so a `__proto__` name stays data.
     manifest.env = Object.fromEntries(envEntries(record.env));
@@ -177,6 +185,9 @@ export function serializeSidecarManifest(manifest: SidecarManifestV1): string {
       args: checked.args,
       healthRoute: checked.healthRoute,
       dataDirectory: checked.dataDirectory,
+      ...(checked.workingDirectory === undefined
+        ? {}
+        : { workingDirectory: checked.workingDirectory }),
       ...(checked.env === undefined ? {} : { env: checked.env }),
       ...(checked.ownerClaimRoute === undefined
         ? {}

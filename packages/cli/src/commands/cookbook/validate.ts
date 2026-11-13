@@ -104,6 +104,20 @@ export function validateCookbookText(
     }
   });
 
+  // Promote the model-provider closure to direct dependencies: the generated
+  // lazy graph and public host imports must resolve from the host, including
+  // cross-package references such as Event -> Place.
+  for (const name of packages) {
+    for (const dependency of index.packages.get(name)?.manifest
+      .smrtDependencies ?? []) {
+      packages.add(dependency);
+      if (!index.packages.has(dependency))
+        errors.push(
+          `model provider dependency "${dependency}" is not resolvable${unresolvedHint(index, dependency)}`,
+        );
+    }
+  }
+
   return {
     ok: errors.length === 0,
     errors,

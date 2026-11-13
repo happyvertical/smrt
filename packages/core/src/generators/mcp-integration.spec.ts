@@ -272,7 +272,7 @@ describe('MCPGenerator - Integration Tests', () => {
         /import \{ tools \} from ["']\.\/tools\/index\.js["']/,
       );
       expect(indexContent).toMatch(
-        /import \{ handleToolCall \} from ["']\.\/handlers\/index\.js["']/,
+        /import \{ handleToolCall, runtimeToolEnabled \} from ["']\.\/handlers\/index\.js["']/,
       );
     });
   });

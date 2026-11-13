@@ -216,7 +216,12 @@ describe('dedicated actual Planner command port', () => {
         })
       ).error?.code,
     ).toBe('conflict');
-    expect(controller.snapshot().recipes).toHaveLength(1);
+    expect(
+      controller
+        .snapshot()
+        .recipes.map((recipe) => recipe.id)
+        .sort(),
+    ).toEqual(['commerce.customers', 'profiles.identity']);
   });
 
   it('rejects a pending pre-reset hosted reply through the real reset coordinator and rejects disposed calls', async () => {

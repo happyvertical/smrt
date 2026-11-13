@@ -21,6 +21,6 @@ Social media account management with OAuth and post scheduling. Supports YouTube
 - **Relationship targets**: `SocialPost.socialAccountId` and
   `SocialPostAnalyticsSnapshot.socialPostId` are same-package `@foreignKey`
   columns; `SocialPost.videoContentId` is a `@crossPackageRef` to
-  `@happyvertical/smrt-video:VideoContent` (no value import back into this
+  `@happyvertical/smrt-video:VideoShot` (no value import back into this
   package). They previously used `@foreignKey(() => X)`, whose target resolved
   to `''`, so none of them carried a relationship edge (#2379).

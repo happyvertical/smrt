@@ -85,20 +85,20 @@ describe('application lifecycle commands', () => {
     expect(JSON.stringify(templatePackage)).not.toContain('db:setup');
   });
 
-  it('names a complete stopped-recovery sequence the scripts provide', () => {
+  it('names a complete stopped-recovery sequence the CLI provides', () => {
     // The setup page's fixed failure tells the owner what to run next; every
     // command it names must exist in this app.
     const steps = DEFAULT_OWNER_SETUP_MESSAGES.setup_invalid.match(
-      /pnpm (app:[a-z]+)/g,
+      /smrt app [a-z]+/g,
     );
     expect(steps).toEqual([
-      'pnpm app:stop',
-      'pnpm app:recover',
-      'pnpm app:start',
-      'pnpm app:open',
+      'smrt app stop',
+      'smrt app recover',
+      'smrt app start',
+      'smrt app open',
     ]);
     for (const step of steps ?? []) {
-      expect(templatePackage.scripts).toHaveProperty(step.slice('pnpm '.length));
+      expect(commandNames).toContain(step.slice('smrt app '.length));
     }
   });
 });

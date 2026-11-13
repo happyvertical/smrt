@@ -812,7 +812,9 @@ describe('MCPGenerator with Custom Actions', () => {
         expect(handlers).toContain(
           '[SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY]: failure',
         );
-        expect(handlers).toContain('const STI_TARGETS');
+        expect(handlers).toContain(
+          'ObjectRegistry.resolveCreateTarget(baseObjectName, args',
+        );
         expect(handlers).toContain('resolveCreateTarget');
         expect(handlers).toMatch(
           /process\.env\.DATABASE_TYPE \|\| ["']sqlite["']/,

@@ -63,4 +63,62 @@ describe('generic tool result component seam', () => {
     expect(screen.getByText('user text')).toBeTruthy();
     expect(screen.queryByText('known text')).toBeNull();
   });
+  it('renders generic person-facing legacy tool activity without names, summaries or payload details', async () => {
+    const transport = createInMemoryAssistantTransport();
+    if (!transport.createThread)
+      throw new Error('fixture cannot create threads');
+    const thread = await transport.createThread('Records');
+    transport.loadMessages = async () => [
+      {
+        id: 'legacy',
+        threadId: thread.id,
+        role: 'tool',
+        createdAt: new Date(),
+        content: 'PRIVATE TenantId ProfileId @fixture/models:Member',
+        toolCallData: { name: 'app_describe', args: { schema: 'PRIVATE' } },
+      },
+      {
+        id: 'ordinary',
+        threadId: thread.id,
+        role: 'tool',
+        createdAt: new Date(),
+        content: 'PRIVATE raw outcome summary',
+        toolCallData: {
+          name: 'record_update',
+          summary: 'PRIVATE JSON',
+          args: { value: 'PRIVATE' },
+        },
+      },
+      {
+        id: 'user',
+        threadId: thread.id,
+        role: 'user',
+        createdAt: new Date(),
+        content: 'Keep this human message',
+      },
+      {
+        id: 'answer',
+        threadId: thread.id,
+        role: 'assistant',
+        createdAt: new Date(),
+        content: 'Keep this ordinary answer',
+      },
+    ];
+    const view = render(AssistantDock, {
+      props: {
+        transport,
+        registry: createDataSurfaceRegistry(),
+        contextMode: 'server',
+        conversations: 'single',
+        toolPresentation: 'generic',
+      },
+    });
+    expect(await screen.findByText('Checked the app structure')).toBeTruthy();
+    expect(screen.getByText('Completed this action')).toBeTruthy();
+    expect(screen.getByText('Keep this human message')).toBeTruthy();
+    expect(screen.getByText('Keep this ordinary answer')).toBeTruthy();
+    expect(view.container.textContent).not.toMatch(
+      /PRIVATE|TenantId|ProfileId|@fixture|record_update|app_describe/,
+    );
+  });
 });

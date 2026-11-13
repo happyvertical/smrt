@@ -6,7 +6,7 @@ import { goto, invalidateAll } from '$app/navigation';
  * throws instead of pretending the session ended.
  */
 export async function signOut(): Promise<void> {
-  const response = await fetch('/sign-out', {
+  const response = await fetch('/sign-out?target=live', {
     method: 'POST',
     credentials: 'same-origin',
   });

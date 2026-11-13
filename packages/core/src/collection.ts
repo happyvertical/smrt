@@ -32,6 +32,7 @@ import {
 import { EmbeddingProvider } from './embeddings/provider';
 import { EmbeddingStorage } from './embeddings/storage';
 import type { ClassEmbeddingConfig } from './embeddings/types';
+import { DatabaseError } from './errors';
 import { buildWhere } from './host.js';
 import {
   createInterceptorContext,
@@ -47,6 +48,7 @@ import {
   QueryOrderByError,
 } from './query-bounds';
 import { ObjectRegistry } from './registry';
+import { getRegistryGeneration } from './registry/generation.js';
 import { assertRuntimeTableBindings } from './registry/table-mappings.js';
 import type { SmrtObjectConstructor } from './registry/types';
 import {
@@ -55,10 +57,13 @@ import {
 } from './relationship-loader';
 import { detectEngine } from './schema/ddl/index';
 import { verifyPersistenceTable } from './schema/table-verifier';
+import { prependSmrtSystemFields } from './system-fields';
+import { resolveDisplayLabelProjection } from './ui-metadata';
 import {
   classnameToTablename,
   fieldsFromClass,
   formatDataJs,
+  isReservedMetaDataKey,
   toCamelCase,
   toSafeInteger,
   toSnakeCase,
@@ -426,9 +431,11 @@ export type SmrtSelectField<T extends SmrtObject> =
   | 'context'
   | 'created_at'
   | 'updated_at'
-  | '_meta_type';
+  | '_meta_type'
+  | 'displayLabel';
 
 type SmrtCoreSelectedFieldData = {
+  displayLabel: string;
   id: string | null | undefined;
   slug: string | null | undefined;
   context: string;
@@ -504,12 +511,15 @@ export interface SmrtStiReadScope {
 }
 
 export interface SmrtListOptions<ModelType extends SmrtObject> {
+  /** Include the declared one-hop display label on hydrated rows. Plain reads omit it. */
+  displayLabel?: boolean;
   where?: SmrtListWhereClause<ModelType>;
   offset?: number;
   limit?: number;
   orderBy?: string | string[];
   /**
-   * Column-backed field projection. When present, `list()` returns plain rows
+   * Public field projection, including a declared computed displayLabel.
+   * When present, `list()` returns plain rows
    * instead of hydrated model instances.
    */
   select?: readonly SmrtSelectField<ModelType>[];
@@ -551,7 +561,7 @@ export interface SmrtLatestRelatedOptions {
 /** Options accepted by {@link SmrtCollection.listWithLatestRelated}. */
 export type SmrtLatestRelatedListOptions<ModelType extends SmrtObject> = Omit<
   SmrtListOptions<ModelType>,
-  'select' | 'include' | 'cache'
+  'select' | 'include' | 'cache' | 'displayLabel'
 > & {
   latestRelated: SmrtLatestRelatedOptions;
 };
@@ -628,6 +638,7 @@ export type SmrtCollectionItemClass<ModelType extends SmrtObject> = (new (
 ) => ModelType) & {
   // biome-ignore lint/suspicious/noExplicitAny: contravariant `create()` option bag — same variance constraint as the constructor above. S4 #1579.
   create(options: any): ModelType | Promise<ModelType>;
+  resolveWriteThroughVirtualProjection?: typeof SmrtObject.resolveWriteThroughVirtualProjection;
 };
 
 /**
@@ -672,6 +683,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * Populated during create() to avoid async getFields() calls on every query.
    * @private
    */
+  private _cachedFieldsGeneration = -1;
   private _cachedFields: Record<string, CollectionFieldDefinition> | null =
     null;
 
@@ -870,6 +882,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     validFieldNames.add('context');
     validFieldNames.add('created_at');
     validFieldNames.add('updated_at');
+    if (this.getDisplayLabelProjection()) {
+      validFieldNames.add('display_label');
+      const config = ObjectRegistry.getConfig(
+        this.getResolvedItemQualifiedName(),
+      );
+      for (const link of Object.values(config.writeThrough ?? {}))
+        for (const name of [
+          ...link.fields,
+          ...Object.keys(link.virtualFields ?? {}),
+        ])
+          validFieldNames.add(toSnakeCase(name));
+    }
 
     // Add STI discriminator field for polymorphic queries.
     // R5-canon: use the qualified item name as the lookup key so a
@@ -1644,6 +1668,268 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
   }
 
+  /** Authorized plain SELECT for composition by owning-package read projections.
+   * Same column policy, beforeList, tenant and STI scope as list({ select });
+   * no hydration or afterList hooks. Bind values in lexical SQL order.
+   */
+  async buildProjectionQuery(options: {
+    select: readonly string[];
+    where?: SmrtListWhereClause<ModelType>;
+  }): Promise<{ sql: string; values: unknown[] }> {
+    await this.ensureStorageReady();
+    const fields = this.getFieldsSync();
+    const projection = this.resolveProjectionSelect(
+      options.select,
+      fields,
+      false,
+    );
+    const context = createInterceptorContext(
+      this.getResolvedItemClassName(),
+      'list',
+      this.constructor.name,
+      undefined,
+      this.getResolvedItemQualifiedName(),
+    );
+    const scoped = (await GlobalInterceptors.executeBeforeList(
+      this.getResolvedItemClassName(),
+      { where: options.where ?? {} },
+      context,
+    )) ?? { where: options.where ?? {} };
+    const where = resolveMetaTypeInWhere(
+      this.applyStiReadScope(scoped.where, undefined),
+    );
+    const predicate = buildWhere(this.convertWhereKeys(where ?? {}));
+    return {
+      sql: `SELECT ${projection.sql} FROM ${this.quoteProjectionIdentifier(this.tableName)} ${predicate.sql}`,
+      values: predicate.values,
+    };
+  }
+
+  private getDisplayLabelProjection() {
+    return resolveDisplayLabelProjection(
+      ObjectRegistry.getConfig(this.getResolvedItemQualifiedName()).display
+        ?.label,
+    );
+  }
+
+  private requestsDisplayFields(sql: string): boolean {
+    const config = ObjectRegistry.getConfig(
+      this.getResolvedItemQualifiedName(),
+    );
+    return [
+      'display_label',
+      ...Object.values(config.writeThrough ?? {}).flatMap((link) =>
+        [...link.fields, ...Object.keys(link.virtualFields ?? {})].map(
+          toSnakeCase,
+        ),
+      ),
+    ].some((name) => new RegExp(`\\b${name}\\b`).test(sql));
+  }
+
+  /**
+   * One SQL statement for label, filtering, sorting and pagination. The target
+   * uses its normal beforeList/STI scope and public projection validation, just
+   * like listWithLatestRelated. No target object is hydrated per parent row.
+   */
+  private async resolveDisplayLabelSource(requested: boolean): Promise<{
+    from: string;
+    values: unknown[];
+  }> {
+    if (!requested) return { from: this.tableName, values: [] };
+    const projection = this.getDisplayLabelProjection();
+    if (!projection) return { from: this.tableName, values: [] };
+    const identity = this.getResolvedItemQualifiedName();
+    const fields = this.getFieldsSync();
+    if (
+      Object.keys(fields).some((name) => toSnakeCase(name) === 'display_label')
+    ) {
+      throw new Error('displayLabel is reserved for the projected label.');
+    }
+    // Validate the link itself as well as the target scalar: a secret/gated FK
+    // must not become a name oracle through a public projection.
+    this.resolveProjectionSelect([projection.via], fields, false);
+    this.buildOrderBySql(projection.via, fields);
+    const edge = ObjectRegistry.getRelationships(identity).find(
+      (r) =>
+        r.fieldName === projection.via &&
+        (r.type === 'foreignKey' || r.type === 'crossPackageRef'),
+    );
+    const displayTarget =
+      ObjectRegistry.getConfig(identity).display?.references?.[projection.via];
+    if (
+      !edge &&
+      !(
+        fields[projection.via]?.type === 'text' &&
+        typeof displayTarget === 'string' &&
+        displayTarget.includes(':')
+      )
+    )
+      throw new Error(
+        'display.label.via must name a declared reference or display.references text field.',
+      );
+    const target = await ObjectRegistry.getCollection(
+      edge ? await resolveRelationshipTargetName(edge) : displayTarget!,
+      this.options,
+    );
+    const targetFields = target.getFieldsSync();
+    const link =
+      ObjectRegistry.getConfig(identity).writeThrough?.[projection.via];
+    if (link) ObjectRegistry.getWriteThroughFields(identity);
+    const inlineFields = link?.fields ?? [];
+    if (inlineFields.length)
+      target.resolveProjectionSelect(inlineFields, targetFields, false);
+    const inlineSql = inlineFields.map(
+      (name) =>
+        `r.${this.quoteProjectionIdentifier(target.toDbColumnName(name))} AS ${this.quoteProjectionIdentifier(toSnakeCase(name))}`,
+    );
+    const targetIdentity = target.getResolvedItemQualifiedName();
+    target.resolveProjectionSelect([projection.field], targetFields, false);
+    // The shared order validator also covers sensitive/gated STI descendants.
+    target.buildOrderBySql(projection.field, targetFields);
+    const labelType = targetFields[projection.field]?.type;
+    if (
+      !labelType ||
+      [
+        'foreignKey',
+        'crossPackageRef',
+        'json',
+        'meta',
+        'oneToMany',
+        'manyToMany',
+      ].includes(labelType)
+    ) {
+      throw new Error(
+        'display.label.field must name a public persisted scalar.',
+      );
+    }
+    const context = createInterceptorContext(
+      target.getResolvedItemClassName(),
+      'list',
+      target.constructor.name,
+      undefined,
+      targetIdentity,
+    );
+    const scoped = (await GlobalInterceptors.executeBeforeList(
+      target.getResolvedItemClassName(),
+      { where: {} },
+      context,
+    )) ?? { where: {} };
+    const where = resolveMetaTypeInWhere(
+      target.applyStiReadScope(scoped.where, undefined),
+    );
+    const predicate = buildWhere(target.convertWhereKeys(where || {}));
+    const pk = target.resolvePrimaryKeyField(
+      targetFields,
+      'Display label target',
+    );
+    const q = (name: string) => this.quoteProjectionIdentifier(name);
+    const tenantField = (
+      collection: SmrtCollection<SmrtObject>,
+      defs: Record<string, CollectionFieldDefinition>,
+    ) => {
+      const config = ObjectRegistry.getConfig(
+        collection.getResolvedItemQualifiedName(),
+      ).tenantScoped;
+      return (
+        (typeof config === 'object' && config.field) ||
+        Object.keys(defs).find(
+          (name) =>
+            isReservedMetaDataKey(name, defs) &&
+            name !== 'id' &&
+            !name.startsWith('_'),
+        )
+      );
+    };
+    const parentTenant = tenantField(this, fields);
+    const targetTenant = tenantField(target, targetFields);
+    const conditions = [
+      edge
+        ? `r.${q(pk.column)} = p.${q(this.toDbColumnName(projection.via))}`
+        : `CAST(r.${q(pk.column)} AS TEXT) = p.${q(this.toDbColumnName(projection.via))}`,
+    ];
+    if (targetTenant) {
+      // A global source can see global targets only. Exact owner matching is
+      // deliberately stricter than loadRelated's null-owner compatibility.
+      const r = `r.${q(target.toDbColumnName(targetTenant))}`;
+      const p = parentTenant
+        ? `p.${q(this.toDbColumnName(parentTenant))}`
+        : 'NULL';
+      conditions.push(`(${r} = ${p} OR (${r} IS NULL AND ${p} IS NULL))`);
+    }
+    const label = `r.${q(target.toDbColumnName(projection.field))}`;
+    const value = `NULLIF(TRIM(CAST(${label} AS TEXT)), '')`;
+    // Keep placeholder numbering in lexical order as well as PostgreSQL's
+    // numeric order: SQLite adapters normalize numbered placeholders to '?'.
+    const virtualNames = Object.keys(link?.virtualFields ?? {});
+    try {
+      await target.ensureStorageReady();
+    } catch (error) {
+      // Only an absent optional target is a display fallback. Authorization,
+      // connection and other schema errors must retain their normal failure.
+      if (
+        error instanceof DatabaseError &&
+        error.code === 'DB_SCHEMA_MISSING' &&
+        error.details?.tableName === target.tableName
+      ) {
+        return {
+          from: `(SELECT p.*, CAST($1 AS TEXT) AS ${q('display_label')}${[
+            ...inlineFields,
+            ...virtualNames,
+          ]
+            .map(toSnakeCase)
+            .map((name) => `, NULL AS ${q(name)}`)
+            .join('')} FROM ${q(this.tableName)} p) AS ${q(this.tableName)}`,
+          values: [projection.fallback],
+        };
+      }
+      throw error;
+    }
+    const values: unknown[] = [projection.fallback];
+    const extra = [
+      ...inlineSql,
+      ...(link ? [`r.${q(pk.column)} AS ${q('_smrt_inline_target')}`] : []),
+    ];
+    const virtual = virtualNames.length
+      ? ((await this._itemClass.resolveWriteThroughVirtualProjection?.(
+          projection.via,
+          { ...this.options, db: this.db },
+        )) ?? {})
+      : {};
+    for (const name of virtualNames) {
+      const plan = virtual[name];
+      if (!plan) throw new Error(`No read projection for inline field ${name}`);
+      const sql = plan.sql.replace(
+        /\$(\d+)/g,
+        (_, index: string) => `$${Number(index) + values.length}`,
+      );
+      values.push(...plan.values);
+      const owner = targetTenant
+        ? `r.${q(target.toDbColumnName(targetTenant))}`
+        : 'NULL';
+      extra.push(
+        `CASE WHEN r.${q(pk.column)} IS NULL THEN NULL ELSE COALESCE((SELECT v.${q('value')} FROM (${sql}) v WHERE v.${q('id')} = r.${q(pk.column)} AND (v.${q('tenantId')} = ${owner} OR (v.${q('tenantId')} IS NULL AND ${owner} IS NULL)) LIMIT 1), '') END AS ${q(toSnakeCase(name))}`,
+      );
+    }
+    const targetParameterOffset = values.length;
+    values.push(...predicate.values);
+    const targetWhereSql = predicate.sql.replace(
+      /\$(\d+)/g,
+      (_, index: string) => `$${Number(index) + targetParameterOffset}`,
+    );
+    const targetColumns = [
+      ...new Set([
+        pk.column,
+        target.toDbColumnName(projection.field),
+        ...inlineFields.map((name) => target.toDbColumnName(name)),
+        ...(targetTenant ? [target.toDbColumnName(targetTenant)] : []),
+      ]),
+    ]
+      .map(q)
+      .join(', ');
+    const from = `(SELECT p.*, COALESCE(${value}, $1) AS ${q('display_label')}${extra.length ? `, ${extra.join(', ')}` : ''} FROM ${q(this.tableName)} p LEFT JOIN (SELECT ${targetColumns} FROM ${q(target.tableName)} ${targetWhereSql}) r ON ${conditions.join(' AND ')}) AS ${q(this.tableName)}`;
+    return { from, values };
+  }
+
   private getHydrationSelectSql(
     schema = ObjectRegistry.getSchema(this.getResolvedItemQualifiedName()) ??
       ObjectRegistry.getSchema(this.getResolvedItemClassName()),
@@ -1715,6 +2001,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     select: readonly string[],
     fields: Record<string, CollectionFieldDefinition>,
     isSTI: boolean,
+    displayLabel = false,
   ): { sql: string; outputFields: string[] } {
     if (!Array.isArray(select)) {
       throw new Error(
@@ -1765,6 +2052,16 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       }
       validFieldNames.add(fieldName);
     }
+    if (displayLabel && this.getDisplayLabelProjection()) {
+      validFieldNames.add('displayLabel');
+      for (const name of Object.values(
+        ObjectRegistry.getConfig(itemQualifiedName).writeThrough ?? {},
+      ).flatMap((link) => [
+        ...link.fields,
+        ...Object.keys(link.virtualFields ?? {}),
+      ]))
+        validFieldNames.add(name);
+    }
     if (isSTI && (!schemaColumnNames || schemaColumnNames.has('_meta_type'))) {
       validFieldNames.add('_meta_type');
     }
@@ -1795,7 +2092,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         );
       }
 
-      const fieldDef = fields[fieldName];
+      const fieldDef =
+        fields[fieldName] ??
+        (displayLabel
+          ? ObjectRegistry.getWriteThroughFields(itemQualifiedName)[fieldName]
+          : undefined);
       const fieldType = fieldDef?.type;
       if (this.isSensitiveFieldDefinition(fieldDef)) {
         throw new Error(
@@ -2398,7 +2699,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
       throw new Error(errorMessage);
     }
-    return ctor._itemClass;
+    const registered = ObjectRegistry.getEffectiveClassByConstructor(
+      ctor._itemClass,
+    );
+    return (
+      registered?.replacedQualifiedNames?.length
+        ? registered.constructor
+        : ctor._itemClass
+    ) as SmrtCollectionItemClass<ModelType>;
   }
 
   /**
@@ -2634,6 +2942,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // This eliminates async getFields() calls on every query
     const fields = await instance.getFields();
     instance._cachedFields = fields;
+    instance._cachedFieldsGeneration = getRegistryGeneration();
 
     // Return fully initialized instance
     return instance;
@@ -2960,7 +3269,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   public async get(
     filter: string | SmrtWhereClause<ModelType>,
-    options: { cache?: CollectionCacheConfig | false } = {},
+    options: {
+      cache?: CollectionCacheConfig | false;
+      displayLabel?: boolean;
+    } = {},
   ): Promise<ModelType | null> {
     await this.ensureStorageReady();
     const itemClassName = this.getResolvedItemClassName();
@@ -3022,11 +3334,20 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // hydrates none of them. The literal is safe to interpolate: it is not
     // caller-derived, and `$n` placeholders here would have to be numbered after
     // the WHERE values on PostgreSQL.
-    const fullSQL = `SELECT ${this.getHydrationSelectSql()} FROM ${this.tableName} ${whereSql} LIMIT 1`;
+    const source = await this.resolveDisplayLabelSource(
+      options.displayLabel === true || this.requestsDisplayFields(whereSql),
+    );
+    const scopedWhereSql = whereSql.replace(
+      /\$(\d+)/g,
+      (_, index: string) => `$${Number(index) + source.values.length}`,
+    );
+    const fullSQL = `SELECT ${this.getHydrationSelectSql()} FROM ${source.from} ${scopedWhereSql} LIMIT 1`;
     const rows = await this.queryRowsWithCache(
       fullSQL,
-      whereValues,
-      this.resolveReadCacheConfig(options.cache),
+      [...source.values, ...whereValues],
+      source.values.length
+        ? undefined
+        : this.resolveReadCacheConfig(options.cache),
       this.hasDuckDbUuidColumnsOutsideHydrationSelect(),
     );
 
@@ -3042,6 +3363,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     const fields = this.getFieldsSync();
     const instance = await this.hydrateResultRow(rows[0], fields, isSTI);
+    if (options.displayLabel && !this.getDisplayLabelProjection())
+      await instance.hydrateWriteThrough();
 
     // Execute afterGet interceptors (e.g., tenant validation)
     return await GlobalInterceptors.executeAfterGet(
@@ -3166,7 +3489,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       (options as InterceptorListOptions | undefined) ??
       {};
 
-    let { where, offset, limit, orderBy, select, stiScope } =
+    let { where, offset, limit, orderBy, select, stiScope, displayLabel } =
       interceptedOptions as SmrtListOptions<ModelType>;
 
     // STI: Child collections should automatically filter by _meta_type.
@@ -3187,7 +3510,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const fields = this.getFieldsSync();
     const projection =
       select !== undefined
-        ? this.resolveProjectionSelect(select, fields, isSTI)
+        ? this.resolveProjectionSelect(select, fields, isSTI, true)
         : undefined;
     if (
       projection &&
@@ -3200,10 +3523,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
 
     const orderBySql = this.buildOrderBySql(orderBy, fields);
+    const source = await this.resolveDisplayLabelSource(
+      displayLabel === true ||
+        select?.some((name) =>
+          this.requestsDisplayFields(toSnakeCase(name)),
+        ) === true ||
+        this.requestsDisplayFields(`${whereSql} ${orderBySql}`),
+    );
+    const scopedWhereSql = whereSql.replace(
+      /\$(\d+)/g,
+      (_, index: string) => `$${Number(index) + source.values.length}`,
+    );
 
     let limitOffsetSql = '';
     const limitOffsetValues: (number | undefined)[] = [];
-    let paramIndex = whereValues.length + 1;
+    let paramIndex = source.values.length + whereValues.length + 1;
 
     // #2367: reject a malformed bound here rather than binding it. A NaN or
     // fractional `limit` used to reach the driver verbatim, where PostgreSQL
@@ -3225,8 +3559,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const selectSql = projection
       ? projection.sql
       : this.getHydrationSelectSql();
-    const sql = `SELECT ${selectSql} FROM ${this.tableName} ${whereSql} ${orderBySql} ${limitOffsetSql}`;
-    const params = [...whereValues, ...limitOffsetValues];
+    const sql = `SELECT ${selectSql} FROM ${source.from} ${scopedWhereSql} ${orderBySql} ${limitOffsetSql}`;
+    const params = [...source.values, ...whereValues, ...limitOffsetValues];
 
     // Resolve the cache preference from the post-interceptor options —
     // beforeList interceptors may legally set or clear `cache` (e.g. force
@@ -3234,9 +3568,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const rows = await this.queryRowsWithCache(
       sql,
       params,
-      this.resolveReadCacheConfig(
-        (interceptedOptions as { cache?: CollectionCacheConfig | false }).cache,
-      ),
+      source.values.length
+        ? undefined
+        : this.resolveReadCacheConfig(
+            (interceptedOptions as { cache?: CollectionCacheConfig | false })
+              .cache,
+          ),
       !projection && this.hasDuckDbUuidColumnsOutsideHydrationSelect(),
     );
 
@@ -3714,7 +4051,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       instance.constructor.name;
     const fields = await ObjectRegistry.getAllFields(name);
     for (const key of Object.keys(values)) {
-      const definition = fields.get(key);
+      const definition =
+        fields.get(key) ?? ObjectRegistry.getWriteThroughFields(name)[key];
       if (
         !definition ||
         definition.readonly ||
@@ -3877,6 +4215,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         `STI polymorphic query failed: Class '${className}' not found in ObjectRegistry. ` +
           `Ensure the class is registered with @smrt() decorator or available via an installed SMRT manifest.`,
       );
+    }
+
+    if (!hydrationRow) {
+      const itemType = this.getResolvedItemQualifiedName();
+      const selectedType =
+        registeredClass.qualifiedName || registeredClass.name;
+      if (!this.getStiReadTypes(itemType).includes(selectedType)) {
+        throw new Error(
+          `STI discriminator '${className}' is not a subtype of '${itemType}'.`,
+        );
+      }
     }
 
     const params = {
@@ -4188,21 +4537,26 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @private
    */
   getFieldsSync(): Record<string, CollectionFieldDefinition> {
-    if (this._cachedFields) {
+    if (
+      this._cachedFields &&
+      this._cachedFieldsGeneration === getRegistryGeneration()
+    ) {
       return this._cachedFields;
     }
-    // Fallback to ObjectRegistry sync method if cache not populated
-    // This handles edge cases where collection wasn't created via static create()
+    // Refresh from live metadata after a generation change, retaining the
+    // canonical injected fields supplied by getAllFields()/getFields().
     const fields = ObjectRegistry.getFields(
       this.getResolvedItemQualifiedName(),
     );
     // Convert Map to Record for consistency with getFields() return type.
     // Registry `RegisteredField`s are a structural superset of the members the
     // collection reads (`type`, `sensitive`, `_meta`); view through `unknown`.
-    return Object.fromEntries(fields) as unknown as Record<
-      string,
-      CollectionFieldDefinition
-    >;
+    return Object.fromEntries(
+      fields.size > 0 ||
+        ObjectRegistry.getClass(this.getResolvedItemQualifiedName())
+        ? prependSmrtSystemFields(fields)
+        : fields,
+    ) as unknown as Record<string, CollectionFieldDefinition>;
   }
 
   /**
@@ -4410,8 +4764,16 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       this.convertWhereKeys(where || {}),
     );
 
+    const source = await this.resolveDisplayLabelSource(
+      this.requestsDisplayFields(whereSql),
+    );
+    const scopedWhereSql = whereSql.replace(
+      /\$(\d+)/g,
+      (_, index: string) => `$${Number(index) + source.values.length}`,
+    );
     const result = await this.db.query(
-      `SELECT COUNT(*) as count FROM ${this.tableName} ${whereSql}`,
+      `SELECT COUNT(*) as count FROM ${source.from} ${scopedWhereSql}`,
+      ...source.values,
       ...whereValues,
     );
 
@@ -4731,6 +5093,44 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
   }
 
+  private inlineReadNames(): string[] {
+    return Object.values(
+      ObjectRegistry.getConfig(this.getResolvedItemQualifiedName())
+        .writeThrough ?? {},
+    ).flatMap((link) =>
+      [...link.fields, ...Object.keys(link.virtualFields ?? {})].map(
+        toSnakeCase,
+      ),
+    );
+  }
+
+  private setInlineRead(
+    instance: SmrtObject,
+    row: Record<string, unknown>,
+  ): void {
+    if (!row._smrt_inline_target) return;
+    const definitions = ObjectRegistry.getWriteThroughFields(
+      this.getResolvedItemQualifiedName(),
+    );
+    const names = Object.values(
+      ObjectRegistry.getConfig(this.getResolvedItemQualifiedName())
+        .writeThrough ?? {},
+    ).flatMap((link) => [
+      ...link.fields,
+      ...Object.keys(link.virtualFields ?? {}),
+    ]);
+    instance._setWriteThroughRead(
+      formatDataJs(
+        Object.fromEntries(
+          names
+            .filter((name) => Object.hasOwn(row, toSnakeCase(name)))
+            .map((name) => [toSnakeCase(name), row[toSnakeCase(name)]]),
+        ),
+        definitions,
+      ),
+    );
+  }
+
   private async hydrateResultRow(
     row: Record<string, unknown>,
     fields: Record<string, CollectionFieldDefinition>,
@@ -4747,7 +5147,19 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       polymorphicFields,
     );
     const formattedData = this.withHydratedCoreFields(
-      formatDataJs(row, hydrationFields),
+      formatDataJs(
+        this.getDisplayLabelProjection()
+          ? Object.fromEntries(
+              Object.entries(row).filter(
+                ([key]) =>
+                  key !== 'display_label' &&
+                  key !== '_smrt_inline_target' &&
+                  !this.inlineReadNames().includes(key),
+              ),
+            )
+          : row,
+        hydrationFields,
+      ),
     );
 
     const metaType = formattedData._meta_type;
@@ -4757,6 +5169,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         formattedData,
         row,
       );
+      if (this.getDisplayLabelProjection())
+        polymorphicInstance._setDisplayLabel(row.display_label);
+      this.setInlineRead(polymorphicInstance, row);
       return polymorphicInstance;
     }
 
@@ -4777,6 +5192,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // caller-created `_skipLoad` instance remains unpersisted.
     instance.markAsPersisted();
     await instance.initialize();
+    if (this.getDisplayLabelProjection())
+      instance._setDisplayLabel(row.display_label);
 
     if (isSTI) {
       // Dynamic STI discriminator write — `_meta_type` is a runtime-only field
@@ -4785,6 +5202,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         this.getResolvedItemQualifiedName();
     }
 
+    this.setInlineRead(instance, row);
     return instance;
   }
 

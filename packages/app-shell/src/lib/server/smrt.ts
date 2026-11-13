@@ -1,6 +1,7 @@
 /**
  * The shell's SMRT runtime: app-runtime local profile, smrt-users owner
- * sign-in (the owner is created on the loopback `/setup` page), and the
+ * sign-in (the desktop owner link creates the owner and signs them in; the
+ * loopback `/setup` page serves the terminal flow), and the
  * shell's own first-run schema through the `prepareDatabase` hook.
  *
  * `PORT` and `SMRT_DATA_DIR` are honored (the desktop sidecar contract):
@@ -9,9 +10,11 @@
  */
 import { createProviderReadinessProbe } from '@happyvertical/smrt-app-runtime';
 import { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
+import './registry.ts';
 import '../objects/index.ts';
 import { installChangeFeedPolicy } from './change-feed.ts';
 import { configureShell } from './host.ts';
+import { installShellInference } from './inference.ts';
 import { prepareShellSchema } from './schema.ts';
 
 export const runtime = createSmrtSvelteKitRuntime({
@@ -27,6 +30,12 @@ export const runtime = createSmrtSvelteKitRuntime({
 configureShell({
   db: async () => (await runtime.localRuntime()).db,
   dataRoot: async () => (await runtime.localRuntime()).paths.root,
+  secretMasterKey: () => runtime.secretMasterKey(),
 });
+
+// Keys saved in Settings and stored tier bindings apply to every inference
+// call in this process, the assistant's included (lazy: nothing opens the
+// database until the first request).
+installShellInference();
 
 installChangeFeedPolicy();

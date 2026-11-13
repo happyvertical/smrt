@@ -91,12 +91,14 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
     expect(collectionRoute).toContain('{ tenantId: null }');
 
     // List + count both carry the scope.
-    expect(collectionRoute).toContain('const readScope = tenantReadScope();');
+    expect(collectionRoute).toContain(
+      'const where = { ...parseRestListWhere(url.searchParams), ...tenantReadScope() };',
+    );
     // #2367 added the deterministic ordering; the read scope still rides along.
     expect(collectionRoute).toContain(
-      'collection.list({ limit, offset, orderBy: LIST_ORDER_BY, where: readScope })',
+      'collection.list({ limit, offset, orderBy, where })',
     );
-    expect(collectionRoute).toContain('collection.count({ where: readScope })');
+    expect(collectionRoute).toContain('collection.count({ where })');
 
     // Single-read get scopes the id lookup to global when no tenant is active.
     expect(itemRoute).toContain('const readScope = tenantReadScope();');
@@ -234,7 +236,7 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
     expect(collectionRoute).not.toContain('tenantReadScope');
     expect(collectionRoute).not.toContain('@happyvertical/smrt-tenancy');
     expect(collectionRoute).toContain(
-      'collection.list({ limit, offset, orderBy: LIST_ORDER_BY })',
+      'collection.list({ limit, offset, orderBy, where })',
     );
     expect(itemRoute).not.toContain('tenantReadScope');
     expect(itemRoute).toContain('collection.get(params.id)');

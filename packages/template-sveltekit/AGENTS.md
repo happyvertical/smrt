@@ -1,15 +1,16 @@
 # template-sveltekit
 
-Minimal SvelteKit project template used by `smrt gnode create --template=sveltekit`.
-It is the ground-up alternative to `smrt-start`.
+`smrt gnode create --template=sveltekit` scaffold; an alternative to `smrt-start`.
 
 ## Exports
 
+- [Cookbook host](agents/cookbook-host.md).
+
 - `getTemplatePath()` returns the template directory.
 - `copyTemplate(destination, options)` copies authored files, substitutes the
-  project package name, and skips `.svelte-kit` plus test-fixture directories.
-- `templateInfo` describes the SvelteKit, SQLite, generated-interface, session,
-  tenancy, and permission foundation.
+  package name, and skips `.svelte-kit` and test-fixture directories.
+- `templateInfo` describes the template's SvelteKit, SQLite, session, tenancy
+  and permission foundation.
 
 ## Current generated-project contract
 
@@ -17,15 +18,15 @@ It is the ground-up alternative to `smrt-start`.
   (contract v1, `@happyvertical/smrt-config/deployment`). It is the source of
   `charts/smrt-app/fixtures/starter.json`: after changing its services or
   annotations run `node scripts/compose-contract-fixture.mjs --write` and
-  commit the fixture; `scripts/compose-contract.test.mjs` fails on drift.
+  commit the fixture; `compose-contract.test.mjs` fails on drift.
 
 - Node `>=26.0.0`; pnpm `11.25.0` via `packageManager` and `engines`. Node 25+
-  images ship no Corepack, so the Dockerfile installs a pinned copy.
+  images ship no Corepack; the Dockerfile installs a pinned copy.
 - `runtime.profile` is the canonical infrastructure selector. Generated apps
-  expose deterministic `app:*` operations and keep runtime state outside source.
+  expose deterministic `app:*` operations and keep runtime state out of source.
 - Every lifecycle script is a `smrt app <operation>` one-liner
   (`packages/cli/agents/app-commands.md`); the template ships no `scripts/`.
-  Never reintroduce copied operator scripts: fix the CLI command instead.
+  Never reintroduce copied operator scripts; fix the CLI command.
 - Server composition is `createSmrtSvelteKitRuntime()` from
   `@happyvertical/smrt-app-runtime/sveltekit`, built once in
   `src/lib/server/smrt.ts`, which holds only `runtime` and its options
@@ -37,41 +38,38 @@ It is the ground-up alternative to `smrt-start`.
   `getCollection`/`getSmrtConfig` export would take precedence (deprecated,
   honoured for one release): never re-add one, a register import, guard, or
   manifest hydration.
-  Health, diagnostics, layout session, and owner setup routes mount that
-  package's handlers.
-- The production baseline uses adapter-node with separate web, task-worker, and
+  Health, diagnostics, layout session and owner setup routes mount its handlers.
+- The production baseline uses adapter-node with separate web, task-worker and
   schedule-worker processes. Workers import the build-compiled
   `.smrt/runtime/register.js` (#3117) before creating runners so app-defined
-  jobs resolve the app's own objects. Its runtime image retains the generated manifest
-  and operator CLI needed by `app:doctor`, `app:export`, and `app:import`.
-- Deployed authentication, asset, and secret readiness is delegated to
-  installed provider-owned probe modules; never replace it with truthy flags.
-- Every supported local web writer (`app:start` or `pnpm dev`)
-  acquires the same external writer lease. Logical imports and filesystem
-  backups fail closed while any writer is alive; logical exports take one
-  database transaction snapshot and include filesystem assets referenced by
-  exported asset rows in a digest-verified, provider-neutral manifest. Imports
-  stage and verify those assets before committing database rows.
-  Direct production startup must set an explicit loopback `HOST`.
+  jobs resolve the app's own objects. The runtime image retains the generated
+  manifest and operator CLI that `app:doctor`, `app:export` and `app:import` need.
+- Deployed authentication, asset and secret readiness is delegated to installed
+  provider-owned probe modules; never replace it with truthy flags.
+- Every supported local web writer (`app:start` or `pnpm dev`) acquires the
+  same external writer lease. Logical imports and filesystem backups fail
+  closed while any writer is alive; logical exports take one database
+  transaction snapshot and include filesystem assets referenced by exported
+  asset rows in a digest-verified, provider-neutral manifest. Imports stage and
+  verify those assets before committing rows. Direct production startup must
+  set an explicit loopback `HOST`.
 - Local `app:start` proves readiness against the loopback-only identity fields
   on the runtime health route using the canonical application ID, random
   process instance, and secret-safe runtime configuration identity; a
   different or stale server is never accepted as this app. Deployed health
   responses expose only generic status and profile.
 - Directly used `@happyvertical/smrt-*` packages share one current release range.
-- `@happyvertical/smrt-cli` is a direct dev dependency because every
-  lifecycle script runs its binary; the runtime image keeps dev dependencies so
-  workers and operator commands can. The template includes `@happyvertical/smrt-web` because the root
+- `@happyvertical/smrt-cli` is a direct dev dependency because every lifecycle
+  script runs its binary; the runtime image keeps dev dependencies for workers
+  and operator commands. `@happyvertical/smrt-web` is included because the root
   Provider wires the generated read-only WebMCP definitions for every page.
 - The generated MCP server resolves its imports from the scaffolded app, not
-  from the CLI, so every specifier `generate-mcp` emits must be declared here.
-  `@modelcontextprotocol/server` (plus its `/stdio` subpath),
-  `@happyvertical/smrt-core`, and `@happyvertical/smrt-config` are always
-  emitted and are always dependencies. `@happyvertical/smrt-jobs` (task actions)
-  and `@happyvertical/smrt-tenancy` (tenant-scoped objects) are also declared
-  for the default worker and tenant surfaces. Do not assume pnpm exposes the
-  CLI's or core's transitive dependencies to the app root — its strict layout
-  does not (#2297).
+  the CLI, so every specifier `generate-mcp` emits must be declared here:
+  `@modelcontextprotocol/server` (and `/stdio`), `@happyvertical/smrt-core` and
+  `@happyvertical/smrt-config` always, plus `@happyvertical/smrt-jobs` and
+  `@happyvertical/smrt-tenancy` for the default worker and tenant surfaces.
+  pnpm's strict layout does not expose the CLI's or core's transitive
+  dependencies to the app root (#2297).
 - `vite.config.ts` is `[sveltekit(), smrt()]`. The preset consumes exactly the
   packages in `smrt.config.ts` `consumer.packages` (profiles, tenancy, users, reports),
   scans `src/lib/objects`, and generates Vite virtual definitions, SvelteKit
@@ -92,34 +90,53 @@ It is the ground-up alternative to `smrt-start`.
   `src/lib/server/commerce.ts` (`bootstrapCommerceTenant`) calls
   `ensureCommerceTenant()` only when the app has installed
   `@happyvertical/smrt-commerce` (resolved from its own `node_modules`, with a
-  variable import specifier), passing `smrt.cookbook.json` when present. The
-  `/setup` page runs it from `onOwnerClaimed`, after the owner claim created the
-  tenant, and logs a failure because the runtime ignores hook errors. Any other
+  variable import specifier), passing `smrt.cookbook.json` when present. `/setup`
+  runs it from `onOwnerClaimed`, after the claim created the tenant, and logs a
+  failure because the runtime ignores hook errors. Any other
   tenant-creation path an app adds should call it too (#4009).
 - App code uses `runtime.getCollection()`/`runtime.classOptions()`, which are
   request-scoped (RLS transaction) and must never be retained.
-- `Note` is the single example object (the canonical Notes starter, matching
-  `smrt-start`) and demonstrates required tenant scope, a REST writable allowlist, shared CRUD action metadata, and the explicit
-  collection registration required by generated CLI/MCP runtime commands.
-- Initial data comes from `+page.server.ts`; loads declare
+- A new app registers no object and opens on an empty home page (no Note, no
+  `notes.*` permissions, no migration). The Note example lives outside the
+  generated app in `examples/notes/` (an `src/`-shaped tree: the object and a
+  `/notes` page) and is not built or registered by default; it demonstrates
+  required tenant scope, a REST writable allowlist, shared CRUD action
+  metadata, and the explicit collection registration generated CLI/MCP runtime
+  commands need. Never move it back under `template/`; tests get it from the
+  reference fixture (`copyRuntimeProfileReference()`).
+- The example page loads data in `+page.server.ts`; loads declare
   `depends('smrt:notes')`, mutations call `invalidate('smrt:notes')`, and
   hand-written writes call `assertOperationPermission()` with the session's
   exact permission snapshot.
 - The root layout is `AppShell` from `@happyvertical/smrt-svelte/app` with a
   small explicit `nav`; `/setup` and `/settings` mount that package's
   `OwnerSetupForm` and `ShellSettingsPage`. Generated REST routes do not imply
-  page routes.
+  page routes. Settings is a section menu: `/settings` lists the sections and
+  each is its own page (`/settings/[section=settingsSection]` for the built-in
+  Appearance, Account, Layout and Shortcuts, via the `isShellSettingsSection`
+  param matcher; host sections get a static route beside it).
+- Inference and Prompts are host sections (`/settings/inference`,
+  `/settings/prompts`) mounting `InferenceSettingsPanel` and
+  `PromptSettingsPanel`. `consumer.packages` lists their packages (smrt-inference,
+  -prompts, -preferences, -secrets) so their tables exist on first start.
+  `settings-registry.ts` (imported by `smrt.ts` first) registers the
+  `inference` preference kind and the `inference.*` / `prompts.customize`
+  permissions the owner role is seeded with. `settings.ts` holds the session
+  (writes need the permission in its snapshot) and builds smrt-inference's
+  `createInferenceSettingsHost` and `createInferenceSettingsController` (shared
+  with the app shell; the route is thin); `installInferenceOverrides` registers
+  the resolver. Owner-only `saveKey` stores keys via the controller;
+  `masterKeyProvider` is `runtime.secretMasterKey()` (local: created; env wins).
 - Session user and sign-out: `+layout.server.ts` (`createSessionLayoutLoad()`)
   returns `session.user` (`{ id, email, name? }` only, never the record or
-  tokens). The root layout passes it as AppShell `user` (account menu) with
-  `onSignOut` from `src/lib/sign-out.ts` (same-origin `fetch` `POST /sign-out`,
-  then `invalidateAll()` and `goto('/')`); the settings page passes the same
-  helper. `src/routes/sign-out/+server.ts` mounts `createSignOutHandler(runtime)`
-  (POST only, 405 otherwise; same-origin only, 403 otherwise; 204, or 303 to `/`
-  for an HTML form post). The layout enables `phoneTabBar` and sets
-  `chrome={!page.route.id?.startsWith('/setup')}` so `/setup` renders only the
-  chrome-free `OwnerSetupForm` card.
-- The Notes page is built from smrt-ui primitives only (`Button`, `Card`,
+  tokens). The root layout passes it as AppShell `user` with `onSignOut` from
+  `src/lib/sign-out.ts` (same-origin `POST /sign-out`, then `invalidateAll()`
+  and `goto('/')`); the settings page passes the same helper.
+  `src/routes/sign-out/+server.ts` mounts `createSignOutHandler(runtime)` (POST
+  only; same-origin only; 204, or 303 to `/` for an HTML form post). The layout
+  enables `phoneTabBar` and sets `chrome={!page.route.id?.startsWith('/setup')}`
+  so `/setup` renders only the chrome-free `OwnerSetupForm` card.
+- The example Notes page is built from smrt-ui primitives only (`Button`, `Card`,
   `Form`, `FormGroup`, `Input`, `Textarea`, `EmptyState`): no raw `<form>`,
   `<input>`, or `<button>`, token spacing, and a "Start your first note" empty
   state. The root layout passes only live AppShell props (no `subtitle`,

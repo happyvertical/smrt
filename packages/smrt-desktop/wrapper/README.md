@@ -16,13 +16,13 @@ signing secret in a URL query is deliberately not carried over.
    contract, see `../README.md`) and parses it strictly (`src/manifest.rs`).
 2. Picks a free loopback port and starts the `externalBin` sidecar through
    `tauri-plugin-shell` (`Command::sidecar`) with:
-   - working directory = the resource directory (the packaged app root),
-     separate from the data directory;
+   - working directory = the resource directory, or its `app` child when
+     `workingDirectory: "app"` is declared; separate from the data directory;
    - a cleared environment rebuilt from the parent environment, then the
      manifest `env`, then the supervisor values, which always win:
      `HOST=127.0.0.1`, `PORT=<port>`, `ORIGIN=http://127.0.0.1:<port>`,
      `SMRT_DATA_DIR=<app_local_data_dir>/<dataDirectory>` (machine-local, never the
-     roaming `app_data_dir`; assumed decision D7, see the parent README), and
+     roaming `app_data_dir`; decision D7, see the parent README), and
      `SMRT_DESKTOP_OWNER_LINK_SECRET=<launch secret>` (see Owner link). The
      secret is set on the sidecar command only.
      Inherited names that collide case-insensitively with a reserved or
@@ -51,10 +51,10 @@ directory writer lease or operation lock; gave up after 5 restarts`.
 | `requestSingleInstanceLock`, `second-instance` shows the window | `tauri-plugin-single-instance`, registered first; the second launch focuses the window and exits |
 | Tray with Open / Quit and a disabled status line; startup error text in the menu | Status line, **Open**, **Restart** (enabled only in `Failed`), **Quit**; tooltip repeats the status |
 | Window created only after the runtime is reachable | Window is created hidden; navigated and shown on the first `Ready` only (restarts never re-raise a hidden window) |
-| Close hides, `quitting` flag lets quit through | `CloseRequested` is prevented and hides the window unless quitting |
+| Close hides, `quitting` flag lets quit through | Default close hides; explicit `plugins.smrt-desktop.closeBehavior: quit` drains the supervisor and exits |
 | `will-quit` stops the runtime before exiting | `RunEvent::ExitRequested{None}` (Cmd+Q) and the tray Quit run the same shutdown, then `exit(0)`; `RunEvent::Exit` is a safety net |
 | Child stop: SIGTERM then SIGKILL after 5 s | `shutdown.rs`: graceful 10 s, forced kill, wait for exit; configurable |
-| Append-only log, failures never break the tray | `log.rs`, under `<app_local_data_dir>/.desktop-wrapper/supervisor.log`, 512 KiB cap plus one `.1` file, never panics |
+| Append-only log, failures never break the tray | `log.rs`, under Tauri's app_log_dir (`~/Library/Logs/<bundle-id>/supervisor.log` on macOS), 512 KiB cap plus one `.1` file, never panics |
 | `uncaughtException` logged | Supervisor thread panics kill the sidecar and surface `Failed`; a main-thread panic hook kills the sidecar |
 | Health wait accepted any status below 500 and followed redirects | Only 2xx is healthy; any 3xx fails immediately and is never followed |
 | Fixed ports | Ephemeral loopback port per launch, preferring the previous port on restart |
@@ -88,10 +88,22 @@ inspect, repair or delete either file. Specifically:
   startup failure that follows the normal backoff and says so in the tray.
   Matching is on those documented runtime phrases; keep
   `LEASE_PHRASES` in `src/supervisor.rs` aligned if they change.
-- The child's output is used for classification only. It stays in memory and
-  is not written to the log (a runtime may print one-time secrets). Set
-  `SMRT_DESKTOP_LOG_SIDECAR_OUTPUT=1` to log a truncated tail of it when a start
-  fails while debugging.
+- Raw child output stays in memory for classification. Non-zero exits log the
+  last 40 stderr lines, each capped at 400 bytes, so a normal Node uncaught
+  stack does not push its error message out of the diagnostic. Secret-bearing environment
+  values of at least eight characters, bearer/basic credentials, cookie and
+  authorization headers, assignments whose keys end in token/secret/password/
+  passwd/key (including camelCase and environment names), and URLs with
+  userinfo or credential query parameters are masked as spans **before**
+  truncation. Overlapping spans are merged against the original text. All 64+ hex
+  secret shapes are masked, including inside paths; ordinary names and short build
+  chunk hashes stay readable. Scoped file URLs containing `@happyvertical` are not
+  URL userinfo. Error classes, messages and stack paths
+  therefore survive redaction. Each launch also records its working and data
+  paths through the same redactor, without arguments or environment maps. Stdout stays
+  private unless `SMRT_DESKTOP_LOG_SIDECAR_OUTPUT=1` enables the same redacted
+  diagnostic tail. The existing capped, rotating supervisor log is unchanged.
+  The launch smoke prints its last 8 KiB on failure through the CLI redactor.
 
 ## Bind-release race
 
@@ -134,16 +146,23 @@ is passed only in the sidecar child's environment as
 that URL; its `Debug` output is redacted and it is never logged. The route
 compares it in constant time and answers `403` without it, so another process
 or OS user on the machine cannot fetch the owner link. A generic s-m-r-t app declares `/api/_runtime/owner-link`, which
-app-runtime serves (`createOwnerLinkHandler`) as a loopback-only `302` to its
-existing one-time `/setup?token=...` page while the owner is unclaimed, and to
-`/` afterwards. The wrapper never requests that route itself: the webview
-follows the redirect, so the token is never in the wrapper's memory, argv,
-environment or log. The log line is `window origin=<origin> route=<route>`
-(`window_log_line`; never the query or the full URL); the `Location` header is
-never read. The owner then claims through app-runtime's
-`/setup` page and `claimOwner()`; the wrapper holds no credential. After a
-sidecar restart the window is navigated to the same route again, which hands out
-a fresh invitation if the owner is still unclaimed.
+app-runtime serves (`createOwnerLinkHandler`). The secret already proves the
+local person, so an app that opts in with `autoClaim` (the shell and the generic
+app do) shows no form: with a valid secret the route creates the local owner on
+the first launch (named after the OS account, no email; app-runtime's single
+`claimOwner()` transaction), signs the sole owner in again when the session
+cookie is gone, sets the session cookie and redirects to `/`. The user goes from
+starting the app to being signed in as the owner. Without `autoClaim` the route
+instead answers a loopback-only `302` to the one-time `/setup?token=...` page
+while the owner is unclaimed, and to `/` afterwards. The wrapper never requests
+that route itself: the webview follows the redirect, so no token or session is
+ever in the wrapper's memory, argv, environment or log. The log line is
+`window origin=<origin> route=<route>` (`window_log_line`; never the query or
+the full URL); the `Location` header and `Set-Cookie` are never read. The
+wrapper holds no credential. After a sidecar restart the window is navigated to
+the same route again, which signs the owner back in. If a signed-out page is
+ever shown, it says to quit and reopen the app (the desktop pages never name
+terminal commands).
 
 ## Modules
 
@@ -532,6 +551,13 @@ matrix) and the signing half of #4836 are `status: blocked` on them.
 4. **Product identity strings** (bundle identifier, display name) in the
    product's `smrt-desktop.json`, plus real product icons: the icons in
    `icons/` are placeholders and no product icons are supplied by the bundle.
+   Tricia's identity is decided and committed
+   (`../examples/tricia/smrt-desktop.json`: `Tricia`, `com.happyvertical.tricia`,
+   `tricia`); its icons are still the placeholders. Its release and update home
+   is GitHub Releases of the public repository `happyvertical/tricia`, where the
+   `latest.json` feed (smrt#4836) will be served. This workflow still publishes
+   to this repository's `desktop-latest` release, so pointing the publish step at
+   that repository is open, and so are the signing secrets and the updater key.
 5. **A gpg-verified Node pin.** The only pin, Node 26.8.1, is `unverified` (see
    `../README.md`, Node pin provenance); a maintainer with `gpg` must run
    `scripts/update-node-pins.mjs`. The signing job reads this committed record,
@@ -608,9 +634,12 @@ cargo test --locked
   under Release pipeline.
 - `.github/workflows/desktop-launch.yml` (path filtered, not required, not part
   of the `Verify build` legs) is the launch smoke for the generic example app
-  (`../examples/generic-app`, smrt#4835). Job `Bundle generic app` builds the
-  app from the repository's template and bundles it for the three desktop
-  targets (`scripts/build-generic-app.mjs`); `Launch generic app (macos |
+  (`../examples/generic-app`, smrt#4835) and for Tricia
+  (`../examples/tricia`, the app shell; macOS arm64 only, triggered by
+  `packages/app-shell/**` too). Job `Bundle <app> app` builds the app (the
+  generic one from the repository's template, Tricia from a copy of
+  `packages/app-shell`) and bundles it for its targets
+  (`scripts/build-desktop-app.mjs --app generic|tricia`); `Launch <app> app (macos |
   windows | linux)` compiles the wrapper without a product (`cargo build
   --locked`) and runs `scripts/launch-smoke.mjs` against that bundle from an
   empty data directory: ready origin in the log, window opened on origin plus
@@ -627,19 +656,19 @@ cargo test --locked
   fixtures of the GitHub API), the minisign verification (keys generated in the
   test), the release asset and feed assembly, and the workflow-structure test
   that keeps the signing secrets out of every build step, plus the pure parts of
-  the launch smoke and the generic app build.
+  the launch smoke and the desktop app build (generic and Tricia).
 
 Manual smoke run: in a debug build the resource directory is the executable directory, so put a
 `sidecar-manifest.json`, the sidecar script and a symlink named like the
 manifest's `executable` (pointing at a `node` binary) in
 `target/debug/` and run `target/debug/smrt-desktop-wrapper`. The log is at
-`<app_local_data_dir>/.desktop-wrapper/supervisor.log`.
+Tauri's app_log_dir (`~/Library/Logs/<bundle-id>/supervisor.log` on macOS).
 
 ## Deferred to later slices (clean seams only)
 
 - **Owner sign-in** is done (see Owner link): the window opens on
-  `ownerClaimRoute`, and sign-in stays app-runtime's loopback onboarding URL and
-  `claimOwner()`; the wrapper carries no credential (#4835).
+  `ownerClaimRoute`, and sign-in is app-runtime's launch-secret-gated
+  `autoClaim` owner link (no form); the wrapper carries no credential (#4835).
 - **Bundling the Node binary** is done by `smrt desktop bundle`. Signing,
   notarisation and releases are described under Release pipeline and are
   blocked on owner inputs.
@@ -661,3 +690,6 @@ manifest's `executable` (pointing at a `node` binary) in
 - CI covers Linux only. The Windows code paths (`taskkill` stop, job-object
   kill via the shell plugin) were not compiled or run, and the GUI paths were
   only exercised on macOS (tray, window and quit were not inspected visually).
+
+For normal built apps, app-root cwd, optional quit-on-close, unsigned macOS
+archives and headless persistence smoke, see [built apps](../agents/built-apps.md).

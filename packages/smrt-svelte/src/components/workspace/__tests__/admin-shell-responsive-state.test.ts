@@ -208,3 +208,30 @@ describe('persistence opt-out', () => {
     expect(store.writes.at(-1)?.panels).toBeUndefined();
   });
 });
+
+describe('independent phone navigation', () => {
+  it.each([
+    'expanded',
+    'collapsed',
+  ] as const)('keeps desktop %s preference while the phone drawer starts closed', async (desktop) => {
+    const store = adapter({ panels: { left: desktop } });
+    const shell = createShellState({
+      viewport: 'phone',
+      phoneNavigation: true,
+      config: { left: { initial: 'expanded' } },
+      settingsAdapter: store,
+    });
+    await shell.hydrate();
+    expect(shell.panels.left).toBe('collapsed');
+    shell.expandPanel('left');
+    expect(shell.panels.left).toBe('expanded');
+    shell.applySettings({ sizes: { panel: 400 } });
+    expect(shell.panels.left).toBe('expanded');
+    shell.collapsePanel('left');
+    expect(shell.settings.panels?.left).toBe(desktop);
+    shell.setViewport('desktop');
+    expect(shell.panels.left).toBe(desktop);
+    shell.setViewport('phone');
+    expect(shell.panels.left).toBe('collapsed');
+  });
+});

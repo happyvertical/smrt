@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "productId": "tricia",
+  "bundleId": "com.happyvertical.tricia",
+  "displayName": "Tricia",
+  "bridge": { "envPrefix": "TRICIA", "mcpPath": "/mcp" },
+  "sidecar": {
+    "healthRoute": "/api/_runtime/health",
+    "ownerClaimRoute": "/api/_runtime/owner-link",
+    "dataDirectory": "runtime"
+  },
+  "features": { "default": ["ai-providers"] },
+  "acknowledgedDynamicImports": [
+    { "from": "@happyvertical/sql", "specifier": "@duckdb/node-api" },
+    { "from": "@happyvertical/smrt-core", "specifier": "tsx" },
+    { "from": "@happyvertical/smrt-core", "specifier": "oxc-transform" }
+  ]
+}

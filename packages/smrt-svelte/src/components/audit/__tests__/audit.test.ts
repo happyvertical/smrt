@@ -8,6 +8,7 @@ import type {
   AuditEntryLabel,
   AuditHistoryEntry,
   AuditResourceHref,
+  UndatedHistoryEntry,
 } from '../types.js';
 
 const entries: AuditHistoryEntry[] = [
@@ -58,6 +59,60 @@ describe('audit views', () => {
     expect(container.querySelector('script')).toBeNull();
     expect(screen.getByText('status: draft → approved')).toBeInTheDocument();
     await expectNoA11yViolations(container);
+  });
+  it('keeps undated host revision order without fabricating dates or actors', async () => {
+    const history: UndatedHistoryEntry[] = [
+      {
+        id: '3',
+        action: 'Added Preferred colour to Customers.',
+        resourceType: 'App structure',
+        resourceId: 'Revision 3',
+      },
+      {
+        id: '1',
+        action: 'Added Loaners.',
+        resourceType: 'App structure',
+        resourceId: 'Revision 1',
+      },
+    ];
+    const { container } = render(RecordHistory, {
+      entries: history,
+      label: 'Change history',
+    });
+    expect(
+      screen.getByRole('region', { name: 'Change history' }),
+    ).toBeInTheDocument();
+    const rows = container.querySelectorAll('ol > li');
+    expect(rows[0]).toHaveTextContent('Added Preferred colour to Customers.');
+    expect(rows[1]).toHaveTextContent('Added Loaners.');
+    expect(container.querySelector('time')).toBeNull();
+    expect(container.querySelector('strong')).toBeNull();
+    expect(container).not.toHaveTextContent('Unknown');
+    await expectNoA11yViolations(container);
+  });
+  it('escapes undated host labels and formats supplied presentation callbacks', () => {
+    const history: UndatedHistoryEntry[] = [
+      {
+        id: '1',
+        action: '<script>Added field</script>',
+        actorLabel: '<b>Person</b>',
+        resourceType: 'App structure',
+        resourceId: 'Revision 1',
+        reason: '<img src=x>',
+        changes: { label: { before: 'Old', after: '<em>New</em>' } },
+      },
+    ];
+    const { container } = render(RecordHistory, {
+      entries: history,
+      actionLabel: (entry: UndatedHistoryEntry) => entry.action,
+      resourceLabel: (entry: UndatedHistoryEntry) => entry.resourceId,
+    });
+    expect(container).toHaveTextContent(
+      '<script>Added field</script> · Revision 1',
+    );
+    expect(container).toHaveTextContent('<b>Person</b>');
+    expect(container).toHaveTextContent('label: Old → <em>New</em>');
+    expect(container.querySelector('script, img, b, em, time')).toBeNull();
   });
   it('filters the authorized data by person, record and date', async () => {
     const user = userEvent.setup();

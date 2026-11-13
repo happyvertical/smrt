@@ -61,16 +61,18 @@ function enhanceForm(form: HTMLFormElement) {
         ? t(M['ui.owner_setup.link_missing_heading'])
         : t(M['ui.owner_setup.heading'])}
     </h1>
-    {#if link === 'unavailable'}
+    {#if data.launchMode === 'desktop' && link !== 'ready'}
+      <p data-owner-setup="desktop">{t(M['ui.owner_setup.desktop_reopen'])}</p>
+    {:else if link === 'unavailable'}
       <p data-owner-setup="unavailable">{t(M['ui.owner_setup.unavailable'])}</p>
     {:else if link === 'missing' || link === 'expired'}
       <div data-owner-setup="recovery">
         <p>{t(M['ui.owner_setup.link_missing_body'])}</p>
         <dl>
           <dt>{t(M['ui.owner_setup.recovery_open'])}</dt>
-          <dd><code>{'pnpm app:open'}</code></dd>
+          <dd><code>{'smrt app open'}</code></dd>
           <dt>{t(M['ui.owner_setup.recovery_recover'])}</dt>
-          <dd><code>{'pnpm app:recover'}</code></dd>
+          <dd><code>{'smrt app stop; smrt app recover; smrt app start; smrt app open'}</code></dd>
         </dl>
       </div>
     {:else}

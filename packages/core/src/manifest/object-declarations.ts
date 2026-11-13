@@ -25,6 +25,7 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
+import { isReplacedModel } from './model-replacements.js';
 
 /** One generated object-type declaration and the listings it describes. */
 export interface ObjectDeclaration {
@@ -120,13 +121,15 @@ export function objectDeclarationIdentity(
 function orderedEntries(
   manifest: SmartObjectManifest,
 ): Array<[string, SmartObjectDefinition]> {
-  return Object.entries(manifest.objects ?? {}).sort(
-    ([leftKey, left], [rightKey, right]) =>
-      compareText(
-        left.qualifiedName || leftKey,
-        right.qualifiedName || rightKey,
-      ) || compareText(leftKey, rightKey),
-  );
+  return Object.entries(manifest.objects ?? {})
+    .filter(([, obj]) => !isReplacedModel(manifest, obj))
+    .sort(
+      ([leftKey, left], [rightKey, right]) =>
+        compareText(
+          left.qualifiedName || leftKey,
+          right.qualifiedName || rightKey,
+        ) || compareText(leftKey, rightKey),
+    );
 }
 
 function declarationPackage(

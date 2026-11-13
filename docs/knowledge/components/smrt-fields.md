@@ -5,10 +5,10 @@ description: "Layered field policy store and resolver (defaults, visibility tier
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-11T08:10:47Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:b5da9360239e879f176aecf30b728ff2f2e63236b0174e5a79d9544d4518b0a8"
+source_revision: "sha256:a90ab07e867bceea21d2b6a38b710e3506cfc8d35f21c6f6d955e213ddb1e24c"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/fields/package.json"
@@ -16,6 +16,9 @@ sources:
   - id: "agents"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/fields/AGENTS.md"
     title: "@happyvertical/smrt-fields packages/fields/AGENTS.md"
+  - id: "agents-2"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/fields/agents/cookbook-policy.md"
+    title: "@happyvertical/smrt-fields packages/fields/agents/cookbook-policy.md"
 ---
 
 # @happyvertical/smrt-fields
@@ -30,6 +33,7 @@ sources:
 ## Documentation
 
 - `packages/fields/AGENTS.md`
+- `packages/fields/agents/cookbook-policy.md`
 
 ## Framework dependencies
 
@@ -51,6 +55,7 @@ sources:
 - `./manifest`
 - `./manifest.json`
 - `./playground`
+- `./policy`
 - `./svelte`
 
 ## Models

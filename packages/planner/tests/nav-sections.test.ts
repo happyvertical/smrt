@@ -16,6 +16,10 @@ const get = (id: string) => {
 };
 
 describe('suggested nav sections', () => {
+  it('does not add an empty menu section for a dependency-only recipe', () => {
+    expect(buildNavSections([get('profiles.identity')])).toEqual([]);
+  });
+
   it.each([
     ['commerce.customers', 'sales'],
     ['commerce.sales', 'sales'],

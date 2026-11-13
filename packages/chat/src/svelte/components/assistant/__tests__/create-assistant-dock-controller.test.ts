@@ -2821,3 +2821,37 @@ describe('createAssistantDockController', () => {
     controller.dispose();
   });
 });
+
+describe('durable design runs', () => {
+  it('rehydrates progress and preserves a background run on disposal; explicit Stop and Resume reach host', async () => {
+    const { transport } = scriptedTransport({ thread: [] });
+    const running = {
+      runId: 'design-1',
+      pass: { index: 2, count: 3, name: 'Check the plan' },
+      status: 'running' as const,
+    };
+    transport.designRun = vi.fn(async () => running);
+    transport.stopDesignRun = vi.fn(async () => ({
+      ...running,
+      status: 'stopped' as const,
+    }));
+    transport.resumeDesignRun = vi.fn(async () => running);
+    const controller = createAssistantDockController({
+      transport,
+      registry: createDataSurfaceRegistry(),
+    });
+    await controller.openThread('thread');
+    expect(controller.designRun?.runId).toBe('design-1');
+    expect(controller.status.label).toContain('Check the plan (2/3)');
+    controller.cancel();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(transport.stopDesignRun).toHaveBeenCalledWith('design-1');
+    expect(controller.designRun?.status).toBe('stopped');
+    await controller.resumeDesignRun();
+    expect(transport.resumeDesignRun).toHaveBeenCalledWith('design-1');
+    expect(controller.designRun?.status).toBe('running');
+    controller.dispose();
+    expect(transport.stopDesignRun).toHaveBeenCalledTimes(1);
+  });
+});

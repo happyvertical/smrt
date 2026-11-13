@@ -43,7 +43,8 @@
           "inventory.stock",
           "ledgers.bookkeeping",
           "products.ingredients",
-          "products.simple"
+          "products.simple",
+          "profiles.identity"
         ],
         "features": [
           "@happyvertical/smrt-commerce:ProductionOrder"
@@ -254,7 +255,8 @@
           "events.calendar",
           "inventory.stock",
           "ledgers.bookkeeping",
-          "products.simple"
+          "products.simple",
+          "profiles.identity"
         ],
         "features": [],
         "policies": [
@@ -487,7 +489,8 @@
           "events.calendar",
           "inventory.stock",
           "ledgers.bookkeeping",
-          "products.simple"
+          "products.simple",
+          "profiles.identity"
         ],
         "features": [],
         "policies": [
@@ -691,7 +694,8 @@
           "events.calendar",
           "inventory.stock",
           "ledgers.bookkeeping",
-          "products.simple"
+          "products.simple",
+          "profiles.identity"
         ],
         "features": [],
         "policies": [
@@ -905,7 +909,8 @@
           "events.calendar",
           "inventory.stock",
           "ledgers.bookkeeping",
-          "products.simple"
+          "products.simple",
+          "profiles.identity"
         ],
         "features": [],
         "policies": [
@@ -1149,7 +1154,8 @@
           "events.calendar",
           "inventory.stock",
           "ledgers.bookkeeping",
-          "products.simple"
+          "products.simple",
+          "profiles.identity"
         ],
         "features": [],
         "policies": [
@@ -1428,7 +1434,8 @@
           "inventory.stock",
           "ledgers.bookkeeping",
           "products.ingredients",
-          "products.simple"
+          "products.simple",
+          "profiles.identity"
         ],
         "features": [
           "@happyvertical/smrt-commerce:ProductionOrder"
@@ -1679,7 +1686,8 @@
           "events.calendar",
           "inventory.stock",
           "ledgers.bookkeeping",
-          "products.simple"
+          "products.simple",
+          "profiles.identity"
         ],
         "features": [],
         "policies": [
@@ -1916,7 +1924,8 @@
           "commerce.customers",
           "commerce.invoicing",
           "events.calendar",
-          "ledgers.bookkeeping"
+          "ledgers.bookkeeping",
+          "profiles.identity"
         ],
         "features": [],
         "policies": [
@@ -2134,6 +2143,7 @@
           "events.calendar",
           "expenses.tracking",
           "ledgers.bookkeeping",
+          "profiles.identity",
           "projects.tracker",
           "timesheets.time-entries"
         ],
@@ -2233,8 +2243,8 @@
           },
           "hidden": [
             "item:commerce:Contract",
-            "item:projects:Label",
-            "item:events:EventSeries"
+            "item:events:EventSeries",
+            "item:projects:Label"
           ],
           "moved": {
             "item:commerce:Customer": "custom:accounts",
@@ -2378,7 +2388,8 @@
           "events.calendar",
           "inventory.stock",
           "ledgers.bookkeeping",
-          "products.simple"
+          "products.simple",
+          "profiles.identity"
         ],
         "features": [],
         "policies": [
@@ -2605,7 +2616,8 @@
           "events.calendar",
           "inventory.stock",
           "ledgers.bookkeeping",
-          "products.simple"
+          "products.simple",
+          "profiles.identity"
         ],
         "features": [],
         "policies": [
@@ -2830,7 +2842,8 @@
           "events.calendar",
           "inventory.stock",
           "ledgers.bookkeeping",
-          "products.simple"
+          "products.simple",
+          "profiles.identity"
         ],
         "features": [],
         "policies": [
@@ -3043,7 +3056,8 @@
           "events.calendar",
           "inventory.stock",
           "ledgers.bookkeeping",
-          "products.simple"
+          "products.simple",
+          "profiles.identity"
         ],
         "features": [],
         "policies": [
@@ -3263,7 +3277,8 @@
           "events.calendar",
           "inventory.stock",
           "ledgers.bookkeeping",
-          "products.simple"
+          "products.simple",
+          "profiles.identity"
         ],
         "features": [],
         "policies": [
@@ -3508,7 +3523,8 @@
           "expenses.tracking",
           "inventory.stock",
           "ledgers.bookkeeping",
-          "products.simple"
+          "products.simple",
+          "profiles.identity"
         ],
         "features": [],
         "policies": [

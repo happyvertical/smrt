@@ -4,14 +4,18 @@
 import { error } from '@sveltejs/kit';
 import { ApiError, api } from './api.ts';
 import { referencedModels } from './columns.ts';
-import type { Description, FieldDef, RecordRow } from './types.ts';
+import type { Description, FieldDef, RecordRow, Target } from './types.ts';
 
 type Fetch = typeof fetch;
 
 /** Load an API result; a failure becomes a SvelteKit error with its message. */
-export async function load<T>(fetchImpl: Fetch, path: string): Promise<T> {
+export async function load<T>(
+  fetchImpl: Fetch,
+  path: string,
+  target: Target = 'live',
+): Promise<T> {
   try {
-    return (await api<T>(path, { fetch: fetchImpl })).data;
+    return (await api<T>(path, { fetch: fetchImpl, target })).data;
   } catch (e) {
     if (e instanceof ApiError)
       error(e.status >= 400 ? e.status : 502, e.message);
@@ -26,10 +30,12 @@ export type DescribeResult =
 /** The app description, or why there is none (signed out / not the owner). */
 export async function loadDescription(
   fetchImpl: Fetch,
+  target: Target = 'live',
 ): Promise<DescribeResult> {
   try {
     const { data } = await api<Description>('/api/shell/describe', {
       fetch: fetchImpl,
+      target,
     });
     return { ok: true, description: data };
   } catch (e) {
@@ -45,10 +51,12 @@ export async function loadRecords(
   fetchImpl: Fetch,
   model: string,
   limit = 500,
+  target: Target = 'live',
 ): Promise<RecordRow[]> {
   const out = await load<{ records: RecordRow[] }>(
     fetchImpl,
     `/api/shell/records/${encodeURIComponent(model)}?limit=${limit}`,
+    target,
   );
   return out.records;
 }
@@ -58,9 +66,12 @@ export async function loadReferences(
   fetchImpl: Fetch,
   fields: Record<string, FieldDef>,
   known: Description['models'],
+  target: Target = 'live',
 ): Promise<Record<string, RecordRow[]>> {
   const names = referencedModels(fields).filter((m) => Object.hasOwn(known, m));
-  const rows = await Promise.all(names.map((m) => loadRecords(fetchImpl, m)));
+  const rows = await Promise.all(
+    names.map((m) => loadRecords(fetchImpl, m, 500, target)),
+  );
   return Object.fromEntries(names.map((m, i) => [m, rows[i]]));
 }
 

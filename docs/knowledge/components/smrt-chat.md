@@ -5,10 +5,10 @@ description: "Chat rooms, DMs, threads, and agent conversations for the SMRT fra
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-08T22:59:11Z"
+  at: "2026-11-13T04:10:05Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:78fa8f078b95f9a5979d9848ebb14bd46289ef2fa788f178c56203fa8978b5ea"
+source_revision: "sha256:29dca37e4d24196b2775d936bb0b398380e8d7fc155a27e129cf3b733fcdd191"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/package.json"
@@ -29,14 +29,29 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/overview-tools.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/overview-tools.md"
   - id: "agents-6"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/owner-approvals.md"
+    title: "@happyvertical/smrt-chat packages/chat/agents/owner-approvals.md"
+  - id: "agents-7"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/recipes.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/recipes.md"
-  - id: "agents-7"
+  - id: "agents-8"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/runtime-exposure.md"
+    title: "@happyvertical/smrt-chat packages/chat/agents/runtime-exposure.md"
+  - id: "agents-9"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/runtime-report-tools.md"
+    title: "@happyvertical/smrt-chat packages/chat/agents/runtime-report-tools.md"
+  - id: "agents-10"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/token-streaming.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/token-streaming.md"
-  - id: "agents-8"
+  - id: "agents-11"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/tool-loop.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/tool-loop.md"
+  - id: "agents-12"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/tool-summaries.md"
+    title: "@happyvertical/smrt-chat packages/chat/agents/tool-summaries.md"
+  - id: "agents-13"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/turn-drivers.md"
+    title: "@happyvertical/smrt-chat packages/chat/agents/turn-drivers.md"
 ---
 
 # @happyvertical/smrt-chat
@@ -55,17 +70,24 @@ sources:
 - `packages/chat/agents/assistant-questions.md`
 - `packages/chat/agents/dev-workbench.md`
 - `packages/chat/agents/overview-tools.md`
+- `packages/chat/agents/owner-approvals.md`
 - `packages/chat/agents/recipes.md`
+- `packages/chat/agents/runtime-exposure.md`
+- `packages/chat/agents/runtime-report-tools.md`
 - `packages/chat/agents/token-streaming.md`
 - `packages/chat/agents/tool-loop.md`
+- `packages/chat/agents/tool-summaries.md`
+- `packages/chat/agents/turn-drivers.md`
 
 ## Framework dependencies
 
 - [smrt-agents](/components/smrt-agents.md)
+- [smrt-app-runtime](/components/smrt-app-runtime.md)
 - [smrt-assets](/components/smrt-assets.md)
 - [smrt-config](/components/smrt-config.md)
 - [smrt-core](/components/smrt-core.md)
 - [smrt-images](/components/smrt-images.md)
+- [smrt-inference](/components/smrt-inference.md)
 - [smrt-personas](/components/smrt-personas.md)
 - [smrt-playground](/components/smrt-playground.md)
 - [smrt-profiles](/components/smrt-profiles.md)
@@ -87,10 +109,12 @@ sources:
 ## Exports
 
 - `.`
+- `./assistant-approvals`
 - `./assistant-turn`
 - `./client`
 - `./data-surface`
 - `./data-surface-bridge`
+- `./engines`
 - `./helper-preferences`
 - `./internal/agent-runtime`
 - `./manifest`
@@ -98,6 +122,7 @@ sources:
 - `./playground`
 - `./svelte`
 - `./sveltekit`
+- `./tool-summary`
 - `./ui`
 
 ## Models

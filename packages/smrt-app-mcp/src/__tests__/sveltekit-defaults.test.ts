@@ -5,6 +5,7 @@
  * the defaults never widen it.
  */
 
+import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import {
   getTestDatabase,
@@ -26,6 +27,35 @@ import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createMcpResourceAuth } from '../auth.js';
 import { MCP_TOOL_ACCESS_DENIED_CODE } from '../errors.js';
+
+it('mounts the published route without the SDK and reports its first-use load failure', () => {
+  const child = spawnSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      `
+    import { registerHooks } from 'node:module';
+    registerHooks({ resolve(specifier, context, next) {
+      if (specifier === '@modelcontextprotocol/server') throw new Error('MCP SDK unavailable');
+      return next(specifier, context);
+    } });
+    const { mountMcpAppRoute } = await import(${JSON.stringify(new URL('../../dist/sveltekit.js', import.meta.url).href)});
+    const handler = mountMcpAppRoute({ models: [], requiredScopes: [], allowAnonymous: true });
+    if (typeof handler !== 'function' || typeof handler.server.callTool !== 'function') process.exit(2);
+    const refused = await handler({ locals: {}, url: new URL('http://127.0.0.1/mcp'), request: new Request('http://127.0.0.1/mcp', { method: 'POST', headers: { origin: 'https://untrusted.example', 'content-type': 'application/json' }, body: '{}' }) });
+    if (refused.status !== 403) process.exit(4);
+    let failed = false;
+    try { await handler({ locals: {}, url: new URL('http://127.0.0.1/mcp'), request: new Request('http://127.0.0.1/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }) }); }
+    catch (error) { if (error.message !== 'MCP SDK unavailable') throw error; failed = true; }
+    if (!failed) process.exit(3);
+  `,
+    ],
+    { encoding: 'utf8', timeout: 30000 },
+  );
+  expect(child.status, child.stderr).toBe(0);
+});
+
 import {
   type McpRouteResourceAuth,
   mountMcpAppRoute,

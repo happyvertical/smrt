@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../collection.js';
@@ -208,18 +209,20 @@ describe('qualified manifest-backed MCP static collection actions (#4308)', () =
         '@happyvertical/smrt-config': {
           'package.json': JSON.stringify({
             type: 'module',
-            exports: './index.js',
+            exports: { '.': './index.js', './cookbook/tools': './index.js' },
           }),
           'index.js': 'export async function loadConfig() { return {}; }',
         },
         '@happyvertical/smrt-core': {
           'package.json': JSON.stringify({
             type: 'module',
-            exports: './index.js',
+            exports: { '.': './index.js', './cookbook/tools': './index.js' },
           }),
           'index.js': `class CollectionReceiver {
             static createQuestion(projectId, title) { return { projectId, title, receiver: this.name }; }
           }
+          export { COOKBOOK_TOOL_NAMES, getCookbookToolService } from ${JSON.stringify(fileURLToPath(new URL('../../dist/cookbook/tools.js', import.meta.url)))};
+export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))};
           export const ObjectRegistry = {
             loadAllManifests() {},
             async getCollection(key) { if (key !== ${JSON.stringify(KEY)}) throw new Error('Wrong identity'); return {}; },

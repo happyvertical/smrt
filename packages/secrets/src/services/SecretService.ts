@@ -38,6 +38,52 @@ import type { TenantKey } from '../models/TenantKey.js';
 const logger = createLogger({ level: 'info' });
 
 /**
+ * Hand a provider-supplied master key to the SDK store. The store only reads
+ * the key from the process environment, caches it on first use, and has no
+ * provider seam of its own, so the key is placed in the variable for the one
+ * synchronous step that makes the store cache it, then removed again. It is
+ * never visible to a later tick or to a child process.
+ */
+async function primeProvidedMasterKey(
+  store: SecretStore,
+  envVar: string,
+  provider: SecretMasterKeyProvider | undefined,
+): Promise<Buffer | null> {
+  if (!provider) return null;
+  let supplied: string | Uint8Array | null;
+  try {
+    supplied = await provider();
+  } catch {
+    throw new AMKUnavailableError(
+      `Application Master Key provider for ${envVar} failed`,
+    );
+  }
+  if (supplied === null) return null;
+  let key: Buffer;
+  try {
+    key =
+      typeof supplied === 'string'
+        ? EnvelopeEncryption.parseHexKey(supplied)
+        : Buffer.from(supplied);
+    if (key.length !== 32) throw new Error('wrong length');
+  } catch {
+    throw new AMKUnavailableError(
+      `Invalid AMK from the provider for ${envVar}: expected 32 bytes`,
+    );
+  }
+  process.env[envVar] = key.toString('hex');
+  let primed: Promise<unknown>;
+  try {
+    // `getActiveAMK` reads and caches the key before its first await.
+    primed = store.getActiveAMK();
+  } finally {
+    delete process.env[envVar];
+  }
+  await primed;
+  return key;
+}
+
+/**
  * Options for creating a SecretService
  */
 export interface SecretServiceOptions {
@@ -47,9 +93,28 @@ export interface SecretServiceOptions {
   amkEnvVar?: string;
   /** AMK key identifier */
   amkKeyId?: string;
+  /**
+   * Where the master key comes from when `amkEnvVar` is not set. The
+   * environment variable always wins and the provider is not called then.
+   * Without either, creation fails as before; there is no default key.
+   */
+  masterKeyProvider?: SecretMasterKeyProvider;
   /** Enable audit logging (default: true) */
   auditEnabled?: boolean;
 }
+
+/**
+ * Supplies the application master key: 64 hex characters (32 bytes), or the
+ * 32 raw bytes. Called at most once per service, only when the AMK
+ * environment variable is unset. Return `null` when this process has no key
+ * to give (service creation then fails with the usual unavailable-key error).
+ * The value is never logged, returned or placed in an error.
+ */
+export type SecretMasterKeyProvider = () =>
+  | Promise<string | Uint8Array | null>
+  | string
+  | Uint8Array
+  | null;
 
 /**
  * Options for storing a secret
@@ -279,6 +344,8 @@ export class SecretService {
   private auditEnabled: boolean;
   private amkEnvVar: string;
   private amkKeyId: string;
+  /** Provider-supplied AMK, used by diagnosis when the env var is unset. */
+  private providedAmk: Buffer | null;
 
   private constructor(
     db: DatabaseInterface,
@@ -289,6 +356,7 @@ export class SecretService {
     auditEnabled: boolean,
     amkEnvVar: string,
     amkKeyId: string,
+    providedAmk: Buffer | null,
   ) {
     this.db = db;
     this.secretStore = secretStore;
@@ -298,6 +366,7 @@ export class SecretService {
     this.auditEnabled = auditEnabled;
     this.amkEnvVar = amkEnvVar;
     this.amkKeyId = amkKeyId;
+    this.providedAmk = providedAmk;
   }
 
   /**
@@ -308,6 +377,7 @@ export class SecretService {
       db,
       amkEnvVar = 'SMRT_SECRET_MASTER_KEY',
       amkKeyId = 'smrt-amk-v1',
+      masterKeyProvider,
       auditEnabled = true,
     } = options;
 
@@ -321,6 +391,11 @@ export class SecretService {
         keyId: amkKeyId,
       },
     });
+
+    // The environment wins; only when it is unset is the provider asked.
+    const providedAmk = process.env[amkEnvVar]
+      ? null
+      : await primeProvidedMasterKey(secretStore, amkEnvVar, masterKeyProvider);
 
     // Create collections - pass db directly (DatabaseConfig accepts DatabaseInterface)
     const baseOptions = { db };
@@ -337,6 +412,7 @@ export class SecretService {
       auditEnabled,
       amkEnvVar,
       amkKeyId,
+      providedAmk,
     );
   }
 
@@ -1170,6 +1246,9 @@ export class SecretService {
     | { usable: true; value: Buffer }
     | { usable: false; error: string; value?: undefined } {
     const keyHex = process.env[this.amkEnvVar];
+    if (!keyHex && this.providedAmk) {
+      return { usable: true, value: this.providedAmk };
+    }
     if (!keyHex) {
       return {
         usable: false,

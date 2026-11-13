@@ -247,3 +247,28 @@ describe('generateDesktopPluginArtifacts', () => {
     }
   });
 });
+
+describe('local MCP harness instructions', () => {
+  it('generates valid JSON/TOML and shell-quotes paths without including credentials', async () => {
+    const { generateLocalMcpSetup } = await import('../desktop-plugins.js');
+    const entry = {
+      name: 'plebeos',
+      command: "/Applications/Owner's App/node",
+      args: ['/private/user state/codex.mjs'],
+    };
+    const setup = generateLocalMcpSetup(entry);
+    expect(JSON.parse(setup.mcpJson).mcpServers.plebeos).toEqual(setup.entry);
+    expect(JSON.parse(setup.claudeDesktop).mcpServers.plebeos).toEqual(
+      setup.entry,
+    );
+    expect(setup.claudeCode).toContain("Owner'\\''s");
+    expect(setup.codex).toContain('[mcp_servers.plebeos]');
+    expect(setup.codex).toContain(JSON.stringify(entry.args));
+    expect(setup.chatgpt).toContain('cannot reach');
+    expect(JSON.stringify(setup)).not.toContain('smrt_mcp_');
+    expect(() => generateLocalMcpSetup({ ...entry, name: 'bad]\n' })).toThrow();
+    expect(() =>
+      generateLocalMcpSetup({ ...entry, args: ['line\nbreak'] }),
+    ).toThrow();
+  });
+});

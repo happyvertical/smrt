@@ -191,6 +191,10 @@ instances and never use this path to overwrite a loaded revision.
   `@meta()` (a same-named column then belongs to an STI sibling). `id`, tenant-ownership and `_`-prefixed
   keys (`isReservedMetaDataKey`, inherited tenant fields included) are dropped
   from the blob on hydration and save, object or JSON text (`sanitizeMetaData`).
+- Explicit create discriminators must resolve to the collection's own model or a
+  registered descendant. `createPolymorphic()` checks this before constructing
+  the selected model; unknown classes and unrelated/sibling branches fail before
+  persistence. It reuses the collection's existing qualified subtree resolver.
 - Polymorphic queries: collection loads `_meta_type`, creates correct subclass dynamically
 - Validation: fail-fast on save if `_meta_type` missing or mismatched
 - Multi-level STI collections read their own discriminator and every registered descendant, never sibling branches. Decorate every intermediate with `@smrt()`; registration rejects an undecorated intermediate beneath an STI root.
@@ -254,3 +258,24 @@ collisions fail with the ordinary unique-constraint error; the create path of
 run their model guards. The default without options remains strict INSERT for
 every initial save, including generated slugs. Once requested, that stricter
 policy cannot be relaxed by a later opt-in call from the model.
+
+Same-name app subclasses replace the effective I/O identity while retaining
+provider declarations for inheritance. See [app-subclasses.md](app-subclasses.md).
+
+### Default signal logger reuse
+
+`SmrtClass.registerAdapters()` keeps one SDK default console logger per module,
+keyed by the SDK's documented `HAVE_LOGGER_LEVEL` input. Replacing that one cache
+entry preserves existing instances' levels when the environment changes. Buses
+and adapter instances remain per object; explicit logger configurations are
+created independently. The shared logger exposes only stateless logging methods,
+not tenant/user state or a public level setter. No SDK provider-selection or
+configuration parser is copied.
+
+Reuse inspection used MCP core review, the intent index, logging/default-adapter
+searches and the installed SDK's public `Logger`/`ConsoleLogger` contracts. The
+signal integration regression was red before the cache: two default instances
+rescanned the environment twice. It now verifies no second scan, separate buses,
+old/new levels across an environment change and independent custom configurations.
+The cleanup/bus/sanitizer suites remain unchanged. This is runtime-neutral and
+has no database executor, persistence or transaction changes.

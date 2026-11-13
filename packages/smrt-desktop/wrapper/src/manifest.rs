@@ -99,6 +99,8 @@ pub struct SidecarManifest {
     pub executable: String,
     /// Literal arguments passed to the executable.
     pub args: Vec<String>,
+    /// Optional app-root cwd; absent preserves the resource-root contract.
+    pub working_directory: Option<String>,
     /// Path probed on the selected loopback origin.
     pub health_route: String,
     /// Portable path under the Tauri app local data dir, exported as `SMRT_DATA_DIR`.
@@ -157,6 +159,7 @@ struct RawManifest {
     version: Option<Version>,
     executable: Option<String>,
     args: Option<Vec<String>>,
+    working_directory: Option<String>,
     health_route: Option<String>,
     data_directory: Option<String>,
     env: Option<Vec<(String, String)>>,
@@ -266,6 +269,9 @@ impl<'de> Deserialize<'de> for RawManifest {
                             }
                             raw.args = Some(map.next_value::<Args>()?.0);
                         }
+                        "workingDirectory" => {
+                            once!(raw.working_directory, "workingDirectory", String)
+                        }
                         "healthRoute" => once!(raw.health_route, "healthRoute", String),
                         "dataDirectory" => once!(raw.data_directory, "dataDirectory", String),
                         "env" => {
@@ -316,6 +322,13 @@ impl RawManifest {
                 });
             }
         }
+        if self
+            .working_directory
+            .as_deref()
+            .is_some_and(|dir| dir != "app")
+        {
+            return Err(invalid("workingDirectory", "must be app"));
+        }
         validate_route("healthRoute", &health_route)?;
         validate_portable_path("dataDirectory", &data_directory)?;
         if let Some(route) = &self.owner_claim_route {
@@ -327,6 +340,7 @@ impl RawManifest {
         Ok(SidecarManifest {
             executable,
             args,
+            working_directory: self.working_directory,
             health_route,
             data_directory,
             env,
@@ -717,6 +731,33 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn app_working_directory_is_optional_and_cannot_escape() {
+        assert_eq!(
+            SidecarManifest::parse(&with("workingDirectory", r#""app""#))
+                .unwrap()
+                .working_directory
+                .as_deref(),
+            Some("app")
+        );
+        for bad in [
+            r#""..""#,
+            r#""../app""#,
+            r#""/app""#,
+            r#""app/build""#,
+            "null",
+            "1",
+        ] {
+            assert!(SidecarManifest::parse(&with("workingDirectory", bad)).is_err());
+        }
+        let duplicate = GOOD.replacen(
+            '{',
+            r#"{"workingDirectory":"app","workingDirectory":"app","#,
+            1,
+        );
+        assert!(SidecarManifest::parse(&duplicate).is_err());
     }
 
     #[test]

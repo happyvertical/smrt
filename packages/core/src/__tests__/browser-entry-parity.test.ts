@@ -33,6 +33,11 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
 }> = [
   {
     reason:
+      'Server-only HTTP failure diagnostics use the framework logger and secret redaction; never expose server causes through the browser entry',
+    names: ['reportUnexpectedHttpError'],
+  },
+  {
+    reason:
       'REST server bootstrap (node:http); belongs behind `@happyvertical/smrt-core/generators/rest`. Model packages that import startRestServer from the root are tracked by #3616',
     names: [
       'APIGenerator',

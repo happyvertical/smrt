@@ -59,6 +59,16 @@ writable cgroup mount, and no permission to escape/migrate cgroups. A configurat
 string alone is insufficient. Container termination/OOM remains a retry/recovery
 condition in ingestion, never a successful extraction.
 
+Single-user desktop hosts (macOS, Windows) have no cgroups. A desktop app may pass
+`requireIngestionMemoryLimit(maximumBytes, { desktopBudget: { budgetBytes? } })`.
+The option is explicit opt-in, applies only on `darwin`/`win32`, and is ignored on
+Linux, where the cgroup check still runs. The budget defaults to the smaller of
+`maximumBytes` and a quarter of total system memory, must not exceed `maximumBytes` or total system memory (an explicit budget may be set up to those bounds), and
+fails closed otherwise. The result carries `enforcement: 'advisory-host-budget'`:
+this is a sizing bound, not an operating-system ceiling. Child processes keep
+their deadlines and Node heap cap; size concurrency from the budget. Never use it
+for a shared server.
+
 The web server may run on macOS or another platform while jobs run in that Linux
 worker. Local mock extraction tests establish sequencing and authorization,
 not live OCR quality or production container enforcement. An actual memory-limited

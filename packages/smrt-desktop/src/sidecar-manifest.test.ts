@@ -640,3 +640,30 @@ describe('serializeSidecarManifest', () => {
     ).toThrow(/healthRoute/);
   });
 });
+
+describe('normal built-app working directory', () => {
+  it('round trips the optional app cwd and rejects escapes and unknown directories', () => {
+    const value = {
+      ...manifest,
+      workingDirectory: 'app' as const,
+      args: ['build/index.js'],
+    };
+    expect(parseSidecarManifest(serializeSidecarManifest(value))).toEqual(
+      value,
+    );
+    for (const workingDirectory of [
+      '..',
+      '../app',
+      '/app',
+      'app/build',
+      '',
+      null,
+      1,
+    ]) {
+      expect(() =>
+        parseSidecarManifest(JSON.stringify({ ...value, workingDirectory })),
+      ).toThrow('workingDirectory');
+    }
+    expect(parseSidecarManifest(example).workingDirectory).toBeUndefined();
+  });
+});

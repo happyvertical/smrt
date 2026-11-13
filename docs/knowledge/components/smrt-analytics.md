@@ -5,7 +5,7 @@ description: "Analytics integration models for SMRT framework"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-13T15:36:38Z"
+  at: "2026-11-13T17:44:32Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:2a5d43d02ab7c8fb5d86757d6e9559bf7ac6b4d955c0e5bcba3a188318636194"

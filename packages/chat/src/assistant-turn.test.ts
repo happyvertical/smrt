@@ -19,6 +19,7 @@ import type {
   ChatOptions,
 } from '@happyvertical/ai';
 import type { PrincipalTool } from '@happyvertical/smrt-agents';
+import { resolveWorkProfile } from '@happyvertical/smrt-inference';
 import {
   MembershipCollection,
   RoleCollection,
@@ -36,8 +37,10 @@ import {
   SESSION_CONTINUATIONS_FIELD,
 } from './assistant-turn.js';
 import {
+  type AssistantApprovalView,
   type AssistantTurnEvent,
   readAssistantTurnStream,
+  reconcileAssistantApprovalView,
 } from './assistant-turn-events.js';
 import { ChatService } from './services/index.js';
 import {
@@ -190,6 +193,46 @@ describe('assistant turn', () => {
     runAsUserId: userId,
     tenantId,
     allowedTools: ['data.discover'],
+  });
+
+  it('restarts a design batch before executing any assist calls and preserves spent tokens', async () => {
+    const ran: string[] = [];
+    const metadata: unknown[] = [];
+    const ai = scriptedAI([
+      calls(['data-discover', {}]),
+      calls(['data-discover', {}]),
+      () => ({
+        content: 'Done',
+        finishReason: 'stop',
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      }),
+    ]);
+    const events = await collect(
+      runAssistantTurn({
+        ai,
+        db,
+        principal: principal(),
+        userMessage: 'Build the app',
+        extraTools: [readTool(ran)],
+        designTools: ['data.discover'],
+        workProfile: resolveWorkProfile({ engine: 'api' }),
+        resolveWorkProfile: async () =>
+          resolveWorkProfile({ engine: 'api', profile: 'design' }),
+        onWorkRun: (value) => metadata.push(value),
+        audit: () => {},
+      }),
+    );
+    expect(ran).toEqual(['data.discover']);
+    expect(metadata).toEqual([
+      expect.objectContaining({ profile: 'design', tokens: 24, toolCalls: 1 }),
+    ]);
+    expect(
+      events.some(
+        (event) =>
+          event.type === 'status' &&
+          event.status.label === 'Thinking this through',
+      ),
+    ).toBe(true);
   });
 
   describe('runToolLoop browser tools', () => {
@@ -1060,7 +1103,12 @@ describe('assistant turn', () => {
 
       // Default: the rejection is persisted, now marked recoverable.
       const plain = rows(await run(recovered));
-      expect(plain.map((row) => row.role)).toEqual(['tool', 'assistant']);
+      expect(plain.map((row) => row.role)).toEqual([
+        'tool',
+        'tool',
+        'assistant',
+      ]);
+      expect(plain[1].content).toBe('Completed this action');
       expect(parse(plain[0].metadata)).toEqual({
         toolStatus: 'error',
         errorKind: 'invalid_request',
@@ -1074,11 +1122,13 @@ describe('assistant turn', () => {
       });
       expect(rows(await run(recovered, false)).map((r) => r.role)).toEqual([
         'tool',
+        'tool',
         'assistant',
       ]);
 
       // Opt-in: a later success of the same tool drops the rejection.
       expect(rows(await run(recovered, true)).map((r) => r.content)).toEqual([
+        'Completed this action',
         'Found articles.',
       ]);
 
@@ -1150,7 +1200,11 @@ describe('assistant turn', () => {
       const persisted = events
         .filter((e) => e.type === 'message')
         .map((e) => e.message as { role: string; metadata: unknown });
-      expect(persisted.map((row) => row.role)).toEqual(['tool', 'assistant']);
+      expect(persisted.map((row) => row.role)).toEqual([
+        'tool',
+        'tool',
+        'assistant',
+      ]);
       const metadata = persisted[0].metadata;
       expect(
         typeof metadata === 'string' ? JSON.parse(metadata) : metadata,
@@ -1714,5 +1768,72 @@ describe('assistant turn', () => {
         /stopped responding/,
       );
     });
+  });
+});
+
+describe('canonical approval presentation reconciliation', () => {
+  const pending: AssistantApprovalView = {
+    id: 'hold',
+    callId: 'hold',
+    tool: 'change',
+    summary: 'Review this change',
+    status: 'pending',
+  };
+  it('accepts the first canonical view without inventing state', () => {
+    expect(reconcileAssistantApprovalView(undefined, pending)).toBe(pending);
+  });
+  it.each([
+    ['pending', 'pending'],
+    ['pending', 'approved'],
+    ['approved', 'executing'],
+    ['executing', 'executing'],
+    ['executing', 'succeeded'],
+  ] as const)('uses canonical data for %s to %s', (before, after) => {
+    const current = { ...pending, status: before };
+    const next = { ...pending, status: after, summary: 'Current caption' };
+    expect(reconcileAssistantApprovalView(current, next)).toBe(next);
+  });
+  it.each([
+    ['approved', 'pending'],
+    ['executing', 'pending'],
+    ['executing', 'approved'],
+  ] as const)('retains %s against a late %s', (before, after) => {
+    const current = { ...pending, status: before };
+    expect(
+      reconcileAssistantApprovalView(current, { ...pending, status: after }),
+    ).toBe(current);
+  });
+  it.each([
+    'succeeded',
+    'denied',
+    'failed',
+    'expired',
+  ] as const)('retains the first terminal %s against every later status', (status) => {
+    const current = { ...pending, status };
+    for (const later of [
+      'pending',
+      'approved',
+      'executing',
+      'succeeded',
+      'denied',
+      'failed',
+      'expired',
+    ] as const)
+      expect(
+        reconcileAssistantApprovalView(current, {
+          ...pending,
+          status: later,
+          summary: 'Later caption',
+        }),
+      ).toBe(current);
+  });
+  it('never merges different approval identities', () => {
+    expect(
+      reconcileAssistantApprovalView(pending, {
+        ...pending,
+        id: 'other',
+        status: 'succeeded',
+      }),
+    ).toBe(pending);
   });
 });

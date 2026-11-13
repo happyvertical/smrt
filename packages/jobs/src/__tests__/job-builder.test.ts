@@ -1,7 +1,39 @@
-import { describe, expect, it } from 'vitest';
-import { type Priority, parseDelay, priorityToNumber } from '../job-builder.js';
+import type { RetryStrategy, RetryStrategyConfig } from '@happyvertical/jobs';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  JobBuilder,
+  type Priority,
+  parseDelay,
+  priorityToNumber,
+} from '../job-builder.js';
+import type { SmrtJobCollection } from '../smrt-job.js';
+
+const sdk = vi.hoisted(() => ({ loads: 0 }));
+vi.mock('@happyvertical/jobs', async (original) => {
+  sdk.loads++;
+  return original();
+});
 
 describe('JobBuilder utilities', () => {
+  it('loads the SDK only for a default strategy at enqueue, preserving custom strategies', async () => {
+    const enqueueJob = vi.fn().mockResolvedValue({ id: 'job-1' });
+    const collection = { enqueueJob } as unknown as SmrtJobCollection;
+    const config: RetryStrategyConfig = { type: 'linear', config: {} };
+    const custom = { toConfig: () => config } as RetryStrategy;
+    const builder = new JobBuilder('Widget', 'w1', 'run', {}, collection);
+    expect(sdk.loads).toBe(0);
+    await builder.retryStrategy(custom).enqueue();
+    expect(sdk.loads).toBe(0);
+    expect(enqueueJob.mock.calls[0][0].retryStrategy).toBe(config);
+
+    await new JobBuilder('Widget', 'w2', 'run', {}, collection).enqueue();
+    expect(sdk.loads).toBe(1);
+    const { exponential } = await import('@happyvertical/jobs');
+    expect(enqueueJob.mock.calls[1][0].retryStrategy).toEqual(
+      exponential().toConfig(),
+    );
+  });
+
   describe('priorityToNumber', () => {
     it('converts string priorities to correct numbers', () => {
       expect(priorityToNumber('critical')).toBe(100);
