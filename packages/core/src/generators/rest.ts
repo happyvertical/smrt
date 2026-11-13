@@ -1,7 +1,4 @@
-import {
-  generatedExpression,
-  rejectGeneratedInput,
-} from '../generated-fields.js';
+import { generatedExpression } from '../generated-fields.js';
 import { getRegistryGeneration } from '../registry/generation.js';
 /**
  * High-performance REST API generator for smrt objects using Node.js HTTP server
@@ -1684,8 +1681,6 @@ export class APIGenerator {
       return {};
     }
 
-    if (objectName)
-      rejectGeneratedInput(ObjectRegistry.getFields(objectName), data);
     const serverManaged = new Set([
       'id',
       'tenantId',

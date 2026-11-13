@@ -1,5 +1,10 @@
 // biome-ignore-all lint/suspicious/noThenProperty: SQL SDK conditionals require a non-callable then data property.
+
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
+import ts from 'typescript';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { field } from '../decorators/index.js';
 import {
@@ -26,6 +31,7 @@ import type {
   FieldDefinition,
   QualifiedClassName,
   SmartObjectDefinition,
+  SmartObjectManifest,
 } from '../scanner/types.js';
 import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
 import { checkLiveSchemaParity } from '../schema/live-parity.js';
@@ -33,6 +39,7 @@ import { manifestColumnsToDefinitions } from '../schema/manifest-schema.js';
 import type { SchemaDefinition } from '../schema/types.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
+import { generateSvelteKitRoutes } from '../vite-plugin/sveltekit-generator.js';
 
 const persistenceEngines =
   process.env.SMRT_TEST_PGLITE === '1'
@@ -171,13 +178,13 @@ describe('database-generated fields #4915', () => {
         new Request('http://test/api/generated_invoices', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ qty: 2, total: 99 }),
+          body: JSON.stringify({ qty: 2, unitPrice: 3, total: 99 }),
         }),
       );
-      expect(denied.status).toBe(400);
-      expect(await denied.json()).toMatchObject({
-        error: { code: 'VALIDATION_GENERATED_FIELD_WRITE' },
-      });
+      expect(denied.status).toBe(201);
+      const accepted = (await collection.list())[0];
+      expect(accepted.toJSON()).toHaveProperty('total', 6);
+      await collection.delete(accepted.id!);
       const first = (await collection.create({
         qty: 2,
         unitPrice: 30,
@@ -1354,6 +1361,183 @@ describe('database-generated fields #4915', () => {
       db.query('INSERT INTO unique_generated (qty) VALUES (5)'),
     ).rejects.toThrow();
   });
+
+  for (const engine of persistenceEngines) {
+    for (const transport of ['REST', 'MCP', 'SvelteKit'] as const) {
+      it(`#4972 round2 item7: ${engine} ${transport} round-trips a fetched record and drops generated/readonly keys`, async () => {
+        const db = await getTestDatabase({
+          type: engine === 'sqlite' ? 'sqlite' : 'pglite',
+          classes: [],
+          includeSystemTables: false,
+        });
+        databases.push(db);
+        const def = definition();
+        def.fields!.serverNote = { type: 'text', default: 'server' };
+        const entry = runtimeModelEntry(def);
+        entry.fields.serverNote.readonly = true;
+        entry.decoratorConfig!.api = {
+          include: ['get', 'create', 'update'],
+          public: true,
+        };
+        const name = '@test/generated:GeneratedInvoice';
+        ObjectRegistry.registerFromManifest(name, entry, def.packageName);
+        for (const sql of await planRuntimeModelDDL(
+          name,
+          engine,
+          async () => null,
+        ))
+          await db.query(sql);
+        const collection = await ObjectRegistry.getCollection(name, { db });
+        const row = await collection.create({ qty: 2, unitPrice: 3 });
+        const fetched = (await collection.get(row.id!, {
+          cache: false,
+        }))!.toPublicJSON();
+        expect(fetched).toHaveProperty('total', 6);
+        const body = { ...fetched, qty: 4, total: 999, serverNote: 'forged' };
+        if (transport === 'REST') {
+          const api = new APIGenerator({ basePath: '/api' }, { db });
+          api.registerCollection('generated_invoices', collection);
+          const response = await api.generateHandler()(
+            new Request(`http://test/api/generated_invoices/${row.id}`, {
+              method: 'PUT',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(body),
+            }),
+          );
+          expect(response.status).toBe(200);
+        } else if (transport === 'MCP') {
+          const generator = new MCPGenerator({ classNames: [name] }, { db });
+          const response = await generator.handleToolCall({
+            method: 'tools/call',
+            params: {
+              name: 'generatedinvoice_update',
+              arguments: body,
+            },
+          });
+          expect(response.isError, JSON.stringify(response)).not.toBe(true);
+        } else {
+          const root = await mkdtemp(
+            join(tmpdir(), 'smrt-generated-roundtrip-'),
+          );
+          try {
+            await generateSvelteKitRoutes(
+              root,
+              {
+                packageName: def.packageName,
+                version: '1',
+                timestamp: 0,
+                objects: { [name]: entry },
+              } as SmartObjectManifest,
+              {
+                enabled: true,
+                routesDir: 'src/routes/api',
+                objectsDir: 'src/lib/objects',
+                configPath: 'src/lib/server',
+                configFileName: 'smrt.ts',
+              },
+            );
+            const source = await readFile(
+              join(root, 'src/routes/api/generated_invoices/[id]/+server.ts'),
+              'utf8',
+            );
+            const js = ts.transpileModule(source, {
+              compilerOptions: {
+                module: ts.ModuleKind.CommonJS,
+                target: ts.ScriptTarget.ES2022,
+              },
+            }).outputText;
+            const core = await import('../index.js');
+            const exports: {
+              PUT?: (event: {
+                request: Request;
+                params: { id: string };
+                locals: object;
+              }) => Promise<Response>;
+            } = {};
+            const require = (specifier: string): unknown => {
+              if (specifier === '@happyvertical/smrt-core') return core;
+              if (specifier === '@sveltejs/kit')
+                return {
+                  json: (data: unknown, init?: ResponseInit) =>
+                    Response.json(data, init),
+                  error: (status: number, message: string) =>
+                    Object.assign(new Error(message), { status }),
+                };
+              if (specifier.includes('smrt-register')) return {};
+              if (specifier.endsWith('/smrt'))
+                return {
+                  runtime: {
+                    getCollection: async () => collection,
+                    classOptions: () => ({ db }),
+                  },
+                };
+              throw new Error(
+                `Unexpected generated route import: ${specifier}`,
+              );
+            };
+            // Execute the actual emitted PUT handler; no server or listening port.
+            new Function('require', 'exports', js)(require, exports);
+            expect(exports.PUT).toBeTypeOf('function');
+            const response = await exports.PUT!({
+              params: { id: row.id! },
+              locals: {},
+              request: new Request('http://test/item', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify(body),
+              }),
+            });
+            expect(response.status).toBe(200);
+          } finally {
+            await rm(root, { recursive: true, force: true });
+          }
+        }
+        const updated = (await collection.get(row.id!, {
+          cache: false,
+        }))!.toJSON();
+        expect(updated).toMatchObject({
+          qty: 4,
+          total: 12,
+          serverNote: 'server',
+        });
+        await expect(
+          collection.update(row.id!, { total: 999 }),
+        ).rejects.toMatchObject({ code: 'VALIDATION_GENERATED_FIELD_WRITE' });
+      });
+    }
+
+    it(`#4972 round2 private naming: ${engine} a user generatedValues field does not collide with hydration bookkeeping`, async () => {
+      const db = await getTestDatabase({
+        type: engine === 'sqlite' ? 'sqlite' : 'pglite',
+        classes: [],
+        includeSystemTables: false,
+      });
+      databases.push(db);
+      const def = definition();
+      def.fields!.generatedValues = { type: 'text' };
+      const name = registerRuntimeModel(def);
+      for (const sql of await planRuntimeModelDDL(
+        name,
+        engine,
+        async () => null,
+      ))
+        await db.query(sql);
+      const collection = await ObjectRegistry.getCollection(name, { db });
+      const row = await collection.create({
+        generatedValues: 'user data',
+        qty: 2,
+        unitPrice: 3,
+      });
+      expect(row.toJSON()).toMatchObject({
+        generatedValues: 'user data',
+        total: 6,
+      });
+      await collection.update(row.id!, { qty: 4 });
+      expect(
+        (await collection.get(row.id!, { cache: false }))!.toJSON(),
+      ).toMatchObject({ generatedValues: 'user data', total: 12 });
+    });
+  }
 
   it('validates the closed grammar, reference rules, result types and bounds', () => {
     const check = (

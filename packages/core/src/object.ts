@@ -1561,7 +1561,7 @@ export class SmrtObject extends SmrtClass {
     return this;
   }
 
-  private generatedValues = new Map<string, unknown>();
+  private _generatedValues = new Map<string, unknown>();
 
   private captureGeneratedValues(): void {
     const self = this as unknown as Record<string, unknown>;
@@ -1569,7 +1569,7 @@ export class SmrtObject extends SmrtClass {
       ?.inheritedFields ??
       ObjectRegistry.getFields(this.getResolvedQualifiedName())) {
       if (generatedExpression(field) !== undefined)
-        this.generatedValues.set(name, self[name]);
+        this._generatedValues.set(name, self[name]);
     }
   }
 
@@ -3349,7 +3349,7 @@ export class SmrtObject extends SmrtClass {
       if (
         !Object.is(
           (this as unknown as Record<string, unknown>)[name],
-          this.generatedValues.get(name),
+          this._generatedValues.get(name),
         )
       ) {
         throw new GeneratedFieldError(

@@ -115,8 +115,13 @@ Persistence rejects supplied generated inputs, strips generated columns after
 the complete serialization chain, and reloads computed values before
 `afterSave`. Shared compatible bulk preparation uses the same path. Direct
 property edits after initialization are rejected against the hydrated baseline.
-Generated core REST/MCP write schemas omit them;
-output shapes retain them subject to normal read policy.
+REST, MCP and generated SvelteKit create/update handlers drop supplied generated
+keys exactly like readonly keys, so a fetched record can be sent back whole.
+The database recomputes the value from writable inputs. Direct object and
+collection assignments still refuse generated keys. Generated REST/MCP write
+schemas omit them; output shapes retain them subject to normal read policy.
+Hydration bookkeeping uses the private `_generatedValues` slot, leaving a
+person's ordinary `generatedValues` model field available.
 
 Tests: `src/__tests__/generated-fields.test.ts` runs SQLite persistence in
 `pnpm test` and PostgreSQL persistence in `pnpm test:pglite`, using the existing

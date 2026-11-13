@@ -18,6 +18,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import { generateActivationRegistration } from '../activation/generate.js';
 import { publishArtifactFiles } from '../consumer-plugin/artifact-publication.js';
+import { generatedExpression } from '../generated-fields.js';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
 import {
   type ApiMethodExposure,
@@ -416,8 +417,7 @@ function collectReadonlyFieldNames(objectDef: SmartObjectDefinition): string[] {
     if (
       (def as { readonly?: boolean }).readonly === true ||
       meta?.readonly === true ||
-      def.generated !== undefined ||
-      meta?.generated !== undefined
+      generatedExpression(def) !== undefined
     ) {
       names.push(name);
     }
@@ -478,8 +478,7 @@ ${
   const writable = targetName ? (api && typeof api === 'object' && Array.isArray(api.writable) ? api.writable : null) : WRITABLE_ALLOWLIST;
 `
     : ''
-}${dynamicTarget ? `  if (targetName && [...ObjectRegistry.getFields(targetName).values()].some(field => typeof (field.generated ?? field._meta?.generated) === 'object')) ObjectRegistry.assertWritableInput(targetName, data);\n` : Object.values(objectDef.fields).some((field) => typeof (field.generated ?? field._meta?.generated) === 'object') ? `  ObjectRegistry.assertWritableInput(${JSON.stringify(objectDef.qualifiedName ?? objectDef.className)}, data);\n` : ''}
-  const result: Record<string, unknown> = {};
+}  const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
     if (key.startsWith('_')) continue;
     if (SERVER_MANAGED_FIELDS.includes(key)) continue;

@@ -1760,14 +1760,6 @@ export class MCPGenerator {
       return {};
     }
 
-    if (objectName)
-      if (
-        [...ObjectRegistry.getFields(objectName).values()].some(
-          (field) =>
-            typeof (field.generated ?? field._meta?.generated) === 'object',
-        )
-      )
-        ObjectRegistry.assertWritableInput(objectName, data);
     const serverManaged = new Set([
       'id',
       'tenantId',
@@ -2999,7 +2991,6 @@ function applyWritablePolicy(objectName: string, data: any): Record<string, any>
       readonly.add(name);
     }
   }
-  if ([...ObjectRegistry.getFields(objectName).values()].some(field => typeof (field.generated ?? field._meta?.generated) === 'object')) ObjectRegistry.assertWritableInput(objectName, data);
   const result: Record<string, any> = {};
   for (const [key, value] of Object.entries(data as Record<string, any>)) {
     if (key.startsWith('_')) continue;
