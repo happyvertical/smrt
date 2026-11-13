@@ -66,7 +66,11 @@ stays below the domain layer. The app passes them as props, or `CookbookApp` sup
   A missing target or searchable display label disables the picker with an
   explanation while preserving the stored ID on unrelated edits. All picker
   messages use `strings.screens.ts`.
-- **REST adapters.** `createRecipeScreensSource(definition, fetchers)` uses
+- **REST adapters.** REST-only `endpoint` / `actions` metadata belongs to the
+  adapter parameter types, composed from smrt-web; the transport-neutral
+  `ScreenCollectionDefinition` omits it so consumer definitions can extend
+  both their REST contract and the screen contract.
+  `createRecipeScreensSource(definition, fetchers)` uses
   smrt-web's envelope/error handling and exposes only permitted mutations.
   `search` requests `limit + 1` rows, `offset`, a display-field `like` filter,
   and stable display-field/ID ordering. `createRecipeScreenReferences(definitions,

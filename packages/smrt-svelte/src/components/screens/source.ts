@@ -2,6 +2,7 @@
 import {
   createDefinitionFetchers,
   type SmrtCrudFetchers,
+  type SmrtWebCollectionDefinition,
   SmrtWebRequestError,
   throwIfSmrtWebError,
   unwrapItemResult,
@@ -14,8 +15,14 @@ import type {
   ScreenReferenceSources,
 } from './types.js';
 
+/** REST metadata is optional for adapters, separate from transport-neutral screens. */
+type RestDefinition = ScreenCollectionDefinition & {
+  endpoint?: SmrtWebCollectionDefinition['endpoint'];
+  actions?: Readonly<SmrtWebCollectionDefinition['actions']>;
+};
+
 export function createRecipeScreensSource(
-  definition: ScreenCollectionDefinition,
+  definition: RestDefinition,
   fetchers: Pick<SmrtCrudFetchers, 'list'> & Partial<SmrtCrudFetchers>,
   options: {
     allPages?: boolean;
@@ -106,11 +113,11 @@ export function createRecipeScreensSource(
 
 /** Resolve a cookbook menu entry over generated REST metadata, including keyed row filters. */
 export function createRecipeScreenEntry(
-  definitions: Readonly<Record<string, ScreenCollectionDefinition>>,
+  definitions: Readonly<Record<string, RestDefinition>>,
   entry: { model: string; filter?: { field: string; value: string } | null },
   options: { fetch?: typeof fetch; basePath?: string } = {},
 ): {
-  definition: ScreenCollectionDefinition;
+  definition: RestDefinition;
   source: RecipeScreensSource;
 } | null {
   const definition = Object.values(definitions).find(
@@ -136,7 +143,7 @@ export function createRecipeScreenEntry(
 
 /** Build once for an app's exposed definitions, then pass the map to RecipeScreens.references. */
 export function createRecipeScreenReferences(
-  definitions: Readonly<Record<string, ScreenCollectionDefinition>>,
+  definitions: Readonly<Record<string, RestDefinition>>,
   options: {
     basePath?: string;
     fetch?: typeof fetch;

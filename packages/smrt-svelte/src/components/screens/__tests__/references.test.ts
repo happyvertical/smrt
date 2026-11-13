@@ -21,7 +21,7 @@ import type {
   ScreenReferenceSources,
 } from '../types.js';
 
-const people: ScreenCollectionDefinition = {
+const people: Parameters<typeof createRecipeScreensSource>[0] = {
   name: 'people',
   objectRef: '@test/people:Person',
   className: 'Person',
@@ -432,6 +432,24 @@ describe('named screen references', () => {
 });
 
 describe('generated REST screen source', () => {
+  it('keeps transport-neutral definitions usable without inventing REST capabilities', async () => {
+    expect(
+      createRecipeScreenEntry(
+        { orders: definition },
+        { model: definition.objectRef },
+      ),
+    ).toBeNull();
+    expect(createRecipeScreenReferences({ orders: definition })).toEqual({});
+    const source = createRecipeScreensSource(definition, {
+      list: async () => [],
+    });
+    expect(await source.list()).toEqual([]);
+    expect(source.create).toBeUndefined();
+    expect(source.update).toBeUndefined();
+    expect(source.delete).toBeUndefined();
+    expect(source.search).toBeUndefined();
+  });
+
   it('adapts keyed cookbook entries across pages and keeps writes inside their filter', async () => {
     const first = Array.from({ length: 500 }, (_, i) => ({
       id: String(i),

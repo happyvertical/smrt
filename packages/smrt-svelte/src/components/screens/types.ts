@@ -11,6 +11,7 @@ import type { RecordStatusTone } from '../overview/widgets/data.js';
 import type { StoredLineItemsTotals } from '../overview/widgets/line-totals.js';
 import type { ScreenRelation } from './relations.js';
 import type { FieldRole } from './roles.js';
+import type { createRecipeScreenReferences } from './source.js';
 
 /**
  * Structural types for the manifest-derived record screens (#3718).
@@ -128,9 +129,6 @@ export interface ScreenCollectionDefinition {
   displayLabelField?: string;
   /** Validated one-hop projection resolved by the server, never by a screen. */
   displayLabelProjection?: { via: string; field: string; fallback: string };
-  /** Generated REST endpoint and permitted actions (used by the source factory). */
-  endpoint?: string;
-  actions?: readonly string[];
   fields: Readonly<Record<string, ScreenFieldDefinition>>;
   /** Manifest-derived relationship edges; the source of `deriveScreenRelations`. */
   relationships?: readonly ScreenRelationshipDefinition[];
@@ -528,7 +526,7 @@ export interface RecipeScreensProps {
    * Every exposed collection definition, keyed by collection name; the
    * record view derives this model's relations from it. Omit for none.
    */
-  definitions?: Readonly<Record<string, ScreenCollectionDefinition>>;
+  definitions?: Parameters<typeof createRecipeScreenReferences>[0];
   /** Passed to `RecordScreen` for the record view and edit. */
   record?: Pick<
     RecordScreenProps,

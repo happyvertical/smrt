@@ -16,9 +16,12 @@ import {
 } from '../../cookbook/__tests__/workspace-catalog';
 import { buildCookbookShell } from '../../cookbook/build';
 import { deriveScreenFields } from '../fields';
-import type { ScreenCollectionDefinition } from '../types';
+import type { createRecipeScreenReferences } from '../source.js';
 
-let definitions: Map<string, ScreenCollectionDefinition>;
+let definitions: Map<
+  string,
+  Parameters<typeof createRecipeScreenReferences>[0][string]
+>;
 beforeAll(() => {
   const objects: SmartObjectManifest['objects'] = {};
   for (const pkg of readdirSync(join(REPO_ROOT, 'packages'))) {
