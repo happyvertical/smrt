@@ -49,3 +49,5 @@ Svelte components auto-register with `ModuleUIRegistry` on import of `@happyvert
 - **Editor bypasses collection.create()**: creates Image instances directly (skips collection validation)
 - **Derivative creation**: 3 DB calls — `collection.create()` + `store.storeFile()` + `save()`
 - **Orientation filtering is in-memory**: queries all images, then filters by dimensions
+
+Native processor loading: [agents/optional-loading.md](agents/optional-loading.md).

@@ -250,7 +250,7 @@ export class SocialPost extends SmrtObject {
    * `@crossPackageRef` rather than a `@foreignKey`: no DDL FK constraint and
    * no value import back into this package.
    */
-  @crossPackageRef('@happyvertical/smrt-video:VideoContent')
+  @crossPackageRef('@happyvertical/smrt-video:VideoShot')
   videoContentId: string | null = null;
 
   /**

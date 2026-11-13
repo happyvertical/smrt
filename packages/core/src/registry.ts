@@ -1,3 +1,4 @@
+import { writeThroughFields } from './write-through.js';
 /**
  * Global object registry for SMRT classes
  *
@@ -78,12 +79,22 @@ import {
 } from './registry/class-registration';
 import {
   applyRuntimeOverrides,
+  checkpointRuntimeOverrides,
   clearRuntimeOverrides,
   getRuntimeOverride,
   type RuntimeRegistrationOverride,
   registerRuntimeOverride,
 } from './registry/runtime-overrides';
-import { clearSubtypeLineage } from './registry/subtype-lineage';
+import {
+  checkpointSubtypeLineage,
+  clearSubtypeLineage,
+  findReplacement,
+  replacedDeclarations,
+} from './registry/subtype-lineage';
+import {
+  isRuntimeModelEnabled,
+  type RuntimeExposureContext,
+} from './runtime-exposure.js';
 
 export type { RuntimeRegistrationOverride } from './registry/runtime-overrides';
 
@@ -180,6 +191,7 @@ import {
   getCollections,
   getCollectionTableNames,
   getConstructorFieldDecorators,
+  getConstructorIndex,
   getConstructorTenantScopedDeclarations,
   getDbInstanceIds,
   getDiscoveryAttemptCache,
@@ -333,7 +345,8 @@ function manifestParentUpdate(
     registered.extends &&
     isQualifiedName(registered.extends) &&
     parseQualifiedName(registered.extends).className === parent &&
-    getClasses().has(registered.extends)
+    (getClasses().has(registered.extends) ||
+      replacedDeclarations().has(registered.extends))
   ) {
     return undefined;
   }
@@ -776,6 +789,19 @@ function resolveEffectiveConfig(
   return config;
 }
 
+/** A create choice uses the exact registry identity, never a simple-name lookup. */
+export interface CreateTarget {
+  name: string;
+  label: string;
+}
+
+/** Static catalog without context; pass trusted context for a live offering. */
+export interface CollectionCreateTargets {
+  base: CreateTarget;
+  subtypes: CreateTarget[];
+  polymorphic: boolean;
+}
+
 /**
  * Central registry for all SMRT objects
  *
@@ -783,6 +809,63 @@ function resolveEffectiveConfig(
  * (even from different package resolution paths) share the same registry state.
  */
 export class ObjectRegistry {
+  /**
+   * Checkpoint the named runtime registrations before a transactional schema
+   * edit. The caller serializes registry writers and gates these models until
+   * commit/rollback; restoring never clears unrelated registrations or policy.
+   */
+  static checkpointRegistrations(names: Iterable<string>): () => void {
+    const keys = new Set(names);
+    for (const [key, entry] of ObjectRegistry.classes)
+      if (entry.replacedQualifiedNames?.some((id) => keys.has(id)))
+        keys.add(key);
+    const saved = new Map(
+      [...keys].map((key) => {
+        const entry = ObjectRegistry.classes.get(key);
+        return [
+          key,
+          entry
+            ? {
+                ...entry,
+                fields: new Map(entry.fields),
+                methods: new Map(entry.methods),
+                config: { ...entry.config },
+                replacedQualifiedNames: entry.replacedQualifiedNames
+                  ? [...entry.replacedQualifiedNames]
+                  : undefined,
+              }
+            : undefined,
+        ] as const;
+      }),
+    );
+    const restoreLineage = checkpointSubtypeLineage(keys);
+    const restorePolicies = checkpointRuntimeOverrides(keys);
+    return () => {
+      for (const [key, entry] of saved) {
+        const current = ObjectRegistry.classes.get(key);
+        if (current && current.constructor !== entry?.constructor)
+          getConstructorIndex().delete(
+            current.constructor as SmrtObjectConstructor,
+          );
+        if (entry) {
+          ObjectRegistry.classes.set(key, entry);
+          getConstructorIndex().set(
+            entry.constructor as SmrtObjectConstructor,
+            key,
+          );
+        } else ObjectRegistry.classes.delete(key);
+      }
+      restoreLineage();
+      restorePolicies();
+      applyRuntimeOverrides();
+      ObjectRegistry.collectionCache.clear();
+      ObjectRegistry.invalidateAllInheritanceCaches();
+    };
+  }
+  /** Invalidation token for consumers caching generated definitions. */
+  static getGeneration(): number {
+    return getRegistryGeneration();
+  }
   /**
    * Get the classes map from globalThis, initializing if needed
    */
@@ -1547,6 +1630,163 @@ export class ObjectRegistry {
   }
 
   /**
+   * What this collection can create. Same-name app replacements are effective
+   * I/O identities; declared ancestry keeps provider children in their family.
+   * Context-free calls describe the AOT superset; live callers MUST pass context.
+   */
+  static getCreateTargets(
+    collectionName: string,
+    context?: RuntimeExposureContext,
+  ): CollectionCreateTargets {
+    const base =
+      ObjectRegistry.getExposureModel(collectionName) ??
+      ObjectRegistry.resolveCollectionRegistration(collectionName).registered;
+    if (!base) throw new Error(`Unknown create collection: ${collectionName}`);
+    const name = base.qualifiedName || base.name;
+    const target = (info: RegisteredClass): CreateTarget => ({
+      name: info.qualifiedName || info.name,
+      label:
+        ObjectRegistry.getConfig(info.qualifiedName || info.name).ui?.label ||
+        info.name,
+    });
+    const polymorphic = ObjectRegistry.getTableStrategy(name) === 'sti';
+    const subtypes = new Map<string, CreateTarget>();
+    if (polymorphic) {
+      const isStub = (info: RegisteredClass) =>
+        (info.constructor as { _isManifestStub?: boolean })._isManifestStub ===
+        true;
+      for (const [key, info] of ObjectRegistry.getAllClasses()) {
+        if (info === base || info.config.abstract) continue;
+        const descends =
+          (!isStub(info) &&
+            !isStub(base) &&
+            info.constructor.prototype instanceof base.constructor) ||
+          ObjectRegistry.getInheritanceChain(key).some(
+            (ancestor) => ObjectRegistry.getClass(ancestor) === base,
+          );
+        if (
+          !descends ||
+          ObjectRegistry.getTableName(key) !== ObjectRegistry.getTableName(name)
+        )
+          continue;
+        if (context && !isRuntimeModelEnabled(info, context)) continue;
+        const choice = target(info);
+        subtypes.set(choice.name, choice);
+      }
+    }
+    return {
+      base: target(base),
+      subtypes: [...subtypes.values()].sort((a, b) =>
+        a.name.localeCompare(b.name),
+      ),
+      polymorphic,
+    };
+  }
+
+  /**
+   * Validate a create selector before filtering writable fields. `createType` is the
+   * public selector on STI families; `_meta_type` remains a compatible alias.
+   * The business `type` field is never interpreted as a selector.
+   */
+  static resolveCreateTarget(
+    collectionName: string,
+    input: unknown,
+    context: RuntimeExposureContext,
+  ): CreateTarget & { collectionName: string; data: Record<string, unknown> } {
+    const catalog = ObjectRegistry.getCreateTargets(collectionName, context);
+    let selected = catalog.base;
+    let data =
+      input && typeof input === 'object' && !Array.isArray(input)
+        ? (input as Record<string, unknown>)
+        : {};
+    if (catalog.polymorphic) {
+      const { createType, _meta_type, ...fields } = data;
+      const selector = createType !== undefined ? createType : _meta_type;
+      if (
+        createType !== undefined &&
+        _meta_type !== undefined &&
+        createType !== _meta_type
+      ) {
+        throw Object.assign(new Error('Conflicting create type selectors'), {
+          status: 400,
+        });
+      }
+      if (selector !== undefined) {
+        const choice = [catalog.base, ...catalog.subtypes].find(
+          (candidate) => candidate.name === selector,
+        );
+        if (!choice) {
+          const reason =
+            typeof selector === 'string' && ObjectRegistry.getClass(selector)
+              ? `is not a subtype of '${catalog.base.name}' or is unavailable`
+              : 'is not registered';
+          throw Object.assign(
+            new Error(
+              `Unknown STI discriminator: ${String(selector)} ${reason}`,
+            ),
+            { status: 400 },
+          );
+        }
+        selected = choice;
+      }
+      data = fields;
+    }
+    if (
+      !isRuntimeModelEnabled(
+        ObjectRegistry.getExposureModel(catalog.base.name),
+        context,
+      ) ||
+      !isRuntimeModelEnabled(
+        ObjectRegistry.getExposureModel(selected.name),
+        context,
+      )
+    ) {
+      throw Object.assign(new Error('Create target is unavailable'), {
+        status: 404,
+      });
+    }
+    return {
+      ...selected,
+      collectionName:
+        selected.name === catalog.base.name ? collectionName : selected.name,
+      data,
+    };
+  }
+
+  /** Effective model identity for runtime exposure, including collection-hosted actions. */
+  static getExposureModel(name: string): RegisteredClass | undefined {
+    const registered = _getClass(name);
+    if (
+      !registered ||
+      !isCollectionRegistration(name, registered, collectionExposureLookup)
+    )
+      return registered;
+    // A public export alias may differ from constructor.name (AppCustomer ->
+    // Customer). Resolve the exact bound item constructor before textual names.
+    const itemConstructor = (
+      registered.constructor as unknown as {
+        _itemClass?: SmrtObjectConstructor;
+      }
+    )._itemClass;
+    const bound = itemConstructor
+      ? ObjectRegistry.getEffectiveClassByConstructor(itemConstructor)
+      : undefined;
+    if (bound) return bound;
+    const itemName = resolveCollectionItemClassName(
+      name,
+      registered,
+      collectionExposureLookup,
+    );
+    return itemName
+      ? resolveRelatedRegistration(
+          itemName,
+          registered,
+          collectionExposureLookup,
+        )
+      : undefined;
+  }
+
+  /**
    * Get a registered class by its constructor reference.
    * This is the most reliable lookup method as it avoids name collision issues
    * that can occur when multiple packages define classes with the same name.
@@ -1633,7 +1873,8 @@ export class ObjectRegistry {
     options: { source?: string } = {},
   ): string | undefined {
     if (!name.includes(':')) return undefined;
-    const registered = _getClassByQualifiedName(name, options.source);
+    const registered =
+      _getClassByQualifiedName(name, options.source) ?? findReplacement(name);
     if (!registered) return undefined;
     return registered.qualifiedName ?? name;
   }
@@ -1686,7 +1927,8 @@ export class ObjectRegistry {
     options: { source?: string } = {},
   ): string[] {
     if (!name.includes(':')) return [name];
-    const registered = _getClassByQualifiedName(name, options.source);
+    const registered =
+      _getClassByQualifiedName(name, options.source) ?? findReplacement(name);
     if (!registered?.qualifiedName) return [name];
     return [
       registered.qualifiedName,
@@ -1830,6 +2072,11 @@ export class ObjectRegistry {
    * }
    * ```
    */
+  /** Declared ancestry metadata, before same-name replacement redirects I/O. */
+  static getDeclaredClass(name: string): RegisteredClass | undefined {
+    return replacedDeclarations().get(name) ?? getClasses().get(name);
+  }
+
   static getAllClasses(): Map<string, RegisteredClass> {
     return _getAllClasses();
   }
@@ -2850,8 +3097,8 @@ export class ObjectRegistry {
         it?: unknown;
       };
       const isTestEnv =
-        process.env.NODE_ENV === 'test' ||
-        process.env.VITEST === 'true' ||
+        globalThis.process?.env?.NODE_ENV === 'test' ||
+        globalThis.process?.env?.VITEST === 'true' ||
         typeof testGlobals.describe !== 'undefined' ||
         typeof testGlobals.it !== 'undefined';
 
@@ -3080,6 +3327,27 @@ export class ObjectRegistry {
    * api/mcp/cli surfaces it leaves unset come from its model (see
    * `registry/collection-exposure.ts`).
    */
+  /** Virtual writable fields; these never enter the persistence registry/schema. */
+  static getWriteThroughFields(name: string) {
+    if (!ObjectRegistry.getConfig(name).writeThrough) return {};
+    const fields = Object.fromEntries(ObjectRegistry.getFields(name));
+    return writeThroughFields(
+      fields,
+      ObjectRegistry.getConfig(name).writeThrough,
+      (via) => {
+        const related = fields[via]?.related;
+        if (typeof related !== 'string')
+          throw new Error(`writeThrough target for ${via} is unavailable`);
+        const target = ObjectRegistry.getClass(related);
+        if (!target)
+          throw new Error(`writeThrough target ${related} is unavailable`);
+        return Object.fromEntries(
+          ObjectRegistry.getFields(target.qualifiedName ?? target.name),
+        );
+      },
+    );
+  }
+
   static getConfig(name: string): SmartObjectConfig {
     // Issue #951: Use findClass for multi-strategy lookup
     const registered = ObjectRegistry.findClass(name);
@@ -3441,7 +3709,7 @@ export class ObjectRegistry {
   static getRelationships(className: string): RelationshipMetadata[] {
     const registered = ObjectRegistry.getClass(className);
     const key = registered?.qualifiedName || className;
-    return ObjectRegistry.getRelationshipMap().get(key) || [];
+    return _getRelationshipMap(key).get(key) || [];
   }
 
   /**
@@ -4382,7 +4650,10 @@ export class ObjectRegistry {
       if (childKey === targetKey) continue;
 
       const chain = ObjectRegistry.getInheritanceChain(childKey);
-      if (chain.includes(targetKey)) {
+      if (
+        chain.includes(targetKey) ||
+        target?.replacedQualifiedNames?.some((name) => chain.includes(name))
+      ) {
         descendants.push(childKey);
       }
     }

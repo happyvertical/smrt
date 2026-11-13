@@ -37,3 +37,31 @@ for (const directory of ['template-sveltekit', 'template-site-static-json']) {
     }
   });
 }
+
+
+test('real CLI tarball retains every authored cookbook API route', () => {
+  const output = mkdtempSync(join(tmpdir(), 'smrt-cookbook-pack-'));
+  try {
+    const packed = spawnSync('pnpm', ['pack', '--pack-destination', output], {
+      cwd: join(repoRoot, 'packages/cli'), encoding: 'utf8', timeout: 180_000,
+    });
+    assert.equal(packed.status, 0, `${packed.error ?? ''}\n${packed.stdout}${packed.stderr}`);
+    const tarballs = readdirSync(output).filter((file) => file.endsWith('.tgz'));
+    assert.equal(tarballs.length, 1);
+    const tarball = join(output, tarballs[0]);
+    const listed = spawnSync('tar', ['-tzf', tarball], { encoding: 'utf8' });
+    assert.equal(listed.status, 0, listed.stderr);
+    const files = new Set(listed.stdout.trim().split('\n'));
+    const prefix = 'package/dist/templates/cookbook/';
+    assert.equal(files.has(`${prefix}.gitignore`), false);
+    const ignored = spawnSync('tar', ['-xOf', tarball, `${prefix}gitignore.template`], { encoding: 'utf8' });
+    assert.equal(ignored.status, 0, ignored.stderr);
+    for (const route of ['_runtime/owner-link', 'assistant/[...path]', 'connect-ai', 'cookbook/prebuilt', 'cookbook/preferences', 'onboarding']) {
+      const path = `src/routes/api/${route}/+server.ts`;
+      assert.ok(files.has(`${prefix}${path}`), `Missing packed authored route ${path}`);
+      assert.ok(ignored.stdout.split('\n').includes(`!${path}`), `Authored route must remain tracked: ${path}`);
+    }
+  } finally {
+    rmSync(output, { recursive: true, force: true });
+  }
+});

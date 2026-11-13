@@ -1,4 +1,5 @@
 <script lang="ts">
+import { greeting } from '$lib/ui/greeting';
 import { modelHref } from '$lib/ui/menu';
 import type { PageProps } from './$types';
 
@@ -6,9 +7,7 @@ let { data }: PageProps = $props();
 
 const description = $derived(data.description);
 const models = $derived(Object.entries(description?.models ?? {}));
-const who = $derived(
-  data.session.user?.name || data.session.user?.email || 'there',
-);
+const hello = $derived(greeting(data.session.user));
 </script>
 
 <svelte:head><title>{description?.name ?? 'My app'}</title></svelte:head>
@@ -18,10 +17,16 @@ const who = $derived(
     <header class="smrt-app-shell__head" data-smrt-part="header"><h1>My app</h1></header>
     <div class="smrt-app-shell__card" data-smrt-part="panel">
       <p><strong>You are signed out.</strong></p>
-      <p class="smrt-app-shell__muted" data-smrt-part="description">
-        Open this app from your desktop app to sign in. On a first run,
-        <a class="smrt-app-shell__link" href="/setup" data-smrt-part="link">set up the owner</a> from this computer.
-      </p>
+      {#if data.desktop}
+        <p class="smrt-app-shell__muted">
+          Quit and reopen the app to sign back in.
+        </p>
+      {:else}
+        <p class="smrt-app-shell__muted">
+          Open this app from your desktop app to sign in. On a first run,
+          <a class="smrt-app-shell__link" href="/setup">set up the owner</a> from this computer.
+        </p>
+      {/if}
     </div>
   {:else if !description}
     <header class="smrt-app-shell__head" data-smrt-part="header"><h1>My app</h1></header>
@@ -32,7 +37,7 @@ const who = $derived(
     <header class="smrt-app-shell__head" data-smrt-part="header">
       <div>
         <h1>{description.name}</h1>
-        <p class="smrt-app-shell__sub" data-smrt-part="description">Hello, {who}.</p>
+        <p class="smrt-app-shell__sub">{hello}</p>
       </div>
       {#if description.pendingApprovals > 0}
         <a class="smrt-app-shell__btn smrt-app-shell__btn-primary" href="/approvals" data-smrt-part="trigger">
@@ -86,8 +91,5 @@ const who = $derived(
   .smrt-app-shell__tile span {
     display: block;
   }
-}
-
-@layer smrt.theme {
 }
 </style>

@@ -13,6 +13,21 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { Expense } from '../models/Expense';
 
 const models = [{ ctor: Expense, pkg: '@happyvertical/smrt-expenses' }];
+it('emits qualified profile references for data-only activation and reference pickers', () => {
+  const manifest = JSON.parse(
+    readFileSync(new URL('../../dist/manifest.json', import.meta.url), 'utf8'),
+  ) as SmartObjectManifest;
+  const expense = manifest.objects['@happyvertical/smrt-expenses:Expense'];
+  for (const field of [
+    'paidByProfileId',
+    'reviewedByProfileId',
+    'recordedByProfileId',
+  ]) {
+    expect(expense.fields[field]?.related, field).toBe(
+      '@happyvertical/smrt-profiles:Profile',
+    );
+  }
+});
 afterEach(() => ObjectRegistry.clear());
 for (const path of ['runtime', 'manifest'] as const) {
   describe(`consumer restrictions on package models (${path})`, () => {

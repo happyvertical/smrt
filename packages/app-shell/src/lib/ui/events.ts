@@ -24,16 +24,33 @@ export function parseShellEvent(data: string): ShellEvent | null {
   }
   if (!v || typeof v !== 'object') return null;
   const e = v as Record<string, unknown>;
+  const target =
+    e.target === 'draft' || e.target === 'live' ? e.target : undefined;
   if (e.type === 'changed')
     return {
       type: 'changed',
+      ...(target ? { target } : {}),
       version: Number(e.version) || 0,
       summary: String(e.summary ?? ''),
     };
   if (e.type === 'records')
     return {
       type: 'records',
+      ...(target ? { target } : {}),
       model: typeof e.model === 'string' ? e.model : null,
+    };
+  if (
+    e.type === 'draft' &&
+    typeof e.id === 'string' &&
+    ['started', 'published', 'discarded', 'unpublishable'].includes(
+      String(e.status),
+    )
+  )
+    return {
+      type: 'draft',
+      status: e.status as 'started',
+      id: e.id,
+      name: String(e.name ?? ''),
     };
   if (e.type === 'approval' && typeof e.id === 'string')
     return {
@@ -63,6 +80,9 @@ export function keysFor(event: ShellEvent): DependsKey[] {
     case 'approval':
       // The menu badge lives in the shell data.
       return [DEPENDS.shell, DEPENDS.approvals];
+    case 'draft':
+      // A draft started, ended or turned out unusable: everything is stale.
+      return [...ALL_KEYS];
   }
 }
 
@@ -80,6 +100,7 @@ export function reduceKeys(
 export function announcement(event: ShellEvent): string | null {
   if (event.type === 'changed')
     return event.summary ? `App changed: ${event.summary}` : 'App changed';
+  if (event.type === 'draft') return `Draft ${event.status}: ${event.name}`;
   if (event.type === 'approval') {
     if (event.status === 'pending') return `Needs approval: ${event.summary}`;
     return `Approval ${event.status}: ${event.summary}`;

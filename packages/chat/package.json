@@ -54,6 +54,18 @@
       "types": "./dist/svelte/index.d.ts",
       "svelte": "./dist/svelte/index.js",
       "import": "./dist/svelte/index.js"
+    },
+    "./engines": {
+      "types": "./dist/engines.d.ts",
+      "import": "./dist/engines.js"
+    },
+    "./tool-summary": {
+      "types": "./dist/tool-summary.d.ts",
+      "import": "./dist/tool-summary.js"
+    },
+    "./assistant-approvals": {
+      "types": "./dist/assistant-approvals.d.ts",
+      "import": "./dist/assistant-approvals.js"
     }
   },
   "files": [
@@ -99,6 +111,7 @@
     "@happyvertical/ai": "catalog:",
     "@happyvertical/speech": "catalog:",
     "@happyvertical/smrt-images": "workspace:*",
+    "@happyvertical/smrt-app-runtime": "workspace:*",
     "@happyvertical/smrt-agents": "workspace:*",
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-config": "workspace:*",
@@ -112,7 +125,8 @@
     "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/images": "catalog:",
-    "gsap": "^3.13.0"
+    "gsap": "^3.13.0",
+    "@happyvertical/smrt-inference": "workspace:*"
   },
   "peerDependencies": {
     "svelte": "^5.57.0"

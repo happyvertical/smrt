@@ -64,13 +64,13 @@ describe('generated MCP custom-action runtime (#2182)', () => {
     });
 
     expect(source).toContain(
-      "cacheHints: {\n          'tools/list': TOOL_LIST_CACHE_HINT,",
+      "cacheHints: {\n          'tools/list': (hasRuntimeExposureGate() || getCookbookToolService()) ? { ttlMs: 0, cacheScope: 'private' } : TOOL_LIST_CACHE_HINT,",
     );
     expect(source).toContain(
       'const TOOL_LIST_CACHE_HINT = {"ttlMs":86400000,"cacheScope":"private"};',
     );
     expect(source).toContain(
-      'tools: [...TOOLS].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)',
+      "tools: [...TOOLS.filter((tool) => runtimeToolEnabled(tool.name)), ...(await getCookbookToolService()?.list({ surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID, userId: process.env.SMRT_MCP_USER_ID }) ?? [])].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)",
     );
   });
 
@@ -276,18 +276,14 @@ describe('generated MCP custom-action runtime (#2182)', () => {
           inputSchema: { type: 'object' },
         },
       ],
-      stiTargets: {
-        animal: { '@test/animals:Cat': '@test/animals:Cat' },
-      },
     });
 
-    // The STI table is keyed by the tool prefix; the base resolves through
-    // the target's registry identity (the legacy target's object name here).
+    // Generated handlers resolve current choices through the shared registry API.
+    expect(source).toContain('resolveCreateTarget("Animal", args, aiConfig)');
     expect(source).toContain(
-      'resolveCreateTarget("animal", "Animal", args, aiConfig)',
+      'ObjectRegistry.resolveCreateTarget(baseObjectName, args',
     );
-    expect(source).toContain('const STI_TARGETS');
-    expect(source).toContain('"@test/animals:Cat":"@test/animals:Cat"');
-    expect(source).toContain('applyWritablePolicy(targetObjectName, args)');
+    expect(source).not.toContain('const STI_TARGETS');
+    expect(source).toContain('applyWritablePolicy(targetObjectName, data)');
   });
 });

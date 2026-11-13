@@ -436,6 +436,46 @@ export class RolePermissionCollection extends SmrtCollection<RolePermission> {
   }
 
   /**
+   * Upgrade path for permissions registered after a role was seeded: grant
+   * each catalog slug that has NO Permission row yet to the named system
+   * roles (default: `owner`), per the default matrix. A slug already in the
+   * Permission table is never touched, so a grant an operator removed from a
+   * role is not re-added, and no other role changes. Idempotent: once the new
+   * slugs have rows, a rerun finds nothing and writes nothing.
+   *
+   * Returns the slugs it introduced (empty when the catalog is unchanged).
+   */
+  async seedNewCatalogPermissions(
+    options: { roleSlugs?: readonly string[] } = {},
+  ): Promise<string[]> {
+    const roleSlugs = options.roleSlugs ?? [DEFAULT_ROLE_SLUGS.OWNER];
+    const catalog = PermissionCatalogService.create(this.options).getCatalog();
+    const permissions = await PermissionCollection.create(
+      withoutListBounds(this.options),
+    );
+    const known = new Set(
+      (await permissions.list({})).map((permission) => permission.slug),
+    );
+    const fresh = catalog.permissions.filter(
+      (permission) => !known.has(permission.slug),
+    );
+    if (fresh.length === 0) return [];
+    const matrix: RolePermissionPatternMatrix = {};
+    for (const slug of roleSlugs) {
+      const patterns = (
+        DEFAULT_ROLE_PERMISSION_PATTERNS as Record<string, readonly string[]>
+      )[slug];
+      if (patterns) matrix[slug] = [...patterns];
+    }
+    await this.seedRolePermissions(matrix, {
+      catalog: { ...catalog, permissions: fresh },
+      syncCatalog: true,
+      systemRolesOnly: true,
+    });
+    return fresh.map((permission) => permission.slug);
+  }
+
+  /**
    * Add the catalog-registered self-personalization grant to existing built-in
    * roles. This is the explicit, idempotent upgrade path for applications
    * whose roles predate the Fields permission; custom role matrices are never

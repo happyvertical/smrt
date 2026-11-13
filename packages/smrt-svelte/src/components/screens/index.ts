@@ -23,6 +23,7 @@ export {
   recordTotals,
   totalsFields,
 } from './record-header.js';
+export { screenRecordLabel, screenReferenceTarget } from './references.js';
 export {
   deriveScreenRelations,
   relationKey,
@@ -39,6 +40,11 @@ export {
   isDocumentLike,
   type ScreenFieldRoles,
 } from './roles.js';
+export {
+  createRecipeScreenEntry,
+  createRecipeScreenReferences,
+  createRecipeScreensSource,
+} from './source.js';
 export type {
   DetailScreenProps,
   EditFormProps,
@@ -64,8 +70,12 @@ export type {
   ScreenMode,
   ScreenPolicy,
   ScreenRecord,
+  ScreenReferenceSource,
+  ScreenReferenceSources,
   ScreenRelationshipDefinition,
   ScreenRelationshipKind,
+  ScreenSearchPage,
+  ScreenSearchRequest,
 } from './types.js';
 export {
   compareScreenValues,

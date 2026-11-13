@@ -5,16 +5,15 @@
 //! (see `app.rs`); [`StdLauncher`] drives the same logic with
 //! `std::process` for the integration tests and headless harnesses.
 //!
-//! Child output is kept in a bounded in-memory tail only. It is used to
-//! classify startup failures (address in use, lease held) and is never
-//! written to the log file unless explicitly opted in, because a runtime may
-//! print one-time secrets.
+//! Raw output stays in a bounded in-memory tail for failure classification.
+//! Separate redacted tails mask credential spans before truncation; only
+//! those diagnostics can reach the log, including stderr on non-zero exits.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::io::{self, BufRead, BufReader, Read};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -96,12 +95,112 @@ impl ExitLatch {
 #[derive(Clone, Default)]
 pub struct OutputTail {
     lines: Arc<Mutex<VecDeque<String>>>,
+    secret_values: Arc<Vec<String>>,
+    redact: bool,
 }
 
 impl OutputTail {
+    /// Capture diagnostics without retaining secret-bearing spans. The native
+    /// wrapper cannot load the CLI's Node redactor; use the same credential
+    /// categories and merge spans on the original line before truncation.
+    pub fn redacted(env: &BTreeMap<String, String>) -> Self {
+        let secret_values = env
+            .iter()
+            .filter(|(name, _)| {
+                name.to_ascii_uppercase().split('_').any(|part| {
+                    matches!(
+                        part,
+                        "URL"
+                            | "DSN"
+                            | "TOKEN"
+                            | "SECRET"
+                            | "PASSWORD"
+                            | "PASSWD"
+                            | "KEY"
+                            | "CREDENTIAL"
+                            | "CREDENTIALS"
+                            | "AUTH"
+                    )
+                })
+            })
+            .flat_map(|(_, value)| {
+                value
+                    .lines()
+                    .filter(|line| !line.is_empty())
+                    .map(str::to_owned)
+            })
+            .collect();
+        Self {
+            secret_values: Arc::new(secret_values),
+            redact: true,
+            ..Self::default()
+        }
+    }
+
+    fn diagnostic_line(&self, line: &str) -> String {
+        if !self.redact {
+            return line.to_owned();
+        }
+        let mut spans: Vec<(usize, usize)> = self
+            .secret_values
+            .iter()
+            .flat_map(|value| {
+                line.match_indices(value)
+                    .map(|(start, _)| (start, start + value.len()))
+            })
+            .collect();
+        // Match credential values, not a keyword elsewhere on an error line.
+        // Authority userinfo ends before the first slash: @scope in a file://
+        // stack frame or an HTTP path is not a credential.
+        static PATTERNS: OnceLock<[regex::Regex; 3]> = OnceLock::new();
+        let patterns = PATTERNS.get_or_init(|| [
+            regex::Regex::new(r"(?i)\b(?:Bearer|Basic)\s+([A-Za-z0-9._~+/=-]+)").unwrap(),
+            regex::Regex::new(r#"(?i)\b(?:token|secret|password|passwd|credentials?|api_key|apikey|access_token|refresh_token|private_key|client_secret|launch|key)\b["']?\s*[:=]\s*(?:"([^"]*)"|'([^']*)'|([^\s"'&;<>{},)]+))"#).unwrap(),
+            regex::Regex::new(r#"(?i)\b([a-z][a-z0-9+.-]*://(?:[^/\s@'"]+@[^\s"'<>)]*|[^\s"'<>)]*[?&;#](?:token|password|secret|key|api_key|access_token|refresh_token|id_token|session_token|client_secret|launch|code|state|signature|sig)=[^\s"'<>)]*))"#).unwrap(),
+        ]);
+        for pattern in patterns {
+            for captures in pattern.captures_iter(line) {
+                for value in captures.iter().skip(1).flatten() {
+                    if !value.is_empty() {
+                        spans.push((value.start(), value.end()));
+                    }
+                }
+            }
+        }
+        // The launch secret is 64 hex characters. Do not infer a token from
+        // an arbitrary long function/directory name, or redact a hash filename.
+        static HEX: OnceLock<regex::Regex> = OnceLock::new();
+        for value in HEX
+            .get_or_init(|| regex::Regex::new(r"\b[0-9a-fA-F]{64}\b").unwrap())
+            .find_iter(line)
+        {
+            let path_character = |c: char| matches!(c, '/' | '\\' | '.' | '-' | '_');
+            if !line[..value.start()].ends_with(path_character)
+                && !line[value.end()..].starts_with(path_character)
+            {
+                spans.push((value.start(), value.end()));
+            }
+        }
+        // Merge overlapping matches against the original bytes. A short env
+        // value must not split a bearer/URL match or rewrite a redaction marker.
+        spans.sort_unstable();
+        let mut result = String::new();
+        let mut cursor = 0;
+        for (start, end) in spans {
+            if start >= cursor {
+                result.push_str(&line[cursor..start]);
+                result.push_str("[redacted]");
+            }
+            cursor = cursor.max(end);
+        }
+        result.push_str(&line[cursor..]);
+        result
+    }
+
     /// Append one line (truncated, control characters replaced).
     pub fn push(&self, line: &str) {
-        let mut cleaned: String = line
+        let mut cleaned: String = self
+            .diagnostic_line(line)
             .chars()
             .map(|c| if c.is_control() { ' ' } else { c })
             .collect();
@@ -139,6 +238,14 @@ pub trait ManagedChild: Send {
     fn force_kill(&mut self) -> io::Result<()>;
     /// Recent output lines, oldest first.
     fn output_tail(&self) -> Vec<String>;
+    /// Redacted stderr only. Custom launchers default to no diagnostics.
+    fn stderr_tail(&self) -> Vec<String> {
+        Vec::new()
+    }
+    /// Redacted stdout/stderr for the legacy diagnostic opt-in.
+    fn diagnostic_tail(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// Everything needed to start one sidecar attempt.
@@ -256,13 +363,27 @@ struct StdChild {
     child: std::process::Child,
     latch: ExitLatch,
     tail: OutputTail,
+    stderr: OutputTail,
+    diagnostics: OutputTail,
 }
 
-fn pump(reader: impl Read + Send + 'static, tail: OutputTail) {
+fn pump(
+    reader: impl Read + Send + 'static,
+    tail: OutputTail,
+    stderr: Option<OutputTail>,
+    diagnostics: OutputTail,
+) {
     thread::spawn(move || {
         for line in BufReader::new(reader).split(b'\n') {
             match line {
-                Ok(bytes) => tail.push(&String::from_utf8_lossy(&bytes)),
+                Ok(bytes) => {
+                    let line = String::from_utf8_lossy(&bytes);
+                    tail.push(&line);
+                    diagnostics.push(&line);
+                    if let Some(stderr) = &stderr {
+                        stderr.push(&line);
+                    }
+                }
                 Err(_) => break,
             }
         }
@@ -285,17 +406,21 @@ impl Launcher for StdLauncher {
             .stderr(Stdio::piped())
             .spawn()?;
         let tail = OutputTail::default();
+        let diagnostics = OutputTail::redacted(&plan.env);
+        let stderr = OutputTail::redacted(&plan.env);
         if let Some(out) = child.stdout.take() {
-            pump(out, tail.clone());
+            pump(out, tail.clone(), None, diagnostics.clone());
         }
         if let Some(err) = child.stderr.take() {
-            pump(err, tail.clone());
+            pump(err, tail.clone(), Some(stderr.clone()), diagnostics.clone());
         }
         Ok(Box::new(StdChild {
             pid: child.id(),
             child,
             latch: ExitLatch::default(),
             tail,
+            stderr,
+            diagnostics,
         }))
     }
 }
@@ -366,6 +491,12 @@ impl ManagedChild for StdChild {
     fn output_tail(&self) -> Vec<String> {
         self.tail.snapshot()
     }
+    fn stderr_tail(&self) -> Vec<String> {
+        self.stderr.snapshot()
+    }
+    fn diagnostic_tail(&self) -> Vec<String> {
+        self.diagnostics.snapshot()
+    }
 }
 
 #[cfg(test)]
@@ -408,6 +539,91 @@ mod tests {
         assert!(tail.snapshot().last().unwrap().len() <= OUTPUT_LINE_BYTES);
         tail.push("a\u{1b}[31mred\r");
         assert!(!tail.snapshot().last().unwrap().contains('\u{1b}'));
+    }
+
+    #[test]
+    fn node_runtime_errors_keep_messages_and_windows_file_url_frames() {
+        let tail = OutputTail::redacted(&BTreeMap::new());
+        let frame = "file:///D:/a/_temp/smrt-launch-smoke-ABCdef/target/debug/app/node_modules/@happyvertical/smrt-app-runtime/dist/chunks/src-runtime.js:37:17";
+        let path = format!("D:\\a\\_temp\\{}\\runtime", "a".repeat(64));
+        let dump = [
+            frame.to_owned(),
+            "    throw new LocalRuntimeError('invalid_configuration', message);".into(),
+            "          ^".into(),
+            format!("LocalRuntimeError: Application secret file could not be opened safely: {path}"),
+            format!("    at unsafeFilesystemEntry ({frame})"),
+            format!("    at preflightWindowsRoot ({frame})"),
+            "    at a_very_long_but_ordinary_error_function_name (D:\\a\\_temp\\app\\build\\index.js:1:2)".into(),
+            "    code: 'invalid_configuration'".into(),
+            "}".into(),
+            "Node.js v26.8.1".into(),
+        ];
+        for line in &dump {
+            tail.push(line);
+        }
+        assert_eq!(tail.snapshot(), dump);
+    }
+
+    #[test]
+    fn diagnostic_tail_redacts_before_truncation_and_preserves_useful_errors() {
+        let env = BTreeMap::from([("APP_SECRET".into(), "known-sensitive-value".into())]);
+        let tail = OutputTail::redacted(&env);
+        for line in [
+            "Authorization: Bearer x".into(),
+            "https://127.0.0.1/setup?launch=unknown-value".into(),
+            "https://user:pass@server/path".into(),
+            "Token=unknown-value".into(),
+            "ab".repeat(32),
+            format!("{}known-sensitive-value", "x ".repeat(198)),
+        ] {
+            tail.push(&line);
+        }
+        let lines = tail.snapshot();
+        assert_eq!(
+            &lines[..5],
+            [
+                "Authorization: Bearer [redacted]",
+                "[redacted]",
+                "[redacted]",
+                "Token=[redacted]",
+                "[redacted]",
+            ]
+        );
+        assert!(
+            !lines[5].contains("know"),
+            "secret must be masked before the byte cut"
+        );
+        tail.push("Error: Local application data directory is not a safe Windows path: longer than 130 UTF-16 units");
+        assert!(tail.snapshot().last().unwrap().contains("longer than 130"));
+        tail.push(&format!("\u{1b}{}", "é ".repeat(OUTPUT_LINE_BYTES)));
+        let last = tail.snapshot().pop().unwrap();
+        assert!(last.len() <= OUTPUT_LINE_BYTES);
+        assert!(!last.chars().any(char::is_control));
+        let short = OutputTail::redacted(&BTreeMap::from([("AUTH_ENABLED".into(), "1".into())]));
+        short.push("Error: path longer than 130 UTF-16 units");
+        assert_eq!(
+            short.snapshot(),
+            ["Error: path longer than [redacted]30 UTF-[redacted]6 units"]
+        );
+    }
+
+    #[test]
+    fn credential_spans_merge_without_exposing_quoted_or_overlapping_values() {
+        let tail = OutputTail::redacted(&BTreeMap::from([("APP_SECRET".into(), "short".into())]));
+        tail.push(r#"Error: "password": "with spaces", 'token': 'short-value', Authorization: Bearer short-value; next"#);
+        assert_eq!(
+            tail.snapshot(),
+            [
+                r#"Error: "password": "[redacted]", 'token': '[redacted]', Authorization: Bearer [redacted]; next"#,
+            ]
+        );
+        tail.push("Error: launch=secret-value failed at D:\\a\\_temp\\ordinary-very-long-directory-name-that-is-not-a-token\\runtime");
+        assert_eq!(tail.snapshot().last().unwrap(),
+            "Error: launch=[redacted] failed at D:\\a\\_temp\\ordinary-very-long-directory-name-that-is-not-a-token\\runtime");
+        tail.push(
+            "Failed request https://example.invalid/@happyvertical/pkg?token=short-value&ok=1",
+        );
+        assert_eq!(tail.snapshot().last().unwrap(), "Failed request [redacted]");
     }
 
     #[test]

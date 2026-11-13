@@ -25,6 +25,12 @@ test('core test generation runs after the production pair writer and never overw
     write(join(core, 'package.json'), JSON.stringify({ name: '@happyvertical/smrt-core', version: '1.0.0', scripts: {
       build: 'node build.mjs', 'generate:test': 'node test-manifest.mjs', typecheck: 'node check.mjs',
     } }));
+    // Integration tests use real packages; this fixture isolates core's
+    // artifact writers with lightweight providers for their task prerequisites.
+    for (const dependency of ['approvals', 'smrt-web']) {
+      const { name, version } = JSON.parse(readFileSync(join(repository, 'packages', dependency, 'package.json'), 'utf8'));
+      write(join(root, 'packages', dependency, 'package.json'), JSON.stringify({ name, version, scripts: { build: 'node -e ""' } }));
+    }
     write(join(core, 'build.mjs'), `
       import { mkdirSync, writeFileSync } from 'node:fs';
       mkdirSync('.smrt', { recursive: true });
@@ -60,6 +66,13 @@ test('core test generation runs after the production pair writer and never overw
     const run = (task) => execFileSync(join(repository, 'node_modules/.bin/turbo'), ['run', task, ...cacheArguments], {
       cwd: root, encoding: 'utf8', timeout: 30000,
     });
+    const plan = JSON.parse(execFileSync(join(repository, 'node_modules/.bin/turbo'), ['run', 'generate:test', '--filter=@happyvertical/smrt-core', '--dry=json'], {
+      cwd: root, encoding: 'utf8', timeout: 30000,
+    }));
+    const generation = plan.tasks.find(({ taskId }) => taskId === '@happyvertical/smrt-core#generate:test');
+    assert.ok(generation.dependencies.includes('@happyvertical/smrt-core#build'));
+    assert.ok(generation.dependencies.includes('@happyvertical/smrt-approvals#build'));
+    assert.ok(generation.dependencies.includes('@happyvertical/smrt-web#build'));
     run('typecheck');
     run('build');
     const replay = run('typecheck');

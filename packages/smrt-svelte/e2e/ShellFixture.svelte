@@ -78,6 +78,8 @@ const chips = Array.from({ length: 8 }, (_, index) => ({
 </AppShell>
 {:else}
 <AdminShell edgeToggles state={shell} title="Mobile shell fixture" storageKey="mobile-shell-fixture"
+  panel={query.has('docked-panel') ? assistantBody : undefined}
+  panelOpen={query.get('docked-panel') === 'open'}
   header={query.has('header') ? shellHeader : undefined}
   homeHref={query.has('brand') ? '/home' : undefined} logoSrc={query.has('brand') ? 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"%3E%3Ccircle cx="16" cy="16" r="15"/%3E%3C/svg%3E' : undefined}
   {appPanel} systemPanel={panel} tenantFooter={query.has('account') ? account : undefined} tenantRailFooter={query.has('railAccount') ? compactAccount : undefined} tenantPanel={navigation} tenantRail={query.has('railFooterOnly') ? undefined : navigationRail} focusPanel={panel} {systemBar}>

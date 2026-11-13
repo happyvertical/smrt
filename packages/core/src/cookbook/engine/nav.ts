@@ -6,6 +6,7 @@ export interface NavItem {
   id: string;
   label: string;
   defaultLabel: string;
+  icon: string;
   hidden: boolean;
 }
 
@@ -56,13 +57,13 @@ export const modelLabel = (catalog: EngineCatalog, id: string): string =>
 interface RawSection {
   id: string;
   label: string;
-  items: { id: string; label: string }[];
+  items: { id: string; label: string; icon: string }[];
 }
 
 /** The menu a document generates, before its layout. */
 function generated(
   catalog: EngineCatalog,
-  doc: Pick<Cookbook, 'recipes' | 'features'>,
+  doc: Pick<Cookbook, 'recipes' | 'features' | 'models'>,
 ): RawSection[] {
   const byId = new Map(catalog.recipes.map((r) => [r.id, r]));
   const sections = new Map<string, RawSection>();
@@ -83,7 +84,11 @@ function generated(
       const { packageId, name } = modelParts(catalog, entry.model);
       const itemId = navItemId(packageId, name, entry.key);
       if (!section.items.some((i) => i.id === itemId)) {
-        section.items.push({ id: itemId, label: entry.label });
+        section.items.push({
+          id: itemId,
+          label: entry.label,
+          icon: entry.icon ?? 'fileText',
+        });
       }
     }
     sections.set(id, section);
@@ -99,7 +104,17 @@ function generated(
       label: FEATURE_SECTION.label,
       items: features.map((id) => {
         const { packageId, name } = modelParts(catalog, id);
-        return { id: navItemId(packageId, name), label: humanize(name) };
+        return {
+          id: navItemId(packageId, name),
+          label:
+            doc.models?.packageName === id.split(':')[0]
+              ? (doc.models.lists[name]?.label ?? humanize(name))
+              : humanize(name),
+          icon:
+            doc.models?.packageName === id.split(':')[0]
+              ? (doc.models.lists[name]?.icon ?? 'fileText')
+              : 'fileText',
+        };
       }),
     });
   }
@@ -121,7 +136,9 @@ const order = <T extends { id: string }>(
 /** The menu with the document's layout applied: moves, order, hides, renames. */
 export function buildNav(
   catalog: EngineCatalog,
-  doc: Pick<Cookbook, 'recipes' | 'features'> & { layout?: CookbookLayout },
+  doc: Pick<Cookbook, 'recipes' | 'features' | 'models'> & {
+    layout?: CookbookLayout;
+  },
 ): NavSection[] {
   const layout = doc.layout;
   const raw = generated(catalog, doc);
@@ -135,6 +152,7 @@ export function buildNav(
       id: i.id,
       label: i.label,
       defaultLabel: i.label,
+      icon: layout?.items?.[i.id]?.icon ?? i.icon,
       hidden: false,
     })),
   }));

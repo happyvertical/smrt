@@ -2,7 +2,11 @@
  * `smrt cookbook validate|apply` (#3748). See `agents/cookbook.md`.
  */
 
-import { resolve } from 'node:path';
+import { readFileSync, realpathSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { createPackageManagerRunner } from '../app/runtime.js';
 import type { CLICommand } from '../cli-generator.js';
 import { ApplyError, applyCookbook } from './cookbook/apply.js';
 import {
@@ -86,6 +90,63 @@ const sharedOptions: CLICommand['options'] = {
 };
 
 export const cookbookCommands: Record<string, CLICommand> = {
+  'source build': {
+    name: 'source build',
+    description:
+      'Build this app or workspace SMRT dependency closure from SMRT_ROOT',
+    args: [],
+    options: {},
+    handler: async () => {
+      if (!process.env.SMRT_ROOT) return;
+      const root = realpathSync(process.env.SMRT_ROOT);
+      const { readdirSync } = await import('node:fs');
+      const projects = [process.cwd()];
+      try {
+        for (const entry of readdirSync(join(process.cwd(), 'apps')))
+          projects.push(join(process.cwd(), 'apps', entry));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+      const packages = new Set<string>();
+      for (const project of projects) {
+        const pkg = JSON.parse(
+          readFileSync(join(project, 'package.json'), 'utf8'),
+        );
+        for (const name of Object.keys({
+          ...pkg.dependencies,
+          ...pkg.devDependencies,
+        }))
+          if (name.startsWith('@happyvertical/smrt-')) packages.add(name);
+      }
+      createPackageManagerRunner(root)([
+        'exec',
+        'turbo',
+        'run',
+        'build',
+        '--concurrency=2',
+        ...[...packages].sort().map((name) => `--filter=${name}...`),
+      ]);
+    },
+  },
+  'cookbook prepare': {
+    name: 'cookbook prepare',
+    description:
+      'Generate preserved app subclasses and the verified lazy host exposure superset',
+    args: [],
+    options: {},
+    handler: async () => {
+      const root = process.cwd();
+      const require = createRequire(join(root, 'package.json'));
+      const { prepareCookbookHost } = await import(
+        pathToFileURL(
+          require.resolve(
+            '@happyvertical/smrt-template-sveltekit/host/generate',
+          ),
+        ).href
+      );
+      await prepareCookbookHost({ root });
+    },
+  },
   'cookbook validate': {
     name: 'cookbook validate',
     description:
@@ -112,14 +173,14 @@ export const cookbookCommands: Record<string, CLICommand> = {
   'cookbook apply': {
     name: 'cookbook apply',
     description:
-      'Create a project from a cookbook (smrt-start template), or update one with --into',
+      'Create a complete cookbook host, or safely update one with --into',
     args: ['file', 'dir'],
     options: {
       ...sharedOptions,
       template: {
         type: 'string',
         description:
-          'Project template: a local path, github:owner/repo[#ref], or a git URL (default github:happyvertical/smrt-start)',
+          'Project template: a local path, github:owner/repo[#ref], or a git URL (default bundled:sveltekit)',
       },
       into: {
         type: 'boolean',
@@ -164,6 +225,7 @@ export const cookbookCommands: Record<string, CLICommand> = {
           template: options.template,
           dryRun: options['dry-run'],
           install: !options['no-install'],
+          installOutput: options.json ? 'stderr' : undefined,
           cliVersion: cliVersion(),
         });
         // After the project is written; stderr only, never fails the command (#4878).

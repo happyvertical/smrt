@@ -18,7 +18,7 @@ import { BundleTreeError } from './tree-errors.js';
  * `node_modules` the root is the `node_modules` directory itself.
  *
  * Pruning (design 4.4) is conservative by construction:
- * - Directory rules (`docs`, `test`, `tests`, `example(s)`) apply only at a
+ * - Directory rules (`docs`, `test`, `tests`, `example(s)`, `template(s)`) apply only at a
  *   package root, `__tests__` and `.github` anywhere, and never to a
  *   directory that the package's `main`/`module`/`exports`/`bin` points into.
  * - Files that reached modules refer to (`protectedPaths`: relative imports,
@@ -341,6 +341,8 @@ const PACKAGE_ROOT_DOC_DIRS: ReadonlySet<string> = new Set([
   'doc',
   'example',
   'examples',
+  'template',
+  'templates',
 ]);
 
 const PLATFORMS = new Set([
@@ -428,7 +430,9 @@ function normalizeEntry(path: string): string {
 /**
  * Collect the file or directory paths a `package.json` points at:
  * `main`, `module`, `browser` (string form), `bin` (string or map) and every
- * string inside `exports`. Paths are package-relative, `./` stripped and
+ * runtime string inside `exports`. Declared copied resource exports are not
+ * runtime roots; actual reached imports/assets still protect them. Paths are
+ * package-relative, `./` stripped and
  * truncated before any `*`.
  */
 export function collectEntryPaths(manifest: unknown): string[] {
@@ -452,7 +456,29 @@ export function collectEntryPaths(manifest: unknown): string[] {
     visit(record.module, 0);
     if (typeof record.browser === 'string') visit(record.browser, 0);
     visit(record.bin, 0);
-    visit(record.exports, 0);
+    const smrt = record.smrt as { resourceExports?: unknown } | undefined;
+    const resources = Array.isArray(smrt?.resourceExports)
+      ? smrt.resourceExports
+      : [];
+    if (
+      record.exports &&
+      typeof record.exports === 'object' &&
+      !Array.isArray(record.exports)
+    ) {
+      for (const [key, value] of Object.entries(record.exports)) {
+        // Same explicit copied-directory contract as the packed-export verifier.
+        // Invalid declarations stay conservative runtime roots.
+        if (
+          resources.includes(key) &&
+          /^\.\/(?:[a-zA-Z0-9_-][a-zA-Z0-9._-]*\/)+\*$/.test(key) &&
+          value === key
+        )
+          continue;
+        visit(value, 0);
+      }
+    } else {
+      visit(record.exports, 0);
+    }
   }
   return [...out].sort();
 }
@@ -503,6 +529,8 @@ export interface PruneOptions {
    * whose whole contents are kept, with the directories on the way. Same
    * limits as `protectedPaths`.
    */
+  /** Native-only optional package roots proven incompatible by their binary header. */
+  readonly foreignNativeDirs?: ReadonlySet<string>;
   readonly protectedSubtrees?: ReadonlySet<string>;
   readonly secrets?: SecretFilterOptions;
 }
@@ -575,7 +603,12 @@ export function classifyPrune(
     return 'removed-package';
   }
   const located = locatePackage(segments);
-  if (located === undefined || located.inner.length === 0) return undefined;
+  if (located === undefined) return undefined;
+  if (located.inner.length === 0) {
+    return entry.kind === 'dir' && options.foreignNativeDirs?.has(entry.rel)
+      ? 'foreign-native'
+      : undefined;
+  }
   const { inner, packageDir } = located;
   const name = entry.name;
   const lower = asciiLower(name);

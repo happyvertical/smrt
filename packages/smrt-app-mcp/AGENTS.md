@@ -80,3 +80,5 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
 - `mountMcpToolsRoute` and `mountMcpCallRoute` are deprecated REST-shaped
   compatibility aliases, not MCP transports.
 - This package is runtime app infrastructure, not the development MCP. Use `@happyvertical/smrt-dev-mcp` for agentic development knowledge, review, and architecture tooling.
+
+HTTP transport loading: [agents/runtime-loading.md](agents/runtime-loading.md).

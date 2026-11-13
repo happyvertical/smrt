@@ -8,7 +8,8 @@
  */
 
 import { type ChildProcess, spawn } from 'node:child_process';
-import { realpath } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { open, realpath } from 'node:fs/promises';
 import { devNull } from 'node:os';
 import { isAbsolute, relative } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
@@ -78,6 +79,8 @@ export interface RunLauncherOptions {
   readonly envPrefix: string;
   /** Permission slugs the token carries. */
   readonly scopes: readonly string[];
+  /** Private CLI config issued by the app. Reuse this credential; never remint on launch. */
+  readonly credentialPath?: string;
   /** Bridge `--mcp-path`, `--name` and `--version`. */
   readonly mcpPath?: string;
   readonly serverName?: string;
@@ -127,6 +130,7 @@ async function validate(o: RunLauncherOptions): Promise<void> {
     o.resourceRoot,
     o.nodePath,
     o.bridgePath,
+    ...(o.credentialPath === undefined ? [] : [o.credentialPath]),
   ];
   const ok =
     typeof o.appId === 'string' &&
@@ -169,6 +173,34 @@ async function defaultIssueToken(
     sourceRoot: o.sourceRoot,
   });
   try {
+    if (o.credentialPath) {
+      const file = await open(
+        o.credentialPath,
+        constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
+      );
+      try {
+        const stat = await file.stat();
+        if (
+          !stat.isFile() ||
+          stat.size > 16_384 ||
+          (process.platform !== 'win32' &&
+            ((stat.mode & 0o077) !== 0 || stat.uid !== process.getuid?.()))
+        )
+          throw new Failure('token_unavailable');
+        const config = JSON.parse(await file.readFile('utf8'));
+        const token = config.token;
+        const principal =
+          typeof token === 'string' ? await store.verify(token) : null;
+        if (
+          !principal ||
+          !o.scopes.every((scope) => principal.scopes.includes(scope))
+        )
+          throw new Failure('token_unavailable');
+        return token;
+      } finally {
+        await file.close();
+      }
+    }
     return (await store.issue(request)).token;
   } finally {
     await store.close().catch(() => undefined);

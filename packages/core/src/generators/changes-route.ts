@@ -34,9 +34,9 @@
 
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { getDatabase } from '@happyvertical/sql';
 import { ensureChangeFeedTable } from '../change-feed.js';
 import { getAuthorizedTenantScopedChangesSince } from '../change-feed-authz.js';
+import { getDatabase } from '../host.js';
 import {
   applyPostgresRuntimeTimeouts,
   resolveRuntimePoolDbid,

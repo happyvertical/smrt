@@ -8,4 +8,6 @@ export type {
   AuditResourceHref,
   AuditValueFormatContext,
   AuditValueFormatter,
+  RecordHistoryEntry,
+  UndatedHistoryEntry,
 } from './types.js';

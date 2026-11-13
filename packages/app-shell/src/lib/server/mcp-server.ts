@@ -8,8 +8,9 @@ import {
   type McpAppServer,
 } from '@happyvertical/smrt-app-mcp';
 import { dispatchTool, shellMcpServer } from './catalog.ts';
-import { PolicyError } from './owner.ts';
+import { PolicyError, type Principal } from './owner.ts';
 import { authorizeCall, toolsFor } from './policy.ts';
+import { type CallScope, LIVE_SCOPE } from './target.ts';
 
 function asPrincipal(p: McpAppPrincipal | null | undefined) {
   return p?.id && p.tenantId
@@ -26,7 +27,19 @@ function denied(error: unknown): never {
   throw error;
 }
 
-export function createShellMcpServer(): McpAppServer {
+/**
+ * Which copies one MCP endpoint serves. The /mcp route builds one server per
+ * request-named scope (`?target=live|draft`, or `?scope=assistant`), so the
+ * copy is fixed by the URL the client was configured with, never by state a
+ * previous call left behind. Default: live.
+ */
+export type ScopeResolver = (
+  principal: Principal,
+) => CallScope | Promise<CallScope>;
+
+export function createShellMcpServer(
+  resolveScope: ScopeResolver = () => LIVE_SCOPE,
+): McpAppServer {
   return {
     get serverInfo() {
       return shellMcpServer().serverInfo;
@@ -35,7 +48,13 @@ export function createShellMcpServer(): McpAppServer {
       return { ttlMs: 0, cacheScope: 'private' as const };
     },
     async listTools({ principal }) {
-      const tools = await toolsFor(asPrincipal(principal));
+      const who = asPrincipal(principal);
+      // A request without a principal lists nothing; the scope is only
+      // resolved for someone who can see tools.
+      const tools = await toolsFor(
+        who,
+        who ? await resolveScope(who) : LIVE_SCOPE,
+      );
       return tools.map(({ name, description, inputSchema, annotations }) => ({
         name,
         description,
@@ -46,8 +65,10 @@ export function createShellMcpServer(): McpAppServer {
     async callTool({ name, arguments: args, principal }) {
       const who = asPrincipal(principal);
       let tool: Awaited<ReturnType<typeof authorizeCall>>;
+      let scope: CallScope = LIVE_SCOPE;
       try {
-        tool = await authorizeCall(who, name);
+        scope = who ? await resolveScope(who) : LIVE_SCOPE;
+        tool = await authorizeCall(who, name, scope);
       } catch (e) {
         denied(e);
       }
@@ -55,6 +76,7 @@ export function createShellMcpServer(): McpAppServer {
         principal as McpAppPrincipal & { id: string },
         tool,
         args ?? {},
+        scope,
       );
       // The host-only `pending` marker never goes to a client.
       const { pending: _pending, ...wire } = result;

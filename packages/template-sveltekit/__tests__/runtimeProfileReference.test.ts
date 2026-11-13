@@ -88,7 +88,6 @@ describe('runtime-profile reference workload fixture', () => {
       existsSync(join(plainTemplate, 'src/lib/objects/ReferenceWorkItem.ts')),
     ).toBe(false);
     expect(readdirSync(join(plainTemplate, 'src/lib/objects')).sort()).toEqual([
-      'Note.ts',
       'index.ts',
     ]);
 

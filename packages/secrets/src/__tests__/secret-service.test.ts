@@ -622,6 +622,85 @@ describe('SecretService', () => {
       expect(codes).toContain('secret_envelope_missing_tenant_encryption_key');
     });
 
+    describe('master key provider', () => {
+      const PROVIDED = 'ab'.repeat(32);
+
+      it('encrypts with a provided key when the env var is unset, and never leaves it in the environment', async () => {
+        delete process.env.SMRT_SECRET_MASTER_KEY;
+        const provided = await SecretService.create({
+          db,
+          masterKeyProvider: () => PROVIDED,
+        });
+        expect(process.env.SMRT_SECRET_MASTER_KEY).toBeUndefined();
+        await provided.storeForTenant('tenant-1', 'api-key', 'provided-value');
+        expect(process.env.SMRT_SECRET_MASTER_KEY).toBeUndefined();
+
+        // A second service with the same provided key reads it back.
+        const again = await SecretService.create({
+          db,
+          masterKeyProvider: async () => Buffer.from(PROVIDED, 'hex'),
+        });
+        expect(
+          (await again.retrieveForTenant('tenant-1', 'api-key')).value,
+        ).toBe('provided-value');
+
+        // Diagnosis sees the provided key as usable.
+        const report = await provided.diagnoseTenantSecretKeyDrift('tenant-1', {
+          secretNames: ['api-key'],
+        });
+        expect(report.issues.map((issue) => issue.code)).not.toContain(
+          'amk_unavailable',
+        );
+      });
+
+      it('lets the env var win without calling the provider', async () => {
+        const provider = vi.fn(() => PROVIDED);
+        const envKeyed = await SecretService.create({
+          db,
+          masterKeyProvider: provider,
+        });
+        expect(provider).not.toHaveBeenCalled();
+        await envKeyed.storeForTenant('tenant-1', 'api-key', 'env-value');
+        expect(
+          (await service.retrieveForTenant('tenant-1', 'api-key')).value,
+        ).toBe('env-value');
+      });
+
+      it('fails closed with no key and never echoes a bad key', async () => {
+        delete process.env.SMRT_SECRET_MASTER_KEY;
+        const none = await SecretService.create({
+          db,
+          masterKeyProvider: () => null,
+        });
+        await expect(
+          none.storeForTenant('tenant-1', 'api-key', 'x'),
+        ).rejects.toThrow(/Application Master Key not found/);
+
+        const bad = 'not-a-key-zzzz-secret-marker';
+        const failure = await SecretService.create({
+          db,
+          masterKeyProvider: () => bad,
+        }).then(
+          () => null,
+          (error: Error) => error,
+        );
+        expect(failure).not.toBeNull();
+        expect(failure?.message).not.toContain(bad);
+        expect(process.env.SMRT_SECRET_MASTER_KEY).toBeUndefined();
+
+        const throwing = await SecretService.create({
+          db,
+          masterKeyProvider: () => {
+            throw new Error(`leaked ${PROVIDED}`);
+          },
+        }).then(
+          () => null,
+          (error: Error) => error,
+        );
+        expect(throwing?.message).not.toContain(PROVIDED);
+      });
+    });
+
     it('does not mark secrets unrecoverable when the AMK is unavailable', async () => {
       await service.storeForTenant('tenant-1', 'api-key', 'old-value');
 

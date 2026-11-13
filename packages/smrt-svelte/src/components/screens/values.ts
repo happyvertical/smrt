@@ -173,6 +173,13 @@ export function parseDraft(
   );
 
   for (const field of fields) {
+    const via = field.definition.writeThrough;
+    if (
+      via &&
+      draft[via] &&
+      (!context.record || draft[via] !== context.record[via])
+    )
+      continue;
     const raw = draft[field.name];
     if (field.kind === 'boolean') {
       values[field.name] = raw === true || raw === 'true';

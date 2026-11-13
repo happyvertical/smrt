@@ -5,7 +5,7 @@ description: "Voice profile management for AI-powered voice synthesis and clonin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-10T22:32:35Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:50a2138d84b47f59684a28b2911f9b55b0ed43732836b60395268bb0d7f28662"

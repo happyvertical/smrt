@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { modelReplacements } from './manifest/model-replacements.js';
+import type { SmartObjectManifest } from './scanner/types.js';
 
 const SOURCE_ROOT_PREFIX = '@smrt/source-root/';
 
@@ -217,11 +219,16 @@ function selectManifestView<TManifest>(
     );
   }
 
+  const effectiveDependencies = new Set(
+    modelReplacements(typed as unknown as SmartObjectManifest).values(),
+  );
   const objects = Object.fromEntries(
-    Object.entries(typed.objects).filter(([, definition]) => {
+    Object.entries(typed.objects).filter(([key, definition]) => {
       const owner = definition.packageName;
       const isProject = owner === undefined || owner === typed.packageName;
-      return view === 'project' ? isProject : !isProject;
+      return view === 'project'
+        ? isProject
+        : !isProject || effectiveDependencies.has(key);
     }),
   );
 

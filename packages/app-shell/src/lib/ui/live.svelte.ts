@@ -1,5 +1,6 @@
 // Browser store for `/api/events`: one EventSource, politely reconnected,
 // turning server events into `invalidate()` calls and screen-reader text.
+
 import { invalidate } from '$app/navigation';
 import {
   ALL_KEYS,
@@ -9,6 +10,7 @@ import {
   reconnectDelay,
   reduceKeys,
 } from './events.ts';
+import type { Target } from './types.ts';
 
 export type LiveStatus = 'connecting' | 'live' | 'reconnecting';
 
@@ -27,7 +29,10 @@ export class LiveUpdates {
   #stopped = true;
   #keys = new Set<DependsKey>();
 
-  start(): void {
+  #target: Target = 'live';
+
+  start(target: Target = 'live'): void {
+    this.#target = target;
     if (!this.#stopped) return;
     this.#stopped = false;
     this.#connect();
@@ -58,6 +63,14 @@ export class LiveUpdates {
       if (!event) return;
       const say = announcement(event);
       if (say) this.announcement = say;
+      // Draft changes still refresh the bar/count while viewing live. Record
+      // events only refresh records of the copy currently on screen.
+      if (
+        event.type === 'records' &&
+        event.target &&
+        event.target !== this.#target
+      )
+        return;
       this.#schedule(reduceKeys(new Set(), event));
     });
     source.addEventListener('error', () => {

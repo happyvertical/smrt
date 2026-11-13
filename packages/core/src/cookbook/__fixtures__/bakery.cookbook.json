@@ -17,7 +17,8 @@
     "inventory.stock",
     "ledgers.bookkeeping",
     "products.ingredients",
-    "products.simple"
+    "products.simple",
+    "profiles.identity"
   ],
   "features": [
     "@happyvertical/smrt-commerce:ProductionOrder"

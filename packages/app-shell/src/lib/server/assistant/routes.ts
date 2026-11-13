@@ -13,7 +13,22 @@
 // per turn through the injected factory; closing the stream (the dock's Stop
 // button, a closed tab) aborts the model call, the running tool and any hold.
 
-import type { TurnEvent } from '../../assistant/events.ts';
+import { join } from 'node:path';
+import type {
+  AssistantEngineId,
+  TurnEvent,
+  TurnStop,
+} from '../../assistant/events.ts';
+import { tokenCredentials } from '../agent-cli/credentials.ts';
+import { type AgentCliStatus, locateCli } from '../agent-cli/detect.ts';
+import {
+  agentCliDeps,
+  asSettingsOwner,
+  assistantSettings,
+  cliStatus,
+} from '../agent-cli/service.ts';
+import type { AgentTool } from '../agent-cli/tools.ts';
+import { dataRoot } from '../host.ts';
 import {
   errorResponse,
   HttpError,
@@ -23,11 +38,9 @@ import {
   readJson,
 } from '../http.ts';
 import { runAs } from '../owner.ts';
-import {
-  type AssistantConfigOptions,
-  assistantStatus,
-  unavailableBody,
-} from './config.ts';
+import { type AgentEngineDeps, runAgentTurn } from './agent-turn.ts';
+import { type AssistantConfigOptions, unavailableBody } from './config.ts';
+import { cliTool, statusFor } from './engine.ts';
 import type { holdForUser } from './hold.ts';
 import { type AssistantModelFactory, createAiModelFactory } from './model.ts';
 import {
@@ -46,6 +59,24 @@ export interface AssistantRoutesOptions extends AssistantConfigOptions {
   limits?: Partial<TurnLimits>;
   /** Tests only. */
   hold?: typeof holdForUser;
+  /** Which engine is chosen. Default: the owner's `assistant` preference. */
+  engine?: () => Promise<AssistantEngineId>;
+  /** The local agent CLI engine's host wiring. Default: this app's runtime. */
+  agent?: AgentEngineDeps;
+  /** What the local CLIs report. Default: cached detection on this machine. */
+  cliStatus?: (tool: AgentTool) => Promise<AgentCliStatus>;
+}
+
+/** Production wiring of the CLI engine: this app's runtime and data root. */
+function productionAgent(): AgentEngineDeps {
+  return {
+    locate: (tool) => locateCli(tool, agentCliDeps()),
+    credentials: tokenCredentials(async () => {
+      const { runtime } = await import('../smrt.ts');
+      return (await runtime.localRuntime()).mcpTokens;
+    }),
+    stateDir: async () => join(await dataRoot(), 'agent-cli'),
+  };
 }
 
 type EventLike = Parameters<typeof ownerOf>[0] & {
@@ -74,11 +105,26 @@ export function mountAssistantRoutes(
 ): AssistantRoutes {
   const factory = options.modelFactory ?? createAiModelFactory(options);
   const running = new Set<string>();
+  const statusOfCli =
+    options.cliStatus ?? ((tool: AgentTool) => cliStatus(tool));
+  const agent = (): AgentEngineDeps => (options.agent ??= productionAgent());
+  const engineOf = (owner: Parameters<typeof runAs>[0]) =>
+    options.engine
+      ? options.engine()
+      : asSettingsOwner(
+          owner,
+          async () => (await assistantSettings().read()).engine,
+        );
 
   return {
     status: guard(async (event) => {
       const owner = await ownerOf(event);
-      return json(await assistantStatus(owner, options));
+      return json(
+        await statusFor(await engineOf(owner), owner, {
+          config: options,
+          cliStatus: statusOfCli,
+        }),
+      );
     }),
 
     threads: guard(async (event) => {
@@ -116,19 +162,40 @@ export function mountAssistantRoutes(
       if (running.has(owner.id))
         throw new HttpError(409, 'the assistant is already working on a turn');
 
-      let model: Awaited<ReturnType<AssistantModelFactory>>;
-      try {
-        model = await factory({ principal: owner });
-      } catch (error) {
-        const body = unavailableBody(error);
-        if (body) return json(body, 503);
-        // Provider SDK messages can echo credentials: class name only.
-        // biome-ignore lint/suspicious/noConsole: class only, never a message
-        console.error(
-          'assistant model setup failed:',
-          error instanceof Error ? error.name : 'unknown',
-        );
-        throw new HttpError(503, 'The assistant could not start. Try again.');
+      const engine = await engineOf(owner);
+      const tool = cliTool(engine);
+      let model: Awaited<ReturnType<AssistantModelFactory>> | undefined;
+      if (tool) {
+        const status = await statusFor(engine, owner, {
+          config: options,
+          cliStatus: statusOfCli,
+        });
+        if (!status.configured)
+          return json(
+            {
+              type: 'unavailable',
+              configured: false,
+              code: status.code ?? 'agent_cli_missing',
+              message: status.message ?? '',
+              error: status.message ?? 'The assistant is not available.',
+              action: status.action,
+            },
+            503,
+          );
+      } else {
+        try {
+          model = await factory({ principal: owner, engine });
+        } catch (error) {
+          const body = unavailableBody(error);
+          if (body) return json(body, 503);
+          // Provider SDK messages can echo credentials: class name only.
+          // biome-ignore lint/suspicious/noConsole: class only, never a message
+          console.error(
+            'assistant model setup failed:',
+            error instanceof Error ? error.name : 'unknown',
+          );
+          throw new HttpError(503, 'The assistant could not start. Try again.');
+        }
       }
       const thread = threadId
         ? await getThread(owner.id, threadId)
@@ -152,17 +219,34 @@ export function mountAssistantRoutes(
           };
           emit({ type: 'thread', threadId: thread.id as string });
           try {
-            await runAs(owner, () =>
-              runTurn({
-                principal: owner,
-                thread,
-                text: message,
-                model,
-                signal: event.request.signal,
-                emit,
-                limits: options.limits,
-                ...(options.hold ? { hold: options.hold } : {}),
-              }),
+            await runAs(
+              owner,
+              (): Promise<TurnStop> =>
+                tool
+                  ? runAgentTurn({
+                      principal: owner,
+                      thread,
+                      text: message,
+                      tool,
+                      // `scope=assistant`: the copies are resolved per call
+                      // from the owner's state (draft open, view), see
+                      // assistant/scope.ts. A plain /mcp is live-only.
+                      mcpUrl: new URL('/mcp?scope=assistant', event.url.origin)
+                        .href,
+                      signal: event.request.signal,
+                      emit,
+                      deps: agent(),
+                    })
+                  : runTurn({
+                      principal: owner,
+                      thread,
+                      text: message,
+                      model: model as NonNullable<typeof model>,
+                      signal: event.request.signal,
+                      emit,
+                      limits: options.limits,
+                      ...(options.hold ? { hold: options.hold } : {}),
+                    }),
             );
           } catch (error) {
             // biome-ignore lint/suspicious/noConsole: class only, never a message

@@ -26,12 +26,18 @@ import type {
   PrincipalTool,
 } from '@happyvertical/smrt-agents';
 import {
+  createSqliteOwnerApprovalStore,
+  OwnerApprovalAuthority,
+} from '@happyvertical/smrt-app-runtime';
+import {
   field,
   ObjectRegistry,
+  resolveDatabase,
   SmrtObject,
   smrt,
   ValidationError,
 } from '@happyvertical/smrt-core';
+import { setRuntimeExposureGate } from '@happyvertical/smrt-core/runtime-exposure';
 import {
   MembershipCollection,
   PermissionCollection,
@@ -42,6 +48,12 @@ import {
   UserCollection,
 } from '@happyvertical/smrt-users';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { snapshotObjectRegistryState } from '../../core/src/test-utils.js';
+import {
+  createAssistantApprovalBridge,
+  requiresOwnerApproval,
+} from './assistant-approvals.js';
+import { runAssistantTurn } from './assistant-turn.js';
 import {
   appendClientToolResults,
   buildManifestToolCatalog,
@@ -358,6 +370,7 @@ describe('runToolLoop', () => {
   });
 
   afterEach(() => {
+    setRuntimeExposureGate(undefined);
     vi.restoreAllMocks();
     if (existsSync(dbPath)) {
       try {
@@ -377,6 +390,246 @@ describe('runToolLoop', () => {
   function tools(slugs: string[]): ManifestTool[] {
     return buildManifestToolCatalog({ db, allowedTools: slugs });
   }
+
+  it('summarizes the effective same-name app subclass under the provider tool identity', async () => {
+    await grant('tool_loop_notes.archive');
+    const restore = snapshotObjectRegistryState();
+    const upstream =
+      ObjectRegistry.getClassByConstructor(ToolLoopNote)?.qualifiedName;
+    if (!upstream) throw new Error('Missing note registration');
+    let dispatched = 0;
+    const AppNote = class extends ToolLoopNote {
+      override async archive() {
+        dispatched++;
+        return super.archive();
+      }
+    };
+    ObjectRegistry.register(AppNote, {
+      name: 'ToolLoopNote',
+      packageName: '@fixture/c4-app',
+    });
+    const effective = '@fixture/c4-app:ToolLoopNote';
+    try {
+      expect(ObjectRegistry.getExposureModel(upstream)?.qualifiedName).toBe(
+        effective,
+      );
+      const notes = await ObjectRegistry.getCollection(upstream, { db });
+      const note = await notes.create({ title: 'App note', body: 'Keep text' });
+      await note.save();
+      const gate = vi.fn((model, context) => {
+        expect(model.qualifiedName).toBe(effective);
+        expect(context.tenantId).toBe(tenantId);
+        return true;
+      });
+      setRuntimeExposureGate({ isEnabled: gate });
+      const turn = runAssistantTurn({
+        ai: makeAI((_messages, _options, call) =>
+          call === 0
+            ? toolCall('tool_loop_notes.archive', { id: note.id })
+            : textResponse('Archived.'),
+        ),
+        db,
+        userMessage: 'Archive the app note',
+        tools: [
+          {
+            slug: 'tool_loop_notes.archive',
+            className: 'ToolLoopNote',
+            qualifiedName: upstream,
+            collection: 'tool_loop_notes',
+            action: 'archive',
+          },
+        ],
+        principal: {
+          runAsUserId: userId,
+          tenantId,
+          allowedTools: ['tool_loop_notes.archive'],
+        },
+        audit: () => {},
+      });
+      const seen = [];
+      for await (const event of turn) seen.push(event);
+      expect(dispatched).toBe(1);
+      expect((await notes.get(String(note.id)))?.toJSON()).toMatchObject({
+        body: '[archived] Keep text',
+      });
+      expect(seen).toContainEqual(
+        expect.objectContaining({
+          type: 'step',
+          step: expect.objectContaining({
+            kind: 'tool_result',
+            ok: true,
+            label: 'Completed this action',
+          }),
+        }),
+      );
+      expect(gate).toHaveBeenCalled();
+    } finally {
+      setRuntimeExposureGate(undefined);
+      restore();
+    }
+  });
+
+  it.each([
+    { name: 'Profile', target: 'Profile', selector: undefined },
+    { name: 'Person', target: 'Person', selector: undefined },
+    { name: 'Bot', target: 'Bot', selector: undefined },
+    { name: 'Profile', target: 'Bot', selector: 'createType' },
+    { name: 'Profile', target: 'Bot', selector: '_meta_type' },
+  ] as const)('summarizes $name create as $target with selector $selector', async ({
+    name,
+    target,
+    selector,
+  }) => {
+    const model = `@happyvertical/smrt-profiles:${name}`;
+    const targetModel = `@happyvertical/smrt-profiles:${target}`;
+    const collectionName = 'profiles';
+    const slug = `${collectionName}.create`;
+    await grant(slug);
+    const types = await ObjectRegistry.getCollection(
+      '@happyvertical/smrt-profiles:ProfileType',
+      { db },
+    );
+    const type = await types.create({ name: `C4 ${name}` });
+    await type.save();
+    const collection = await ObjectRegistry.getCollection(model, { db });
+    const turn = runAssistantTurn({
+      ai: makeAI((_messages, _options, call) =>
+        call === 0
+          ? toolCall(slug, {
+              name: 'Ada',
+              typeId: type.id,
+              ...(selector ? { [selector]: targetModel } : {}),
+            })
+          : textResponse('Created.'),
+      ),
+      db,
+      userMessage: 'Add Ada',
+      tools: [
+        {
+          slug,
+          collection: collectionName,
+          className: name,
+          qualifiedName: model,
+          action: 'create',
+        },
+      ],
+      principal: { runAsUserId: userId, tenantId, allowedTools: [slug] },
+      audit: () => {},
+    });
+    const seen = [];
+    for await (const event of turn) seen.push(event);
+    const rows = await collection.list({ where: { name: 'Ada' } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].toJSON()).toMatchObject({
+      name: 'Ada',
+      _meta_type: targetModel,
+    });
+    expect(seen).toContainEqual(
+      expect.objectContaining({
+        type: 'step',
+        step: expect.objectContaining({
+          kind: 'tool_result',
+          ok: true,
+          label: expect.stringContaining('Ada'),
+        }),
+      }),
+    );
+  });
+
+  it('holds a real manifest delete before the owning collection is mutated', async () => {
+    await grant('tool_loop_notes.delete');
+    const notes = await ObjectRegistry.getCollection('ToolLoopNote', { db });
+    const note = await notes.create({ title: 'Keep until approved' });
+    await note.save();
+    const database = await resolveDatabase(db);
+    const authority = new OwnerApprovalAuthority(
+      await createSqliteOwnerApprovalStore(database),
+      async () => true,
+    );
+    const turn = runAssistantTurn({
+      ai: makeAI(() =>
+        toolCall('tool_loop_notes.delete', { id: note.id, approved: true }),
+      ),
+      db,
+      userMessage: 'Delete that note',
+      tools: tools(['tool_loop_notes.delete']),
+      principal: {
+        runAsUserId: userId,
+        tenantId,
+        allowedTools: ['tool_loop_notes.delete'],
+      },
+      approvals: createAssistantApprovalBridge({
+        authority,
+        tenantId,
+        requestedBy: userId,
+        context: {},
+      }),
+      audit: () => {},
+    });
+    const events = [];
+    for await (const event of turn) events.push(event);
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'done', stoppedReason: 'approval' }),
+    );
+    expect(await notes.get(String(note.id))).not.toBeNull();
+    expect(await authority.list({ id: userId, tenantId })).toHaveLength(1);
+  });
+
+  it.each([
+    false,
+    true,
+  ])('waives only a declared app-record delete when owner opt-out=%s', async (allowRemovalsInChat) => {
+    const slug = 'tool_loop_notes.delete';
+    await grant(slug);
+    const notes = await ObjectRegistry.getCollection('ToolLoopNote', { db });
+    const note = await notes.create({ title: 'Scratch record' });
+    await note.save();
+    const database = await resolveDatabase(db);
+    const authority = new OwnerApprovalAuthority(
+      await createSqliteOwnerApprovalStore(database),
+      async () => true,
+    );
+    const audit = vi.fn();
+    const turn = runAssistantTurn({
+      ai: makeAI((_messages, _options, call) =>
+        call === 0 ? toolCall(slug, { id: note.id }) : textResponse('Done.'),
+      ),
+      db,
+      userMessage: 'Delete scratch',
+      tools: tools([slug]).map((tool) => ({
+        ...tool,
+        annotations: { recordDeletion: true as const },
+      })),
+      principal: { runAsUserId: userId, tenantId, allowedTools: [slug] },
+      approvals: createAssistantApprovalBridge({
+        authority,
+        tenantId,
+        requestedBy: userId,
+        context: {},
+        policy: { allowRemovalsInChat },
+      }),
+      audit,
+    });
+    const events = [];
+    for await (const event of turn) events.push(event);
+    expect(events.some((event) => event.type === 'approval_needed')).toBe(
+      !allowRemovalsInChat,
+    );
+    expect((await notes.get(String(note.id))) === null).toBe(
+      allowRemovalsInChat,
+    );
+    expect(await authority.list({ id: userId, tenantId })).toHaveLength(
+      allowRemovalsInChat ? 0 : 1,
+    );
+    if (allowRemovalsInChat)
+      expect(audit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'chat.tool_loop',
+          actorUserId: userId,
+          tenantId,
+        }),
+      );
+  });
 
   it('stops with the final text when the model makes no tool call', async () => {
     const ai = makeAI(() => textResponse('nothing to do'));
@@ -482,6 +735,109 @@ describe('runToolLoop', () => {
     expect(result.stoppedReason).toBe('stop');
     expect(result.invocations).toHaveLength(1);
     expect(result.invocations[0]).toMatchObject({ ok: true, rejected: false });
+  });
+
+  it('uses a host vocabulary alias while retaining the canonical permission and dispatcher', async () => {
+    await grant('tool_loop_notes.read');
+    const notes = await ObjectRegistry.getCollection('ToolLoopNote', { db });
+    const note = await notes.create({ title: 'Member note' });
+    await note.save();
+    const declared = tools(['tool_loop_notes.read']).map((tool) => ({
+      ...tool,
+      functionName: 'members_read',
+    }));
+    const result = await runToolLoop({
+      ai: makeAI((_messages, options, call) => {
+        if (toolsOffered(options))
+          expect(options?.tools?.map((tool) => tool.function.name)).toEqual([
+            'members_read',
+          ]);
+        return call === 0
+          ? toolCall('members_read', { id: note.id })
+          : textResponse('Read.');
+      }),
+      db,
+      messages: [{ role: 'user', content: 'Read member' }],
+      tools: declared,
+      principal: {
+        runAsUserId: userId,
+        tenantId,
+        allowedTools: ['tool_loop_notes.read'],
+      },
+      audit: () => {},
+    });
+    expect(result.invocations).toHaveLength(1);
+    expect(result.invocations[0]).toMatchObject({
+      slug: 'tool_loop_notes.read',
+      ok: true,
+    });
+    expect(result.invocations[0].observation).toMatchObject({
+      id: note.id,
+      title: 'Member note',
+    });
+    const denied = await runToolLoop({
+      ai: makeAI((_m, _o, call) =>
+        call === 0 ? toolCall('members_read', {}) : textResponse('No.'),
+      ),
+      db,
+      messages: [{ role: 'user', content: 'Read' }],
+      tools: declared,
+      principal: { runAsUserId: userId, tenantId, allowedTools: [] },
+      audit: () => {},
+    });
+    expect(denied.invocations[0]).toMatchObject({
+      slug: 'tool_loop_notes.read',
+      ok: false,
+      rejected: true,
+    });
+  });
+
+  it('withdraws disabled cookbook tools and refuses a disable during the AI call', async () => {
+    let enabled = false;
+    setRuntimeExposureGate({
+      isEnabled: (_model, context) => enabled && context.tenantId === tenantId,
+    });
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const declared = tools(['tool_loop_notes.read']);
+    const principal = {
+      runAsUserId: userId,
+      tenantId,
+      allowedTools: NOTE_TOOLS,
+    };
+    const hiddenAI = makeAI((_messages, options) => {
+      expect(toolsOffered(options)).toBe(false);
+      return textResponse('done');
+    });
+    await runToolLoop({
+      ai: hiddenAI,
+      db,
+      messages: [],
+      tools: declared,
+      principal,
+      executeTool,
+      audit: () => {},
+    });
+    expect(executeTool).not.toHaveBeenCalled();
+    enabled = true;
+    const racingAI = makeAI((_messages, options, call) => {
+      if (call === 0) {
+        expect(toolsOffered(options)).toBe(true);
+        enabled = false;
+        return toolCall('tool_loop_notes.read', {});
+      }
+      return textResponse('done');
+    });
+    const result = await runToolLoop({
+      ai: racingAI,
+      db,
+      messages: [],
+      tools: declared,
+      principal,
+      executeTool,
+      audit: () => {},
+    });
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(result.invocations[0]).toMatchObject({ ok: false, rejected: true });
   });
 
   it('correlates each tool observation to its call via tool_call_id', async () => {
@@ -2728,5 +3084,228 @@ describe('runToolLoop', () => {
       expect(updated?.calculatedTotal).toBe(120);
       expect(updated?.internalScore).toBe(7);
     });
+  });
+});
+
+describe('server approval policy', () => {
+  const tool: ManifestTool = {
+    slug: 'notes.delete',
+    collection: 'notes',
+    className: 'Note',
+    action: 'delete',
+    annotations: { recordDeletion: true },
+  };
+  it('uses canonical destructive operations regardless of model-supplied flags or operation names', () => {
+    expect(
+      requiresOwnerApproval(tool, { approved: true, operation: 'read' }),
+    ).toBe(true);
+    expect(
+      requiresOwnerApproval(
+        { ...tool, slug: 'notes.read', action: 'read' },
+        {},
+      ),
+    ).toBe(false);
+    expect(
+      requiresOwnerApproval(
+        { ...tool, slug: 'notes.deleteAll', action: 'deleteAll' },
+        {},
+      ),
+    ).toBe(true);
+  });
+  it('allows only trusted in-app removal opt-outs and keeps purge effects held', () => {
+    expect(requiresOwnerApproval(tool, { allowRemovalsInChat: true })).toBe(
+      true,
+    );
+    expect(
+      requiresOwnerApproval(tool, { id: 'one' }, { allowRemovalsInChat: true }),
+    ).toBe(false);
+    expect(
+      requiresOwnerApproval(tool, {}, { allowRemovalsInChat: false }),
+    ).toBe(true);
+    for (const action of ['purge', 'delete', 'remove']) {
+      const candidate = { ...tool, slug: `notes.${action}`, action };
+      expect(
+        requiresOwnerApproval(
+          candidate,
+          { id: 'one' },
+          { allowRemovalsInChat: true },
+        ),
+      ).toBe(action !== 'delete');
+    }
+    expect(
+      requiresOwnerApproval(
+        tool,
+        { operation: 'purge' },
+        { allowRemovalsInChat: true },
+      ),
+    ).toBe(true);
+    expect(
+      requiresOwnerApproval(
+        { ...tool, slug: 'notes.custom', action: 'custom' },
+        {},
+        { allowRemovalsInChat: true },
+        true,
+      ),
+    ).toBe(true);
+  });
+  it('keeps declared security identities held even if a host marks them as app records', () => {
+    for (const [pkg, name] of [
+      ['users', 'User'],
+      ['profiles', 'Profile'],
+      ['users', 'ApiKey'],
+      ['users', 'Role'],
+      ['tenancy', 'Tenant'],
+      ['preferences', 'UiPreferenceRecord'],
+      ['features', 'FeatureOverride'],
+      ['app-runtime', 'Installation'],
+      ['secrets', 'Secret'],
+    ]) {
+      expect(
+        requiresOwnerApproval(
+          { ...tool, qualifiedName: `@happyvertical/smrt-${pkg}:${name}` },
+          { id: 'one' },
+          { allowRemovalsInChat: true },
+          true,
+        ),
+        `${pkg}:${name}`,
+      ).toBe(true);
+    }
+  });
+  it('keeps a control-model subclass and a sensitive model held under app names', () => {
+    const restore = snapshotObjectRegistryState();
+    try {
+      class SafetyIdentity extends SmrtObject {}
+      class BusinessLookingRecord extends SafetyIdentity {}
+      const BaseIdentity = SafetyIdentity;
+      const SameNameIdentity = class SafetyIdentity extends BaseIdentity {};
+      class PrivateSetting extends SmrtObject {}
+      ObjectRegistry.register(SafetyIdentity, {
+        packageName: '@happyvertical/smrt-users',
+      });
+      ObjectRegistry.register(BusinessLookingRecord, {
+        packageName: '@fixture/safety-app',
+      });
+      ObjectRegistry.register(SameNameIdentity, {
+        packageName: '@fixture/safety-app',
+      });
+      ObjectRegistry.register(PrivateSetting, {
+        packageName: '@fixture/safety-app',
+        sensitive: true,
+      });
+      for (const cls of [
+        BusinessLookingRecord,
+        SameNameIdentity,
+        PrivateSetting,
+      ]) {
+        const qualifiedName =
+          ObjectRegistry.getClassByConstructor(cls)?.qualifiedName;
+        expect(qualifiedName).toBeDefined();
+        expect(
+          requiresOwnerApproval(
+            { ...tool, qualifiedName },
+            { id: 'one' },
+            { allowRemovalsInChat: true },
+            true,
+          ),
+        ).toBe(true);
+      }
+    } finally {
+      restore();
+    }
+  });
+  it('never waives a design-class delete, a missing id or a model-supplied classification', () => {
+    const policy = { allowRemovalsInChat: true };
+    expect(
+      requiresOwnerApproval(
+        {
+          ...tool,
+          annotations: { ...tool.annotations, workProfile: 'design' },
+        },
+        { id: 'one' },
+        policy,
+        true,
+      ),
+    ).toBe(true);
+    for (const id of [undefined, null, '', '  ', ['one']]) {
+      expect(requiresOwnerApproval(tool, { id }, policy, true)).toBe(true);
+    }
+    expect(
+      requiresOwnerApproval(
+        { ...tool, annotations: undefined },
+        { id: 'one', annotations: { recordDeletion: true } },
+        policy,
+        true,
+      ),
+    ).toBe(true);
+    expect(requiresOwnerApproval(tool, { id: 'one' }, policy, true)).toBe(
+      false,
+    );
+  });
+  it('does not waive unknown or security removals based on a name or destructive hint', () => {
+    for (const slug of [
+      'users.delete',
+      'apiKeys.delete',
+      'roles.delete',
+      'tenants.delete',
+      'settings.remove',
+      'installations.remove',
+      'notes.deleteAll',
+    ]) {
+      const action = slug.split('.').at(-1)!;
+      expect(
+        requiresOwnerApproval(
+          {
+            ...tool,
+            annotations: undefined,
+            slug,
+            action,
+            collection: slug.split('.')[0],
+          },
+          { id: 'one' },
+          { allowRemovalsInChat: true },
+          true,
+        ),
+        slug,
+      ).toBe(true);
+    }
+    const extra = {
+      slug: 'records.remove',
+      aiTool: {} as never,
+      execute: async () => ({}),
+    };
+    expect(
+      requiresOwnerApproval(
+        extra,
+        { id: 'one', recordDeletion: true },
+        { allowRemovalsInChat: true },
+        true,
+      ),
+    ).toBe(true);
+    expect(
+      requiresOwnerApproval(
+        { ...tool, action: 'update', slug: 'notes.update' },
+        { id: 'one', operation: 'remove' },
+        { allowRemovalsInChat: true },
+      ),
+    ).toBe(true);
+  });
+  it('supports explicit per-tool and per-operation overrides with tool precedence', () => {
+    expect(
+      requiresOwnerApproval(tool, {}, { operations: { delete: false } }),
+    ).toBe(false);
+    expect(
+      requiresOwnerApproval(
+        tool,
+        {},
+        { tools: { 'notes.delete': true }, operations: { delete: false } },
+      ),
+    ).toBe(true);
+    expect(
+      requiresOwnerApproval(
+        { ...tool, slug: 'notes.update', action: 'update' },
+        {},
+        { operations: { update: true } },
+      ),
+    ).toBe(true);
   });
 });

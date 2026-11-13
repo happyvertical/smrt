@@ -128,6 +128,8 @@ export function printApplyResult(
     log(`  = ${name}@${range} (already declared)`);
   }
   log(`  smrt.cookbook.json: ${plan.config}`);
+  if (result.dryRun && plan.config !== 'unchanged')
+    log(JSON.stringify({ cookbookDiff: plan.cookbookDiff }, null, 2));
   log('\nNext steps:');
   for (const step of result.nextSteps) log(`  ${step}`);
 }

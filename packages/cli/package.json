@@ -27,9 +27,14 @@
     "./app": {
       "types": "./dist/app.d.ts",
       "import": "./dist/app.js"
+    },
+    "./source-checkout": {
+      "require": "./scripts/source-checkout.cjs",
+      "default": "./scripts/source-checkout.cjs"
     }
   },
   "scripts": {
+    "prepack": "pnpm exec turbo run build --filter=@happyvertical/smrt-cli^... && node ../../scripts/prepack-package.js",
     "build": "vite build",
     "build:watch": "vite build --watch",
     "clean": "rm -rf dist",

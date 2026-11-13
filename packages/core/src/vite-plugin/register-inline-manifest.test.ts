@@ -190,6 +190,44 @@ describe('smrtPlugin __smrt-register__ manifest inlining (#1506/#1507)', () => {
     expect(result).toBeNull();
   });
 
+  it.each([
+    false,
+    true,
+  ])('stamps lazy app constructors with route generation %s and leaves their shim unchanged', async (enabled) => {
+    const plugin = smrtPlugin({
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+      svelteKit: { enabled, lazyActivation: true },
+    });
+    await (plugin as any).configResolved({
+      root: tmpDir,
+      build: {},
+      plugins: [],
+    });
+    const source =
+      "import { smrt, SmrtObject } from '@happyvertical/smrt-core';\n@smrt() export class UsageMetric extends SmrtObject {}";
+    const result = await (plugin as any).transform.handler(
+      source,
+      join(tmpDir, 'src/UsageMetric.ts'),
+    );
+    expect(result?.code).toContain(
+      'static __smrtPackage__ = "@fixture/inline-register-app";',
+    );
+    expect(
+      await (plugin as any).transform.handler(
+        source,
+        join(tmpDir, '../foreign/UsageMetric.ts'),
+      ),
+    ).toBeNull();
+
+    expect(
+      await (plugin as any).transform.handler(
+        REGISTER_SHIM_SOURCE,
+        join(tmpDir, 'src/__smrt-register__.ts'),
+      ),
+    ).toBeNull();
+  });
+
   it('does not transform other modules in library builds', async () => {
     const plugin = await createLibraryBuildPlugin();
 

@@ -276,3 +276,24 @@ byte budgeting. Objects hydrated from text columns become JSON strings and use
 the existing scalar shortening/warning path; JSON columns retain their document
 limits. Date-only and timezone-less datetime strings mean UTC, including facet
 buckets. Bigint values must remain safely representable as JavaScript numbers.
+
+## Public content serialization
+
+`serializeContent` is exported from `@happyvertical/smrt-content`. It is the existing
+`src/serialization.ts` implementation used by content's API adapters, not a second
+serializer. Hosts whose generated manifest still names
+`$lib/server/content-api-serializers` can forward this public export; they must not
+import installed `src/` files. The host override module remains supported. A future
+provider-default serializer reference with an explicit host override would remove
+that compatibility forwarding file without breaking existing host customizations.
+
+Reuse check: smrt-dev-mcp package review, intent index and `rg` serializeContent/
+serialization/export searches in content, core, UI/Svelte/chat found the existing
+implementation and its internal route wrapper; no public export existed. Only the
+root export is added. No new component/helper/model implementation is introduced.
+
+The default Content API item serializer imports `serializeContent` from the
+public `@happyvertical/smrt-content` entry. Hosts need no forwarding module at
+`$lib/server/content-api-serializers`. An app subclass can explicitly supply its
+own `api.serializers.item` reference while retaining the provider's API exposure
+restrictions; the normal serializer and inheritance contracts still apply.

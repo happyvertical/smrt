@@ -151,6 +151,30 @@ export function resolvePanelResize(
   };
 }
 
+/** Default limits for the docked panel between the left sidebar and main (CSS px). */
+export const DEFAULT_SHELL_DOCKED_PANEL_RESIZE: Required<ShellPanelResize> = {
+  min: 280,
+  max: 800,
+  step: 16,
+};
+
+/**
+ * Resolve a docked panel's `resize` option: `null` when it is not resizable,
+ * else the limits with the docked-panel defaults filled in.
+ */
+export function resolveDockedPanelResize(
+  resize: boolean | ShellPanelResize | undefined,
+): Required<ShellPanelResize> | null {
+  if (resize === false) return null;
+  const limits = resize === true || resize === undefined ? {} : resize;
+  const min = Math.max(0, limits.min ?? DEFAULT_SHELL_DOCKED_PANEL_RESIZE.min);
+  return {
+    min,
+    max: Math.max(min, limits.max ?? DEFAULT_SHELL_DOCKED_PANEL_RESIZE.max),
+    step: Math.max(1, limits.step ?? DEFAULT_SHELL_DOCKED_PANEL_RESIZE.step),
+  };
+}
+
 /** Clamp a requested width into an edge's resize limits (rounded to px). */
 export function clampPanelSize(
   size: number,
@@ -192,8 +216,13 @@ export function stripUnpersistedSettings(
       if (
         panelPersists(config.panels[edge], key === 'panels' ? 'state' : 'size')
       ) {
-        kept[edge] = values[edge];
+        kept[edge] = (values as Record<string, unknown>)[edge];
       }
+    }
+    // The docked panel's width is the host's to persist (it has no edge
+    // config to opt out with).
+    if (key === 'sizes' && 'panel' in values) {
+      kept.panel = (values as Record<string, unknown>).panel;
     }
     if (Object.keys(kept).length > 0) {
       (stripped as Record<string, unknown>)[key] = kept;

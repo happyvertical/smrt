@@ -11,16 +11,23 @@ import {
 } from '../server/approvals.ts';
 import { assertOwner } from '../server/owner.ts';
 
-export type ApprovalStatus = 'pending' | 'approved' | 'denied' | 'failed';
+export type ApprovalStatus =
+  | 'pending'
+  | 'approved'
+  | 'denied'
+  | 'failed'
+  | 'accepted'
+  | 'executing'
+  | 'expired';
 
 // The decorator config must be a literal (the smrt() scanner reads it
 // statically) and is repeated on the collection (core applies a collection's
 // @smrt() config to its item class).
 
 /**
- * A risky change waiting for the owner. Created by the shell when a risky
- * builder method, app tool or REST DELETE is attempted; applied only by
- * {@link Approval.decide} (the one place the engine's `approved` flag is set).
+ * Compatibility facade for installed Tricia approval storage and generated
+ * decide/pending operations. The shared OwnerApprovalAuthority owns decisions
+ * and consumption; the shell retains only its action/draft execution policy.
  */
 @smrt({
   tableName: 'approvals',

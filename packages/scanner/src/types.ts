@@ -22,6 +22,9 @@ export interface RawClassDefinition {
   /** Class name as declared in source */
   className: string;
 
+  /** Local named export used for an app replacement of its imported parent. */
+  exportName?: string;
+
   /** Absolute path to source file */
   filePath: string;
 

@@ -287,3 +287,16 @@ carries the error's message, its stable `code` when it has one (e.g.
 `DATA_SURFACE_QUERY_FAILED`), and the fixed `TOOL_EXECUTION_ERROR_HINT`:
 the failure is the server's, so the model should not resend the same call
 but answer with what it has or tell the user (#4378).
+
+A trusted host may set `ManifestTool.functionName` to its app-facing vocabulary.
+`manifestToolToAITool` and the loop use that provider-safe alias for discovery,
+call resolution and browser-tool collision protection. The canonical `slug`
+continues to govern permissions, approval envelopes, transcripts and dispatch;
+an alias grants no operation. The real SQLite alias test retains the negative
+allow-list control and the canonical invocation record.
+
+Manifest read operations request the collection's existing displayLabel projection
+for point and list reads, matching REST's inline contact/display contract. This
+uses the original principal and ordinary public JSON filtering; it does not load
+identity lists as extra tools. The host regression creates a typed contact, then
+checks name/email/phone in actual item and list tool observations.

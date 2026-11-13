@@ -31,8 +31,10 @@ import {
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { PageHeader } from '@happyvertical/smrt-ui/layout';
 import { Button, Disclosure } from '@happyvertical/smrt-ui/ui';
+import { SmrtWebRequestError } from '@happyvertical/smrt-web';
 import { untrack } from 'svelte';
 import { M } from '../../i18n/strings.screens.js';
+import { tryGetCookbookContext } from '../cookbook/context.js';
 import { statusLabel } from '../overview/widgets/record-table.js';
 import {
   deriveScreenFields,
@@ -40,6 +42,9 @@ import {
   screenSourceError,
   screenTitles,
 } from './fields.js';
+import ReferencePicker from './ReferencePicker.svelte';
+import { screenReferenceTarget } from './references.js';
+import { currencyCodeField } from './roles.js';
 import type {
   EditFormProps,
   ScreenCollectionDefinition,
@@ -58,12 +63,13 @@ import {
 } from './values.js';
 
 let {
-  definition,
-  policy = null,
+  definition: suppliedDefinition,
+  references = {},
+  policy: suppliedPolicy,
   record,
   title,
   fields: include,
-  currency = DEFAULT_SCREEN_CURRENCY,
+  currency: suppliedCurrency,
   showHeader = true,
   submitting = false,
   fieldErrors = {},
@@ -73,9 +79,34 @@ let {
   derivedFields = [],
 }: EditFormProps = $props();
 
+const cookbookContext = tryGetCookbookContext();
+const definition = $derived(
+  cookbookContext?.screenDefinition?.(suppliedDefinition) ?? suppliedDefinition,
+);
+const policy = $derived(
+  suppliedPolicy ??
+    cookbookContext?.fieldPolicy?.(definition) ??
+    cookbookContext?.fieldPolicies?.[definition.objectRef] ??
+    null,
+);
 const { t } = useI18n();
 
 const isNew = $derived(record === undefined);
+const currency = $derived.by(() => {
+  if (suppliedCurrency) return suppliedCurrency;
+  const name = currencyCodeField(definition);
+  const field = name ? policy?.fields[name] : undefined;
+  const value = record
+    ? record[name ?? '']
+    : field?.hasDefault
+      ? field.defaultValue
+      : name
+        ? definition.fields[name].default
+        : undefined;
+  return typeof value === 'string' && /^[A-Za-z]{3}$/.test(value.trim())
+    ? value.trim().toUpperCase()
+    : DEFAULT_SCREEN_CURRENCY;
+});
 const titles = $derived(screenTitles(definition));
 const sourceError = $derived(screenSourceError(definition, policy));
 const heading = $derived(
@@ -88,11 +119,16 @@ const heading = $derived(
 const allFields = $derived(
   sourceError
     ? []
-    : deriveScreenFields(definition, policy, { mode: 'edit', include }),
+    : deriveScreenFields(definition, policy, {
+        mode: 'edit',
+        include,
+        references,
+      }),
 );
 /** Derived fields (a total computed from line items) show but never submit. */
 const isDerived = (field: ScreenField): boolean =>
   derivedFields.includes(field.name);
+const isReadOnly = (field: ScreenField): boolean => field.readOnly === true;
 const basicFields = $derived(allFields.filter((f) => f.tier === 'basic'));
 const advancedFields = $derived(allFields.filter((f) => f.tier === 'advanced'));
 
@@ -105,14 +141,14 @@ function initialDraft(): ScreenDraft {
 let draft = $state<ScreenDraft>(initialDraft());
 let localErrors = $state<Record<string, ScreenFieldErrorCode>>({});
 let hostErrors = $state<Record<string, string>>({});
-let failed = $state(false);
+let failed = $state<string | null>(null);
 let working = $state(false);
 let advancedOpen = $state(false);
 
 // Re-seed when the host swaps the record (or the field set) under a mounted
 // form; typing never re-seeds because only the identity is tracked.
 const sessionKey = $derived(
-  `${definition.objectRef}:${record ? String(record[definition.idField ?? 'id']) : 'new'}:${allFields.map((f) => f.name).join(',')}`,
+  `${definition.objectRef}:${record ? String(record[definition.idField ?? 'id']) : 'new'}:${allFields.map((f) => f.name).join(',')}:${JSON.stringify(policy)}`,
 );
 let appliedKey = untrack(() => sessionKey);
 $effect(() => {
@@ -123,7 +159,7 @@ $effect(() => {
     draft = initialDraft();
     localErrors = {};
     hostErrors = {};
-    failed = false;
+    failed = null;
   });
 });
 
@@ -158,10 +194,10 @@ function label(field: ScreenField): string {
 
 async function submit(): Promise<void> {
   if (working || submitting) return;
-  failed = false;
+  failed = null;
   hostErrors = {};
   const parsed = parseDraft(
-    allFields.filter((f) => !isDerived(f)),
+    allFields.filter((f) => !isDerived(f) && !isReadOnly(f)),
     draft,
     { currency, record },
   );
@@ -172,35 +208,61 @@ async function submit(): Promise<void> {
   }
   working = true;
   try {
-    const result = await onsubmit(parsed.values, { isNew });
+    // A hidden value is not a blank control: edits omit it, and creates keep
+    // its resolved default. Never manufacture a null that clears stored data.
+    const defaults: Record<string, unknown> = {};
+    if (isNew) {
+      for (const [name, field] of Object.entries(policy?.fields ?? {})) {
+        if (
+          Object.hasOwn(definition.fields, name) &&
+          definition.fields[name]?.readonly !== true &&
+          field.hasDefault &&
+          (field.visibility === 'hidden' || field.readOnly) &&
+          !derivedFields.includes(name)
+        )
+          defaults[name] = field.defaultValue;
+      }
+    }
+    const result = await onsubmit({ ...defaults, ...parsed.values }, { isNew });
     if (result?.fieldErrors) {
       hostErrors = { ...result.fieldErrors };
       if (advancedFields.some((f) => result.fieldErrors?.[f.name])) {
         advancedOpen = true;
       }
     }
-  } catch {
-    failed = true;
+  } catch (cause) {
+    failed =
+      cause instanceof SmrtWebRequestError && cause.publicMessage
+        ? cause.publicMessage
+        : cause instanceof SmrtWebRequestError && cause.requestId
+          ? t(M['ui.screens.save_failed_reference'], {
+              requestId: cause.requestId,
+            })
+          : t(M['ui.screens.save_failed']);
   } finally {
     working = false;
   }
 }
 
 const busy = $derived(working || submitting);
-const formError = $derived(
-  error ?? (failed ? t(M['ui.screens.save_failed']) : null),
-);
+const formError = $derived(error ?? failed);
 </script>
 
 {#snippet control(field: ScreenField)}
-  {#if isDerived(field)}
-    <FormGroup label={label(field)} hint={t(M['ui.screens.derived_hint'])}>
+  {#if isDerived(field) || (isReadOnly(field) && field.kind !== 'reference')}
+    <FormGroup label={label(field)} hint={isDerived(field) ? t(M['ui.screens.derived_hint']) : hint(field)}>
       <Input
         name={field.name}
         readonly
-        value={formatScreenValue(field, record?.[field.name], { currency })}
+        value={formatScreenValue(field, record ? record[field.name] : policy?.fields[field.name]?.hasDefault ? policy.fields[field.name].defaultValue : field.definition.default, { currency })}
       />
     </FormGroup>
+  {:else if field.kind === 'reference'}
+    {@const target = screenReferenceTarget(definition, field, references)}
+    {#key target}
+      <ReferencePicker {field} {target} disabled={busy || isReadOnly(field)} error={messageFor(field)}
+        bind:value={() => text(field.name), (v) => setText(field.name, v)} />
+    {/key}
   {:else if field.kind === 'boolean'}
     <div class="smrt-edit-form__check" data-smrt-part="field">
       <Checkbox
@@ -291,6 +353,9 @@ const formError = $derived(
 <section class="smrt-edit-form__root" aria-label={heading} data-smrt-component="EditForm">
   {#if sourceError}
     <Alert variant="error">{sourceError}</Alert>
+  {:else if allFields.length === 0}
+    <Alert variant="info">{t(M['ui.screens.no_editable_fields'])}</Alert>
+    {#if oncancel}<Button type="button" variant="ghost" onclick={oncancel}>{t(M['ui.screens.cancel'])}</Button>{/if}
   {:else}
     <Form onsubmit={submit} novalidate>
       {#if formError}

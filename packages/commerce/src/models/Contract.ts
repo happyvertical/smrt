@@ -115,6 +115,18 @@ export function isContractSnapshotReportEligible(contract: Contract): boolean {
  */
 @TenantScoped({ mode: 'optional' })
 @smrt({
+  display: {
+    label: 'reference',
+    list: [
+      'reference',
+      'customerId',
+      'vendorId',
+      'status',
+      'totalAmount',
+      'issueDate',
+      'dueDate',
+    ],
+  },
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
@@ -645,7 +657,12 @@ export class Lease extends SalesContract {
  * Agreement - Service or maintenance agreement
  */
 @TenantScoped({ mode: 'optional' })
-@smrt()
+@smrt({
+  display: {
+    label: 'reference',
+    list: ['reference', 'customerId', 'status', 'totalAmount', 'createdAt'],
+  },
+})
 export class Agreement extends SalesContract {
   @foreignKey(Customer, { required: true })
   override customerId: string | null = null;

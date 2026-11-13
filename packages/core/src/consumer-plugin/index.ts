@@ -6,14 +6,20 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { DomainKnowledgeAgentSurface } from '@happyvertical/smrt-types';
+import { isDeepStrictEqual } from 'node:util';
+import type {
+  DomainKnowledgeAgentSurface,
+  RecipeDefinition,
+} from '@happyvertical/smrt-types';
 import { resolve as resolveImport } from 'import-meta-resolve';
+import { generateActivationRegistration } from '../activation/generate.js';
 import {
   loadVerifiedSmrtGenerationSnapshot,
   type SmrtGenerationSnapshotOptions,
 } from '../generation-snapshot.js';
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { resolveFileKnowledgeConfig } from '../knowledge-config.js';
+import { annotateModelReplacements } from '../manifest/model-replacements';
 import { selectObjectDeclarations } from '../manifest/object-declarations.js';
 import { manifestExportCandidates } from '../manifest/package-manifest-exports.js';
 import { isTestArtifactManifest } from '../manifest/test-artifacts.js';
@@ -25,6 +31,7 @@ import type {
 import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
 import { generateClientModule } from '../vite-plugin/generated-client.js';
 import type { SmrtPluginApi } from '../vite-plugin/index.js';
+import { createDevNativeSsrModules } from '../vite-plugin/native-ssr.js';
 import type {
   SmrtConfigEnv,
   SmrtVitePlugin,
@@ -50,6 +57,7 @@ import {
 import {
   generateWebModule,
   isCollectionManifestClass,
+  renderRecipeSurfaceDeclarations,
   resolveCollectionItemObject,
 } from '../vite-plugin/web-collections.js';
 import { publishArtifactFiles } from './artifact-publication.js';
@@ -64,6 +72,10 @@ export {
   serializeSmrtGenerationSnapshot,
   sha256SmrtGenerationSnapshot,
 } from '../generation-snapshot.js';
+export {
+  aliasHostedCollections,
+  separateHostedStiCollections,
+} from './hosted-sti-collections.js';
 
 /**
  * Loosely-typed view of an object definition as carried by an external
@@ -99,6 +111,7 @@ class AmbiguousProviderGraphError extends Error {}
  * JSON read at the package boundary.
  */
 interface ConsumerManifest {
+  recipes?: RecipeDefinition[];
   version: string;
   timestamp: number;
   packageName?: string;
@@ -135,7 +148,8 @@ function packageNameFromImportPath(importPath: string): string {
     : (parts[0] ?? importPath);
 }
 
-function findInstalledPackageJson(
+/** Resolve installed package metadata through the actual host/workspace links. */
+export function findInstalledPackageJson(
   packageName: string,
   searchFrom: string,
 ): string | undefined {
@@ -332,6 +346,8 @@ export interface SmrtConsumerSvelteKitOptions
 }
 
 export interface SmrtConsumerOptions {
+  /** Opt-in data-only registration and deferred model loaders (SQLite hosts). */
+  lazyActivation?: boolean;
   /** SMRT packages to scan (e.g., ['@my-org/products', '@my-org/content']) */
   packages?: string[];
   /** Generate TypeScript declarations */
@@ -761,11 +777,7 @@ export function smrtConsumer(
   let producerApi: SmrtPluginApi | undefined;
   let routeLifecycleConfig: object | undefined;
   let isBuild = false;
-  let devServerRoot = projectRoot;
-  const devNativeSsrModules = new Map<
-    string,
-    { externalize: string; type: 'module' | 'commonjs' }
-  >();
+  const devNativeSsrModules = createDevNativeSsrModules();
   let selectiveSsrPackages = new Map<string, SelectiveSsrPackage>();
 
   function loadGenerationSnapshot(): ConsumerManifest {
@@ -1048,6 +1060,7 @@ export function smrtConsumer(
             env,
           );
           const routeOptions = {
+            lazyActivation: options.lazyActivation,
             enabled: true,
             routesDir,
             // Must equal the producer's, or the shared routesDir is refused.
@@ -1089,7 +1102,11 @@ export function smrtConsumer(
                 await generateConfigTypes(routeManifest);
                 // The generated TS registration imports this runtime module.
                 // SvelteKit sync must resolve it before Vite buildStart runs.
-                await generateRegistrationFile(routeManifest, projectRoot);
+                await generateRegistrationFile(
+                  routeManifest,
+                  projectRoot,
+                  options.lazyActivation,
+                );
                 if (ownershipJournaled) return;
                 ownershipJournaled = true;
                 // Preflight has succeeded but no generated output has changed.
@@ -1125,7 +1142,11 @@ export function smrtConsumer(
           // SvelteKit typecheck reaches Vite's later buildStart lifecycle.
           await generateConfigTypes();
           if (options.svelteKit && typeManifest) {
-            await generateRegistrationFile(typeManifest, projectRoot);
+            await generateRegistrationFile(
+              typeManifest,
+              projectRoot,
+              options.lazyActivation,
+            );
           }
           if (previousConsumerRouteRoots.length > 0) {
             await reconcileConsumerSvelteKitRouteRoots(
@@ -1168,16 +1189,7 @@ export function smrtConsumer(
     },
 
     configureServer(server) {
-      devServerRoot = server.config.root;
-      const ssr = server.environments?.ssr;
-      if (!ssr?.fetchModule) return;
-      const fetchModule = ssr.fetchModule.bind(ssr);
-      // Dev import analysis ignores resolveId.external. Keep its ordinary URL
-      // graph, but hand only our resolved server entries to Node's native cache.
-      ssr.fetchModule = async (id, importer, options) => {
-        const native = devNativeSsrModules.get(id.split('?')[0]);
-        return native ?? fetchModule(id, importer, options);
-      };
+      devNativeSsrModules.configureServer(server);
     },
 
     async buildStart() {
@@ -1188,7 +1200,11 @@ export function smrtConsumer(
         console.log(
           `[smrt:consumer] Reusing verified generation snapshot (${generationSnapshot.provenance})`,
         );
-        await generateRegistrationFile(typeManifest, projectRoot);
+        await generateRegistrationFile(
+          typeManifest,
+          projectRoot,
+          options.lazyActivation,
+        );
         if (generateTypes && !typesGenerated) {
           await generateProjectTypes(typeManifest, typesDir, projectRoot);
           typesGenerated = true;
@@ -1225,7 +1241,11 @@ export function smrtConsumer(
         );
 
         // Generate registration file for CLI class loading
-        await generateRegistrationFile(typeManifest, projectRoot);
+        await generateRegistrationFile(
+          typeManifest,
+          projectRoot,
+          options.lazyActivation,
+        );
 
         // Generate types if requested
         if (generateTypes && !typesGenerated) {
@@ -1243,6 +1263,10 @@ export function smrtConsumer(
     },
 
     async resolveId(id, importer, resolveOptions) {
+      // Resolve before selective native-SSR externalization. Without this
+      // plugin the real package export is an empty, browser-safe fallback.
+      if (id === '@happyvertical/smrt-svelte/cookbook/surfaces')
+        return '\0smrt-consumer:web';
       if (resolveOptions?.ssr) {
         for (const [packageName, selectivePackage] of selectiveSsrPackages) {
           if (id !== packageName && !id.startsWith(`${packageName}/`)) {
@@ -1284,20 +1308,13 @@ export function smrtConsumer(
             if (!resolved) return;
             const filename = resolved.id.split('?')[0];
             if (!path.isAbsolute(filename)) return resolved;
-            const native = {
-              externalize: pathToFileURL(filename).href,
-              type: (filename.endsWith('.mjs') ||
-              (!filename.endsWith('.cjs') && packageJson?.type === 'module')
+            devNativeSsrModules.register(
+              filename,
+              filename.endsWith('.mjs') ||
+                (!filename.endsWith('.cjs') && packageJson?.type === 'module')
                 ? 'module'
-                : 'commonjs') as 'module' | 'commonjs',
-            };
-            devNativeSsrModules.set(filename, native);
-            devNativeSsrModules.set(path.posix.join('/@fs/', filename), native);
-            if (filename.startsWith(`${devServerRoot}/`))
-              devNativeSsrModules.set(
-                filename.slice(devServerRoot.length),
-                native,
-              );
+                : 'commonjs',
+            );
             return resolved;
           }
           break;
@@ -1326,7 +1343,7 @@ export function smrtConsumer(
       return null;
     },
 
-    async load(id) {
+    async load(id, loadOptions) {
       // Handle virtual modules if types aren't available
       const cleanId = id.startsWith('\0') ? id.slice(1) : id;
 
@@ -1363,6 +1380,8 @@ export function smrtConsumer(
             typeManifest as unknown as SmartObjectManifest,
             {
               kebabRoutes: effectiveKebabRoutes,
+              ssr: loadOptions?.ssr,
+              lazyActivation: options.lazyActivation,
             },
           );
 
@@ -1532,6 +1551,7 @@ async function aggregateTypeManifests(
 
   const unresolvedPackages: string[] = [];
   const objectSources = new Map<string, string>();
+  const recipes = new Map<string, RecipeDefinition>();
 
   for (const packageName of packages) {
     let loadedManifest = false;
@@ -1598,6 +1618,16 @@ async function aggregateTypeManifests(
             console.log(
               `[smrt:consumer] Loaded manifest from ${packageName} (${Object.keys(manifest.objects).length} objects)`,
             );
+
+            for (const recipe of manifest.recipes ?? []) {
+              const prior = recipes.get(recipe.id);
+              if (prior && !isDeepStrictEqual(prior, recipe)) {
+                throw new AmbiguousProviderGraphError(
+                  `[smrt:consumer] Conflicting recipe ${recipe.id}`,
+                );
+              }
+              recipes.set(recipe.id, recipe);
+            }
 
             // ENHANCED: Preserve package metadata for each object
             for (const [objectName, objectDef] of Object.entries(
@@ -1685,6 +1715,9 @@ async function aggregateTypeManifests(
     );
   }
 
+  aggregatedManifest.recipes = [...recipes.values()].sort((a, b) =>
+    a.id.localeCompare(b.id),
+  );
   return aggregatedManifest;
 }
 
@@ -1792,6 +1825,8 @@ async function saveAggregatedManifest(
       }
     }
 
+    merged = annotateModelReplacements(merged);
+
     // smrtPlugin writes the local knowledge artifact before this consumer
     // plugin merges external package entries into the same manifest. Refresh
     // the artifact from the merged manifest so its source hash always names
@@ -1855,9 +1890,40 @@ async function saveAggregatedManifest(
 async function generateRegistrationFile(
   manifest: ConsumerManifest,
   projectRoot: string,
+  lazyActivation = false,
 ): Promise<void> {
   const smrtDir = path.join(projectRoot, '.smrt');
   const registerPath = path.join(smrtDir, 'register.js');
+  if (lazyActivation) {
+    const manifestPath = path.join(smrtDir, 'manifest.json');
+    const existing = fs.existsSync(manifestPath)
+      ? (JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as ConsumerManifest)
+      : undefined;
+    const full = {
+      ...manifest,
+      ...(existing?.packageName ? { packageName: existing.packageName } : {}),
+      objects: { ...existing?.objects, ...manifest.objects },
+    };
+    const generated = generateActivationRegistration(
+      full as unknown as SmartObjectManifest,
+      { projectRoot, outputDir: smrtDir, splitDeclarations: true },
+    );
+    fs.mkdirSync(smrtDir, { recursive: true });
+    for (const file of Object.keys(generated.files))
+      fs.mkdirSync(path.dirname(path.join(smrtDir, file)), { recursive: true });
+    publishArtifactFiles([
+      ...Object.entries(generated.files).map(([file, content]) => ({
+        path: path.join(smrtDir, file),
+        content,
+      })),
+      { path: registerPath, content: generated.source },
+      {
+        path: path.join(smrtDir, 'activation-manifest.json'),
+        content: JSON.stringify(generated.manifest, null, 2),
+      },
+    ]);
+    return;
+  }
 
   // Bind every imported symbol to a generated local name. Aggregated manifests
   // may contain same-named exports from different packages (and may list a
@@ -2373,7 +2439,11 @@ async function generateProjectTypes(
   typesDir: string,
   projectRoot: string,
 ): Promise<void> {
-  if (!typeManifest || Object.keys(typeManifest.objects).length === 0) {
+  if (
+    !typeManifest ||
+    (Object.keys(typeManifest.objects).length === 0 &&
+      !typeManifest.recipes?.length)
+  ) {
     console.log(
       '[smrt:consumer] No SMRT objects found, skipping type generation',
     );
@@ -2390,6 +2460,13 @@ async function generateProjectTypes(
     includeVirtualModules: true,
     includeObjectTypes: true,
   });
+
+  // Additive declarations alongside the existing generated web declarations.
+  // Keep the installed recipe catalog typed even for packages with no models.
+  fs.writeFileSync(
+    path.resolve(projectRoot, typesDir, 'smrt-recipe-surfaces.d.ts'),
+    `declare module '@smrt/web' {\n${renderRecipeSurfaceDeclarations(typeManifest as unknown as SmartObjectManifest)}\n}\n`,
+  );
 
   console.log(
     `[smrt:consumer] Generated types for ${Object.keys(typeManifest.objects).length} objects`,

@@ -9,6 +9,7 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
+import { Bot, Profile } from '@happyvertical/smrt-profiles';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { snapshotObjectRegistryState } from '../../../core/src/test-utils.js';
 import { PermissionCollection } from '../collections/PermissionCollection.js';
@@ -106,6 +107,65 @@ describe('PermissionCatalogService', () => {
         rmSync(dbPath, { force: true });
       }
     }
+  });
+
+  it('keeps shared Profile CRUD bound to Profile rather than the last subtype', () => {
+    expect(ObjectRegistry.getClassByConstructor(Bot)).toBeDefined();
+    const profile = ObjectRegistry.getClassByConstructor(Profile)!;
+    const definitions =
+      PermissionCatalogService.create().getCatalog().permissions;
+    for (const action of ['read', 'create', 'update', 'delete']) {
+      expect(
+        definitions.find((entry) => entry.slug === `profiles.${action}`),
+      ).toMatchObject({
+        className: 'Profile',
+        qualifiedName: profile.qualifiedName,
+      });
+    }
+  });
+
+  it.each([
+    false,
+    true,
+  ])('uses the effective STI root in either registry order (replacement: %s)', (replace) => {
+    cleanupFns.push(snapshotObjectRegistryState());
+    class CatalogRoot extends SmrtObject {}
+    class CatalogChild extends CatalogRoot {}
+    class CatalogLeaf extends CatalogChild {}
+    ObjectRegistry.register(CatalogRoot, {
+      packageName: '@fixture/catalog-root',
+      tableStrategy: 'sti',
+      collection: 'catalog_sti_roots',
+      tableName: 'catalog_sti_roots',
+    });
+    ObjectRegistry.register(CatalogChild, {
+      packageName: '@fixture/catalog-root',
+    });
+    ObjectRegistry.register(CatalogLeaf, {
+      packageName: '@fixture/catalog-root',
+    });
+    const CatalogRootBase = CatalogRoot;
+    if (replace) {
+      const AppRoot = class CatalogRoot extends CatalogRootBase {};
+      ObjectRegistry.register(AppRoot, { packageName: '@fixture/catalog-app' });
+    }
+    function definitions() {
+      return PermissionCatalogService.create()
+        .getCatalog()
+        .permissions.filter((entry) =>
+          /^catalog_sti_roots\.(read|create|update|delete)$/.test(entry.slug),
+        );
+    }
+    const root = ObjectRegistry.getClass('@fixture/catalog-root:CatalogRoot')!;
+    const original = ObjectRegistry.getAllClasses();
+    const expected = definitions();
+    vi.spyOn(ObjectRegistry, 'getAllClasses').mockReturnValue(
+      new Map([...original].reverse()),
+    );
+    expect(definitions()).toEqual(expected);
+    expect(expected).toHaveLength(4);
+    for (const entry of expected)
+      expect(entry.qualifiedName).toBe(root.qualifiedName);
   });
 
   it('derives each current supplied registry snapshot once without metadata or relationship projection', () => {

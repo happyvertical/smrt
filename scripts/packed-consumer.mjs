@@ -53,6 +53,18 @@ export function copyPackedProducerSupportFiles(root, producer, selectedPackages 
   }
 }
 
+/** Keep producer-resolved dependencies scoped to their actual parent. */
+export function packedExternalVersions(resolutions) {
+  const overrides = {};
+  for (const { parent, version, dependency, resolvedVersion } of resolutions) {
+    const selector = `${parent}@${version}>${dependency}`;
+    assert.ok(!overrides[selector] || overrides[selector] === resolvedVersion,
+      `Conflicting external versions for ${selector}`);
+    overrides[selector] = resolvedVersion;
+  }
+  return overrides;
+}
+
 /** Install real workspace tarballs in a consumer that cannot borrow producer types. */
 export function createPackedConsumer({ root, packageNames, evidence, consumerDependencies = {}, overrides = {} }) {
   const workspace = readJson(resolve(root, 'package.json'));
@@ -85,7 +97,7 @@ export function createPackedConsumer({ root, packageNames, evidence, consumerDep
     }
   };
   const packed = new Map();
-  const externalVersions = new Map();
+  const externalVersions = [];
 
   function run(command, args, cwd = fixture) {
     const result = spawnSync(command, args, {
@@ -133,9 +145,8 @@ export function createPackedConsumer({ root, packageNames, evidence, consumerDep
         if (optional && error.code === 'ENOENT') continue;
         throw error;
       }
-      const existing = externalVersions.get(dependency);
-      assert.ok(!existing || existing === version, `Conflicting external versions for ${dependency}`);
-      externalVersions.set(dependency, version);
+      externalVersions.push({ parent: name, version: manifest.version,
+        dependency, resolvedVersion: version });
     }
   }
 
@@ -182,7 +193,7 @@ export function createPackedConsumer({ root, packageNames, evidence, consumerDep
     }, null, 2));
     writeFileSync(resolve(fixture, 'pnpm-workspace.yaml'), JSON.stringify({
       packages: [],
-      overrides: { ...Object.fromEntries(externalVersions), ...Object.fromEntries([...packed.keys()].map((name) => [name, dependencies[name]])), ...overrides },
+      overrides: { ...packedExternalVersions(externalVersions), ...Object.fromEntries([...packed.keys()].map((name) => [name, dependencies[name]])), ...overrides },
     }, null, 2));
     // Honor the project's public registry routing without copying credentials.
     const npmrc = resolve(root, '.npmrc');

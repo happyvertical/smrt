@@ -18,11 +18,13 @@ export interface McpToolTarget {
  * Preserve valid aliases and deterministically name previously invalid ones.
  * Reserve all valid names before assigning hashes so registry order cannot
  * cause an invalid alias to steal a valid published name. Collisions fail closed.
+ * snakeCase selects the stricter workflow grammar without changing protocol defaults.
  */
 export function canonicalMcpToolNames(
   entries: readonly { name: string; target: McpToolTarget }[],
+  snakeCase = false,
 ): string[] {
-  const valid = /^[A-Za-z0-9_.-]{1,64}$/;
+  const valid = snakeCase ? /^[a-z][a-z0-9_]{0,63}$/ : /^[A-Za-z0-9_.-]{1,64}$/;
   const occupied = new Set<string>();
   const rawNames = new Set<string>();
   for (const { name } of entries) {
@@ -33,7 +35,11 @@ export function canonicalMcpToolNames(
   return entries.map(({ name, target }) => {
     if (valid.test(name)) return name;
     const identity = JSON.stringify([target.objectName, target.action, name]);
-    const prefix = name.replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 31);
+    let prefix = snakeCase
+      ? name.toLowerCase().replace(/[^a-z0-9_]/g, '_')
+      : name.replace(/[^A-Za-z0-9_.-]/g, '_');
+    if (snakeCase && !/^[a-z]/.test(prefix)) prefix = `m_${prefix}`;
+    prefix = prefix.slice(0, 31);
     const digest = createHash('sha256')
       .update(identity)
       .digest('hex')

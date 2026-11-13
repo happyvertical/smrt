@@ -42,6 +42,7 @@ export class CustomersRecipe extends SmrtRecipe {
     description: 'Customers, orders and quotes: everything you sell.',
   };
   static models = [Customer];
+  static requires = ['profiles.identity'];
   static nav = [
     {
       label: 'Customers',
@@ -167,6 +168,7 @@ export class VendorsRecipe extends SmrtRecipe {
     description: 'Vendors and purchase orders: everything you buy.',
   };
   static models = [Vendor];
+  static requires = ['profiles.identity'];
   static nav = [
     {
       label: 'Vendors',

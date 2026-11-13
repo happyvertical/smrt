@@ -1,3 +1,4 @@
+import { COOKBOOK_TOOL_NAMES } from '@happyvertical/smrt-core/cookbook';
 import {
   type PermissionDefinition,
   registerPermissionDefinitions,
@@ -16,6 +17,12 @@ export const CUSTOMIZE_SHELL_PERMISSION = 'shell.customize';
 export const PERSONALIZE_SHELL_PERMISSION = 'shell.personalize';
 
 export const PREFERENCE_PERMISSION_DEFINITIONS: PermissionDefinition[] = [
+  ...COOKBOOK_TOOL_NAMES.map((slug) => ({
+    slug,
+    category: 'cookbook',
+    name: slug,
+    description: 'Owner cookbook building-block tools',
+  })),
   {
     slug: CUSTOMIZE_OVERVIEW_PERMISSION,
     category: 'preferences',

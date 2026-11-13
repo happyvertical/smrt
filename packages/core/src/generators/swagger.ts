@@ -6,6 +6,10 @@
 
 import { ObjectRegistry } from '../registry';
 import { readFieldEnum } from '../registry/manifest-field-merge.js';
+import {
+  isRuntimeModelEnabled,
+  type RuntimeExposureContext,
+} from '../runtime-exposure.js';
 import type { FieldDefinition } from '../scanner/types';
 
 export interface OpenAPIConfig {
@@ -14,6 +18,8 @@ export interface OpenAPIConfig {
   description?: string;
   basePath?: string;
   serverUrl?: string;
+  /** Trusted request scope for live create-type offerings. Omit for static documentation. */
+  exposureContext?: RuntimeExposureContext;
 }
 
 /**
@@ -89,7 +95,7 @@ export function generateOpenAPISpec(config: OpenAPIConfig = {}): OpenAPISpec {
         },
       },
     },
-    paths: generatePaths(basePath),
+    paths: generatePaths(basePath, config.exposureContext),
   };
 
   return spec;
@@ -225,11 +231,22 @@ function fieldToOpenAPISchema(field: FieldDefinition): OpenAPISchemaObject {
 /**
  * Generate API paths
  */
-function generatePaths(basePath: string): Record<string, OpenAPIPathItem> {
+function generatePaths(
+  basePath: string,
+  exposureContext?: RuntimeExposureContext,
+): Record<string, OpenAPIPathItem> {
   const paths: Record<string, OpenAPIPathItem> = {};
   const registeredClasses = ObjectRegistry.getAllClasses();
 
   for (const [key, classInfo] of registeredClasses) {
+    if (
+      exposureContext &&
+      !isRuntimeModelEnabled(
+        ObjectRegistry.getExposureModel(key),
+        exposureContext,
+      )
+    )
+      continue;
     // Issue #951: Use simple name, not the qualified map key
     const name = classInfo.name || key;
     const pluralName = pluralize(name.toLowerCase());
@@ -294,6 +311,29 @@ function generatePaths(basePath: string): Record<string, OpenAPIPathItem> {
     }
 
     if (shouldInclude('create')) {
+      const targets = ObjectRegistry.getCreateTargets(key, exposureContext);
+      const choices = [targets.base, ...targets.subtypes];
+      const createSchema = targets.polymorphic
+        ? {
+            allOf: [
+              { $ref: `#/components/schemas/${name}` },
+              {
+                type: 'object',
+                properties: {
+                  createType: {
+                    type: 'string',
+                    enum: choices.map((target) => target.name),
+                    description:
+                      'Optional createType target: ' +
+                      choices
+                        .map((target) => `${target.name} (${target.label})`)
+                        .join(', '),
+                  },
+                },
+              },
+            ],
+          }
+        : { $ref: `#/components/schemas/${name}` };
       paths[objectPath].post = {
         summary: `Create ${name}`,
         tags: [name],
@@ -301,7 +341,7 @@ function generatePaths(basePath: string): Record<string, OpenAPIPathItem> {
           required: true,
           content: {
             'application/json': {
-              schema: { $ref: `#/components/schemas/${name}` },
+              schema: createSchema,
             },
           },
         },

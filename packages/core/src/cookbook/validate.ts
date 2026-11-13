@@ -8,6 +8,7 @@ import type {
   CookbookTheme,
   RecipeShellSlot,
 } from '@happyvertical/smrt-types';
+import { validateCookbookModels } from './models.js';
 
 export type { Cookbook } from '@happyvertical/smrt-types';
 
@@ -191,6 +192,14 @@ function checkPolicy(
       `${at}.locked must be a boolean`,
     );
   }
+  if (value.readOnly != null && typeof value.readOnly !== 'boolean') {
+    error(
+      diagnostics,
+      'invalid_type',
+      `${at}.readOnly`,
+      `${at}.readOnly must be a boolean`,
+    );
+  }
 }
 
 function checkLayout(value: unknown, diagnostics: CookbookDiagnostic[]) {
@@ -253,6 +262,22 @@ function checkLayout(value: unknown, diagnostics: CookbookDiagnostic[]) {
         `layout.${key}`,
         `layout.${key} must map ids to objects`,
       );
+    }
+  }
+  if (isObject(value.items)) {
+    for (const [id, item] of Object.entries(value.items)) {
+      if (!isObject(item) || item.icon === undefined) continue;
+      if (
+        typeof item.icon !== 'string' ||
+        !/^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\s\S])/.test(item.icon)
+      ) {
+        error(
+          diagnostics,
+          'invalid_value',
+          `layout.items.${id}.icon`,
+          'Item icon must be a 1–64 character identifier starting with a letter (letters, digits, _ or -).',
+        );
+      }
     }
   }
   const custom = value.customSections;
@@ -864,6 +889,11 @@ export function validateCookbook(
         if (checked.ok && checked.override) overviews[id] = checked.override;
       }
     }
+  }
+
+  if (input.models !== undefined) {
+    for (const problem of validateCookbookModels(input.models))
+      error(diagnostics, 'invalid_models', problem.path, problem.message);
   }
 
   const errors = diagnostics

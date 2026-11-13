@@ -7,6 +7,7 @@ export default defineConfig({
     conditions: ['browser'],
   },
   test: {
+    globalSetup: ['../vitest/src/test-home.global-setup.ts'],
     environment: 'jsdom',
     setupFiles: ['@happyvertical/smrt-vitest/svelte-setup'],
     include: ['src/svelte/__tests__/components.test.ts'],

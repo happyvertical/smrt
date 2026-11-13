@@ -8,12 +8,12 @@
  */
 
 import type { AIClient, AIClientOptions } from '@happyvertical/ai';
-import { fetchStaticMap, type StaticMapProvider } from '@happyvertical/geo';
+import type { fetchStaticMap, StaticMapProvider } from '@happyvertical/geo';
+import type { HeadlineCardTemplate } from '@happyvertical/images';
 import {
-  generateHeadlineCard,
-  type HeadlineCardTemplate,
-} from '@happyvertical/images';
-import type { DatabaseConfig } from '@happyvertical/smrt-core';
+  type DatabaseConfig,
+  importOptionalDependency,
+} from '@happyvertical/smrt-core';
 import type { Image } from '@happyvertical/smrt-images';
 import { ImageCollection } from '@happyvertical/smrt-images';
 import {
@@ -257,6 +257,7 @@ export class ThumbnailGenerator {
   private async generateHeadlineCard(
     options: HeadlineCardThumbnailOptions,
   ): Promise<Image> {
+    const { generateHeadlineCard } = await import('@happyvertical/images');
     const title = this.content.title || this.content.name || 'Untitled';
 
     const result = await generateHeadlineCard(title, {
@@ -327,6 +328,10 @@ export class ThumbnailGenerator {
       | FetchStaticMapOptions['mapboxStyle']
       | undefined;
 
+    const { fetchStaticMap } = (await importOptionalDependency(
+      '@happyvertical/geo',
+      'Install the geo capability to generate static map thumbnails.',
+    )) as typeof import('@happyvertical/geo');
     const result = await fetchStaticMap(latitude, longitude, {
       provider: options.mapProvider ?? 'mapbox',
       width: options.width ?? 1200,

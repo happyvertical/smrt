@@ -28,6 +28,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { transformSync } from 'oxc-transform';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { smrtPlugin } from './index.js';
 
@@ -209,7 +210,9 @@ export class Gizmo extends SmrtObject {
   it('loads the default UI module source', async () => {
     const code = await load('\0smrt:ui');
     expect(typeof code).toBe('string');
-    expect((code as string).length).toBeGreaterThan(0);
+    expect(code).toContain('function renderDashboard');
+    expect(code).not.toContain('Template file not found');
+    expect(transformSync('default-ui.js', code as string).errors).toEqual([]);
   });
 
   it('loads the default index.html', async () => {

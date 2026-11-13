@@ -25,6 +25,7 @@ import { join, parse, resolve, win32 } from 'node:path';
 import { custodyContext } from './custody-context.js';
 import { errorCode } from './error-code.js';
 import { resolveLocalRuntimePaths, validateApplicationId } from './index.js';
+import { assertAllowedStateBase } from './local-custody.js';
 import { lookupWindowsEnvironment } from './windows-acl-inspector.js';
 import { preparePrivateWindowsTree } from './windows-custody.js';
 import {
@@ -114,6 +115,7 @@ export function resolveApplicationStateRoot(
     sourceRoot: options.sourceRoot,
   });
   const stateBase = stateBaseFor(options).base;
+  assertAllowedStateBase(stateBase, platformName as NodeJS.Platform);
   const dataIdentity = createHash('sha256')
     .update(resolve(paths.root))
     .digest('hex')
@@ -147,6 +149,7 @@ function resolveWindowsStateRoot(
     );
   }
   const stateBase = validateWindowsPath(localAppData, 'LOCALAPPDATA');
+  assertAllowedStateBase(stateBase, 'win32');
   const dataIdentity = createHash('sha256')
     .update(foldWindowsCase(paths.root))
     .digest('hex')

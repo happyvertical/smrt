@@ -314,6 +314,7 @@ export type {
   SafeRemoteFetchResult,
 } from './safe-remote-url';
 export { fetchSafeRemoteUrl } from './safe-remote-url';
+export { serializeContent } from './serialization.js';
 // Thumbnail generation
 export {
   type AIGenerateThumbnailOptions,

@@ -26,7 +26,6 @@ use crate::signals::{block_termination_signals, wait_for_termination_signal};
 use crate::supervisor::{emergency_kill, Phase, Supervisor, SupervisorConfig, SupervisorParams};
 
 const MAIN_WINDOW: &str = "main";
-const LOG_DIR: &str = ".desktop-wrapper";
 const LOG_FILE: &str = "supervisor.log";
 const TRAY_ICON: &[u8] = include_bytes!("../icons/32x32.png");
 /// Opt-in debugging switch: log a truncated tail of the child's output when a
@@ -61,6 +60,8 @@ struct TauriChild {
     child: Option<CommandChild>,
     latch: ExitLatch,
     tail: OutputTail,
+    stderr: OutputTail,
+    diagnostics: OutputTail,
 }
 
 impl Launcher for TauriLauncher {
@@ -85,14 +86,26 @@ impl Launcher for TauriLauncher {
         let (mut events, child) = command.spawn().map_err(to_io)?;
         let latch = ExitLatch::default();
         let tail = OutputTail::default();
+        let diagnostics = OutputTail::redacted(&plan.env);
+        let reader_diagnostics = diagnostics.clone();
+        let stderr = OutputTail::redacted(&plan.env);
+        let reader_stderr = stderr.clone();
         let (reader_latch, reader_tail) = (latch.clone(), tail.clone());
         thread::Builder::new()
             .name("smrt-sidecar-events".into())
             .spawn(move || {
                 while let Some(event) = events.blocking_recv() {
                     match event {
-                        CommandEvent::Stdout(bytes) | CommandEvent::Stderr(bytes) => {
-                            reader_tail.push(&String::from_utf8_lossy(&bytes));
+                        CommandEvent::Stdout(bytes) => {
+                            let line = String::from_utf8_lossy(&bytes);
+                            reader_tail.push(&line);
+                            reader_diagnostics.push(&line);
+                        }
+                        CommandEvent::Stderr(bytes) => {
+                            let line = String::from_utf8_lossy(&bytes);
+                            reader_tail.push(&line);
+                            reader_stderr.push(&line);
+                            reader_diagnostics.push(&line);
                         }
                         CommandEvent::Error(_) => reader_tail.push("process event error"),
                         CommandEvent::Terminated(payload) => {
@@ -115,6 +128,8 @@ impl Launcher for TauriLauncher {
             child: Some(child),
             latch,
             tail,
+            stderr,
+            diagnostics,
         }))
     }
 }
@@ -148,6 +163,12 @@ impl ManagedChild for TauriChild {
 
     fn output_tail(&self) -> Vec<String> {
         self.tail.snapshot()
+    }
+    fn stderr_tail(&self) -> Vec<String> {
+        self.stderr.snapshot()
+    }
+    fn diagnostic_tail(&self) -> Vec<String> {
+        self.diagnostics.snapshot()
     }
 }
 
@@ -280,7 +301,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // socket state to other machines. On macOS and Linux the two coincide.
     let app_local_data_dir = app.path().app_local_data_dir()?;
     let resource_dir = app.path().resource_dir()?;
-    let logger = Arc::new(Logger::new(app_local_data_dir.join(LOG_DIR), LOG_FILE));
+    let logger = Arc::new(Logger::new(app.path().app_log_dir()?, LOG_FILE));
     logger.info("wrapper starting");
 
     app.manage(Wrapper::default());
@@ -381,6 +402,14 @@ fn install_panic_hook() {
     }));
 }
 
+/// Product opt-in; existing tray apps keep their hide-on-close behavior.
+fn quits_on_close(config: Option<&serde_json::Value>) -> bool {
+    config
+        .and_then(|value| value.get("closeBehavior"))
+        .and_then(|value| value.as_str())
+        == Some("quit")
+}
+
 /// Run the desktop wrapper.
 pub fn run() {
     // Before any other thread exists, so every thread inherits the mask.
@@ -401,7 +430,11 @@ pub fn run() {
                     .is_some_and(|wrapper| wrapper.quitting.load(Ordering::SeqCst));
                 if !quitting {
                     api.prevent_close();
-                    let _ = window.hide();
+                    if quits_on_close(window.app_handle().config().plugins.0.get("smrt-desktop")) {
+                        begin_quit(window.app_handle());
+                    } else {
+                        let _ = window.hide();
+                    }
                 }
             }
         })
@@ -429,7 +462,7 @@ pub fn run() {
 mod tests {
     use super::*;
 
-    /// D7 (assumed, pending owner confirmation): the data directory and the
+    /// D7 (owner-confirmed): the data directory and the
     /// log live under `app_local_data_dir`. Tauri's `app_data_dir` is Roaming
     /// on Windows; SQLite and pid/socket state must not roam. This guards the
     /// non-test source from calling the roaming resolver again.
@@ -446,6 +479,17 @@ mod tests {
             "app.rs must resolve the data directory with app_local_data_dir"
         );
         assert!(production.contains(".app_local_data_dir()"));
+    }
+
+    #[test]
+    fn close_behavior_defaults_to_hide_and_quit_is_explicit() {
+        assert!(!quits_on_close(None));
+        assert!(!quits_on_close(Some(
+            &serde_json::json!({"closeBehavior":"hide"})
+        )));
+        assert!(quits_on_close(Some(
+            &serde_json::json!({"closeBehavior":"quit"})
+        )));
     }
 
     #[test]

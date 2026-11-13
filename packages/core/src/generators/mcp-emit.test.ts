@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 /**
  * Regression tests for the generated MCP server's emit language (#2279).
  *
@@ -84,7 +85,7 @@ async function installGeneratedServerRuntimeStubs(
     ),
     writeFile(
       join(serverPackage, 'index.js'),
-      'export class Server { handlers = new Map(); setRequestHandler(name, handler) { this.handlers.set(name, handler); } }\n',
+      'export class Server { handlers = new Map(); notifications = []; setRequestHandler(name, handler) { this.handlers.set(name, handler); } async sendToolListChanged() { this.notifications.push("notifications/tools/list_changed"); } }\n',
     ),
     writeFile(
       join(serverPackage, 'stdio.js'),
@@ -92,15 +93,22 @@ async function installGeneratedServerRuntimeStubs(
     ),
     writeFile(
       join(smrtPackage, 'package.json'),
-      JSON.stringify({ type: 'module', exports: './index.js' }),
+      JSON.stringify({
+        type: 'module',
+        exports: { '.': './index.js', './cookbook/tools': './index.js' },
+      }),
     ),
     writeFile(
       join(smrtPackage, 'index.js'),
-      "export const ObjectRegistry = { loadAllManifests() {} }; export function normalizeCustomActionFailure() {} export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';\n",
+      `export { COOKBOOK_TOOL_NAMES, getCookbookToolService } from ${JSON.stringify(fileURLToPath(new URL('../../dist/cookbook/tools.js', import.meta.url)))};
+export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))}; export const ObjectRegistry = { loadAllManifests() {} }; export function normalizeCustomActionFailure() {} export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';\n`,
     ),
     writeFile(
       join(configPackage, 'package.json'),
-      JSON.stringify({ type: 'module', exports: './index.js' }),
+      JSON.stringify({
+        type: 'module',
+        exports: { '.': './index.js', './cookbook/tools': './index.js' },
+      }),
     ),
     writeFile(
       join(configPackage, 'index.js'),
@@ -255,7 +263,9 @@ describe('MCPGenerator - generated output is runnable (#2279)', () => {
     expect(content).toContain('emit-js-server');
     // The two annotations that made the shipped `.js` output unparseable.
     expect(content).not.toContain('type CallToolRequest');
-    expect(content).not.toContain('const STI_TARGETS: Record<');
+    expect(content).not.toContain(
+      'async function resolveCreateTarget(baseObjectName: string',
+    );
 
     await expectParsesAsEsModule(outputPath);
     await expectGeneratedServerStarts(outputPath);
@@ -272,7 +282,9 @@ describe('MCPGenerator - generated output is runnable (#2279)', () => {
 
     const content = await readFile(outputPath, 'utf-8');
     expect(content).toContain('type CallToolRequest');
-    expect(content).toContain('const STI_TARGETS: Record<');
+    expect(content).toContain(
+      'async function resolveCreateTarget(baseObjectName: string',
+    );
   });
 
   it('points the Claude config example at the file it generated', async () => {
@@ -345,7 +357,7 @@ describe('MCPGenerator - generated output is runnable (#2279)', () => {
       },
     });
     delete tools[1].annotations;
-    vi.spyOn(generator, 'generateTools').mockResolvedValue(tools);
+    vi.spyOn(generator, 'generateToolDefinitions').mockResolvedValue(tools);
     const outputDir = join(
       tmpDir,
       modular ? 'metadata-modular' : 'metadata-single',
@@ -372,6 +384,202 @@ describe('MCPGenerator - generated output is runnable (#2279)', () => {
         a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
       ),
     );
+  });
+
+  it.each([
+    false,
+    true,
+  ])('delegates edited model lists/calls to the shared live generator (modular=%s)', async (modular) => {
+    const outputDir = join(tmpDir, modular ? 'app-modular' : 'app-single');
+    await generator.generateServer({
+      outputPath: join(outputDir, 'index.mjs'),
+      modular,
+    });
+    await installGeneratedServerRuntimeStubs(outputDir);
+    const toolsPath = fileURLToPath(
+      new URL('../../dist/cookbook/tools.js', import.meta.url),
+    );
+    const probe = join(outputDir, 'app-probe.mjs');
+    await writeFile(
+      probe,
+      `
+      import {createServer} from './index.mjs';
+      import {setCookbookToolService} from ${JSON.stringify(toolsPath)};
+      const contexts = [];
+      setCookbookToolService({
+        async list() {return [];},
+        async modelTools(context) {
+          contexts.push(context);
+          return {
+            async generateTools() {return [{name:'projects_create',inputSchema:{type:'object',properties:{projectTitle:{type:'string'}}}}];},
+            async handleToolCall(request) {return {content:[{type:'text',text:'Created Garden.'}],structuredContent:{name:request.params.name,title:request.params.arguments.projectTitle}};},
+          };
+        },
+      });
+      const server = await createServer();
+      const listed = await server.handlers.get('tools/list')({});
+      const result = await server.handlers.get('tools/call')({params:{name:'projects_create',arguments:{projectTitle:'Garden'}}});
+      console.log(JSON.stringify({listed,result,contexts}));
+    `,
+    );
+    const { stdout } = await execFileAsync(process.execPath, [probe], {
+      cwd: outputDir,
+      env: {
+        ...process.env,
+        SMRT_MCP_TENANT_ID: 'tenant',
+        SMRT_MCP_USER_ID: 'owner',
+      },
+    });
+    const result = JSON.parse(stdout.trim());
+    expect(result.listed.tools).toEqual([
+      {
+        name: 'projects_create',
+        inputSchema: {
+          type: 'object',
+          properties: { projectTitle: { type: 'string' } },
+        },
+      },
+    ]);
+    expect(result.result.structuredContent).toEqual({
+      name: 'projects_create',
+      title: 'Garden',
+    });
+    expect(result.contexts).toEqual([
+      { surface: 'mcp', tenantId: 'tenant', userId: 'owner' },
+      { surface: 'mcp', tenantId: 'tenant', userId: 'owner' },
+    ]);
+  });
+
+  it.each([
+    false,
+    true,
+  ])('serves installed cookbook tools from the shared service (modular=%s)', async (modular) => {
+    const outputDir = join(
+      tmpDir,
+      modular ? 'cookbook-modular' : 'cookbook-single',
+    );
+    await generator.generateServer({
+      outputPath: join(outputDir, 'index.mjs'),
+      modular,
+    });
+    await installGeneratedServerRuntimeStubs(outputDir);
+    const toolsPath = fileURLToPath(
+      new URL('../../dist/cookbook/tools.js', import.meta.url),
+    );
+    const gatePath = fileURLToPath(
+      new URL('../../dist/runtime-exposure.js', import.meta.url),
+    );
+    const probe = join(outputDir, 'cookbook-probe.mjs');
+    await writeFile(
+      probe,
+      `
+      import { createServer } from './index.mjs';
+      import { setCookbookToolService } from ${JSON.stringify(toolsPath)};
+      import { notifyRuntimeExposureChanged } from ${JSON.stringify(gatePath)};
+      let on = true;
+      const contexts = [];
+      const definition = {name:'recipes.search',description:'Installed recipes',inputSchema:{type:'object'},outputSchema:{type:'object'}};
+      setCookbookToolService({
+        async list(context) { contexts.push(context); return on ? [definition] : []; },
+        async invoke(name, args, context) {
+          contexts.push(context);
+          if (!on) throw new Error('forbidden');
+          return {status:'ok',summary:'Found Billing.',recipes:[{id:'billing'}]};
+        },
+      });
+      const server = await createServer();
+      const list = () => server.handlers.get('tools/list')({});
+      const call = () => server.handlers.get('tools/call')({params:{name:'recipes.search',arguments:{query:'send invoices'}}});
+      const offered = (await list()).tools.find(tool => tool.name === 'recipes.search');
+      const result = await call();
+      on = false; notifyRuntimeExposureChanged();
+      const removed = !(await list()).tools.some(tool => tool.name === 'recipes.search');
+      const refused = (await call()).isError;
+      console.log(JSON.stringify({offered,result,removed,refused,contexts,notifications:server.notifications}));
+    `,
+    );
+    const { stdout } = await execFileAsync(process.execPath, [probe], {
+      cwd: outputDir,
+      env: {
+        ...process.env,
+        SMRT_MCP_TENANT_ID: 'tenant',
+        SMRT_MCP_USER_ID: 'owner',
+      },
+    });
+    const result = JSON.parse(stdout.trim());
+    expect(result.offered).toMatchObject({ name: 'recipes.search' });
+    expect(result.result.structuredContent).toMatchObject({
+      summary: 'Found Billing.',
+      recipes: [{ id: 'billing' }],
+    });
+    expect(result.removed).toBe(true);
+    expect(result.refused).toBe(true);
+    expect(result.contexts.length).toBeGreaterThan(0);
+    expect(
+      result.contexts.every(
+        (context: any) =>
+          context.tenantId === 'tenant' &&
+          context.userId === 'owner' &&
+          context.surface === 'mcp',
+      ),
+    ).toBe(true);
+    expect(result.notifications).toContain('notifications/tools/list_changed');
+  });
+
+  it.each([
+    false,
+    true,
+  ])('gates emitted catalogs and calls and emits list_changed without regeneration (modular=%s)', async (modular) => {
+    const outputDir = join(tmpDir, modular ? 'live-modular' : 'live-single');
+    const outputPath = join(outputDir, 'index.mjs');
+    await generator.generateServer({ outputPath, modular });
+    await installGeneratedServerRuntimeStubs(outputDir);
+    const rootStub = join(
+      outputDir,
+      'node_modules/@happyvertical/smrt-core/index.js',
+    );
+    await writeFile(
+      rootStub,
+      `${await readFile(rootStub, 'utf8')}\nObjectRegistry.getExposureModel = (name) => ({ qualifiedName: name });`,
+    );
+    const tool = (await generator.generateToolDefinitions())[0];
+    const gatePath = fileURLToPath(
+      new URL('../../dist/runtime-exposure.js', import.meta.url),
+    );
+    await writeFile(
+      join(outputDir, 'live-probe.mjs'),
+      `
+      import { createServer } from './index.mjs';
+      import { setRuntimeExposureGate, notifyRuntimeExposureChanged } from ${JSON.stringify(gatePath)};
+      let enabled = false;
+      setRuntimeExposureGate({ isEnabled: () => enabled });
+      const server = await createServer();
+      const list = () => server.handlers.get('tools/list')({});
+      const call = () => server.handlers.get('tools/call')({ params: { name: ${JSON.stringify(tool.name)}, arguments: {} } });
+      const before = (await list()).tools.length;
+      const refused = (await call()).isError;
+      enabled = true; notifyRuntimeExposureChanged();
+      const after = (await list()).tools.length;
+      enabled = false; notifyRuntimeExposureChanged();
+      const disabledAgain = (await list()).tools.length;
+      server.onclose(); notifyRuntimeExposureChanged();
+      console.log(JSON.stringify({ before, refused, after, disabledAgain, notifications: server.notifications }));
+    `,
+    );
+    const { stdout } = await execFileAsync(process.execPath, [
+      join(outputDir, 'live-probe.mjs'),
+    ]);
+    const result = JSON.parse(stdout.trim().split('\n').at(-1) ?? '{}');
+    expect(result).toMatchObject({
+      before: 0,
+      refused: true,
+      disabledAgain: 0,
+      notifications: [
+        'notifications/tools/list_changed',
+        'notifications/tools/list_changed',
+      ],
+    });
+    expect(result.after).toBeGreaterThan(0);
   });
 
   it('emits modular TypeScript with matching sibling specifiers', async () => {

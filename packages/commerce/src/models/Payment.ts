@@ -107,6 +107,10 @@ const recordingInProgress = new WeakSet<Payment>();
  */
 @TenantScoped({ mode: 'optional' })
 @smrt({
+  display: {
+    list: ['reference', 'customerId', 'status', 'amount', 'paidAt'],
+    label: 'reference',
+  },
   // ROOT FIX (S5 audit #1390 round 4): restrict the generated create/update
   // write surface so privileged / settlement-derived fields can NEVER be set
   // by a generated REST/MCP route — closing the status-mass-assignment vector

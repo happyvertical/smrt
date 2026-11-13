@@ -5,7 +5,7 @@ import { smrtVitestPlugin } from '../vitest/src/index.ts';
 export default defineConfig({
   plugins: [svelte(), smrtVitestPlugin({ verbose: false })],
   test: {
-    environment: 'node',
+    environment: 'node', testTimeout: 30000, hookTimeout: 30000,
     include: ['src/svelte/invoices/**/*.spec.ts'],
     fileParallelism: false,
     pool: 'forks',

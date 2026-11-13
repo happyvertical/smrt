@@ -55,6 +55,7 @@ import {
 export {
   type DesktopPluginLauncher,
   generateDesktopPluginArtifacts,
+  generateLocalMcpSetup,
 } from './desktop-plugins.js';
 export {
   type CliResource,

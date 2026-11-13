@@ -380,3 +380,90 @@ describe('selector slots (#3599)', () => {
     expect(() => gen.applyUiMetadata(manifest)).not.toThrow();
   });
 });
+
+describe('one-hop display label', () => {
+  function projected(
+    label: unknown = {
+      via: 'profileId',
+      field: 'name',
+      fallback: 'Unnamed customer',
+    },
+    target = text(),
+    link: FieldDefinition = {
+      type: 'crossPackageRef',
+      related: `${PKG}:Profile`,
+    },
+    own: Record<string, FieldDefinition> = {},
+  ) {
+    const result = scan({ profileId: link, ...own }, { display: { label } });
+    result[0].objects.push({
+      ...result[0].objects[0],
+      className: 'Profile',
+      name: 'profile',
+      collection: 'profiles',
+      decoratorConfig: {},
+      fields: { name: target },
+    });
+    return new ManifestGenerator().generateManifest(result, {
+      packageName: PKG,
+    });
+  }
+
+  it('carries the projection without inventing a persisted name column', () => {
+    const manifest = projected();
+    const order = manifest.objects[`${PKG}:Order`];
+    expect(order.displayLabelField).toBe('displayLabel');
+    expect(order.displayLabelProjection).toEqual({
+      via: 'profileId',
+      field: 'name',
+      fallback: 'Unnamed customer',
+    });
+    expect(order.fields).not.toHaveProperty('displayLabel');
+    expect(order.schema?.columns).not.toHaveProperty('display_label');
+  });
+
+  it.each([
+    { sensitive: true },
+    { transient: true },
+    { readPermission: 'profile.read_internal' },
+    { _meta: { readPermission: 'profile.read_internal' } },
+    { type: 'foreignKey' as const, related: 'Other' },
+  ])('refuses non-public/non-scalar target metadata %j', (extra) => {
+    expect(() => projected(undefined, text(extra))).toThrow(
+      /display.label target/,
+    );
+  });
+
+  it('rejects missing targets, invalid hops, unknown keys and reserved output collisions', () => {
+    expect(() => projected(undefined, text(), { type: 'text' })).toThrow(
+      /foreignKey or crossPackageRef/,
+    );
+    expect(() => projected({ via: 'profileId', field: 'name' })).toThrow(
+      /fallback/,
+    );
+    expect(() =>
+      projected({
+        via: 'profileId',
+        field: 'nested.name',
+        fallback: 'Missing',
+      }),
+    ).toThrow(/one relationship hop/);
+    expect(() =>
+      projected({
+        via: 'profileId',
+        field: 'name',
+        fallback: 'Missing',
+        allowCrossTenant: true,
+      }),
+    ).toThrow(/one relationship hop/);
+    expect(() =>
+      projected(undefined, text(), {
+        type: 'crossPackageRef',
+        related: `${PKG}:Absent`,
+      }),
+    ).toThrow(/unavailable/);
+    expect(() =>
+      projected(undefined, text(), undefined, { displayLabel: text() }),
+    ).toThrow(/reserved/);
+  });
+});

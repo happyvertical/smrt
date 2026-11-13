@@ -104,7 +104,7 @@ describe('deriveScreenFields with a resolved policy', () => {
     );
   });
 
-  it('list: basic scalar fields only, without long text, JSON or raw references', () => {
+  it('list: basic scalar and reference fields, without long text or JSON', () => {
     const fields = deriveScreenFields(taskDefinition, taskPolicy, {
       mode: 'list',
     });
@@ -114,6 +114,7 @@ describe('deriveScreenFields with a resolved policy', () => {
       'budget',
       'done',
       'dueAt',
+      'ownerId',
     ]);
   });
 
@@ -218,4 +219,119 @@ describe('screenSourceError', () => {
       }),
     ).toMatch(/not '@acme\/tasks:Task'/);
   });
+});
+
+describe('projected display fields', () => {
+  const definition: ScreenCollectionDefinition = {
+    objectRef: '@test:Customer',
+    className: 'Customer',
+    displayLabelField: 'displayLabel',
+    displayLabelProjection: {
+      via: 'profileId',
+      field: 'name',
+      fallback: 'Unnamed customer',
+    },
+    fields: {
+      profileId: { type: 'crossPackageRef' },
+      displayLabel: { type: 'text', readonly: true, ui: { basic: true } },
+    },
+  };
+  it('uses the name column and title role, but never creates a writable form field', () => {
+    expect(
+      deriveScreenFields(definition, null, { mode: 'list' }),
+    ).toMatchObject([
+      { name: 'displayLabel', label: 'Name', roles: ['title'] },
+    ]);
+    expect(
+      names(
+        deriveScreenFields(definition, null, {
+          mode: 'edit',
+          include: ['displayLabel', 'profileId'],
+        }),
+      ),
+    ).toEqual(['profileId']);
+  });
+  it('honors policy labels and hidden/omitted fields without making computed values writable', () => {
+    const policy = {
+      objectRef: definition.objectRef,
+      fields: {
+        displayLabel: { visibility: 'basic' as const, label: 'Customer name' },
+      },
+    };
+    expect(
+      deriveScreenFields(definition, policy, { mode: 'view' })[0],
+    ).toMatchObject({
+      label: 'Customer name',
+      roles: ['title'],
+    });
+    expect(deriveScreenFields(definition, policy, { mode: 'edit' })).toEqual(
+      [],
+    );
+    expect(
+      deriveScreenFields(
+        definition,
+        {
+          ...policy,
+          fields: {
+            displayLabel: { visibility: 'hidden' },
+          },
+        },
+        { mode: 'list', include: ['displayLabel'] },
+      ),
+    ).toEqual([]);
+    expect(
+      deriveScreenFields(
+        definition,
+        { ...policy, fields: {} },
+        { mode: 'view' },
+      ),
+    ).toEqual([]);
+  });
+});
+
+it('uses the cookbook singular vocabulary for create and edit', () => {
+  expect(screenTitles({ ...taskDefinition, label: 'Members' })).toEqual({
+    singular: 'Member',
+    plural: 'Members',
+  });
+  expect(
+    screenTitles({ ...taskDefinition, label: 'People', singularLabel: 'Guest' })
+      .singular,
+  ).toBe('Guest');
+});
+it('keeps required fields visible when the only basic field is a read-only linked label', () => {
+  const fields = deriveScreenFields(
+    {
+      ...taskDefinition,
+      fields: {
+        displayLabel: { type: 'text', readonly: true, ui: { basic: true } },
+        name: { type: 'text', required: true },
+        note: { type: 'text' },
+      },
+    },
+    null,
+    { mode: 'edit' },
+  );
+  expect(fields.find((f) => f.name === 'name')?.tier).toBe('basic');
+  expect(fields.find((f) => f.name === 'note')?.tier).toBe('advanced');
+});
+it('uses declared list columns ahead of internal implementation fields', () => {
+  const definition: ScreenCollectionDefinition = {
+    ...taskDefinition,
+    displayLabelField: 'number',
+    listFields: ['status', 'total', 'dueDate'],
+    fields: {
+      moneyAuthority: { type: 'text' },
+      historicalSalesMoneyJson: { type: 'json' },
+      historicalSourceKeyHash: { type: 'text' },
+      backendId: { type: 'text' },
+      number: { type: 'text' },
+      status: { type: 'text' },
+      total: { type: 'integer' },
+      dueDate: { type: 'datetime' },
+    },
+  };
+  expect(names(deriveScreenFields(definition, null, { mode: 'list' }))).toEqual(
+    ['number', 'status', 'total', 'dueDate'],
+  );
 });

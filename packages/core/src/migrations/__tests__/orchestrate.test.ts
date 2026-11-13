@@ -405,6 +405,33 @@ describe('schema orchestration', () => {
     expect(pending.unactionableChanges[0].name).toBe('score');
   });
 
+  it('requireComplete refuses manual drift before executing even the actionable part of a plan', async () => {
+    await db.query(
+      'CREATE TABLE documents (id TEXT PRIMARY KEY, legacy_code TEXT NOT NULL)',
+    );
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+      documents: {
+        ...makeDocumentSchema(),
+        columns: { id: { type: 'TEXT', primaryKey: true } },
+      },
+      new_documents: { ...makeDocumentSchema(), tableName: 'new_documents' },
+    });
+    await expect(
+      migrateSmrtSchemas({
+        db,
+        packageName: '@fixture/app',
+        requireComplete: true,
+      }),
+    ).rejects.toThrow(/manual schema migration/);
+    expect(
+      (
+        await db.query(
+          "SELECT name FROM sqlite_master WHERE name = 'new_documents'",
+        )
+      ).rows,
+    ).toEqual([]);
+  });
+
   it('surfaces a blocking orphan NOT NULL column as unactionable, keeps info notes out, executes nothing for advisories (#2369)', async () => {
     await db.query(
       'CREATE TABLE documents (id TEXT PRIMARY KEY, legacy_code TEXT NOT NULL, legacy_note TEXT);',

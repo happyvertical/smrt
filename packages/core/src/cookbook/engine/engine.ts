@@ -1,3 +1,4 @@
+import { cookbookModelCatalog } from '../models.js';
 import { validateCookbook } from '../validate.js';
 import {
   adopt,
@@ -231,10 +232,13 @@ export function createCookbookEngine(
 
   function snapshotOf(state: PlanState, rev: number): PlanSnapshot {
     const { doc } = state;
+    const effectiveCatalog = cookbookModelCatalog(catalog, doc.models);
     const byId = new Map(catalog.recipes.map((r) => [r.id, r]));
     const settings = readSettings(catalog, doc);
     const exposed = new Set(
-      catalog.models.filter((m) => m.exposed !== false).map((m) => m.id),
+      effectiveCatalog.models
+        .filter((m) => m.exposed !== false)
+        .map((m) => m.id),
     );
     return {
       version: COOKBOOK_COMMANDS_VERSION,
@@ -251,6 +255,13 @@ export function createCookbookEngine(
         return recipe ? [{ id, label: recipe.label }] : [];
       }),
       features: doc.features.filter((id) => exposed.has(id)),
+      ...(doc.models
+        ? {
+            customModels: Object.keys(doc.models.lists).map(
+              (name) => `${doc.models!.packageName}:${name}`,
+            ),
+          }
+        : {}),
       unavailable: [
         ...doc.recipes.filter((id) => !byId.has(id)),
         ...doc.features.filter((id) => !exposed.has(id)),
@@ -271,13 +282,14 @@ export function createCookbookEngine(
         density: doc.theme?.density ?? null,
         contrast: doc.theme?.contrast ?? null,
       },
-      sections: buildNav(catalog, doc).map((s) => ({
+      sections: buildNav(effectiveCatalog, doc).map((s) => ({
         id: s.id,
         label: s.label,
         hidden: s.hidden,
         items: s.items.map((i) => ({
           id: i.id,
           label: i.label,
+          icon: i.icon,
           hidden: i.hidden,
         })),
       })),

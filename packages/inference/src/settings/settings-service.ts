@@ -8,7 +8,7 @@
  * Makes no authorization decision of its own: call it only from server code
  * that has already established who the caller is.
  */
-import { AI_PROVIDER_TYPES } from '@happyvertical/ai';
+import { AI_PROVIDER_TYPES } from '@happyvertical/ai/types';
 import { getDefaultAIKeyEnvName } from '@happyvertical/smrt-config';
 import {
   type AiUsageReport,

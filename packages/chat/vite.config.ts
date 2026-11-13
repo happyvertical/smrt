@@ -22,6 +22,8 @@ export default defineConfig(async ({ command, mode }) => {
         // Browser-safe assistant-turn wire contract + SSE reader (#2908),
         // shared by the server engine and the AssistantDock.
         'assistant-turn-events',
+        'tool-summary',
+        'assistant-approvals',
         // Browser-safe helper presentation DTOs. Keep the Profile/SQL adapter
         // in the package root server surface, never in this subpath.
         'helper-preferences',
@@ -29,6 +31,7 @@ export default defineConfig(async ({ command, mode }) => {
         'data-surface-bridge',
         // Server-only SvelteKit routes for the AssistantDock (#3368).
         'sveltekit',
+        'engines',
         // Internal agent-runtime surface (S5 #1392): emitted under a dedicated
         // subpath, NOT folded into the package index, so only trusted in-process
         // agent runtimes opt into `sendAgentReply`.

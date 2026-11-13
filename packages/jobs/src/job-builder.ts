@@ -1,8 +1,4 @@
-import {
-  exponential,
-  type RetryStrategy,
-  type RetryStrategyConfig,
-} from '@happyvertical/jobs';
+import type { RetryStrategy, RetryStrategyConfig } from '@happyvertical/jobs';
 import { clampRetries, DEFAULT_TENANT_JOB_CAP } from './background-policy.js';
 import { JobHandle } from './job-handle.js';
 import type { SmrtJobCollection, TimeoutBehavior } from './smrt-job.js';
@@ -90,7 +86,7 @@ export class JobBuilder<T = unknown> {
   private _priority: number = 50;
   private _timeout: number = 300000;
   private _timeoutBehavior: TimeoutBehavior = 'fail';
-  private _retryStrategy: RetryStrategy = exponential();
+  private _retryStrategy?: RetryStrategy;
   private _tenantJobCap: number = DEFAULT_TENANT_JOB_CAP;
 
   constructor(
@@ -186,10 +182,14 @@ export class JobBuilder<T = unknown> {
   async enqueue(): Promise<JobHandle<T>> {
     const runAt = new Date(Date.now() + this._delay);
 
+    const strategy =
+      this._retryStrategy ??
+      (await import('@happyvertical/jobs')).exponential();
+
     const retryConfig: RetryStrategyConfig =
-      'toConfig' in this._retryStrategy
-        ? this._retryStrategy.toConfig()
-        : (this._retryStrategy as RetryStrategyConfig);
+      'toConfig' in strategy
+        ? strategy.toConfig()
+        : (strategy as RetryStrategyConfig);
 
     // Route through the collection's single creation path so the per-tenant
     // in-flight cap and the retry ceiling are enforced in one place, shared with

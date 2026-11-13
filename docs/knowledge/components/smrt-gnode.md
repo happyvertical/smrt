@@ -5,7 +5,7 @@ description: "SMRT federation library for building federated local knowledge bas
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-10T22:32:35Z"
 audience: "internal"
 evidence_level: "manifest-described"
 source_revision: "sha256:df790290167b01c659b39c20ece54ec2659e6aeae4c2f35d1bbf0fb2f0e144d9"

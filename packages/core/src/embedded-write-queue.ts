@@ -133,10 +133,12 @@ export function usesEmbeddedRevisionFallback(db: QueueableDatabase): boolean {
 }
 
 /**
- * Whether `url` identifies a SQLite/DuckDB in-memory database that is
+ * Whether `url` identifies a SQLite/DuckDB/PGlite in-memory database that is
  * private to its own connection, as opposed to shared state.
  *
- * Bare `:memory:` and `file::memory:` (no query string) each mint a fresh,
+ * PGlite `memory://` directories always create independent handles unless the
+ * SDK returns the same cached handle. Bare `:memory:` and `file::memory:`
+ * (no query string) each mint a fresh,
  * connection-private database -- `resolveDuckDBUrl(':memory:')` returns it
  * unchanged, with no per-instance suffix -- so two independent handles that
  * both happen to carry this literal string are NOT the same database and
@@ -146,9 +148,10 @@ export function usesEmbeddedRevisionFallback(db: QueueableDatabase): boolean {
  * across connections in the process, so a URL carrying it must keep the
  * ordinary string-keyed (shared) behavior.
  */
-function isPerConnectionMemoryUrl(url: string): boolean {
+export function isPerConnectionMemoryUrl(url: string): boolean {
+  if (url.startsWith('memory://')) return true;
   if (url.includes('cache=shared')) return false;
-  return url === ':memory:' || url === 'file::memory:';
+  return url === ':memory:' || url === 'memory' || url === 'file::memory:';
 }
 
 function queueKey(db: QueueableDatabase): string | object {

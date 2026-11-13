@@ -38,6 +38,33 @@ describe('humanizeFieldName', () => {
 });
 
 describe('fieldsFromCollectionDefinition', () => {
+  it('exports a visible virtual label but never imports or seeds it, even with an unchecked default', () => {
+    const definition = {
+      fields: { displayLabel: { type: 'text' as const, readonly: true } },
+    };
+    const fields = fieldsFromCollectionDefinition(definition, {
+      policy: {
+        displayLabel: {
+          label: 'Client name',
+          readOnly: false,
+          hasDefault: true,
+          defaultValue: 'forged',
+        },
+      },
+    });
+    expect(fields.find((field) => field.name === 'displayLabel')).toMatchObject(
+      { label: 'Client name', importable: false, exportable: true },
+    );
+    expect(
+      fields.find((field) => field.name === 'displayLabel'),
+    ).not.toHaveProperty('hasDefault');
+    expect(
+      fieldsFromCollectionDefinition(definition, {
+        policy: { displayLabel: { visibility: 'hidden' } },
+      }).find((field) => field.name === 'displayLabel'),
+    ).toMatchObject({ importable: false, exportable: false });
+  });
+
   const fields = fieldsFromCollectionDefinition(definition, {
     enums: { status: ['draft', 'live'] },
     unique: ['sku'],

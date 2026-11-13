@@ -43,7 +43,7 @@ use crate::health::{loopback_addr, wait_until_healthy, HealthConfig, ProbeOutcom
 use crate::log::Logger;
 use crate::manifest::SidecarManifest;
 use crate::port::{choose_port, is_address_in_use};
-use crate::process::{ExitInfo, LaunchPlan, Launcher, ManagedChild};
+use crate::process::{ExitInfo, LaunchPlan, Launcher, ManagedChild, OUTPUT_TAIL_LINES};
 use crate::shutdown::{stop_child, ShutdownConfig, ShutdownOutcome};
 
 /// Observable supervisor state.
@@ -273,8 +273,8 @@ pub struct SupervisorConfig {
     /// process that grabbed the chosen port answers the first probe while the
     /// child is still starting and about to die of `EADDRINUSE`.
     pub confirm_window: Duration,
-    /// Log the (truncated) child output tail when a start fails. Off by
-    /// default because a runtime may print one-time secrets.
+    /// Include redacted stdout as well as stderr when a start fails. Off by
+    /// default; non-zero exits always log the bounded redacted stderr tail.
     pub log_failure_output: bool,
 }
 
@@ -654,8 +654,24 @@ impl Core {
         let tail = child.output_tail();
         let kind = classify_exit(exit, &tail);
         if self.params.config.log_failure_output {
-            for line in tail.iter().rev().take(10).rev() {
+            for line in child
+                .diagnostic_tail()
+                .iter()
+                .rev()
+                .take(OUTPUT_TAIL_LINES)
+                .rev()
+            {
                 self.log().warn(&format!("sidecar output: {line}"));
+            }
+        } else if exit.code != Some(0) {
+            for line in child
+                .stderr_tail()
+                .iter()
+                .rev()
+                .take(OUTPUT_TAIL_LINES)
+                .rev()
+            {
+                self.log().warn(&format!("sidecar stderr: {line}"));
             }
         }
         kind
@@ -693,7 +709,10 @@ impl Core {
         let plan = LaunchPlan {
             program: self.params.manifest.executable.clone(),
             args: self.params.manifest.args.clone(),
-            cwd: self.params.resource_dir.clone(),
+            cwd: match &self.params.manifest.working_directory {
+                Some(dir) => self.params.resource_dir.join(dir),
+                None => self.params.resource_dir.clone(),
+            },
             env: build_child_env(
                 self.params.inherited_env.clone(),
                 &self.params.manifest,
@@ -701,6 +720,12 @@ impl Core {
             ),
         };
         // Deliberately not logged: plan.env and plan.args.
+        let path_diagnostics = crate::process::OutputTail::redacted(&plan.env);
+        path_diagnostics.push(&format!("sidecar paths cwd={}", plan.cwd.display()));
+        path_diagnostics.push(&format!("sidecar paths data-root={data_dir}"));
+        for line in path_diagnostics.snapshot() {
+            self.log().info(&line);
+        }
         let mut child = match self.params.launcher.launch(&plan) {
             Ok(child) => child,
             Err(error) => {

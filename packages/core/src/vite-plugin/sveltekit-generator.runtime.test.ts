@@ -15,9 +15,13 @@ import { clearCache, loadConfig } from '@happyvertical/smrt-config';
 import { build } from 'esbuild';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../collection.js';
+import { field } from '../decorators/index.js';
+import { reportUnexpectedHttpError } from '../generators/route-error';
 import { clearManifestCache } from '../manifest/manifest-loader.js';
 import { SmrtObject } from '../object.js';
+import { parseRestListWhere } from '../query-bounds.js';
 import { ObjectRegistry, smrt } from '../registry.js';
+import { setRuntimeExposureGate } from '../runtime-exposure.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { generateSvelteKitRoutes } from './sveltekit-generator.js';
@@ -174,9 +178,13 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
   writeFileSync(
     join(packageDir, 'index.js'),
     [
+      `export { isRuntimeModelEnabled, hasRuntimeExposureGate } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))};`,
       'globalThis.__smrtGeneratedHelperCalls ??= [];',
       'globalThis.__smrtGeneratedHelperRegistrations ??= [];',
       'export const ObjectRegistry = {',
+      '  resolveCreateTarget(name, data, context) { return globalThis.__smrtGeneratedRegistry?.resolveCreateTarget(name, data, context) ?? { name, collectionName: name, data }; },',
+      '  getFields(name) { return globalThis.__smrtGeneratedRegistry?.getFields(name) ?? new Map(); },',
+      '  getConfig(name) { return globalThis.__smrtGeneratedRegistry?.getConfig(name) ?? {}; },',
       '  async getCollection(...args) {',
       '    globalThis.__smrtGeneratedHelperCalls.push(args);',
       '    if (globalThis.__smrtGeneratedCollectionResolver) return globalThis.__smrtGeneratedCollectionResolver(...args);',
@@ -203,6 +211,7 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       "  return 'W/\"' + version + '-' + representation + '\"';",
       '}',
       'export async function getTableVersion() { return 1; }',
+      `export const parseRestListWhere = (${parseRestListWhere.toString()});`,
       'export function ifNoneMatchHasConcreteMatch() { return false; }',
       'export function ifNoneMatchSatisfied() { return false; }',
       'export function normalizeCustomActionFailure() { return undefined; }',
@@ -213,6 +222,7 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
           new URL('../generated-collection-access.ts', import.meta.url),
         ),
       )};`,
+      'export const reportUnexpectedHttpError = globalThis.__smrtGeneratedReportError;',
       'export function normalizeTypedHttpError(error) {',
       "  if (!error || typeof error !== 'object' || !Number.isInteger(error.status) || error.status < 400 || error.status > 499) return undefined;",
       "  const code = typeof error.code === 'string' ? error.code : error.status === 403 ? 'permission_denied' : 'request_rejected';",
@@ -246,6 +256,8 @@ describe('generated SvelteKit helper runtime', () => {
   let projectRoot = '';
 
   beforeEach(async () => {
+    (globalThis as Record<string, unknown>).__smrtGeneratedReportError =
+      reportUnexpectedHttpError;
     (globalThis as Record<string, unknown>).__smrtGeneratedHelperCalls = [];
     (globalThis as Record<string, unknown>).__smrtGeneratedHelperRegistrations =
       [];
@@ -292,6 +304,8 @@ describe('generated SvelteKit helper runtime', () => {
   });
 
   afterEach(() => {
+    setRuntimeExposureGate(undefined);
+    delete (globalThis as Record<string, unknown>).__smrtGeneratedReportError;
     vi.restoreAllMocks();
     clearCache();
 
@@ -303,6 +317,7 @@ describe('generated SvelteKit helper runtime', () => {
 
     rmSync(projectRoot, { force: true, recursive: true });
     projectRoot = '';
+    delete (globalThis as Record<string, unknown>).__smrtGeneratedRegistry;
     delete (globalThis as Record<string, unknown>).__smrtGeneratedHelperCalls;
     delete (globalThis as Record<string, unknown>)
       .__smrtGeneratedHelperRegistrations;
@@ -483,19 +498,31 @@ describe('generated SvelteKit helper runtime', () => {
 
   async function importGeneratedCollectionList(
     fields: SmartObjectManifest['objects'][string]['fields'] = {},
+    projection = false,
   ) {
     const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
-    await generateSvelteKitRoutes(
+    const manifest = createManifest(
       projectRoot,
-      createManifest(projectRoot, objectFilePath, ['list'], false, fields),
-      {
-        configFileName: 'smrt.ts',
-        configPath: 'src/lib/server',
-        enabled: true,
-        objectsDir: 'src/lib/objects',
-        routesDir: 'src/routes/api',
-      },
+      objectFilePath,
+      ['list'],
+      false,
+      fields,
     );
+    if (projection) {
+      manifest.objects.Widget.displayLabelField = 'displayLabel';
+      manifest.objects.Widget.displayLabelProjection = {
+        via: 'profileId',
+        field: 'name',
+        fallback: 'Unnamed widget',
+      };
+    }
+    await generateSvelteKitRoutes(projectRoot, manifest, {
+      configFileName: 'smrt.ts',
+      configPath: 'src/lib/server',
+      enabled: true,
+      objectsDir: 'src/lib/objects',
+      routesDir: 'src/routes/api',
+    });
 
     return await bundleGeneratedRoute(
       'src/routes/api/widgets/+server.ts',
@@ -577,6 +604,184 @@ describe('generated SvelteKit helper runtime', () => {
     ]);
   });
 
+  it('gates emitted projected list routes before collection access and ETag evaluation', async () => {
+    const route = await importGeneratedCollectionList({}, true);
+    const list = vi.fn(async () => [
+      { toPublicJSON: () => ({ displayLabel: 'Maya' }) },
+    ]);
+    const count = vi.fn(async () => 1);
+    (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+      list,
+      count,
+    };
+    let enabled = true;
+    setRuntimeExposureGate({ isEnabled: () => enabled });
+    const url = new URL(
+      'http://fixture/api/widgets?displayLabel[like]=%25aya%25&orderBy=displayLabel',
+    );
+    const call = (etag?: string) =>
+      route.GET({
+        locals: { tenantId: 'a', user: { id: 'owner' } },
+        url,
+        request: new Request(url, {
+          headers: etag ? { 'if-none-match': etag } : {},
+        }),
+      });
+    const first = await call();
+    expect(await first.json()).toMatchObject({
+      items: [{ displayLabel: 'Maya' }],
+    });
+    expect(list).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { 'displayLabel like': '%aya%' },
+        orderBy: 'displayLabel',
+        displayLabel: true,
+      }),
+    );
+    list.mockClear();
+    count.mockClear();
+    enabled = false;
+    await expect(call(first.headers.get('etag') ?? '')).rejects.toMatchObject({
+      status: 404,
+    });
+    expect(list).not.toHaveBeenCalled();
+    expect(count).not.toHaveBeenCalled();
+    enabled = true;
+    expect((await call()).status).toBe(200);
+  });
+
+  it('gates emitted routes per tenant before collection access, including public and stale URLs', async () => {
+    const route = await importGeneratedCollectionPost();
+    const create = vi.fn(async () => ({
+      toPublicJSON: () => ({ id: 'created' }),
+    }));
+    (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+      create,
+    };
+    let enabled = false;
+    setRuntimeExposureGate({
+      isEnabled: (model, context) =>
+        enabled &&
+        context.tenantId === 'a' &&
+        model.qualifiedName === '@test/generated-helper-app:Widget',
+    });
+    const call = (tenantId: string) =>
+      route.POST({
+        locals: {
+          tenantId,
+          permissions: ['widgets.create'],
+          user: { id: 'owner' },
+        },
+        request: new Request('http://fixture/api/widgets', {
+          method: 'POST',
+          body: '{}',
+        }),
+      });
+    await expect(call('a')).rejects.toMatchObject({ status: 404 });
+    expect(create).not.toHaveBeenCalled();
+    enabled = true;
+    expect((await call('a')).status).toBe(201);
+    await expect(call('b')).rejects.toMatchObject({ status: 404 });
+    enabled = false;
+    await expect(call('a')).rejects.toMatchObject({ status: 404 });
+    expect(create).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    false,
+    true,
+  ])('executes emitted STI create selectors through the real registry (replacement=%s)', async (replace) => {
+    const restore = snapshotObjectRegistryState();
+    const root = '@test/generated-helper-app:Widget';
+    const child = '@test/generated-helper-app:SpecialWidget';
+    const hidden = '@test/generated-helper-app:HiddenWidget';
+    const app = '@test/generated-app:Widget';
+    class Widget extends SmrtObject {
+      name = '';
+      type = '';
+    }
+    class SpecialWidget extends Widget {
+      detail = '';
+      locked = '';
+    }
+    class HiddenWidget extends Widget {}
+    class ForeignWidget extends SmrtObject {}
+    field({ type: 'text' })(Widget.prototype, 'name');
+    field({ type: 'text' })(Widget.prototype, 'type');
+    field({ type: 'text' })(SpecialWidget.prototype, 'detail');
+    field({ type: 'text', readonly: true })(SpecialWidget.prototype, 'locked');
+    ObjectRegistry.register(Widget, {
+      packageName: '@test/generated-helper-app',
+      tableName: 'generated_widgets',
+      tableStrategy: 'sti',
+    });
+    for (const ctor of [SpecialWidget, HiddenWidget, ForeignWidget]) {
+      ObjectRegistry.register(ctor, {
+        packageName: '@test/generated-helper-app',
+      });
+    }
+    if (replace) {
+      const Parent = Widget;
+      ObjectRegistry.register(class Widget extends Parent {}, {
+        packageName: '@test/generated-app',
+      });
+    }
+    const globals = globalThis as Record<string, unknown>;
+    globals.__smrtGeneratedRegistry = ObjectRegistry;
+    const create = vi.fn(async (data) => ({ toPublicJSON: () => data }));
+    globals.__smrtGeneratedRouteCollection = { create };
+    setRuntimeExposureGate({
+      isEnabled: (model) => model.qualifiedName !== hidden,
+    });
+    try {
+      const route = await importGeneratedCollectionPost();
+      const call = (body: Record<string, unknown>) =>
+        route.POST({
+          locals: {
+            tenantId: 'a',
+            user: { id: 'owner' },
+            permissions: ['widgets.create'],
+          },
+          request: new Request('http://fixture/api/widgets', {
+            method: 'POST',
+            body: JSON.stringify(body),
+          }),
+        });
+      expect((await call({ name: 'base', type: 'article' })).status).toBe(201);
+      expect(
+        (
+          await call({
+            name: 'selected',
+            createType: child,
+            type: 'article',
+            detail: 'own field',
+            locked: 'forbidden',
+          })
+        ).status,
+      ).toBe(201);
+      expect(create.mock.calls).toEqual([
+        [{ name: 'base', type: 'article' }],
+        [{ name: 'selected', type: 'article', detail: 'own field' }],
+      ]);
+      const calls = globals.__smrtGeneratedHelperCalls as Array<[string]>;
+      expect(calls.map(([name]) => name)).toEqual(['Widget', child]);
+      expect(ObjectRegistry.getCreateTargets(root).base.name).toBe(
+        replace ? app : root,
+      );
+      for (const type of [
+        hidden,
+        '@test/generated-helper-app:ForeignWidget',
+        'missing',
+        42,
+      ]) {
+        expect((await call({ createType: type })).status).toBe(400);
+      }
+      expect(create).toHaveBeenCalledTimes(2);
+    } finally {
+      restore();
+    }
+  });
+
   it('executes emitted POST routes with safe typed 4xx errors and opaque 5xx errors', async () => {
     const route = await importGeneratedCollectionPost();
     const routeCollection = globalThis as Record<string, unknown>;
@@ -625,6 +830,7 @@ describe('generated SvelteKit helper runtime', () => {
     expect(failed.status).toBe(500);
     await expect(failed.json()).resolves.toEqual({
       error: 'Internal server error',
+      requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
     });
   });
 
@@ -914,6 +1120,9 @@ describe('generated SvelteKit helper runtime', () => {
     const denied = await route.DELETE({
       locals: { permissions: ['widgets.delete'], user: { id: 'user-1' } },
       params: { id: 'foreign-policy' },
+      request: new Request('http://localhost/api/widgets/foreign-policy', {
+        method: 'DELETE',
+      }),
     });
     expect(denied.status).toBe(403);
     await expect(denied.json()).resolves.toEqual({
@@ -937,10 +1146,14 @@ describe('generated SvelteKit helper runtime', () => {
     const failed = await route.DELETE({
       locals: { permissions: ['widgets.delete'], user: { id: 'user-1' } },
       params: { id: 'foreign-policy' },
+      request: new Request('http://localhost/api/widgets/foreign-policy', {
+        method: 'DELETE',
+      }),
     });
     expect(failed.status).toBe(500);
     await expect(failed.json()).resolves.toEqual({
       error: 'Internal server error',
+      requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
     });
   });
 
@@ -1095,7 +1308,7 @@ describe('generated SvelteKit helper runtime', () => {
       // a mocked factory. It must construct and initialize against this DB.
       writeFileSync(
         join(projectRoot, 'node_modules/@happyvertical/smrt-core/index.js'),
-        `export const { ObjectRegistry, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied } = globalThis.__smrt4320Core;`,
+        `export const { ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere } = globalThis.__smrt4320Core;`,
       );
       const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
       writeFileSync(

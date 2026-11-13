@@ -291,6 +291,15 @@ describe('application identity and state custody', () => {
 });
 
 describe('secret redaction', () => {
+  it('redacts desktop launch URLs even without knowing the launch secret', () => {
+    expect(
+      redactSecrets(
+        'http://127.0.0.1:4961/owner-link?launch=unknown-launch&ok=1',
+        {},
+        { strict: true },
+      ),
+    ).toBe('http://127.0.0.1:4961/owner-link?launch=[redacted]&ok=1');
+  });
   it('removes credentials, tokens, and secret environment values', () => {
     const message = redactSecrets(
       'connect postgresql://admin:hunter22@db.example/app failed; open http://127.0.0.1:5173/setup?token=abcDEF123456 with Bearer abcdefghijklmnop and value s3cr3t-value-123',

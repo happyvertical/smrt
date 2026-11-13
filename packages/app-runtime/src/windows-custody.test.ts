@@ -10,7 +10,7 @@
 
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, win32 } from 'node:path';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runWithCustodyContext } from './custody-context.js';
@@ -226,6 +226,29 @@ describe('W1 lexical rule (WT5: aliases, devices, streams)', () => {
     expect(() => validateWindowsPath(`C:\\${'a'.repeat(250)}`, 'p')).toThrow(
       /longer than/,
     );
+  });
+
+  it('boots the generic wrapper path under a shallow Windows test profile', () => {
+    const identifier = 'placeholder.invalid.smrt-desktop-wrapper';
+    const dataDirectory = (home: string) =>
+      win32.join(home, 'AppData', 'Local', identifier, 'runtime');
+    // The CI checkout-relative profile fails W1 before any ACL inspector runs.
+    const deep = dataDirectory(
+      'D:\\a\\smrt\\smrt\\packages\\vitest\\node_modules\\.cache\\test-homes\\home-AbCdEf',
+    );
+    expect(deep.length).toBe(136);
+    expect(() =>
+      resolveLocalRuntimePaths(windowsOptions({ dataDirectory: deep })),
+    ).toThrow(/longer than 130 UTF-16 units/);
+    // installTestHome uses the OS temp directory on Windows, leaving the
+    // unchanged 110-unit derived-file reserve within the 240-unit ceiling.
+    const shallow = dataDirectory(
+      'C:\\Users\\runneradmin\\AppData\\Local\\Temp\\home-AbCdEf',
+    );
+    expect(shallow.length).toBe(114);
+    expect(
+      resolveLocalRuntimePaths(windowsOptions({ dataDirectory: shallow })).root,
+    ).toBe(shallow);
   });
 
   it('accepts and canonicalises a plain path', () => {
@@ -1232,6 +1255,67 @@ describe('preflight keeps the dedicated-root rules', () => {
     onWindows(machine, () =>
       preflightLocalApplicationRoot(ROOT, SOURCE, 'myapp'),
     );
+
+  it.each([
+    ['D:\\a\\_temp', 85],
+    ['C:\\Users\\runneradmin\\AppData\\Local\\Temp', 114],
+  ] as const)('accepts the smoke layout under %s when its custody is valid', async (temporaryBase, length) => {
+    const home = win32.join(temporaryBase, 'home-AbCdEf');
+    const localAppData = win32.join(home, 'AppData', 'Local');
+    const dataDirectory = win32.join(
+      localAppData,
+      'placeholder.invalid.smrt-desktop-wrapper',
+      'runtime',
+    );
+    const sourceRoot =
+      'D:\\a\\_temp\\smrt-launch-smoke-QwErTy\\target\\debug\\app';
+    const env = {
+      SystemRoot: 'C:\\Windows',
+      SystemDrive: 'C:',
+      LOCALAPPDATA: localAppData,
+      APPDATA: win32.join(home, 'AppData', 'Roaming'),
+    };
+    const options = {
+      appId: 'generic-smrt-app',
+      dataDirectory,
+      sourceRoot,
+      platform: 'win32' as const,
+      homeDirectory: home,
+      env,
+    };
+    expect(resolveLocalRuntimePaths(options).root).toHaveLength(length);
+    const state = resolveApplicationStateRoot({
+      ...options,
+      platformName: 'win32',
+      environment: env,
+    });
+    expect(state.startsWith(localAppData)).toBe(true);
+    expect(state.length).toBeLessThanOrEqual(130);
+    const machine = new FakeWindowsMachine();
+    machine.env = env;
+    // These ACLs are deliberate valid fixtures, not claims about CI's ACLs.
+    for (const path of [
+      ...windowsPathComponents(localAppData),
+      ...windowsPathComponents(sourceRoot),
+    ]) {
+      if (!machine.node(path)) machine.dir(path, SDDL.userPrivate());
+    }
+    await expect(
+      onWindows(machine, () =>
+        preflightLocalApplicationRoot(dataDirectory, sourceRoot, options.appId),
+      ),
+    ).resolves.toBeUndefined();
+    const ancestor = machine.at(temporaryBase);
+    ancestor.sddl += '(A;;FA;;;WD)';
+    await expect(
+      onWindows(machine, () =>
+        preflightLocalApplicationRoot(dataDirectory, sourceRoot, options.appId),
+      ),
+    ).rejects.toMatchObject({
+      code: 'invalid_configuration',
+      message: expect.stringContaining('Windows custody (ancestor)'),
+    });
+  });
 
   it('refuses a populated root without a marker', async () => {
     const machine = FakeWindowsMachine.standard();

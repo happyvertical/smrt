@@ -80,6 +80,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   import {
     clampPanelSize,
     DEFAULT_PANEL_CONFIG,
+    resolveDockedPanelResize,
     resolveHotkey,
   } from './settings.js';
   import { createShellState, type ShellState } from './state.svelte.js';
@@ -95,6 +96,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     PanelEdge,
     ShellLayoutEditSurface,
     ShellFocusTool,
+    ShellPanelResize,
     ShellViewport,
   } from './types.js';
 
@@ -208,6 +210,28 @@ function buildLayoutStyle(shell: ModuleShellState): string {
      * sheets close and the phone top bar comes back.
      */
     path?: string;
+    /**
+     * A docked panel between the left sidebar and the main area (the order is
+     * sidebar, panel, content). Only rendered when given, so existing shells
+     * are unchanged. The panel stays mounted while closed (`panelOpen`
+     * false hides it), so its state survives a toggle. Off phones it sits
+     * beside main with a draggable, keyboard-operable separator; on phones it
+     * is a full-size view over main.
+     */
+    panel?: Snippet<[{ viewport: ShellViewport; open: boolean }]>;
+    /** Whether the docked panel is shown (default true). Host-owned. */
+    panelOpen?: boolean;
+    /** Accessible name of the panel (default "Panel"). */
+    panelLabel?: string;
+    /**
+     * Resizing of the docked panel: `true` (default) uses the docked-panel
+     * limits (280-800 px, 16 px step), an object overrides them, `false`
+     * keeps the panel at `panelSize`. The width persists through the shell
+     * settings adapter (`ShellSettingsDelta.sizes.panel`).
+     */
+    panelResize?: boolean | ShellPanelResize;
+    /** The panel's width in px until the user resizes it (default 400). */
+    panelSize?: number;
     children: Snippet;
   }
 
@@ -216,6 +240,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     homeHref,
     showTenantToggle,
     edgeToggles = false,
+    sidebarFooterDivider = true,
     hotkeys,
     brandInSlot = false,
     logoSrc,
@@ -257,6 +282,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     phoneDockOpener = true,
     pinChrome = false,
     path,
+    panel,
+    panelOpen = true,
+    panelLabel,
+    panelResize = true,
+    panelSize = 400,
     children,
   }: Props = $props();
 
@@ -272,6 +302,19 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       }),
   );
   setAdminShell(shell);
+  // The docked panel's resize limits live on the shell state, beside the
+  // edges', so the one set of size helpers (`clampPanelSize`, `panelSize`,
+  // `setPanelSize`) serves it.
+  untrack(() => {
+    shell.dockedPanelLimits = panel ? resolveDockedPanelResize(panelResize) : null;
+  });
+  $effect(() => {
+    const limits = panel ? resolveDockedPanelResize(panelResize) : null;
+    untrack(() => {
+      shell.dockedPanelLimits = limits;
+    });
+  });
+  const panelShown = $derived(Boolean(panel) && panelOpen);
 
   let shortcutsOpen = $state(false);
   function resolveActiveFocusTool(): ShellFocusTool | null {
@@ -290,7 +333,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   let keyboardOpen = $state(false);
   let formActions = $state(false);
   let chromeHidden = $state(false);
-  let resizing = $state<SideEdge | null>(null);
+  let resizing = $state<SideEdge | 'panel' | null>(null);
   /** Set after hydration and two frames, so first paint never animates. */
   let motionReady = $state(false);
   const sideElements = $state<Partial<Record<SideEdge, HTMLElement>>>({});
@@ -764,10 +807,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
    * The edge's expanded width in px: the resized width, else the configured
    * `expandedSize` (measured when it is not a plain px/rem length).
    */
-  function currentSize(edge: SideEdge): number {
+  function currentSize(edge: SideEdge | 'panel'): number {
     const limits = shell.resizeLimits(edge);
     const resized = shell.panelSize(edge);
     if (resized !== null) return resized;
+    if (edge === 'panel') {
+      return limits ? clampPanelSize(panelSize, limits) : Math.round(panelSize);
+    }
     const width =
       cssLengthToPx(shell.config.panels[edge].expandedSize) ??
       sideElements[edge]?.getBoundingClientRect().width ??
@@ -775,7 +821,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     return limits ? clampPanelSize(width, limits) : Math.round(width);
   }
 
-  function canResize(edge: SideEdge): boolean {
+  function canResize(edge: SideEdge | 'panel'): boolean {
+    if (edge === 'panel') {
+      return !isPhone && panelShown && shell.resizeLimits('panel') !== null;
+    }
     return (
       !isPhone &&
       edgeExpanded(edge) &&
@@ -784,12 +833,16 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     );
   }
 
-  function onResizeKeydown(event: KeyboardEvent, edge: SideEdge): void {
+  function onResizeKeydown(
+    event: KeyboardEvent,
+    edge: SideEdge | 'panel',
+  ): void {
     const limits = shell.resizeLimits(edge);
     if (!limits) return;
     const step = limits.step * (event.shiftKey ? 4 : 1);
-    const grow = edge === 'left' ? 'ArrowRight' : 'ArrowLeft';
-    const shrink = edge === 'left' ? 'ArrowLeft' : 'ArrowRight';
+    // The left sidebar and the docked panel grow toward the inline end.
+    const grow = edge !== 'right' ? 'ArrowRight' : 'ArrowLeft';
+    const shrink = edge !== 'right' ? 'ArrowLeft' : 'ArrowRight';
     let next: number | null;
     if (event.key === grow) next = currentSize(edge) + step;
     else if (event.key === shrink) next = currentSize(edge) - step;
@@ -808,7 +861,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   // state that outlives this component, nor a stale `resizing` flag.
   $effect(() => () => stopActiveResize?.(false));
 
-  function onResizePointerdown(event: PointerEvent, edge: SideEdge): void {
+  function onResizePointerdown(
+    event: PointerEvent,
+    edge: SideEdge | 'panel',
+  ): void {
     if (event.button !== 0 || !shell.resizeLimits(edge)) return;
     event.preventDefault();
     stopActiveResize?.(true);
@@ -822,7 +878,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
     function onMove(move: PointerEvent): void {
       const dx = move.clientX - startX;
-      latest = startSize + (edge === 'left' ? dx : -dx);
+      latest = startSize + (edge !== 'right' ? dx : -dx);
       shell.setPanelSize(edge, latest, { persist: false });
     }
 
@@ -1040,6 +1096,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   function panelMounted(edge: PanelEdge): boolean {
     return shownOpen(edge) || keepsContent(edge);
   }
+
+  const panelName = $derived(panelLabel ?? t(M['ui.admin_shell.panel']));
 
   function labelFor(edge: PanelEdge): string {
     return shell.config.panels[edge].label;
@@ -1288,7 +1346,19 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   </button>
 {/snippet}
 
-{#snippet resizer(edge: SideEdge)}
+{#snippet mainRegion()}
+  <main
+    id="smrt-admin-shell-main"
+    class="smrt-admin-shell__main"
+    bind:this={mainElement}
+    inert={overlayEdge !== null || (isPhone && panelShown)}
+    data-smrt-part="body"
+  >
+    {@render children()}
+  </main>
+{/snippet}
+
+{#snippet resizer(edge: SideEdge | 'panel')}
   {#if canResize(edge)}
     {@const limits = shell.resizeLimits(edge)}
     <!-- A focusable separator is the WAI-ARIA window-splitter widget; Svelte's
@@ -1299,7 +1369,9 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       role="separator"
       aria-orientation="vertical"
       aria-controls={`smrt-admin-shell-${edge}-panel`}
-      aria-label={t(M['ui.admin_shell.resize_panel'], { label: labelFor(edge) })}
+      aria-label={t(M['ui.admin_shell.resize_panel'], {
+        label: edge === 'panel' ? panelName : labelFor(edge),
+      })}
       aria-valuemin={limits?.min}
       aria-valuemax={limits?.max}
       aria-valuenow={currentSize(edge)}
@@ -1380,6 +1452,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   data-right-state={panelState('right')}
   data-bottom-state={panelState('bottom')}
   data-viewport={viewport}
+  data-footer-divider={sidebarFooterDivider ? undefined : 'off'}
   data-bottom-bar={bottomBar}
   data-phone-top={showPhoneTop ? '' : undefined}
   data-chrome-hidden={chromeHidden ? '' : undefined}
@@ -1546,14 +1619,27 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     </aside>
   {/if}
 
-  <main
-    id="smrt-admin-shell-main"
-    class="smrt-admin-shell__main"
-    bind:this={mainElement}
-    inert={overlayEdge !== null} data-smrt-part="body"
-  >
-    {@render children()}
-  </main>
+  {#if panel}
+    <div class="smrt-admin-shell__body" data-panel-open={panelShown ? '' : undefined}>
+      <aside
+        id="smrt-admin-shell-panel-panel"
+        class="smrt-admin-shell__dock-panel"
+        aria-label={panelName}
+        data-testid="admin-shell-panel"
+        hidden={!panelShown}
+        inert={!panelShown || overlayEdge !== null}
+        style={`--smrt-admin-shell-panel-width: ${currentSize('panel')}px`}
+      >
+        <div class="smrt-admin-shell__dock-panel-body" data-smrt-part="body">
+          {@render panel({ viewport, open: panelShown })}
+        </div>
+        {@render resizer('panel')}
+      </aside>
+      {@render mainRegion()}
+    </div>
+  {:else}
+    {@render mainRegion()}
+  {/if}
 
   {#if showPhoneTop}
     <div class="smrt-admin-shell__phone-top" data-testid="admin-shell-phone-top" data-smrt-part="header">
@@ -3198,6 +3284,88 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       color: GrayText;
       border-color: GrayText;
     }
+  }
+}
+
+@layer smrt.structure {
+  .smrt-admin-shell[data-footer-divider='off'] .smrt-admin-shell__slot--leftSidebar-footer,
+  .smrt-admin-shell[data-footer-divider='off'] .smrt-admin-shell__slot--rightSidebar-footer,
+  .smrt-admin-shell[data-footer-divider='off'] .smrt-admin-shell__tenant-rail-footer {
+    padding-block-start: 0;
+  }
+  .smrt-admin-shell__slot--leftSidebar-footer {
+    flex-wrap: wrap;
+  }
+  .smrt-admin-shell__body {
+    grid-column: 2;
+    grid-row: 3;
+    position: relative;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+  }
+  .smrt-admin-shell__body > .smrt-admin-shell__main {
+    flex: 1 1 0;
+  }
+  .smrt-admin-shell__dock-panel {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    inline-size: var(--smrt-admin-shell-panel-width, 25rem);
+    max-inline-size: calc(100% - var(--smrt-admin-shell-panel-main-min));
+    min-inline-size: 0;
+    min-block-size: 0;
+    z-index: 15;
+  }
+  .smrt-admin-shell__dock-panel-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    min-block-size: 0;
+    overflow: hidden;
+  }
+  .smrt-admin-shell__dock-panel[hidden] {
+    display: none;
+  }
+  .smrt-admin-shell__resizer--panel {
+    inset-inline-end: -0.375rem;
+  }
+  @media (max-width: 48rem) {
+    .smrt-admin-shell__dock-panel {
+      position: absolute;
+      inset: 0;
+      inline-size: auto;
+      max-inline-size: none;
+    }
+  }
+}
+
+@layer smrt.theme {
+  .smrt-admin-shell {
+  }
+  .smrt-admin-shell[data-footer-divider='off'] .smrt-admin-shell__slot--leftSidebar-footer,
+  .smrt-admin-shell[data-footer-divider='off'] .smrt-admin-shell__slot--rightSidebar-footer,
+  .smrt-admin-shell[data-footer-divider='off'] .smrt-admin-shell__tenant-rail-footer {
+    border-block-start: 0;
+  }
+  .smrt-admin-shell__dock-panel {
+    border-inline-end: var(--smrt-hairline);
+    background: var(--smrt-surface-raised);
+    color: var(--smrt-color-on-surface);
+  }
+  @media (max-width: 48rem) {
+    .smrt-admin-shell__dock-panel {
+      border-inline-end: 0;
+    }
+  }
+}
+
+@layer smrt.structure {
+  .smrt-admin-shell {
+    --smrt-admin-shell-panel-main-min: 20rem;
   }
 }
 </style>

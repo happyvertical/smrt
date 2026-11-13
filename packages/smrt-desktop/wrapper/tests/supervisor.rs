@@ -68,6 +68,7 @@ struct Harness {
 
 struct Options {
     mode: &'static str,
+    app_cwd: bool,
     fail_runs: u32,
     health_route: &'static str,
     extra_env: Vec<(&'static str, &'static str)>,
@@ -81,6 +82,7 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             mode: "ok",
+            app_cwd: false,
             fail_runs: 0,
             health_route: "/health",
             extra_env: Vec::new(),
@@ -147,7 +149,11 @@ fn start(node: &Path, options: Options) -> Harness {
     .to_string();
     // The fixture path is absolute, which the argument policy allows: args
     // are literal strings owned by the packaging tool.
-    let manifest = SidecarManifest::parse(&manifest_json).unwrap();
+    let mut manifest = SidecarManifest::parse(&manifest_json).unwrap();
+    if options.app_cwd {
+        fs::create_dir(resource.join("app")).unwrap();
+        manifest.working_directory = Some("app".into());
+    }
 
     let log_dir = options.log_dir.unwrap_or_else(|| scratch("log"));
     let log = Arc::new(Logger::new(log_dir, "supervisor.log"));
@@ -312,6 +318,10 @@ fn reserved_env_wins_and_the_launch_shape_is_exact() {
     // Working directory is the packaged app root, separate from the data dir.
     assert_eq!(seen["cwd"], h.resource.to_str().unwrap());
     assert_ne!(seen["cwd"], seen["SMRT_DATA_DIR"]);
+    // Paths use the same strict redactor: an inherited short auth flag may
+    // redact matching digits, but both labeled facts must remain available.
+    assert!(h.log_text().contains("sidecar paths cwd="));
+    assert!(h.log_text().contains("sidecar paths data-root="));
     // Arguments are passed literally, without shell splitting.
     assert_eq!(seen["argv"], serde_json::json!(["--flag", "two words"]));
     h.supervisor.shutdown();
@@ -570,6 +580,81 @@ fn a_squatter_answering_the_first_probe_is_never_published_as_ready() {
 }
 
 #[test]
+fn an_uncaught_node_error_keeps_its_message_before_the_final_ten_lines() {
+    let node = node_or_skip!();
+    let h = start(
+        &node,
+        Options {
+            mode: "node-runtime-error",
+            recovery: RecoveryPolicy {
+                max_restarts: 0,
+                ..fast_recovery()
+            },
+            ..Options::default()
+        },
+    );
+    h.wait_failed();
+    h.supervisor.shutdown();
+    let log = h.log_text();
+    assert!(log.contains("LocalRuntimeError: fixture startup refusal"));
+    assert!(log.contains("ordinary-very-long-directory-name-that-is-not-a-token"));
+    assert!(log.contains("@happyvertical/smrt-app-runtime"));
+    assert!(log.contains("code: 'invalid_configuration'"));
+}
+
+#[test]
+fn nonzero_exit_logs_only_the_bounded_redacted_stderr_tail_by_default() {
+    let node = node_or_skip!();
+    for mode in ["stderr-failure", "stderr-success", "stderr-mixed-failure"] {
+        let h = start(
+            &node,
+            Options {
+                mode,
+                extra_env: vec![("DIAGNOSTIC_TEST_SECRET", "known-sensitive-value")],
+                recovery: RecoveryPolicy {
+                    max_restarts: 0,
+                    ..fast_recovery()
+                },
+                ..Options::default()
+            },
+        );
+        h.wait_failed();
+        h.supervisor.shutdown();
+        let log = h.log_text();
+        assert!(!log.contains("private stdout"));
+        assert!(!log.contains("Bearer x"));
+        assert!(!log.contains("known-sensitive-value"));
+        assert!(!log.contains("unknown-sensitive-value"));
+        assert!(!log.contains("?launch="));
+        let lines: Vec<_> = log
+            .lines()
+            .filter(|line| line.contains("sidecar stderr:"))
+            .collect();
+        if mode != "stderr-success" {
+            let count = if mode == "stderr-mixed-failure" {
+                5
+            } else {
+                40
+            };
+            assert_eq!(lines.len(), count, "{log}");
+            if count == 40 {
+                assert!(lines[0].contains("diagnostic window boundary"));
+            }
+            assert!(lines
+                .last()
+                .unwrap()
+                .contains("Local application data directory"));
+            assert!(log.contains("[redacted]"));
+        } else {
+            assert!(
+                lines.is_empty(),
+                "clean exits should not expose diagnostics"
+            );
+        }
+    }
+}
+
+#[test]
 fn a_held_lease_is_a_retryable_startup_failure_with_backoff() {
     let node = node_or_skip!();
     let h = start(
@@ -592,8 +677,11 @@ fn a_held_lease_is_a_retryable_startup_failure_with_backoff() {
         .collect();
     assert_eq!(reasons.len(), 2);
     assert!(reasons.iter().all(|r| r.contains("lease")), "{reasons:?}");
-    // The raw child output is never surfaced or logged by default.
-    assert!(!h.log_text().contains("99999"));
+    // Non-zero exits now include the bounded, redacted stderr by default.
+    assert!(h.log_text().contains("sidecar stderr:"));
+    assert!(h
+        .log_text()
+        .contains("Another application writer is active"));
     h.supervisor.shutdown();
 }
 
@@ -746,4 +834,21 @@ fn an_unwritable_log_directory_does_not_disturb_supervision() {
     h.wait_ready();
     h.supervisor.shutdown();
     assert!(!h.log.path().exists());
+}
+
+#[test]
+fn a_normal_built_app_runs_in_its_app_directory_and_stops_cleanly() {
+    let node = node_or_skip!();
+    let h = start(
+        &node,
+        Options {
+            app_cwd: true,
+            ..Options::default()
+        },
+    );
+    let (origin, _) = h.wait_ready();
+    let seen: serde_json::Value = serde_json::from_str(&get(&format!("{origin}/env"))).unwrap();
+    assert_eq!(seen["cwd"], h.resource.join("app").to_str().unwrap());
+    assert_ne!(seen["cwd"], seen["SMRT_DATA_DIR"]);
+    h.supervisor.shutdown();
 }

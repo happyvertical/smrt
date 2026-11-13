@@ -1036,10 +1036,15 @@ describe('vault relay target', () => {
       const relay = relayWithSigner();
       const target = make(relay);
       await target.put((await seal(root, 1n)).request());
-      relay.relay.tamper.chunkBytes = (bytes, index) =>
-        index === 1
-          ? Buffer.concat([bytes.subarray(0, -1), Buffer.from('x')])
-          : bytes;
+      relay.relay.tamper.chunkBytes = (bytes, index) => {
+        if (index !== 1) return bytes;
+        const corrupted = Buffer.from(bytes);
+        corrupted[corrupted.length - 1] ^= 0xff;
+        return corrupted;
+      };
+      expect(relay.relay.tamper.chunkBytes(Buffer.from('x'), 1)).not.toEqual(
+        Buffer.from('x'),
+      );
       expect((await failure(collect(target.get('1')))).code).toBe('integrity');
       relay.relay.tamper.chunkBytes = undefined;
       relay.relay.tamper.chunkHeader = () => 'c'.repeat(64);
