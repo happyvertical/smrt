@@ -64,7 +64,7 @@ describe('heading role mapping in base.css', () => {
       /font-feature-settings:\s*var\(--smrt-font-feature-settings\)/,
     );
     expect(baseCss).toMatch(
-      /table,[^{]*\[data-smrt-component="DataTable"\][^{]*\[data-smrt-component="Badge"\][^{]*\.smrt-numeric-tabular\s*{[^}]*tabular-nums/s,
+      /table,[^{]*\[data-smrt-component="DataTable"\][^{]*\[data-smrt-component="Badge"\][^{]*\.smrt-tabular\s*{[^}]*tabular-nums/s,
     );
   });
 });

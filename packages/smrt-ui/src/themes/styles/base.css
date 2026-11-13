@@ -228,7 +228,7 @@ table,
 time,
 [data-smrt-component="DataTable"],
 [data-smrt-component="Badge"],
-.smrt-numeric-tabular {
+.smrt-tabular {
   font-variant-numeric: tabular-nums;
 }
 }
