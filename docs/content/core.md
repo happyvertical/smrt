@@ -1001,9 +1001,9 @@ inserts. A constant default alone would give every existing row the same
 value and collide with a unique index.
 
 If there is neither, or if the backfill yields NULL for some row or fails to
-evaluate, `db:migrate` exits 1 and names the table and column. It does not
-add the column, and it holds back any index or foreign key on that column.
-Nothing is left half-applied. A column that an older release already added
+evaluate, `db:migrate` exits 1 and names the table and column. Migrate is all
+or nothing: it applies none of that run's changes, not only the ones on this
+column, and lists what it held back. Nothing is left half-applied. A column that an older release already added
 as nullable is repaired the same way: the backfill fills its NULLs, and
 then NOT NULL is enforced.
 
@@ -2363,7 +2363,11 @@ unique index over exactly those columns (otherwise every save fails with
    new release's manifests. It builds the tenant-led unique under its own name
    (`<table>_tenant_id_slug_idx`) and keeps the global `<table>_slug_context_idx`.
    The new key is a superset of the old one, so the build cannot fail on
-   existing rows. Old and new code both keep saving.
+   existing rows. Old and new code both keep saving. Copies of the old code
+   that are already running keep working, but one that restarts after this step
+   is refused by the startup check, which sees a database migrated for a
+   different build (see the [data shape rules](https://github.com/happyvertical/smrt/blob/main/packages/core/agents/data-shape-rules.md),
+   rule 7). Do not rely on restarting old copies during the rollout.
 2. **Roll out** the new release. While the legacy index stands, a second
    tenant cannot store a slug another tenant already uses: that save fails
    with a unique violation (nothing is overwritten).

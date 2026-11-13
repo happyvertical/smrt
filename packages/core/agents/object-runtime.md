@@ -199,6 +199,9 @@ instances and never use this path to overwrite a loaded revision.
 
 ## Same-named subclass replaces its parent (#4921)
 
+This is rule 3 of the [data shape rules](data-shape-rules.md): an app hardens a
+smrt class by overriding fields on a subclass, and the name decides the reach.
+
 An app class that extends a smrt class and declares the SAME simple name takes
 over the registry entry (`sti-child-wins`, `registry/collision-policy.ts`) and
 records the old key in `replacedQualifiedNames`. smrt's own collections follow
