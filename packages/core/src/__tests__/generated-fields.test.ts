@@ -22,7 +22,11 @@ import {
   registerRuntimeModel,
   runtimeModelEntry,
 } from '../runtime-model.js';
-import type { FieldDefinition } from '../scanner/types.js';
+import type {
+  FieldDefinition,
+  QualifiedClassName,
+  SmartObjectDefinition,
+} from '../scanner/types.js';
 import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
 import { checkLiveSchemaParity } from '../schema/live-parity.js';
 import { manifestColumnsToDefinitions } from '../schema/manifest-schema.js';
@@ -704,6 +708,388 @@ describe('database-generated fields #4915', () => {
       ).toEqual([]);
     });
   }
+
+  for (const path of ['decoration', 'manifest', 'runtime'] as const) {
+    it(`#4972: refuses implicit tenantId generation at ${path}`, () => {
+      const def: RuntimeModelDefinition = {
+        name: 'ImplicitGeneratedOwner',
+        packageName: '@test/generated-owner',
+        fields: {
+          ownerSource: { type: 'text' },
+          tenantId: { type: 'text' },
+        },
+      };
+      const ordinary = runtimeModelEntry(def);
+      const expression = { col: 'ownerSource' };
+      const register = () => {
+        if (path === 'runtime') {
+          def.fields!.tenantId.generated = expression;
+          return registerRuntimeModel(def);
+        }
+        if (path === 'manifest') {
+          ordinary.fields.tenantId.generated = expression;
+          return ObjectRegistry.registerFromManifest(
+            '@test/generated-owner:ImplicitGeneratedOwner',
+            ordinary,
+            def.packageName,
+          );
+        }
+        const Model = class ImplicitGeneratedOwner extends SmrtObject {};
+        field({ type: 'text' })(Model.prototype, 'ownerSource');
+        field({ type: 'text', generated: expression })(
+          Model.prototype,
+          'tenantId',
+        );
+        smrt({ packageName: def.packageName })(Model);
+      };
+      expect(register).toThrow(GeneratedFieldError);
+      expect(register).toThrow(
+        expect.objectContaining({
+          code: 'VALIDATION_GENERATED_EXPRESSION',
+        }),
+      );
+    });
+  }
+
+  it('#4972: ordinary implicit ownership and custom tenancy remain valid', () => {
+    for (const tenant of ['tenantId', 'organizationId']) {
+      const name = registerRuntimeModel({
+        name: `OrdinaryOwner${tenant}`,
+        packageName: '@test/generated-owner',
+        ...(tenant === 'organizationId'
+          ? { tenantScoped: { field: tenant } }
+          : {}),
+        fields: { [tenant]: { type: 'text' } },
+      });
+      expect(ObjectRegistry.getOwnershipTenantColumn(name)).toBe(
+        tenant === 'tenantId' ? 'tenant_id' : 'organization_id',
+      );
+    }
+    expect(() =>
+      runtimeModelEntry({
+        name: 'CustomGeneratedOwner',
+        packageName: '@test/generated-owner',
+        tenantScoped: { field: 'organizationId' },
+        fields: {
+          source: { type: 'text' },
+          organizationId: { type: 'text', generated: { col: 'source' } },
+        },
+      }),
+    ).toThrow(GeneratedFieldError);
+  });
+
+  it('#4972: refuses identity, primary-key, reference and authority system fields', () => {
+    const fields: [string, FieldDefinition][] = [
+      ...[
+        'id',
+        'slug',
+        'context',
+        'createdAt',
+        'updatedAt',
+        'created_at',
+        'updated_at',
+        '_meta_type',
+        '_meta_data',
+        '_sync_revision',
+        '_sync_origin_device_id',
+      ].map((name): [string, FieldDefinition] => [name, { type: 'text' }]),
+      ['key', { type: 'text', _meta: { primaryKey: true } }],
+      ['reference', { type: 'foreignKey', related: 'Other' }],
+      ['external', { type: 'crossPackageRef', related: '@other/pkg:Other' }],
+    ];
+    for (const [name, field] of fields) {
+      expect(
+        () =>
+          validateGeneratedFields(
+            new Map([
+              ['source', { type: 'text' }],
+              [name, { ...field, generated: { col: 'source' } }],
+            ]),
+          ),
+        name,
+      ).toThrow(GeneratedFieldError);
+    }
+  });
+
+  it('#4972: resolves same-named parents by constructor identity', () => {
+    const First = class GeneratedSameParent extends SmrtObject {};
+    field({ type: 'integer' })(First.prototype, 'wrong');
+    smrt({
+      packageName: '@test/generated-first',
+      tableStrategy: 'sti',
+      tableName: 'generated_first',
+    })(First);
+    const Real = class GeneratedSameParent extends SmrtObject {};
+    field({ type: 'integer' })(Real.prototype, 'qty');
+    smrt({
+      packageName: '@test/generated-real',
+      tableStrategy: 'sti',
+      tableName: 'generated_real',
+    })(Real);
+    const Child = class GeneratedExactChild extends Real {};
+    field({ type: 'integer', generated: { col: 'qty' } })(
+      Child.prototype,
+      'total',
+    );
+    expect(() =>
+      smrt({ packageName: '@test/generated-real' })(Child),
+    ).not.toThrow();
+    expect(ObjectRegistry.getClassByConstructor(Child)?.extends).toBe(
+      '@test/generated-real:GeneratedSameParent',
+    );
+  });
+
+  for (const engine of persistenceEngines) {
+    for (const path of ['decoration', 'manifest'] as const) {
+      it(`#4972: ${engine} three-level ${path} ancestry registers and computes`, async () => {
+        const pkg = '@test/generated-ancestry';
+        let child: QualifiedClassName;
+        if (path === 'decoration') {
+          const A = class GeneratedAncestor extends SmrtObject {};
+          field({ type: 'integer' })(A.prototype, 'qty');
+          smrt({
+            packageName: pkg,
+            tableStrategy: 'sti',
+            tableName: 'generated_ancestry',
+          })(A);
+          const B = class GeneratedMiddle extends A {};
+          field({ type: 'integer', generated: { col: 'qty' } })(
+            B.prototype,
+            'total',
+          );
+          smrt({ packageName: pkg })(B);
+          const C = class GeneratedLeaf extends B {};
+          smrt({ packageName: pkg })(C);
+          child = ObjectRegistry.getClassByConstructor(C)!.qualifiedName!;
+        } else {
+          const entry = runtimeModelEntry({
+            name: 'GeneratedAncestor',
+            packageName: pkg,
+            tableName: 'generated_ancestry',
+            fields: { qty: { type: 'integer' } },
+          });
+          entry.decoratorConfig!.tableStrategy = 'sti';
+          ObjectRegistry.registerFromManifest(
+            `${pkg}:GeneratedAncestor`,
+            entry,
+            pkg,
+          );
+          const middle: SmartObjectDefinition = {
+            ...entry,
+            name: 'generatedmiddle',
+            className: 'GeneratedMiddle',
+            qualifiedName: `${pkg}:GeneratedMiddle`,
+            extends: 'GeneratedAncestor',
+            extendsQualified: `${pkg}:GeneratedAncestor`,
+            fields: {
+              total: { type: 'integer' as const, generated: { col: 'qty' } },
+            },
+          };
+          ObjectRegistry.registerFromManifest(
+            `${pkg}:GeneratedMiddle`,
+            middle,
+            pkg,
+          );
+          child = `${pkg}:GeneratedLeaf`;
+          ObjectRegistry.registerFromManifest(
+            child,
+            {
+              ...middle,
+              name: 'generatedleaf',
+              className: 'GeneratedLeaf',
+              qualifiedName: child,
+              extends: 'GeneratedMiddle',
+              extendsQualified: `${pkg}:GeneratedMiddle`,
+              fields: {},
+            },
+            pkg,
+          );
+        }
+        const db = await getTestDatabase({
+          type: engine === 'sqlite' ? 'sqlite' : 'pglite',
+          classes: [],
+          includeSystemTables: false,
+        });
+        databases.push(db);
+        for (const sql of await planRuntimeModelDDL(
+          child,
+          engine,
+          async () => null,
+        ))
+          await db.query(sql);
+        const collection = await ObjectRegistry.getCollection(child, { db });
+        const row = await collection.create({ qty: 6 });
+        expect(row.toJSON()).toHaveProperty('total', 6);
+      });
+    }
+
+    it(`#4972: ${engine} converts the last generated column to ordinary and back`, async () => {
+      const db = await getTestDatabase({
+        type: engine === 'sqlite' ? 'sqlite' : 'pglite',
+        classes: [],
+        includeSystemTables: false,
+      });
+      databases.push(db);
+      const schema: SchemaDefinition = {
+        tableName: 'generated_conversion',
+        columns: {
+          qty: { type: 'INTEGER' },
+          total: { type: 'INTEGER', generated: { col: 'qty' } },
+        },
+        indexes: [{ name: 'conversion_total_idx', columns: ['total'] }],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1',
+      };
+      await db.query(getDDLStrategy(engine).generateCreateTable(schema));
+      for (const sql of getDDLStrategy(engine).generateIndexes(schema))
+        await db.query(sql);
+      await db.query('INSERT INTO generated_conversion (qty) VALUES (6)');
+      schema.columns.total = { type: 'INTEGER', defaultValue: 17 };
+      const schemas = { generated_conversion: schema };
+      const parity = () =>
+        checkLiveSchemaParity({
+          db,
+          schemas,
+          engineHint: engine,
+          includeSystemTables: false,
+        });
+      expect((await parity()).findings).toContainEqual(
+        expect.objectContaining({
+          kind: 'generated_expression_drift',
+          target: 'total',
+        }),
+      );
+      const diff = await new SchemaComparer(db, { engineHint: engine }).compare(
+        schemas,
+      );
+      const conversion = diff.changes.find(
+        (change) => change.name === 'total',
+      )!;
+      expect(conversion.type).toBe('alter_column');
+      const apply = async (executor: DatabaseInterface) => {
+        for (const change of diff.changes.filter(
+          (change) => change.name === 'total',
+        ))
+          for (const sql of change.sqlStatements ?? [change.sql!])
+            await executor.query(sql);
+      };
+      // DDL and data changes roll back together on both supported engines.
+      await expect(
+        db.transaction!(async (tx) => {
+          await apply(tx);
+          throw new Error('conversion rollback');
+        }),
+      ).rejects.toThrow('conversion rollback');
+      expect((await parity()).findings).toContainEqual(
+        expect.objectContaining({
+          kind: 'generated_expression_drift',
+          target: 'total',
+        }),
+      );
+      await db.transaction!(apply);
+      expect(
+        Number(
+          (await db.query('SELECT total FROM generated_conversion')).rows[0]
+            .total,
+        ),
+      ).toBe(engine === 'postgres' ? 6 : 17);
+      await db.query('UPDATE generated_conversion SET total = 99');
+      expect(
+        Number(
+          (await db.query('SELECT total FROM generated_conversion')).rows[0]
+            .total,
+        ),
+      ).toBe(99);
+      expect(
+        (await parity()).findings.filter(
+          (finding) => finding.target === 'total',
+        ),
+      ).toEqual([]);
+      expect(
+        (
+          await new SchemaComparer(db, { engineHint: engine }).compare(schemas)
+        ).changes.filter((change) => change.name === 'total'),
+      ).toEqual([]);
+      schema.columns.total = { type: 'INTEGER', generated: { col: 'qty' } };
+      expect((await parity()).findings).toContainEqual(
+        expect.objectContaining({ kind: 'generated_expression_drift' }),
+      );
+      const back = await new SchemaComparer(db, { engineHint: engine }).compare(
+        schemas,
+      );
+      const replacement = back.changes.find(
+        (change) => change.name === 'total',
+      )!;
+      await db.transaction!(async (tx) => {
+        for (const sql of replacement.sqlStatements!) await tx.query(sql);
+      });
+      expect(
+        Number(
+          (await db.query('SELECT total FROM generated_conversion')).rows[0]
+            .total,
+        ),
+      ).toBe(6);
+      expect(
+        (await parity()).findings.filter(
+          (finding) => finding.target === 'total',
+        ),
+      ).toEqual([]);
+    });
+  }
+
+  it('#4972: SQLite required conversion without a default preserves the live column as manual drift', async () => {
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      classes: [],
+      includeSystemTables: false,
+    });
+    databases.push(db);
+    await db.query(
+      'CREATE TABLE required_conversion (qty INTEGER, total INTEGER GENERATED ALWAYS AS (qty) VIRTUAL)',
+    );
+    await db.query('INSERT INTO required_conversion (qty) VALUES (6)');
+    const schema: SchemaDefinition = {
+      tableName: 'required_conversion',
+      columns: {
+        qty: { type: 'INTEGER' },
+        total: { type: 'INTEGER', notNull: true },
+      },
+      indexes: [],
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: '1',
+    };
+    const diff = await new SchemaComparer(db, { engineHint: 'sqlite' }).compare(
+      { required_conversion: schema },
+    );
+    const change = diff.changes.find((change) => change.name === 'total')!;
+    expect(change.sql).toContain('requires an explicit data migration');
+    expect(change.sqlStatements).toBeUndefined();
+    expect(
+      (await db.query('SELECT total FROM required_conversion')).rows[0].total,
+    ).toBe(6);
+    // A nullable ordinary column can be installed; there are no virtual values to retain.
+    schema.columns.total.notNull = false;
+    const nullable = await new SchemaComparer(db, {
+      engineHint: 'sqlite',
+    }).compare({ required_conversion: schema });
+    const conversion = nullable.changes.find(
+      (change) => change.name === 'total',
+    )!;
+    await db.transaction!(async (tx) => {
+      for (const sql of conversion.sqlStatements!) await tx.query(sql);
+    });
+    expect(
+      (await db.query('SELECT total FROM required_conversion')).rows[0].total,
+    ).toBeNull();
+    await db.query('UPDATE required_conversion SET total = 42');
+    expect(
+      (await db.query('SELECT total FROM required_conversion')).rows[0].total,
+    ).toBe(42);
+  });
 
   it('validates the closed grammar, reference rules, result types and bounds', () => {
     const check = (

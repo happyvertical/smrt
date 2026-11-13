@@ -18,7 +18,19 @@ total = 0;
 Registration checks the closed node shapes, same-row references, result type,
 24-level depth, 1024-node budget and 65536 serialized-character budget.
 References to generated or transient fields are refused, including self
-references. Framework identity/ownership fields cannot be generated. Metadata
+references. Validation resolves the full effective ancestry; decorator parents
+are resolved by constructor identity even when packages share a class name.
+
+Framework identity/ownership fields cannot be generated. This covers `id`,
+`slug`, `context`, creation/update timestamps (camelCase or snake_case), every
+underscore-prefixed system field (including STI discriminators/data and sync
+revision/device identity), explicitly marked primary keys, foreign keys and
+cross-package references. Tenant columns use the registry's shared ownership
+resolver: an implicit `tenantId` is protected without a tenancy declaration,
+as are explicitly configured or marked tenant fields. Decoration, manifest
+registration/merge and runtime definitions enforce the same boundary.
+
+Metadata
 is cloned and frozen so changing a caller's definition cannot change a
 registered expression. `GeneratedFieldError` carries a validation code;
 caller assignments use `VALIDATION_GENERATED_FIELD_WRITE`.
@@ -57,6 +69,25 @@ expression metadata. SQLite generated columns need `table_xinfo` because
 `table_info` omits them. PostgreSQL deparses implicit casts; parity uses
 read-only EXPLAIN (without ANALYZE) to normalize differing renderings. Changed
 expressions drop and re-add the column and recreate declared column indexes.
+Introspection runs even when the expected schema declares no generated columns;
+live parity reports `generated_expression_drift` for both conversion directions.
+
+Generated-to-ordinary migrations have explicit value semantics:
+
+- PostgreSQL uses `ALTER COLUMN ... DROP EXPRESSION`, preserving every STORED
+  value and existing index. Ordinary type/default/nullability changes are then
+  planned by the normal differ.
+- SQLite (and DuckDB) VIRTUAL columns have no stored values. The migration drops
+  and re-adds the column, recreating declared column indexes. Existing rows
+  receive the ordinary declaration's default, or NULL; the previous calculated
+  results are not materialized. A populated table targeting NOT NULL without a
+  non-NULL default stays manual drift and emits no destructive SQL: supply a
+  deliberate data migration or a default first.
+- Ordinary-to-generated and changed-expression migrations replace the derived
+  column, discard its old values and recalculate from the expression. Source
+  columns and rows remain intact. Execute multi-statement plans through the
+  migration tracker's transaction so a failed replacement rolls back.
+
 Application tables are still created only by explicit schema planning.
 
 `planRuntimeModelDDL` remains additive: it adds missing generated columns but

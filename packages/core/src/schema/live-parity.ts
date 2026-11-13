@@ -257,8 +257,11 @@ export async function checkLiveSchemaParity(
 
     tablesChecked++;
     const liveColumns = await readLiveColumns(db, table.name);
-    if (table.columns.some((column) => column.generated !== undefined)) {
-      const generated = await readGeneratedColumns(db, table.name, engine);
+    const generated = await readGeneratedColumns(db, table.name, engine);
+    if (
+      generated.size ||
+      table.columns.some((column) => column.generated !== undefined)
+    ) {
       if (engine === 'sqlite') {
         const { rows } = await db.query(
           'SELECT * FROM pragma_table_xinfo($1)',
@@ -275,9 +278,10 @@ export async function checkLiveSchemaParity(
             });
       }
       for (const column of table.columns) {
-        if (column.generated === undefined) continue;
         const actual = generated.get(column.name);
+        if (column.generated === undefined && actual === undefined) continue;
         if (
+          column.generated === undefined ||
           actual === undefined ||
           !(await generatedExpressionsMatch(
             db,

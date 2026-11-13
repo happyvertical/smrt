@@ -58,7 +58,10 @@ import {
 } from './collision-policy.js';
 import { isFrameworkBaseClass } from './framework-base-classes.js';
 import { bumpRegistryGeneration } from './generation';
-import { buildInheritanceChain } from './inheritance-resolver';
+import {
+  buildInheritanceChain,
+  getEffectiveFieldsSync,
+} from './inheritance-resolver';
 import {
   createFieldFromManifest,
   mergeManifestField,
@@ -1759,11 +1762,6 @@ function registerUntracked(
     }
   }
 
-  const generatedParent = findClass(buildInheritanceChain(ctor).at(-2) ?? '');
-  validateGeneratedFields(
-    new Map([...(generatedParent?.fields ?? []), ...fields]),
-  );
-
   // Handle tenantScoped configuration (Issue #688)
   // External manifests can carry tenantScoped only in decoratorConfig, so
   // registration must honor the merged view rather than only explicit config.
@@ -1811,6 +1809,18 @@ function registerUntracked(
       );
     }
   }
+
+  const generatedParentKey = registeredParentKey(ctor, undefined);
+  const generatedParent = generatedParentKey
+    ? findClass(generatedParentKey)
+    : undefined;
+  validateGeneratedFields(
+    new Map([
+      ...(generatedParent ? getEffectiveFieldsSync(generatedParent) : []),
+      ...fields,
+    ]),
+    tenantScopedConfig?.field,
+  );
 
   if (manifestEntry?.methods) {
     // Load method definitions from manifest (for custom CLI/API/MCP generation)
@@ -2646,13 +2656,6 @@ function mergeManifestIntoExistingRegistration(
     }
   }
 
-  const generatedParentFields = findClass(
-    objectDef.extendsQualified ?? existing.extends ?? objectDef.extends ?? '',
-  )?.fields;
-  validateGeneratedFields(
-    new Map([...(generatedParentFields ?? []), ...existing.fields]),
-  );
-
   // An explicit core declaration remains authoritative. Otherwise a manifest
   // is authoritative even when it is silent: discard provisional decorator or
   // field-fallback tenancy so lazy manifest loading matches preloaded runtime.
@@ -2666,6 +2669,21 @@ function mergeManifestIntoExistingRegistration(
       ensureTenantScopedField(existing.fields, tenantScopedConfig);
     }
   }
+
+  const generatedParent = findClass(
+    registeredParentKey(existing.constructor, objectDef.extends) ??
+      objectDef.extendsQualified ??
+      existing.extends ??
+      objectDef.extends ??
+      '',
+  );
+  validateGeneratedFields(
+    new Map([
+      ...(generatedParent ? getEffectiveFieldsSync(generatedParent) : []),
+      ...existing.fields,
+    ]),
+    existing.tenantScopedConfig?.field,
+  );
 
   if (objectDef.methods) {
     for (const [methodName, methodDef] of Object.entries(objectDef.methods)) {
@@ -2811,14 +2829,29 @@ export function registerFromManifest(
   manifestPackageName?: string,
   runtimeOptions?: RuntimeManifestRegistrationOptions,
 ): void {
+  const generatedExisting = getClasses().get(objectDef.qualifiedName ?? name);
+  const generatedParentName = objectDef.extendsQualified ?? objectDef.extends;
+  const generatedPackage = objectDef.packageName ?? manifestPackageName;
+
   const generatedParentEntry = findClass(
-    objectDef.extendsQualified ?? objectDef.extends ?? '',
+    (generatedExisting
+      ? registeredParentKey(generatedExisting.constructor, objectDef.extends)
+      : undefined) ??
+      runtimeOptions?.extendsRegistered ??
+      (generatedParentName && generatedPackage
+        ? qualifyExtendsName(generatedParentName, generatedPackage)
+        : generatedParentName) ??
+      '',
   );
   validateGeneratedFields(
     new Map([
-      ...(generatedParentEntry?.fields ?? []),
+      ...(generatedParentEntry
+        ? getEffectiveFieldsSync(generatedParentEntry)
+        : []),
+      ...(generatedExisting ? getEffectiveFieldsSync(generatedExisting) : []),
       ...Object.entries(objectDef.fields ?? {}),
     ]),
+    normalizeTenantScopedConfig(objectDef.decoratorConfig?.tenantScoped)?.field,
   );
   // Same invalidation contract as register() (#3047).
   bumpRegistryGeneration();
@@ -3034,8 +3067,13 @@ function registerFromManifestUntracked(
     }
   }
 
+  const generatedParent = runtimeParent ?? findClass(qualifiedExtends ?? '');
   validateGeneratedFields(
-    new Map([...(runtimeParent ? runtimeParent.fields : []), ...fields]),
+    new Map([
+      ...(generatedParent ? getEffectiveFieldsSync(generatedParent) : []),
+      ...fields,
+    ]),
+    normalizeTenantScopedConfig(objectDef.decoratorConfig?.tenantScoped)?.field,
   );
 
   // Load method definitions

@@ -125,6 +125,7 @@ describe('schema orchestration', () => {
         if (sql.includes('information_schema.tables')) {
           return { rows: [{ table_name: 'documents' }] };
         }
+        if (sql.includes("is_generated = 'ALWAYS'")) return { rows: [] };
         throw new Error(`Unexpected query: ${sql}`);
       },
       getTableSchema: async () => ({

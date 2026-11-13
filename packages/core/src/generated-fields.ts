@@ -6,8 +6,13 @@ import {
   renderExpression,
 } from '@happyvertical/sql/query';
 import type { FieldDefinition } from './scanner/types.js';
+import {
+  resolveOwnershipTenantColumn,
+  resolveTenantColumn,
+} from './schema/conflict-target.js';
 import type { DatabaseEngine } from './schema/ddl/types.js';
 import { SmrtError } from './smrt-error.js';
+import { SMRT_SYSTEM_FIELDS } from './system-fields.js';
 import { toSnakeCase } from './utils/naming.js';
 
 export type GeneratedExpression = AggregateOperand;
@@ -48,7 +53,19 @@ const numeric = (type: ResultType) => type === 'integer' || type === 'decimal';
 /** Validate before publishing metadata; references use model field names. */
 export function validateGeneratedFields(
   fields: Map<string, FieldDefinition>,
+  tenantField?: string,
 ): void {
+  // Share the registry's ownership decision, including undeclared tenantId.
+  const ownershipColumn = resolveOwnershipTenantColumn(
+    resolveTenantColumn(tenantField, (name) => fields.has(name), toSnakeCase),
+    (column) =>
+      [...fields].some(
+        ([name, field]) =>
+          field.type !== 'oneToMany' &&
+          field.type !== 'manyToMany' &&
+          toSnakeCase(name) === column,
+      ),
+  );
   for (const [name, field] of fields) {
     const expression = generatedExpression(field);
     if (expression === undefined) continue;
@@ -64,15 +81,8 @@ export function validateGeneratedFields(
     )
       fail('generated fields must be scalar persisted columns');
     if (
-      [
-        'id',
-        'slug',
-        'context',
-        'createdAt',
-        'updatedAt',
-        'created_at',
-        'updated_at',
-      ].includes(name) ||
+      Object.hasOwn(SMRT_SYSTEM_FIELDS, toSnakeCase(name)) ||
+      toSnakeCase(name) === ownershipColumn ||
       name.startsWith('_') ||
       field._meta?.primaryKey ||
       field._meta?.__tenancy?.isTenantIdField

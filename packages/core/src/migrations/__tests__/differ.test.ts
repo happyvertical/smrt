@@ -462,6 +462,7 @@ describe('SchemaComparer engine-specific SQL generation', () => {
       if (sql.includes('information_schema.tables')) {
         return { rows: [{ table_name: 'documents' }] };
       }
+      if (sql.includes("is_generated = 'ALWAYS'")) return { rows: [] };
       throw new Error(`Unexpected introspection query: ${sql}`);
     });
 
@@ -512,6 +513,7 @@ describe('SchemaComparer engine-specific SQL generation', () => {
       if (sql.includes('information_schema.tables')) {
         return { rows: [{ table_name: 'users' }] };
       }
+      if (sql.includes("is_generated = 'ALWAYS'")) return { rows: [] };
       throw new Error(`Unexpected introspection query: ${sql}`);
     });
 

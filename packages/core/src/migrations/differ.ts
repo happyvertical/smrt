@@ -2010,12 +2010,12 @@ export class SchemaComparer {
     dbSchema: SqlTableSchemaInfo,
   ): Promise<SchemaChange[]> {
     const changes: SchemaChange[] = [];
-    const hasGenerated = Object.values(manifest.columns).some(
-      (column) => column.generated !== undefined,
+    // Live generated columns matter even when the last declaration was removed.
+    const generated = await readGeneratedColumns(
+      this.db,
+      tableName,
+      this.engine,
     );
-    const generated = hasGenerated
-      ? await readGeneratedColumns(this.db, tableName, this.engine)
-      : new Map<string, string>();
     if (this.engine === 'sqlite' && generated.size) {
       const { rows } = await this.db.query(
         `SELECT * FROM pragma_table_xinfo($1)`,
@@ -2053,6 +2053,72 @@ export class SchemaComparer {
           )),
         );
       } else {
+        if (colDef.generated === undefined && generated.has(colName)) {
+          const table = this.quoteIdentifier(tableName);
+          const column = this.quoteIdentifier(colName);
+          if (this.engine === 'postgres') {
+            // STORED values become ordinary values without dropping the column.
+            changes.push({
+              type: 'alter_column',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              sql: `ALTER TABLE ${table} ALTER COLUMN ${column} DROP EXPRESSION`,
+              mismatch: {
+                expected: 'ordinary column (stored values preserved)',
+                actual: generated.get(colName)!,
+              },
+            });
+            // Continue comparing type/default/nullability for the ordinary column.
+          } else {
+            // Refuse to discard the old column before an impossible required ADD.
+            if (
+              colDef.notNull &&
+              (colDef.defaultValue === undefined ||
+                colDef.defaultValue === null) &&
+              (await this.tableHasRows(tableName))
+            ) {
+              changes.push({
+                type: 'alter_column',
+                table: tableName,
+                name: colName,
+                column: colDef,
+                sql: `-- ${this.engine}: converting generated ${tableName}.${colName} to NOT NULL requires an explicit data migration or non-NULL default`,
+                mismatch: {
+                  expected: 'ordinary NOT NULL column',
+                  actual: generated.get(colName)!,
+                },
+              });
+              continue;
+            }
+            const indexes = manifest.indexes.filter((index) =>
+              index.columns.includes(colName),
+            );
+            const statements = [
+              ...indexes.map(
+                (index) =>
+                  `DROP INDEX IF EXISTS ${this.quoteIdentifier(index.name)}`,
+              ),
+              `ALTER TABLE ${table} DROP COLUMN ${column}`,
+              `ALTER TABLE ${table} ADD COLUMN ${this.ddlStrategy.generateColumnDefinition(colName, colDef)}`,
+              ...this.ddlStrategy.generateIndexes({ ...manifest, indexes }),
+            ];
+            changes.push({
+              type: 'alter_column',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              sql: statements[0],
+              sqlStatements: statements,
+              mismatch: {
+                expected:
+                  'ordinary column (virtual results replaced by default or NULL)',
+                actual: generated.get(colName)!,
+              },
+            });
+            continue;
+          }
+        }
         if (colDef.generated !== undefined) {
           const actual = generated.get(colName);
           if (
