@@ -26,7 +26,7 @@ export class MessagingEndpoint extends SmrtObject {
   @crossPackageRef('@happyvertical/smrt-profiles:Profile', { nullable: true })
   profileId: string | null = null;
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   label = '';
 
   @field({ required: true })
