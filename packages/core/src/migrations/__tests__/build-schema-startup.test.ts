@@ -443,20 +443,89 @@ describe('the build schema decides migrate records and startup (rv1)', () => {
     });
   });
 
-  it('reads the project manifest in the order smrt db:migrate does', () => {
+  /** A project with the app's `.smrt` manifest and a library's published `dist` one. */
+  function projectWithBoth(app: Pkg[], library: Pkg[]): string {
+    const root = join(dir, `project-${crypto.randomUUID()}`);
+    for (const sub of ['dist', '.smrt'])
+      mkdirSync(join(root, sub), { recursive: true });
+    writeFileSync(
+      join(root, '.smrt/manifest.json'),
+      JSON.stringify(buildManifest(app)),
+    );
+    writeFileSync(
+      join(root, 'dist/manifest.json'),
+      JSON.stringify(buildManifest(library)),
+    );
+    return root;
+  }
+
+  it("reads the app's .smrt manifest before dist, the one its bundled description is written from", () => {
     const root = join(dir, 'project');
     for (const sub of ['dist', '.smrt'])
       mkdirSync(join(root, sub), { recursive: true });
+    writeFileSync(
+      join(root, 'dist/manifest.json'),
+      JSON.stringify(buildManifest([B])),
+    );
+    // Only a library manifest: it is the build.
+    expect(readProjectBuildSchema(root)?.packages).toEqual(['@rv1/smrt-b']);
     writeFileSync(
       join(root, '.smrt/manifest.json'),
       JSON.stringify(buildManifest([A])),
     );
     expect(readProjectBuildSchema(root)?.packages).toEqual(['@rv1/smrt-a']);
-    writeFileSync(
-      join(root, 'dist/manifest.json'),
-      JSON.stringify(buildManifest([B])),
-    );
-    expect(readProjectBuildSchema(root)?.packages).toEqual(['@rv1/smrt-b']);
+  });
+
+  it('two manifests that describe different schemas: names the one used and why, never silent', () => {
+    const different = readProjectBuildSchema(projectWithBoth([A, B], [A]));
+    expect(different?.packages).toEqual(['@rv1/smrt-a', '@rv1/smrt-b']);
+    expect(different?.notice).toContain('Using');
+    expect(different?.notice).toContain('.smrt/manifest.json');
+    expect(different?.notice).toContain('bundled description');
+    expect(different?.notice).toContain('dist/manifest.json');
+    expect(different?.notice).toContain('Not used');
+    // The same schema in both files is not a disagreement.
+    expect(
+      readProjectBuildSchema(projectWithBoth([A, B], [A, B]))?.notice,
+    ).toBeUndefined();
+  });
+
+  it('a dist manifest filtered to a library: migrate records the app build, the bundled app starts, the next migrate sees no change in packages', async () => {
+    const app = buildManifest([A, B]);
+    const root = projectWithBoth([A, B], [A]);
+    vi.stubEnv('SMRT_BUILD_MANIFEST', '');
+    vi.spyOn(process, 'cwd').mockReturnValue(root);
+    newProcess(A, B);
+    const first = await migrateSmrtSchemas({ db, packageName: 'rv1-app' });
+    expect(first.refused).toBe(false);
+    expect(first.notices.join('\n')).toContain('Two project manifests');
+    expect(await readLastMigrateRecord(db)).toMatchObject({
+      record: {
+        packages: ['@rv1/smrt-a', '@rv1/smrt-b'],
+        fingerprint: app.schemaFingerprint,
+      },
+    });
+    // The bundled app: its description is written from `.smrt/manifest.json`.
+    vi.stubEnv('SMRT_BUILD_MANIFEST', join(dir, 'missing.json'));
+    await loadBuildModule(app);
+    newProcess(A);
+    const running = await newDatabaseHandle();
+    try {
+      await expect(assertDatabaseMigratedForBuild(running)).resolves.toBe(
+        undefined,
+      );
+    } finally {
+      await running.close?.();
+    }
+    // The next migrate: consumed packages are neither new nor missing.
+    registerBuildSchema(undefined);
+    vi.stubEnv('SMRT_BUILD_MANIFEST', '');
+    newProcess(A, B);
+    const again = await migrateSmrtSchemas({ db, packageName: 'rv1-app' });
+    expect(again.refused).toBe(false);
+    expect(again.packageStops).toEqual([]);
+    expect(again.notices.join('\n')).not.toContain('missing');
+    expect(await runs()).toBe(1);
   });
 
   it('a registered build wins and NODE_ENV=test never reads the working directory', () => {

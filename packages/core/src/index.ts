@@ -487,6 +487,7 @@ export {
   type BuildSchema,
   describeManifestSchema,
   generateBuildSchemaModule,
+  noteAlternativeManifests,
   PROJECT_MANIFEST_PATHS,
   readBuildSchemaFile,
   readProjectBuildSchema,

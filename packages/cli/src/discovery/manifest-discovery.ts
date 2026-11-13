@@ -13,6 +13,7 @@ import { createLogger } from '@happyvertical/logger';
 import type { SmartObjectDefinition } from '@happyvertical/smrt-core';
 import {
   isRefusedTestArtifact,
+  noteAlternativeManifests,
   ObjectRegistry,
   PROJECT_MANIFEST_PATHS,
   readBuildSchemaFile,
@@ -398,7 +399,12 @@ export async function autoDiscoverAndLoad(
   // checks, the schema it describes (#4929, #4928). A legacy `.js` project
   // manifest or none at all leaves no build registered.
   const project = manifests.find((manifest) => manifest.source === 'project');
-  registerBuildSchema(project ? readBuildSchemaFile(project.path) : undefined);
+  const projectBuild = project ? readBuildSchemaFile(project.path) : undefined;
+  registerBuildSchema(
+    projectBuild
+      ? noteAlternativeManifests(projectBuild, projectRoot)
+      : undefined,
+  );
 
   return {
     discovered: manifests,

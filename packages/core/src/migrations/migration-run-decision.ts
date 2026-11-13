@@ -19,6 +19,8 @@ export interface PackagesSeenInput {
    */
   build?: {
     fingerprint?: string;
+    /** Two project manifests disagree: names the one used and why. */
+    notice?: string;
     planned: string;
     unloaded: readonly { packageName: string; tables: readonly string[] }[];
   };
@@ -120,6 +122,7 @@ export function decideMigrationRun<T extends SchemaChangeInput>(options: {
     (name) =>
       `Ignoring --confirm-removed-package ${name}: this package is not missing.`,
   );
+  if (build?.notice) notices.unshift(build.notice);
   if (
     build?.fingerprint &&
     !build.unloaded.length &&
