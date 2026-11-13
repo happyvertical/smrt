@@ -32,6 +32,7 @@ import {
   foreignKeyConstraintName,
   foreignKeyRelationshipKey,
   renderForeignKeyAddStatements,
+  renderForeignKeyConstraint,
   renderForeignKeyOrphanDetector,
   renderForeignKeyOrphanRepair,
   renderForeignKeyReference,
@@ -80,8 +81,9 @@ import {
 } from '../schema/uuid-convergence.js';
 import { getDatabaseEngine } from '../system/compatibility.js';
 import { decideSchemaChange, hasExecutableSchemaSql } from './change-kinds.js';
+import { planDuckDbTableChanges } from './duckdb-rebuild.js';
 import {
-  planSqliteTableRebuilds,
+  planSqliteTableRebuildsWithConstraints,
   sqliteBackfillPlaceholderSql,
   sqliteRebuildPlaceholderSql,
 } from './sqlite-rebuild.js';
@@ -340,9 +342,13 @@ export function isInfoOnlyChange(change: SchemaChange): boolean {
  * `ALTER COLUMN` the engine cannot perform in place).
  */
 export function isManualOrAdvisoryChange(change: SchemaChange): boolean {
+  // The caller does not name an engine, and the table of change kinds differs
+  // by engine for a few kinds (#4937): the change is manual only when no engine
+  // would apply it.
   return (
-    decideSchemaChange(change, 'sqlite').decision !== 'apply' ||
-    !hasExecutableSchemaSql(change)
+    !(['postgres', 'sqlite', 'duckdb'] as const).some(
+      (engine) => decideSchemaChange(change, engine).decision === 'apply',
+    ) || !hasExecutableSchemaSql(change)
   );
 }
 
@@ -873,29 +879,73 @@ export class SchemaComparer {
       manifest,
       dbSchema,
     );
+    // The constraint changes join the column changes in one table rebuild on
+    // SQLite (#4937), so they are read before the rebuild is planned.
+    let foreignKeyChanges = [
+      ...(await this.compareForeignKeys(
+        tableName,
+        manifest,
+        dbSchema,
+        manifestSchemas,
+      )),
+      ...(await this.compareTableChecks(tableName, manifest)),
+    ];
     // #2370: SQLite cannot change a column's type in place. Turn the
     // "requires table recreation" placeholders those comparisons emit into an
     // executable table rebuild (see `./sqlite-rebuild.ts`); anything the
-    // rebuild can't do safely stays manual drift, as before. Explicit NOT NULL relaxation also uses
-    // the rebuild, with tracker-owned foreign-key suspension (#4413).
-    // Other constraint drift remains manual.
-    const plannedColumnChanges =
-      this.engine === 'sqlite'
-        ? await planSqliteTableRebuilds({
-            db: this.db,
-            tableName,
-            changes: columnChanges,
-            mapType: (type) => this.ddlStrategy.mapType(type),
-            addedColumnDefinition: (change) =>
-              this.sqliteAddedColumnDefinition(change),
-            addedColumnFollowUps: (change) =>
-              change.column?.unique && change.name
-                ? [
-                    `CREATE UNIQUE INDEX ${this.quoteIdentifier(uniqueColumnIndexName(tableName, change.name))} ON ${this.quoteIdentifier(tableName)} (${this.quoteIdentifier(change.name)})`,
-                  ]
-                : [],
-          })
-        : columnChanges;
+    // rebuild can't do safely stays manual drift, as before. NOT NULL, default,
+    // foreign-key and CHECK changes use the same rebuild (#4413, #4937), with
+    // tracker-owned foreign-key suspension.
+    let plannedColumnChanges = columnChanges;
+    let planInConstraints = false;
+    if (this.engine === 'sqlite') {
+      const planned = await planSqliteTableRebuildsWithConstraints({
+        db: this.db,
+        tableName,
+        changes: columnChanges,
+        constraintChanges: foreignKeyChanges,
+        foreignKeysSuspended: true,
+        mapType: (type) => this.ddlStrategy.mapType(type),
+        formatDefault: (change) => this.formatChangeDefault(change),
+        foreignKeyDefinition: (change) =>
+          this.embeddedForeignKeyDefinition(tableName, change),
+        addedColumnDefinition: (change) =>
+          this.embeddedAddedColumnDefinition(change),
+        addedColumnFollowUps: (change) =>
+          change.column?.unique && change.name
+            ? [
+                `CREATE UNIQUE INDEX ${this.quoteIdentifier(uniqueColumnIndexName(tableName, change.name))} ON ${this.quoteIdentifier(tableName)} (${this.quoteIdentifier(change.name)})`,
+              ]
+            : [],
+      });
+      plannedColumnChanges = planned.changes;
+      foreignKeyChanges = planned.constraintChanges;
+      planInConstraints = planned.planInConstraints;
+    } else if (this.engine === 'duckdb') {
+      // DuckDB rebuilds the table when ALTER cannot do the change, and
+      // otherwise moves the indexes out of ALTER's way (#4937).
+      const planned = await planDuckDbTableChanges({
+        db: this.db,
+        tableName,
+        changes: columnChanges,
+        constraintChanges: foreignKeyChanges,
+        mapType: (type) => this.ddlStrategy.mapType(type),
+        formatDefault: (change) => this.formatChangeDefault(change),
+        foreignKeyDefinition: (change) =>
+          this.embeddedForeignKeyDefinition(tableName, change),
+        addedColumnDefinition: (change) =>
+          this.embeddedAddedColumnDefinition(change),
+        addedColumnFollowUps: (change) =>
+          change.column?.unique && change.name
+            ? [
+                `CREATE UNIQUE INDEX ${this.quoteIdentifier(uniqueColumnIndexName(tableName, change.name))} ON ${this.quoteIdentifier(tableName)} (${this.quoteIdentifier(change.name)})`,
+              ]
+            : [],
+      });
+      plannedColumnChanges = planned.changes;
+      foreignKeyChanges = planned.constraintChanges;
+      planInConstraints = planned.planInConstraints;
+    }
     // #3008: an `add_column` the SQLite rebuild planner had to refuse is
     // left as comment-only SQL; report it as the same "column not added"
     // manual change every engine uses, never as an executable migration.
@@ -958,15 +1008,14 @@ export class SchemaComparer {
       dbIndexPredicates,
       inlineUniqueSignatures,
     );
-    const foreignKeyChanges = [
-      ...(await this.compareForeignKeys(
-        tableName,
-        manifest,
-        dbSchema,
-        manifestSchemas,
-      )),
-      ...(await this.compareTableChecks(tableName, manifest)),
-    ];
+    if (planInConstraints) {
+      // The rebuild carried by a constraint change must run before the
+      // table's index changes: it copies the live table and replays the live
+      // indexes, so an index created earlier in the batch would be lost.
+      const [carrier, ...rest] = foreignKeyChanges;
+      changes.push(carrier);
+      foreignKeyChanges = rest;
+    }
     if (notAdded.size === 0) {
       changes.push(...indexChanges, ...foreignKeyChanges);
       return changes;
@@ -1067,12 +1116,35 @@ export class SchemaComparer {
     return schema;
   }
 
+  /** The SQL literal of the default a change declares, or undefined for no default. */
+  private formatChangeDefault(change: SchemaChange): string | undefined {
+    const value = change.column?.defaultValue;
+    if (value === undefined || value === null) return undefined;
+    const declared = change.column?.type ?? '';
+    const type: SQLDataType = isValidSQLDataType(declared) ? declared : 'TEXT';
+    const sql = this.ddlStrategy.formatDefaultValue(value, type);
+    return /^null$/i.test(sql.trim()) ? undefined : sql;
+  }
+
+  private embeddedForeignKeyDefinition(
+    tableName: string,
+    change: SchemaChange,
+  ): string | undefined {
+    return change.foreignKey
+      ? renderForeignKeyConstraint(tableName, change.foreignKey)
+      : undefined;
+  }
+
   private async getDuckDbForeignKeys(
     tableName: string,
   ): Promise<NonNullable<SqlTableSchemaInfo['foreignKeys']>> {
     try {
+      // `referenced_table` is read rather than `constraint_text`, which DuckDB
+      // leaves empty for a table that references itself.
       const { rows } = await this.db.query(
-        `SELECT to_json(constraint_column_names)::VARCHAR AS columns, constraint_text AS text
+        `SELECT to_json(constraint_column_names)::VARCHAR AS columns,
+                referenced_table AS parent,
+                to_json(referenced_column_names)::VARCHAR AS parent_columns
          FROM duckdb_constraints()
          WHERE database_name = current_database() AND schema_name = current_schema()
            AND table_name = ? AND constraint_type = 'FOREIGN KEY'`,
@@ -1080,16 +1152,15 @@ export class SchemaComparer {
       );
       return rows.flatMap((row) => {
         const columns = JSON.parse(String(row.columns)) as string[];
-        const match =
-          /REFERENCES\s+"?([^"\s(]+)"?\s*\(\s*"?([^")\s]+)"?\s*\)/i.exec(
-            String(row.text ?? ''),
-          );
-        return columns.length === 1 && match
+        const parentColumns = JSON.parse(
+          String(row.parent_columns),
+        ) as string[];
+        return columns.length === 1 && parentColumns.length === 1 && row.parent
           ? [
               {
                 column: columns[0],
-                referencesTable: match[1],
-                referencesColumn: match[2],
+                referencesTable: String(row.parent),
+                referencesColumn: parentColumns[0],
               },
             ]
           : [];
@@ -1725,7 +1796,8 @@ export class SchemaComparer {
           { onDelete: expectedDelete, onUpdate: expectedUpdate },
         );
       }
-      if (sameColumn && !replacement) {
+      // SQLite and DuckDB replace the old key as part of the table rebuild.
+      if (sameColumn && !replacement && this.engine === 'postgres') {
         changes.push({
           type: 'add_foreign_key',
           kindHint: 'foreign-key.conflicting',
@@ -1747,37 +1819,20 @@ export class SchemaComparer {
         continue;
       }
 
-      if (this.engine !== 'postgres') {
-        const engineReason =
-          this.engine === 'sqlite'
-            ? 'SQLite requires a table rebuild to add a foreign key to an existing table.'
-            : 'DuckDB does not support ALTER TABLE ADD CONSTRAINT.';
-        changes.push({
-          type: 'add_foreign_key',
-          table: tableName,
-          name: foreignKeyConstraintName(tableName, foreignKey),
-          foreignKey,
-          engineUnsupported: true,
-          advisory: {
-            severity: 'warning',
-            message: `${engineReason} Run the orphan detector, repair rows, and rebuild the table with the generated constraint.`,
-            suggestedSql: [detectorSql, repairSql],
-          },
-        });
-        continue;
-      }
-
       // #2608: refuse — and *report* — a constraint whose live child and
       // parent columns have different physical types and that this run's
       // uuid convergence will not repair. PostgreSQL rejects such an ADD
       // CONSTRAINT with SQLSTATE 42804, so calling it "pending" in
       // `db:status` promises a migration that cannot succeed.
-      const typeBlock = await this.describeForeignKeyTypeBlock(
-        tableName,
-        dbSchema,
-        manifest,
-        foreignKey,
-      );
+      const typeBlock =
+        this.engine === 'postgres'
+          ? await this.describeForeignKeyTypeBlock(
+              tableName,
+              dbSchema,
+              manifest,
+              foreignKey,
+            )
+          : undefined;
       if (typeBlock) {
         // The uuid convergence is only the right remediation when the
         // manifest actually declares UUID on both sides. Any other
@@ -1907,11 +1962,33 @@ export class SchemaComparer {
       // an orphan. The subsequent NOT VALID + VALIDATE statements remain the
       // authoritative safety check once the prerequisite column exists.
       const childColumnExists = Boolean(dbSchema.columns[foreignKey.column]);
-      if (
-        !plannedParent &&
-        childColumnExists &&
-        (await this.foreignKeyHasOrphans(tableName, foreignKey, orphanOptions))
-      ) {
+      let hasOrphans = false;
+      if (!plannedParent && childColumnExists) {
+        try {
+          hasOrphans = await this.foreignKeyHasOrphans(
+            tableName,
+            foreignKey,
+            orphanOptions,
+          );
+        } catch (error) {
+          if (this.engine === 'postgres') throw error;
+          // SQLite and DuckDB cannot read a referenced table that does not
+          // exist: there is nothing to rebuild the key against.
+          changes.push({
+            type: 'add_foreign_key',
+            kindHint: 'foreign-key.parent-data-missing',
+            table: tableName,
+            name: foreignKeyConstraintName(tableName, foreignKey),
+            foreignKey,
+            advisory: {
+              severity: 'warning',
+              message: `Cannot add foreign key ${tableName}.${foreignKey.column}: the referenced table ${foreignKey.referencesTable} cannot be read (${error instanceof Error ? error.message : String(error)}). Create it, then rerun.`,
+            },
+          });
+          continue;
+        }
+      }
+      if (hasOrphans) {
         changes.push({
           type: 'add_foreign_key',
           table: tableName,
@@ -1931,6 +2008,28 @@ export class SchemaComparer {
       }
 
       const constraintName = foreignKeyConstraintName(tableName, foreignKey);
+      if (this.engine !== 'postgres') {
+        // SQLite and DuckDB add or replace a foreign key by rebuilding the
+        // table; the rebuild planner turns this change into that plan. It
+        // stays a stop when the planner cannot build one.
+        const engineReason =
+          this.engine === 'sqlite'
+            ? 'SQLite adds a foreign key to an existing table only by rebuilding it.'
+            : 'DuckDB cannot add a foreign key to an existing table, so it must rebuild the table.';
+        changes.push({
+          type: 'add_foreign_key',
+          table: tableName,
+          name: constraintName,
+          foreignKey,
+          engineUnsupported: true,
+          advisory: {
+            severity: 'warning',
+            message: `${engineReason} Run the orphan detector, repair rows, and rebuild the table with the generated constraint.`,
+            suggestedSql: [detectorSql, repairSql],
+          },
+        });
+        continue;
+      }
       changes.push({
         type: 'add_foreign_key',
         table: tableName,
@@ -2750,7 +2849,7 @@ export class SchemaComparer {
             expected: '(not in manifest)',
             actual: this.describeDbColumn(dbCol),
           },
-          sql: this.generateDropColumnSQL(tableName, colName),
+          ...this.dropColumnSql(tableName, colName, dbSchema),
         });
         continue;
       }
@@ -3898,19 +3997,13 @@ export class SchemaComparer {
               ]
             : null,
           // Dropping NOT NULL from a column the manifest declares nullable
-          // loses no data and rejects no row, so on PostgreSQL it is
-          // executable by default (DuckDB rejects ALTER COLUMN on a table with
-          // any index, so it stays opt-in there): a package release that
-          // relaxes a column must not strand every consumer on a fail-closed
-          // migration (#4897, direction in #4920). SQLite keeps the opt-in rebuild path, and
-          // DROP DEFAULT / orphan relaxations still require `relaxColumns`.
-          relaxation:
-            this.engine === 'postgres'
-              ? undefined
-              : {
-                  severity: 'warning',
-                  message: `${tableName}.${colName} is NOT NULL in the database but nullable in the manifest; writes that store NULL will fail. ${this.relaxHint('drop the constraint')}`,
-                },
+          // loses no data and rejects no row, so it is executable by default
+          // on every engine: a package release that relaxes a column must not
+          // strand every consumer on a fail-closed migration (#4897, direction
+          // in #4920). SQLite rebuilds the table and DuckDB drops and
+          // recreates the indexes around the ALTER (#4937). DROP DEFAULT and
+          // orphan relaxations still require `relaxColumns`.
+          relaxation: undefined,
         }),
       );
     }
@@ -5407,10 +5500,11 @@ export class SchemaComparer {
   }
 
   /**
-   * #3008: the column definition a SQLite backfill rebuild appends — NOT
-   * NULL, plus the declared default (for future inserts) and CHECK.
+   * #3008: the column definition a table rebuild appends (SQLite and DuckDB)
+   * — NOT NULL when the field is required, plus the declared default (for
+   * future inserts) and CHECK.
    */
-  private sqliteAddedColumnDefinition(change: SchemaChange): string {
+  private embeddedAddedColumnDefinition(change: SchemaChange): string {
     const column = change.column as ColumnDefinition;
     const type: SQLDataType = isValidSQLDataType(column.type)
       ? column.type
@@ -5418,8 +5512,8 @@ export class SchemaComparer {
     const parts = [
       this.quoteIdentifier(change.name as string),
       this.ddlStrategy.mapType(type),
-      'NOT NULL',
     ];
+    if (column.notNull) parts.push('NOT NULL');
     if (column.defaultValue !== undefined && column.defaultValue !== null) {
       parts.push(
         `DEFAULT ${this.ddlStrategy.formatDefaultValue(column.defaultValue, type)}`,
@@ -5527,6 +5621,36 @@ export class SchemaComparer {
   /**
    * Generate SQL for dropping a column
    */
+  /**
+   * The SQL that drops a column. PostgreSQL drops the indexes that use the
+   * column with it; SQLite refuses until they are gone, so they go first.
+   */
+  private dropColumnSql(
+    tableName: string,
+    colName: string,
+    dbSchema: SqlTableSchemaInfo,
+  ): Pick<SchemaChange, 'sql' | 'sqlStatements'> {
+    const drop = this.generateDropColumnSQL(tableName, colName);
+    const covering =
+      this.engine === 'sqlite'
+        ? (dbSchema.indexes ?? []).filter(
+            (index) =>
+              !index.name.startsWith('sqlite_autoindex') &&
+              index.columns.some(
+                (column) => column.replace(/^"(.*)"$/, '$1') === colName,
+              ),
+          )
+        : [];
+    if (covering.length === 0) return { sql: drop };
+    const statements = [
+      ...covering.map(
+        (index) => `DROP INDEX ${this.quoteIdentifier(index.name)}`,
+      ),
+      drop,
+    ];
+    return { sql: drop, sqlStatements: statements };
+  }
+
   private generateDropColumnSQL(tableName: string, colName: string): string {
     return `ALTER TABLE ${this.quoteIdentifier(tableName)} DROP COLUMN ${this.quoteIdentifier(colName)}`;
   }

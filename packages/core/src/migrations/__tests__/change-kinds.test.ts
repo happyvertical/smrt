@@ -336,6 +336,21 @@ describe('schema change policy coverage (#4925)', () => {
     expect(hints.filter((hint) => !(hint in SCHEMA_CHANGE_KINDS))).toEqual([]);
   });
 
+  it('differs by engine only for the shared-table CHECK kinds (#4937)', () => {
+    // Every other kind applies, reports or stops the same way on all three
+    // engines. The CHECK is PostgreSQL only: the rule stays in smrt's
+    // save-time check on SQLite and DuckDB (#4932).
+    const differing = Object.entries(SCHEMA_CHANGE_KINDS)
+      .filter(
+        ([, entry]) =>
+          new Set(Object.values(entry.engines).map((policy) => policy.decision))
+            .size > 1,
+      )
+      .map(([kind]) => kind)
+      .sort();
+    expect(differing).toEqual(['check.add', 'check.drop', 'check.violated']);
+  });
+
   it('validates every engine policy and rejects a synthetic non-data stop', () => {
     expect(validateChangeKindTable(SCHEMA_CHANGE_KINDS)).toEqual([]);
     const bad: SchemaChangeKind = {
@@ -471,7 +486,7 @@ describe('schema change policy coverage (#4925)', () => {
     const { partitionSchemaChanges } = await import(
       '../../../../cli/src/commands/db-migrate-actions.js'
     );
-    const changes: SchemaChange[] = [
+    const allChanges: SchemaChange[] = [
       ...postgresShapes.map(([, change]) => change),
       {
         type: 'orphan_column',
@@ -497,6 +512,13 @@ describe('schema change policy coverage (#4925)', () => {
       },
     ];
     for (const engine of ['postgres', 'sqlite', 'duckdb'] as const) {
+      // Only PostgreSQL carries the shared-table CHECK changes (#4932).
+      const changes = allChanges.filter(
+        (change) =>
+          engine === 'postgres' ||
+          (change.alteration !== 'set_check' &&
+            change.alteration !== 'drop_check'),
+      );
       const expected = changes.filter(
         (change) => decideSchemaChange(change, engine).decision === 'stop',
       );
@@ -620,7 +642,7 @@ describe.each([
     );
   });
 
-  it('classifies existing-column foreign keys as engine exceptions', async () => {
+  it('applies a foreign key on an existing column by rebuilding the table (#4937)', async () => {
     await db.query('CREATE TABLE parents (id TEXT PRIMARY KEY)');
     await db.query('CREATE TABLE items (id TEXT PRIMARY KEY, parent_id TEXT)');
     const current = schema({ parent_id: { type: 'TEXT' } });
@@ -632,9 +654,10 @@ describe.each([
       },
     ];
     const result = await diff(current);
-    expect(result.changes.map(classifySchemaChange)).toContain(
-      'foreign-key.add-unsupported',
-    );
+    expect(result.changes.map(classifySchemaChange)).toEqual([
+      'foreign-key.add',
+    ]);
+    expect(collectUnactionableChanges(result, engine)).toEqual([]);
   });
 
   it('classifies default changes and constraint tightening on empty tables', async () => {
@@ -647,9 +670,10 @@ describe.each([
         required: { type: 'TEXT', notNull: true },
       }),
     );
+    // SQLite carries both in one table rebuild (#4937).
     expect(result.changes.map(classifySchemaChange)).toEqual(
       engine === 'sqlite'
-        ? ['column.alter-unsupported', 'column.alter-unsupported']
+        ? ['column.set-default', 'column.rebuild-covered']
         : ['column.set-default', 'column.set-not-null'],
     );
   });
@@ -668,7 +692,7 @@ describe.each([
   });
 
   if (engine === 'sqlite') {
-    it('classifies a sibling rebuild note as report and an inbound-FK rebuild as a data stop', async () => {
+    it('classifies a sibling rebuild note as report and applies an inbound-FK rebuild (#4937)', async () => {
       await db.query(
         'CREATE TABLE items (id TEXT PRIMARY KEY, a INTEGER, b INTEGER)',
       );
@@ -680,12 +704,14 @@ describe.each([
       await db.query(
         'CREATE TABLE child (item_id TEXT REFERENCES items(id) ON DELETE CASCADE)',
       );
-      const blocked = await diff(current);
-      expect(blocked.changes.map(classifySchemaChange)).toEqual([
-        'type.rebuild-data-loss',
-        'type.rebuild-data-loss',
+      // The tracker turns foreign keys off around the rebuild, so a table
+      // other tables reference no longer stops the run.
+      const withChild = await diff(current);
+      expect(withChild.changes.map(classifySchemaChange)).toEqual([
+        'type.convert',
+        'type.noop',
       ]);
-      expect(collectUnactionableChanges(blocked, engine)).toHaveLength(2);
+      expect(collectUnactionableChanges(withChild, engine)).toEqual([]);
     });
 
     it('classifies sibling backfill tightening as an already-covered report', async () => {
@@ -706,7 +732,7 @@ describe.each([
       expect(collectUnactionableChanges(result, engine)).toEqual([]);
     });
 
-    it('classifies a required backfill rebuild with inbound foreign keys as a data stop', async () => {
+    it('applies a required backfill rebuild with inbound foreign keys (#4937)', async () => {
       await db.query('CREATE TABLE items (id TEXT PRIMARY KEY)');
       await db.query("INSERT INTO items VALUES ('one')");
       await db.query(
@@ -717,12 +743,10 @@ describe.each([
           required: { type: 'TEXT', notNull: true, backfill: "'row:' || id" },
         }),
       );
-      expect(result.changes.map(classifySchemaChange)).toEqual([
-        'column.rebuild-data-loss',
-      ]);
+      expect(result.changes.map(classifySchemaChange)).toEqual(['column.add']);
     });
 
-    it('classifies disabled and conflicting existing foreign keys as named exceptions', async () => {
+    it('replaces a conflicting foreign key and drops a disabled one by rebuilding (#4937)', async () => {
       await db.query('CREATE TABLE parents (id TEXT PRIMARY KEY)');
       await db.query(
         'CREATE TABLE items (id TEXT PRIMARY KEY, parent_id TEXT REFERENCES parents(id) ON DELETE CASCADE)',
@@ -736,13 +760,13 @@ describe.each([
           onDelete: 'NO ACTION',
         },
       ];
-      expect((await diff(current)).changes.map(classifySchemaChange)).toContain(
-        'foreign-key.conflicting',
-      );
+      expect((await diff(current)).changes.map(classifySchemaChange)).toEqual([
+        'foreign-key.add',
+      ]);
       current.foreignKeys[0].engines = ['postgres'];
-      expect((await diff(current)).changes.map(classifySchemaChange)).toContain(
-        'foreign-key.drop-unavailable',
-      );
+      expect((await diff(current)).changes.map(classifySchemaChange)).toEqual([
+        'foreign-key.drop',
+      ]);
     });
   }
 

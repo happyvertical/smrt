@@ -454,17 +454,16 @@ describe('schema orchestration', () => {
     expect(columns.find((c) => c.name === 'weight')?.type).toBe('REAL');
   });
 
-  it('still surfaces an unplannable SQLite type upgrade as unactionable drift', async () => {
-    // A child table with ON DELETE CASCADE makes the rebuild unsafe (the
-    // DROP TABLE step would cascade its rows away), so the differ keeps the
-    // advisory comment. The orchestrator must strip that comment from the
-    // executable statements and report the drift as manual.
+  it('rebuilds a SQLite table that other tables reference, keeping their rows (#4937)', async () => {
+    await db.query('PRAGMA foreign_keys = ON');
     await db.query(
       'CREATE TABLE documents (id TEXT PRIMARY KEY, score INTEGER);',
     );
     await db.query(
       'CREATE TABLE document_notes (id TEXT PRIMARY KEY, document_id TEXT REFERENCES documents(id) ON DELETE CASCADE);',
     );
+    await db.query("INSERT INTO documents VALUES ('d1', 3)");
+    await db.query("INSERT INTO document_notes VALUES ('n1', 'd1')");
 
     vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
       documents: {
@@ -481,12 +480,46 @@ describe('schema orchestration', () => {
       },
     });
 
+    const result = await migrateSmrtSchemas({ db, packageName: 'test' });
+    expect(result.applied).toBe(true);
+    expect(result.hasManualDrift).toBe(false);
+    expect((await db.query('SELECT id FROM document_notes')).rows).toEqual([
+      { id: 'n1' },
+    ]);
+    expect((await db.query('SELECT score FROM documents')).rows).toEqual([
+      { score: 3 },
+    ]);
+  });
+
+  it('still surfaces an unplannable SQLite change as unactionable drift', async () => {
+    // AUTOINCREMENT keeps a sequence that a rebuild would not carry over, so
+    // the differ keeps the advisory comment. The orchestrator must strip that
+    // comment from the executable statements and report the drift as manual.
+    await db.query(
+      'CREATE TABLE documents (id INTEGER PRIMARY KEY AUTOINCREMENT, score INTEGER);',
+    );
+
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+      documents: {
+        tableName: 'documents',
+        columns: {
+          id: { type: 'INTEGER', primaryKey: true },
+          score: { type: 'INTEGER', defaultValue: 5 },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
     const pending = await getPendingSchemaStatements(db);
 
     expect(pending.statements).toEqual([]);
     expect(pending.unactionableChanges).toHaveLength(1);
     expect(pending.hasManualDrift).toBe(true);
-    expect(pending.unactionableChanges[0].type).toBe('type_upgrade');
+    expect(pending.unactionableChanges[0].type).toBe('alter_column');
     expect(pending.unactionableChanges[0].name).toBe('score');
   });
 
@@ -620,15 +653,17 @@ describe('schema orchestration', () => {
       });
     }
 
-    // SQLite keeps relaxation opt-in: nothing is relaxed or reported by default.
+    // Dropping NOT NULL applies by default on every engine (#4937), so it is
+    // planned and reported without the opt-in.
     const pending = await getPendingSchemaStatements(db);
-    expect(pending.relaxedColumns).toEqual([]);
+    expect(pending.relaxedColumns).toEqual([
+      { table: 'notes', column: 'body', alteration: 'drop_not_null' },
+    ]);
 
     const result = await migrateSmrtSchemas({
       db,
       packageName: 'test',
       version: '1.0.0',
-      relaxColumns: true,
     });
     expect(result.applied).toBe(true);
     expect(result.relaxedColumns).toEqual([
