@@ -1,5 +1,10 @@
 import type { Workbook } from '@happyvertical/spreadsheets';
-import { checkLoaded, checkPlan, type ImportFacts } from './checks.js';
+import {
+  checkLoaded,
+  checkPlan,
+  type ImportFacts,
+  verificationWork,
+} from './checks.js';
 import { ImportRunError } from './errors.js';
 import { WorkBudget } from './evaluate.js';
 import { type Finding, hasErrors } from './findings.js';
@@ -25,12 +30,16 @@ export interface RunImportResult {
   /** Rows the target reports loading, per table. Empty when nothing was written. */
   loaded: Record<string, number>;
   plan: ImportPlan;
+  /** Work units spent, verification reservation included. */
+  work: number;
 }
 
 /**
  * First import of a workbook into an empty target: validate, admit, check,
- * build structure, load every batch, then prove the result by reading it back.
- * Adapter errors propagate untouched.
+ * plan the whole load, reserve the read-back work, and only then touch the
+ * target: build structure, load every batch, prove the result by reading it
+ * back. `work-over-limit` is therefore thrown before the first target call or
+ * not at all. Adapter errors propagate untouched.
  */
 export async function runImport(
   options: RunImportOptions,
@@ -56,8 +65,19 @@ export async function runImport(
       facts: planned.facts,
       loaded: {},
       plan,
+      work: budget.used,
     };
   }
+
+  // Everything that can exhaust the budget happens before the first call on
+  // the target: plan the whole load now, and reserve the read-back work.
+  const load = planLoad(plan, options.workbook, {
+    batchSize: options.batchSize,
+    limits: options.limits,
+    budget,
+  });
+  const batches = [...load.batches()];
+  budget.charge(verificationWork(plan, planned.facts));
 
   const structure = await options.target.describe();
   const existing = new Set(structure.tables.map((table) => table.key));
@@ -72,23 +92,18 @@ export async function runImport(
 
   await options.target.applyStructure(plan);
   const loaded: Record<string, number> = {};
-  const load = planLoad(plan, options.workbook, {
-    batchSize: options.batchSize,
-    limits: options.limits,
-    budget,
-  });
   for (const table of load.order) loaded[table] = 0;
-  for (const batch of load.batches()) {
+  for (const batch of batches) {
     const result = await options.target.load(batch);
     loaded[batch.table] += result.loaded;
   }
 
+  // Verification draws from the reservation: its own bounded accounting, no throw.
   const verified = await checkLoaded(
     plan,
     options.workbook,
     options.target,
     planned.facts,
-    budget,
   );
   const findings = [...planned.findings, ...verified.findings];
   return {
@@ -97,5 +112,6 @@ export async function runImport(
     facts: planned.facts,
     loaded,
     plan,
+    work: budget.used,
   };
 }

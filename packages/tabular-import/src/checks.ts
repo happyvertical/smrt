@@ -316,6 +316,25 @@ function cachedAgrees(
 }
 
 /**
+ * The most work `checkLoaded` can spend for these planned counts. `runImport`
+ * reserves it before its first call on the target, so verification can never
+ * exhaust the budget after something was written.
+ */
+export function verificationWork(plan: ImportPlan, facts: ImportFacts): number {
+  let work = 0;
+  for (const table of plan.tables) {
+    const planned = facts.tables[table.key]?.planned ?? 0;
+    const calculated = table.fields.filter((f) => f.calculated !== undefined);
+    const summed = table.fields.filter(
+      (f) => f.column !== undefined && SUMMED.has(f.type),
+    );
+    work += 1 + summed.length;
+    if (calculated.length > 0) work += (planned + 1) * (1 + calculated.length);
+  }
+  return work;
+}
+
+/**
  * After a load: row counts, column sums and every calculated field with a
  * cached column, read back from the target and compared with the workbook.
  */
@@ -324,7 +343,7 @@ export async function checkLoaded(
   workbook: Workbook,
   target: ImportTarget,
   facts: ImportFacts,
-  budget: WorkBudget = new WorkBudget(DEFAULT_IMPORT_LIMITS.maxWork),
+  budget: WorkBudget = new WorkBudget(Number.POSITIVE_INFINITY),
 ): Promise<CheckResult> {
   const sink = new FindingSink();
   for (const table of plan.tables) {
@@ -361,7 +380,7 @@ export async function checkLoaded(
         });
       }
     }
-    await checkCalculated(table, workbook, target, sink, budget);
+    await checkCalculated(table, workbook, target, sink, budget, planned + 1);
   }
   const findings = sink.list();
   return { ok: !hasErrors(findings), findings };
@@ -373,15 +392,20 @@ async function checkCalculated(
   target: ImportTarget,
   sink: FindingSink,
   budget: WorkBudget,
+  maxRows: number,
 ): Promise<void> {
   const sheet = workbook.sheets.find((s) => s.name === table.source.sheet);
   const calculated = table.fields.filter((f) => f.calculated !== undefined);
   if (calculated.length === 0) return;
   // One pass over the stored rows for every calculated field of the table.
+  // Bounded by planned rows + 1: a target holding more is a row-count-mismatch
+  // (reported from count()), never unbounded work.
+  let seen = 0;
   for await (const row of target.values(
     table.key,
     calculated.map((f) => f.key),
   )) {
+    if (++seen > maxRows) break;
     budget.charge(1 + calculated.length);
     for (const field of calculated) {
       const column = field.cachedColumn;

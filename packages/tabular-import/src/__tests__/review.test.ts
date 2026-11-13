@@ -355,3 +355,151 @@ describe('per-row work is linear in the cells read', () => {
     }
   });
 });
+
+describe('work-over-limit is thrown before the first target call or not at all', () => {
+  const plan = planOf([
+    {
+      key: 't',
+      label: 'T',
+      source: { sheet: 'S', range: 'A1:C3', headerRow: 1 },
+      fields: [
+        { key: 'name', label: 'Name', type: 'text', column: 1 },
+        { key: 'x', label: 'X', type: 'integer', column: 2 },
+        {
+          key: 'y',
+          label: 'Y',
+          type: 'integer',
+          calculated: { op: 'add', left: col('x'), right: lit(1) },
+          cachedColumn: 3,
+        },
+      ],
+    },
+  ]);
+  const workbook = () =>
+    workbookOf(
+      sheetOf('S', [
+        ['N', 'X', 'Y'],
+        ['a', 1, 2],
+        ['b', 2, 3],
+      ]),
+    );
+
+  /** The reference target with every call recorded. */
+  async function spied() {
+    const real = await createSqliteReferenceTarget();
+    const calls: string[] = [];
+    const target = new Proxy(real, {
+      get: (obj, name, receiver) => {
+        const value = Reflect.get(obj, name, receiver);
+        if (typeof value !== 'function' || name === 'close') return value;
+        return (...args: unknown[]) => {
+          calls.push(String(name));
+          return value.apply(obj, args);
+        };
+      },
+    });
+    return { real, target, calls };
+  }
+
+  it('sweeps maxWork from 1 to the full cost: succeed, or refuse with zero target calls', async () => {
+    const full = await spied();
+    let total: number;
+    try {
+      const result = await runImport({
+        plan,
+        workbook: workbook(),
+        target: full.target,
+      });
+      expect(result.ok).toBe(true);
+      total = result.work;
+    } finally {
+      await full.real.close();
+    }
+    expect(total).toBeGreaterThan(10);
+
+    let refused = 0;
+    for (let maxWork = 1; maxWork <= total; maxWork++) {
+      const run = await spied();
+      try {
+        const outcome: unknown = await runImport({
+          plan,
+          workbook: workbook(),
+          target: run.target,
+          limits: { maxWork },
+        }).then(
+          (result) => result,
+          (error: unknown) => error,
+        );
+        if (outcome instanceof Error) {
+          refused++;
+          expect(outcome).toMatchObject({ code: 'work-over-limit' });
+          expect(run.calls, `maxWork ${maxWork}`).toEqual([]);
+        } else {
+          expect((outcome as { ok: boolean }).ok, `maxWork ${maxWork}`).toBe(
+            true,
+          );
+          expect(await run.real.count('t')).toBe(2);
+        }
+      } finally {
+        await run.real.close();
+      }
+    }
+    // The boundary is real: the cheapest budgets refuse, and exactly `total` succeeds.
+    expect(refused).toBeGreaterThan(0);
+    const exact = await spied();
+    try {
+      const result = await runImport({
+        plan,
+        workbook: workbook(),
+        target: exact.target,
+        limits: { maxWork: total },
+      });
+      expect(result.ok).toBe(true);
+    } finally {
+      await exact.real.close();
+    }
+  });
+
+  it('reports a target that returns extra rows as a finding, never a budget error', async () => {
+    const real = await createSqliteReferenceTarget();
+    const greedy: ImportTarget = {
+      describe: () => real.describe(),
+      applyStructure: (p) => real.applyStructure(p),
+      load: (b) => real.load(b),
+      sum: (t, f) => real.sum(t, f),
+      count: async (t) => (await real.count(t)) + 3,
+      async *values(t, f, r) {
+        for await (const row of real.values(t, f, r)) yield row;
+        for (let i = 0; i < 1000; i++) {
+          yield { sourceRow: 100 + i, values: { y: 0 } };
+        }
+      },
+    };
+    try {
+      const probeTarget = await createSqliteReferenceTarget();
+      const probe = await runImport({
+        plan,
+        workbook: workbook(),
+        target: probeTarget,
+      }).finally(() => probeTarget.close());
+      const result = await runImport({
+        plan,
+        workbook: workbook(),
+        target: greedy,
+        limits: { maxWork: probe.work },
+      });
+      expect(result.ok).toBe(false);
+      expect(result.findings.map((f) => f.code)).toContain(
+        'row-count-mismatch',
+      );
+      expect(
+        result.findings.find((f) => f.code === 'row-count-mismatch'),
+      ).toMatchObject({
+        expected: 2,
+        actual: 5,
+      });
+    } finally {
+      await real.close();
+    }
+  });
+});

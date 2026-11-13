@@ -5,10 +5,10 @@ description: "Validated import plans, workbook checks and a batch-loading orches
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-13T19:19:42Z"
+  at: "2026-11-13T19:41:25Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:845dd7c8be4b337bc825ba808e0d225c1e9d8d1afa2d814f34b24609461c0b39"
+source_revision: "sha256:59f65a32e6bcb9c91894ef32e4f5259486047c1f8960075dc97599728363dfa6"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/tabular-import/package.json"

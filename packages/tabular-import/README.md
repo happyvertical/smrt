@@ -85,6 +85,8 @@ The `/testing` entry is Node-only; the root entry is browser-safe.
 Workbooks over 250,000 cells or tables over 10,000 rows are refused before any
 row is read (`admit`). The cell limit is provisional. Reading is bounded by
 occupied cells, not range size, and by a work budget (`maxWork`, refusal
-`work-over-limit`). Plans are bounded too:
+`work-over-limit`). That refusal comes before the first call on your target,
+`describe()` included, or not at all: `runImport` plans the whole load and reserves
+the work for reading it back before it writes anything. Plans are bounded too:
 200 tables, 500 fields per table, 2 MB of JSON; all can be raised through
 `validatePlan(plan, limits)`.

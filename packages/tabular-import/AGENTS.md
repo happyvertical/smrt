@@ -45,7 +45,11 @@ name either. No `@smrt()` objects, no tables, no Svelte.
   choice sets, column lists, insert SQL) is resolved once before rows are visited;
   never `.find`/`.includes` over plan data inside a row or cell loop. Every
   per-row, per-cell and per-reference unit is charged to one `WorkBudget` that
-  `runImport` shares across checking, planning and verifying.
+  `runImport` shares across checking, planning and verifying. `work-over-limit`
+  is thrown before the first call on the target (`describe()` included) or never:
+  `runImport` plans every batch up front and reserves the read-back work
+  (`verificationWork`) before touching the target; read-back is bounded by planned
+  rows + 1, and extra rows are a `row-count-mismatch`, never a budget error.
 - `checkLoaded` value-checks every calculated integer, money and number field
   (`calculated-invalid`: not a whole safe integer / not finite) with or without a
   `cachedColumn`. Integer and money comparisons are exact; tolerance is for `number`.
