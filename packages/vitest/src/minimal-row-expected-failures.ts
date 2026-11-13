@@ -893,7 +893,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'intakeItemId',
       error: 'Extraction requires an intake item',
       reason:
-        'packages/education/src/question-extraction-models.ts: QuestionExtractionRecord requires nonempty intakeItemId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'packages/education/src/question-extraction-service.ts:230-234 keys preserve replays by tenant, intakeItemId and analysisAttemptId; question-extraction-models.ts:117-122 also demands attempt, source identity, digests and actor. Keep this first-failure entry until those optional prerequisites are audited together; promoting intakeItemId alone exposes a different unledgered failure.',
     },
     {
       model: '@happyvertical/smrt-education:ExtractedQuestionLink',
@@ -901,7 +901,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'extractionId.intakeItemId',
       error: 'Extraction requires an intake item',
       reason:
-        'packages/education/src/question-extraction-models.ts: QuestionExtractionRecord requires nonempty intakeItemId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'packages/education/src/question-extraction-service.ts:230-234 keys parent extraction replays by intakeItemId and attempt; question-extraction-models.ts:117-122 demands additional optional parent values. Keep the nested first-failure entry until the parent prerequisite chain is audited together.',
     },
     {
       model: '@happyvertical/smrt-education:LearningObjective',
@@ -909,7 +909,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'externalKey',
       error: 'Objective requires a key',
       reason:
-        'packages/education/src/question-models.ts: LearningObjective requires nonempty externalKey although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'packages/education/src/question-authoring-service.ts:778-781 resolves objective identity by tenant and externalKey; question-models.ts:96-97 also demands optional author and requestKey. Keep this first-failure entry pending coordinated audit of those remaining prerequisites; declaring externalKey alone does not make the minimal row pass.',
     },
     {
       model: '@happyvertical/smrt-education:LearningObjectiveRevision',
@@ -917,7 +917,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'objectiveId.externalKey',
       error: 'Objective requires a key',
       reason:
-        'packages/education/src/question-models.ts: LearningObjective requires nonempty externalKey although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'packages/education/src/question-authoring-service.ts:778-781 resolves the parent objective by externalKey; question-models.ts:96-97 demands further optional parent values. Keep the nested first-failure entry until the objective prerequisite chain is audited together.',
     },
     {
       model: '@happyvertical/smrt-education:Question',
@@ -925,7 +925,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'createdByUserId',
       error: 'Question requires an author',
       reason:
-        'packages/education/src/question-models.ts: Question requires nonempty createdByUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'packages/education/src/question-models.ts:204 requires author attribution, but repository readers do not use createdByUserId for lookup, authorization or replay; :205 then demands optional requestKey. Keep the entry pending a decision on the author-attribution invariant and audit of the remaining guard; none of the five reasons clearly names attribution alone.',
     },
     {
       model: '@happyvertical/smrt-education:QuestionRevision',
@@ -933,7 +933,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'questionId.createdByUserId',
       error: 'Question requires an author',
       reason:
-        'packages/education/src/question-models.ts: Question requires nonempty createdByUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'packages/education/src/question-models.ts:204 requires parent Question author attribution, with no downstream identity, authorization or replay use found; :205 also requires optional requestKey. Keep this nested entry pending the parent attribution decision and remaining-guard audit.',
     },
     {
       model: '@happyvertical/smrt-education:QuestionResponse',
@@ -950,7 +950,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'lessonRevisionId',
       error: 'Question record parent ownership mismatch',
       reason:
-        'GeneratedPrintable code requires lessonRevisionId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'packages/education/src/question-models.ts:451 loads lessonRevisionId under the tenant as provenance, but this plain text field has no relationship metadata for the minimal-row parent builder. Keep the entry pending a decision on representing or supplying that exact revision; removing the ownership check would weaken provenance.',
     },
     {
       model: '@happyvertical/smrt-education:Submission',
