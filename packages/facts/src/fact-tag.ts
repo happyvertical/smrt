@@ -17,10 +17,10 @@ import type { FactTagOptions } from './types';
   cli: { skipApiCheck: true },
 })
 export class FactTag extends SmrtObject {
-  @foreignKey('Fact', { required: true })
+  @foreignKey('Fact', { required: true, requiredFor: 'identity' })
   factId: string = '';
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   tagSlug: string = '';
 
   @field()

@@ -170,7 +170,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       model: '@happyvertical/smrt-expenses:Expense',
       field: 'currency',
       reason:
-        "Model validation rejects empty/default currency: currency must be a three-letter ISO 4217 code (for example 'USD'), got ''.",
+        'Expense totals group by currency (ExpenseCollection.ts:346), and commitment/refund guards compare it (Expense.ts:1198,1332); no requiredFor value describes a monetary unit. Keep this exception pending that decision.',
       error:
         "currency must be a three-letter ISO 4217 code (for example 'USD'), got ''.",
     },
@@ -178,7 +178,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       model: '@happyvertical/smrt-facts:Fact',
       field: 'catalogSearch',
       reason:
-        'The persistence normalizer fills catalogSearch from required text; the stored search column differs from its empty default.',
+        'Fact.normalizePersistenceData derives catalogSearch from serialized text (fact.ts:142-149); the helper expects optional defaults to survive, but this read-only column must be recomputed for correct catalog queries. It is not caller-required.',
       error: 'optional field catalogSearch read back populated',
     },
     {
@@ -1102,7 +1102,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       error:
         "currency must be a three-letter ISO 4217 code (for example 'USD'), got ''.",
       reason:
-        'Expense guard requires nonempty currency despite optional metadata. Required-parent path: sourceExpenseId.',
+        'The Expense parent needs currency for per-currency totals and commitment/refund comparisons (ExpenseCollection.ts:346; Expense.ts:1198,1332); no requiredFor value describes a monetary unit. Required-parent path: sourceExpenseId.',
     },
     {
       model: '@happyvertical/smrt-expenses:ExpenseAllocationPortion',
@@ -1111,7 +1111,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       error:
         "currency must be a three-letter ISO 4217 code (for example 'USD'), got ''.",
       reason:
-        'Expense guard requires nonempty currency despite optional metadata. Required-parent path: sourceExpenseId.',
+        'The Expense parent needs currency for per-currency totals and commitment/refund comparisons (ExpenseCollection.ts:346; Expense.ts:1198,1332); no requiredFor value describes a monetary unit. Required-parent path: sourceExpenseId.',
     },
     {
       model: '@happyvertical/smrt-expenses:ExpenseAllocationBilling',
@@ -1120,7 +1120,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       error:
         "currency must be a three-letter ISO 4217 code (for example 'USD'), got ''.",
       reason:
-        'Expense guard requires nonempty currency despite optional metadata. Required-parent path: sourceExpenseId.',
+        'The Expense parent needs currency for per-currency totals and commitment/refund comparisons (ExpenseCollection.ts:346; Expense.ts:1198,1332); no requiredFor value describes a monetary unit. Required-parent path: sourceExpenseId.',
     },
     {
       model: '@happyvertical/smrt-expenses:ExpenseReceipt',
@@ -1129,7 +1129,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       error:
         "currency must be a three-letter ISO 4217 code (for example 'USD'), got ''.",
       reason:
-        'Expense guard requires nonempty currency despite optional metadata. Required-parent path: expenseId.',
+        'The Expense parent needs currency for per-currency totals and commitment/refund comparisons (ExpenseCollection.ts:346; Expense.ts:1198,1332); no requiredFor value describes a monetary unit. Required-parent path: expenseId.',
     },
     {
       model: '@happyvertical/smrt-fields:FieldPolicy',
