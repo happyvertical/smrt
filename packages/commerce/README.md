@@ -219,10 +219,12 @@ report eligibility is unchanged.
 The existing leaf qualified names and the `contracts` table stay the same; a
 `db:migrate --dry-run` against a v0.55.19 schema reports no DDL changes on
 SQLite or PostgreSQL. Sales leaves no longer accept `vendorId`; purchase leaves
-no longer accept `customerId`. `Order`, `Estimate`, `Agreement`, `Lease`, and
-`WholesaleOrder` require a customer on save. `PurchaseOrder` and `SupplierQuote`
-require a vendor.
-`Cart`, `LicenseSale`, and `ProductionOrder` retain optional parties on their side.
+no longer accept `customerId`. smrt does not require a customer on `Order`,
+`Estimate`, `Agreement`, `Lease`, or `WholesaleOrder`, or a vendor on
+`PurchaseOrder` or `SupplierQuote` (#4935): its own code guards an empty party
+link. An app that needs the party hardens the field in a same-named subclass
+(`required: true`). `Estimate` conversion still refuses an estimate with no
+customer.
 
 Before upgrading existing data, run the read-only
 `preflightCommercePartyLinks(db)` and inspect its stray party links, missing
@@ -241,9 +243,9 @@ the correct leaf, assign it to the document's tenant, or repair the link before
 deployment. The deprecated `ContractCollection` party finders now return the
 appropriate branch
 only, so retype legacy base rows with party links before relying on those
-finders. Clear stray party columns and fill required parties before deploying
-writers that save affected rows. Missing required parties remain readable but
-fail their next save. Regenerate cached manifests, planner catalogs, and
+finders. Clear stray party columns before deploying writers that save affected rows.
+Rows listed as missing a customer or vendor still save; the list is for an app
+that hardened the party field. Regenerate cached manifests, planner catalogs, and
 generated screens after upgrading.
 This preflight never edits rows; an operator chooses the data correction.
 

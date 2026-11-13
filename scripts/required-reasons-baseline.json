@@ -1,12 +1,4 @@
 {
   "comment": "Required fields in smrt packages with no requiredFor reason (#4923). This list may only shrink: give a field a reason or relax it, then run `node scripts/check-required-reasons.mjs --prune`.",
-  "unexplained": [
-    "packages/commerce/src/models/Contract.ts#Agreement.customerId",
-    "packages/commerce/src/models/Contract.ts#Estimate.customerId",
-    "packages/commerce/src/models/Contract.ts#Lease.customerId",
-    "packages/commerce/src/models/Contract.ts#Order.customerId",
-    "packages/commerce/src/models/Contract.ts#PurchaseOrder.vendorId",
-    "packages/commerce/src/models/Contract.ts#SupplierQuote.vendorId",
-    "packages/commerce/src/models/Contract.ts#WholesaleOrder.customerId"
-  ]
+  "unexplained": []
 }
