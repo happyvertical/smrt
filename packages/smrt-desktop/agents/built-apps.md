@@ -127,3 +127,13 @@ next client launch. The config must be a bounded regular private user-owned file
 POSIX symlinks are refused. The default launcher without credentialPath retains
 its existing holder-rotation contract. Node/bridge containment, origin discovery,
 health probing, environment-only credential handoff and redaction are unchanged.
+
+Unused package-root `template` and `templates` directories are pruned like
+examples and documentation. This removes scaffold-only environment examples
+from runtime dependencies before secret inspection, without exempting any
+secret filename. Explicit `smrt.resourceExports` copied-directory declarations are not runtime
+entrypoints (the same contract as the packed-export verifier). Runtime exports
+and traced runtime assets retain their
+existing protection; a retained environment file still refuses the bundle.
+The pruning regression covers both folder spellings, referenced assets,
+entrypoints, nested runtime directories and retained-secret refusal.
