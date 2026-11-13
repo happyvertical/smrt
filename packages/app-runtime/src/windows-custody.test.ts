@@ -10,7 +10,7 @@
 
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, win32 } from 'node:path';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runWithCustodyContext } from './custody-context.js';
@@ -226,6 +226,29 @@ describe('W1 lexical rule (WT5: aliases, devices, streams)', () => {
     expect(() => validateWindowsPath(`C:\\${'a'.repeat(250)}`, 'p')).toThrow(
       /longer than/,
     );
+  });
+
+  it('boots the generic wrapper path under a shallow Windows test profile', () => {
+    const identifier = 'placeholder.invalid.smrt-desktop-wrapper';
+    const dataDirectory = (home: string) =>
+      win32.join(home, 'AppData', 'Local', identifier, 'runtime');
+    // The CI checkout-relative profile fails W1 before any ACL inspector runs.
+    const deep = dataDirectory(
+      'D:\\a\\smrt\\smrt\\packages\\vitest\\node_modules\\.cache\\test-homes\\home-AbCdEf',
+    );
+    expect(deep.length).toBe(136);
+    expect(() =>
+      resolveLocalRuntimePaths(windowsOptions({ dataDirectory: deep })),
+    ).toThrow(/longer than 130 UTF-16 units/);
+    // installTestHome uses the OS temp directory on Windows, leaving the
+    // unchanged 110-unit derived-file reserve within the 240-unit ceiling.
+    const shallow = dataDirectory(
+      'C:\\Users\\runneradmin\\AppData\\Local\\Temp\\home-AbCdEf',
+    );
+    expect(shallow.length).toBe(114);
+    expect(
+      resolveLocalRuntimePaths(windowsOptions({ dataDirectory: shallow })).root,
+    ).toBe(shallow);
   });
 
   it('accepts and canonicalises a plain path', () => {

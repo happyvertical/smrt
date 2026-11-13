@@ -17,9 +17,15 @@ including operator CLIs, launchers and sidecars. Do not drop these variables
 when constructing a child environment. Do not use `userInfo().homedir` for
 writable fixtures; `homedir()` reads the isolated HOME.
 
-The home is a unique directory in this package's `node_modules/.cache/test-homes`,
-outside `/tmp` so custody tests that distrust `/tmp` still exercise their original
-ancestry checks. Teardown restores the caller's environment and recursively
+On POSIX the home is a unique directory in this package's
+`node_modules/.cache/test-homes`, outside `/tmp` so custody tests that distrust
+`/tmp` still exercise their original ancestry checks. On Windows it is a unique
+directory directly under the OS `tmpdir()`: the checkout-relative profile on
+GitHub Actions makes the generic wrapper's data root 136 UTF-16 units, exceeding
+the runtime's unchanged 130-unit root budget (240 minus 110 reserved for derived
+files). The shallow profile fits without relaxing path or DACL rules; AppData
+bases still belong only to that disposable profile.
+Teardown restores the caller's environment and recursively
 removes only that owned directory. An exit hook is a fallback for normal process
 exit; SIGKILL cannot run JavaScript cleanup.
 

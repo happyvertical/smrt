@@ -7,7 +7,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { installTestHome, testHomeEnvironment } from '../test-home.js';
@@ -24,6 +24,43 @@ const names = [
 ];
 
 describe('test home isolation', () => {
+  it('keeps Windows profiles shallow while preserving isolation and cleanup', () => {
+    const source = new URL('../test-home.ts', import.meta.url).href;
+    const result = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          '--input-type=module',
+          '-e',
+          `
+        import { realpathSync, existsSync } from 'node:fs';
+        import { tmpdir } from 'node:os';
+        const parent = realpathSync(tmpdir());
+        Object.defineProperty(process, 'platform', { value: 'win32' });
+        const { installTestHome } = await import(${JSON.stringify(source)});
+        const before = process.env.HOME;
+        const guard = process.env.SMRT_FORBIDDEN_STATE_BASES;
+        const dispose = installTestHome();
+        const home = process.env.HOME;
+        const basesExist = existsSync(process.env.LOCALAPPDATA) && existsSync(process.env.APPDATA);
+        const guardPreserved = process.env.SMRT_FORBIDDEN_STATE_BASES === guard;
+        dispose();
+        console.log(JSON.stringify({ parent, home, basesExist, guardPreserved,
+          removed: !existsSync(home), restored: process.env.HOME === before }));
+      `,
+        ],
+        { encoding: 'utf8' },
+      ),
+    );
+    expect(dirname(result.home)).toBe(result.parent);
+    expect(result).toMatchObject({
+      basesExist: true,
+      guardPreserved: true,
+      removed: true,
+      restored: true,
+    });
+  });
+
   it('records the real account bases before a Node runner replaces its home', () => {
     const env = { ...process.env };
     delete env.SMRT_FORBIDDEN_STATE_BASES;

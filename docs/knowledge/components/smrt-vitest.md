@@ -5,10 +5,10 @@ description: "Vitest plugin for automatic cross-package manifest loading in SMRT
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-13T07:22:22Z"
+  at: "2026-11-13T09:33:35Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:2974844cfec625fc37bc0b009b0a7a879c5d52247ad3cab75f44f22ae25fb883"
+source_revision: "sha256:d3e43c24350a1355a54d990be9638a7e371d4be9d85fa0b971d1bc51d1e26681"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/vitest/package.json"

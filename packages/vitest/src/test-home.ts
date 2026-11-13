@@ -1,6 +1,6 @@
 /** Test-owned home/state storage, shared by Vitest, Node tests and e2e runners. */
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
-import { homedir, userInfo } from 'node:os';
+import { homedir, tmpdir, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -43,13 +43,17 @@ export function testHomeEnvironment(): Record<string, string> {
 
 /**
  * Install before workers start: even launchers with NODE_ENV=production inherit
- * the isolated OS paths. Keep custody roots outside /tmp (untrusted-parent tests).
+ * the isolated OS paths. POSIX custody fixtures stay outside untrusted /tmp;
+ * Windows uses a shallow OS temp profile to preserve the runtime path budget.
  * Teardown restores the caller and removes only the mkdtemp directory we own.
  */
 export function installTestHome(): () => void {
-  const parent = fileURLToPath(
-    new URL('../node_modules/.cache/test-homes/', import.meta.url),
-  );
+  const parent =
+    process.platform === 'win32'
+      ? tmpdir()
+      : fileURLToPath(
+          new URL('../node_modules/.cache/test-homes/', import.meta.url),
+        );
   mkdirSync(parent, { recursive: true });
   const home = mkdtempSync(join(realpathSync(parent), 'home-'));
   const environment = {
