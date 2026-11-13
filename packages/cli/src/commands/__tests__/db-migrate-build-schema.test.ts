@@ -127,6 +127,25 @@ describe('db:migrate records the build, not the install (rv1, real SQLite)', () 
     rmSync(project, { recursive: true, force: true });
   });
 
+  it('a dev install then a production install without C record the same packages and never stop', async () => {
+    await migrate();
+    expect(process.exitCode ?? 0).toBe(0);
+    const first = await withDb((db) => readLastMigrateRecord(db));
+    expect(first).toMatchObject({
+      state: 'recorded',
+      record: {
+        packages: ['@rv1/smrt-a', '@rv1/smrt-b'],
+        fingerprint: build.schemaFingerprint,
+      },
+    });
+
+    rmSync(join(project, 'node_modules/@rv1/smrt-c'), { recursive: true });
+    const out = await migrate();
+    expect(process.exitCode ?? 0).toBe(0);
+    expect(out).not.toContain('Migrate stopped');
+    expect(await withDb((db) => readLastMigrateRecord(db))).toEqual(first);
+  });
+
   it('probe: after the CLI migrate, a production process that loaded only A starts', async () => {
     await migrate();
     expect(process.exitCode ?? 0).toBe(0);

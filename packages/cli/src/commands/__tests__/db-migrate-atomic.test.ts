@@ -185,6 +185,11 @@ vi.mock('@happyvertical/smrt-core', () => ({
     packages: [],
     fingerprint: 'fixture',
   })),
+  packagesSeenInput: vi.fn(() => ({
+    recorded: null,
+    current: [],
+    confirmedRemoved: [],
+  })),
   readLastMigrateRecord: vi.fn(async () => ({ state: 'none' })),
   recordSuccessfulMigrate: vi.fn(async () => {}),
   ObjectRegistry: {

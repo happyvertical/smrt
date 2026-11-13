@@ -111,8 +111,10 @@ export {
   type MigrateRecord,
   type MigrateRecordInput,
   type MigrateRecordOptions,
+  packagesSeenInput,
   readLastMigrateRecord,
   recordSuccessfulMigrate,
+  type UnloadedBuildPackage,
 } from './migrate-record.js';
 // Cross-process serialization of db:migrate runs (#3634)
 export {

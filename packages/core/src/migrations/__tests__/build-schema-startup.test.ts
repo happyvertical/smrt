@@ -214,6 +214,94 @@ describe('the build schema decides migrate records and startup (rv1)', () => {
     }
   });
 
+  it('an installed package outside the build stays out of the record and never stops a later run', async () => {
+    deploy(buildManifest([A, B]));
+    // The CLI loads every installed manifest, C included.
+    newProcess(A, B, C);
+    await migrateSmrtSchemas({ db, packageName: 'rv1-app' });
+    expect(await readLastMigrateRecord(db)).toMatchObject({
+      record: {
+        packages: ['@rv1/smrt-a', '@rv1/smrt-b'],
+        fingerprint: buildManifest([A, B]).schemaFingerprint,
+      },
+    });
+    // A production install without C, and the app itself, see the same.
+    newProcess(A, B);
+    const result = await migrateSmrtSchemas({ db, packageName: 'rv1-app' });
+    expect(result.refused).toBe(false);
+    expect(result.packageStops).toEqual([]);
+    newProcess(A);
+    const app = await newDatabaseHandle();
+    try {
+      await expect(assertDatabaseMigratedForBuild(app)).resolves.toBe(
+        undefined,
+      );
+    } finally {
+      await app.close?.();
+    }
+  });
+
+  it('two writers that load different package sets alternate without a stop or a new record', async () => {
+    deploy(buildManifest([A, B]));
+    for (let round = 0; round < 2; round++) {
+      newProcess(A, B, C); // the CLI: every installed package
+      expect(
+        (await migrateSmrtSchemas({ db, packageName: 'rv1-app' })).refused,
+      ).toBe(false);
+      newProcess(B, A); // the app's own migrateSmrtSchemas
+      const inApp = await migrateSmrtSchemas({ db, packageName: 'rv1-app' });
+      expect(inApp.refused).toBe(false);
+      expect(inApp.packageStops).toEqual([]);
+    }
+    expect(await runs()).toBe(1);
+  });
+
+  it('a writer that has not loaded a build package stops and cannot confirm it away', async () => {
+    deploy(buildManifest([A, B]));
+    newProcess(A, B);
+    await migrateSmrtSchemas({ db, packageName: 'rv1-app' });
+    const before = await readLastMigrateRecord(db);
+    newProcess(A);
+    for (const confirm of [[], ['@rv1/smrt-b']]) {
+      const result = await migrateSmrtSchemas({
+        db,
+        packageName: 'rv1-app',
+        confirmRemovedPackages: confirm,
+      });
+      expect(result.refused).toBe(true);
+      expect(result.packageStops).toEqual([
+        {
+          packageName: '@rv1/smrt-b',
+          message: expect.stringContaining(
+            'part of this build, but this run has not loaded its tables (rv1_gadgets)',
+          ),
+        },
+      ]);
+    }
+    expect(await readLastMigrateRecord(db)).toEqual(before);
+  });
+
+  it('a package removed from the build still needs --confirm-removed-package (P5)', async () => {
+    deploy(buildManifest([A, B]));
+    newProcess(A, B);
+    await migrateSmrtSchemas({ db, packageName: 'rv1-app' });
+    deploy(buildManifest([A]));
+    newProcess(A);
+    const refused = await migrateSmrtSchemas({ db, packageName: 'rv1-app' });
+    expect(refused.packageStops.map((stop) => stop.message)).toEqual([
+      expect.stringContaining('--confirm-removed-package @rv1/smrt-b'),
+    ]);
+    const confirmed = await migrateSmrtSchemas({
+      db,
+      packageName: 'rv1-app',
+      confirmRemovedPackages: ['@rv1/smrt-b'],
+    });
+    expect(confirmed.refused).toBe(false);
+    expect(await readLastMigrateRecord(db)).toMatchObject({
+      record: { packages: ['@rv1/smrt-a'] },
+    });
+  });
+
   it('an old copy restarted after a newer migrate is refused', async () => {
     const v1 = buildManifest([A, B]);
     const v2 = buildManifest([A, B], [B]);
@@ -375,8 +463,9 @@ describe('the build schema decides migrate records and startup (rv1)', () => {
     expect(collectMigrateRecordInput().build).toBeUndefined();
     registerBuildSchema(buildManifest([A]));
     expect(collectMigrateRecordInput()).toMatchObject({
+      packages: ['@rv1/smrt-a'],
       fingerprint: buildManifest([A]).schemaFingerprint,
-      build: { source: 'registered' },
+      build: { source: 'registered', unloaded: [] },
     });
   });
 });

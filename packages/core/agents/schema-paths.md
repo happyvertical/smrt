@@ -1234,9 +1234,8 @@ Adding live trigger generation requires a migration rollout design.
 
 `migrations/migrate-record.ts` owns `_smrt_migrate_runs`, provisioned by
 `ensureSystemTables` (system schema 1.16.0). A successful whole-schema migrate,
-including an already-current database, records the core release, sorted unique
-packages seen in the registry (`<unqualified>` for classes without a package),
-and the build's fingerprint (below). Failed, stopped, and dry runs never stamp
+including an already-current database, records the core release, the build's
+packages and fingerprint (below). Failed, stopped, and dry runs never stamp
 it. Identical release/packages/fingerprint skip the insert; changed values append
 and preserve history. This permanent ledger has no retention/prune task.
 `readLastMigrateRecord` is SELECT-only and returns `state: 'none'` for an absent
@@ -1249,9 +1248,9 @@ handle while its migration lock is held; it also works without a tracker.
 `migrations/build-schema.ts`. The build is the app's project manifest: the
 first of `PROJECT_MANIFEST_PATHS` (`dist/manifest.json`, `.smrt/manifest.json`,
 `src/manifest/manifest.json`), the file `smrt db:migrate` already requires.
-`describeManifestSchema(manifest)` gives its stamp (`schemaFingerprint`) and
-its tables with their owning packages (framework base classes and collections
-own none). `resolveBuildSchema()` finds
+`describeManifestSchema(manifest)` gives its stamp (`schemaFingerprint`), its
+tables with their owning packages, and the packages that contribute tables
+(framework base classes and collections own none). `resolveBuildSchema()` finds
 it: a registered build (`registerBuildSchema(manifest)`; CLI discovery
 registers the project manifest it found), else the file in
 `SMRT_BUILD_MANIFEST`, else the project manifest under the working directory.
@@ -1260,11 +1259,17 @@ Under `NODE_ENV=test` only the first two count.
 `collectMigrateRecordInput(build = resolveBuildSchema())` is the one input for
 both writers (CLI and `migrateSmrtSchemas`): `fingerprint` is
 `computeSchemaFingerprint` over the planned schema restricted to the build's
-tables, equal to the stamp when declarations agree, whatever else the process
-loaded. With no build, the whole planned schema is recorded, as before.
+tables (equal to the stamp when declarations agree), `packages` is the build's
+list. So the CLI, the app's own migrate, a dev install and a production install
+all record the same values. A build table the run has not planned is an
+unconfirmable package stop ("part of this build, but this run has not loaded
+its tables"). All tables planned but a different shape (installed packages
+newer than the build) proceeds with a notice that the build will be refused
+until rebuilt. With no build, the whole planned schema and every registered
+class's package are recorded, as before.
 
-`migrateSmrtSchemas()` compares the last record's packages with
-`collectMigrateRecordInput().packages` before tracker bootstrap or apply.
+`migrateSmrtSchemas()` and the CLI pass `packagesSeenInput(current, last,
+confirmed)` to `decideMigrationRun()` before tracker bootstrap or apply.
 Unconfirmed missing packages refuse the whole run. `packageStops` names them
 and explains that a missing declaration could loosen required columns;
 `heldBack` lists the apply changes. Pass `confirmRemovedPackages: string[]`

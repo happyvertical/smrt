@@ -10,6 +10,7 @@ import {
   type MigrationRunDecision,
   ObjectRegistry,
   OLDEST_SUPPORTED_RELEASE,
+  packagesSeenInput,
   readLastMigrateRecord,
   type SchemaChangeEngine,
 } from '@happyvertical/smrt-core';
@@ -92,11 +93,7 @@ export async function buildMigratePreview(
   const current = collectMigrateRecordInput();
   const last = await readLastMigrateRecord(db, { engineHint: engine });
   const recorded = last.state === 'recorded' ? last.record : null;
-  const packagesSeen = {
-    recorded: recorded?.packages ?? null,
-    current: current.packages,
-    confirmedRemoved: [],
-  };
+  const packagesSeen = packagesSeenInput(current, last);
   const packages = checkPackagesSeen(packagesSeen);
   const decision = decideMigrationRun({
     changes: pending.diff.changes,

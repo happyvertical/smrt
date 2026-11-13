@@ -12,6 +12,16 @@ export interface PackagesSeenInput {
   recorded: readonly string[] | null;
   current: readonly string[];
   confirmedRemoved: readonly string[];
+  /**
+   * How this run compares with the app's build (`collectMigrateRecordInput().build`).
+   * A build package whose tables this run has not planned is a stop that a
+   * confirmation cannot clear: the package was forgotten, not removed.
+   */
+  build?: {
+    fingerprint?: string;
+    planned: string;
+    unloaded: readonly { packageName: string; tables: readonly string[] }[];
+  };
 }
 
 export interface PackagesSeenCheck {
@@ -99,10 +109,25 @@ export function decideMigrationRun<T extends SchemaChangeInput>(options: {
     packageName,
     message: `Package ${packageName} was seen last time but is missing now. A package that declared required columns may be missing; the migrate could loosen them. Load the package, or pass --confirm-removed-package ${packageName} to confirm its removal.`,
   }));
+  const build = options.packagesSeen?.build;
+  for (const { packageName, tables } of build?.unloaded ?? []) {
+    packageStops.push({
+      packageName,
+      message: `Package ${packageName} is part of this build, but this run has not loaded its tables (${tables.join(', ')}). Load every model before migrating, or run smrt db:migrate in the app's project.`,
+    });
+  }
   const notices = (packages?.ignoredConfirmations ?? []).map(
     (name) =>
       `Ignoring --confirm-removed-package ${name}: this package is not missing.`,
   );
+  if (
+    build?.fingerprint &&
+    !build.unloaded.length &&
+    build.fingerprint !== build.planned
+  )
+    notices.push(
+      `The schema this run applies to the build's tables (${build.planned.slice(0, 12)}) differs from the build's stamp (${build.fingerprint.slice(0, 12)}): the installed packages are not the ones the build was made with. Rebuild the app and migrate again, or the build will be refused at startup.`,
+    );
   if (packages?.state === 'no-record')
     notices.unshift(
       'Package comparison skipped because no earlier migrate record exists. The record will be written after this run succeeds (not in dry-run).',

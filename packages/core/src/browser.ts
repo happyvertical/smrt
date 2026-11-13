@@ -781,8 +781,10 @@ export {
   type MigrateRecord,
   type MigrateRecordInput,
   type MigrateRecordOptions,
+  packagesSeenInput,
   readLastMigrateRecord,
   recordSuccessfulMigrate,
+  type UnloadedBuildPackage,
 } from './migrations/migrate-record.js';
 export * from './migrations/migration-run-decision.js';
 export {
