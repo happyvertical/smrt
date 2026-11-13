@@ -8,6 +8,22 @@ import test from 'node:test';
 
 const repoRoot = fileURLToPath(new URL('../', import.meta.url));
 
+test.before(() => {
+  // Build each package and its prepack dependency closure, so even an existing
+  // CI dist reflects current source. Keep compilation outside the pack deadline;
+  // real pack below still runs every lifecycle hook and artifact verifier.
+  const built = spawnSync('pnpm', [
+    'exec', 'turbo', 'run', 'build',
+    '--filter=@happyvertical/smrt-template-sveltekit...',
+    '--filter=@happyvertical/smrt-cli...',
+  ], {
+    cwd: repoRoot, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
+    timeout: 600_000,
+  });
+  assert.ifError(built.error);
+  assert.equal(built.status, 0, `${built.stdout}${built.stderr}`);
+});
+
 // These packages have no verify:pack script. Match the publish validator's
 // real pnpm-pack boundary, including ordinary lifecycle hooks, rather than
 // counting only packages that expose a convenience verification script.
@@ -21,6 +37,7 @@ for (const directory of ['template-sveltekit', 'template-site-static-json']) {
         encoding: 'utf8',
         timeout: 120_000,
       });
+      assert.ifError(packed.error);
       assert.equal(packed.status, 0, `${packed.error ?? ''}\n${packed.stdout}${packed.stderr}`);
       const tarballs = readdirSync(output).filter((file) => file.endsWith('.tgz'));
       assert.equal(tarballs.length, 1);
@@ -45,6 +62,7 @@ test('real CLI tarball retains every authored cookbook API route', () => {
     const packed = spawnSync('pnpm', ['pack', '--pack-destination', output], {
       cwd: join(repoRoot, 'packages/cli'), encoding: 'utf8', timeout: 180_000,
     });
+    assert.ifError(packed.error);
     assert.equal(packed.status, 0, `${packed.error ?? ''}\n${packed.stdout}${packed.stderr}`);
     const tarballs = readdirSync(output).filter((file) => file.endsWith('.tgz'));
     assert.equal(tarballs.length, 1);
