@@ -265,6 +265,7 @@
     "@tanstack/db": "^1.0.0-rc.1",
     "@tanstack/svelte-db": "^1.0.0-rc.1",
     "esm-env": "^1.2.2",
+    "@happyvertical/smrt-chat": "workspace:*",
     "@happyvertical/smrt-inference": "workspace:*"
   },
   "peerDependencies": {
@@ -274,8 +275,7 @@
     "@remotion/whisper-web": ">=4.0.526",
     "bitgpu": "^0.19.1",
     "chrono-node": "^2.10.1",
-    "svelte": "^5.57.0",
-    "@happyvertical/smrt-chat": "workspace:*"
+    "svelte": "^5.57.0"
   },
   "peerDependenciesMeta": {
     "@happyvertical/speech": {
@@ -295,14 +295,10 @@
     },
     "chrono-node": {
       "optional": true
-    },
-    "@happyvertical/smrt-chat": {
-      "optional": true
     }
   },
   "devDependencies": {
     "@happyvertical/smrt-agents": "workspace:*",
-    "@happyvertical/smrt-chat": "workspace:*",
     "@happyvertical/smrt-content": "workspace:*",
     "@happyvertical/smrt-reports": "workspace:*",
     "@happyvertical/smrt-scanner": "workspace:*",
