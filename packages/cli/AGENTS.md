@@ -218,10 +218,9 @@ atomic batch as everything else. It is no longer a "manual intervention" that
 makes `db:migrate` exit 1 on every run (#2370). All drifted columns of one
 table are fixed by one rebuild; `--dry-run` prints the whole statement list.
 
-The rebuild refuses — and the column stays manual drift — when another table
-declares a foreign key onto the target while `PRAGMA foreign_keys` is ON,
-because `DROP TABLE` would fire those children's `ON DELETE` actions. Fix that
-one by hand (or against a connection with enforcement disabled).
+A table other tables reference is rebuilt too: the tracker turns foreign keys
+off around the rebuild and checks them before the commit (#4937). DuckDB rebuilds
+the same way; see `agents/db-migrate-all-or-nothing.md`.
 
 ## `db:rollback` is execute-or-refuse
 

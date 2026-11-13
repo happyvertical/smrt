@@ -107,7 +107,7 @@ export const dbDiffCommand: CLICommand = {
     'relax-columns': {
       type: 'boolean',
       description:
-        'Include constraint relaxations in the diff (DROP NOT NULL / DROP DEFAULT on live columns stricter than the manifest, DROP NOT NULL on orphan NOT NULL columns). Off by default, except that PostgreSQL always includes DROP NOT NULL for a column the manifest declares nullable; relaxations are always reported.',
+        'Include constraint relaxations in the diff (DROP DEFAULT on live columns stricter than the manifest, DROP NOT NULL on orphan NOT NULL columns). Off by default, except that every engine always includes DROP NOT NULL for a column the manifest declares nullable; relaxations are always reported.',
       default: false,
     },
     'postgres-timestamp-legacy-timezone': {
@@ -256,9 +256,16 @@ export const dbDiffCommand: CLICommand = {
       // Report-only findings (#2369) are printed even when nothing is
       // executable so an orphan NOT NULL column is never hidden behind an
       // "up to date" line.
+      // The table of change kinds differs by engine for a few kinds (#4937),
+      // so name the engine the diff was read from.
+      const partitionEngine =
+        (['postgres', 'sqlite', 'duckdb', 'json'] as const).find(
+          (candidate) => candidate === dbType,
+        ) ?? (String(dbType) === 'pglite' ? 'postgres' : 'sqlite');
       const { advisories, manualInterventions } = partitionSchemaChanges(
         diff.changes as SchemaChangeLike[],
         (tableName) => tableName,
+        partitionEngine,
       );
       const manualForeignKeyChanges = manualInterventions.filter(
         (change) =>
