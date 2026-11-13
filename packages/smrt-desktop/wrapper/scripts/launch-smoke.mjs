@@ -613,7 +613,12 @@ async function main() {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   // The wrapper derives OS data/log paths too, before it starts its sidecar.
   // Even --keep never retains the temporary home or one-time owner links.
-  const disposeTestHome = installTestHome();
+  // Not on Windows: the custody inspector runs Windows PowerShell with the
+  // child's LOCALAPPDATA, and a fresh profile has no module analysis cache, so
+  // every inspection outlives its 10 s limit and the sidecar refuses storage.
+  // There the smoke uses the real profile, as it does on main.
+  const disposeTestHome =
+    process.platform === 'win32' ? () => {} : installTestHome();
   main().finally(disposeTestHome).catch((error) => {
     console.error(`launch-smoke: ${error.message}`);
     process.exit(1);
