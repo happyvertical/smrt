@@ -182,17 +182,10 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       error: 'optional field catalogSearch read back populated',
     },
     {
-      model: '@happyvertical/smrt-ledgers:Ledger',
-      field: 'name',
-      reason:
-        'Model validation rejects empty/default name: Ledger name is required',
-      error: 'Ledger name is required',
-    },
-    {
       model: '@happyvertical/smrt-manufacturing:ProductionRun',
       field: 'targetQty',
       reason:
-        'Validation requires targetQty > 0 although the field is optional with a default of zero.',
+        'ProductionRun.validateBeforeSave rejects targetQty = 0 (ProductionRun.ts); the real decimal initializer is outside this audit, and no reason value expresses a positive planning quantity. Retain the domain-value exception.',
       error: 'A production run needs a target quantity greater than zero.',
     },
     {
@@ -225,31 +218,24 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       error: 'Plan version must be a positive integer',
     },
     {
-      model: '@happyvertical/smrt-timesheets:AttendancePunch',
-      field: 'profileId',
-      reason:
-        'Model validation rejects empty/default profileId: Attendance requires tenantId and profileId.',
-      error: 'Attendance requires tenantId and profileId.',
-    },
-    {
       model: '@happyvertical/smrt-video:VideoComposition',
       field: 'title',
       reason:
-        'Content.validateBeforeSave() copies required name into optional title; persisted title differs from its empty initialized value.',
+        'Inherited Content.validateBeforeSave (content.ts:932) derives empty title from name. This is framework-maintained compatibility data, not caller-required video identity; changing the owning content package is outside this batch, so retain the populated-optional-field exception.',
       error: 'optional field title read back populated',
     },
     {
       model: '@happyvertical/smrt-video:VideoSequence',
       field: 'title',
       reason:
-        'Content.validateBeforeSave() copies required name into optional title; persisted title differs from its empty initialized value.',
+        'Inherited Content.validateBeforeSave (content.ts:932) derives empty title from name. This is framework-maintained compatibility data, not caller-required video identity; changing the owning content package is outside this batch, so retain the populated-optional-field exception.',
       error: 'optional field title read back populated',
     },
     {
       model: '@happyvertical/smrt-video:VideoShot',
       field: 'title',
       reason:
-        'Content.validateBeforeSave() copies required name into optional title; persisted title differs from its empty initialized value.',
+        'Inherited Content.validateBeforeSave (content.ts:932) derives empty title from name. This is framework-maintained compatibility data, not caller-required video identity; changing the owning content package is outside this batch, so retain the populated-optional-field exception.',
       error: 'optional field title read back populated',
     },
     {
@@ -1221,7 +1207,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'journalId',
       error: 'Journal entry requires an accessible parent journal',
       reason:
-        'JournalEntry code requires journalId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'JournalEntry.save loads and locks its parent journal before checking its account scope and nonzero debit/credit. Promoting journalId alone exposes the independent optional accountId failure; the combined parent/account/amount fixture contract remains undecided, with the original error retained.',
     },
     {
       model: '@happyvertical/smrt-manufacturing:ProductionRunCompletion',
@@ -1229,7 +1215,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'runId.targetQty',
       error: 'A production run needs a target quantity greater than zero.',
       reason:
-        'ProductionRun requires positive targetQty despite optional metadata. Required-parent path: runId.',
+        'The required runId parent cannot save with its real targetQty = 0 initializer (ProductionRun.validateBeforeSave); this is the parent planning-quantity exception, not a missing run identity. No reason value expresses that positive quantity.',
     },
     {
       model: '@happyvertical/smrt-playbooks:PlaybookOverride',
@@ -1344,20 +1330,12 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
         'AttendanceCorrection writes are owned by AttendanceCorrectionService; its owner must run once against a minimal row.',
     },
     {
-      model: '@happyvertical/smrt-timesheets:AttendanceBreak',
-      kind: 'optional-field',
-      field: 'punchId',
-      error: 'Invalid attendance break.',
-      reason:
-        'AttendanceBreak code requires punchId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
-    },
-    {
       model: '@happyvertical/smrt-timesheets:AttendanceSegment',
       kind: 'optional-field',
       field: 'punchId, workRefType, workRefId',
       error: 'Invalid attendance work segment.',
       reason:
-        'AttendanceSegment code requires punchId, workRefType, workRefId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'Segments require a tenant-owned punch, matching parent profileId, and paired work identity; continueSegment reuses stored references. A single-field promotion does not express the parent-derived profile or resume contract. Retain this coupled-field exception pending a complete minimal fixture contract.',
     },
     {
       model: '@happyvertical/smrt-timesheets:AttendanceReplay',
@@ -1365,7 +1343,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'outcome',
       error: 'Invalid stored attendance replay outcome.',
       reason:
-        'AttendanceReplay code requires outcome although registry metadata allows it empty/default; changing required/NOT NULL would change schema. ',
+        'AttendanceReplay.getOutcome fails closed on a receipt lacking a clientId and exactly one success punchId or refusal error. The real JSON initializer {} is outside this audit; no field-level required flag expresses that outcome shape.',
     },
     {
       model: '@happyvertical/smrt-timesheets:PeriodTimecard',
