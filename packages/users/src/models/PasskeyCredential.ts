@@ -66,7 +66,12 @@ export class UsersPasskeyCredential extends SmrtObject {
   credentialId = '';
 
   /** The credential public key (COSE), base64url. */
-  @field({ type: 'text', required: true, sensitive: true })
+  @field({
+    type: 'text',
+    required: true,
+    requiredFor: 'authentication',
+    sensitive: true,
+  })
   publicKey = '';
 
   /** The authenticator's signature counter at its last accepted assertion. */

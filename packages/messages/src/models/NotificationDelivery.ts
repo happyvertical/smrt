@@ -213,15 +213,15 @@ export class NotificationDelivery extends SmrtObject {
   dispatchPolicyBinding = '{}';
 
   /** Email subject line. */
-  @field({ required: true })
+  @field()
   subject = '';
 
   /** Plain-text body; the deep link is appended on its own line. */
-  @field({ required: true })
+  @field()
   textBody = '';
 
   /** Absolute deep link on the host's configured origin (no credentials). */
-  @field({ required: true })
+  @field()
   href = '';
 
   /** Address snapshot from the host recipient resolver. */

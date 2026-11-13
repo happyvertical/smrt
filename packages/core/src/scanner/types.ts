@@ -6,6 +6,7 @@ import type {
   PackageBrowserCapability,
   RecipeDefinition,
 } from '@happyvertical/smrt-types';
+import type { RequiredForReason } from '../decorators/index.js';
 import type { SmartObjectConfig } from '../registry.js';
 
 /**
@@ -82,12 +83,7 @@ export interface FieldMeta {
   /** Per-row SQL backfill for adding/tightening a required column (#3008). */
   backfill?: string;
   /** Why smrt's own code needs this required field (#4923). */
-  requiredFor?:
-    | 'identity'
-    | 'tenant-scope'
-    | 'idempotency'
-    | 'workflow-state'
-    | 'system-table';
+  requiredFor?: RequiredForReason;
   /** Marks the field as the primary key column. */
   primaryKey?: boolean;
   /** Marks the column as unique. */

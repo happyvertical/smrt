@@ -6,7 +6,8 @@
  *
  *   @field({ required: true, requiredFor: 'identity' })
  *
- * Values: identity, tenant-scope, idempotency, workflow-state, system-table.
+ * Values: identity, tenant-scope, idempotency, workflow-state, system-table,
+ * integrity, authentication.
  * The option is carried into the manifest (`_meta.requiredFor`).
  *
  * Which fields it covers (#4935, P11): the ones a caller must supply. At save
@@ -61,6 +62,8 @@ export const REQUIRED_FOR_VALUES = [
   'idempotency',
   'workflow-state',
   'system-table',
+  'integrity',
+  'authentication',
 ];
 
 const BASELINE_PATH = 'scripts/required-reasons-baseline.json';
