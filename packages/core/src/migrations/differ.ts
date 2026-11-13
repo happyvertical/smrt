@@ -1045,6 +1045,64 @@ export class SchemaComparer {
     );
   }
 
+  /** One table through the adapter, plus the foreign keys it cannot read on DuckDB. */
+  private async introspectTable(
+    tableName: string,
+  ): Promise<SqlTableSchemaInfo | null | undefined> {
+    const schema = unquoteIndexColumns(
+      await this.db.getTableSchema?.(tableName),
+    );
+    if (
+      schema &&
+      this.engine === 'duckdb' &&
+      isKnownNativeDuckDbHandle(this.db) &&
+      (schema.foreignKeys?.length ?? 0) === 0
+    ) {
+      // The adapter reads `constraint_column_names` as a list, but the native
+      // handle returns an object, so it reports no foreign key at all. Without
+      // this, every foreign key a DuckDB table declares looks missing.
+      const foreignKeys = await this.getDuckDbForeignKeys(tableName);
+      if (foreignKeys.length > 0) schema.foreignKeys = foreignKeys;
+    }
+    return schema;
+  }
+
+  private async getDuckDbForeignKeys(
+    tableName: string,
+  ): Promise<NonNullable<SqlTableSchemaInfo['foreignKeys']>> {
+    try {
+      const { rows } = await this.db.query(
+        `SELECT to_json(constraint_column_names)::VARCHAR AS columns, constraint_text AS text
+         FROM duckdb_constraints()
+         WHERE database_name = current_database() AND schema_name = current_schema()
+           AND table_name = ? AND constraint_type = 'FOREIGN KEY'`,
+        tableName,
+      );
+      return rows.flatMap((row) => {
+        const columns = JSON.parse(String(row.columns)) as string[];
+        const match =
+          /REFERENCES\s+"?([^"\s(]+)"?\s*\(\s*"?([^")\s]+)"?\s*\)/i.exec(
+            String(row.text ?? ''),
+          );
+        return columns.length === 1 && match
+          ? [
+              {
+                column: columns[0],
+                referencesTable: match[1],
+                referencesColumn: match[2],
+              },
+            ]
+          : [];
+      });
+    } catch (err) {
+      logger.debug(
+        `[SchemaComparer] DuckDB foreign-key introspection unavailable for ${tableName}`,
+        { error: err instanceof Error ? err.message : String(err) },
+      );
+      return [];
+    }
+  }
+
   /**
    * Read (and memoize for this run) one table's live schema. Returns
    * `undefined` when the table does not exist or the adapter cannot
@@ -1056,9 +1114,7 @@ export class SchemaComparer {
     if (this.liveSchemas.has(tableName)) {
       return this.liveSchemas.get(tableName) ?? undefined;
     }
-    const schema = unquoteIndexColumns(
-      await this.db.getTableSchema?.(tableName),
-    );
+    const schema = await this.introspectTable(tableName);
     this.liveSchemas.set(tableName, schema);
     return schema ?? undefined;
   }
@@ -1095,8 +1151,7 @@ export class SchemaComparer {
     const schemas = await mapWithConcurrency(
       pending,
       concurrency,
-      async (tableName) =>
-        unquoteIndexColumns(await this.db.getTableSchema?.(tableName)),
+      (tableName) => this.introspectTable(tableName),
     );
     pending.forEach((tableName, index) => {
       this.liveSchemas.set(tableName, schemas[index]);
