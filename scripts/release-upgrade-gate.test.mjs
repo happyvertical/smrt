@@ -24,6 +24,9 @@ import {
   stableJSON,
   validateLeftovers,
   validateOldest,
+  validateSeedFiles,
+  validateSeedPlan,
+  readSeedPlan,
 } from './lib/release-upgrade-gate.mjs';
 import { ManifestGenerator } from '../packages/core/dist/scanner/manifest-generator.js';
 
@@ -131,7 +134,7 @@ test('required to optional with rows (#4920) passes and physically drops NOT NUL
   });
   assert.equal(result.ok, true, textOf(result));
   assert.equal(result.seededTables, 1);
-  assert.deepEqual(result.seedWarnings, []);
+  assert.deepEqual(result.seedFailures, []);
 });
 test('optional to required with NULL and no data step fails naming table.column', async () => {
   current({ value: { type: 'text', required: true } });
@@ -225,6 +228,26 @@ test('stale leftover entry fails, and missing reasons are refused', async () => 
     /non-empty reason/,
   );
 });
+/** A table the generic row cannot satisfy: it leaves `value` NULL, the CHECK demands one. */
+const needsValue = (snapshot) => {
+  snapshot.tables[tableName].constraints.push({
+    name: 'value_required',
+    type: 'c',
+    definition: 'CHECK ((value IS NOT NULL))',
+    columns: ['value'],
+  });
+  return snapshot;
+};
+const suppliedRow = {
+  table: tableName,
+  row: {
+    id: '00000000-0000-4000-8000-000000000001',
+    slug: 'supplied',
+    value: 'supplied',
+  },
+  reason: 'The CHECK on value needs a non-NULL value.',
+};
+
 test('NOT NULL orphan without default fails even if its table could not be seeded', async () => {
   current();
   const snapshot = oldSnapshot(col('text'), { orphan: col('text', true) });
@@ -237,8 +260,163 @@ test('NOT NULL orphan without default fails even if its table could not be seede
   const result = await run(snapshot);
   assert.equal(result.ok, false);
   assert.equal(result.seededTables, 0);
-  assert.match(result.seedWarnings.join(' '), /gate4933s/);
   assert.match(textOf(result), /gate4933s.orphan.*blocks new inserts/);
+});
+test('an unseedable table fails the gate, naming the table and the insert error, and nothing else', async () => {
+  current();
+  const result = await run(needsValue(oldSnapshot()));
+  assert.equal(result.ok, false);
+  assert.equal(result.seededTables, 0);
+  assert.equal(result.failures.length, 1, textOf(result));
+  assert.match(
+    textOf(result),
+    /^Seeding smrt 0\.60\.17: gate4933s: could not seed a row: .*value_required.*seed\/0\.60\.17\.json/s,
+  );
+  assert.equal(result.seedFailures.length, 1);
+});
+test('optional to required on a table that could not be seeded no longer passes', async () => {
+  current({ value: { type: 'text', required: true } });
+  const result = await run(needsValue(oldSnapshot()));
+  assert.equal(result.ok, false);
+  assert.match(textOf(result), /gate4933s: could not seed a row/);
+});
+test('a supplied row seeds the table and the upgrade is rehearsed on it', async () => {
+  current({ value: { type: 'text', required: true } });
+  let stored;
+  const result = await run(needsValue(oldSnapshot()), {
+    seedPlan: { suppliedRows: [suppliedRow], emptyByDesign: [] },
+    inspect: async (db) => {
+      stored = (await db.query(`SELECT slug, value FROM ${tableName}`)).rows;
+    },
+  });
+  assert.equal(result.ok, true, textOf(result));
+  assert.equal(result.seededTables, 1);
+  assert.deepEqual(stored, [{ slug: 'supplied', value: 'supplied' }]);
+});
+test('a supplied row for a table that now seeds, or for nothing real, is stale and fails', async () => {
+  current();
+  const seedable = await run(oldSnapshot(), {
+    seedPlan: { suppliedRows: [suppliedRow], emptyByDesign: [] },
+  });
+  assert.equal(seedable.ok, false);
+  assert.match(textOf(seedable), /gate4933s: stale supplied row.*generic seeder now seeds/);
+  const unknownTable = await run(oldSnapshot(), {
+    seedPlan: {
+      suppliedRows: [{ ...suppliedRow, table: 'no_such_table' }],
+      emptyByDesign: [],
+    },
+  });
+  assert.match(textOf(unknownTable), /no_such_table: stale entry.*not a model table/);
+  const unknownColumn = await run(needsValue(oldSnapshot()), {
+    seedPlan: {
+      suppliedRows: [
+        { ...suppliedRow, row: { ...suppliedRow.row, gone: 'x' } },
+      ],
+      emptyByDesign: [],
+    },
+  });
+  assert.equal(unknownColumn.ok, false);
+  assert.match(textOf(unknownColumn), /gate4933s\.gone: stale supplied row.*no such column/);
+});
+test('a supplied row that the table refuses fails with both errors', async () => {
+  current();
+  const result = await run(needsValue(oldSnapshot()), {
+    seedPlan: {
+      suppliedRows: [
+        { ...suppliedRow, row: { ...suppliedRow.row, value: null } },
+      ],
+      emptyByDesign: [],
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.match(textOf(result), /gate4933s: the supplied row.*could not be inserted.*generic row failed/s);
+});
+test('a table listed as empty by design is allowed to stay empty; a stale entry fails', async () => {
+  current();
+  const empty = {
+    emptyByDesign: [{ table: tableName, reason: 'Rows are written by a trigger.' }],
+    suppliedRows: [],
+  };
+  const allowed = await run(needsValue(oldSnapshot()), { seedPlan: empty });
+  assert.equal(allowed.ok, true, textOf(allowed));
+  assert.equal(allowed.seededTables, 0);
+  const stale = await run(oldSnapshot(), { seedPlan: empty });
+  assert.equal(stale.ok, false);
+  assert.match(textOf(stale), /gate4933s: stale emptyByDesign.*accepts a seeded row/);
+  const unknown = await run(oldSnapshot(), {
+    seedPlan: {
+      emptyByDesign: [{ table: 'no_such_table', reason: 'Gone.' }],
+      suppliedRows: [],
+    },
+  });
+  assert.match(textOf(unknown), /no_such_table: stale entry.*not a model table/);
+});
+test('a seeded reference that points at no row fails the gate', async () => {
+  current();
+  const snapshot = oldSnapshot(col('text'), { owner_id: col('uuid', true) });
+  snapshot.tables[tableName].constraints.push({
+    name: 'gate4933s_owner_fk',
+    type: 'f',
+    definition: 'FOREIGN KEY (owner_id) REFERENCES elsewhere(id)',
+    columns: ['owner_id'],
+    referencesTable: 'elsewhere',
+    referencesColumns: ['id'],
+  });
+  snapshot.tables.elsewhere = {
+    columns: { id: col('uuid', true) },
+    primaryKey: ['id'],
+    indexes: [],
+    constraints: [
+      {
+        name: 'elsewhere_pkey',
+        type: 'p',
+        definition: 'PRIMARY KEY (id)',
+        columns: ['id'],
+      },
+    ],
+  };
+  // `elsewhere` is not a model table, so nothing is seeded for the reference.
+  snapshot.modelTables = [tableName];
+  const result = await run(snapshot);
+  assert.equal(result.ok, false);
+  assert.match(textOf(result), /gate4933s\.owner_id: the seeded value points at no row in elsewhere/);
+});
+test('seed plans are validated: a reason is required, tables are listed once, rows are objects', () => {
+  assert.deepEqual(validateSeedPlan(), { suppliedRows: [], emptyByDesign: [] });
+  assert.throws(
+    () => validateSeedPlan({ emptyByDesign: [{ table: 't', reason: ' ' }] }),
+    /non-empty reason/,
+  );
+  assert.throws(
+    () => validateSeedPlan({ suppliedRows: [{ table: 't', row: {}, reason: 'r' }] }),
+    /non-empty object/,
+  );
+  assert.throws(
+    () =>
+      validateSeedPlan({
+        suppliedRows: [{ table: 't', row: { a: 1 }, reason: 'r' }],
+        emptyByDesign: [{ table: 't', reason: 'r' }],
+      }),
+    /listed twice/,
+  );
+  assert.throws(() => validateSeedPlan({ extra: [] }), /unknown key/);
+  assert.throws(() => validateSeedPlan([]), /must be an object/);
+});
+test('seed files are read per snapshot and one without a snapshot is stale', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'gate-seed-'));
+  try {
+    assert.deepEqual(readSeedPlan(dir, '1.0.0'), { suppliedRows: [], emptyByDesign: [] });
+    mkdirSync(path.join(dir, 'seed'));
+    writeFileSync(
+      path.join(dir, 'seed/1.0.0.json'),
+      JSON.stringify({ suppliedRows: [], emptyByDesign: [{ table: 't', reason: 'r' }] }),
+    );
+    assert.equal(readSeedPlan(dir, '1.0.0').emptyByDesign[0].table, 't');
+    validateSeedFiles(dir, ['1.0.0', '1.0.1']);
+    assert.throws(() => validateSeedFiles(dir, ['1.0.1']), /Stale seed file seed\/1\.0\.0\.json/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 test('a migrator that leaves actionable changes fails convergence', async () => {
   current();
@@ -330,7 +508,7 @@ test('seed supports FK cycles, enum CHECKs, uuid/json/timestamps, arrays and byt
   const db = await restore(snapshot, { root });
   try {
     const seeded = await seed(db, snapshot);
-    assert.deepEqual(seeded, { seededTables: 2, seedWarnings: [] });
+    assert.deepEqual(seeded, { seededTables: 2, seedFailures: [] });
     const rows = (
       await db.query(
         'SELECT a.status, a.payload, a.parent_id=b.id AS linked FROM cycle_a a CROSS JOIN cycle_b b',
@@ -552,7 +730,7 @@ test('required FK uses the actual default in a seeded non-PK unique parent colum
   try {
     assert.deepEqual(await seed(db, snapshot), {
       seededTables: 2,
-      seedWarnings: [],
+      seedFailures: [],
     });
     assert.deepEqual(
       (await db.query('SELECT parent_code FROM children')).rows,
@@ -588,7 +766,7 @@ test('_smrt_ model tables are seeded and checked for orphan data; prefix is not 
   original.constraints[0].name = '_smrt_gate4933_pkey';
   const result = await run(snapshot);
   assert.equal(result.seededTables, 1);
-  assert.deepEqual(result.seedWarnings, []);
+  assert.deepEqual(result.seedFailures, []);
   assert.equal(result.ok, false);
   assert.match(textOf(result), /_smrt_gate4933.value.*0.60.17/);
 });
@@ -613,6 +791,6 @@ test('snapshot model ownership excludes private bookkeeping from seed and orphan
   };
   const result = await run(snapshot);
   assert.equal(result.seededTables, 1);
-  assert.deepEqual(result.seedWarnings, []);
+  assert.deepEqual(result.seedFailures, []);
   assert.equal(result.ok, true, textOf(result));
 });

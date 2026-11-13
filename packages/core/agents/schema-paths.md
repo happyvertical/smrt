@@ -1469,8 +1469,18 @@ or before this build's version, and the oldest supported release. When these
 are the same file it runs once. Each rehearsal restores the old physical schema
 in PGlite and seeds one minimal row per model table. Only old required columns
 without defaults are filled, with deterministic primary keys. Foreign keys and
-enum checks guide seed values. Unseedable tables print warnings and a seeded
-table count; a warning alone does not fail the gate.
+enum checks guide seed values. Every model table must get its row (rule 6: a
+rehearsal on an empty table proves nothing). A table that does not, a seeded
+reference that cannot be aligned or points at no row, and a stale plan entry all
+fail the gate, each naming the table and the database error. There is no warning
+path. `seed/<release>.json` holds, per snapshot, the two checked-in escapes:
+`suppliedRows` (`table`, a real minimal `row` of column values, `reason`) for a
+table the generic row cannot satisfy, and `emptyByDesign` (`table`, `reason`) for
+a table that must stay empty. Both start empty. An entry is stale, and fails, when
+its table is not a model table of that release, a supplied column is not in the
+snapshot, or the generic seeder now fills the table. A seed file with no snapshot
+fails too. `save` writes an empty file for a new snapshot; pruning a snapshot
+removes its file.
 
 Any migration stop fails the gate. The output names the table and column,
 the reason, and the work held back. Errors and a second diff that still needs
