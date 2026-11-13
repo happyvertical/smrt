@@ -6,6 +6,7 @@
 export { smrtAssetUrlCompatibility } from './asset-url-compatibility.js';
 
 import { existsSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
@@ -2733,9 +2734,19 @@ function getDefaultUIModule(): string {
     const __dirname = dirname(fileURLToPath(import.meta.url));
 
     // Load template file (works in both src and dist)
-    const templatePath = join(__dirname, 'templates/default-ui.js');
-
-    return readFileSync(templatePath, 'utf-8').trim();
+    const templatePath = join(__dirname, 'templates/default-ui.ts');
+    // Resolve native tooling on demand, as activation generation does; the
+    // public core root must remain loadable when compiler tooling is excluded.
+    const { transformSync } = createRequire(import.meta.url)(
+      'oxc-transform',
+    ) as typeof import('oxc-transform');
+    const transformed = transformSync(
+      templatePath,
+      readFileSync(templatePath, 'utf-8'),
+    );
+    if (transformed.errors.length)
+      throw new Error('Invalid default UI template');
+    return transformed.code.trim();
   } catch (error) {
     console.error('[smrt] Error loading UI template:', error);
     // Fallback to minimal UI

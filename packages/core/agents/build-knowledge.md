@@ -554,3 +554,12 @@ boots a real SQLite coordinator, proves map evaluation/disabled calls never eval
 the surface package, activates its model and publishes the recipe, then uses the SAME
 server/client modules to load the surface. Disabling and missing server gates refuse.
 The existing bundle test still proves component bytes stay out of the initial chunk.
+
+## Default development UI source
+
+`getDefaultUIModule()` reads the shipped `templates/default-ui.ts` and uses the
+existing on-demand `oxc-transform` seam to return JavaScript. Package builds copy
+the browser template as source; a nonexistent `.js` path must not silently select
+the fallback. Native compiler loading remains inside this build/dev operation,
+not at public-root import time. The load-hook test requires the real dashboard,
+rejects the fallback text and parses the result as JavaScript.
