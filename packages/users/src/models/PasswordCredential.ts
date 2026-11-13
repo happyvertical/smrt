@@ -32,7 +32,12 @@ export class UsersPasswordCredential extends SmrtObject {
   userId = '';
 
   /** Encoded hash: `scrypt$N$r$p$saltB64$hashB64`. */
-  @field({ type: 'text', required: true, sensitive: true })
+  @field({
+    type: 'text',
+    required: true,
+    requiredFor: 'authentication',
+    sensitive: true,
+  })
   passwordHash = '';
 
   /** Bumped on every set/change/reset; a parameter-upgrade rehash keeps it. */

@@ -103,7 +103,7 @@ export class ProfileLink extends SmrtObject {
   platform: ProfileLinkPlatform = 'website';
 
   /** A normalized http(s) address. */
-  @field({ required: true, maxLength: 2048 })
+  @field({ required: true, requiredFor: 'identity', maxLength: 2048 })
   url = '';
 
   /** Optional words shown instead of the address ("Campaign site"). */

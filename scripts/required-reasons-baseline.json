@@ -12,14 +12,9 @@
     "packages/messages/src/models/NotificationDelivery.ts#NotificationDelivery.href",
     "packages/messages/src/models/NotificationDelivery.ts#NotificationDelivery.subject",
     "packages/messages/src/models/NotificationDelivery.ts#NotificationDelivery.textBody",
-    "packages/profiles/src/models/ProfileLink.ts#ProfileLink.url",
     "packages/projects/src/models/ProjectDecision.ts#ProjectDecision.question",
     "packages/projects/src/models/ProjectQuestion.ts#ProjectQuestion.prompt",
     "packages/projects/src/models/ProjectSpecification.ts#ProjectSpecification.title",
-    "packages/reports/src/runtime-report.ts#RuntimeReport.spec",
-    "packages/sales/src/commissions/models/EarningEvent.ts#EarningEvent.eventKind",
-    "packages/users/src/models/PasskeyCredential.ts#UsersPasskeyCredential.publicKey",
-    "packages/users/src/models/PasswordCredential.ts#UsersPasswordCredential.passwordHash",
-    "packages/users/src/models/PinCredential.ts#UsersPinCredential.pinHash"
+    "packages/sales/src/commissions/models/EarningEvent.ts#EarningEvent.eventKind"
   ]
 }
