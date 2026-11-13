@@ -1,0 +1,363 @@
+import {
+  address,
+  type Cell,
+  type Workbook,
+  type WorkbookProfile,
+} from '@happyvertical/spreadsheets';
+import { describeCell, isBlankCell, isoDate } from './coerce.js';
+import {
+  type EvaluatedTable,
+  evaluatePlan,
+  keyText,
+  type PlannedRecord,
+} from './evaluate.js';
+import { type Finding, FindingSink, hasErrors } from './findings.js';
+import type { ImportPlan, PlanField, PlanTable } from './plan.js';
+import type { ImportTarget } from './target.js';
+
+/** Numbers a table summed per field, for the after-load comparison. */
+export interface TableFacts {
+  /** Data rows examined. */
+  read: number;
+  /** Rows left out: skipRows and rows with every mapped cell blank. */
+  skipped: number;
+  /** Rows refused by an error finding. */
+  rejected: number;
+  /** Records that will be loaded. */
+  planned: number;
+}
+
+export interface ImportFacts {
+  tables: Record<string, TableFacts>;
+  /** table -> field -> sum. Money and integers in exact minor units/integers. */
+  sums: Record<string, Record<string, number>>;
+}
+
+export interface CheckResult {
+  /** No error findings. */
+  ok: boolean;
+  findings: Finding[];
+}
+
+export interface PlanCheckResult extends CheckResult {
+  facts: ImportFacts;
+}
+
+const SUMMED: ReadonlySet<string> = new Set(['number', 'integer', 'money']);
+
+/** Neumaier-compensated sum: the error does not grow with the row count. */
+export function compensatedSum(values: Iterable<number>): number {
+  let sum = 0;
+  let compensation = 0;
+  for (const value of values) {
+    const next = sum + value;
+    compensation +=
+      Math.abs(sum) >= Math.abs(value)
+        ? sum - next + value
+        : value - next + sum;
+    sum = next;
+  }
+  return sum + compensation;
+}
+
+function columnSum(
+  rows: readonly PlannedRecord[],
+  field: PlanField,
+): { value: number; safe: boolean } {
+  if (field.type === 'number') {
+    return {
+      value: compensatedSum(
+        rows.map((row) => Number(row.values[field.key] ?? 0)),
+      ),
+      safe: true,
+    };
+  }
+  let total = 0n;
+  for (const row of rows) {
+    const value = row.values[field.key];
+    if (typeof value === 'number') total += BigInt(value);
+  }
+  const safe =
+    total <= BigInt(Number.MAX_SAFE_INTEGER) &&
+    total >= BigInt(Number.MIN_SAFE_INTEGER);
+  return { value: Number(total), safe };
+}
+
+/** Findings that need the rows of more than one table. */
+function crossChecks(
+  tables: ReadonlyMap<string, EvaluatedTable>,
+  sink: FindingSink,
+): void {
+  const keyIndex = new Map<string, Set<string>>();
+  for (const evaluated of tables.values()) {
+    const { table } = evaluated;
+    if (!table.lookupKey) continue;
+    const keys = new Set<string>();
+    const firstRow = new Map<string, number>();
+    for (const row of evaluated.rows) {
+      const parts = table.lookupKey.map((key) => row.values[key] ?? null);
+      const blankIndex = parts.indexOf(null);
+      if (blankIndex >= 0) {
+        const field = table.lookupKey[blankIndex];
+        const column = table.fields.find((f) => f.key === field)?.column;
+        sink.add({
+          code: 'lookup-key-blank',
+          severity: 'error',
+          table: table.key,
+          field,
+          sheet: table.source.sheet,
+          row: row.sourceRow,
+          ...(column !== undefined
+            ? { cell: address({ row: row.sourceRow, col: column }) }
+            : {}),
+          message: `Row ${row.sourceRow}: lookup key field "${field}" is blank.`,
+        });
+        continue;
+      }
+      const text = keyText(parts);
+      const earlier = firstRow.get(text);
+      if (earlier !== undefined) {
+        sink.add({
+          code: 'lookup-key-not-unique',
+          severity: 'error',
+          table: table.key,
+          field: table.lookupKey.join(','),
+          sheet: table.source.sheet,
+          row: row.sourceRow,
+          actual: parts.join(' | '),
+          message: `Row ${row.sourceRow}: lookup key (${parts.join(', ')}) already appears on row ${earlier}.`,
+        });
+        continue;
+      }
+      firstRow.set(text, row.sourceRow);
+      keys.add(text);
+    }
+    keyIndex.set(table.key, keys);
+  }
+
+  for (const evaluated of tables.values()) {
+    const { table } = evaluated;
+    for (const field of table.fields) {
+      if (!field.reference) continue;
+      const known = keyIndex.get(field.reference.table) ?? new Set<string>();
+      for (const row of evaluated.rows) {
+        const ref = row.references[field.key];
+        if (!ref || known.has(keyText(ref.key))) continue;
+        const column = field.reference.columns[0];
+        sink.add({
+          code: 'reference-unresolved',
+          severity: 'error',
+          table: table.key,
+          field: field.key,
+          sheet: table.source.sheet,
+          cell: address({ row: row.sourceRow, col: column }),
+          row: row.sourceRow,
+          expected: field.reference.table,
+          actual: ref.key.join(' | '),
+          message: `Row ${row.sourceRow}: no ${field.reference.table} row has key (${ref.key.join(', ')}).`,
+        });
+      }
+    }
+  }
+}
+
+/**
+ * Checks a plan against a workbook before anything is written. The plan must
+ * already be valid ({@link validatePlan}); `profile` is accepted for callers
+ * that hold a workbook profile and is not needed to decide anything here.
+ */
+export function checkPlan(
+  plan: ImportPlan,
+  workbook: Workbook,
+  _profile?: WorkbookProfile,
+): PlanCheckResult {
+  const sink = new FindingSink();
+  const tables = evaluatePlan(plan, workbook, sink);
+  crossChecks(tables, sink);
+
+  const facts: ImportFacts = { tables: {}, sums: {} };
+  for (const [key, evaluated] of tables) {
+    facts.tables[key] = {
+      read: evaluated.read,
+      skipped: evaluated.skipped,
+      rejected: evaluated.rejected,
+      planned: evaluated.rows.length,
+    };
+    const sums: Record<string, number> = {};
+    for (const field of evaluated.table.fields) {
+      if (field.column === undefined || !SUMMED.has(field.type)) continue;
+      const sum = columnSum(evaluated.rows, field);
+      if (!sum.safe) {
+        sink.add({
+          code: 'sum-unsafe',
+          severity: 'error',
+          table: key,
+          field: field.key,
+          message: `The column sum of "${field.key}" exceeds the safe integer range.`,
+        });
+      }
+      sums[field.key] = sum.value;
+    }
+    facts.sums[key] = sums;
+  }
+  const findings = sink.list();
+  return { ok: !hasErrors(findings), findings, facts };
+}
+
+function relativelyEqual(a: number, b: number, tolerance = 1e-9): boolean {
+  if (a === b) return true;
+  return Math.abs(a - b) <= tolerance * Math.max(Math.abs(a), Math.abs(b));
+}
+
+function asNumber(value: unknown): number | undefined {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'bigint') return Number(value);
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function asBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  if (value === 1 || value === '1') return true;
+  if (value === 0 || value === '0') return false;
+  return undefined;
+}
+
+function asIsoDate(value: unknown): string | undefined {
+  if (value instanceof Date) return isoDate(value);
+  if (typeof value === 'string')
+    return /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : undefined;
+  return undefined;
+}
+
+/** Does the target's value for a calculated field agree with the workbook's cached result? */
+function cachedAgrees(
+  field: PlanField,
+  cached: Cell | undefined,
+  actual: unknown,
+): boolean {
+  const cachedBlank = isBlankCell(cached, false) || cached?.type === 'error';
+  if (cachedBlank) return actual === null || actual === undefined;
+  if (actual === null || actual === undefined) return false;
+  const value = cached?.value;
+  switch (field.type) {
+    case 'number':
+    case 'integer': {
+      const a = asNumber(actual);
+      return (
+        typeof value === 'number' &&
+        a !== undefined &&
+        relativelyEqual(value, a)
+      );
+    }
+    case 'money': {
+      const a = asNumber(actual);
+      const scale = field.money?.scale ?? 0;
+      return (
+        typeof value === 'number' &&
+        a !== undefined &&
+        Math.abs(value * 10 ** scale - a) <= 0.5
+      );
+    }
+    case 'boolean':
+      return typeof value === 'boolean' && asBoolean(actual) === value;
+    case 'date':
+      return value instanceof Date && asIsoDate(actual) === isoDate(value);
+    default:
+      return typeof value === 'string'
+        ? value === String(actual)
+        : describeCell(cached) === String(actual);
+  }
+}
+
+/**
+ * After a load: row counts, column sums and every calculated field with a
+ * cached column, read back from the target and compared with the workbook.
+ */
+export async function checkLoaded(
+  plan: ImportPlan,
+  workbook: Workbook,
+  target: ImportTarget,
+  facts: ImportFacts,
+): Promise<CheckResult> {
+  const sink = new FindingSink();
+  for (const table of plan.tables) {
+    const planned = facts.tables[table.key]?.planned ?? 0;
+    const count = await target.count(table.key);
+    if (count !== planned) {
+      sink.add({
+        code: 'row-count-mismatch',
+        severity: 'error',
+        table: table.key,
+        expected: planned,
+        actual: count,
+        message: `"${table.key}" holds ${count} rows; the workbook plans ${planned}.`,
+      });
+    }
+    for (const field of table.fields) {
+      if (field.column === undefined || !SUMMED.has(field.type)) continue;
+      const expected = facts.sums[table.key]?.[field.key];
+      if (expected === undefined) continue;
+      const actual = Number(await target.sum(table.key, field.key));
+      const equal =
+        field.type === 'number'
+          ? relativelyEqual(expected, actual)
+          : expected === actual;
+      if (!equal) {
+        sink.add({
+          code: 'sum-mismatch',
+          severity: 'error',
+          table: table.key,
+          field: field.key,
+          expected,
+          actual,
+          message: `"${table.key}.${field.key}" sums to ${actual}; the workbook sums to ${expected}.`,
+        });
+      }
+    }
+    await checkCalculated(table, workbook, target, sink);
+  }
+  const findings = sink.list();
+  return { ok: !hasErrors(findings), findings };
+}
+
+async function checkCalculated(
+  table: PlanTable,
+  workbook: Workbook,
+  target: ImportTarget,
+  sink: FindingSink,
+): Promise<void> {
+  const sheet = workbook.sheets.find((s) => s.name === table.source.sheet);
+  if (!sheet) return;
+  for (const field of table.fields) {
+    if (field.calculated === undefined || field.cachedColumn === undefined) {
+      continue;
+    }
+    const column = field.cachedColumn;
+    for await (const row of target.values(table.key, [field.key])) {
+      const cached = sheet.cells.get(row.sourceRow, column);
+      const actual = row.values[field.key];
+      if (cachedAgrees(field, cached, actual)) continue;
+      sink.add({
+        code: 'calculated-mismatch',
+        severity: 'error',
+        table: table.key,
+        field: field.key,
+        sheet: table.source.sheet,
+        cell: address({ row: row.sourceRow, col: column }),
+        row: row.sourceRow,
+        expected: describeCell(cached),
+        actual:
+          actual === null || actual === undefined
+            ? null
+            : typeof actual === 'object'
+              ? JSON.stringify(actual)
+              : (actual as string | number | boolean),
+        message: `Row ${row.sourceRow}: "${field.key}" is ${String(actual)} in the target; the workbook cached ${describeCell(cached)}.`,
+      });
+    }
+  }
+}
