@@ -41,10 +41,13 @@ export class Comment extends SmrtPolymorphicAssociation {
   @tenantId()
   tenantId = '';
 
-  @crossPackageRef('@happyvertical/smrt-users:User', { required: true })
+  @crossPackageRef('@happyvertical/smrt-users:User', {
+    required: true,
+    requiredFor: 'identity',
+  })
   authorUserId = '';
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'idempotency' })
   body = '';
 
   /** JSON array of referenced User UUIDs; use mentionUserIds for validation. */
