@@ -48,6 +48,16 @@ export type RepositoryCiState =
   | 'pending'
   | 'none'
   | 'unknown';
+/** What a project is for: client work, an owned product, or internal work. */
+export const PROJECT_KINDS = ['client', 'product', 'internal'] as const;
+export type ProjectKind = (typeof PROJECT_KINDS)[number];
+/** How a repository serves a project it is linked to. */
+export const PROJECT_REPOSITORY_ROLES = [
+  'primary',
+  'shared-library',
+  'infrastructure',
+] as const;
+export type ProjectRepositoryRole = (typeof PROJECT_REPOSITORY_ROLES)[number];
 export type ProjectProviderType = 'github' | 'jira' | 'linear' | 'zenhub';
 
 /**

@@ -11,6 +11,7 @@ export { ProjectGovernanceEventCollection } from './ProjectGovernanceEvents';
 export { ProjectIntegrationAuditCollection } from './ProjectIntegrationAudits';
 export { ProjectIntegrationCollection } from './ProjectIntegrations';
 export { ProjectQuestionCollection } from './ProjectQuestions';
+export { ProjectRepositoryCollection } from './ProjectRepositories';
 export { ProjectSpecificationCollection } from './ProjectSpecifications.js';
 export { ProjectCollection } from './Projects';
 export { PullRequestCollection } from './PullRequests';

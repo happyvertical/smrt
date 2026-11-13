@@ -20,6 +20,7 @@ import type {
   ItemFilters,
   ProjectField,
   ProjectItem,
+  ProjectKind,
   ProjectProviderType,
   ProjectStatus,
   SDKProject,
@@ -41,6 +42,7 @@ export interface ProjectOptions extends SmrtObjectOptions {
   fields?: ProjectField[];
   statusFieldId?: string;
   statusOptions?: Record<string, string>;
+  kind?: ProjectKind | null;
   tenantId?: string | null;
 }
 
@@ -104,6 +106,16 @@ export class Project extends SmrtObject {
   url: string = '';
 
   /**
+   * What the project is for (client, product, internal). Unset until assigned;
+   * internal projects belong to the owning organization (#4906).
+   */
+  @field({
+    type: 'text',
+    description: 'Whether this is client, product, or internal work.',
+  })
+  kind: ProjectKind | null = null;
+
+  /**
    * Project provider type
    */
   providerType: ProjectProviderType = 'github';
@@ -163,6 +175,7 @@ export class Project extends SmrtObject {
       this.statusFieldId = options.statusFieldId;
     if (options.statusOptions !== undefined)
       this.statusOptions = options.statusOptions;
+    if (options.kind !== undefined) this.kind = options.kind;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
   }
 

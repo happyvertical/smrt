@@ -60,6 +60,7 @@ await issue.rollback();
 | Export | Description |
 |--------|------------|
 | `Repository` | Git repository with provider integration. Methods: `sync()`, `getIssues()`, `getPullRequests()`, `createIssue()`, `createPullRequest()`, `summarizeActivity()` |
+| `ProjectRepository` | Link between a `Project` and a `Repository` with a `role` (`primary`, `shared-library`, `infrastructure`); many-to-many |
 | `Issue` | Issue/ticket (STI base). Methods: `sync()`, `incorporateFeedback()`, `rollback()`, `suggestLabels()`, `close()`, `addLabels()`, `addComment()` |
 | `PullRequest` | Pull request (STI subclass of Issue). Methods: `sync()`, `summarize()`, `merge()`, `markReady()`, `convertToDraft()`, `requestReviewers()`, `findLinkedIssue()` |
 | `Project` | Project board (GitHub Projects V2). Methods: `sync()`, `addItem()`, `moveItem()`, `listItems()`, `updateItemStatus()`, `analyzeHealth()` |
@@ -74,6 +75,7 @@ await issue.rollback();
 | Export | Key Methods |
 |--------|------------|
 | `RepositoryCollection` | Standard CRUD |
+| `ProjectRepositoryCollection` | `link()`, `unlink()`, `repositoriesOfProject()`, `projectsOfRepository()`, `unassignedRepositories()` |
 | `CommentCollection` | Standard CRUD (project-native issue comments) |
 | `IssueCollection` | `discover()`, `findByProject()`, `findByRepository()`, `findOpen()`, `findByLabel()`, `findByAssignee()`, `findNeedingReview()`, `findWithUnincorporatedFeedback()`, `batchSync()` |
 | `PullRequestCollection` | `discover()`, `findByRepository()`, `findOpen()`, `batchSync()` |
