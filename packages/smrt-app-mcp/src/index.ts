@@ -23,6 +23,15 @@
  */
 
 export {
+  createInMemoryMcpAuditSink,
+  type McpAuditOutcome,
+  type McpAuditQuery,
+  type McpAuditRecord,
+  type McpAuditSink,
+  mcpArgumentKeyNames,
+  mcpAuditRecordFromEvent,
+} from './audit.js';
+export {
   continueMcpWorkflow,
   createMcpContinuationTool,
   type McpWorkflowContinuation,
@@ -38,6 +47,7 @@ export {
 } from './defaults.js';
 export {
   MCP_AUTHENTICATION_REQUIRED_CODE,
+  MCP_CONFIRM_REQUIRED_CODE,
   MCP_ORIGIN_DENIED_CODE,
   MCP_TOOL_ACCESS_DENIED_CODE,
   MCP_TOOL_EXECUTION_FAILED_CODE,

@@ -33,6 +33,9 @@ export class McpAccessError extends Error {
 /** Stable code for a request naming a tool this server does not publish. */
 export const MCP_TOOL_NOT_FOUND_CODE = 'mcp_tool_not_found';
 
+/** Stable code for a gated tool called without `arguments.confirm === true`. */
+export const MCP_CONFIRM_REQUIRED_CODE = 'confirm_required';
+
 /** Stable code for a tool call that needs an authenticated principal. */
 export const MCP_AUTHENTICATION_REQUIRED_CODE = 'mcp_authentication_required';
 

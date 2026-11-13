@@ -268,6 +268,46 @@ workflowTools: [{
 }],
 ```
 
+### Tool scopes, confirm gate and persistent audit
+
+Scoped credentials for external agents need no app-local policy parsing:
+
+```ts
+createDefaultMcpAppServer({
+  models, requiredScopes: [], principalKinds: ['agent', 'owner'],
+  // glob pattern -> scopes the principal must hold (all of them)
+  toolScopes: { 'crm_*': ['crm.read'], mail_send: ['mail.send'] },
+  // refuse unless arguments.confirm === true (also: workflowTool.requiresConfirm)
+  confirmTools: ['*_send', '*_publish', '*_pay', '*_delete'],
+  auditSink: createSmrtMcpAuditStore({ smrtOptions }), // from '@happyvertical/smrt-app-mcp/audit-store'
+  auditTenantId: ({ principal }) => principal?.tenantId, // host-supplied; the default
+});
+```
+
+- **Scopes.** A workflow tool declares `requiredScopes`; the host may also map
+  patterns with `toolScopes`. A tool whose scopes the principal (`principal.scopes`)
+  does not hold is hidden from `tools/list` and denied (403) on call; this is
+  ANDed with `toolPolicy`. An anonymous caller holds none, so a scoped tool is
+  never public.
+- **Confirm.** A gated tool is refused before any `workflowAssertions` or
+  handler runs unless `arguments.confirm === true`: the result is `isError` with
+  `structuredContent.error.code === 'confirm_required'`, audited `denied`.
+  Discovery advertises a boolean `confirm` property. For generated tools the
+  `confirm` flag is consumed by the gate and not forwarded.
+- **Audit.** `onToolCall` events now also carry `tenantId`, `argumentKeys`
+  and `occurredAt`; `auditSink.record(record)` receives the persistable
+  `McpAuditRecord` (`principalId`, `principalKind`, `tool`, `tenantId`,
+  `outcome: 'allowed' | 'denied' | 'error'`, `errorCode?`, `argumentKeys`,
+  `occurredAt`): argument key names only, never values. A tool result with
+  `isError` records `error`, or `denied` for `forbidden`, `confirm_required` and
+  access-denial codes. Sink failures go to `onToolCallHookError`.
+- **Persistent store.** `createSmrtMcpAuditStore({ smrtOptions })` (subpath
+  `./audit-store`, registers the tenant-scoped `McpCallAudit` model, table
+  `smrt_mcp_call_audits`) is a sink with `list({ tenantId, principalId?, tool?,
+  outcome?, limit? })`; `tenantId` is mandatory (`null` lists global rows).
+  Run your schema bootstrap/migrations so the table exists. Implement
+  `McpAuditSink` for any other store; `createInMemoryMcpAuditSink()` suits tests.
+
 ### Host operations, audit and typed errors
 
 `@happyvertical/smrt-app-mcp/host-operations` (browser-safe, dependency-free)

@@ -1,5 +1,5 @@
 import { createPackageConfig } from '../../vite.config.base.js';
 
 export default createPackageConfig('smrt-app-mcp', {
-  entries: ['sveltekit', 'auth', 'host-operations'],
+  entries: ['sveltekit', 'auth', 'host-operations', 'audit-store'],
 });
