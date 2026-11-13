@@ -8,27 +8,10 @@ import {
   type PlannedRecord,
 } from './evaluate.js';
 import { FindingSink } from './findings.js';
+import { DEFAULT_IMPORT_LIMITS, type ImportLimits } from './limits.js';
 import { type ImportPlan, loadOrder } from './plan.js';
 
-/**
- * PROVISIONAL (owner decision pending): the most cells a workbook may hold
- * before an import is refused. One named constant so the decision is one edit.
- */
-export const DEFAULT_MAX_CELLS = 250_000;
-
-export const DEFAULT_MAX_ROWS_PER_TABLE = 10_000;
-
 export const DEFAULT_BATCH_SIZE = 500;
-
-export interface ImportLimits {
-  maxCells: number;
-  maxRowsPerTable: number;
-}
-
-export const DEFAULT_IMPORT_LIMITS: Readonly<ImportLimits> = Object.freeze({
-  maxCells: DEFAULT_MAX_CELLS,
-  maxRowsPerTable: DEFAULT_MAX_ROWS_PER_TABLE,
-});
 
 export type LoadRecord = PlannedRecord;
 
@@ -108,14 +91,19 @@ export function admit(
 export function planLoad(
   plan: ImportPlan,
   workbook: Workbook,
-  options: { batchSize?: number } = {},
+  options: { batchSize?: number; limits?: Partial<ImportLimits> } = {},
 ): LoadPlan {
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
   if (!Number.isSafeInteger(batchSize) || batchSize < 1) {
     throw new RangeError('batchSize must be a positive integer');
   }
   const sink = new FindingSink();
-  const tables = evaluatePlan(plan, workbook, sink);
+  const tables = evaluatePlan(
+    plan,
+    workbook,
+    sink,
+    options.limits?.maxWork ?? DEFAULT_IMPORT_LIMITS.maxWork,
+  );
   const unreadable = [...tables.values()].filter((t) => !t.readable);
   if (unreadable.length > 0) {
     throw new ImportRunError(

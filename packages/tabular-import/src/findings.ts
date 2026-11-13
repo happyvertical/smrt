@@ -15,6 +15,7 @@ export type FindingCode =
   | 'sum-unsafe'
   | 'row-count-mismatch'
   | 'sum-mismatch'
+  | 'calculated-invalid'
   | 'calculated-mismatch';
 
 export interface Finding {

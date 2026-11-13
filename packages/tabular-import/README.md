@@ -61,6 +61,9 @@ and, for every calculated field with a `cachedColumn`, the target's value
 against the workbook's cached result, row by row. That is how a translated
 formula is proven.
 
+If `ok` is false after a load, the target holds a draft that failed its proof:
+discard it. This package does not undo or recreate anything.
+
 ### Targets
 
 Implement `ImportTarget` (`describe`, `applyStructure`, `load`, `count`, `sum`,
@@ -80,6 +83,8 @@ The `/testing` entry is Node-only; the root entry is browser-safe.
 ### Limits
 
 Workbooks over 250,000 cells or tables over 10,000 rows are refused before any
-row is read (`admit`). The cell limit is provisional. Plans are bounded too:
+row is read (`admit`). The cell limit is provisional. Reading is bounded by
+occupied cells, not range size, and by a work budget (`maxWork`, refusal
+`work-over-limit`). Plans are bounded too:
 200 tables, 500 fields per table, 2 MB of JSON; all can be raised through
 `validatePlan(plan, limits)`.

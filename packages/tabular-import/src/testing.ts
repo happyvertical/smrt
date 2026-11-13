@@ -67,6 +67,13 @@ function toStored(value: unknown): unknown {
 
 function fromStored(field: PlanField | undefined, value: unknown): unknown {
   if (typeof value === 'bigint') return Number(value);
+  if (
+    typeof value === 'string' &&
+    (field?.type === 'integer' || field?.type === 'money') &&
+    /^-?\d+$/.test(value)
+  ) {
+    return BigInt(value);
+  }
   if (field?.type === 'boolean' && (value === 0 || value === 1)) {
     return value === 1;
   }
@@ -264,7 +271,15 @@ export async function createSqliteReferenceTarget(
           chunks.push(wanted.slice(at, at + 500));
         }
       } else chunks.push(undefined);
-      const select = [SOURCE_ROW, ...fields].map(quote).join(', ');
+      // An integer beyond the safe range cannot cross the driver as a number;
+      // hand it over as text and surface it as a bigint instead.
+      const select = [
+        quote(SOURCE_ROW),
+        ...fields.map(
+          (f) =>
+            `CASE WHEN typeof(${quote(f)}) = 'integer' AND (${quote(f)} > 9007199254740991 OR ${quote(f)} < -9007199254740991) THEN CAST(${quote(f)} AS TEXT) ELSE ${quote(f)} END AS ${quote(f)}`,
+        ),
+      ].join(', ');
       for (const chunk of chunks) {
         const where = chunk
           ? ` WHERE ${quote(SOURCE_ROW)} IN (${chunk.map((_, i) => `$${i + 1}`).join(', ')})`

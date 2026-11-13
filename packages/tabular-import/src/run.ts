@@ -2,7 +2,8 @@ import type { Workbook } from '@happyvertical/spreadsheets';
 import { checkLoaded, checkPlan, type ImportFacts } from './checks.js';
 import { ImportRunError } from './errors.js';
 import { type Finding, hasErrors } from './findings.js';
-import { admit, type ImportLimits, planLoad } from './load.js';
+import type { ImportLimits } from './limits.js';
+import { admit, planLoad } from './load.js';
 import { type ImportPlan, validatePlan } from './plan.js';
 import type { ImportTarget } from './target.js';
 
@@ -36,7 +37,7 @@ export async function runImport(
   const plan = validatePlan(options.plan);
   admit(options.workbook, options.limits, plan);
 
-  const planned = checkPlan(plan, options.workbook);
+  const planned = checkPlan(plan, options.workbook, undefined, options.limits);
   if (!planned.ok) {
     return {
       ok: false,
@@ -62,6 +63,7 @@ export async function runImport(
   const loaded: Record<string, number> = {};
   const load = planLoad(plan, options.workbook, {
     batchSize: options.batchSize,
+    limits: options.limits,
   });
   for (const table of load.order) loaded[table] = 0;
   for (const batch of load.batches()) {

@@ -12,7 +12,9 @@ import {
   hasLeadingZeros,
   isBlankCell,
 } from './coerce.js';
+import { ImportRunError } from './errors.js';
 import type { FindingSink } from './findings.js';
+import { DEFAULT_MAX_WORK } from './limits.js';
 import type { ImportPlan, PlanField, PlanTable } from './plan.js';
 
 export interface PlannedRecord {
@@ -37,26 +39,58 @@ export interface EvaluatedTable {
   rejected: number;
 }
 
-const extentCache = new WeakMap<Sheet, { rows: number; columns: number }>();
-
-/** Highest occupied row and column of a sheet; one pass over sparse storage. */
-function sheetExtent(sheet: Sheet): { rows: number; columns: number } {
-  let known = extentCache.get(sheet);
-  if (!known) {
-    known = { rows: 0, columns: 0 };
-    for (const [row, cells] of sheet.cells.rows()) {
-      known.rows = Math.max(known.rows, row);
-      for (const column of cells.keys()) {
-        known.columns = Math.max(known.columns, column);
-      }
-    }
-    extentCache.set(sheet, known);
-  }
-  return known;
+/** Highest occupied row of a sheet. Never cached: workbooks are mutable. */
+export function lastOccupiedRow(sheet: Sheet): number {
+  let last = 0;
+  for (const [row] of sheet.cells.rows()) last = Math.max(last, row);
+  return last;
 }
 
-export function lastOccupiedRow(sheet: Sheet): number {
-  return sheetExtent(sheet).rows;
+type IndexedRows = Array<[number, ReadonlyMap<number, Cell>]>;
+
+/**
+ * State of one evaluation call: the occupied rows of each sheet, read once,
+ * and the work spent so far. Nothing outlives the call, so a workbook that
+ * changes between calls is always read afresh.
+ */
+class Evaluation {
+  private readonly rows = new Map<Sheet, IndexedRows>();
+  private used = 0;
+
+  constructor(private readonly maxWork: number) {}
+
+  charge(units: number): void {
+    this.used += units;
+    if (this.used > this.maxWork) {
+      throw new ImportRunError(
+        'work-over-limit',
+        `Reading the workbook needs more than ${this.maxWork} units of work.`,
+        { maxWork: this.maxWork },
+      );
+    }
+  }
+
+  occupied(sheet: Sheet): IndexedRows {
+    let known = this.rows.get(sheet);
+    if (!known) {
+      this.charge(sheet.cells.size);
+      known = [...sheet.cells.rows()];
+      this.rows.set(sheet, known);
+    }
+    return known;
+  }
+}
+
+/** Index of the first entry whose row is at least `row`. */
+function lowerBound(rows: IndexedRows, row: number): number {
+  let low = 0;
+  let high = rows.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (rows[mid][0] < row) low = mid + 1;
+    else high = mid;
+  }
+  return low;
 }
 
 /** The sheet columns a field reads from. */
@@ -100,11 +134,16 @@ export function evaluatePlan(
   plan: ImportPlan,
   workbook: Workbook,
   sink: FindingSink,
+  maxWork: number = DEFAULT_MAX_WORK,
 ): Map<string, EvaluatedTable> {
+  const evaluation = new Evaluation(maxWork);
   const tables = new Map(plan.tables.map((table) => [table.key, table]));
   const result = new Map<string, EvaluatedTable>();
   for (const table of plan.tables) {
-    result.set(table.key, evaluateTable(table, tables, workbook, sink));
+    result.set(
+      table.key,
+      evaluateTable(table, tables, workbook, sink, evaluation),
+    );
   }
   return result;
 }
@@ -114,6 +153,7 @@ function evaluateTable(
   tables: ReadonlyMap<string, PlanTable>,
   workbook: Workbook,
   sink: FindingSink,
+  evaluation: Evaluation,
 ): EvaluatedTable {
   const out: EvaluatedTable = {
     table,
@@ -183,8 +223,11 @@ function evaluateTable(
 
   const skip = new Set(table.source.skipRows ?? []);
   const first = Math.max(headerRow + 1, box.start.row);
-  const last = Math.min(box.end.row, lastOccupiedRow(sheet));
-  const lastColumn = Math.min(box.end.col, sheetExtent(sheet).columns);
+  const occupiedRows = evaluation.occupied(sheet);
+  const lastRow =
+    occupiedRows.length > 0 ? occupiedRows[occupiedRows.length - 1][0] : 0;
+  const last = Math.min(box.end.row, lastRow);
+  const total = Math.max(0, last - first + 1);
   const mapped = new Set(table.fields.flatMap(fieldColumns));
   const readFields = table.fields.filter(
     (field) => field.column !== undefined || field.reference,
@@ -196,24 +239,38 @@ function evaluateTable(
   const seen = new Set<string>();
   const unmapped = new Map<number, { count: number; formula: boolean }>();
 
-  for (let row = first; row <= last; row++) {
-    out.read++;
+  // Only occupied rows are visited; the empty rows between are counted, not walked.
+  let occupied = 0;
+  for (
+    let at = lowerBound(occupiedRows, first);
+    at < occupiedRows.length && occupiedRows[at][0] <= last;
+    at++
+  ) {
+    const [row, rowCells] = occupiedRows[at];
+    occupied++;
+    evaluation.charge(1 + rowCells.size + sources.length);
     if (skip.has(row)) {
       out.skipped++;
       continue;
     }
     // Columns nothing maps: remember what they hold, for one warning each.
     // A distinct table is an extraction of some columns, so the rest are expected.
-    for (let column = box.start.col; column <= lastColumn; column++) {
-      if (table.source.distinct || mapped.has(column)) continue;
-      const cell = sheet.cells.get(row, column);
-      if (!cell || isBlankCell(cell)) continue;
+    for (const [column, cell] of rowCells) {
+      if (
+        table.source.distinct ||
+        mapped.has(column) ||
+        column < box.start.col ||
+        column > box.end.col
+      ) {
+        continue;
+      }
+      if (isBlankCell(cell)) continue;
       const entry = unmapped.get(column) ?? { count: 0, formula: false };
       entry.count++;
       if (cell.formula) entry.formula = true;
       unmapped.set(column, entry);
     }
-    if (sources.every((column) => isBlankCell(sheet.cells.get(row, column)))) {
+    if (sources.every((column) => isBlankCell(rowCells.get(column)))) {
       out.skipped++;
       continue;
     }
@@ -262,7 +319,7 @@ function evaluateTable(
             ?.fields.find(
               (candidate) => candidate.key === field.reference?.by[index],
             );
-          const cell = sheet.cells.get(row, column);
+          const cell = rowCells.get(column);
           if (!keyField) {
             failed = true;
             return;
@@ -312,7 +369,7 @@ function evaluateTable(
         continue;
       }
       const column = field.column as number;
-      const cell = sheet.cells.get(row, column);
+      const cell = rowCells.get(column);
       if (field.type === 'number' || field.type === 'integer') {
         const digits = digitsAsNumber(cell);
         if (digits !== undefined) {
@@ -366,6 +423,8 @@ function evaluateTable(
     }
     out.rows.push(record);
   }
+  out.read = total;
+  out.skipped += total - occupied;
 
   const headerLabel = (column: number): string =>
     describeCell(sheet.cells.get(headerRow, column));

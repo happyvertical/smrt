@@ -36,6 +36,7 @@ export class ImportPlanError extends Error {
 export type ImportRunErrorCode =
   | 'cells-over-limit'
   | 'rows-over-limit'
+  | 'work-over-limit'
   | 'target-not-empty'
   | 'source-invalid';
 

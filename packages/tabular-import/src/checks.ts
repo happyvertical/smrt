@@ -12,6 +12,7 @@ import {
   type PlannedRecord,
 } from './evaluate.js';
 import { type Finding, FindingSink, hasErrors } from './findings.js';
+import { DEFAULT_IMPORT_LIMITS, type ImportLimits } from './limits.js';
 import type { ImportPlan, PlanField, PlanTable } from './plan.js';
 import type { ImportTarget } from './target.js';
 
@@ -170,9 +171,15 @@ export function checkPlan(
   plan: ImportPlan,
   workbook: Workbook,
   _profile?: WorkbookProfile,
+  limits: Partial<ImportLimits> = {},
 ): PlanCheckResult {
   const sink = new FindingSink();
-  const tables = evaluatePlan(plan, workbook, sink);
+  const tables = evaluatePlan(
+    plan,
+    workbook,
+    sink,
+    limits.maxWork ?? DEFAULT_IMPORT_LIMITS.maxWork,
+  );
   crossChecks(tables, sink);
 
   const facts: ImportFacts = { tables: {}, sums: {} };
@@ -233,6 +240,30 @@ function asIsoDate(value: unknown): string | undefined {
   return undefined;
 }
 
+/** Why a stored calculated value cannot be a valid value of its field, if it cannot. */
+function invalidCalculated(
+  field: PlanField,
+  actual: unknown,
+): string | undefined {
+  if (actual === null || actual === undefined) return undefined;
+  const whole = field.type === 'integer' || field.type === 'money';
+  if (!whole && field.type !== 'number') return undefined;
+  if (typeof actual === 'bigint') {
+    return actual <= BigInt(Number.MAX_SAFE_INTEGER) &&
+      actual >= BigInt(Number.MIN_SAFE_INTEGER)
+      ? undefined
+      : `${actual} is beyond the safe integer range`;
+  }
+  const n = actual;
+  if (typeof n !== 'number' || !Number.isFinite(n)) {
+    return `${String(actual)} is not a finite number`;
+  }
+  if (whole && !Number.isInteger(n)) return `${n} is not a whole number`;
+  if (whole && !Number.isSafeInteger(n))
+    return `${n} is beyond the safe integer range`;
+  return undefined;
+}
+
 /** Does the target's value for a calculated field agree with the workbook's cached result? */
 function cachedAgrees(
   field: PlanField,
@@ -244,8 +275,7 @@ function cachedAgrees(
   if (actual === null || actual === undefined) return false;
   const value = cached?.value;
   switch (field.type) {
-    case 'number':
-    case 'integer': {
+    case 'number': {
       const a = asNumber(actual);
       return (
         typeof value === 'number' &&
@@ -253,14 +283,18 @@ function cachedAgrees(
         relativelyEqual(value, a)
       );
     }
+    // Integers and money are exact: no tolerance, however large the value.
+    case 'integer': {
+      const a = asNumber(actual);
+      return typeof value === 'number' && a !== undefined && value === a;
+    }
     case 'money': {
       const a = asNumber(actual);
-      const scale = field.money?.scale ?? 0;
-      return (
-        typeof value === 'number' &&
-        a !== undefined &&
-        Math.abs(value * 10 ** scale - a) <= 0.5
-      );
+      if (typeof value !== 'number' || a === undefined) return false;
+      const minor = value * 10 ** (field.money?.scale ?? 0);
+      const rounded = Math.round(minor);
+      // A cached amount finer than a minor unit cannot equal a stored integer.
+      return Math.abs(minor - rounded) <= 1e-6 && rounded === a;
     }
     case 'boolean':
       return typeof value === 'boolean' && asBoolean(actual) === value;
@@ -331,15 +365,34 @@ async function checkCalculated(
   sink: FindingSink,
 ): Promise<void> {
   const sheet = workbook.sheets.find((s) => s.name === table.source.sheet);
-  if (!sheet) return;
   for (const field of table.fields) {
-    if (field.calculated === undefined || field.cachedColumn === undefined) {
-      continue;
-    }
+    if (field.calculated === undefined) continue;
     const column = field.cachedColumn;
     for await (const row of target.values(table.key, [field.key])) {
-      const cached = sheet.cells.get(row.sourceRow, column);
       const actual = row.values[field.key];
+      const shown =
+        actual === null || actual === undefined
+          ? null
+          : typeof actual === 'object'
+            ? JSON.stringify(actual)
+            : typeof actual === 'bigint'
+              ? String(actual)
+              : (actual as string | number | boolean);
+      const invalid = invalidCalculated(field, actual);
+      if (invalid !== undefined) {
+        sink.add({
+          code: 'calculated-invalid',
+          severity: 'error',
+          table: table.key,
+          field: field.key,
+          row: row.sourceRow,
+          actual: shown,
+          message: `Row ${row.sourceRow}: "${field.key}" holds ${invalid}.`,
+        });
+        continue;
+      }
+      if (column === undefined || !sheet) continue;
+      const cached = sheet.cells.get(row.sourceRow, column);
       if (cachedAgrees(field, cached, actual)) continue;
       sink.add({
         code: 'calculated-mismatch',
@@ -350,12 +403,7 @@ async function checkCalculated(
         cell: address({ row: row.sourceRow, col: column }),
         row: row.sourceRow,
         expected: describeCell(cached),
-        actual:
-          actual === null || actual === undefined
-            ? null
-            : typeof actual === 'object'
-              ? JSON.stringify(actual)
-              : (actual as string | number | boolean),
+        actual: shown,
         message: `Row ${row.sourceRow}: "${field.key}" is ${String(actual)} in the target; the workbook cached ${describeCell(cached)}.`,
       });
     }

@@ -24,12 +24,15 @@ export {
   MAX_EXAMPLES,
 } from './findings.js';
 export {
-  admit,
-  DEFAULT_BATCH_SIZE,
   DEFAULT_IMPORT_LIMITS,
   DEFAULT_MAX_CELLS,
   DEFAULT_MAX_ROWS_PER_TABLE,
+  DEFAULT_MAX_WORK,
   type ImportLimits,
+} from './limits.js';
+export {
+  admit,
+  DEFAULT_BATCH_SIZE,
   type LoadBatch,
   type LoadPlan,
   type LoadRecord,

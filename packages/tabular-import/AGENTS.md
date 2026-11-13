@@ -37,6 +37,15 @@ name either. No `@smrt()` objects, no tables, no Svelte.
 - Money is integer minor units (`value * 10^scale`, within 1e-6 of an integer or
   refused). Integer sums are exact (BigInt); number sums are compensated.
 - `distinct` tables skip the unmapped-column warning: they extract columns by design.
+- Work is bounded: evaluation visits occupied rows and mapped columns only, never
+  range width x height, and spends from `maxWork` (`DEFAULT_MAX_WORK`); over it,
+  `work-over-limit`. Row indexes live for one evaluation call, never across calls:
+  a workbook is mutable and is re-read every time.
+- `checkLoaded` value-checks every calculated integer, money and number field
+  (`calculated-invalid`: not a whole safe integer / not finite) with or without a
+  `cachedColumn`. Integer and money comparisons are exact; tolerance is for `number`.
+- `ok:false` after a load is a verdict, not a repair: the caller discards the draft
+  target. There is no rollback or recreation logic here.
 - Findings keep at most 20 examples per (code, table, field) with a total `count`.
 - Plan keys are `^[a-z][a-z0-9_]{0,62}$`; SQL keywords are fine, names that exist
   on every object (`constructor`, `prototype`, ...) are refused. The reference
