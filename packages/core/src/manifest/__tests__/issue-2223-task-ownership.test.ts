@@ -191,6 +191,23 @@ function withIsolatedCoreFixture<T>(run: (fixtureDir: string) => T): T {
         join(destination, 'node_modules'),
       );
     }
+    // These downstream packages are real prerequisites of core integration
+    // tests, but this fixture exercises only core's artifact ownership.
+    // Keep lightweight task providers here; app-tools tests use real builds.
+    for (const dependency of ['approvals', 'smrt-web']) {
+      const { name, version } = JSON.parse(
+        readFileSync(
+          resolve(workspaceDir, 'packages', dependency, 'package.json'),
+          'utf8',
+        ),
+      );
+      const destination = join(fixtureRoot, 'packages', dependency);
+      mkdirSync(destination, { recursive: true });
+      writeFileSync(
+        join(destination, 'package.json'),
+        JSON.stringify({ name, version, scripts: { build: 'node -e ""' } }),
+      );
+    }
 
     return run(fixtureDir);
   } finally {
@@ -282,6 +299,14 @@ describe('Issue #2223 - test manifest task ownership', () => {
     withIsolatedCoreFixture((fixtureDir) => {
       const fixtureWorkspace = resolve(fixtureDir, '../..');
       const turbo = resolve(workspaceDir, 'node_modules/.bin/turbo');
+      expect(
+        getCoreTask(fixtureWorkspace, 'generate:test').dependencies,
+      ).toEqual(
+        expect.arrayContaining([
+          '@happyvertical/smrt-approvals#build',
+          '@happyvertical/smrt-web#build',
+        ]),
+      );
       // The canonical `.smrt` pair is the production one `generate` writes.
       // Produce it here rather than assuming an earlier build left it: the
       // fixture copy excludes `.smrt/`, and `generate:test` depends only on

@@ -468,6 +468,10 @@ checks the generated imports with `svelte-check`.
 Core's `generate:test` task depends on its own `build`: both publish the local
 `.smrt` manifest/knowledge pair, so Turbo must serialize production before test
 generation instead of caching an interleaved pair.
+It also builds `smrt-approvals` and `smrt-web` for the cookbook app-tools
+integration tests, which exercise app-runtime's durable owner approval store
+and smrt-svelte's screen source adapter. These test-only prerequisites belong
+in core's task graph, avoiding a production dependency cycle.
 
 ## Model descriptions
 
