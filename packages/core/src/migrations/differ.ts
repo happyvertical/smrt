@@ -1,4 +1,5 @@
 import {
+  GeneratedFieldError,
   generatedExpressionsMatch,
   readGeneratedColumns,
 } from '../generated-fields.js';
@@ -2094,13 +2095,26 @@ export class SchemaComparer {
             const indexes = manifest.indexes.filter((index) =>
               index.columns.includes(colName),
             );
+            const additions = await this.generateAddColumnChanges(
+              tableName,
+              colName,
+              colDef,
+            );
             const statements = [
+              ...(this.engine === 'sqlite'
+                ? [
+                    `DROP INDEX IF EXISTS ${this.quoteIdentifier(uniqueColumnIndexName(tableName, colName))}`,
+                  ]
+                : []),
               ...indexes.map(
                 (index) =>
                   `DROP INDEX IF EXISTS ${this.quoteIdentifier(index.name)}`,
               ),
               `ALTER TABLE ${table} DROP COLUMN ${column}`,
-              `ALTER TABLE ${table} ADD COLUMN ${this.ddlStrategy.generateColumnDefinition(colName, colDef)}`,
+              ...additions.flatMap(
+                (change) =>
+                  change.sqlStatements ?? (change.sql ? [change.sql] : []),
+              ),
               ...this.ddlStrategy.generateIndexes({ ...manifest, indexes }),
             ];
             changes.push({
@@ -2110,6 +2124,10 @@ export class SchemaComparer {
               column: colDef,
               sql: statements[0],
               sqlStatements: statements,
+              advisory: {
+                severity: 'warning',
+                message: `Converting VIRTUAL ${tableName}.${colName} to an ordinary column replaces its calculated results with the declared default or NULL.`,
+              },
               mismatch: {
                 expected:
                   'ordinary column (virtual results replaced by default or NULL)',
@@ -2132,18 +2150,37 @@ export class SchemaComparer {
               colDef.generatedInputTypes,
             ))
           ) {
+            if (this.engine === 'duckdb')
+              throw new GeneratedFieldError(
+                `DuckDB cannot add or change generated column ${tableName}.${colName} on an existing table; migrate to a new table explicitly`,
+                'VALIDATION_GENERATED_DIALECT',
+                colName,
+              );
             const table = this.quoteIdentifier(tableName);
             const column = this.quoteIdentifier(colName);
             const indexes = manifest.indexes.filter((index) =>
               index.columns.includes(colName),
             );
+            const additions = await this.generateAddColumnChanges(
+              tableName,
+              colName,
+              colDef,
+            );
             const statements = [
+              ...(this.engine === 'sqlite'
+                ? [
+                    `DROP INDEX IF EXISTS ${this.quoteIdentifier(uniqueColumnIndexName(tableName, colName))}`,
+                  ]
+                : []),
               ...indexes.map(
                 (index) =>
                   `DROP INDEX IF EXISTS ${this.quoteIdentifier(index.name)}`,
               ),
               `ALTER TABLE ${table} DROP COLUMN ${column}`,
-              `ALTER TABLE ${table} ADD COLUMN ${this.ddlStrategy.generateColumnDefinition(colName, colDef)}`,
+              ...additions.flatMap(
+                (change) =>
+                  change.sqlStatements ?? (change.sql ? [change.sql] : []),
+              ),
               ...this.ddlStrategy.generateIndexes({ ...manifest, indexes }),
             ];
             changes.push({
@@ -2153,6 +2190,14 @@ export class SchemaComparer {
               column: colDef,
               sql: statements[0],
               sqlStatements: statements,
+              ...(actual === undefined
+                ? {
+                    advisory: {
+                      severity: 'warning' as const,
+                      message: `Converting ${tableName}.${colName} to a generated column will discard existing values and recalculate them from the expression.`,
+                    },
+                  }
+                : {}),
               mismatch: {
                 expected: JSON.stringify(colDef.generated),
                 actual: actual ?? 'ordinary column',
@@ -5103,13 +5148,30 @@ export class SchemaComparer {
     inlineReferences: ForeignKeyDefinition[] = [],
   ): Promise<SchemaChange[]> {
     if (colDef.generated !== undefined) {
+      if (this.engine === 'duckdb')
+        throw new GeneratedFieldError(
+          `DuckDB cannot add generated column ${tableName}.${colName} to an existing table; migrate to a new table explicitly`,
+          'VALIDATION_GENERATED_DIALECT',
+          colName,
+        );
+      // SQLite accepts UNIQUE in CREATE TABLE, but never ALTER ADD COLUMN.
+      const separateUnique = this.engine === 'sqlite' && colDef.unique;
+      const sql = `ALTER TABLE ${this.quoteIdentifier(tableName)} ADD COLUMN ${this.ddlStrategy.generateColumnDefinition(colName, separateUnique ? { ...colDef, unique: false } : colDef)}`;
       return [
         {
           type: 'add_column',
           table: tableName,
           name: colName,
           column: colDef,
-          sql: `ALTER TABLE ${this.quoteIdentifier(tableName)} ADD COLUMN ${this.ddlStrategy.generateColumnDefinition(colName, colDef)}`,
+          sql,
+          ...(separateUnique
+            ? {
+                sqlStatements: [
+                  sql,
+                  `CREATE UNIQUE INDEX ${this.quoteIdentifier(uniqueColumnIndexName(tableName, colName))} ON ${this.quoteIdentifier(tableName)} (${this.quoteIdentifier(colName)})`,
+                ],
+              }
+            : {}),
         },
       ];
     }

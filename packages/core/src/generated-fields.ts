@@ -339,13 +339,13 @@ export function validateGeneratedFields(
     )
       fail(`expression result ${type} is incompatible with ${field.type}`);
     const inputTypes: Record<string, ExpressionResultType> = {};
-    compileGeneratedExpression(
-      expression,
-      'sqlite',
-      Object.fromEntries(
-        [...fields].map(([key, value]) => [key, sqlExpressionType(value.type)]),
-      ),
+    const logicalInputTypes = Object.fromEntries(
+      [...fields].map(([key, value]) => [key, sqlExpressionType(value.type)]),
     );
+    // Registration promises a portable definition, including PostgreSQL's
+    // immutable STORED-expression contract, not just SQLite's renderer.
+    for (const engine of ['sqlite', 'postgres'] as const)
+      compileGeneratedExpression(expression, engine, logicalInputTypes);
     for (const [key, value] of fields)
       if (inputs.has(value))
         inputTypes[toSnakeCase(key)] = sqlExpressionType(value.type);
@@ -419,6 +419,24 @@ export function compileGeneratedExpression(
       'VALIDATION_GENERATED_DIALECT',
     );
   try {
+    if (engine === 'postgres') {
+      const inspect = (value: unknown, depth = 0): void => {
+        if (depth > 24)
+          throw new GeneratedFieldError('Expression exceeds depth 24');
+        if (!value || typeof value !== 'object') return;
+        const node = value as Record<string, unknown>;
+        if (
+          node.kind === 'datetime' ||
+          (typeof node.col === 'string' && inputTypes[node.col] === 'datetime')
+        )
+          throw new ExpressionError(
+            'NON_IMMUTABLE',
+            'PostgreSQL generated expressions cannot contain datetime columns or literals (TIMESTAMPTZ casts depend on session settings)',
+          );
+        for (const child of Object.values(node)) inspect(child, depth + 1);
+      };
+      inspect(expression);
+    }
     const rendered = renderExpression(expression, {
       dialect: engine,
       mode: 'ddl',

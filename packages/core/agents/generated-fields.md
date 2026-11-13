@@ -30,8 +30,7 @@ resolver: an implicit `tenantId` is protected without a tenancy declaration,
 as are explicitly configured or marked tenant fields. Decoration, manifest
 registration/merge and runtime definitions enforce the same boundary.
 
-Metadata
-is cloned and frozen so changing a caller's definition cannot change a
+Metadata is cloned and frozen so changing a caller's definition cannot change a
 registered expression. `GeneratedFieldError` carries a validation code;
 caller assignments use `VALIDATION_GENERATED_FIELD_WRITE`.
 
@@ -55,20 +54,37 @@ quoting, literal escaping and immutability checks. There is no aggregate SQL
 scraping. Schema/manifest columns carry `generatedInputTypes` for physical
 references, preserving safe casts through migrations and parity checks.
 `VALIDATION_GENERATED_NON_IMMUTABLE` refuses unsafe generated expressions.
-SQLite temporal inputs use ISO text. PostgreSQL core datetime columns are
-TIMESTAMPTZ, so the compiler withholds the SDK's timezone-free type assertion:
-generated date operations on those columns are refused. Typed date literals
-and their composed calendar operations remain immutable. A bare typed temporal
-result targeting a PostgreSQL TIMESTAMPTZ column also requires a session-dependent
-implicit cast and is refused. `asText` of a datetime is refused because its
-representation can depend on session settings.
+Registration compiles for SQLite and PostgreSQL. PostgreSQL rejects datetime
+columns and datetime literals anywhere in the expression tree, including inside
+boolean comparisons or null checks: a boolean result does not make nested
+TIMESTAMPTZ casts immutable. Portable definitions therefore use date-only
+literals for calendar expressions; datetime inputs are refused with
+`VALIDATION_GENERATED_NON_IMMUTABLE` before DDL. The standalone SQLite renderer
+can still compile temporal expressions for that dialect.
 
 SQLite uses VIRTUAL columns; PostgreSQL uses STORED; DuckDB uses VIRTUAL;
 the JSON adapter is refused. Normal migration and parity paths retain
 expression metadata. SQLite generated columns need `table_xinfo` because
 `table_info` omits them. PostgreSQL deparses implicit casts; parity uses
 read-only EXPLAIN (without ANALYZE) to normalize differing renderings. Changed
-expressions drop and re-add the column and recreate declared column indexes.
+expressions on SQLite/PostgreSQL drop and re-add the column and recreate
+declared column indexes. Ordinary-to-generated replacement carries the existing
+warning advisory mechanism because it discards ordinary stored values. SQLite
+adds UNIQUE generated columns with a separate unique index: ALTER ADD COLUMN
+cannot carry inline UNIQUE. PostgreSQL columns are STORED; SQLite and DuckDB
+columns are VIRTUAL.
+
+DuckDB can create a new table with VIRTUAL generated columns (covered against
+real in-process DuckDB). Its driver cannot add a generated column to an existing
+table. Additions and expression changes on existing tables raise
+`VALIDATION_GENERATED_DIALECT` before returning any executable statement; an
+operator must explicitly plan a new-table migration.
+
+Known limit: SQLite/DuckDB drift comparison ignores whitespace and identifier
+quoting but otherwise compares expression text. An SDK renderer change can
+report drift for a semantically identical expression; SQLite may replace the
+column, while DuckDB refuses the change. Inspect the plan after SDK upgrades.
+No semantic SQL parser or normalization beyond formatting is promised.
 Introspection runs even when the expected schema declares no generated columns;
 live parity reports `generated_expression_drift` for both conversion directions.
 

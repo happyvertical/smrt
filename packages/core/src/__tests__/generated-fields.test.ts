@@ -1,5 +1,5 @@
 // biome-ignore-all lint/suspicious/noThenProperty: SQL SDK conditionals require a non-callable then data property.
-import type { DatabaseInterface } from '@happyvertical/sql';
+import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { field } from '../decorators/index.js';
 import {
@@ -559,12 +559,12 @@ describe('database-generated fields #4915', () => {
           2,
         ],
         [
-          'typedDatetime',
+          'typedDate',
           'integer',
           {
             op: 'day',
             value: {
-              value: { kind: 'datetime', iso: '2024-02-29T23:30:00-02:00' },
+              value: { kind: 'date', iso: '2024-03-01' },
             },
           },
           1,
@@ -1089,6 +1089,270 @@ describe('database-generated fields #4915', () => {
     expect(
       (await db.query('SELECT total FROM required_conversion')).rows[0].total,
     ).toBe(42);
+  });
+
+  for (const operation of ['add', 'change', 'ordinary-to-generated'] as const) {
+    it(`#4972 round2 item1: DuckDB refuses ${operation} before a real migration can alter data`, async () => {
+      const db = await getDatabase({ type: 'duckdb', url: ':memory:' });
+      databases.push(db);
+      await db.query(
+        operation === 'add'
+          ? 'CREATE TABLE duck_generated (qty INTEGER)'
+          : operation === 'change'
+            ? 'CREATE TABLE duck_generated (qty INTEGER, total INTEGER GENERATED ALWAYS AS (qty * 2) VIRTUAL)'
+            : 'CREATE TABLE duck_generated (qty INTEGER, total INTEGER)',
+      );
+      await db.query(
+        operation === 'ordinary-to-generated'
+          ? 'INSERT INTO duck_generated (qty, total) VALUES (5, 77)'
+          : 'INSERT INTO duck_generated (qty) VALUES (5)',
+      );
+      const schema: SchemaDefinition = {
+        tableName: 'duck_generated',
+        columns: {
+          qty: { type: 'INTEGER' },
+          total: {
+            type: 'INTEGER',
+            generated: { op: 'add', left: { col: 'qty' }, right: { value: 1 } },
+          },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1',
+      };
+      const migrate = async () => {
+        const diff = await new SchemaComparer(db, {
+          engineHint: 'duckdb',
+        }).compare({ duck_generated: schema });
+        for (const change of diff.changes)
+          for (const sql of change.sqlStatements ??
+            (change.sql ? [change.sql] : []))
+            await db.query(sql);
+      };
+      await expect(migrate()).rejects.toMatchObject({
+        code: 'VALIDATION_GENERATED_DIALECT',
+        name: 'GeneratedFieldError',
+      });
+      const row = (await db.query('SELECT * FROM duck_generated')).rows[0];
+      expect(Number(row.qty)).toBe(5);
+      if (operation !== 'add')
+        expect(Number(row.total)).toBe(operation === 'change' ? 10 : 77);
+      else expect(row).not.toHaveProperty('total');
+    });
+  }
+
+  it('#4972 round2 item1: real DuckDB creates and computes a new VIRTUAL column', async () => {
+    const db = await getDatabase({ type: 'duckdb', url: ':memory:' });
+    databases.push(db);
+    const schema: SchemaDefinition = {
+      tableName: 'duck_new_generated',
+      columns: {
+        qty: { type: 'INTEGER' },
+        total: {
+          type: 'INTEGER',
+          generated: { op: 'mul', left: { col: 'qty' }, right: { value: 2 } },
+        },
+      },
+      indexes: [],
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: '1',
+    };
+    await db.query(getDDLStrategy('duckdb').generateCreateTable(schema));
+    await db.query('INSERT INTO duck_new_generated (qty) VALUES (5)');
+    expect(
+      Number(
+        (await db.query('SELECT total FROM duck_new_generated')).rows[0].total,
+      ),
+    ).toBe(10);
+  });
+
+  for (const engine of persistenceEngines) {
+    it(`#4972 round2 item2: ${engine} refuses datetime inputs nested in boolean generated expressions`, async () => {
+      const db = await getTestDatabase({
+        type: engine === 'sqlite' ? 'sqlite' : 'pglite',
+        classes: [],
+        includeSystemTables: false,
+      });
+      databases.push(db);
+      const literal = {
+        value: { kind: 'datetime', iso: '2024-01-01T00:00:00Z' },
+      } as const;
+      const expressions: GeneratedExpression[] = [
+        { op: 'gt', left: { col: 'time' }, right: literal },
+        {
+          op: 'isNull',
+          operand: { op: 'coalesce', operands: [{ col: 'time' }, literal] },
+        },
+        { op: 'isNull', operand: { col: 'time' } },
+        { op: 'eq', left: literal, right: literal },
+      ];
+      for (const generated of expressions) {
+        expect(() =>
+          runtimeModelEntry({
+            name: 'UnsafeBoolean',
+            packageName: '@test/generated',
+            fields: {
+              time: { type: 'datetime' },
+              result: { type: 'boolean', generated },
+            },
+          }),
+        ).toThrow(
+          expect.objectContaining({
+            code: 'VALIDATION_GENERATED_NON_IMMUTABLE',
+          }),
+        );
+        expect(() =>
+          compileGeneratedExpression(generated, 'postgres', {
+            time: 'datetime',
+          }),
+        ).toThrow(
+          expect.objectContaining({
+            code: 'VALIDATION_GENERATED_NON_IMMUTABLE',
+          }),
+        );
+      }
+      // Date-only literals are still portable and execute on the actual engine.
+      await db.query(
+        getDDLStrategy(engine).generateCreateTable({
+          tableName: 'safe_generated_date',
+          columns: {
+            qty: { type: 'INTEGER' },
+            year: {
+              type: 'INTEGER',
+              generated: {
+                op: 'year',
+                value: { value: { kind: 'date', iso: '2024-01-01' } },
+              },
+            },
+          },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: '1',
+        }),
+      );
+      await db.query('INSERT INTO safe_generated_date (qty) VALUES (1)');
+      expect(
+        Number(
+          (await db.query('SELECT year FROM safe_generated_date')).rows[0].year,
+        ),
+      ).toBe(2024);
+    });
+
+    it(`#4972 round2 item3: ${engine} warns before discarding an ordinary column's values`, async () => {
+      const db = await getTestDatabase({
+        type: engine === 'sqlite' ? 'sqlite' : 'pglite',
+        classes: [],
+        includeSystemTables: false,
+      });
+      databases.push(db);
+      await db.query(
+        'CREATE TABLE destructive_generated (qty INTEGER, total INTEGER)',
+      );
+      await db.query(
+        'INSERT INTO destructive_generated (qty, total) VALUES (5, 77)',
+      );
+      const schema: SchemaDefinition = {
+        tableName: 'destructive_generated',
+        columns: {
+          qty: { type: 'INTEGER' },
+          total: { type: 'INTEGER', generated: { col: 'qty' } },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1',
+      };
+      const diff = await new SchemaComparer(db, { engineHint: engine }).compare(
+        { destructive_generated: schema },
+      );
+      const change = diff.changes.find((change) => change.name === 'total')!;
+      expect(change.advisory).toMatchObject({
+        severity: 'warning',
+        message: expect.stringMatching(/discard.*values/i),
+      });
+      expect(
+        Number(
+          (await db.query('SELECT total FROM destructive_generated')).rows[0]
+            .total,
+        ),
+      ).toBe(77);
+      await db.transaction!(async (tx) => {
+        for (const sql of change.sqlStatements!) await tx.query(sql);
+      });
+      expect(
+        Number(
+          (await db.query('SELECT total FROM destructive_generated')).rows[0]
+            .total,
+        ),
+      ).toBe(5);
+    });
+  }
+
+  it('#4972 round2 item6: SQLite adds and enforces a unique generated column on populated storage', async () => {
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      classes: [],
+      includeSystemTables: false,
+    });
+    databases.push(db);
+    await db.query('CREATE TABLE unique_generated (qty INTEGER)');
+    await db.query('INSERT INTO unique_generated (qty) VALUES (5), (7)');
+    const schema: SchemaDefinition = {
+      tableName: 'unique_generated',
+      columns: {
+        qty: { type: 'INTEGER' },
+        total: { type: 'INTEGER', unique: true, generated: { col: 'qty' } },
+      },
+      indexes: [],
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: '1',
+    };
+    const diff = await new SchemaComparer(db, { engineHint: 'sqlite' }).compare(
+      { unique_generated: schema },
+    );
+    const change = diff.changes.find((change) => change.name === 'total')!;
+    await db.transaction!(async (tx) => {
+      for (const sql of change.sqlStatements ?? [change.sql!])
+        await tx.query(sql);
+    });
+    expect(
+      (
+        await db.query('SELECT total FROM unique_generated ORDER BY total')
+      ).rows.map((row) => Number(row.total)),
+    ).toEqual([5, 7]);
+    await expect(
+      db.query('INSERT INTO unique_generated (qty) VALUES (5)'),
+    ).rejects.toThrow();
+    schema.columns.total.generated = {
+      op: 'add',
+      left: { col: 'qty' },
+      right: { value: 1 },
+    };
+    const replacement = (
+      await new SchemaComparer(db, { engineHint: 'sqlite' }).compare({
+        unique_generated: schema,
+      })
+    ).changes.find((change) => change.name === 'total')!;
+    await db.transaction!(async (tx) => {
+      for (const sql of replacement.sqlStatements!) await tx.query(sql);
+    });
+    expect(
+      (
+        await db.query('SELECT total FROM unique_generated ORDER BY total')
+      ).rows.map((row) => Number(row.total)),
+    ).toEqual([6, 8]);
+    await expect(
+      db.query('INSERT INTO unique_generated (qty) VALUES (5)'),
+    ).rejects.toThrow();
   });
 
   it('validates the closed grammar, reference rules, result types and bounds', () => {
