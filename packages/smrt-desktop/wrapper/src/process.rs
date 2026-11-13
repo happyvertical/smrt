@@ -6,14 +6,14 @@
 //! `std::process` for the integration tests and headless harnesses.
 //!
 //! Raw output stays in a bounded in-memory tail for failure classification.
-//! Separate redacted tails suppress sensitive lines before truncation; only
+//! Separate redacted tails mask credential spans before truncation; only
 //! those diagnostics can reach the log, including stderr on non-zero exits.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::io::{self, BufRead, BufReader, Read};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -100,9 +100,9 @@ pub struct OutputTail {
 }
 
 impl OutputTail {
-    /// Capture diagnostics without retaining secret-bearing lines. The native
+    /// Capture diagnostics without retaining secret-bearing spans. The native
     /// wrapper cannot load the CLI's Node redactor; use the same credential
-    /// categories, conservatively suppressing entire lines before truncation.
+    /// categories and merge spans on the original line before truncation.
     pub fn redacted(env: &BTreeMap<String, String>) -> Self {
         let secret_values = env
             .iter()
@@ -141,50 +141,60 @@ impl OutputTail {
         if !self.redact {
             return line.to_owned();
         }
-        let lower = line.to_ascii_lowercase();
-        let credential = lower
-            .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-            .any(|word| {
-                matches!(
-                    word,
-                    "token"
-                        | "secret"
-                        | "password"
-                        | "passwd"
-                        | "credentials"
-                        | "credential"
-                        | "authorization"
-                        | "api_key"
-                        | "apikey"
-                        | "access_token"
-                        | "refresh_token"
-                        | "private_key"
-                        | "launch"
-                )
-            });
-        let opaque_token = line
-            .split(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
-            .any(|part| part.len() >= 32);
-        if self
+        let mut spans: Vec<(usize, usize)> = self
             .secret_values
             .iter()
-            .any(|value| value.len() >= 8 && line.contains(value))
-            || lower.split_whitespace().any(|word| word == "bearer")
-            || (credential && (line.contains('=') || line.contains(':')))
-            || (line.contains("://")
-                && (line.contains('@') || line.contains('?') || line.contains('#')))
-            || opaque_token
-        {
-            "[redacted sensitive sidecar output]".into()
-        } else {
-            // Strictly redact short values too, without losing the whole error
-            // to an auth flag such as SMRT_AUTH_ENABLED=1.
-            let mut result = line.to_owned();
-            for value in self.secret_values.iter().filter(|value| value.len() < 8) {
-                result = result.replace(value, "[redacted]");
+            .flat_map(|value| {
+                line.match_indices(value)
+                    .map(|(start, _)| (start, start + value.len()))
+            })
+            .collect();
+        // Match credential values, not a keyword elsewhere on an error line.
+        // Authority userinfo ends before the first slash: @scope in a file://
+        // stack frame or an HTTP path is not a credential.
+        static PATTERNS: OnceLock<[regex::Regex; 3]> = OnceLock::new();
+        let patterns = PATTERNS.get_or_init(|| [
+            regex::Regex::new(r"(?i)\b(?:Bearer|Basic)\s+([A-Za-z0-9._~+/=-]+)").unwrap(),
+            regex::Regex::new(r#"(?i)\b(?:token|secret|password|passwd|credentials?|api_key|apikey|access_token|refresh_token|private_key|client_secret|launch|key)\b["']?\s*[:=]\s*(?:"([^"]*)"|'([^']*)'|([^\s"'&;<>{},)]+))"#).unwrap(),
+            regex::Regex::new(r#"(?i)\b([a-z][a-z0-9+.-]*://(?:[^/\s@'"]+@[^\s"'<>)]*|[^\s"'<>)]*[?&;#](?:token|password|secret|key|api_key|access_token|refresh_token|id_token|session_token|client_secret|launch|code|state|signature|sig)=[^\s"'<>)]*))"#).unwrap(),
+        ]);
+        for pattern in patterns {
+            for captures in pattern.captures_iter(line) {
+                for value in captures.iter().skip(1).flatten() {
+                    if !value.is_empty() {
+                        spans.push((value.start(), value.end()));
+                    }
+                }
             }
-            result
         }
+        // The launch secret is 64 hex characters. Do not infer a token from
+        // an arbitrary long function/directory name, or redact a hash filename.
+        static HEX: OnceLock<regex::Regex> = OnceLock::new();
+        for value in HEX
+            .get_or_init(|| regex::Regex::new(r"\b[0-9a-fA-F]{64}\b").unwrap())
+            .find_iter(line)
+        {
+            let path_character = |c: char| matches!(c, '/' | '\\' | '.' | '-' | '_');
+            if !line[..value.start()].ends_with(path_character)
+                && !line[value.end()..].starts_with(path_character)
+            {
+                spans.push((value.start(), value.end()));
+            }
+        }
+        // Merge overlapping matches against the original bytes. A short env
+        // value must not split a bearer/URL match or rewrite a redaction marker.
+        spans.sort_unstable();
+        let mut result = String::new();
+        let mut cursor = 0;
+        for (start, end) in spans {
+            if start >= cursor {
+                result.push_str(&line[cursor..start]);
+                result.push_str("[redacted]");
+            }
+            cursor = cursor.max(end);
+        }
+        result.push_str(&line[cursor..]);
+        result
     }
 
     /// Append one line (truncated, control characters replaced).
@@ -532,6 +542,29 @@ mod tests {
     }
 
     #[test]
+    fn node_runtime_errors_keep_messages_and_windows_file_url_frames() {
+        let tail = OutputTail::redacted(&BTreeMap::new());
+        let frame = "file:///D:/a/_temp/smrt-launch-smoke-ABCdef/target/debug/app/node_modules/@happyvertical/smrt-app-runtime/dist/chunks/src-runtime.js:37:17";
+        let path = format!("D:\\a\\_temp\\{}\\runtime", "a".repeat(64));
+        let dump = [
+            frame.to_owned(),
+            "    throw new LocalRuntimeError('invalid_configuration', message);".into(),
+            "          ^".into(),
+            format!("LocalRuntimeError: Application secret file could not be opened safely: {path}"),
+            format!("    at unsafeFilesystemEntry ({frame})"),
+            format!("    at preflightWindowsRoot ({frame})"),
+            "    at a_very_long_but_ordinary_error_function_name (D:\\a\\_temp\\app\\build\\index.js:1:2)".into(),
+            "    code: 'invalid_configuration'".into(),
+            "}".into(),
+            "Node.js v26.8.1".into(),
+        ];
+        for line in &dump {
+            tail.push(line);
+        }
+        assert_eq!(tail.snapshot(), dump);
+    }
+
+    #[test]
     fn diagnostic_tail_redacts_before_truncation_and_preserves_useful_errors() {
         let env = BTreeMap::from([("APP_SECRET".into(), "known-sensitive-value".into())]);
         let tail = OutputTail::redacted(&env);
@@ -545,10 +578,21 @@ mod tests {
         ] {
             tail.push(&line);
         }
-        assert!(tail
-            .snapshot()
-            .iter()
-            .all(|line| line == "[redacted sensitive sidecar output]"));
+        let lines = tail.snapshot();
+        assert_eq!(
+            &lines[..5],
+            [
+                "Authorization: Bearer [redacted]",
+                "[redacted]",
+                "[redacted]",
+                "Token=[redacted]",
+                "[redacted]",
+            ]
+        );
+        assert!(
+            !lines[5].contains("know"),
+            "secret must be masked before the byte cut"
+        );
         tail.push("Error: Local application data directory is not a safe Windows path: longer than 130 UTF-16 units");
         assert!(tail.snapshot().last().unwrap().contains("longer than 130"));
         tail.push(&format!("\u{1b}{}", "é ".repeat(OUTPUT_LINE_BYTES)));
@@ -561,6 +605,25 @@ mod tests {
             short.snapshot(),
             ["Error: path longer than [redacted]30 UTF-[redacted]6 units"]
         );
+    }
+
+    #[test]
+    fn credential_spans_merge_without_exposing_quoted_or_overlapping_values() {
+        let tail = OutputTail::redacted(&BTreeMap::from([("APP_SECRET".into(), "short".into())]));
+        tail.push(r#"Error: "password": "with spaces", 'token': 'short-value', Authorization: Bearer short-value; next"#);
+        assert_eq!(
+            tail.snapshot(),
+            [
+                r#"Error: "password": "[redacted]", 'token': '[redacted]', Authorization: Bearer [redacted]; next"#,
+            ]
+        );
+        tail.push("Error: launch=secret-value failed at D:\\a\\_temp\\ordinary-very-long-directory-name-that-is-not-a-token\\runtime");
+        assert_eq!(tail.snapshot().last().unwrap(),
+            "Error: launch=[redacted] failed at D:\\a\\_temp\\ordinary-very-long-directory-name-that-is-not-a-token\\runtime");
+        tail.push(
+            "Failed request https://example.invalid/@happyvertical/pkg?token=short-value&ok=1",
+        );
+        assert_eq!(tail.snapshot().last().unwrap(), "Failed request [redacted]");
     }
 
     #[test]

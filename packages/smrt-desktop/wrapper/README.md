@@ -89,11 +89,16 @@ inspect, repair or delete either file. Specifically:
   Matching is on those documented runtime phrases; keep
   `LEASE_PHRASES` in `src/supervisor.rs` aligned if they change.
 - Raw child output stays in memory for classification. Non-zero exits log the
-  last ten stderr lines, each capped at 400 bytes. Secret-bearing environment
-  values, bearer credentials, sensitive assignments, credential/query URLs and
-  opaque tokens suppress the entire line **before** truncation. Short secret
-  environment values are replaced in place, so an auth flag cannot erase an
-  entire error. Stdout stays
+  last 40 stderr lines, each capped at 400 bytes, so a normal Node uncaught
+  stack does not push its error message out of the diagnostic. Secret-bearing environment
+  values, bearer/basic credential values, sensitive assignments and URLs with
+  userinfo or credential query parameters are masked as spans **before**
+  truncation. Overlapping spans are merged against the original text, including
+  short environment values. Bare 64-hex launch-secret shapes are masked; ordinary
+  long names and hashes in file paths are preserved. Scoped file URLs containing
+  `@happyvertical` are not URL userinfo. Error classes, messages and stack paths
+  therefore survive redaction. Each launch also records its working and data
+  paths through the same redactor, without arguments or environment maps. Stdout stays
   private unless `SMRT_DESKTOP_LOG_SIDECAR_OUTPUT=1` enables the same redacted
   diagnostic tail. The existing capped, rotating supervisor log is unchanged.
   The launch smoke prints its last 8 KiB on failure through the CLI redactor.

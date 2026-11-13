@@ -318,6 +318,10 @@ fn reserved_env_wins_and_the_launch_shape_is_exact() {
     // Working directory is the packaged app root, separate from the data dir.
     assert_eq!(seen["cwd"], h.resource.to_str().unwrap());
     assert_ne!(seen["cwd"], seen["SMRT_DATA_DIR"]);
+    // Paths use the same strict redactor: an inherited short auth flag may
+    // redact matching digits, but both labeled facts must remain available.
+    assert!(h.log_text().contains("sidecar paths cwd="));
+    assert!(h.log_text().contains("sidecar paths data-root="));
     // Arguments are passed literally, without shell splitting.
     assert_eq!(seen["argv"], serde_json::json!(["--flag", "two words"]));
     h.supervisor.shutdown();
@@ -576,6 +580,29 @@ fn a_squatter_answering_the_first_probe_is_never_published_as_ready() {
 }
 
 #[test]
+fn an_uncaught_node_error_keeps_its_message_before_the_final_ten_lines() {
+    let node = node_or_skip!();
+    let h = start(
+        &node,
+        Options {
+            mode: "node-runtime-error",
+            recovery: RecoveryPolicy {
+                max_restarts: 0,
+                ..fast_recovery()
+            },
+            ..Options::default()
+        },
+    );
+    h.wait_failed();
+    h.supervisor.shutdown();
+    let log = h.log_text();
+    assert!(log.contains("LocalRuntimeError: fixture startup refusal"));
+    assert!(log.contains("ordinary-very-long-directory-name-that-is-not-a-token"));
+    assert!(log.contains("@happyvertical/smrt-app-runtime"));
+    assert!(log.contains("code: 'invalid_configuration'"));
+}
+
+#[test]
 fn nonzero_exit_logs_only_the_bounded_redacted_stderr_tail_by_default() {
     let node = node_or_skip!();
     for mode in ["stderr-failure", "stderr-success", "stderr-mixed-failure"] {
@@ -607,17 +634,17 @@ fn nonzero_exit_logs_only_the_bounded_redacted_stderr_tail_by_default() {
             let count = if mode == "stderr-mixed-failure" {
                 5
             } else {
-                10
+                40
             };
             assert_eq!(lines.len(), count, "{log}");
-            if count == 10 {
-                assert!(lines[0].contains("diagnostic line 45"));
+            if count == 40 {
+                assert!(lines[0].contains("diagnostic window boundary"));
             }
             assert!(lines
                 .last()
                 .unwrap()
                 .contains("Local application data directory"));
-            assert!(log.contains("[redacted sensitive sidecar output]"));
+            assert!(log.contains("[redacted]"));
         } else {
             assert!(
                 lines.is_empty(),
