@@ -17,7 +17,7 @@ import {
   lookupInManifest,
 } from '../manifest/manifest-loader.js';
 import { selectObjectDeclarations } from '../manifest/object-declarations.js';
-import { computeManifestSchemaFingerprint } from '../migrations/schema-fingerprint.js';
+import { tryComputeManifestSchemaFingerprint } from '../migrations/schema-fingerprint.js';
 import { findField, type HelpModel, validateHelp } from '../recipe-help.js';
 import {
   closeWildcardExclusions,
@@ -1503,7 +1503,10 @@ export class ManifestGenerator {
         current = this.namedParent(current, schemaClasses, aggregatedManifest);
       }
     }
-    manifest.schemaFingerprint = computeManifestSchemaFingerprint(manifest);
+    manifest.schemaFingerprint = tryComputeManifestSchemaFingerprint(
+      manifest,
+      (error) => logger.warn(`No schema fingerprint written: ${error.message}`),
+    );
   }
 
   /** A report model's generated surface defaults to `list`/`get`. */

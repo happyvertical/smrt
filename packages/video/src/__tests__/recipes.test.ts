@@ -61,10 +61,14 @@ describe('video recipes (#4409)', () => {
       });
       // The build derives this from the dependency tree; it lets the generator
       // merge the Content fields the three STI models inherit, the same way the
-      // shipped manifest.json carries them, so `options` can curate them.
+      // shipped manifest.json carries them, so `options` can curate them. It
+      // also names smrt-assets so the five Asset subclasses resolve to the
+      // `assets` table instead of each getting a table of its own (one of
+      // which, `character_assets`, is CharacterOwnedAsset's table).
       manifest.smrtDependencies = [
-        '@happyvertical/smrt-core',
+        '@happyvertical/smrt-assets',
         '@happyvertical/smrt-content',
+        '@happyvertical/smrt-core',
       ];
       new ManifestGenerator().applyGenerationPasses(manifest, {
         packageName: PACKAGE,

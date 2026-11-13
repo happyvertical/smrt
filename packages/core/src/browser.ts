@@ -778,6 +778,7 @@ export * from './migrations/migration-run-decision.js';
 export {
   computeManifestSchemaFingerprint,
   computeSchemaFingerprint,
+  tryComputeManifestSchemaFingerprint,
 } from './migrations/schema-fingerprint.js';
 export { assertDatabaseMigratedForBuild } from './migrations/startup-guard.js';
 export {
