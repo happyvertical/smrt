@@ -3,7 +3,14 @@
 // package's); the release guards (verify-manifest-completeness,
 // verify-manifest-exports) expect `dist/manifest.json` to list this package's
 // own objects, so keep those and write them where `./manifest` exports point.
+//
+// A manifest's `schemaFingerprint` describes the objects in that file. The
+// source stamp covers the whole app, so it is not copied: the stamp is computed
+// again for the objects written, with the function the generators use. This
+// file is a library manifest, never the app's build (the build is
+// `.smrt/manifest.json`; see core `PROJECT_MANIFEST_PATHS`).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { tryComputeManifestSchemaFingerprint } from '@happyvertical/smrt-core/migrations';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -27,10 +34,21 @@ const objects = Object.fromEntries(
     .filter(([key]) => key.startsWith(prefix))
     .map(([key, object]) => [key, portable(object)]),
 );
+const { schemaFingerprint: _appStamp, ...rest } = source;
+const manifest = {
+  ...rest,
+  packageName: pkg.name,
+  packageVersion: pkg.version,
+  objects,
+};
+const stamp = tryComputeManifestSchemaFingerprint(manifest, (error) =>
+  console.warn(`[publish-manifest] no schema fingerprint: ${error.message}`),
+);
+if (stamp) manifest.schemaFingerprint = stamp;
 mkdirSync(join(root, 'dist'), { recursive: true });
 writeFileSync(
   join(root, 'dist', 'manifest.json'),
-  `${JSON.stringify({ ...source, packageName: pkg.name, packageVersion: pkg.version, objects }, null, 2)}\n`,
+  `${JSON.stringify(manifest, null, 2)}\n`,
 );
 console.log(
   `[publish-manifest] ${Object.keys(objects).length} object(s) -> dist/manifest.json`,

@@ -48,7 +48,7 @@ Read this before you upgrade a deployed app.
   table changes commit first, indexes build after, and a rerun finishes the
   indexes. Details: [`db-migrate-all-or-nothing.md`](https://github.com/happyvertical/smrt/blob/main/packages/cli/agents/db-migrate-all-or-nothing.md).
 - **Migrate stops on a missing package.** It remembers the packages that own
-  tables in your app's build (its project manifest, `.smrt/manifest.json` or
+  tables in your app's build (its project manifest: `.smrt/manifest.json`, else
   `dist/manifest.json`). If a package left the build, migrate stops before it
   writes anything, because the package may have declared columns as required
   and migrate would loosen them. If you removed the package on purpose, run

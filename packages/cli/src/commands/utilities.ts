@@ -2012,6 +2012,7 @@ export default testManifest;
         const {
           buildConcurrentIndexPlan,
           decideMigrationRun,
+          describeMigrationRefusal,
           MigrationTracker,
           parsePostgresTimeoutMs,
           shortChecksum,
@@ -2285,25 +2286,14 @@ export default testManifest;
         });
         for (const notice of runDecision.notices) console.log(notice);
         if (!runDecision.proceed) {
-          console.log(
-            runDecision.releaseStop
-              ? 'Migrate stopped: database release is not supported by this build'
-              : runDecision.packageStops.length
-                ? `Migrate stopped: ${runDecision.packageStops.length} missing package(s), ${runDecision.stops.length} schema stop(s)`
-                : `Migrate stopped: ${runDecision.stops.length} change(s) would lose or invent data`,
-          );
-          if (runDecision.releaseStop)
-            console.log(`   ${runDecision.releaseStop.message}`);
-          for (const stop of runDecision.packageStops)
-            console.log(`   ${stop.message}`);
-          for (const stop of runDecision.stops) {
-            console.log(`   ${stop.message} (${stop.reason})`);
-            for (const sql of stop.change.advisory?.suggestedSql ?? [])
-              console.log(`      ${sql}`);
-          }
-          console.log('Held back (nothing was applied):');
-          for (const held of runDecision.heldBack)
-            console.log(`   ${held.description}`);
+          // The same wording the local runtime shows when it migrates itself.
+          const refusal = describeMigrationRefusal(runDecision, {
+            repairSql: true,
+          });
+          console.log(refusal.headline);
+          for (const line of refusal.stopLines) console.log(line);
+          console.log(refusal.heldBackHeading);
+          for (const line of refusal.heldBackLines) console.log(line);
           for (const pending of pendingOrphanDispositions)
             console.log(
               `   Null orphan references ${pending.tableName}.${pending.column}`,

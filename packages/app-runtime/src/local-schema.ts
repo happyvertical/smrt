@@ -27,7 +27,12 @@
 
 import { randomBytes } from 'node:crypto';
 import { lstat, unlink } from 'node:fs/promises';
-import { migrateSmrtSchemas } from '@happyvertical/smrt-core/migrations';
+import {
+  assertMigrationAccepted,
+  formatMigrationRefusal,
+  MigrationRefusedError,
+  migrateSmrtSchemas,
+} from '@happyvertical/smrt-core/migrations';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { LocalRuntimePaths } from './index.js';
 import { BOOTSTRAP_TABLE } from './local-custody.js';
@@ -134,6 +139,33 @@ export function schemaCreationFailed(cause: unknown): LocalRuntimeError {
   );
 }
 
+/**
+ * The framework step was refused: smrt held the whole upgrade back and applied
+ * nothing. Unlike the other failures this one is named, because the reader (the
+ * app's user, who cannot run `smrt db:migrate`) needs to know what stopped. The
+ * message carries table, column, reason, row counts, package and release stops
+ * and what was held back (the same text `smrt db:migrate` prints): schema names
+ * and counts only, no path, SQL or driver text.
+ */
+export function schemaMigrationRefused(
+  refusal: MigrationRefusedError,
+): LocalRuntimeError {
+  return withCause(
+    new LocalRuntimeError(
+      'schema_migration_refused',
+      `The local database schema was not upgraded, and nothing was changed. ${formatMigrationRefusal(refusal.result)}`,
+    ),
+    refusal,
+  );
+}
+
+/** A refused migrate keeps its reasons; any other framework failure is redacted. */
+function frameworkFailure(failure: unknown): LocalRuntimeError {
+  return failure instanceof MigrationRefusedError
+    ? schemaMigrationRefused(failure)
+    : schemaCreationFailed(failure);
+}
+
 function withCause(failure: LocalRuntimeError, cause: unknown) {
   Object.defineProperty(failure, 'cause', {
     value: cause,
@@ -183,6 +215,9 @@ function contextFor(
         engineHint: 'sqlite',
         name: uniqueMigrationName(),
       });
+      // A refused run also reports `applied: false`; never read that as
+      // "nothing to do". Fail the step and say what stopped.
+      assertMigrationAccepted(result);
       return { applied: result.applied };
     },
   });
@@ -207,7 +242,12 @@ export async function prepareLocalSchema(
     try {
       await input.prepareDatabase?.(db, contextFor(db, input, firstRun));
     } catch (failure) {
-      throw new LocalSchemaStepFailure(migrationFailed(failure), false);
+      throw new LocalSchemaStepFailure(
+        failure instanceof MigrationRefusedError
+          ? schemaMigrationRefused(failure)
+          : migrationFailed(failure),
+        false,
+      );
     }
     return;
   }
@@ -230,7 +270,7 @@ export async function prepareLocalSchema(
     try {
       await contextFor(db, input, firstRun).migrateSchemas();
     } catch (failure) {
-      throw new LocalSchemaStepFailure(schemaCreationFailed(failure), false);
+      throw new LocalSchemaStepFailure(frameworkFailure(failure), false);
     }
     try {
       await db.transaction(async (tx) => {
@@ -241,7 +281,12 @@ export async function prepareLocalSchema(
         );
       });
     } catch (failure) {
-      throw new LocalSchemaStepFailure(migrationFailed(failure), false);
+      throw new LocalSchemaStepFailure(
+        failure instanceof MigrationRefusedError
+          ? schemaMigrationRefused(failure)
+          : migrationFailed(failure),
+        false,
+      );
     }
     return;
   }
@@ -263,9 +308,11 @@ export async function prepareLocalSchema(
     });
   } catch (failure) {
     throw new LocalSchemaStepFailure(
-      stage === 'framework'
-        ? schemaCreationFailed(failure)
-        : migrationFailed(failure),
+      failure instanceof MigrationRefusedError
+        ? schemaMigrationRefused(failure)
+        : stage === 'framework'
+          ? schemaCreationFailed(failure)
+          : migrationFailed(failure),
       true,
     );
   }

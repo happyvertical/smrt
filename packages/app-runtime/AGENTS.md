@@ -77,8 +77,10 @@ Application infrastructure composition for the validated runtime profiles in
   keep name and shape. It runs on EVERY start after the framework step
   (idempotent). `context`: `db`, `profile`, `paths` (null deployed), `firstRun`,
   `migrateSchemas()`; `(db)` callers still work. Its rejection is
-  `migration_failed`; a framework-step failure is `schema_creation_failed`.
-  Both are fixed text, cause only as non-enumerable `cause`, root retryable.
+  `migration_failed`; a framework-step failure is `schema_creation_failed`
+  (fixed text, cause only as non-enumerable `cause`, root retryable). A refused
+  migrate is `schema_migration_refused`: core's `formatMigrationRefusal` text,
+  nothing applied. Call `assertMigrationAccepted(result)` before `applied`.
   Tests of creation set `SMRT_VITEST_AUTO_SCHEMA=0` (the shared setup
   otherwise pre-creates every registered table).
 - Standalone migration commands must call `prepareLocalDatabaseStorage()`

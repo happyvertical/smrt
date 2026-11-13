@@ -38,6 +38,7 @@ import {
 } from './migrate-record.js';
 import {
   decideMigrationRun,
+  formatMigrationRefusal,
   type MigrationRunDecision,
 } from './migration-run-decision.js';
 import { MigrationTracker } from './tracker.js';
@@ -173,6 +174,30 @@ export interface MigrateSmrtSchemasResult
    * manifest-nullable columns by default on PostgreSQL, #4897).
    */
   relaxedColumns: RelaxedColumn[];
+}
+
+/**
+ * A migrate was refused (a stop, a package stop or a release stop) and nothing
+ * was applied. Its message is {@link formatMigrationRefusal}; `result` is the
+ * refused result.
+ */
+export class MigrationRefusedError extends Error {
+  constructor(readonly result: MigrateSmrtSchemasResult) {
+    super(formatMigrationRefusal(result));
+    this.name = 'MigrationRefusedError';
+  }
+}
+
+/**
+ * Throw {@link MigrationRefusedError} when `result` is a refusal. A caller that
+ * goes on to read `applied` (or treats the run as done) calls this first, so
+ * a refusal can never be mistaken for "nothing to do": a refused run also has
+ * `applied: false`. Narrows the type to the accepted result.
+ */
+export function assertMigrationAccepted(
+  result: MigrateSmrtSchemasResult,
+): asserts result is MigrateSmrtSchemasResult & { refused: false } {
+  if (result.refused) throw new MigrationRefusedError(result);
 }
 
 export interface PendingSchemaStatementsResult {

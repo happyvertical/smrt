@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { DatabaseEngine } from '../../schema/ddl/types.js';
 import type { SchemaChangeInput } from '../change-kinds.js';
-import { decideMigrationRun } from '../migration-run-decision.js';
+import {
+  decideMigrationRun,
+  describeMigrationRefusal,
+  formatMigrationRefusal,
+} from '../migration-run-decision.js';
 
 const stop: SchemaChangeInput = {
   type: 'alter_column',
@@ -153,5 +157,43 @@ describe('decideMigrationRun (#4927)', () => {
         resolvedStops,
       }).proceed,
     ).toBe(false);
+  });
+});
+
+describe('describeMigrationRefusal (#4927)', () => {
+  it('says what stopped and what was held back; the CLI and the local runtime share it', () => {
+    const decision = decideMigrationRun({
+      changes: [
+        {
+          type: 'alter_column',
+          table: 'notes',
+          name: 'title',
+          alteration: 'set_not_null',
+          advisory: {
+            severity: 'warning',
+            message: 'notes.title holds NULL',
+            suggestedSql: ['UPDATE notes SET title = <value>'],
+          },
+        } as SchemaChangeInput,
+        {
+          type: 'add_column',
+          table: 'other',
+          name: 'extra',
+          sql: 'ALTER TABLE other ADD COLUMN extra TEXT',
+        },
+      ],
+      addedTables: [{ tableName: 'fresh' }],
+      engine: 'sqlite',
+    });
+    const text = describeMigrationRefusal(decision, { repairSql: true });
+    expect(text.headline).toContain('would lose or invent data');
+    expect(text.stopLines.join('\n')).toContain('notes.title');
+    expect(text.stopLines.join('\n')).toContain('UPDATE notes SET title');
+    expect(text.heldBackLines.join('\n')).toContain('Create table fresh');
+    expect(text.heldBackLines.join('\n')).toContain('other.extra');
+    const plain = formatMigrationRefusal(decision);
+    expect(plain).toContain(text.headline);
+    expect(plain).toContain(text.heldBackHeading);
+    expect(plain).not.toContain('UPDATE notes SET title');
   });
 });

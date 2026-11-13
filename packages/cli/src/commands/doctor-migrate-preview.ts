@@ -207,6 +207,7 @@ export async function buildMigratePreview(
     );
   const age = checkOldestSupportedRelease(recorded?.release ?? null);
   if (!age.ok) report.warnings.push(age.message);
+  if (current.build?.notice) report.warnings.push(current.build.notice);
   // Startup compares the build's stamp, so the doctor does too (#4929).
   const expected = current.build
     ? current.build.fingerprint
@@ -345,7 +346,8 @@ export function formatMigratePreview(
     ? report.current.build.fingerprint
     : report.current.fingerprint;
   group('Schema fingerprint', [
-    `Build: ${build ? hash(build) : 'none'}; database: ${recorded ? hash(recorded.fingerprint) : 'no migrate record'}`,
+    `Build: ${build ? hash(build) : 'none'}${report.current.build ? ` (${report.current.build.source})` : ''}; database: ${recorded ? hash(recorded.fingerprint) : 'no migrate record'}`,
+    ...(report.current.build?.notice ? [report.current.build.notice] : []),
     build && recorded?.fingerprint === build
       ? 'matches'
       : (report.warnings.find(

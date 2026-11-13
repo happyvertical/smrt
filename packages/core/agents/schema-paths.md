@@ -1295,8 +1295,18 @@ handle while its migration lock is held; it also works without a tracker.
 ### The build's schema (rv1)
 
 `migrations/build-schema.ts`. The build is the app's project manifest: the
-first of `PROJECT_MANIFEST_PATHS` (`dist/manifest.json`, `.smrt/manifest.json`,
+first of `PROJECT_MANIFEST_PATHS` (`.smrt/manifest.json`, `dist/manifest.json`,
 `src/manifest/manifest.json`), the file `smrt db:migrate` already requires.
+`.smrt/manifest.json` is first because the app's bundled description
+(`.smrt/build-schema.js`) is written from it in the same publish, so migrate and
+the bundled app agree by construction. A `dist/manifest.json` is a published
+library manifest (the shell's lists only its own objects); it is the build only
+when nothing else exists. When two project manifests describe different
+schemas, `noteAlternativeManifests` sets `BuildSchema.notice`, which migrate
+prints and doctor shows: it names the one used and why. A tool that filters or
+copies a manifest must recompute `schemaFingerprint` for the objects it writes
+or leave it out; `scripts/check-manifest-stamps.mjs` (part of `pnpm build`)
+fails on a built manifest whose stamp does not match its own objects.
 `describeManifestSchema(manifest)` gives its stamp (`schemaFingerprint`), its
 tables with their owning packages, and the packages that contribute tables
 (framework base classes and collections own none). `resolveBuildSchema()` finds
@@ -1310,7 +1320,8 @@ registers the project manifest it found) or by the app's generated
 importing anything. The generated `smrt-register.ts` (so the server bundle and
 `.smrt/runtime/register.js`) and the consumer's `.smrt/register.js` import it
 first, so a deployed app knows its build with no file and no variable. Library
-`dist` output carries neither the module nor a stamp.
+`dist` output carries no build module; its stamp, when it has one, describes
+only its own objects and is read only when that file is the project manifest.
 
 `collectMigrateRecordInput(build = resolveBuildSchema())` is the one input for
 both writers (CLI and `migrateSmrtSchemas`): `fingerprint` is

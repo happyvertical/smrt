@@ -3,7 +3,8 @@
  * and the startup check all read (#4929, #4928).
  *
  * "The build" is the app's project manifest, the first of
- * {@link PROJECT_MANIFEST_PATHS} under the project root. Its
+ * {@link PROJECT_MANIFEST_PATHS} under the project root: the manifest the
+ * app's bundled description (`.smrt/build-schema.js`) is written from. Its
  * `schemaFingerprint` is the stamp. Startup compares that stamp with the last
  * migrate record and never looks at the live registry, so what a process has
  * imported so far does not matter. Migrate records the fingerprint of its
@@ -22,10 +23,17 @@ import {
  * Project manifest locations, in the order `smrt db:migrate` reads them (its
  * schema contract accepts only these). Startup reads the same order, so both
  * sides read the same file.
+ *
+ * `.smrt/manifest.json` is first because the build's description that ships in
+ * the app's bundle is written from it, in the same publish: migrate and the
+ * bundled app agree by construction. A `dist/manifest.json` is a published
+ * library manifest (it may list only a package's own objects, as the shell's
+ * does); it is the build only when nothing else exists, for example when
+ * migrating in a library's own directory with no `.smrt` output.
  */
 export const PROJECT_MANIFEST_PATHS = [
-  'dist/manifest.json',
   '.smrt/manifest.json',
+  'dist/manifest.json',
   'src/manifest/manifest.json',
 ] as const;
 
@@ -43,6 +51,11 @@ export interface BuildSchema {
   packages: string[];
   /** Where the build schema came from (a path, or `registered`). */
   source: string;
+  /**
+   * Set when another project manifest exists that describes a different
+   * schema: names the one used and why. Never read from a bundled module.
+   */
+  notice?: string;
 }
 
 type ManifestLike = Pick<SmartObjectManifest, 'objects'> &
@@ -171,13 +184,49 @@ export function readBuildSchemaFile(path: string): BuildSchema | undefined {
   }
 }
 
+/**
+ * When `build` was read from one project manifest and another candidate under
+ * `projectRoot` describes a different schema, say so and name which was used
+ * and why. Never silent: two manifests that disagree are two different builds.
+ */
+export function noteAlternativeManifests(
+  build: BuildSchema,
+  projectRoot: string,
+): BuildSchema {
+  const used = build.source.replaceAll('\\', '/');
+  const isUsed = (candidate: string) =>
+    used === candidate || used.endsWith(`/${candidate}`);
+  const different: string[] = [];
+  for (const candidate of PROJECT_MANIFEST_PATHS) {
+    if (isUsed(candidate)) continue;
+    const other = readBuildSchemaFile(join(projectRoot, candidate));
+    if (!other) continue;
+    const sameTables =
+      JSON.stringify(build.tables) === JSON.stringify(other.tables);
+    const sameStamp =
+      !build.fingerprint ||
+      !other.fingerprint ||
+      build.fingerprint === other.fingerprint;
+    if (!sameTables || !sameStamp)
+      different.push(
+        `${candidate} (${Object.keys(other.tables).length} table(s), ${other.packages.length} package(s), stamp ${other.fingerprint?.slice(0, 12) ?? 'none'})`,
+      );
+  }
+  if (!different.length) return build;
+  const isApp = isUsed('.smrt/manifest.json');
+  return {
+    ...build,
+    notice: `Two project manifests describe different schemas. Using ${build.source} (${Object.keys(build.tables).length} table(s), ${build.packages.length} package(s), stamp ${build.fingerprint?.slice(0, 12) ?? 'none'}) as the build${isApp ? ": the app's bundled description is written from it" : ': it is the first project manifest present'}. Not used: ${different.join('; ')}. A manifest published for a library is not the app's build.`,
+  };
+}
+
 /** The first project manifest under `projectRoot`, in the CLI's order. */
 export function readProjectBuildSchema(
   projectRoot: string,
 ): BuildSchema | undefined {
   for (const candidate of PROJECT_MANIFEST_PATHS) {
     const build = readBuildSchemaFile(join(projectRoot, candidate));
-    if (build) return build;
+    if (build) return noteAlternativeManifests(build, projectRoot);
   }
   return undefined;
 }

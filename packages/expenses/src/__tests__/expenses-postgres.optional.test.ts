@@ -222,6 +222,7 @@ describePostgres('expenses on PostgreSQL', () => {
       expect(report.ok).toBe(true);
 
       const again = await dbMigrate(db);
+      expect(again.refused).toBe(false);
       expect(again.applied).toBe(false);
       expect(again.statements).toEqual([]);
     });

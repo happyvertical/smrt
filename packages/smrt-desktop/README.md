@@ -645,7 +645,8 @@ report is the list to sign.
   path (`migrateSmrtSchemas`), and then serves. Upgrades take the same path.
   The wrapper needs no prepare step. A failure rolls the database back (a
   database that start created is removed) and exits non-zero with
-  `schema_creation_failed` (the framework step) or `migration_failed` (the
+  `schema_creation_failed` (the framework step), `schema_migration_refused` (the
+  framework step stopped, with the reason in the message) or `migration_failed` (the
   app's own `prepareDatabase` step) in the sidecar's output, so the wrapper
   sees an ordinary startup failure with a stable, path-free code; see
   `@happyvertical/smrt-app-runtime` "First start". Deployed profiles still

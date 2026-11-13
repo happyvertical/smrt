@@ -72,12 +72,13 @@ A failed upgrade batch leaves a `failed` row in `_smrt_schema_migrations`, as
 `smrt db:migrate` does; a framework upgrade that already committed is kept if
 the application's step then fails.
 
-**Failure codes.** Both surface as `LocalRuntimeError` with fixed, path-free,
-SQL-free text; the original error is a non-enumerable `cause` for private logs.
+**Failure codes.** Each surfaces as `LocalRuntimeError` with path-free,
+SQL-free text (fixed, except a refused migrate, which names what stopped); the original error is a non-enumerable `cause` for private logs.
 
 | Code | When | Message constant |
 | --- | --- | --- |
 | `schema_creation_failed` | the framework step (creation or upgrade) failed | `SCHEMA_CREATION_FAILED_MESSAGE` |
+| `schema_migration_refused` | the framework step was refused: smrt held the whole upgrade back and changed nothing | names what stopped (table, column, reason), any package or release stop, and what was held back, in the words `smrt db:migrate` prints; schema names only |
 | `migration_failed` | the application's `prepareDatabase` rejected | `MIGRATION_FAILED_MESSAGE` |
 
 Startup fails, the process exits non-zero, and the code and message are in the

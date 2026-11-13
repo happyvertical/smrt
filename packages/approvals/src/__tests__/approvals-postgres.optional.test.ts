@@ -136,6 +136,7 @@ describePostgres('approvals on PostgreSQL', () => {
       );
       expect(ours).toEqual([]);
       const again = await dbMigrate(db);
+      expect(again.refused).toBe(false);
       expect(again.applied).toBe(false);
     });
   });

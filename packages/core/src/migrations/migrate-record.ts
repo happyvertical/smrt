@@ -25,6 +25,8 @@ export interface MigrateRecordInput {
     source: string;
     /** The build's stamp, when it has one. */
     fingerprint?: string;
+    /** Another project manifest describes a different schema: which was used. */
+    notice?: string;
     /** Build tables this run has not planned, grouped by package. */
     unloaded: UnloadedBuildPackage[];
   };
@@ -98,6 +100,7 @@ export function collectMigrateRecordInput(
     build: {
       source: build.source,
       ...(build.fingerprint ? { fingerprint: build.fingerprint } : {}),
+      ...(build.notice ? { notice: build.notice } : {}),
       unloaded: [...unloaded]
         .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
         .map(([packageName, tables]) => ({ packageName, tables })),
@@ -125,6 +128,7 @@ export function packagesSeenInput(
             ...(current.build.fingerprint
               ? { fingerprint: current.build.fingerprint }
               : {}),
+            ...(current.build.notice ? { notice: current.build.notice } : {}),
             planned: current.fingerprint,
             unloaded: current.build.unloaded,
           },
