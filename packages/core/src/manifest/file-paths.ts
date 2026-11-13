@@ -7,13 +7,13 @@
  * writes or inlines the manifest. The result is the same on every machine and
  * on every build.
  */
-import { isAbsolute, relative, resolve } from 'node:path';
+
 import type { SmartObjectManifest } from '../scanner/types.js';
+import { getNodeBuiltins } from './store.js';
 
 /** True for a POSIX, Windows-drive, UNC, or `file:` absolute path. */
 export function isAbsoluteManifestPath(path: string): boolean {
   return (
-    isAbsolute(path) ||
     path.startsWith('/') ||
     path.startsWith('\\\\') ||
     /^[A-Za-z]:[\\/]/.test(path) ||
@@ -29,6 +29,10 @@ export function relativizeManifestFilePaths(
   manifest: SmartObjectManifest,
   packageRoot: string,
 ): SmartObjectManifest {
+  const builtins = getNodeBuiltins();
+  if (!builtins)
+    throw new Error('Relativizing manifest paths requires Node.js');
+  const { relative, resolve } = builtins.path;
   const root = resolve(packageRoot);
   const objects: SmartObjectManifest['objects'] = {};
   for (const [key, object] of Object.entries(manifest.objects ?? {})) {
