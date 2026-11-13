@@ -206,4 +206,72 @@ describe('#4932 decorator registration with no build', () => {
     expect(fields.get('note')?.required).toBe(true);
     expect(fields.get('status')?.required).toBe(true);
   });
+
+  // #4954 added run-time same-name replacements (`replaces: true`), which the
+  // app model editor uses to add fields to a built model. A replacement shares
+  // its provider's table and keeps its requiredness; the one refusal and the
+  // inheritance rule apply to it as to any redeclaration.
+  describe('same-name run-time replacements (#4954)', () => {
+    const replacement = (fields: Record<string, any>) => ({
+      name: 'OwnParent4932',
+      packageName: '@test4932/app',
+      extends: qn(OwnParent4932),
+      replaces: true,
+      fields,
+    });
+
+    it('keeps the required fields, reasons and NOT NULL columns of the provider', async () => {
+      const entry = runtimeModelEntry(
+        replacement({ loyaltyCode: { type: 'text' } }),
+      );
+      expect(entry.fields.code.required).toBe(true);
+      expect(entry.fields.code._meta?.requiredFor).toBe('identity');
+      expect(entry.fields.title.required).toBe(true);
+      expect(entry.fields.loyaltyCode.required).toBe(false);
+      expect(entry.schema?.columns.code.notNull).toBe(true);
+      expect(entry.schema?.columns.loyalty_code.notNull).toBeFalsy();
+      const name = registerRuntimeModel(
+        replacement({ loyaltyCode: { type: 'text' } }),
+      );
+      const fields = await ObjectRegistry.getAllFields(name);
+      expect(fields.get('code')?.required).toBe(true);
+      expect(fields.get('code')?._meta?.requiredFor).toBe('identity');
+    });
+
+    it('refuses a replacement that makes a field smrt needs optional', () => {
+      const attempt = () =>
+        runtimeModelEntry(
+          replacement({ code: { type: 'text', required: false } }),
+        );
+      expect(attempt).toThrow(/OwnParent4932\.code cannot be made optional/);
+      try {
+        attempt();
+      } catch (e) {
+        expect((e as { code?: string }).code).toBe(
+          'CONFIG_REQUIRED_FIELD_LOOSENED',
+        );
+      }
+    });
+
+    it('a restated field that does not state required keeps it, column included', () => {
+      const entry = runtimeModelEntry(
+        replacement({ code: { type: 'text', description: 'Our code' } }),
+      );
+      expect(entry.fields.code.required).toBe(true);
+      expect(entry.fields.code._meta?.requiredFor).toBe('identity');
+      expect(entry.fields.code.description).toBe('Our code');
+      expect(entry.schema?.columns.code.notNull).toBe(true);
+    });
+
+    it('may loosen a provider field with no reason, and tighten one', () => {
+      const entry = runtimeModelEntry(
+        replacement({
+          title: { type: 'text', required: false },
+          note: { type: 'text', required: true },
+        }),
+      );
+      expect(entry.fields.title.required).toBe(false);
+      expect(entry.fields.note.required).toBe(true);
+    });
+  });
 });
