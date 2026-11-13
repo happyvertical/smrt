@@ -144,7 +144,7 @@ export const SCHEMA_CHANGE_KINDS = {
     type: 'alter_column',
     engines: stop(
       'loses-data',
-      'A caller that runs the rebuild without MigrationTracker would drop the target with foreign keys enabled, and that can delete referencing rows.',
+      'A caller that runs the rebuild without MigrationTracker would drop the target with foreign keys enabled, and that can delete referencing rows. The differ never produces it (it plans for the tracker); a direct caller of planSqliteTableRebuilds does.',
     ),
   },
   'check.add': {

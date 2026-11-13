@@ -69,11 +69,33 @@ describe.each([
         root({ state: stateRequired }),
         def(
           'Loose4932',
-          { state: { type: 'text', required: false } },
+          {
+            state: {
+              type: 'text',
+              required: false,
+              _meta: { __statedOptions: ['required'] },
+            },
+          },
           'Root4932',
         ),
       ]),
     ).toThrowError(/Loose4932\.state cannot be made optional.*workflow-state/);
+  });
+
+  it('does not refuse an entry with no stated-options list: its required:false is inferred (#4942)', () => {
+    const manifest = build([
+      root({ state: stateRequired }),
+      def(
+        'Unlisted4932',
+        { state: { type: 'text', required: false } },
+        'Root4932',
+      ),
+    ]);
+    const field = Object.values(manifest.objects).find(
+      (object) => object.className === 'Unlisted4932',
+    )?.fields.state;
+    expect(field?.required).toBe(true);
+    expect(field?._meta?.requiredFor).toBe('workflow-state');
   });
 
   it('refuses the same loosening through a nullable stated option', () => {
@@ -101,7 +123,13 @@ describe.each([
         def('Middle4932', { note: { type: 'text' } }, 'Root4932'),
         def(
           'Leaf4932',
-          { state: { type: 'text', required: false } },
+          {
+            state: {
+              type: 'text',
+              required: false,
+              _meta: { __statedOptions: ['required'] },
+            },
+          },
           'Middle4932',
         ),
       ]),

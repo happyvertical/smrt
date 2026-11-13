@@ -129,3 +129,11 @@ mismatch are warnings. One stop holds every apply change, including unrelated
 tables. STI CHECK additions and removals are ordinary apply changes
 (`check.add`, `check.drop`); rows that already break a rule stop the run
 (`check.violated`).
+
+`db:diff`, `db:status` and `db:history` decide every change with the engine the
+database runs on (`resolveSchemaChangeEngine`, PGlite reads as PostgreSQL), the
+same table of change kinds `db:migrate` uses (#4934). Every classifier takes the
+engine as a required argument; none defaults to SQLite. `db:diff` lists each
+column alteration under exactly one heading through `listAlteration`: repairs
+(apply), manual step (stop), or the advisories (report). `db:status` reports a
+pending CHECK as `check_drift`.

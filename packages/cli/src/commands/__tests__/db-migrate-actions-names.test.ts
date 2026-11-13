@@ -18,14 +18,15 @@ import {
  */
 describe('classifyTypeUpgradeSql', () => {
   it('treats an empty/undefined sql as manual', () => {
-    expect(classifyTypeUpgradeSql(undefined)).toBe('manual');
-    expect(classifyTypeUpgradeSql('   ')).toBe('manual');
+    expect(classifyTypeUpgradeSql(undefined, 'sqlite')).toBe('manual');
+    expect(classifyTypeUpgradeSql('   ', 'sqlite')).toBe('manual');
   });
 
   it('treats a real SQL statement as executable', () => {
     expect(
       classifyTypeUpgradeSql(
         'ALTER TABLE contents ALTER COLUMN status TYPE jsonb',
+        'sqlite',
       ),
     ).toBe('executable');
   });
@@ -34,6 +35,7 @@ describe('classifyTypeUpgradeSql', () => {
     expect(
       classifyTypeUpgradeSql(
         '-- SQLite: "metadata" already stores JSON as TEXT (no change needed)',
+        'sqlite',
       ),
     ).toBe('noop');
   });
@@ -42,6 +44,7 @@ describe('classifyTypeUpgradeSql', () => {
     expect(
       classifyTypeUpgradeSql(
         '-- SQLite: type upgrade requires table recreation',
+        'sqlite',
       ),
     ).toBe('manual');
   });
@@ -292,16 +295,19 @@ describe('getSyntheticMigrationNameForChange', () => {
 
 describe('getUnresolvedGeneratedMigrationNames', () => {
   it('skips no-op type upgrades and unrelated change types', () => {
-    const names = getUnresolvedGeneratedMigrationNames([
-      { type: 'add_column', table: 'widgets', name: 'price' },
-      {
-        type: 'type_upgrade',
-        table: 'widgets',
-        name: 'metadata',
-        sql: '-- already stores JSON as TEXT (no change needed)',
-      },
-      { type: 'drop_table', table: 'widgets' },
-    ] as any);
+    const names = getUnresolvedGeneratedMigrationNames(
+      [
+        { type: 'add_column', table: 'widgets', name: 'price' },
+        {
+          type: 'type_upgrade',
+          table: 'widgets',
+          name: 'metadata',
+          sql: '-- already stores JSON as TEXT (no change needed)',
+        },
+        { type: 'drop_table', table: 'widgets' },
+      ] as any,
+      'sqlite',
+    );
 
     expect(names.has('add_column_widgets_price')).toBe(true);
     expect(names.has('type_upgrade_widgets_metadata')).toBe(false);
@@ -328,6 +334,7 @@ describe('partitionSchemaChanges index + guard branches', () => {
         },
       ] as any,
       getClassForTable,
+      'sqlite',
     );
 
     expect(migrations.map((m) => m.type)).toEqual(['add_index', 'drop_index']);
@@ -344,6 +351,7 @@ describe('partitionSchemaChanges index + guard branches', () => {
         { type: 'type_upgrade', table: 'widgets', name: 'x' },
       ],
       getClassForTable,
+      'sqlite',
     );
 
     expect(migrations).toEqual([]);
@@ -364,6 +372,7 @@ describe('partitionSchemaChanges index + guard branches', () => {
         },
       ] as any,
       getClassForTable,
+      'sqlite',
     );
 
     expect(migrations).toEqual([]);
