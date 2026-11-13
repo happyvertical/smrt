@@ -6,6 +6,10 @@ Package orientation, the cross-module invariants, and the traps that apply
 before editing anything live in [../AGENTS.md](../AGENTS.md) — read that first;
 it links the relevant runtime and generation contracts.
 
+The data shape rules these paths implement (required only with a reason, harden
+by subclass, migrate all or nothing) and how each is kept are in
+[data-shape-rules.md](data-shape-rules.md).
+
 ## Four entry points, two of which ship
 
 `src/schema/generator.ts` exposes four index-emitting entry points. Their columns and indexes must agree for the same class.

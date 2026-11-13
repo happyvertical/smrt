@@ -64,3 +64,23 @@ Answers to the open checks of #4869, each with a test in
 For an STI parent, the subclass's fields become nullable columns on the parent's
 table, its records carry its own `_meta_type`, and the parent's collection
 returns them (as subclass instances).
+
+## Run-time models and the data shape rules (#4920)
+
+The rules are in [data-shape-rules.md](data-shape-rules.md). A run-time
+definition is shape that the app registers, so it counts under rule 2 like a
+decorated class. What differs from a decorated class:
+
+- **Migrate never sees it.** `db:migrate` plans from classes in the build. The
+  host applies the `planRuntimeModelDDL` statements itself, so rules 4 to 7
+  (apply when safe, stop to avoid losing data, all or nothing) do not cover
+  these tables. The host decides when to apply them.
+- **A required field may be enforced only in code.** A new table gets `NOT NULL`
+  for a required field. A column added to an existing table is always nullable.
+  The save-time check still refuses a record without the value.
+- **No build refusal.** The one refusal of rule 3 (an app may not loosen a field
+  smrt needs) is a build error. A run-time definition does not go through the
+  build, and an inherited field in a run-time subclass's own table is listed as
+  optional (see the list above). Do not use a run-time definition to loosen a
+  field smrt requires for its own correctness.
+
