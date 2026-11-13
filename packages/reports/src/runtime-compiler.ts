@@ -652,7 +652,20 @@ export async function runRuntimeReport(
     1,
     adapterType,
   );
-  const result = await options.db.query(aggregate.sql, ...aggregate.values);
+  // SQLite's driver refuses unsafe integers before cell normalization can
+  // classify them. Read integer outputs as exact text, after the aggregate's
+  // numeric grouping, HAVING, ordering and limit have already been applied.
+  const projection = compiled.columns.map((column) => {
+    const alias = `"${`${ALIAS_PREFIX}${column.id}`.replace(/"/g, '""')}"`;
+    return column.type === 'integer'
+      ? `CAST(${alias} AS TEXT) AS ${alias}`
+      : alias;
+  });
+  const sql =
+    adapterType === 'sqlite'
+      ? `SELECT ${projection.join(', ')} FROM (${aggregate.sql}) AS "_smrt_report_result"`
+      : aggregate.sql;
+  const result = await options.db.query(sql, ...aggregate.values);
   const rawRows = (result.rows ?? []) as Record<string, unknown>[];
   const limit = Math.min(
     compiled.limit,

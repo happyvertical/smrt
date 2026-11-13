@@ -39,6 +39,10 @@
       "types": "./dist/state.d.ts",
       "import": "./dist/state.js"
     },
+    "./display": {
+      "types": "./dist/display.d.ts",
+      "import": "./dist/display.js"
+    },
     "./spec": {
       "types": "./dist/spec.d.ts",
       "import": "./dist/spec.js"
@@ -66,7 +70,8 @@
     "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run optional.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
-    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js .",
+    "test:pglite": "node ../core/scripts/test-pglite.mjs src/__tests__/runtime-generated-field.test.ts"
   },
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",
