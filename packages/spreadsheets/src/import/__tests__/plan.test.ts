@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createSqliteReferenceTarget } from '../../testing.js';
 import {
   type ImportPlan,
   ImportPlanError,
@@ -7,7 +8,6 @@ import {
   runImport,
   validatePlan,
 } from '../index.js';
-import { createSqliteReferenceTarget } from '../testing.js';
 import { planOf, sheetOf, workbookOf } from './helpers.js';
 
 const valid = (): ImportPlan =>

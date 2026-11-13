@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { createSqliteReferenceTarget } from '../../testing.js';
 import { checkPlan, planLoad, runImport } from '../index.js';
-import { createSqliteReferenceTarget } from '../testing.js';
 import { planOf, sheetOf, workbookOf } from './helpers.js';
 
 // Orders sheet: one row per order line; regions are extracted into a lookup table.

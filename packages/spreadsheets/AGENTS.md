@@ -1,31 +1,39 @@
-# @happyvertical/smrt-tabular-import
+# @happyvertical/smrt-spreadsheets
 
-The deterministic half of "build an app from a workbook" (#4969). A model,
-elsewhere and later, proposes an `ImportPlan`; this package validates it,
+smrt's spreadsheet package, starting with import: the deterministic half of
+"build an app from a workbook" (#4969). A model, elsewhere and later, proposes an `ImportPlan`; this package validates it,
 checks it against the workbook, loads the data through an `ImportTarget`, and
 proves the result. Two products implement the target, so nothing here may
 name either. No `@smrt()` objects, no tables, no Svelte.
 
+`./export`, saved mapping and re-import are planned, not present.
+
 ## Entries
 
-- Root: browser-safe and pure. Imports `@happyvertical/spreadsheets` and
+- Root (`.`): types only (`export type * from './import/index.js'`); no runtime
+  code or values. Keep it types only as new capabilities arrive.
+- `./import`: browser-safe and pure. Imports `@happyvertical/spreadsheets` and
   `@happyvertical/sql/query` only, never the sql root or a `node:` built-in
   (`browser-safe.test.ts` walks and bundles the graph).
-- `/testing`: Node-only `createSqliteReferenceTarget()`, real in-process SQLite
+- `./testing`: Node-only `createSqliteReferenceTarget()`, real in-process SQLite
   through `@happyvertical/sql`. Calculated fields are generated columns made
   by `renderExpression`, so they run on database semantics. Never import it
-  from the root entry.
+  from the root or import entry.
 
 ## Source map
 
-- `plan.ts`: `validatePlan` (closed shapes, JSON-cloned input, limits),
+Import implementation and tests live under `src/import/`; `src/import/index.ts`
+exports the import surface. `src/index.ts` is the type-only root, and
+`src/testing.ts` implements the Node-only target.
+
+- `src/import/plan.ts`: `validatePlan` (closed shapes, JSON-cloned input, limits),
   `loadOrder`. Calculated expressions may read column fields only.
-- `coerce.ts`: `coerceCell`, the one typing rule. Nothing is guessed.
-- `evaluate.ts`: reads and types every table; shared by `checkPlan` and
+- `src/import/coerce.ts`: `coerceCell`, the one typing rule. Nothing is guessed.
+- `src/import/evaluate.ts`: reads and types every table; shared by `checkPlan` and
   `planLoad`. A row that fails never reaches a record.
-- `checks.ts`: `checkPlan` (before writing) and `checkLoaded` (after).
-- `load.ts`: `admit` (limits) and `planLoad` (ordered, batched records).
-- `run.ts`: `runImport`. Adapter errors propagate; it catches nothing.
+- `src/import/checks.ts`: `checkPlan` (before writing) and `checkLoaded` (after).
+- `src/import/load.ts`: `admit` (limits) and `planLoad` (ordered, batched records).
+- `src/import/run.ts`: `runImport`. Adapter errors propagate; it catches nothing.
 
 ## Invariants
 
@@ -62,6 +70,6 @@ name either. No `@smrt()` objects, no tables, no Svelte.
 
 ## Validation
 
-`pnpm --filter @happyvertical/smrt-tabular-import build|typecheck|test`.
+`pnpm --filter @happyvertical/smrt-spreadsheets build|typecheck|test`.
 Tests build workbooks in code with the SDK's `createWorkbook`/`createSheet`;
 no binary fixtures, no containers.

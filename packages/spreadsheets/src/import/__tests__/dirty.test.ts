@@ -1,5 +1,6 @@
 import type { Workbook } from '@happyvertical/spreadsheets';
 import { describe, expect, it, vi } from 'vitest';
+import { createSqliteReferenceTarget } from '../../testing.js';
 import {
   checkPlan,
   type ImportPlan,
@@ -9,7 +10,6 @@ import {
   planLoad,
   runImport,
 } from '../index.js';
-import { createSqliteReferenceTarget } from '../testing.js';
 import { type CellSpec, planOf, sheetOf, workbookOf } from './helpers.js';
 
 const errorCell = { value: null, type: 'error' as const, error: '#DIV/0!' };

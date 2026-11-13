@@ -66,10 +66,10 @@
 * [@happyvertical/smrt-secrets](/components/smrt-secrets.md) - Per-tenant secret management with envelope encryption for SMRT
 * [@happyvertical/smrt-sites](/components/smrt-sites.md) - Site lifecycle management for multi-tenant SMRT networks
 * [@happyvertical/smrt-social](/components/smrt-social.md) - Social media account management for multi-platform publishing in the SMRT ecosystem
+* [@happyvertical/smrt-spreadsheets](/components/smrt-spreadsheets.md) - Spreadsheet capabilities for smrt, starting with validated import plans, workbook checks and batch loading through a target adapter
 * [@happyvertical/smrt-subscriptions](/components/smrt-subscriptions.md) - Tenant subscriptions, entitlement resolution, usage thresholds, and subscription UI for SMRT
 * [@happyvertical/smrt-support](/components/smrt-support.md) - AI-first Support Cases: channel-neutral intake, lifecycle, routing, service targets, and service time for the SMRT framework
 * [@happyvertical/smrt-svelte](/components/smrt-svelte.md) - Svelte 5 components for SMRT user management - auth, users, tenants, roles, permissions, groups
-* [@happyvertical/smrt-tabular-import](/components/smrt-tabular-import.md) - Validated import plans, workbook checks and a batch-loading orchestrator that turn a spreadsheet into records through a target adapter
 * [@happyvertical/smrt-tags](/components/smrt-tags.md) - Reusable tagging system with hierarchies, contexts, and multi-language support for SMRT framework
 * [@happyvertical/smrt-template-site-static-json](/components/smrt-template-site-static-json.md) - Static community site template with JSON data storage and SMRT framework
 * [@happyvertical/smrt-template-sveltekit](/components/smrt-template-sveltekit.md) - Minimal SvelteKit project template with s-m-r-t framework integration

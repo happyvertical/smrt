@@ -816,7 +816,7 @@ properties to any element.
 
 Tabular figures: the root sets `font-feature-settings: var(--smrt-font-feature-settings)`,
 and `table`, `time`, `[data-smrt-component="DataTable"]`, `[data-smrt-component="Badge"]`
-and `.smrt-tabular` set `font-variant-numeric: tabular-nums`.
+and `.smrt-numeric-tabular` set `font-variant-numeric: tabular-nums`.
 
 Preset rhythm: display tracking tightens with size (about -0.02em at display, -0.01em at
 headline, 0 at title), labels weigh 500 (Day Shift keeps its documented bold B612 labels),

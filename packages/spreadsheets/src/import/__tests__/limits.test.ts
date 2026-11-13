@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createSqliteReferenceTarget } from '../../testing.js';
 import {
   admit,
   checkPlan,
@@ -6,7 +7,6 @@ import {
   DEFAULT_MAX_ROWS_PER_TABLE,
   runImport,
 } from '../index.js';
-import { createSqliteReferenceTarget } from '../testing.js';
 import { type CellSpec, planOf, sheetOf, workbookOf } from './helpers.js';
 
 const bigPlan = (rows: number) =>

@@ -1,8 +1,8 @@
 // biome-ignore-all lint/suspicious/noThenProperty: IF nodes are closed data, not thenable functions.
 import { describe, expect, it } from 'vitest';
+import { createSqliteReferenceTarget } from '../../testing.js';
 import type { AggregateOperand } from '../index.js';
 import { runImport } from '../index.js';
-import { createSqliteReferenceTarget } from '../testing.js';
 import { planOf, sheetOf, workbookOf } from './helpers.js';
 
 const col = (name: string): AggregateOperand => ({ col: name });

@@ -1,5 +1,5 @@
 /**
- * The root entry is browser-safe: its import graph reaches no `node:` built-in,
+ * The root and import entries are browser-safe: neither reaches a `node:` built-in,
  * not the sql root (drivers), and not the Node-only `/testing` entry. Checked by
  * walking the source graph and by bundling it for a browser.
  */
@@ -7,10 +7,12 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import type { ImportPlan as RootImportPlan } from '../../index.js';
+import type { ImportPlan } from '../index.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const src = path.resolve(here, '..');
+const src = path.resolve(here, '../..');
 
 function withoutComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
@@ -45,8 +47,11 @@ function walk(entry: string) {
   return { files, bare };
 }
 
-describe('root entry browser safety', () => {
-  const graph = walk(path.join(src, 'index.ts'));
+describe.each([
+  ['.', 'index.ts'],
+  ['./import', 'import/index.ts'],
+])('%s entry browser safety', (subpath, source) => {
+  const graph = walk(path.join(src, source));
 
   it('imports only the spreadsheets package and the sql query subpath', () => {
     expect([...graph.bare].sort()).toEqual([
@@ -80,7 +85,7 @@ describe('root entry browser safety', () => {
         write: false,
         minify: false,
         lib: {
-          entry: path.join(src, 'index.ts'),
+          entry: path.join(src, source),
           formats: ['es'],
           fileName: 'out',
         },
@@ -101,13 +106,40 @@ describe('root entry browser safety', () => {
       ),
     ).toEqual([]);
     expect(code).not.toMatch(/@libsql|better-sqlite3|from\s*["']pg["']/);
+    if (subpath === '.') {
+      expect(chunks.flatMap((chunk) => chunk.exports)).toEqual([]);
+      expect(chunks.flatMap((chunk) => chunk.imports)).toEqual([]);
+      expect(code.trim()).toBe('');
+    } else {
+      expect(chunks.flatMap((chunk) => chunk.exports)).toContain('runImport');
+    }
   });
+});
 
-  it('keeps the testing entry out of the root export map', () => {
+describe('spreadsheet package entries', () => {
+  it('exposes separate root, import and testing entries', () => {
     const pkg = JSON.parse(
       readFileSync(path.resolve(src, '../package.json'), 'utf8'),
     );
-    expect(Object.keys(pkg.exports)).toEqual(['.', './testing']);
-    expect(pkg.exports['.'].import).toBe('./dist/index.js');
+    expect(pkg.name).toBe('@happyvertical/smrt-spreadsheets');
+    expect(pkg.exports).toEqual({
+      '.': { types: './dist/index.d.ts', import: './dist/index.js' },
+      './import': {
+        types: './dist/import/index.d.ts',
+        import: './dist/import/index.js',
+      },
+      './testing': {
+        types: './dist/testing.d.ts',
+        import: './dist/testing.js',
+      },
+    });
+  });
+
+  it('re-exports import types from a root with no runtime values', async () => {
+    expectTypeOf<RootImportPlan>().toEqualTypeOf<ImportPlan>();
+    expect(Object.keys(await import('../../index.js'))).toEqual([]);
+    expect(readFileSync(path.join(src, 'index.ts'), 'utf8').trim()).toBe(
+      "export type * from './import/index.js';",
+    );
   });
 });

@@ -1,6 +1,7 @@
-# @happyvertical/smrt-tabular-import
+# @happyvertical/smrt-spreadsheets
 
-Turns a spreadsheet into records without guessing. A plan says which sheet
+smrt's spreadsheet package. Its first capability is import: turning a spreadsheet
+into records without guessing. A plan says which sheet
 range becomes which table, which column becomes which typed field, and which
 fields are calculated or point at another table. This package validates the
 plan, checks it against the workbook before anything is written, loads the data
@@ -14,14 +15,24 @@ product, a database or an s-m-r-t model layer.
 ## Installation
 
 ```bash
-pnpm add @happyvertical/smrt-tabular-import
+pnpm add @happyvertical/smrt-spreadsheets
 ```
+
+## Entry points
+
+- `.`: type-only re-exports of the import surface; no runtime code or values.
+- `./import`: the browser-safe import API (`runImport`, plan validation, checks
+  and target contracts).
+- `./testing`: the Node-only SQLite reference target for tests.
+
+`./export`, saved mapping and re-import are planned capabilities, not present
+in this version. The root stays types only as new capabilities arrive.
 
 ## Usage
 
 ```ts
 import { getSpreadsheets } from '@happyvertical/spreadsheets';
-import { runImport } from '@happyvertical/smrt-tabular-import';
+import { runImport } from '@happyvertical/smrt-spreadsheets/import';
 
 const workbook = await (await getSpreadsheets({ type: 'xlsx' })).read(bytes);
 
@@ -83,12 +94,12 @@ batch. The target keeps each record's `sourceRow`.
 For tests there is a reference target on real in-process SQLite:
 
 ```ts
-import { createSqliteReferenceTarget } from '@happyvertical/smrt-tabular-import/testing';
+import { createSqliteReferenceTarget } from '@happyvertical/smrt-spreadsheets/testing';
 
 const target = await createSqliteReferenceTarget();
 ```
 
-The `/testing` entry is Node-only; the root entry is browser-safe.
+The `./testing` entry is Node-only; `.` and `./import` are browser-safe.
 
 ### Limits
 

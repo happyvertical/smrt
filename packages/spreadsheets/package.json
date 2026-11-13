@@ -1,7 +1,7 @@
 {
-  "name": "@happyvertical/smrt-tabular-import",
+  "name": "@happyvertical/smrt-spreadsheets",
   "version": "0.60.18",
-  "description": "Validated import plans, workbook checks and a batch-loading orchestrator that turn a spreadsheet into records through a target adapter",
+  "description": "Spreadsheet capabilities for smrt, starting with validated import plans, workbook checks and batch loading through a target adapter",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -14,6 +14,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./import": {
+      "types": "./dist/import/index.d.ts",
+      "import": "./dist/import/index.js"
     },
     "./testing": {
       "types": "./dist/testing.d.ts",
@@ -55,6 +59,6 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/happyvertical/smrt.git",
-    "directory": "packages/tabular-import"
+    "directory": "packages/spreadsheets"
   }
 }

@@ -1,5 +1,6 @@
 import { createSheet, createWorkbook } from '@happyvertical/spreadsheets';
 import { describe, expect, it, vi } from 'vitest';
+import { createSqliteReferenceTarget } from '../../testing.js';
 import {
   type AggregateOperand,
   checkLoaded,
@@ -10,7 +11,6 @@ import {
   runImport,
   validatePlan,
 } from '../index.js';
-import { createSqliteReferenceTarget } from '../testing.js';
 import {
   type CellSpec,
   cellOf,

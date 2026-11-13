@@ -1,7 +1,7 @@
 import { getSpreadsheets } from '@happyvertical/spreadsheets';
 import { describe, expect, it } from 'vitest';
+import { createSqliteReferenceTarget } from '../../testing.js';
 import { checkPlan, planLoad, runImport, validatePlan } from '../index.js';
-import { createSqliteReferenceTarget } from '../testing.js';
 import { day, planOf, sheetOf, workbookOf } from './helpers.js';
 
 const plan = planOf([

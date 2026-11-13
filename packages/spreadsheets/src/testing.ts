@@ -1,11 +1,11 @@
 /**
  * Node-only reference target for tests: real in-process SQLite through
  * `@happyvertical/sql`, so calculated fields are generated columns evaluated
- * with database semantics. Never imported by the root entry.
+ * with database semantics. Never imported by the root or `/import` entry.
  */
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { renderExpression } from '@happyvertical/sql/query';
-import type { LoadBatch } from './load.js';
+import type { LoadBatch } from './import/load.js';
 import {
   type ImportFieldType,
   type ImportPlan,
@@ -13,8 +13,12 @@ import {
   type PlanField,
   type PlanReport,
   type PlanTable,
-} from './plan.js';
-import type { ImportTarget, TargetRow, TargetStructure } from './target.js';
+} from './import/plan.js';
+import type {
+  ImportTarget,
+  TargetRow,
+  TargetStructure,
+} from './import/target.js';
 
 export interface SqliteReferenceTarget extends ImportTarget {
   /** The database the target writes to. */
