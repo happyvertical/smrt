@@ -709,3 +709,8 @@ Reuse check: smrt-dev-mcp reviews and purpose/name searches covered app-runtime,
 In-flight removal settings: the MCP boundary honors both the current owner preference and the running turn's existing `requiresApproval` gate. Tightening can add a hold immediately; relaxing never waives a hold already bound to that request. This prevents an effect from running and then being rejected by result authoring. CLI host tests flip the preference just before MCP execution and still require the original owner decision exactly once.
 
 The browser gate accepts `SMRT_BROWSER_TEST_PORT` to reserve an assigned loopback port. Installed Chrome is supported through `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`; this worker used port 4969.
+
+The workspace prepack hook builds the template dependency closure through Turbo,
+then builds and verifies the host with the shared package prepack script. This
+ships the declared `dist/host/*` exports from a source checkout without a prior
+build; packing runs inside the workspace, where Turbo and the shared script live.

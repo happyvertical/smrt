@@ -34,6 +34,7 @@
     }
   },
   "scripts": {
+    "prepack": "pnpm exec turbo run build --filter=@happyvertical/smrt-cli^... && node ../../scripts/prepack-package.js",
     "build": "vite build",
     "build:watch": "vite build --watch",
     "clean": "rm -rf dist",
