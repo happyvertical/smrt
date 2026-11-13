@@ -5,9 +5,6 @@ when its own code needs it, and says why. This file holds the seven rules, how
 smrt keeps each one, and how an app hardens a smrt class. It is the standing
 policy, not a transition step.
 
-Marks in this file: **Not built yet** means the check is planned and has an
-issue. Do not rely on it.
-
 ## The rules
 
 1. **smrt requires a field only when its own code would be wrong or unsafe
@@ -52,15 +49,27 @@ migrate will do before they deploy.
 | Rule | Build check | Test | `smrt doctor --db` |
 |---|---|---|---|
 | 1 | `scripts/check-required-reasons.mjs` (in `pnpm lint` and CI): a required field a caller must supply states `requiredFor` or sits in `scripts/required-reasons-baseline.json`, which only shrinks | `registerMinimalRowTests()` from `@happyvertical/smrt-vitest/minimal-row`: one generated `minimal-row.generated.test.ts` per model package saves each model from its required fields alone. Known gaps sit in `packages/vitest/src/minimal-row-expected-failures.ts`, which only shrinks | None. A live database cannot show why a field is required |
-| 2 | `scripts/check-hand-written-ddl.mjs` (in `pnpm lint` and CI): hand-written `CREATE`, `ALTER` or `DROP TABLE` outside the migrator, the schema code and core's `system/` tables fails; existing ones sit in `scripts/hand-written-ddl-baseline.json`, which only shrinks | PostgreSQL: a `NOT NULL` added by hand to a column the code declares nullable is dropped by migrate (`issue-2369-postgres-column-drift.optional.test.ts`, #4897). SQLite and DuckDB: **not built yet** (#4937) | **Not built yet** (#4934): list the hand-made constraints the next migrate removes |
-| 3 | None. It is behaviour, not declaration. The one refusal is an error from the build, from run-time model definition, and from field resolution (below) | `issue-4932-hardening-end-to-end.test.ts` (a stricter subclass refuses a save without the field; the own-table column is `NOT NULL`), `issue-4921-same-name-subclass.test.ts` (smrt's collections build the app's class), `issue-4932-required-loosening.test.ts` (the build refuses loosening a field smrt needs), `issue-4932-runtime-required-loosening.test.ts` (run-time models and decorator subclasses refuse it too), `issue-4932-sti-hardening.test.ts` (shared-table rule as a PostgreSQL `CHECK`) | **Not built yet** (#4934): list rules declared in code that the database does not enforce, and why |
-| 4 | None | `change-kinds.test.ts`: one table, `SCHEMA_CHANGE_KINDS`, lists every kind of schema change as apply, report or stop; a kind with no entry fails. `packages-seen-orchestrate.test.ts` and `db-migrate-packages-seen.test.ts`: migrate with one package left out stops and changes nothing | **Not built yet** (#4934): show what the next migrate applies, and the packages the last migrate saw against those loaded now |
-| 5 | None | The same table: every stop says `loses-data` or `invents-data`, and its message names the table and column | **Not built yet** (#4934): show what the next migrate stops on, with row counts |
-| 6 | None | **Not built yet** (#4933): the release upgrade gate | **Not built yet** (#4934): warn when the database is older than the oldest supported release |
-| 7 | None | `db-migrate-all-or-nothing.test.ts` and `db-migrate-atomic.test.ts`: one stop plus other changes leaves the database identical; a failure part-way rolls back. `issue-4929-startup.test.ts`: production refuses an unmigrated database. `db-migrate-postgres-safe.optional.test.ts`: an index failure exits with an error and a rerun finishes it | **Not built yet** (#4934): show the build's schema fingerprint next to the database's |
+| 2 | `scripts/check-hand-written-ddl.mjs` (in `pnpm lint` and CI): hand-written `CREATE`, `ALTER` or `DROP TABLE` outside the migrator, the schema code and core's `system/` tables fails; existing ones sit in `scripts/hand-written-ddl-baseline.json`, which only shrinks | PostgreSQL: a `NOT NULL` added by hand to a column the code declares nullable is dropped by migrate (`issue-2369-postgres-column-drift.optional.test.ts`, #4897). SQLite and DuckDB: the same relaxation applies there by atomic table rebuild (`db-migrate-engine-parity.test.ts` runs one scenario table on SQLite, DuckDB and PostgreSQL) | `smrt doctor --db`, section "Next migrate": "Constraints made by hand that the next migrate removes" |
+| 3 | None. It is behaviour, not declaration. The one refusal is an error from the build, from run-time model definition, and from field resolution (below) | `issue-4932-hardening-end-to-end.test.ts` (a stricter subclass refuses a save without the field; the own-table column is `NOT NULL`), `issue-4921-same-name-subclass.test.ts` (smrt's collections build the app's class), `issue-4932-required-loosening.test.ts` (the build refuses loosening a field smrt needs), `issue-4932-runtime-required-loosening.test.ts` (run-time models refuse it too), `issue-4932-runtime-required-loosening.test.ts` (run-time models and decorator subclasses refuse it too), `issue-4932-sti-hardening.test.ts` (shared-table rule as a PostgreSQL `CHECK`) | "Rules in code the database is not enforcing" |
+| 4 | None | `change-kinds.test.ts`: one table, `SCHEMA_CHANGE_KINDS`, lists every kind of schema change as apply, report or stop; a kind with no entry fails. On SQLite and DuckDB the kinds apply by atomic rebuild where `ALTER` cannot (`issue-4937-sqlite-parity.test.ts` and `issue-4937-duckdb-parity.test.ts`). `packages-seen-orchestrate.test.ts` and `db-migrate-packages-seen.test.ts`: migrate with one package left out stops and changes nothing | "What the next migrate applies", "Tables to create", and "Packages" (the packages the last migrate saw against those loaded now, and any missing) |
+| 5 | None | The same table: every stop says `loses-data` or `invents-data`, and its message names the table and column | "What the next migrate stops on", with row counts, and "Held back" |
+| 6 | None | The release upgrade gate: `pnpm check:release-upgrade` (`scripts/release-upgrade-gate.mjs`, files in `packages/core/release-upgrade/`). It restores the schema saved for the newest release at or before this build and for the oldest supported release (now 0.60.17), seeds one minimal row per model table, runs migrate, and fails on any stop and on data left in a column smrt no longer declares. It runs in the full-mode knowledge pull request job. `scripts/release-upgrade-gate.test.mjs` tests the gate. Migrate refuses a database older than the oldest supported release (`oldest-supported.test.ts`, `db-migrate-oldest-supported.test.ts`). | "Database release": warns when the database is older than the oldest supported release |
+| 7 | None | `db-migrate-all-or-nothing.test.ts` and `db-migrate-atomic.test.ts`: one stop plus other changes leaves the database identical; a failure part-way rolls back. `issue-4929-startup.test.ts`: production refuses an unmigrated database. `db-migrate-postgres-safe.optional.test.ts`: an index failure exits with an error and a rerun finishes it | "Schema fingerprint": the build's next to the database's |
 
-Rule 1 is enforced as far as the audit has gone. Fields smrt has not audited
-yet are in the baseline; each one is an open question, not a reason.
+Rule 1 is fully audited. Every required field in a smrt package states a
+reason, and the baseline of unexplained fields is empty. The reasons are
+`identity`, `tenant-scope`, `idempotency`, `workflow-state`, `system-table`,
+`integrity` and `authentication`. The fields the audit made optional are listed
+in [the operator notes](https://github.com/happyvertical/smrt/blob/main/docs/content/data-shape-rules.md).
+
+One thing is not wired. The release upgrade gate runs on pull requests, but the
+release workflow does not run it: a release job cannot be checked without
+publishing. After a release, the maintainer runs `pnpm release:snapshot` by hand
+and commits the saved schema. The oldest supported release moves only with
+`node scripts/release-upgrade-gate.mjs move-oldest`, which records the decision.
+
+A field that was optional in the oldest supported release becomes required only
+together with the data step for the rows that lack it. The gate fails otherwise.
 
 ## How an app hardens a smrt class
 

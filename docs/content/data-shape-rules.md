@@ -74,7 +74,39 @@ Read this before you upgrade a deployed app.
   longer holds a path from the machine that built it. `pnpm build` in this
   repository fails if one appears. An app has nothing to do beyond rebuilding
   with the new release.
-- **smrt is relaxing required fields it does not need.** The audit is under
-  way; each field it relaxes is listed in the release note. On PostgreSQL
-  migrate drops the `NOT NULL` on its own. If your app relied on such a field
-  being required, declare it again in a same-named subclass.
+- **90 fields are no longer required.** The audit of every required field in
+  a smrt package is complete. 767 required fields state a reason, and none is
+  left unexplained. The fields smrt does not need became optional. The columns of the 90 fields lose
+  `NOT NULL` when migrate runs, with no flag. If your app relied on one of them
+  being required, harden it in a same-named subclass. The list, by package and
+  class, is on [Fields smrt no longer requires](./relaxed-required-fields.md).
+- **Commerce contract links are optional.** `customerId` on `Estimate`, `Order`,
+  `Lease`, `Agreement` and `WholesaleOrder`, and `vendorId` on `PurchaseOrder`
+  and `SupplierQuote`, no longer need a value. An estimate with no customer
+  still cannot be converted to an order: the conversion refuses it. If you want
+  the link required on save, harden it in a same-named subclass.
+- **SQLite and DuckDB apply the same changes as PostgreSQL.** Where `ALTER`
+  cannot do a change, migrate rebuilds the table inside the same atomic run
+  (and the tables that reference it on DuckDB), so a failure part-way leaves
+  everything as it was. A change that used to stop on SQLite or DuckDB now
+  applies, and dropping `NOT NULL` from a column the code declares nullable
+  applies by default on all three. Six differences remain, each with a reason:
+  the shared-table `CHECK` exists only on PostgreSQL; removing a foreign key
+  stops on PostgreSQL (the adapter does not give the live constraint name); a
+  SQLite table declared `AUTOINCREMENT` stops; a DuckDB table that references
+  itself stops when the change needs a rebuild; a DuckDB constraint that names a
+  dropped column stops; and the JSON adapter cannot rebuild. The list is in
+  [`schema-paths.md`](https://github.com/happyvertical/smrt/blob/main/packages/core/agents/schema-paths.md).
+- **Migrate refuses a database older than the oldest supported release.** That
+  release is 0.60.17. The error names it and the first upgrade to run. A
+  database with no migrate record is not refused. Every release upgrades the
+  previous release and the oldest supported one, and the pull request job
+  `pnpm check:release-upgrade` rehearses both. The release workflow does not
+  run that gate yet; the maintainer saves each release's schema with
+  `pnpm release:snapshot` by hand.
+- **`smrt doctor --db` shows the next migrate.** A "Next migrate" section lists
+  the constraints made by hand that migrate will remove, rules in code the
+  database does not enforce, what migrate applies and stops on, what it would
+  hold back, the packages last seen against those loaded, the database's
+  release, and the build's schema fingerprint next to the database's. It reads
+  and writes nothing.
