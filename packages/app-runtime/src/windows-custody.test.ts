@@ -1256,6 +1256,67 @@ describe('preflight keeps the dedicated-root rules', () => {
       preflightLocalApplicationRoot(ROOT, SOURCE, 'myapp'),
     );
 
+  it.each([
+    ['D:\\a\\_temp', 85],
+    ['C:\\Users\\runneradmin\\AppData\\Local\\Temp', 114],
+  ] as const)('accepts the smoke layout under %s when its custody is valid', async (temporaryBase, length) => {
+    const home = win32.join(temporaryBase, 'home-AbCdEf');
+    const localAppData = win32.join(home, 'AppData', 'Local');
+    const dataDirectory = win32.join(
+      localAppData,
+      'placeholder.invalid.smrt-desktop-wrapper',
+      'runtime',
+    );
+    const sourceRoot =
+      'D:\\a\\_temp\\smrt-launch-smoke-QwErTy\\target\\debug\\app';
+    const env = {
+      SystemRoot: 'C:\\Windows',
+      SystemDrive: 'C:',
+      LOCALAPPDATA: localAppData,
+      APPDATA: win32.join(home, 'AppData', 'Roaming'),
+    };
+    const options = {
+      appId: 'generic-smrt-app',
+      dataDirectory,
+      sourceRoot,
+      platform: 'win32' as const,
+      homeDirectory: home,
+      env,
+    };
+    expect(resolveLocalRuntimePaths(options).root).toHaveLength(length);
+    const state = resolveApplicationStateRoot({
+      ...options,
+      platformName: 'win32',
+      environment: env,
+    });
+    expect(state.startsWith(localAppData)).toBe(true);
+    expect(state.length).toBeLessThanOrEqual(130);
+    const machine = new FakeWindowsMachine();
+    machine.env = env;
+    // These ACLs are deliberate valid fixtures, not claims about CI's ACLs.
+    for (const path of [
+      ...windowsPathComponents(localAppData),
+      ...windowsPathComponents(sourceRoot),
+    ]) {
+      if (!machine.node(path)) machine.dir(path, SDDL.userPrivate());
+    }
+    await expect(
+      onWindows(machine, () =>
+        preflightLocalApplicationRoot(dataDirectory, sourceRoot, options.appId),
+      ),
+    ).resolves.toBeUndefined();
+    const ancestor = machine.at(temporaryBase);
+    ancestor.sddl += '(A;;FA;;;WD)';
+    await expect(
+      onWindows(machine, () =>
+        preflightLocalApplicationRoot(dataDirectory, sourceRoot, options.appId),
+      ),
+    ).rejects.toMatchObject({
+      code: 'invalid_configuration',
+      message: expect.stringContaining('Windows custody (ancestor)'),
+    });
+  });
+
   it('refuses a populated root without a marker', async () => {
     const machine = FakeWindowsMachine.standard();
     machine.dir(ROOT, SDDL.userPrivate());
