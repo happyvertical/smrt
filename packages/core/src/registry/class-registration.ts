@@ -201,6 +201,33 @@ function assertRegisteredStiParent(ctor: typeof SmrtObject): void {
  * directories come from a bundler (Vite library mode, webpack, Next.js,
  * Nuxt, svelte-kit) that can duplicate module code across chunks.
  */
+
+/**
+ * The options a decorator states, as the scanner's `_meta.__statedOptions`
+ * records them, so the shared inheritance rule knows `@field({ required: false })`
+ * was written (#4942, #4932). Decorator options are exactly what the author
+ * passed. A manifest field with no list contributes what it carries except
+ * `required` and `nullable`, which an older scanner inferred.
+ */
+function statedOptionsFromDecorator(
+  existing: FieldMeta | undefined,
+  decoratorOptions: object,
+): string[] {
+  const authored = Object.entries(decoratorOptions)
+    .filter(([key, value]) => key !== 'type' && value !== undefined)
+    .map(([key]) => key);
+  const carried = Array.isArray(existing?.__statedOptions)
+    ? (existing.__statedOptions as string[])
+    : Object.keys(existing ?? {}).filter(
+        (key) =>
+          key !== 'type' &&
+          key !== 'required' &&
+          key !== 'nullable' &&
+          !key.startsWith('__'),
+      );
+  return [...new Set([...carried, ...authored])];
+}
+
 export function isBundledOutputPath(sourceFile: string | undefined): boolean {
   if (!sourceFile) return false;
   return (
@@ -1663,6 +1690,10 @@ function registerUntracked(
         const mergedMeta: FieldMeta = {
           ...existingField._meta,
           ...decoratorOptions,
+          __statedOptions: statedOptionsFromDecorator(
+            existingField._meta,
+            decoratorOptions,
+          ),
         };
         const mergedField: RegisteredField = {
           type: opts.type || existingField.type,
@@ -1721,7 +1752,13 @@ function registerUntracked(
         );
       } else {
         // Decorator for field not in manifest - add it
-        const newMeta: FieldMeta = decoratorOptions;
+        const newMeta: FieldMeta = {
+          ...decoratorOptions,
+          __statedOptions: statedOptionsFromDecorator(
+            undefined,
+            decoratorOptions,
+          ),
+        };
         const newField: RegisteredField = {
           type: opts.type || inferDecoratorOnlyFieldType(opts),
           _meta: newMeta,

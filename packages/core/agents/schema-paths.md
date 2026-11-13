@@ -79,8 +79,19 @@ Ancestors apply base to child, then the class's own fields last:
   fields. A same-type redeclaration keeps the parent value or its absence. A type change may use
   fresh inferred defaults for the new type. `_meta.__statedOptions` records the
   written decorator options, plus enum and relationship declarations, before
-  registry normalization can mix inferred values into `_meta`. Decorator-only
-  and older fields without that list use the options they carry.
+  registry normalization can mix inferred values into `_meta`. The decorator
+  path writes the same list from the options the author passed. **An entry
+  with no list** (a manifest built before the list existed, or one written by
+  hand) uses the options it carries, as before this release, when it replaced
+  its parent's field whole: its `default`, `description`, `enum` and the like
+  win. The one exception is `required` and `nullable` over a parent that smrt
+  needs (`requiredFor`): an older scanner inferred `required: false` for fields
+  the author never touched, so they are not taken as stated. The field keeps
+  the parent's `required` and `requiredFor`, and nothing is refused at run time
+  (`CONFIG_REQUIRED_FIELD_LOOSENED` needs a stated `required: false`; an empty
+  list also states nothing). Rebuild the manifest to get the list. The check
+  reads `required` from the field or from `_meta`, since a registry field
+  loaded from a manifest keeps the flag only under `_meta`.
 - A type change drops inherited `sqlType`, `min`, `max`, `enum`, `default`,
   `backfill`, `minLength`, `maxLength` and `pattern`. Other options still
   inherit. Type means the field type (`text`, `integer`, etc.); changing it

@@ -45,6 +45,9 @@
  * optional. {@link resolveInheritedFields} refuses it with
  * `CONFIG_REQUIRED_FIELD_LOOSENED` (#4932), so the build, the registry and
  * run-time models all refuse by this one decision, {@link requiredLoosenedReason}.
+ * Only a stated `required: false` is refused: an entry with no stated-options
+ * list (a manifest older than the list, or one written by hand) keeps the
+ * parent's `required` and is not refused ({@link inferredRequired}).
  *
  * Methods merge by a different rule and are not part of this.
  */
@@ -112,10 +115,43 @@ export function requiredLoosenedReason(
 ): string | undefined {
   const reason = inherited._meta?.requiredFor;
   return typeof reason === 'string' &&
-    inherited.required === true &&
-    resolved.required !== true
+    isRequired(inherited) &&
+    !isRequired(resolved)
     ? reason
     : undefined;
+}
+
+/**
+ * Whether a field is required. A registry field loaded from a manifest keeps
+ * the flag under `_meta` only, so both places are read.
+ */
+function isRequired(field: InheritableField): boolean {
+  return (field.required ?? field._meta?.required) === true;
+}
+
+/**
+ * The options of an entry with no stated-options list that are not trusted when
+ * the parent's field is one smrt needs. A manifest built before the scanner
+ * wrote the list (or one written by hand) says nothing about what its author
+ * wrote, and the older scanner inferred `required: false` (and `nullable`) for
+ * fields the author never touched. Taking that as stated would refuse a
+ * subclass at run time for something nobody wrote (#4942), so for a field smrt
+ * needs the entry's `required` and `nullable` are left out: the field keeps the
+ * parent's `required` and `requiredFor`, and nothing is refused. Every other
+ * option the entry carries wins, as it did before this release, when the entry
+ * replaced its parent's field whole. An entry with a list (even an empty one),
+ * and a field no reason protects, are unaffected.
+ */
+function inferredRequired(
+  inherited: InheritableField,
+  incoming: InheritableField,
+): ReadonlySet<string> {
+  const unlisted = !Array.isArray(incoming._meta?.__statedOptions);
+  return unlisted &&
+    typeof inherited._meta?.requiredFor === 'string' &&
+    isRequired(inherited)
+    ? new Set(['required', 'nullable'])
+    : new Set();
 }
 
 /** Refuse a loosened field smrt needs, naming the class and field. */
@@ -192,6 +228,8 @@ function fillMissing<F extends InheritableField>(
   inherited: F,
   own: F,
   representation: FieldRepresentation,
+  /** Carried options that are not taken as stated (see {@link inferredRequired}). */
+  notStated: ReadonlySet<string> = new Set(),
 ): F {
   const inheritedBag = inherited as Bag;
   const ownBag = own as Bag;
@@ -200,6 +238,7 @@ function fillMissing<F extends InheritableField>(
   const meta: Bag = { ...inheritedMeta, ...ownMeta };
   const out = { ...own } as Bag;
   const ownStated = stated(own);
+  for (const key of notStated) ownStated.delete(key);
   const inheritedStated = stated(inherited);
   // A type the scanner could not resolve is a fallback, not a stated type: the
   // field keeps its parent's type and options (#4942).
@@ -361,7 +400,12 @@ export function resolveInheritedFields<F extends InheritableField>(
     ) {
       input.onTypeMismatch(name, inherited.type, incoming.type, inherited);
     }
-    const resolved = fillMissing(inherited, incoming, representation);
+    const resolved = fillMissing(
+      inherited,
+      incoming,
+      representation,
+      inferredRequired(inherited, incoming),
+    );
     assertRequiredNotLoosened(className, name, inherited, resolved);
     return resolved;
   };
