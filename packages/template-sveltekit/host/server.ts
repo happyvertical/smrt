@@ -632,6 +632,17 @@ export function createCookbookHost(options: CookbookHostOptions) {
         },
       );
     };
+    const livePermissions = async (c: {
+      tenantId?: string | null;
+      userId?: string | null;
+    }): Promise<ReadonlySet<string>> =>
+      c.tenantId && c.userId
+        ? (
+            await (
+              await PermissionResolver.create({ db })
+            ).resolvePermissions(c.userId, c.tenantId)
+          ).permissions
+        : new Set();
     const service = createCookbookToolService({
       ...(options.activation ? { activation: options.activation() } : {}),
       ...{
@@ -641,13 +652,10 @@ export function createCookbookHost(options: CookbookHostOptions) {
       catalog: app.catalog,
       engineFor: state.engineFor,
       isOwner: (c) => isOwner(c.tenantId, c.userId),
-      can: async (c, slug) => {
-        if (!c.tenantId || !c.userId) return false;
-        return (
-          await (
-            await PermissionResolver.create({ db })
-          ).resolvePermissions(c.userId, c.tenantId)
-        ).permissions.has(slug);
+      can: async (c, slug) => (await livePermissions(c)).has(slug),
+      canAll: async (c, slugs) => {
+        const held = await livePermissions(c);
+        return new Set(slugs.filter((slug) => held.has(slug)));
       },
       approvals: continuations.adapter('cookbook'),
       previewBeforeApply: async (context) => {

@@ -345,6 +345,51 @@ describe(`installed recipe server tools (${databaseType}, in process)`, () => {
     await expect(enable()).rejects.toMatchObject({ code: 'activation_failed' });
   });
 
+  it('reads ownership and permissions once per listing, and keeps the per-tool fallback', async () => {
+    const all = (await service.list(context)).map((tool) => tool.name);
+    expect(all.length).toBeGreaterThan(1);
+    let owners = 0;
+    let singles = 0;
+    const batches: string[][] = [];
+    const counted = {
+      ...options,
+      isOwner: async (c: CookbookToolContext) => {
+        owners++;
+        return options.isOwner(c);
+      },
+      can: async () => {
+        singles++;
+        return permission;
+      },
+    };
+    const batched = createCookbookToolService({
+      ...counted,
+      canAll: async (_c, tools) => {
+        batches.push([...tools]);
+        return new Set(tools.filter((tool) => tool !== all[0]));
+      },
+    });
+    expect((await batched.list(context)).map((tool) => tool.name)).toEqual(
+      all.slice(1),
+    );
+    expect({ owners, singles, batches }).toEqual({
+      owners: 1,
+      singles: 0,
+      batches: [all],
+    });
+    const failing = createCookbookToolService({
+      ...counted,
+      canAll: async () => {
+        throw new Error('permission store unreadable');
+      },
+    });
+    expect(await failing.list(context)).toEqual([]);
+    owners = 0;
+    const single = createCookbookToolService(counted);
+    expect((await single.list(context)).map((tool) => tool.name)).toEqual(all);
+    expect({ owners, singles }).toEqual({ owners: 1, singles: all.length });
+  });
+
   it('activates a lazy closure before publishing enablement, then honors preference and durable disable approval', async () => {
     const activation = await lazy();
     const handler = rest();
