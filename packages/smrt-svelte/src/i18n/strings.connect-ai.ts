@@ -11,6 +11,21 @@ export const M = defineMessages({
   'ui.connect_ai.cli_invocation':
     'The local AI does not accept the required secure options. Update the CLI, then retry.',
   'ui.connect_ai.title': 'Connect AI',
+  'ui.connect_ai.compact_loading':
+    'Looking for the AI you can use on this computer…',
+  'ui.connect_ai.model': 'Model',
+  'ui.connect_ai.compact_sign_out': 'Sign out',
+  'ui.connect_ai.compact_api_saved':
+    "An API key (saved here, or found in this computer's settings).",
+  'ui.connect_ai.compact_api_available': 'You also have an API key available.',
+  'ui.connect_ai.compact_legal_before':
+    "Claude Code runs the app you already have installed, signed in the way its maker requires. Sign in with ChatGPT uses OpenAI's own sign-in page, a",
+  'ui.connect_ai.compact_preview': 'preview for open source apps',
+  'ui.connect_ai.compact_legal_after':
+    '. Either bills your own account, and this app never sees your password.',
+  'ui.connect_ai.compact_advanced':
+    'Advanced: use an API key or another provider',
+  'ui.connect_ai.compact_install_context': 'for {tool} (opens in a new tab)',
   'ui.connect_ai.loading': 'Checking the AI available on this computer…',
   'ui.connect_ai.options': 'Your AI',
   'ui.connect_ai.missing': 'Not installed on this computer.',

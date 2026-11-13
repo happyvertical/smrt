@@ -12,6 +12,7 @@ import { FormGroup, Input, Select, Toggle } from '@happyvertical/smrt-ui/forms';
 import { defineMessages, useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button, Card, Disclosure } from '@happyvertical/smrt-ui/ui';
 import { tick } from 'svelte';
+import { M as connectAiMessages } from '../../i18n/strings.connect-ai.js';
 import { safeHref } from '../overview/markdown.js';
 
 const M = defineMessages({
@@ -204,7 +205,7 @@ async function save(reset = false) {
       <FormGroup label={t(M['ui.work_profiles.engine'])}>
         <Select value={drafts[profile.name]?.engine ?? ''} disabled={!editable || busy} onchange={event => change(profile.name, 'engine', event.currentTarget.value || undefined)}>
           <option value="">{t(M['ui.work_profiles.recommended'])}</option>
-          <option value="claude-code">Claude Code</option><option value="codex">Codex</option><option value="chatgpt">ChatGPT</option><option value="api">API key</option>
+          <option value="claude-code">{t(connectAiMessages['ui.connect_ai.claude'])}</option><option value="codex">{t(connectAiMessages['ui.connect_ai.codex'])}</option><option value="chatgpt">{t(connectAiMessages['ui.connect_ai.chatgpt'])}</option><option value="api">{t(connectAiMessages['ui.connect_ai.api'])}</option>
         </Select>
       </FormGroup>
       {#if !chatgptSignedIn && (drafts[profile.name]?.engine ?? profile.engine) === 'chatgpt'}

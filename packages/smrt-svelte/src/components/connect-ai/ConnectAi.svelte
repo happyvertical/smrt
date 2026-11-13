@@ -286,21 +286,21 @@ onMount(() => {
 {#if presentation === 'compact'}
 <div class="smrt-connect-ai__connect" data-smrt-component="ConnectAi" data-variant={variant}>
   {#if !compactInfo}
-    <p class="smrt-app-shell__muted" role="status">Looking for the AI you can use on this computer…</p>
+    <p class="smrt-app-shell__muted" role="status">{t(M['ui.connect_ai.compact_loading'])}</p>
   {:else}
     {@const gpt = chatgptAction(compactInfo)}
-    <ul class="smrt-app-shell__list smrt-connect-ai__tools" aria-label="Your AI">
+    <ul class="smrt-app-shell__list smrt-connect-ai__tools" aria-label={t(M['ui.connect_ai.options'])}>
       {#each mainTools as tool (tool.tool)}
         {@render toolRow(tool, compactInfo)}
       {/each}
       <li class="smrt-connect-ai__tool" id="chatgpt">
         <div class="smrt-connect-ai__what">
-          <strong>ChatGPT</strong>
+          <strong>{t(M['ui.connect_ai.chatgpt'])}</strong>
           <span class="smrt-app-shell__muted">{t(M['ui.connect_ai.chatgpt_recommended'])}</span>
           <span class="smrt-app-shell__muted">{chatgptDescription(compactInfo)}</span>
           {#if variant === 'settings' && compactInfo.chatgpt?.signedIn && chatgptState?.models?.length}
             <label class="smrt-connect-ai__model">
-              <span class="smrt-app-shell__muted">Model</span>
+              <span class="smrt-app-shell__muted">{t(M['ui.connect_ai.model'])}</span>
               <Select class="smrt-app-shell__input" disabled={busy} value={chatgptState.model ?? ''} onchange={pickModel}>
                 <option value="">{t(M['ui.connect_ai.recommended_model'])}</option>
                 {#each chatgptState.models as m (m.id)}
@@ -323,7 +323,7 @@ onMount(() => {
           {/if}
           {#if compactInfo.chatgpt.signingIn || signInUrl}{@render pendingSignIn()}{/if}
           {#if compactInfo.chatgpt?.signedIn}
-            <Button type="button" class="smrt-app-shell__btn" disabled={busy} onclick={signOutOfChatGPT}>Sign out</Button>
+            <Button type="button" class="smrt-app-shell__btn" disabled={busy} onclick={signOutOfChatGPT}>{t(M['ui.connect_ai.compact_sign_out'])}</Button>
           {/if}
         </div>
       </li>
@@ -335,31 +335,29 @@ onMount(() => {
     {@const api = apiRow(compactInfo)}
     {#if api === 'in-use'}
       <p class="smrt-connect-ai__api">
-        <span class="smrt-app-shell__badge smrt-app-shell__badge-ok">In use</span> An API key (saved here, or found in this computer's settings).
+        <span class="smrt-app-shell__badge smrt-app-shell__badge-ok">{t(M['ui.connect_ai.in_use'])}</span> {t(M['ui.connect_ai.compact_api_saved'])}
       </p>
     {:else if api === 'available'}
       <p class="smrt-connect-ai__api">
-        You also have an API key available.
-        <Button type="button" class="smrt-app-shell__btn smrt-app-shell__btn-small" disabled={busy} onclick={useApi}>Use my API key</Button>
+        {t(M['ui.connect_ai.compact_api_available'])}
+        <Button type="button" class="smrt-app-shell__btn smrt-app-shell__btn-small" disabled={busy} onclick={useApi}>{t(M['ui.connect_ai.use_key'])}</Button>
       </p>
     {:else if !ready}
-      <p class="smrt-connect-ai__api smrt-app-shell__muted">Nothing connected yet.</p>
+      <p class="smrt-connect-ai__api smrt-app-shell__muted">{t(M['ui.connect_ai.not_ready'])}</p>
     {/if}
 
     <p class="smrt-app-shell__muted smrt-connect-ai__legal">
-      Claude Code runs the app you already have installed, signed in the way its
-      maker requires. Sign in with ChatGPT uses OpenAI's own sign-in page, a
-      <a class="smrt-app-shell__link" href="https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations" target="_blank" rel="noopener noreferrer">preview for open source apps<span class="smrt-app-shell__sr-only"> (opens in a new tab)</span></a>.
-      Either bills your own account, and this app never sees your password.
+      {t(M['ui.connect_ai.compact_legal_before'])}
+      <a class="smrt-app-shell__link" href="https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations" target="_blank" rel="noopener noreferrer">{t(M['ui.connect_ai.compact_preview'])}<span class="smrt-app-shell__sr-only"> {t(M['ui.connect_ai.new_tab'])}</span></a>{t(M['ui.connect_ai.compact_legal_after'])}
     </p>
 
     <p class="smrt-connect-ai__advanced">
-      <a class="smrt-app-shell__link" href={safeHref(apiKeyHref) ?? undefined}>Advanced: use an API key or another provider</a>
+      <a class="smrt-app-shell__link" href={safeHref(apiKeyHref) ?? undefined}>{t(M['ui.connect_ai.compact_advanced'])}</a>
     </p>
   {/if}
 
   <p class="smrt-app-shell__alert {failed ? 'smrt-app-shell__alert-error' : message ? 'smrt-app-shell__alert-ok' : ''} smrt-connect-ai__note" role={failed ? 'alert' : 'status'} hidden={!message && !failed}>{message || (failed ? t(M['ui.connect_ai.error']) : '')}</p>
-  <p class="smrt-app-shell__sr-only" role="status">{ready ? 'The assistant is ready.' : ''}</p>
+  <p class="smrt-app-shell__sr-only" role="status">{ready ? t(M['ui.connect_ai.ready']) : ''}</p>
 </div>
 
 {:else}
@@ -458,15 +456,15 @@ onMount(() => {
       {#if tool.tool === 'codex'}<span class="smrt-app-shell__muted">{t(M['ui.connect_ai.codex_description'])}</span>{/if}
       <span class="smrt-app-shell__muted">
         {#if !tool.installed}
-          Not installed on this computer.
+          {t(M['ui.connect_ai.missing'])}
         {:else if tool.signedIn === null}
-          Installed, but it did not answer.
+          {t(M['ui.connect_ai.unknown'])}
         {:else if tool.signedIn && tool.ready !== true}
           {t(M['ui.connect_ai.unusable'])}
         {:else if tool.signedIn}
           {t(tool.version ? M['ui.connect_ai.ready_version'] : M['ui.connect_ai.signed_in'], { version: tool.version ?? '' })}
         {:else}
-          Installed, not signed in.
+          {t(M['ui.connect_ai.signed_out'])}
         {/if}
       </span>
       {#if tool.startError}<p role="alert">{t(M[`ui.connect_ai.${tool.startError}`])}</p>{/if}
@@ -477,7 +475,7 @@ onMount(() => {
         href={safeHref(tool.installUrl) ?? undefined}
         target="_blank"
         rel="noopener noreferrer"
-      >{action.label}<span class="smrt-app-shell__sr-only"> for {tool.label} (opens in a new tab)</span></a>
+      >{action.label}<span class="smrt-app-shell__sr-only"> {t(M['ui.connect_ai.compact_install_context'], { tool: tool.label ?? '' })}</span></a>
     {:else if action.kind === 'in-use'}
       <span class="smrt-app-shell__badge smrt-app-shell__badge-ok">{action.label}</span>
     {:else}
