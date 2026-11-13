@@ -55,7 +55,9 @@ export function installTestHome(): () => void {
           new URL('../node_modules/.cache/test-homes/', import.meta.url),
         );
   mkdirSync(parent, { recursive: true });
-  const home = mkdtempSync(join(realpathSync(parent), 'home-'));
+  // The native form expands Windows 8.3 short names (RUNNER~1); custody refuses
+  // a state root reached through one as a redirected path.
+  const home = mkdtempSync(join(realpathSync.native(parent), 'home-'));
   const environment = {
     // Browser binaries are installed prerequisites, separate from writable app state.
     // Resolve their cache before HOME/XDG isolation so Playwright workers can launch.
