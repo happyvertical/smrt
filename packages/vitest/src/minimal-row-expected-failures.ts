@@ -163,7 +163,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       model: '@happyvertical/smrt-education:EducationGroup',
       field: 'name',
       reason:
-        'Model validation rejects empty/default name: Group sharing requires exact identity',
+        'name reaches the empty-name guard at packages/education/src/group-sharing-models.ts:90; packages/education/src/group-sharing-service.ts:52 only displays the name. Retain conservatively until the parent guard and other optional inputs in this minimal-row graph can be audited together; the guard alone is not identity evidence.',
       error: 'Group sharing requires exact identity',
     },
     {
@@ -590,7 +590,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'baseRevisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path baseRevisionId.authorUserId reaches the empty author guard at packages/education/src/course-authoring-models.ts:117. That guard alone does not justify requiredFor; retain pending audit of the parent snapshot guards, outside this batch.',
     },
     {
       model: '@happyvertical/smrt-education:CourseGenerationEvent',
@@ -598,7 +598,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'jobId.baseRevisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path jobId.baseRevisionId.authorUserId reaches the empty author guard at packages/education/src/course-authoring-models.ts:117. That guard alone does not justify requiredFor; retain pending audit of the parent snapshot guards, outside this batch.',
     },
     {
       model: '@happyvertical/smrt-education:CourseProposal',
@@ -606,7 +606,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'jobId.baseRevisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path jobId.baseRevisionId.authorUserId reaches the empty author guard at packages/education/src/course-authoring-models.ts:117. That guard alone does not justify requiredFor; retain pending audit of the parent snapshot guards, outside this batch.',
     },
     {
       model: '@happyvertical/smrt-education:CourseProposalDecision',
@@ -614,7 +614,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'proposalId.jobId.baseRevisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path proposalId.jobId.baseRevisionId.authorUserId reaches the empty author guard at packages/education/src/course-authoring-models.ts:117. That guard alone does not justify requiredFor; retain pending audit of the parent snapshot guards, outside this batch.',
     },
     {
       model: '@happyvertical/smrt-education:CourseGenerationBriefRecord',
@@ -622,7 +622,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'jobId.baseRevisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path jobId.baseRevisionId.authorUserId reaches the empty author guard at packages/education/src/course-authoring-models.ts:117. That guard alone does not justify requiredFor; retain pending audit of the parent snapshot guards, outside this batch.',
     },
     {
       model: '@happyvertical/smrt-education:CourseReview',
@@ -630,7 +630,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'revisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path revisionId.authorUserId reaches the empty author guard at packages/education/src/course-authoring-models.ts:117. That guard alone does not justify requiredFor; retain pending audit of the parent snapshot guards, outside this batch.',
     },
     {
       model: '@happyvertical/smrt-education:CourseReviewFinding',
@@ -638,7 +638,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'reviewId.revisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path reviewId.revisionId.authorUserId reaches the empty author guard at packages/education/src/course-authoring-models.ts:117. That guard alone does not justify requiredFor; retain pending audit of the parent snapshot guards, outside this batch.',
     },
     {
       model: '@happyvertical/smrt-education:CourseReviewOutdatedMarker',
@@ -646,7 +646,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'reviewId.revisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path reviewId.revisionId.authorUserId reaches the empty author guard at packages/education/src/course-authoring-models.ts:117. That guard alone does not justify requiredFor; retain pending audit of the parent snapshot guards, outside this batch.',
     },
     {
       model: '@happyvertical/smrt-education:CourseFindingResolution',
@@ -654,7 +654,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'findingId.reviewId.revisionId.authorUserId',
       error: 'Revision requires an author',
       reason:
-        'packages/education/src/course-authoring-models.ts: CourseRevision requires nonempty authorUserId although metadata permits empty/default. Changing required/NOT NULL would change schema.',
+        'Required-parent path findingId.reviewId.revisionId.authorUserId reaches the empty author guard at packages/education/src/course-authoring-models.ts:117. That guard alone does not justify requiredFor; retain pending audit of the parent snapshot guards, outside this batch.',
     },
     {
       model: '@happyvertical/smrt-education:EnrollmentParentNote',
@@ -680,7 +680,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'groupId.name',
       error: 'Group sharing requires exact identity',
       reason:
-        'EducationGroup identity guard requires nonempty name despite optional metadata. Required-parent path: groupId.',
+        'groupId.name reaches the empty-name guard at packages/education/src/group-sharing-models.ts:90; packages/education/src/group-sharing-service.ts:52 only displays the name. Retain conservatively until the parent guard and other optional inputs in this minimal-row graph can be audited together; the guard alone is not identity evidence.',
     },
     {
       model: '@happyvertical/smrt-education:GroupLearnerMembership',
@@ -688,7 +688,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'groupId.name',
       error: 'Group sharing requires exact identity',
       reason:
-        'EducationGroup identity guard requires nonempty name despite optional metadata. Required-parent path: groupId.',
+        'groupId.name reaches the empty-name guard at packages/education/src/group-sharing-models.ts:90; packages/education/src/group-sharing-service.ts:52 only displays the name. Retain conservatively until the parent guard and other optional inputs in this minimal-row graph can be audited together; the guard alone is not identity evidence.',
     },
     {
       model: '@happyvertical/smrt-education:GroupSharingPolicy',
@@ -696,7 +696,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'membershipId.groupId.name',
       error: 'Group sharing requires exact identity',
       reason:
-        'EducationGroup identity guard requires nonempty name despite optional metadata. Required-parent path: membershipId.groupId.',
+        'membershipId.groupId.name reaches the empty-name guard at packages/education/src/group-sharing-models.ts:90; packages/education/src/group-sharing-service.ts:52 only displays the name. Retain conservatively until the parent guard and other optional inputs in this minimal-row graph can be audited together; the guard alone is not identity evidence.',
     },
     {
       model: '@happyvertical/smrt-education:GroupRevisionComment',
@@ -704,7 +704,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'membershipId.groupId.name',
       error: 'Group sharing requires exact identity',
       reason:
-        'EducationGroup identity guard requires nonempty name despite optional metadata. Required-parent path: membershipId.groupId.',
+        'membershipId.groupId.name reaches the empty-name guard at packages/education/src/group-sharing-models.ts:90; packages/education/src/group-sharing-service.ts:52 only displays the name. Retain conservatively until the parent guard and other optional inputs in this minimal-row graph can be audited together; the guard alone is not identity evidence.',
     },
     {
       model: '@happyvertical/smrt-education:GroupLearnerRosterEntry',
@@ -712,7 +712,7 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       field: 'groupId.name',
       error: 'Group sharing requires exact identity',
       reason:
-        'EducationGroup identity guard requires nonempty name despite optional metadata. Required-parent path: groupId.',
+        'groupId.name reaches the empty-name guard at packages/education/src/group-sharing-models.ts:90; packages/education/src/group-sharing-service.ts:52 only displays the name. Retain conservatively until the parent guard and other optional inputs in this minimal-row graph can be audited together; the guard alone is not identity evidence.',
     },
     {
       model: '@happyvertical/smrt-education:LessonProgressTransition',
