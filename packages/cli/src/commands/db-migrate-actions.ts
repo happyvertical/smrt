@@ -305,8 +305,35 @@ function typeUpgradeFingerprint(action: {
     .slice(0, 8);
 }
 
+/** The engines the table of change kinds distinguishes (`json` reads as DuckDB). */
+export type SchemaChangeEngineName = 'postgres' | 'sqlite' | 'duckdb' | 'json';
+
+/**
+ * The engine a configured database type decides changes with (#4934). The
+ * table of change kinds differs by engine for a few kinds, so every command
+ * that shows or decides a change names the engine the diff was read from.
+ */
+export function resolveSchemaChangeEngine(
+  dbType: string | undefined,
+): SchemaChangeEngineName {
+  switch (dbType) {
+    case 'postgres':
+    case 'postgresql':
+    case 'pg':
+    case 'pglite':
+      return 'postgres';
+    case 'duckdb':
+      return 'duckdb';
+    case 'json':
+      return 'json';
+    default:
+      return 'sqlite';
+  }
+}
+
 export function classifyTypeUpgradeSql(
-  changeOrSql?: string | SchemaChangeInput,
+  changeOrSql: string | SchemaChangeInput | undefined,
+  engine: SchemaChangeEngineName,
 ): TypeUpgradeExecutionKind {
   const change =
     typeof changeOrSql === 'object'
@@ -316,7 +343,7 @@ export function classifyTypeUpgradeSql(
           table: '(unknown)',
           sql: changeOrSql,
         };
-  switch (decideSchemaChange(change, 'sqlite').decision) {
+  switch (decideSchemaChange(change, engine).decision) {
     case 'apply':
       return 'executable';
     case 'report':
@@ -556,6 +583,7 @@ export function classifyFailedMigration(
 
 export function getUnresolvedGeneratedMigrationNames(
   changes: SchemaChangeLike[],
+  engine: SchemaChangeEngineName,
 ): Set<string> {
   const names = new Set<string>();
 
@@ -575,7 +603,7 @@ export function getUnresolvedGeneratedMigrationNames(
 
     if (
       change.type === 'type_upgrade' &&
-      classifyTypeUpgradeSql(change) === 'noop'
+      classifyTypeUpgradeSql(change, engine) === 'noop'
     ) {
       continue;
     }
@@ -650,10 +678,33 @@ export function summarizeFailedMigrations(
   return buckets;
 }
 
+/** Where `db:diff` lists a column alteration. Each lands in exactly one. */
+export type AlterationListing = 'automatic' | 'manual' | 'report';
+
+/**
+ * The one place that says which of the three lists `db:diff` prints a column
+ * alteration under, decided by the table of change kinds for the engine
+ * (#4934). A change that applies is automatic; one that stops is manual; one
+ * that only reports is printed with the advisories.
+ */
+export function listAlteration(
+  change: SchemaChangeInput,
+  engine: SchemaChangeEngineName,
+): AlterationListing {
+  switch (decideSchemaChange(change, engine).decision) {
+    case 'apply':
+      return 'automatic';
+    case 'stop':
+      return 'manual';
+    case 'report':
+      return 'report';
+  }
+}
+
 export function partitionSchemaChanges(
   changes: SchemaChangeLike[],
   getClassForTable: (tableName: string) => string,
-  engine: 'postgres' | 'sqlite' | 'duckdb' | 'json' = 'sqlite',
+  engine: SchemaChangeEngineName,
 ): {
   migrations: MigrationAction[];
   manualInterventions: MigrationAction[];

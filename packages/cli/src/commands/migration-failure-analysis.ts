@@ -6,6 +6,7 @@ import type {
 import {
   classifyTypeUpgradeSql,
   getSyntheticMigrationNamesForChange,
+  type SchemaChangeEngineName,
 } from './db-migrate-actions.js';
 
 export type FailedMigrationResolution =
@@ -27,9 +28,12 @@ export interface FailedMigrationAssessment {
   errorMessage: string | null;
 }
 
-function getActionableGeneratedMigrationNames(change: SchemaChange): string[] {
+function getActionableGeneratedMigrationNames(
+  change: SchemaChange,
+  engine: SchemaChangeEngineName,
+): string[] {
   if (change.type === 'type_upgrade' && change.name) {
-    if (classifyTypeUpgradeSql(change.sql) === 'noop') {
+    if (classifyTypeUpgradeSql(change.sql, engine) === 'noop') {
       return [];
     }
   }
@@ -39,11 +43,12 @@ function getActionableGeneratedMigrationNames(change: SchemaChange): string[] {
 
 export function getActionableFailedMigrationNames(
   diff: SchemaDiff,
+  engine: SchemaChangeEngineName,
 ): Set<string> {
   const names = new Set<string>();
 
   for (const change of diff.changes) {
-    for (const name of getActionableGeneratedMigrationNames(change)) {
+    for (const name of getActionableGeneratedMigrationNames(change, engine)) {
       names.add(name);
     }
   }
@@ -63,8 +68,11 @@ function classifyKind(name: string): FailedMigrationAssessment['kind'] {
 export function assessFailedMigrations(
   failedMigrations: SchemaMigrationRecord[],
   diff: SchemaDiff | null,
+  engine: SchemaChangeEngineName,
 ): FailedMigrationAssessment[] {
-  const actionableNames = diff ? getActionableFailedMigrationNames(diff) : null;
+  const actionableNames = diff
+    ? getActionableFailedMigrationNames(diff, engine)
+    : null;
 
   return failedMigrations.map((migration) => {
     const kind = classifyKind(migration.name);

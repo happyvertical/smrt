@@ -117,6 +117,8 @@ export function detectEngine(url: string, type?: string): DatabaseEngine {
       case 'postgres':
       case 'postgresql':
       case 'pg':
+      case 'pglite':
+        // PGlite is PostgreSQL in process; its URL is a data directory.
         return 'postgres';
       default:
         // Fall through to URL detection

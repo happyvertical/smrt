@@ -49,7 +49,7 @@ const blocked: SchemaChangeLike = {
 
 describe('uuid convergence partitioning (#2608)', () => {
   it('keeps an executable conversion in the migration batch', () => {
-    const result = partitionSchemaChanges([conversion], className);
+    const result = partitionSchemaChanges([conversion], className, 'sqlite');
     expect(result.migrations).toHaveLength(1);
     expect(result.migrations[0]?.type).toBe('type_upgrade');
     expect(result.migrations[0]?.column?.name).toBe('id');
@@ -65,18 +65,19 @@ describe('uuid convergence partitioning (#2608)', () => {
     // it on this marker: conversions must precede every `create_table_*`
     // definition, because an acyclic new child table keeps its foreign key
     // inline in CREATE TABLE.
-    const result = partitionSchemaChanges([conversion], className);
+    const result = partitionSchemaChanges([conversion], className, 'sqlite');
     expect(result.migrations[0]?.phase).toBe('pre_foreign_key');
 
     const ordinary = partitionSchemaChanges(
       [{ ...conversion, phase: undefined }],
       className,
+      'sqlite',
     );
     expect(ordinary.migrations[0]?.phase).toBeUndefined();
   });
 
   it('stops a refused convergence because stored values cannot be preserved', () => {
-    const result = partitionSchemaChanges([blocked], className);
+    const result = partitionSchemaChanges([blocked], className, 'sqlite');
     expect(result.migrations).toHaveLength(0);
     expect(result.advisories).toHaveLength(0);
     expect(result.manualInterventions).toHaveLength(1);
@@ -90,14 +91,16 @@ describe('uuid convergence partitioning (#2608)', () => {
   });
 
   it('never turns a refused convergence into a tracker migration name', () => {
-    expect([...getUnresolvedGeneratedMigrationNames([blocked])]).toEqual([]);
+    expect([
+      ...getUnresolvedGeneratedMigrationNames([blocked], 'sqlite'),
+    ]).toEqual([]);
     expect(
-      [...getUnresolvedGeneratedMigrationNames([conversion])].length,
+      [...getUnresolvedGeneratedMigrationNames([conversion], 'sqlite')].length,
     ).toBeGreaterThan(0);
   });
 
   it('carries the table message and preserves the manual repair SQL', () => {
-    const action = partitionSchemaChanges([blocked], className)
+    const action = partitionSchemaChanges([blocked], className, 'sqlite')
       .manualInterventions[0];
     expect(action.decisionMessage).toContain('tags.id: would lose data');
     expect(action.advisory?.suggestedSql?.join('\n')).toContain(
