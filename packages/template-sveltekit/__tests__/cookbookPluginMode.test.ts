@@ -1063,4 +1063,6 @@ it.each([
   } finally {
     await liveOwnerClient.close();
   }
-}, 180000);
+  // Builds and boots a real host and drives two live clients: 93-149 s on CI
+  // runners. 180 s left too little room and one run timed out.
+}, 300000);
