@@ -1364,6 +1364,32 @@ describe('local SvelteKit runtime', () => {
     expect(call.prepareDatabase).toBe(prepareDatabase);
   });
 
+  it('forwards confirmRemovedPackages to the local runtime, and leaves it unset when the app sets none (#4928)', async () => {
+    for (const option of [['@gone/package'], undefined]) {
+      const initializeLocal = vi.fn(async () => {
+        throw new Error('stop after capturing the options');
+      });
+      const runtime = composeSmrtSvelteKitRuntime(
+        {
+          appId: 'schema-app',
+          runtime: LOCAL,
+          env: { NODE_ENV: 'development' },
+          acquireWriterLease: false,
+          enableTenancy: false,
+          ...(option ? { confirmRemovedPackages: option } : {}),
+        },
+        { initializeLocal: initializeLocal as never },
+      );
+      await expect(Promise.resolve(runtime.init())).rejects.toThrow(
+        'stop after capturing',
+      );
+      const call = (initializeLocal.mock.calls[0] as unknown[])[0] as {
+        confirmRemovedPackages?: readonly string[];
+      };
+      expect(call.confirmRemovedPackages).toEqual(option);
+    }
+  });
+
   it('requires a loopback bind host for local production startup', async () => {
     const release = vi.fn();
     const missingHost = await localRuntime('nohost', {

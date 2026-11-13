@@ -151,6 +151,7 @@ describe('packages seen (#4928)', () => {
     expect(result.packageStops).toEqual([
       {
         packageName: '@scope/b',
+        kind: 'removed',
         message: expect.stringContaining('--confirm-removed-package @scope/b'),
       },
     ]);

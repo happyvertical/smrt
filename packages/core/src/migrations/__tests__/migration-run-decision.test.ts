@@ -3,6 +3,7 @@ import type { DatabaseEngine } from '../../schema/ddl/types.js';
 import type { SchemaChangeInput } from '../change-kinds.js';
 import {
   decideMigrationRun,
+  describeAppMigrationRefusal,
   describeMigrationRefusal,
   formatMigrationRefusal,
 } from '../migration-run-decision.js';
@@ -195,5 +196,76 @@ describe('describeMigrationRefusal (#4927)', () => {
     expect(plain).toContain(text.headline);
     expect(plain).toContain(text.heldBackHeading);
     expect(plain).not.toContain('UPDATE notes SET title');
+  });
+});
+
+describe('describeAppMigrationRefusal (#4928, an app that migrates itself)', () => {
+  const removed = decideMigrationRun({
+    changes: [],
+    engine: 'sqlite',
+    packagesSeen: {
+      recorded: ['@app/a', '@scope/b'],
+      current: ['@app/a'],
+      confirmedRemoved: [],
+    },
+  });
+  const unloaded = decideMigrationRun({
+    changes: [],
+    engine: 'sqlite',
+    packagesSeen: {
+      recorded: ['@app/a'],
+      current: ['@app/a'],
+      confirmedRemoved: [],
+      build: {
+        planned: 'x',
+        unloaded: [{ packageName: '@scope/c', tables: ['c_things'] }],
+      },
+    },
+  });
+  const release = decideMigrationRun({
+    changes: [],
+    engine: 'sqlite',
+    recordedRelease: '0.0.1',
+  });
+
+  it('keeps the user line free of commands and options, for every stop', () => {
+    for (const decision of [removed, unloaded, release]) {
+      const { userLine } = describeAppMigrationRefusal(decision);
+      expect(userLine).toContain('nothing was changed');
+      expect(userLine).toContain("app's developer");
+      expect(userLine).not.toMatch(/smrt|db:migrate|--|confirmRemoved|option/);
+    }
+  });
+
+  it('tells the developer the option for a removed package, never the CLI flag', () => {
+    const { developerLines } = describeAppMigrationRefusal(removed);
+    const text = developerLines.join('\n');
+    expect(text).toContain('@scope/b');
+    expect(text).toContain('"@scope/b" to the confirmRemovedPackages option');
+    expect(text).not.toContain('--confirm-removed-package');
+    expect(text).not.toContain('db:migrate');
+  });
+
+  it('says plainly that no option clears an unloaded package or a release stop', () => {
+    expect(
+      describeAppMigrationRefusal(unloaded).developerLines.join('\n'),
+    ).toMatch(/c_things.*does not clear this: ship a build that loads them/);
+    expect(
+      describeAppMigrationRefusal(release).developerLines.join('\n'),
+    ).toMatch(
+      /No app option skips this: ship a build of the app made with smrt/,
+    );
+  });
+
+  it('leaves the CLI wording as it was', () => {
+    expect(formatMigrationRefusal(removed)).toContain(
+      'Load the package, or pass --confirm-removed-package @scope/b to confirm its removal.',
+    );
+    expect(formatMigrationRefusal(unloaded)).toContain(
+      "Load every model before migrating, or run smrt db:migrate in the app's project.",
+    );
+    expect(formatMigrationRefusal(release)).toContain(
+      "then run this build's migrate again.",
+    );
   });
 });

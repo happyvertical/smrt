@@ -59,7 +59,22 @@ export function checkPackagesSeen(input: PackagesSeenInput): PackagesSeenCheck {
 
 export interface MigrationPackageStop {
   packageName: string;
+  /**
+   * `removed`: seen last time, missing now (a confirmation clears it).
+   * `unloaded`: part of the build, tables not loaded by this run (none does).
+   */
+  kind: 'removed' | 'unloaded';
+  /** The build tables this run did not load (`unloaded` only). */
+  tables?: string[];
   message: string;
+}
+
+/** A release stop; the parts are structured so a writer can word it for its reader. */
+export interface MigrationReleaseStop {
+  message: string;
+  recorded?: string;
+  oldest?: string;
+  firstHop?: string;
 }
 
 export interface MigrationRunStop<T = SchemaChangeInput> {
@@ -77,7 +92,7 @@ export interface HeldBackMigration {
 
 export interface MigrationRunDecision<T = SchemaChangeInput> {
   proceed: boolean;
-  releaseStop: { message: string } | null;
+  releaseStop: MigrationReleaseStop | null;
   packageStops: MigrationPackageStop[];
   notices: string[];
   stops: MigrationRunStop<T>[];
@@ -101,20 +116,30 @@ export function decideMigrationRun<T extends SchemaChangeInput>(options: {
   const releaseCheck = checkOldestSupportedRelease(
     options.recordedRelease ?? null,
   );
-  const releaseStop = releaseCheck.ok
+  const releaseStop: MigrationReleaseStop | null = releaseCheck.ok
     ? null
-    : { message: releaseCheck.message };
+    : {
+        message: releaseCheck.message,
+        recorded: releaseCheck.recorded,
+        oldest: releaseCheck.oldest,
+        ...(releaseCheck.firstHop ? { firstHop: releaseCheck.firstHop } : {}),
+      };
   const packages = options.packagesSeen
     ? checkPackagesSeen(options.packagesSeen)
     : undefined;
-  const packageStops = (packages?.unconfirmed ?? []).map((packageName) => ({
+  const packageStops: MigrationPackageStop[] = (
+    packages?.unconfirmed ?? []
+  ).map((packageName) => ({
     packageName,
+    kind: 'removed' as const,
     message: `Package ${packageName} was seen last time but is missing now. A package that declared required columns may be missing; the migrate could loosen them. Load the package, or pass --confirm-removed-package ${packageName} to confirm its removal.`,
   }));
   const build = options.packagesSeen?.build;
   for (const { packageName, tables } of build?.unloaded ?? []) {
     packageStops.push({
       packageName,
+      kind: 'unloaded',
+      tables: [...tables],
       message: `Package ${packageName} is part of this build, but this run has not loaded its tables (${tables.join(', ')}). Load every model before migrating, or run smrt db:migrate in the app's project.`,
     });
   }
@@ -297,5 +322,77 @@ function describeChange(change: SchemaChangeInput): HeldBackMigration {
     description,
     table: change.table,
     ...(isColumn && column ? { column } : {}),
+  };
+}
+
+/**
+ * The name of the option through which an app that migrates itself (the local
+ * runtime) confirms, in code, that it removed a package on purpose. It means
+ * what `smrt db:migrate --confirm-removed-package` means.
+ */
+export const APP_CONFIRM_REMOVED_PACKAGES_OPTION = 'confirmRemovedPackages';
+
+/** A refused run worded for the two readers of an app that migrates itself. */
+export interface AppMigrationRefusalText {
+  /**
+   * One short line the app may show its user: the app could not update this
+   * database, nothing was changed, who to contact. No command, no option.
+   */
+  userLine: string;
+  /** What stopped the run, for the app's developer. */
+  headline: string;
+  /** One indented line per stop, each saying what the developer can do. */
+  developerLines: string[];
+  /** Heading for the held-back list. */
+  heldBackHeading: string;
+  /** One indented line per change that was held back. */
+  heldBackLines: string[];
+}
+
+/**
+ * {@link describeMigrationRefusal} for an app that migrates itself and has no
+ * operator: an end user who can run no command, and a developer who can set
+ * options in code and ship a new build. Same stops, same facts; the user line
+ * carries no instruction the user cannot follow, and each developer line says
+ * what the developer can do about that stop (or that nothing in the app's
+ * options can). `smrt db:migrate` keeps using {@link describeMigrationRefusal}.
+ */
+export function describeAppMigrationRefusal(
+  decision: Pick<
+    MigrationRunDecision,
+    'releaseStop' | 'packageStops' | 'stops' | 'heldBack'
+  >,
+): AppMigrationRefusalText {
+  const base = describeMigrationRefusal(decision);
+  const option = APP_CONFIRM_REMOVED_PACKAGES_OPTION;
+  const developerLines: string[] = [];
+  const stop = decision.releaseStop;
+  if (stop) {
+    developerLines.push(
+      stop.recorded && stop.oldest && stop.firstHop
+        ? `   This database was last migrated by smrt ${stop.recorded}, and this build supports upgrades from ${stop.oldest} and later. No app option skips this: ship a build of the app made with smrt ${stop.firstHop} for installations to run first, then this build.`
+        : `   ${stop.message} No app option skips this: ship a build of the app that can read the record, or one made with a supported smrt release that installations run first.`,
+    );
+  }
+  for (const packageStop of decision.packageStops) {
+    developerLines.push(
+      packageStop.kind === 'unloaded'
+        ? `   Package ${packageStop.packageName} is part of this build, but this run has not loaded its tables (${(packageStop.tables ?? []).join(', ')}). Import every model module before the runtime starts. The ${option} option does not clear this: ship a build that loads them.`
+        : `   Package ${packageStop.packageName} was seen last time but is missing now. A package that declared required columns may be missing; the migrate could loosen them. If you removed it on purpose, add "${packageStop.packageName}" to the ${option} option of the app's runtime and ship that build; otherwise load the package again.`,
+    );
+  }
+  for (const schemaStop of decision.stops)
+    developerLines.push(`   ${schemaStop.message} (${schemaStop.reason})`);
+  if (decision.stops.length)
+    developerLines.push(
+      '   No app option overrides a schema stop: ship a build whose models do not make this change.',
+    );
+  return {
+    userLine:
+      "This app could not update its local database to this version, and nothing was changed. Your data is as it was. Contact the app's developer.",
+    headline: base.headline,
+    developerLines,
+    heldBackHeading: base.heldBackHeading,
+    heldBackLines: base.heldBackLines,
   };
 }

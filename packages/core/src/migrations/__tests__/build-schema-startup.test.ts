@@ -275,6 +275,8 @@ describe('the build schema decides migrate records and startup (rv1)', () => {
       expect(result.packageStops).toEqual([
         {
           packageName: '@rv1/smrt-b',
+          kind: 'unloaded',
+          tables: ['rv1_gadgets'],
           message: expect.stringContaining(
             'part of this build, but this run has not loaded its tables (rv1_gadgets)',
           ),

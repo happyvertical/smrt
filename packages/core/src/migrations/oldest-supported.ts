@@ -42,9 +42,17 @@ export function compareReleases(a: string, b: string): number {
 }
 
 /** No record means the first run under the release-record scheme. No writes. */
-export function checkOldestSupportedRelease(
-  recordedRelease: string | null,
-): { ok: true } | { ok: false; message: string } {
+export function checkOldestSupportedRelease(recordedRelease: string | null):
+  | { ok: true }
+  | {
+      ok: false;
+      message: string;
+      /** Structured parts of the stop, for writers that word it themselves. */
+      recorded: string;
+      oldest: string;
+      /** Absent when the recorded release could not be read. */
+      firstHop?: string;
+    } {
   if (recordedRelease === null) return { ok: true };
   try {
     if (compareReleases(recordedRelease, OLDEST_SUPPORTED_RELEASE) >= 0)
@@ -52,6 +60,8 @@ export function checkOldestSupportedRelease(
   } catch {
     return {
       ok: false,
+      recorded: recordedRelease,
+      oldest: OLDEST_SUPPORTED_RELEASE,
       message: `This database has an unreadable smrt release record: ${recordedRelease}. This build supports upgrades from ${OLDEST_SUPPORTED_RELEASE} and later. Check the last migrate record before retrying.`,
     };
   }
@@ -60,6 +70,9 @@ export function checkOldestSupportedRelease(
   const firstHop = record.upgradeFirstTo ?? OLDEST_SUPPORTED_RELEASE;
   return {
     ok: false,
+    recorded: recordedRelease,
+    oldest: OLDEST_SUPPORTED_RELEASE,
+    firstHop,
     message: `This database was last migrated by smrt ${recordedRelease}. This build supports upgrades from ${OLDEST_SUPPORTED_RELEASE} and later. First upgrade the database with smrt ${firstHop}, then run this build's migrate again.`,
   };
 }

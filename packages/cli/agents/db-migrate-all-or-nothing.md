@@ -96,7 +96,7 @@ Proceeding and in-sync results have `refused:false`. Wrappers need no separate
 partial-apply policy. A refused run also has `applied:false`, so a caller must
 never read `applied` as "nothing to do": call `assertMigrationAccepted(result)`
 first (it throws `MigrationRefusedError`), or print `describeMigrationRefusal()`.
-The CLI and the local runtime (`schema_migration_refused`) use that one wording. `migrateSmrtSchemas({ confirmRemovedPackages: [name], ... })`
+The CLI and the local runtime (`schema_migration_refused`) draw on the same stops; the local runtime words them for its two readers with `describeAppMigrationRefusal()` (no CLI instruction; the CLI output is `describeMigrationRefusal()`, unchanged). `migrateSmrtSchemas({ confirmRemovedPackages: [name], ... })`
 checks packages itself and returns the same package stops and notices.
 
 ## `doctor --db`: next migrate

@@ -96,6 +96,7 @@ describe('migrateSmrtSchemas missing packages (#4928, SQLite)', () => {
     expect(refused.packageStops).toEqual([
       {
         packageName: '@scope/b',
+        kind: 'removed',
         message: expect.stringContaining('--confirm-removed-package @scope/b'),
       },
     ]);

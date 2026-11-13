@@ -526,6 +526,204 @@ describe('first-start schema creation (smrt#4835)', () => {
     expect(after.tenants).toBe(1);
   });
 
+  describe('a package removed on purpose (#4928)', () => {
+    /** Everything a refused start must leave alone, as plain data. */
+    function databaseState(path: string) {
+      const file = new DatabaseSync(path, { readOnly: true });
+      try {
+        return {
+          schema: file
+            .prepare('SELECT name, sql FROM sqlite_master ORDER BY name')
+            .all(),
+          runs: file.prepare('SELECT * FROM _smrt_migrate_runs').all(),
+          migrations: file
+            .prepare('SELECT * FROM _smrt_schema_migrations')
+            .all(),
+        };
+      } finally {
+        file.close();
+      }
+    }
+
+    /** An installation whose last migrate record also lists `names`. */
+    async function installationWithRecordedPackages(
+      label: string,
+      names: string[],
+    ) {
+      const dirs = await directories(label);
+      const first = await initializeLocalApplicationRuntime({
+        appId: 'schema-app',
+        ...dirs,
+        createSchema: true,
+      });
+      await first.runtime.db.close?.();
+      const file = new DatabaseSync(dirs.database);
+      try {
+        const row = file
+          .prepare(
+            'SELECT id, packages FROM _smrt_migrate_runs ORDER BY created_at DESC LIMIT 1',
+          )
+          .get() as { id: string; packages: string };
+        file
+          .prepare('UPDATE _smrt_migrate_runs SET packages = ? WHERE id = ?')
+          .run(JSON.stringify([...JSON.parse(row.packages), ...names]), row.id);
+      } finally {
+        file.close();
+      }
+      return dirs;
+    }
+
+    function latestPackages(path: string): string[] {
+      const file = new DatabaseSync(path, { readOnly: true });
+      try {
+        const row = file
+          .prepare(
+            'SELECT packages FROM _smrt_migrate_runs ORDER BY created_at DESC LIMIT 1',
+          )
+          .get() as { packages: string };
+        return JSON.parse(row.packages);
+      } finally {
+        file.close();
+      }
+    }
+
+    it('refuses the start, names the package and the option, and changes nothing', async () => {
+      const dirs = await installationWithRecordedPackages('removed-refused', [
+        '@gone/package',
+      ]);
+      const before = databaseState(dirs.database);
+      const hook = vi.fn(async () => undefined);
+
+      const failure = await failureOf(
+        initializeLocalApplicationRuntime({
+          appId: 'schema-app',
+          ...dirs,
+          createSchema: true,
+          prepareDatabase: hook,
+        }),
+      );
+
+      expect(failure.code).toBe('schema_migration_refused');
+      // The line an app may show: nothing to run, nothing to set.
+      expect(failure.userMessage).toContain('nothing was changed');
+      expect(failure.userMessage).toContain("app's developer");
+      expect(failure.userMessage).not.toMatch(
+        /@gone|db:migrate|--|confirm|option|smrt/,
+      );
+      expect(failure.message.startsWith(failure.userMessage as string)).toBe(
+        true,
+      );
+      // The developer detail: which package, and the option to set.
+      expect(failure.developerDetail).toContain('@gone/package');
+      expect(failure.developerDetail).toContain('was seen last time');
+      expect(failure.developerDetail).toContain(
+        '"@gone/package" to the confirmRemovedPackages option',
+      );
+      // No instruction the app's user (or the app) cannot follow, anywhere.
+      expect(failure.message).not.toContain('db:migrate');
+      expect(failure.message).not.toContain('--confirm-removed-package');
+      expect(hook).not.toHaveBeenCalled();
+      expect(databaseState(dirs.database)).toEqual(before);
+    });
+
+    it('starts and records the new package list when the app confirms the removal', async () => {
+      const dirs = await installationWithRecordedPackages('removed-confirmed', [
+        '@gone/package',
+      ]);
+      expect(latestPackages(dirs.database)).toContain('@gone/package');
+
+      const upgraded = await initializeLocalApplicationRuntime({
+        appId: 'schema-app',
+        ...dirs,
+        createSchema: true,
+        confirmRemovedPackages: ['@gone/package'],
+      });
+      await upgraded.runtime.db.close?.();
+
+      expect(latestPackages(dirs.database)).not.toContain('@gone/package');
+      // The next start needs no confirmation: the record no longer lists it.
+      const again = await initializeLocalApplicationRuntime({
+        appId: 'schema-app',
+        ...dirs,
+        createSchema: true,
+      });
+      await again.runtime.db.close?.();
+    });
+
+    it('confirms only the packages it names', async () => {
+      const dirs = await installationWithRecordedPackages('removed-partial', [
+        '@gone/one',
+        '@gone/two',
+      ]);
+      const before = databaseState(dirs.database);
+      const failure = await failureOf(
+        initializeLocalApplicationRuntime({
+          appId: 'schema-app',
+          ...dirs,
+          createSchema: true,
+          confirmRemovedPackages: ['@gone/one'],
+        }),
+      );
+      expect(failure.code).toBe('schema_migration_refused');
+      expect(failure.developerDetail).toContain('Package @gone/two');
+      expect(failure.developerDetail).not.toContain('Package @gone/one');
+      expect(databaseState(dirs.database)).toEqual(before);
+    });
+
+    it('treats a name that is not missing as harmless', async () => {
+      const dirs = await directories('removed-stale');
+      for (let start = 0; start < 2; start += 1) {
+        const started = await initializeLocalApplicationRuntime({
+          appId: 'schema-app',
+          ...dirs,
+          createSchema: true,
+          confirmRemovedPackages: ['@never/was-here', '@gone/long-ago'],
+        });
+        await started.runtime.db.close?.();
+      }
+      expect(latestPackages(dirs.database)).not.toContain('@never/was-here');
+    });
+
+    it('rejects a confirmation list that is not package names', async () => {
+      const dirs = await directories('removed-invalid');
+      await expect(
+        initializeLocalApplicationRuntime({
+          appId: 'schema-app',
+          ...dirs,
+          createSchema: true,
+          confirmRemovedPackages: [''],
+        }),
+      ).rejects.toMatchObject({ code: 'invalid_configuration' });
+      expect(await exists(dirs.database)).toBe(false);
+    });
+
+    it('lets the SvelteKit runtime carry the confirmation to the upgrade', async () => {
+      const dirs = await installationWithRecordedPackages('removed-sveltekit', [
+        '@gone/package',
+      ]);
+      const options = {
+        appId: 'schema-app',
+        sourceRoot: dirs.sourceRoot,
+        dataDirectory: dirs.dataDirectory,
+        runtime: resolveApplicationRuntime({ profile: 'local' }),
+        env: { NODE_ENV: 'development' },
+        acquireWriterLease: false,
+        enableTenancy: false,
+      } as const;
+      const refused = createSmrtSvelteKitRuntime(options);
+      await expect(Promise.resolve(refused.init())).rejects.toMatchObject({
+        code: 'schema_migration_refused',
+      });
+
+      const confirmed = createSmrtSvelteKitRuntime({
+        ...options,
+        confirmRemovedPackages: ['@gone/package'],
+      });
+      await confirmed.init();
+      expect(latestPackages(dirs.database)).not.toContain('@gone/package');
+    });
+  });
+
   it('does not create schema unless asked: an empty directory still fails with DB_SCHEMA_MISSING', async () => {
     const dirs = await directories('off');
     const hook = vi.fn(async () => undefined);

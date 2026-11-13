@@ -29,7 +29,7 @@ import { randomBytes } from 'node:crypto';
 import { lstat, unlink } from 'node:fs/promises';
 import {
   assertMigrationAccepted,
-  formatMigrationRefusal,
+  describeAppMigrationRefusal,
   MigrationRefusedError,
   migrateSmrtSchemas,
 } from '@happyvertical/smrt-core/migrations';
@@ -105,6 +105,12 @@ export interface PrepareLocalSchemaInput {
   /** Create and upgrade the framework schema (otherwise only run the hook). */
   readonly createSchema: boolean;
   readonly prepareDatabase?: LocalPrepareDatabase;
+  /**
+   * Packages the app removed on purpose, passed to `migrateSmrtSchemas` as
+   * `confirmRemovedPackages` (what `smrt db:migrate --confirm-removed-package`
+   * is for the CLI). Names a package that is not missing: ignored.
+   */
+  readonly confirmRemovedPackages?: readonly string[];
 }
 
 /**
@@ -141,19 +147,32 @@ export function schemaCreationFailed(cause: unknown): LocalRuntimeError {
 
 /**
  * The framework step was refused: smrt held the whole upgrade back and applied
- * nothing. Unlike the other failures this one is named, because the reader (the
- * app's user, who cannot run `smrt db:migrate`) needs to know what stopped. The
- * message carries table, column, reason, row counts, package and release stops
- * and what was held back (the same text `smrt db:migrate` prints): schema names
- * and counts only, no path, SQL or driver text.
+ * nothing. Unlike the other failures this one is named, and it has two readers
+ * (core's `describeAppMigrationRefusal` words both, so the CLI's wording is
+ * untouched):
+ * - `userMessage`: one short line an app may show its user, who can run no
+ *   command and set no option: the app could not update this database, nothing
+ *   was changed, contact the developer;
+ * - `developerDetail`: what stopped (table, column, reason, package and release
+ *   stops, what was held back) and what the developer can do about each.
+ * `message` is the user line, then the detail. Schema names and counts only: no
+ * path, SQL or driver text.
  */
 export function schemaMigrationRefused(
   refusal: MigrationRefusedError,
 ): LocalRuntimeError {
+  const text = describeAppMigrationRefusal(refusal.result);
+  const developerDetail = [
+    text.headline,
+    ...text.developerLines,
+    text.heldBackHeading,
+    ...text.heldBackLines,
+  ].join('\n');
   return withCause(
     new LocalRuntimeError(
       'schema_migration_refused',
-      `The local database schema was not upgraded, and nothing was changed. ${formatMigrationRefusal(refusal.result)}`,
+      `${text.userLine}\n\nFor the app's developer:\n${developerDetail}`,
+      { userMessage: text.userLine, developerDetail },
     ),
     refusal,
   );
@@ -214,6 +233,9 @@ function contextFor(
         packageName: input.appId,
         engineHint: 'sqlite',
         name: uniqueMigrationName(),
+        ...(input.confirmRemovedPackages?.length
+          ? { confirmRemovedPackages: [...input.confirmRemovedPackages] }
+          : {}),
       });
       // A refused run also reports `applied: false`; never read that as
       // "nothing to do". Fail the step and say what stopped.

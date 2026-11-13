@@ -53,6 +53,8 @@ Read this before you upgrade a deployed app.
   writes anything, because the package may have declared columns as required
   and migrate would loosen them. If you removed the package on purpose, run
   `smrt db:migrate --confirm-removed-package <name>`, once for each package.
+  A local app that migrates itself confirms it in code instead, with the
+  `confirmRemovedPackages` option of its runtime.
   If a package is still in the build but the run did not load its tables (an
   in-app `migrateSmrtSchemas` that has not imported it), migrate stops too;
   load it or run `smrt db:migrate`. Packages installed but not in the build do

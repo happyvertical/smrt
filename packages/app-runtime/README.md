@@ -78,7 +78,7 @@ SQL-free text (fixed, except a refused migrate, which names what stopped); the o
 | Code | When | Message constant |
 | --- | --- | --- |
 | `schema_creation_failed` | the framework step (creation or upgrade) failed | `SCHEMA_CREATION_FAILED_MESSAGE` |
-| `schema_migration_refused` | the framework step was refused: smrt held the whole upgrade back and changed nothing | names what stopped (table, column, reason), any package or release stop, and what was held back, in the words `smrt db:migrate` prints; schema names only |
+| `schema_migration_refused` | the framework step was refused: smrt held the whole upgrade back and changed nothing | `message` is a short line for the app's user (nothing was changed; contact the developer; no command), then the developer detail: what stopped (table, column, reason), any package or release stop with what the developer can do, and what was held back. The two parts are also `userMessage` and `developerDetail`; schema names only. See `agents/local-schema.md` |
 | `migration_failed` | the application's `prepareDatabase` rejected | `MIGRATION_FAILED_MESSAGE` |
 
 Startup fails, the process exits non-zero, and the code and message are in the

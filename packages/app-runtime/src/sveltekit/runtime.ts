@@ -233,6 +233,17 @@ export interface SmrtSvelteKitRuntimeOptions {
     context: PrepareDatabaseContext,
   ) => Promise<void>;
   /**
+   * Packages this build removed on purpose (local profile, with
+   * `createSchema`). A package the installation's last migrate record lists and
+   * this build lacks refuses the start (`schema_migration_refused`, nothing
+   * changed) unless it is named here: what `smrt db:migrate
+   * --confirm-removed-package <name>` is for the CLI. It confirms only the
+   * names given; a name that is not missing is ignored. Keep a name until every
+   * installation you support has run the release that removed the package.
+   * Deployed profiles migrate through the CLI and ignore this.
+   */
+  readonly confirmRemovedPackages?: readonly string[];
+  /**
    * Local HTTP bind host. Defaults to `HOST`, or `127.0.0.1` when
    * `NODE_ENV=development`. Local production startup without one fails.
    */
@@ -711,6 +722,7 @@ export function composeSmrtSvelteKitRuntime(
       passwordPolicy: options.passwordPolicy,
       createSchema: options.createSchema ?? true,
       prepareDatabase: options.prepareDatabase,
+      confirmRemovedPackages: options.confirmRemovedPackages,
       now: options.now,
     })
       .then(({ runtime: initialized, bootstrap }) => {
