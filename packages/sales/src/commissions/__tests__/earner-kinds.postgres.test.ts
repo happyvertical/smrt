@@ -132,7 +132,9 @@ for (const { engine, enabled } of [
         expect(result.applied).toBe(true);
         expect(result.hasManualDrift).toBe(false);
         expect(result.statements.join('\n')).toMatch(/payout_destination/);
-        expect((await migrate()).applied).toBe(false);
+        const unchanged = await migrate();
+        expect(unchanged.refused).toBe(false);
+        expect(unchanged.applied).toBe(false);
         const payouts = await CommissionPayoutCollection.create({ db: active });
         const legacy = await payouts.get({ id });
         expect(legacy?.getPayoutDestination()).toBeNull();
@@ -186,6 +188,7 @@ for (const { engine, enabled } of [
         expect(result.statements.join('\n')).toMatch(/payout_destination/);
 
         const again = await migrate();
+        expect(again.refused).toBe(false);
         expect(again.applied).toBe(false);
         expect(again.hasManualDrift).toBe(false);
 

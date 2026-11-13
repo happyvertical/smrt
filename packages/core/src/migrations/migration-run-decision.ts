@@ -182,6 +182,71 @@ export function decideMigrationRun<T extends SchemaChangeInput>(options: {
   };
 }
 
+/** The refused part of a {@link MigrationRunDecision}, in plain words. */
+export interface MigrationRefusalText {
+  /** One line: what stopped the run. */
+  headline: string;
+  /** One indented line per release stop, package stop and schema stop. */
+  stopLines: string[];
+  /** Heading for the held-back list. */
+  heldBackHeading: string;
+  /** One indented line per change that was held back. */
+  heldBackLines: string[];
+}
+
+/**
+ * Describe a refused run: what stopped it (table, column, reason, and any row
+ * counts the stop message carries), any package or release stop, and what was
+ * held back. The one wording `smrt db:migrate` prints and an application that
+ * migrates itself (the local runtime) shows, so the two never disagree.
+ * `repairSql` adds the suggested repair statements under each stop (the CLI
+ * prints them; an app's end user cannot run them).
+ */
+export function describeMigrationRefusal(
+  decision: Pick<
+    MigrationRunDecision,
+    'releaseStop' | 'packageStops' | 'stops' | 'heldBack'
+  >,
+  options: { repairSql?: boolean } = {},
+): MigrationRefusalText {
+  const headline = decision.releaseStop
+    ? 'Migrate stopped: database release is not supported by this build'
+    : decision.packageStops.length
+      ? `Migrate stopped: ${decision.packageStops.length} missing package(s), ${decision.stops.length} schema stop(s)`
+      : `Migrate stopped: ${decision.stops.length} change(s) would lose or invent data`;
+  const stopLines: string[] = [];
+  if (decision.releaseStop)
+    stopLines.push(`   ${decision.releaseStop.message}`);
+  for (const stop of decision.packageStops)
+    stopLines.push(`   ${stop.message}`);
+  for (const stop of decision.stops) {
+    stopLines.push(`   ${stop.message} (${stop.reason})`);
+    if (options.repairSql)
+      for (const sql of stop.change.advisory?.suggestedSql ?? [])
+        stopLines.push(`      ${sql}`);
+  }
+  return {
+    headline,
+    stopLines,
+    heldBackHeading: 'Held back (nothing was applied):',
+    heldBackLines: decision.heldBack.map((held) => `   ${held.description}`),
+  };
+}
+
+/** {@link describeMigrationRefusal} as one multi-line string. */
+export function formatMigrationRefusal(
+  decision: Parameters<typeof describeMigrationRefusal>[0],
+  options: { repairSql?: boolean } = {},
+): string {
+  const text = describeMigrationRefusal(decision, options);
+  return [
+    text.headline,
+    ...text.stopLines,
+    text.heldBackHeading,
+    ...text.heldBackLines,
+  ].join('\n');
+}
+
 function describeChange(change: SchemaChangeInput): HeldBackMigration {
   const column = change.foreignKey?.column ?? change.name;
   const subject = `${change.table}${column ? `.${column}` : ''}`;

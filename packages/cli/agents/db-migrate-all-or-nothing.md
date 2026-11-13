@@ -93,7 +93,10 @@ package whose tables the run has not loaded is a stop no confirmation clears. Th
 returns `applied:false` and `refused:true` on refusal, with those stops and held
 changes. It keeps `unactionableChanges` and `hasManualDrift` for existing callers.
 Proceeding and in-sync results have `refused:false`. Wrappers need no separate
-partial-apply policy. `migrateSmrtSchemas({ confirmRemovedPackages: [name], ... })`
+partial-apply policy. A refused run also has `applied:false`, so a caller must
+never read `applied` as "nothing to do": call `assertMigrationAccepted(result)`
+first (it throws `MigrationRefusedError`), or print `describeMigrationRefusal()`.
+The CLI and the local runtime (`schema_migration_refused`) use that one wording. `migrateSmrtSchemas({ confirmRemovedPackages: [name], ... })`
 checks packages itself and returns the same package stops and notices.
 
 ## `doctor --db`: next migrate

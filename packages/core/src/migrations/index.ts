@@ -165,10 +165,12 @@ export {
 } from './oldest-supported.js';
 // High-level schema orchestration over ObjectRegistry
 export {
+  assertMigrationAccepted,
   createRegisteredTables,
   getPendingSchemaStatements,
   type MigrateSmrtSchemasOptions,
   type MigrateSmrtSchemasResult,
+  MigrationRefusedError,
   migrateSmrtSchemas,
   type PendingSchemaStatementsResult,
   type RelaxedColumn,

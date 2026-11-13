@@ -222,9 +222,12 @@ describe('core orchestration records successful runs (#4926)', () => {
     await db.query(
       'CREATE TABLE migrate_record_entries (id TEXT PRIMARY KEY NOT NULL)',
     );
-    expect(
-      (await migrateSmrtSchemas({ db, packageName: '@fixture/app' })).applied,
-    ).toBe(false);
+    const unchanged = await migrateSmrtSchemas({
+      db,
+      packageName: '@fixture/app',
+    });
+    expect(unchanged.refused).toBe(false);
+    expect(unchanged.applied).toBe(false);
     expect((await readLastMigrateRecord(db)).state).toBe('recorded');
   });
 
