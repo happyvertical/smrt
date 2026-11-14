@@ -226,17 +226,17 @@ function commandLines(
         const field = String(step.fieldLabel ?? 'the field');
         switch (step.kind) {
           case 'loadRecords':
-            return `Undoes the load in ${model}: removes inserted records and restores the original values in updated fields. Other fields keep later edits.`;
+            return `Undoes the load in ${model}: removes ${plural(num(step.inserted), 'inserted record')} and restores ${plural(num(step.restoredValues), 'updated value')}. Other fields keep later edits.`;
           case 'mergeRecords':
-            return `Undoes the merge in ${model}: recreates removed records and points surviving references back to those records.`;
+            return `Undoes the merge in ${model}: recreates ${plural(num(step.recreated), 'removed record')} and points ${plural(num(step.references), 'reference')} back to those records.`;
           case 'extractModel':
-            return `Undoes the extraction of ${field} in ${model}: restores the original text and removes linked records created by the extraction.`;
+            return `Undoes the extraction of ${field} in ${model}: restores ${plural(num(step.restoredValues), 'original text value')} and removes ${plural(num(step.inserted), 'created linked record')}.`;
           case 'calculation':
             return step.calculationRestore === 'calculation'
               ? `Restores the previous calculation for ${field} in ${model}.`
-              : `Removes the calculation for ${field} in ${model} and restores the original stored values.`;
+              : `Removes the calculation for ${field} in ${model} and restores ${plural(num(step.restoredValues), 'original stored value')}.`;
           case 'convertColumn':
-            return `Undoes the type change for ${field} in ${model}: restores archived original values. Values written since the type change can be overwritten.`;
+            return `Undoes the type change for ${field} in ${model}: restores ${plural(num(step.restoredValues), 'archived original value')}. Values written since the type change can be overwritten.`;
           default:
             return 'Undoes the selected change.';
         }
@@ -250,9 +250,11 @@ function commandLines(
           ...(lines.length ? lines : ['Undoes the selected change.']),
           ...(refusal
             ? [refusal]
-            : [
-                'Undo checks again before applying and refuses conflicts that would discard later edits.',
-              ]),
+            : kinds.some((step) => step.kind === 'convertColumn')
+              ? []
+              : [
+                  'Undo checks again and refuses conflicts that would discard later edits.',
+                ]),
         ],
       };
     }

@@ -654,7 +654,12 @@ export class AppRuntime {
    * gives (they were edited, or created over the original, since).
    */
   async countOverwrites(version: number, steps: Step[]) {
-    const out: { table: string; column: string; replaced: number }[] = [];
+    const out: {
+      table: string;
+      column: string;
+      replaced: number;
+      originals?: number;
+    }[] = [];
     for (const step of steps) {
       if (
         step.op === 'loadRecords' ||
@@ -717,6 +722,7 @@ export class AppRuntime {
       }
       if (step.op !== 'convertColumn') continue;
       let replaced = 0;
+      let originals = 0;
       if (
         (await this.tableExists(this.db, '_archive')) &&
         (await this.columnTypes(this.db, step.table)).has(step.column)
@@ -727,6 +733,7 @@ export class AppRuntime {
             [version, step.table, step.column],
           )
         ).rows as Row[];
+        originals = archived.length;
         const current = new Map<string, unknown>(
           (
             (
@@ -745,7 +752,7 @@ export class AppRuntime {
             replaced++;
         }
       }
-      out.push({ table: step.table, column: step.column, replaced });
+      out.push({ table: step.table, column: step.column, replaced, originals });
     }
     return out;
   }

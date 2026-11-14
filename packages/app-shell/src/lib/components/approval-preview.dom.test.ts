@@ -25,6 +25,7 @@ it('renders real Node engine previews in approval cards for all data and calcula
       status?: string;
       result?: unknown;
       preserved?: boolean;
+      view?: ApprovalView;
     }[];
     const expected: Record<string, string> = {
       insert: '1 inserted, 0 updated',
@@ -36,12 +37,12 @@ it('renders real Node engine previews in approval cards for all data and calcula
       replace: 'from Quantity to 3',
       clear: '2 records keep their current values',
       undoCalculation: 'Invoice total in Customers',
-      undoLoad: 'removes inserted records and restores the original values',
+      undoLoad: 'removes 1 inserted record and restores 1 updated value',
       undoRefused: '1 record needs attention',
       undoFailed: '1 record needs attention',
-      undoMerge:
-        'recreates removed records and points surviving references back',
-      undoExtract: 'restores the original text',
+      undoMerge: 'recreates 1 removed record and points 1 reference back',
+      undoExtract:
+        'restores 2 original text values and removes 1 created linked record',
       undoType: 'Undoes the type change for Invoice total in Customers',
       empty: '0 records will be recalculated',
     };
@@ -50,7 +51,7 @@ it('renders real Node engine previews in approval cards for all data and calcula
     for (const card of cards) {
       const container = document.createElement('div');
       document.body.append(container);
-      const approval: ApprovalView = {
+      const approval: ApprovalView = card.view ?? {
         id: card.name,
         status: (card.status ?? 'pending') as ApprovalView['status'],
         summary: card.summary,
@@ -67,7 +68,15 @@ it('renders real Node engine previews in approval cards for all data and calcula
         props: { approval, ondecide: () => {} },
       });
       try {
-        rendered.push(`${card.name}: ${container.textContent}`);
+        rendered.push(
+          `${card.name}\nHeading: ${container.querySelector('h3')?.textContent}\n${[
+            ...container.querySelectorAll('p,li'),
+          ]
+            .filter((element) => !element.querySelector('time'))
+            .map((element) => element.textContent?.trim())
+            .filter(Boolean)
+            .join('\n')}`,
+        );
         expect(container.textContent, card.name).toContain(expected[card.name]);
         if (
           [
@@ -93,8 +102,17 @@ it('renders real Node engine previews in approval cards for all data and calcula
                 /Approve/.test(button.textContent ?? '') && !button.disabled,
             ),
           ).toHaveLength(0);
+        if (card.name === 'undoCalculation')
+          expect(container.textContent).toContain('2 original stored values');
+        if (card.name === 'undoType') {
+          expect(container.textContent).toContain('2 archived original values');
+          expect(container.textContent).not.toContain('refuses conflicts');
+        }
         if (card.name === 'undoFailed') {
           expect(card.preserved).toBe(true);
+          expect(container.querySelector('h3')?.textContent).toBe(
+            'Undo: load into Contacts',
+          );
           expect(container.textContent).not.toContain('the app did not start');
         }
         if (card.name === 'mergeCapped') {

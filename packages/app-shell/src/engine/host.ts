@@ -1219,7 +1219,12 @@ export class AppHost extends EventEmitter {
     };
     if (risky) {
       const counts = await this.callApp<
-        { table: string; column: string; replaced: number }[]
+        {
+          table: string;
+          column: string;
+          replaced: number;
+          originals?: number;
+        }[]
       >('countOverwrites', rec.version, steps);
       const fields = counts.map((c) => {
         const where = this.locate(rec.definition, c.table, c.column);
@@ -1228,6 +1233,7 @@ export class AppHost extends EventEmitter {
       preview = {
         ...preview,
         fields,
+        undoKinds: this.undoKinds(rec, counts),
         replaced: fields.reduce((n, f) => n + f.rows, 0),
         note: 'Undo restores archived values in the listed fields, removes command-created records and recreates records removed by a merge. Data-command undo refuses later edits to those fields, deleted rows and reused ids; other fields keep later edits. Restoring a cleared calculation refuses later edits to its writable values. Type conversions can replace newer values in the converted field.',
       };
@@ -1324,10 +1330,17 @@ export class AppHost extends EventEmitter {
     };
     if (converting.length) {
       const fields: { model: string; field: string; rows: number }[] = [];
+      const undoKinds: Record<string, unknown>[] = [];
       for (const r of converting) {
         const counts = await this.callApp<
-          { table: string; column: string; replaced: number }[]
+          {
+            table: string;
+            column: string;
+            replaced: number;
+            originals?: number;
+          }[]
         >('countOverwrites', r.version, r.migration?.steps ?? []);
+        undoKinds.push(...this.undoKinds(r, counts));
         for (const c of counts)
           fields.push({
             ...this.locate(r.definition, c.table, c.column),
@@ -1337,6 +1350,7 @@ export class AppHost extends EventEmitter {
       preview = {
         ...preview,
         fields,
+        undoKinds,
         replaced: fields.reduce((n, f) => n + f.rows, 0),
         note: 'Undo restores archived values in the listed fields, removes command-created records and recreates records removed by a merge. Data-command undo refuses later edits to those fields, deleted rows and reused ids; other fields keep later edits. Restoring a cleared calculation refuses later edits to its writable values. Type conversions can replace newer values in the converted field.',
       };
@@ -1380,7 +1394,31 @@ export class AppHost extends EventEmitter {
     };
   }
 
-  private undoKinds(rec: VersionRecord) {
+  private undoKinds(
+    rec: VersionRecord,
+    counts: {
+      table: string;
+      column: string;
+      replaced: number;
+      originals?: number;
+    }[] = [],
+  ) {
+    const count = (column: string) =>
+      counts
+        .filter((c) => c.column === column)
+        .reduce((n, c) => n + c.replaced, 0);
+    const restoredValues = counts
+      .filter((c) => !c.column.startsWith('('))
+      .reduce((n, c) => n + (c.originals ?? c.replaced), 0);
+    const references = counts
+      .filter((c) => {
+        const location = this.locate(rec.definition, c.table, c.column);
+        return (
+          rec.definition.models[location.model]?.fields[location.field]
+            ?.type === 'reference'
+        );
+      })
+      .reduce((n, c) => n + c.replaced, 0);
     return (rec.migration?.steps ?? []).flatMap<Record<string, unknown>>(
       (step) => {
         if (
@@ -1392,6 +1430,10 @@ export class AppHost extends EventEmitter {
           return [
             {
               kind: step.op,
+              inserted: count('(remove created record)'),
+              recreated: count('(recreate merged record)'),
+              restoredValues,
+              references,
               modelLabel: rec.definition.models[model]?.label ?? model,
               ...(step.op === 'extractModel'
                 ? {
@@ -1408,6 +1450,11 @@ export class AppHost extends EventEmitter {
             {
               kind: step.op,
               ...this.locate(rec.definition, step.table, step.column),
+              restoredValues: counts
+                .filter(
+                  (c) => c.table === step.table && c.column === step.column,
+                )
+                .reduce((n, c) => n + (c.originals ?? c.replaced), 0),
               calculationRestore: step.from?.calculated
                 ? 'calculation'
                 : 'values',

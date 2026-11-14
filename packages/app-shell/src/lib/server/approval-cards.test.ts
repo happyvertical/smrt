@@ -128,7 +128,7 @@ it('projects real engine previews through stored approvals into card text', asyn
     expect(clear.text).toContain('keep their current values');
     expect(clear.text).toContain('Future edits can set this field directly');
     const undo = await card({ type: 'undo' });
-    expect(undo.text).toContain('original stored values');
+    expect(undo.text).toContain('2 original stored values');
     await execute({
       type: 'defineModel',
       name: 'Empty',

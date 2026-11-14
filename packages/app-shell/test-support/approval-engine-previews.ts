@@ -1,3 +1,5 @@
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 // Node-only fixture producer: jsdom's browser conditions cannot boot app models.
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -107,10 +109,10 @@ try {
   const version = host.version;
   await host.update('Customer', String(a.id), {amount:23});
   await collect('undoRefused', {type:'undo'});
-  const refusedPlan = await host.plan({type:'undo'});
-  let error = '';
-  try { await execute({type:'undo'}); } catch (cause) { error = (cause as Error).message; }
-  cards.push({name:'undoFailed', command:{type:'undo'},summary:refusedPlan.summary,preview:refusedPlan.preview,status:'failed',result:{error}, preserved:host.version === version && (await host.get('Customer',String(a.id)))?.amount === 23});
+  let refused = false;
+  try { await execute({type:'undo'}); } catch { refused = true; }
+  if (!refused || host.version !== version || (await host.get('Customer',String(a.id)))?.amount !== 23) throw new Error('Refused undo changed data or version');
+
   await host.update('Customer',String(a.id),{amount:22});
   await execute({type:'undo'});
   await execute({type:'mergeRecords',model:'Customer',keep:String(a.id),merge:[String(b.id)]});
@@ -132,6 +134,9 @@ try {
   const blank = await host.create('Customer',{name:''});
   const many = await Promise.all(Array.from({length:12},(_,i)=>host.create('Customer',{name:`Removed ${i+1}`})));
   await collect('mergeCapped',{type:'mergeRecords',model:'Customer',keep:String(blank.id),merge:many.map((row)=>String(row.id))});
+  const routeOutput = join(dir,'route-approval.json');
+  execFileSync(process.execPath,[fileURLToPath(new URL('../vitest.mjs',import.meta.resolve('vitest'))),'run','src/lib/server/approval-failure.test.ts'],{env:{...process.env,SMRT_ROUTE_APPROVAL_ARTIFACT:routeOutput},timeout:60000,stdio:'pipe'});
+  cards.push({name:'undoFailed',view:JSON.parse(readFileSync(routeOutput,'utf8')),preserved:true});
   writeFileSync(process.argv[2], JSON.stringify(cards));
 } finally {
   await host.close();

@@ -1,3 +1,4 @@
+import { writeFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { decideApproval, returnedFailure } from './approvals.ts';
 import { getHost } from './host.ts';
@@ -119,5 +120,12 @@ it('the real undo and decision routes preserve records and version after a later
   expect(result.error).not.toContain('the app did not start');
   expect(host.version).toBe(version);
   expect((await host.get('UndoContact', String(row.id)))?.amount).toBe(3);
-  expect((await getApprovalView(approval.approvalId))?.status).toBe('failed');
+  const persisted = await getApprovalView(approval.approvalId);
+  expect(persisted?.status).toBe('failed');
+  expect(persisted?.summary).toBe('Undo: load into Contacts');
+  if (process.env.SMRT_ROUTE_APPROVAL_ARTIFACT)
+    writeFileSync(
+      process.env.SMRT_ROUTE_APPROVAL_ARTIFACT,
+      JSON.stringify(persisted),
+    );
 });
