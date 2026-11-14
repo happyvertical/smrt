@@ -82,7 +82,7 @@ it('loads 10,000 coerced rows with batched lookups; undo removes only its insert
   expect((await host.list('Sale')).map((r) => r.code)).toEqual(['later']);
 }, 120000);
 
-it('previews bounded row problems and refuses the whole load', async () => {
+it('refuses invalid load plans with bounded actionable row problems', async () => {
   const before = raw();
   const cmd: Command = {
     type: 'loadRecords',
@@ -95,9 +95,10 @@ it('previews bounded row problems and refuses the whole load', async () => {
     ],
     references: { customer: { model: 'Customer', by: 'name' } },
   };
-  const plan = await host.plan(cmd);
-  expect(plan.preview).toMatchObject({ insert: 1, rejected: 2 });
-  expect(JSON.stringify(plan.preview)).not.toContain('secret row content');
+  const problem = await host.plan(cmd).catch((error) => error);
+  expect(problem).toMatchObject({ name: 'EngineError', code: 'invalid' });
+  expect(problem.message).toMatch(/rejected 2 rows.*row 2 qty:/);
+  expect(problem.message).not.toContain('secret row content');
   await expect(run(cmd)).rejects.toThrow(/rejected 2/);
   expect(raw()).toEqual(before);
   await expect(
@@ -107,19 +108,11 @@ it('previews bounded row problems and refuses the whole load', async () => {
     host.plan({ ...cmd, rows: [{ code: 'x'.repeat(8 * 1024 * 1024) }] }),
   ).rejects.toThrow(/bytes/);
   await host.create('Customer', { name: 'Ada' });
-  expect(
-    (
-      await host.plan({
-        ...cmd,
-        rows: [{ code: 'ambiguous', customer: 'Ada' }],
-      })
-    ).preview,
-  ).toMatchObject({
-    rejected: 1,
-    problems: [
-      { row: 0, field: 'customer', reason: 'ambiguous reference lookup' },
-    ],
-  });
+  await expect(
+    host.plan({ ...cmd, rows: [{ code: 'ambiguous', customer: 'Ada' }] }),
+  ).rejects.toThrow(
+    /rejected 1 rows.*row 1 customer: ambiguous reference lookup/,
+  );
 });
 
 it('upserts by key, counts unchanged, requires approval, and restores exact originals', async () => {
@@ -355,15 +348,15 @@ it.each([
     mode: 'insert',
     rows: [{ code: 'unknown-field', [field]: null }],
   };
-  expect((await host.plan(cmd)).preview).toMatchObject({
-    insert: 0,
-    rejected: 1,
-    problems: [{ row: 0, field, reason: 'unknown or hidden field' }],
+  await expect(host.plan(cmd)).rejects.toMatchObject({
+    name: 'EngineError',
+    code: 'invalid',
+    message: `loadRecords rejected 1 rows; no rows loaded: row 1 ${field}: unknown or hidden field`,
   });
   await expect(run(cmd)).rejects.toMatchObject({
     name: 'EngineError',
     code: 'invalid',
-    message: 'loadRecords rejected 1 rows; no rows loaded',
+    message: `loadRecords rejected 1 rows; no rows loaded: row 1 ${field}: unknown or hidden field`,
   });
   expect(raw()).toEqual(before);
   expect(host.version).toBe(version);
