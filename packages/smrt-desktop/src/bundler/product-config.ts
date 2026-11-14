@@ -223,6 +223,16 @@ export interface ProductConfig {
   /** Public runtime assets copied to the bundled app root. */
   readonly runtimeFiles?: readonly string[];
   readonly maxSizeMB?: number;
+  /**
+   * Installer icons (`smrt desktop build`): portable app-relative paths to
+   * `.png`, `.ico` or `.icns` files. Owner input; there is no default.
+   */
+  readonly icons?: readonly string[];
+  /**
+   * The public half of the Tauri updater key (`smrt desktop build`). A public
+   * value the owner commits; never a private key and never defaulted.
+   */
+  readonly updaterPublicKey?: string;
   readonly nativeExceptions: readonly NativeException[];
   readonly acknowledgedDynamicImports: readonly AcknowledgedImport[];
 }
@@ -270,6 +280,19 @@ function stringArray(
   if (!items.every(accept)) bad(field);
   if (unique && new Set(items).size !== items.length) bad(field);
   return items as string[];
+}
+
+/** A base64 minisign public key text: no whitespace, no control characters. */
+function parseUpdaterPublicKey(value: unknown): string {
+  if (
+    typeof value !== 'string' ||
+    value.length < 16 ||
+    value.length > 512 ||
+    !/^[A-Za-z0-9+/=]+$/.test(value)
+  ) {
+    bad('updaterPublicKey');
+  }
+  return value as string;
 }
 
 function parseArgs(value: unknown): string[] {
@@ -487,6 +510,8 @@ export function parseProductConfig(text: string): ProductConfig {
         'features',
         'exclude',
         'runtimeFiles',
+        'icons',
+        'updaterPublicKey',
         'maxSizeMB',
         'nativeExceptions',
         'acknowledgedDynamicImports',
@@ -561,6 +586,21 @@ export function parseProductConfig(text: string): ProductConfig {
             32,
             isPortablePath,
           ),
+        }),
+    ...(record.icons === undefined
+      ? {}
+      : {
+          icons: stringArray(
+            record.icons,
+            'icons',
+            8,
+            (item) => isPortablePath(item) && /\.(?:png|ico|icns)$/.test(item),
+          ),
+        }),
+    ...(record.updaterPublicKey === undefined
+      ? {}
+      : {
+          updaterPublicKey: parseUpdaterPublicKey(record.updaterPublicKey),
         }),
     ...(maxSizeMB === undefined ? {} : { maxSizeMB }),
     nativeExceptions: parseNativeExceptions(record.nativeExceptions),

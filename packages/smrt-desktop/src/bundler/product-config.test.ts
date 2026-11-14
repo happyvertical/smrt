@@ -591,3 +591,43 @@ describe('readProductConfig', () => {
     }
   });
 });
+
+describe('installer inputs (smrt desktop build)', () => {
+  const text = (extra: Record<string, unknown>) =>
+    JSON.stringify({ ...valid, ...extra });
+
+  it('accepts app-relative icons and an updater public key, and defaults neither', () => {
+    expect(parseProductConfig(text({})).icons).toBeUndefined();
+    expect(parseProductConfig(text({})).updaterPublicKey).toBeUndefined();
+    const parsed = parseProductConfig(
+      text({
+        icons: ['icons/icon.png', 'icons/icon.ico', 'icons/icon.icns'],
+        updaterPublicKey: 'dW50cnVzdGVkIGNvbW1lbnQ6IHRlc3Q=',
+      }),
+    );
+    expect(parsed.icons).toEqual([
+      'icons/icon.png',
+      'icons/icon.ico',
+      'icons/icon.icns',
+    ]);
+    expect(parsed.updaterPublicKey).toBe('dW50cnVzdGVkIGNvbW1lbnQ6IHRlc3Q=');
+  });
+
+  it.each([
+    [{ icons: ['../icon.png'] }, 'icons'],
+    [{ icons: ['icons/icon.svg'] }, 'icons'],
+    [{ icons: ['/abs/icon.png'] }, 'icons'],
+    [{ icons: ['a.png', 'a.png'] }, 'icons'],
+    [{ icons: 'icon.png' }, 'icons'],
+    [{ updaterPublicKey: 'short' }, 'updaterPublicKey'],
+    [
+      { updaterPublicKey: 'has space in it is not base64!!' },
+      'updaterPublicKey',
+    ],
+    [{ updaterPublicKey: 7 }, 'updaterPublicKey'],
+  ])('rejects %j', (extra, field) => {
+    expect(() => parseProductConfig(text(extra))).toThrow(
+      expect.objectContaining({ code: 'config_invalid_field', field }),
+    );
+  });
+});
