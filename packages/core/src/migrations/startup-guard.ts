@@ -12,6 +12,7 @@ import {
   type MigrateRecordOptions,
   readLastMigrateRecord,
 } from './migrate-record.js';
+import { runtimeManagedDatabaseDeclaration } from './runtime-managed-database.js';
 
 const logger = createLogger({ level: 'info' });
 // Keep in-flight work too: concurrent first queries share the same read.
@@ -43,6 +44,10 @@ export async function assertDatabaseMigratedForBuild(
     isPreparedTestDatabase(db)
   )
     return;
+  // A runtime-managed database builds its own schema and never has a migrate
+  // record; its opener declared that, with an owner and a reason. Only this
+  // comparison is skipped: callers still verify table existence.
+  if (runtimeManagedDatabaseDeclaration(db)) return;
   const key = getVerificationKey(db);
   const build = registeredBuildSchema();
   let entry = starts.get(key);

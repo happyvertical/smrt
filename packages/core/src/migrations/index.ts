@@ -191,6 +191,11 @@ export {
   legacyQualifiedNamesBackfillName,
 } from './qualified-name-aliases.js';
 export {
+  declareRuntimeManagedDatabase,
+  type RuntimeManagedDatabaseDeclaration,
+  runtimeManagedDatabaseDeclaration,
+} from './runtime-managed-database.js';
+export {
   computeManifestSchemaFingerprint,
   computeSchemaFingerprint,
   manifestTableEntries,

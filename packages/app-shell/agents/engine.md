@@ -21,6 +21,16 @@ adds) and swaps it in once it is ready. The engine must not import SvelteKit,
   first and restart the old definition if the new one fails. They are
   SQLite-shaped (`RENAME/DROP COLUMN`, `VACUUM INTO`, `pragma_table_xinfo`);
   Postgres is future work.
+- **app.db is runtime-managed.** The engine builds app.db's schema itself
+  (`_app_meta.version` is its record); core's migrate never runs on it. So
+  `AppRuntime.boot` declares the handle with core's
+  `declareRuntimeManagedDatabase` right after its one `getDatabase` call, and
+  core's production startup check does not ask app.db for a migrate record.
+  Tables are still checked. Every app.db the engine touches is opened there:
+  live, draft copies, publish rehearsal and the read-only report worker. Open
+  app.db nowhere else; `scripts/check-runtime-managed-databases.mjs` allows the
+  call only in `app-runtime.ts`. `production-start.test.ts` boots the engine
+  with `NODE_ENV=production`.
 - **Column storage.** No column-type history: re-adding a field checks the real
   column's storage family. Text defaults can be `''`, so counts and archives use
   `IS NOT NULL AND <> ''`. Renames do not rewrite method code; the plan lists

@@ -532,6 +532,11 @@ export {
   OLDEST_SUPPORTED_RELEASE,
 } from './migrations/oldest-supported.js';
 export {
+  declareRuntimeManagedDatabase,
+  type RuntimeManagedDatabaseDeclaration,
+  runtimeManagedDatabaseDeclaration,
+} from './migrations/runtime-managed-database.js';
+export {
   computeManifestSchemaFingerprint,
   computeSchemaFingerprint,
   manifestTableEntries,

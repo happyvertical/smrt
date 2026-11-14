@@ -6,6 +6,7 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import {
+  declareRuntimeManagedDatabase,
   ObjectRegistry,
   planRuntimeModelDDL,
   registerRuntimeModel,
@@ -117,6 +118,13 @@ export class AppRuntime {
       type: 'sqlite',
       url: join(this.dataDir, 'app.db'),
     } as any);
+    // The only place the engine opens app.db: the live app, every draft copy,
+    // publish rehearsal and the read-only report worker all boot through here.
+    declareRuntimeManagedDatabase(this.db, {
+      owner: '@happyvertical/smrt-app-shell',
+      reason:
+        "The engine builds app.db's schema from the app definition with its own versioned steps (_app_meta.version); core's migrate never runs against it.",
+    });
     await this.register();
     for (const report of Object.values(this.def.reports ?? {}))
       await compileReport(this.def, report.spec);
