@@ -1,7 +1,8 @@
 /**
  * No-generated-field compatibility contract for #4915/#4972.
  * Byte digests and SQLite deployment SQL were captured by executing this test
- * with production sources from origin/main b16fc4c9075e50a6410a6039e1df295a42473c26.
+ * with the production sources of the data-shape release branch (#4920) just
+ * before #4972 was merged into it, 0f16192e1b3b5d64b639cce688aaa35075a71464.
  * No output normalization is applied. Fixture provenance lives beside the JSON.
  */
 import { execFileSync } from 'node:child_process';
@@ -28,7 +29,7 @@ import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
 import { generateSvelteKitRoutes } from '../vite-plugin/sveltekit-generator.js';
 
-const BASELINE = 'b16fc4c9075e50a6410a6039e1df295a42473c26';
+const BASELINE = '0f16192e1b3b5d64b639cce688aaa35075a71464';
 const fixturePath = join(
   import.meta.dirname,
   'fixtures/generated-fields-origin-main.json',
@@ -54,6 +55,7 @@ function captureRequested(): boolean {
         BASELINE,
         '--',
         'packages/core/src',
+        ':(exclude)packages/core/src/__tests__/**',
         ':(exclude)packages/core/src/**/__tests__/**',
         ':(exclude)packages/core/src/**/*.test.ts',
         ':(exclude)packages/core/src/**/*.spec.ts',

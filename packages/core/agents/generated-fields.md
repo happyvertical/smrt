@@ -203,8 +203,9 @@ and update reference the same allocated component. Plain models retain their
 original component references.
 
 `src/__tests__/generated-fields-compatibility.test.ts` compares exact byte
-digests with checked-in expectations captured from `origin/main` at
-`b16fc4c9075e50a6410a6039e1df295a42473c26`. It covers a plain model and a
+digests with checked-in expectations captured before #4972 (first from
+`origin/main` at `b16fc4c907`, recaptured at the data-shape release branch
+`0f16192e1b`, whose plain-model output differs on purpose). It covers a plain model and a
 three-level STI hierarchy with a middle-class unique field, including a live
 migration diff against the captured SQLite deployment. The fixture includes
 OpenAPI, monolithic/modular MCP and every generated SvelteKit TypeScript file;
