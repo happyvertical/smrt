@@ -1,4 +1,4 @@
-# App-shell engine (`src/engine`)
+# Shared app engine (`src/engine/`)
 
 Runs a person's own smrt app from a versioned JSON definition. The host
 (`AppHost`) owns the version history (through a `VersionStore`) and the data
@@ -12,14 +12,14 @@ adds) and swaps it in once it is ready. The engine must not import SvelteKit,
 - **Approval gate.** `RISKY_COMMANDS`, `isRiskyCommand` and `isRiskyTool` live
   in `commands.ts`. `execute` throws `ApprovalRequiredError` for a risky
   command without `approved: true`; `callAppTool` does the same for
-  `<model>_delete`, and `rest` for `DELETE`. Approval covers the command, not a
-  plan hash: the plan is recomputed at execute time.
+  `<model>_delete`, and `rest` for `DELETE`. Approval carries reviewed mutation counts: the plan is recomputed inside the
+  execute queue and growing load/extract/merge counts require a fresh decision.
 - **Queue.** Work inside the change queue must call `callApp`, never `onApp`
   (which awaits the queue): the old `clean_up` deadlock.
 - **Migrations** (`app-runtime.ts`) run in one transaction in the new worker,
   reading through the transaction handle. Destructive ones retire the old worker
   first and restart the old definition if the new one fails. They are
-  SQLite-shaped (`RENAME/DROP COLUMN`, `VACUUM INTO`, `pragma_table_info`);
+  SQLite-shaped (`RENAME/DROP COLUMN`, `VACUUM INTO`, `pragma_table_xinfo`);
   Postgres is future work.
 - **Column storage.** No column-type history: re-adding a field checks the real
   column's storage family. Text defaults can be `''`, so counts and archives use
@@ -110,7 +110,9 @@ is documented here; the shell's tables, approvals and UI sit on top.
   returns a `PublishPreview`: per-version steps and SQL, definition diff, archive
   counts and EVERY method in full, from a rehearsal on a fresh copy of the CURRENT
   live data (live only waits while the copy is taken); `digest` pins the draft's
-  chain. `live.publishDraft(draft, { author, approved: true, expect: digest, draftName? })`
+  chain and every replayed load/extract/merge count; each version exposes
+  `dataSteps` from that sequential rehearsal. A changed count at apply requires
+  a fresh preview before any live swap. `live.publishDraft(draft, { author, approved: true, expect: digest, draftName? })`
   refuses without `approved`, without the digest, if the chain or the app it
   started from changed, or if a `.prepublish` file is lying around. Inside the
   queue, calls drained: copy live, replay each draft version in order (one short
@@ -123,7 +125,7 @@ is documented here; the shell's tables, approvals and UI sit on top.
   asides and rehearsal. The versions are N ordinary live versions numbered after
   the store's HIGHEST (live may sit on an undone branch), parent-chained,
   summaries tagged `[draft: name] ...`; archives are keyed by those numbers so
-  `undo` works. Draft records are not carried. Any failure before the store is
+  `undo` works. Direct draft record edits are not carried; draft data commands replay on live. Any failure before the store is
   written renames the asides back (live's `app.db` is byte-for-byte what it
   was, same version) and restarts the old app; `onStage` lets tests fail each
   stage. Use a store with the optional atomic `commit(records, current)`; without
@@ -163,4 +165,105 @@ is documented here; the shell's tables, approvals and UI sit on top.
   small QuickJS stack limit keeps its error first, and a host-level failure
   discards the WASM module instance.
 
-S1 shared Connect AI compatibility: the shell client/owner onboarding route forwards `cancel` to shared `chatgpt-cancel`. Unsupported auth SDK cancellation remains an error, not a fake successful sign-out. Existing owner/origin checks and shared readiness status are retained.
+## Calculated fields (#4916)
+
+`FieldDef.calculated` uses core's `GeneratedExpression` (SQL SDK operand data).
+`addField` and `setCalculation` validate through `runtimeModelEntry` at plan
+time; hidden inputs and generated-to-generated references are rejected by core.
+SQLite owns the VIRTUAL column. Writes use the common coercer and generated core
+record commands explicitly refuse calculated inputs with typed EngineError (invalid); generated REST/MCP surfaces instead drop them like readonly inputs, allowing whole-record round trips. `setCalculation` requires approval for conversion, replacement and clearing and replaces the column transactionally;
+clearing materializes current calculated values into a writable column. Undoing the clear refuses if writable values differ from that materialized snapshot (including populated rows created later), so it never discards later edits. Converting a writable field archives
+its originals and is risky. Undo restores those originals or the old expression. Calculation archives encode JavaScript numbers directly, preserving finite double precision.
+Renames rewrite expressions; hide/remove/type change refuse named dependents.
+Changing a calculated field's type replaces its generated column directly and
+validates the expression against the new type, without archiving derived values.
+`titleField` optionally names the record label, with first visible text as fallback.
+The expression grammar includes SDK 0.112.3 conditional, numeric, text and
+calendar functions and typed date-only literals. All are display-only in
+`src/engine/formula.ts`; evaluation stays in the database. Engine `date` fields
+map to core datetime. Any expression referencing those fields, or containing a
+datetime literal, is temporarily refused at plan time on every dialect
+(sdk#1516). Date-only literal calendar expressions remain usable for integer/text results. Date outputs are temporarily refused too: core requires an immutable datetime result, while date-only literals and addDays produce date values. Reference and
+lookup/title keys cannot be calculated; bulk upsert keys must remain writable. Reference walks include
+all nested function arguments and conditional branches. Regression suites:
+`portable-calculations.test.ts` and `keyword-fields.test.ts` (all eight SQL
+keyword field names across CRUD, bulk loads, reports and calculations).
+Test design and required validation: [engine-4916-tests.md](engine-4916-tests.md).
+
+## Definition reports (#4916)
+
+`reports?: Record<string, { label?, description?, spec: RuntimeReportSpec }>`
+is additive format 1 data, never the RuntimeReport table. `defineReport`,
+`renameReport`, `removeReport` are structural commands. Defining compiles with
+smrt-reports against the app's own visible fields; boot revalidates saved specs.
+`removeReport` requires approval; `renameReport` is immediate. Renames rewrite field references; destructive field changes list report dependents.
+`host.runReport(nameOrSpec, { maxRows?, timeoutMs? })` works frozen or in drafts.
+The SQL compiler/runner supplies bounded aggregates on app.db, tenantId null.
+Defaults: 1000 rows, 5000 ms; allowed ceilings: 1000 rows, 10000 ms. A dedicated
+read worker is terminated on query timeout, without killing the app worker.
+Columns preserve the compiler's money/date hints: counts stay unitless, while
+sum/min/max/avg keep source units. Choice hints are added from the definition.
+Reference dimension columns add
+`reference` and `labelColumn`; rows carry that label next to the original id,
+resolved in one query per target model, using titleField or first visible text.
+The server catalog's engine-tools adapter calls the same owner check and builder
+path; app_runreport names the records target, builder commands the structure target.
+
+## Atomic bulk loads (#4916)
+
+`loadRecords { model, rows, mode: 'insert'|'upsert', key?, references? }`
+is structural. Upsert requires visible writable key fields; all modes, including insert and upserts without updates,
+require approval outside a draft. Apply re-prepares inside the migration transaction and refuses if updates exceed the reviewed count; callers must plan again. Draft publish prepares fresh bounds in its rehearsal over current live data and pins their counts to the reviewed publish digest. `references[field] = { model, by }`
+resolves lookup values with one query per target model. The dry-run preview
+returns insert/update/unchanged/rejected counts and up to 100 zero-based row,
+field, reason problems, never whole rows. Rejected input refuses the entire load.
+All data-command undo journals (load, extract and merge) are capped at 10,000 affected rows and 8 MiB of stored JSON. Preparation refuses oversized source journals; a final check inside the migration transaction includes postimages and rolls back the whole command on overflow. Input fields, upsert keys, lookup keys and merge selectors must name own visible
+fields; inherited object keys receive the same typed refusal as unknown fields.
+Bounds: 10,000 rows and 8 MiB total JSON command data per call. Calculated input is refused.
+Preparation uses the record coercer, then collection writes use bounded
+100-record SDK savepoint scopes inside the one migration transaction. Releasing
+a savepoint never commits the outer transaction; a later-batch failure rolls
+back all earlier batches and archives. Each scope uses core
+`withCallerOwnedDatabaseTransaction` so record hooks and validation stay intact.
+Load planning reads affected originals and `pragma_table_xinfo` metadata, without
+copying a database or writing records, archives, files or SDK defaults. Preparation
+and apply share the exact JSON serializer and UTF-8 byte arithmetic: each load
+postimage is `{ $load: 1, hashes: { column: SHA256-base64 } }`. Digests have fixed
+44-byte values even when SDK slugs, defaults, timestamps, save hooks or generated
+columns have unpredictable contents. Inserts protect every stored column; updates
+exclude generated columns and restore only columns whose before/after digests
+differ. Command inputs retain their independent 8 MiB bound. Apply verifies the
+persisted journal byte total agrees with preparation, inside the same transaction.
+Planning still builds the existing upsert and reference lookup maps from their
+model rows; its read cost is proportional to those models, not the entire database.
+Original raw rows (including nulls and timestamps), inserted ids and the versioned
+postimages are journaled in `_archive` for undo. Legacy full-value postimages remain
+readable. Undo restores only the columns changed by the command, preserving later edits to other fields. Changed command-owned columns, user-deleted rows, edited command-created records, and reused removed ids refuse undo transactionally, even with approval. Older row journals without postimages refuse rather than overwrite data. Every load has a
+pre-migration snapshot and stable per-command ids, so draft publish replays the
+load against current live keys and lookup data rather than copying draft rows.
+Undo of a data migration requires approval; its preview names affected fields, removals and recreations.
+Load undo refuses surviving references to its inserted rows (including hidden
+references), preserving all rows and the current version on refusal. The shared
+load/extraction guard scans each reference field once against the set of created
+ids, rather than rescanning its table for every inserted row. Refusals name up to ten surviving referring records with human-readable model, field and record labels.
+
+## Extracting a column (#4916)
+
+`extractModel { model, field, into, titleField?, normalize? }` is structural and
+risky: text/choice values become references, originals remain archived for undo.
+A new target has a required text title field (`name` by default); an existing
+target matches its titleField or first visible text. Exact matching is default;
+`normalize: true` trims and compares case-insensitively. The preview reports
+rows/distinct/folded/create/matched counts. Empty strings (and whitespace-only strings with normalization) become null references; undo restores their exact original text. Null values remain null. Ambiguous existing labels refuse the command. Undo restores originals
+and deletes only created target rows, refusing surviving references (including
+hidden references) added since extraction. Source references written after extraction also refuse undo, including references to pre-existing targets, so ids never become text. Publish extracts current live values.
+
+## Merging records (#4916)
+
+`mergeRecords { model, keep, merge: ids[], fields?: { [field]: 'keep' | id } }`
+is structural and always risky (1–1000 distinct merged ids). The plan lists
+reference counts by app model, including hidden reference fields. Every reference
+to a removed id is repointed to keep; chosen writable values survive on keep.
+Raw originals and changed-column postimages are archived before updates/removals. Undo
+restores only changed columns and merged-away records; later deletions of merge source rows or conflicting edits refuse the whole undo. Referring records deleted later stay deleted and are skipped; undo returns `skipped` and includes that count in its summary (also aggregated by `undoTo`). A removed id reused since the merge also refuses. Draft publish
+recomputes affected references on current live data. No arbitrary SQL is accepted.

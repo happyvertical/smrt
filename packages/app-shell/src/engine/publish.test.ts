@@ -926,3 +926,94 @@ describe('undoTo after a publish', () => {
     }
   });
 });
+
+describe('reviewed replay data impacts', () => {
+  it('shows upsert counts from current live and refuses growth after review', async () => {
+    const w = await world();
+    try {
+      await w.draft.execute(
+        {
+          type: 'loadRecords',
+          model: 'Chore',
+          mode: 'upsert',
+          key: ['title'],
+          rows: [{ title: 'New', notes: 'loaded' }],
+        },
+        AUTHOR,
+      );
+      const first = await w.live.previewPublish(w.draft);
+      expect(first.versions.at(-1)?.dataSteps).toEqual([
+        {
+          op: 'loadRecords',
+          model: 'Chore',
+          mode: 'upsert',
+          counts: expect.objectContaining({ insert: 1, update: 0 }),
+        },
+      ]);
+      await w.live.create('Chore', { title: 'New', notes: 'live' });
+      await expect(
+        w.live.publishDraft(w.draft, { ...OK, expect: first.digest }),
+      ).rejects.toThrow(/review.*again/);
+      expect(
+        (await w.live.list('Chore')).find((r) => r.title === 'New')?.notes,
+      ).toBe('live');
+      const fresh = await w.live.previewPublish(w.draft);
+      expect(fresh.versions.at(-1)?.dataSteps?.[0].counts).toMatchObject({
+        insert: 0,
+        update: 1,
+      });
+      await w.live.publishDraft(w.draft, { ...OK, expect: fresh.digest });
+      expect(
+        (await w.live.list('Chore')).find((r) => r.title === 'New')?.notes,
+      ).toBe('loaded');
+    } finally {
+      await close(w);
+    }
+  });
+});
+
+it('counts extract and merge steps sequentially against current live records', async () => {
+  const w = await world();
+  try {
+    const others = await w.live.list('Other');
+    await w.draft.execute(
+      { type: 'extractModel', model: 'Chore', field: 'notes', into: 'Note' },
+      AUTHOR,
+    );
+    await w.draft.execute(
+      {
+        type: 'mergeRecords',
+        model: 'Other',
+        keep: others[0].id as string,
+        merge: [others[1].id as string],
+      },
+      AUTHOR,
+    );
+    await w.live.create('Chore', {
+      title: 'Live extra',
+      notes: 'new distinct',
+    });
+    const preview = await w.live.previewPublish(w.draft);
+    const steps = preview.versions.flatMap((v) => v.dataSteps ?? []);
+    expect(steps).toEqual([
+      {
+        op: 'extractModel',
+        model: 'Chore',
+        counts: { rows: 4, distinct: 4, folded: 0, create: 4, matched: 0 },
+      },
+      {
+        op: 'mergeRecords',
+        model: 'Other',
+        counts: { removed: 1, references: {} },
+      },
+    ]);
+    await w.live.create('Chore', { title: 'Later', notes: 'another distinct' });
+    await expect(
+      w.live.publishDraft(w.draft, { ...OK, expect: preview.digest }),
+    ).rejects.toThrow(/review.*again/);
+    expect(await w.live.list('Other')).toHaveLength(2);
+    expect(w.live.def.models.Note).toBeUndefined();
+  } finally {
+    await close(w);
+  }
+});

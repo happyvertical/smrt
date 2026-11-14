@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from 'node:crypto';
 // The host: owns the version history (through a VersionStore) and the data
 // directory, and manages the user app, which runs as its own runtime in a
 // worker thread. Every definition change starts a fresh app runtime from the
@@ -11,6 +12,10 @@ import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  parseRuntimeReportSpec,
+  type RuntimeReportSpec,
+} from '@happyvertical/smrt-reports';
+import {
   type Command,
   type ExecuteOptions,
   isRiskyCommand,
@@ -20,6 +25,7 @@ import {
   type Plan,
   type Template,
 } from './commands.ts';
+import { assertLoadBounds, type LoadPreview } from './data-migrations.ts';
 import {
   type AppDefinition,
   builtInFields,
@@ -27,6 +33,7 @@ import {
   EMPTY_APP,
   type FieldDef,
   FORMAT,
+  isValidFieldName,
   type MethodDef,
   type Migration,
   RECIPES,
@@ -34,10 +41,17 @@ import {
   restRouteAllowed,
   type Step,
   snake,
+  sqlType,
+  storageFamily,
   tableFor,
   toolNamesFor,
   validate,
 } from './definition.ts';
+import {
+  fieldDependents,
+  rewriteExpression,
+  rewriteReports,
+} from './dependents.ts';
 import {
   checkDraftPath,
   type DraftMarker,
@@ -47,6 +61,8 @@ import {
   writeDraftMarker,
 } from './draft.ts';
 import { ApprovalRequiredError, EngineError } from './errors.ts';
+import type { ExtractPreview } from './extract-model.ts';
+import type { MergePreview } from './merge-records.ts';
 import {
   archivedTables,
   assertNoAside,
@@ -66,6 +82,11 @@ import {
   restoreAside,
   writeJournal,
 } from './publish.ts';
+import {
+  type AppReportResult,
+  type ReportOptions,
+  titleField,
+} from './reports.ts';
 import { checkSyntax } from './sandbox.ts';
 import type { VersionRecord, VersionStore } from './store.ts';
 import { AppCallError, AppWorker } from './worker-handle.ts';
@@ -116,6 +137,13 @@ export type PublishStage =
   | 'respawned'
   | 'committed';
 
+export interface PublishDataStep {
+  op: 'loadRecords' | 'extractModel' | 'mergeRecords';
+  model: string;
+  mode?: 'insert' | 'upsert';
+  counts: Record<string, unknown>;
+}
+
 export interface PublishVersionPreview {
   /** The number this version gets in live. */
   version: number;
@@ -124,6 +152,7 @@ export interface PublishVersionPreview {
   author: string;
   summary: string;
   steps: Step[];
+  dataSteps?: PublishDataStep[];
   /** The SQL the rehearsal ran for it. */
   statements: string[];
 }
@@ -178,6 +207,8 @@ export interface ChangeResult {
   snapshot: string | null;
   appRestartMs: number;
   affectedMethods?: string[];
+  loadCounts?: LoadPreview;
+  skipped?: number;
   converted?: number;
   emptied?: number;
   undid?: string;
@@ -459,8 +490,15 @@ export class AppHost extends EventEmitter {
 
   /** What a command would do, without changing anything. */
   plan(cmd: Command): Promise<Plan> {
+    try {
+      if (cmd.type === 'loadRecords') assertLoadBounds(cmd);
+      cmd = structuredClone(cmd);
+    } catch (e) {
+      return Promise.reject(e);
+    }
     return this.run(async () => {
       this.refuseIfFrozen(cmd);
+      await this.drainInflight();
       return (await this.analyse(cmd)).plan;
     });
   }
@@ -492,13 +530,52 @@ export class AppHost extends EventEmitter {
    * `approved` is true, and then nothing has changed.
    */
   execute(cmd: Command, opts: ExecuteOptions): Promise<ExecuteResult> {
+    try {
+      if (cmd.type === 'loadRecords') assertLoadBounds(cmd);
+      cmd = structuredClone(cmd);
+    } catch (e) {
+      return Promise.reject(e);
+    }
+    opts = { ...opts };
     if (!opts || typeof opts.author !== 'string' || !opts.author)
       return Promise.reject(new EngineError('execute needs an author'));
     return this.run(async () => {
       this.refuseIfFrozen(cmd);
+      await this.drainInflight();
       const a = await this.analyse(cmd);
       if (a.plan.risky && opts.approved !== true && !this.#autoApprove)
         throw new ApprovalRequiredError(a.plan);
+      if (
+        opts.reviewedPreview &&
+        ['loadRecords', 'extractModel', 'mergeRecords'].includes(cmd.type)
+      ) {
+        const grew = (current: unknown, reviewed: unknown): boolean => {
+          if (typeof current === 'number')
+            return current > (typeof reviewed === 'number' ? reviewed : 0);
+          if (!current || typeof current !== 'object' || Array.isArray(current))
+            return false;
+          return Object.entries(current).some(([key, value]) =>
+            grew(
+              value,
+              reviewed && typeof reviewed === 'object'
+                ? (reviewed as Record<string, unknown>)[key]
+                : undefined,
+            ),
+          );
+        };
+        const keys =
+          cmd.type === 'loadRecords'
+            ? ['insert', 'update']
+            : cmd.type === 'extractModel'
+              ? ['rows', 'create', 'matched', 'distinct', 'folded']
+              : ['removed', 'references'];
+        if (
+          keys.some((key) =>
+            grew(a.plan.preview?.[key], opts.reviewedPreview?.[key]),
+          )
+        )
+          throw new ApprovalRequiredError(a.plan);
+      }
       return a.apply(opts.author);
     });
   }
@@ -572,6 +649,120 @@ export class AppHost extends EventEmitter {
     });
 
     switch (cmd.type) {
+      case 'mergeRecords': {
+        const preview = await this.callApp<MergePreview>('previewMerge', cmd);
+        return change(
+          `merge ${cmd.merge.length} ${cmd.model} records into ${cmd.keep}`,
+          this.clone(),
+          {
+            preview: { ...preview },
+            steps: [{ op: 'mergeRecords', command: structuredClone(cmd) }],
+          },
+        );
+      }
+      case 'extractModel': {
+        const st = this.storage(cmd.model, cmd.field);
+        if (
+          st.fd.hidden ||
+          st.fd.calculated ||
+          !['text', 'choice'].includes(st.fd.type) ||
+          cmd.into === cmd.model
+        )
+          throw new EngineError(
+            'extractModel needs a visible writable text or choice field and a different target model',
+          );
+        this.refuseDependents(cmd.model, cmd.field);
+        const d = this.clone();
+        const title =
+          cmd.titleField ??
+          (d.models[cmd.into] ? titleField(d, cmd.into) : 'name');
+        if (!title) throw new EngineError('extract target needs a title field');
+        if (!d.models[cmd.into])
+          d.models[cmd.into] = {
+            titleField: title,
+            fields: { [title]: { type: 'text', required: true } },
+          };
+        d.models[cmd.model].fields[cmd.field] = {
+          type: 'reference',
+          ref: cmd.into,
+          label: st.fd.label,
+          required: st.fd.required,
+        };
+        this.assertValid(d);
+        const command = { ...cmd, titleField: title };
+        const preview = await this.callApp<ExtractPreview>(
+          'previewExtract',
+          command,
+        );
+        return change(`extract ${cmd.model}.${cmd.field} into ${cmd.into}`, d, {
+          preview: { ...preview },
+          steps: [
+            { op: 'extractModel', command, from: st.fd, seed: randomUUID() },
+          ],
+        });
+      }
+      case 'loadRecords': {
+        const preview = await this.callApp<LoadPreview>('previewLoad', cmd);
+        const a = change(
+          `load ${cmd.rows.length} ${cmd.model} records`,
+          this.clone(),
+          {
+            preview: { ...preview },
+            after: (r) => ({ ...r, loadCounts: preview }),
+            steps: [
+              {
+                op: 'loadRecords',
+                command: structuredClone(cmd),
+                seed: randomUUID(),
+                maxUpdates: preview.update,
+              },
+            ],
+          },
+        );
+        a.plan.risky = true;
+        if (preview.rejected)
+          a.apply = async () => {
+            throw new EngineError(
+              `loadRecords rejected ${preview.rejected} rows; no rows loaded`,
+            );
+          };
+        return a;
+      }
+      case 'defineReport': {
+        if (!isValidFieldName(cmd.name))
+          throw new EngineError('invalid report name');
+        const d = this.clone();
+        d.reports ??= {};
+        d.reports[cmd.name] = cmd.definition;
+        this.assertValid(d);
+        const compiled = await this.callApp<{ spec: RuntimeReportSpec }>(
+          'compileReport',
+          cmd.definition.spec,
+        );
+        d.reports[cmd.name] = { ...cmd.definition, spec: compiled.spec };
+        return change(`define report ${cmd.name}`, d);
+      }
+      case 'renameReport': {
+        if (!isValidFieldName(cmd.to))
+          throw new EngineError('invalid report name');
+        if (!Object.hasOwn(this.def.reports ?? {}, cmd.from))
+          throw new EngineError('unknown report');
+        if (Object.hasOwn(this.def.reports ?? {}, cmd.to))
+          throw new EngineError('report already exists');
+        const d = this.clone();
+        const reports = d.reports ?? {};
+        reports[cmd.to] = reports[cmd.from];
+        delete reports[cmd.from];
+        this.assertValid(d);
+        return change(`rename report ${cmd.from} -> ${cmd.to}`, d);
+      }
+      case 'removeReport': {
+        if (!Object.hasOwn(this.def.reports ?? {}, cmd.name))
+          throw new EngineError('unknown report');
+        const d = this.clone();
+        delete d.reports?.[cmd.name];
+        return change(`remove report ${cmd.name}`, d);
+      }
       case 'defineModel': {
         if (Object.hasOwn(this.def.models, cmd.name))
           throw new EngineError(`${cmd.name} already exists; use addField`);
@@ -584,7 +775,21 @@ export class AppHost extends EventEmitter {
           methods: {},
         };
         this.assertValid(d);
-        return change(`define ${cmd.name}`, d);
+        const steps: Step[] = [];
+        let overwrite = false;
+        for (const [field, fd] of Object.entries(d.models[cmd.name].fields)) {
+          if (!fd.calculated) continue;
+          const step = await this.calculationStep(
+            tableFor(cmd.name),
+            field,
+            fd,
+          );
+          steps.push(step);
+          overwrite ||= !!step.from;
+        }
+        const a = change(`define ${cmd.name}`, d, { steps });
+        a.plan.risky ||= overwrite;
+        return a;
       }
       case 'addField': {
         const md = this.model(cmd.model);
@@ -598,10 +803,60 @@ export class AppHost extends EventEmitter {
         const d = this.clone();
         d.models[cmd.model].fields[cmd.field] = shown(cmd.definition);
         this.assertValid(d);
-        return change(`add ${cmd.model}.${cmd.field}`, d);
+        const step = cmd.definition.calculated
+          ? await this.calculationStep(
+              tableFor(cmd.model, md),
+              cmd.field,
+              cmd.definition,
+              md.fields[cmd.field],
+            )
+          : undefined;
+        const a = change(`add ${cmd.model}.${cmd.field}`, d, {
+          steps: step ? [step] : [],
+        });
+        a.plan.risky ||= !!step?.from;
+        return a;
+      }
+      case 'setCalculation': {
+        const st = this.storage(cmd.model, cmd.field);
+        if (st.fd.hidden || (cmd.calculated === null && !st.fd.calculated))
+          throw new EngineError(
+            'setCalculation needs a visible field with a calculation to clear',
+          );
+        const d = this.clone();
+        if (cmd.calculated === null)
+          delete d.models[cmd.model].fields[cmd.field].calculated;
+        else d.models[cmd.model].fields[cmd.field].calculated = cmd.calculated;
+        this.assertValid(d);
+        const a = change(`set calculation ${cmd.model}.${cmd.field}`, d, {
+          steps: [
+            {
+              op: 'calculation',
+              table: st.table,
+              column: st.column,
+              from: st.fd,
+              to: d.models[cmd.model].fields[cmd.field],
+            },
+          ],
+          preview: {
+            model: cmd.model,
+            field: cmd.field,
+            rows: await this.callApp<number>('countRows', st.table),
+            withValue: await this.callApp<number>(
+              'countValues',
+              st.table,
+              st.column,
+            ),
+            from: st.fd.calculated ?? null,
+            to: cmd.calculated,
+          },
+        });
+        a.plan.risky = true;
+        return a;
       }
       case 'hideField': {
         const st = this.storage(cmd.model, cmd.field);
+        this.refuseDependents(cmd.model, cmd.field);
         if (st.fd.hidden)
           throw new EngineError(`${cmd.model}.${cmd.field} is already hidden`);
         const d = this.clone();
@@ -623,6 +878,12 @@ export class AppHost extends EventEmitter {
             v,
           ]),
         );
+        for (const fd of Object.values(d.models[cmd.model].fields))
+          if (fd.calculated)
+            fd.calculated = rewriteExpression(fd.calculated, cmd.from, cmd.to);
+        if (d.models[cmd.model].titleField === cmd.from)
+          d.models[cmd.model].titleField = cmd.to;
+        rewriteReports(d, cmd.model, cmd.from, cmd.to);
         this.assertValid(d);
         return change(`rename ${cmd.model}.${cmd.from} -> ${cmd.to}`, d, {
           steps: [
@@ -642,6 +903,7 @@ export class AppHost extends EventEmitter {
       }
       case 'removeField': {
         const st = this.storage(cmd.model, cmd.field);
+        this.refuseDependents(cmd.model, cmd.field);
         const valuesArchived = await this.callApp<number>(
           'countValues',
           st.table,
@@ -659,21 +921,54 @@ export class AppHost extends EventEmitter {
           },
           affectedMethods: this.methodsMentioning(cmd.field),
           steps: [
-            {
-              op: 'dropColumn',
-              table: st.table,
-              key: 'id',
-              column: st.column,
-              type: st.fd.type,
-            },
+            st.fd.calculated
+              ? { op: 'calculation', table: st.table, column: st.column }
+              : {
+                  op: 'dropColumn',
+                  table: st.table,
+                  key: 'id',
+                  column: st.column,
+                  type: st.fd.type,
+                },
           ],
         });
       }
       case 'changeFieldType': {
         const st = this.storage(cmd.model, cmd.field);
+        this.refuseDependents(cmd.model, cmd.field);
         const to: FieldDef = { ...st.fd, ...cmd.to, hidden: false };
         if (cmd.to.type !== 'choice' && !cmd.to.choices) delete to.choices;
         if (cmd.to.type !== 'reference' && !cmd.to.ref) delete to.ref;
+        if (st.fd.calculated) {
+          const d = this.clone();
+          d.models[cmd.model].fields[cmd.field] = shown(to);
+          this.assertValid(d);
+          return change(
+            `change ${cmd.model}.${cmd.field} ${st.fd.type} -> ${to.type}`,
+            d,
+            {
+              preview: {
+                model: cmd.model,
+                field: cmd.field,
+                from: st.fd.type,
+                to: to.type,
+                valuesArchived: 0,
+                note: 'The generated column is replaced; its values are derived.',
+              },
+              steps: [
+                {
+                  op: 'calculation',
+                  table: st.table,
+                  column: st.column,
+                  from: st.fd,
+                  to,
+                },
+              ],
+              converting: new Set([`${cmd.model}.${cmd.field}`]),
+              affectedMethods: this.methodsMentioning(cmd.field),
+            },
+          );
+        }
         const pv = await this.callApp<{
           rows: number;
           withValue: number;
@@ -809,6 +1104,52 @@ export class AppHost extends EventEmitter {
     }
   }
 
+  private async calculationStep(
+    table: string,
+    field: string,
+    to: FieldDef,
+    previous?: FieldDef,
+  ): Promise<Extract<Step, { op: 'calculation' }>> {
+    const info = await this.callApp<{
+      type: string;
+      generated: boolean;
+    } | null>('columnInfo', table, snake(field));
+    if (info && storageFamily(info.type) !== storageFamily(sqlType(to.type)))
+      throw new EngineError(
+        'existing column has a different storage family; change its type explicitly',
+      );
+    const family = info ? storageFamily(info.type) : '';
+    const from: FieldDef | undefined =
+      info && !info.generated
+        ? (previous ?? {
+            type:
+              family === 'integer'
+                ? 'integer'
+                : family === 'real'
+                  ? 'number'
+                  : family === 'date'
+                    ? 'date'
+                    : 'text',
+          })
+        : undefined;
+    return {
+      op: 'calculation',
+      table,
+      column: snake(field),
+      ...(from ? { from } : {}),
+      to,
+    };
+  }
+
+  private refuseDependents(model: string, field: string) {
+    const deps = fieldDependents(this.def, model, field);
+    if (deps.length)
+      throw new EngineError(
+        `${model}.${field} is used by: ${deps.join(', ')}`,
+        'refused',
+      );
+  }
+
   private assertValid(d: AppDefinition) {
     const errs = validate(d);
     if (errs.length) throw new EngineError(errs.join('\n'));
@@ -857,7 +1198,7 @@ export class AppHost extends EventEmitter {
         ...preview,
         fields,
         replaced: fields.reduce((n, f) => n + f.rows, 0),
-        note: 'Going back restores the original value of every row in these fields. Values written since the type change are replaced.',
+        note: 'Undo restores archived values in the listed fields, removes command-created records and recreates records removed by a merge. Data-command undo refuses later edits to those fields, deleted rows and reused ids; other fields keep later edits. Restoring a cleared calculation refuses later edits to its writable values. Type conversions can replace newer values in the converted field.',
       };
     }
     return {
@@ -880,12 +1221,13 @@ export class AppHost extends EventEmitter {
           migration,
           () => this.store.setCurrent(parent.version),
         );
-        const summary = `undo: ${rec.summary}`;
+        const summary = `undo: ${rec.summary}${swapped.skipped ? `; skipped ${swapped.skipped} deleted referring records` : ''}`;
         this.emit('changed', { version: parent.version, summary });
         return {
           version: parent.version,
           summary,
           undid: rec.summary,
+          ...(swapped.skipped ? { skipped: swapped.skipped } : {}),
           statements: swapped.statements,
           snapshot: swapped.snapshot,
           appRestartMs: swapped.swapMs,
@@ -958,7 +1300,7 @@ export class AppHost extends EventEmitter {
         ...preview,
         fields,
         replaced: fields.reduce((n, f) => n + f.rows, 0),
-        note: 'Going back restores the original value of every row in these fields. Values written since the type change are replaced.',
+        note: 'Undo restores archived values in the listed fields, removes command-created records and recreates records removed by a merge. Data-command undo refuses later edits to those fields, deleted rows and reused ids; other fields keep later edits. Restoring a cleared calculation refuses later edits to its writable values. Type conversions can replace newer values in the converted field.',
       };
     }
     const summary = `undo ${undone.length} change${undone.length === 1 ? '' : 's'} back to version ${target}`;
@@ -968,6 +1310,7 @@ export class AppHost extends EventEmitter {
         const statements: string[] = [];
         let snapshot: string | null = null;
         let appRestartMs = 0;
+        let skipped = 0;
         for (const [i, r] of undone.entries()) {
           try {
             const step = await (await this.analyseUndo(r.version)).apply('');
@@ -975,6 +1318,7 @@ export class AppHost extends EventEmitter {
             statements.push(...c.statements);
             snapshot = c.snapshot ?? snapshot;
             appRestartMs += c.appRestartMs;
+            skipped += c.skipped ?? 0;
           } catch (e) {
             const code = e instanceof EngineError ? e.code : 'migration_failed';
             throw new EngineError(
@@ -985,7 +1329,10 @@ export class AppHost extends EventEmitter {
         }
         return {
           version: target,
-          summary,
+          summary:
+            summary +
+            (skipped ? `; skipped ${skipped} deleted referring records` : ''),
+          ...(skipped ? { skipped } : {}),
           undid: undone.map((r) => r.summary).join('; '),
           statements,
           snapshot,
@@ -1095,6 +1442,22 @@ export class AppHost extends EventEmitter {
     if (this.version !== 0 || Object.keys(this.def.models).length)
       throw new EngineError('import needs an empty app', 'refused');
     const def = structuredClone(data.definition);
+    if (Object.keys(def.reports ?? {}).length) {
+      for (const report of Object.values(def.reports ?? {}))
+        report.spec = parseRuntimeReportSpec(report.spec);
+      // Plan against the imported registry, without touching app.db or creating tables.
+      const worker = new AppWorker(this.workerUrl, {
+        dataDir: this.dataDir,
+        def,
+        version: this.version,
+        validateOnly: true,
+      });
+      try {
+        await worker.ready;
+      } finally {
+        await worker.terminate();
+      }
+    }
     // The approval shows every method in full: what is approved is what runs.
     const methods: {
       model: string;
@@ -1341,6 +1704,7 @@ export class AppHost extends EventEmitter {
    */
   private async replay(dir: string, chain: DraftChain, numbers: number[]) {
     const boots: BootInfo[] = [];
+    const dataSteps: PublishDataStep[][] = [];
     const allSteps = chain.versions.flatMap((r) => r.migration?.steps ?? []);
     let archives = { values: 0, tables: 0 };
     const file = join(dir, 'final', 'app.db');
@@ -1351,7 +1715,53 @@ export class AppHost extends EventEmitter {
         throw new EngineError(
           `"${rec.summary}" from the draft is invalid: ${errs.join('; ')}`,
         );
-      const steps = rec.migration?.steps ?? [];
+      const steps = structuredClone(rec.migration?.steps ?? []);
+      const impacts: PublishDataStep[] = [];
+      if (
+        steps.some((step) =>
+          ['loadRecords', 'extractModel', 'mergeRecords'].includes(step.op),
+        )
+      ) {
+        const before = new AppWorker(this.workerUrl, {
+          dataDir: dir,
+          def: i ? chain.versions[i - 1].definition : chain.base.definition,
+          version: i ? numbers[i - 1] : chain.baseVersion,
+        });
+        try {
+          await before.ready;
+          for (const step of steps) {
+            if (step.op === 'loadRecords') {
+              const counts = await before.call<LoadPreview>(
+                'previewLoad',
+                step.command,
+              );
+              step.maxUpdates = counts.update;
+              impacts.push({
+                op: step.op,
+                model: step.command.model,
+                mode: step.command.mode,
+                counts: { ...counts },
+              });
+            } else if (
+              step.op === 'extractModel' ||
+              step.op === 'mergeRecords'
+            ) {
+              const counts = await before.call<ExtractPreview | MergePreview>(
+                step.op === 'extractModel' ? 'previewExtract' : 'previewMerge',
+                step.command,
+              );
+              impacts.push({
+                op: step.op,
+                model: step.command.model,
+                counts: { ...counts },
+              });
+            }
+          }
+        } finally {
+          await before.retire();
+        }
+      }
+      dataSteps.push(impacts);
       const w = new AppWorker(this.workerUrl, {
         dataDir: dir,
         def: rec.definition,
@@ -1379,7 +1789,15 @@ export class AppHost extends EventEmitter {
       }
       await w.retire();
     }
-    return { boots, archives, file };
+    return { boots, archives, file, dataSteps };
+  }
+
+  private replayDigest(chain: string, dataSteps: PublishDataStep[][]) {
+    return dataSteps.some((steps) => steps.length)
+      ? createHash('sha256')
+          .update(canonical({ chain, dataSteps }))
+          .digest('hex')
+      : chain;
   }
 
   /**
@@ -1406,7 +1824,7 @@ export class AppHost extends EventEmitter {
       const final =
         ctx.chain.versions[ctx.chain.versions.length - 1].definition;
       return {
-        digest: ctx.digest,
+        digest: this.replayDigest(ctx.digest, r.dataSteps),
         risky: true,
         fromVersion: ctx.at,
         toVersion: ctx.numbers[ctx.numbers.length - 1],
@@ -1417,6 +1835,7 @@ export class AppHost extends EventEmitter {
           summary: rec.summary,
           steps: rec.migration?.steps ?? [],
           statements: r.boots[i].statements,
+          dataSteps: r.dataSteps[i],
         })),
         definition: diffDefinitions(ctx.from, final),
         archives: r.archives,
@@ -1471,7 +1890,14 @@ export class AppHost extends EventEmitter {
     opts: PublishOptions,
   ): Promise<PublishResult> {
     const { chain, digest } = await this.publishInputs(draft);
-    if (digest !== opts.expect)
+    if (
+      !chain.versions.some((rec) =>
+        rec.migration?.steps.some((step) =>
+          ['loadRecords', 'extractModel', 'mergeRecords'].includes(step.op),
+        ),
+      ) &&
+      digest !== opts.expect
+    )
       throw new EngineError(
         'the draft is not what was reviewed (it changed since the preview); review it again',
         'refused',
@@ -1500,6 +1926,11 @@ export class AppHost extends EventEmitter {
       await this.callApp('copyTo', join(dir, 'app.db'));
       await stage('copied');
       const r = await this.replay(dir, chain, numbers);
+      if (this.replayDigest(digest, r.dataSteps) !== opts.expect)
+        throw new EngineError(
+          'the draft or live data counts changed since review; review it again',
+          'refused',
+        );
       archives = r.archives;
       await stage('rehearsed');
       snapshot = join(
@@ -1610,6 +2041,54 @@ export class AppHost extends EventEmitter {
         'migration_failed',
       );
     }
+  }
+
+  /** Bounded read worker: a timeout never terminates the live app worker. */
+  runReport(
+    input: string | RuntimeReportSpec,
+    options: ReportOptions = {},
+  ): Promise<AppReportResult> {
+    const timeoutMs = options.timeoutMs ?? 5000;
+    const maxRows = options.maxRows ?? 1000;
+    if (
+      !Number.isInteger(timeoutMs) ||
+      timeoutMs < 1 ||
+      timeoutMs > 10000 ||
+      !Number.isInteger(maxRows) ||
+      maxRows < 1 ||
+      maxRows > 1000
+    )
+      return Promise.reject(
+        new EngineError('report limits: 1-1000 rows and 1-10000 ms'),
+      );
+    return this.run(async () => {
+      await this.drainInflight();
+      const worker = new AppWorker(this.workerUrl, {
+        dataDir: this.dataDir,
+        def: this.def,
+        version: this.version,
+        readOnly: true,
+      });
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await worker.ready;
+        return await Promise.race([
+          worker.call<AppReportResult>('runReport', input, { maxRows }),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () =>
+                reject(
+                  new EngineError('report time limit exceeded', 'refused'),
+                ),
+              timeoutMs,
+            );
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+        await worker.terminate();
+      }
+    });
   }
 
   list(model: string, limit = 200) {

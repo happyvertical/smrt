@@ -115,7 +115,7 @@ export function initialValues(
 ): FormValues {
   const out: FormValues = {};
   for (const [name, def] of Object.entries(fields)) {
-    if (def.hidden) continue;
+    if (def.hidden || def.calculated) continue;
     out[name] = toFormValue(def, record ? record[name] : undefined);
   }
   return out;
@@ -193,7 +193,7 @@ export function serializeForm(
   const data: Record<string, unknown> = {};
   const errors: FormErrors = {};
   for (const [name, def] of Object.entries(fields)) {
-    if (def.hidden || (keep && !keep.has(name))) continue;
+    if (def.hidden || def.calculated || (keep && !keep.has(name))) continue;
     const r = coerceInput(def, values[name]);
     if (r.ok) data[name] = r.value;
     else errors[name] = r.error;

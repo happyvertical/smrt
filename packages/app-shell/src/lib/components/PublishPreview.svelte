@@ -1,10 +1,11 @@
 <script lang="ts">
 import { Badge, Card, Grid, Stack } from '@happyvertical/smrt-ui';
-import { publishGroups } from '$lib/ui/publish';
+import { publishCalculations, publishGroups } from '$lib/ui/publish';
 import type { PublishPreview } from '$lib/ui/types';
 
 let { preview }: { preview: PublishPreview } = $props();
 const groups = $derived(publishGroups(preview));
+const calculations = $derived(publishCalculations(preview));
 </script>
 
 <Stack gap="lg">
@@ -25,7 +26,7 @@ const groups = $derived(publishGroups(preview));
     </section>
   {/each}
 </Grid>
-<p>Counts can change until you publish as live records change. Records added in the draft are thrown away.</p>
+<p>Data commands replay against current live records. If reviewed counts change, review a fresh preview before publishing. Direct record edits made in the draft are discarded; records loaded by a draft command are replayed.</p>
 <h2>Changes to publish ({preview.versions.length})</h2>
 <ol>
   {#each preview.versions as version (version.version)}
@@ -34,6 +35,10 @@ const groups = $derived(publishGroups(preview));
     </li>
   {/each}
 </ol>
+{#if calculations.length}
+<h2>Calculated field changes</h2>
+<ul>{#each calculations as line (line)}<li>{line}</li>{/each}</ul>
+{/if}
 <h2>All method code ({preview.methods.length})</h2>
 {#each preview.methods as method (method.model + '.' + method.name)}
   <section aria-label="{method.model}.{method.name}">

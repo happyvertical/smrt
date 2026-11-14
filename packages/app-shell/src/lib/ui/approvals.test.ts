@@ -141,3 +141,59 @@ describe('approval descriptions', () => {
     expect(failureText(view({ status: 'approved' }))).toBeNull();
   });
 });
+
+for (const [type, preview, expected] of [
+  [
+    'mergeRecords',
+    {
+      modelLabel: 'Customers',
+      keepLabel: 'Acme',
+      removed: 2,
+      references: { Order: 3 },
+      referenceLabels: { Order: 'Orders' },
+    },
+    ['2 Customers records', 'Acme', '3 references in Orders'],
+  ],
+  [
+    'extractModel',
+    {
+      modelLabel: 'Orders',
+      fieldLabel: 'Customer name',
+      intoLabel: 'Customers',
+      rows: 4,
+      create: 2,
+      matched: 1,
+      distinct: 3,
+      folded: 1,
+    },
+    [
+      'Customer name',
+      '4 records',
+      '2 linked records created',
+      '1 existing records matched',
+    ],
+  ],
+  [
+    'loadRecords',
+    { modelLabel: 'Orders', insert: 1, update: 2, unchanged: 3, rejected: 0 },
+    [
+      'Orders',
+      '1 inserted, 2 updated, 3 unchanged, 0 rejected',
+      'overwrite stored values',
+    ],
+  ],
+  [
+    'setCalculation',
+    { modelLabel: 'Orders', fieldLabel: 'Invoice total', rows: 4 },
+    ['Invoice total', '4 records', 'replaces ordinary stored values'],
+  ],
+] as const) {
+  it(`explains ${type} using reviewed counts and human labels`, () => {
+    const description = describeApproval(
+      view({ action: { kind: 'command', command: { type } }, preview }),
+    );
+    for (const text of expected)
+      expect(description.lines.join(' ')).toContain(text);
+    expect(description.lines.join(' ')).toContain('Undo restores');
+  });
+}

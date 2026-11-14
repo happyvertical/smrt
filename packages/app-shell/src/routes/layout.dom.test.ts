@@ -11,6 +11,7 @@ import {
   draftInfo,
 } from '../test/draft-fixtures.ts';
 import { layoutState } from '../test/layout-state.svelte.ts';
+import { report } from '../test/report-fixtures.ts';
 import Layout from './+layout.svelte';
 
 const navigation = vi.hoisted(() => ({
@@ -543,6 +544,36 @@ describe('draft controls in the content column', () => {
     );
   });
 
+  it('keeps review unreachable throughout a delayed draft start and enables it after readiness', async () => {
+    const state = layoutState(data());
+    const fetcher = vi.mocked(fetch);
+    const original = fetcher.getMockImplementation();
+    let finish!: (response: Response) => void;
+    const started = new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+    fetcher.mockImplementation(async (path, init) => {
+      if (String(path).startsWith('/api/shell/draft?')) return started;
+      return original!(path, init);
+    });
+    navigation.invalidateAll.mockImplementation(async () => {
+      state.description = draftDescription();
+    });
+    await render(state);
+    button('Start draft')?.click();
+    await tick();
+    expect(button('Start draft')?.disabled).toBe(true);
+    expect(q('a[href="/draft/review"]')).toBeNull();
+    // A layout refresh may learn about the draft before the start request resolves.
+    state.description = draftDescription();
+    await tick();
+    expect(q('a[href="/draft/review"]')).toBeNull();
+    finish(new Response(JSON.stringify(draftInfo)));
+    await vi.waitFor(() => expect(q('a[href="/draft/review"]')).toBeTruthy());
+    expect(container.textContent).not.toContain('no draft open');
+    expect(q('[role="alert"]')).toBeNull();
+  });
+
   it('shows the switch, count, actions, warning, sidebar new marker and chat badge', async () => {
     await render(draftData());
     expect(button('Draft')?.getAttribute('aria-pressed')).toBe('true');
@@ -825,4 +856,21 @@ it('starts the phone drawer closed despite a remembered expanded desktop sidebar
   expect(JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? '{}').panels.left).toBe(
     'expanded',
   );
+});
+
+it('puts reports below models and marks only draft-only reports new', async () => {
+  const live = { ...draftDescription('live'), reports: { sales: report } };
+  const draft = {
+    ...draftDescription('draft'),
+    reports: { sales: report, newReport: { ...report, label: 'New answer' } },
+  };
+  await render(data({ description: draft, liveDescription: live }));
+  const group = container.querySelector('a[href="/reports"]');
+  expect(group?.textContent).toContain('Reports');
+  expect(
+    container.querySelector('a[href="/reports/newReport"]')?.textContent,
+  ).toContain('new');
+  expect(
+    container.querySelector('a[href="/reports/sales"]')?.textContent,
+  ).not.toContain('new');
 });

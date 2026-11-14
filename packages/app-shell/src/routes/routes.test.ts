@@ -383,9 +383,14 @@ describe('owner flows', () => {
     const stored = (await listApprovalViews({ status: 'pending' })).find(
       (a) => a.id === body.approvalId,
     );
-    expect(stored?.action).toEqual({
+    expect(stored?.action).toMatchObject({
       kind: 'command',
       command: { type: 'undo', version },
+      reviewedPreview: {
+        version,
+        replaced: 1,
+        fields: [{ model: 'Gauge', field: 'reading', rows: 1 }],
+      },
     });
     const decided = await runAs(h.owner, async () =>
       (

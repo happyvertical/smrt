@@ -6,7 +6,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { OwnerApprovalError } from '@happyvertical/smrt-app-runtime';
-import type { Command, Plan } from '../../engine/index.ts';
+import {
+  ApprovalRequiredError,
+  type Command,
+  type Plan,
+} from '../../engine/index.ts';
 import { type Approval, ApprovalCollection } from '../objects/Approval.ts';
 import { shellApprovalAuthority } from './approval-store.ts';
 import { discardNow, publishApproved } from './drafts.ts';
@@ -16,7 +20,11 @@ import { publicChangeResult } from './results.ts';
 
 /** What an approval runs once the owner says yes. */
 export type ApprovalAction =
-  | { kind: 'command'; command: Command }
+  | {
+      kind: 'command';
+      command: Command;
+      reviewedPreview?: Record<string, unknown>;
+    }
   | { kind: 'tool'; name: string; args: Record<string, unknown> }
   | { kind: 'rest'; method: string; url: string; body?: string }
   | { kind: 'record-delete'; model: string; id: string }
@@ -311,6 +319,9 @@ export async function decideApproval(
           await host.execute(action.command, {
             author: row.requestedBy || decidedBy,
             approved: true,
+            reviewedPreview:
+              action.reviewedPreview ??
+              (parseJson(row.preview) as Record<string, unknown>),
           }),
         );
       else if (action.kind === 'tool')
@@ -328,14 +339,31 @@ export async function decideApproval(
       // a non-2xx REST response) instead of throwing: they did not apply.
       if (error === undefined) error = returnedFailure(action.kind, result);
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      if (e instanceof ApprovalRequiredError && action.kind === 'command') {
+        const pending = await requestApproval(
+          { ...action, reviewedPreview: e.plan.preview },
+          {
+            ...e.plan,
+            preview: {
+              ...(parseJson(row.preview) as Record<string, unknown>),
+              ...e.plan.preview,
+            },
+          },
+          row.requestedBy || decidedBy,
+        );
+        result = pending;
+        error =
+          'The affected record counts increased. Review the new approval before applying this change.';
+      } else error = e instanceof Error ? e.message : String(e);
     }
     row.status = error === undefined ? 'approved' : 'failed';
     await authority.complete(
       tenantId,
       id,
       error === undefined,
-      error === undefined ? result : { error },
+      error === undefined
+        ? result
+        : { error, ...(result ? { pending: result } : {}) },
     );
     publish({
       type: 'approval',
