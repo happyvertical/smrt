@@ -272,6 +272,37 @@ describe('keychain-wrapped vault key store', () => {
     );
   });
 
+  it('fails closed with fixed text when the lock cannot be used, writing no key', async () => {
+    writeFileSync(join(root, 'not-a-directory'), 'x');
+    const broken: Array<string | (() => string)> = [
+      () => {
+        throw Object.assign(new Error('/secret/home/path'), {
+          code: 'ERR_SYSTEM_ERROR',
+        });
+      },
+      join(root, 'not-a-directory'),
+      join(root, 'not-a-directory', 'child'),
+    ];
+    for (const lockDirectory of broken) {
+      const fake = fakeKeychain();
+      const keys = createKeychainVaultKeyStore({
+        productId: 'lolaus',
+        directory: sealed,
+        fallbackDirectory: plain,
+        keychain: fake.keychain,
+        lockDirectory,
+      });
+      const error = await keys.set('item', new Uint8Array([1])).then(
+        () => null,
+        (e: Error) => e,
+      );
+      expect(error?.message).toBe('The vault key creation lock is unavailable');
+      expect(fake.calls.set).toBe(0);
+      expect(fake.items.size).toBe(0);
+      expect(() => readdirSync(sealed)).toThrow();
+    }
+  });
+
   it('reclaims a lock left by a dead process', async () => {
     mkdirSync(join(root, 'locks'), { mode: 0o700 });
     writeFileSync(join(root, 'locks', 'lolaus.lock'), '{"pid":2147483646}\n', {

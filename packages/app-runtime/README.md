@@ -1454,6 +1454,9 @@ errors are fixed text. `custody()` reports `os-keychain` or `file-fallback`.
   the home taken from the OS account record, never `HOME` or `TMPDIR`), taken around read, create and confirm, with
   the key re-read once the lock is held. A dead owner's lock is reclaimed. It
   covers processes of one OS user on one machine, not two machines or users.
+  If the lock directory cannot be derived or used (no account record, an
+  unwritable or non-directory location), creation fails closed with fixed text
+  naming no path; it never creates the key without the lock.
 
 **File store** (`createFileVaultKeyStore(dir)`), for headless and development
 installs:

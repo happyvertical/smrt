@@ -528,11 +528,12 @@ export interface KeychainVaultKeyStoreOptions {
    * (`<account home>/.smrt/locks`), outside any data root and independent of
    * the environment, so every root of one product shares it.
    */
-  lockDirectory?: string;
+  lockDirectory?: string | (() => string);
 }
 
 const LOCK_WAIT_MS = 30_000;
 const LOCK_POLL_MS = 25;
+const LOCK_UNAVAILABLE = 'The vault key creation lock is unavailable';
 
 /**
  * The product lock directory: `<account home>/.smrt/locks`. The home comes
@@ -556,19 +557,31 @@ export function defaultKeychainLockDirectory(
  * removed by hand (acquisition then fails with fixed text after 30 seconds).
  */
 async function withProductLock<T>(
-  directory: string,
+  directoryOrResolver: string | (() => string),
   productId: string,
   callback: () => Promise<T>,
 ): Promise<T> {
-  await mkdir(directory, { recursive: true, mode: 0o700 });
-  const details = await lstat(directory);
-  const uid = process.getuid?.();
-  if (
-    details.isSymbolicLink() ||
-    !details.isDirectory() ||
-    (uid !== undefined && (details.uid !== uid || (details.mode & 0o077) !== 0))
-  ) {
-    throw failure('The vault key lock directory lacks owner-only custody');
+  let directory: string;
+  try {
+    directory =
+      typeof directoryOrResolver === 'function'
+        ? directoryOrResolver()
+        : directoryOrResolver;
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const details = await lstat(directory);
+    const uid = process.getuid?.();
+    if (
+      details.isSymbolicLink() ||
+      !details.isDirectory() ||
+      (uid !== undefined &&
+        (details.uid !== uid || (details.mode & 0o077) !== 0))
+    ) {
+      throw new Error('custody');
+    }
+  } catch {
+    // Fail closed with fixed text: never create the key without the lock, and
+    // never surface a path or system error.
+    throw failure(LOCK_UNAVAILABLE);
   }
   const path = join(directory, `${productId}.lock`);
   const deadline = Date.now() + LOCK_WAIT_MS;
@@ -580,12 +593,12 @@ async function withProductLock<T>(
       } catch (error) {
         await handle.close();
         await rm(path, { force: true });
-        throw error;
+        throw failure(LOCK_UNAVAILABLE);
       }
       await handle.close();
       break;
     } catch (error) {
-      if (errorCode(error) !== 'EEXIST') throw error;
+      if (errorCode(error) !== 'EEXIST') throw failure(LOCK_UNAVAILABLE);
       let observed: string | null = null;
       try {
         observed = await readFile(path, 'utf8');
@@ -712,7 +725,7 @@ export function createKeychainVaultKeyStore(
     // this product may have created the key since the read above, and a second
     // writer would overwrite it and orphan whatever the first already sealed.
     return withProductLock(
-      options.lockDirectory ?? defaultKeychainLockDirectory(),
+      options.lockDirectory ?? (() => defaultKeychainLockDirectory()),
       productId,
       async (): Promise<Resolved> => {
         let current: Uint8Array | null;
