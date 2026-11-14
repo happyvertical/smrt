@@ -173,11 +173,15 @@ export function assertRequiredNotLoosened(
   );
 }
 
-/** Whether a field is calculated by the database (`generated`, #4915). */
+/**
+ * Whether a field is calculated by the database (`generated`, #4915). Only an
+ * expression counts: `_meta.generated: true` is the older marker for a field
+ * the framework added (the tenant column of `tenantScoped`).
+ */
 function isCalculated(field: InheritableField): boolean {
   const bag = field as { generated?: unknown };
   const value = bag.generated ?? field._meta?.generated;
-  return value !== undefined && value !== null;
+  return typeof value === 'object' && value !== null;
 }
 
 /**
