@@ -5,10 +5,10 @@ description: "Consumer bundle reachability and size regression gate for SMRT pac
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-08T15:27:30Z"
+  at: "2026-11-14T17:28:46Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:cc58cc35acc88af5a059ce02387a119b9ecf9cce80164646fc17a50f13756766"
+source_revision: "sha256:0c86a24189f58a11914207ffc2b2b28da25346839f5b075abea7bb54cf4e561f"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/bundle-gate/package.json"
@@ -63,6 +63,7 @@ sources:
 - [smrt-messages](/components/smrt-messages.md)
 - [smrt-personas](/components/smrt-personas.md)
 - [smrt-places](/components/smrt-places.md)
+- [smrt-planner](/components/smrt-planner.md)
 - [smrt-playbooks](/components/smrt-playbooks.md)
 - [smrt-preferences](/components/smrt-preferences.md)
 - [smrt-products](/components/smrt-products.md)
