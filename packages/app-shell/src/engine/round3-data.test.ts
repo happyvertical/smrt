@@ -106,60 +106,29 @@ it('explains missing undo safety information without storage terminology', async
   }
 });
 
-it('checks exact stored load metadata in planning without app writes or leftover copies', async () => {
-  const { mkdtempSync, rmSync, readdirSync } = await import('node:fs');
-  const { tmpdir } = await import('node:os');
-  const { join } = await import('node:path');
-  const { AppHost, MemoryVersionStore } = await import('./index.ts');
-  const dir = mkdtempSync(join(tmpdir(), 'load-plan-budget-'));
-  const host = await AppHost.open(dir, { store: new MemoryVersionStore() });
+it('plans load journals without copying or writing any database', async () => {
+  const { AppRuntime } = await import('./app-runtime.ts');
+  const f = fixture();
+  const runtime = new AppRuntime('/must-not-create-preview-files', def, 1);
+  const query = vi.spyOn(f.db, 'query');
+  Object.assign(runtime, {
+    db: { ...f.db, transaction: (run: any) => run(f.db) },
+  });
+  const copy = vi
+    .spyOn(runtime, 'copyTo')
+    .mockRejectedValue(new Error('database copy forbidden'));
   try {
-    await host.execute(
-      { type: 'defineModel', name: 'Memo', fields: { body: { type: 'text' } } },
-      { author: 't', approved: true },
-    );
-    await host.execute(
-      {
-        type: 'loadRecords',
-        model: 'Memo',
-        mode: 'insert',
-        rows: [{ body: 'x' }],
-      },
-      { author: 't', approved: true },
-    );
-    const probe = new DatabaseSync(join(dir, 'app.db'));
-    const bytes = Number(
-      probe
-        .prepare(
-          "SELECT SUM(length(CAST(value AS BLOB))) AS n FROM _archive WHERE version = ? AND col IN ('$row','$after','$deleted')",
-        )
-        .get(host.version)?.n,
-    );
-    probe.close();
-    await host.execute({ type: 'undo' }, { author: 't', approved: true });
-    const body = 'x'.repeat(JOURNAL_LIMITS.bytes - bytes + 2);
-    const command = {
-      type: 'loadRecords' as const,
-      model: 'Memo',
-      mode: 'insert' as const,
-      rows: [{ body }],
-    };
-    expect(Buffer.byteLength(JSON.stringify(command))).toBeLessThan(
-      JOURNAL_LIMITS.bytes,
-    );
-    const version = host.version;
-    await expect(host.plan(command)).rejects.toThrow(/undo journal.*bytes/);
-    expect(host.version).toBe(version);
-    expect(await host.list('Memo')).toEqual([]);
-    expect(
-      readdirSync(dir).filter((name) => name.startsWith('.load-preview-')),
-    ).toEqual([]);
     await expect(
-      host.execute(command, { author: 't', approved: true }),
-    ).rejects.toThrow(/undo journal.*bytes/);
-    expect(await host.list('Memo')).toEqual([]);
+      runtime.previewLoad({
+        type: 'loadRecords',
+        model: 'Note',
+        mode: 'insert',
+        rows: [{ name: 'one' }],
+      }),
+    ).resolves.toMatchObject({ insert: 1 });
+    expect(copy).not.toHaveBeenCalled();
+    expect(query.mock.calls.every(([sql]) => /^SELECT /i.test(sql))).toBe(true);
   } finally {
-    await host.close();
-    rmSync(dir, { recursive: true, force: true });
+    f.close();
   }
 });

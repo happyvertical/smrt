@@ -224,9 +224,21 @@ Preparation uses the record coercer, then collection writes use bounded
 100-record SDK savepoint scopes inside the one migration transaction. Releasing
 a savepoint never commits the outer transaction; a later-batch failure rolls
 back all earlier batches and archives. Each scope uses core
-`withCallerOwnedDatabaseTransaction` so record hooks and validation stay intact. Load planning runs the same collection writes and final stored-journal bound check on a disposable VACUUM copy, so oversized final postimages are rejected before approval without changing app.db.
-Original raw rows (including nulls and timestamps) and
-inserted ids and command-owned column postimages are journaled in `_archive` for undo. Undo restores only the columns changed by the command, preserving later edits to other fields. Changed command-owned columns, user-deleted rows, edited command-created records, and reused removed ids refuse undo transactionally, even with approval. Older row journals without postimages refuse rather than overwrite data. Every load has a
+`withCallerOwnedDatabaseTransaction` so record hooks and validation stay intact.
+Load planning reads affected originals and `pragma_table_xinfo` metadata, without
+copying a database or writing records, archives, files or SDK defaults. Preparation
+and apply share the exact JSON serializer and UTF-8 byte arithmetic: each load
+postimage is `{ $load: 1, hashes: { column: SHA256-base64 } }`. Digests have fixed
+44-byte values even when SDK slugs, defaults, timestamps, save hooks or generated
+columns have unpredictable contents. Inserts protect every stored column; updates
+exclude generated columns and restore only columns whose before/after digests
+differ. Command inputs retain their independent 8 MiB bound. Apply verifies the
+persisted journal byte total agrees with preparation, inside the same transaction.
+Planning still builds the existing upsert and reference lookup maps from their
+model rows; its read cost is proportional to those models, not the entire database.
+Original raw rows (including nulls and timestamps), inserted ids and the versioned
+postimages are journaled in `_archive` for undo. Legacy full-value postimages remain
+readable. Undo restores only the columns changed by the command, preserving later edits to other fields. Changed command-owned columns, user-deleted rows, edited command-created records, and reused removed ids refuse undo transactionally, even with approval. Older row journals without postimages refuse rather than overwrite data. Every load has a
 pre-migration snapshot and stable per-command ids, so draft publish replays the
 load against current live keys and lookup data rather than copying draft rows.
 Undo of a data migration requires approval; its preview names affected fields, removals and recreations.

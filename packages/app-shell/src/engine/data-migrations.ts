@@ -308,20 +308,17 @@ export async function prepareLoad(
       ...(before ? { id: String(before.id), before } : {}),
     });
   }
-  // Budget the original rows and the command-owned postimages before writes.
-  // Insert postimages also contain SDK metadata, so apply checks stored bytes too.
+  // Only schema metadata and affected row originals enter the exact journal budget.
+  // Generated SDK values are represented by fixed-size hashes, never rehearsed.
+  const columns = (
+    await db.query('SELECT name, hidden FROM pragma_table_xinfo(?)', [
+      tableFor(cmd.model, def.models[cmd.model]),
+    ])
+  ).rows as { name: string; hidden: number }[];
   let journalBytes = 0;
   for (const write of writes) {
-    const after = Object.fromEntries(
-      Object.entries(write.data)
-        .map(([field, value]) => [snake(field), stored(value)])
-        .filter(
-          ([column, value]) =>
-            !write.before || !same(value, write.before[String(column)]),
-        ),
-    );
     journalBytes += Buffer.byteLength(JSON.stringify(write.before ?? null));
-    journalBytes += Buffer.byteLength(JSON.stringify(after));
+    journalBytes += Buffer.byteLength(loadPostimage(write, columns));
   }
   if (
     writes.length > JOURNAL_LIMITS.rows ||
@@ -330,7 +327,49 @@ export async function prepareLoad(
     throw new AppError(
       `undo journal accepts at most ${JOURNAL_LIMITS.rows} rows and ${JOURNAL_LIMITS.bytes} bytes`,
     );
-  return { preview, writes };
+  return { preview, writes, columns, journalBytes };
+}
+
+// SDK-generated defaults, timestamps, slugs and hooks can change any stored
+// value. Fixed-size digests make the stored postimage's size exact without
+// predicting those values or running save hooks during a read-only preview.
+interface LoadPostimage {
+  $load: 1;
+  hashes: Record<string, string>;
+}
+const valueHash = (value: unknown) =>
+  createHash('sha256')
+    .update(JSON.stringify(value ?? null))
+    .digest('base64');
+function loadPostimage(
+  write: { before?: Row },
+  columns: { name: string; hidden: number }[],
+  after?: Row,
+): string {
+  const hashes: Record<string, string> = {};
+  for (const { name, hidden } of columns) {
+    if (write.before && hidden > 1) continue;
+    hashes[name] = after ? valueHash(after[name]) : '0'.repeat(44);
+  }
+  return JSON.stringify({ $load: 1, hashes } satisfies LoadPostimage);
+}
+function isLoadPostimage(after: Row): after is Row & LoadPostimage {
+  return after.$load === 1 && !!after.hashes;
+}
+function ownedColumns(after: Row, before: Row | null): string[] {
+  if (!isLoadPostimage(after)) return Object.keys(after);
+  return Object.keys(after.hashes).filter(
+    (column) => !before || after.hashes[column] !== valueHash(before[column]),
+  );
+}
+function matchesPostimage(after: Row, row: Row, before: Row | null) {
+  return ownedColumns(after, before).every(
+    (column) =>
+      column === 'updated_at' ||
+      (isLoadPostimage(after)
+        ? valueHash(row[column]) === after.hashes[column]
+        : same(row[column], after[column])),
+  );
 }
 
 // A single row journal entry per version/table/id, including NULL originals.
@@ -370,7 +409,11 @@ export async function applyLoad(
   defaults: Row = {},
   maxUpdates?: number,
 ) {
-  const { preview, writes } = await prepareLoad(def, db, cmd);
+  const { preview, writes, columns, journalBytes } = await prepareLoad(
+    def,
+    db,
+    cmd,
+  );
   if (maxUpdates !== undefined && preview.update > maxUpdates)
     throw new AppError(
       `loadRecords preview became stale: ${preview.update} updates exceed the ${maxUpdates} reviewed updates; plan again for approval`,
@@ -430,11 +473,6 @@ export async function applyLoad(
         }
         const batchWrites = prepared.slice(offset, offset + 100);
         const byId = new Map(batchWrites.map((write) => [write.id, write]));
-        const generated = new Set(
-          Object.entries(fieldsOf(def, cmd.model))
-            .filter(([, fd]) => fd.calculated)
-            .map(([field]) => snake(field)),
-        );
         const rows = (
           await batch.query(
             `SELECT * FROM ${quote(tableFor(cmd.model, def.models[cmd.model]))} WHERE id IN (${batchWrites.map(() => '?').join(',')})`,
@@ -447,21 +485,13 @@ export async function applyLoad(
             const write = byId.get(String(after.id));
             if (!write)
               throw new AppError('loaded row missing from prepared batch');
-            const owned = write.before
-              ? Object.fromEntries(
-                  Object.entries(after).filter(
-                    ([column, value]) =>
-                      !same(value, write.before?.[column]) &&
-                      !generated.has(column),
-                  ),
-                )
-              : after;
+            const value = loadPostimage(write, columns, after);
             return {
               version,
               tbl: cmd.model,
               col: '$after',
               record_id: write.id,
-              value: JSON.stringify(owned),
+              value,
               created_at: stamp,
             };
           }),
@@ -470,6 +500,15 @@ export async function applyLoad(
     );
   }
   await assertStoredJournalBounds(db, version);
+  // The preparation arithmetic and persisted representation must agree exactly.
+  const actual = (
+    await db.query(
+      "SELECT SUM(length(CAST(value AS BLOB))) AS bytes FROM _archive WHERE version = ? AND col IN ('$row', '$after')",
+      [version],
+    )
+  ).rows[0];
+  if (Number(actual.bytes ?? 0) !== journalBytes)
+    throw new AppError('load journal size changed during persistence');
   return preview;
 }
 
@@ -601,9 +640,10 @@ export async function undoRows(
       continue;
     }
     if (
-      Object.entries(after).some(
-        ([column, value]) =>
-          column !== 'updated_at' && !same(row[column], value),
+      !matchesPostimage(
+        after,
+        row,
+        JSON.parse(String(entry.value)) as Row | null,
       )
     )
       conflict(
@@ -646,11 +686,14 @@ export async function undoRows(
     } else {
       const after = post.get(key) as Row;
       const row = current.get(model)?.get(String(entry.record_id)) as Row;
-      const columns = Object.keys(after).filter(
+      const columns = ownedColumns(after, before).filter(
         (c) =>
           c !== 'id' &&
           !generated.has(c) &&
-          (c !== 'updated_at' || same(row[c], after[c])),
+          (c !== 'updated_at' ||
+            (isLoadPostimage(after)
+              ? valueHash(row[c]) === after.hashes[c]
+              : same(row[c], after[c]))),
       );
       if (columns.length)
         await db.query(
