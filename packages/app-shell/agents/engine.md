@@ -223,6 +223,8 @@ inserted ids are journaled in `_archive` for exact undo. Every load has a
 pre-migration snapshot and stable per-command ids, so draft publish replays the
 load against current live keys and lookup data rather than copying draft rows.
 Undo of a data migration requires approval because it can replace newer data.
+Load undo refuses surviving references to its inserted rows (including hidden
+references), preserving all rows and the current version on refusal.
 
 ## Extracting a column (#4916)
 

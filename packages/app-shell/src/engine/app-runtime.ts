@@ -48,6 +48,7 @@ import {
 import { AppError } from './errors.ts';
 import {
   applyExtract,
+  assertCanUndoRows,
   type ExtractModelCommand,
   prepareExtract,
   undoExtract,
@@ -320,7 +321,10 @@ export class AppRuntime {
               ? { typeId: await this.personType(tx) }
               : {},
           );
-        else await undoRows(this.def, tx, m.version);
+        else {
+          await assertCanUndoRows(this.def, tx, m.version);
+          await undoRows(this.def, tx, m.version);
+        }
         done.push(`-- ${up ? 'load' : 'undo load'} records`);
         break;
       case 'calculation': {

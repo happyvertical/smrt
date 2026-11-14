@@ -7,6 +7,7 @@ import {
   AppHost,
   ApprovalRequiredError,
   type Command,
+  EngineError,
   MemoryVersionStore,
 } from './index.ts';
 
@@ -254,4 +255,46 @@ it('bounds total command bytes before sending oversized metadata to a worker', a
       },
     }),
   ).rejects.toThrow(/bytes/);
+});
+
+it.each([
+  'create',
+  'update',
+] as const)('refuses load undo atomically after a later reference %s, then succeeds once removed', async (operation) => {
+  const customers = await host.list('Customer');
+  const sale =
+    operation === 'update'
+      ? await host.create('Sale', { code: 'updated-reference' })
+      : undefined;
+  await run({
+    type: 'loadRecords',
+    model: 'Customer',
+    mode: 'insert',
+    rows: [{ name: 'Referenced' }, { name: 'Unreferenced' }],
+  });
+  const loaded = await host.list('Customer');
+  const customer = loaded.find((r) => r.name === 'Referenced');
+  const referring = sale
+    ? await host.update('Sale', String(sale.id), { customer: customer?.id })
+    : await host.create('Sale', {
+        code: 'created-reference',
+        customer: customer?.id,
+      });
+  const sales = raw();
+  const version = host.version;
+  await expect(
+    host.execute({ type: 'undo' }, { author: 't' }),
+  ).rejects.toBeInstanceOf(ApprovalRequiredError);
+  const failure = await run({ type: 'undo' }).catch((error) => error);
+  expect(failure).toBeInstanceOf(EngineError);
+  expect(failure).toMatchObject({ code: 'migration_failed' });
+  expect(failure.message).toMatch(
+    /Sale.customer still references a created Customer record/,
+  );
+  expect(host.version).toBe(version);
+  expect(await host.list('Customer')).toEqual(loaded);
+  expect(raw()).toEqual(sales);
+  await host.remove('Sale', String(referring.id));
+  await run({ type: 'undo' });
+  expect(await host.list('Customer')).toEqual(customers);
 });
