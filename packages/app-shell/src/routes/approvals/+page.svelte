@@ -2,7 +2,7 @@
 import { invalidate } from '$app/navigation';
 import ApprovalCard from '$lib/components/ApprovalCard.svelte';
 import { ApiError, decideApproval } from '$lib/ui/api';
-import { splitApprovals } from '$lib/ui/approvals';
+import { approvalHeading, splitApprovals } from '$lib/ui/approvals';
 import { DEPENDS } from '$lib/ui/events';
 import type { PageProps } from './$types';
 
@@ -79,7 +79,7 @@ async function decide(id: string, summary: string, approve: boolean) {
             {approval}
             busy={busyId === approval.id}
             message={messages[approval.id]}
-            ondecide={(approve) => decide(approval.id, approval.summary, approve)}
+            ondecide={(approve) => decide(approval.id, approvalHeading(approval), approve)}
           />
         {/each}
       </div>

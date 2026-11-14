@@ -1,5 +1,7 @@
 // The host's handle on one app runtime thread.
+
 import { Worker } from 'node:worker_threads';
+import { RuntimeReportError } from '@happyvertical/smrt-reports';
 import type { AppDefinition, Migration } from './definition.ts';
 import { EngineError, WorkerCrashedError } from './errors.ts';
 import type { BootInfo, WorkerOp, WorkerReply } from './worker-protocol.ts';
@@ -35,6 +37,8 @@ export class AppWorker {
       def: AppDefinition;
       version: number;
       migration?: Migration;
+      readOnly?: boolean;
+      validateOnly?: boolean;
     },
   ) {
     this.version = init.version;
@@ -50,13 +54,13 @@ export class AppWorker {
     this.ready = new Promise((resolve, reject) => {
       this.worker.once(
         'message',
-        (m: BootInfo & { ready: boolean; error?: string }) => {
+        (m: BootInfo & { ready: boolean; error?: string; user?: boolean }) => {
           if (m.ready) resolve(m);
           else
             reject(
               new EngineError(
                 m.error ?? 'the app did not start',
-                'migration_failed',
+                m.user ? 'refused' : 'migration_failed',
               ),
             );
           this.worker.on('message', (r: WorkerReply) => this.settle(r));
@@ -84,6 +88,14 @@ export class AppWorker {
     if (!p) return;
     this.pending.delete(r.id);
     if (r.ok) p.resolve(r.value);
+    else if (r.reportError)
+      p.reject(
+        new RuntimeReportError(
+          r.reportError.code,
+          r.reportError.path,
+          'Report could not run',
+        ),
+      );
     else p.reject(new AppCallError(r.error, r.user));
   }
 

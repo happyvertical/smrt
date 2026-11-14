@@ -8,7 +8,7 @@ owner's approval, and every change is versioned and can be undone.
 ```
 smrt-app-shell (SvelteKit + adapter-node, app-runtime local profile)
 ├── shell.db (the app-runtime database)  users, sessions, App, AppVersion, Approval
-├── src/engine                           AppHost: worker thread, migrations, sandbox
+├── src/engine                    Shared AppHost: worker thread, migrations, sandbox
 └── <data root>/user-app/                app.db, snapshots (plain files; the newest 20 `method-*` are kept, clean up prunes old migration ones)
 ```
 
@@ -92,7 +92,7 @@ The same names and parameters on both surfaces. A wrong-shaped argument is a
 | `undoTo` (`app_undoto`) | `version` |
 | `startDraft`, `previewPublish`, `publishDraft`, `discardDraft` | `name?`; none; `expect?`; none. See [Draft then publish](#draft-then-publish-the-shell). `?target=live\|draft` (REST) names the copy a builder operation acts on |
 
-A FieldDef is `{ type, label?, required?, choices?, ref? }`; `type` is one of
+A FieldDef is `{ type, label?, required?, choices?, ref?, calculated? }`; `type` is one of
 text, number, integer, boolean, date, money, choice, reference, json. Field names
 are camelCase (`dueDate`).
 
@@ -114,6 +114,10 @@ owner). Writes must be same-origin `application/json`. Errors are
 | `GET /PUT /api/shell/records/<Model>/<id>?target=` | PUT: changed fields | the record |
 | `DELETE /api/shell/records/<Model>/<id>?target=` | | live: **202** `PendingApproval`, nothing is deleted until approved; draft: **200** `{ deleted: id }` |
 | `/api/app/<route>` (any method; copy in the `x-shell-target` header) | as the app's REST | the app's generated REST (`/api/app/chores` is the app's `/api/chores`); `DELETE` answers **202** `PendingApproval`; only the app's own collection routes are served (`sync/apply`, `_changes`, `_events` and unknown collections are 404) |
+| `GET /reports`, `GET /reports/<name>` | | Saved report list and live result in the owner's saved copy; sidebar group appears when reports exist |
+| `GET /api/shell/reports/<name>?target=` | | Bounded engine result; labels and reference destinations remain separate from raw ids |
+| `GET /api/shell/reports/<name>/csv?target=` | | Server-generated RFC 4180 CSV, screen formatting, labels instead of ids, formula-safe text |
+| `POST /api/shell/reports/<name>?target=` | `{ action: 'rename', label }` (display label) or `{ action: 'rename', to }` (definition key) or `{ action: 'remove' }` | Existing builder result or pending approval; live structure is frozen during a draft |
 | `GET /api/events` | | server-sent events |
 | `POST /mcp` | MCP Streamable HTTP | shell tools plus app tools, one policy |
 
@@ -470,7 +474,7 @@ Approval and holds the turn; it never applies.
 The engine can run a second host, a draft, over a copy of the live data and
 later replay the draft's changes onto live. Rules and failure behaviour are in
 [agents/engine.md](agents/engine.md); the API on `AppHost` (exported from
-`src/engine`):
+`@happyvertical/smrt-app-shell/engine`):
 
 ```ts
 const live = await AppHost.open(dir, { store });
@@ -527,3 +531,76 @@ publish under its draft name; **Undo this publish** returns to its first parent
 (and takes back subsequent changes), with an Approval if needed. Lifecycle events
 refresh the bar and pages without reloading. An unusable draft explains the problem
 and keeps Discard available. See [UI validation](agents/draft-ui.md).
+
+### Engine calculated fields
+
+Definitions remain format 1. `addField.definition.calculated` and
+`setCalculation { model, field, calculated }` use core's `GeneratedExpression`
+(the SQL SDK's operand nodes). Pass `null` to clear a calculation. Generated
+values are database-owned and read-only on all write surfaces. Plan validates
+same-model visible inputs and result types. Renames rewrite expressions; hide,
+remove and type changes refuse dependents. Changes and undo run transactionally;
+undo restores the prior expression. A writable-to-calculated change archives
+originals and requires approval. Clearing an expression starts an empty writable
+column. See [engine contracts](agents/engine.md).
+
+Calculated fields are read-only in record forms, with their formula in field
+labels. New forms show no guessed value; saved records show the engine's value.
+Save payloads omit calculated fields. Model pages list every field and its
+formula, and table headers sort the loaded records, including calculated values.
+Publish review uses the same display-only formula renderer.
+
+The assistant uses reports for aggregate answers, calculated fields for values
+from the same record, and asks before saving a one-time answer. Run results use
+the same shared report component in chat. Reopened threads keep the summary and
+saved-report link; results run again on the report page.
+
+A deterministic QA import body is [agents/reports-ui-seed.json](agents/reports-ui-seed.json).
+It needs an empty app and can be posted by the signed-in owner to
+`/api/apps/importTemplate?target=live`. It seeds customer links, dates, choices,
+money and calculated totals, bar/line/table reports, empty and capped results.
+
+### Engine reports
+
+`AppDefinition.reports[name] = { label?, description?, spec }` stores a
+smrt-reports `RuntimeReportSpec`. `source` is an app model name. Commands are
+`defineReport { name, definition }`, `renameReport { from, to }`, and
+`removeReport { name }`. Reports participate in history, undo, and draft publish.
+`AppHost.runReport(nameOrSpec, { maxRows?, timeoutMs? })` runs a live aggregate;
+it works on frozen and draft hosts. Only visible app fields are nameable.
+No SQL is accepted. Bounds are 1–1000 rows and 1–10000 ms (defaults 1000/5000).
+Reference dimensions retain ids and add labels in each column's `labelColumn`;
+columns also carry `format`, `choices`, and `reference` hints where applicable.
+The server catalog exposes `app_setcalculation`, `app_definereport`,
+`app_renamereport`, `app_removereport`, `app_runreport` through the owner policy.
+
+### Engine bulk load
+
+`loadRecords { model, rows, mode: 'insert' | 'upsert', key?: string[],
+references?: { [field]: { model, by } } }` loads at most 10,000 rows / 8 MiB.
+Plan returns counts and up to 100 row problems (zero-based row, field, reason).
+Any rejected row aborts execute. Key upsert counts insert/update/unchanged;
+updates require live approval. Reference lookups are batched per target model.
+Values use single-record coercion; calculated input is refused. Loads are
+versioned, atomic, snapshotted, undone from exact originals, and replayed when
+publishing a draft. Catalog tool: `app_loadrecords`.
+
+### Engine extraction
+
+`extractModel { model, field, into, titleField?, normalize? }` turns a writable
+text/choice field into a reference. Distinct nonempty values create target rows
+or match an existing target's title field. Exact matching is default;
+`normalize: true` trims and compares without case. Plan counts folded values.
+The new model uses `titleField` or `name`; existing models use their title field
+or first visible text. Undo restores exact text and removes created targets only
+when no surviving app reference points to them. Catalog: `app_extractmodel`.
+
+### Engine merge
+
+`mergeRecords { model, keep, merge: ids[], fields?: { [field]: 'keep' | id } }`
+repoints all app references to `keep`, archives and removes merged rows, and
+optionally selects surviving field values from one of those records. Always
+requires live approval. Plan lists reference counts per model. Undo restores
+exact rows and references, refusing reused deleted ids. Bounds: 1–1000 merged
+ids. Draft publish recomputes against current live references. Catalog:
+`app_mergerecords`. Calculated fields cannot be selected as writable values.

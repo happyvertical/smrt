@@ -1,5 +1,6 @@
 import { mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { result } from '../../test/report-fixtures.ts';
 import AssistantPanel from './AssistantPanel.svelte';
 
 let component: ReturnType<typeof mount>;
@@ -136,4 +137,66 @@ it('reopens old tool chips as human lines without JSON, SQL or snapshot paths', 
       /[{}]|ALTER TABLE|\/private/,
     );
   }
+});
+
+it('renders an assistant-run report with the shared result component and record links', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input) => {
+      const path = String(input);
+      if (path.includes('/turn'))
+        return new Response(
+          [
+            { type: 'tool_call', id: 'r', name: 'app_runreport', args: '{}' },
+            {
+              type: 'tool_result',
+              id: 'r',
+              name: 'app_runreport',
+              ok: true,
+              summary: 'Ran Sales: 1 rows',
+              report: {
+                result: { ...result, chart: { type: 'table' } },
+                href: '/reports/sales',
+              },
+            },
+            { type: 'done', stop: 'complete' },
+          ]
+            .map((e) => `event: turn\ndata: ${JSON.stringify(e)}\n\n`)
+            .join(''),
+          { headers: { 'content-type': 'text/event-stream' } },
+        );
+      return new Response(
+        JSON.stringify(
+          path.includes('/status')
+            ? { configured: true }
+            : { threads: [], approvals: [] },
+        ),
+      );
+    }),
+  );
+  container = document.createElement('div');
+  document.body.append(container);
+  component = mount(AssistantPanel, {
+    target: container,
+    props: { open: true },
+  });
+  await vi.waitFor(() =>
+    expect(container.textContent).toContain('Tell me what you want'),
+  );
+  const field = container.querySelector('textarea');
+  if (!field) throw new Error('Missing composer');
+  field.value = 'Run sales';
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+  container
+    .querySelector('form')
+    ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  await vi.waitFor(() =>
+    expect(
+      container.querySelector('[data-smrt-component="ReportResult"]'),
+    ).toBeTruthy(),
+  );
+  expect(container.querySelector('td a')?.textContent).toBe('Acme Ltd');
+  expect(container.querySelector('a[href="/reports/sales"]')?.textContent).toBe(
+    'Open report',
+  );
 });

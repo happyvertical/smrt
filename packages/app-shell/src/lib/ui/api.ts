@@ -110,10 +110,10 @@ export const decideApproval = (id: string, approve: boolean) =>
 
 /** 202 with a PendingApproval when going back would overwrite newer data. */
 export const undoLast = (target: Target) =>
-  api<PendingApproval | { version: number; summary: string }>(
-    '/api/shell/undo',
-    { target, method: 'POST' },
-  );
+  api<
+    | PendingApproval
+    | { version: number; summary: string; humanSummary?: string }
+  >('/api/shell/undo', { target, method: 'POST' });
 
 export interface MethodOutcome {
   isError: boolean;
@@ -193,11 +193,11 @@ export async function runMethodTool(
 }
 
 export const undoPublish = (version: number, target: Target) =>
-  api<PendingApproval | { version: number; summary: string }>(
-    '/api/shell/undo-to',
-    {
-      method: 'POST',
-      body: { version },
-      target,
-    },
-  );
+  api<
+    | PendingApproval
+    | { version: number; summary: string; humanSummary?: string }
+  >('/api/shell/undo-to', {
+    method: 'POST',
+    body: { version },
+    target,
+  });

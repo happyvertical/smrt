@@ -1,6 +1,10 @@
 // Plain-language reading of an approval's preview and action.
-import { publishLines } from './publish.ts';
-import type { ApprovalView, PublishPreview } from './types.ts';
+import type { GeneratedExpression } from '@happyvertical/smrt-core';
+import { commandSummary } from './command-summary.ts';
+import { humanize } from './fields.ts';
+import { formulaWords } from './formula.ts';
+import { publishLines, publishMethodLabel } from './publish.ts';
+import type { ApprovalView, FieldDef, PublishPreview } from './types.ts';
 
 function obj(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v)
@@ -17,6 +21,38 @@ function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+function typeWords(value: unknown): string {
+  return (
+    (
+      {
+        integer: 'whole numbers',
+        decimal: 'numbers',
+        text: 'text',
+        boolean: 'yes/no',
+        date: 'dates',
+        reference: 'links',
+        json: 'structured data',
+        choice: 'choices',
+      } as Record<string, string>
+    )[String(value)] ?? 'the selected type'
+  );
+}
+
+/** Use the same owner-facing heading for the card and decision status. */
+export function approvalHeading(view: ApprovalView): string {
+  if (view.humanSummary) return view.humanSummary;
+  const preview = obj(view.preview);
+  if (view.action?.kind === 'command' && /^[a-z]/.test(view.summary))
+    return commandSummary(view.action.command, undefined, undefined, preview);
+  if (
+    view.action?.kind === 'record-delete' ||
+    view.action?.kind === 'rest' ||
+    view.action?.kind === 'tool'
+  )
+    return `${view.action.kind !== 'tool' || view.action.name.endsWith('_delete') ? 'Delete record' : 'Run action'}${preview.modelLabel ? ` in ${preview.modelLabel}` : ''}`;
+  return view.summary;
+}
+
 export interface CodeBlock {
   /** `Model.method()`. */
   title: string;
@@ -30,6 +66,9 @@ export interface ApprovalDescription {
   blocks: CodeBlock[];
   /** True when something is lost for good (not restorable by undo). */
   destructive: boolean;
+  refusal?: string;
+  labels?: string[];
+  keptLabel?: string;
 }
 
 function commandLines(
@@ -42,14 +81,99 @@ function commandLines(
     blocks: [],
     destructive: false,
   };
+  const model = String(
+    preview.modelLabel ??
+      humanize(String(command.model ?? preview.model ?? 'records')),
+  );
+  const field = String(
+    preview.fieldLabel ??
+      humanize(String(command.field ?? preview.field ?? 'the field')),
+  );
   switch (op) {
+    case 'mergeRecords': {
+      const references = obj(preview.references);
+      const labels = obj(preview.referenceLabels);
+      return {
+        ...base,
+        keptLabel: String(preview.keepLabel || 'the selected record'),
+        labels: Array.isArray(preview.removedLabels)
+          ? preview.removedLabels.map(String)
+          : [],
+        lines: [
+          `Merges ${plural(num(preview.removed), 'record')} in ${model} into the kept record.`,
+          ...Object.entries(references).map(
+            ([name, count]) =>
+              `${plural(num(count), 'reference')} in ${labels[name] ?? humanize(name)} will point to the kept record.`,
+          ),
+          `Removes ${plural(num(preview.removed), 'record')} in total.`,
+          'The merged records are removed. Undo restores them until old archives are cleaned up. Later edits can prevent undo.',
+        ],
+      };
+    }
+    case 'extractModel':
+      return {
+        ...base,
+        lines: [
+          `Turns ${field} in ${model} into links to ${preview.intoLabel ?? humanize(String(command.into ?? 'linked records'))}.`,
+          `${plural(num(preview.rows), 'record')} will be linked: ${plural(num(preview.create), 'linked record')} created and ${plural(num(preview.matched), 'existing record')} matched.`,
+          `${plural(num(preview.distinct), 'distinct value')}; ${plural(num(preview.folded), 'value')} combined by normalization. Undo restores the original values until old archives are cleaned up.`,
+        ],
+      };
+    case 'loadRecords':
+      return {
+        ...base,
+        lines: [
+          `Loads records into ${model}: ${num(preview.insert)} inserted, ${num(preview.update)} updated, ${num(preview.unchanged)} unchanged, ${num(preview.rejected)} rejected.`,
+          ...(num(preview.update) > 0
+            ? [
+                'Updates overwrite stored values. Undo restores the originals until old archives are cleaned up. Later edits can prevent undo.',
+              ]
+            : [
+                'Undo removes the loaded records until old archives are cleaned up. Later edits can prevent undo.',
+              ]),
+        ],
+      };
+    case 'setCalculation': {
+      const fields = obj(preview.fields) as Record<string, FieldDef>;
+      const from = preview.from as GeneratedExpression | null | undefined;
+      const to = preview.to as GeneratedExpression | null | undefined;
+      const words = (expression: GeneratedExpression) =>
+        formulaWords(expression, fields);
+      if (to === null)
+        return {
+          ...base,
+          lines: [
+            `Removes the calculation from ${field} in ${model}${from ? `: ${words(from)}` : ''}.`,
+            `${plural(num(preview.rows), 'record')} ${num(preview.rows) === 1 ? 'keeps its' : 'keep their'} current ${num(preview.rows) === 1 ? 'value' : 'values'}. Future edits can set this field directly.`,
+            'Undo restores the calculation until old archives are cleaned up.',
+          ],
+        };
+      return {
+        ...base,
+        lines: [
+          from && to
+            ? `Changes the calculation for ${field} in ${model} from ${words(from)} to ${words(to)}.`
+            : `Calculates ${field} in ${model}${to ? ` as ${words(to)}` : ''}.`,
+          `${plural(num(preview.rows), 'record')} will be recalculated.`,
+          ...(!from && num(preview.withValue) > 0
+            ? [
+                `${plural(num(preview.withValue), 'stored value')} will be overwritten with calculated values.`,
+              ]
+            : []),
+          from && to
+            ? 'Future edits cannot set this field directly. Undo restores the previous calculation until old archives are cleaned up.'
+            : 'Future edits cannot set this field directly. Undo restores the original values until old archives are cleaned up.',
+        ],
+      };
+    }
+
     case 'removeField': {
       const n = num(preview.valuesArchived);
       return {
         ...base,
         lines: [
-          `Removes the field ${preview.model}.${preview.field}.`,
-          `${plural(n, 'stored value')} will be archived. Undo restores them until old archives are cleaned up.`,
+          `Removes ${field} from ${model}.`,
+          `${plural(n, 'stored value')} will be archived. Undo restores ${n === 1 ? 'it' : 'them'} until old archives are cleaned up.`,
         ],
       };
     }
@@ -58,8 +182,8 @@ function commandLines(
       return {
         ...base,
         lines: [
-          `Removes the model ${preview.model}.`,
-          `${plural(n, 'record')} will be moved aside. Undo restores them until old archives are cleaned up.`,
+          `Removes the model ${model}.`,
+          `${plural(n, 'record')} will be moved aside. Undo restores ${n === 1 ? 'it' : 'them'} until old archives are cleaned up.`,
         ],
       };
     }
@@ -67,8 +191,8 @@ function commandLines(
       const failing = num(preview.failingCount);
       const withValue = num(preview.withValue);
       const lines = [
-        `Changes ${preview.model}.${preview.field} from ${preview.from} to ${preview.to}.`,
-        `${plural(withValue, 'record')} hold a value; ${num(preview.convertible)} convert cleanly.`,
+        `Changes ${field} in ${model} from ${typeWords(preview.from)} to ${typeWords(preview.to)}.`,
+        `${plural(withValue, 'record')} ${withValue === 1 ? 'holds' : 'hold'} a value; ${num(preview.convertible)} ${num(preview.convertible) === 1 ? 'converts' : 'convert'} cleanly.`,
       ];
       if (failing > 0)
         lines.push(
@@ -80,7 +204,7 @@ function commandLines(
       return {
         ...base,
         lines: [
-          `Adds code that will run on your data: ${preview.model}.${preview.method}().`,
+          `Adds ${humanize(String(preview.method ?? command.name ?? 'the method'))} code to ${model}.`,
           String(preview.description ?? ''),
           'It runs in a sandbox and can only propose changes to your records. Read it before you approve.',
         ].filter(Boolean),
@@ -88,7 +212,7 @@ function commandLines(
           typeof preview.code === 'string'
             ? [
                 {
-                  title: `${preview.model}.${preview.method}()`,
+                  title: `${humanize(String(preview.method ?? command.name ?? 'the method'))} in ${model}`,
                   code: preview.code,
                 },
               ]
@@ -126,7 +250,7 @@ function commandLines(
           typeof m.code === 'string'
             ? [
                 {
-                  title: `${m.model}.${m.name}()${m.description ? `: ${m.description}` : ''}`,
+                  title: `${humanize(String(m.name))} in ${obj(preview.modelLabels)[String(m.model)] ?? humanize(String(m.model))}${m.description ? `: ${m.description}` : ''}`,
                   code: m.code,
                 },
               ]
@@ -136,18 +260,43 @@ function commandLines(
     }
     case 'undoTo':
     case 'undo': {
-      const fields = (Array.isArray(preview.fields) ? preview.fields : [])
-        .map(obj)
-        .map((f) => `${f.model}.${f.field}`);
-      const replaced = num(preview.replaced);
+      const kinds = (
+        Array.isArray(preview.undoKinds) ? preview.undoKinds : []
+      ).map(obj);
+      const lines = kinds.map((step) => {
+        const model = String(step.modelLabel ?? 'the model');
+        const field = String(step.fieldLabel ?? 'the field');
+        switch (step.kind) {
+          case 'loadRecords':
+            return `Undoes the load in ${model}: removes ${plural(num(step.inserted), 'inserted record')} and restores ${plural(num(step.restoredValues), 'updated value')}. Other fields keep later edits.`;
+          case 'mergeRecords':
+            return `Undoes the merge in ${model}: recreates ${plural(num(step.recreated), 'removed record')} and points ${plural(num(step.references), 'reference')} back to those records.`;
+          case 'extractModel':
+            return `Undoes the extraction of ${field} in ${model}: restores ${plural(num(step.restoredValues), 'original text value')} and removes ${plural(num(step.inserted), 'created linked record')}.`;
+          case 'calculation':
+            return step.calculationRestore === 'calculation'
+              ? `Restores the previous calculation for ${field} in ${model}.`
+              : `Removes the calculation for ${field} in ${model} and restores ${plural(num(step.restoredValues), 'original stored value')}.`;
+          case 'convertColumn':
+            return `Undoes the type change for ${field} in ${model}: restores ${plural(num(step.restoredValues), 'archived original value')}. Values written since the type change can be overwritten.`;
+          default:
+            return 'Undoes the selected change.';
+        }
+      });
+      const refusal =
+        typeof preview.refusal === 'string' ? preview.refusal : undefined;
       return {
         ...base,
-        destructive: replaced > 0,
+        refusal,
         lines: [
-          `Undoes a type change: every row of ${fields.join(', ') || 'the field'} goes back to its original value.`,
-          replaced > 0
-            ? `${plural(replaced, 'record')} changed since will be overwritten with the original value. This cannot be taken back.`
-            : 'No value written since the change will be lost.',
+          ...(lines.length ? lines : ['Undoes the selected change.']),
+          ...(refusal
+            ? [refusal]
+            : kinds.some((step) => step.kind === 'convertColumn')
+              ? []
+              : [
+                  'Undo checks again and refuses conflicts that would discard later edits.',
+                ]),
         ],
       };
     }
@@ -174,10 +323,10 @@ export function describeApproval(view: ApprovalView): ApprovalDescription {
         lines: [
           `Publishes “${action.draftName}”.`,
           ...publishLines(p),
-          'Counts can change until publish. Draft records are thrown away.',
+          'This approval is pinned to the reviewed changes. Draft records are thrown away.',
         ],
         blocks: p.methods.map((m) => ({
-          title: `${m.model}.${m.name}()`,
+          title: publishMethodLabel(m, p),
           code: m.code,
         })),
       };
@@ -197,13 +346,13 @@ export function describeApproval(view: ApprovalView): ApprovalDescription {
         ...empty,
         destructive: true,
         lines: [
-          `Deletes one ${action.model} record. This cannot be undone from History.`,
+          `Deletes ${preview.recordLabel ? `“${preview.recordLabel}” in ${preview.modelLabel ?? humanize(action.model)}` : `one record in ${preview.modelLabel ?? humanize(action.model)}`}. This cannot be undone from History.`,
         ],
       };
     case 'tool': {
       const kind = action.name.endsWith('_delete')
-        ? 'Deletes a record'
-        : `Calls ${action.name}`;
+        ? `Deletes ${preview.recordLabel ? `“${preview.recordLabel}”` : 'the selected record'}${preview.modelLabel ? ` in ${preview.modelLabel}` : ''}`
+        : `Runs ${preview.methodLabel ?? 'the selected action'}${preview.modelLabel ? ` in ${preview.modelLabel}` : ''}`;
       return {
         ...empty,
         destructive: action.name.endsWith('_delete'),
@@ -216,8 +365,8 @@ export function describeApproval(view: ApprovalView): ApprovalDescription {
         destructive: action.method === 'DELETE',
         lines: [
           action.method === 'DELETE'
-            ? `Deletes ${action.url.replace(/^\/api\//, '')}. This cannot be undone from History.`
-            : `${action.method} ${action.url}`,
+            ? `Deletes ${preview.recordLabel ? `“${preview.recordLabel}”` : 'the selected record'}${preview.modelLabel ? ` in ${preview.modelLabel}` : ''}. This cannot be undone from History.`
+            : 'Runs the selected request.',
         ],
       };
   }

@@ -15,7 +15,10 @@
 import type { AIMessage, AITool, AIToolCall } from '@happyvertical/ai';
 import { toProviderToolSchema } from '@happyvertical/smrt-core';
 import type { TurnEvent, TurnStop } from '../../assistant/events.ts';
-import { toolSummary } from '../../assistant/tool-summary.ts';
+import {
+  reportPresentation,
+  toolSummary,
+} from '../../assistant/tool-summary.ts';
 import type { AssistantThread } from '../../objects/AssistantThread.ts';
 import { getApprovalView } from '../approvals.ts';
 import type { CatalogResponse, CatalogTool } from '../catalog.ts';
@@ -171,6 +174,7 @@ interface CallOutcome {
   ok: boolean;
   summary: string;
   approvalId?: string;
+  report?: ReturnType<typeof reportPresentation>;
   /** Which copy the call acted on, when a draft is open. */
   copy?: Target;
   /** Stop the turn after this call (an approval left undecided / aborted). */
@@ -260,7 +264,8 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
         ? undefined
         : structural
           ? mode.scope.structure
-          : offered.get(call.name)?.side === 'app'
+          : offered.get(call.name)?.side === 'app' ||
+              call.name === 'app_runreport'
             ? mode.scope.records
             : undefined;
       if (ok && structural && mode.draft) changedIn = mode;
@@ -273,7 +278,12 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
             : '';
       return {
         ok,
-        summary: toolSummary(call.name, text, ok),
+        summary: toolSummary(
+          call.name,
+          call.name === 'app_runreport' ? response : text,
+          ok,
+        ),
+        report: reportPresentation(call.name, response, ok),
         content: `${where}${text}`,
         ...(copy ? { copy } : {}),
       };
@@ -517,6 +527,7 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
         ok: outcome.ok,
         summary: outcome.summary,
         ...(outcome.copy ? { copy: outcome.copy } : {}),
+        ...(outcome.report ? { report: outcome.report } : {}),
       });
       const meta = {
         id: call.id,
@@ -524,11 +535,13 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
         ok: outcome.ok,
         summary: outcome.summary,
         ...(outcome.copy ? { copy: outcome.copy } : {}),
+        ...(outcome.report?.href ? { reportHref: outcome.report.href } : {}),
         ...(outcome.approvalId ? { approvalId: outcome.approvalId } : {}),
       };
       await appendMessage(thread, {
         role: 'tool',
-        content: outcome.content,
+        content:
+          call.name === 'app_runreport' ? outcome.summary : outcome.content,
         toolCallId: call.id,
         meta,
       });

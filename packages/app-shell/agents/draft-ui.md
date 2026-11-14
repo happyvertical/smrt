@@ -3,7 +3,7 @@
 The content header owns draft controls on home, model, history and review pages; welcome and settings have none. Chat is hidden during onboarding. The publish preview groups Added, Removed, Changed and Archived items in counted cards before its ordered changes and full method code. The saved owner view selects the
 layout description; loaders and mutations carry that description's explicit
 target. Changing copies remounts forms and returns home. Approvals always name
-live. No report route is present. Shell copy uses the existing plain-text
+live. Reports use the same saved copy at `/reports` and `/reports/[name]`; both keep the content-header draft controls. Shell copy uses the existing plain-text
 pattern (the package has no message catalog).
 
 | Behavior | Trigger and positive case | Failure case | Context / executor | Runtime / edge | Level / command |
@@ -72,3 +72,121 @@ Real paid model turns, ChatGPT OAuth and real key saves were not exercised;
 connection transitions and resumed-engine inputs were verified with DOM tests,
 the stub model and both stub CLIs. Each numbered fix has failing pre-fix
 regression evidence and passing fixed-code evidence. No containers were used.
+
+
+## Reports UI (#4917)
+
+Reuse check: read the intent index and ran smrt-dev-mcp review on app-shell.
+Existing `ReportResult`, `reportCsv`, chart formatters, shell cell/money formatters,
+`hostFor`, `runCommand`, and SSE dependencies are reused. No Svelte MCP is
+available in this session. Formula wording is display-only, never evaluation.
+
+| Behavior / invariant | Reachable trigger | Positive | Negative / failure | Actor / context | Executor / transaction | Runtime / dialect | External edge | Level / command |
+|---|---|---|---|---|---|---|---|---|
+| Report navigation | Saved reports in viewed description | Group below models, draft-only new badge | No reports hides group; live has no draft items | Owner / saved copy | Description read; N/A mutation | Svelte 5 / jsdom | smrt-svelte nav children | DOM / app-shell test |
+| Report results | Open report, record/definition SSE invalidation | Shared result, chart, record links, empty and truncation | Plain error and back link | Owner / explicit live or draft | Engine read, no result persistence | Node 26 / SQLite; Svelte 5 | reports display callbacks | Node + DOM / app-shell test |
+| CSV | Download action | Display labels, money, RFC 4180 and formula-safe text | Anonymous/member/other tenant, missing report/copy, invalid target | Verified owner, explicit copy | Same bounded engine read | Node 26 / SQLite | HTTP attachment | Node / app-shell test |
+| Report changes | Rename/remove, define through catalog | runCommand, review/history added/changed/renamed/removed | Live frozen, unknown action/name, cross-origin refused | Verified owner / draft split | Existing builder transaction and approval gate; no new writes | Node 26 / SQLite | Existing command contract | Node + DOM / app-shell test |
+| Calculated values | Open new/existing record, save, list fields | Read-only formatted value, formula, sorted column | No value before save; never submitted, even injected form values | Owner / viewed copy | Existing record mutation; generated column remains database-owned | Svelte 5, Node 26 / SQLite | Closed SDK expression grammar | Unit + DOM / app-shell test |
+| Assistant reports | Catalog tool result and saved thread replay | Safe summaries, shared result in chat, saved-report link | Failed/malformed payload never rendered; no approval bypass | Owner / one catalog policy | Existing turn/thread store; rows stay transient | Node 26, Svelte 5 | API + CLI event details | Unit + Node + DOM / app-shell test |
+
+UI additions have no prior implementation to compare as a bug-fix base. Existing
+engine rollback, replay and approval idempotence suites remain the transaction
+evidence. Browser visual QA is delegated to the coordinator, not claimed here.
+
+Report runs preserve `RuntimeReportError` code/path across the read worker.
+`invalid_result` is explained as a value too large to show exactly, naming a
+sum's source field label and calculated input labels when available. Results,
+CSV and failed assistant runs use the same safe wording; compiler/driver text
+and stacks are never displayed. Changed-field failures retain their repair
+message. Record input limits are unchanged.
+
+Report key renames change the report's link. Draft review, History and tool
+summaries say this using the report label; visible renames use labels on both
+sides and never display the key.
+
+Draft review rechecks the server's current draft after the parent layout loads,
+so layout data fetched during a draft start cannot produce a false no-draft
+screen. With no open draft the loader redirects home and the component never
+requests a preview. The draft bar keeps review links disabled through the
+start request and view refresh.
+
+Failed report tools return an MCP `isError` result tagged `report_failure` with
+the already sanitized summary. Both API and local CLI assistants preserve that
+summary through the shared text sanitizer; untagged or unsafe failures keep the
+generic failure label. Failed reports never become report result projections.
+
+Approval previews distinguish adding, replacing and clearing a calculation. Adding
+a calculation names the stored values that will be overwritten only when the
+count is nonzero; replacing shows both formulas with field labels; clearing
+keeps current values and allows direct edits again. Insert-only loads show no
+update warning. Merge counts use “records in Customers”; publish Data steps use
+model labels and the publish approval states that it is pinned to reviewed
+changes. Saved approval reference labels contain only models used by the card.
+
+Regression evidence includes real SQLite engine plans routed through stored
+approvals into card descriptions, plus actual mounted cards fed real engine
+previews produced by a Node subprocess. The subprocess is necessary because
+the DOM test config selects browser exports, which cannot boot engine models.
+
+## Round 5 review regressions (#4917)
+
+Draft publishing resolves `renameColumn` command steps against their before/after
+model definitions. Renames belong in Changed, never Added/Removed; a calculation
+operand rewritten by that rename is not an independent formula edit. Genuine
+formula edits remain visible. The ordered list uses the same label formatter as
+History and Approval headings. When an explicit label survives a rename, the
+review names that old label and the requested new field name. Data rehearsal
+counts are retained. Load-only undo journals are not archive decisions; when
+removal/conversion archives coexist with data commands, the archive description
+names the affected fields and explains the data-command undo journals.
+
+The mounted review regression uses real Node/SQLite publish rehearsals from
+`test-support/draft-review-engine-previews.ts`, outside the application source.
+It covers load + rename with an unchanged calculated total, a second rename with
+different display labels, a genuine formula edit, and field removal archives.
+The exact rendered decision is “Rename field Quantity to units in Orders.”
+F5 narrow validation: 7 unit tests and 9 review DOM tests passed; the DOM fixture
+preserves nonzero raw archive journal counts while rendering no archive decision
+for load + rename. Full branch validation is the integration owner's gate.
+
+The summary cards use an available-width grid: `auto-fit` with a minimum track
+of `min(100%, 18rem)`. A 300px main column fits one track; a narrower column
+shrinks that track to its own width. Heading and badge share a no-wrap flex row;
+card prose wraps at normal word boundaries. This responds to a narrowed main
+column beside chat/sidebar independently of viewport breakpoints. DOM tests
+mount the real engine previews in a 300px container and check section/headings;
+source CSS assertions provide the layout-rule evidence. jsdom does not measure
+browser layout, so these checks do not claim a browser visual pass.
+
+| Fix | Invariant / positive case | Negative or failure case | Evidence / executor |
+|---|---|---|---|
+| F1 Undo decisions | Read-only preflight reuses conflict guards; operation-kind wording names affected data | Known conflicts refuse before pending storage; legacy cards remain deniable; apply still checks freshness | Real SQLite preview + mounted approval cards; owning worker tests |
+| F2 Refusal wording | Classified engine refusals retain plain singular/plural wording | Actual startup failures retain diagnostics | Engine/server refusal regressions; owning worker tests |
+| F3 Human summaries | History, Approval, publish list share label-based formatter | Machine paths, storage keys and record IDs do not become headings | Real command/version fixtures + mounted History; owning worker tests |
+| F4 Merge scope | Removed record names are bounded with full title; referring models use labels | Markup remains literal; record IDs stay hidden | Real engine merge preview + mounted approval card; owning worker tests |
+| F5 Publish decisions | Command-step renames are Changed; genuine formula edits remain; counts preserved | Rename operand rewrites create no false formula/add/remove/archive decision | Real Node/SQLite rehearsals + mounted review; 26 Node and 9 DOM tests passed |
+| F6 Narrow column | 300px main column has one summary track; heading words stay intact | No viewport-only column rule or arbitrary word breaking | Mounted real previews, section structure and CSS assertions; review DOM suite |
+
+Round 5 publish sweep: model additions/removals, field fallbacks, data references,
+method summaries, full-code headings and their accessibility labels all resolve
+friendly owner labels. Legacy preview version headings use the common formatter
+rather than raw persisted summaries. Every method shown in the full-code list
+has its owner label projected, including unchanged methods; unrelated models
+remain absent. The real engine DOM fixture includes added/changed/unchanged
+methods, labeled field add/remove/type conversion, and model add/remove. Full
+method bodies remain unchanged. Available-column styles use namespaced owned
+classes inside `smrt.structure`; scoped cascade and class/layer gates pass.
+
+Merge cards created before scoped reference labels were saved hydrate only missing
+labels for the referring models counted by that card. Fresh and reused approvals,
+publish counts, and undo merge summaries retain friendly labels without copying
+unrelated model metadata. The DOM merge fixture now uses the real stored builder
+approval rather than a manually supplied reference-label map.
+
+Known-impossible undo requests now return a typed refusal before requesting an
+approval, consistently with other refused builder commands. HTTP returns 409 and
+the assistant tool returns the same sentence-case reason without a pending
+marker. Existing blocked pending cards retain a Deny action through the normal
+decision endpoint. A later edit after a valid preview still fails at apply; the
+engine preflight and migration guards remain in place.

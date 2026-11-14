@@ -1,5 +1,6 @@
 // The wire contract shared by the server and dock. Imports are type-only;
 // the browser does not load the inference server entry.
+
 import type {
   AgentTurnEvent,
   AgentTurnStop,
@@ -7,6 +8,7 @@ import type {
   InferenceEngineId,
   InferenceEngineStatus,
 } from '@happyvertical/smrt-inference/server';
+import type { AppReportResult } from '../ui/types.ts';
 
 /** API-key turns also stop at the host's model-round and token bounds. */
 export type TurnStop = AgentTurnStop | 'max_steps' | 'max_tokens';
@@ -17,6 +19,7 @@ export type TurnEvent =
   | (Omit<Extract<AgentTurnEvent, { type: 'tool_result' }>, 'details'> & {
       /** The copy the shell's tool acted on, while a draft is open. */
       copy?: 'live' | 'draft';
+      report?: { result: AppReportResult; href?: string };
     })
   | (Extract<AgentTurnEvent, { type: 'error' }> & {
       /** A host route that fixes the failure, when one exists. */
@@ -61,6 +64,7 @@ export interface ThreadMessage {
     name: string;
     ok: boolean;
     summary: string;
+    reportHref?: string;
     approvalId?: string;
     copy?: 'live' | 'draft';
   };

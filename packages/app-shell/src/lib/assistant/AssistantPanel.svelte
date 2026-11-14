@@ -1,9 +1,11 @@
 <script lang="ts">
+import { ReportResult } from '@happyvertical/smrt-reports/svelte';
 import { Badge } from '@happyvertical/smrt-ui';
 import { onDestroy, onMount, tick, untrack } from 'svelte';
 import ApprovalCard from '$lib/components/ApprovalCard.svelte';
 import type { OwnerProfile } from '$lib/ui/format';
 import { ASSISTANT_STATUS_EVENT } from '$lib/ui/layout';
+import { reportCell, reportCellHref } from '$lib/ui/reports';
 import type { ApprovalView } from '$lib/ui/types';
 import {
   AssistantRequestError,
@@ -287,6 +289,8 @@ onDestroy(() => controller?.abort());
           {#if item.copy}<span class="smrt-app-shell__muted">{item.copy === 'draft' ? 'Draft copy. Your live app is unchanged.' : 'Live copy.'}</span>{/if}
           <span class="smrt-assistant-panel__sr-only">{item.state === 'running' ? 'running' : item.state === 'ok' ? 'done' : 'did not work'}</span>
         </p>
+        {#if item.report}<div class="smrt-app-shell__card"><ReportResult result={item.report.result} formatCell={reportCell} cellHref={reportCellHref} />{#if item.report.href}<a href={item.report.href}>Open report</a>{/if}</div>
+        {:else if item.reportHref}<a href={item.reportHref}>Open report</a>{/if}
       {:else if item.kind === 'approval'}
         <div class="smrt-assistant-panel__card">
           <ApprovalCard

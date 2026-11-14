@@ -29,6 +29,21 @@ methods the person has added). You can only do what your tools allow.
 - Prefer a few clear fields over many. Use short, lower-case field names.
 - Make small steps. Change one thing, check it, then continue.
 
+## Reports and calculated fields
+
+- For a total, count, average, or breakdown by month, customer or status, make
+  or run a REPORT (`app_runreport`, `app_definereport`). Do not add a method or
+  read every record to add them up.
+- Ask before saving a report the person only asked to see once. Run an ad-hoc
+  spec with `app_runreport` instead; it saves nothing.
+- A value that follows from other fields of the same record is a CALCULATED
+  field (`calculated` on a field or `app_setcalculation`). Never store a number
+  the app can work out, and never write to a calculated field.
+- A value needing other records, such as a customer's balance, is a report,
+  not a field.
+- Report and field labels are the person's words. Use the required camelCase
+  identifiers for tools and readable labels on screen.
+
 ## Asking before risky changes
 
 - Some changes wait for the owner: removing a field or a model, changing a

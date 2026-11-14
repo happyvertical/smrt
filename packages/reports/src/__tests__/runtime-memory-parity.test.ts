@@ -768,3 +768,31 @@ describe('runRuntimeReportInMemory parity with the SQL runner (#4100)', () => {
     ).toThrow(RuntimeReportError);
   });
 });
+
+it.each([
+  1, -1,
+])('rejects an unsafe SQLite sum with its typed column error (sign %s)', async (sign) => {
+  await db.query('DELETE FROM pm_invoices');
+  for (const [id, amount] of [
+    ['large', sign * Number.MAX_SAFE_INTEGER],
+    ['small', sign],
+  ] as const)
+    await db.query(
+      'INSERT INTO pm_invoices (id, total_amount) VALUES (?, ?)',
+      id,
+      amount,
+    );
+  const spec = {
+    ...base,
+    measures: [{ fn: 'sum', field: 'totalAmount', as: 'revenue' }],
+  };
+  await expect(viaSql(spec)).rejects.toBeInstanceOf(RuntimeReportError);
+  await expect(viaSql(spec)).rejects.toMatchObject({
+    code: 'invalid_result',
+    path: 'revenue',
+  });
+  await db.query("DELETE FROM pm_invoices WHERE id = 'small'");
+  expect((await viaSql(spec)).rows).toEqual([
+    { revenue: sign * Number.MAX_SAFE_INTEGER },
+  ]);
+});

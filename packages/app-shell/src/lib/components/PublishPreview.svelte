@@ -1,21 +1,27 @@
 <script lang="ts">
-import { Badge, Card, Grid, Stack } from '@happyvertical/smrt-ui';
-import { publishGroups } from '$lib/ui/publish';
+import { Badge, Card, Stack } from '@happyvertical/smrt-ui';
+import {
+  publishCalculations,
+  publishGroups,
+  publishMethodLabel,
+  publishVersionSummary,
+} from '$lib/ui/publish';
 import type { PublishPreview } from '$lib/ui/types';
 
 let { preview }: { preview: PublishPreview } = $props();
 const groups = $derived(publishGroups(preview));
+const calculations = $derived(publishCalculations(preview));
 </script>
 
 <Stack gap="lg">
-<Grid columns={{ sm: 1, md: 2 }} gap="md">
+<div class="smrt-publish-preview__groups">
   {#each groups as group (group.name)}
-    <section aria-label={group.name}>
+    <section class="smrt-publish-preview__group" aria-label={group.name}>
       <Card padding="sm">
         <Stack gap="sm">
-          <Stack direction="horizontal" align="center" gap="sm">
+          <div class="smrt-publish-preview__group-heading">
             <h2>{group.name}</h2><Badge variant="neutral">{group.count}</Badge>
-          </Stack>
+          </div>
           {#if group.items.length}
             <ul>{#each group.items as item (item)}<li>{item}</li>{/each}</ul>
           {:else}<p class="smrt-app-shell__muted">None.</p>{/if}
@@ -24,24 +30,55 @@ const groups = $derived(publishGroups(preview));
       </Card>
     </section>
   {/each}
-</Grid>
-<p>Counts can change until you publish as live records change. Records added in the draft are thrown away.</p>
+</div>
+<p>Data commands replay against current live records. If reviewed counts change, review a fresh preview before publishing. Direct record edits made in the draft are discarded; records loaded by a draft command are replayed.</p>
 <h2>Changes to publish ({preview.versions.length})</h2>
 <ol>
   {#each preview.versions as version (version.version)}
     <li>
-      <p>{version.summary}</p>
+      <p>{publishVersionSummary(version, preview)}</p>
     </li>
   {/each}
 </ol>
+{#if calculations.length}
+<h2>Calculated field changes</h2>
+<ul>{#each calculations as line (line)}<li>{line}</li>{/each}</ul>
+{/if}
 <h2>All method code ({preview.methods.length})</h2>
 {#each preview.methods as method (method.model + '.' + method.name)}
-  <section aria-label="{method.model}.{method.name}">
-    <h3>{method.model}.{method.name}() · {method.change}</h3>
+  <section aria-label={publishMethodLabel(method, preview)}>
+    <h3>{publishMethodLabel(method, preview)} · {method.change}</h3>
     <p>{method.description}</p>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard scrolling of full method code) -->
-    <pre class="smrt-app-shell__code" tabindex="0" aria-label="Code for {method.model}.{method.name}"><code>{method.code}</code></pre>
+    <pre class="smrt-app-shell__code" tabindex="0" aria-label="Code for {publishMethodLabel(method, preview)}"><code>{method.code}</code></pre>
   </section>
 {/each}
 
 </Stack>
+
+<style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+
+@layer smrt.structure {
+  .smrt-publish-preview__groups {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+    gap: var(--smrt-spacing-md);
+    min-width: 0;
+  }
+  .smrt-publish-preview__group {
+    min-width: 0;
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+  .smrt-publish-preview__group-heading {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-sm);
+    white-space: nowrap;
+  }
+  .smrt-publish-preview__group-heading h2 {
+    margin: 0;
+  }
+}
+</style>

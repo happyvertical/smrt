@@ -98,7 +98,7 @@ async function decide(approve: boolean) {
 }
 
 onMount(() => {
-  void review();
+  if (data.description?.draft) void review();
 });
 </script>
 

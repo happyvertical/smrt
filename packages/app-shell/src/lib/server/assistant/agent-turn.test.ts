@@ -191,6 +191,34 @@ describe.each(['claude-code', 'codex'] as const)('%s engine', (tool) => {
     expect(textOf(events)).toContain('All done.');
   });
 
+  it('streams report results through the shared CLI details seam and stores only a link', async () => {
+    await callTool(h.owner, 'app_definereport', {
+      name: 'choreCounts',
+      definition: {
+        spec: {
+          version: 1,
+          title: 'Chore counts',
+          source: 'Chore',
+          measures: [{ fn: 'count', as: 'total' }],
+        },
+      },
+    });
+    const { events, thread } = await turn(
+      tool,
+      'tool app_runreport {"report":"choreCounts"}',
+    );
+    expect(events.find((e) => e.type === 'tool_result')).toMatchObject({
+      report: {
+        href: '/reports/choreCounts',
+        result: { title: 'Chore counts' },
+      },
+    });
+    const view = await viewMessages(thread.id as string);
+    const message = view.find((m) => m.tool?.name === 'app_runreport');
+    expect(message?.tool?.reportHref).toBe('/reports/choreCounts');
+    expect(JSON.stringify(message)).not.toContain('columns');
+  });
+
   it('reaches the app builder tools too, under the token’s own scope', async () => {
     const { events, stop } = await turn(tool, 'tool app_describe {}');
     expect(stop).toBe('complete');
