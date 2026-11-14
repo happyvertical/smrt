@@ -38,6 +38,36 @@ export const LOAD_LIMITS = {
   bytes: 8 * 1024 * 1024,
   problems: 100,
 } as const;
+/** All data commands share the load-sized undo journal budget. */
+export const JOURNAL_LIMITS = {
+  rows: LOAD_LIMITS.rows,
+  bytes: LOAD_LIMITS.bytes,
+} as const;
+export function assertJournalBounds(rows: Row[]) {
+  if (rows.length > JOURNAL_LIMITS.rows)
+    throw new AppError(
+      `undo journal accepts at most ${JOURNAL_LIMITS.rows} rows`,
+    );
+  if (Buffer.byteLength(JSON.stringify(rows)) > JOURNAL_LIMITS.bytes)
+    throw new AppError(
+      `undo journal accepts at most ${JOURNAL_LIMITS.bytes} bytes`,
+    );
+}
+export async function assertStoredJournalBounds(db: any, version: number) {
+  const count = (
+    await db.query(
+      "SELECT SUM(CASE WHEN col = '$row' THEN 1 ELSE 0 END) AS n, SUM(length(CAST(value AS BLOB))) AS bytes FROM _archive WHERE version = ? AND col IN ('$row', '$after', '$deleted')",
+      [version],
+    )
+  ).rows[0];
+  if (
+    Number(count.n) > JOURNAL_LIMITS.rows ||
+    Number(count.bytes) > JOURNAL_LIMITS.bytes
+  )
+    throw new AppError(
+      `undo journal accepts at most ${JOURNAL_LIMITS.rows} rows and ${JOURNAL_LIMITS.bytes} bytes`,
+    );
+}
 export const quote = (s: string) => `"${s.replace(/"/g, '""')}"`;
 export const fieldsOf = (def: AppDefinition, model: string) => {
   const md = def.models[model];
@@ -412,6 +442,7 @@ export async function applyLoad(
       }),
     );
   }
+  await assertStoredJournalBounds(db, version);
   return preview;
 }
 

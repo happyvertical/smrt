@@ -1,6 +1,8 @@
 import {
   archiveAfter,
   archiveRow,
+  assertJournalBounds,
+  assertStoredJournalBounds,
   fieldsOf,
   quote,
   type Row,
@@ -83,6 +85,13 @@ export async function prepareMerge(
       changes.push({ model, row, columns });
     }
   }
+  const journal = new Map(
+    changes.map((change) => [`${change.model}:${change.row.id}`, change.row]),
+  );
+  if (Object.keys(chosen).length) journal.set(`${cmd.model}:${cmd.keep}`, keep);
+  for (const id of cmd.merge)
+    journal.set(`${cmd.model}:${id}`, byId.get(id) as Row);
+  assertJournalBounds([...journal.values()]);
   return {
     keep,
     byId,
@@ -137,6 +146,7 @@ export async function applyMerge(
     );
     await db.query(`DELETE FROM ${table} WHERE id = ?`, [id]);
   }
+  await assertStoredJournalBounds(db, version);
 }
 export async function undoMerge(
   def: AppDefinition,

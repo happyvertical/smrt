@@ -1,6 +1,8 @@
 import {
   archiveAfter,
   archiveRow,
+  assertJournalBounds,
+  assertStoredJournalBounds,
   collectionFor,
   fieldsOf,
   quote,
@@ -109,6 +111,12 @@ export async function prepareExtract(
     )
       throw new AppError('extracted value is not a target choice');
   }
+  assertJournalBounds([
+    ...[...groups.values()].flatMap((group) => group.rows),
+    ...[...groups.values()]
+      .filter((group) => !group.id)
+      .map((group) => ({ [label]: group.value })),
+  ]);
   return {
     label,
     groups,
@@ -169,6 +177,7 @@ export async function applyExtract(
   // Empty stays empty: both null and the exact original empty string survive.
   // Keep original type data in the version for validation and undo registration.
   void from;
+  await assertStoredJournalBounds(db, version);
 }
 
 /** No row created by a command may be removed while a surviving row references it. */

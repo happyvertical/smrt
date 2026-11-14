@@ -215,7 +215,7 @@ rows require approval outside a draft. `references[field] = { model, by }`
 resolves lookup values with one query per target model. The dry-run preview
 returns insert/update/unchanged/rejected counts and up to 100 zero-based row,
 field, reason problems, never whole rows. Rejected input refuses the entire load.
-Input fields, upsert keys, lookup keys and merge selectors must name own visible
+All data-command undo journals (load, extract and merge) are capped at 10,000 affected rows and 8 MiB of stored JSON. Preparation refuses oversized source journals; a final check inside the migration transaction includes postimages and rolls back the whole command on overflow. Input fields, upsert keys, lookup keys and merge selectors must name own visible
 fields; inherited object keys receive the same typed refusal as unknown fields.
 Bounds: 10,000 rows and 8 MiB total JSON command data per call. Calculated input is refused.
 Preparation uses the record coercer, then collection writes use bounded
