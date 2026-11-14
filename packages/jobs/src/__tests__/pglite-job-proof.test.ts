@@ -1,6 +1,10 @@
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import { expect, it } from 'vitest';
-import { assertJobClaim } from '../job-claim.js';
+import {
+  assertJobClaim,
+  assertJobClaimForRelease,
+  JobClaimLostError,
+} from '../job-claim.js';
 import { SmrtJobCollection } from '../smrt-job.js';
 import { SmrtJobEventCollection } from '../smrt-job-event.js';
 import {
@@ -22,24 +26,42 @@ it.runIf(Boolean(process.env.SMRT_TEST_PGLITE_MODULE))(
       expect(offLoopEligible(db)).toBe(false);
       const jobs = await SmrtJobCollection.create({ db });
       await jobs.enqueueJob({ objectType: 'PgliteProof', method: 'run' });
+      const now = new Date(Date.now() + 120_000);
       const [job] = await jobs.claimReady({
+        now,
         workerId: 'pg-worker',
         limit: 1,
         claimFencing: true,
       });
-      await db.transaction?.((tx) =>
-        assertJobClaim(tx, {
-          jobId: job.id as string,
-          workerId: 'pg-worker',
-          attempt: job.attempts,
-          startedAt: job.startedAt?.toISOString() as string,
-          tenantId: null,
-          objectType: job.objectType,
-          objectId: null,
-          method: 'run',
-        }),
-      );
+      const claim = {
+        jobId: job.id as string,
+        workerId: 'pg-worker',
+        attempt: job.attempts,
+        startedAt: job.startedAt?.toISOString() as string,
+        tenantId: null,
+        objectType: job.objectType,
+        objectId: null,
+        method: 'run',
+      };
+      await db.transaction?.((tx) => assertJobClaim(tx, claim));
       await job.cancel();
+      await job.retry();
+      expect(job.startedAt).toBeNull();
+      const [replacement] = await jobs.claimReady({
+        workerId: 'pg-worker',
+        limit: 1,
+        claimFencing: true,
+        now: new Date(now.getTime() - 60_000),
+      });
+      expect(replacement.startedAt?.getTime()).toBe(
+        Date.parse(claim.startedAt) + 1,
+      );
+      for (const assert of [assertJobClaim, assertJobClaimForRelease]) {
+        await expect(
+          db.transaction?.((tx) => assert(tx, claim)),
+        ).rejects.toBeInstanceOf(JobClaimLostError);
+      }
+      await replacement.cancel();
       const events = await SmrtJobEventCollection.create({ db });
       expect(
         await events.getTerminalOutcome(job.id as string, { tenantId: null }),
