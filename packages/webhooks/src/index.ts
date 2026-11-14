@@ -34,6 +34,13 @@ export {
   type WebhookRequest,
   type WebhookTransport,
 } from './security.js';
+export {
+  DEFAULT_WEBHOOK_TOLERANCE_MS,
+  signWebhookPayload,
+  type VerifyWebhookOptions,
+  type VerifyWebhookResult,
+  verifyWebhookSignature,
+} from './signing.js';
 export { WebhookStore } from './store.js';
 export type {
   WebhookDeliveryRecord,
