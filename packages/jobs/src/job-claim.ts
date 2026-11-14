@@ -141,6 +141,10 @@ export async function assertFailedJobDispatch(
  * contract. Use only for an application lease already bound to this claim.
  * Job cancellation alone is not settlement; a live process or fresh worker lease
  * rejects release. The job row stays locked until the caller commits.
+ * Worker liveness is an unlocked observation, exactly as in stale recovery:
+ * neither the worker lease row nor future renewals are locked out. Expiry is
+ * not proof that a paused process or external effect physically stopped.
+ * Application writes must remain claim-fenced and replayed effects idempotent.
  * @param transaction - Transaction that also CAS-releases the application lease.
  * @param claim - Persisted identity of the dispatch that acquired that lease.
  */

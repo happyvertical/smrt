@@ -62,3 +62,11 @@ Merely exposing `dumpDataDir` does not change engine selection. Existing hosts
 that do not call this API retain their previous behavior. The isolated fixture
 regression is enabled with `SMRT_TEST_PGLITE_MODULE`; it is not a full PGlite
 backend certification of the jobs suite.
+
+
+Abandonment locks only the exact job row. Its process live-set and fresh-worker
+lease reads are observations without a worker-row lock, matching TaskRunner
+stale recovery. They do not serialize against a later lease renewal or prove
+that an expired/suspended process has physically stopped. Keep domain writes
+claim-fenced after re-admission and external effects idempotent; do not treat
+this API as stronger process exclusion or physical cancellation.

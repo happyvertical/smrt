@@ -240,5 +240,5 @@ the framework retention sweep in `@happyvertical/smrt-core`.
 Use `getJobClaim`, `assertJobClaim`, `assertJobClaimForRelease`,
 `assertFailedJobDispatch` and `assertAbandonedJobClaim` for dispatch fencing,
 recovery and application lease release. Read [claim and recovery contracts](agents/job-claims.md)
-for nonce persistence, transaction affinity, liveness, exact outcome lookup and
+for opt-in fencing, transaction affinity, liveness, exact outcome lookup and
 PGlite validation. Never infer settlement from cancellation alone.
