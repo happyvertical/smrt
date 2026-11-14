@@ -851,16 +851,19 @@ jobs:
     needs: build
     if: inputs.mode == 'full'
     runs-on: ubuntu-latest
-    # Each shard runs ~1/3 of package tests and lets Turbo build only their
+    # Shards 1-3 each run ~1/3 of the other packages and shard 4 only the
+    # dedicated one; each lets Turbo build only their
     # dependency closures. Runner-pool contention still applies, so this keeps
     # the standard ceiling rather than a shard-specific one.
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      # Three workers match the three shards on the hosted runner.
+      # The hosted fleet runs three workers at a time. Shard 4/4 is dedicated
+      # to smrt-template-sveltekit (scripts/test-packages-shard.mjs, #4990);
+      # it is listed first so the longest shard starts immediately.
       max-parallel: 3
       matrix:
-        shard: ['1/3', '2/3', '3/3']
+        shard: ['4/4', '1/4', '2/4', '3/4']
 
     steps:
       - name: Checkout repository
@@ -877,7 +880,8 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Each shard runs ~1/3 of the non-core packages
+      # Shards 1-3 run ~1/3 of the non-core packages each; shard 4 runs only
+      # smrt-template-sveltekit
       # (scripts/test-packages-shard.mjs round-robins by name), keeping
       # per-runner load low.
       #
