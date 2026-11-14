@@ -242,6 +242,10 @@ readable. Undo restores only the columns changed by the command, preserving late
 pre-migration snapshot and stable per-command ids, so draft publish replays the
 load against current live keys and lookup data rather than copying draft rows.
 Undo of a data migration requires approval; its preview names affected fields, removals and recreations.
+Undo plans reuse the down migration’s row/reference/calculation guards in a read-only
+preflight against the destination definition. Known conflicts appear as `preview.refusal`;
+they never relax the fresh guards inside apply’s transaction. `undoTo` preflights
+its first pending step; subsequent steps are checked against the state reached during apply.
 Load undo refuses surviving references to its inserted rows (including hidden
 references), preserving all rows and the current version on refusal. The shared
 load/extraction guard scans each reference field once against the set of created

@@ -91,7 +91,10 @@ it('projects real engine previews through stored approvals into card text', asyn
       merge: [String(second.id)],
     });
     expect(merge.text).toContain('1 record in Customers');
-    expect(merge.text).toContain('Acme');
+    expect(merge.approval.preview).toMatchObject({
+      keepLabel: 'Acme',
+      removedLabels: ['Other'],
+    });
     expect(JSON.stringify(merge.approval.preview)).not.toContain(
       'Unrelated private label',
     );
@@ -125,7 +128,7 @@ it('projects real engine previews through stored approvals into card text', asyn
     expect(clear.text).toContain('keep their current values');
     expect(clear.text).toContain('Future edits can set this field directly');
     const undo = await card({ type: 'undo' });
-    expect(undo.text).toContain('original value');
+    expect(undo.text).toContain('original stored values');
     await execute({
       type: 'defineModel',
       name: 'Empty',

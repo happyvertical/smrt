@@ -101,14 +101,22 @@ describe('approval descriptions', () => {
         action: { kind: 'command', command: { type: 'undo', version: 3 } },
         preview: {
           version: 3,
-          fields: [{ model: 'Chore', field: 'points', rows: 2 }],
+          undoKinds: [
+            {
+              kind: 'convertColumn',
+              modelLabel: 'Chores',
+              fieldLabel: 'Points',
+            },
+          ],
           replaced: 2,
         },
       }),
     );
-    expect(d.lines.join(' ')).toContain('Chore.points');
-    expect(d.lines.join(' ')).toContain('2 records changed since');
-    expect(d.destructive).toBe(true);
+    expect(d.lines.join(' ')).toContain('Points in Chores');
+    expect(d.lines.join(' ')).toContain(
+      'Values written since the type change can be overwritten',
+    );
+    expect(d.destructive).toBe(false);
   });
 
   it('flags cleanUp and deletes as permanent', () => {
@@ -152,7 +160,7 @@ for (const [type, preview, expected] of [
       references: { Order: 3 },
       referenceLabels: { Order: 'Orders' },
     },
-    ['2 records in Customers', 'Acme', '3 references in Orders'],
+    ['2 records in Customers', '3 references in Orders'],
   ],
   [
     'extractModel',

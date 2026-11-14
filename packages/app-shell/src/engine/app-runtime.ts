@@ -342,14 +342,7 @@ export class AppRuntime {
         const clearing =
           !!step.from?.calculated && !!step.to && !step.to.calculated;
         if (!up && clearing) {
-          const conflict = await tx.query(
-            `SELECT 1 FROM ${q(step.table)} t LEFT JOIN _archive a ON a.version = ? AND a.tbl = ? AND a.col = ? AND a.record_id = t.id WHERE t.${q(step.column)} IS NOT CAST(a.value AS ${sqlType((step.to ?? (step.from as FieldDef)).type)}) LIMIT 1`,
-            [m.version, step.table, step.column],
-          );
-          if (conflict.rows.length)
-            throw new AppError(
-              `cannot undo clearing ${step.table}.${step.column}: writable values changed since clearing; restoring the calculation would discard those edits`,
-            );
+          await this.assertCalculationUndo(tx, step, m.version);
         }
         if (up && clearing) {
           // Serialize in JavaScript: SQLite's REAL-to-TEXT affinity conversion
@@ -601,6 +594,58 @@ export class AppRuntime {
           ).rows[0].n,
         );
     return { values, tables: tables.length };
+  }
+
+  private async assertCalculationUndo(
+    db: Handle,
+    step: Extract<Step, { op: 'calculation' }>,
+    version: number,
+  ) {
+    const conflict = await db.query(
+      `SELECT 1 FROM ${q(step.table)} t LEFT JOIN _archive a ON a.version = ? AND a.tbl = ? AND a.col = ? AND a.record_id = t.id WHERE t.${q(step.column)} IS NOT CAST(a.value AS ${sqlType((step.to ?? (step.from as FieldDef)).type)}) LIMIT 1`,
+      [version, step.table, step.column],
+    );
+    if (conflict.rows.length)
+      throw new AppError(
+        `cannot undo clearing ${step.table}.${step.column}: writable values changed since clearing; restoring the calculation would discard those edits`,
+      );
+  }
+
+  /** Read-only reuse of the guards run again in the atomic down migration. */
+  async previewUndo(
+    version: number,
+    steps: Step[],
+    definition: AppDefinition = this.def,
+  ) {
+    try {
+      for (const step of steps) {
+        if (step.op === 'loadRecords') {
+          await assertCanUndoRows(definition, this.db, version);
+          await undoRows(definition, this.db, version, { previewOnly: true });
+        } else if (step.op === 'extractModel') {
+          await undoExtract(definition, this.db, step.command, version, true);
+        } else if (step.op === 'mergeRecords') {
+          await undoRows(definition, this.db, version, {
+            previewOnly: true,
+            skipDeletedReferrers: {
+              model: step.command.model,
+              keep: step.command.keep,
+            },
+          });
+        } else if (
+          step.op === 'calculation' &&
+          step.from?.calculated &&
+          step.to &&
+          !step.to.calculated
+        ) {
+          await this.assertCalculationUndo(this.db, step, version);
+        }
+      }
+      return {};
+    } catch (error) {
+      if (error instanceof AppError) return { refusal: error.message };
+      throw error;
+    }
   }
 
   /**

@@ -48,7 +48,11 @@ if (!isMainThread && workerData?.appWorker) {
     });
   } catch (e) {
     await settleStartupJobs();
-    port.postMessage({ ready: false, error: (e as Error).message });
+    port.postMessage({
+      ready: false,
+      error: (e as Error).message,
+      user: migration?.direction === 'down' && e instanceof AppError,
+    });
   }
   if (ok)
     port.on('message', async ({ id, op, args }: WorkerCall) => {

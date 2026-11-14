@@ -23,6 +23,7 @@ export const WORKER_OPS = [
   'countRows',
   'countArchives',
   'countOverwrites',
+  'previewUndo',
   'pruneSnapshots',
   'purgeArchives',
   'importRecords',

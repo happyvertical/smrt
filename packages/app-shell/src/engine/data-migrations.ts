@@ -547,7 +547,10 @@ export async function undoRows(
   def: AppDefinition,
   db: any,
   version: number,
-  options: { skipDeletedReferrers?: { model: string; keep: string } } = {},
+  options: {
+    skipDeletedReferrers?: { model: string; keep: string };
+    previewOnly?: boolean;
+  } = {},
 ) {
   const entries = (
     await db.query(
@@ -699,8 +702,9 @@ export async function undoRows(
   }
   if (conflictCount)
     throw new AppError(
-      `cannot undo: ${conflictCount} records need attention. ${conflicts.join('; ')}${conflictCount > conflicts.length ? `; ${conflictCount - conflicts.length} more records` : ''}`,
+      `cannot undo: ${conflictCount} ${conflictCount === 1 ? 'record needs' : 'records need'} attention. ${conflicts.join('; ')}${conflictCount > conflicts.length ? `; ${conflictCount - conflicts.length} more records` : ''}`,
     );
+  if (options.previewOnly) return { skipped: skipped.size };
   const removals = new Map<string, unknown[]>();
   const generatedByTable = new Map<string, Set<string>>();
   for (const entry of entries) {

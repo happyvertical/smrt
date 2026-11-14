@@ -32,6 +32,9 @@ export interface ApprovalDescription {
   blocks: CodeBlock[];
   /** True when something is lost for good (not restorable by undo). */
   destructive: boolean;
+  refusal?: string;
+  labels?: string[];
+  keptLabel?: string;
 }
 
 function commandLines(
@@ -52,12 +55,17 @@ function commandLines(
       const labels = obj(preview.referenceLabels);
       return {
         ...base,
+        keptLabel: String(preview.keepLabel || 'the selected record'),
+        labels: Array.isArray(preview.removedLabels)
+          ? preview.removedLabels.map(String)
+          : [],
         lines: [
-          `Merges ${plural(num(preview.removed), 'record')} in ${model} into ${preview.keepLabel ?? 'the selected record'}.`,
+          `Merges ${plural(num(preview.removed), 'record')} in ${model} into the kept record.`,
           ...Object.entries(references).map(
             ([name, count]) =>
               `${plural(num(count), 'reference')} in ${labels[name] ?? name} will point to the kept record.`,
           ),
+          `Removes ${plural(num(preview.removed), 'record')} in total.`,
           'The merged records are removed. Undo restores them until old archives are cleaned up.',
         ],
       };
@@ -210,18 +218,41 @@ function commandLines(
     }
     case 'undoTo':
     case 'undo': {
-      const fields = (Array.isArray(preview.fields) ? preview.fields : [])
-        .map(obj)
-        .map((f) => `${f.model}.${f.field}`);
-      const replaced = num(preview.replaced);
+      const kinds = (
+        Array.isArray(preview.undoKinds) ? preview.undoKinds : []
+      ).map(obj);
+      const lines = kinds.map((step) => {
+        const model = String(step.modelLabel ?? 'the model');
+        const field = String(step.fieldLabel ?? 'the field');
+        switch (step.kind) {
+          case 'loadRecords':
+            return `Undoes the load in ${model}: removes inserted records and restores the original values in updated fields. Other fields keep later edits.`;
+          case 'mergeRecords':
+            return `Undoes the merge in ${model}: recreates removed records and points surviving references back to those records.`;
+          case 'extractModel':
+            return `Undoes the extraction of ${field} in ${model}: restores the original text and removes linked records created by the extraction.`;
+          case 'calculation':
+            return step.calculationRestore === 'calculation'
+              ? `Restores the previous calculation for ${field} in ${model}.`
+              : `Removes the calculation for ${field} in ${model} and restores the original stored values.`;
+          case 'convertColumn':
+            return `Undoes the type change for ${field} in ${model}: restores archived original values. Values written since the type change can be overwritten.`;
+          default:
+            return 'Undoes the selected change.';
+        }
+      });
+      const refusal =
+        typeof preview.refusal === 'string' ? preview.refusal : undefined;
       return {
         ...base,
-        destructive: replaced > 0,
+        refusal,
         lines: [
-          `Undoes a type change: every row of ${fields.join(', ') || 'the field'} goes back to its original value.`,
-          replaced > 0
-            ? `${plural(replaced, 'record')} changed since will be overwritten with the original value. This cannot be taken back.`
-            : 'No value written since the change will be lost.',
+          ...(lines.length ? lines : ['Undoes the selected change.']),
+          ...(refusal
+            ? [refusal]
+            : [
+                'Undo checks again before applying and refuses conflicts that would discard later edits.',
+              ]),
         ],
       };
     }

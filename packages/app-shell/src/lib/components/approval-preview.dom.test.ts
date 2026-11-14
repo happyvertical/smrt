@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -22,40 +22,97 @@ it('renders real Node engine previews in approval cards for all data and calcula
       command: Record<string, unknown>;
       summary: string;
       preview: unknown;
+      status?: string;
+      result?: unknown;
+      preserved?: boolean;
     }[];
     const expected: Record<string, string> = {
       insert: '1 inserted, 0 updated',
       upsert: 'overwrite stored values',
       merge: '1 record in Customers',
+      mergeCapped: '12 records in total',
       extract: '2 records will be linked',
       plain: '2 stored values will be overwritten',
       replace: 'from Quantity to 3',
       clear: '2 records keep their current values',
-      undo: 'original value',
+      undoCalculation: 'Invoice total in Customers',
+      undoLoad: 'removes inserted records and restores the original values',
+      undoRefused: '1 record needs attention',
+      undoFailed: '1 record needs attention',
+      undoMerge:
+        'recreates removed records and points surviving references back',
+      undoExtract: 'restores the original text',
+      undoType: 'Undoes the type change for Invoice total in Customers',
       empty: '0 records will be recalculated',
     };
-    expect(cards).toHaveLength(9);
+    expect(cards).toHaveLength(16);
+    const rendered: string[] = [];
     for (const card of cards) {
       const container = document.createElement('div');
       document.body.append(container);
       const approval: ApprovalView = {
         id: card.name,
-        status: 'pending',
+        status: (card.status ?? 'pending') as ApprovalView['status'],
         summary: card.summary,
         preview: card.preview,
         action: { kind: 'command', command: card.command },
         requestedBy: '',
         decidedBy: '',
         decidedAt: '',
-        result: null,
+        result: card.result ?? null,
         createdAt: new Date().toISOString(),
       };
       const component = mount(ApprovalCard, {
         target: container,
-        props: { approval },
+        props: { approval, ondecide: () => {} },
       });
       try {
+        rendered.push(`${card.name}: ${container.textContent}`);
         expect(container.textContent, card.name).toContain(expected[card.name]);
+        if (
+          [
+            'undoLoad',
+            'undoMerge',
+            'undoExtract',
+            'undoCalculation',
+            'undoType',
+          ].includes(card.name)
+        ) {
+          expect(container.textContent).not.toContain('cannot undo');
+          expect(
+            [...container.querySelectorAll('button')].some(
+              (button) =>
+                /Approve/.test(button.textContent ?? '') && !button.disabled,
+            ),
+          ).toBe(true);
+        }
+        if (card.name === 'undoRefused')
+          expect(
+            [...container.querySelectorAll('button')].filter(
+              (button) =>
+                /Approve/.test(button.textContent ?? '') && !button.disabled,
+            ),
+          ).toHaveLength(0);
+        if (card.name === 'undoFailed') {
+          expect(card.preserved).toBe(true);
+          expect(container.textContent).not.toContain('the app did not start');
+        }
+        if (card.name === 'mergeCapped') {
+          expect(container.querySelectorAll('li[title]')).toHaveLength(10);
+          expect(container.textContent).toContain('the selected record');
+          expect(container.textContent).not.toContain('Removed 11');
+          expect(container.textContent).not.toMatch(
+            /[0-9a-f]{8}-[0-9a-f]{4}-/i,
+          );
+        }
+        if (card.name === 'merge') {
+          expect(container.textContent).toContain('1 reference in Orders');
+          const label = container.querySelector('li[title]');
+          expect(label?.getAttribute('title')).toContain('<b>Removed</b>');
+          expect(label?.textContent).toContain('…');
+          expect(container.querySelector('b')).toBeNull();
+          expect(container.textContent).toContain('1 record in total');
+        }
         if (['empty', 'replace', 'clear', 'insert'].includes(card.name))
           expect(container.textContent, card.name).not.toContain(
             'will be overwritten',
@@ -69,6 +126,11 @@ it('renders real Node engine previews in approval cards for all data and calcula
         container.remove();
       }
     }
+    if (process.env.SMRT_APPROVAL_TEXT_ARTIFACT)
+      writeFileSync(
+        process.env.SMRT_APPROVAL_TEXT_ARTIFACT,
+        rendered.join('\n\n'),
+      );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -409,6 +409,7 @@ export class AppHost extends EventEmitter {
         this.app = this.spawn(this.def, this.version);
         await this.app.ready.catch(() => {}); // surfaced later by the dead worker
       }
+      if (e instanceof EngineError && e.code === 'refused') throw e;
       throw new EngineError(
         `the app did not start with this change, so it was not applied: ${(e as Error).message}`,
         'migration_failed',
@@ -1208,6 +1209,13 @@ export class AppHost extends EventEmitter {
     let preview: Record<string, unknown> = {
       version: rec.version,
       steps: steps.length,
+      undoKinds: this.undoKinds(rec),
+      ...(await this.callApp<Record<string, unknown>>(
+        'previewUndo',
+        rec.version,
+        steps,
+        parent.definition,
+      )),
     };
     if (risky) {
       const counts = await this.callApp<
@@ -1306,6 +1314,13 @@ export class AppHost extends EventEmitter {
     let preview: Record<string, unknown> = {
       to: target,
       versions: undone.map((r) => ({ version: r.version, summary: r.summary })),
+      undoKinds: undone.flatMap((r) => this.undoKinds(r)),
+      ...(await this.callApp<Record<string, unknown>>(
+        'previewUndo',
+        undone[0]?.version,
+        undone[0]?.migration?.steps ?? [],
+        chain[1]?.definition ?? this.def,
+      )),
     };
     if (converting.length) {
       const fields: { model: string; field: string; rows: number }[] = [];
@@ -1365,12 +1380,57 @@ export class AppHost extends EventEmitter {
     };
   }
 
+  private undoKinds(rec: VersionRecord) {
+    return (rec.migration?.steps ?? []).flatMap<Record<string, unknown>>(
+      (step) => {
+        if (
+          step.op === 'loadRecords' ||
+          step.op === 'extractModel' ||
+          step.op === 'mergeRecords'
+        ) {
+          const model = step.command.model;
+          return [
+            {
+              kind: step.op,
+              modelLabel: rec.definition.models[model]?.label ?? model,
+              ...(step.op === 'extractModel'
+                ? {
+                    fieldLabel:
+                      rec.definition.models[model]?.fields[step.command.field]
+                        ?.label ?? step.command.field,
+                  }
+                : {}),
+            },
+          ];
+        }
+        if (step.op === 'calculation' || step.op === 'convertColumn') {
+          return [
+            {
+              kind: step.op,
+              ...this.locate(rec.definition, step.table, step.column),
+              calculationRestore: step.from?.calculated
+                ? 'calculation'
+                : 'values',
+            },
+          ];
+        }
+        return [];
+      },
+    );
+  }
+
   /** The model and field stored in `table.column` under `def`. */
   private locate(def: AppDefinition, table: string, column: string) {
     for (const [model, md] of Object.entries(def.models))
       if (tableFor(model, md) === table)
         for (const f of Object.keys(md.fields))
-          if (snake(f) === column) return { model, field: f };
+          if (snake(f) === column)
+            return {
+              model,
+              field: f,
+              modelLabel: md.label ?? model,
+              fieldLabel: md.fields[f].label ?? f,
+            };
     return { model: table, field: column };
   }
 

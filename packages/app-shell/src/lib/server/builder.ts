@@ -11,7 +11,8 @@ import {
   EngineError,
   isStructuralCommand,
 } from '../../engine/index.ts';
-import { fieldLabel, recordLabel } from '../ui/fields.ts';
+import { commandSummary } from '../ui/command-summary.ts';
+import { fieldLabel } from '../ui/fields.ts';
 import type { RecordRow } from '../ui/types.ts';
 import {
   type ApprovalAction,
@@ -77,8 +78,33 @@ export async function runCommand(
         command.type === 'mergeRecords'
           ? await host.get(command.model, command.keep)
           : undefined;
-      const keptLabel =
-        keep && model ? recordLabel(model, keep as RecordRow) : '';
+      const labelFor = (record: RecordRow | undefined) => {
+        if (!record || !model) return 'the selected record';
+        const title =
+          host.def.models['model' in command ? command.model : '']
+            ?.titleField ??
+          Object.entries(model.fields).find(
+            ([, f]) => !f.hidden && f.type === 'text',
+          )?.[0];
+        const value = title ? record[title] : undefined;
+        return value == null || String(value).trim() === ''
+          ? 'the selected record'
+          : String(value);
+      };
+      const removedLabels =
+        command.type === 'mergeRecords'
+          ? await Promise.all(
+              command.merge
+                .slice(0, 10)
+                .map(async (id) =>
+                  labelFor(
+                    (await host.get(command.model, id)) as
+                      | RecordRow
+                      | undefined,
+                  ),
+                ),
+            )
+          : [];
       const preview = {
         ...e.plan.preview,
         ...(model
@@ -92,12 +118,8 @@ export async function runCommand(
           : {}),
         ...(keep && model
           ? {
-              keepLabel:
-                keptLabel &&
-                keptLabel !== String(keep.id) &&
-                !keptLabel.endsWith('…')
-                  ? keptLabel
-                  : 'the selected record',
+              keepLabel: labelFor(keep as RecordRow),
+              removedLabels,
             }
           : {}),
         ...(command.type === 'extractModel'
@@ -127,7 +149,11 @@ export async function runCommand(
       };
       return requestApproval(
         { kind: 'command', command: pinned, reviewedPreview: e.plan.preview },
-        { ...e.plan, preview },
+        {
+          ...e.plan,
+          summary: commandSummary(command, host.def, undefined, preview),
+          preview,
+        },
         author,
       );
     }

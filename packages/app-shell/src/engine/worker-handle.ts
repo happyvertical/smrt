@@ -54,13 +54,13 @@ export class AppWorker {
     this.ready = new Promise((resolve, reject) => {
       this.worker.once(
         'message',
-        (m: BootInfo & { ready: boolean; error?: string }) => {
+        (m: BootInfo & { ready: boolean; error?: string; user?: boolean }) => {
           if (m.ready) resolve(m);
           else
             reject(
               new EngineError(
                 m.error ?? 'the app did not start',
-                'migration_failed',
+                m.user ? 'refused' : 'migration_failed',
               ),
             );
           this.worker.on('message', (r: WorkerReply) => this.settle(r));

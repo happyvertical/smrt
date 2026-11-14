@@ -1,24 +1,36 @@
 // Node-only fixture producer: jsdom's browser conditions cannot boot app models.
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AppHost, type Command, MemoryVersionStore } from '../src/engine/index.ts';
+
+import { commandSummary } from '../src/lib/ui/command-summary.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'approval-engine-'));
 const host = await AppHost.open(dir, { store: new MemoryVersionStore() });
 const cards: unknown[] = [];
 const execute = (command: Command) =>
   host.execute(command, { author: 'owner', approved: true });
+function files() {
+  return readdirSync(dir,{recursive:true}).map(String).sort().filter((file)=>statSync(join(dir,file)).isFile()).map((file)=>[file,createHash('sha256').update(readFileSync(join(dir,file))).digest('hex')]);
+}
 async function collect(name: string, command: Command) {
+  const before = JSON.stringify(files());
+  const version = host.version;
   const plan = await host.plan(command);
+  if (JSON.stringify(files()) !== before || host.version !== version) throw new Error(`Preview ${name} wrote files or changed version`);
   const models = host.describe().models;
   const model = 'model' in command ? models[command.model] : undefined;
+  const mergeRows = command.type === 'mergeRecords' ? await Promise.all(command.merge.slice(0, 10).map((id) => host.get(command.model, id))) : [];
+  const keep = command.type === 'mergeRecords' ? await host.get(command.model, command.keep) : undefined;
   cards.push({
     name,
     command,
-    summary: plan.summary,
+    summary: commandSummary(command,host.def,undefined,plan.preview),
     preview: {
       ...plan.preview,
+      ...(command.type === 'mergeRecords' ? { keepLabel: keep?.name || 'the selected record', removedLabels: mergeRows.map((row) => row?.name || 'the selected record'), referenceLabels: { Order: 'Orders' } } : {}),
       ...(model ? { modelLabel: model.label, fields: model.fields } : {}),
       ...('field' in command && model
         ? { fieldLabel: model.fields[command.field]?.label }
@@ -63,6 +75,9 @@ try {
     key: ['name'],
     rows: [{ name: 'Acme', amount: 9 }],
   });
+  await execute({ type: 'defineModel', name: 'Order', label: 'Orders', fields: { name: {type:'text'}, customer: {type:'reference', ref:'Customer'} } });
+  await host.create('Order', {name:'First order',customer:b.id});
+  await host.update('Customer', String(b.id), {name: '<b>Removed</b> ' + 'very long record label '.repeat(12)});
   await collect('merge', {
     type: 'mergeRecords',
     model: 'Customer',
@@ -85,13 +100,38 @@ try {
   await execute(calculation);
   await collect('replace', { ...calculation, calculated: { value: 3 } });
   await collect('clear', { ...calculation, calculated: null });
-  await collect('undo', { type: 'undo' });
+  await collect('undoCalculation', { type: 'undo' });
+  await execute({type:'undo'});
+  await execute({type:'loadRecords',model:'Customer',mode:'upsert',key:['name'],rows:[{name:'Acme',amount:22},{name:'Inserted'}]});
+  await collect('undoLoad', {type:'undo'});
+  const version = host.version;
+  await host.update('Customer', String(a.id), {amount:23});
+  await collect('undoRefused', {type:'undo'});
+  const refusedPlan = await host.plan({type:'undo'});
+  let error = '';
+  try { await execute({type:'undo'}); } catch (cause) { error = (cause as Error).message; }
+  cards.push({name:'undoFailed', command:{type:'undo'},summary:refusedPlan.summary,preview:refusedPlan.preview,status:'failed',result:{error}, preserved:host.version === version && (await host.get('Customer',String(a.id)))?.amount === 23});
+  await host.update('Customer',String(a.id),{amount:22});
+  await execute({type:'undo'});
+  await execute({type:'mergeRecords',model:'Customer',keep:String(a.id),merge:[String(b.id)]});
+  await collect('undoMerge',{type:'undo'});
+  await execute({type:'undo'});
+  await execute({type:'extractModel',model:'Customer',field:'category',into:'Category'});
+  await collect('undoExtract',{type:'undo'});
+  await execute({type:'undo'});
+  await execute({type:'changeFieldType',model:'Customer',field:'amount',to:{type:'text'}});
+  await collect('undoType',{type:'undo'});
+  await execute({type:'undo'});
+
   await execute({
     type: 'defineModel',
     name: 'Empty',
     fields: { qty: { type: 'integer' }, amount: { type: 'integer' } },
   });
   await collect('empty', { ...calculation, model: 'Empty' });
+  const blank = await host.create('Customer',{name:''});
+  const many = await Promise.all(Array.from({length:12},(_,i)=>host.create('Customer',{name:`Removed ${i+1}`})));
+  await collect('mergeCapped',{type:'mergeRecords',model:'Customer',keep:String(blank.id),merge:many.map((row)=>String(row.id))});
   writeFileSync(process.argv[2], JSON.stringify(cards));
 } finally {
   await host.close();

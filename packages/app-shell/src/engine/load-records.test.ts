@@ -324,7 +324,8 @@ it.each([
   ).rejects.toBeInstanceOf(ApprovalRequiredError);
   const failure = await run({ type: 'undo' }).catch((error) => error);
   expect(failure).toBeInstanceOf(EngineError);
-  expect(failure).toMatchObject({ code: 'migration_failed' });
+  expect(failure).toMatchObject({ code: 'refused' });
+  expect(failure.message).not.toContain('the app did not start');
   expect(failure.message).toMatch(
     /Sale “(?:created|updated)-reference”: still refers to a record this undo would remove/,
   );
