@@ -1240,6 +1240,9 @@ importers:
       jiti:
         specifier: ^2.7.0
         version: 2.7.0
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
     devDependencies:
       '@types/node':
         specifier: 24.13.2
