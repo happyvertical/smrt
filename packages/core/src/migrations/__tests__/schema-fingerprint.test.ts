@@ -370,6 +370,16 @@ describe('whole-schema fingerprint (#4926)', () => {
     );
   });
 
+  it('keeps the stamp of an ordinary column when calculated fields exist (#4915)', () => {
+    const plain = schema();
+    const marked = structuredClone(plain);
+    marked.columns.score.generated = undefined;
+    marked.columns.score.generatedInputTypes = { score: 'number' };
+    expect(computeSchemaFingerprint([marked])).toBe(
+      computeSchemaFingerprint([plain]),
+    );
+  });
+
   it('uses a stable placeholder for classes registered without a package', () => {
     ObjectRegistry.registerFromManifest(
       'LocalOnly',
@@ -553,6 +563,22 @@ const columnAttributes: Record<keyof ColumnDefinition, Decision> = {
     reason: 'a label',
     change: (s) => {
       s.columns.score.description = 'Other label';
+    },
+  },
+  generated: {
+    stamp: true,
+    change: (s) => {
+      s.columns.doubled.generated = {
+        op: 'add',
+        left: { col: 'score' },
+        right: { value: 2 },
+      } as unknown as ColumnDefinition['generated'];
+    },
+  },
+  generatedInputTypes: {
+    stamp: true,
+    change: (s) => {
+      s.columns.doubled.generatedInputTypes = { score: 'text' };
     },
   },
 };
@@ -864,6 +890,15 @@ const tableAttributes: Record<keyof SchemaDefinition, Decision> = {
 const columnForeignKeyBase = (): SchemaDefinition => {
   const base = richSchema();
   base.foreignKeys = [];
+  base.columns.doubled = {
+    type: 'INTEGER',
+    generated: {
+      op: 'mul',
+      left: { col: 'score' },
+      right: { value: 2 },
+    } as unknown as ColumnDefinition['generated'],
+    generatedInputTypes: { score: 'number' },
+  };
   return base;
 };
 

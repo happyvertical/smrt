@@ -1353,7 +1353,8 @@ exists. The core migrator logs those notices and returns them to wrappers.
 `getPendingSchemaStatements().decision` covers schema changes only.
 
 The fingerprint hashes canonical sorted JSON of abstract tables, columns,
-defaults, column CHECKs, table-level CHECKs (shared-table rules, by name and
+defaults, column CHECKs, calculated-column expressions with their input types
+(left out for ordinary columns, #4915), table-level CHECKs (shared-table rules, by name and
 whitespace-normalized expression, left out of the JSON when a table has none),
 physical foreign keys, indexes (including predicates and JSON paths), and
 triggers. It is computed from declarations, never read back from a catalog, so

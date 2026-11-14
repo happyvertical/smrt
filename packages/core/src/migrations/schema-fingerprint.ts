@@ -68,6 +68,16 @@ export function computeSchemaFingerprint(
             ? { default: defaultDDL(column.defaultValue, column.type) }
             : {}),
           ...(column.check ? { check: column.check } : {}),
+          // A calculated column (#4915): its expression and the input types
+          // it is rendered with decide the column migrate creates, replaces or
+          // converts. Left out of the JSON for ordinary columns, so their
+          // stamps do not move.
+          ...(column.generated !== undefined
+            ? {
+                generated: column.generated,
+                generatedInputTypes: column.generatedInputTypes ?? {},
+              }
+            : {}),
         },
       ]),
     ),
