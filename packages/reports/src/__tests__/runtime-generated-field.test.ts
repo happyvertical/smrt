@@ -4,7 +4,7 @@ import {
   registerRuntimeModel,
 } from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   compileRuntimeReportSpec,
   runRuntimeReport,
@@ -83,5 +83,57 @@ describe('runtime report over database-generated fields #4915', () => {
         ObjectRegistry.clear();
       }
     });
+  }
+});
+
+it('keeps an ordered limited SQLite report numeric after casting integer output', async () => {
+  ObjectRegistry.clear();
+  const db = await getTestDatabase({ type: 'sqlite', classes: [] });
+  try {
+    const name = registerRuntimeModel({
+      name: 'OrderedReportLine',
+      packageName: '@test/ordered-report',
+      fields: { category: { type: 'text' }, amount: { type: 'integer' } },
+    });
+    for (const sql of await planRuntimeModelDDL(
+      name,
+      'sqlite',
+      async () => null,
+    ))
+      await db.query(sql);
+    const lines = await ObjectRegistry.getCollection(name, { db });
+    for (const amount of [100, 2, 10, 9])
+      await lines.create({ category: `c${amount}`, amount });
+    const query = vi.spyOn(db, 'query');
+    for (const direction of ['asc', 'desc'] as const) {
+      const compiled = await compileRuntimeReportSpec(
+        parseRuntimeReportSpec({
+          title: 'Ordered limited',
+          source: 'lines',
+          dimensions: [{ field: 'category' }],
+          measures: [{ fn: 'sum', field: 'amount', as: 'total' }],
+          sort: [{ by: 'total', direction }],
+          limit: 3,
+        }),
+        {
+          sources: [{ id: 'lines', className: name, label: 'Lines' }],
+          tenantId: null,
+        },
+      );
+      const result = await runRuntimeReport(compiled, {
+        db,
+        adapterType: 'sqlite',
+      });
+      expect(result.rows.map((row) => row.total)).toEqual(
+        direction === 'asc' ? [2, 9, 10] : [100, 10, 9],
+      );
+      expect(result.truncated).toBe(true);
+      expect(query.mock.calls.at(-1)?.[0]).toContain(
+        `AS "_smrt_report_result" ORDER BY "_smrt_report_result"."r_total" ${direction.toUpperCase()}`,
+      );
+    }
+  } finally {
+    await db.close();
+    ObjectRegistry.clear();
   }
 });

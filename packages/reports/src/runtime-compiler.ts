@@ -661,9 +661,17 @@ export async function runRuntimeReport(
       ? `CAST(${alias} AS TEXT) AS ${alias}`
       : alias;
   });
+  const orderBy = compiled.aggregate.orderBy;
+  const outerOrder = (
+    Array.isArray(orderBy) ? orderBy : orderBy ? [orderBy] : []
+  ).map((order) => {
+    const [column, direction] = order.split(' ');
+    // Qualify the uncast subquery output: projected integer aliases are TEXT.
+    return `"_smrt_report_result"."${column.replace(/"/g, '""')}" ${direction}`;
+  });
   const sql =
     adapterType === 'sqlite'
-      ? `SELECT ${projection.join(', ')} FROM (${aggregate.sql}) AS "_smrt_report_result"`
+      ? `SELECT ${projection.join(', ')} FROM (${aggregate.sql}) AS "_smrt_report_result"${outerOrder.length ? ` ORDER BY ${outerOrder.join(', ')}` : ''}`
       : aggregate.sql;
   const result = await options.db.query(sql, ...aggregate.values);
   const rawRows = (result.rows ?? []) as Record<string, unknown>[];
