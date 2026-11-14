@@ -103,6 +103,8 @@ export async function runMcpCommand(
   const parsed = parseMcpArgs(args);
   const [sub, ...rest] = parsed.positionals;
   if (sub !== 'tools' && sub !== 'call') throw new Error(USAGE);
+  if (rest.length > (sub === 'call' ? 2 : 0))
+    throw new Error(`Unexpected extra arguments.\n${USAGE}`);
   if (parsed.confirm && sub !== 'call')
     throw new Error('--confirm is only valid with `mcp call`.');
 
@@ -147,7 +149,13 @@ export async function runMcpCommand(
   }
 
   const scrub = (text: string) =>
-    token ? text.split(token).join('[REDACTED]') : text;
+    token
+      ? text
+          .split(token)
+          .join('[REDACTED]')
+          .split(JSON.stringify(token).slice(1, -1))
+          .join('[REDACTED]')
+      : text;
 
   if (!parsed.legacyRest) {
     try {

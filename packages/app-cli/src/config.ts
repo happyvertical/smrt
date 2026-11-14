@@ -318,6 +318,8 @@ export interface RequestJsonOptions {
    * (#1311 review A4.)
    */
   maxResponseBytes?: number;
+  /** Abort the request after this many ms (default 30000). */
+  timeoutMs?: number;
   /**
    * Pre-loaded config to avoid re-reading from disk. Set by callers that
    * already have it (e.g. `buildAppContext`); leave undefined for the
@@ -426,13 +428,18 @@ export async function requestJsonResult<T = unknown>(
     response = await fetchImpl(`${serverUrl}${path}`, {
       ...init,
       headers,
+      redirect: 'error',
+      signal: init.signal ?? AbortSignal.timeout(options.timeoutMs ?? 30_000),
     });
   } catch (error) {
     return failure(0, {
       code: 'network_error',
-      message: redactMessage(
-        error instanceof Error ? error.message : String(error),
-      ),
+      message:
+        error instanceof Error && error.name === 'TimeoutError'
+          ? 'Request timed out.'
+          : redactMessage(
+              error instanceof Error ? error.message : String(error),
+            ),
       retryable: true,
     });
   }

@@ -136,7 +136,8 @@ deployed app's modern MCP endpoint (Streamable HTTP at exactly `/api/mcp`, or
   `<mcpPath>/call` REST routes and their result envelope.
 - `--confirm` (`mcp call` only) sets `confirm: true` in the call arguments for
   outbound or destructive tools. It is never added unless passed, and the
-  arguments must be a JSON object.
+  arguments must be a JSON object. A `"confirm": true` already present in
+  the JSON passes through unchanged.
 
 ```bash
 WORK_OWNER_TOKEN=... acme mcp call send_invoice '{"id":"inv_1"}' \

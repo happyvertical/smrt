@@ -185,7 +185,7 @@ describe('mcp remote client flags', () => {
         { context, fetch: fetchMock as any, env: { MY_TOKEN: SECRET } },
         ['tools', '--url', 'http://evil.test', '--token-env', 'MY_TOKEN'],
       ),
-    ).rejects.not.toThrow(SECRET);
+    ).rejects.toThrow(/Invalid server URL/);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -288,6 +288,64 @@ describe('mcp remote client flags', () => {
     );
     expect(succeeded).toBe(true);
     expect(fetchMock).toHaveBeenCalledOnce();
+  });
+});
+
+describe('mcp argument and transport hardening', () => {
+  const context = { envPrefix: 'MCPHARD', defaultServerUrl: 'https://d.test' };
+  const sink = () => ({ write: vi.fn() }) as unknown as NodeJS.WriteStream;
+
+  it('refuses redirects', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}'));
+    await runMcpCommand(
+      { context, stdout: sink(), stderr: sink(), fetch: fetchMock as any },
+      ['tools', '--legacy-rest', '--url', 'https://app.test'],
+    );
+    expect((fetchMock.mock.calls[0] as any)[1].redirect).toBe('error');
+  });
+
+  it('accepts the --url=value form', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}'));
+    await runMcpCommand(
+      { context, stdout: sink(), stderr: sink(), fetch: fetchMock as any },
+      ['tools', '--legacy-rest', '--url=https://eq.test'],
+    );
+    expect((fetchMock.mock.calls[0] as any)[0]).toBe(
+      'https://eq.test/api/mcp/tools',
+    );
+  });
+
+  it.each([
+    [['tools', '--mcp-path', '//evil.test']],
+    [['tools', '--confirm']],
+    [['tools', '--bogus']],
+    [['tools', 'extra']],
+    [['call', 'x', '{}', 'extra']],
+  ])('rejects %j', async (args) => {
+    const fetchMock = vi.fn();
+    await expect(
+      runMcpCommand({ context, fetch: fetchMock as any }, args),
+    ).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('maps a timeout to network_error', async () => {
+    const stdout = sink();
+    const ok = await runMcpCommand(
+      {
+        context,
+        stdout,
+        stderr: sink(),
+        fetch: (async () => {
+          throw Object.assign(new Error('x'), { name: 'TimeoutError' });
+        }) as any,
+      },
+      ['tools', '--legacy-rest', '--url', 'https://app.test'],
+    );
+    expect(ok).toBe(false);
+    expect(String((stdout.write as any).mock.calls[0][0])).toContain(
+      'network_error',
+    );
   });
 });
 
