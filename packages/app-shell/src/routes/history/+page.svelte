@@ -43,7 +43,7 @@ async function undo() {
       return;
     }
     waiting = false;
-    status = `Undone: ${out.summary}`;
+    status = `Undone: ${out.humanSummary ?? 'the selected change'}`;
     await Promise.all([
       invalidate(DEPENDS.history),
       invalidate(DEPENDS.shell),
@@ -93,7 +93,7 @@ async function undo() {
           {#each group.versions as v (v.version)}
           <article class="smrt-app-shell__card" aria-current={v.current ? 'true' : undefined}>
             <div class="smrt-app-shell-history__row">
-              <h2>{v.summary || `Version ${v.version}`}</h2>
+              <h2>{v.humanSummary || v.summary || `Version ${v.version}`}</h2>
               <div class="smrt-app-shell-history__badges" data-smrt-part="badges">
                 {#if v.current}<span class="smrt-app-shell__badge smrt-app-shell__badge-ok" data-smrt-part="badge">Current</span>{/if}
                 {#if v.purged}<span class="smrt-app-shell__badge smrt-app-shell__badge-warn" data-smrt-part="badge">Cannot be undone</span>{/if}
@@ -143,7 +143,7 @@ async function undo() {
   oncancel={() => (confirming = false)}
 >
   <p>
-    <strong>{selected?.name ?? current?.summary}</strong> will be taken back and your app returns
+    <strong>{selected?.name ?? current?.humanSummary ?? current?.summary}</strong> will be taken back and your app returns
     to the version before it. Later changes are also taken back. Archived data is restored.
   </p>
 </ConfirmDialog>

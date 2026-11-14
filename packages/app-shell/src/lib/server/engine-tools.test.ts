@@ -1,6 +1,6 @@
 import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { discardNow, startDraft } from './drafts.ts';
+import { discardNow, historyFor, startDraft } from './drafts.ts';
 import { getHost } from './host.ts';
 import { callTool, toolsFor } from './policy.ts';
 import { openShell, type ShellHarness } from './test-support.ts';
@@ -104,7 +104,19 @@ it('uses the kept record label in a draft merge summary without exposing ids', a
   );
   expect(result.structuredContent).toMatchObject({
     summary: 'Merged 1 Customers into Acme Ltd',
+    humanSummary: 'Merge 1 record in Customers',
   });
+  const history = await historyFor('draft');
+  expect(history.at(-1)).toMatchObject({
+    humanSummary: 'Merge 1 record in Customers',
+  });
+  expect(
+    JSON.stringify(
+      history.map(
+        (v) => (v as unknown as { humanSummary: string }).humanSummary,
+      ),
+    ),
+  ).not.toContain(String(keep.id));
   await discardNow();
 });
 

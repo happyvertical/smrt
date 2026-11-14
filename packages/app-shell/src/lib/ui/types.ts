@@ -67,6 +67,13 @@ export interface DraftInfo {
 }
 
 export interface PublishPreview {
+  fieldRenames?: {
+    model: string;
+    from: string;
+    to: string;
+    fromLabel: string;
+    toLabel: string;
+  }[];
   modelLabels?: Record<string, string>;
   fields?: Record<string, Record<string, FieldDef>>;
   reportChanges?: { kind: 'added' | 'changed' | 'removed'; text: string }[];
@@ -76,6 +83,7 @@ export interface PublishPreview {
   versions: {
     version: number;
     summary: string;
+    humanSummary?: string;
     dataSteps?: {
       op: 'loadRecords' | 'extractModel' | 'mergeRecords';
       model: string;
@@ -151,6 +159,7 @@ export interface VersionInfo {
   parent: number | null;
   author: string;
   summary: string;
+  humanSummary?: string;
   createdAt: string;
   purged: boolean;
   current: boolean;
@@ -175,6 +184,7 @@ export interface ApprovalView {
   id: string;
   status: ApprovalStatus;
   summary: string;
+  humanSummary?: string;
   preview: unknown;
   action: ApprovalAction | null;
   requestedBy: string;
@@ -188,6 +198,7 @@ export interface PendingApproval {
   status: 'pending_approval';
   approvalId: string;
   summary: string;
+  humanSummary?: string;
   preview: unknown;
 }
 
@@ -197,6 +208,7 @@ export type ShellEvent =
       target?: 'live' | 'draft';
       version: number;
       summary: string;
+      humanSummary?: string;
     }
   | { type: 'records'; target?: 'live' | 'draft'; model: string | null }
   | {
@@ -210,4 +222,5 @@ export type ShellEvent =
       id: string;
       status: ApprovalStatus;
       summary: string;
+      humanSummary?: string;
     };

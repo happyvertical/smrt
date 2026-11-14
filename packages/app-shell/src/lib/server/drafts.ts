@@ -18,6 +18,7 @@ import {
   type PublishResult,
 } from '../../engine/index.ts';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
+import { versionSummary } from '../ui/command-summary.ts';
 import type { ReportChange } from '../ui/reports.ts';
 import { reportChanges } from '../ui/reports.ts';
 import type { FieldDef } from '../ui/types.ts';
@@ -458,6 +459,13 @@ export async function historyFor(target: Target) {
     );
     if (changes.length)
       version.summary = `${record.summary} ${changes.map((c) => c.text).join(' ')}`;
+    Object.assign(version, {
+      humanSummary: versionSummary(
+        record.summary,
+        records.get(record.parent ?? -1)?.definition,
+        record.definition,
+      ),
+    });
   }
   if (target === 'draft') {
     const base = host.draft?.baseVersion;

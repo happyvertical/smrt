@@ -11,6 +11,7 @@ export { ENGINE_TOOLS, isEngineTool } from '../../engine/index.ts';
 import type { RuntimeReportSpec } from '@happyvertical/smrt-reports';
 import type { Command } from '../../engine/index.ts';
 import { toolSummary } from '../assistant/tool-summary.ts';
+import { commandSummary } from '../ui/command-summary.ts';
 import { fieldLabel, recordLabel } from '../ui/fields.ts';
 import type { RecordRow } from '../ui/types.ts';
 import { runCommand } from './builder.ts';
@@ -97,11 +98,13 @@ export async function runEngineTool(
   if (!type) throw new Error('unknown engine tool');
   // The caller cannot override the command discriminant or supply approval.
   const host = await hostFor(scope.structure);
-  await host.plan({ ...args, type } as Command);
+  const command = { ...args, type } as Command;
+  const plan = await host.plan(command);
+  const before = structuredClone(host.def);
   const description = host.describe();
   const model = own(description.models, args.model);
   const report = own(description.reports, args.name ?? args.from);
-  let summary = '';
+  let summary = commandSummary(command, before, undefined, plan.preview);
   switch (name) {
     case 'app_definereport': {
       const definition = args.definition as
@@ -150,5 +153,9 @@ export async function runEngineTool(
     const counts = result.loadCounts;
     summary = `Loaded ${counts.insert + counts.update} ${model?.label ?? 'records'}: ${counts.insert} inserted, ${counts.update} updated, ${counts.unchanged} unchanged`;
   }
-  return { ...result, summary: toolSummary(name, summary) };
+  return {
+    ...result,
+    humanSummary: commandSummary(command, before, host.def, plan.preview),
+    summary: toolSummary(name, summary),
+  };
 }
