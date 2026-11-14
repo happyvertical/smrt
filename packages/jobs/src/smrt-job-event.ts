@@ -3,7 +3,7 @@
 import './__smrt-register__.js';
 
 import {
-  detectEngine,
+  type detectEngine,
   ensureJobEventsSystemTableCompatibility,
   field,
   foreignKey,
@@ -17,6 +17,7 @@ import {
   tenantId,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { resolveEngine } from './worker-liveness.js';
 
 export type SmrtJobEventType = 'status' | 'progress' | 'log' | 'error' | string;
 
@@ -216,10 +217,7 @@ function databaseEngine(
     type?: string;
     client?: { constructor?: { name?: string }; connection?: unknown };
   };
-  const engine = detectEngine(
-    db.url || configured.config?.url || '',
-    configured.type || configured.config?.type,
-  );
+  const engine = resolveEngine(db);
   const clientName = configured.client?.constructor?.name?.toLowerCase() ?? '';
   if (
     engine === 'sqlite' &&

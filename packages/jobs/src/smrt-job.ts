@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { RetryStrategyConfig } from '@happyvertical/jobs';
 import {
-  detectEngine,
+  type detectEngine,
   ensureJobsSystemTableCompatibility,
   field,
   ObjectRegistry,
@@ -26,6 +26,7 @@ import {
 } from './background-policy.js';
 import { SmrtJobDedupeSlotCollection } from './smrt-job-dedupe-slot.js';
 import { terminalSnapshot, transitionTerminalJob } from './terminal-outcome.js';
+import { resolveEngine } from './worker-liveness.js';
 
 /**
  * Job status type
@@ -970,11 +971,7 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
 function getDatabaseEngine(
   db: DatabaseInterface,
 ): ReturnType<typeof detectEngine> {
-  const dbWithConfig = db as DatabaseWithConfig;
-  return detectEngine(
-    db.url || dbWithConfig.config?.url || '',
-    dbWithConfig.type || dbWithConfig.config?.type,
-  );
+  return resolveEngine(db);
 }
 
 function compareClaimOrder(left: SmrtJob, right: SmrtJob): number {

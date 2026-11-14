@@ -263,3 +263,9 @@ the same caller transaction for the domain CAS and job admission.
 completedAt? })` reads the safe outcome for that exact job and completion,
 without depending on the tenant feed's 1,000 candidates. Event retention still
 applies, and callers must authorize the resource as well as supply its tenant.
+
+PGlite clients use PostgreSQL claim/event SQL, detected through the SDK client's
+public `dumpDataDir` method (constructor names are minified). They cannot use an
+off-loop worker connection to the same WASM instance. The opt-in regression uses
+`SMRT_TEST_PGLITE_MODULE` from core's documented isolated peer fixture; absent
+that fixture the default suite deliberately skips the WASM case.

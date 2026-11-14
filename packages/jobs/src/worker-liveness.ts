@@ -134,8 +134,17 @@ export async function tuneSqliteForConcurrency(
   }
 }
 
+/** SDK PGlite exposes this public method even in minified builds. */
+export function isPglite(db: DatabaseInterface): boolean {
+  return (
+    typeof (db.client as { dumpDataDir?: unknown } | undefined)?.dumpDataDir ===
+    'function'
+  );
+}
+
 /** Resolve the database engine for a connection. */
 export function resolveEngine(db: DatabaseInterface): DatabaseEngine {
+  if (isPglite(db)) return 'postgres';
   const withConfig = db as DatabaseInterface & {
     config?: { type?: string };
     type?: string;
@@ -168,6 +177,7 @@ export function isInMemory(db: DatabaseInterface): boolean {
  * main-loop lease renewal + the in-process live set.
  */
 export function offLoopEligible(db: DatabaseInterface): boolean {
+  if (isPglite(db)) return false; // No independent backend can open this WASM instance.
   const engine = resolveEngine(db);
   if (engine === 'postgres') return true;
   if (engine === 'sqlite') return !isInMemory(db);
