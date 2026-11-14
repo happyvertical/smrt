@@ -10,6 +10,7 @@ import {
   installDesignRunExecutor,
 } from '@happyvertical/smrt-inference/server';
 import {
+  assertFailedJobDispatch,
   assertJobClaim,
   assertJobClaimForRelease,
   getJobClaim,
@@ -263,25 +264,20 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
               objectId: id,
               tenantId,
               status: 'failed',
+              method: 'execute',
             },
             orderBy: 'updated_at DESC',
             limit: 1,
           });
           const job = prior[0];
-          const outcomes = await events.listTerminalOutcomes({
-            tenantId,
-            objectTypes: [target],
-            limit: 1000,
-          });
-          if (
-            !job ||
-            !outcomes.outcomes.some(
-              (event) =>
-                event.jobId === job.id &&
-                event.attempts === job.attempts &&
-                event.failureKind === 'stale-recovery',
-            )
-          )
+          const outcome = job?.completedAt
+            ? await events.getTerminalOutcome(String(job.id), {
+                tenantId,
+                attempts: job.attempts,
+                completedAt: job.completedAt.toISOString(),
+              })
+            : null;
+          if (!job || outcome?.failureKind !== 'stale-recovery')
             throw new DesignRunConflictError(
               'TaskRunner has not recovered the previous job',
             );
@@ -298,14 +294,16 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
             };
             if (!(await recoveryStore.save(next, state.revision)))
               throw new DesignRunConflictError();
-            const current = await (
-              await SmrtJobCollection.create({ db: tx })
-            ).get({ id: String(job.id) });
-            if (
-              current?.status !== 'failed' ||
-              current.attempts !== job.attempts ||
-              (await activeJobs(owner, id, tx)).length
-            )
+            await assertFailedJobDispatch(tx, {
+              jobId: String(job.id),
+              tenantId,
+              attempt: job.attempts,
+              startedAt: job.startedAt?.toISOString() ?? '',
+              objectType: target,
+              objectId: id,
+              method: 'execute',
+            });
+            if ((await activeJobs(owner, id, tx)).length)
               throw new DesignRunConflictError('The recovered job changed');
             await enqueue(tx, next, owner);
             return snapshot(next);
