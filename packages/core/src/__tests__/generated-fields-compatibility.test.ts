@@ -4,6 +4,7 @@
  * with production sources from origin/main b16fc4c9075e50a6410a6039e1df295a42473c26.
  * No output normalization is applied. Fixture provenance lives beside the JSON.
  */
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -40,6 +41,36 @@ interface Fixture {
   sourceRevision: string;
   cases: Record<string, Expectation>;
 }
+function captureRequested(): boolean {
+  if (process.env.SMRT_CAPTURE_ORIGIN_MAIN !== BASELINE) return false;
+  // Check the worktree against the actual source commit, including new/deleted
+  // production files. A matching env string alone is never provenance.
+  try {
+    execFileSync(
+      'git',
+      [
+        'diff',
+        '--quiet',
+        BASELINE,
+        '--',
+        'packages/core/src',
+        ':(exclude)packages/core/src/**/__tests__/**',
+        ':(exclude)packages/core/src/**/*.test.ts',
+        ':(exclude)packages/core/src/**/*.spec.ts',
+        ':(exclude)packages/core/src/test-utils.ts',
+        ':(exclude)packages/core/src/testing/**',
+      ],
+      { cwd: join(import.meta.dirname, '../../../..'), stdio: 'pipe' },
+    );
+  } catch (cause) {
+    throw new Error(
+      `Capture requires baseline sources from ${BASELINE}; restore production sources from that commit before recapturing`,
+      { cause },
+    );
+  }
+  return true;
+}
+
 async function sources(
   directory: string,
   prefix = '',
@@ -67,6 +98,7 @@ describe('plain-model byte compatibility with origin/main #4972 round2', () => {
 
   for (const kind of ['plain', 'sti'] as const) {
     it(`${kind}: manifest, DDL, migration diff, OpenAPI and generated source match pre-PR bytes`, async () => {
+      const updating = captureRequested();
       const entries: SmartObjectDefinition[] = [];
       const pkg = '@test/generated-compat';
       if (kind === 'plain') {
@@ -176,7 +208,6 @@ describe('plain-model byte compatibility with origin/main #4972 round2', () => {
         getDDLStrategy('sqlite').generateCreateTable(schema),
         ...getDDLStrategy('sqlite').generateIndexes(schema),
       ]);
-      const updating = process.env.SMRT_CAPTURE_ORIGIN_MAIN === BASELINE;
       const fixture: Fixture = updating
         ? await readFile(fixturePath, 'utf8')
             .then(JSON.parse)
@@ -240,4 +271,23 @@ describe('plain-model byte compatibility with origin/main #4972 round2', () => {
       }
     });
   }
+});
+
+describe('compatibility fixture capture provenance #4972 round3', () => {
+  it('permits capture only from verified baseline production sources', () => {
+    // The explicit capture lane also executes this positive check against the
+    // real baseline tree. Ordinary validation exercises feature-tree refusal.
+    if (process.env.SMRT_CAPTURE_ORIGIN_MAIN === BASELINE) {
+      expect(captureRequested()).toBe(true);
+      return;
+    }
+    const previous = process.env.SMRT_CAPTURE_ORIGIN_MAIN;
+    process.env.SMRT_CAPTURE_ORIGIN_MAIN = BASELINE;
+    try {
+      expect(() => captureRequested()).toThrow(/baseline sources/i);
+    } finally {
+      if (previous === undefined) delete process.env.SMRT_CAPTURE_ORIGIN_MAIN;
+      else process.env.SMRT_CAPTURE_ORIGIN_MAIN = previous;
+    }
+  });
 });
