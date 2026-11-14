@@ -2015,6 +2015,7 @@ export default testManifest;
           describeMigrationRefusal,
           MigrationTracker,
           parsePostgresTimeoutMs,
+          resolveRetirementContext,
           shortChecksum,
         } = await import('@happyvertical/smrt-core/migrations');
 
@@ -2098,6 +2099,9 @@ export default testManifest;
           relaxColumns: Boolean(options['relax-columns']),
           postgresTimestampMigration,
           emptyTextAsNull: Boolean(options['empty-text-as-null']),
+          // Tables a package declares retired (#5005): dropped here, in this
+          // whole-schema run, and nowhere else.
+          retirement: resolveRetirementContext(manifestSchemas),
         });
         const diff = await comparer.compare(manifestSchemas);
         const engine = tracker.getEngine();
@@ -2352,6 +2356,20 @@ export default testManifest;
           console.log();
         }
 
+        // A retired table is dropped with its rows, so it is never silent.
+        const retirements = migrations.filter(
+          (migration) => migration.type === 'retire_table',
+        );
+        if (retirements.length > 0) {
+          console.log(
+            `\n🗑️  ${retirements.length} table(s) declared retired by their package will be DROPPED:`,
+          );
+          for (const migration of retirements) {
+            console.log(`   ${migration.tableName}: ${migration.note ?? ''}`);
+          }
+          console.log();
+        }
+
         const preForeignKeyMigrations = migrations.filter(
           (migration) => migration.phase === 'pre_foreign_key',
         );
@@ -2442,6 +2460,19 @@ export default testManifest;
             const columnDrops = migrations.filter(
               (m) => m.type === 'drop_column',
             );
+
+            const tableRetirements = migrations.filter(
+              (m) => m.type === 'retire_table',
+            );
+            if (tableRetirements.length > 0) {
+              console.log(
+                `  🗑️  Tables to retire (DESTRUCTIVE, declared by their package): ${tableRetirements.length}`,
+              );
+              for (const m of tableRetirements) {
+                console.log(`     ${m.tableName}: ${m.note ?? ''}`);
+              }
+              console.log();
+            }
 
             if (columnMigrations.length > 0) {
               console.log(`  📊 Columns to add: ${columnMigrations.length}`);
@@ -2635,6 +2666,9 @@ export default testManifest;
             } else if (migration.type === 'drop_foreign_key') {
               migrationSql = migration.sql || '';
               actionDesc = `Dropped foreign-key constraint on ${migration.tableName}`;
+            } else if (migration.type === 'retire_table') {
+              migrationSql = migration.sql || '';
+              actionDesc = `Retired table ${migration.tableName}${migration.note ? ` (${migration.note})` : ''}`;
             } else {
               return;
             }
@@ -2655,11 +2689,13 @@ export default testManifest;
                         ? `Upgrade column ${migration.column?.name} on ${migration.tableName} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`
                         : migration.type === 'drop_index'
                           ? `Drop index ${migration.indexName} on ${migration.tableName}`
-                          : migration.type === 'add_foreign_key'
-                            ? `Add foreign-key constraint on ${migration.tableName}`
-                            : migration.type === 'drop_foreign_key'
-                              ? `Drop foreign-key constraint on ${migration.tableName}`
-                              : `Add index ${migration.index?.name} on ${migration.tableName}`,
+                          : migration.type === 'retire_table'
+                            ? `Retire table ${migration.tableName}`
+                            : migration.type === 'add_foreign_key'
+                              ? `Add foreign-key constraint on ${migration.tableName}`
+                              : migration.type === 'drop_foreign_key'
+                                ? `Drop foreign-key constraint on ${migration.tableName}`
+                                : `Add index ${migration.index?.name} on ${migration.tableName}`,
               version: '1.0.0',
               // Auto-migrations don't carry a DOWN script. Atomic execution
               // rolls back the surrounding transaction instead of relying on

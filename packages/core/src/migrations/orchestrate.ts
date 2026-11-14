@@ -42,6 +42,7 @@ import {
   formatMigrationRefusal,
   type MigrationRunDecision,
 } from './migration-run-decision.js';
+import { resolveRetirementContext } from './retire-context.js';
 import { MigrationTracker } from './tracker.js';
 
 const logger = createLogger({ level: 'info' });
@@ -278,6 +279,9 @@ export async function getPendingSchemaStatements(
     postgresTimestampMigration: options.postgresTimestampMigration,
     emptyTextAsNull: options.emptyTextAsNull,
     relaxColumns: options.relaxColumns,
+    // Declared retirements (#5005). A run limited to tables plans them too, so
+    // decideMigrationRun can refuse them by name: only a whole-schema run drops.
+    retirement: resolveRetirementContext(schemas),
   });
   const statements = collectStatementsFromDiff(diff, db, options.engineHint);
   const unactionableChanges = collectUnactionableChanges(

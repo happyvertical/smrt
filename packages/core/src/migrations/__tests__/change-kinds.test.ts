@@ -14,6 +14,7 @@ import {
   classifySchemaChange,
   decideSchemaChange,
   hasExecutableSchemaSql,
+  isAdditiveSchemaChangeKind,
   SCHEMA_CHANGE_KINDS,
   type SchemaChangeKind,
   type SchemaChangeKindId,
@@ -295,6 +296,66 @@ const postgresShapes: Array<[SchemaChangeKindId, SchemaChange]> = [
   ],
 ];
 
+// The retire step (#5005): one change that drops, three named stops.
+const retireShapes: Array<[SchemaChangeKindId, SchemaChange]> = [
+  [
+    'table.retire',
+    {
+      type: 'retire_table',
+      kindHint: 'table.retire',
+      table: 'old_items',
+      sql: 'DROP TABLE IF EXISTS "old_items"',
+    },
+  ],
+  ...(
+    [
+      'table.retire-declared',
+      'table.retire-rows',
+      'table.retire-dependent',
+    ] as const
+  ).map((kind): [SchemaChangeKindId, SchemaChange] => [
+    kind,
+    {
+      type: 'retire_table',
+      kindHint: kind,
+      table: 'old_items',
+      advisory: { severity: 'warning', message: 'Named by the planner.' },
+    },
+  ]),
+];
+
+describe('the retire kinds (#5005)', () => {
+  it.each(retireShapes)('classifies %s', (kind, change) => {
+    expect(classifySchemaChange(change)).toBe(kind);
+  });
+
+  it('applies the drop and stops, losing data, on the three named stops, on every engine', () => {
+    for (const engine of ['postgres', 'sqlite', 'duckdb'] as const)
+      for (const [kind, change] of retireShapes) {
+        const verdict = decideSchemaChange(change, engine);
+        if (kind === 'table.retire') {
+          expect(verdict.decision).toBe('apply');
+        } else {
+          expect(verdict.decision).toBe('stop');
+          expect(verdict.stop?.reason).toBe('loses-data');
+          expect(verdict.message).toContain('old_items');
+          expect(verdict.message).toContain('Named by the planner.');
+        }
+      }
+  });
+
+  it('is not additive: a run limited to tables may never retire', () => {
+    expect(SCHEMA_CHANGE_KINDS['table.retire']).not.toHaveProperty('additive');
+    expect(isAdditiveSchemaChangeKind('table.retire')).toBe(false);
+  });
+
+  it('does not classify a retire change that carries neither a hint nor SQL', () => {
+    expect(
+      classifySchemaChange({ type: 'retire_table', table: 'old_items' }),
+    ).toBe('unlisted');
+  });
+});
+
 describe('schema change policy coverage (#4925)', () => {
   it('covers exactly the SchemaChange union and every differ type literal', () => {
     const differ = readFileSync(
@@ -533,6 +594,7 @@ describe('schema change policy coverage (#4925)', () => {
         name: 'covered',
         sql: '-- rebuilt with sibling (no change needed)',
       },
+      ...retireShapes.map(([, change]) => change),
     ];
     for (const engine of ['postgres', 'sqlite', 'duckdb'] as const) {
       // Only PostgreSQL carries the shared-table CHECK changes (#4932).

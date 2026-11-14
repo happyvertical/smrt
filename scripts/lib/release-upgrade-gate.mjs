@@ -106,7 +106,7 @@ export async function createDatabase(root) {
 export async function introspect(
   db,
   release,
-  { normalize = true, modelTables } = {},
+  { normalize = true, modelTables, modelOwners } = {},
 ) {
   const tables = {};
   const list = (
@@ -200,7 +200,22 @@ export async function introspect(
     capturedFrom: 'migrateSmrtSchemas on an empty database',
     tables,
     ...(modelTables ? { modelTables: [...modelTables].sort() } : {}),
+    // Which classes declared each model table in that release. A retirement
+    // names its `lastOwner`, and the gate checks it against this (#5005).
+    ...(modelOwners ? { modelOwners: sortKeys(modelOwners) } : {}),
   };
+}
+
+/** Table to the qualified classes that declare it, read from the registry. */
+export function collectModelOwners(registry) {
+  const owners = {};
+  for (const [key, entry] of registry.getAllClasses()) {
+    const table = registry.getTableName(key);
+    if (!table) continue;
+    const name = entry.qualifiedName ?? key;
+    owners[table] = [...new Set([...(owners[table] ?? []), name])].sort();
+  }
+  return owners;
 }
 
 export async function capture({
@@ -226,6 +241,7 @@ export async function capture({
       modelTables: Object.keys(
         build.ObjectRegistry.getAllSchemasAsDefinitions(),
       ),
+      modelOwners: collectModelOwners(build.ObjectRegistry),
     });
   } finally {
     await db.close();
@@ -635,6 +651,7 @@ export async function rehearse({
   const matchedLeftovers = new Set();
   let seededTables = 0;
   let seedFailures = [];
+  const retiredChecked = [];
   let db;
   let planned;
   try {
@@ -664,6 +681,24 @@ export async function rehearse({
     if (result.refused && !failures.length)
       failures.push('Migrate was refused without a reason');
     if (!result.refused) {
+      // A snapshot that holds a table a package declares retired: it is gone
+      // after the upgrade (#5005).
+      const held = snapshotModelTables(snapshot);
+      const gone = new Set(
+        (
+          await db.query(
+            `SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p')`,
+          )
+        ).rows.map((row) => row.name),
+      );
+      for (const entry of build.ObjectRegistry.getRetiredTables?.() ?? []) {
+        if (!held.has(entry.table)) continue;
+        retiredChecked.push(entry.table);
+        if (gone.has(entry.table))
+          failures.push(
+            `Retired table ${entry.table} is still there after the upgrade from smrt ${snapshot.release}.`,
+          );
+      }
       onProgress(`${label}: checking convergence`);
       const pending = await build.getPendingSchemaStatements(db, {
         engineHint: 'postgres',
@@ -771,8 +806,65 @@ export async function rehearse({
     seededTables,
     seedFailures,
     matchedLeftovers: [...matchedLeftovers],
+    retiredChecked,
     ok: failures.length === 0,
   };
+}
+
+/**
+ * The tables a snapshot holds as models (not smrt's bookkeeping tables).
+ */
+function snapshotModelTables(snapshot) {
+  return new Set(
+    snapshot.modelTables ??
+      Object.keys(snapshot.tables).filter((name) => !bookkeepingTables.has(name)),
+  );
+}
+
+/**
+ * The declared retirements (#5005) against the release snapshots, without a
+ * database. Each failure names the table.
+ *
+ * - A declaration whose table is in no supported snapshot is stale: the list
+ *   shrinks over time, so it fails until the declaration is removed.
+ * - `lastOwner` must be a class the snapshot recorded as declaring the table,
+ *   in every supported snapshot that holds it. A snapshot made before owners
+ *   were recorded cannot vouch for it: that fails too, naming the fix.
+ * - A package retires only a table its own models declared: `lastOwner` must
+ *   be a class of the declaring package.
+ *
+ * `supported` are the snapshots at or after the oldest supported release.
+ */
+export function checkRetiredDeclarations({ retired, supported }) {
+  const failures = [];
+  for (const entry of retired) {
+    const where = `Retired table ${entry.table} (${entry.packageName})`;
+    if (!entry.lastOwner.startsWith(`${entry.packageName}:`))
+      failures.push(
+        `${where}: lastOwner ${entry.lastOwner} is not a class of ${entry.packageName}. A package may retire only a table its own models declared.`,
+      );
+    const holding = supported.filter((snapshot) =>
+      snapshotModelTables(snapshot).has(entry.table),
+    );
+    if (!holding.length) {
+      failures.push(
+        `${where}: stale. The table is in no supported release snapshot (${supported.map((snapshot) => snapshot.release).join(', ') || 'none'}). Remove the declaration.`,
+      );
+      continue;
+    }
+    for (const snapshot of holding) {
+      const owners = snapshot.modelOwners?.[entry.table];
+      if (!owners)
+        failures.push(
+          `${where}: smrt ${snapshot.release} records no owner for the table, so lastOwner ${entry.lastOwner} cannot be checked. Add modelOwners.${entry.table} to snapshots/${snapshot.release}.json from that release's manifests.`,
+        );
+      else if (!owners.includes(entry.lastOwner))
+        failures.push(
+          `${where}: lastOwner ${entry.lastOwner} did not declare the table in smrt ${snapshot.release} (declared by ${owners.join(', ')}).`,
+        );
+    }
+  }
+  return failures;
 }
 
 export function selectPrevious(snapshots, current, compare) {
@@ -937,17 +1029,28 @@ export async function check({
     for (const failure of result.failures)
       report(`FAIL ${release}: ${failure}`);
   }
+  // Declared retirements against every supported snapshot (#5005).
+  const supported = versions
+    .filter((version) => build.compareReleases(version, oldest.release) >= 0)
+    .filter((version) => build.compareReleases(version, build.release) <= 0)
+    .map((version) => readJSON(path.join(directory, `snapshots/${version}.json`)));
+  const retired = build.ObjectRegistry.getRetiredTables?.() ?? [];
+  const retiredFailures = checkRetiredDeclarations({ retired, supported });
+  for (const failure of retiredFailures) report(`FAIL retired table: ${failure}`);
   const matched = new Set(results.flatMap((result) => result.matchedLeftovers));
   const stale = leftovers.filter(
     (entry) => !matched.has(`${entry.table}.${entry.column}`),
   );
   for (const entry of stale)
     report(`FAIL stale leftover: ${entry.table}.${entry.column}`);
-  const ok = results.every((result) => result.ok) && stale.length === 0;
+  const ok =
+    results.every((result) => result.ok) &&
+    stale.length === 0 &&
+    retiredFailures.length === 0;
   report(
-    `Release upgrade gate: ${ok ? 'PASS' : 'FAIL'} (${results.length} starting release(s), ${results.reduce((n, result) => n + result.failures.length, stale.length)} failure(s))`,
+    `Release upgrade gate: ${ok ? 'PASS' : 'FAIL'} (${results.length} starting release(s), ${results.reduce((n, result) => n + result.failures.length, stale.length + retiredFailures.length)} failure(s))`,
   );
-  return { ok, results, stale };
+  return { ok, results, stale, retiredFailures };
 }
 
 export async function save({ root, directory }) {

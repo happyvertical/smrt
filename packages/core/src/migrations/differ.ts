@@ -98,6 +98,7 @@ import {
   type DuckDbRebuildPlan,
   planDuckDbTableChanges,
 } from './duckdb-rebuild.js';
+import { planTableRetirements, type RetirementContext } from './retire-plan.js';
 import {
   planSqliteTableRebuildsWithConstraints,
   sqliteBackfillPlaceholderSql,
@@ -322,6 +323,12 @@ export interface DiffOptions {
    * the original sequential behavior — on every other engine.
    */
   introspectionConcurrency?: number;
+  /**
+   * Declared table retirements (#5005): the tables packages declare retired
+   * and what still declares tables. Resolve with `resolveRetirementContext()`.
+   * Without it nothing is retired: only a declared table is ever dropped.
+   */
+  retirement?: RetirementContext;
 }
 
 /**
@@ -916,6 +923,21 @@ export class SchemaComparer {
       if (this.options.includeDroppedTables && orphanTables.length > 0) {
         diff.dropped_tables.push(...orphanTables);
         diff.has_changes = true;
+      }
+
+      // Declared retirements (#5005). Planned last so a drop follows every
+      // other change of the run, and never read from the orphan list above.
+      if (this.options.retirement?.retired.length) {
+        const retirements = await planTableRetirements({
+          ...this.options.retirement,
+          db: this.db,
+          engine: this.engine,
+          liveTables: existingTables,
+        });
+        if (retirements.length > 0) {
+          diff.changes.push(...retirements);
+          diff.has_changes = true;
+        }
       }
 
       return diff;

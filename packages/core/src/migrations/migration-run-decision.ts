@@ -83,8 +83,14 @@ export interface MigrationReleaseStop {
 export interface MigrationRunStop<T = SchemaChangeInput> {
   change: T;
   kind: SchemaChangeVerdict['kind'];
-  /** `build-table`: a run limited to tables would relax or remove part of a build table. */
-  reason: NonNullable<SchemaChangeVerdict['stop']>['reason'] | 'build-table';
+  /**
+   * `build-table`: a run limited to tables would relax or remove part of a
+   * build table. `whole-schema-only`: it would retire (drop) a table (#5005).
+   */
+  reason:
+    | NonNullable<SchemaChangeVerdict['stop']>['reason']
+    | 'build-table'
+    | 'whole-schema-only';
   message: string;
 }
 
@@ -175,6 +181,18 @@ export function decideMigrationRun<T extends SchemaChangeInput>(options: {
   const applicable: T[] = [];
   for (const change of options.changes) {
     const verdict = decideSchemaChange(change, options.engine);
+    // Retiring is not additive: it removes a table. A run limited to tables
+    // never does it, whatever tables it names; only a whole-schema migrate,
+    // where the package comparison applies, may (#5005).
+    if (options.onlyAddTo && verdict.kind === 'table.retire') {
+      stops.push({
+        change,
+        kind: verdict.kind,
+        reason: 'whole-schema-only',
+        message: `${change.table}: this table is declared retired and would be dropped, but this run is limited to some tables (lazy activation or a run-time model edit), and only a whole-schema migrate retires a table. Run smrt db:migrate, a full migrate that compares the build's packages.`,
+      });
+      continue;
+    }
     const buildProblem = options.onlyAddTo
       ? buildTableProblem(change, verdict, options.onlyAddTo)
       : null;
@@ -379,6 +397,9 @@ function describeChange(change: SchemaChangeInput): HeldBackMigration {
       break;
     case 'drop_column':
       description = `Drop column ${subject}`;
+      break;
+    case 'retire_table':
+      description = `Retire table ${change.table}`;
       break;
     case 'alter_column':
       description = `Alter column ${subject} (${change.alteration ?? 'constraints'})`;

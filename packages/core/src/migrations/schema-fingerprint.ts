@@ -10,6 +10,10 @@ import {
 import { formatDefaultValue } from '../schema/sql-identifiers.js';
 import type { SchemaDefinition } from '../schema/types.js';
 import { sha256Hex } from '../utils/sha256.js';
+import {
+  type RetiredTableDeclaration,
+  retiredTablesStampInput,
+} from './retired-tables.js';
 
 // The knowledge graph's stableStringify entry also loads filesystem tooling.
 // Keep this projection import-free apart from pure schema/hash helpers.
@@ -52,6 +56,15 @@ export function computeSchemaFingerprint(
   schemas:
     | Readonly<Record<string, SchemaDefinition>>
     | readonly SchemaDefinition[],
+  options: {
+    /**
+     * The tables the build declares retired (#5005). A build whose only change
+     * is a new retirement must get a new stamp, or production starts before
+     * migrate has dropped the table. Left out of the hash when empty, so
+     * builds without any keep their stamp.
+     */
+    retired?: readonly RetiredTableDeclaration[];
+  } = {},
 ): string {
   const tables = Object.values(schemas).map((schema) => ({
     table: schema.tableName,
@@ -136,17 +149,22 @@ export function computeSchemaFingerprint(
   }));
   // STI manifests can repeat the identical shared-table definition.
   const uniqueTables = [...new Set(tables.map(canonicalJson))].sort();
-  return sha256Hex(`[${uniqueTables.join(',')}]`);
+  const retired = retiredTablesStampInput(options.retired);
+  return sha256Hex(
+    `[${uniqueTables.join(',')}]${retired.length ? `retired:${canonicalJson(retired)}` : ''}`,
+  );
 }
 
 /** Build-only projection of the same declarations used by the runtime hash. */
 export function computeManifestSchemaFingerprint(
-  manifest: Pick<SmartObjectManifest, 'objects'>,
+  manifest: Pick<SmartObjectManifest, 'objects'> &
+    Partial<Pick<SmartObjectManifest, 'retiredTables'>>,
 ): string {
   return computeSchemaFingerprint(
     [...collectManifestTables(manifestTableEntries(manifest)).values()].map(
       (table) => table.definition,
     ),
+    { retired: manifest.retiredTables },
   );
 }
 
@@ -177,7 +195,8 @@ export function manifestTableEntries(
  * the plain-words error so the caller can warn.
  */
 export function tryComputeManifestSchemaFingerprint(
-  manifest: Pick<SmartObjectManifest, 'objects'>,
+  manifest: Pick<SmartObjectManifest, 'objects'> &
+    Partial<Pick<SmartObjectManifest, 'retiredTables'>>,
   onConflict?: (error: ManifestTableConflictError) => void,
 ): string | undefined {
   try {

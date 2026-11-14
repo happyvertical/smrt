@@ -34,6 +34,7 @@ export {
   registerBuildSchema,
   registeredBuildSchema,
   resolveBuildSchema,
+  resolveRetiredTables,
 } from './build-schema.js';
 export * from './change-kinds.js';
 // Checksum utilities
@@ -190,6 +191,21 @@ export {
   type LegacyQualifiedNameTarget,
   legacyQualifiedNamesBackfillName,
 } from './qualified-name-aliases.js';
+// Declared table retirements (#5005)
+export { resolveRetirementContext } from './retire-context.js';
+export {
+  type PlanTableRetirementsOptions,
+  planTableRetirements,
+  type RetireDependent,
+  type RetirementContext,
+} from './retire-plan.js';
+export {
+  mergeRetiredTables,
+  type RetiredTable,
+  type RetiredTableDeclaration,
+  RetiredTableDeclarationError,
+  readRetiredTablesFromPackageJson,
+} from './retired-tables.js';
 export {
   computeManifestSchemaFingerprint,
   computeSchemaFingerprint,

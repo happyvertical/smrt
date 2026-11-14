@@ -211,7 +211,7 @@ export const dbDiffCommand: CLICommand = {
       const schemaDefinitions = ObjectRegistry.getAllSchemasAsDefinitions();
 
       // 6. Import diff utilities
-      const { SchemaComparer } = await import(
+      const { resolveRetirementContext, SchemaComparer } = await import(
         '@happyvertical/smrt-core/migrations'
       );
 
@@ -235,6 +235,8 @@ export const dbDiffCommand: CLICommand = {
         emptyTextAsNull: Boolean(options['empty-text-as-null']),
         // The engine the command decides changes with is the engine it reads.
         engineHint: dbType,
+        // Tables a package declares retired (#5005), as db:migrate plans them.
+        retirement: resolveRetirementContext(schemaDefinitions),
       });
 
       const diff = await comparer.compare(schemaDefinitions);
@@ -286,7 +288,9 @@ export const dbDiffCommand: CLICommand = {
       }
 
       const executableOrManual = diff.changes.filter(
-        (c) => !(c.advisory && !c.sql && !c.sqlStatements),
+        (c) =>
+          c.type === 'retire_table' ||
+          !(c.advisory && !c.sql && !c.sqlStatements),
       );
       if (
         executableOrManual.length === 0 &&
@@ -403,6 +407,31 @@ export const dbDiffCommand: CLICommand = {
         );
         for (const change of columnDrops) {
           console.log(`     - ${change.table}.${change.name}`);
+        }
+        console.log();
+      }
+
+      // Retirements (#5005): what db:migrate drops, and what holds a drop back.
+      const retireChanges = diff.changes.filter(
+        (c) => c.type === 'retire_table',
+      );
+      const retiring = retireChanges.filter((c) => c.sql);
+      if (retiring.length > 0) {
+        console.log(
+          `  🗑️  Tables to retire (DESTRUCTIVE, declared by their package) (${retiring.length}):`,
+        );
+        for (const change of retiring) {
+          console.log(`     - ${change.table}: ${change.note ?? ''}`);
+        }
+        console.log('     (dropped by smrt db:migrate, a whole-schema run)\n');
+      }
+      const retireStops = retireChanges.filter((c) => !c.sql);
+      if (retireStops.length > 0) {
+        console.log(
+          `  ⚠️  Retirements that stop the migrate (${retireStops.length}):`,
+        );
+        for (const change of retireStops) {
+          console.log(`     ! ${change.advisory?.message ?? change.table}`);
         }
         console.log();
       }

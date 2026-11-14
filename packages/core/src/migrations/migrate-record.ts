@@ -11,6 +11,7 @@ import {
 import { getDatabaseEngine, tableExists } from '../system/compatibility.js';
 import { type BuildSchema, resolveBuildSchema } from './build-schema.js';
 import type { PackagesSeenInput } from './migration-run-decision.js';
+import { getRegisteredRetiredTables } from './retired-tables.js';
 import { computeSchemaFingerprint } from './schema-fingerprint.js';
 
 export interface MigrateRecordInput {
@@ -78,7 +79,9 @@ export function collectMigrateRecordInput(
     return {
       release: corePackage.version,
       packages: [...packages].sort(),
-      fingerprint: computeSchemaFingerprint(schemas),
+      fingerprint: computeSchemaFingerprint(schemas, {
+        retired: getRegisteredRetiredTables(),
+      }),
     };
   }
   const unloaded = new Map<string, string[]>();
@@ -96,7 +99,8 @@ export function collectMigrateRecordInput(
   return {
     release: corePackage.version,
     packages: [...build.packages],
-    fingerprint: computeSchemaFingerprint(planned),
+    // The build's own retired list, which the build's stamp covers.
+    fingerprint: computeSchemaFingerprint(planned, { retired: build.retired }),
     build: {
       source: build.source,
       ...(build.fingerprint ? { fingerprint: build.fingerprint } : {}),

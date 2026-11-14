@@ -13,6 +13,7 @@ import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
   capture,
+  checkRetiredDeclarations,
   introspect,
   loadBuild,
   moveOldest,
@@ -451,6 +452,7 @@ test('capture is stable and restore round trips catalogs and bookkeeping', async
       stableJSON(
         await introspect(db, first.release, {
           modelTables: first.modelTables,
+          modelOwners: first.modelOwners,
         }),
       ),
       stableJSON(first),
@@ -793,4 +795,136 @@ test('snapshot model ownership excludes private bookkeeping from seed and orphan
   assert.equal(result.seededTables, 1);
   assert.deepEqual(result.seedFailures, []);
   assert.equal(result.ok, true, textOf(result));
+});
+
+// The retire step (#5005): the gate seeds a snapshot that holds the table,
+// migrates, asserts the table is gone and the schema converges; a stale
+// declaration and a wrong owner fail.
+const retiredTable = 'gate5005_old';
+const retiredOwner = '@test/gate4933:OldThing';
+function snapshotWithRetiredTable(extra = {}) {
+  const snapshot = oldSnapshot();
+  snapshot.tables[retiredTable] = {
+    columns: { id: col('uuid', true), slug: col('text', true) },
+    primaryKey: ['id'],
+    indexes: [],
+    constraints: [
+      {
+        name: `${retiredTable}_pkey`,
+        type: 'p',
+        definition: 'PRIMARY KEY (id)',
+        columns: ['id'],
+        referencesTable: null,
+        referencesColumns: [],
+      },
+    ],
+    ...extra,
+  };
+  snapshot.modelTables = [tableName, retiredTable];
+  snapshot.modelOwners = {
+    [tableName]: ['@test/gate4933:Gate4933'],
+    [retiredTable]: [retiredOwner],
+  };
+  return snapshot;
+}
+const declareRetired = (extra = {}) =>
+  build.ObjectRegistry.registerRetiredTables('@test/gate4933', [
+    {
+      table: retiredTable,
+      lastOwner: retiredOwner,
+      since: '0.61.2',
+      reason: 'Folded into gate4933s.',
+      rows: 'discard',
+      packageName: '@test/gate4933',
+      ...extra,
+    },
+  ]);
+
+test('a declared retired table is seeded, dropped by the upgrade, and the schema converges', async () => {
+  current();
+  declareRetired();
+  const result = await run(snapshotWithRetiredTable(), {
+    inspect: async (db) => {
+      const live = await introspect(db, release, { normalize: false });
+      assert.equal(live.tables[retiredTable], undefined);
+      assert.ok(live.tables[tableName]);
+    },
+  });
+  assert.equal(result.ok, true, textOf(result));
+  assert.equal(result.seededTables, 2);
+  assert.deepEqual(result.retiredChecked, [retiredTable]);
+});
+test("a retirement that does not say rows: 'discard' fails the gate with the named stop", async () => {
+  current();
+  declareRetired({ rows: undefined });
+  const result = await run(snapshotWithRetiredTable());
+  assert.equal(result.ok, false);
+  assert.match(textOf(result), /gate5005_old.*holds 1 row\(s\)/);
+  assert.match(textOf(result), /rows: 'discard'/);
+});
+test('a table both declared by a model and retired fails the gate by name', async () => {
+  current();
+  declareRetired({ table: tableName });
+  const result = await run(snapshotWithRetiredTable());
+  assert.equal(result.ok, false);
+  assert.match(textOf(result), /gate4933s is declared retired/);
+});
+test('a table that is simply no longer declared still fails; only a declaration lets it go', async () => {
+  current();
+  const result = await run(snapshotWithRetiredTable());
+  assert.equal(result.ok, false);
+  assert.match(textOf(result), /gate5005_old\.\w+.*0\.60\.17/);
+});
+test('retired declarations are checked against the supported snapshots', () => {
+  const retired = [
+    {
+      table: retiredTable,
+      lastOwner: retiredOwner,
+      since: '0.61.2',
+      reason: 'x',
+      rows: 'discard',
+      packageName: '@test/gate4933',
+    },
+  ];
+  const holding = snapshotWithRetiredTable();
+  assert.deepEqual(
+    checkRetiredDeclarations({ retired, supported: [holding] }),
+    [],
+  );
+  // Stale: the table is in no supported snapshot.
+  const stale = checkRetiredDeclarations({
+    retired,
+    supported: [oldSnapshot()],
+  });
+  assert.equal(stale.length, 1);
+  assert.match(stale[0], /gate5005_old.*stale.*no supported release snapshot/);
+  // The recorded owner is not the declared lastOwner.
+  const wrongOwner = snapshotWithRetiredTable();
+  wrongOwner.modelOwners[retiredTable] = ['@test/gate4933:Other'];
+  assert.match(
+    checkRetiredDeclarations({ retired, supported: [wrongOwner] }).join('\n'),
+    /did not declare the table.*@test\/gate4933:Other/,
+  );
+  // A snapshot made before owners were recorded cannot vouch for it.
+  const unattributed = snapshotWithRetiredTable();
+  delete unattributed.modelOwners;
+  assert.match(
+    checkRetiredDeclarations({ retired, supported: [unattributed] }).join('\n'),
+    /records no owner.*modelOwners\.gate5005_old/,
+  );
+  // A package retires only its own tables.
+  assert.match(
+    checkRetiredDeclarations({
+      retired: [{ ...retired[0], packageName: '@test/elsewhere' }],
+      supported: [holding],
+    }).join('\n'),
+    /not a class of @test\/elsewhere/,
+  );
+});
+test('capture records which classes declare each model table', async () => {
+  current();
+  const snapshot = await capture({ root, build });
+  assert.deepEqual(snapshot.modelOwners[tableName], [
+    '@test/gate4933:Gate4933',
+  ]);
 });

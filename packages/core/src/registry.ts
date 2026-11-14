@@ -79,6 +79,12 @@ import {
   getTestManifestCache,
   loadExternalManifestSyncWithNode,
 } from './manifest/store.js';
+import {
+  clearRegisteredRetiredTables,
+  getRegisteredRetiredTables,
+  type RetiredTable,
+  registerRetiredTables,
+} from './migrations/retired-tables.js';
 import type { SmrtObject } from './object';
 // ── Extracted modules (Issue #1006) ──────────────────────────────────────
 import { resolveCollectionCacheConfig as _resolveCollectionCacheConfig } from './registry/cache-config';
@@ -2748,6 +2754,12 @@ export class ObjectRegistry {
       objectsRegistered++;
     }
 
+    // The package's declared table retirements (#5005), which migrate reads
+    // wherever the package is installed.
+    if (packageName) {
+      registerRetiredTables(packageName, manifest.retiredTables);
+    }
+
     verboseLog(
       `[ObjectRegistry] registerPackageManifest: loaded ${objectsRegistered} objects from ${packageName || sourceLabel}`,
     );
@@ -2795,9 +2807,27 @@ export class ObjectRegistry {
   }
 
   /**
+   * Tables a registered package declares retired (#5005), in stable order.
+   * Migrate drops one only when it is listed here (or in the app's build), no
+   * model declares it, and the run is a whole-schema migrate.
+   */
+  static getRetiredTables(): RetiredTable[] {
+    return getRegisteredRetiredTables();
+  }
+
+  /** Register a package's retired tables, replacing its earlier list. */
+  static registerRetiredTables(
+    packageName: string,
+    retired: readonly RetiredTable[] | undefined,
+  ): void {
+    registerRetiredTables(packageName, retired);
+  }
+
+  /**
    * Clear all registered classes (mainly for testing)
    */
   static clear(): void {
+    clearRegisteredRetiredTables();
     clearGeneratedClassState();
     clearRuntimeOverrides();
     clearSubtypeLineage();

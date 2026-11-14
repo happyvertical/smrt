@@ -520,6 +520,107 @@ scenario table on SQLite, DuckDB and PostgreSQL (PGlite). Each scenario gives
 its outcome per engine, and a test fails if a scenario differs by engine without
 an entry in its `DIFFERENCES` list.
 
+### Retiring a table (#5005)
+
+Migrate never drops a table it was not told to drop. The policy was "migrate
+never drops a table"; it is now "migrate drops only a table its owning package
+has declared retired, with a reason, in a whole-schema run". Orphan detection
+plays no part: the differ still skips `_smrt_` orphans and still only reports
+the others (`includeDroppedTables` stays opt-in and separate).
+
+**The declaration** is in the owning package's `package.json`, so the package
+ships it and every install sees it:
+
+```json
+{
+  "name": "@acme/orders",
+  "smrt": {
+    "retiredTables": [
+      {
+        "table": "acme_order_drafts",
+        "lastOwner": "@acme/orders:OrderDraft",
+        "since": "1.4.0",
+        "reason": "Drafts are kept on the order itself.",
+        "rows": "discard"
+      }
+    ]
+  }
+}
+```
+
+`table` is the physical table. `lastOwner` is the qualified class that last
+declared it, and must be a class of the declaring package: a package may retire
+only a table its own models declared. `since` is the release that retires it.
+`reason` is the sentence `smrt doctor --db` and the migrate output show.
+`rows: 'discard'` is the only value; it is written out because dropping rows is
+the owner's decision. Without it a retired table that holds rows stops the
+migrate. A smrt system table (`SYSTEM_TABLE_NAMES`) can never be retired. The
+model class is removed in the same release that declares the retirement.
+
+**How it travels** (`migrations/retired-tables.ts`): the manifest generator
+(`applyRetiredTables`, one of the generation passes, run before the schemas so
+the stamp covers it) reads `smrt.retiredTables` into the package manifest's
+`retiredTables` (each entry carries its `packageName`). A malformed
+declaration fails the build naming the table. `ObjectRegistry.registerPackageManifest()`
+puts the list in the registry (`ObjectRegistry.getRetiredTables()`); the CLI's
+manifest loader does the same for every manifest it reads; the app's merged
+`.smrt/manifest.json` and its bundled build description carry the consumed
+packages' lists (`BuildSchema.retired`). `resolveRetiredTables()` is the union
+of the registry's and the build's, and `resolveRetirementContext()` adds what
+still declares each table. A run plans retirements only when it is given that
+context (`DiffOptions.retirement`): `getPendingSchemaStatements`, `db:migrate`
+and `db:diff` pass it; a bare `SchemaComparer` plans none.
+
+**What migrate does** (`migrations/retire-plan.ts`): a new change type
+`retire_table`, kinds in `SCHEMA_CHANGE_KINDS`:
+
+| Kind | Decision | When |
+|---|---|---|
+| `table.retire` | apply | The live table exists, a package in the build declares it retired, no model in the build declares it, it is empty or the declaration says `rows: 'discard'`, and nothing undeclared depends on it. One `DROP TABLE IF EXISTS`, last in the atomic batch, referencing retired tables first. Never `CASCADE`. |
+| `table.retire-declared` | stop (loses data) | A model, or smrt itself, still declares the table. |
+| `table.retire-rows` | stop (loses data) | The table holds rows and the declaration does not say `rows: 'discard'` (or the rows could not be counted). |
+| `table.retire-dependent` | stop (loses data) | Something undeclared depends on it, one stop per dependent: a foreign key (live, or declared by a model), a view, a trigger on another table. |
+
+These are named stops in the ordinary decision (`stops`, `heldBack`), never a
+thrown error. An absent table is nothing to do, so the step is idempotent. The
+dependents are read from the catalogs: SQLite `PRAGMA foreign_key_list` and
+`sqlite_master` (views and triggers by the table name in their SQL); PostgreSQL
+`pg_constraint`, `pg_depend` (views, materialized views) and trigger functions
+whose body names the table; DuckDB `duckdb_constraints()` and `duckdb_views()`
+(DuckDB has no triggers). A trigger on the retired table itself, and its
+indexes, go with it. Not detectable: a PostgreSQL function that names the table
+but is not a trigger function, and anything on the JSON adapter, which plans no
+retirements. Retired tables that reference each other drop in one run, the
+referencing table first; a cycle among them is a stop.
+
+**Not additive.** `table.retire` is not `additive`, and a run limited to named
+tables (`tables`, lazy activation, the run-time model editor) refuses it with
+reason `whole-schema-only`, whichever tables it names. Only a whole-schema
+migrate retires.
+
+**Build stamp.** `retiredTablesStampInput()` (table, and whether rows may be
+discarded) is part of `computeSchemaFingerprint()`; the key is left out when
+nothing is retired, so no existing build's stamp moves. The manifest, the
+build description and `collectMigrateRecordInput()` all read the same list.
+Parity test: `issue-5005-retired-stamp.test.ts` (a build whose only change is a
+retirement is refused at startup until migrate has run, and migrate records the
+stamp the build made).
+
+**Coverage.** `table-retire.test.ts` runs the step on SQLite with foreign keys
+ON and DuckDB, and on PGlite under `pnpm test:pglite`;
+`table-retire-postgres.optional.test.ts` runs it on a real server.
+`retired-tables.test.ts` covers the declaration and its path to the registry.
+
+**Upgrade gate.** Snapshots record `modelOwners` (table to the classes that
+declared it). For each snapshot that holds a retired table the gate seeds it as
+for any model table, migrates, and asserts the table is gone and the schema
+converges. `checkRetiredDeclarations()` fails a declaration whose table is in
+no supported snapshot (stale, so the list shrinks), whose `lastOwner` the
+snapshot does not record as declaring the table, or whose `lastOwner` is not a
+class of the declaring package. A snapshot saved before owners were recorded
+cannot vouch for `lastOwner`: add `modelOwners` for that table to it, from that
+release's manifests, in the commit that declares the retirement.
+
 ### A SQLite type change is a table rebuild (#2370)
 
 SQLite has no `ALTER TABLE ... ALTER COLUMN ... TYPE`, so
@@ -1561,6 +1662,15 @@ new code cannot insert. Ship a needed data step with the schema change. A field 
 `leftover-columns.json` can record intended leftovers. Every entry names
 `table`, `column`, `since` and a non-empty `reason`. Review that reason as a data
 decision. Entries that match no leftover in either rehearsal fail as stale.
+
+A table a package declares retired (see "Retiring a table (#5005)") is the one
+way a model table leaves a release. For each rehearsed snapshot that holds it,
+the gate seeds the table like any model table, migrates, and asserts the table
+is gone and the schema converges. It also fails a declaration whose table is in
+no supported snapshot (stale), whose `lastOwner` the snapshots do not record as
+declaring it (`modelOwners` in each snapshot), or whose `lastOwner` is not in
+the declaring package. A table the code simply stopped declaring, with no
+declaration, still fails as an old column that holds data.
 
 Migrate refuses a database whose last migrate record is older than the floor.
 It names the supported release and the first upgrade to run. A database without

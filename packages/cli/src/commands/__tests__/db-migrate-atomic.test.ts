@@ -235,6 +235,8 @@ vi.mock('@happyvertical/smrt-core/migrations', async () => {
       actual.DEFAULT_MIGRATION_LOCK_WAIT_TIMEOUT_MS,
     MigrationTracker: MockMigrationTracker,
     parsePostgresTimeoutMs: actual.parsePostgresTimeoutMs,
+    // No retired tables in these fixtures (#5005).
+    resolveRetirementContext: () => undefined,
     shortChecksum: vi.fn((checksum: string) => checksum),
   };
 });

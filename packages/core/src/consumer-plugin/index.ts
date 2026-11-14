@@ -27,6 +27,10 @@ import {
   BUILD_SCHEMA_MODULE,
   generateBuildSchemaModule,
 } from '../migrations/build-schema.js';
+import {
+  mergeRetiredTables,
+  type RetiredTable,
+} from '../migrations/retired-tables.js';
 import { tryComputeManifestSchemaFingerprint } from '../migrations/schema-fingerprint.js';
 import { generateDeclarations } from '../prebuild/index.js';
 import type {
@@ -118,6 +122,8 @@ class AmbiguousProviderGraphError extends Error {}
 interface ConsumerManifest {
   schemaFingerprint?: string;
   recipes?: RecipeDefinition[];
+  /** Retirements the consumed packages declare, merged (#5005). */
+  retiredTables?: RetiredTable[];
   version: string;
   timestamp: number;
   packageName?: string;
@@ -1605,6 +1611,7 @@ async function aggregateTypeManifests(
   const unresolvedPackages: string[] = [];
   const objectSources = new Map<string, string>();
   const recipes = new Map<string, RecipeDefinition>();
+  const retiredTables: RetiredTable[] = [];
 
   for (const packageName of packages) {
     let loadedManifest = false;
@@ -1671,6 +1678,14 @@ async function aggregateTypeManifests(
             console.log(
               `[smrt:consumer] Loaded manifest from ${packageName} (${Object.keys(manifest.objects).length} objects)`,
             );
+
+            for (const entry of manifest.retiredTables ?? []) {
+              retiredTables.push({
+                ...entry,
+                // A manifest written by hand may omit it; the owner is the package.
+                packageName: entry.packageName ?? packageName,
+              });
+            }
 
             for (const recipe of manifest.recipes ?? []) {
               const prior = recipes.get(recipe.id);
@@ -1771,6 +1786,9 @@ async function aggregateTypeManifests(
   aggregatedManifest.recipes = [...recipes.values()].sort((a, b) =>
     a.id.localeCompare(b.id),
   );
+  const consumedRetired = mergeRetiredTables(retiredTables);
+  if (consumedRetired.length > 0)
+    aggregatedManifest.retiredTables = consumedRetired;
   return aggregatedManifest;
 }
 
@@ -1872,6 +1890,17 @@ async function saveAggregatedManifest(
               : {}),
             objects: { ...existing.objects, ...manifest.objects },
           };
+          // The consumed packages' retirements replace what the file held for
+          // them; the local package's own (written by smrtPlugin) stay (#5005).
+          const consumed = new Set(manifest.smrtDependencies ?? []);
+          const unioned = mergeRetiredTables(
+            (existing.retiredTables ?? []).filter(
+              (entry) => !consumed.has(entry.packageName),
+            ),
+            manifest.retiredTables,
+          );
+          if (unioned.length > 0) merged.retiredTables = unioned;
+          else delete merged.retiredTables;
         }
       } catch {
         // Unreadable/corrupt existing file — fall back to a plain write.
@@ -2300,7 +2329,12 @@ async function generateRegistrationFile(
 
     const logicalName = def.className || exportName;
     // The build's stamp stays in .smrt/manifest.json only (#4929).
-    const { schemaFingerprint: _buildStamp, ...registrationBase } = manifest;
+    // Nor the retired list: the build's description carries it (#5005).
+    const {
+      schemaFingerprint: _buildStamp,
+      retiredTables: _retired,
+      ...registrationBase
+    } = manifest;
     registrationManifests[objectName] = {
       ...registrationBase,
       packageName: def.packageName,

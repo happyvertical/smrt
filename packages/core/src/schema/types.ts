@@ -390,6 +390,11 @@ export interface SchemaChange {
   type:
     | 'add_table'
     | 'drop_table'
+    /**
+     * A table a package declares retired (#5005): `DROP TABLE` when it is
+     * safe, otherwise a named stop. Never produced by orphan detection.
+     */
+    | 'retire_table'
     | 'add_column'
     | 'drop_column'
     | 'alter_column'
@@ -481,6 +486,18 @@ export interface SchemaChange {
    * under `emptyTextAsNull` (#3226). Printed by `db:diff`/`db:migrate`.
    */
   note?: string;
+  /**
+   * On a `retire_table` change: the declaration it carries (#5005), for the
+   * report that names each retirement and its reason. `rows` is the live row
+   * count when it could be read.
+   */
+  retirement?: {
+    packageName: string;
+    lastOwner: string;
+    since: string;
+    reason: string;
+    rows: number | null;
+  };
   /**
    * On an `add_index` that is really an `ALTER INDEX ... RENAME`: the live
    * index name being renamed to `name`. The DDL is unchanged; reporting

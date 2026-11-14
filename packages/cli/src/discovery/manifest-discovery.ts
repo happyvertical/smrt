@@ -19,6 +19,10 @@ import {
   readBuildSchemaFile,
   registerBuildSchema,
 } from '@happyvertical/smrt-core';
+import {
+  mergeRetiredTables,
+  type RetiredTable,
+} from '@happyvertical/smrt-core/migrations';
 import { glob } from 'tinyglobby';
 import { resolveManifestEntryPackageName } from './manifest-identity.js';
 
@@ -361,6 +365,23 @@ export async function loadManifest(manifestPath: string): Promise<void> {
       manifest.packageName,
     );
     ObjectRegistry.registerFromManifest(name, definition, packageName);
+  }
+
+  // Tables a package declares retired travel in its manifest (#5005). The
+  // app's merged manifest lists each consumed package's own entries.
+  const retired = Array.isArray(manifest.retiredTables)
+    ? (manifest.retiredTables as RetiredTable[])
+    : [];
+  for (const packageName of new Set(retired.map((item) => item.packageName))) {
+    ObjectRegistry.registerRetiredTables(
+      packageName,
+      mergeRetiredTables(
+        ObjectRegistry.getRetiredTables().filter(
+          (item) => item.packageName === packageName,
+        ),
+        retired.filter((item) => item.packageName === packageName),
+      ),
+    );
   }
 }
 
