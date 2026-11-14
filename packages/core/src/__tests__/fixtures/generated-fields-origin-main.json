@@ -1,0 +1,63 @@
+{
+  "sourceRevision": "b16fc4c9075e50a6410a6039e1df295a42473c26",
+  "cases": {
+    "plain": {
+      "sqliteDeployment": [
+        "CREATE TABLE IF NOT EXISTS \"compat_plain\" (\n  \"_sync_origin_device_id\" TEXT,\n  \"_sync_revision\" INTEGER,\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT DEFAULT '',\n  \"created_at\" DATETIME NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" DATETIME NOT NULL DEFAULT current_timestamp,\n  \"title\" TEXT NOT NULL,\n  \"qty\" INTEGER\n);"
+      ],
+      "sha256": {
+        "manifest": "39a64dad7285de854afca837a742abcdf7ac1a2887c366553b8fa4b49d1e8167",
+        "schema": "2f90c75f198095ea1afbf88e8427d15b3b0df882f636042b3a1986e1453fd119",
+        "registrySchema": "2f90c75f198095ea1afbf88e8427d15b3b0df882f636042b3a1986e1453fd119",
+        "openapi": "33f83962d32be30fe568e1e6becc578db01b3bba58f602a6c906a1b42658b3c7",
+        "ddl/sqlite": "5697ca02c313858c1aed8f81bfcdf5dc39bf8fb3d8e20c38d64f53efd7cb8d10",
+        "ddl/postgres": "235444497ac8d2a065833fdaebaab49d1c58d8f955ac0267af5a33f86d4838bc",
+        "ddl/duckdb": "36150aa4f686620718a4bc0411c0425439bb0f3df6ffaa3d38b809c79a88becb",
+        "migration": "bc5a587ce702dd8fe3c1a841568ca95c57b8458483e28d9d949e1ef31905fc0b",
+        "source/modular/config.ts": "4e8b1d0155d884e3bb3d3cddeb4f717723778359b5ce2f22901fca9467921708",
+        "source/modular/handlers/index.ts": "cd09d5e7f0128265fc723896b8e4d65ebc7655011a2a3fb353d3488cf785b821",
+        "source/modular/index.ts": "b9f49a7c9e30a97237272b8fb10648b53b691eb2216ecb8d86cee5b02fee1aea",
+        "source/modular/tools/index.ts": "373feae6968fa10d677776e33199797de7bcfd26c81816f4422a739dce08edcb",
+        "source/single/index.ts": "c626110cc2ea3d7973f61d1894e8f29a53072c461603ff9008d5fafaef7d79cc",
+        "source/sveltekit/src/lib/server/smrt-register.ts": "a34e6d18e7c707cc73f9a4f041481944ba8faaf524a3ee71a54bac04300ec935",
+        "source/sveltekit/src/lib/server/smrt.ts": "0ccb2afbd8cc5f2d935fa82bbb52653417890b2e4e225b9fae5c773282f23dbf",
+        "source/sveltekit/src/routes/api/_changes/+server.ts": "0d90d327ad6437bc07aee0466797ac19851716d3e93d1781c34c7a457725819e",
+        "source/sveltekit/src/routes/api/_events/+server.ts": "7d2cc146aa19cdf11640693976bc506fb86e26483970a82e26232dd3c7cb5040",
+        "source/sveltekit/src/routes/api/compat_plain/[id]/+server.ts": "a8bbf0fa104a91b46faee9dc7c0f2225bac0136f2d0339ee572b3eac415df078",
+        "source/sveltekit/src/routes/api/compat_plain/+server.ts": "04c2aefa087d5327424cf3b042522a5619cc67eba0e95c06e38c7bff2fbf98e1",
+        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "58fdd92a8da9226217a3120ec8f72555063b39400fe671304ed1b7e41d245527"
+      }
+    },
+    "sti": {
+      "sqliteDeployment": [
+        "CREATE TABLE IF NOT EXISTS \"compat_roots\" (\n  \"_sync_origin_device_id\" TEXT,\n  \"_sync_revision\" INTEGER,\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" TEXT,\n  \"created_at\" DATETIME NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" DATETIME NOT NULL DEFAULT current_timestamp,\n  \"qty\" INTEGER,\n  \"serial\" TEXT\n);",
+        "CREATE UNIQUE INDEX IF NOT EXISTS \"compat_roots_slug_context_meta_type_idx\" ON \"compat_roots\" (\"slug\", \"context\", \"_meta_type\");",
+        "CREATE INDEX IF NOT EXISTS \"compat_roots_meta_type_idx\" ON \"compat_roots\" (\"_meta_type\");",
+        "CREATE UNIQUE INDEX IF NOT EXISTS \"compat_roots_serial_compat_middle_unique_idx\" ON \"compat_roots\" (\"serial\") WHERE _meta_type = '@test/generated-compat:CompatMiddle';",
+        "CREATE INDEX IF NOT EXISTS \"compat_roots_created_at_idx\" ON \"compat_roots\" (\"created_at\");"
+      ],
+      "sha256": {
+        "manifest": "ddd86a15d312a159168eaeb594c2b6fd34b25be66e4a09409b91f277ce62d138",
+        "schema": "f01b3e0cd4be9315fa9b5035862d50e233f8fb19f3b5768e08f709b20e89be0b",
+        "registrySchema": "4319766646cc5c3f24630c498b158f67056f1b65dc94375992754bbf40b3b79d",
+        "openapi": "167c319364d88ae20242063b2bbf1c6ad769e5ea589b912d13874e41780e902a",
+        "ddl/sqlite": "5f2d6a45b32c5c01ebf08d82347eb8e4cffa12a92b5310898f623e35db7c3528",
+        "ddl/postgres": "3dfb0c8b03d48665601763b70e3cc40330abb1459829463ec171edb5b4e6c2cb",
+        "ddl/duckdb": "19d3509309e8bad5b325f2576ab0dc7ee1235479b5a51cea0b00331e5f2308ec",
+        "migration": "bc5a587ce702dd8fe3c1a841568ca95c57b8458483e28d9d949e1ef31905fc0b",
+        "source/modular/config.ts": "4e8b1d0155d884e3bb3d3cddeb4f717723778359b5ce2f22901fca9467921708",
+        "source/modular/handlers/index.ts": "1edfc336847e6f73ea7bfbcc730ef5b20c41cbf5eea4a268d35c56f369ab7cf8",
+        "source/modular/index.ts": "b9f49a7c9e30a97237272b8fb10648b53b691eb2216ecb8d86cee5b02fee1aea",
+        "source/modular/tools/index.ts": "ad79e570331f654d456fc7f5c938c7cb2a77dd994c123d2f33b19537dec67a4e",
+        "source/single/index.ts": "defd01795e648d10600c4e1269b1d06b3c761e51f76237c8ba1219dfb2841152",
+        "source/sveltekit/src/lib/server/smrt-register.ts": "40f8b7ae5798d46d7a4156976671b6d27793da1da8673af72678810b52bb4714",
+        "source/sveltekit/src/lib/server/smrt.ts": "0ccb2afbd8cc5f2d935fa82bbb52653417890b2e4e225b9fae5c773282f23dbf",
+        "source/sveltekit/src/routes/api/_changes/+server.ts": "51b9498c2881de41b4fc1d18155386746071681028f215478e2365cd03835e6f",
+        "source/sveltekit/src/routes/api/_events/+server.ts": "f0473b6d66e0e35cb1a36c3997a2aa06215f20a18ffef3a08b86637191a14927",
+        "source/sveltekit/src/routes/api/compatroots/[id]/+server.ts": "e74eb57624eac8ccbc30fc45b5c6adf9ec3201dbcb6e6947057f31aee6537813",
+        "source/sveltekit/src/routes/api/compatroots/+server.ts": "12863ba60bfdc50d3dda6e4ba96462ab21da92297df61e85bd894169556e448a",
+        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "d473cd402daa5f37c55944ebf43ebf659d462c5c93ce05a4f1f98622af002c25"
+      }
+    }
+  }
+}

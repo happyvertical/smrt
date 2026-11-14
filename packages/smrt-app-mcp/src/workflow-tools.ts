@@ -40,6 +40,18 @@ export interface McpWorkflowToolDefinition {
     resourceUri?: string;
     visibility?: readonly McpWorkflowToolVisibility[];
   };
+  /**
+   * Scopes the calling principal must hold, all of them, for this tool to be
+   * visible or callable. Enforced by the server with `toolPolicy`; an
+   * unauthenticated caller holds none.
+   */
+  requiredScopes?: readonly string[];
+  /**
+   * Require `arguments.confirm === true`. An unconfirmed call is refused before
+   * the handler runs (`confirm_required`, audited as denied) and discovery
+   * advertises the `confirm` argument. Use for send/publish/pay/delete tools.
+   */
+  requiresConfirm?: boolean;
   /** Preserved extension metadata. It is never used as an authorization input. */
   metadata?: Record<string, unknown>;
   execute(context: McpWorkflowToolContext): MCPResponse | Promise<MCPResponse>;
@@ -55,6 +67,8 @@ export interface McpWorkflowTool {
   tool: MCPTool;
   execute: McpWorkflowToolDefinition['execute'];
   mapError?: McpToolErrorMapper;
+  requiredScopes: readonly string[];
+  requiresConfirm: boolean;
 }
 
 const TOOL_NAME = /^[a-z][a-z0-9_]{0,63}$/;
@@ -275,6 +289,23 @@ export function createMcpWorkflowTool(
     definition.outputSchema,
     'Workflow tool output schema',
   );
+  if (
+    definition.requiredScopes !== undefined &&
+    (!Array.isArray(definition.requiredScopes) ||
+      definition.requiredScopes.some(
+        (scope) => typeof scope !== 'string' || !scope,
+      ))
+  ) {
+    throw new TypeError(
+      'Workflow tool requiredScopes must be an array of non-empty strings.',
+    );
+  }
+  if (
+    definition.requiresConfirm !== undefined &&
+    typeof definition.requiresConfirm !== 'boolean'
+  ) {
+    throw new TypeError('Workflow tool requiresConfirm must be boolean.');
+  }
   const metadata = cloneMetadata(definition.metadata);
   if (definition.ui !== undefined) {
     assertRecord(definition.ui, 'Workflow tool ui');
@@ -327,6 +358,8 @@ export function createMcpWorkflowTool(
       ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
     },
     execute: definition.execute,
+    requiredScopes: Object.freeze([...(definition.requiredScopes ?? [])]),
+    requiresConfirm: definition.requiresConfirm === true,
     ...(definition.mapError ? { mapError: definition.mapError } : {}),
   };
 }

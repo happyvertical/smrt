@@ -33,6 +33,11 @@ paths = [
   # secrets must never live in tests, so excluding fixtures keeps the gate
   # signal-rich without flagging deliberate dummies.
   '''\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$''',
+  # SHA-256 digests of generated output captured from main (smrt-core
+  # generated-field compatibility baseline, #4915). The digest stored under the
+  # `openapi` key trips the generic-api-key keyword heuristic; it is a hash of an
+  # OpenAPI document, not a credential. One file only.
+  '''^packages/core/src/__tests__/fixtures/generated-fields-origin-main\.json$''',
   # This config documents example patterns; don't scan it.
   '''(^|/)\.gitleaks\.toml$''',
 ]

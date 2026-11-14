@@ -13,6 +13,16 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
 
 ## Patterns
 
+- Scopes, confirm and audit are server options (`toolScopes`, workflow
+  `requiredScopes`/`requiresConfirm`, `confirmTools`, `auditSink`,
+  `auditTenantId`). The scope check lives inside `passesToolPolicy` so tools and
+  resources share it and an anonymous caller never passes a scoped tool; the
+  confirm gate runs in `authorizeCall` before assertions and handlers and
+  answers as an `isError` result (`confirm_required`, audited `denied`). Audit
+  records hold argument KEY names only. `audit.ts` is model-free; the
+  `@smrt()` `McpCallAudit` model lives only behind the `./audit-store` subpath
+  (smrt#4957), never in the main entry.
+
 - Generate tools from core scoped to the allow-list (`MCPConfig.classNames`),
   then filter by allowed class names: a duplicate tool name among registered
   classes the app never publishes must not fail its catalog or calls (#3490).

@@ -1,3 +1,4 @@
+import { generatedExpression } from '../generated-fields.js';
 /**
  * Validator module for the SMRT ObjectRegistry.
  *
@@ -54,7 +55,11 @@ export function compileValidators(
     const options: FieldMeta = field._meta ?? {};
 
     // Skip transient fields (they're not persisted, so no validation needed)
-    if (options.transient || field.transient) {
+    if (
+      options.transient ||
+      field.transient ||
+      generatedExpression(field) !== undefined
+    ) {
       continue;
     }
 

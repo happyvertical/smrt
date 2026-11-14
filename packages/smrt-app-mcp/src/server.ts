@@ -38,8 +38,14 @@ import {
 } from '@happyvertical/smrt-jobs';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
+  type McpAuditSink,
+  mcpArgumentKeyNames,
+  mcpAuditRecordFromEvent,
+} from './audit.js';
+import {
   authoredMcpToolError,
   MCP_AUTHENTICATION_REQUIRED_CODE,
+  MCP_CONFIRM_REQUIRED_CODE,
   MCP_TOOL_ACCESS_DENIED_CODE,
   MCP_TOOL_NOT_FOUND_CODE,
   McpAccessError,
@@ -58,6 +64,7 @@ import {
   isPublicMcpTool,
   MCP_TOOL_EFFECTS,
   type McpToolEffect,
+  matchesToolPattern,
   mcpToolEffect,
 } from './tools.js';
 import {
@@ -141,6 +148,14 @@ export interface McpToolCallAuditEvent {
   identity: Readonly<McpPrincipalIdentity> | null;
   outcome: McpToolCallOutcome;
   error?: Readonly<McpToolErrorInfo>;
+  /**
+   * Host-supplied tenant for the call ({@link CreateMcpAppServerOptions.auditTenantId},
+   * default `principal.tenantId`), or `null`.
+   */
+  tenantId: string | null;
+  /** Sorted argument key names only; values are never reported. */
+  argumentKeys: readonly string[];
+  occurredAt: Date;
 }
 
 /** Context supplied to the optional per-tool principal policy. */
@@ -260,6 +275,36 @@ export interface CreateMcpAppServerOptions {
    * fast: a call returns after the hook settles.
    */
   onToolCall?: (event: McpToolCallAuditEvent) => void | Promise<void>;
+  /**
+   * Persistent audit destination, written once per call with the same
+   * never-throws, awaited semantics as {@link onToolCall} (failures go to
+   * `onToolCallHookError`). Records carry argument key names only.
+   */
+  auditSink?: McpAuditSink;
+  /**
+   * Tenant recorded for a call. Defaults to `principal.tenantId`. Must derive
+   * from the authenticated principal, never from request arguments.
+   */
+  auditTenantId?: (context: {
+    principal: Readonly<McpAppPrincipal> | null;
+    tool: string;
+  }) => string | null | undefined;
+  /**
+   * Declarative tool authorization: glob pattern (see `matchesToolPattern`) to
+   * the scopes the principal must hold, all of them, for every matching tool.
+   * A tool lacking them is hidden from discovery and denied on call, composed
+   * (AND) with `toolPolicy` and with a workflow tool's own `requiredScopes`.
+   * An unauthenticated caller holds none, so a scoped tool is never public.
+   */
+  toolScopes?: Readonly<Record<string, readonly string[]>>;
+  /**
+   * Glob patterns of tools that need `arguments.confirm === true`. An
+   * unconfirmed call is refused before any assertion or handler runs with a
+   * `confirm_required` error result, audited as `denied`; discovery advertises
+   * the boolean `confirm` argument. Combines with a workflow tool's own
+   * `requiresConfirm`.
+   */
+  confirmTools?: readonly string[];
   /** Receives (never rethrown) failures of {@link onToolCall}. */
   onToolCallHookError?: (error: unknown) => void;
   /**
@@ -390,6 +435,53 @@ function configuredEffects(
   return new Set(effects);
 }
 
+/** Failure codes that mean the call was refused, not that it broke. */
+const DENIED_FAILURE_CODES: ReadonlySet<string> = new Set([
+  'forbidden',
+  MCP_CONFIRM_REQUIRED_CODE,
+  MCP_TOOL_ACCESS_DENIED_CODE,
+  MCP_AUTHENTICATION_REQUIRED_CODE,
+  MCP_TOOL_NOT_FOUND_CODE,
+]);
+
+function configuredScopeRules(
+  toolScopes: CreateMcpAppServerOptions['toolScopes'],
+): ReadonlyArray<readonly [string, readonly string[]]> {
+  if (toolScopes === undefined) return [];
+  if (
+    !toolScopes ||
+    typeof toolScopes !== 'object' ||
+    Array.isArray(toolScopes)
+  ) {
+    throw new TypeError('MCP toolScopes must be an object.');
+  }
+  return Object.entries(toolScopes).map(([pattern, scopes]) => {
+    if (
+      !pattern ||
+      !Array.isArray(scopes) ||
+      scopes.some((scope) => typeof scope !== 'string' || !scope)
+    ) {
+      throw new TypeError(
+        'MCP toolScopes maps a tool pattern to an array of non-empty scopes.',
+      );
+    }
+    return [pattern, Object.freeze([...scopes])] as const;
+  });
+}
+
+function configuredConfirmPatterns(
+  patterns: readonly string[] | undefined,
+): readonly string[] {
+  if (patterns === undefined) return [];
+  if (
+    !Array.isArray(patterns) ||
+    patterns.some((pattern) => typeof pattern !== 'string' || !pattern)
+  ) {
+    throw new TypeError('MCP confirmTools must be an array of tool patterns.');
+  }
+  return Object.freeze([...patterns]);
+}
+
 type RegistryEntry =
   ReturnType<typeof ObjectRegistry.getAllClasses> extends Map<string, infer V>
     ? V
@@ -478,6 +570,8 @@ export function createMcpAppServer(
     }
     workflowToolsByName.set(workflowTool.tool.name, workflowTool);
   }
+  const scopeRules = configuredScopeRules(options.toolScopes);
+  const confirmPatterns = configuredConfirmPatterns(options.confirmTools);
   const allowedEffects = configuredEffects(options.effects);
   const requestedToolListCacheHint = configuredToolListCacheHint(
     options.toolListCache,
@@ -585,6 +679,7 @@ export function createMcpAppServer(
       ...coreTools,
       ...workflowTools.map(({ tool }) => ({ tool })),
     ];
+    warnUnmatchedPatterns(allTools.map(({ tool }) => tool.name));
     for (const { tool } of allTools) {
       const ui = tool._meta?.ui as { resourceUri?: unknown } | undefined;
       if (
@@ -595,6 +690,7 @@ export function createMcpAppServer(
       }
     }
     return allTools
+      .map((entry) => ({ ...entry, tool: withConfirmSchema(entry.tool) }))
       .filter(
         ({ tool }) =>
           !applyEffects ||
@@ -604,6 +700,67 @@ export function createMcpAppServer(
       .sort((left, right) =>
         compareMcpToolNames(left.tool.name, right.tool.name),
       );
+  }
+
+  let patternsChecked = false;
+  /** Once, on the first catalog build: a pattern matching no tool is likely a typo. */
+  function warnUnmatchedPatterns(names: readonly string[]): void {
+    if (patternsChecked) return;
+    patternsChecked = true;
+    const unmatched = [
+      ...scopeRules.map(([pattern]) => ['toolScopes', pattern]),
+      ...confirmPatterns.map((pattern) => ['confirmTools', pattern]),
+    ].filter(
+      ([, pattern]) =>
+        !names.some((name) => matchesToolPattern(name, pattern as string)),
+    );
+    for (const [option, pattern] of unmatched) {
+      console.warn(
+        `[smrt-app-mcp] ${option} pattern "${pattern}" matches no tool; it protects nothing.`,
+      );
+    }
+  }
+
+  function requiredScopesFor(tool: MCPTool): readonly string[] {
+    const required = new Set(
+      workflowToolsByName.get(tool.name)?.requiredScopes ?? [],
+    );
+    for (const [pattern, scopes] of scopeRules) {
+      if (matchesToolPattern(tool.name, pattern)) {
+        for (const scope of scopes) required.add(scope);
+      }
+    }
+    return [...required];
+  }
+
+  function needsConfirm(tool: MCPTool): boolean {
+    return (
+      workflowToolsByName.get(tool.name)?.requiresConfirm === true ||
+      confirmPatterns.some((pattern) => matchesToolPattern(tool.name, pattern))
+    );
+  }
+
+  /** Advertise the boolean `confirm` argument on a gated tool. */
+  function withConfirmSchema(tool: MCPTool): MCPTool {
+    if (!needsConfirm(tool)) return tool;
+    const schema = tool.inputSchema as {
+      properties?: Record<string, unknown>;
+    };
+    if (schema.properties && 'confirm' in schema.properties) return tool;
+    return {
+      ...tool,
+      inputSchema: {
+        ...tool.inputSchema,
+        properties: {
+          ...(schema.properties ?? {}),
+          confirm: {
+            type: 'boolean',
+            description:
+              'Must be true to confirm this action; the call is refused without it.',
+          },
+        },
+      } as MCPTool['inputSchema'],
+    };
   }
 
   function runWorkflowAssertions(
@@ -635,6 +792,13 @@ export function createMcpAppServer(
     tool: MCPTool,
     principal: McpAppPrincipal | null,
   ): Promise<boolean> {
+    const scopes = requiredScopesFor(tool);
+    if (scopes.length > 0) {
+      const held = principal?.scopes;
+      if (!Array.isArray(held) || !scopes.every((s) => held.includes(s))) {
+        return false;
+      }
+    }
     if (!toolPolicy) return true;
     try {
       return Boolean(await toolPolicy({ principal, tool }));
@@ -751,8 +915,10 @@ export function createMcpAppServer(
     const publicPatterns = getPublicPatterns();
     const isSafePublicCatalog =
       !toolPolicy &&
+      scopeRules.length === 0 &&
       tools.every(
         ({ tool, identity }) =>
+          requiredScopesFor(tool).length === 0 &&
           isPublicMcpTool(tool, publicPatterns) &&
           identity !== undefined &&
           !isTenantScopedTool(identity),
@@ -767,6 +933,7 @@ export function createMcpAppServer(
     args: Record<string, unknown>;
     principal: McpAppPrincipal | null;
     tool: MCPTool;
+    confirmRequired: boolean;
   }> {
     const args = input.arguments ?? {};
     const principal = principalForCall(input);
@@ -791,8 +958,12 @@ export function createMcpAppServer(
         retryable: false,
       });
     }
+    // The gate runs before any host assertion or handler can act.
+    if (needsConfirm(tool) && args.confirm !== true) {
+      return { args, principal, tool, confirmRequired: true };
+    }
     runWorkflowAssertions(tool, identity, args, principal);
-    return { args, principal, tool };
+    return { args, principal, tool, confirmRequired: false };
   }
 
   function snapshotPrincipal(
@@ -834,22 +1005,61 @@ export function createMcpAppServer(
     outcome: McpToolCallOutcome,
     error?: McpToolErrorInfo,
   ): Promise<void> {
-    if (!options.onToolCall) return;
-    try {
-      await options.onToolCall(
-        Object.freeze({
-          tool: String(input.name).slice(0, 256),
-          principal: snapshotPrincipal(principal),
-          identity: identityOf(principal),
-          outcome,
-          ...(error ? { error: Object.freeze({ ...error }) } : {}),
-        }),
-      );
-    } catch (hookError) {
+    if (!options.onToolCall && !options.auditSink) return;
+    const reportFailure = (hookError: unknown) => {
       try {
         options.onToolCallHookError?.(hookError);
       } catch {
         // The error reporter is best effort too.
+      }
+    };
+    let event: McpToolCallAuditEvent;
+    try {
+      const snapshot = snapshotPrincipal(principal);
+      const tool = String(input.name).slice(0, 256);
+      let tenant: string | null | undefined = snapshot?.tenantId;
+      if (options.auditTenantId) {
+        try {
+          tenant = options.auditTenantId({ principal: snapshot, tool });
+        } catch (tenantError) {
+          // A throwing resolver must not drop the record: fall back to the
+          // principal's own tenant and still audit.
+          reportFailure(tenantError);
+          tenant = snapshot?.tenantId;
+        }
+      }
+      event = Object.freeze({
+        tool,
+        principal: snapshot,
+        identity: identityOf(principal),
+        outcome,
+        ...(error ? { error: Object.freeze({ ...error }) } : {}),
+        tenantId: typeof tenant === 'string' && tenant ? tenant : null,
+        argumentKeys: Object.freeze(mcpArgumentKeyNames(input.arguments)),
+        occurredAt: new Date(),
+      });
+    } catch (buildError) {
+      reportFailure(buildError);
+      return;
+    }
+    if (options.onToolCall) {
+      try {
+        await options.onToolCall(event);
+      } catch (hookError) {
+        reportFailure(hookError);
+      }
+    }
+    // Anonymous probes of unknown tools are reported to `onToolCall` only:
+    // persisting them would let unauthenticated callers flood the store.
+    const skipPersist =
+      !principal &&
+      outcome === 'denied' &&
+      error?.code === MCP_TOOL_NOT_FOUND_CODE;
+    if (options.auditSink && !skipPersist) {
+      try {
+        await options.auditSink.record(mcpAuditRecordFromEvent(event));
+      } catch (sinkError) {
+        reportFailure(sinkError);
       }
     }
   }
@@ -875,6 +1085,7 @@ export function createMcpAppServer(
     run: (authorized: {
       args: Record<string, unknown>;
       principal: McpAppPrincipal | null;
+      tool: MCPTool;
     }) => Promise<{ response: MCPResponse; failure?: McpToolErrorInfo }>,
   ): Promise<MCPResponse> {
     const principal = principalForCall(input);
@@ -889,8 +1100,30 @@ export function createMcpAppServer(
       }
       throw error;
     }
+    if (authorized.confirmRequired) {
+      const failure = {
+        code: MCP_CONFIRM_REQUIRED_CODE,
+        message: `Confirmation required: call ${String(input.name).slice(0, 64)} again with confirm: true.`,
+      };
+      await audit(input, principal, 'denied', failure);
+      return {
+        isError: true,
+        content: [{ type: 'text', text: failure.message }],
+        structuredContent: { error: failure },
+      } as MCPResponse;
+    }
     let result: { response: MCPResponse; failure?: McpToolErrorInfo };
     try {
+      // Generated tools never declared `confirm`; the gate consumed it.
+      const { tool } = authorized;
+      if (
+        needsConfirm(tool) &&
+        !workflowToolsByName.has(tool.name) &&
+        Object.hasOwn(authorized.args, 'confirm')
+      ) {
+        const { confirm: _confirm, ...rest } = authorized.args;
+        authorized = { ...authorized, args: rest };
+      }
       result = await run(authorized);
     } catch (error) {
       if (error instanceof McpAccessError) {
@@ -901,11 +1134,12 @@ export function createMcpAppServer(
       throw error;
     }
     if (result.response.isError) {
+      const failure = result.failure ?? failureOf(result.response);
       await audit(
         input,
         principal,
-        'error',
-        result.failure ?? failureOf(result.response),
+        DENIED_FAILURE_CODES.has(failure.code) ? 'denied' : 'error',
+        failure,
       );
     } else {
       await audit(input, principal, 'ok');
@@ -1074,7 +1308,19 @@ export function createMcpAppServer(
       for (const { tool, identity } of await catalogTools(false)) {
         if (!identity || workflowToolsByName.has(tool.name)) continue;
         if (!isTaskOrigin(identity, origin)) continue;
-        if (!allowedEffects || allowedEffects.has(mcpToolEffect(tool))) return;
+        if (allowedEffects && !allowedEffects.has(mcpToolEffect(tool)))
+          continue;
+        // Scopes are re-checked against the originating tool so a revoked or
+        // narrowed credential cannot keep driving a task it can no longer start.
+        const scopes = requiredScopesFor(tool);
+        const held = principal.scopes;
+        if (
+          scopes.length > 0 &&
+          (!Array.isArray(held) || !scopes.every((s) => held.includes(s)))
+        ) {
+          continue;
+        }
+        return;
       }
     }
     throw new McpAccessError(404, 'Unknown MCP task.');

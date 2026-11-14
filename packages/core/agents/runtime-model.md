@@ -158,3 +158,9 @@ Executable coverage: `src/__tests__/runtime-model.test.ts`,
 `runtime-model-presentation.test.ts`, `same-name-app-subclass.test.ts`,
 and `app-model-editor.test.ts`. All use in-process SQLite; PostgreSQL/DuckDB
 editor activation and packaged desktop behavior are unverified.
+
+## Database-generated fields (#4915)
+
+`RuntimeFieldDefinition.generated` declares a database-owned, output-only column.
+See [generated fields](generated-fields.md) for supported SDK expression nodes,
+validation, inherited read policy, migration behavior, and tests.

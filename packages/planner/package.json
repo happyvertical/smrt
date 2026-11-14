@@ -84,6 +84,7 @@
     "@happyvertical/smrt-affiliates": "workspace:*",
     "@happyvertical/smrt-agents": "workspace:*",
     "@happyvertical/smrt-analytics": "workspace:*",
+    "@happyvertical/smrt-app-mcp": "workspace:*",
     "@happyvertical/smrt-approvals": "workspace:*",
     "@happyvertical/smrt-comments": "workspace:*",
     "@happyvertical/smrt-content": "workspace:*",

@@ -1,3 +1,4 @@
+import { generatedExpression } from '../generated-fields.js';
 /**
  * OpenAPI documentation generation for smrt APIs
  *
@@ -53,6 +54,7 @@ export function generateOpenAPISpec(config: OpenAPIConfig = {}): OpenAPISpec {
     serverUrl = 'http://localhost:3000',
   } = config;
 
+  const inputNames = generatedInputSchemaNames();
   const spec = {
     openapi: '3.0.3',
     info: { title, version, description },
@@ -66,7 +68,7 @@ export function generateOpenAPISpec(config: OpenAPIConfig = {}): OpenAPISpec {
           bearerFormat: 'JWT',
         },
       },
-      schemas: generateSchemas(),
+      schemas: generateSchemas(inputNames),
       responses: {
         ValidationError: {
           description: 'Validation error',
@@ -95,7 +97,7 @@ export function generateOpenAPISpec(config: OpenAPIConfig = {}): OpenAPISpec {
         },
       },
     },
-    paths: generatePaths(basePath, config.exposureContext),
+    paths: generatePaths(basePath, config.exposureContext, inputNames),
   };
 
   return spec;
@@ -104,11 +106,39 @@ export function generateOpenAPISpec(config: OpenAPIConfig = {}): OpenAPISpec {
 /**
  * Generate schemas for all registered objects
  */
-function generateSchemas(): Record<string, OpenAPISchemaObject> {
+/** Allocate only generated write shapes, reserving every real model/list name. */
+function generatedInputSchemaNames(): Map<string, string> {
+  const generatedClasses = ObjectRegistry.getGeneratedClasses();
+  if (!generatedClasses.size) return new Map();
+  const reserved = new Set<string>();
+  const names = new Map<string, string>();
+  for (const [key, info] of [...generatedClasses].sort(([left], [right]) =>
+    left.localeCompare(right),
+  )) {
+    if (
+      info.generatedFields?.error ||
+      ObjectRegistry.getConfig(key).api === false
+    )
+      continue;
+    const stem = `${info.name || key}Input`;
+    let name = stem,
+      suffix = 2;
+    while (reserved.has(name) || ObjectRegistry.getClass(name))
+      name = `${stem}${suffix++}`;
+    reserved.add(name);
+    names.set(key, name);
+  }
+  return names;
+}
+
+function generateSchemas(
+  inputNames: Map<string, string>,
+): Record<string, OpenAPISchemaObject> {
   const schemas: Record<string, OpenAPISchemaObject> = {};
   const registeredClasses = ObjectRegistry.getAllClasses();
 
   for (const [key, classInfo] of registeredClasses) {
+    if (classInfo.generatedFields?.error) continue;
     // Issue #951: Use simple name for schema keys, not the qualified map key
     const name = classInfo.name || key;
     // `api: false` disables REST generation (see rest.ts) and is already
@@ -120,6 +150,8 @@ function generateSchemas(): Record<string, OpenAPISchemaObject> {
       continue;
     }
     schemas[name] = generateObjectSchema(name);
+    const inputName = inputNames.get(key);
+    if (inputName) schemas[inputName] = generateObjectSchema(name, true);
     schemas[`${name}List`] = {
       type: 'object',
       properties: {
@@ -146,7 +178,10 @@ function generateSchemas(): Record<string, OpenAPISchemaObject> {
 /**
  * Generate schema for a specific object
  */
-function generateObjectSchema(objectName: string): OpenAPISchemaObject {
+function generateObjectSchema(
+  objectName: string,
+  input = false,
+): OpenAPISchemaObject {
   const fields = ObjectRegistry.getFields(objectName);
   const properties: Record<string, OpenAPISchemaObject> = {
     id: { type: 'string', format: 'uuid' },
@@ -158,6 +193,7 @@ function generateObjectSchema(objectName: string): OpenAPISchemaObject {
   const required = ['id'];
 
   for (const [fieldName, field] of fields) {
+    if (input && generatedExpression(field) !== undefined) continue;
     properties[fieldName] = fieldToOpenAPISchema(field);
     if (field._meta?.required) {
       required.push(fieldName);
@@ -233,12 +269,14 @@ function fieldToOpenAPISchema(field: FieldDefinition): OpenAPISchemaObject {
  */
 function generatePaths(
   basePath: string,
-  exposureContext?: RuntimeExposureContext,
+  exposureContext: RuntimeExposureContext | undefined,
+  inputNames: Map<string, string>,
 ): Record<string, OpenAPIPathItem> {
   const paths: Record<string, OpenAPIPathItem> = {};
   const registeredClasses = ObjectRegistry.getAllClasses();
 
   for (const [key, classInfo] of registeredClasses) {
+    if (classInfo.generatedFields?.error) continue;
     if (
       exposureContext &&
       !isRuntimeModelEnabled(
@@ -249,6 +287,7 @@ function generatePaths(
       continue;
     // Issue #951: Use simple name, not the qualified map key
     const name = classInfo.name || key;
+    const inputName = inputNames.get(key) ?? name;
     const pluralName = pluralize(name.toLowerCase());
     const objectPath = `${basePath}/${pluralName}`;
 
@@ -316,7 +355,7 @@ function generatePaths(
       const createSchema = targets.polymorphic
         ? {
             allOf: [
-              { $ref: `#/components/schemas/${name}` },
+              { $ref: `#/components/schemas/${inputName}` },
               {
                 type: 'object',
                 properties: {
@@ -333,7 +372,7 @@ function generatePaths(
               },
             ],
           }
-        : { $ref: `#/components/schemas/${name}` };
+        : { $ref: `#/components/schemas/${inputName}` };
       paths[objectPath].post = {
         summary: `Create ${name}`,
         tags: [name],
@@ -390,7 +429,7 @@ function generatePaths(
           required: true,
           content: {
             'application/json': {
-              schema: { $ref: `#/components/schemas/${name}` },
+              schema: { $ref: `#/components/schemas/${inputName}` },
             },
           },
         },

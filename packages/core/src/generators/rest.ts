@@ -248,7 +248,7 @@ export function getRuntimeManifest(
   const objects: SmartObjectManifest['objects'] = {};
   const seen = new Set<RegisteredClass>();
   for (const [key, info] of classes) {
-    if (seen.has(info)) continue;
+    if (info.generatedFields?.error || seen.has(info)) continue;
     seen.add(info);
     const manifestKey = info.qualifiedName || key;
     objects[manifestKey] = runtimeObjectDefinition(key, info);
@@ -2049,6 +2049,7 @@ export class APIGenerator {
       if (isFrameworkBaseClass(info.name || key, info.packageName)) continue;
       // Primary match: the canonical manifest `collection` segment.
       if (info.collection === segment) {
+        if (info.generatedFields?.error) throw info.generatedFields.error;
         // Collections and their row models share a URL. All downstream gates,
         // policy checks and execution must use the effective row identity,
         // independent of registration order.
@@ -2073,6 +2074,7 @@ export class APIGenerator {
         !info.collection &&
         this.pluralize((info.name || key).toLowerCase()) === segment
       ) {
+        if (info.generatedFields?.error) throw info.generatedFields.error;
         return (
           ObjectRegistry.getExposureModel(info.qualifiedName || key) ?? null
         );

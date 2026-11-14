@@ -790,6 +790,26 @@ describe('createMcpAppServer', () => {
     });
   });
 
+  it('drops a public cache hint to private when scopes make the catalog per-principal', async () => {
+    generateToolsMock.mockResolvedValue([tool('opportunity_list')]);
+    const base = {
+      smrtOptions: () => ({}),
+      serverInfo: { name: 'app', version: '0.1.0' },
+      allowedClassNames: ['Opportunity'],
+      publicToolPatterns: () => ['opportunity_*'],
+      toolListCache: { cacheScope: 'public', publicCatalog: true },
+    } as const;
+    await expect(
+      createMcpAppServer({
+        ...base,
+        toolScopes: { 'opportunity_*': ['crm.read'] },
+      }).getToolsListCacheHint?.(),
+    ).resolves.toMatchObject({ cacheScope: 'private' });
+    await expect(
+      createMcpAppServer({ ...base, toolScopes: {} }).getToolsListCacheHint?.(),
+    ).resolves.toMatchObject({ cacheScope: 'public' });
+  });
+
   it('keeps explicitly public catalogs private when a registered tool is tenant-scoped', async () => {
     generateToolsMock.mockResolvedValue([tool('CacheMetadataTenant_list')]);
     const allClasses = vi

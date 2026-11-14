@@ -1,4 +1,5 @@
 /** Registry fixture isolation, without a test-runner runtime dependency. */
+import { snapshotGeneratedClassState } from '../registry/generated-state.js';
 import { getLegacyFieldDecorators } from '../registry/shared-state.js';
 import { ObjectRegistry } from '../registry.js';
 
@@ -58,6 +59,7 @@ function getRegistryForTests(): RegistryTestSurface {
  * tests that mutate registry internals at runtime.
  */
 export function snapshotObjectRegistryState(): () => void {
+  const restoreGenerated = snapshotGeneratedClassState();
   const legacyFields = new Map(
     Array.from(getLegacyFieldDecorators(), ([key, fields]) => [
       key,
@@ -116,5 +118,6 @@ export function snapshotObjectRegistryState(): () => void {
 
     registry.nextDbId = snapshot.nextDbId;
     ObjectRegistry.invalidateAllInheritanceCaches();
+    restoreGenerated();
   };
 }

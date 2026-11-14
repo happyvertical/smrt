@@ -1,3 +1,4 @@
+import { generatedExpression } from '../generated-fields.js';
 import type { FieldDefinition, FieldMeta } from '../scanner/types.js';
 import type { RegisteredField } from './types';
 
@@ -109,6 +110,7 @@ function assignDefinedMeta(
 
 export function createFieldFromManifest(
   fieldDef: ManifestFieldInput,
+  generatedModel = false,
 ): RegisteredField {
   const meta: FieldMeta = {};
 
@@ -137,6 +139,20 @@ export function createFieldFromManifest(
     metaRecord.enum = [...fieldDef.enum];
   }
 
+  const generated = generatedExpression(fieldDef);
+  if (generated !== undefined) metaRecord.generated = generated;
+  if (generatedModel) {
+    for (const key of [
+      'sensitive',
+      'readonly',
+      'readPermission',
+      'transient',
+    ] as const) {
+      const value = fieldDef[key] ?? fieldDef._meta?.[key];
+      if (value !== undefined) metaRecord[key] = value;
+    }
+  }
+
   // Preserve top-level `related` for relationship-graph lookups
   // (foreignKey / crossPackageRef / oneToMany / manyToMany all rely on it).
   const out: RegisteredField = {
@@ -152,6 +168,7 @@ export function createFieldFromManifest(
 export function mergeManifestField(
   existingField: RegisteredField,
   fieldDef: ManifestFieldInput,
+  generatedModel = false,
 ): RegisteredField {
   const hasTenancyMarker =
     existingField.__tenancy?.isTenantIdField ||
@@ -191,8 +208,22 @@ export function mergeManifestField(
     nextMetaRecord.enum = [...fieldDef.enum];
   }
 
+  const generated = generatedExpression(fieldDef);
+  if (generated !== undefined) nextMetaRecord.generated = generated;
+  if (generatedModel) {
+    for (const key of [
+      'sensitive',
+      'readonly',
+      'readPermission',
+      'transient',
+    ] as const) {
+      const value = fieldDef[key] ?? fieldDef._meta?.[key];
+      if (value !== undefined) nextMetaRecord[key] = value;
+    }
+  }
   return {
     ...existingField,
+    ...(generated !== undefined ? { generated } : {}),
     type:
       !hasTenancyMarker && fieldDef.type ? fieldDef.type : existingField.type,
     _meta: nextMeta,

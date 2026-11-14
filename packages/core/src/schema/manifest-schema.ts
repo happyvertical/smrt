@@ -46,6 +46,8 @@ const logger = createLogger({ level: 'info' });
  * `defaultValue`. Hand-authored manifests use either.
  */
 export interface ManifestColumnLike {
+  generated?: ColumnDefinition['generated'];
+  generatedInputTypes?: ColumnDefinition['generatedInputTypes'];
   type: string;
   primaryKey?: boolean;
   referenceKind?: ColumnDefinition['referenceKind'];
@@ -90,6 +92,10 @@ export function manifestColumnsToDefinitions(
     const definition: ColumnDefinition = {
       type: column.type as SQLDataType,
     };
+    if (column.generated !== undefined) {
+      definition.generated = column.generated;
+      definition.generatedInputTypes = column.generatedInputTypes;
+    }
     if (column.primaryKey !== undefined)
       definition.primaryKey = column.primaryKey;
     if (column.referenceKind !== undefined)
