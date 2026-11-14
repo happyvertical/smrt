@@ -8,6 +8,7 @@ const sidebars: SidebarsConfig = {
       label: 'Guides',
       collapsed: false,
       items: [
+        { type: 'doc', id: 'ai-runs' },
         { type: 'doc', id: 'app-cli' },
         { type: 'doc', id: 'commerce-money' },
         { type: 'doc', id: 'data-compartmentalization' },
