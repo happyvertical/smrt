@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Badge, Card, Grid, Stack } from '@happyvertical/smrt-ui';
+import { Badge, Card, Stack } from '@happyvertical/smrt-ui';
 import { publishCalculations, publishGroups } from '$lib/ui/publish';
 import type { PublishPreview } from '$lib/ui/types';
 
@@ -9,14 +9,14 @@ const calculations = $derived(publishCalculations(preview));
 </script>
 
 <Stack gap="lg">
-<Grid columns={{ sm: 1, md: 2 }} gap="md">
+<div class="publish-groups">
   {#each groups as group (group.name)}
-    <section aria-label={group.name}>
+    <section class="publish-group" aria-label={group.name}>
       <Card padding="sm">
         <Stack gap="sm">
-          <Stack direction="horizontal" align="center" gap="sm">
+          <div class="publish-group-heading">
             <h2>{group.name}</h2><Badge variant="neutral">{group.count}</Badge>
-          </Stack>
+          </div>
           {#if group.items.length}
             <ul>{#each group.items as item (item)}<li>{item}</li>{/each}</ul>
           {:else}<p class="smrt-app-shell__muted">None.</p>{/if}
@@ -25,7 +25,7 @@ const calculations = $derived(publishCalculations(preview));
       </Card>
     </section>
   {/each}
-</Grid>
+</div>
 <p>Data commands replay against current live records. If reviewed counts change, review a fresh preview before publishing. Direct record edits made in the draft are discarded; records loaded by a draft command are replayed.</p>
 <h2>Changes to publish ({preview.versions.length})</h2>
 <ol>
@@ -50,3 +50,26 @@ const calculations = $derived(publishCalculations(preview));
 {/each}
 
 </Stack>
+
+<style>
+  .publish-groups {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+    gap: var(--smrt-spacing-md, 0.75rem);
+    min-width: 0;
+  }
+  .publish-group {
+    min-width: 0;
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+  .publish-group-heading {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-sm, 0.5rem);
+    white-space: nowrap;
+  }
+  .publish-group-heading h2 {
+    margin: 0;
+  }
+</style>

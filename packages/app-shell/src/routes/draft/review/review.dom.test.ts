@@ -324,6 +324,22 @@ it('reviews real load and field rename rehearsals without false removals or form
         json({ draft: draftInfo, preview: actual }),
       );
       await render();
+      // The surrounding chat/sidebar can leave a 300px main column even on desktop.
+      container.style.width = '300px';
+      const grid = container.querySelector<HTMLElement>('.publish-groups');
+      expect(grid).toBeTruthy();
+      expect(
+        [...grid!.children].map((section) =>
+          section.getAttribute('aria-label'),
+        ),
+      ).toEqual(['Data', 'Added', 'Removed', 'Changed', 'Archived']);
+      for (const section of grid!.children) {
+        const heading = section.querySelector('.publish-group-heading');
+        expect(heading?.querySelector('h2')).toBeTruthy();
+        expect(
+          heading?.querySelector('[data-smrt-component="Badge"]'),
+        ).toBeTruthy();
+      }
       const text = container.textContent ?? '';
       const group = (name: string) =>
         container.querySelector(`section[aria-label="${name}"]`);
@@ -372,3 +388,25 @@ it('reviews real load and field rename rehearsals without false removals or form
     rmSync(dir, { recursive: true, force: true });
   }
 }, 120000);
+
+it('sizes summary tracks to the available column and keeps heading words intact', () => {
+  const source = readFileSync(
+    'src/lib/components/PublishPreview.svelte',
+    'utf8',
+  );
+  expect(source).toContain('repeat(auto-fit, minmax(min(100%, 18rem), 1fr))');
+  expect(source).toMatch(
+    /\.publish-group-heading\s*\{[^}]*white-space: nowrap;/s,
+  );
+  expect(source).toMatch(
+    /\.publish-group\s*\{[^}]*overflow-wrap: normal;[^}]*word-break: normal;/s,
+  );
+  expect(source).not.toMatch(
+    /word-break:\s*break-all|overflow-wrap:\s*anywhere/,
+  );
+  if (process.env.SMRT_DRAFT_REVIEW_ARTIFACT)
+    writeFileSync(
+      `${process.env.SMRT_DRAFT_REVIEW_ARTIFACT}-layout.css`,
+      source.slice(source.indexOf('<style>') + 7, source.indexOf('</style>')),
+    );
+});

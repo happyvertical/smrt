@@ -149,3 +149,21 @@ The exact rendered decision is “Rename field Quantity to units in Orders.”
 F5 narrow validation: 7 unit tests and 9 review DOM tests passed; the DOM fixture
 preserves nonzero raw archive journal counts while rendering no archive decision
 for load + rename. Full branch validation is the integration owner's gate.
+
+The summary cards use an available-width grid: `auto-fit` with a minimum track
+of `min(100%, 18rem)`. A 300px main column fits one track; a narrower column
+shrinks that track to its own width. Heading and badge share a no-wrap flex row;
+card prose wraps at normal word boundaries. This responds to a narrowed main
+column beside chat/sidebar independently of viewport breakpoints. DOM tests
+mount the real engine previews in a 300px container and check section/headings;
+source CSS assertions provide the layout-rule evidence. jsdom does not measure
+browser layout, so these checks do not claim a browser visual pass.
+
+| Fix | Invariant / positive case | Negative or failure case | Evidence / executor |
+|---|---|---|---|
+| F1 Undo decisions | Read-only preflight reuses conflict guards; operation-kind wording names affected data | Known conflicts disable approval; apply still checks freshness | Real SQLite preview + mounted approval cards; owning worker tests |
+| F2 Refusal wording | Classified engine refusals retain plain singular/plural wording | Actual startup failures retain diagnostics | Engine/server refusal regressions; owning worker tests |
+| F3 Human summaries | History, Approval, publish list share label-based formatter | Machine paths, storage keys and record IDs do not become headings | Real command/version fixtures + mounted History; owning worker tests |
+| F4 Merge scope | Removed record names are bounded with full title; referring models use labels | Markup remains literal; record IDs stay hidden | Real engine merge preview + mounted approval card; owning worker tests |
+| F5 Publish decisions | Command-step renames are Changed; genuine formula edits remain; counts preserved | Rename operand rewrites create no false formula/add/remove/archive decision | Real Node/SQLite rehearsals + mounted review; 26 Node and 9 DOM tests passed |
+| F6 Narrow column | 300px main column has one summary track; heading words stay intact | No viewport-only column rule or arbitrary word breaking | Mounted real previews, section structure and CSS assertions; review DOM suite |
