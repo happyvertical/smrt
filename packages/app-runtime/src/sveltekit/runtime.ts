@@ -280,9 +280,10 @@ export interface SmrtSvelteKitRuntimeOptions {
   readonly passwordPolicy?: PasswordPolicyOptions;
   /**
    * Custody for the local secrets master key ({@link
-   * SmrtSvelteKitRuntime.secretMasterKey}). Defaults to an owner-only file
-   * store beside the data root; the desktop wrapper injects an OS keychain
-   * provider. Local profile only.
+   * SmrtSvelteKitRuntime.secretMasterKey}). An injected store always wins.
+   * Else the OS-keychain-wrapped store when the desktop wrapper started the
+   * process (`SMRT_DESKTOP_KEYCHAIN=1`), else an owner-only file store beside
+   * the data root. Local profile only.
    */
   readonly vaultKeyStore?: VaultKeyStore;
   /**

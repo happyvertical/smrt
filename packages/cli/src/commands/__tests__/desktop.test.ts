@@ -1,14 +1,17 @@
 import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as realBuilder from '@happyvertical/smrt-desktop/builder';
 import * as realBundler from '@happyvertical/smrt-desktop/bundler';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  type DesktopBuildIo,
   type DesktopBundleCliOptions,
   type DesktopBundleIo,
   DesktopBundleUsageError,
   desktopCommands,
   parseDesktopBundleOptions,
+  runDesktopBuild,
   runDesktopBundle,
 } from '../desktop.js';
 
@@ -355,7 +358,10 @@ describe('desktop bundle command definition', () => {
   const command = desktopCommands['desktop bundle'];
 
   it('is registered under its two-word name with no positional arguments', () => {
-    expect(Object.keys(desktopCommands)).toEqual(['desktop bundle']);
+    expect(Object.keys(desktopCommands)).toEqual([
+      'desktop build',
+      'desktop bundle',
+    ]);
     expect(command?.name).toBe('desktop bundle');
     expect(command?.args).toEqual([]);
   });
@@ -415,5 +421,146 @@ describe('desktop bundle is loaded lazily', () => {
       .filter((line) => /^import\s/.test(line) && !/^import type\s/.test(line));
     expect(staticImports.join('\n')).not.toContain('smrt-desktop');
     expect(source).toContain("import('@happyvertical/smrt-desktop/bundler')");
+  });
+});
+
+describe('desktop build', () => {
+  const result = {
+    outDir: '/out',
+    target: 'aarch64-apple-darwin',
+    product: {
+      productId: 'demo',
+      bundleId: 'com.example.demo',
+      displayName: 'Demo',
+      productVersion: '1.0.0',
+    },
+    wrapperVersion: '0.60.18',
+    installers: ['Demo.app'],
+    signed: false,
+    smoke: false,
+    warnings: ['w'],
+  } as const;
+
+  function io(overrides: Partial<typeof realBuilder> = {}) {
+    const out: string[] = [];
+    const err: string[] = [];
+    const runBuild = vi.fn(async () => result);
+    const createBuildSeams = vi.fn(async () => ({}) as never);
+    const harness: DesktopBuildIo = {
+      loadBuilder: async () =>
+        ({
+          ...realBuilder,
+          runBuild,
+          createBuildSeams,
+          ...overrides,
+        }) as never,
+      stdout: (text) => out.push(text),
+      stderr: (text) => err.push(text),
+    };
+    return { harness, out, err, runBuild, createBuildSeams };
+  }
+
+  it('builds from a plan made of the options and prints a summary', async () => {
+    const h = io();
+    const code = await runDesktopBuild(
+      [],
+      { app: 'a', bundle: 'b', out: 'o', target: 'aarch64-apple-darwin' },
+      h.harness,
+    );
+    expect(code).toBe(0);
+    expect(h.runBuild).toHaveBeenCalledWith(
+      {
+        appDir: resolve('a'),
+        bundleDir: resolve('b'),
+        outDir: resolve('o'),
+        target: 'aarch64-apple-darwin',
+        smoke: false,
+      },
+      expect.anything(),
+    );
+    expect(h.out.join('')).toContain('Unsigned installer written to /out');
+    expect(h.out.join('')).toContain('signed     no');
+    expect(h.err.join('')).toContain('warning: w');
+  });
+
+  it('prints the result as JSON with --json', async () => {
+    const h = io();
+    const code = await runDesktopBuild(
+      [],
+      { bundle: 'b', out: 'o', target: 'aarch64-apple-darwin', json: true },
+      h.harness,
+    );
+    expect(code).toBe(0);
+    expect(JSON.parse(h.out.join(''))).toMatchObject({
+      ok: true,
+      signed: false,
+    });
+  });
+
+  it('refuses bad options without touching the seams', async () => {
+    for (const [args, options, field] of [
+      [['x'], { bundle: 'b', out: 'o' }, '(arguments)'],
+      [[], { out: 'o' }, 'bundle'],
+      [[], { bundle: 'b' }, 'out'],
+      [[], { bundle: '', out: 'o' }, 'bundle'],
+      [[], { bundle: 'b', out: 'o', smoke: 'yes' }, 'smoke'],
+    ] as const) {
+      const h = io();
+      const code = await runDesktopBuild(args, options as never, h.harness);
+      expect(code, field).toBe(2);
+      expect(h.err.join('')).toContain(`option: ${field}`);
+      expect(h.createBuildSeams).not.toHaveBeenCalled();
+    }
+  });
+
+  it('maps a BuildError to its exit code with fixed text only', async () => {
+    const h = io({
+      runBuild: async () => {
+        throw new realBuilder.BuildError('wrapper_version_drift', {
+          stage: 'inputs',
+        });
+      },
+    });
+    const code = await runDesktopBuild(
+      [],
+      { bundle: 'b', out: 'o', target: 'aarch64-apple-darwin', json: true },
+      h.harness,
+    );
+    expect(code).toBe(5);
+    expect(JSON.parse(h.out.join(''))).toMatchObject({
+      ok: false,
+      code: 'wrapper_version_drift',
+      exitCode: 5,
+    });
+    expect(h.err.join('')).toContain('wrapper_version_drift');
+  });
+
+  it('turns an unexpected error into an internal failure without its text', async () => {
+    const h = io({
+      runBuild: async () => {
+        throw new Error('/secret/path leaked');
+      },
+    });
+    const code = await runDesktopBuild(
+      [],
+      { bundle: 'b', out: 'o', target: 'aarch64-apple-darwin' },
+      h.harness,
+    );
+    expect(code).toBe(1);
+    expect(h.err.join('')).not.toContain('secret');
+  });
+
+  it('is registered with documented flags and loads the builder lazily', () => {
+    const command = desktopCommands['desktop build'];
+    expect(command?.args).toEqual([]);
+    expect(Object.keys(command?.options ?? {}).sort()).toEqual(
+      ['app', 'bundle', 'json', 'out', 'smoke', 'target'].sort(),
+    );
+    expect(command?.description).toContain('UNSIGNED');
+    const source = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../desktop.ts'),
+      'utf8',
+    );
+    expect(source).toContain("import('@happyvertical/smrt-desktop/builder')");
   });
 });

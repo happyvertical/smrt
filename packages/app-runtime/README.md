@@ -776,12 +776,23 @@ const secrets = await SecretService.create({
 - **Env wins.** `SecretService` asks the provider only when
   `SMRT_SECRET_MASTER_KEY` is unset. On a deployed profile the method returns
   `null`; the runtime never generates a key outside the local profile.
-- **Custody seam.** The default store is `createFileVaultKeyStore` on an
-  owner-only `.smrt-keys-<data directory name>` directory beside the data
-  root (never inside it, so exports and backups of the root exclude it).
-  Pass `vaultKeyStore` to `initializeLocalApplicationRuntime` or
-  `createSmrtSvelteKitRuntime` to inject another provider, such as the
-  desktop wrapper's OS keychain.
+- **Custody seam.** Selection, first match wins: an injected `vaultKeyStore`
+  (on `initializeLocalApplicationRuntime` or `createSmrtSvelteKitRuntime`);
+  else, when the desktop wrapper started the process
+  (`SMRT_DESKTOP_KEYCHAIN=1`), the OS-keychain-wrapped store
+  (`createKeychainVaultKeyStore`, below), with no application code; else
+  `createFileVaultKeyStore` on an owner-only `.smrt-keys-<data directory
+  name>` directory beside the data root. Every option keeps the key outside
+  the data root.
+- **Backups.** The data root holds the database and the sealed secrets, never
+  the master key, so a plain file backup of it carries ciphertext without its
+  key; restoring it on another machine does not decrypt secrets, and the
+  user re-enters them. Under the desktop wrapper the key item is itself
+  sealed by a key in the OS keychain, so even a backup that also copies the
+  key directory is not enough without the user's OS login.
+- **`SecretService` stays explicit.** `smrt-secrets` does not depend on the
+  runtime (package DAG), so `SecretService.create` does not look for a local
+  key by itself: pass `masterKeyProvider: () => runtime.secretMasterKey()`.
 - **Fails closed.** A store that cannot be read, or an item that is not 32
   bytes, rejects with `LocalRuntimeError` code `secret_master_key_unavailable`,
   whose message names no key material or path. A malformed item is never
@@ -1415,16 +1426,48 @@ always do.
 ### Custody
 
 `VaultKeyStore` is the custody seam: `get`, `set` and `delete` named byte
-items, with atomic replacement. The desktop wrapper injects an OS keychain
-provider. Headless and development installs use `createFileVaultKeyStore(dir)`
-from `@happyvertical/smrt-app-runtime/vault-key-store`.
+items, with atomic replacement. Both stores below come from
+`@happyvertical/smrt-app-runtime/vault-key-store`.
+
+**Keychain-wrapped store** (`createKeychainVaultKeyStore`; the local runtime
+selects it by itself when the desktop wrapper sets `SMRT_DESKTOP_KEYCHAIN=1`).
+A random 32-byte key-encryption key lives in the OS keychain under the
+service `smrt-vault.<product id>`: macOS Keychain (`security`), Windows
+Credential Manager (PowerShell and `advapi32`), or Linux Secret Service
+(`secret-tool`). Items are sealed with AES-256-GCM (into a `.smrt-sealed-keys-<data directory name>` directory beside the data root), with a random nonce and
+the product id and item name authenticated, so an item cannot be moved to
+another name or product, and stored through the owner-only atomic file
+store, so Credential Manager's blob limit never applies. Secrets reach the OS
+tools only on stdin or stdout, never argv, environment, logs or URLs, and
+errors are fixed text. `custody()` reports `os-keychain` or `file-fallback`.
+
+- No usable keychain (tool missing, headless Linux without a Secret Service
+  on the session bus, unsupported OS): it falls back to the plain file store
+  in the same directory the runtime would otherwise use, outside the state
+  root, and `custody()` says so with the reason. Existing file-store items
+  keep the file store even when a keychain key already exists (another root,
+  a reinstall), so switching never orphans them.
+- It never falls back and never replaces a key when sealed items exist but
+  the key is missing, malformed or unreadable: that fails closed, because a
+  new key would orphan them. Losing the keychain entry loses the items.
+- Creating the key is serialized across every root of one product by a lock
+  file outside the data roots (`<account home>/.smrt/locks/<product id>.lock`,
+  the home taken from the OS account record, never `HOME` or `TMPDIR`), taken around read, create and confirm, with
+  the key re-read once the lock is held. A dead owner's lock is reclaimed. It
+  covers processes of one OS user on one machine, not two machines or users.
+  If the lock directory cannot be derived or used (no account record, an
+  unwritable or non-directory location), creation fails closed with fixed text
+  naming no path; it never creates the key without the lock.
+
+**File store** (`createFileVaultKeyStore(dir)`), for headless and development
+installs:
 
 - The directory must be absolute. It is created with mode 0700 and must be a
   real directory owned by the current user.
 - Items are mode 0600 files replaced by atomic rename.
 - On Windows, POSIX modes are synthetic and there is no uid, so the file
   store performs no custody check. Place the directory under the user's
-  profile, and prefer the wrapper's keychain provider there.
+  profile, and prefer the keychain-wrapped store there.
 - Keep the directory outside the application state root, so plain-data
   exports and backups never include it.
 

@@ -29,8 +29,13 @@ Application infrastructure composition for the validated runtime profiles in
   must derive the same lease.
 - `secretMasterKey()` (`src/local-secret-master-key.ts`) is the smrt-secrets
   master key for the local profile: created once in the `VaultKeyStore`
-  (default file store in a `.smrt-keys-<root name>` sibling of the data root,
-  injectable via `vaultKeyStore`), under the initialization lock. Hex for
+  (injected `vaultKeyStore`, else the keychain-wrapped store when the desktop
+  wrapper sets `SMRT_DESKTOP_KEYCHAIN=1`, else the file store in a
+  `.smrt-keys-<root name>` sibling of the data root), under the initialization
+  lock. `src/keychain-vault-key-store.ts` seals items under a key in the OS
+  keychain and fails closed (never falls back, never re-keys) when sealed items
+  exist without a readable key; keychain tests use fakes only, never the real
+  keychain. Hex for
   `SecretService.create({ masterKeyProvider })` only; errors carry no key,
   path or cause. Deployed profiles return `null` (env var only); never add a
   generated or default key outside the local profile.

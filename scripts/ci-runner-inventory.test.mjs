@@ -146,6 +146,10 @@ function inventoryViolations(overrides = {}) {
     // each OS; its `bundle` job is a plain ubuntu-latest job. The matrix values
     // are checked in the desktop-launch test below.
     ['desktop-launch.yml:launch', (value) => value === DESKTOP_MATRIX_RUNS_ON],
+    // desktop-consumer-build.yml (smrt#4965): the reusable build for a
+    // consuming repository; its runner comes from the plan job's closed table,
+    // checked in the consumer-build test below.
+    ['desktop-consumer-build.yml:build', (value) => value === DESKTOP_MATRIX_RUNS_ON],
   ]);
   const results = workflowFiles.map((file) => runnerDeclarations(file, overrides[file]));
   const declarations = results.flatMap((result) => result.declarations);
@@ -738,6 +742,49 @@ test('Windows custody installs every package scheduled by its build and manifest
     assert.ok(plan.tasks.length > 0, `${name} must schedule tasks`);
     for (const task of plan.tasks) {
       assert.ok(installed.has(task.package), `${name}: ${task.taskId} has no installed dependency closure`);
+    }
+  }
+});
+
+test('the reusable consumer build has exactly its jobs, hosted runners and one secret step', () => {
+  const text = readFileSync(path.join(workflowsDir, 'desktop-consumer-build.yml'), 'utf8');
+  const doc = parseDocument(text, { uniqueKeys: true, merge: false });
+  assert.deepEqual([...doc.errors, ...doc.warnings], []);
+  const workflow = doc.toJS({ maxAliasCount: -1 });
+  assert.deepEqual(Object.keys(workflow.jobs), ['plan', 'release-preflight', 'build']);
+  assert.equal(workflow.jobs.plan['runs-on'], 'ubuntu-latest');
+  assert.equal(workflow.jobs['release-preflight']['runs-on'], 'ubuntu-latest');
+  assert.equal(workflow.jobs.build['runs-on'], DESKTOP_MATRIX_RUNS_ON);
+  assert.ok(!/self-hosted|DESKTOP_MACOS_SIGNING_RUNNER/i.test(text));
+  // Every runner the plan table can emit is a hosted one from the shared list.
+  const runners = [...text.matchAll(/runner: "([^"]+)"/g)].map((match) => match[1]);
+  assert.ok(runners.length >= 3);
+  for (const runner of runners) assert.ok(DESKTOP_HOSTED_RUNNERS.includes(runner), runner);
+  // workflow_call only, declared secrets are optional and valueless.
+  assert.deepEqual(Object.keys(workflow.on), ['workflow_call']);
+  for (const [name, secret] of Object.entries(workflow.on.workflow_call.secrets)) {
+    assert.deepEqual(secret, { required: false }, name);
+  }
+  // Secrets reach exactly one step, in the release preflight, and the build
+  // job (which runs the caller's code) never sees any, nor an environment.
+  const withSecrets = Object.entries(workflow.jobs).flatMap(([id, job]) =>
+    (job.steps ?? []).filter((step) => /\$\{\{\s*secrets\./.test(JSON.stringify(step))).map((step) => `${id}:${step.name}`),
+  );
+  assert.deepEqual(withSecrets, ['release-preflight:Check secrets and product inputs']);
+  assert.equal(workflow.jobs.build.environment, undefined);
+  assert.equal(workflow.jobs.plan.environment, undefined);
+  assert.equal(workflow.jobs['release-preflight'].environment, 'desktop-release');
+  // Nothing refers to a path of this repository.
+  const code = text.split('\n').filter((line) => !/^\s*#/.test(line)).join('\n');
+  assert.ok(!code.includes('packages/smrt-desktop'));
+  assert.ok(!code.includes('.github/actions/'));
+  // Inputs reach the shell only through env, never inline in a run script.
+  for (const job of Object.values(workflow.jobs)) {
+    for (const step of job.steps ?? []) {
+      if (typeof step.run === 'string') {
+        assert.ok(!/\$\{\{\s*inputs\./.test(step.run), `inline input in ${step.name}`);
+        assert.ok(!/\$\{\{\s*matrix\./.test(step.run), `inline matrix in ${step.name}`);
+      }
     }
   }
 });

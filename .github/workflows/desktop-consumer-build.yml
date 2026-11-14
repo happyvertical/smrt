@@ -1,0 +1,342 @@
+# =============================================================================
+# Desktop build for a consuming repository (reusable workflow, smrt#4965)
+# =============================================================================
+# An application OUTSIDE this repository calls this workflow to bundle its
+# runtime and build an UNSIGNED installer with the wrapper that ships in the
+# published @happyvertical/smrt-desktop package. Nothing here reads a path in
+# this repository: the caller's repository is checked out, its own locked
+# dependencies are installed, and `smrt desktop bundle` and `smrt desktop
+# build` run from them, so the wrapper is the one that matches the app's pinned
+# smrt version.
+#
+#   jobs:
+#     desktop:
+#       uses: happyvertical/smrt/.github/workflows/desktop-consumer-build.yml@<sha>
+#       with:
+#         app_dir: .
+#         targets: aarch64-apple-darwin,x86_64-unknown-linux-gnu
+#
+# Unsigned path (release: false, the default): `contents: read`, no secrets, no
+# environment. A pull request in the caller's repository can run it.
+#
+# Release path (release: true): the preflight runs in the caller's
+# `desktop-release` environment and refuses unless the run is on main and every
+# signing input exists (the packaged release-preflight.mjs, fail closed; no
+# default, fallback or generated value for any of them). The signing, notarizing
+# and publishing legs are NOT part of this reusable workflow yet: the run stops
+# after the preflight with a failure that says so. See "Building an installer"
+# in packages/smrt-desktop/README.md for what remains.
+#
+# The secrets are declared so a caller can pass them from its own environment;
+# they reach exactly one step (the preflight's presence check), never a step
+# that installs or builds.
+# =============================================================================
+
+name: Desktop build (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      app_dir:
+        description: >-
+          Caller-repository-relative directory of the built app
+          (package.json, pnpm-lock.yaml, smrt-desktop.json).
+        type: string
+        default: '.'
+      targets:
+        description: >-
+          Comma-separated Rust targets: aarch64-apple-darwin,
+          x86_64-apple-darwin, x86_64-unknown-linux-gnu.
+        type: string
+        default: 'aarch64-apple-darwin,x86_64-unknown-linux-gnu'
+      release:
+        description: >-
+          Run the fail-closed release preflight (main only, every owner input).
+          The signing legs are not part of this workflow yet.
+        type: boolean
+        default: false
+      smrt_desktop_version:
+        description: >-
+          Expected @happyvertical/smrt-desktop version. Empty means whatever
+          the caller's lockfile resolves. A non-empty value that differs from
+          the lockfile fails the run (the app's locked tree is what builds).
+        type: string
+        default: ''
+      bridge_path:
+        description: >-
+          Caller-repository-relative path of the pre-bundled MCP bridge file
+          (passed to smrt desktop bundle --bridge). Empty omits it.
+        type: string
+        default: ''
+      node_version:
+        description: Node.js version for the app build.
+        type: string
+        default: '26.8.1'
+      pnpm_version:
+        description: Exact pnpm version installed for the app build.
+        type: string
+        default: '11.25.0'
+    secrets:
+      APPLE_CERTIFICATE:
+        required: false
+      APPLE_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_SIGNING_IDENTITY:
+        required: false
+      APPLE_ID:
+        required: false
+      APPLE_PASSWORD:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+  # Must equal TAURI_CLI_VERSION of the installed smrt-desktop package: a
+  # different CLI fails `smrt desktop build` with tauri_version_mismatch (and a
+  # test in this repository keeps this value equal to the package constant).
+  TAURI_CLI_VERSION: 2.12.4
+  RUST_TOOLCHAIN: 1.95.0
+
+jobs:
+  # Validates the inputs and turns them into the build matrix. Plain data in,
+  # plain data out: inputs reach the shell only through env, never inline.
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - name: Validate the inputs and plan the matrix
+        id: plan
+        env:
+          APP_DIR: ${{ inputs.app_dir }}
+          TARGETS: ${{ inputs.targets }}
+          BRIDGE_PATH: ${{ inputs.bridge_path }}
+          DESKTOP_VERSION: ${{ inputs.smrt_desktop_version }}
+        run: |
+          node --input-type=module -e '
+            import { appendFileSync } from "node:fs";
+            const safe = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._\/-]+$/;
+            const fail = (message) => { console.error(message); process.exit(1); };
+            const { APP_DIR, TARGETS, BRIDGE_PATH, DESKTOP_VERSION } = process.env;
+            if (!safe.test(APP_DIR)) fail("app_dir must be a relative path of plain segments");
+            if (BRIDGE_PATH !== "" && !safe.test(BRIDGE_PATH)) fail("bridge_path must be a relative path of plain segments");
+            if (DESKTOP_VERSION !== "" && !/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/.test(DESKTOP_VERSION)) fail("smrt_desktop_version must be an exact version");
+            const table = {
+              "aarch64-apple-darwin": { runner: "macos-15", smoke: true },
+              "x86_64-apple-darwin": { runner: "macos-15-intel", smoke: true },
+              "x86_64-unknown-linux-gnu": { runner: "ubuntu-latest", smoke: true },
+            };
+            const targets = TARGETS.split(",").map((value) => value.trim());
+            if (targets.length === 0 || new Set(targets).size !== targets.length) fail("targets must be a non-empty list without duplicates");
+            const include = targets.map((target) => {
+              if (!Object.hasOwn(table, target)) fail("unsupported target: " + target);
+              return { target, ...table[target] };
+            });
+            appendFileSync(process.env.GITHUB_OUTPUT, "matrix=" + JSON.stringify({ include }) + "\n");
+          '
+
+  # Only when release is requested. The one job that sees the secrets, and
+  # only in one step, for presence. It never builds or installs anything the
+  # caller wrote.
+  release-preflight:
+    name: Release preflight (fails closed)
+    if: inputs.release
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: desktop-release
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Require main
+        env:
+          REF: ${{ github.ref }}
+          DEFAULT_REF: refs/heads/${{ github.event.repository.default_branch }}
+        run: |
+          if [ "$REF" != "$DEFAULT_REF" ]; then
+            echo "A release is only built from the default branch; this run is on ${REF}." >&2
+            exit 1
+          fi
+
+      - name: Checkout the caller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Install the pinned smrt-desktop (scripts disabled)
+        env:
+          PNPM_VERSION: ${{ inputs.pnpm_version }}
+          APP_DIR: ${{ inputs.app_dir }}
+        run: |
+          npm install --global --ignore-scripts "pnpm@${PNPM_VERSION}"
+          pnpm --dir "$APP_DIR" install --frozen-lockfile --ignore-scripts
+
+      # Presence only. The script names what is missing and never prints a
+      # value. The secrets reach this one step and no other in this workflow.
+      - name: Check secrets and product inputs
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APP_DIR: ${{ inputs.app_dir }}
+          BRIDGE_PATH: ${{ inputs.bridge_path }}
+        run: |
+          preflight="$(pnpm --dir "$APP_DIR" exec node --input-type=module -e '
+            import { createRequire } from "node:module";
+            import { dirname, join } from "node:path";
+            import { fileURLToPath } from "node:url";
+            const cli = fileURLToPath(import.meta.resolve("@happyvertical/smrt-cli"));
+            const desktop = createRequire(cli).resolve("@happyvertical/smrt-desktop/package.json");
+            console.log(join(dirname(desktop), "wrapper", "scripts", "release-preflight.mjs"));
+          ')"
+          node "$preflight" --secrets --inputs "$APP_DIR" "$BRIDGE_PATH"
+
+      - name: Stop before signing
+        run: |
+          echo "The release preflight passed, but the signing, notarization and publishing legs are not part of the reusable workflow yet (smrt#4965 follow-up)." >&2
+          exit 1
+
+  build:
+    name: Build unsigned (${{ matrix.target }})
+    needs: plan
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Checkout the caller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Tauri Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config xvfb \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libssl-dev libxdo-dev patchelf
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Set up Rust
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+          rustup target add "$TARGET"
+          rustc --version
+          cargo --version
+
+      - name: Install pnpm and the pinned Tauri CLI (scripts disabled)
+        env:
+          PNPM_VERSION: ${{ inputs.pnpm_version }}
+        run: |
+          npm install --global --ignore-scripts "pnpm@${PNPM_VERSION}" "@tauri-apps/cli@${TAURI_CLI_VERSION}"
+
+      # The caller's own locked tree supplies the CLI, the bundler and the
+      # wrapper. Nothing is copied from this repository.
+      - name: Install the app (frozen lockfile, no lifecycle scripts)
+        env:
+          APP_DIR: ${{ inputs.app_dir }}
+        run: pnpm --dir "$APP_DIR" install --frozen-lockfile --ignore-scripts
+
+      - name: Check the locked smrt-desktop version
+        env:
+          APP_DIR: ${{ inputs.app_dir }}
+          EXPECTED: ${{ inputs.smrt_desktop_version }}
+        run: |
+          locked="$(grep -ohE "@happyvertical/smrt-desktop@[0-9][0-9A-Za-z.+-]*" "$APP_DIR/pnpm-lock.yaml" | sed 's/.*@//' | sort -u)"
+          if [ "$(printf '%s\n' "$locked" | grep -c .)" -ne 1 ]; then
+            echo "The lockfile must resolve exactly one @happyvertical/smrt-desktop version." >&2
+            exit 1
+          fi
+          if [ -n "$EXPECTED" ] && [ "$EXPECTED" != "$locked" ]; then
+            echo "smrt_desktop_version does not match the version the lockfile resolves." >&2
+            exit 1
+          fi
+          echo "smrt-desktop $locked (locked)"
+
+      - name: Build the app
+        env:
+          APP_DIR: ${{ inputs.app_dir }}
+        run: pnpm --dir "$APP_DIR" exec smrt app build
+
+      - name: Bundle the runtime
+        env:
+          APP_DIR: ${{ inputs.app_dir }}
+          BRIDGE_PATH: ${{ inputs.bridge_path }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          rm -rf "$RUNNER_TEMP/bundle"
+          args=(--app "$GITHUB_WORKSPACE/$APP_DIR" --target "$TARGET" --out "$RUNNER_TEMP/bundle")
+          if [ -n "$BRIDGE_PATH" ]; then args+=(--bridge "$GITHUB_WORKSPACE/$BRIDGE_PATH"); fi
+          pnpm --dir "$APP_DIR" exec smrt desktop bundle "${args[@]}"
+
+      # Unsigned, always: `smrt desktop build` passes --no-sign and forwards no
+      # signing variable. The launch smoke runs the wrapper on this runner
+      # (Linux under a virtual display).
+      - name: Build the unsigned installer and run the launch smoke
+        env:
+          APP_DIR: ${{ inputs.app_dir }}
+          TARGET: ${{ matrix.target }}
+          SMOKE: ${{ matrix.smoke }}
+        run: |
+          rm -rf "$RUNNER_TEMP/installer"
+          args=(desktop build --app "$GITHUB_WORKSPACE/$APP_DIR" --bundle "$RUNNER_TEMP/bundle" --target "$TARGET" --out "$RUNNER_TEMP/installer")
+          if [ "$SMOKE" = "true" ]; then args+=(--smoke); fi
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a pnpm --dir "$APP_DIR" exec smrt "${args[@]}"
+          else
+            pnpm --dir "$APP_DIR" exec smrt "${args[@]}"
+          fi
+
+      # upload-artifact drops Unix modes, which would break a macOS .app, so
+      # the installer directory goes up as one tar archive (modes preserved).
+      - name: Archive the unsigned installer
+        if: github.event_name != 'pull_request'
+        run: tar -C "$RUNNER_TEMP/installer" -cf "$RUNNER_TEMP/installer.tar" .
+
+      - name: Upload the unsigned installer
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: desktop-installer-unsigned-${{ matrix.target }}
+          path: ${{ runner.temp }}/installer.tar
+          if-no-files-found: error
+          retention-days: 3

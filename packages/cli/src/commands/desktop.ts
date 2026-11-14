@@ -1,4 +1,8 @@
 /**
+ * `smrt desktop build`: build an unsigned installer from a runtime bundle with
+ * the wrapper that ships in `@happyvertical/smrt-desktop` (smrt#4965). Same
+ * rules as below: thin; the logic lives in `@happyvertical/smrt-desktop/builder`.
+ *
  * `smrt desktop bundle`: build the runtime bundle of an SMRT desktop app
  * (the Node sidecar, the production dependencies, the adapter-node build, the
  * bridge and the contract manifests) for one target.
@@ -56,6 +60,31 @@ const defaultIo: DesktopBundleIo = {
   stderr: (text) => {
     process.stderr.write(text);
   },
+};
+
+/** Raw option bag of `smrt desktop build`. */
+export interface DesktopBuildCliOptions {
+  app?: string;
+  bundle?: string;
+  out?: string;
+  target?: string;
+  smoke?: boolean;
+  json?: boolean;
+}
+
+type BuilderModule = typeof import('@happyvertical/smrt-desktop/builder');
+
+/** Everything `smrt desktop build` touches outside its own logic. */
+export interface DesktopBuildIo {
+  loadBuilder(): Promise<BuilderModule>;
+  stdout(text: string): void;
+  stderr(text: string): void;
+}
+
+const defaultBuildIo: DesktopBuildIo = {
+  loadBuilder: () => import('@happyvertical/smrt-desktop/builder'),
+  stdout: defaultIo.stdout,
+  stderr: defaultIo.stderr,
 };
 
 /** A bad flag: reported as a usage error (exit 2) by the bundler's table. */
@@ -257,7 +286,165 @@ export async function runDesktopBundle(
   }
 }
 
+/**
+ * Run `smrt desktop build` and return its exit code (the bundler's closed
+ * table: 0 ok, 2 usage, 3 invalid input, 5 verification, 7 child failed, 8 io).
+ * Never throws; messages are the builder's fixed text.
+ */
+export async function runDesktopBuild(
+  args: readonly string[],
+  options: DesktopBuildCliOptions,
+  io: DesktopBuildIo = defaultBuildIo,
+): Promise<number> {
+  let builder: BuilderModule;
+  try {
+    builder = await io.loadBuilder();
+  } catch {
+    io.stderr('smrt desktop build: the builder could not be loaded\n');
+    return 1;
+  }
+  const json = options.json === true;
+  const fail = (error: unknown): number => {
+    const buildError = builder.BuildError.from(error);
+    if (json) {
+      io.stdout(
+        `${JSON.stringify({
+          ok: false,
+          code: buildError.code,
+          category: buildError.category,
+          exitCode: buildError.exitCode,
+          ...(buildError.stage === undefined
+            ? {}
+            : { stage: buildError.stage }),
+          ...(buildError.field === undefined
+            ? {}
+            : { field: buildError.field }),
+          subjects: buildError.subjects,
+        })}\n`,
+      );
+    }
+    const where =
+      buildError.stage === undefined ? '' : ` (${buildError.stage})`;
+    io.stderr(
+      `smrt desktop build: ${buildError.message}${where} [${buildError.code}, exit ${buildError.exitCode}]\n`,
+    );
+    if (buildError.field !== undefined) {
+      io.stderr(`  option: ${buildError.field}\n`);
+    }
+    for (const subject of buildError.subjects) io.stderr(`  - ${subject}\n`);
+    return buildError.exitCode;
+  };
+
+  try {
+    if (args.length > 0) {
+      throw new builder.BuildError('invalid_option', { field: '(arguments)' });
+    }
+    const text = (key: keyof DesktopBuildCliOptions): string | undefined => {
+      const value = options[key];
+      if (value === undefined) return undefined;
+      if (typeof value !== 'string' || value.length === 0) {
+        throw new builder.BuildError('invalid_option', { field: key });
+      }
+      return value;
+    };
+    const flag = (key: 'smoke' | 'json'): boolean => {
+      const value = options[key];
+      if (value !== undefined && typeof value !== 'boolean') {
+        throw new builder.BuildError('invalid_option', { field: key });
+      }
+      return value === true;
+    };
+    const bundle = text('bundle');
+    const out = text('out');
+    if (bundle === undefined) {
+      throw new builder.BuildError('invalid_option', { field: 'bundle' });
+    }
+    if (out === undefined) {
+      throw new builder.BuildError('invalid_option', { field: 'out' });
+    }
+    const target = text('target');
+    const plan = builder.createBuildPlan(
+      {
+        appDir: text('app') ?? '.',
+        bundleDir: bundle,
+        outDir: out,
+        smoke: flag('smoke'),
+        ...(target === undefined ? {} : { target }),
+      },
+      { platform: process.platform, arch: process.arch, cwd: process.cwd() },
+    );
+    const seams = await builder.createBuildSeams({
+      onStage: (stage) => {
+        if (!json) io.stderr(`[${stage.replace('_', ' ')}]\n`);
+      },
+    });
+    const result = await builder.runBuild(plan, seams);
+    for (const warning of result.warnings) io.stderr(`warning: ${warning}\n`);
+    if (json) {
+      io.stdout(`${JSON.stringify({ ok: true, ...result })}\n`);
+      return 0;
+    }
+    io.stdout(
+      [
+        `Unsigned installer written to ${result.outDir}`,
+        `  product    ${result.product.productId}@${result.product.productVersion} (${result.target})`,
+        `  wrapper    ${result.wrapperVersion}`,
+        ...result.installers.map((name) => `  installer  ${name}`),
+        `  smoke      ${result.smoke ? 'passed' : 'not run (pass --smoke)'}`,
+        '  signed     no (signing is the release workflow, see the README)',
+        '',
+      ].join('\n'),
+    );
+    return 0;
+  } catch (error) {
+    return fail(error);
+  }
+}
+
 export const desktopCommands: Record<string, CLICommand> = {
+  'desktop build': {
+    name: 'desktop build',
+    description:
+      'Build an UNSIGNED installer for a bundled desktop app with the wrapper shipped in @happyvertical/smrt-desktop (run `smrt desktop bundle` first; needs the pinned Tauri CLI and a Rust toolchain; exit codes: 0 ok, 2 usage, 3 invalid input, 5 verification, 7 child failed, 8 io)',
+    args: [],
+    options: {
+      app: {
+        type: 'string',
+        description:
+          'Application directory with smrt-desktop.json (identity, icons, updaterPublicKey; default: .)',
+      },
+      bundle: {
+        type: 'string',
+        description:
+          'The `smrt desktop bundle` output directory for the same target (required)',
+      },
+      out: {
+        type: 'string',
+        description:
+          'Installer output directory (required); it must not exist or be empty',
+      },
+      target: {
+        type: 'string',
+        description: 'Rust target triple (default: this machine)',
+      },
+      smoke: {
+        type: 'boolean',
+        description:
+          'After the build, run the launch smoke against the bundle (host target only; on Linux run under xvfb-run -a)',
+        default: false,
+      },
+      json: {
+        type: 'boolean',
+        description:
+          'Print the result (or a failure document) as JSON on stdout; progress goes to stderr',
+        default: false,
+      },
+    },
+    handler: async (args: string[], options: DesktopBuildCliOptions) => {
+      const code = await runDesktopBuild(args, options);
+      if (code !== 0) process.exitCode = code;
+    },
+  },
   'desktop bundle': {
     name: 'desktop bundle',
     description:

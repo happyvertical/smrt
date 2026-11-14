@@ -27,11 +27,12 @@ describe('the package root exports an explicit list', () => {
 });
 
 describe('the package subpaths', () => {
-  it('declares exactly the root, bundler and launcher entries', () => {
+  it('declares exactly the root, bundler, builder and launcher entries', () => {
     const exports = JSON.parse(read('package.json')).exports;
     expect(Object.keys(exports)).toEqual([
       '.',
       './bundler',
+      './builder',
       './launcher',
       './package.json',
     ]);
@@ -50,6 +51,16 @@ describe('the package subpaths', () => {
     expect(read('vite.config.ts')).toContain(
       "{ name: 'bundler', source: 'src/bundler/index.ts' }",
     );
+  });
+
+  it('builds the installer builder as its own entry', () => {
+    expect(read('vite.config.ts')).toContain(
+      "{ name: 'builder', source: 'src/builder/index.ts' }",
+    );
+  });
+
+  it('keeps the builder out of the root entry', () => {
+    expect(read('src/index.ts')).not.toMatch(/builder/);
   });
 
   it('builds the launcher as its own entry', () => {

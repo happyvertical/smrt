@@ -146,6 +146,8 @@ export {
   SCHEMA_CREATION_FAILED_MESSAGE,
 } from './local-schema.js';
 export {
+  DESKTOP_KEYCHAIN_ENV,
+  defaultLocalSealedKeyDirectory,
   defaultLocalVaultKeyDirectory,
   SECRET_MASTER_KEY_ITEM,
 } from './local-secret-master-key.js';
@@ -875,6 +877,7 @@ export async function initializeLocalApplicationRuntime(
       ownerTenant,
       passwordPolicy: options.passwordPolicy,
       vaultKeyStore: options.vaultKeyStore,
+      appId,
       identity,
       now: options.now ?? (() => new Date()),
       canonicalSourceRoot,
@@ -945,6 +948,7 @@ interface LocalApplicationRuntimeState {
   ownerTenant: ResolvedOwnerTenant;
   passwordPolicy?: PasswordPolicyOptions;
   vaultKeyStore?: VaultKeyStore;
+  appId: string;
   now: () => Date;
   canonicalSourceRoot: string;
 }
@@ -1014,6 +1018,7 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
   private readonly canonicalSourceRoot: string;
   private readonly identity: LocalInstallationIdentity;
   private readonly vaultKeyStore?: VaultKeyStore;
+  private readonly appId: string;
   private masterKey?: Promise<string>;
 
   constructor(state: LocalApplicationRuntimeState) {
@@ -1031,6 +1036,7 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
     this.canonicalSourceRoot = state.canonicalSourceRoot;
     this.identity = state.identity;
     this.vaultKeyStore = state.vaultKeyStore;
+    this.appId = state.appId;
     this.mcpTokens = localMcpTokenStore(
       state.db,
       state.paths,
@@ -1046,7 +1052,9 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
   secretMasterKey(): Promise<string> {
     this.masterKey ??= withLocalInitializationLock(this.paths.root, () =>
       loadOrCreateSecretMasterKey(
-        localVaultKeyStore(this.paths.root, this.vaultKeyStore),
+        localVaultKeyStore(this.paths.root, this.vaultKeyStore, {
+          appId: this.appId,
+        }),
       ),
     ).catch((error: unknown) => {
       this.masterKey = undefined;

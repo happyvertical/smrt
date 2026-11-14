@@ -231,6 +231,11 @@ jobs:
           echo "📝 Syncing starter-template versions to $AFTER_VERSION"
           node scripts/sync-template-versions.mjs "$AFTER_VERSION"
 
+          # The Tauri wrapper crate carries the smrt-desktop package version
+          # (smrt#4965). Run after the final version is settled; the diff below
+          # carries Cargo.toml and Cargo.lock into the release patch.
+          node scripts/sync-desktop-wrapper-version.mjs
+
           # Preserve the exact versioned tree so later jobs can publish
           # what they validated without rerunning changeset versioning.
           git diff --binary > release-version.patch
@@ -264,6 +269,12 @@ jobs:
             # the app from source, which reads the generated catalog and CLI
             # version. All three are build outputs outside dist/.
             find packages/planner/app -type f -print
+            # The wrapper crate version moves with the package version; the
+            # published smrt-desktop tarball ships both files (the rest of the
+            # wrapper is tracked source from the checkout).
+            printf '%s\n' \
+              packages/smrt-desktop/wrapper/Cargo.toml \
+              packages/smrt-desktop/wrapper/Cargo.lock
             printf '%s\n' \
               packages/planner/src/lib/catalog/catalog.json \
               packages/planner/src/lib/smrt-version.ts
@@ -762,6 +773,7 @@ jobs:
           # Build (dist/) and dependency (node_modules/) output is gitignored;
           # staging it makes git add refuse the path and abort the release (#4711).
           mapfile -t release_files < <(find packages -type d \( -name dist -o -name node_modules \) -prune -o \( -name 'package.json' -o -name 'package.dependencies.json' -o -name 'CHANGELOG.md' -o -name 'template.config.js' -o -name 'smrt-register.ts' \) -print | sort)
+          release_files+=(packages/smrt-desktop/wrapper/Cargo.toml packages/smrt-desktop/wrapper/Cargo.lock)
           git add package.json
           git add -A .changeset
           if [ "${#release_files[@]}" -gt 0 ]; then
@@ -1102,6 +1114,7 @@ jobs:
           # Build (dist/) and dependency (node_modules/) output is gitignored;
           # staging it makes git add refuse the path and abort the release (#4711).
           mapfile -t release_files < <(find packages -type d \( -name dist -o -name node_modules \) -prune -o \( -name 'package.json' -o -name 'package.dependencies.json' -o -name 'CHANGELOG.md' -o -name 'template.config.js' -o -name 'smrt-register.ts' \) -print | sort)
+          release_files+=(packages/smrt-desktop/wrapper/Cargo.toml packages/smrt-desktop/wrapper/Cargo.lock)
           git add package.json
           git add -A .changeset
           if [ "${#release_files[@]}" -gt 0 ]; then

@@ -185,6 +185,35 @@ function sameInstalledPackage(
   );
 }
 
+/**
+ * Locate the package.json of the installed instance that actually owns a
+ * resolved file. Vite's resolution is the authority on which pnpm peer-context
+ * variant is bundled; the importer-relative lookup can name a different one.
+ */
+function findOwningPackageJson(
+  packageName: string,
+  resolvedFile: string,
+): string | undefined {
+  if (!path.isAbsolute(resolvedFile) || !fs.existsSync(resolvedFile)) {
+    return undefined;
+  }
+  let currentDir = path.dirname(fs.realpathSync(resolvedFile));
+  while (true) {
+    const candidate = path.join(currentDir, 'package.json');
+    if (fs.existsSync(candidate)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(candidate, 'utf8'));
+        if (parsed?.name === packageName) return candidate;
+      } catch {
+        // Ignore unreadable manifests and keep walking.
+      }
+    }
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) return undefined;
+    currentDir = parentDir;
+  }
+}
+
 function readInstalledPackageJson(
   packageJsonPath: string | undefined,
 ): ConsumerPackageJson | undefined {
@@ -1298,17 +1327,35 @@ export function smrtConsumer(
           const packageJson = packageJsonPath
             ? readInstalledPackageJson(packageJsonPath)
             : selectivePackage.packageJson;
+          // The importer-relative instance can differ from the one Vite
+          // resolved (duplicate pnpm peer contexts, virtual importers), so
+          // also judge the resolved file against its own owning package.
+          const owningPackageJsonPath = resolved
+            ? findOwningPackageJson(packageName, resolved.id.split('?')[0])
+            : undefined;
+          const owningPackageJson = owningPackageJsonPath
+            ? readInstalledPackageJson(owningPackageJsonPath)
+            : undefined;
           const compileSvelteBarrel =
-            packageJson &&
-            resolvesToSvelteCondition(
-              packageName,
-              packageJson,
-              packageJsonPath
-                ? path.dirname(packageJsonPath)
-                : selectivePackage.packageRoot,
-              id,
-              resolved?.id,
-            );
+            (packageJson &&
+              resolvesToSvelteCondition(
+                packageName,
+                packageJson,
+                packageJsonPath
+                  ? path.dirname(packageJsonPath)
+                  : selectivePackage.packageRoot,
+                id,
+                resolved?.id,
+              )) ||
+            (owningPackageJsonPath &&
+              owningPackageJson &&
+              resolvesToSvelteCondition(
+                packageName,
+                owningPackageJson,
+                path.dirname(owningPackageJsonPath),
+                id,
+                resolved?.id,
+              ));
           if (!compile && !compileSvelteBarrel) {
             if (isBuild) return { id, external: true };
             if (!resolved) return;

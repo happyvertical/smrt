@@ -33,6 +33,7 @@ import {
 import { registerWebhookModelEvents } from '../events.js';
 import { WebhookSubscriptionCollection } from '../models.js';
 import type { WebhookRequest } from '../security.js';
+import { verifyWebhookSignature } from '../signing.js';
 
 const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
@@ -157,6 +158,14 @@ for (const type of dialects)
         expect(request.headers['x-smrt-signature']).toBe(
           `sha256=${createHmac('sha256', secret).update(`${request.headers['x-smrt-timestamp']}.${request.body}`).digest('hex')}`,
         );
+        expect(
+          verifyWebhookSignature({
+            secret,
+            body: request.body,
+            timestamp: request.headers['x-smrt-timestamp'],
+            signature: request.headers['x-smrt-signature'],
+          }),
+        ).toEqual({ ok: true });
         const view = await admin.view();
         expect(view.deliveries[0]).toMatchObject({
           status: 'delivered',

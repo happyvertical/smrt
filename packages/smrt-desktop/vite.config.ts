@@ -5,6 +5,9 @@ export default createPackageConfig('smrt-desktop', {
     // Node-only runtime bundler (`smrt desktop bundle`). The root entry must
     // never import it.
     { name: 'bundler', source: 'src/bundler/index.ts' },
+    // Installer build (`smrt desktop build`). Node only; the root entry must
+    // never import it.
+    { name: 'builder', source: 'src/builder/index.ts' },
     // Assistant-plugin launcher (`runLauncher`). Node only; needs app-runtime.
     { name: 'launcher', source: 'src/launcher/index.ts' },
   ],
