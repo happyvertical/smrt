@@ -324,10 +324,14 @@ function buildOwnedTables(
       (runtimeOnly.get(table) ?? true) && standaloneRuntime,
     );
   }
-  const owned = new Set<string>();
-  for (const { table } of changes) {
-    if (build?.tables[table] || runtimeOnly.get(table) !== true)
-      owned.add(table);
+  // Every build table, not only the changed ones: a merged rebuild plan can
+  // carry statements for a table that has no change of its own.
+  const owned = new Set<string>(Object.keys(build?.tables ?? {}));
+  for (const table of [
+    ...changes.map((change) => change.table),
+    ...runtimeOnly.keys(),
+  ]) {
+    if (runtimeOnly.get(table) !== true) owned.add(table);
   }
   return owned;
 }

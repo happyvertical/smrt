@@ -3,7 +3,9 @@
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import {
   decideSchemaChange,
+  hasExecutableSchemaSql,
   isAdditiveSchemaChangeKind,
+  isCommentOnlySql,
   type SchemaChangeInput,
   type SchemaChangeVerdict,
 } from './change-kinds.js';
@@ -173,17 +175,16 @@ export function decideMigrationRun<T extends SchemaChangeInput>(options: {
   const applicable: T[] = [];
   for (const change of options.changes) {
     const verdict = decideSchemaChange(change, options.engine);
-    if (
-      verdict.decision === 'apply' &&
-      options.onlyAddTo?.has(change.table) &&
-      !isAdditiveSchemaChangeKind(verdict.kind)
-    ) {
+    const buildProblem = options.onlyAddTo
+      ? buildTableProblem(change, verdict, options.onlyAddTo)
+      : null;
+    if (buildProblem) {
       const subject = `${change.table}${change.name ? `.${change.name}` : ''}`;
       stops.push({
         change,
         kind: verdict.kind,
         reason: 'build-table',
-        message: `${subject}: ${change.table} belongs to the build, and this run is limited to some tables (lazy activation or a run-time model edit), so it may only add to it. This change (${verdict.kind}) relaxes or removes part of it. Run smrt db:migrate, a full migrate that compares the build's packages.`,
+        message: `${subject}: ${buildProblem.table} belongs to the build, and this run is limited to some tables (lazy activation or a run-time model edit), so it may only add to it. ${buildProblem.why} Run smrt db:migrate, a full migrate that compares the build's packages.`,
       });
       continue;
     }
@@ -231,6 +232,73 @@ export function decideMigrationRun<T extends SchemaChangeInput>(options: {
     notices,
     heldBack,
   };
+}
+
+/**
+ * Statement text that relaxes, removes, replaces or rebuilds: a drop, a
+ * rename, a column alteration, a SQLite or DuckDB table rebuild (its staging
+ * table, row copy and foreign-key switch), a staged constraint swap (its
+ * DROP and RENAME) or a row delete. An additive kind whose statements contain any of these carries more
+ * than an addition (P22).
+ */
+const NON_ADDITIVE_SQL =
+  /\bDROP\b|\bRENAME\b|\bALTER\s+COLUMN\b|_smrt_rebuild_|\bPRAGMA\s+foreign_keys\b|\bINSERT\s+INTO\b|\bDELETE\s+FROM\b|(?:^|;)\s*UPDATE\s/im;
+const FOLDED_KINDS = new Set(['column.rebuild-covered', 'type.noop']);
+
+function mentionsTable(sql: string, table: string): boolean {
+  const name = table.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^\\w])"?${name}"?([^\\w]|$)`).test(sql);
+}
+
+/**
+ * Why a change may not run in a table-limited run, or null. It judges every
+ * effect the change carries on a build table: its own table, and any build
+ * table its statements rebuild or alter (a merged DuckDB plan). Only a
+ * genuine addition passes: a kind marked additive whose statements add and
+ * nothing else, or a report that executes nothing. A report that executes, or
+ * a change folded into another's rebuild, is refused: in doubt, refuse.
+ */
+function buildTableProblem(
+  change: SchemaChangeInput,
+  verdict: SchemaChangeVerdict,
+  buildTables: ReadonlySet<string>,
+): { table: string; why: string } | null {
+  if (verdict.decision === 'stop') return null;
+  const statements = (
+    change.sqlStatements ?? (change.sql ? [change.sql] : [])
+  ).filter((sql) => !isCommentOnlySql(sql));
+  const carrying = statements.filter((sql) => NON_ADDITIVE_SQL.test(sql));
+  const touched = buildTables.has(change.table)
+    ? change.table
+    : carrying.length
+      ? [...buildTables].find((table) =>
+          carrying.some((sql) => mentionsTable(sql, table)),
+        )
+      : undefined;
+  if (!touched) return null;
+  if (FOLDED_KINDS.has(verdict.kind))
+    return {
+      table: touched,
+      why: `This change (${verdict.kind}) is folded into a table rebuild, which can relax or remove part of the table.`,
+    };
+  if (verdict.decision === 'report')
+    return hasExecutableSchemaSql(change)
+      ? {
+          table: touched,
+          why: `This change (${verdict.kind}) is reported but still executes SQL on the table.`,
+        }
+      : null;
+  if (!isAdditiveSchemaChangeKind(verdict.kind))
+    return {
+      table: touched,
+      why: `This change (${verdict.kind}) relaxes or removes part of it.`,
+    };
+  if (carrying.length)
+    return {
+      table: touched,
+      why: `This change (${verdict.kind}) does more than add: its SQL replaces, rebuilds or rewrites part of the table (${carrying[0].trim().slice(0, 80)}).`,
+    };
+  return null;
 }
 
 /** The refused part of a {@link MigrationRunDecision}, in plain words. */

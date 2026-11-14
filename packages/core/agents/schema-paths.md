@@ -1462,7 +1462,7 @@ Whole-schema provisioning is `db:migrate` or `migrateSmrtSchemas`; both record
 success, including an in-sync run. A run limited to `tables` (lazy activation,
 run-time model edits) is not a whole-schema migrate: it skips the package
 comparison and records nothing, and on a build table it may only add (a
-relaxing or removing change is a `build-table` stop; see the CLI's
+change whose SQL does more than add is a `build-table` stop; see the CLI's
 `db-migrate-all-or-nothing.md`). `smrt app install/setup/migrate` use the CLI
 migrate path. The local app-runtime's first-run `createSchema` hook and its
 `migrateSchemas()` callback use the core migrator, so they also record success.
