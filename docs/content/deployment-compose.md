@@ -444,6 +444,73 @@ renderer or the fixture changes without the others:
 node scripts/compose-contract-fixture.mjs --write
 ```
 
+## Hosting a declaration on the platform operator
+
+The same declaration is also the input to a hosting platform. The operator's
+`smrt` preset takes a `HostedApp` (`hosting.happyvertical.com/v1alpha1`), and
+`@happyvertical/smrt-config/deployment` composes it, so the chart rendering
+above and the hosted rendering come from one contract implementation.
+
+The declaration says what the application is. What it may have is the
+platform's decision, so the deployer passes that in as entitlements and gets
+back either a manifest or a list of rejections written for the person who owns
+the Compose file:
+
+```typescript
+import { composeHostedApp } from '@happyvertical/smrt-config/deployment';
+
+const result = composeHostedApp({
+  document,                 // the parsed Compose file, read at `commit`
+  commit,                   // 7 to 64 hex digits
+  digests: { web: webDigest, worker: workerDigest }, // by Compose service name
+  app: { name: 'notes', poolRef: 'shared', tier: 'T2', labels: { 'example.com/id': id } },
+  entitlements: {
+    bindings: ['postgres', 'bucket'],      // binding kinds the plan includes
+    domains: ['notes.example.org'],        // verified custom domains
+    platformHost: 'notes.apps.example.com', // the derived host; not written to spec.domains
+    volumeSize: '2Gi',                     // the declaration carries no size
+  },
+});
+if (!result.ok) return result.rejections; // [{ code, message }]
+result.manifest;                           // the HostedApp to apply
+```
+
+`composeHostedApp` validates the file at the `deploy` stage, then refuses a
+binding outside `entitlements.bindings` (`binding-not-entitled`), a domain that
+is neither the platform host nor in `entitlements.domains`
+(`domain-not-verified`), a volume with no approved size (`volume-not-entitled`),
+and more than one worker (`multiple-workers-unsupported`). It reports every
+problem at once, never throws on an untrusted document, and carries no secrets.
+The release id is derived from the commit and the digests, so repeating a CI
+call for the same build is the same release. The result also carries the
+resolved `declaration` and any validator warnings.
+
+The network half is a separate entry, `@happyvertical/smrt-config/deployment/hosting`,
+because it uses `fetch` and a YAML parser while `./deployment` stays
+browser-safe:
+
+```typescript
+import {
+  createHostedAppApplier,
+  readGitHubComposeDeclaration,
+} from '@happyvertical/smrt-config/deployment/hosting';
+
+// Contents API with ref=<commit>: what is validated is what CI built.
+const { document } = await readGitHubComposeDeclaration({ owner, repo, commit, token });
+
+const applier = createHostedAppApplier({ apiServer, token: scopedToken });
+const { generation } = await applier.apply(result.manifest); // server-side apply
+await applier.remove('notes');                                // a missing app is not an error
+```
+
+`readGitHubComposeDeclaration` accepts only a commit (never a branch), tries
+`compose.yaml`, `compose.yml` and `docker-compose.yml` unless told otherwise,
+caps YAML aliases and file size, and leaves merge keys unexpanded so the
+validator refuses them. `parseComposeDocument` is the same parser for a file
+you already have. The applier can write only the `HostedApp` kind: the
+credential's RBAC is what bounds it. Failures carry a code and an HTTP status
+and never the token, a response body or file contents.
+
 ## Compatibility
 
 Version 1 changes only by addition: a new binding kind, a new preset, or a new

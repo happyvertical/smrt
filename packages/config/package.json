@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-config",
-  "version": "0.61.0",
+  "version": "0.61.1",
   "type": "module",
   "description": "Centralized configuration management for SMRT modules",
   "author": "HappyVertical",
@@ -16,6 +16,10 @@
     "./deployment": {
       "types": "./dist/deployment.d.ts",
       "import": "./dist/deployment.js"
+    },
+    "./deployment/hosting": {
+      "types": "./dist/deployment-hosting.d.ts",
+      "import": "./dist/deployment-hosting.js"
     },
     "./schemas/*": "./schemas/*"
   },
@@ -35,7 +39,8 @@
   "dependencies": {
     "@happyvertical/smrt-types": "workspace:*",
     "cosmiconfig": "^10.0.1",
-    "jiti": "^2.7.0"
+    "jiti": "^2.7.0",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@types/node": "24.13.6",

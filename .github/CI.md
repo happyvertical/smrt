@@ -676,7 +676,7 @@ mode, so only the publication step differs between the two.
 
 Verify the first merge-group transit after a runner change: required contexts
 must remain present, the PostgreSQL lane must retain its isolation behavior,
-and the three-shard matrices must schedule all three shards. Merge-queue rollout
+and the sharded matrices (three shards, four for `test-packages`) must schedule every shard. Merge-queue rollout
 can be reversed independently by clearing `CI_MERGE_QUEUE_ENABLED`, restoring
 the previous required status list, and removing the merge-queue rule.
 PostgreSQL is not part of the `Required CI` aggregator: its lane reports its

@@ -5,10 +5,10 @@ description: "Centralized configuration management for SMRT modules"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-09T13:55:53Z"
+  at: "2026-11-14T05:25:25Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:9df8b4d67f668690cb0b4e0e4a1e5a0eff5db26448e99a86d1ea9232faaebfa7"
+source_revision: "sha256:2851087fe23705d097ebe85d7dd29337e38730199c292f31a7016f1050406cb4"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/config/package.json"
@@ -39,4 +39,5 @@ sources:
 
 - `.`
 - `./deployment`
+- `./deployment/hosting`
 - `./schemas/*`

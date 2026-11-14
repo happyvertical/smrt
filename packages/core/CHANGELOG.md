@@ -1,5 +1,24 @@
 # @happyvertical/smrt-core
 
+## 0.61.1
+
+### Patch Changes
+
+- ### Features
+  
+  - compose, read and apply HostedApp from a compose declaration (#4982) (config)
+  
+  ### Bug Fixes
+  
+  - keep node:module out of ./core entry (#5000) (#5002) (planner)
+  
+  ### Other Changes
+  
+  - ci: dedicate a shard to smrt-template-sveltekit (#4997) (test)
+- @happyvertical/smrt-config@0.61.1
+  - @happyvertical/smrt-scanner@0.61.1
+  - @happyvertical/smrt-types@0.61.1
+
 ## 0.61.0
 
 ### Patch Changes

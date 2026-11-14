@@ -153,6 +153,14 @@ and are never deployed. The JSON Schema for the annotations is published as
 `@happyvertical/smrt-config/schemas/x-happyvertical.v1.schema.json`. From a
 terminal, use `smrt deploy:check` and `smrt deploy:chart-values`.
 
+To host the same declaration on the platform operator, `composeHostedApp()`
+(same entry) turns it plus caller-supplied entitlements (approved bindings,
+verified domains, volume size) into a `HostedApp` manifest or structured
+rejections. `@happyvertical/smrt-config/deployment/hosting` holds the I/O:
+`readGitHubComposeDeclaration()` reads the file at an exact commit and
+`createHostedAppApplier()` server-side-applies the manifest. See the
+deployment guide's "Hosting a declaration on the platform operator".
+
 ### Use config in code
 
 ```typescript
