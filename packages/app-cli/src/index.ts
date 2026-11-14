@@ -294,7 +294,10 @@ async function dispatchCli(
   }
 
   if (command === 'mcp') {
-    const succeeded = await runMcpCommand({ context, stdout, stderr }, rest);
+    const succeeded = await runMcpCommand(
+      { context, stdout, stderr, mcpPath: options.mcpPath },
+      rest,
+    );
     if (!succeeded) process.exitCode = 1;
     return;
   }
@@ -449,8 +452,12 @@ function printUsage(
   out.write(
     `  ${name} <resource> <command> [id] [--flags...] [json-payload]\n`,
   );
-  out.write(`  ${name} mcp tools\n`);
-  out.write(`  ${name} mcp call <tool> [<json>]\n`);
+  out.write(
+    `  ${name} mcp tools [--url <server>] [--token-env <ENV>] [--mcp-path <path>]\n`,
+  );
+  out.write(
+    `  ${name} mcp call <tool> [<json>] [--confirm] [--url <server>] [--token-env <ENV>]\n`,
+  );
   for (const cmd of extras.values()) {
     out.write(`  ${name} ${cmd.name}  — ${cmd.description}\n`);
   }

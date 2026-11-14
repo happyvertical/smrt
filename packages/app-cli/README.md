@@ -120,6 +120,30 @@ The stdio bridge carries it in MCP `_meta` under
 `io.happyvertical/smrt`. It deliberately does not synthesize MCP
 `structuredContent`.
 
+## Remote MCP client commands
+
+`<app> mcp tools` lists and `<app> mcp call <tool> '<json>'` invokes tools on a
+deployed app's modern MCP endpoint (Streamable HTTP at exactly `/api/mcp`, or
+`mcpPath`), printing the JSON result. Flags:
+
+- `--url <server>` targets a server other than the configured one.
+- `--token-env <NAME>` reads the bearer token from that environment variable.
+  The token is never printed: it is scrubbed from stdout and stderr, and
+  errors name only the variable. An explicit token requires an HTTPS (or
+  loopback) `--url`. Without it the stored login token is used.
+- `--mcp-path <path>` overrides the same-server MCP route.
+- `--legacy-rest` opts in to the deprecated `<mcpPath>/tools` and
+  `<mcpPath>/call` REST routes and their result envelope.
+- `--confirm` (`mcp call` only) sets `confirm: true` in the call arguments for
+  outbound or destructive tools. It is never added unless passed, and the
+  arguments must be a JSON object. A `"confirm": true` already present in
+  the JSON passes through unchanged.
+
+```bash
+WORK_OWNER_TOKEN=... acme mcp call send_invoice '{"id":"inv_1"}' \
+  --url https://work.example.com --token-env WORK_OWNER_TOKEN --confirm
+```
+
 ## Add an app-specific command
 
 ```ts
