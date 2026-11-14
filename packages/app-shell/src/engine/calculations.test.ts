@@ -373,3 +373,40 @@ it('refuses calculated date outputs before addField and setCalculation apply', a
       ),
     });
 });
+
+it('clears and undoes floating calculations without changing any double bits', async () => {
+  await run({
+    type: 'defineModel',
+    name: 'Precise',
+    fields: {
+      input: { type: 'number' },
+      offset: { type: 'number' },
+      output: {
+        type: 'number',
+        calculated: {
+          op: 'add',
+          left: { col: 'input' },
+          right: { col: 'offset' },
+        },
+      },
+    },
+  });
+  const ids = [];
+  for (const [input, offset] of [
+    [0.1, 0.2],
+    [1.2345678901234567, 0],
+  ])
+    ids.push(String((await host.create('Precise', { input, offset })).id));
+  const before = await Promise.all(ids.map((id) => host.get('Precise', id)));
+  await run({
+    type: 'setCalculation',
+    model: 'Precise',
+    field: 'output',
+    calculated: null,
+  });
+  for (let i = 0; i < ids.length; i++)
+    expect((await host.get('Precise', ids[i])).output).toBe(before[i].output);
+  await run({ type: 'undo' });
+  for (let i = 0; i < ids.length; i++)
+    expect((await host.get('Precise', ids[i])).output).toBe(before[i].output);
+});

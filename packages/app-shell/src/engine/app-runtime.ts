@@ -341,7 +341,29 @@ export class AppRuntime {
               `cannot undo clearing ${step.table}.${step.column}: writable values changed since clearing; restoring the calculation would discard those edits`,
             );
         }
-        if (up && step.from && (!step.from.calculated || clearing))
+        if (up && clearing) {
+          // Serialize in JavaScript: SQLite's REAL-to-TEXT affinity conversion
+          // rounds doubles, so SQL INSERT ... SELECT into value TEXT loses bits.
+          const values = (
+            await tx.query(
+              `SELECT id, ${q(step.column)} AS value FROM ${q(step.table)}`,
+            )
+          ).rows;
+          for (const row of values)
+            await exec(
+              'INSERT INTO _archive (version, tbl, col, record_id, value, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+              [
+                m.version,
+                step.table,
+                step.column,
+                row.id,
+                typeof row.value === 'number'
+                  ? JSON.stringify(row.value)
+                  : row.value,
+                now,
+              ],
+            );
+        } else if (up && step.from && !step.from.calculated)
           await exec(
             `INSERT INTO _archive (version, tbl, col, record_id, value, created_at) SELECT ?, ?, ?, id, ${q(step.column)}, ? FROM ${q(step.table)}`,
             [m.version, step.table, step.column, now],
