@@ -1987,7 +1987,206 @@ describe('database-generated fields #4915', () => {
   }
 
   for (const engine of [...persistenceEngines, 'duckdb'] as const) {
-    it(`#4972 round3 item4: ${engine} ordinary diff and parity make zero generated catalog probes`, async () => {
+    if (engine === 'sqlite') continue;
+    it(`#4972 round4 item2: ${engine} batches catalog discovery once per run with main's ordinary diff`, async () => {
+      const db =
+        engine === 'duckdb'
+          ? await (
+              await vi.importActual<typeof import('@happyvertical/sql')>(
+                '@happyvertical/sql',
+              )
+            ).getDatabase({ type: 'duckdb', url: ':memory:' })
+          : await getTestDatabase({
+              type: 'pglite',
+              classes: [],
+              includeSystemTables: false,
+            });
+      databases.push(db);
+      const schemas: Record<string, SchemaDefinition> = {};
+      for (const tableName of [
+        'plain_batch_one',
+        'plain_batch_two',
+        'plain_batch_three',
+      ]) {
+        await db.query(`CREATE TABLE ${tableName} (qty BIGINT)`);
+        schemas[tableName] = {
+          tableName,
+          columns: { qty: { type: 'INTEGER' } },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: '1',
+        };
+      }
+      const query = db.query.bind(db);
+      const probes: string[] = [];
+      const spy = vi.spyOn(db, 'query').mockImplementation((sql, ...values) => {
+        if (
+          /generation_expression|SELECT (?:table_name, )?sql FROM duckdb_tables\(\)/i.test(
+            sql,
+          )
+        )
+          probes.push(sql);
+        return query(sql, ...values);
+      });
+      try {
+        const comparer = new SchemaComparer(db, { engineHint: engine });
+        // Verified against origin/main's comparer at 45cea33a86da on both engines.
+        const mainDiff = {
+          added_tables: [],
+          dropped_tables: [],
+          changes: [],
+          has_changes: false,
+          orphan_tables: [],
+        };
+        expect(await comparer.compare(schemas)).toEqual(mainDiff);
+        expect(probes).toHaveLength(1);
+        expect(await comparer.compare(schemas)).toEqual(mainDiff);
+        expect(probes).toHaveLength(2);
+        for (let run = 0; run < 2; run++) {
+          expect(
+            (
+              await checkLiveSchemaParity({
+                db,
+                schemas,
+                engineHint: engine,
+                includeSystemTables: false,
+              })
+            ).findings,
+          ).toEqual([]);
+          expect(probes).toHaveLength(3 + run);
+        }
+        for (const expected of [false, true]) {
+          const failure = new Error('generated catalog unavailable');
+          spy.mockImplementation((sql, ...values) => {
+            if (
+              /generation_expression|SELECT (?:table_name, )?sql FROM duckdb_tables\(\)/i.test(
+                sql,
+              )
+            )
+              return Promise.reject(failure);
+            return query(sql, ...values);
+          });
+          const changed = structuredClone(schemas);
+          if (expected)
+            changed.plain_batch_two.columns.total = {
+              type: 'INTEGER',
+              generated: { col: 'qty' },
+            };
+          const diff = () => comparer.compare(changed);
+          const parity = () =>
+            checkLiveSchemaParity({
+              db,
+              schemas: changed,
+              engineHint: engine,
+              includeSystemTables: false,
+            });
+          if (expected) {
+            await expect(diff()).rejects.toBe(failure);
+            await expect(parity()).rejects.toBe(failure);
+          } else {
+            expect(await diff()).toEqual(mainDiff);
+            expect((await parity()).findings).toEqual([]);
+          }
+        }
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it(`#4972 round4 item2: ${engine} removing the last declaration without a snapshot permits ordinary saves`, async () => {
+      const restoreModel = snapshotObjectRegistryState();
+      const def: RuntimeModelDefinition = {
+        name: 'LastGenerated',
+        packageName: '@test/last-generated',
+        tableName: 'last_generated',
+        fields: {
+          qty: { type: 'integer' },
+          total: { type: 'integer', generated: { col: 'qty' } },
+        },
+      };
+      const name = registerRuntimeModel(def);
+      const db =
+        engine === 'duckdb'
+          ? await (
+              await vi.importActual<typeof import('@happyvertical/sql')>(
+                '@happyvertical/sql',
+              )
+            ).getDatabase({ type: 'duckdb', url: ':memory:' })
+          : await getTestDatabase({
+              type: 'pglite',
+              classes: [],
+              includeSystemTables: false,
+            });
+      databases.push(db);
+      const generatedSchemas = ObjectRegistry.getAllSchemasAsDefinitions({
+        tables: ['last_generated'],
+      });
+      const initial = await new SchemaComparer(db, {
+        engineHint: engine,
+      }).compare(generatedSchemas);
+      expect(initial.added_tables).toHaveLength(1);
+      const strategy = getDDLStrategy(engine);
+      for (const schema of initial.added_tables) {
+        await db.query(strategy.generateCreateTable(schema));
+        for (const sql of strategy.generateIndexes(schema)) await db.query(sql);
+      }
+      const initialCollection = await ObjectRegistry.getCollection(name, {
+        db,
+      });
+      await initialCollection.create({ qty: 5 });
+      restoreModel(); // Simulate restarting on the new ordinary declaration.
+      def.fields!.total = { type: 'integer' };
+      registerRuntimeModel(def);
+      const schemas = ObjectRegistry.getAllSchemasAsDefinitions({
+        tables: ['last_generated'],
+      });
+      const options = {
+        db,
+        schemas,
+        engineHint: engine,
+        includeSystemTables: false,
+      };
+      expect((await checkLiveSchemaParity(options)).findings).toContainEqual(
+        expect.objectContaining({
+          kind: 'generated_expression_drift',
+          target: 'total',
+        }),
+      );
+      const diff = await new SchemaComparer(db, { engineHint: engine }).compare(
+        schemas,
+      );
+      const conversion = diff.changes.find(
+        (change) => change.name === 'total',
+      )!;
+      expect(conversion.advisory?.severity).toBe('warning');
+      await db.transaction!(async (tx) => {
+        for (const change of diff.changes)
+          for (const sql of change.sqlStatements ?? [change.sql!])
+            await tx.query(sql);
+      });
+      expect(
+        (await db.query('SELECT total FROM last_generated')).rows[0].total,
+      ).toBe(engine === 'postgres' ? 5 : null);
+      const collection = await ObjectRegistry.getCollection(name, { db });
+      const saved = await collection.create({ qty: 7, total: 42 });
+      expect(saved.toJSON()).toMatchObject({ qty: 7, total: 42 });
+      await db.query('UPDATE last_generated SET qty = 9');
+      expect((await collection.get({ id: saved.id }))!.toJSON()).toMatchObject({
+        qty: 9,
+        total: 42,
+      });
+      expect(
+        (await checkLiveSchemaParity(options)).findings,
+      ).not.toContainEqual(
+        expect.objectContaining({ kind: 'generated_expression_drift' }),
+      );
+    });
+  }
+
+  for (const engine of [...persistenceEngines, 'duckdb'] as const) {
+    it(`#4972 round3 item4: ${engine} ordinary diff and parity tolerate unavailable generated catalogs`, async () => {
       const db =
         engine === 'duckdb'
           ? await getDatabase({ type: 'duckdb', url: ':memory:' })
@@ -2015,7 +2214,7 @@ describe('database-generated fields #4915', () => {
         .spyOn(db, 'query')
         .mockImplementation(async (sql, ...values) => {
           if (
-            /generation_expression|SELECT sql FROM (sqlite_master|duckdb_tables\(\))/i.test(
+            /generation_expression|SELECT (?:table_name, )?sql FROM (sqlite_master|duckdb_tables\(\))/i.test(
               sql,
             )
           ) {
@@ -2045,7 +2244,7 @@ describe('database-generated fields #4915', () => {
           engineHint: engine,
           includeSystemTables: false,
         });
-        expect(probes).toEqual([]);
+        expect(probes).toHaveLength(engine === 'sqlite' ? 0 : 4);
       } finally {
         spy.mockRestore();
       }

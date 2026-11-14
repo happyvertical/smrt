@@ -2,6 +2,7 @@ import {
   GeneratedFieldError,
   generatedExpressionsMatch,
   probeGeneratedColumns,
+  readGeneratedColumnCatalog,
 } from '../generated-fields.js';
 /**
  * Schema Differ
@@ -165,9 +166,9 @@ function isValidSQLDataType(type: string): type is SQLDataType {
  * Options for schema comparison
  */
 export interface DiffOptions {
-  /** Previously recorded deployment shapes; no history/catalog query is added.
-   * Supply these when removing the last generated declaration, especially for
-   * PostgreSQL/DuckDB whose ordinary schema metadata still lists that column.
+  /** Previously recorded deployment shapes; suppress SQLite's missing-column
+   * fallback when the prior table is known to be ordinary. PostgreSQL/DuckDB
+   * discover removed generated declarations in one current-schema catalog read.
    */
   previousSchemas?: Record<string, SchemaDefinition>;
 
@@ -667,6 +668,10 @@ export class SchemaComparer {
    */
   private indexPredicateCache: Map<string, Map<string, string>> | null = null;
 
+  /** Current-schema generated columns, scoped to one compare() run. */
+  private generatedColumnCatalog: Map<string, Map<string, string>> | null =
+    null;
+
   /**
    * Cross-table batch queries stay bounded regardless of schema shape: this
    * caps how many scalar-subquery columns one probe statement packs into a
@@ -718,6 +723,7 @@ export class SchemaComparer {
     this.liveSchemas.clear();
     this.renameDataPendingCache = null;
     this.indexPredicateCache = null;
+    this.generatedColumnCatalog = null;
 
     // #2878 review: `renameDataPendingCache` is populated below for the
     // duration of this call only. The `finally` clears it again on the way
@@ -733,6 +739,15 @@ export class SchemaComparer {
     // `compare()` call" would be false.
     try {
       // Get list of existing tables
+      this.generatedColumnCatalog = await readGeneratedColumnCatalog(
+        this.db,
+        this.engine,
+        Object.values(manifestSchemas).some((schema) =>
+          Object.values(schema.columns).some(
+            (column) => column.generated !== undefined,
+          ),
+        ),
+      );
       const existingTables = await this.getExistingTables();
       this.plannedTables = new Map(
         Object.entries(manifestSchemas).filter(
@@ -822,6 +837,7 @@ export class SchemaComparer {
       this.plannedTables.clear();
       this.renameDataPendingCache = null;
       this.indexPredicateCache = null;
+      this.generatedColumnCatalog = null;
     }
   }
 
@@ -2017,22 +2033,29 @@ export class SchemaComparer {
     dbSchema: SqlTableSchemaInfo,
   ): Promise<SchemaChange[]> {
     const changes: SchemaChange[] = [];
-    const generated = await probeGeneratedColumns(
-      this.db,
-      tableName,
-      this.engine,
-      {
-        expected: Object.values(manifest.columns).some(
-          (column) => column.generated !== undefined,
-        ),
-        previous: Object.values(
-          this.options.previousSchemas?.[tableName]?.columns ?? {},
-        ).some((column) => column.generated !== undefined),
-        missingColumns:
-          !this.options.previousSchemas?.[tableName] &&
-          Object.keys(manifest.columns).some((name) => !dbSchema.columns[name]),
-      },
-    );
+    const generated =
+      this.engine === 'postgres' || this.engine === 'duckdb'
+        ? ((this.generatedColumnCatalog ??
+            (await readGeneratedColumnCatalog(
+              this.db,
+              this.engine,
+              Object.values(manifest.columns).some(
+                (column) => column.generated !== undefined,
+              ),
+            )))!.get(tableName) ?? new Map<string, string>())
+        : await probeGeneratedColumns(this.db, tableName, this.engine, {
+            expected: Object.values(manifest.columns).some(
+              (column) => column.generated !== undefined,
+            ),
+            previous: Object.values(
+              this.options.previousSchemas?.[tableName]?.columns ?? {},
+            ).some((column) => column.generated !== undefined),
+            missingColumns:
+              !this.options.previousSchemas?.[tableName] &&
+              Object.keys(manifest.columns).some(
+                (name) => !dbSchema.columns[name],
+              ),
+          });
     if (this.engine === 'sqlite' && generated.size) {
       const { rows } = await this.db.query(
         `SELECT * FROM pragma_table_xinfo($1)`,

@@ -107,32 +107,28 @@ quoting but otherwise compares expression text. An SDK renderer change can
 report drift for a semantically identical expression; SQLite may replace the
 column, while DuckDB refuses the change. Inspect the plan after SDK upgrades.
 No semantic SQL parser or normalization beyond formatting is promised.
-Generated catalog introspection runs only for tables whose expected schema or
-previously recorded deployment schema contains generated columns. Supply the
-previous deployment shapes through `SchemaComparer` / `generateSchemaDiff`'s
-`previousSchemas` option and `checkLiveSchemaParity({ previousSchemas })` when
-removing the last declaration. These APIs do not own persisted schema snapshots
-and do not add a history-table query; the caller retains and supplies the
-snapshot. An ordinary table with complete live metadata pays zero generated
-catalog queries, including when an engine hint differs from the connection.
+PostgreSQL and DuckDB diff and live-parity runs each read generated columns
+for every table in the current schema in **one catalog query per run**, reused
+across all tables. This discovers removal of the last generated declaration,
+including hand-created columns, without requiring deployment snapshots.
+A reused comparer refreshes the catalog for each run; standalone `compareTable`
+calls also make one catalog read each. A database without generated columns
+retains the ordinary migration diff, with one extra query per run.
 
-Without a previous table snapshot, SQLite also probes when an expected column
-is absent from live metadata: `table_info` hides VIRTUAL columns, so this keeps
-the last-generated-to-ordinary transition discoverable. The same symptom can
-mean a genuinely new ordinary column and pays one best-effort probe for that
-table. A recorded ordinary snapshot disables that fallback. PostgreSQL/DuckDB
-metadata lists generated columns, so removing the final generated declaration
-without a previous snapshot cannot be detected automatically; supply the old
-schema or plan the conversion explicitly. Hand-created generated columns follow
-the same discovery rule.
+SQLite retains feature-scoped discovery: it probes tables with expected or
+previously recorded generated columns, or (without a previous table snapshot)
+when an expected column is missing from live metadata. `table_info` hides
+VIRTUAL columns, so this fallback discovers last-declaration removal. A genuinely
+new ordinary column can also pay this best-effort probe. The optional
+`previousSchemas` input can suppress that fallback for known ordinary tables;
+it is not needed for PostgreSQL/DuckDB removal detection.
 
-A failed optional probe (previous snapshot or SQLite missing-column fallback)
-is treated as no generated columns known, preserving ordinary diff/parity
-behavior on catalog-incompatible adapters or test doubles. A probe failure
-always propagates if generated columns are expected; declared generated drift
-is never silently ignored. Optional discovery can therefore miss a conversion
-when the catalog is unavailable. Live parity reports
-`generated_expression_drift` for both conversion directions when discovered.
+A failed optional catalog read is treated as no generated columns known,
+preserving ordinary diff/parity behavior on catalog-incompatible adapters or
+test doubles. Failure propagates if **any** generated column is expected in
+the run; declared generated drift is never silently ignored. Optional discovery
+can therefore miss a conversion when the catalog is unavailable. Live parity
+reports `generated_expression_drift` for both conversion directions when found.
 
 Generated-to-ordinary migrations have explicit value semantics:
 
@@ -140,8 +136,10 @@ Generated-to-ordinary migrations have explicit value semantics:
   value and existing index. A warning advisory explicitly says the column will
   stop updating automatically, including for discovered hand-created columns.
   Ordinary type/default/nullability changes are then planned by the normal differ.
-- SQLite (and DuckDB) VIRTUAL columns have no stored values. The migration drops
-  and re-adds the column, recreating declared column indexes. Existing rows
+- SQLite and DuckDB VIRTUAL columns have no stored values. Removing a generated
+  declaration is supported on both: the migration drops the VIRTUAL column and
+  adds an ordinary column, recreating declared column indexes. DuckDB's refusal
+  of generated additions/expression changes does not apply to this ordinary ADD. Existing rows
   receive the ordinary declaration's default, or NULL; the previous calculated
   results are not materialized. A populated table targeting NOT NULL without a
   non-NULL default stays manual drift and emits no destructive SQL: supply a

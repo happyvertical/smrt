@@ -2,6 +2,7 @@ import {
   type GeneratedExpression,
   generatedExpressionsMatch,
   probeGeneratedColumns,
+  readGeneratedColumnCatalog,
 } from '../generated-fields.js';
 /**
  * Live-schema parity check (#2368)
@@ -134,7 +135,7 @@ export interface LiveSchemaParityOptions {
   db: DatabaseInterface;
   /** Expected application table shapes, keyed by table name. */
   schemas?: Record<string, SchemaDefinition>;
-  /** Previously recorded deployment shapes, used to discover removed generated declarations without querying ordinary tables. */
+  /** Previously recorded deployment shapes; suppress SQLite's missing-column fallback when the prior table is known to be ordinary. */
   previousSchemas?: Record<string, SchemaDefinition>;
   /** Declared upsert conflict targets, keyed by table name. */
   conflictTargets?: Record<string, ConflictTargetInput[]>;
@@ -234,6 +235,13 @@ export async function checkLiveSchemaParity(
     engine,
   });
 
+  const generatedCatalog = await readGeneratedColumnCatalog(
+    db,
+    engine,
+    expected.some((table) =>
+      table.columns.some((column) => column.generated !== undefined),
+    ),
+  );
   const liveTableNames = await listLiveTables(db, engine);
   const indexCatalog = await readIndexCatalog(db, engine);
   const findings: LiveParityFinding[] = [];
@@ -260,15 +268,20 @@ export async function checkLiveSchemaParity(
 
     tablesChecked++;
     const liveColumns = await readLiveColumns(db, table.name);
-    const generated = await probeGeneratedColumns(db, table.name, engine, {
-      expected: table.columns.some((column) => column.generated !== undefined),
-      previous: Object.values(
-        options.previousSchemas?.[table.name]?.columns ?? {},
-      ).some((column) => column.generated !== undefined),
-      missingColumns:
-        !options.previousSchemas?.[table.name] &&
-        table.columns.some((column) => !liveColumns.has(column.name)),
-    });
+    const generated =
+      generatedCatalog !== null
+        ? (generatedCatalog.get(table.name) ?? new Map<string, string>())
+        : await probeGeneratedColumns(db, table.name, engine, {
+            expected: table.columns.some(
+              (column) => column.generated !== undefined,
+            ),
+            previous: Object.values(
+              options.previousSchemas?.[table.name]?.columns ?? {},
+            ).some((column) => column.generated !== undefined),
+            missingColumns:
+              !options.previousSchemas?.[table.name] &&
+              table.columns.some((column) => !liveColumns.has(column.name)),
+          });
     if (
       generated.size ||
       table.columns.some((column) => column.generated !== undefined)

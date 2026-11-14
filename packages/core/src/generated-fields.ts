@@ -523,7 +523,7 @@ export function rejectGeneratedInput(
 }
 
 /**
- * Catalog work is feature-scoped. With no recorded schema, SQLite's hidden
+ * SQLite's catalog work is feature-scoped. With no recorded schema, a hidden
  * generated column may look like a missing ordinary column; that fallback is
  * best-effort. A manifest that expects generated columns always fails closed.
  */
@@ -545,6 +545,45 @@ export async function probeGeneratedColumns(
     if (evidence.expected) throw error;
     return new Map();
   }
+}
+
+/** One current-schema catalog read, including declarations the model removed. */
+export async function readGeneratedColumnCatalog(
+  db: Parameters<typeof readGeneratedColumns>[0],
+  engine: DatabaseEngine,
+  expected: boolean,
+): Promise<Map<string, Map<string, string>> | null> {
+  if (engine !== 'postgres' && engine !== 'duckdb') return null;
+  const catalog = new Map<string, Map<string, string>>();
+  try {
+    const { rows } = await db.query(
+      engine === 'postgres'
+        ? "SELECT table_name, column_name, generation_expression FROM information_schema.columns WHERE table_schema = current_schema() AND is_generated = 'ALWAYS'"
+        : 'SELECT table_name, sql FROM duckdb_tables() WHERE schema_name = current_schema()',
+    );
+    for (const row of rows) {
+      if (typeof row.table_name !== 'string') continue;
+      if (engine === 'duckdb') {
+        catalog.set(
+          row.table_name,
+          generatedColumnsFromDDL(String(row.sql ?? '')),
+        );
+      } else if (
+        typeof row.column_name === 'string' &&
+        typeof row.generation_expression === 'string'
+      ) {
+        const columns =
+          catalog.get(row.table_name) ?? new Map<string, string>();
+        columns.set(row.column_name, row.generation_expression);
+        catalog.set(row.table_name, columns);
+      }
+    }
+  } catch (error) {
+    if (expected) throw error;
+    // An unavailable optional catalog is unknown, never a per-table retry.
+    catalog.clear();
+  }
+  return catalog;
 }
 
 /** Introspect generated expressions missing from the SQL SDK's schema metadata. */
@@ -578,7 +617,10 @@ export async function readGeneratedColumns(
           "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = $1",
           [table],
         );
-  const ddl = String(rows[0]?.sql ?? '');
+  return generatedColumnsFromDDL(String(rows[0]?.sql ?? ''));
+}
+
+function generatedColumnsFromDDL(ddl: string): Map<string, string> {
   const result = new Map<string, string>();
   // Match a generated clause by balanced parentheses, respecting SQL quotes.
   const pattern =
