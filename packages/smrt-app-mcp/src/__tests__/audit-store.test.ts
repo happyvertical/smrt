@@ -36,6 +36,22 @@ describe('SMRT-model audit store', () => {
     });
   }
 
+  it('resolves smrtOptions on every operation, never caching request-scoped state', async () => {
+    let calls = 0;
+    const s = createSmrtMcpAuditStore({
+      smrtOptions: () => {
+        calls += 1;
+        return {
+          db: { type: 'sqlite', url: join(dir, 'a.sqlite'), cache: false },
+        };
+      },
+    });
+    await s.record(record());
+    await s.record(record());
+    await s.list({ tenantId: 'tenant-a' });
+    expect(calls).toBe(3);
+  });
+
   it('persists and lists records by tenant and principal, newest first', async () => {
     const s = store();
     await s.record(record());

@@ -139,16 +139,12 @@ export function createSmrtMcpAuditStore(
     query: McpAuditQuery & { tenantId: string | null },
   ): ReturnType<McpCallAuditCollection['listAudits']>;
 } {
-  let collection: Promise<McpCallAuditCollection> | undefined;
-  const get = () => {
-    collection ??= McpCallAuditCollection.create(
+  // Resolved per operation: `smrtOptions()` may return request-scoped state
+  // (e.g. a transaction-bound db under RLS) that must not outlive its request.
+  const get = () =>
+    McpCallAuditCollection.create(
       options.smrtOptions() as never,
-    ).catch((error) => {
-      collection = undefined;
-      throw error;
-    }) as Promise<McpCallAuditCollection>;
-    return collection;
-  };
+    ) as Promise<McpCallAuditCollection>;
   return {
     async record(record) {
       await (await get()).append(record);

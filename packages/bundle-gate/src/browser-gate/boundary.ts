@@ -341,6 +341,8 @@ export const MODEL_PACKAGE_EXCLUSIONS: Record<string, string> = {
     'command-line tool; its `@smrt(` matches are scaffold template text, and a CLI is Node-only by definition',
   '@happyvertical/smrt-app-shell':
     'an adapter-node application (worker threads, SQLite, QuickJS), not a consumable model package; it has no root entry and its shell models are never imported by other packages',
+  '@happyvertical/smrt-app-mcp':
+    'server-side MCP host (HTTP route mounting, per-request transactions, node crypto); its only model is the McpCallAudit table, reached through the ./audit-store subpath and never imported by a browser bundle',
 };
 
 /** Always gated even when no decorated class is found in source. */
