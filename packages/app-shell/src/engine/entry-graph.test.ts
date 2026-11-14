@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
@@ -13,6 +13,17 @@ it('keeps both engine entry graphs independent of shell UI and SvelteKit', () =>
     resolve(src, 'engine/index.ts'),
     resolve(src, 'engine/app-worker.ts'),
   ];
+  // Also cover dormant production modules before a future entry exposes them.
+  for (const entry of readdirSync(resolve(src, 'engine'), {
+    recursive: true,
+    withFileTypes: true,
+  }))
+    if (
+      entry.isFile() &&
+      entry.name.endsWith('.ts') &&
+      !entry.name.endsWith('.test.ts')
+    )
+      queue.push(resolve(entry.parentPath, entry.name));
   while (queue.length) {
     const file = queue.pop() as string;
     if (seen.has(file)) continue;
@@ -44,7 +55,17 @@ it('keeps both engine entry graphs independent of shell UI and SvelteKit', () =>
       ts.forEachChild(node, visit);
     };
     visit(source);
-    for (const specifier of imports) {
+    for (let specifier of imports) {
+      const self = '@happyvertical/smrt-app-shell';
+      if (
+        specifier === `${self}/engine` ||
+        specifier === `${self}/engine/worker`
+      )
+        specifier = `./${specifier.endsWith('/worker') ? 'app-worker' : 'index'}.ts`;
+      else if (specifier === self || specifier.startsWith(`${self}/`)) {
+        forbidden.push(`${relative(src, file)} -> ${specifier}`);
+        continue;
+      }
       if (
         /^(svelte(?:\/|$)|@sveltejs\/|\$lib(?:\/|$)|\$app(?:\/|$))/.test(
           specifier,

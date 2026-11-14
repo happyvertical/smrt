@@ -1,5 +1,7 @@
 <script lang="ts">
 import { Badge, Card, Grid, Stack } from '@happyvertical/smrt-ui';
+import { fieldLabel } from '$lib/ui/fields';
+import { formulaWords } from '$lib/ui/formula';
 import { publishGroups } from '$lib/ui/publish';
 import type { PublishPreview } from '$lib/ui/types';
 
@@ -34,6 +36,10 @@ const groups = $derived(publishGroups(preview));
     </li>
   {/each}
 </ol>
+{#if Object.values(preview.fields ?? {}).some(fields => Object.values(fields).some(field => field.calculated))}
+<h2>Calculated fields</h2>
+<ul>{#each Object.entries(preview.fields ?? {}) as [model, fields] (model)}{#each Object.entries(fields) as [name, field] (name)}{#if field.calculated}<li>{model} · {fieldLabel(name, field)}: {formulaWords(field.calculated, fields)}</li>{/if}{/each}{/each}</ul>
+{/if}
 <h2>All method code ({preview.methods.length})</h2>
 {#each preview.methods as method (method.model + '.' + method.name)}
   <section aria-label="{method.model}.{method.name}">

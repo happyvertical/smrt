@@ -233,3 +233,16 @@ it('keeps empty change groups visible with zero counts', async () => {
   }
   expect(container.querySelector('ol')?.children.length).toBe(0);
 });
+
+it('does not request a preview when mounted without a ready draft', async () => {
+  component = mount(Review, {
+    target: container,
+    props: {
+      data: { description: { ...description(), draft: null } },
+    } as never,
+  });
+  await tick();
+  await tick();
+  expect(fetch).not.toHaveBeenCalled();
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});

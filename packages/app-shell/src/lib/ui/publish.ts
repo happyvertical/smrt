@@ -1,4 +1,25 @@
-import type { PublishPreview, VersionInfo } from './types.ts';
+import { formulaWords } from './formula.ts';
+import type { FieldDef, PublishPreview, VersionInfo } from './types.ts';
+
+function fieldChange(
+  model: string,
+  field: string,
+  from: FieldDef,
+  to: FieldDef,
+  preview: PublishPreview,
+) {
+  const fields = preview.fields?.[model] ?? { [field]: to };
+  if (to.calculated)
+    return `Change ${model}.${field}: calculated as ${formulaWords(to.calculated, fields)}.`;
+  if (from.calculated)
+    return `Change ${model}.${field}: remove calculation; use ${to.type} values.`;
+  return `Change ${model}.${field}: ${from.type} to ${to.type}.`;
+}
+function addedField(model: string, field: string, preview: PublishPreview) {
+  const fields = preview.fields?.[model] ?? {};
+  const calculation = fields[field]?.calculated;
+  return `Add field ${model}.${field}${calculation ? `: calculated as ${formulaWords(calculation, fields)}` : ''}.`;
+}
 
 /** Summarise the definition and replay: intermediate conversions matter too. */
 export function publishLines(preview: PublishPreview): string[] {
@@ -10,11 +31,11 @@ export function publishLines(preview: PublishPreview): string[] {
     ...d.modelsRemoved.map((name) => `Remove model ${name}.`),
   ];
   for (const [name, model] of Object.entries(d.models)) {
-    lines.push(...model.fieldsAdded.map((f) => `Add field ${name}.${f}.`));
+    lines.push(...model.fieldsAdded.map((f) => addedField(name, f, preview)));
     lines.push(...model.fieldsRemoved.map((f) => `Remove field ${name}.${f}.`));
     lines.push(
-      ...model.fieldsChanged.map(
-        (f) => `Change ${name}.${f.field}: ${f.from.type} to ${f.to.type}.`,
+      ...model.fieldsChanged.map((f) =>
+        fieldChange(name, f.field, f.from, f.to, preview),
       ),
     );
   }
@@ -29,6 +50,7 @@ export function publishLines(preview: PublishPreview): string[] {
     ...d.recipesAdded.map((r) => `Add recipe ${r}.`),
     ...d.recipesRemoved.map((r) => `Remove recipe ${r}.`),
   );
+  lines.push(...(preview.reportChanges ?? []).map((c) => c.text));
   return lines;
 }
 
@@ -53,15 +75,14 @@ export function publishGroups(preview: PublishPreview): PublishGroup[] {
   const changed: string[] = [];
   for (const [name, model] of Object.entries(d.models)) {
     added.push(
-      ...model.fieldsAdded.map((field) => `Add field ${name}.${field}.`),
+      ...model.fieldsAdded.map((field) => addedField(name, field, preview)),
     );
     removed.push(
       ...model.fieldsRemoved.map((field) => `Remove field ${name}.${field}.`),
     );
     changed.push(
-      ...model.fieldsChanged.map(
-        (field) =>
-          `Change ${name}.${field.field}: ${field.from.type} to ${field.to.type}.`,
+      ...model.fieldsChanged.map((field) =>
+        fieldChange(name, field.field, field.from, field.to, preview),
       ),
     );
   }
@@ -70,6 +91,14 @@ export function publishGroups(preview: PublishPreview): PublishGroup[] {
       added.push(`Add method ${method.model}.${method.name}().`);
     if (method.change === 'changed')
       changed.push(`Change method ${method.model}.${method.name}().`);
+  }
+  for (const change of preview.reportChanges ?? []) {
+    (change.kind === 'added'
+      ? added
+      : change.kind === 'removed'
+        ? removed
+        : changed
+    ).push(change.text);
   }
   const conversions = preview.versions
     .flatMap((v) => v.steps)

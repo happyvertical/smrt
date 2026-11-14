@@ -1,6 +1,7 @@
 <script lang="ts">
 import { goto, invalidate } from '$app/navigation';
 import { ApiError, isPendingApproval, records } from '$lib/ui/api';
+import { cellText } from '$lib/ui/columns';
 import { DEPENDS } from '$lib/ui/events';
 import {
   changedFields,
@@ -12,6 +13,7 @@ import {
   serializeForm,
   stripFieldPrefix,
 } from '$lib/ui/fields';
+import { formulaWords } from '$lib/ui/formula';
 import { modelHref } from '$lib/ui/menu';
 import type { Description, PendingApproval, RecordRow } from '$lib/ui/types';
 import ConfirmDialog from './ConfirmDialog.svelte';
@@ -134,6 +136,13 @@ const methods = $derived(Object.entries(info.methods));
     <p class="smrt-app-shell__alert smrt-app-shell__alert-error" role="alert" id="{uid}-err">{formError}</p>
   {/if}
   {#each specs as spec (spec.name)}
+    {@const field = info.fields[spec.name]}
+    {#if field.calculated}
+      <div class="smrt-app-shell__field"><p class="smrt-app-shell__label">{spec.label} <small class="smrt-app-shell__muted">calculated</small></p>
+        <output aria-label={spec.label}>{record ? cellText(field, record[spec.name]) : ''}</output>
+        <p class="smrt-app-shell__muted">{formulaWords(field.calculated, info.fields)}{#if !record} · Available after saving.{/if}</p>
+      </div>
+    {:else}
     <FieldInput
       id="{uid}-{spec.name}"
       {spec}
@@ -143,6 +152,7 @@ const methods = $derived(Object.entries(info.methods));
       refModel={spec.ref ? description.models[spec.ref] : undefined}
       disabled={saving}
     />
+    {/if}
   {/each}
   {#if specs.length === 0}
     <p class="smrt-app-shell__muted">This model has no fields yet. Ask the assistant to add some.</p>

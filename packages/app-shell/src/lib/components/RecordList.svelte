@@ -26,7 +26,42 @@ let { model, description, rows, references = {} }: Props = $props();
 
 const info = $derived(description.models[model]);
 const columns = $derived(selectColumns(info));
-const sorted = $derived(orderByCreated(rows));
+let sortField = $state<string | null>(null);
+let descending = $state(false);
+const sorted = $derived.by(() => {
+  const ordered = orderByCreated(rows);
+  if (!sortField) return ordered;
+  const field = sortField;
+  return ordered.sort((a, b) => {
+    const x = a[field],
+      y = b[field];
+    const compared =
+      x == null
+        ? y == null
+          ? 0
+          : -1
+        : y == null
+          ? 1
+          : typeof x === 'number' && typeof y === 'number'
+            ? x - y
+            : cellText(
+                info.fields[field],
+                x,
+                description.models,
+                lookup,
+              ).localeCompare(
+                cellText(info.fields[field], y, description.models, lookup),
+              );
+    return descending ? -compared : compared;
+  });
+});
+function sort(name: string) {
+  if (sortField === name) descending = !descending;
+  else {
+    sortField = name;
+    descending = false;
+  }
+}
 const lookup = $derived(indexReferences(references));
 const methods = $derived(Object.entries(info.methods));
 const base = $derived(modelHref(model));
@@ -76,7 +111,7 @@ async function confirmDelete() {
       <caption class="smrt-record-list__sr-only" data-smrt-part="label">{info.label}, newest first</caption>
       <thead>
         <tr>
-          {#each columns as col (col.name)}<th scope="col">{col.label}</th>{/each}
+          {#each columns as col (col.name)}<th scope="col" aria-sort={sortField === col.name ? descending ? 'descending' : 'ascending' : 'none'}><button class="smrt-app-shell__btn smrt-app-shell__btn-small" data-smrt-part="trigger" onclick={() => sort(col.name)}>{col.label}</button></th>{/each}
           <th scope="col" class="smrt-record-list__sr-only" data-smrt-part="label">Actions</th>
         </tr>
       </thead>
