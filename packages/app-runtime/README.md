@@ -1449,9 +1449,11 @@ errors are fixed text. `custody()` reports `os-keychain` or `file-fallback`.
 - It never falls back and never replaces a key when sealed items exist but
   the key is missing, malformed or unreadable: that fails closed, because a
   new key would orphan them. Losing the keychain entry loses the items.
-- Creating the key is not atomic across roots or processes; the runtime
-  serializes it under the data root's initialization lock and the desktop
-  wrapper is single-instance.
+- Creating the key is serialized across every root of one product by a lock
+  file outside the data roots (a per-user directory under the OS temp
+  directory, named by product id), taken around read, create and confirm, with
+  the key re-read once the lock is held. A dead owner's lock is reclaimed. It
+  covers processes of one OS user on one machine, not two machines or users.
 
 **File store** (`createFileVaultKeyStore(dir)`), for headless and development
 installs:

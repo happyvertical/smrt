@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import {
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -72,6 +73,7 @@ describe('keychain-wrapped vault key store', () => {
       directory: sealed,
       fallbackDirectory: plain,
       keychain,
+      lockDirectory: join(root, 'locks'),
     });
   }
 
@@ -211,6 +213,49 @@ describe('keychain-wrapped vault key store', () => {
       reason: 'existing-file-items',
     });
     expect(fake.calls.set).toBe(0);
+  });
+
+  it('serializes key creation across stores of one product with different directories', async () => {
+    const fake = fakeKeychain();
+    const delayed = (setDelay: number): OsKeychain => ({
+      get: async (s, a) => {
+        await new Promise((r) => setTimeout(r, 5));
+        return fake.keychain.get(s, a);
+      },
+      set: async (s, a, secret) => {
+        await new Promise((r) => setTimeout(r, setDelay));
+        return fake.keychain.set(s, a, secret);
+      },
+      delete: fake.keychain.delete,
+    });
+    const make = (name: string, setDelay: number) =>
+      createKeychainVaultKeyStore({
+        productId: 'lolaus',
+        directory: join(root, `${name}-sealed`),
+        fallbackDirectory: join(root, `${name}-plain`),
+        keychain: delayed(setDelay),
+        lockDirectory: join(root, 'locks'),
+      });
+    const a = make('a', 5);
+    const b = make('b', 40);
+    await Promise.all([
+      a.set('x', new Uint8Array([1])),
+      b.set('y', new Uint8Array([2])),
+    ]);
+    expect(await a.get('x')).toEqual(new Uint8Array([1]));
+    expect(await b.get('y')).toEqual(new Uint8Array([2]));
+    expect(fake.calls.set).toBe(1);
+    expect(readdirSync(join(root, 'locks'))).toEqual([]);
+  });
+
+  it('reclaims a lock left by a dead process', async () => {
+    mkdirSync(join(root, 'locks'), { mode: 0o700 });
+    writeFileSync(join(root, 'locks', 'lolaus.lock'), '{"pid":2147483646}\n', {
+      mode: 0o600,
+    });
+    const keys = store(fakeKeychain().keychain);
+    await keys.set('item', new Uint8Array([1]));
+    expect(await keys.get('item')).toEqual(new Uint8Array([1]));
   });
 
   it('keeps existing file custody even when a keychain key already exists', async () => {

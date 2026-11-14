@@ -1,12 +1,21 @@
 import { spawn } from 'node:child_process';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { readdir } from 'node:fs/promises';
+import { lstat, mkdir, open, readdir, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { errorCode } from './error-code.js';
 import {
   assertVaultKeyStoreItemName,
   createFileVaultKeyStore,
   type FileVaultKeyStoreOptions,
   type VaultKeyStore,
 } from './file-vault-key-store.js';
+import {
+  isStaleOperationLock,
+  lockOwnerPid,
+  processExists,
+} from './operation-lock.js';
+import { reclaimStaleRecord } from './stale-reclaim.js';
 
 /**
  * One secret held by the operating system's credential store, addressed by a
@@ -513,6 +522,83 @@ export interface KeychainVaultKeyStoreOptions {
   keychain?: OsKeychain | null;
   /** Testable file-store overrides, applied to both directories. */
   fileStoreOptions?: FileVaultKeyStoreOptions;
+  /**
+   * Private directory for the product-wide lock that serializes creating the
+   * key-encryption key. Defaults to a per-user directory under the OS temp
+   * directory, outside any data root, so every root of one product shares it.
+   */
+  lockDirectory?: string;
+}
+
+const LOCK_WAIT_MS = 30_000;
+const LOCK_POLL_MS = 25;
+
+function defaultLockDirectory(): string {
+  return join(tmpdir(), `.smrt-keychain-locks-${process.getuid?.() ?? 'user'}`);
+}
+
+/**
+ * Hold an exclusive, product-wide lock while `callback` runs. It is a
+ * `wx`-created record naming this process, reclaimed through the shared
+ * stale-reclaim mutex when its owner is gone, and waited for (never stolen)
+ * while the owner lives. Limits: it serializes processes of one OS user on
+ * one machine; it does not protect two machines or two users, and a lock file
+ * left empty by a crash between create and write blocks creation until it is
+ * removed by hand (acquisition then fails with fixed text after 30 seconds).
+ */
+async function withProductLock<T>(
+  directory: string,
+  productId: string,
+  callback: () => Promise<T>,
+): Promise<T> {
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const details = await lstat(directory);
+  const uid = process.getuid?.();
+  if (
+    details.isSymbolicLink() ||
+    !details.isDirectory() ||
+    (uid !== undefined && (details.uid !== uid || (details.mode & 0o077) !== 0))
+  ) {
+    throw failure('The vault key lock directory lacks owner-only custody');
+  }
+  const path = join(directory, `${productId}.lock`);
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  for (;;) {
+    try {
+      const handle = await open(path, 'wx', 0o600);
+      try {
+        await handle.writeFile(`${JSON.stringify({ pid: process.pid })}\n`);
+      } catch (error) {
+        await handle.close();
+        await rm(path, { force: true });
+        throw error;
+      }
+      await handle.close();
+      break;
+    } catch (error) {
+      if (errorCode(error) !== 'EEXIST') throw error;
+      let observed: string | null = null;
+      try {
+        observed = await readFile(path, 'utf8');
+      } catch {
+        // Removed between the create attempt and the read: retry.
+      }
+      const owner = observed === null ? null : lockOwnerPid(observed);
+      if (observed !== null && owner !== null && !processExists(owner)) {
+        reclaimStaleRecord(path, observed, isStaleOperationLock);
+        continue;
+      }
+      if (Date.now() >= deadline) {
+        throw failure('The vault key creation lock could not be acquired');
+      }
+      await new Promise((done) => setTimeout(done, LOCK_POLL_MS));
+    }
+  }
+  try {
+    return await callback();
+  } finally {
+    await rm(path, { force: true });
+  }
 }
 
 function failure(message: string): Error {
@@ -551,9 +637,8 @@ export function createKeychainVaultKeyStore(
   ) {
     throw new Error('Invalid vault key store product id');
   }
-  // Creating the key is not atomic across roots or processes: two fresh roots
-  // of one product could each create one. The desktop wrapper is
-  // single-instance, which makes that a single-root case.
+  // Key creation is serialized across every root of this product by a lock
+  // outside the data roots (see withProductLock for its limits).
   const productId = options.productId;
   const service = `smrt-vault.${productId}`;
   const sealedFiles = createFileVaultKeyStore(
@@ -614,26 +699,49 @@ export function createKeychainVaultKeyStore(
         'The vault key-encryption key is missing and sealed vault items exist',
       );
     }
-    const created = new Uint8Array(randomBytes(KEK_BYTES));
-    try {
-      await keychain.set(service, KEK_ACCOUNT, created);
-    } catch (error) {
-      created.fill(0);
-      if (error instanceof KeychainUnavailableError) return unavailable();
-      throw failure('The OS keychain could not be written');
-    }
-    // Trust only what the keychain returns: another process may have won.
-    let confirmed: Uint8Array | null;
-    try {
-      confirmed = await keychain.get(service, KEK_ACCOUNT);
-    } catch {
-      confirmed = null;
-    }
-    created.fill(0);
-    if (confirmed === null || confirmed.length !== KEK_BYTES) {
-      throw failure('The OS keychain did not retain the key-encryption key');
-    }
-    return { custody: { kind: 'os-keychain' }, key: confirmed };
+    // Create under the product-wide lock, re-reading first: another root of
+    // this product may have created the key since the read above, and a second
+    // writer would overwrite it and orphan whatever the first already sealed.
+    return withProductLock(
+      options.lockDirectory ?? defaultLockDirectory(),
+      productId,
+      async (): Promise<Resolved> => {
+        let current: Uint8Array | null;
+        try {
+          current = await keychain.get(service, KEK_ACCOUNT);
+        } catch (error) {
+          if (error instanceof KeychainUnavailableError) return unavailable();
+          throw failure('The OS keychain could not be read');
+        }
+        if (current !== null) {
+          if (current.length !== KEK_BYTES) {
+            throw failure('The vault key-encryption key is malformed');
+          }
+          return { custody: { kind: 'os-keychain' }, key: current };
+        }
+        const created = new Uint8Array(randomBytes(KEK_BYTES));
+        try {
+          await keychain.set(service, KEK_ACCOUNT, created);
+        } catch (error) {
+          created.fill(0);
+          if (error instanceof KeychainUnavailableError) return unavailable();
+          throw failure('The OS keychain could not be written');
+        }
+        let confirmed: Uint8Array | null;
+        try {
+          confirmed = await keychain.get(service, KEK_ACCOUNT);
+        } catch {
+          confirmed = null;
+        }
+        created.fill(0);
+        if (confirmed === null || confirmed.length !== KEK_BYTES) {
+          throw failure(
+            'The OS keychain did not retain the key-encryption key',
+          );
+        }
+        return { custody: { kind: 'os-keychain' }, key: confirmed };
+      },
+    );
   }
 
   function ready(): Promise<Resolved> {
