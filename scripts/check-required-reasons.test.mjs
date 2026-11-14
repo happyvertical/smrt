@@ -247,6 +247,32 @@ class Order {
   }
 });
 
+test('a calculated field is not demanded of the caller (#4915)', () => {
+  const found = findRequiredFields(`
+class Line {
+  @field({ type: 'integer', required: true, generated: { op: 'mul', left: { col: 'qty' }, right: { col: 'price' } } })
+  total!: number;
+  @field({ type: 'integer', generated: { op: 'add', left: { col: 'qty' }, right: { value: 1 } } })
+  inferredTotal!: number;
+  @field({ required: true }) written!: string;
+}`);
+  const by = Object.fromEntries(found.map((f) => [f.field, f]));
+  assert.equal(by.total.required, true);
+  assert.equal(by.total.demanded, false);
+  assert.equal(by.inferredTotal.demanded, false);
+  assert.equal(by.written.demanded, true);
+  const root = repo(
+    {
+      'packages/a/src/thing.ts': MODEL(
+        `@field({ type: 'integer', required: true, generated: { op: 'add', left: { col: 'qty' }, right: { value: 1 } } })\n  total!: number;`,
+      ),
+    },
+    [],
+  );
+  assert.equal(run(root).status, 0);
+  rmSync(root, { recursive: true });
+});
+
 test('a field a real initializer satisfies needs neither a reason nor a baseline entry', () => {
   const root = repo(
     {

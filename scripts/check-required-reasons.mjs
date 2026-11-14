@@ -15,7 +15,8 @@
  * empty string, so a class initializer that holds a real value (`= 0`,
  * `= false`, `= 'active'`) already satisfies it and the caller supplies
  * nothing. A decorator `default` option does NOT put a value on the instance,
- * so it does not count. `required` is written (`required: true`) or inferred
+ * so it does not count. A calculated field (`generated`, #4915) is out of
+ * scope too: the database computes it and a caller's value is refused. `required` is written (`required: true`) or inferred
  * from the TypeScript declaration (no initializer, not `?`), as the scanner
  * does (`manifest-adapter.ts` `inferFieldType`). A required `@tenantId()` is
  * explained by itself (tenant-scope).
@@ -308,7 +309,12 @@ export function findRequiredFields(source) {
       field: rec.name,
       line,
       required: isRequired,
-      demanded: isRequired && !initializerHoldsValue,
+      // A calculated field (`generated`, #4915) is computed by the database
+      // and refused as caller input, so the caller never supplies it.
+      demanded:
+        isRequired &&
+        !initializerHoldsValue &&
+        !props.some((p) => p.key === 'generated'),
       implicit: decoName === 'tenantId' && isRequired && !reason,
       requiredFor: reason ? (stringLiteral(reason.value) ?? undefined) : null,
     });
