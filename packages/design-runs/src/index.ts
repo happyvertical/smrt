@@ -174,7 +174,7 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
     });
   };
 
-  /** Runner handler; hosts with several kinds route their one DB executor here. */
+  /** Runner handler; startup failures become owner-actionable checkpoints. */
   async function handler(
     record: DesignRunRecord,
     args: unknown,
@@ -184,33 +184,58 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
       throw new Error('Design execution requires TaskRunner context');
     const claim = getJobClaim(context);
     const owner = { ownerId: record.ownerId, tenantId: record.tenantId };
+    const id = String(record.id);
     if (
-      !args ||
-      typeof args !== 'object' ||
-      (args as { kind?: unknown }).kind !== options.kind ||
       claim.objectType !== target ||
       claim.method !== 'execute' ||
-      claim.objectId !== record.id ||
+      claim.objectId !== id ||
       claim.tenantId !== owner.tenantId
     )
       throw new Error('Design job target changed');
-    await options.authorize(owner);
-    await transaction((tx) => assertJobClaim(tx, claim));
-    const state = await load(owner, String(record.id));
     const controller = new AbortController();
     const abort = () => controller.abort(context.signal.reason);
     context.signal.addEventListener('abort', abort, { once: true });
     if (context.signal.aborted) abort();
-    controllers.set(state.id, controller);
+    controllers.set(id, controller);
+    let began = false;
     try {
-      return await driver(owner, state.input as Input, claim).run(
-        state.id,
-        owner.ownerId,
-        controller.signal,
-      );
+      if (
+        !args ||
+        typeof args !== 'object' ||
+        (args as { kind?: unknown }).kind !== options.kind
+      )
+        throw new Error('Design job kind changed');
+      await options.authorize(owner);
+      await transaction((tx) => assertJobClaim(tx, claim));
+      const state = await load(owner, id);
+      const workflow = driver(owner, state.input as Input, claim);
+      began = true;
+      return await workflow.run(id, owner.ownerId, controller.signal);
+    } catch (error) {
+      if (!began) {
+        try {
+          const state = await load(owner, id);
+          if (['running', 'checking'].includes(state.status)) {
+            const stopped = state.leaseRevision === undefined;
+            await store(owner, claim).save(
+              {
+                ...state,
+                revision: state.revision + 1,
+                status: stopped ? 'stopped' : 'failed',
+                note: stopped
+                  ? 'The job could not start. Fix its permissions or configuration, then resume.'
+                  : 'The job could not start with a retained lease. Restore its configuration and inspect this run before starting new work.',
+              },
+              state.revision,
+            );
+          }
+        } catch {
+          /* Keep the original failure; owner reads can reconcile later. */
+        }
+      }
+      throw error;
     } finally {
-      if (controllers.get(state.id) === controller)
-        controllers.delete(state.id);
+      if (controllers.get(id) === controller) controllers.delete(id);
       context.signal.removeEventListener('abort', abort);
     }
   }
@@ -261,26 +286,87 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
       const owner = { ownerId, tenantId };
       const authorized = async (id: string) => {
         await options.authorize(owner);
-        return load(owner, id);
+        let state = await load(owner, id);
+        // A router/setup failure may precede this handler. Reconcile only a
+        // lease-free checkpoint against its exact authoritative execution failure.
+        if (
+          ['running', 'checking'].includes(state.status) &&
+          state.leaseRevision === undefined &&
+          !(await activeJobs(owner, id)).length
+        ) {
+          const [job] = await (await jobs).list({
+            where: {
+              objectType: target,
+              objectId: id,
+              tenantId,
+              method: 'execute',
+              status: 'failed',
+            },
+            orderBy: 'updated_at DESC',
+            limit: 1,
+          });
+          const events = await SmrtJobEventCollection.create({
+            db: options.db,
+          });
+          const outcome = job?.completedAt
+            ? await events.getTerminalOutcome(String(job.id), {
+                tenantId,
+                attempts: job.attempts,
+                completedAt: job.completedAt.toISOString(),
+              })
+            : null;
+          if (job && outcome?.failureKind === 'execution') {
+            const recovery = createDesignRunStore({
+              db: options.db,
+              ...owner,
+              enqueue: async () => {},
+              authorizeWrite: async (tx) => {
+                await assertFailedJobDispatch(tx, {
+                  jobId: String(job.id),
+                  tenantId,
+                  attempt: job.attempts,
+                  startedAt: job.startedAt?.toISOString() ?? '',
+                  objectType: target,
+                  objectId: id,
+                  method: 'execute',
+                });
+                return !(await activeJobs(owner, id, tx)).length;
+              },
+            });
+            await recovery.save(
+              {
+                ...state,
+                revision: state.revision + 1,
+                status: 'stopped',
+                note: 'The job could not start. Fix its permissions or configuration, then resume.',
+              },
+              state.revision,
+            );
+            state = await load(owner, id);
+          }
+        }
+        return state;
       };
-      const pause = async (id: string, cancel: boolean) => {
+      const pause = async (id: string) => {
         const state = await authorized(id);
-        const workflow = driver(owner, state.input as Input);
-        const result = await (cancel ? workflow.cancel : workflow.stop)(
-          id,
-          ownerId,
-        );
-        if (!['done', 'failed'].includes(result.status)) {
-          controllers.get(id)?.abort(new Error('Design run stopped'));
-          for (const job of await activeJobs(owner, id)) {
-            try {
-              await job.cancel();
-            } catch (error) {
-              // A concurrent terminal write is already settled. Other errors matter.
-              const current = await (await jobs).get({ id: String(job.id) });
-              if (!current || ['pending', 'running'].includes(current.status))
-                throw error;
-            }
+        if (state.status === 'done' || state.status === 'failed')
+          return snapshot(state);
+        const result: DesignRunState = {
+          ...state,
+          revision: state.revision + 1,
+          status: 'stopped',
+          note: 'Stopped. You can resume this design run.',
+        };
+        if (!(await store(owner).save(result, state.revision)))
+          throw new DesignRunConflictError();
+        controllers.get(id)?.abort(new Error('Design run stopped'));
+        for (const job of await activeJobs(owner, id)) {
+          try {
+            await job.cancel();
+          } catch (error) {
+            const current = await (await jobs).get({ id: String(job.id) });
+            if (!current || ['pending', 'running'].includes(current.status))
+              throw error;
           }
         }
         return snapshot(result);
@@ -389,9 +475,9 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
           }
         },
         get: async (id: string) => snapshot(await authorized(id)),
-        stop: (id: string) => pause(id, false),
+        stop: (id: string) => pause(id),
         /** Inference cancellation is currently resumable Stop (#4995). */
-        cancel: (id: string) => pause(id, true),
+        cancel: (id: string) => pause(id),
         resume,
         /** Host must first durably record its approval/denial; check replays it. */
         async continueAfterApproval(id: string) {

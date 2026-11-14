@@ -120,3 +120,10 @@ proposal validation and presentation. `configure` adapts those existing callback
 Run package `build`, `typecheck` and `test`. The suite uses a real job runner and
 SQLite, covering repair, budgets, approval decisions, abort, restart recovery,
 claim fencing, idempotent admission and a runtime entry graph with no Svelte/UI.
+
+Early authorization/configuration/routing failures park lease-free checkpoints
+as `stopped`, with a safe fixed explanation. Restore permissions/configuration,
+then call `resume`; the backing failed job itself is not automatically retried.
+Owner reads reconcile an authoritative routing failure if no handler started.
+A retained lease fails closed instead of treating an early failure as proof of
+settlement. Stop uses the public checkpoint CAS and never calls `configure`.

@@ -568,8 +568,55 @@ describe('durable design job bridge', () => {
     await worker();
     await jobSettled(run.id);
     expect((await jobs.get({ id: job.id as string }))?.status).toBe('failed');
-    expect(await bound.get(run.id)).toEqual(run);
+    expect((await bound.get(run.id)).status).toBe('stopped');
     expect(execute).not.toHaveBeenCalled();
+    await bound.resume(run.id);
+    expect((await end(run.id)).status).toBe('done');
+  });
+
+  it('makes a handler authorization failure resumable after permission is restored', async () => {
+    let denied = false;
+    const bound = install(undefined, passes, {
+      authorize: async () => {
+        if (denied) throw new Error('Private authorization failure');
+      },
+    });
+    const run = await bound.start(startInput());
+    denied = true;
+    await worker();
+    await jobSettled(run.id);
+    denied = false;
+    const stopped = await bound.get(run.id);
+    expect(stopped.status).toBe('stopped');
+    expect(stopped.note).not.toContain('Private');
+    await bound.resume(run.id);
+    expect((await end(run.id)).status).toBe('done');
+  });
+
+  it('can Stop without configure, and resume an initial configuration failure after repair', async () => {
+    let broken = false;
+    const bound = install(undefined, passes, {
+      configure: () => {
+        if (broken) throw new Error('Private configuration failure');
+        return {
+          passes,
+          validate: (schema, output) =>
+            ajv.validate(schema, output) ? [] : ['Invalid'],
+          executePass: async () => ({ output: { value: 1 }, metadata }),
+          readResource: async () => ({ data: null }),
+        };
+      },
+    });
+    const pending = await bound.start(startInput('pending'));
+    const run = await bound.start(startInput('failed-setup'));
+    broken = true;
+    expect((await bound.stop(pending.id)).status).toBe('stopped');
+    await worker();
+    await jobSettled(run.id);
+    expect((await bound.get(run.id)).status).toBe('stopped');
+    broken = false;
+    await bound.resume(run.id);
+    expect((await end(run.id)).status).toBe('done');
   });
 
   it('replays a completed run job without executing any pass again', async () => {
