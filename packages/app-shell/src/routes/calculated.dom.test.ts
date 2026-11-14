@@ -1,4 +1,5 @@
 import { mount, tick, unmount } from 'svelte';
+import { createClassComponent } from 'svelte/legacy';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import RecordForm from '../lib/components/RecordForm.svelte';
 import RecordList from '../lib/components/RecordList.svelte';
@@ -161,4 +162,87 @@ it('the model field view identifies calculated fields and their formula', async 
   expect(container.querySelector('details')?.textContent).toContain(
     'Quantity × Price',
   );
+});
+
+it('sorts dates chronologically and money numerically in both directions, with nulls', async () => {
+  const d = data();
+  d.models.Customer.fields = {
+    name: { type: 'text' },
+    when: { type: 'date', label: 'When' },
+    price: { type: 'money', label: 'Price' },
+  };
+  component = mount(RecordList, {
+    target: container,
+    props: {
+      description: d,
+      model: 'Customer',
+      rows: [
+        { id: 'later', name: 'Later', when: '2026-01-01', price: 1000 },
+        { id: 'earlier', name: 'Earlier', when: '2025-12-31', price: 200 },
+        { id: 'empty', name: 'Empty', when: null, price: null },
+      ],
+    },
+  });
+  await tick();
+  const names = () =>
+    [...container.querySelectorAll('tbody tr td:first-child')].map((cell) =>
+      cell.textContent?.trim(),
+    );
+  for (const label of ['When', 'Price']) {
+    const button = [
+      ...container.querySelectorAll<HTMLButtonElement>('th button'),
+    ].find((b) => b.textContent === label);
+    button?.click();
+    await tick();
+    expect(names()).toEqual(['Empty', 'Earlier', 'Later']);
+    button?.click();
+    await tick();
+    expect(names()).toEqual(['Later', 'Earlier', 'Empty']);
+  }
+});
+
+it('resets sorting when navigating to another model with different fields', async () => {
+  const d = data();
+  d.models.Other = {
+    ...d.models.Customer,
+    label: 'Other',
+    fields: { name: { type: 'text' } },
+  };
+  const list = createClassComponent({
+    component: RecordList,
+    target: container,
+    props: {
+      description: d,
+      model: 'Customer',
+      rows: [
+        { id: 'c1', name: 'First', total: 200 },
+        { id: 'c2', name: 'Second', total: 100 },
+      ],
+    },
+  });
+  try {
+    await tick();
+    [...container.querySelectorAll<HTMLButtonElement>('th button')]
+      .find((b) => b.textContent === 'Name')
+      ?.click();
+    await tick();
+    list.$set({
+      model: 'Other',
+      rows: [
+        { id: 'old', name: 'A older', createdAt: '2025-01-01' },
+        { id: 'new', name: 'Z newest', createdAt: '2026-01-01' },
+      ],
+    });
+    await tick();
+    expect(container.querySelector('tbody tr')?.textContent).toContain(
+      'Z newest',
+    );
+    expect(
+      [...container.querySelectorAll('th[aria-sort]')].every(
+        (th) => th.getAttribute('aria-sort') === 'none',
+      ),
+    ).toBe(true);
+  } finally {
+    list.$destroy();
+  }
 });

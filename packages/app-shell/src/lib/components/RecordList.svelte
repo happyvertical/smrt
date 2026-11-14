@@ -28,13 +28,26 @@ const info = $derived(description.models[model]);
 const columns = $derived(selectColumns(info));
 let sortField = $state<string | null>(null);
 let descending = $state(false);
+let sortedModel = $state<string | null>(null);
+$effect.pre(() => {
+  if (sortedModel !== model) {
+    sortedModel = model;
+    sortField = null;
+    descending = false;
+  }
+});
 const sorted = $derived.by(() => {
   const ordered = orderByCreated(rows);
-  if (!sortField) return ordered;
+  if (!sortField || !info.fields[sortField]) return ordered;
   const field = sortField;
+  const def = info.fields[field];
   return ordered.sort((a, b) => {
     const x = a[field],
       y = b[field];
+    const dateX =
+      def.type === 'date' && x != null ? Date.parse(String(x)) : NaN;
+    const dateY =
+      def.type === 'date' && y != null ? Date.parse(String(y)) : NaN;
     const compared =
       x == null
         ? y == null
@@ -42,16 +55,13 @@ const sorted = $derived.by(() => {
           : -1
         : y == null
           ? 1
-          : typeof x === 'number' && typeof y === 'number'
-            ? x - y
-            : cellText(
-                info.fields[field],
-                x,
-                description.models,
-                lookup,
-              ).localeCompare(
-                cellText(info.fields[field], y, description.models, lookup),
-              );
+          : Number.isFinite(dateX) && Number.isFinite(dateY)
+            ? dateX - dateY
+            : typeof x === 'number' && typeof y === 'number'
+              ? x - y
+              : cellText(def, x, description.models, lookup).localeCompare(
+                  cellText(def, y, description.models, lookup),
+                );
     return descending ? -compared : compared;
   });
 });
@@ -108,7 +118,7 @@ async function confirmDelete() {
 {:else}
   <div class="smrt-app-shell__tablewrap" data-smrt-part="body">
     <table class="smrt-app-shell__table" data-smrt-part="table">
-      <caption class="smrt-record-list__sr-only" data-smrt-part="label">{info.label}, newest first</caption>
+      <caption class="smrt-record-list__sr-only" data-smrt-part="label">{info.label}, {sortField ? `${columns.find((column) => column.name === sortField)?.label ?? sortField}, ${descending ? 'descending' : 'ascending'}` : 'newest first'}</caption>
       <thead>
         <tr>
           {#each columns as col (col.name)}<th scope="col" aria-sort={sortField === col.name ? descending ? 'descending' : 'ascending' : 'none'}><button class="smrt-app-shell__btn smrt-app-shell__btn-small" data-smrt-part="trigger" onclick={() => sort(col.name)}>{col.label}</button></th>{/each}
