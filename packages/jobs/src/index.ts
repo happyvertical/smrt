@@ -219,6 +219,7 @@ export {
 } from './smrt-worker.js';
 export {
   createWorkerKey,
+  enablePgliteJobs,
   isWorkerAlive,
   registerLiveWorker,
   unregisterLiveWorker,

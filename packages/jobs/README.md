@@ -490,3 +490,12 @@ for its persisted exact terminal dispatch when the original worker is neither
 in the process live set nor holding a fresh worker lease. It uses TaskRunner's
 liveness contract, not an application's timeout. A cancelled row alone never
 proves settlement. Keep the application lease CAS in that same transaction.
+
+
+PGlite support is opt-in: call `enablePgliteJobs(db)` before creating jobs
+collections or starting a runner. It enables PostgreSQL claim/event SQL and
+main-loop liveness renewal for that shared SDK client (including transactions).
+Merely exposing `dumpDataDir` does not change engine selection. Existing hosts
+that do not call this API retain their previous behavior. The isolated fixture
+regression is enabled with `SMRT_TEST_PGLITE_MODULE`; it is not a full PGlite
+backend certification of the jobs suite.

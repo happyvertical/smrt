@@ -134,12 +134,24 @@ export async function tuneSqliteForConcurrency(
   }
 }
 
-/** SDK PGlite exposes this public method even in minified builds. */
+const enabledPgliteClients = new WeakSet<object>();
+
+/**
+ * Opt a shared SDK PGlite client into PostgreSQL job SQL and main-loop leases.
+ * Call before creating jobs collections or starting runners on that client.
+ * Detection alone never changes existing consumers' engine selection.
+ * @param db - SDK connection whose public client exposes dumpDataDir.
+ */
+export function enablePgliteJobs(db: DatabaseInterface): void {
+  const client = db.client as { dumpDataDir?: unknown } | undefined;
+  if (!client || typeof client.dumpDataDir !== 'function')
+    throw new Error('enablePgliteJobs requires an SDK PGlite client');
+  enabledPgliteClients.add(client);
+}
+
+/** Only explicitly enabled clients use the PGlite jobs path. */
 export function isPglite(db: DatabaseInterface): boolean {
-  return (
-    typeof (db.client as { dumpDataDir?: unknown } | undefined)?.dumpDataDir ===
-    'function'
-  );
+  return !!db.client && enabledPgliteClients.has(db.client as object);
 }
 
 /** Resolve the database engine for a connection. */

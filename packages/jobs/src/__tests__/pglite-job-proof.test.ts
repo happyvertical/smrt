@@ -3,7 +3,11 @@ import { expect, it } from 'vitest';
 import { assertJobClaim } from '../job-claim.js';
 import { SmrtJobCollection } from '../smrt-job.js';
 import { SmrtJobEventCollection } from '../smrt-job-event.js';
-import { offLoopEligible, resolveEngine } from '../worker-liveness.js';
+import {
+  enablePgliteJobs,
+  offLoopEligible,
+  resolveEngine,
+} from '../worker-liveness.js';
 
 it.runIf(Boolean(process.env.SMRT_TEST_PGLITE_MODULE))(
   'uses PostgreSQL claims and exact outcome lookup on the documented SDK PGlite fixture',
@@ -13,6 +17,7 @@ it.runIf(Boolean(process.env.SMRT_TEST_PGLITE_MODULE))(
       classes: ['SmrtJob', 'SmrtJobEvent', 'SmrtJobDedupeSlot'],
     });
     try {
+      enablePgliteJobs(db);
       expect(resolveEngine(db)).toBe('postgres');
       expect(offLoopEligible(db)).toBe(false);
       const jobs = await SmrtJobCollection.create({ db });
@@ -40,3 +45,21 @@ it.runIf(Boolean(process.env.SMRT_TEST_PGLITE_MODULE))(
     }
   },
 );
+
+it('does not change engine or ticker selection merely because a client looks like PGlite', () => {
+  const client = { dumpDataDir() {} };
+  const db = {
+    url: ':memory:',
+    client,
+  } as unknown as import('@happyvertical/sql').DatabaseInterface;
+  expect(resolveEngine(db)).toBe('sqlite');
+  expect(offLoopEligible(db)).toBe(false);
+  enablePgliteJobs(db);
+  expect(resolveEngine(db)).toBe('postgres');
+  expect(offLoopEligible(db)).toBe(false);
+  // Transaction handles share the SDK client, so the explicit choice follows it.
+  expect(resolveEngine({ ...db })).toBe('postgres');
+  expect(() =>
+    enablePgliteJobs({ url: ':memory:', client: {} } as typeof db),
+  ).toThrow('PGlite client');
+});

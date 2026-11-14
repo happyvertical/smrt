@@ -29,14 +29,18 @@ completedAt? })` reads the safe outcome for that exact job and completion,
 without depending on the tenant feed's 1,000 candidates. Event retention still
 applies, and callers must authorize the resource as well as supply its tenant.
 
-PGlite clients use PostgreSQL claim/event SQL, detected through the SDK client's
-public `dumpDataDir` method (constructor names are minified). They cannot use an
-off-loop worker connection to the same WASM instance. The opt-in regression uses
-`SMRT_TEST_PGLITE_MODULE` from core's documented isolated peer fixture; absent
-that fixture the default suite deliberately skips the WASM case.
 
 `assertAbandonedJobClaim(tx, claim)` permits an application lease release only
 for its persisted exact terminal dispatch when the original worker is neither
 in the process live set nor holding a fresh worker lease. It uses TaskRunner's
 liveness contract, not an application's timeout. A cancelled row alone never
 proves settlement. Keep the application lease CAS in that same transaction.
+
+
+PGlite support is opt-in: call `enablePgliteJobs(db)` before creating jobs
+collections or starting a runner. It enables PostgreSQL claim/event SQL and
+main-loop liveness renewal for that shared SDK client (including transactions).
+Merely exposing `dumpDataDir` does not change engine selection. Existing hosts
+that do not call this API retain their previous behavior. The isolated fixture
+regression is enabled with `SMRT_TEST_PGLITE_MODULE`; it is not a full PGlite
+backend certification of the jobs suite.
