@@ -219,6 +219,9 @@ export const TOOLCHAIN_ENV_ALLOWLIST: readonly string[] = Object.freeze([
   'TMPDIR',
   'USERPROFILE',
   'WAYLAND_DISPLAY',
+  // xvfb-run exports its temporary auth file here; the smoke replaces HOME,
+  // so without it the wrapper cannot authenticate to the display.
+  'XAUTHORITY',
   'WINDIR',
   'XDG_RUNTIME_DIR',
   'windir',

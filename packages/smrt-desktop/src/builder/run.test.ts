@@ -146,6 +146,18 @@ describe('runBuild', () => {
       );
       expect(JSON.stringify(call.env)).not.toContain('never-forwarded');
     }
+    expect(
+      buildToolchainEnv({
+        DISPLAY: ':99',
+        XAUTHORITY: '/tmp/xvfb-run.1/Xauthority',
+        NPM_TOKEN: 'x',
+      }),
+    ).toEqual({
+      DISPLAY: ':99',
+      XAUTHORITY: '/tmp/xvfb-run.1/Xauthority',
+      CARGO_TERM_COLOR: 'never',
+      CARGO_INCREMENTAL: '0',
+    });
     expect(buildToolchainEnv({ NPM_TOKEN: 'x', PATH: '/a' })).toEqual({
       PATH: '/a',
       CARGO_TERM_COLOR: 'never',
