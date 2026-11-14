@@ -804,6 +804,9 @@ importers:
       '@happyvertical/smrt-places':
         specifier: workspace:*
         version: link:../places
+      '@happyvertical/smrt-planner':
+        specifier: workspace:*
+        version: link:../planner
       '@happyvertical/smrt-playbooks':
         specifier: workspace:*
         version: link:../playbooks

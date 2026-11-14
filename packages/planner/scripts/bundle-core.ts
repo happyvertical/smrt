@@ -6,12 +6,19 @@
  * dependencies (they include the browser inference runtimes). svelte-package
  * leaves `./core` importing `@happyvertical/smrt-core`, `-commerce`, `-ui` and
  * `-reports` subpaths, so that import failed. This rebuilds the entry as one
- * ES module with every non-built-in import inlined; the other `dist/` files
+ * ES module with every import inlined and no Node built-in left (#5000); the other `dist/` files
  * (the Svelte entries) are untouched.
  *
  * Usage: node scripts/bundle-core.ts [distDir]   (default: dist)
  */
-import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from 'node:fs';
+import { isBuiltin } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { build } from 'vite';
@@ -29,7 +36,26 @@ try {
     logLevel: 'warn',
     // Run from the package so workspace dependencies resolve as installed.
     root: resolve(import.meta.dirname, '..'),
-    ssr: { noExternal: true, target: 'node' },
+    // 'webworker' (not 'node') keeps the bundler from emitting its Node
+    // `createRequire(import.meta.url)` runtime shim, which would put an
+    // `import 'node:module'` at the top of an entry that browser client builds
+    // reach (#5000). The entry needs no Node built-ins.
+    ssr: { noExternal: true, target: 'webworker' },
+    plugins: [
+      {
+        // Vite stubs bare built-ins for non-node targets instead of failing.
+        name: 'planner-core-no-node-builtins',
+        enforce: 'pre',
+        resolveId(source: string, importer?: string) {
+          if (isBuiltin(source)) {
+            throw new Error(
+              `./core must not import Node built-in "${source}" (from ${importer ?? 'entry'})`,
+            );
+          }
+          return null;
+        },
+      },
+    ],
     build: {
       ssr: entry,
       outDir,
@@ -50,15 +76,23 @@ try {
   const outputs = (Array.isArray(result) ? result : [result]).flatMap(
     (output) => ('output' in output ? output.output : []),
   );
-  const bare = outputs
-    .flatMap((chunk) =>
-      chunk.type === 'chunk' ? [...chunk.imports, ...chunk.dynamicImports] : [],
-    )
-    .filter((specifier) => !specifier.startsWith('node:'));
+  const bare = outputs.flatMap((chunk) =>
+    chunk.type === 'chunk' ? [...chunk.imports, ...chunk.dynamicImports] : [],
+  );
   if (bare.length > 0) {
-    throw new Error(`bundled ./core still imports: ${bare.join(', ')}`);
+    throw new Error(
+      `bundled ./core still has external imports: ${bare.join(', ')}`,
+    );
   }
   // Copy, not rename: the temporary directory may be on another device.
+  // Guard (#5000): the self-contained entry must stay free of Node built-ins.
+  const text = readFileSync(bundled, 'utf8');
+  const nodeImport = text.match(
+    /(?:from|import\s*\(?)\s*["']node:[^"']+["']|__vite-browser-external/,
+  );
+  if (nodeImport) {
+    throw new Error(`bundled ./core imports a Node built-in: ${nodeImport[0]}`);
+  }
   copyFileSync(bundled, entry);
   console.log(`./core bundled into ${entry}`);
 } finally {
