@@ -213,6 +213,36 @@ describe('keychain-wrapped vault key store', () => {
     expect(fake.calls.set).toBe(0);
   });
 
+  it('keeps existing file custody even when a keychain key already exists', async () => {
+    const fake = fakeKeychain();
+    // Another root of the same product (or an earlier run) made the key.
+    await store(fake.keychain).set('other', new Uint8Array([1]));
+    rmSync(sealed, { recursive: true, force: true });
+    const setBefore = fake.calls.set;
+
+    const oldKey = new Uint8Array(randomBytes(32));
+    await createFileVaultKeyStore(plain).set('smrt-secrets.master-key', oldKey);
+    const keys = store(fake.keychain);
+    expect(await keys.get('smrt-secrets.master-key')).toEqual(oldKey);
+    expect(await keys.custody()).toEqual({
+      kind: 'file-fallback',
+      reason: 'existing-file-items',
+    });
+    await keys.set('later', new Uint8Array([2]));
+    expect(fake.calls.set).toBe(setBefore);
+    expect(() => readdirSync(sealed)).toThrow();
+  });
+
+  it('keeps the file store after a temporary fallback run once the keychain returns', async () => {
+    const down = store(null);
+    await down.set('smrt-secrets.master-key', new Uint8Array([5, 5]));
+    const back = store(fakeKeychain().keychain);
+    expect(await back.get('smrt-secrets.master-key')).toEqual(
+      new Uint8Array([5, 5]),
+    );
+    expect((await back.custody()).kind).toBe('file-fallback');
+  });
+
   it('fails closed when sealed items exist without a usable key', async () => {
     const fake = fakeKeychain();
     await store(fake.keychain).set('device-secret', new Uint8Array([1]));

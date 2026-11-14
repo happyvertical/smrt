@@ -551,6 +551,9 @@ export function createKeychainVaultKeyStore(
   ) {
     throw new Error('Invalid vault key store product id');
   }
+  // Creating the key is not atomic across roots or processes: two fresh roots
+  // of one product could each create one. The desktop wrapper is
+  // single-instance, which makes that a single-root case.
   const productId = options.productId;
   const service = `smrt-vault.${productId}`;
   const sealedFiles = createFileVaultKeyStore(
@@ -573,6 +576,15 @@ export function createKeychainVaultKeyStore(
         ? createPlatformKeychain()
         : options.keychain;
     const sealedPresent = await hasItems(options.directory);
+    // Existing file custody always wins over a keychain key, whoever made the
+    // key (another root of this product, a smoke run, a reinstall): sealed
+    // reads would miss the old items and the caller would mint a new key over
+    // them, orphaning everything the old key sealed.
+    if (!sealedPresent && (await hasItems(options.fallbackDirectory))) {
+      return {
+        custody: { kind: 'file-fallback', reason: 'existing-file-items' },
+      };
+    }
     const unavailable = (): Resolved => {
       if (sealedPresent) {
         throw failure(
@@ -601,11 +613,6 @@ export function createKeychainVaultKeyStore(
       throw failure(
         'The vault key-encryption key is missing and sealed vault items exist',
       );
-    }
-    if (await hasItems(options.fallbackDirectory)) {
-      return {
-        custody: { kind: 'file-fallback', reason: 'existing-file-items' },
-      };
     }
     const created = new Uint8Array(randomBytes(KEK_BYTES));
     try {

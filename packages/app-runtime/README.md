@@ -1444,11 +1444,12 @@ errors are fixed text. `custody()` reports `os-keychain` or `file-fallback`.
   on the session bus, unsupported OS): it falls back to the plain file store
   in the same directory the runtime would otherwise use, outside the state
   root, and `custody()` says so with the reason. Existing file-store items
-  keep the file store, so switching never orphans them.
+  keep the file store even when a keychain key already exists (another root,
+  a reinstall), so switching never orphans them.
 - It never falls back and never replaces a key when sealed items exist but
   the key is missing, malformed or unreadable: that fails closed, because a
   new key would orphan them. Losing the keychain entry loses the items.
-- The first creation of the key is not cross-process atomic; the runtime
+- Creating the key is not atomic across roots or processes; the runtime
   serializes it under the data root's initialization lock and the desktop
   wrapper is single-instance.
 
