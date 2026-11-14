@@ -25,6 +25,8 @@ import { stiHardeningChecks } from '../../schema/sti-hardening.js';
 import type { SchemaDefinition } from '../../schema/types.js';
 import { getTestDatabase } from '../../testing/database.js';
 import { registerBuildSchema } from '../build-schema.js';
+import { decideSchemaChange } from '../change-kinds.js';
+import { SchemaComparer } from '../differ.js';
 import { migrateSmrtSchemas } from '../orchestrate.js';
 
 type Engine = 'sqlite' | 'duckdb' | 'postgres';
@@ -282,10 +284,11 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
     const shared = (
       generated: NonNullable<SchemaDefinition['columns'][string]['generated']>,
       withRule = true,
+      qty: SchemaDefinition['columns'][string] = { type: 'INTEGER' },
     ): SchemaDefinition => ({
       ...table({
         _meta_type: { type: 'TEXT' },
-        qty: { type: 'INTEGER' },
+        qty,
         total: { type: 'INTEGER', generated },
       }),
       ...(withRule ? { checks: [rule] } : {}),
@@ -387,6 +390,95 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
       ).toContain('invents-data:check.violated');
       expect(await totals()).toEqual([['a', 0]]);
       expect(await liveChecks()).toEqual([]);
+    });
+
+    // Review r8 (C1): the run fills qty before total is recalculated, so the
+    // rule is judged on the filled qty, never on the NULL it held before.
+    const fiveOrNullAtZero = {
+      op: 'if',
+      condition: { op: 'isNull', operand: { col: 'qty' } },
+      // biome-ignore lint/suspicious/noThenProperty: the calculated-field grammar names this branch then.
+      then: { value: 1 },
+      else: {
+        op: 'if',
+        condition: { op: 'gt', left: { col: 'qty' }, right: { value: 0 } },
+        // biome-ignore lint/suspicious/noThenProperty: the calculated-field grammar names this branch then.
+        then: { op: 'mul', left: { col: 'qty' }, right: { value: 5 } },
+        else: { value: null },
+      },
+    } as unknown as NonNullable<
+      SchemaDefinition['columns'][string]['generated']
+    >;
+    it.each([
+      ['a declared backfill', { backfill: '0' }],
+      ['the declared default', { defaultValue: 0 }],
+    ] as const)('judges the rule on the rows after %s fills an existing column', async (_label, fill) => {
+      declare(shared(coalesced));
+      expect(await migrate()).toMatchObject({ applied: true });
+      await insertStrict('a', null);
+      declare(
+        shared(times('qty', { value: 5 }), true, {
+          type: 'INTEGER',
+          notNull: true,
+          ...fill,
+        }),
+      );
+      expect(await migrate()).toMatchObject({ applied: true, refused: false });
+      expect(await totals()).toEqual([['a', 0]]);
+      expect(await liveChecks()).toEqual([rule.name]);
+      await expect(insertStrict('b', null)).rejects.toThrow();
+    });
+
+    it('stops when the values the run fills in break the rule', async () => {
+      // Before the fill, total would read qty = NULL and give 1; the run
+      // fills qty with 0, which gives NULL for a class that requires total.
+      declare(shared(coalesced));
+      expect(await migrate()).toMatchObject({ applied: true });
+      await insertStrict('a', null);
+      declare(
+        shared(fiveOrNullAtZero, true, {
+          type: 'INTEGER',
+          notNull: true,
+          backfill: '0',
+        }),
+      );
+      const result = await migrate();
+      expect(result).toMatchObject({ applied: false, refused: true });
+      expect(
+        result.stops.map((stop) => `${stop.reason}:${stop.kind}`),
+      ).toContain('invents-data:check.violated');
+      expect(await totals()).toEqual([['a', 0]]);
+      expect(await liveChecks()).toEqual([rule.name]);
+    });
+
+    it('stops, never guesses, when the run also writes rows in a way the probe cannot replay', async () => {
+      declare(shared(times('qty', { value: 2 }), false));
+      expect(await migrate()).toMatchObject({ applied: true });
+      await insertStrict('a', null);
+      const comparer = new SchemaComparer(db, { engineHint: 'postgres' });
+      const live = await db.getTableSchema?.('items');
+      const unknown = 'UPDATE "items" SET "qty" = 1';
+      const changes = await (
+        comparer as unknown as {
+          compareTableChecks: (
+            table: string,
+            manifest: SchemaDefinition,
+            live: unknown,
+            columnChanges: unknown[],
+          ) => Promise<Array<{ kindHint?: string; advisory?: unknown }>>;
+        }
+      ).compareTableChecks('items', shared(times('qty', { value: 2 })), live, [
+        { type: 'alter_column', table: 'items', name: 'qty', sql: unknown },
+      ]);
+      expect(changes.map((change) => change.kindHint)).toEqual([
+        'check.unprojectable',
+      ]);
+      expect(decideSchemaChange(changes[0] as never, 'postgres').decision).toBe(
+        'stop',
+      );
+      expect(
+        (changes[0]?.advisory as { message?: string } | undefined)?.message,
+      ).toContain(unknown);
     });
 
     it('does not stop for what the replacement re-creates: UNIQUE, declared and partial indexes', async () => {

@@ -280,6 +280,19 @@ const postgresShapes: Array<[SchemaChangeKindId, SchemaChange]> = [
       sqlStatements: ['ALTER TABLE items DROP CONSTRAINT IF EXISTS smrt_ck_x'],
     },
   ],
+  [
+    'check.unprojectable',
+    {
+      type: 'alter_column',
+      table: 'items',
+      name: 'title',
+      alteration: 'set_check',
+      kindHint: 'check.unprojectable',
+      mismatch: { expected: 'CHECK (x)', actual: '(none)' },
+      sql: '-- items: cannot judge CHECK smrt_ck_x on the rows this run leaves',
+      advisory: { severity: 'warning', message: 'Cannot predict the rows.' },
+    },
+  ],
 ];
 
 describe('schema change policy coverage (#4925)', () => {
@@ -354,6 +367,7 @@ describe('schema change policy coverage (#4925)', () => {
     expect(differing).toEqual([
       'check.add',
       'check.drop',
+      'check.unprojectable',
       'check.violated',
       'column.generated-replace',
       'column.generated-to-ordinary',

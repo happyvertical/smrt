@@ -88,7 +88,11 @@ import {
   type UuidConvergencePlan,
 } from '../schema/uuid-convergence.js';
 import { getDatabaseEngine } from '../system/compatibility.js';
-import { decideSchemaChange, hasExecutableSchemaSql } from './change-kinds.js';
+import {
+  decideSchemaChange,
+  hasExecutableSchemaSql,
+  isCommentOnlySql,
+} from './change-kinds.js';
 import {
   combineDuckDbRebuilds,
   type DuckDbRebuildPlan,
@@ -1782,7 +1786,7 @@ export class SchemaComparer {
       this.checksDroppedWithColumn.get(tableName) ?? new Set<string>();
     const quotedTable = this.quoteIdentifier(tableName);
     const changes: SchemaChange[] = [];
-    let source: string | undefined;
+    let probe: { source: string } | { unprojectable: string } | undefined;
     for (const check of declared) {
       const dropped = droppedWithColumn.has(check.name);
       if (live.includes(check.name) && !dropped) continue;
@@ -1791,12 +1795,37 @@ export class SchemaComparer {
       // The probe reads the rows as they will be after this run's column
       // changes, never a column the live table lacks: on PostgreSQL that
       // query fails and aborts a transaction the caller owns (25P02).
-      source ??= this.checkProbeSource(
+      probe ??= await this.checkProbeSource(
         tableName,
         manifest,
         dbSchema,
         columnChanges,
       );
+      if ('unprojectable' in probe) {
+        // Neither "holds" nor "violated" can be proven: stop, by name.
+        changes.push({
+          type: 'alter_column',
+          table: tableName,
+          name: column,
+          alteration: 'set_check',
+          kindHint: 'check.unprojectable',
+          mismatch: {
+            expected: `CHECK (${check.expression})`,
+            actual: dropped ? '(dropped with the replaced column)' : '(none)',
+          },
+          sql: `-- ${tableName}: cannot judge CHECK ${check.name} on the rows this run leaves; it also runs: ${probe.unprojectable}`,
+          advisory: {
+            severity: 'warning',
+            message:
+              `${tableName} gains the shared-table rule ${check.name}, but this run also runs a statement ` +
+              `whose effect on the stored rows the planner cannot predict (${probe.unprojectable}). ` +
+              'Run that change on its own first, then rerun the migration.',
+            suggestedSql: [add],
+          },
+        });
+        continue;
+      }
+      const source = probe.source;
       const result = await this.db.query(
         `SELECT 1 FROM ${source} WHERE NOT (${check.expression}) LIMIT 1`,
       );
@@ -1845,98 +1874,306 @@ export class SchemaComparer {
   }
 
   /**
-   * The rows a shared-table CHECK probe reads (PostgreSQL): the live table,
-   * with every column this run adds supplied as the value existing rows will
-   * hold once it is added, and every calculated column this run replaces
-   * supplied as its new expression. A rule may read any declared column (the
-   * discriminator `_meta_type` as well as the hardened column), so every
-   * missing one is supplied, not only the rule's own.
+   * The rows a shared-table CHECK probe reads (PostgreSQL): the rows as this
+   * run leaves them (review r7 R7-1, review r8 C1). The probe and the run
+   * must not disagree, so this replays the run's own statements for the
+   * table, in the order the run executes them (the table's UUID conversions
+   * first, then its column changes; index, foreign-key and CHECK statements
+   * come later and write no row), each as one projection layer over the
+   * previous one:
    *
-   * Existing rows of an added column hold: the declared backfill when the
-   * column is added NOT NULL from one; otherwise the declared default; else
-   * NULL. A calculated column is computed from the others, in an outer layer,
-   * since PostgreSQL never lets one calculated column read another.
+   * - `UPDATE … SET c = x WHERE c IS NULL` (a backfill, or a default applied
+   *   to NULLs before NOT NULL) fills `c` with `x`, cast to `c`'s type;
+   * - `ADD COLUMN` gives existing rows the inline DEFAULT, else NULL; a
+   *   calculated one its expression;
+   * - `ALTER COLUMN … TYPE t [USING e]` converts `c` to `CAST(e AS t)`;
+   * - `DROP EXPRESSION` keeps the values computed so far; `DROP COLUMN`
+   *   removes the column;
+   * - NOT NULL, default, constraint, index and comment statements, and the
+   *   read-only conversion preflights, write nothing.
+   *
+   * After every layer each calculated column is computed again from the new
+   * values, as PostgreSQL recomputes a STORED column whenever its row is
+   * rewritten. A declared column still missing at the end (an add the plan
+   * refused, which stops the run) reads as NULL, so the probe never names a
+   * column the table lacks. Any other statement is not guessed at: the
+   * result names it, and the caller stops.
    */
-  private checkProbeSource(
+  private async checkProbeSource(
     tableName: string,
     manifest: SchemaDefinition,
     dbSchema: SqlTableSchemaInfo | undefined,
     columnChanges: readonly SchemaChange[],
-  ): string {
-    const quotedTable = this.quoteIdentifier(tableName);
-    // Without the live columns there is nothing known to be missing.
-    if (!dbSchema) return quotedTable;
-    const replaced = new Set(
-      columnChanges
+  ): Promise<{ source: string } | { unprojectable: string }> {
+    const table = this.quoteIdentifier(tableName);
+    // Without the live columns there is nothing known to project.
+    if (!dbSchema) return { source: table };
+    const statements = [
+      ...(this.uuidConvergence?.conversions ?? [])
+        .filter((conversion) => conversion.table === tableName)
+        .flatMap((conversion) => conversion.statements),
+      ...columnChanges
         .filter(
           (change) =>
-            change.kindHint === 'column.generated-replace' ||
-            change.kindHint === 'column.generated-from-ordinary',
+            change.table === tableName &&
+            change.type !== 'type_mismatch' &&
+            !isAdvisoryOnlyChange(change),
         )
-        .map((change) => change.name),
+        .flatMap(
+          (change) => change.sqlStatements ?? (change.sql ? [change.sql] : []),
+        ),
+    ]
+      .map((statement) => statement.trim().replace(/;$/, ''))
+      .filter((statement) => statement && !isCommentOnlySql(statement));
+
+    const columns = new Map<string, { type?: string; generated?: string }>(
+      Object.keys(dbSchema.columns).map((name) => [name, {}]),
     );
-    const supplied: string[] = [];
-    const calculated: string[] = [];
-    for (const [name, column] of Object.entries(manifest.columns)) {
-      const isLive = dbSchema.columns[name] !== undefined;
-      if (isLive && !replaced.has(name)) continue;
-      const alias = this.quoteIdentifier(name);
-      if (column.generated !== undefined) {
-        calculated.push(
-          `(${compileGeneratedExpression(column.generated, this.engine, column.generatedInputTypes)}) AS ${alias}`,
-        );
-      } else if (!isLive) {
-        supplied.push(
-          `${this.addedColumnExistingValue(name, column, columnChanges)} AS ${alias}`,
-        );
+    let relation = table;
+    if (statements.length > 0) {
+      const live = await this.liveColumnShapes(tableName, manifest);
+      for (const [name, column] of columns) {
+        column.type = live.types.get(name);
+        column.generated = live.generated.get(name);
       }
     }
-    if (supplied.length === 0 && calculated.length === 0) return quotedTable;
-    const kept = Object.keys(dbSchema.columns)
-      .filter((name) => !replaced.has(name))
-      .map((name) => this.quoteIdentifier(name));
-    const rows = `(SELECT ${[...kept, ...supplied].join(', ')} FROM ${quotedTable}) AS smrt_probe_rows`;
-    return calculated.length === 0
-      ? rows
-      : `(SELECT smrt_probe_rows.*, ${calculated.join(', ')} FROM ${rows}) AS smrt_probe`;
+    const ident = '"(?:[^"]|"")+"';
+    const name = (quoted: string) => quoted.slice(1, -1).replace(/""/g, '"');
+    const escaped = table.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const update = new RegExp(
+      `^UPDATE ${escaped} SET (${ident}) = ([\\s\\S]+) WHERE (${ident}) IS NULL$`,
+    );
+    const alter = new RegExp(`^ALTER TABLE ${escaped} ([\\s\\S]+)$`);
+    const addColumn = new RegExp(`^ADD COLUMN (${ident}) ([\\s\\S]+)$`);
+    const dropColumn = new RegExp(
+      `^DROP COLUMN (?:IF EXISTS )?(${ident})(?: CASCADE| RESTRICT)?$`,
+    );
+    const alterColumn = new RegExp(`^ALTER COLUMN (${ident}) ([\\s\\S]+)$`);
+    const preflight =
+      /^DO \$\$ BEGIN IF ([\s\S]*?) THEN RAISE EXCEPTION '(?:[^']|'')*'; END IF; END \$\$$/;
+    const unprojectable = (statement: string) => ({
+      unprojectable:
+        statement.length > 160 ? `${statement.slice(0, 157)}...` : statement,
+    });
+    const typeOf = (column: ColumnDefinition) =>
+      this.ddlStrategy.mapType(
+        isValidSQLDataType(column.type) ? column.type : 'TEXT',
+      );
+
+    for (const statement of statements) {
+      // The values this statement writes, read from the previous layer.
+      const values = new Map<string, string>();
+      let writes = false;
+      const filled = update.exec(statement);
+      const altered = alter.exec(statement);
+      if (filled) {
+        const [, quoted, value, where] = filled;
+        const column = columns.get(name(quoted));
+        if (quoted !== where || !column || column.generated !== undefined)
+          return unprojectable(statement);
+        const cast = column.type
+          ? `CAST((${value}) AS ${column.type})`
+          : `(${value})`;
+        values.set(
+          name(quoted),
+          `CASE WHEN ${quoted} IS NULL THEN ${cast} ELSE ${quoted} END`,
+        );
+        writes = true;
+      } else if (altered) {
+        const action = altered[1];
+        const added = addColumn.exec(action);
+        const dropped = dropColumn.exec(action);
+        if (added) {
+          const [, quoted, definition] = added;
+          const declared = manifest.columns[name(quoted)];
+          if (!declared) return unprojectable(statement);
+          if (/\bGENERATED ALWAYS AS\b/i.test(definition)) {
+            if (declared.generated === undefined)
+              return unprojectable(statement);
+            columns.set(name(quoted), {
+              type: typeOf(declared),
+              generated: compileGeneratedExpression(
+                declared.generated,
+                this.engine,
+                declared.generatedInputTypes,
+              ),
+            });
+          } else {
+            const type = typeOf(declared);
+            if (!definition.startsWith(type)) return unprojectable(statement);
+            let value = 'NULL';
+            if (/\bDEFAULT\b/i.test(definition)) {
+              const formatted =
+                declared.defaultValue === undefined ||
+                declared.defaultValue === null
+                  ? undefined
+                  : this.ddlStrategy.formatDefaultValue(
+                      declared.defaultValue,
+                      isValidSQLDataType(declared.type)
+                        ? declared.type
+                        : 'TEXT',
+                    );
+              if (!formatted || !definition.includes(`DEFAULT ${formatted}`))
+                return unprojectable(statement);
+              value = formatted;
+            }
+            columns.set(name(quoted), { type });
+            values.set(name(quoted), `CAST(${value} AS ${type})`);
+          }
+          writes = true;
+        } else if (dropped) {
+          columns.delete(name(dropped[1]));
+          writes = true;
+        } else if (/^(ADD|DROP|VALIDATE|RENAME) CONSTRAINT /.test(action)) {
+          // A constraint writes no row.
+        } else {
+          for (const clause of action.split(/,\s*(?=ALTER COLUMN ")/)) {
+            const target = alterColumn.exec(clause);
+            const column = target ? columns.get(name(target[1])) : undefined;
+            if (!target || !column) return unprojectable(statement);
+            const [, quoted, change] = target;
+            if (
+              /^(SET|DROP) NOT NULL$/.test(change) ||
+              /^DROP DEFAULT$/.test(change) ||
+              /^SET DEFAULT [\s\S]+$/.test(change)
+            )
+              continue;
+            if (/^DROP EXPRESSION(?: IF EXISTS)?$/.test(change)) {
+              // The value computed so far is kept as an ordinary value.
+              column.generated = undefined;
+              writes = true;
+              continue;
+            }
+            const converted =
+              /^(?:SET DATA )?TYPE ([\s\S]+?)(?: USING ([\s\S]+))?$/.exec(
+                change,
+              );
+            if (!converted || column.generated !== undefined)
+              return unprojectable(statement);
+            values.set(
+              name(quoted),
+              `CAST((${converted[2] ?? quoted}) AS ${converted[1]})`,
+            );
+            column.type = converted[1];
+            writes = true;
+          }
+        }
+      } else if (
+        /^(CREATE (UNIQUE )?INDEX|DROP INDEX|COMMENT ON) /.test(statement) ||
+        (preflight.test(statement) &&
+          !/\b(UPDATE|INSERT|DELETE)\b/i.test(
+            preflight.exec(statement)?.[1] ?? '',
+          ))
+      ) {
+        // Writes no row.
+      } else {
+        return unprojectable(statement);
+      }
+      if (writes) relation = this.probeLayer(table, relation, columns, values);
+    }
+
+    const missing = Object.entries(manifest.columns).filter(
+      ([column]) => !columns.has(column),
+    );
+    if (relation === table && missing.length === 0) return { source: table };
+    if (relation === table)
+      relation = this.probeLayer(table, relation, columns, new Map());
+    return {
+      source:
+        missing.length === 0
+          ? relation
+          : `(SELECT ${table}.*, ${missing
+              .map(
+                ([column, definition]) =>
+                  `CAST(NULL AS ${typeOf(definition)}) AS ${this.quoteIdentifier(column)}`,
+              )
+              .join(', ')} FROM ${relation} AS ${table})`,
+    };
   }
 
-  /** SQL for the value an existing row holds once this run adds `column`. */
-  private addedColumnExistingValue(
-    name: string,
-    column: ColumnDefinition,
-    columnChanges: readonly SchemaChange[],
+  /**
+   * One probe layer: every ordinary column, from `values` or as the previous
+   * layer holds it, then every calculated column computed from those.
+   */
+  private probeLayer(
+    table: string,
+    relation: string,
+    columns: ReadonlyMap<string, { generated?: string }>,
+    values: ReadonlyMap<string, string>,
   ): string {
-    const type: SQLDataType = isValidSQLDataType(column.type)
-      ? column.type
-      : 'TEXT';
-    const cast = (sql: string) =>
-      `CAST(${sql} AS ${this.ddlStrategy.mapType(type)})`;
-    if (column.notNull && column.backfill) {
-      // The backfill reads only live columns once the add is planned (its
-      // probe refuses the column otherwise). A refused column is never
-      // added and stops the run, so NULL stands in for it.
-      const add = columnChanges.find(
-        (change) => change.type === 'add_column' && change.name === name,
-      );
-      return add && hasExecutableSchemaSql(add)
-        ? cast(`(${column.backfill})`)
-        : cast('NULL');
+    const ordinary: string[] = [];
+    const calculated: string[] = [];
+    for (const [name, column] of columns) {
+      const alias = this.quoteIdentifier(name);
+      if (column.generated !== undefined)
+        calculated.push(`(${column.generated}) AS ${alias}`);
+      else
+        ordinary.push(`${values.get(name) ?? `${table}.${alias}`} AS ${alias}`);
     }
-    if (column.defaultValue !== undefined && column.defaultValue !== null)
-      return cast(
-        this.ddlStrategy.formatDefaultValue(column.defaultValue, type),
-      );
-    return cast('NULL');
+    const rows = `(SELECT ${ordinary.join(', ')} FROM ${relation} AS ${table})`;
+    return calculated.length === 0
+      ? rows
+      : `(SELECT ${table}.*, ${calculated.join(', ')} FROM ${rows} AS ${table})`;
+  }
+
+  /**
+   * The live column types (as PostgreSQL renders them) and calculated-column
+   * expressions of a table, for the CHECK probe's projection.
+   */
+  private async liveColumnShapes(
+    tableName: string,
+    manifest: SchemaDefinition,
+  ): Promise<{ types: Map<string, string>; generated: Map<string, string> }> {
+    const result = await this.db.query(
+      `SELECT a.attname AS name, format_type(a.atttypid, a.atttypmod) AS type ` +
+        `FROM pg_attribute AS a JOIN pg_class AS t ON t.oid = a.attrelid ` +
+        `JOIN pg_namespace AS ns ON ns.oid = t.relnamespace ` +
+        `WHERE ns.nspname = 'public' AND t.relname = ${this.quoteLiteral(tableName)} ` +
+        `AND a.attnum > 0 AND NOT a.attisdropped`,
+    );
+    const types = new Map<string, string>();
+    for (const row of (result.rows ?? []) as Array<Record<string, unknown>>)
+      types.set(String(row.name), String(row.type));
+    const catalog =
+      this.generatedColumnCatalog ??
+      (await readGeneratedColumnCatalog(
+        this.db,
+        this.engine,
+        () =>
+          Object.values(manifest.columns).some(
+            (column) => column.generated !== undefined,
+          ),
+        new Set([tableName]),
+      ));
+    return {
+      types,
+      generated: new Map(catalog?.get(tableName) ?? []),
+    };
   }
 
   /**
    * What PostgreSQL drops with `tableName.colName` (review r7, C1). Read from
    * `pg_depend`, the catalog `DROP COLUMN` follows. Returns the declared
-   * shared-table CHECKs to add back, and a label for each object the
-   * replacement would lose: everything that is neither re-created by the
-   * replacement (its own expression, its NOT NULL/UNIQUE/CHECK clause, the
-   * declared indexes over it) nor a CHECK `compareTableChecks` manages.
+   * shared-table CHECKs to add back, whether the live column is NOT NULL, and
+   * a label for each object the replacement would lose. Every row class is
+   * decided here (review r8):
+   *
+   * - returns with the re-added column: its own expression (`pg_attrdef` of
+   *   the column), its own NOT NULL (`pg_constraint` `n`, from PostgreSQL 18;
+   *   when the code no longer declares it the caller plans the drop as
+   *   `column.drop-not-null`), its own UNIQUE (`u`, one key, declared) with
+   *   that constraint's index, and its own CHECK (`c`, one key, declared,
+   *   named `<table>_<column>_check…`);
+   * - re-created by smrt: the declared indexes over the column or whose
+   *   predicate reads it, and the declared shared-table CHECKs
+   *   (`compareTableChecks`; an undeclared `smrt_ck_` one is dropped there);
+   * - lost, so the plan stops naming it: any other constraint (CHECK, UNIQUE,
+   *   primary key, foreign key either way, exclusion, constraint trigger),
+   *   index, sequence or relation, view or rule, trigger, extended
+   *   statistics, row-level security policy, publication column list, any
+   *   other catalog's object, and the column comment and column privileges
+   *   (not in `pg_depend`). Every catalog read here is open to a role
+   *   without superuser.
    */
   private async postgresColumnDependents(
     tableName: string,
@@ -1944,7 +2181,7 @@ export class SchemaComparer {
     colDef: ColumnDefinition,
     manifest: SchemaDefinition,
     restoredIndexes: readonly IndexDefinition[],
-  ): Promise<{ declaredChecks: string[]; lost: string[] }> {
+  ): Promise<{ declaredChecks: string[]; lost: string[]; notNull: boolean }> {
     const table = this.quoteLiteral(tableName);
     const column = this.quoteLiteral(colName);
     const target =
@@ -1957,7 +2194,9 @@ export class SchemaComparer {
         `cardinality(con.conkey) AS constraint_keys, ` +
         `rel.relname AS relation_name, rel.relkind AS relation_kind, ` +
         `ad.adnum AS expression_column, a.attnum AS column_number, ` +
-        `view_rel.relname AS view_name, trg.tgname AS trigger_name ` +
+        `view_rel.relname AS view_name, trg.tgname AS trigger_name, ` +
+        `stx.stxname AS statistics_name, pol.polname AS policy_name, ` +
+        `pub.pubname AS publication_name ` +
         `FROM pg_attribute AS a ` +
         `JOIN pg_depend AS d ON d.refclassid = 'pg_class'::regclass ` +
         `AND d.refobjid = a.attrelid AND d.refobjsubid = a.attnum ` +
@@ -1967,6 +2206,10 @@ export class SchemaComparer {
         `LEFT JOIN pg_rewrite AS rw ON d.classid = 'pg_rewrite'::regclass AND rw.oid = d.objid ` +
         `LEFT JOIN pg_class AS view_rel ON view_rel.oid = rw.ev_class ` +
         `LEFT JOIN pg_trigger AS trg ON d.classid = 'pg_trigger'::regclass AND trg.oid = d.objid ` +
+        `LEFT JOIN pg_statistic_ext AS stx ON d.classid = 'pg_statistic_ext'::regclass AND stx.oid = d.objid ` +
+        `LEFT JOIN pg_policy AS pol ON d.classid = 'pg_policy'::regclass AND pol.oid = d.objid ` +
+        `LEFT JOIN pg_publication_rel AS pr ON d.classid = 'pg_publication_rel'::regclass AND pr.oid = d.objid ` +
+        `LEFT JOIN pg_publication AS pub ON pub.oid = pr.prpubid ` +
         target,
     );
     const declared = new Set(
@@ -1999,6 +2242,10 @@ export class SchemaComparer {
         const type = text(row.constraint_type);
         if (type === 'c' && declared.has(name)) declaredChecks.push(name);
         else if (type === 'c' && name.startsWith(STI_CHECK_PREFIX)) continue;
+        // The column's own NOT NULL (PostgreSQL 18 records it here). The
+        // re-added column carries NOT NULL exactly when the code declares
+        // it; otherwise the caller plans the drop, read from `attnotnull`.
+        else if (type === 'n' && Number(row.constraint_keys) === 1) continue;
         else if (
           type === 'c' &&
           colDef.check &&
@@ -2007,10 +2254,18 @@ export class SchemaComparer {
         )
           continue;
         else if (ownUnique.has(name)) continue;
-        else
-          lost.push(
-            `${type === 'f' ? 'foreign key' : type === 'u' ? 'UNIQUE constraint' : type === 'c' ? 'CHECK constraint' : 'constraint'} ${name}`,
-          );
+        else {
+          const kinds: Record<string, string> = {
+            c: 'CHECK constraint',
+            f: 'foreign key',
+            n: 'NOT NULL constraint',
+            p: 'primary key',
+            t: 'constraint trigger',
+            u: 'UNIQUE constraint',
+            x: 'exclusion constraint',
+          };
+          lost.push(`${kinds[type ?? ''] ?? 'constraint'} ${name}`);
+        }
       } else if (catalog === 'pg_class') {
         const name = text(row.relation_name) ?? '(unnamed)';
         const kind = text(row.relation_kind);
@@ -2020,7 +2275,11 @@ export class SchemaComparer {
         )
           continue;
         lost.push(
-          kind === 'i' || kind === 'I' ? `index ${name}` : `relation ${name}`,
+          kind === 'i' || kind === 'I'
+            ? `index ${name}`
+            : kind === 'S'
+              ? `sequence ${name}`
+              : `relation ${name}`,
         );
       } else if (catalog === 'pg_attrdef') {
         if (Number(row.expression_column) === Number(row.column_number))
@@ -2030,21 +2289,32 @@ export class SchemaComparer {
         lost.push(`view ${text(row.view_name) ?? '(unnamed)'}`);
       } else if (catalog === 'pg_trigger') {
         lost.push(`trigger ${text(row.trigger_name) ?? '(unnamed)'}`);
+      } else if (catalog === 'pg_statistic_ext') {
+        lost.push(`statistics ${text(row.statistics_name) ?? '(unnamed)'}`);
+      } else if (catalog === 'pg_policy') {
+        lost.push(`policy ${text(row.policy_name) ?? '(unnamed)'}`);
+      } else if (catalog === 'pg_publication_rel') {
+        lost.push(`publication ${text(row.publication_name) ?? '(unnamed)'}`);
       } else {
         lost.push(`a ${catalog ?? 'catalog'} object`);
       }
     }
-    // Neither is in pg_depend: a column comment and column-level grants.
+    // Not in pg_depend: a column comment and column-level grants. NOT NULL is
+    // read from `attnotnull`, which every version keeps.
     const extra = await this.db.query(
       `SELECT col_description(a.attrelid, a.attnum) IS NOT NULL AS has_comment, ` +
-        `a.attacl IS NOT NULL AS has_grants FROM pg_attribute AS a ${target}`,
+        `a.attacl IS NOT NULL AS has_grants, a.attnotnull AS not_null ` +
+        `FROM pg_attribute AS a ${target}`,
     );
     const facts = (extra.rows?.[0] ?? {}) as Record<string, unknown>;
-    if (facts.has_comment === true || facts.has_comment === 't')
-      lost.push('the column comment');
-    if (facts.has_grants === true || facts.has_grants === 't')
-      lost.push('column-level privileges');
-    return { declaredChecks, lost: [...new Set(lost)] };
+    const yes = (value: unknown) => value === true || value === 't';
+    if (yes(facts.has_comment)) lost.push('the column comment');
+    if (yes(facts.has_grants)) lost.push('column-level privileges');
+    return {
+      declaredChecks,
+      lost: [...new Set(lost)],
+      notNull: yes(facts.not_null),
+    };
   }
 
   private async compareForeignKeys(
@@ -2936,6 +3206,23 @@ export class SchemaComparer {
                 for (const name of dependents.declaredChecks) dropped.add(name);
                 this.checksDroppedWithColumn.set(tableName, dropped);
               }
+              // The re-added column is nullable when the code no longer
+              // requires it. That is a change of its own, planned as for an
+              // ordinary column (`column.drop-not-null`), never a silent one.
+              if (dependents.notNull && !colDef.notNull)
+                changes.push(
+                  this.buildAlterColumnChange({
+                    tableName,
+                    colName,
+                    colDef,
+                    alteration: 'drop_not_null',
+                    expected: 'NULL',
+                    actual: 'NOT NULL',
+                    statements: [
+                      `ALTER TABLE ${table} ALTER COLUMN ${column} DROP NOT NULL`,
+                    ],
+                  }),
+                );
             }
             changes.push({
               type: 'alter_column',

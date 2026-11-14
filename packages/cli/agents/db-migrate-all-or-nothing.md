@@ -151,8 +151,10 @@ Every group prints `none` when empty. Stops and missing packages are issues;
 unenforced rules, planned constraint removals, release age and fingerprint
 mismatch are warnings. One stop holds every apply change, including unrelated
 tables. STI CHECK additions and removals are ordinary apply changes
-(`check.add`, `check.drop`); rows that already break a rule stop the run
-(`check.violated`).
+(`check.add`, `check.drop`); rows that break a rule once the run's own
+statements have run stop it (`check.violated`), and a run that also writes rows
+in a way the planner cannot replay stops instead of guessing
+(`check.unprojectable`).
 
 `db:diff`, `db:status` and `db:history` decide every change with the engine the
 database runs on (`resolveSchemaChangeEngine`, PGlite reads as PostgreSQL), the

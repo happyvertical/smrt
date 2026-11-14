@@ -241,6 +241,20 @@ export const SCHEMA_CHANGE_KINDS = {
       ),
     },
   },
+  'check.unprojectable': {
+    type: 'alter_column',
+    engines: {
+      postgres: unresolvedPolicy(
+        'The same run also runs a statement whose effect on stored rows the planner cannot predict, so it cannot prove the shared-table CHECK holds. Run that change first, then migrate again.',
+      ),
+      sqlite: reportPolicy(
+        'SQLite carries no shared-table CHECK: the rule stays in smrt save-time check.',
+      ),
+      duckdb: reportPolicy(
+        'DuckDB carries no shared-table CHECK: the rule stays in smrt save-time check.',
+      ),
+    },
+  },
   'check.drop': {
     type: 'alter_column',
     engines: {

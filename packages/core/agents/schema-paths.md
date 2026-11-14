@@ -451,21 +451,29 @@ calculated. PostgreSQL compares expression renderings with EXPLAIN on the live
 table and sends no probe for an expression that reads a column the same run
 adds. A changed expression is `DROP COLUMN` plus `ADD COLUMN`, and on
 PostgreSQL the drop takes everything tied to the column with it (read from
-`pg_depend`): the replacement re-creates the column's own clauses and the
-declared indexes over it or whose predicate reads it, and `compareTableChecks`
+`pg_depend`, each row class decided in `postgresColumnDependents`): the
+re-added column brings back its own expression, NOT NULL (a `pg_constraint`
+row from PostgreSQL 18), UNIQUE and CHECK; the replacement re-creates the
+declared indexes over it or whose predicate reads it; and `compareTableChecks`
 adds back every declared shared-table `CHECK` it dropped in the same atomic
-run, judged against the new values. Anything else (an index, constraint, view
-or trigger smrt did not declare, a column comment, column grants) stops the
+run, judged against the new values. A live NOT NULL the code no longer
+declares is planned as its own `column.drop-not-null`. Anything else (an
+index, constraint, view, trigger, extended statistics, policy or publication
+column list smrt did not declare, a column comment, column grants) stops the
 plan as `column.generated-replace-dependents`, naming each object. SQLite's
-`DROP COLUMN` refuses such a column itself, so nothing is lost silently there.
-Tests: `migrations/__tests__/calculated-column-kinds.test.ts`.
+`DROP COLUMN` refuses such a column itself, so nothing is lost silently there;
+the refusal is the engine's error, because only SQLite's own schema re-parse
+knows every dependent. Tests: `migrations/__tests__/calculated-column-kinds.test.ts`
+and, on a real server, `calculated-column-swap-postgres.optional.test.ts`.
 
-The shared-table `CHECK` probe reads the rows as they will be after the run:
-every declared column the live table lacks is supplied as the value existing
-rows will hold (backfill, else default, else NULL; a calculated one as its
-expression) and every replaced calculated column as its new expression, so a
-table that gains `_meta_type` in the same run is never probed for a missing
-column (`issue-4932-check-probe-pglite.test.ts`).
+The shared-table `CHECK` probe reads the rows as the run leaves them: it
+replays the run's own statements for the table, in run order, as projection
+layers (fills of NULLs from a backfill or default, added columns, type
+conversions, `DROP EXPRESSION`, replaced calculated columns, each calculated
+column recomputed after every layer). A table that gains `_meta_type` in the
+same run is never probed for a missing column
+(`issue-4932-check-probe-pglite.test.ts`). A statement the projection does not
+recognize is never guessed at: the rule stops as `check.unprojectable`.
 
 How each engine gets there:
 
