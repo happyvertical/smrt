@@ -149,6 +149,13 @@ export interface CookbookToolOptions {
   isOwner(context: CookbookToolContext): Promise<boolean>;
   /** Permission slug check, even for owners. */
   can(context: CookbookToolContext, tool: CookbookToolName): Promise<boolean>;
+  /** Optional batch form of `can` for listings: the subset of `tools` the
+   * caller may use, from one live permission read. Without it, `list` asks
+   * `can` once per tool. */
+  canAll?(
+    context: CookbookToolContext,
+    tools: readonly CookbookToolName[],
+  ): Promise<ReadonlySet<CookbookToolName>>;
   approvals: CookbookToolApprovals;
   /** True only when the host has no application records/configuration to replace.
    * Enabled content still requires approval except for trusted initialSetup. */
@@ -1328,11 +1335,41 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     async list(
       context: CookbookToolContext,
     ): Promise<CookbookToolDefinition[]> {
-      const result: CookbookToolDefinition[] = [];
-      for (const definition of definitions)
-        if (await allowed(context, definition.name))
-          result.push(structuredClone(definition));
-      return result;
+      // One listing is one question: read ownership and permissions once,
+      // not once per tool. Single-tool checks before an invocation stay live.
+      try {
+        if (
+          !context.tenantId ||
+          !context.userId ||
+          !options.engineFor(context) ||
+          !(await options.isOwner(context))
+        )
+          return [];
+        const enabled = definitions.filter((definition) => {
+          try {
+            return definition.name.startsWith('app.')
+              ? !!options.modelEditorFor?.(context)
+              : isRuntimeModelEnabled(COOKBOOK_TOOLS_MODEL, context);
+          } catch {
+            return false;
+          }
+        });
+        const names = enabled.map((definition) => definition.name);
+        let permitted: ReadonlySet<CookbookToolName>;
+        if (options.canAll) permitted = await options.canAll(context, names);
+        else {
+          const granted = new Set<CookbookToolName>();
+          for (const name of names)
+            if (await options.can(context, name).catch(() => false))
+              granted.add(name);
+          permitted = granted;
+        }
+        return enabled
+          .filter((definition) => permitted.has(definition.name))
+          .map((definition) => structuredClone(definition));
+      } catch {
+        return [];
+      }
     },
     invoke,
     supportsDesignAction,

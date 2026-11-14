@@ -23,6 +23,7 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
+import { getCookbookToolService } from '@happyvertical/smrt-core/cookbook/tools';
 import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
 import {
   getTestDatabase,
@@ -2394,6 +2395,47 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       ),
     ).toBe(true);
   });
+  it('keeps batched discovery and invocation permissions aligned for a partially granted owner', async () => {
+    const before = (await mcp()).body.result.tools.map(
+      (tool: { name: string }) => tool.name,
+    );
+    expect(before).toContain('recipes_search');
+    expect(before).toContain('recipes_describe');
+    const service = getCookbookToolService()!;
+    const context = { surface: 'mcp' as const, tenantId, userId: owner.id };
+    const offered = (await service.assistantTools(context)).map(
+      (tool) => tool.slug,
+    );
+    expect(offered).toContain('recipes.search');
+    expect(offered).toContain('recipes.describe');
+    const permission = await (
+      await PermissionCollection.create({ db })
+    ).findBySlug('recipes.search');
+    const role = await (
+      await RoleCollection.create({ db })
+    ).findSystemRoleBySlug('owner');
+    const grants = await (await RolePermissionCollection.create({ db })).list({
+      where: { roleId: role!.id, permissionId: permission!.id },
+    });
+    expect(grants).toHaveLength(1);
+    await grants[0].delete();
+    expect(
+      (await mcp()).body.result.tools.map(
+        (tool: { name: string }) => tool.name,
+      ),
+    ).toEqual(before.filter((name: string) => name !== 'recipes_search'));
+    // Check the host's batch callback without the MCP scope filter masking it.
+    expect(
+      (await service.assistantTools(context)).map((tool) => tool.slug),
+    ).toEqual(offered.filter((slug) => slug !== 'recipes.search'));
+    await expect(
+      service.invoke('recipes.search', { query: 'memos' }, context),
+    ).rejects.toMatchObject({ code: 'forbidden' });
+    await expect(
+      service.invoke('recipes.describe', { id: 'host.memos' }, context),
+    ).resolves.toMatchObject({ status: 'ok' });
+  });
+
   it.each([
     ['app_describe', {}],
     ['app_history', {}],
