@@ -3,8 +3,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { mount, unmount } from 'svelte';
-import { expect, it } from 'vitest';
+import { mount, tick, unmount } from 'svelte';
+import { expect, it, vi } from 'vitest';
+import ApprovalsPage from '../../routes/approvals/+page.svelte';
 import type { ApprovalView } from '../ui/types.ts';
 import ApprovalCard from './ApprovalCard.svelte';
 
@@ -21,6 +22,7 @@ it('renders real Node engine previews in approval cards for all data and calcula
       name: string;
       command: Record<string, unknown>;
       summary: string;
+      rawSummary?: string;
       preview: unknown;
       status?: string;
       result?: unknown;
@@ -29,6 +31,15 @@ it('renders real Node engine previews in approval cards for all data and calcula
     }[];
     const expected: Record<string, string> = {
       insert: '1 inserted, 0 updated',
+      removeField: 'Removes Invoice total from Invoices',
+      removeModel: 'Removes the model Invoices',
+      changeType:
+        'Changes Invoice total in Invoices from whole numbers to text',
+      method: 'Adds Send reminder code to Invoices',
+      template: 'Code for Send greeting in Members',
+      recordDelete: 'Deletes “Acme” in Contacts',
+      toolDelete: 'Deletes “Acme” in Contacts',
+      restDelete: 'Deletes “Acme” in Contacts',
       upsert: 'overwrite stored values',
       merge: '1 record in Customers',
       mergeCapped: '12 records in total',
@@ -46,7 +57,7 @@ it('renders real Node engine previews in approval cards for all data and calcula
       undoType: 'Undoes the type change for Invoice total in Customers',
       empty: '0 records will be recalculated',
     };
-    expect(cards).toHaveLength(16);
+    expect(cards).toHaveLength(24);
     const rendered: string[] = [];
     for (const card of cards) {
       const container = document.createElement('div');
@@ -54,7 +65,8 @@ it('renders real Node engine previews in approval cards for all data and calcula
       const approval: ApprovalView = card.view ?? {
         id: card.name,
         status: (card.status ?? 'pending') as ApprovalView['status'],
-        summary: card.summary,
+        summary: card.rawSummary ?? card.summary,
+        humanSummary: card.summary,
         preview: card.preview,
         action: { kind: 'command', command: card.command },
         requestedBy: '',
@@ -102,6 +114,36 @@ it('renders real Node engine previews in approval cards for all data and calcula
                 /Approve/.test(button.textContent ?? '') && !button.disabled,
             ),
           ).toHaveLength(0);
+        if (
+          [
+            'removeField',
+            'removeModel',
+            'changeType',
+            'method',
+            'template',
+            'recordDelete',
+            'toolDelete',
+            'restDelete',
+          ].includes(card.name)
+        ) {
+          expect(container.textContent).not.toContain('InvoiceEntry');
+          expect(container.textContent).not.toContain('TemplateContact');
+          expect(container.textContent).not.toContain('UndoContact');
+          expect(container.textContent).not.toContain('/api/');
+          expect(container.textContent).not.toMatch(
+            /[0-9a-f]{8}-[0-9a-f]{4}-/i,
+          );
+        }
+        if (card.name === 'extract')
+          expect(container.textContent).toContain('1 linked record created');
+        if (card.name === 'method')
+          expect(container.querySelector('code')?.textContent).toBe(
+            'return 1;',
+          );
+        if (card.name === 'template')
+          expect(container.querySelector('code')?.textContent).toBe(
+            'return 2;',
+          );
         if (card.name === 'undoCalculation')
           expect(container.textContent).toContain('2 original stored values');
         if (card.name === 'undoType') {
@@ -143,6 +185,61 @@ it('renders real Node engine previews in approval cards for all data and calcula
         await unmount(component);
         container.remove();
       }
+    }
+    const remove = cards.find((card) => card.name === 'removeField');
+    if (!remove) throw new Error('Expected real remove-field preview');
+    const target = document.createElement('div');
+    document.body.append(target);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ status: 'denied' }), { status: 200 }),
+      ),
+    );
+    const page = mount(ApprovalsPage, {
+      target,
+      props: {
+        data: {
+          approvals: [
+            {
+              id: 'status',
+              status: 'pending',
+              summary: remove.rawSummary,
+              humanSummary: remove.summary,
+              preview: remove.preview,
+              action: { kind: 'command', command: remove.command },
+              createdAt: new Date().toISOString(),
+              requestedBy: '',
+              decidedBy: '',
+              decidedAt: '',
+              result: null,
+            },
+          ],
+          session: null,
+        },
+      } as never,
+    });
+    try {
+      await tick();
+      [...target.querySelectorAll('button')]
+        .find((button) => button.textContent?.trim() === 'Deny')
+        ?.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await tick();
+      expect(target.querySelector('[role="status"]')?.textContent).toBe(
+        `Denied: ${remove.summary}`,
+      );
+      expect(
+        target.querySelector('[role="status"]')?.textContent,
+      ).not.toContain('InvoiceEntry');
+      rendered.push(
+        `approvalStatus\n${target.querySelector('[role="status"]')?.textContent}`,
+      );
+    } finally {
+      await unmount(page);
+      target.remove();
+      vi.unstubAllGlobals();
     }
     if (process.env.SMRT_APPROVAL_TEXT_ARTIFACT)
       writeFileSync(

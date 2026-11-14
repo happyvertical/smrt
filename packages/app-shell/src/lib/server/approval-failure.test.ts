@@ -53,7 +53,9 @@ describe('an approved action that comes back as an error is a failed approval', 
 });
 
 it('the real undo and decision routes preserve records and version after a later edit', async () => {
-  const { runCommand } = await import('./builder.ts');
+  const { runCommand, requestRecordDelete, runAppTool, runRest } = await import(
+    './builder.ts'
+  );
   const { POST: undo } = await import('../../routes/api/shell/undo/+server.ts');
   const { POST: decide } = await import(
     '../../routes/api/shell/approvals/[id]/+server.ts'
@@ -123,6 +125,43 @@ it('the real undo and decision routes preserve records and version after a later
   const persisted = await getApprovalView(approval.approvalId);
   expect(persisted?.status).toBe('failed');
   expect(persisted?.summary).toBe('Undo: load into Contacts');
+  const deletions = [
+    await requestRecordDelete(
+      'UndoContact',
+      String(row.id),
+      h.owner.id,
+      'live',
+    ),
+    await runAppTool(
+      'undocontact_delete',
+      { id: String(row.id) },
+      h.owner.id,
+      'live',
+    ),
+    await runRest(
+      { method: 'DELETE', url: `/api/undo_contacts/${row.id}` },
+      h.owner.id,
+      'live',
+    ),
+  ];
+  const deletionViews = await Promise.all(
+    deletions.map(async (pending) => {
+      if (!('approvalId' in pending))
+        throw new Error('Expected delete approval');
+      const saved = await getApprovalView(pending.approvalId);
+      expect(saved?.preview).toMatchObject({
+        modelLabel: 'Contacts',
+        recordLabel: 'Acme',
+      });
+      expect(saved?.summary).not.toContain(String(row.id));
+      return saved;
+    }),
+  );
+  if (process.env.SMRT_ROUTE_DELETE_ARTIFACT)
+    writeFileSync(
+      process.env.SMRT_ROUTE_DELETE_ARTIFACT,
+      JSON.stringify(deletionViews),
+    );
   if (process.env.SMRT_ROUTE_APPROVAL_ARTIFACT)
     writeFileSync(
       process.env.SMRT_ROUTE_APPROVAL_ARTIFACT,

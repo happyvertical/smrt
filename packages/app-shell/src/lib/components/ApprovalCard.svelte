@@ -1,7 +1,12 @@
 <script lang="ts">
 import { AssistantApprovalCard } from '@happyvertical/smrt-chat/svelte';
 import { Button } from '@happyvertical/smrt-ui';
-import { describeApproval, failureText, statusLabel } from '$lib/ui/approvals';
+import {
+  approvalHeading,
+  describeApproval,
+  failureText,
+  statusLabel,
+} from '$lib/ui/approvals';
 import {
   authorName,
   fullTime,
@@ -42,7 +47,7 @@ const badge = $derived(
 </script>
 
 <AssistantApprovalCard presentation={{
-  id: approval.id, summary: approval.humanSummary ?? approval.summary,
+  id: approval.id, summary: approvalHeading(approval),
   statusLabel: statusLabel(approval.status), badgeClass: badge,
   pending: pending && !description.refusal, busy, message, ondecide, busyLabel: 'Working…', headingSize: '1.0625rem',
 }}>

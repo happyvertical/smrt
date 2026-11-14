@@ -29,6 +29,8 @@ try {
   await run({ type: 'undo' });
   await run({ type: 'extractModel', model: 'Order', field: 'group', into: 'Category' });
   await run({ type: 'undo' });
+  await run({type:'addMethod',model:'Order',name:'total',method:{description:'Shows the total',code:'return 1;'}});
+  await run({type:'addMethod',model:'Order',name:'total',method:{description:'Shows the updated total',code:'return 2;'}});
   await run({ type: 'renameField', model: 'Order', from: 'oldValue', to: 'renamedValue' });
   await run({ type: 'removeField', model: 'Order', field: 'renamedValue' });
   const records = await store.list();

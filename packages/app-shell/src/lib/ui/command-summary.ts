@@ -4,7 +4,14 @@ import { fieldLabel, humanize } from './fields.ts';
 import type { FieldDef } from './types.ts';
 
 export interface SummaryDefinition {
-  models: Record<string, { label?: string; fields: Record<string, FieldDef> }>;
+  models: Record<
+    string,
+    {
+      label?: string;
+      fields: Record<string, FieldDef>;
+      methods?: Record<string, unknown>;
+    }
+  >;
   reports?: Record<string, { label?: string; spec?: { title?: string } }>;
 }
 
@@ -84,7 +91,9 @@ export function commandSummary(
     case 'removeReport':
       return `Remove report: ${reportName}`;
     case 'addMethod':
-      return `Add code to ${modelName}`;
+      return before?.models[key]?.methods?.[String(command.name)]
+        ? `Change code in ${modelName}`
+        : `Add code to ${modelName}`;
     case 'enableRecipe':
       return `Enable recipe: ${humanize(String(command.recipe ?? ''))}`;
     case 'importTemplate':
@@ -189,8 +198,11 @@ export function versionSummary(
     });
   m = summary.match(/^rename report (\w+) -> (\w+)$/);
   if (m) return format({ type: 'renameReport', from: m[1], to: m[2] });
-  m = summary.match(/^(?:add|replace) method (\w+)\./);
-  if (m) return format({ type: 'addMethod', model: m[1] });
+  m = summary.match(/^(add|replace) method (\w+)\./);
+  if (m)
+    return m[1] === 'replace'
+      ? `Change code in ${after?.models[m[2]]?.label ?? before?.models[m[2]]?.label ?? humanize(m[2])}`
+      : format({ type: 'addMethod', model: m[2] });
   m = summary.match(/^enable (\w+)$/);
   if (m) return format({ type: 'enableRecipe', recipe: m[1] });
   if (summary === 'empty app') return 'New app';

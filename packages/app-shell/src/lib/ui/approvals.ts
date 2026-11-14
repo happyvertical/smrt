@@ -1,7 +1,9 @@
 // Plain-language reading of an approval's preview and action.
 import type { GeneratedExpression } from '@happyvertical/smrt-core';
+import { commandSummary } from './command-summary.ts';
+import { humanize } from './fields.ts';
 import { formulaWords } from './formula.ts';
-import { publishLines } from './publish.ts';
+import { publishLines, publishMethodLabel } from './publish.ts';
 import type { ApprovalView, FieldDef, PublishPreview } from './types.ts';
 
 function obj(v: unknown): Record<string, unknown> {
@@ -17,6 +19,38 @@ function num(v: unknown): number {
 
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
+}
+
+function typeWords(value: unknown): string {
+  return (
+    (
+      {
+        integer: 'whole numbers',
+        decimal: 'numbers',
+        text: 'text',
+        boolean: 'yes/no',
+        date: 'dates',
+        reference: 'links',
+        json: 'structured data',
+        choice: 'choices',
+      } as Record<string, string>
+    )[String(value)] ?? 'the selected type'
+  );
+}
+
+/** Use the same owner-facing heading for the card and decision status. */
+export function approvalHeading(view: ApprovalView): string {
+  if (view.humanSummary) return view.humanSummary;
+  const preview = obj(view.preview);
+  if (view.action?.kind === 'command' && /^[a-z]/.test(view.summary))
+    return commandSummary(view.action.command, undefined, undefined, preview);
+  if (
+    view.action?.kind === 'record-delete' ||
+    view.action?.kind === 'rest' ||
+    view.action?.kind === 'tool'
+  )
+    return `${view.action.kind !== 'tool' || view.action.name.endsWith('_delete') ? 'Delete record' : 'Run action'}${preview.modelLabel ? ` in ${preview.modelLabel}` : ''}`;
+  return view.summary;
 }
 
 export interface CodeBlock {
@@ -47,8 +81,14 @@ function commandLines(
     blocks: [],
     destructive: false,
   };
-  const model = String(preview.modelLabel ?? command.model ?? 'records');
-  const field = String(preview.fieldLabel ?? command.field ?? 'the field');
+  const model = String(
+    preview.modelLabel ??
+      humanize(String(command.model ?? preview.model ?? 'records')),
+  );
+  const field = String(
+    preview.fieldLabel ??
+      humanize(String(command.field ?? preview.field ?? 'the field')),
+  );
   switch (op) {
     case 'mergeRecords': {
       const references = obj(preview.references);
@@ -63,7 +103,7 @@ function commandLines(
           `Merges ${plural(num(preview.removed), 'record')} in ${model} into the kept record.`,
           ...Object.entries(references).map(
             ([name, count]) =>
-              `${plural(num(count), 'reference')} in ${labels[name] ?? name} will point to the kept record.`,
+              `${plural(num(count), 'reference')} in ${labels[name] ?? humanize(name)} will point to the kept record.`,
           ),
           `Removes ${plural(num(preview.removed), 'record')} in total.`,
           'The merged records are removed. Undo restores them until old archives are cleaned up.',
@@ -74,9 +114,9 @@ function commandLines(
       return {
         ...base,
         lines: [
-          `Turns ${field} in ${model} into links to ${preview.intoLabel ?? command.into}.`,
-          `${plural(num(preview.rows), 'record')} will be linked: ${num(preview.create)} linked records created and ${num(preview.matched)} existing records matched.`,
-          `${plural(num(preview.distinct), 'distinct value')}; ${num(preview.folded)} values combined by normalization. Undo restores the original values until old archives are cleaned up.`,
+          `Turns ${field} in ${model} into links to ${preview.intoLabel ?? humanize(String(command.into ?? 'linked records'))}.`,
+          `${plural(num(preview.rows), 'record')} will be linked: ${plural(num(preview.create), 'linked record')} created and ${plural(num(preview.matched), 'existing record')} matched.`,
+          `${plural(num(preview.distinct), 'distinct value')}; ${plural(num(preview.folded), 'value')} combined by normalization. Undo restores the original values until old archives are cleaned up.`,
         ],
       };
     case 'loadRecords':
@@ -130,8 +170,8 @@ function commandLines(
       return {
         ...base,
         lines: [
-          `Removes the field ${preview.model}.${preview.field}.`,
-          `${plural(n, 'stored value')} will be archived. Undo restores them until old archives are cleaned up.`,
+          `Removes ${field} from ${model}.`,
+          `${plural(n, 'stored value')} will be archived. Undo restores ${n === 1 ? 'it' : 'them'} until old archives are cleaned up.`,
         ],
       };
     }
@@ -140,8 +180,8 @@ function commandLines(
       return {
         ...base,
         lines: [
-          `Removes the model ${preview.model}.`,
-          `${plural(n, 'record')} will be moved aside. Undo restores them until old archives are cleaned up.`,
+          `Removes the model ${model}.`,
+          `${plural(n, 'record')} will be moved aside. Undo restores ${n === 1 ? 'it' : 'them'} until old archives are cleaned up.`,
         ],
       };
     }
@@ -149,8 +189,8 @@ function commandLines(
       const failing = num(preview.failingCount);
       const withValue = num(preview.withValue);
       const lines = [
-        `Changes ${preview.model}.${preview.field} from ${preview.from} to ${preview.to}.`,
-        `${plural(withValue, 'record')} hold a value; ${num(preview.convertible)} convert cleanly.`,
+        `Changes ${field} in ${model} from ${typeWords(preview.from)} to ${typeWords(preview.to)}.`,
+        `${plural(withValue, 'record')} ${withValue === 1 ? 'holds' : 'hold'} a value; ${num(preview.convertible)} ${num(preview.convertible) === 1 ? 'converts' : 'convert'} cleanly.`,
       ];
       if (failing > 0)
         lines.push(
@@ -162,7 +202,7 @@ function commandLines(
       return {
         ...base,
         lines: [
-          `Adds code that will run on your data: ${preview.model}.${preview.method}().`,
+          `Adds ${humanize(String(preview.method ?? command.name ?? 'the method'))} code to ${model}.`,
           String(preview.description ?? ''),
           'It runs in a sandbox and can only propose changes to your records. Read it before you approve.',
         ].filter(Boolean),
@@ -170,7 +210,7 @@ function commandLines(
           typeof preview.code === 'string'
             ? [
                 {
-                  title: `${preview.model}.${preview.method}()`,
+                  title: `${humanize(String(preview.method ?? command.name ?? 'the method'))} in ${model}`,
                   code: preview.code,
                 },
               ]
@@ -208,7 +248,7 @@ function commandLines(
           typeof m.code === 'string'
             ? [
                 {
-                  title: `${m.model}.${m.name}()${m.description ? `: ${m.description}` : ''}`,
+                  title: `${humanize(String(m.name))} in ${obj(preview.modelLabels)[String(m.model)] ?? humanize(String(m.model))}${m.description ? `: ${m.description}` : ''}`,
                   code: m.code,
                 },
               ]
@@ -284,7 +324,7 @@ export function describeApproval(view: ApprovalView): ApprovalDescription {
           'This approval is pinned to the reviewed changes. Draft records are thrown away.',
         ],
         blocks: p.methods.map((m) => ({
-          title: `${m.model}.${m.name}()`,
+          title: publishMethodLabel(m, p),
           code: m.code,
         })),
       };
@@ -304,13 +344,13 @@ export function describeApproval(view: ApprovalView): ApprovalDescription {
         ...empty,
         destructive: true,
         lines: [
-          `Deletes one ${action.model} record. This cannot be undone from History.`,
+          `Deletes ${preview.recordLabel ? `“${preview.recordLabel}” in ${preview.modelLabel ?? humanize(action.model)}` : `one record in ${preview.modelLabel ?? humanize(action.model)}`}. This cannot be undone from History.`,
         ],
       };
     case 'tool': {
       const kind = action.name.endsWith('_delete')
-        ? 'Deletes a record'
-        : `Calls ${action.name}`;
+        ? `Deletes ${preview.recordLabel ? `“${preview.recordLabel}”` : 'the selected record'}${preview.modelLabel ? ` in ${preview.modelLabel}` : ''}`
+        : `Runs ${preview.methodLabel ?? 'the selected action'}${preview.modelLabel ? ` in ${preview.modelLabel}` : ''}`;
       return {
         ...empty,
         destructive: action.name.endsWith('_delete'),
@@ -323,8 +363,8 @@ export function describeApproval(view: ApprovalView): ApprovalDescription {
         destructive: action.method === 'DELETE',
         lines: [
           action.method === 'DELETE'
-            ? `Deletes ${action.url.replace(/^\/api\//, '')}. This cannot be undone from History.`
-            : `${action.method} ${action.url}`,
+            ? `Deletes ${preview.recordLabel ? `“${preview.recordLabel}”` : 'the selected record'}${preview.modelLabel ? ` in ${preview.modelLabel}` : ''}. This cannot be undone from History.`
+            : 'Runs the selected request.',
         ],
       };
   }

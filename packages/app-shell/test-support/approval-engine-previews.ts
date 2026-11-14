@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AppHost, type Command, MemoryVersionStore } from '../src/engine/index.ts';
+import { AppHost, type Command, MemoryVersionStore, EMPTY_APP } from '../src/engine/index.ts';
 
 import { commandSummary } from '../src/lib/ui/command-summary.ts';
 
@@ -29,6 +29,7 @@ async function collect(name: string, command: Command) {
   cards.push({
     name,
     command,
+    rawSummary: plan.summary,
     summary: commandSummary(command,host.def,undefined,plan.preview),
     preview: {
       ...plan.preview,
@@ -134,8 +135,23 @@ try {
   const blank = await host.create('Customer',{name:''});
   const many = await Promise.all(Array.from({length:12},(_,i)=>host.create('Customer',{name:`Removed ${i+1}`})));
   await collect('mergeCapped',{type:'mergeRecords',model:'Customer',keep:String(blank.id),merge:many.map((row)=>String(row.id))});
+  await execute({type:'defineModel',name:'InvoiceEntry',label:'Invoices',fields:{title:{type:'text',label:'Invoice title'},invoiceTotal:{type:'integer',label:'Invoice total'}}});
+  await host.create('InvoiceEntry',{title:'November',invoiceTotal:50});
+  await collect('removeField',{type:'removeField',model:'InvoiceEntry',field:'invoiceTotal'});
+  await collect('removeModel',{type:'removeModel',model:'InvoiceEntry'});
+  await collect('changeType',{type:'changeFieldType',model:'InvoiceEntry',field:'invoiceTotal',to:{type:'text'}});
+  await collect('method',{type:'addMethod',model:'InvoiceEntry',name:'sendReminder',method:{description:'Sends the invoice reminder',code:'return 1;'}});
+  const templateDir = mkdtempSync(join(tmpdir(),'approval-template-'));
+  const templateHost = await AppHost.open(templateDir,{store:new MemoryVersionStore()});
+  try {
+    const command: Command = {type:'importTemplate',data:{format:1,definition:{...structuredClone(EMPTY_APP),models:{TemplateContact:{label:'Members',fields:{name:{type:'text'}},methods:{sendGreeting:{description:'Greets a member',code:'return 2;'}}}}}}};
+    const plan = await templateHost.plan(command);
+    cards.push({name:'template',command,rawSummary:plan.summary,summary:commandSummary(command),preview:{...plan.preview,modelLabels:{TemplateContact:'Members'}}});
+  } finally {await templateHost.close();rmSync(templateDir,{recursive:true,force:true});}
   const routeOutput = join(dir,'route-approval.json');
-  execFileSync(process.execPath,[fileURLToPath(new URL('../vitest.mjs',import.meta.resolve('vitest'))),'run','src/lib/server/approval-failure.test.ts'],{env:{...process.env,SMRT_ROUTE_APPROVAL_ARTIFACT:routeOutput},timeout:60000,stdio:'pipe'});
+  const deleteOutput = join(dir,'route-deletes.json');
+  execFileSync(process.execPath,[fileURLToPath(new URL('../vitest.mjs',import.meta.resolve('vitest'))),'run','src/lib/server/approval-failure.test.ts'],{env:{...process.env,SMRT_ROUTE_APPROVAL_ARTIFACT:routeOutput,SMRT_ROUTE_DELETE_ARTIFACT:deleteOutput},timeout:60000,stdio:'pipe'});
+  JSON.parse(readFileSync(deleteOutput,'utf8')).forEach((view:unknown,index:number)=>cards.push({name:['recordDelete','toolDelete','restDelete'][index],view}));
   cards.push({name:'undoFailed',view:JSON.parse(readFileSync(routeOutput,'utf8')),preserved:true});
   writeFileSync(process.argv[2], JSON.stringify(cards));
 } finally {

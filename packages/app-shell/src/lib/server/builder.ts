@@ -5,14 +5,17 @@
 // the request. There is no default. On the LIVE copy a risky change becomes an
 // Approval; on the DRAFT copy the draft host approves its own risky changes
 // (`autoApprove`, engine-enforced to draft hosts only), so none is asked.
+
+import { routeFor, toolNamesFor } from '../../engine/definition.ts';
 import {
+  type AppHost,
   ApprovalRequiredError,
   type Command,
   EngineError,
   isStructuralCommand,
 } from '../../engine/index.ts';
 import { commandSummary } from '../ui/command-summary.ts';
-import { fieldLabel } from '../ui/fields.ts';
+import { fieldLabel, humanize } from '../ui/fields.ts';
 import type { RecordRow } from '../ui/types.ts';
 import {
   type ApprovalAction,
@@ -24,6 +27,25 @@ import { type PublicExecuteResult, publicChangeResult } from './results.ts';
 import type { Target } from './target.ts';
 
 export type BuilderResult = PublicExecuteResult | PendingApproval;
+
+/** Owner-facing delete details, separate from executable model keys and record ids. */
+async function recordPreview(host: AppHost, model: string, id?: string) {
+  const definition = host.def.models[model];
+  const record = id ? await host.get(model, id) : undefined;
+  const title =
+    definition?.titleField ??
+    Object.entries(definition?.fields ?? {}).find(
+      ([, f]) => !f.hidden && f.type === 'text',
+    )?.[0];
+  const label = title ? record?.[title] : undefined;
+  return {
+    modelLabel: definition?.label ?? humanize(model),
+    recordLabel:
+      label == null || String(label).trim() === ''
+        ? 'the selected record'
+        : String(label),
+  };
+}
 
 /** The refusal for a structural request that names the live copy while a draft is open. */
 async function refuseLiveStructure(): Promise<never> {
@@ -107,6 +129,15 @@ export async function runCommand(
           : [];
       const preview = {
         ...e.plan.preview,
+        ...(command.type === 'importTemplate'
+          ? {
+              modelLabels: Object.fromEntries(
+                Object.entries(command.data.definition.models).map(
+                  ([name, md]) => [name, md.label ?? humanize(name)],
+                ),
+              ),
+            }
+          : {}),
         ...(model
           ? {
               modelLabel:
@@ -172,8 +203,27 @@ export async function runAppTool(
   try {
     return await host.callAppTool(name, args);
   } catch (e) {
-    if (e instanceof ApprovalRequiredError)
-      return requestApproval({ kind: 'tool', name, args }, e.plan, author);
+    if (e instanceof ApprovalRequiredError) {
+      const model = Object.entries(host.def.models).find(([model, md]) =>
+        toolNamesFor(model, md).includes(name),
+      )?.[0];
+      const details = model
+        ? await recordPreview(
+            host,
+            model,
+            typeof args.id === 'string' ? args.id : undefined,
+          )
+        : {};
+      return requestApproval(
+        { kind: 'tool', name, args },
+        {
+          ...e.plan,
+          summary: `Delete record${'modelLabel' in details ? ` in ${details.modelLabel}` : ''}`,
+          preview: { ...e.plan.preview, ...details },
+        },
+        author,
+      );
+    }
     throw e;
   }
 }
@@ -195,7 +245,26 @@ export async function runRest(
         url: req.url,
         ...(req.body ? { body: req.body } : {}),
       };
-      return requestApproval(action, e.plan, author);
+      const route = req.url.split('?')[0].split('/');
+      const model = Object.entries(host.def.models).find(
+        ([name, md]) => routeFor(name, md) === route[2],
+      )?.[0];
+      const details = model
+        ? await recordPreview(
+            host,
+            model,
+            route[3] ? decodeURIComponent(route[3]) : undefined,
+          )
+        : {};
+      return requestApproval(
+        action,
+        {
+          ...e.plan,
+          summary: `Delete record${'modelLabel' in details ? ` in ${details.modelLabel}` : ''}`,
+          preview: { ...e.plan.preview, ...details },
+        },
+        author,
+      );
     }
     throw e;
   }
@@ -226,9 +295,9 @@ export async function requestRecordDelete(
   return requestApproval(
     { kind: 'record-delete', model, id },
     {
-      summary: `Delete ${model} record ${id}`,
+      summary: `Delete record in ${host.def.models[model]?.label ?? humanize(model)}`,
       risky: true,
-      preview: { model, id, record },
+      preview: { model, id, record, ...(await recordPreview(host, model, id)) },
     },
     author,
   );

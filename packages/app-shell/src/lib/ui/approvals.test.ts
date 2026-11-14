@@ -24,7 +24,7 @@ describe('approval descriptions', () => {
         preview: { model: 'Chore', field: 'notes', valuesArchived: 1 },
       }),
     );
-    expect(d.lines.join(' ')).toContain('Chore.notes');
+    expect(d.lines.join(' ')).toContain('Notes from Chore');
     expect(d.lines.join(' ')).toContain('1 stored value will be archived');
     expect(d.destructive).toBe(false);
   });
@@ -60,7 +60,7 @@ describe('approval descriptions', () => {
       }),
     );
     expect(d.blocks).toEqual([
-      { title: 'Chore.complete()', code: 'return 1;' },
+      { title: 'Complete in Chore', code: 'return 1;' },
     ]);
   });
 
@@ -92,7 +92,7 @@ describe('approval descriptions', () => {
     );
     expect(d.lines.join(' ')).toContain('2 code methods');
     expect(d.blocks.map((b) => b.code)).toEqual(['return 1;', 'return 2;']);
-    expect(d.blocks[0].title).toContain('Chore.done()');
+    expect(d.blocks[0].title).toContain('Done in Chore');
   });
 
   it('describes an undo that overwrites newer values', () => {
@@ -178,7 +178,7 @@ for (const [type, preview, expected] of [
       'Customer name',
       '4 records',
       '2 linked records created',
-      '1 existing records matched',
+      '1 existing record matched',
     ],
   ],
   [

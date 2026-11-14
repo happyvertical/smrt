@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { mount, tick, unmount } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { VersionInfo } from '../../lib/ui/types.ts';
 import { description, versions } from '../../test/draft-fixtures.ts';
 import History from './+page.svelte';
 
@@ -29,7 +30,12 @@ afterEach(() => {
   container.remove();
   vi.unstubAllGlobals();
 });
-async function render(rows = versions) {
+async function render(
+  rows: VersionInfo[] = versions.map((version) => ({
+    ...version,
+    humanSummary: version.summary,
+  })),
+) {
   component = mount(History, {
     target: container,
     props: {
@@ -118,6 +124,8 @@ it('renders label headings from real engine versions, including rename, removal 
     expect(headings).toContain('Load 2 records into Orders');
     expect(headings).toContain('Merge 1 record in Orders');
     expect(headings).toContain('Change calculation: Total in Orders');
+    expect(headings).toContain('Add code to Orders');
+    expect(headings).toContain('Change code in Orders');
     expect(payload.headings.some((h: string) => h.startsWith('Undo:'))).toBe(
       true,
     );
@@ -134,6 +142,23 @@ it('renders label headings from real engine versions, including rename, removal 
     writeFileSync(
       '/tmp/smrt-4916-inplace/round5/f3-history-headings.txt',
       headings.join('\n'),
+    );
+    await unmount(component);
+    await render(
+      payload.versions.map((version: Record<string, unknown>) => ({
+        ...version,
+        humanSummary: undefined,
+      })),
+    );
+    expect(
+      [...container.querySelectorAll('article h2')].every(
+        (heading) => heading.textContent?.trim() === 'Change to your app',
+      ),
+    ).toBe(true);
+    button('Undo this change')?.click();
+    await tick();
+    expect(container.textContent).not.toMatch(
+      /Order\.|oldValue|[a-f0-9]{8}-[a-f0-9]{4}-/,
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });
