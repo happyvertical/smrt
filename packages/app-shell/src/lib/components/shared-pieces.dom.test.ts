@@ -84,13 +84,18 @@ describe('Tricia shared component adapters', () => {
           id: 'approval-1',
           status: 'pending',
           summary: 'Add Chore.score',
+          humanSummary: 'Add code to Chores',
           preview: {
             model: 'Chore',
+            modelLabel: 'Chores',
             method: 'score',
             code: 'return 1;',
             description: 'A score',
           },
-          action: { kind: 'command', command: { type: 'addMethod' } },
+          action: {
+            kind: 'command',
+            command: { type: 'addMethod', model: 'Chore', name: 'score' },
+          },
           requestedBy: 'owner',
           decidedBy: '',
           decidedAt: '',
@@ -107,8 +112,9 @@ describe('Tricia shared component adapters', () => {
         ),
       ).toBeTruthy(),
     );
-    expect(container.textContent).toContain(
-      'Adds code that will run on your data',
+    expect(container.textContent).toContain('Adds Score code to Chores.');
+    expect(container.querySelector('h3')?.textContent).toBe(
+      'Add code to Chores',
     );
     expect(container.querySelector('pre')?.textContent).toBe('return 1;');
     const approve = [...container.querySelectorAll('button')].find((button) =>
