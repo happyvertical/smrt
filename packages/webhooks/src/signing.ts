@@ -10,9 +10,12 @@ const TIMESTAMP_FORMAT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 export function signWebhookPayload(
   secret: string,
   timestamp: string,
-  body: string,
+  body: string | Uint8Array,
 ): string {
-  return `sha256=${createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex')}`;
+  // Hash the bytes exactly as received; never decode bytes to a string first.
+  const hmac = createHmac('sha256', secret).update(`${timestamp}.`);
+  hmac.update(typeof body === 'string' ? Buffer.from(body, 'utf8') : body);
+  return `sha256=${hmac.digest('hex')}`;
 }
 
 export interface VerifyWebhookOptions {
@@ -43,11 +46,7 @@ export function verifyWebhookSignature(
   options: VerifyWebhookOptions,
 ): VerifyWebhookResult {
   const { timestamp, signature } = options ?? ({} as VerifyWebhookOptions);
-  const rawBody: unknown = options?.body;
-  const body =
-    rawBody instanceof Uint8Array
-      ? Buffer.from(rawBody).toString('utf8')
-      : rawBody;
+  const body: unknown = options?.body;
   const given: unknown = options?.secret;
   const secrets: unknown[] =
     typeof given === 'string'
@@ -58,7 +57,7 @@ export function verifyWebhookSignature(
   if (
     typeof timestamp !== 'string' ||
     typeof signature !== 'string' ||
-    typeof body !== 'string' ||
+    (typeof body !== 'string' && !(body instanceof Uint8Array)) ||
     !secrets.length ||
     secrets.some((s) => typeof s !== 'string' || !s) ||
     !/^sha256=[0-9a-f]{64}$/.test(signature) ||
@@ -81,7 +80,11 @@ export function verifyWebhookSignature(
   let matched = false;
   for (const secret of secrets) {
     const expected = Buffer.from(
-      signWebhookPayload(secret as string, timestamp, body),
+      signWebhookPayload(
+        secret as string,
+        timestamp,
+        body as string | Uint8Array,
+      ),
     );
     if (timingSafeEqual(expected, received)) matched = true;
   }

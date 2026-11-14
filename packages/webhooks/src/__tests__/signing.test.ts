@@ -160,4 +160,19 @@ describe('webhook signature verification', () => {
       }),
     ).toEqual({ ok: true });
   });
+  it('authenticates raw bytes without lossy UTF-8 decoding', () => {
+    const signed = new Uint8Array([0x7b, 0xef, 0xbf, 0xbd, 0x7d]);
+    const altered = new Uint8Array([0x7b, 0xff, 0x7d]);
+    const s = signWebhookPayload(secret, ts, signed);
+    const verify = (b: Uint8Array) =>
+      verifyWebhookSignature({
+        secret,
+        body: b,
+        timestamp: ts,
+        signature: s,
+        now,
+      });
+    expect(verify(signed)).toEqual({ ok: true });
+    expect(verify(altered)).toEqual({ ok: false, reason: 'mismatch' });
+  });
 });
