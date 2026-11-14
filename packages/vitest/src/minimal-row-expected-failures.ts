@@ -2,7 +2,11 @@
 export interface MinimalRowExpectedFailure {
   model: string;
   /** Omitted on original entries: optional-field. All kinds are shrink-only. */
-  kind?: 'optional-field' | 'service-only' | 'needs-domain-value';
+  kind?:
+    | 'optional-field'
+    | 'service-only'
+    | 'needs-domain-value'
+    | 'undeclared-parent';
   field: string;
   reason: string;
   /** Stable error excerpt; a different defect must still fail. */
@@ -1238,5 +1242,29 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
       error: 'Invalid attendance break.',
       reason:
         "AttendanceBreak code requires punchId although registry metadata allows it empty/default; changing required/NOT NULL would change schema. Smrt's code needs this value, but the column was optional in 0.60.17, so making it required needs a data step for old rows that hold NULL; that step is not written.",
+    },
+    {
+      model: '@happyvertical/smrt-tenancy:BillingRelationship',
+      kind: 'undeclared-parent',
+      field: 'childTenantId',
+      error: 'Required parent @happyvertical/smrt-users:Tenant',
+      reason:
+        'childTenantId requires a Tenant from @happyvertical/smrt-users, a package that depends on @happyvertical/smrt-tenancy, so tenancy cannot declare it (a dependency cycle). The harness resolves parents only inside the declared packages, so this fails the same whether or not users is built; a minimal row needs a parent the declared packages can supply.',
+    },
+    {
+      model: '@happyvertical/smrt-messages:PersonaMessageRoute',
+      kind: 'undeclared-parent',
+      field: 'personaId',
+      error: 'Required parent @happyvertical/smrt-personas:AgentPersona',
+      reason:
+        'personaId requires a AgentPersona from @happyvertical/smrt-personas, a package that depends on @happyvertical/smrt-messages, so messages cannot declare it (a dependency cycle). The harness resolves parents only inside the declared packages, so this fails the same whether or not personas is built; a minimal row needs a parent the declared packages can supply.',
+    },
+    {
+      model: '@happyvertical/smrt-facts:FactContent',
+      kind: 'undeclared-parent',
+      field: 'contentId',
+      error: 'Required parent @happyvertical/smrt-content:Content',
+      reason:
+        'contentId requires a Content from @happyvertical/smrt-content, a package that depends on @happyvertical/smrt-facts, so facts cannot declare it (a dependency cycle). The harness resolves parents only inside the declared packages, so this fails the same whether or not content is built; a minimal row needs a parent the declared packages can supply.',
     },
   ];

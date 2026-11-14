@@ -1,7 +1,7 @@
 /** Registry-driven minimum-data fixtures and persistence contracts. Vitest only. */
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import {
   isFrameworkBaseClass,
@@ -41,6 +41,25 @@ type BuildContext = MinimalRowOptions & {
   /** One identity per named relationship target within this fixture's parent graph. */
   parents: Map<string, string>;
 };
+
+/**
+ * A required parent lives in a package the package under test does not
+ * declare (directly or transitively). Whether that package has a built
+ * manifest depends on what else was built, so the harness refuses to resolve
+ * it in every shape instead of passing only where it happens to be built.
+ */
+class UndeclaredParentError extends Error {
+  constructor(
+    readonly owner: string,
+    readonly related: string,
+    readonly packageName: string,
+    readonly underTest: string,
+  ) {
+    super(
+      `Required parent ${related} of ${owner} belongs to ${packageName}, which ${underTest} does not declare as a dependency`,
+    );
+  }
+}
 
 class RequiredFieldError extends Error {
   constructor(
@@ -158,6 +177,74 @@ function sample(field: RegisteredField, populated = false): unknown {
   }
 }
 
+/** Package under test; set by registerMinimalRowTests, else the cwd package. */
+let declaredRoot = process.cwd();
+const declaredClosures = new Map<string, Set<string>>();
+
+/** Nearest node_modules/<name>/package.json above `from`, as Node resolves it. */
+function findInstalledPackageJson(from: string, name: string): string | null {
+  for (let dir = resolve(from); ; dir = dirname(dir)) {
+    const file = join(dir, 'node_modules', name, 'package.json');
+    if (existsSync(file)) return file;
+    if (dirname(dir) === dir) return null;
+  }
+}
+
+/**
+ * The package and every `@happyvertical/smrt-*` package it declares, directly
+ * or transitively, in dependencies, peerDependencies or devDependencies. Built
+ * dependencies are exactly this set in a Turbo `^build` shard; nothing outside
+ * it can be assumed to have a manifest.
+ */
+function declaredPackages(root: string): Set<string> {
+  const cached = declaredClosures.get(root);
+  if (cached) return cached;
+  const found = new Set<string>();
+  const visit = (directory: string, file: string): void => {
+    const json = JSON.parse(readFileSync(file, 'utf8')) as {
+      name?: string;
+      dependencies?: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    if (json.name) found.add(json.name);
+    for (const name of Object.keys({
+      ...json.dependencies,
+      ...json.peerDependencies,
+      ...json.devDependencies,
+    })) {
+      if (!name.startsWith('@happyvertical/smrt-') || found.has(name)) continue;
+      const installed = findInstalledPackageJson(directory, name);
+      if (installed) visit(dirname(installed), installed);
+      else found.add(name);
+    }
+  };
+  visit(root, join(root, 'package.json'));
+  declaredClosures.set(root, found);
+  return found;
+}
+
+/** Refuse a parent whose package is outside the declared closure. */
+function assertDeclared(
+  owner: Registration,
+  related: string,
+  packageName: string | undefined,
+): void {
+  if (
+    !packageName ||
+    packageName === owner.packageName ||
+    declaredPackages(declaredRoot).has(packageName)
+  )
+    return;
+  throw new UndeclaredParentError(
+    owner.qualifiedName ?? owner.name,
+    related,
+    packageName,
+    JSON.parse(readFileSync(join(declaredRoot, 'package.json'), 'utf8'))
+      .name as string,
+  );
+}
+
 function registration(model: string): Registration {
   const found = ObjectRegistry.getClass(model);
   if (!found) throw new Error(`Model ${model}: not registered`);
@@ -171,6 +258,10 @@ async function relatedModel(
   const related = field.related;
   if (!related)
     throw new Error(`Unresolved required relationship on ${owner.name}`);
+  // Judge the package before looking at the registry: an undeclared package may
+  // already be registered here, which must not change the verdict.
+  if (related.includes(':'))
+    assertDeclared(owner, related, related.slice(0, related.lastIndexOf(':')));
   if (related.includes(':') && !ObjectRegistry.hasClass(related)) {
     await ObjectRegistry.ensureManifestLoaded(related);
   }
@@ -180,6 +271,7 @@ async function relatedModel(
         ObjectRegistry.getClassInPackage(owner.packageName, related)) ||
       ObjectRegistry.getClass(related);
   if (!found) throw new Error(`Required parent ${related} is not registered`);
+  assertDeclared(owner, related, found.packageName);
   return found.qualifiedName ?? found.name;
 }
 
@@ -249,6 +341,7 @@ async function buildRow(
         row[name] = sample(field);
       }
     } catch (cause) {
+      if (cause instanceof UndeclaredParentError) throw cause;
       throw new RequiredFieldError(identity, name, cause);
     }
   }
@@ -418,7 +511,12 @@ async function exercise(model: string, populatedField?: string): Promise<void> {
                     field.related,
                   )) ||
                 ObjectRegistry.getClass(field.related));
-          if (target) {
+          if (
+            target &&
+            (!target.packageName ||
+              target.packageName === owner.packageName ||
+              declaredPackages(declaredRoot).has(target.packageName))
+          ) {
             classes.add(target.qualifiedName ?? target.name);
             includePackageTables(target.packageName);
           }
@@ -550,6 +648,7 @@ export async function assertMinimalRow(model: string): Promise<void> {
     await exercise(model);
   } catch (cause) {
     if (cause instanceof OptionalFieldError) throw cause;
+    if (cause instanceof UndeclaredParentError) throw cause;
     // A required parent or required value failed before optional inputs on
     // this model were used. Do not misattribute its field to this child.
     if (cause instanceof RequiredFieldError) throw cause;
@@ -685,6 +784,7 @@ export async function registerMinimalRowTests(
   options: MinimalRowTestOptions = {},
 ): Promise<void> {
   const root = resolve(options.root ?? process.cwd());
+  declaredRoot = root;
   const packageName = JSON.parse(
     readFileSync(join(root, 'package.json'), 'utf8'),
   ).name as string;
@@ -779,13 +879,20 @@ export async function registerMinimalRowTests(
           ? 'service-only: refuses direct writes'
           : expected?.kind === 'needs-domain-value'
             ? 'needs-domain-value: preserves the specific domain refusal'
-            : 'create, save, get, list with optional fields empty/default';
+            : expected?.kind === 'undeclared-parent'
+              ? 'undeclared-parent: refuses a required parent outside its declared packages'
+              : 'create, save, get, list with optional fields empty/default';
       it(`${model}: ${contract}`, async () => {
         await checkMinimalRowExpectedFailure(model, expected);
       });
     }
   });
-  const counts = ['optional-field', 'service-only', 'needs-domain-value'].map(
+  const counts = [
+    'optional-field',
+    'service-only',
+    'needs-domain-value',
+    'undeclared-parent',
+  ].map(
     (kind) =>
       `${kind}=${localFailures.filter((entry) => (entry.kind ?? 'optional-field') === kind).length}`,
   );

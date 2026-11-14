@@ -148,6 +148,55 @@ describe('minimal rows', () => {
     }
   });
 
+  it('refuses a required parent in an undeclared package even when it is registered', async () => {
+    class Outside extends SmrtObject {
+      name = '';
+    }
+    const outsideName = '@test/not-a-dependency:Outside';
+    ObjectRegistry.registerFromManifest(outsideName, {
+      name: 'outside',
+      className: 'Outside',
+      packageName: '@test/not-a-dependency',
+      collection: 'minimal_outside',
+      filePath: import.meta.filename,
+      extends: 'SmrtObject',
+      fields: { name: { type: 'text', required: true } },
+      methods: {},
+      decoratorConfig: { tableName: 'minimal_outside' },
+    });
+    ObjectRegistry.register(Outside, {
+      packageName: '@test/not-a-dependency',
+      tableName: 'minimal_outside',
+    });
+    class Dependent extends SmrtObject {
+      outsideId = '';
+    }
+    const child = fixture(
+      'Dependent',
+      {
+        outsideId: {
+          type: 'crossPackageRef',
+          required: true,
+          related: outsideName,
+        },
+      },
+      Dependent,
+    );
+    // Registered here, so a built-state-dependent harness would pass; the
+    // verdict must depend only on the declared packages.
+    const db = await getTestDatabase({ type: 'sqlite', classes: [] });
+    try {
+      await expect(buildMinimalRow(child, { db })).rejects.toThrow(
+        /@test\/not-a-dependency.*does not declare as a dependency/,
+      );
+      await expect(assertMinimalRow(child)).rejects.toThrow(
+        /Required parent @test\/not-a-dependency:Outside/,
+      );
+    } finally {
+      await db.close?.();
+    }
+  });
+
   it('shares optional parent tenancy and ancestor identities without populating root optionals', async () => {
     class Owner extends SmrtObject {
       tenantId: string | null = null;

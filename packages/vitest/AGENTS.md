@@ -273,7 +273,8 @@ gate in `TESTING_STANDARD.md` also requires one minimal-row run per service.
 
 `src/minimal-row-expected-failures.ts` records known defects by qualified model,
 field, kind, stable error excerpt and reason. Kinds are `optional-field`
-(the original default), `service-only` and `needs-domain-value`. A field path
+(the original default), `service-only`, `needs-domain-value` and
+`undeclared-parent`. A field path
 can identify a required parent's finding; comma-separated fields identify
 combined guards. Entries can only shrink. Service-only entries use
 `(service-only write)` and name the owning service/command in the reason.
@@ -281,6 +282,11 @@ Each such owner must run once against a minimal row under the per-service
 release requirement, asserting its supported write/result or documented refusal.
 Domain-value entries describe the concrete registered value or domain context
 that field metadata cannot generate. Findings are reported separately by kind.
+Parents resolve only inside the package under test and the `@happyvertical/smrt-*`
+packages it declares, transitively (dependencies, peer, dev), which is what a
+Turbo `^build` shard has built. A required parent elsewhere is refused whether or
+not that package happens to be built; when it cannot be declared (a dependency
+cycle), record it as `undeclared-parent`, field = the required reference.
 Every listed model still runs; a newly passing model fails with “remove this entry”. A changed failure also fails.
 `src/__tests__/minimal-row-workspace.test.ts` guards package coverage.
 
