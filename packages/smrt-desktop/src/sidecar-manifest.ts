@@ -33,6 +33,7 @@ export const RESERVED_ENV_KEYS = [
   'ORIGIN',
   'SMRT_DATA_DIR',
   'SMRT_DESKTOP_OWNER_LINK_SECRET',
+  'SMRT_DESKTOP_KEYCHAIN',
 ] as const;
 
 const requiredKeys = [
@@ -256,5 +257,8 @@ export function buildSidecarEnv(
   if (supplied.ownerLinkSecret !== undefined) {
     env.set('SMRT_DESKTOP_OWNER_LINK_SECRET', supplied.ownerLinkSecret);
   }
+  // `SMRT_DESKTOP_KEYCHAIN` is reserved (stripped from base and manifest) but
+  // never set here: only the Rust wrapper sets it, so a harness such as
+  // `measure` never drives the developer's real OS keychain.
   return Object.fromEntries(env);
 }

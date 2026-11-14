@@ -7,6 +7,14 @@ import {
   initializeLocalApplicationRuntime,
   LocalRuntimeError,
 } from './index.js';
+import type { OsKeychain } from './keychain-vault-key-store.js';
+import {
+  DESKTOP_KEYCHAIN_ENV,
+  defaultLocalSealedKeyDirectory,
+  defaultLocalVaultKeyDirectory,
+  loadOrCreateSecretMasterKey,
+  localVaultKeyStore,
+} from './local-secret-master-key.js';
 import type { VaultKeyStore } from './vault-key-store.js';
 
 const KEY_ITEM = 'smrt-secrets.master-key';
@@ -162,5 +170,97 @@ describe('local secrets master key', () => {
     expect((failure as Error).message).not.toContain(marker);
     expect(String((failure as Error).stack)).not.toContain(marker);
     expect((failure as { cause?: unknown }).cause).toBeUndefined();
+  });
+});
+
+describe('local key store selection', () => {
+  function fakeKeychain(): OsKeychain {
+    const items = new Map<string, Uint8Array>();
+    return {
+      get: async (service, account) =>
+        items.get(`${service}|${account}`) ?? null,
+      set: async (service, account, secret) => {
+        items.set(`${service}|${account}`, new Uint8Array(secret));
+      },
+      delete: async (service, account) => {
+        items.delete(`${service}|${account}`);
+      },
+    };
+  }
+
+  it('uses the keychain-wrapped store only under the desktop marker, and an injected store always wins', async () => {
+    const { root } = await directories('select');
+    const dataRoot = join(root, 'data');
+    const keychain = fakeKeychain();
+    const marked = { [DESKTOP_KEYCHAIN_ENV]: '1' };
+
+    const plain = localVaultKeyStore(dataRoot, undefined, {
+      appId: 'lolaus',
+      env: {},
+      keychain,
+    });
+    expect('custody' in plain).toBe(false);
+    const notExactlyOne = localVaultKeyStore(dataRoot, undefined, {
+      appId: 'lolaus',
+      env: { [DESKTOP_KEYCHAIN_ENV]: 'true' },
+      keychain,
+    });
+    expect('custody' in notExactlyOne).toBe(false);
+
+    const injected = memoryStore().store;
+    expect(
+      localVaultKeyStore(dataRoot, injected, {
+        appId: 'lolaus',
+        env: marked,
+        keychain,
+      }),
+    ).toBe(injected);
+
+    const wrapped = localVaultKeyStore(dataRoot, undefined, {
+      appId: 'lolaus',
+      env: marked,
+      keychain,
+    }) as VaultKeyStore & { custody(): Promise<{ kind: string }> };
+    const key = await loadOrCreateSecretMasterKey(wrapped);
+    expect(await wrapped.custody()).toEqual({ kind: 'os-keychain' });
+    // Sealed beside the data root: the file holds no plaintext key, and the
+    // plain file store directory is never created.
+    const sealed = await readFile(
+      join(defaultLocalSealedKeyDirectory(dataRoot), KEY_ITEM),
+    );
+    expect(sealed.toString('hex')).not.toContain(key);
+    expect(sealed.length).toBe(1 + 12 + 32 + 16);
+    await expect(
+      stat(defaultLocalVaultKeyDirectory(dataRoot)),
+    ).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    // Reopened over the same keychain and directory: the same key.
+    const again = localVaultKeyStore(dataRoot, undefined, {
+      appId: 'lolaus',
+      env: marked,
+      keychain,
+    });
+    expect(await loadOrCreateSecretMasterKey(again)).toBe(key);
+  });
+
+  it('falls back to the file store outside the data root where no keychain exists', async () => {
+    const { root } = await directories('fallback');
+    const dataRoot = join(root, 'data');
+    const store = localVaultKeyStore(dataRoot, undefined, {
+      appId: 'lolaus',
+      env: { [DESKTOP_KEYCHAIN_ENV]: '1' },
+      keychain: null,
+    }) as VaultKeyStore & { custody(): Promise<unknown> };
+    const key = await loadOrCreateSecretMasterKey(store);
+    expect(await store.custody()).toEqual({
+      kind: 'file-fallback',
+      reason: 'keychain-unavailable',
+    });
+    expect(
+      (
+        await readFile(join(defaultLocalVaultKeyDirectory(dataRoot), KEY_ITEM))
+      ).toString('hex'),
+    ).toBe(key);
   });
 });

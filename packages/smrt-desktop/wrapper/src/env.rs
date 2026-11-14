@@ -1,7 +1,7 @@
 //! Child environment construction and reserved-value precedence.
 //!
-//! The supervisor owns `HOST`, `PORT`, `ORIGIN`, `SMRT_DATA_DIR` and
-//! `SMRT_DESKTOP_OWNER_LINK_SECRET`. They are applied last and always win: over the manifest `env` (which the parser
+//! The supervisor owns `HOST`, `PORT`, `ORIGIN`, `SMRT_DATA_DIR`,
+//! `SMRT_DESKTOP_OWNER_LINK_SECRET` and `SMRT_DESKTOP_KEYCHAIN`. They are applied last and always win: over the manifest `env` (which the parser
 //! already forbids from naming them) and over whatever the parent process
 //! inherited, including differently-cased spellings (`Port`, `host`) that a
 //! case-insensitive platform would treat as the same variable.
@@ -14,6 +14,11 @@ use crate::manifest::SidecarManifest;
 
 /// The reserved environment name that carries the launch secret to the sidecar.
 pub const OWNER_LINK_SECRET_ENV: &str = "SMRT_DESKTOP_OWNER_LINK_SECRET";
+
+/// The reserved environment name that tells the sidecar's runtime to keep vault
+/// key material in the OS keychain. It carries no secret; the value is always
+/// `1` and only the supervisor sets it.
+pub const KEYCHAIN_ENV: &str = "SMRT_DESKTOP_KEYCHAIN";
 
 /// Random bytes in a launch secret.
 pub const LAUNCH_SECRET_BYTES: usize = 32;
@@ -194,6 +199,7 @@ where
         OWNER_LINK_SECRET_ENV.into(),
         supervisor.launch_secret.expose().to_owned(),
     );
+    env.insert(KEYCHAIN_ENV.into(), "1".into());
     env
 }
 
@@ -332,7 +338,8 @@ mod tests {
         assert_eq!(env["ORIGIN"], "http://127.0.0.1:4321");
         assert_eq!(env["SMRT_DATA_DIR"], "/data/app/runtime");
         assert_eq!(env[OWNER_LINK_SECRET_ENV], "ab".repeat(32));
-        assert_eq!(env.len(), 5);
+        assert_eq!(env[KEYCHAIN_ENV], "1");
+        assert_eq!(env.len(), 6);
     }
 
     #[test]
@@ -347,6 +354,8 @@ mod tests {
             ("smrt_data_dir", "/lower"),
             ("SMRT_DESKTOP_OWNER_LINK_SECRET", "inherited"),
             ("smrt_desktop_owner_link_secret", "lower"),
+            ("SMRT_DESKTOP_KEYCHAIN", "0"),
+            ("smrt_desktop_keychain", "0"),
             ("PATH", "/usr/bin"),
         ]);
         let env = build_child_env(inherited, &manifest("{}"), &sup());
@@ -360,6 +369,8 @@ mod tests {
         assert!(!env.contains_key("smrt_data_dir"));
         assert_eq!(env[OWNER_LINK_SECRET_ENV], "ab".repeat(32));
         assert!(!env.contains_key("smrt_desktop_owner_link_secret"));
+        assert_eq!(env[KEYCHAIN_ENV], "1");
+        assert!(!env.contains_key("smrt_desktop_keychain"));
     }
 
     #[test]

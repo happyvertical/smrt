@@ -132,15 +132,19 @@ change on Windows leaves its old directory behind in the roaming profile.
 
 ### Supervisor-supplied environment
 
-`HOST`, `PORT`, `ORIGIN`, `SMRT_DATA_DIR` and
-`SMRT_DESKTOP_OWNER_LINK_SECRET` are exported as `RESERVED_ENV_KEYS`. The
+`HOST`, `PORT`, `ORIGIN`, `SMRT_DATA_DIR`,
+`SMRT_DESKTOP_OWNER_LINK_SECRET` and `SMRT_DESKTOP_KEYCHAIN` are exported as
+`RESERVED_ENV_KEYS`. The
 supervisor sets `HOST=127.0.0.1`, `PORT` to the selected port,
 `ORIGIN=http://127.0.0.1:<port>`, `SMRT_DATA_DIR` to the absolute resolved data
 directory and `SMRT_DESKTOP_OWNER_LINK_SECRET` to a fresh per-launch secret
 (32 bytes from the OS random source as 64 lowercase hex characters, drawn on
 every sidecar start, passed only in the sidecar's environment and in the
 window's first URL as `?launch=`, never logged); the owner link route answers
-403 without it. A manifest `env` naming any of them, in any
+403 without it. The wrapper also sets `SMRT_DESKTOP_KEYCHAIN=1` (no secret), which
+makes the app runtime keep its vault key material and secrets master key in
+the OS keychain-wrapped store (see `@happyvertical/smrt-app-runtime`
+"Secrets master key"); `buildSidecarEnv` reserves the name but never sets it. A manifest `env` naming any of them, in any
 letter case, is rejected at parse time with a value-free diagnostic.
 `buildSidecarEnv(manifest, { port, dataDirectory }, baseEnv)` composes the
 final environment: it drops reserved names from `baseEnv` (case-insensitively),

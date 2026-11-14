@@ -23,8 +23,10 @@ signing secret in a URL query is deliberately not carried over.
      `HOST=127.0.0.1`, `PORT=<port>`, `ORIGIN=http://127.0.0.1:<port>`,
      `SMRT_DATA_DIR=<app_local_data_dir>/<dataDirectory>` (machine-local, never the
      roaming `app_data_dir`; decision D7, see the parent README), and
-     `SMRT_DESKTOP_OWNER_LINK_SECRET=<launch secret>` (see Owner link). The
-     secret is set on the sidecar command only.
+     `SMRT_DESKTOP_OWNER_LINK_SECRET=<launch secret>` (see Owner link) and
+     `SMRT_DESKTOP_KEYCHAIN=1` (a marker, no secret: the app runtime then keeps
+     vault key material in the OS keychain-wrapped store). The launch secret is
+     set on the sidecar command only.
      Inherited names that collide case-insensitively with a reserved or
      manifest name are dropped (`Port`, `host`).
 3. Polls `healthRoute` on exactly that origin (`src/health.rs`). Only after a

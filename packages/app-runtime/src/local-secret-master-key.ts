@@ -1,10 +1,21 @@
 import { randomBytes } from 'node:crypto';
 import { basename, dirname, join } from 'node:path';
-import { LocalRuntimeError } from './local-runtime-error.js';
 import {
   createFileVaultKeyStore,
   type VaultKeyStore,
-} from './vault-key-store.js';
+} from './file-vault-key-store.js';
+import {
+  createKeychainVaultKeyStore,
+  type OsKeychain,
+} from './keychain-vault-key-store.js';
+import { LocalRuntimeError } from './local-runtime-error.js';
+
+/**
+ * Supervisor-owned marker the desktop wrapper exports to the sidecar. When it
+ * is exactly `1` and no store was injected, the local runtime keeps vault key
+ * material in the OS-keychain-wrapped store.
+ */
+export const DESKTOP_KEYCHAIN_ENV = 'SMRT_DESKTOP_KEYCHAIN';
 
 /** Vault key store item holding the 32-byte secrets master key. */
 export const SECRET_MASTER_KEY_ITEM = 'smrt-secrets.master-key';
@@ -20,14 +31,51 @@ export function defaultLocalVaultKeyDirectory(dataRoot: string): string {
   return join(dirname(dataRoot), `.smrt-keys-${basename(dataRoot)}`);
 }
 
-/** The key store a local runtime uses: the injected one, else the file store. */
+/**
+ * Where the keychain-wrapped store keeps its sealed items: a private sibling
+ * of the data root, never inside it, next to (and distinct from) the plain
+ * file store directory.
+ */
+export function defaultLocalSealedKeyDirectory(dataRoot: string): string {
+  return join(dirname(dataRoot), `.smrt-sealed-keys-${basename(dataRoot)}`);
+}
+
+export interface LocalVaultKeyStoreSelection {
+  /** Application identity; namespaces the keychain service. */
+  appId: string;
+  /** Defaults to `process.env`. */
+  env?: NodeJS.ProcessEnv;
+  /** Testable keychain; the real one for the platform by default. */
+  keychain?: OsKeychain | null;
+}
+
+/**
+ * The key store a local runtime uses. An injected store always wins. Else,
+ * when the desktop wrapper started the process ({@link DESKTOP_KEYCHAIN_ENV}),
+ * the keychain-wrapped store, which falls back to the file store outside the
+ * data root where no keychain is usable. Else the owner-only file store.
+ */
 export function localVaultKeyStore(
   dataRoot: string,
   injected?: VaultKeyStore,
+  selection?: LocalVaultKeyStoreSelection,
 ): VaultKeyStore {
-  return (
-    injected ?? createFileVaultKeyStore(defaultLocalVaultKeyDirectory(dataRoot))
-  );
+  if (injected) return injected;
+  const fileDirectory = defaultLocalVaultKeyDirectory(dataRoot);
+  if (
+    selection &&
+    (selection.env ?? process.env)[DESKTOP_KEYCHAIN_ENV] === '1'
+  ) {
+    return createKeychainVaultKeyStore({
+      productId: selection.appId,
+      directory: defaultLocalSealedKeyDirectory(dataRoot),
+      fallbackDirectory: fileDirectory,
+      ...(selection.keychain !== undefined
+        ? { keychain: selection.keychain }
+        : {}),
+    });
+  }
+  return createFileVaultKeyStore(fileDirectory);
 }
 
 /** The one failure of this module; it names no key material or path. */
