@@ -25,6 +25,7 @@
     "_smrt_field_usage_report_receipts",
     "_smrt_forge_deliveries",
     "_smrt_forge_projection_checkpoints",
+    "_smrt_inference_design_runs",
     "_smrt_inference_overrides",
     "_smrt_job_dedupe_slots",
     "_smrt_job_events",
@@ -74,6 +75,8 @@
     "analytics_properties",
     "analytics_reports",
     "api_keys",
+    "app_draft_versions",
+    "app_drafts",
     "app_versions",
     "approval_events",
     "approval_policies",
@@ -178,7 +181,9 @@
     "development_request_work_links",
     "development_requests",
     "directive_proposals",
+    "dns_zones",
     "document_taxes",
+    "domains",
     "earner_source_attributions",
     "earners",
     "earning_events",
@@ -336,10 +341,12 @@
     "profiles",
     "project_decisions",
     "project_delivery_events",
+    "project_domains",
     "project_governance_events",
     "project_integration_audits",
     "project_integrations",
     "project_questions",
+    "project_repositories",
     "project_specifications",
     "projects",
     "properties",
@@ -381,6 +388,7 @@
     "sessions",
     "site_agent_bindings",
     "sites",
+    "smrt_mcp_call_audits",
     "social_accounts",
     "social_post_analytics_snapshots",
     "social_posts",
@@ -457,7 +465,7 @@
     "workbook_photo_intakes",
     "zones"
   ],
-  "release": "0.60.18",
+  "release": "0.61.1",
   "tables": {
     "_smrt_agent_schedules": {
       "columns": {
@@ -4126,6 +4134,117 @@
       ],
       "rows": []
     },
+    "_smrt_inference_design_runs": {
+      "columns": {
+        "_sync_origin_device_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "_sync_revision": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "bigint"
+        },
+        "context": {
+          "default": "''::text",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "created_at": {
+          "default": "CURRENT_TIMESTAMP",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "timestamp with time zone"
+        },
+        "id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "uuid"
+        },
+        "owner_id": {
+          "default": "''::text",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "payload": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "revision": {
+          "default": "0",
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "bigint"
+        },
+        "slug": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "tenant_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "uuid"
+        },
+        "updated_at": {
+          "default": "CURRENT_TIMESTAMP",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "timestamp with time zone"
+        }
+      },
+      "constraints": [
+        {
+          "columns": [
+            "id"
+          ],
+          "definition": "PRIMARY KEY (id)",
+          "name": "_smrt_inference_design_runs_pkey",
+          "referencesColumns": [],
+          "referencesTable": null,
+          "type": "p"
+        }
+      ],
+      "indexes": [
+        {
+          "definition": "CREATE INDEX _smrt_inference_design_runs_created_at_idx ON public._smrt_inference_design_runs USING btree (created_at)",
+          "name": "_smrt_inference_design_runs_created_at_idx"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX _smrt_inference_design_runs_tenant_id_slug_idx ON public._smrt_inference_design_runs USING btree (tenant_id, slug, context) NULLS NOT DISTINCT",
+          "name": "_smrt_inference_design_runs_tenant_id_slug_idx"
+        },
+        {
+          "definition": "CREATE INDEX idx_inference_design_runs_owner ON public._smrt_inference_design_runs USING btree (owner_id, tenant_id)",
+          "name": "idx_inference_design_runs_owner"
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "rows": []
+    },
     "_smrt_inference_overrides": {
       "columns": {
         "_sync_origin_device_id": {
@@ -6986,20 +7105,20 @@
         {
           "applied_at": "2000-01-01T00:00:00.000Z",
           "applied_by": "release-upgrade-gate",
-          "applied_checksum": "f8b4ef9183997aa9fe8fba3f73ead84e8d790beb8f7344c4c582a60fdfac8fe1",
+          "applied_checksum": "fd1fd8a1c4db26d167192d69ac70dfea855d77242030771c1fa60fc9ffd78a99",
           "attempts": 1,
           "batch": 1,
-          "checksum": "f8b4ef9183997aa9fe8fba3f73ead84e8d790beb8f7344c4c582a60fdfac8fe1",
+          "checksum": "fd1fd8a1c4db26d167192d69ac70dfea855d77242030771c1fa60fc9ffd78a99",
           "error_message": null,
           "execution_time_ms": 0,
-          "id": "1faa393a-9c7c-43a6-860c-b3b65cb88f69",
+          "id": "fcd90b1a-4deb-49f3-8878-477a5d06991b",
           "is_reversible": 0,
           "name": "release_gate_capture",
           "package_name": "@happyvertical/release-gate",
           "rolled_back_at": null,
           "source_file": null,
           "status": "completed",
-          "version": "0.60.18"
+          "version": "0.61.1"
         }
       ]
     },
@@ -12837,6 +12956,274 @@
         {
           "definition": "CREATE UNIQUE INDEX api_keys_slug_context_idx ON public.api_keys USING btree (slug, context)",
           "name": "api_keys_slug_context_idx"
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    "app_draft_versions": {
+      "columns": {
+        "_sync_origin_device_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "_sync_revision": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "bigint"
+        },
+        "author": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "context": {
+          "default": "''::text",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "created_at": {
+          "default": "CURRENT_TIMESTAMP",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "timestamp with time zone"
+        },
+        "definition": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "draft_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "uuid"
+        },
+        "migration": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "parent": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "bigint"
+        },
+        "purged": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "boolean"
+        },
+        "slug": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "summary": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "updated_at": {
+          "default": "CURRENT_TIMESTAMP",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "timestamp with time zone"
+        },
+        "version": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "bigint"
+        }
+      },
+      "constraints": [
+        {
+          "columns": [
+            "id"
+          ],
+          "definition": "PRIMARY KEY (id)",
+          "name": "app_draft_versions_pkey",
+          "referencesColumns": [],
+          "referencesTable": null,
+          "type": "p"
+        }
+      ],
+      "indexes": [
+        {
+          "definition": "CREATE INDEX app_draft_versions_created_at_idx ON public.app_draft_versions USING btree (created_at)",
+          "name": "app_draft_versions_created_at_idx"
+        },
+        {
+          "definition": "CREATE INDEX app_draft_versions_slug_context_idx ON public.app_draft_versions USING btree (slug, context)",
+          "name": "app_draft_versions_slug_context_idx"
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    "app_drafts": {
+      "columns": {
+        "_sync_origin_device_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "_sync_revision": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "bigint"
+        },
+        "base_version": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "bigint"
+        },
+        "context": {
+          "default": "''::text",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "created_at": {
+          "default": "CURRENT_TIMESTAMP",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "timestamp with time zone"
+        },
+        "created_by": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "current_version": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "bigint"
+        },
+        "ended_at": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "uuid"
+        },
+        "name": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "note": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "published_versions": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "slug": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "status": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "updated_at": {
+          "default": "CURRENT_TIMESTAMP",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "timestamp with time zone"
+        }
+      },
+      "constraints": [
+        {
+          "columns": [
+            "id"
+          ],
+          "definition": "PRIMARY KEY (id)",
+          "name": "app_drafts_pkey",
+          "referencesColumns": [],
+          "referencesTable": null,
+          "type": "p"
+        }
+      ],
+      "indexes": [
+        {
+          "definition": "CREATE INDEX app_drafts_created_at_idx ON public.app_drafts USING btree (created_at)",
+          "name": "app_drafts_created_at_idx"
+        },
+        {
+          "definition": "CREATE INDEX app_drafts_slug_context_idx ON public.app_drafts USING btree (slug, context)",
+          "name": "app_drafts_slug_context_idx"
         }
       ],
       "primaryKey": [
@@ -30816,7 +31203,7 @@
           "type": "text"
         },
         "status": {
-          "default": null,
+          "default": "'active'::text",
           "generated": "",
           "identity": "",
           "notNull": false,
@@ -31574,6 +31961,109 @@
         "id"
       ]
     },
+    "dns_zones": {
+      "columns": {
+        "_sync_origin_device_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "_sync_revision": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "bigint"
+        },
+        "context": {
+          "default": "''::text",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "created_at": {
+          "default": "CURRENT_TIMESTAMP",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "timestamp with time zone"
+        },
+        "id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "uuid"
+        },
+        "name": {
+          "default": "''::text",
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "notes": {
+          "default": "''::text",
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "slug": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "tenant_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "uuid"
+        },
+        "updated_at": {
+          "default": "CURRENT_TIMESTAMP",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "timestamp with time zone"
+        }
+      },
+      "constraints": [
+        {
+          "columns": [
+            "id"
+          ],
+          "definition": "PRIMARY KEY (id)",
+          "name": "dns_zones_pkey",
+          "referencesColumns": [],
+          "referencesTable": null,
+          "type": "p"
+        }
+      ],
+      "indexes": [
+        {
+          "definition": "CREATE INDEX dns_zones_slug_context_idx ON public.dns_zones USING btree (slug, context)",
+          "name": "dns_zones_slug_context_idx"
+        },
+        {
+          "definition": "CREATE INDEX dns_zones_tenant_id_created_at_idx ON public.dns_zones USING btree (tenant_id, created_at)",
+          "name": "dns_zones_tenant_id_created_at_idx"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX dns_zones_tenant_id_name_idx ON public.dns_zones USING btree (tenant_id, name) NULLS NOT DISTINCT",
+          "name": "dns_zones_tenant_id_name_idx"
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
     "document_taxes": {
       "columns": {
         "_sync_origin_device_id": {
@@ -31755,6 +32245,132 @@
         {
           "definition": "CREATE INDEX document_taxes_tenant_id_created_at_idx ON public.document_taxes USING btree (tenant_id, created_at)",
           "name": "document_taxes_tenant_id_created_at_idx"
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    "domains": {
+      "columns": {
+        "_sync_origin_device_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "_sync_revision": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "bigint"
+        },
+        "context": {
+          "default": "''::text",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "created_at": {
+          "default": "CURRENT_TIMESTAMP",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "timestamp with time zone"
+        },
+        "hostname": {
+          "default": "''::text",
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "uuid"
+        },
+        "notes": {
+          "default": "''::text",
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "slug": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "tenant_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "uuid"
+        },
+        "updated_at": {
+          "default": "CURRENT_TIMESTAMP",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "timestamp with time zone"
+        },
+        "zone_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "uuid"
+        }
+      },
+      "constraints": [
+        {
+          "columns": [
+            "id"
+          ],
+          "definition": "PRIMARY KEY (id)",
+          "name": "domains_pkey",
+          "referencesColumns": [],
+          "referencesTable": null,
+          "type": "p"
+        },
+        {
+          "columns": [
+            "zone_id"
+          ],
+          "definition": "FOREIGN KEY (zone_id) REFERENCES dns_zones(id) ON UPDATE CASCADE",
+          "name": "domains_zone_id_dns_zones_id_fkey",
+          "referencesColumns": [
+            "id"
+          ],
+          "referencesTable": "dns_zones",
+          "type": "f"
+        }
+      ],
+      "indexes": [
+        {
+          "definition": "CREATE INDEX domains_slug_context_idx ON public.domains USING btree (slug, context)",
+          "name": "domains_slug_context_idx"
+        },
+        {
+          "definition": "CREATE INDEX domains_tenant_id_created_at_idx ON public.domains USING btree (tenant_id, created_at)",
+          "name": "domains_tenant_id_created_at_idx"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX domains_tenant_id_hostname_idx ON public.domains USING btree (tenant_id, hostname) NULLS NOT DISTINCT",
+          "name": "domains_tenant_id_hostname_idx"
+        },
+        {
+          "definition": "CREATE INDEX domains_zone_id_idx ON public.domains USING btree (zone_id)",
+          "name": "domains_zone_id_idx"
         }
       ],
       "primaryKey": [
@@ -59904,6 +60520,132 @@
         "id"
       ]
     },
+    "project_domains": {
+      "columns": {
+        "_sync_origin_device_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "_sync_revision": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "bigint"
+        },
+        "context": {
+          "default": "''::text",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "created_at": {
+          "default": "CURRENT_TIMESTAMP",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "timestamp with time zone"
+        },
+        "domain_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "uuid"
+        },
+        "id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "uuid"
+        },
+        "project_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "uuid"
+        },
+        "role": {
+          "default": "'production'::text",
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "slug": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "tenant_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "uuid"
+        },
+        "updated_at": {
+          "default": "CURRENT_TIMESTAMP",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "timestamp with time zone"
+        }
+      },
+      "constraints": [
+        {
+          "columns": [
+            "domain_id"
+          ],
+          "definition": "FOREIGN KEY (domain_id) REFERENCES domains(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "name": "project_domains_domain_id_domains_id_fkey",
+          "referencesColumns": [
+            "id"
+          ],
+          "referencesTable": "domains",
+          "type": "f"
+        },
+        {
+          "columns": [
+            "id"
+          ],
+          "definition": "PRIMARY KEY (id)",
+          "name": "project_domains_pkey",
+          "referencesColumns": [],
+          "referencesTable": null,
+          "type": "p"
+        }
+      ],
+      "indexes": [
+        {
+          "definition": "CREATE UNIQUE INDEX project_domains_domain_id_project_id_idx ON public.project_domains USING btree (domain_id, project_id, role) NULLS NOT DISTINCT",
+          "name": "project_domains_domain_id_project_id_idx"
+        },
+        {
+          "definition": "CREATE INDEX project_domains_project_id_idx ON public.project_domains USING btree (project_id)",
+          "name": "project_domains_project_id_idx"
+        },
+        {
+          "definition": "CREATE INDEX project_domains_slug_context_idx ON public.project_domains USING btree (slug, context)",
+          "name": "project_domains_slug_context_idx"
+        },
+        {
+          "definition": "CREATE INDEX project_domains_tenant_id_created_at_idx ON public.project_domains USING btree (tenant_id, created_at)",
+          "name": "project_domains_tenant_id_created_at_idx"
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
     "project_governance_events": {
       "columns": {
         "_sync_origin_device_id": {
@@ -60585,6 +61327,144 @@
         "id"
       ]
     },
+    "project_repositories": {
+      "columns": {
+        "_sync_origin_device_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "_sync_revision": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "bigint"
+        },
+        "context": {
+          "default": "''::text",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "created_at": {
+          "default": "CURRENT_TIMESTAMP",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "timestamp with time zone"
+        },
+        "id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "uuid"
+        },
+        "project_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "uuid"
+        },
+        "repository_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "uuid"
+        },
+        "role": {
+          "default": "'primary'::text",
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "slug": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "tenant_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "uuid"
+        },
+        "updated_at": {
+          "default": "CURRENT_TIMESTAMP",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "timestamp with time zone"
+        }
+      },
+      "constraints": [
+        {
+          "columns": [
+            "id"
+          ],
+          "definition": "PRIMARY KEY (id)",
+          "name": "project_repositories_pkey",
+          "referencesColumns": [],
+          "referencesTable": null,
+          "type": "p"
+        },
+        {
+          "columns": [
+            "project_id"
+          ],
+          "definition": "FOREIGN KEY (project_id) REFERENCES projects(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "name": "project_repositories_project_id_projects_id_fkey",
+          "referencesColumns": [
+            "id"
+          ],
+          "referencesTable": "projects",
+          "type": "f"
+        },
+        {
+          "columns": [
+            "repository_id"
+          ],
+          "definition": "FOREIGN KEY (repository_id) REFERENCES repositories(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "name": "project_repositories_repository_id_repositories_id_fkey",
+          "referencesColumns": [
+            "id"
+          ],
+          "referencesTable": "repositories",
+          "type": "f"
+        }
+      ],
+      "indexes": [
+        {
+          "definition": "CREATE UNIQUE INDEX project_repositories_project_id_repository_id_idx ON public.project_repositories USING btree (project_id, repository_id)",
+          "name": "project_repositories_project_id_repository_id_idx"
+        },
+        {
+          "definition": "CREATE INDEX project_repositories_repository_id_idx ON public.project_repositories USING btree (repository_id)",
+          "name": "project_repositories_repository_id_idx"
+        },
+        {
+          "definition": "CREATE INDEX project_repositories_slug_context_idx ON public.project_repositories USING btree (slug, context)",
+          "name": "project_repositories_slug_context_idx"
+        },
+        {
+          "definition": "CREATE INDEX project_repositories_tenant_id_created_at_idx ON public.project_repositories USING btree (tenant_id, created_at)",
+          "name": "project_repositories_tenant_id_created_at_idx"
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
     "project_specifications": {
       "columns": {
         "_sync_origin_device_id": {
@@ -60798,6 +61678,13 @@
           "identity": "",
           "notNull": true,
           "type": "uuid"
+        },
+        "kind": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
         },
         "last_synced_at": {
           "default": null,
@@ -67569,6 +68456,161 @@
         {
           "definition": "CREATE UNIQUE INDEX sites_tenant_id_domain_idx ON public.sites USING btree (tenant_id, domain) NULLS NOT DISTINCT",
           "name": "sites_tenant_id_domain_idx"
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    "smrt_mcp_call_audits": {
+      "columns": {
+        "_sync_origin_device_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "_sync_revision": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "bigint"
+        },
+        "argument_keys": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "jsonb"
+        },
+        "context": {
+          "default": "''::text",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "created_at": {
+          "default": "CURRENT_TIMESTAMP",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "timestamp with time zone"
+        },
+        "error_code": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "uuid"
+        },
+        "identity_client_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "identity_issuer": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "identity_subject": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "occurred_at": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "timestamp with time zone"
+        },
+        "outcome": {
+          "default": "'allowed'::text",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "principal_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "principal_kind": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "text"
+        },
+        "slug": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "tenant_id": {
+          "default": null,
+          "generated": "",
+          "identity": "",
+          "notNull": false,
+          "type": "uuid"
+        },
+        "tool": {
+          "default": "''::text",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "text"
+        },
+        "updated_at": {
+          "default": "CURRENT_TIMESTAMP",
+          "generated": "",
+          "identity": "",
+          "notNull": true,
+          "type": "timestamp with time zone"
+        }
+      },
+      "constraints": [
+        {
+          "columns": [
+            "id"
+          ],
+          "definition": "PRIMARY KEY (id)",
+          "name": "smrt_mcp_call_audits_pkey",
+          "referencesColumns": [],
+          "referencesTable": null,
+          "type": "p"
+        }
+      ],
+      "indexes": [
+        {
+          "definition": "CREATE UNIQUE INDEX smrt_mcp_call_audits_slug_context_idx ON public.smrt_mcp_call_audits USING btree (tenant_id, slug, context) NULLS NOT DISTINCT",
+          "name": "smrt_mcp_call_audits_slug_context_idx"
+        },
+        {
+          "definition": "CREATE INDEX smrt_mcp_call_audits_tenant_id_created_at_idx ON public.smrt_mcp_call_audits USING btree (tenant_id, created_at)",
+          "name": "smrt_mcp_call_audits_tenant_id_created_at_idx"
         }
       ],
       "primaryKey": [
