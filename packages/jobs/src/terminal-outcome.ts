@@ -124,12 +124,14 @@ export async function transitionTerminalJob(
       where.push('worker_id = ?');
       whereValues.push(options.expectedWorkerId);
     }
-    where.push('attempts = ?');
-    whereValues.push(options.job.attempts);
-    if (options.job.startedAt === null) where.push('started_at IS NULL');
-    else if (options.job.startedAt !== undefined) {
-      where.push('started_at = ?');
-      whereValues.push(options.job.startedAt);
+    if (options.expectedWorkerId !== undefined) {
+      where.push('attempts = ?');
+      whereValues.push(options.job.attempts);
+      if (options.job.startedAt === null) where.push('started_at IS NULL');
+      else if (options.job.startedAt !== undefined) {
+        where.push('started_at = ?');
+        whereValues.push(options.job.startedAt);
+      }
     }
     if (options.expectedTaskId !== undefined) {
       where.push('task_id = ?');

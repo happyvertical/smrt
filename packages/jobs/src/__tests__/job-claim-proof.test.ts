@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { getTestDatabase, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   assertAbandonedJobClaim,
   assertFailedJobDispatch,
@@ -10,6 +10,7 @@ import {
   type JobClaim,
   JobClaimLostError,
 } from '../job-claim.js';
+import { JobHandle } from '../job-handle.js';
 import { getJobClaim, TaskRunner } from '../runner.js';
 import { SmrtJobCollection } from '../smrt-job.js';
 import { SmrtWorkerCollection } from '../smrt-worker.js';
@@ -57,6 +58,52 @@ describe('transaction-bound job claim proof', () => {
   });
   afterEach(async () => {
     await db.close?.();
+  });
+
+  it.each([
+    'object',
+    'handle',
+  ])('preserves %s cancellation when a runner claims after the read', async (path) => {
+    const jobs = await SmrtJobCollection.create({ db });
+    const pending = await jobs.enqueueJob({
+      objectType: 'ClaimProofProbe',
+      method: 'execute',
+      queue: 'cancel-race',
+    });
+    // Prepare schema before injecting the exact read -> claim -> cancel ordering.
+    await jobs
+      .enqueueJob({
+        objectType: 'ClaimProofProbe',
+        method: 'execute',
+        queue: 'prepare',
+      })
+      .then((job) => job.cancel());
+    const original = db.transaction!.bind(db);
+    const spy = vi
+      .spyOn(db, 'transaction')
+      .mockImplementationOnce(async (callback) => {
+        const [claimed] = await jobs.claimReady({
+          workerId: 'racing-worker',
+          queues: ['cancel-race'],
+        });
+        expect(claimed.id).toBe(pending.id);
+        expect(claimed.attempts).toBe(1);
+        return original(callback);
+      });
+    try {
+      if (path === 'object') await pending.cancel();
+      else await new JobHandle(pending.id as string, jobs).cancel();
+      expect((await jobs.get({ id: pending.id as string }))?.status).toBe(
+        'cancelled',
+      );
+      const outcomes = await db.query(
+        'SELECT data FROM _smrt_job_events WHERE job_id = ?',
+        pending.id,
+      );
+      expect(JSON.parse(String(outcomes.rows[0].data)).attempts).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('proves a claim on the transaction used for application commit', async () => {
