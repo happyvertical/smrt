@@ -170,6 +170,7 @@ interface ExpectedIndex {
 }
 
 interface ExpectedTable {
+  hasGenerated?: boolean;
   name: string;
   origin: ExpectedTableOrigin;
   columns: ExpectedColumn[];
@@ -238,9 +239,7 @@ export async function checkLiveSchemaParity(
   const generatedCatalog = await readGeneratedColumnCatalog(
     db,
     engine,
-    expected.some((table) =>
-      table.columns.some((column) => column.generated !== undefined),
-    ),
+    () => expected.some((table) => table.hasGenerated === true),
     new Set(expected.map((table) => table.name)),
   );
   const liveTableNames = await listLiveTables(db, engine);
@@ -269,39 +268,48 @@ export async function checkLiveSchemaParity(
 
     tablesChecked++;
     const liveColumns = await readLiveColumns(db, table.name);
-    const generated =
-      generatedCatalog !== null
-        ? (generatedCatalog.get(table.name) ?? new Map<string, string>())
-        : await probeGeneratedColumns(db, table.name, engine, {
-            expected: table.columns.some(
-              (column) => column.generated !== undefined,
-            ),
-            previous: Object.values(
-              options.previousSchemas?.[table.name]?.columns ?? {},
-            ).some((column) => column.generated !== undefined),
-            missingColumns:
-              !options.previousSchemas?.[table.name] &&
-              table.columns.some((column) => !liveColumns.has(column.name)),
-          });
-    if (
-      generated.size ||
-      table.columns.some((column) => column.generated !== undefined)
-    ) {
-      if (engine === 'sqlite') {
-        const { rows } = await db.query(
-          'SELECT * FROM pragma_table_xinfo($1)',
-          [table.name],
-        );
-        for (const row of rows)
-          if (generated.has(String(row.name)))
-            liveColumns.set(String(row.name), {
-              name: String(row.name),
-              type: String(row.type),
-              notNull: Boolean(row.notnull),
-              primaryKey: Boolean(row.pk),
-              hasDefault: false,
-            });
+    let generated = generatedCatalog?.get(table.name) ?? NO_GENERATED_COLUMNS;
+    let columnFindings: ColumnComparison | undefined;
+    const previous = options.previousSchemas?.[table.name];
+    const recordedGenerated =
+      previous &&
+      Object.values(previous.columns).some(
+        (column) => column.generated !== undefined,
+      );
+    if (engine === 'sqlite') {
+      // Ordinary columns are compared once, as on main. Only a missing-column
+      // finding can trigger unknown-history discovery and a second comparison.
+      if (!table.hasGenerated && !recordedGenerated)
+        columnFindings = compareColumns(table, liveColumns, engine);
+      if (
+        table.hasGenerated ||
+        recordedGenerated ||
+        (!previous && columnFindings?.missingColumns)
+      ) {
+        generated = await probeGeneratedColumns(db, table.name, engine, {
+          expected: table.hasGenerated === true,
+          previous: Boolean(recordedGenerated),
+          missingColumns: columnFindings?.missingColumns === true,
+        });
+        if (generated.size) {
+          const { rows } = await db.query(
+            'SELECT * FROM pragma_table_xinfo($1)',
+            [table.name],
+          );
+          for (const row of rows)
+            if (generated.has(String(row.name)))
+              liveColumns.set(String(row.name), {
+                name: String(row.name),
+                type: String(row.type),
+                notNull: Boolean(row.notnull),
+                primaryKey: Boolean(row.pk),
+                hasDefault: false,
+              });
+          columnFindings = undefined;
+        }
       }
+    }
+    if (generated.size || table.hasGenerated) {
       for (const column of table.columns) {
         const actual = generated.get(column.name);
         if (column.generated === undefined && actual === undefined) continue;
@@ -329,7 +337,9 @@ export async function checkLiveSchemaParity(
           });
       }
     }
-    findings.push(...compareColumns(table, liveColumns, engine));
+    findings.push(
+      ...(columnFindings ?? compareColumns(table, liveColumns, engine)),
+    );
     findings.push(
       ...(await detectRenameDataPending(db, engine, table, liveColumns)),
     );
@@ -440,21 +450,27 @@ function buildExpectedTables(input: {
     const tableName = schema?.tableName || key;
     if (!tableName) continue;
 
+    let hasGenerated = false;
     const columns: ExpectedColumn[] = Object.entries(schema.columns ?? {}).map(
-      ([columnName, column]) => ({
-        generated: column.generated,
-        generatedInputTypes: column.generatedInputTypes,
-        name: columnName,
-        type: strategy.mapType(column.type),
-        primaryKey: column.primaryKey === true,
-        notNull: column.notNull === true || column.primaryKey === true,
-        unique: column.unique === true,
-        hasDefault: column.defaultValue !== undefined,
-        reference: column.foreignKey ? 'foreignKey' : column.referenceKind,
-      }),
+      ([columnName, column]) => {
+        const generated = column.generated;
+        if (generated !== undefined) hasGenerated = true;
+        return {
+          generated,
+          generatedInputTypes: column.generatedInputTypes,
+          name: columnName,
+          type: strategy.mapType(column.type),
+          primaryKey: column.primaryKey === true,
+          notNull: column.notNull === true || column.primaryKey === true,
+          unique: column.unique === true,
+          hasDefault: column.defaultValue !== undefined,
+          reference: column.foreignKey ? 'foreignKey' : column.referenceKind,
+        };
+      },
     );
 
     tables.push({
+      hasGenerated,
       name: tableName,
       origin: 'application',
       columns,
@@ -532,17 +548,21 @@ function dedupeConflictTargets(
 // Column comparison
 // ---------------------------------------------------------------------------
 
+const NO_GENERATED_COLUMNS = new Map<string, string>();
+type ColumnComparison = LiveParityFinding[] & { missingColumns?: true };
+
 function compareColumns(
   table: ExpectedTable,
   liveColumns: Map<string, LiveColumn>,
   engine: DatabaseEngine,
-): LiveParityFinding[] {
-  const findings: LiveParityFinding[] = [];
+): ColumnComparison {
+  const findings: ColumnComparison = [];
   const expectedNames = new Set(table.columns.map((column) => column.name));
 
   for (const column of table.columns) {
     const live = liveColumns.get(column.name);
     if (!live) {
+      findings.missingColumns = true;
       findings.push({
         kind: 'missing_column',
         severity: 'error',

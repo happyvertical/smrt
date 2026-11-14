@@ -793,9 +793,7 @@ describe('database-generated fields #4915', () => {
         expect(() => ObjectRegistry.getSchemaDDL(childKey, 'sqlite')).toThrow(
           unresolved,
         );
-        expect(() => ObjectRegistry.getAllSchemasAsDefinitions()).toThrow(
-          unresolved,
-        );
+        expect(() => ObjectRegistry.getAllSchemasAsDefinitions()).not.toThrow();
         await expect(ObjectRegistry.getAllFields(childKey)).rejects.toThrow(
           unresolved,
         );
@@ -808,11 +806,11 @@ describe('database-generated fields #4915', () => {
         await expect(
           ObjectRegistry.getCollection(childKey, { db }),
         ).rejects.toThrow(unresolved);
-        await expect(async () =>
+        await expect(
           new SchemaComparer(db).compare(
             ObjectRegistry.getAllSchemasAsDefinitions(),
           ),
-        ).rejects.toThrow(unresolved);
+        ).resolves.toBeDefined();
         const Ctor = ObjectRegistry.getClass(childKey)!
           .constructor as typeof SmrtObject;
         await expect(async () => new Ctor({ db }).save()).rejects.toThrow(
@@ -844,7 +842,7 @@ describe('database-generated fields #4915', () => {
             name: 'GeneratedFieldError',
             message: expect.stringContaining('LateGeneratedChild'),
           });
-          expect(registerParent).toThrow(rejected);
+          expect(registerParent).not.toThrow();
           await expect(
             ObjectRegistry.getAllFields(grandchildKey),
           ).rejects.toThrow(rejected);

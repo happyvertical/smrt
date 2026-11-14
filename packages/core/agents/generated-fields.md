@@ -36,10 +36,14 @@ its inheritance caches when their ancestry is available. A generated declaration
 whose parent has not loaded may register as pending metadata, but schema access
 (including migration inputs) and persistence throw `GeneratedFieldError` with
 `ancestry unresolved` until the full chain is registered. Loading a parent
-revalidates its generated descendants. An invalid descendant makes that parent
-registration call fail with an error naming the child; the valid parent remains
-registered, while the child stays visible for diagnostics and every schema or
-persistence access refuses it. Legitimate pending children become usable when
+revalidates only subscribed generated descendants, without scanning other
+registrations. An invalid descendant is quarantined on its own registry record;
+parent registration succeeds. Its typed error appears in existing registry
+diagnostics (`usable: false`) and its own field/schema/DDL, runtime migration,
+persistence and transport entry points refuse use. Bulk schema, migration-input,
+OpenAPI, REST-manifest and MCP catalogs omit only quarantined classes, so other
+models stay available. Pending classes follow the same isolation rule. Legitimate
+pending children become usable when
 their ancestry is complete. An unqualified decorator parent is held by its
 constructor identity while pending: a different package's same-named class
 cannot resolve it. Qualified manifest parent references retain package identity.
@@ -112,11 +116,16 @@ No semantic SQL parser or normalization beyond formatting is promised.
 PostgreSQL and DuckDB diff and live-parity runs each read generated columns
 in **one catalog query per run**, reused across managed tables. Rows for unmanaged
 tables are ignored before parsing DuckDB DDL, so an unrelated table cannot break
-generated-column discovery. This discovers removal of the last generated declaration,
+generated-column discovery. This discovers removal of the last generated
+declaration,
 including hand-created columns, without requiring deployment snapshots.
 A reused comparer refreshes the catalog for each run; standalone `compareTable`
 calls also make one catalog read each. A database without generated columns
 retains the ordinary migration diff, with one extra query per run.
+Successful catalog reads do not scan model declarations to decide strictness;
+that check is deferred until a catalog read fails. Ordinary SQLite diff/parity
+reuse their existing column comparison to discover missing columns, avoiding
+a separate generated-declaration walk.
 
 SQLite retains feature-scoped discovery: it probes tables with expected or
 previously recorded generated columns, or (without a previous table snapshot)
@@ -197,3 +206,16 @@ three-level STI hierarchy with a middle-class unique field, including a live
 migration diff against the captured SQLite deployment. The fixture includes
 OpenAPI, monolithic/modular MCP and every generated SvelteKit TypeScript file;
 no output normalization is applied. See the fixture's provenance document.
+
+Generated-feature isolation: registration records generated declarations during
+its existing field-map writes. Plain classes perform no generated validation,
+ancestry walk, or expression compilation; field/schema/write hot paths use only
+an O(1) check on the class's own record. Pending subscriptions use exact parent
+constructors for decorator classes and qualified names for unloaded manifests.
+Only a subscribing generated class is revisited when its missing parent loads.
+Transactional registry checkpoints preserve declaration discovery and subscriptions;
+restoring ordinary classes performs no generated validation.
+The PostgreSQL/DuckDB one-query discovery above remains necessary to detect a
+removed last declaration without a persisted snapshot; it is the documented
+exception to zero extra catalog work for a currently ordinary schema. SQLite's
+missing-column discovery also remains necessary for that transition.

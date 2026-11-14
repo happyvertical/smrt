@@ -1,4 +1,7 @@
-import { generatedExpression } from '../generated-fields.js';
+import {
+  GeneratedFieldError,
+  generatedExpression,
+} from '../generated-fields.js';
 /**
  * MCP (Model Context Protocol) server generator for smrt objects
  *
@@ -126,6 +129,8 @@ type InstanceCallable = (...args: unknown[]) => unknown;
 function normalizePublicToolError(
   error: unknown,
 ): { code: string; message: string } | undefined {
+  if (error instanceof GeneratedFieldError)
+    return { code: error.code, message: error.message };
   if (!error || typeof error !== 'object') return undefined;
   const candidate = error as { code?: unknown; publicMessage?: unknown };
   if (
@@ -576,6 +581,7 @@ export class MCPGenerator {
     const generated = new Set<RegisteredClass>();
 
     for (const [key, classInfo] of registeredClasses) {
+      if (classInfo.generatedFields?.error) continue;
       // Issue #951: Use simple name for tool naming, map key for registry
       // lookups. Configuration, fields, methods and dispatch all resolve
       // through `key`, so two packages' same-named classes never borrow each
@@ -1127,8 +1133,18 @@ export class MCPGenerator {
   }
 
   /** Normalize registry fields for the transport-neutral schema emitter. */
-  private toToolFields(fields: Map<string, FieldDefinition>): ToolFieldMeta[] {
-    return Array.from(fields, ([name, field]) => ({
+  private toToolFields(
+    fields: Map<string, FieldDefinition>,
+    generated = false,
+  ): ToolFieldMeta[] {
+    const input = generated
+      ? new Map(
+          [...fields].filter(
+            ([, field]) => generatedExpression(field) === undefined,
+          ),
+        )
+      : fields;
+    return Array.from(input, ([name, field]) => ({
       name,
       type: field.type,
       required: field.required ?? field._meta?.required,
@@ -1162,12 +1178,11 @@ export class MCPGenerator {
     const schema = buildToolInputSchema(
       action,
       this.toToolFields(
-        new Map(
-          [
-            ...fields,
-            ...Object.entries(ObjectRegistry.getWriteThroughFields(objectName)),
-          ].filter(([, field]) => generatedExpression(field) === undefined),
-        ),
+        new Map([
+          ...fields,
+          ...Object.entries(ObjectRegistry.getWriteThroughFields(objectName)),
+        ]),
+        Boolean(ObjectRegistry.getClass(objectName)?.generatedFields),
       ),
       customAction,
       ObjectRegistry.getConfig(objectName).idType,
@@ -1235,11 +1250,8 @@ export class MCPGenerator {
             required: [
               '_meta_type',
               ...this.toToolFields(
-                new Map(
-                  [...variantFields].filter(
-                    ([, field]) => generatedExpression(field) === undefined,
-                  ),
-                ),
+                variantFields,
+                Boolean(ObjectRegistry.getClass(name)?.generatedFields),
               )
                 .filter((field) => field.required)
                 .map((field) => field.name),
@@ -1258,11 +1270,8 @@ export class MCPGenerator {
               required: [
                 'createType',
                 ...this.toToolFields(
-                  new Map(
-                    [...ObjectRegistry.getFields(name)].filter(
-                      ([, field]) => generatedExpression(field) === undefined,
-                    ),
-                  ),
+                  ObjectRegistry.getFields(name),
+                  Boolean(ObjectRegistry.getClass(name)?.generatedFields),
                 )
                   .filter((field) => field.required)
                   .map((field) => field.name),
@@ -1450,6 +1459,14 @@ export class MCPGenerator {
       const tool = availableTools.find((candidate) => candidate.name === name);
 
       if (!tool) {
+        for (const [key, info] of ObjectRegistry.getGeneratedClasses()) {
+          if (
+            info.generatedFields?.error &&
+            name.startsWith(`${info.name.toLowerCase()}_`)
+          ) {
+            ObjectRegistry.assertGeneratedAncestry(key);
+          }
+        }
         throw new Error(`Unknown tool: ${name}`);
       }
 
@@ -1660,6 +1677,7 @@ export class MCPGenerator {
     objectName: string,
     classInfo: RegisteredClass,
   ): Promise<SmrtCollection<SmrtObject>> {
+    if (classInfo.generatedFields?.error) throw classInfo.generatedFields.error;
     if (!this.collections.has(objectName) && !classInfo.collectionConstructor) {
       // A model that declares no collection class gets the registry's
       // default one, exactly as generated REST routes do.

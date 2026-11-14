@@ -53,11 +53,7 @@ import {
   TenantIsolationError,
   ValidationError,
 } from './errors';
-import {
-  GeneratedFieldError,
-  generatedExpression,
-  rejectGeneratedInput,
-} from './generated-fields.js';
+import { GeneratedFieldError } from './generated-fields.js';
 import { buildWhere } from './host.js';
 import type {
   InferenceCapabilityFallbackOption,
@@ -1403,10 +1399,9 @@ export class SmrtObject extends SmrtClass {
     const fields = await fieldsFromClass(
       this.constructor as SmrtObjectConstructor,
     );
-    if (!this.isPersisted)
-      rejectGeneratedInput(
-        this.getRegisteredClassInfo()?.inheritedFields ??
-          ObjectRegistry.getFields(this.getResolvedQualifiedName()),
+    if (!this.isPersisted && this.getRegisteredClassInfo()?.generatedFields)
+      ObjectRegistry.assertWritableInput(
+        this.getResolvedQualifiedName(),
         options,
       );
 
@@ -1561,16 +1556,15 @@ export class SmrtObject extends SmrtClass {
     return this;
   }
 
-  private _generatedValues = new Map<string, unknown>();
+  private _generatedValues?: Map<string, unknown>;
 
   private captureGeneratedValues(): void {
+    const generated = this.getRegisteredClassInfo()?.generatedFields;
+    if (!generated) return;
     const self = this as unknown as Record<string, unknown>;
-    for (const [name, field] of this.getRegisteredClassInfo()
-      ?.inheritedFields ??
-      ObjectRegistry.getFields(this.getResolvedQualifiedName())) {
-      if (generatedExpression(field) !== undefined)
-        this._generatedValues.set(name, self[name]);
-    }
+    this._generatedValues ??= new Map();
+    for (const [name] of generated.fields)
+      this._generatedValues.set(name, self[name]);
   }
 
   /**
@@ -3342,24 +3336,23 @@ export class SmrtObject extends SmrtClass {
       data[ownershipColumn] = null;
     }
     const generatedFields =
-      this.getRegisteredClassInfo()?.inheritedFields ??
-      ObjectRegistry.getFields(this.getResolvedQualifiedName());
-    for (const [name, field] of generatedFields) {
-      if (generatedExpression(field) === undefined) continue;
-      if (
-        !Object.is(
-          (this as unknown as Record<string, unknown>)[name],
-          this._generatedValues.get(name),
-        )
-      ) {
-        throw new GeneratedFieldError(
-          `Cannot assign database-generated field '${name}'`,
-          'VALIDATION_GENERATED_FIELD_WRITE',
-          name,
-        );
+      this.getRegisteredClassInfo()?.generatedFields?.fields;
+    if (generatedFields)
+      for (const [name] of generatedFields) {
+        if (
+          !Object.is(
+            (this as unknown as Record<string, unknown>)[name],
+            this._generatedValues?.get(name),
+          )
+        ) {
+          throw new GeneratedFieldError(
+            `Cannot assign database-generated field '${name}'`,
+            'VALIDATION_GENERATED_FIELD_WRITE',
+            name,
+          );
+        }
+        delete data[toSnakeCase(name)];
       }
-      delete data[toSnakeCase(name)];
-    }
     const derivedColumns = this.getPersistenceDerivedColumns();
     const registeredFields = ObjectRegistry.getFields(
       this.getResolvedQualifiedName(),
@@ -3367,10 +3360,10 @@ export class SmrtObject extends SmrtClass {
     const registeredColumns = new Set(
       [...registeredFields]
         .filter(
-          ([, field]) =>
+          ([name, field]) =>
             field.type !== 'oneToMany' &&
             field.type !== 'manyToMany' &&
-            generatedExpression(field) === undefined,
+            !generatedFields?.has(name),
         )
         .map(([name]) => toSnakeCase(name)),
     );
@@ -3436,14 +3429,7 @@ export class SmrtObject extends SmrtClass {
     // key even if natural-key fields change afterwards (issue #1472).
     this._persisted = true;
 
-    if (
-      [
-        ...(
-          this.getRegisteredClassInfo()?.inheritedFields ??
-          ObjectRegistry.getFields(this.getResolvedQualifiedName())
-        ).values(),
-      ].some((field) => generatedExpression(field) !== undefined)
-    ) {
+    if (this.getRegisteredClassInfo()?.generatedFields) {
       await this.loadFromId();
       this.captureGeneratedValues();
     }

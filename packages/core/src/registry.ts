@@ -4,6 +4,14 @@ import {
   rejectGeneratedInput,
   validateGeneratedFields,
 } from './generated-fields.js';
+import {
+  clearGeneratedClassState,
+  forgetGeneratedClass,
+  GeneratedFieldMap,
+  generatedClasses,
+  recordGeneratedClass,
+  refreshGeneratedChildren,
+} from './registry/generated-state.js';
 import { writeThroughFields } from './write-through.js';
 /**
  * Global object registry for SMRT classes
@@ -816,70 +824,25 @@ export interface CollectionCreateTargets {
  * (even from different package resolution paths) share the same registry state.
  */
 export class ObjectRegistry {
-  private static generatedAncestryChecks = new WeakMap<
-    RegisteredClass,
-    number
-  >();
-
-  /** Pending generated declarations are metadata only until all parents exist. */
+  /** Read stored state only. Ordinary models never enter generated validation. */
   static assertGeneratedAncestry(name: string): void {
-    const registered = ObjectRegistry.findClass(name);
-    if (!registered) return;
-    const generation = getRegistryGeneration();
-    if (this.generatedAncestryChecks.get(registered) === generation) return;
-    this.validateGeneratedRegistration(registered, undefined, true);
-    this.generatedAncestryChecks.set(registered, generation);
+    const error = ObjectRegistry.findClass(name)?.generatedFields?.error;
+    if (error) throw error;
   }
 
-  /** A newly available parent can invalidate a previously pending child. */
+  static recordGeneratedRegistration(
+    entry: RegisteredClass,
+    declaredFields?: Iterable<string>,
+  ): void {
+    recordGeneratedClass(entry, declaredFields);
+  }
+
   static revalidateGeneratedDescendants(parent: RegisteredClass): void {
-    const parentKey = parent.qualifiedName ?? parent.name;
-    // Bind every waiting direct child before walking descendants, independent
-    // of registration order. Another package's same-named class cannot bind it.
-    for (const child of ObjectRegistry.classes.values()) {
-      if (child.generatedParentConstructor !== parent.constructor) continue;
-      child.extends = parentKey;
-      delete child.generatedParentConstructor;
-      _invalidateInheritanceEntries(child);
-    }
-    let failure: unknown;
-    for (const child of ObjectRegistry.classes.values()) {
-      if (child === parent) continue;
-      let chain: string[];
-      try {
-        chain = ObjectRegistry.getInheritanceChain(
-          child.qualifiedName ?? child.name,
-          child,
-        );
-      } catch (error) {
-        // Ordinary unresolved/ambiguous declarations retain their deferred
-        // diagnostics; only generated declarations participate in this check.
-        if (
-          [...child.fields.values()].some(
-            (field) => generatedExpression(field) !== undefined,
-          )
-        )
-          failure ??= error;
-        continue;
-      }
-      if (!chain.includes(parentKey)) continue;
-      if (
-        !chain.some((key) =>
-          [...(ObjectRegistry.findClass(key)?.fields.values() ?? [])].some(
-            (field) => generatedExpression(field) !== undefined,
-          ),
-        )
-      )
-        continue;
-      // Rejected children remain registered for diagnostics, but every schema
-      // and persistence entry point revalidates them and refuses their use.
-      try {
-        this.validateGeneratedRegistration(child);
-      } catch (error) {
-        failure ??= error;
-      }
-    }
-    if (failure) throw failure;
+    refreshGeneratedChildren(parent);
+  }
+
+  static getGeneratedClasses(): ReadonlyMap<string, RegisteredClass> {
+    return generatedClasses();
   }
 
   /**
@@ -900,7 +863,7 @@ export class ObjectRegistry {
           entry
             ? {
                 ...entry,
-                fields: new Map(entry.fields),
+                fields: new GeneratedFieldMap(entry.fields),
                 methods: new Map(entry.methods),
                 config: { ...entry.config },
                 replacedQualifiedNames: entry.replacedQualifiedNames
@@ -916,6 +879,7 @@ export class ObjectRegistry {
     return () => {
       for (const [key, entry] of saved) {
         const current = ObjectRegistry.classes.get(key);
+        if (current) forgetGeneratedClass(current);
         if (current && current.constructor !== entry?.constructor)
           getConstructorIndex().delete(
             current.constructor as SmrtObjectConstructor,
@@ -933,6 +897,10 @@ export class ObjectRegistry {
       applyRuntimeOverrides();
       ObjectRegistry.collectionCache.clear();
       ObjectRegistry.invalidateAllInheritanceCaches();
+      for (const entry of saved.values()) {
+        if (entry)
+          recordGeneratedClass(entry, entry.generatedFields?.declaredFields);
+      }
     };
   }
   /** Invalidation token for consumers caching generated definitions. */
@@ -1715,6 +1683,7 @@ export class ObjectRegistry {
       ObjectRegistry.getExposureModel(collectionName) ??
       ObjectRegistry.resolveCollectionRegistration(collectionName).registered;
     if (!base) throw new Error(`Unknown create collection: ${collectionName}`);
+    if (base.generatedFields?.error) throw base.generatedFields.error;
     const name = base.qualifiedName || base.name;
     const target = (info: RegisteredClass): CreateTarget => ({
       name: info.qualifiedName || info.name,
@@ -1729,7 +1698,12 @@ export class ObjectRegistry {
         (info.constructor as { _isManifestStub?: boolean })._isManifestStub ===
         true;
       for (const [key, info] of ObjectRegistry.getAllClasses()) {
-        if (info === base || info.config.abstract) continue;
+        if (
+          info.generatedFields?.error ||
+          info === base ||
+          info.config.abstract
+        )
+          continue;
         const descends =
           (!isStub(info) &&
             !isStub(base) &&
@@ -2789,6 +2763,7 @@ export class ObjectRegistry {
    * Clear all registered classes (mainly for testing)
    */
   static clear(): void {
+    clearGeneratedClassState();
     clearRuntimeOverrides();
     clearSubtypeLineage();
     bumpRegistryGeneration();
@@ -3076,16 +3051,17 @@ export class ObjectRegistry {
    */
   /** Reject caller values for database-owned fields before writable-policy filtering. */
   static assertWritableInput(name: string, data: object): void {
-    const fields = new Map(
-      this.getInheritanceChain(name).flatMap((key) => [...this.getFields(key)]),
-    );
-    rejectGeneratedInput(fields, data);
+    const own = this.findClass(name)?.generatedFields;
+    if (!own) return;
+    if (own.error) throw own.error;
+    rejectGeneratedInput(own.fields, data);
   }
 
   static getFields(name: string): Map<string, RegisteredField> {
     // Issue #951: Use findClass for multi-strategy lookup (qualified key, classNameMap, case-insensitive)
     const registered = ObjectRegistry.findClass(name);
-    ObjectRegistry.assertGeneratedAncestry(name);
+    if (registered?.generatedFields?.error)
+      throw registered.generatedFields.error;
     return registered ? registered.fields : new Map();
   }
 
@@ -3856,7 +3832,6 @@ export class ObjectRegistry {
     // omitted the SmrtHierarchical `parentId` normalization the module applies,
     // so inherited self-FK fields could surface with the wrong shape. Removing
     // the duplicate keeps field merging consistent everywhere.
-    ObjectRegistry.assertGeneratedAncestry(className);
     return _getAllFields(className);
   }
 
@@ -4342,7 +4317,8 @@ export class ObjectRegistry {
       for (const ancestorKey of chain) {
         if (ancestorKey === key) continue;
         const ancestor = ObjectRegistry.findClass(ancestorKey);
-        if (ancestor) this.validateGeneratedRegistration(ancestor);
+        if (ancestor?.generatedFields)
+          this.validateGeneratedRegistration(ancestor);
       }
     }
     const owners = new Set<string>();

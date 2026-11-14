@@ -270,14 +270,22 @@ export function runtimeModelEntry(
         ]
       : undefined;
   const fields: Record<string, FieldDefinition> = {};
+  let declaresGenerated = Boolean(parent?.generatedFields);
   // Keep ordinary STI fields on their declaring class, as before #4915.
   // Copy only generated metadata needed by output/write consumers; validation
   // below resolves dependencies from the complete effective parent ancestry.
-  if (parent) {
-    const sharedTable = ObjectRegistry.getSTIBase(parentKey!) !== null;
+  if (
+    parent &&
+    (def.replaces ||
+      ObjectRegistry.getSTIBase(parentKey!) === null ||
+      parent.generatedFields)
+  ) {
+    const sharedTable =
+      Boolean(parent.generatedFields) &&
+      ObjectRegistry.getSTIBase(parentKey!) !== null;
     const inheritedFields =
       sharedTable && !def.replaces
-        ? getEffectiveFieldsSync(parent)
+        ? parent.generatedFields!.fields
         : getOwnTableFieldsSync(parent);
     const hierarchical =
       !def.replaces && !sharedTable && inheritsHierarchicalBase(parent);
@@ -316,6 +324,7 @@ export function runtimeModelEntry(
   }
   for (const [name, fd] of Object.entries(def.fields ?? {})) {
     fields[name] = toFieldDefinition(fd);
+    if (generatedExpression(fd) !== undefined) declaresGenerated = true;
     if (
       fd.type === 'foreignKey' &&
       fd.related &&
@@ -335,12 +344,13 @@ export function runtimeModelEntry(
     normalizeTenantScopedConfig(tenantScoped),
   );
   Object.assign(fields, Object.fromEntries(scopedFields));
-  validateGeneratedFields(
-    new Map([
-      ...(parent ? getEffectiveFieldsSync(parent) : []),
-      ...Object.entries(fields),
-    ]),
-  );
+  if (declaresGenerated)
+    validateGeneratedFields(
+      new Map([
+        ...(parent ? getEffectiveFieldsSync(parent) : []),
+        ...Object.entries(fields),
+      ]),
+    );
   const methods: Record<string, MethodDefinition> =
     def.replaces && parent ? Object.fromEntries(parent.methods) : {};
   for (const [name, md] of Object.entries(def.methods ?? {})) {
@@ -394,22 +404,23 @@ export function runtimeModelEntry(
     ...(def.ui ? { ui: { ...def.ui } } : {}),
     ...(def.display ? { display: { ...def.display } } : {}),
   };
-  ObjectRegistry.validateGeneratedRegistration(
-    {
-      name: def.name,
-      qualifiedName,
-      packageName: def.packageName,
-      constructor: parent?.constructor ?? SmrtObject,
-      fields: new Map<string, RegisteredField>(
-        Object.entries(fields).map(([name, field]) => [name, { ...field }]),
-      ),
-      methods: new Map(),
-      config: decoratorConfig as SmartObjectConfig,
-      extends: parentKey,
-      tenantScopedConfig: normalizeTenantScopedConfig(tenantScoped),
-    },
-    Object.keys(def.fields ?? {}),
-  );
+  if (declaresGenerated)
+    ObjectRegistry.validateGeneratedRegistration(
+      {
+        name: def.name,
+        qualifiedName,
+        packageName: def.packageName,
+        constructor: parent?.constructor ?? SmrtObject,
+        fields: new Map<string, RegisteredField>(
+          Object.entries(fields).map(([name, field]) => [name, { ...field }]),
+        ),
+        methods: new Map(),
+        config: decoratorConfig as SmartObjectConfig,
+        extends: parentKey,
+        tenantScopedConfig: normalizeTenantScopedConfig(tenantScoped),
+      },
+      Object.keys(def.fields ?? {}),
+    );
   const label = (decoratorConfig.display as SmartObjectConfig['display'])
     ?.label;
   const displayLabelProjection = resolveDisplayLabelProjection(label);
@@ -601,6 +612,7 @@ export async function planRuntimeModelDDL(
   if (!registered) {
     throw new Error(`Run-time model ${qualifiedName} is not registered`);
   }
+  if (registered.generatedFields?.error) throw registered.generatedFields.error;
   const table = ObjectRegistry.getTableName(qualifiedName);
   if (!table) throw new Error(`No table for ${qualifiedName}`);
   const definition = ObjectRegistry.getAllSchemasAsDefinitions()[table];

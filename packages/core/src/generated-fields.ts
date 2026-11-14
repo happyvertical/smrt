@@ -551,7 +551,7 @@ export async function probeGeneratedColumns(
 export async function readGeneratedColumnCatalog(
   db: Parameters<typeof readGeneratedColumns>[0],
   engine: DatabaseEngine,
-  expected: boolean,
+  expected: boolean | (() => boolean),
   managedTables: ReadonlySet<string>,
 ): Promise<Map<string, Map<string, string>> | null> {
   if (engine !== 'postgres' && engine !== 'duckdb') return null;
@@ -584,7 +584,7 @@ export async function readGeneratedColumnCatalog(
       }
     }
   } catch (error) {
-    if (expected) throw error;
+    if (typeof expected === 'function' ? expected() : expected) throw error;
     // An unavailable optional catalog is unknown, never a per-table retry.
     catalog.clear();
   }

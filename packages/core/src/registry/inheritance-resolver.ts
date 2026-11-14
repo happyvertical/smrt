@@ -144,7 +144,6 @@ export function getInheritanceChain(
   const visited = new Set<RegisteredClass>(); // Cycle detection using object identity
   let current: RegisteredClass | undefined = registered;
   let circularDetected = false;
-  let complete = true;
   while (current) {
     // Cycle detection: use object identity to handle cases where distinct
     // classes share the same name (e.g., histrio:Performer vs smrt-video:Performer)
@@ -192,7 +191,6 @@ export function getInheritanceChain(
     // installed or the manifest is stale. We gracefully end the chain
     // here instead of mutating registry state during a read operation.
     if (!parent) {
-      complete = false;
       verboseLog(
         `[ObjectRegistry] Parent class '${current.extends}' not found ` +
           `while building inheritance chain. Ensure the parent package ` +
@@ -207,7 +205,7 @@ export function getInheritanceChain(
   // Caching a broken chain from a circular detection would cause all future
   // lookups to return incorrect inheritance data (e.g., ["VideoShot","VideoShot"]
   // instead of ["Content","VideoShot"]), breaking STI table resolution.
-  if (!pending && !circularDetected && complete) {
+  if (!pending && !circularDetected) {
     registered.inheritanceChain = chain;
     cache.set(className, chain);
   }
@@ -231,6 +229,8 @@ export async function getAllFields(
   if (!registered) {
     return new Map();
   }
+
+  if (registered.generatedFields?.error) throw registered.generatedFields.error;
 
   // Ensure manifest is loaded (handles external packages)
   await ObjectRegistry.ensureManifestLoaded(className);
@@ -418,7 +418,16 @@ export function getOwnTableFieldsSync(
 ): Map<string, RegisteredField> {
   const key = registered.qualifiedName ?? registered.name;
   if (ObjectRegistry.getSTIBase(key) !== null) return registered.fields;
-  return getEffectiveFieldsSync(registered);
+  const ancestors: Array<FieldInheritanceLink<InheritedFieldDefinition>> = [];
+  for (const ancestorName of getInheritanceChain(key)) {
+    if (ancestorName === key) continue;
+    const ancestor =
+      replacedDeclarations().get(ancestorName) ?? findClass(ancestorName);
+    if (!ancestor || ancestor === registered) continue;
+    ancestors.push(toLink(ancestor));
+  }
+  if (ancestors.length === 0) return registered.fields;
+  return resolveRegistryFields(registered, ancestors, 'own-table');
 }
 
 /** Effective ancestry without manifest I/O, including shared-table parents. */
@@ -427,7 +436,7 @@ export function getEffectiveFieldsSync(
 ): Map<string, RegisteredField> {
   const key = registered.qualifiedName ?? registered.name;
   const ancestors: Array<FieldInheritanceLink<InheritedFieldDefinition>> = [];
-  for (const ancestorName of getInheritanceChain(key)) {
+  for (const ancestorName of getInheritanceChain(key, registered)) {
     if (ancestorName === key) continue;
     const ancestor =
       replacedDeclarations().get(ancestorName) ?? findClass(ancestorName);

@@ -1401,11 +1401,16 @@ export class ManifestGenerator {
    */
   generateValidationRules(manifest: SmartObjectManifest): void {
     for (const [name, obj] of Object.entries(manifest.objects)) {
-      validateGeneratedFields(new Map(Object.entries(obj.fields)));
+      let generatedValidated = false;
       const rules: ValidationRule[] = [];
       let skippedAutoPopulatedTenantRequiredRule = false;
 
       for (const [fieldName, field] of Object.entries(obj.fields)) {
+        if (!generatedValidated && generatedExpression(field) !== undefined) {
+          validateGeneratedFields(new Map(Object.entries(obj.fields)));
+          generatedValidated = true;
+        }
+
         // Skip transient fields (they're not persisted, so no validation needed)
         if (
           field.transient ||

@@ -1,8 +1,8 @@
 import {
   GeneratedFieldError,
   generatedExpressionsMatch,
-  probeGeneratedColumns,
   readGeneratedColumnCatalog,
+  readGeneratedColumns,
 } from '../generated-fields.js';
 /**
  * Schema Differ
@@ -94,6 +94,7 @@ import {
 import type { DatabaseInterface, SqlTableSchemaInfo } from './types.js';
 
 const logger = createLogger({ level: 'info' });
+const NO_GENERATED_COLUMNS = new Map<string, string>();
 
 /**
  * DuckDB introspection reports an index column that needs quoting as its
@@ -742,11 +743,12 @@ export class SchemaComparer {
       this.generatedColumnCatalog = await readGeneratedColumnCatalog(
         this.db,
         this.engine,
-        Object.values(manifestSchemas).some((schema) =>
-          Object.values(schema.columns).some(
-            (column) => column.generated !== undefined,
+        () =>
+          Object.values(manifestSchemas).some((schema) =>
+            Object.values(schema.columns).some(
+              (column) => column.generated !== undefined,
+            ),
           ),
-        ),
         new Set(
           Object.values(manifestSchemas).map((schema) => schema.tableName),
         ),
@@ -2030,58 +2032,94 @@ export class SchemaComparer {
    *    inserts never supply it and will fail (`23502`); with `relaxColumns`
    *    that orphan gets an executable `DROP NOT NULL` where the engine allows.
    */
+  /** Discovery is allocated and executed only for a declared, recorded or missing SQLite column. */
+  private async probeSqliteColumns(
+    tableName: string,
+    dbSchema: SqlTableSchemaInfo,
+    dbColumnNames: Set<string>,
+  ): Promise<{ columns: Map<string, string>; failure?: { error: unknown } }> {
+    try {
+      const columns = await readGeneratedColumns(this.db, tableName, 'sqlite');
+      if (columns.size) {
+        const { rows } = await this.db.query(
+          'SELECT * FROM pragma_table_xinfo($1)',
+          [tableName],
+        );
+        for (const row of rows) {
+          const name = String(row.name);
+          if (columns.has(name) && !dbSchema.columns[name]) {
+            dbSchema.columns[name] = {
+              type: String(row.type),
+              notNull: Boolean(row.notnull),
+              primaryKey: Boolean(row.pk),
+              defaultValue: row.dflt_value,
+            };
+            dbColumnNames.add(name);
+          }
+        }
+      }
+      return { columns };
+    } catch (error) {
+      return { columns: NO_GENERATED_COLUMNS, failure: { error } };
+    }
+  }
+
   private async compareColumns(
     tableName: string,
     manifest: SchemaDefinition,
     dbSchema: SqlTableSchemaInfo,
   ): Promise<SchemaChange[]> {
     const changes: SchemaChange[] = [];
-    const generated =
+    const dbColumnNames = new Set(Object.keys(dbSchema.columns));
+    let generated =
       this.engine === 'postgres' || this.engine === 'duckdb'
         ? ((this.generatedColumnCatalog ??
             (await readGeneratedColumnCatalog(
               this.db,
               this.engine,
-              Object.values(manifest.columns).some(
-                (column) => column.generated !== undefined,
-              ),
+              () =>
+                Object.values(manifest.columns).some(
+                  (column) => column.generated !== undefined,
+                ),
               new Set([tableName]),
-            )))!.get(tableName) ?? new Map<string, string>())
-        : await probeGeneratedColumns(this.db, tableName, this.engine, {
-            expected: Object.values(manifest.columns).some(
-              (column) => column.generated !== undefined,
-            ),
-            previous: Object.values(
-              this.options.previousSchemas?.[tableName]?.columns ?? {},
-            ).some((column) => column.generated !== undefined),
-            missingColumns:
-              !this.options.previousSchemas?.[tableName] &&
-              Object.keys(manifest.columns).some(
-                (name) => !dbSchema.columns[name],
-              ),
-          });
-    if (this.engine === 'sqlite' && generated.size) {
-      const { rows } = await this.db.query(
-        `SELECT * FROM pragma_table_xinfo($1)`,
-        [tableName],
+            )))!.get(tableName) ?? NO_GENERATED_COLUMNS)
+        : NO_GENERATED_COLUMNS;
+    let sqliteProbe:
+      | Awaited<ReturnType<SchemaComparer['probeSqliteColumns']>>
+      | undefined;
+    const previous = this.options.previousSchemas?.[tableName];
+    if (
+      this.engine === 'sqlite' &&
+      previous &&
+      Object.values(previous.columns).some(
+        (column) => column.generated !== undefined,
+      )
+    ) {
+      sqliteProbe = await this.probeSqliteColumns(
+        tableName,
+        dbSchema,
+        dbColumnNames,
       );
-      for (const row of rows)
-        if (
-          generated.has(String(row.name)) &&
-          !dbSchema.columns[String(row.name)]
-        ) {
-          dbSchema.columns[String(row.name)] = {
-            type: String(row.type),
-            notNull: Boolean(row.notnull),
-            primaryKey: Boolean(row.pk),
-            defaultValue: row.dflt_value,
-          };
-        }
+      generated = sqliteProbe.columns;
     }
-    const dbColumnNames = new Set(Object.keys(dbSchema.columns));
 
     // Check for new and modified columns
     for (const [colName, colDef] of Object.entries(manifest.columns)) {
+      // Reuse the ordinary comparison loop: no declaration/missing-column pre-scan.
+      if (
+        this.engine === 'sqlite' &&
+        (colDef.generated !== undefined ||
+          (!previous && !dbColumnNames.has(colName)))
+      ) {
+        sqliteProbe ??= await this.probeSqliteColumns(
+          tableName,
+          dbSchema,
+          dbColumnNames,
+        );
+        generated = sqliteProbe.columns;
+        if (colDef.generated !== undefined && sqliteProbe.failure)
+          throw sqliteProbe.failure.error;
+      }
       if (!dbColumnNames.has(colName)) {
         // Column doesn't exist - add it
         changes.push(

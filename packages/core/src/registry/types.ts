@@ -1170,6 +1170,8 @@ export interface RegisteredClass {
   extends?: string;
   /** Unqualified generated ancestry must wait for this exact decorator parent. */
   generatedParentConstructor?: typeof SmrtObject;
+  /** Feature state is absent for ordinary models; use sites only read this record. */
+  generatedFields?: import('./generated-state.js').GeneratedClassState;
   /** Generic type arg from `SmrtCollection<X>` — marks collection classes. */
   extendsTypeArg?: string;
   /**

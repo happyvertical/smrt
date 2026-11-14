@@ -249,9 +249,10 @@ function createBaseColumns(
  * ```
  */
 export function getSchema(name: string): SchemaDefinition | undefined {
-  ObjectRegistry.assertGeneratedAncestry(name);
   // Issue #951: Use findClass for multi-strategy lookup
   const registered = findClass(name);
+  if (registered?.generatedFields?.error)
+    throw registered.generatedFields.error;
   return registered ? mappedSchema(registered) : undefined;
 }
 
@@ -699,6 +700,7 @@ function buildMergedTableSchemas(
   const contributorsByTable = new Map<string, TableContributor[]>();
 
   for (const [className, registered] of getClasses()) {
+    if (registered.generatedFields?.error) continue;
     // Collection classes have no table of their own; their schemas carry
     // collection properties (loaded, options, ...) rather than columns.
     if (
@@ -744,10 +746,6 @@ function buildMergedTableSchemas(
   for (let next = 0; next < pending.length; next++) {
     const tableName = pending[next];
     const contributors = contributorsByTable.get(tableName) ?? [];
-    for (const { registered } of contributors)
-      ObjectRegistry.assertGeneratedAncestry(
-        registered.qualifiedName ?? registered.name,
-      );
     assertSingleTableFamily(tableName, contributors);
     const orderedContributors = sortTableContributors(contributors);
     for (const contributor of orderedContributors) {

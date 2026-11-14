@@ -108,28 +108,23 @@ export function generateOpenAPISpec(config: OpenAPIConfig = {}): OpenAPISpec {
  */
 /** Allocate only generated write shapes, reserving every real model/list name. */
 function generatedInputSchemaNames(): Map<string, string> {
-  const classes = ObjectRegistry.getAllClasses();
+  const generatedClasses = ObjectRegistry.getGeneratedClasses();
+  if (!generatedClasses.size) return new Map();
   const reserved = new Set<string>();
-  for (const [key, info] of classes) {
-    const name = info.name || key;
-    reserved.add(name);
-    reserved.add(`${name}List`);
-  }
   const names = new Map<string, string>();
-  for (const [key, info] of [...classes].sort(([left], [right]) =>
+  for (const [key, info] of [...generatedClasses].sort(([left], [right]) =>
     left.localeCompare(right),
   )) {
     if (
-      ObjectRegistry.getConfig(key).api === false ||
-      ![...ObjectRegistry.getFields(key).values()].some(
-        (field) => generatedExpression(field) !== undefined,
-      )
+      info.generatedFields?.error ||
+      ObjectRegistry.getConfig(key).api === false
     )
       continue;
     const stem = `${info.name || key}Input`;
     let name = stem,
       suffix = 2;
-    while (reserved.has(name)) name = `${stem}${suffix++}`;
+    while (reserved.has(name) || ObjectRegistry.getClass(name))
+      name = `${stem}${suffix++}`;
     reserved.add(name);
     names.set(key, name);
   }
@@ -143,6 +138,7 @@ function generateSchemas(
   const registeredClasses = ObjectRegistry.getAllClasses();
 
   for (const [key, classInfo] of registeredClasses) {
+    if (classInfo.generatedFields?.error) continue;
     // Issue #951: Use simple name for schema keys, not the qualified map key
     const name = classInfo.name || key;
     // `api: false` disables REST generation (see rest.ts) and is already
@@ -280,6 +276,7 @@ function generatePaths(
   const registeredClasses = ObjectRegistry.getAllClasses();
 
   for (const [key, classInfo] of registeredClasses) {
+    if (classInfo.generatedFields?.error) continue;
     if (
       exposureContext &&
       !isRuntimeModelEnabled(
