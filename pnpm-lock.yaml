@@ -2760,6 +2760,9 @@ importers:
       '@happyvertical/smrt-analytics':
         specifier: workspace:*
         version: link:../analytics
+      '@happyvertical/smrt-app-mcp':
+        specifier: workspace:*
+        version: link:../smrt-app-mcp
       '@happyvertical/smrt-approvals':
         specifier: workspace:*
         version: link:../approvals
