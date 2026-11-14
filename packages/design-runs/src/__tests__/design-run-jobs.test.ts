@@ -742,6 +742,29 @@ describe('durable design job bridge', () => {
     expect((await end(run.id)).status).toBe('done');
   });
 
+  it('parks a transient handler checkpoint-load failure and resumes after the read recovers', async () => {
+    const bound = install();
+    const run = await bound.start(startInput());
+    const query = db.query.bind(db);
+    let fail = true;
+    const read = vi.spyOn(db, 'query').mockImplementation((sql, ...values) => {
+      if (fail && sql.startsWith('SELECT payload')) {
+        fail = false;
+        return Promise.reject(new Error('Transient checkpoint read failure'));
+      }
+      return query(sql, ...values);
+    });
+    try {
+      await worker();
+      await jobSettled(run.id);
+      expect((await bound.get(run.id)).status).toBe('stopped');
+      await bound.resume(run.id);
+      expect((await end(run.id)).status).toBe('done');
+    } finally {
+      read.mockRestore();
+    }
+  });
+
   it('replays a completed run job without executing any pass again', async () => {
     const execute = vi.fn<DesignRunDriverOptions['executePass']>(async () => ({
       output: { value: 1 },
