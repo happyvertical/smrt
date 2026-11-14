@@ -5,10 +5,10 @@ description: "Validated local, self-hosted, and cloud runtime composition for s-
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-14T09:10:15Z"
+  at: "2026-11-14T09:14:54Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:9a84994abbc07a2ed7c9f50b8ea53f9dd30462b884ae31dbb03d2acd5d7071d2"
+source_revision: "sha256:afc4e0bbf853e1a2e2b244ecceab2ceb4a5c96585c4fb05b9e986219a2a2c85a"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/package.json"
@@ -23,12 +23,15 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/agents/desktop-signin.md"
     title: "@happyvertical/smrt-app-runtime packages/app-runtime/agents/desktop-signin.md"
   - id: "agents-4"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/agents/keychain-vault-key-store.md"
+    title: "@happyvertical/smrt-app-runtime packages/app-runtime/agents/keychain-vault-key-store.md"
+  - id: "agents-5"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/agents/local-schema.md"
     title: "@happyvertical/smrt-app-runtime packages/app-runtime/agents/local-schema.md"
-  - id: "agents-5"
+  - id: "agents-6"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/agents/owner-approvals.md"
     title: "@happyvertical/smrt-app-runtime packages/app-runtime/agents/owner-approvals.md"
-  - id: "agents-6"
+  - id: "agents-7"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/agents/windows-custody.md"
     title: "@happyvertical/smrt-app-runtime packages/app-runtime/agents/windows-custody.md"
 ---
@@ -47,6 +50,7 @@ sources:
 - `packages/app-runtime/AGENTS.md`
 - `packages/app-runtime/README.md`
 - `packages/app-runtime/agents/desktop-signin.md`
+- `packages/app-runtime/agents/keychain-vault-key-store.md`
 - `packages/app-runtime/agents/local-schema.md`
 - `packages/app-runtime/agents/owner-approvals.md`
 - `packages/app-runtime/agents/windows-custody.md`

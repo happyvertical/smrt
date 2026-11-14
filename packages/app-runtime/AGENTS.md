@@ -32,10 +32,8 @@ Application infrastructure composition for the validated runtime profiles in
   (injected `vaultKeyStore`, else the keychain-wrapped store when the desktop
   wrapper sets `SMRT_DESKTOP_KEYCHAIN=1`, else the file store in a
   `.smrt-keys-<root name>` sibling of the data root), under the initialization
-  lock. `src/keychain-vault-key-store.ts` seals items under a key in the OS
-  keychain and fails closed (never falls back, never re-keys) when sealed items
-  exist without a readable key; keychain tests use fakes only, never the real
-  keychain. Hex for
+  lock; the keychain store fails closed:
+  [agents/keychain-vault-key-store.md](agents/keychain-vault-key-store.md). Hex for
   `SecretService.create({ masterKeyProvider })` only; errors carry no key,
   path or cause. Deployed profiles return `null` (env var only); never add a
   generated or default key outside the local profile.
