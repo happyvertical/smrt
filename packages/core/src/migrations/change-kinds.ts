@@ -171,6 +171,13 @@ export const SCHEMA_CHANGE_KINDS = {
       ),
     },
   },
+  'column.generated-replace-dependents': {
+    type: 'alter_column',
+    engines: stop(
+      'loses-data',
+      'Replacing the calculated column drops what the database ties to it (indexes, constraints, comments, privileges, views, triggers). smrt puts back only what the manifest declares; the rest would be lost. Drop or move each named object first, or replace the column by hand and recreate it.',
+    ),
+  },
   'column.generated-from-ordinary': {
     type: 'alter_column',
     engines: stop(

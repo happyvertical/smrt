@@ -1,4 +1,5 @@
 import {
+  compileGeneratedExpression,
   GeneratedFieldError,
   generatedExpressionsMatch,
   readGeneratedColumnCatalog,
@@ -119,6 +120,33 @@ function expressionColumns(
 }
 
 const NO_GENERATED_COLUMNS = new Map<string, string>();
+
+/** Whether SQL text names `column` as an identifier (bare or double-quoted). */
+function sqlNamesColumn(sql: string, column: string): boolean {
+  const escaped = column.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(
+    `(^|[^A-Za-z0-9_"])("${escaped}"|${escaped})($|[^A-Za-z0-9_"])`,
+  ).test(sql);
+}
+
+/**
+ * The declared indexes a column replacement drops and re-creates: those over
+ * the column and those whose predicate reads it. A predicate that only
+ * mentions the name in a literal re-creates an index it did not need to,
+ * which is harmless.
+ */
+function indexesReadingColumn(
+  manifest: SchemaDefinition,
+  column: string,
+): IndexDefinition[] {
+  return manifest.indexes.filter(
+    (index) =>
+      index.columns.includes(column) ||
+      (index.where !== undefined &&
+        index.where !== null &&
+        sqlNamesColumn(index.where, column)),
+  );
+}
 
 /**
  * DuckDB introspection reports an index column that needs quoting as its
@@ -653,6 +681,12 @@ export class SchemaComparer {
   >();
   /** #3008: per-table single-column unique targets, set by compareTable. */
   private uniqueTargets = new Map<string, Set<string>>();
+  /**
+   * Declared shared-table CHECKs that a calculated-column replacement drops
+   * with its column (PostgreSQL), per table; `compareTableChecks` adds them
+   * back in the same run. Set by `compareColumns`, reset by `compareTable`.
+   */
+  private checksDroppedWithColumn = new Map<string, Set<string>>();
 
   private liveSchemas = new Map<
     string,
@@ -962,6 +996,7 @@ export class SchemaComparer {
     this.assertStiConflictSupport(manifest);
     const changes: SchemaChange[] = [];
     this.batchIndexes.delete(tableName);
+    this.checksDroppedWithColumn.delete(tableName);
     // #3008: single-column unique targets (unique indexes / conflict
     // columns) — a backfill for one of these must be distinct per row.
     this.uniqueTargets.set(
@@ -1006,7 +1041,12 @@ export class SchemaComparer {
         dbSchema,
         manifestSchemas,
       )),
-      ...(await this.compareTableChecks(tableName, manifest, dbSchema)),
+      ...(await this.compareTableChecks(
+        tableName,
+        manifest,
+        dbSchema,
+        columnChanges,
+      )),
     ];
     // #2370: SQLite cannot change a column's type in place. Turn the
     // "requires table recreation" placeholders those comparisons emit into an
@@ -1713,6 +1753,7 @@ export class SchemaComparer {
     tableName: string,
     manifest: SchemaDefinition,
     dbSchema?: SqlTableSchemaInfo,
+    columnChanges: readonly SchemaChange[] = [],
   ): Promise<SchemaChange[]> {
     if (!this.ddlStrategy.supportsTableChecks()) return [];
     const declared = manifest.checks ?? [];
@@ -1735,31 +1776,27 @@ export class SchemaComparer {
     } catch {
       return [];
     }
+    // A calculated-column replacement drops these with the column; they are
+    // added back after it, in the same run.
+    const droppedWithColumn =
+      this.checksDroppedWithColumn.get(tableName) ?? new Set<string>();
     const quotedTable = this.quoteIdentifier(tableName);
     const changes: SchemaChange[] = [];
+    let source: string | undefined;
     for (const check of declared) {
-      if (live.includes(check.name)) continue;
+      const dropped = droppedWithColumn.has(check.name);
+      if (live.includes(check.name) && !dropped) continue;
       const column = check.columns[0];
       const add = `ALTER TABLE ${quotedTable} ADD CONSTRAINT ${this.quoteIdentifier(check.name)} CHECK (${check.expression})`;
-      // A column this same migration adds is not in the live table, and a
-      // query naming it fails; on PostgreSQL that failure aborts a transaction
-      // the caller owns (25P02), even when it is caught. No probe is sent for
-      // it. The column is added NULL for every existing row unless the
-      // manifest gives it a default, so the rule is judged with the column
-      // supplied as NULL, or as its default, in place of the missing one.
-      const columnMissing = dbSchema !== undefined && !dbSchema.columns[column];
-      const manifestDefault = manifest.columns[column]?.defaultValue;
-      let source = quotedTable;
-      if (columnMissing) {
-        const supplied =
-          manifestDefault === undefined || manifestDefault === null
-            ? 'NULL'
-            : this.ddlStrategy.formatDefaultValue(
-                manifestDefault,
-                manifest.columns[column]?.type ?? 'TEXT',
-              );
-        source = `(SELECT *, ${supplied} AS ${this.quoteIdentifier(column)} FROM ${quotedTable}) AS probe`;
-      }
+      // The probe reads the rows as they will be after this run's column
+      // changes, never a column the live table lacks: on PostgreSQL that
+      // query fails and aborts a transaction the caller owns (25P02).
+      source ??= this.checkProbeSource(
+        tableName,
+        manifest,
+        dbSchema,
+        columnChanges,
+      );
       const result = await this.db.query(
         `SELECT 1 FROM ${source} WHERE NOT (${check.expression}) LIMIT 1`,
       );
@@ -1770,7 +1807,10 @@ export class SchemaComparer {
         table: tableName,
         name: column,
         alteration: 'set_check',
-        mismatch: { expected: `CHECK (${check.expression})`, actual: '(none)' },
+        mismatch: {
+          expected: `CHECK (${check.expression})`,
+          actual: dropped ? '(dropped with the replaced column)' : '(none)',
+        },
         ...(violated
           ? {
               sql: `-- ${tableName}.${column} is required for some classes but live rows of those classes hold NULL`,
@@ -1802,6 +1842,209 @@ export class SchemaComparer {
       });
     }
     return changes;
+  }
+
+  /**
+   * The rows a shared-table CHECK probe reads (PostgreSQL): the live table,
+   * with every column this run adds supplied as the value existing rows will
+   * hold once it is added, and every calculated column this run replaces
+   * supplied as its new expression. A rule may read any declared column (the
+   * discriminator `_meta_type` as well as the hardened column), so every
+   * missing one is supplied, not only the rule's own.
+   *
+   * Existing rows of an added column hold: the declared backfill when the
+   * column is added NOT NULL from one; otherwise the declared default; else
+   * NULL. A calculated column is computed from the others, in an outer layer,
+   * since PostgreSQL never lets one calculated column read another.
+   */
+  private checkProbeSource(
+    tableName: string,
+    manifest: SchemaDefinition,
+    dbSchema: SqlTableSchemaInfo | undefined,
+    columnChanges: readonly SchemaChange[],
+  ): string {
+    const quotedTable = this.quoteIdentifier(tableName);
+    // Without the live columns there is nothing known to be missing.
+    if (!dbSchema) return quotedTable;
+    const replaced = new Set(
+      columnChanges
+        .filter(
+          (change) =>
+            change.kindHint === 'column.generated-replace' ||
+            change.kindHint === 'column.generated-from-ordinary',
+        )
+        .map((change) => change.name),
+    );
+    const supplied: string[] = [];
+    const calculated: string[] = [];
+    for (const [name, column] of Object.entries(manifest.columns)) {
+      const isLive = dbSchema.columns[name] !== undefined;
+      if (isLive && !replaced.has(name)) continue;
+      const alias = this.quoteIdentifier(name);
+      if (column.generated !== undefined) {
+        calculated.push(
+          `(${compileGeneratedExpression(column.generated, this.engine, column.generatedInputTypes)}) AS ${alias}`,
+        );
+      } else if (!isLive) {
+        supplied.push(
+          `${this.addedColumnExistingValue(name, column, columnChanges)} AS ${alias}`,
+        );
+      }
+    }
+    if (supplied.length === 0 && calculated.length === 0) return quotedTable;
+    const kept = Object.keys(dbSchema.columns)
+      .filter((name) => !replaced.has(name))
+      .map((name) => this.quoteIdentifier(name));
+    const rows = `(SELECT ${[...kept, ...supplied].join(', ')} FROM ${quotedTable}) AS smrt_probe_rows`;
+    return calculated.length === 0
+      ? rows
+      : `(SELECT smrt_probe_rows.*, ${calculated.join(', ')} FROM ${rows}) AS smrt_probe`;
+  }
+
+  /** SQL for the value an existing row holds once this run adds `column`. */
+  private addedColumnExistingValue(
+    name: string,
+    column: ColumnDefinition,
+    columnChanges: readonly SchemaChange[],
+  ): string {
+    const type: SQLDataType = isValidSQLDataType(column.type)
+      ? column.type
+      : 'TEXT';
+    const cast = (sql: string) =>
+      `CAST(${sql} AS ${this.ddlStrategy.mapType(type)})`;
+    if (column.notNull && column.backfill) {
+      // The backfill reads only live columns once the add is planned (its
+      // probe refuses the column otherwise). A refused column is never
+      // added and stops the run, so NULL stands in for it.
+      const add = columnChanges.find(
+        (change) => change.type === 'add_column' && change.name === name,
+      );
+      return add && hasExecutableSchemaSql(add)
+        ? cast(`(${column.backfill})`)
+        : cast('NULL');
+    }
+    if (column.defaultValue !== undefined && column.defaultValue !== null)
+      return cast(
+        this.ddlStrategy.formatDefaultValue(column.defaultValue, type),
+      );
+    return cast('NULL');
+  }
+
+  /**
+   * What PostgreSQL drops with `tableName.colName` (review r7, C1). Read from
+   * `pg_depend`, the catalog `DROP COLUMN` follows. Returns the declared
+   * shared-table CHECKs to add back, and a label for each object the
+   * replacement would lose: everything that is neither re-created by the
+   * replacement (its own expression, its NOT NULL/UNIQUE/CHECK clause, the
+   * declared indexes over it) nor a CHECK `compareTableChecks` manages.
+   */
+  private async postgresColumnDependents(
+    tableName: string,
+    colName: string,
+    colDef: ColumnDefinition,
+    manifest: SchemaDefinition,
+    restoredIndexes: readonly IndexDefinition[],
+  ): Promise<{ declaredChecks: string[]; lost: string[] }> {
+    const table = this.quoteLiteral(tableName);
+    const column = this.quoteLiteral(colName);
+    const target =
+      `JOIN pg_class AS t ON t.oid = a.attrelid ` +
+      `JOIN pg_namespace AS ns ON ns.oid = t.relnamespace ` +
+      `WHERE ns.nspname = 'public' AND t.relname = ${table} AND a.attname = ${column}`;
+    const result = await this.db.query(
+      `SELECT d.classid::regclass::text AS catalog, ` +
+        `con.conname AS constraint_name, con.contype AS constraint_type, ` +
+        `cardinality(con.conkey) AS constraint_keys, ` +
+        `rel.relname AS relation_name, rel.relkind AS relation_kind, ` +
+        `ad.adnum AS expression_column, a.attnum AS column_number, ` +
+        `view_rel.relname AS view_name, trg.tgname AS trigger_name ` +
+        `FROM pg_attribute AS a ` +
+        `JOIN pg_depend AS d ON d.refclassid = 'pg_class'::regclass ` +
+        `AND d.refobjid = a.attrelid AND d.refobjsubid = a.attnum ` +
+        `LEFT JOIN pg_constraint AS con ON d.classid = 'pg_constraint'::regclass AND con.oid = d.objid ` +
+        `LEFT JOIN pg_class AS rel ON d.classid = 'pg_class'::regclass AND rel.oid = d.objid ` +
+        `LEFT JOIN pg_attrdef AS ad ON d.classid = 'pg_attrdef'::regclass AND ad.oid = d.objid ` +
+        `LEFT JOIN pg_rewrite AS rw ON d.classid = 'pg_rewrite'::regclass AND rw.oid = d.objid ` +
+        `LEFT JOIN pg_class AS view_rel ON view_rel.oid = rw.ev_class ` +
+        `LEFT JOIN pg_trigger AS trg ON d.classid = 'pg_trigger'::regclass AND trg.oid = d.objid ` +
+        target,
+    );
+    const declared = new Set(
+      (manifest.checks ?? []).map((check) => check.name),
+    );
+    const restored = new Set(restoredIndexes.map((index) => index.name));
+    const ownCheckPrefix = `${tableName}_${colName}_check`;
+    const declaredChecks: string[] = [];
+    const lost: string[] = [];
+    const rows = (result.rows ?? []) as Array<Record<string, unknown>>;
+    const text = (value: unknown) =>
+      value === null || value === undefined ? undefined : String(value);
+    // The re-added column brings back its own UNIQUE constraint and that
+    // constraint's index, under the same names.
+    const ownUnique = new Set<string>();
+    for (const row of rows) {
+      const name = text(row.constraint_name);
+      if (
+        name &&
+        text(row.constraint_type) === 'u' &&
+        Number(row.constraint_keys) === 1 &&
+        colDef.unique
+      )
+        ownUnique.add(name);
+    }
+    for (const row of rows) {
+      const catalog = text(row.catalog);
+      if (catalog === 'pg_constraint') {
+        const name = text(row.constraint_name) ?? '(unnamed)';
+        const type = text(row.constraint_type);
+        if (type === 'c' && declared.has(name)) declaredChecks.push(name);
+        else if (type === 'c' && name.startsWith(STI_CHECK_PREFIX)) continue;
+        else if (
+          type === 'c' &&
+          colDef.check &&
+          Number(row.constraint_keys) === 1 &&
+          name.startsWith(ownCheckPrefix)
+        )
+          continue;
+        else if (ownUnique.has(name)) continue;
+        else
+          lost.push(
+            `${type === 'f' ? 'foreign key' : type === 'u' ? 'UNIQUE constraint' : type === 'c' ? 'CHECK constraint' : 'constraint'} ${name}`,
+          );
+      } else if (catalog === 'pg_class') {
+        const name = text(row.relation_name) ?? '(unnamed)';
+        const kind = text(row.relation_kind);
+        if (
+          (kind === 'i' || kind === 'I') &&
+          (restored.has(name) || ownUnique.has(name))
+        )
+          continue;
+        lost.push(
+          kind === 'i' || kind === 'I' ? `index ${name}` : `relation ${name}`,
+        );
+      } else if (catalog === 'pg_attrdef') {
+        if (Number(row.expression_column) === Number(row.column_number))
+          continue;
+        lost.push('the default or expression of another column');
+      } else if (catalog === 'pg_rewrite') {
+        lost.push(`view ${text(row.view_name) ?? '(unnamed)'}`);
+      } else if (catalog === 'pg_trigger') {
+        lost.push(`trigger ${text(row.trigger_name) ?? '(unnamed)'}`);
+      } else {
+        lost.push(`a ${catalog ?? 'catalog'} object`);
+      }
+    }
+    // Neither is in pg_depend: a column comment and column-level grants.
+    const extra = await this.db.query(
+      `SELECT col_description(a.attrelid, a.attnum) IS NOT NULL AS has_comment, ` +
+        `a.attacl IS NOT NULL AS has_grants FROM pg_attribute AS a ${target}`,
+    );
+    const facts = (extra.rows?.[0] ?? {}) as Record<string, unknown>;
+    if (facts.has_comment === true || facts.has_comment === 't')
+      lost.push('the column comment');
+    if (facts.has_grants === true || facts.has_grants === 't')
+      lost.push('column-level privileges');
+    return { declaredChecks, lost: [...new Set(lost)] };
   }
 
   private async compareForeignKeys(
@@ -2558,9 +2801,7 @@ export class SchemaComparer {
               });
               continue;
             }
-            const indexes = manifest.indexes.filter((index) =>
-              index.columns.includes(colName),
-            );
+            const indexes = indexesReadingColumn(manifest, colName);
             const additions = await this.generateAddColumnChanges(
               tableName,
               colName,
@@ -2633,9 +2874,7 @@ export class SchemaComparer {
               );
             const table = this.quoteIdentifier(tableName);
             const column = this.quoteIdentifier(colName);
-            const indexes = manifest.indexes.filter((index) =>
-              index.columns.includes(colName),
-            );
+            const indexes = indexesReadingColumn(manifest, colName);
             const additions = await this.generateAddColumnChanges(
               tableName,
               colName,
@@ -2658,6 +2897,46 @@ export class SchemaComparer {
               ),
               ...this.ddlStrategy.generateIndexes({ ...manifest, indexes }),
             ];
+            // DROP COLUMN also drops what PostgreSQL ties to the column.
+            // Declared shared-table CHECKs go back in this run
+            // (`compareTableChecks`); anything else smrt cannot put back
+            // stops the plan by name instead of being lost (review r7).
+            if (actual !== undefined && this.engine === 'postgres') {
+              const dependents = await this.postgresColumnDependents(
+                tableName,
+                colName,
+                colDef,
+                manifest,
+                indexes,
+              );
+              if (dependents.lost.length > 0) {
+                const lost = dependents.lost.join(', ');
+                changes.push({
+                  type: 'alter_column',
+                  table: tableName,
+                  name: colName,
+                  column: colDef,
+                  sql: `-- replacing calculated ${tableName}.${colName} would drop: ${lost}`,
+                  kindHint: 'column.generated-replace-dependents',
+                  advisory: {
+                    severity: 'warning',
+                    message: `Replacing calculated ${tableName}.${colName} would drop, and smrt would not put back: ${lost}.`,
+                  },
+                  mismatch: {
+                    expected: JSON.stringify(colDef.generated),
+                    actual,
+                  },
+                });
+                continue;
+              }
+              if (dependents.declaredChecks.length > 0) {
+                const dropped =
+                  this.checksDroppedWithColumn.get(tableName) ??
+                  new Set<string>();
+                for (const name of dependents.declaredChecks) dropped.add(name);
+                this.checksDroppedWithColumn.set(tableName, dropped);
+              }
+            }
             changes.push({
               type: 'alter_column',
               table: tableName,

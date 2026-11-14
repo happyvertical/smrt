@@ -21,6 +21,7 @@
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ObjectRegistry } from '../../registry.js';
+import { stiHardeningChecks } from '../../schema/sti-hardening.js';
 import type { SchemaDefinition } from '../../schema/types.js';
 import { getTestDatabase } from '../../testing/database.js';
 import { registerBuildSchema } from '../build-schema.js';
@@ -248,3 +249,209 @@ describe.each(ENGINES)('calculated columns on %s', (engine) => {
     });
   });
 });
+
+/**
+ * Review r7 (C1): on PostgreSQL, replacing a calculated column (DROP COLUMN,
+ * ADD COLUMN) also drops every object PostgreSQL ties to that column. The
+ * shared-table CHECKs smrt declares are put back in the same atomic run;
+ * anything smrt did not declare, and so cannot put back, stops the plan by
+ * name instead of being lost.
+ */
+describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
+  'replacing a calculated column keeps what PostgreSQL ties to it',
+  () => {
+    const STRICT = '@app/a:Strict';
+    const [rule] = stiHardeningChecks(
+      'items',
+      (name) => name,
+      [],
+      [
+        {
+          className: STRICT,
+          fields: [['total', { type: 'integer', required: true }]],
+        },
+      ],
+    );
+    const coalesced = {
+      op: 'mul',
+      left: { op: 'coalesce', operands: [{ col: 'qty' }, { value: 0 }] },
+      right: { value: 2 },
+    } as unknown as NonNullable<
+      SchemaDefinition['columns'][string]['generated']
+    >;
+    const shared = (
+      generated: NonNullable<SchemaDefinition['columns'][string]['generated']>,
+      withRule = true,
+    ): SchemaDefinition => ({
+      ...table({
+        _meta_type: { type: 'TEXT' },
+        qty: { type: 'INTEGER' },
+        total: { type: 'INTEGER', generated },
+      }),
+      ...(withRule ? { checks: [rule] } : {}),
+    });
+
+    let db: DatabaseInterface;
+    let run = 0;
+    beforeEach(async () => {
+      db = await getTestDatabase({
+        type: 'pglite',
+        classes: [],
+        includeSystemTables: false,
+      });
+      registerBuildSchema({
+        fingerprint: 'stamp',
+        tables: { items: ['@app/a'] },
+        packages: ['@app/a'],
+        source: 'registered',
+      });
+    });
+    afterEach(async () => {
+      registerBuildSchema(undefined);
+      vi.restoreAllMocks();
+      await db.close?.();
+    });
+    const declare = (schema: SchemaDefinition) => {
+      vi.restoreAllMocks();
+      vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+        items: schema,
+      });
+    };
+    const migrate = () =>
+      migrateSmrtSchemas({
+        db,
+        packageName: '@app/a',
+        engineHint: 'postgres',
+        name: `calc_check_${++run}`,
+        relaxColumns: true,
+        atomic: true,
+        postgresSafe: false,
+        useConcurrentIndexes: false,
+      });
+    const liveChecks = async () =>
+      (
+        await db.query(
+          "SELECT conname FROM pg_constraint WHERE conrelid = 'items'::regclass AND contype = 'c' ORDER BY conname",
+        )
+      ).rows.map((row) => String(row.conname));
+    const totals = async () =>
+      (await db.query('SELECT id, total FROM items ORDER BY id')).rows.map(
+        (row) => [row.id, row.total === null ? null : Number(row.total)],
+      );
+    const insertStrict = (id: string, qty: number | null) =>
+      db.query('INSERT INTO items (id, _meta_type, qty) VALUES ($1, $2, $3)', [
+        id,
+        STRICT,
+        qty,
+      ]);
+
+    it('puts back the shared-table CHECK that reads the column', async () => {
+      declare(shared(times('qty', { value: 2 })));
+      expect(await migrate()).toMatchObject({ applied: true });
+      await insertStrict('a', 3);
+      expect(await liveChecks()).toEqual([rule.name]);
+
+      declare(shared(times('qty', { value: 5 })));
+      expect(await migrate()).toMatchObject({ applied: true, refused: false });
+      expect(await totals()).toEqual([['a', 15]]);
+      expect(await liveChecks()).toEqual([rule.name]);
+      await expect(insertStrict('b', null)).rejects.toThrow(rule.name);
+      expect(await migrate()).toMatchObject({
+        applied: false,
+        refused: false,
+        stops: [],
+      });
+    });
+
+    it('judges a rule added in the same run against the new values', async () => {
+      // Live: qty * 2, so a Strict row with no qty holds NULL. The new
+      // expression gives it 0, so the new rule holds for every row.
+      declare(shared(times('qty', { value: 2 }), false));
+      expect(await migrate()).toMatchObject({ applied: true });
+      await insertStrict('a', null);
+      declare(shared(coalesced));
+      expect(await migrate()).toMatchObject({ applied: true, refused: false });
+      expect(await totals()).toEqual([['a', 0]]);
+      expect(await liveChecks()).toEqual([rule.name]);
+    });
+
+    it('stops a rule added in the same run that the new values would break', async () => {
+      declare(shared(coalesced, false));
+      expect(await migrate()).toMatchObject({ applied: true });
+      await insertStrict('a', null);
+      declare(shared(times('qty', { value: 2 })));
+      const result = await migrate();
+      expect(result).toMatchObject({ applied: false, refused: true });
+      expect(
+        result.stops.map((stop) => `${stop.reason}:${stop.kind}`),
+      ).toContain('invents-data:check.violated');
+      expect(await totals()).toEqual([['a', 0]]);
+      expect(await liveChecks()).toEqual([]);
+    });
+
+    it('does not stop for what the replacement re-creates: UNIQUE, declared and partial indexes', async () => {
+      const indexed = (
+        generated: NonNullable<
+          SchemaDefinition['columns'][string]['generated']
+        >,
+      ): SchemaDefinition => {
+        const schema = shared(generated);
+        schema.columns.total = { ...schema.columns.total, unique: true };
+        schema.indexes = [
+          { name: 'items_total_idx', columns: ['total'] },
+          {
+            name: 'items_qty_positive_idx',
+            columns: ['qty'],
+            where: 'total > 0',
+          },
+        ];
+        return schema;
+      };
+      declare(indexed(times('qty', { value: 2 })));
+      expect(await migrate()).toMatchObject({ applied: true });
+      await insertStrict('a', 3);
+      declare(indexed(times('qty', { value: 5 })));
+      expect(await migrate()).toMatchObject({ applied: true, refused: false });
+      expect(await totals()).toEqual([['a', 15]]);
+      const indexes = (
+        await db.query(
+          "SELECT indexname FROM pg_indexes WHERE tablename = 'items' ORDER BY indexname",
+        )
+      ).rows.map((row) => String(row.indexname));
+      expect(indexes).toEqual(
+        expect.arrayContaining(['items_total_idx', 'items_qty_positive_idx']),
+      );
+      expect(await liveChecks()).toEqual([rule.name]);
+      expect(await migrate()).toMatchObject({
+        applied: false,
+        refused: false,
+        stops: [],
+      });
+    });
+
+    it('stops, naming them, when objects smrt did not declare read the column', async () => {
+      declare(shared(times('qty', { value: 2 })));
+      expect(await migrate()).toMatchObject({ applied: true });
+      await insertStrict('a', 3);
+      await db.query('CREATE INDEX items_total_hand ON items ((total + 1))');
+      await db.query(
+        'ALTER TABLE items ADD CONSTRAINT items_total_hand_ck CHECK (total >= 0)',
+      );
+      await db.query("COMMENT ON COLUMN items.total IS 'kept by hand'");
+      declare(shared(times('qty', { value: 5 })));
+      const result = await migrate();
+      expect(result).toMatchObject({ applied: false, refused: true });
+      const stop = result.stops.find(
+        (item) => item.kind === 'column.generated-replace-dependents',
+      );
+      expect(stop?.reason).toBe('loses-data');
+      expect(stop?.message).toContain('items_total_hand');
+      expect(stop?.message).toContain('items_total_hand_ck');
+      expect(stop?.message).toContain('comment');
+      expect(await totals()).toEqual([['a', 6]]);
+      expect(await liveChecks()).toEqual(
+        ['items_total_hand_ck', rule.name].sort(),
+      );
+    });
+  },
+);

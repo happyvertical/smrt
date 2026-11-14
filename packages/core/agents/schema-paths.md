@@ -449,7 +449,23 @@ ordinary column calculated stops on every engine
 for another column copies only ordinary columns and keeps the calculated one
 calculated. PostgreSQL compares expression renderings with EXPLAIN on the live
 table and sends no probe for an expression that reads a column the same run
-adds. Tests: `migrations/__tests__/calculated-column-kinds.test.ts`.
+adds. A changed expression is `DROP COLUMN` plus `ADD COLUMN`, and on
+PostgreSQL the drop takes everything tied to the column with it (read from
+`pg_depend`): the replacement re-creates the column's own clauses and the
+declared indexes over it or whose predicate reads it, and `compareTableChecks`
+adds back every declared shared-table `CHECK` it dropped in the same atomic
+run, judged against the new values. Anything else (an index, constraint, view
+or trigger smrt did not declare, a column comment, column grants) stops the
+plan as `column.generated-replace-dependents`, naming each object. SQLite's
+`DROP COLUMN` refuses such a column itself, so nothing is lost silently there.
+Tests: `migrations/__tests__/calculated-column-kinds.test.ts`.
+
+The shared-table `CHECK` probe reads the rows as they will be after the run:
+every declared column the live table lacks is supplied as the value existing
+rows will hold (backfill, else default, else NULL; a calculated one as its
+expression) and every replaced calculated column as its new expression, so a
+table that gains `_meta_type` in the same run is never probed for a missing
+column (`issue-4932-check-probe-pglite.test.ts`).
 
 How each engine gets there:
 

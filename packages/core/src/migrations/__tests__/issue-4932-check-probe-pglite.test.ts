@@ -144,6 +144,49 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
       await expect(insert(STRICT, 'b')).rejects.toThrow(/smrt_ck_/);
     });
 
+    // Review r7 (R7-1): an own table becomes a shared table in the same run
+    // that a subclass hardens a field. The live table has no `_meta_type`
+    // yet, and the rule reads it.
+    const ownTable = `CREATE TABLE "${TABLE}" (id UUID PRIMARY KEY, slug TEXT, context TEXT, title TEXT)`;
+
+    it('plans a rule that reads a discriminator the same run adds, inside a caller-owned transaction', async () => {
+      await db.query(ownTable);
+      await db.query('BEGIN');
+      const diff = await plan();
+      const check = diff.changes.find(
+        (c: { alteration?: string }) => c.alteration === 'set_check',
+      );
+      expect(check?.sqlStatements).toBeDefined();
+      for (const sql of statements(diff)) await db.query(sql);
+      await db.query('COMMIT');
+      await expect(insert(STRICT, 'a')).rejects.toThrow(/smrt_ck_/);
+      await insert(`${PKG}:BaseProbe`, 'b');
+    });
+
+    it('plans a rule that reads a discriminator the same run adds, without a transaction', async () => {
+      await db.query(ownTable);
+      const diff = await plan();
+      for (const sql of statements(diff)) await db.query(sql);
+      await expect(insert(STRICT, 'a')).rejects.toThrow(/smrt_ck_/);
+    });
+
+    it('keeps a caller-owned transaction usable when the table that gains a discriminator holds rows', async () => {
+      await db.query(ownTable);
+      await db.query(
+        `INSERT INTO "${TABLE}" (id, slug, context, title) VALUES (gen_random_uuid(), 'old', '', 'x')`,
+      );
+      await db.query('BEGIN');
+      const diff = await plan();
+      // Existing rows hold no class yet, so none can break the rule.
+      const check = diff.changes.find(
+        (c: { alteration?: string }) => c.alteration === 'set_check',
+      );
+      expect(check?.advisory).toBeUndefined();
+      // The transaction is still usable after planning.
+      await db.query('SELECT 1');
+      await db.query('ROLLBACK');
+    });
+
     it('plans a backfill that names a column this migration adds, inside a caller-owned transaction', async () => {
       await db.query('CREATE TABLE bf_items (id TEXT PRIMARY KEY, name TEXT)');
       await db.query("INSERT INTO bf_items (id, name) VALUES ('i1', 'a')");
