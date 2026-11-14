@@ -30,12 +30,12 @@ UI, engine selection, product schemas or application effects belong here.
 Validate with package `build`, `typecheck`, `test`. Tests use real TaskRunner and
 in-process SQLite with fake pass execution and Ajv; no containers or model calls.
 
-Early authorization/configuration/routing failures park lease-free checkpoints
+Early authorization/configuration/routing failures park checkpoints
 as `stopped`, with a safe fixed explanation. Restore permissions/configuration,
 then call `resume`; the backing failed job itself is not automatically retried.
 Owner reads reconcile an authoritative routing failure if no handler started.
-A retained lease fails closed instead of treating an early failure as proof of
-settlement. Stop uses the public checkpoint CAS and never calls `configure`.
+Retained leases keep their original dispatch proof for recovery after the host
+fixes permissions/configuration; startup failure alone never clears a lease. Stop uses the public checkpoint CAS and never calls `configure`.
 
 `continueAfterApproval` waits up to 30 seconds for a running parking job to
 settle, then reloads the checkpoint. If it is no longer waiting, it returns

@@ -261,15 +261,12 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
         try {
           const state = await load(owner, id);
           if (['running', 'checking'].includes(state.status)) {
-            const stopped = state.leaseRevision === undefined;
             await store(owner, claim).save(
               {
                 ...state,
                 revision: state.revision + 1,
-                status: stopped ? 'stopped' : 'failed',
-                note: stopped
-                  ? 'The job could not start. Fix its permissions or configuration, then resume.'
-                  : 'The job could not start with a retained lease. Restore its configuration and inspect this run before starting new work.',
+                status: 'stopped',
+                note: 'The job could not start. Fix its permissions or configuration, then resume.',
               },
               state.revision,
             );
@@ -469,7 +466,12 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
             orderBy: 'updated_at DESC',
             limit: 1,
           });
-          const job = prior[0];
+          // A startup failure did not acquire a new inference lease. Recovery
+          // remains bound to the persisted dispatch that actually acquired it.
+          const original = (state as AdmissionState).leaseClaim;
+          const job = original
+            ? await (await jobs).get({ id: original.jobId })
+            : prior[0];
           const outcome = job?.completedAt
             ? await events.getTerminalOutcome(String(job.id), {
                 tenantId,
@@ -496,15 +498,18 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
             };
             if (!(await recoveryStore.save(next, state.revision)))
               throw new DesignRunConflictError();
-            await assertFailedJobDispatch(tx, {
-              jobId: String(job.id),
-              tenantId,
-              attempt: job.attempts,
-              startedAt: job.startedAt?.toISOString() ?? '',
-              objectType: target,
-              objectId: id,
-              method: 'execute',
-            });
+            await assertFailedJobDispatch(
+              tx,
+              original ?? {
+                jobId: String(job.id),
+                tenantId,
+                attempt: job.attempts,
+                startedAt: job.startedAt?.toISOString() ?? '',
+                objectType: target,
+                objectId: id,
+                method: 'execute',
+              },
+            );
             if ((await activeJobs(owner, id, tx)).length)
               throw new DesignRunConflictError('The recovered job changed');
             await enqueue(tx, next, owner);

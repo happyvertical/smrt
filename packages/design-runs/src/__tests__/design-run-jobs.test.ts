@@ -618,6 +618,56 @@ describe('durable design job bridge', () => {
     }
   });
 
+  it('parks an authorization failure after crash recovery without losing its retained lease recovery path', async () => {
+    const external = deferred();
+    settled.push(external.resolve);
+    let interrupted = false;
+    let denied = false;
+    const calls: number[] = [];
+    const execute: DesignRunDriverOptions['executePass'] = async (request) => {
+      calls.push(request.pass.index);
+      if (request.pass.index === 2 && !interrupted) {
+        interrupted = true;
+        await external.promise;
+      }
+      return { output: { value: request.pass.index }, metadata };
+    };
+    const bound = install(execute, passes, {
+      authorize: async () => {
+        if (denied) throw new Error('Transient authority failure');
+      },
+    });
+    const run = await bound.start(startInput('retained-startup-failure'));
+    const old = await worker({ shutdownTimeout: 1 });
+    await until(() => interrupted);
+    const leased = await bound.get(run.id);
+    const [original] = await jobs.list({ where: { objectId: run.id } });
+    await old.stop();
+    unregisterLiveWorker(original.workerId as string);
+    await (await SmrtWorkerCollection.create({ db })).expireWorker(
+      original.workerId as string,
+    );
+    const recovery = await worker();
+    await until(
+      async () =>
+        (await jobs.get({ id: original.id as string }))?.status === 'failed',
+    );
+    await recovery.stop();
+    await bound.resume(run.id);
+    denied = true;
+    const deniedRunner = await worker();
+    await jobSettled(run.id);
+    await deniedRunner.stop();
+    denied = false;
+    const stopped = await bound.get(run.id);
+    expect(stopped.status).toBe('stopped');
+    expect(stopped.leaseRevision).toBe(leased.leaseRevision);
+    await bound.resume(run.id);
+    await worker();
+    expect((await end(run.id)).status).toBe('done');
+    expect(calls.filter((index) => index === 1)).toHaveLength(1);
+  });
+
   it('can Stop without configure, and resume an initial configuration failure after repair', async () => {
     let broken = false;
     const bound = install(undefined, passes, {
