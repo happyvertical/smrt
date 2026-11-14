@@ -187,6 +187,11 @@ The crate builds and tests without a Node binary. The base `tauri.conf.json`
 therefore declares no `externalBin` (tauri-build refuses to build when a
 declared binary for the target triple is missing) and no resources. The
 consuming app's packaging step supplies them through a config overlay.
+A consuming app does not copy this directory: the wrapper ships in the
+published package and `smrt desktop build` materialises it (see "Building an
+installer" in the package README). Everything below describes the same step
+done by hand, and what the in-repository release path does.
+
 `smrt desktop bundle` (`@happyvertical/smrt-desktop/bundler`) writes the
 sidecar binary, the resources and a `tauri.bundle.json` fragment for exactly
 this; merge it with the product identity and icons:
@@ -213,6 +218,12 @@ relative to the resource directory, which is the child's working directory
 (for example `["app/build/index.js"]`). The icons in `icons/` are placeholders.
 
 ## Release pipeline
+
+`.github/workflows/desktop-consumer-build.yml` is the reusable, unsigned build
+for apps in other repositories (smrt#4965); it never reads this repository's
+paths. The signing legs below exist only for this repository's own products:
+a consumer's release stops after its preflight until those legs are made
+reusable too.
 
 `.github/workflows/desktop-release.yml` (epic #4663 item 5, issue #4836) holds
 two paths that share a file and nothing else. `desktop-wrapper.yml` keeps the fast
@@ -653,6 +664,13 @@ cargo test --locked
   `windows-latest` run is recorded yet; the Windows and Linux legs stay
   `continue-on-error` until one is. The unsigned wrapper is
   the cargo build, not an installer: signed installers are the release path.
+- The published tarball carries only what `smrt desktop build` needs: the crate
+  sources, `Cargo.lock`, `scripts/launch-smoke.mjs`, `scripts/smoke-support.mjs`
+  and `scripts/release-preflight.mjs` (`package.json` `files`; no `target/`, no
+  tests, no `signing-tools/`). `launch-smoke.mjs` imports only Node built-ins
+  and `smoke-support.mjs`, whose redactor is a copy of the CLI's with a test
+  that compares them. The crate version equals the package version
+  (`scripts/sync-desktop-wrapper-version.mjs`; `version-sync.test.ts`).
 - `node --test scripts/*.test.mjs` covers the release preflight (closed Tauri
   fragment, tree walk, committed Node pin), the environment guard (offline
   fixtures of the GitHub API), the minisign verification (keys generated in the

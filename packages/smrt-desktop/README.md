@@ -347,8 +347,9 @@ a measured start that leaves anything in the output root, or changes a file
 under `binaries/` or `resources/`, fails the bundle
 (`bundle_changed_while_measuring`).
 
-Merge `tauri.bundle.json` into the Tauri configuration and build with
-`tauri build --target <the same triple>`. The sidecar manifest always carries
+`smrt desktop build` (below) merges `tauri.bundle.json` into the packaged
+wrapper's Tauri configuration and builds with `tauri build --target <the same
+triple>`; to do it by hand, merge it and build. The sidecar manifest always carries
 `NODE_ENV=production`, empty `NODE_OPTIONS` and `NODE_PATH` (the wrapper passes
 the parent environment through) and `SMRT_APP_ID=<productId>`: the app runtime
 otherwise reads `package.json` from its working directory, which is the
@@ -381,6 +382,11 @@ and out-of-grammar values are errors, and no error echoes a value):
   ]
 }
 ```
+
+`icons` and `updaterPublicKey` are owner inputs for `smrt desktop build` (see
+"Building an installer"): `icons` is a list of up to eight app-relative `.png`,
+`.ico` or `.icns` paths, `updaterPublicKey` the base64 public half of the
+Tauri updater key. Neither has a default and the bundler ignores both.
 
 `sidecar.args` (default `["app/build/index.js"]`; see below), `sidecar.ownerClaimRoute`,
 `exclude` (extra package patterns to drop), `nativeExceptions`
@@ -728,3 +734,125 @@ and read `measurements` in `bundle-report.json`. Per-OS rows from the CI matrix 
 
 Normal built apps, runtimeFiles, unsigned macOS packaging and headless smoke:
 [Built-app packaging](agents/built-apps.md).
+
+## Building an installer
+
+An app outside this repository builds its own installer from published
+packages only: no copied Rust, no copied scripts. The tarball ships the Tauri
+wrapper under `wrapper/` (the crate sources, `Cargo.lock`, icons placeholders,
+`scripts/launch-smoke.mjs` with `scripts/smoke-support.mjs`, and
+`scripts/release-preflight.mjs`); it does not ship `target/`, tests or
+`signing-tools/` (the signed release path stays in this repository, see
+`wrapper/README.md`). `package-contents.test.ts` checks the tarball listing.
+
+Prerequisites on the build host: the app's locked tree installed (it provides
+`smrt`), a Rust toolchain for the target, and the exact Tauri CLI release
+`2.12.4` (`TAURI_CLI_VERSION`; another version fails with
+`tauri_version_mismatch`): `npm install --global --ignore-scripts
+@tauri-apps/cli@2.12.4`. Linux also needs the Tauri system libraries
+(`libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libayatana-appindicator3-dev`,
+`librsvg2-dev`, `libssl-dev`, `libxdo-dev`, `patchelf`).
+
+1. Write the owner inputs in `smrt-desktop.json`: product identity (as for the
+   bundler), `icons` and, for anything that will ever be released,
+   `updaterPublicKey`. Nothing is defaulted or generated: a missing `icons`
+   fails with `identity_missing`; a missing `updaterPublicKey` only warns (an
+   unsigned installer does not need it).
+2. `smrt app build`, then `smrt desktop bundle --app . --bridge <bridge.mjs>
+   --target <triple> --out <bundle>`.
+3. `smrt desktop build --app . --bundle <bundle> --target <triple> --out
+   <installer dir> [--smoke] [--json]`.
+
+`smrt desktop build` (CLI in `packages/cli`, logic in
+`@happyvertical/smrt-desktop/builder`) verifies the bundle (report, target,
+product identity, `tauri.bundle.json` shape, every digest, no unlisted file or
+symlink), refuses a wrapper whose `Cargo.toml` or `Cargo.lock` version differs
+from the package version (`wrapper_version_drift`), copies the packaged wrapper
+into a scratch directory beside `--out` (the installed package is never written
+to), stages the bundle, copies the icons and writes one config overlay from the
+product identity, the icons, the bundle fragment and `updaterPublicKey`, then
+runs `tauri build --no-sign --target <triple> --config tauri.build.json
+--bundles <app|nsis|deb> -- --locked` with an allowlisted environment (no
+`APPLE_*`, `TAURI_SIGNING_*` or token reaches a child). The installer is moved
+to `--out` only after everything, including the optional smoke, passed. The
+result is always unsigned (`signed: false`); signing, notarization and
+publishing are the release path's, not this command's.
+
+`--smoke` additionally builds the wrapper in debug (`cargo build --locked`) and
+runs `scripts/launch-smoke.mjs` against the bundle from an empty data
+directory (health 200, owner link refusing without the launch secret, orderly
+quit, no leftover process). The target must be the host's; on Linux run the
+whole command under `xvfb-run -a`.
+
+Exit codes are the bundler's table (0, 2 usage, 3 invalid input, 5
+verification, 7 child failed, 8 io, 1 internal). Messages are fixed text; they
+never carry a path, version or child output. Codes: `invalid_option`,
+`unsupported_target`, `smoke_needs_host_target`, `app_invalid`,
+`identity_missing`, `icons_invalid`, `bundle_invalid`, `bundle_mismatch`,
+`wrapper_missing`, `wrapper_version_drift`, `tauri_version_mismatch`,
+`output_exists`, `tauri_failed`, `smoke_failed`, `no_installer`, `io_failed`,
+`internal`.
+
+### Version drift
+
+The wrapper crate version (`wrapper/Cargo.toml`, and its entry in
+`wrapper/Cargo.lock`) equals the package version. `scripts/sync-desktop-wrapper-version.mjs`
+(root) rewrites both and runs after `changeset version` (the root
+`changeset:version` and `version` scripts); `version-sync.test.ts` fails when
+they differ, and the build refuses a mismatch. The publish workflow's release
+commit stages only `package.json`, `CHANGELOG.md` and similar files, so it must
+also stage these two files or the next run on main fails the test (open item,
+see the issue).
+
+### Reusable workflow
+
+`.github/workflows/desktop-consumer-build.yml` is a `workflow_call` workflow
+for a consuming repository. It checks out the caller, installs the caller's
+locked tree (`pnpm install --frozen-lockfile --ignore-scripts`), builds the
+app, runs `smrt desktop bundle` and `smrt desktop build --smoke` for each
+target on a hosted runner (macOS arm64, macOS x64, Linux x64) and uploads the
+unsigned installers from non-pull-request runs. It reads nothing from this
+repository and holds no secret on the unsigned path (`contents: read`, no
+environment).
+
+```yaml
+# .github/workflows/desktop.yml in the consuming repository
+name: Desktop
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      release:
+        type: boolean
+        default: false
+jobs:
+  desktop:
+    uses: happyvertical/smrt/.github/workflows/desktop-consumer-build.yml@<commit sha>
+    with:
+      app_dir: .
+      targets: aarch64-apple-darwin,x86_64-unknown-linux-gnu
+      bridge_path: build/smrt-mcp-bridge.mjs
+      release: ${{ inputs.release || false }}
+    secrets:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+```
+
+Inputs: `app_dir`, `targets`, `release`, `smrt_desktop_version` (empty means the
+version the lockfile resolves; a different non-empty value fails the run),
+`bridge_path`, `node_version`, `pnpm_version`. The `secrets:` are declared
+optional; on pull requests pass none. With `release: true` the
+`release-preflight` job runs in the caller's `desktop-release` environment on
+the default branch and refuses (the packaged `release-preflight.mjs --secrets
+--inputs`, fail closed) unless every signing secret and the product inputs
+exist. The signing, notarization and publishing legs are not part of the
+reusable workflow yet, so a release run stops after the preflight with a
+failure that says so. Not proven: that the environment's secrets reach the
+called job as written, and a run from a second repository (needs an org-level
+setting that allows the workflow to be called, and a scratch repository).
