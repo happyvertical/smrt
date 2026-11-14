@@ -1,4 +1,6 @@
 // Format-1 stored definitions reconstructed from origin/main's definition.ts
+// Hidden FieldDef and MethodDef literals also follow origin/main definition.ts;
+// origin/main host.ts hideField and addMethod store these exact properties.
 // fbfe8dcbc2a474cb0c468536682da3bdf776e3d9: RECIPES and host.ts enableRecipe/defineModel (before calculated fields/reports).
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -40,8 +42,15 @@ const plain: AppDefinition = {
         day: { type: 'date' },
         customer: { type: 'reference', ref: 'Customer' },
         status: { type: 'choice', choices: ['open', 'paid'] },
+        internal: { type: 'text', hidden: true },
       },
-      methods: {},
+      methods: {
+        label: {
+          description: 'Return a record label with an optional prefix',
+          params: { prefix: { type: 'text', required: true } },
+          code: 'return params.prefix + record.title;',
+        },
+      },
     },
   },
 };
@@ -88,6 +97,12 @@ it.each([
         customer: customer.id,
         status: 'paid',
       });
+      expect(host.describe().models.Sale.fields.internal).toBeUndefined();
+      expect(
+        await host.runMethod('Sale', 'label', String(sale.id), {
+          prefix: 'Sale: ',
+        }),
+      ).toMatchObject({ result: 'Sale: First' });
       expect(sale).toMatchObject({
         total: 1234,
         customer: customer.id,
