@@ -679,6 +679,7 @@ export function createMcpAppServer(
       ...coreTools,
       ...workflowTools.map(({ tool }) => ({ tool })),
     ];
+    warnUnmatchedPatterns(allTools.map(({ tool }) => tool.name));
     for (const { tool } of allTools) {
       const ui = tool._meta?.ui as { resourceUri?: unknown } | undefined;
       if (
@@ -699,6 +700,25 @@ export function createMcpAppServer(
       .sort((left, right) =>
         compareMcpToolNames(left.tool.name, right.tool.name),
       );
+  }
+
+  let patternsChecked = false;
+  /** Once, on the first catalog build: a pattern matching no tool is likely a typo. */
+  function warnUnmatchedPatterns(names: readonly string[]): void {
+    if (patternsChecked) return;
+    patternsChecked = true;
+    const unmatched = [
+      ...scopeRules.map(([pattern]) => ['toolScopes', pattern]),
+      ...confirmPatterns.map((pattern) => ['confirmTools', pattern]),
+    ].filter(
+      ([, pattern]) =>
+        !names.some((name) => matchesToolPattern(name, pattern as string)),
+    );
+    for (const [option, pattern] of unmatched) {
+      console.warn(
+        `[smrt-app-mcp] ${option} pattern "${pattern}" matches no tool; it protects nothing.`,
+      );
+    }
   }
 
   function requiredScopesFor(tool: MCPTool): readonly string[] {
@@ -997,9 +1017,17 @@ export function createMcpAppServer(
     try {
       const snapshot = snapshotPrincipal(principal);
       const tool = String(input.name).slice(0, 256);
-      const tenant = options.auditTenantId
-        ? options.auditTenantId({ principal: snapshot, tool })
-        : snapshot?.tenantId;
+      let tenant: string | null | undefined = snapshot?.tenantId;
+      if (options.auditTenantId) {
+        try {
+          tenant = options.auditTenantId({ principal: snapshot, tool });
+        } catch (tenantError) {
+          // A throwing resolver must not drop the record: fall back to the
+          // principal's own tenant and still audit.
+          reportFailure(tenantError);
+          tenant = snapshot?.tenantId;
+        }
+      }
       event = Object.freeze({
         tool,
         principal: snapshot,
@@ -1021,7 +1049,13 @@ export function createMcpAppServer(
         reportFailure(hookError);
       }
     }
-    if (options.auditSink) {
+    // Anonymous probes of unknown tools are reported to `onToolCall` only:
+    // persisting them would let unauthenticated callers flood the store.
+    const skipPersist =
+      !principal &&
+      outcome === 'denied' &&
+      error?.code === MCP_TOOL_NOT_FOUND_CODE;
+    if (options.auditSink && !skipPersist) {
       try {
         await options.auditSink.record(mcpAuditRecordFromEvent(event));
       } catch (sinkError) {
@@ -1274,7 +1308,19 @@ export function createMcpAppServer(
       for (const { tool, identity } of await catalogTools(false)) {
         if (!identity || workflowToolsByName.has(tool.name)) continue;
         if (!isTaskOrigin(identity, origin)) continue;
-        if (!allowedEffects || allowedEffects.has(mcpToolEffect(tool))) return;
+        if (allowedEffects && !allowedEffects.has(mcpToolEffect(tool)))
+          continue;
+        // Scopes are re-checked against the originating tool so a revoked or
+        // narrowed credential cannot keep driving a task it can no longer start.
+        const scopes = requiredScopesFor(tool);
+        const held = principal.scopes;
+        if (
+          scopes.length > 0 &&
+          (!Array.isArray(held) || !scopes.every((s) => held.includes(s)))
+        ) {
+          continue;
+        }
+        return;
       }
     }
     throw new McpAccessError(404, 'Unknown MCP task.');

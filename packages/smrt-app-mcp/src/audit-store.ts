@@ -47,6 +47,15 @@ export class McpCallAudit extends SmrtObject {
   @field({ type: 'text', nullable: true })
   principalKind: string | null = null;
 
+  @field({ type: 'text', nullable: true })
+  identityIssuer: string | null = null;
+
+  @field({ type: 'text', nullable: true })
+  identitySubject: string | null = null;
+
+  @field({ type: 'text', nullable: true })
+  identityClientId: string | null = null;
+
   @field({ type: 'text', required: true, default: '' })
   tool = '';
 
@@ -77,6 +86,9 @@ export class McpCallAuditCollection extends SmrtCollection<McpCallAudit> {
         tenantId: record.tenantId,
         principalId: record.principalId,
         principalKind: record.principalKind,
+        identityIssuer: record.identityIssuer ?? null,
+        identitySubject: record.identitySubject ?? null,
+        identityClientId: record.identityClientId ?? null,
         tool: record.tool,
         outcome: record.outcome,
         errorCode: record.errorCode ?? null,
@@ -116,6 +128,11 @@ export class McpCallAuditCollection extends SmrtCollection<McpCallAudit> {
       tenantId: row.tenantId ?? null,
       outcome: row.outcome,
       ...(row.errorCode ? { errorCode: row.errorCode } : {}),
+      ...(row.identityIssuer ? { identityIssuer: row.identityIssuer } : {}),
+      ...(row.identitySubject ? { identitySubject: row.identitySubject } : {}),
+      ...(row.identityClientId
+        ? { identityClientId: row.identityClientId }
+        : {}),
       argumentKeys: Array.isArray(row.argumentKeys) ? row.argumentKeys : [],
       occurredAt: new Date(row.occurredAt),
     }));

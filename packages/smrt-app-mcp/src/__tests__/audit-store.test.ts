@@ -36,6 +36,23 @@ describe('SMRT-model audit store', () => {
     });
   }
 
+  it('round-trips the credential identity', async () => {
+    const s = store();
+    await s.record(
+      record({
+        identityIssuer: 'https://idp',
+        identitySubject: 'sub-1',
+        identityClientId: 'c1',
+      }),
+    );
+    const [row] = await s.list({ tenantId: 'tenant-a' });
+    expect(row).toMatchObject({
+      identityIssuer: 'https://idp',
+      identitySubject: 'sub-1',
+      identityClientId: 'c1',
+    });
+  });
+
   it('resolves smrtOptions on every operation, never caching request-scoped state', async () => {
     let calls = 0;
     const s = createSmrtMcpAuditStore({

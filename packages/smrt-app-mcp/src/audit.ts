@@ -28,6 +28,10 @@ export interface McpAuditRecord {
   outcome: McpAuditOutcome;
   /** Stable safe code of a denial or failure, when there was one. */
   errorCode?: string;
+  /** Verified credential identity (issuer, subject, client id), when the adapter stamped one. */
+  identityIssuer?: string;
+  identitySubject?: string;
+  identityClientId?: string;
   /** Sorted argument key names. Values are never recorded. */
   argumentKeys: readonly string[];
   occurredAt: Date;
@@ -61,6 +65,15 @@ export function mcpAuditRecordFromEvent(
     tenantId: event.tenantId,
     outcome: event.outcome === 'ok' ? 'allowed' : event.outcome,
     ...(event.error ? { errorCode: event.error.code } : {}),
+    ...(event.identity
+      ? {
+          identityIssuer: event.identity.issuer,
+          identitySubject: event.identity.subject,
+          ...(event.identity.clientId
+            ? { identityClientId: event.identity.clientId }
+            : {}),
+        }
+      : {}),
     argumentKeys: event.argumentKeys,
     occurredAt: event.occurredAt,
   });

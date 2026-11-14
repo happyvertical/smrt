@@ -298,7 +298,7 @@ createDefaultMcpAppServer({
   and `occurredAt`; `auditSink.record(record)` receives the persistable
   `McpAuditRecord` (`principalId`, `principalKind`, `tool`, `tenantId`,
   `outcome: 'allowed' | 'denied' | 'error'`, `errorCode?`, `argumentKeys`,
-  `occurredAt`): argument key names only, never values. A tool result with
+  `occurredAt`, plus `identityIssuer`/`identitySubject`/`identityClientId` when the adapter stamped a verified identity): argument key names only, never values. Anonymous unknown-tool denials reach `onToolCall` but are not persisted to the sink. A throwing `auditTenantId` falls back to `principal.tenantId`. Task lifecycle calls re-check the originating tool's scopes. Patterns in `toolScopes`/`confirmTools` that match no tool log a one-time warning. A tool result with
   `isError` records `error`, or `denied` for `forbidden`, `confirm_required` and
   access-denial codes. Sink failures go to `onToolCallHookError`. Anonymous 401/404 calls are audited too when a persistent sink is configured, so hosts should rate-limit the endpoint. Scopes make `tools/list` principal-dependent, so its cache hint is forced `private` whenever any scope is declared.
 - **Persistent store.** `createSmrtMcpAuditStore({ smrtOptions })` (subpath

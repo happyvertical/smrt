@@ -292,6 +292,57 @@ describe('audit records', () => {
     });
   });
 
+  it('survives a throwing tenant resolver and falls back to the principal tenant', async () => {
+    const failures: unknown[] = [];
+    const { app, sink } = make([def('crm_search', { effect: 'read' })], {
+      auditTenantId: () => {
+        throw new Error('boom');
+      },
+      onToolCallHookError: (e: unknown) => failures.push(e),
+    });
+    await app.callTool({ name: 'crm_search', arguments: {}, principal: agent });
+    expect(failures).toHaveLength(1);
+    expect(sink.records[0]).toMatchObject({ tenantId: 'tenant-a' });
+  });
+
+  it('does not persist anonymous unknown-tool denials but still reports them', async () => {
+    const { app, sink, events } = make([def('crm_search', { effect: 'read' })]);
+    await expect(
+      app.callTool({ name: 'nope', arguments: {}, principal: null }),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(sink.records).toHaveLength(0);
+    expect(events).toHaveLength(1);
+  });
+
+  it('records the verified credential identity', async () => {
+    const { app, sink } = make([def('crm_search', { effect: 'read' })]);
+    await app.callTool({
+      name: 'crm_search',
+      arguments: {},
+      principal: {
+        ...agent,
+        identity: { issuer: 'https://idp', subject: 'sub-1', clientId: 'c1' },
+      },
+    });
+    expect(sink.records[0]).toMatchObject({
+      identityIssuer: 'https://idp',
+      identitySubject: 'sub-1',
+      identityClientId: 'c1',
+    });
+  });
+
+  it('warns once about toolScopes and confirmTools patterns that match no tool', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { app } = make([def('crm_search', { effect: 'read' })], {
+      toolScopes: { 'typo_*': ['x'] },
+      confirmTools: ['also_missing'],
+    });
+    await app.listTools({ principal: agent });
+    await app.listTools({ principal: agent });
+    expect(warn).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
+  });
+
   it('bounds argument key names and ignores non-object arguments', () => {
     expect(mcpArgumentKeyNames(undefined)).toEqual([]);
     expect(mcpArgumentKeyNames(['a'])).toEqual([]);
