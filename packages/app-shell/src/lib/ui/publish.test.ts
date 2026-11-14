@@ -78,15 +78,16 @@ it('shows each replayed data step with upsert status and live counts', () => {
       counts: { removed: 2, references: { Order: 7 } },
     },
   ];
+  p.modelLabels = { Customer: 'Customers', Order: 'Orders' };
   const lines = publishLines(p).join('\n');
   expect(lines).toContain(
-    'Load Order (upsert): 2 inserted, 3 updated, 4 unchanged, 0 rejected.',
+    'Load records into Orders (upsert): 2 inserted, 3 updated, 4 unchanged, 0 rejected.',
   );
   expect(lines).toContain(
-    'Extract Order: 9 rows, 5 distinct values, 1 folded, 3 created, 2 matched.',
+    'Extract from Orders: 9 records, 5 distinct values, 1 folded, 3 created, 2 matched.',
   );
   expect(lines).toContain(
-    'Merge Customer: 2 removed; references repointed (Order: 7).',
+    'Merge 2 records in Customers; references repointed (7 references in Orders).',
   );
 });
 
@@ -121,4 +122,10 @@ it('includes only added or changed calculations, including cleared formulas', ()
   expect(lines.join(' ')).toContain('Add field Customer.added');
   expect(lines.join(' ')).toContain('Customer.cleared: remove calculation');
   expect(lines.join(' ')).not.toContain('Customer.same');
+});
+
+it('pins publish approval wording to reviewed changes', () => {
+  const text = describeApproval(publishApproval()).lines.join(' ');
+  expect(text).toContain('This approval is pinned to the reviewed changes.');
+  expect(text).not.toContain('Counts can change');
 });

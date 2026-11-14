@@ -67,6 +67,7 @@ export interface DraftInfo {
 }
 
 export interface PublishPreview {
+  modelLabels?: Record<string, string>;
   fields?: Record<string, Record<string, FieldDef>>;
   reportChanges?: { kind: 'added' | 'changed' | 'removed'; text: string }[];
   digest: string;

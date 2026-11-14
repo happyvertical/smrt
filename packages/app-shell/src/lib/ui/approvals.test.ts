@@ -152,7 +152,7 @@ for (const [type, preview, expected] of [
       references: { Order: 3 },
       referenceLabels: { Order: 'Orders' },
     },
-    ['2 Customers records', 'Acme', '3 references in Orders'],
+    ['2 records in Customers', 'Acme', '3 references in Orders'],
   ],
   [
     'extractModel',
@@ -184,8 +184,13 @@ for (const [type, preview, expected] of [
   ],
   [
     'setCalculation',
-    { modelLabel: 'Orders', fieldLabel: 'Invoice total', rows: 4 },
-    ['Invoice total', '4 records', 'replaces ordinary stored values'],
+    {
+      modelLabel: 'Orders',
+      fieldLabel: 'Invoice total',
+      rows: 4,
+      withValue: 2,
+    },
+    ['Invoice total', '4 records', '2 stored values will be overwritten'],
   ],
 ] as const) {
   it(`explains ${type} using reviewed counts and human labels`, () => {

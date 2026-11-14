@@ -1,6 +1,8 @@
 // Plain-language reading of an approval's preview and action.
+import type { GeneratedExpression } from '@happyvertical/smrt-core';
+import { formulaWords } from './formula.ts';
 import { publishLines } from './publish.ts';
-import type { ApprovalView, PublishPreview } from './types.ts';
+import type { ApprovalView, FieldDef, PublishPreview } from './types.ts';
 
 function obj(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v)
@@ -51,7 +53,7 @@ function commandLines(
       return {
         ...base,
         lines: [
-          `Merges ${plural(num(preview.removed), `${model} record`)} into ${preview.keepLabel ?? 'the selected record'}.`,
+          `Merges ${plural(num(preview.removed), 'record')} in ${model} into ${preview.keepLabel ?? 'the selected record'}.`,
           ...Object.entries(references).map(
             ([name, count]) =>
               `${plural(num(count), 'reference')} in ${labels[name] ?? name} will point to the kept record.`,
@@ -74,20 +76,46 @@ function commandLines(
         ...base,
         lines: [
           `Loads records into ${model}: ${num(preview.insert)} inserted, ${num(preview.update)} updated, ${num(preview.unchanged)} unchanged, ${num(preview.rejected)} rejected.`,
-          'Updates overwrite stored values. Undo restores the originals until old archives are cleaned up.',
+          ...(num(preview.update) > 0
+            ? [
+                'Updates overwrite stored values. Undo restores the originals until old archives are cleaned up.',
+              ]
+            : [
+                'Undo removes the loaded records until old archives are cleaned up.',
+              ]),
         ],
       };
-    case 'setCalculation':
+    case 'setCalculation': {
+      const fields = obj(preview.fields) as Record<string, FieldDef>;
+      const from = preview.from as GeneratedExpression | null | undefined;
+      const to = preview.to as GeneratedExpression | null | undefined;
+      const words = (expression: GeneratedExpression) =>
+        formulaWords(expression, fields);
+      if (to === null)
+        return {
+          ...base,
+          lines: [
+            `Removes the calculation from ${field} in ${model}${from ? `: ${words(from)}` : ''}.`,
+            `${plural(num(preview.rows), 'record')} ${num(preview.rows) === 1 ? 'keeps its' : 'keep their'} current ${num(preview.rows) === 1 ? 'value' : 'values'}. Future edits can set this field directly.`,
+            'Undo restores the calculation until old archives are cleaned up.',
+          ],
+        };
       return {
         ...base,
         lines: [
-          `Calculates ${field} in ${model}.`,
-          ...(typeof preview.rows === 'number'
-            ? [`${plural(num(preview.rows), 'record')} will be recalculated.`]
+          from && to
+            ? `Changes the calculation for ${field} in ${model} from ${words(from)} to ${words(to)}.`
+            : `Calculates ${field} in ${model}${to ? ` as ${words(to)}` : ''}.`,
+          `${plural(num(preview.rows), 'record')} will be recalculated.`,
+          ...(!from && num(preview.withValue) > 0
+            ? [
+                `${plural(num(preview.withValue), 'stored value')} will be overwritten with calculated values.`,
+              ]
             : []),
-          'This replaces ordinary stored values with calculated values. Future edits cannot set this field directly. Undo restores the original values until old archives are cleaned up.',
+          'Future edits cannot set this field directly. Undo restores the original values until old archives are cleaned up.',
         ],
       };
+    }
 
     case 'removeField': {
       const n = num(preview.valuesArchived);
@@ -220,7 +248,7 @@ export function describeApproval(view: ApprovalView): ApprovalDescription {
         lines: [
           `Publishes “${action.draftName}”.`,
           ...publishLines(p),
-          'Counts can change until publish. Draft records are thrown away.',
+          'This approval is pinned to the reviewed changes. Draft records are thrown away.',
         ],
         blocks: p.methods.map((m) => ({
           title: `${m.model}.${m.name}()`,

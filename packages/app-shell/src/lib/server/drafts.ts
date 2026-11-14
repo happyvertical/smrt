@@ -67,6 +67,7 @@ export interface DraftInfo {
 }
 
 type PublishPreview = EnginePublishPreview & {
+  modelLabels?: Record<string, string>;
   reportChanges?: ReportChange[];
   fields?: Record<string, Record<string, FieldDef>>;
 };
@@ -239,6 +240,20 @@ export async function previewDraft(): Promise<{
       name,
       model.fields,
     ]),
+  );
+  const descriptions = { ...live.describe().models, ...host.describe().models };
+  const dataModels = new Set(
+    preview.versions.flatMap((version) =>
+      (version.dataSteps ?? []).flatMap((step) => [
+        step.model,
+        ...Object.keys(
+          (step.counts.references ?? {}) as Record<string, unknown>,
+        ),
+      ]),
+    ),
+  );
+  preview.modelLabels = Object.fromEntries(
+    [...dataModels].map((name) => [name, descriptions[name]?.label ?? name]),
   );
   preview.reportChanges = [];
   for (const version of preview.versions) {

@@ -115,3 +115,16 @@ Failed report tools return an MCP `isError` result tagged `report_failure` with
 the already sanitized summary. Both API and local CLI assistants preserve that
 summary through the shared text sanitizer; untagged or unsafe failures keep the
 generic failure label. Failed reports never become report result projections.
+
+Approval previews distinguish adding, replacing and clearing a calculation. Adding
+a calculation names the stored values that will be overwritten only when the
+count is nonzero; replacing shows both formulas with field labels; clearing
+keeps current values and allows direct edits again. Insert-only loads show no
+update warning. Merge counts use “records in Customers”; publish Data steps use
+model labels and the publish approval states that it is pinned to reviewed
+changes. Saved approval reference labels contain only models used by the card.
+
+Regression evidence includes real SQLite engine plans routed through stored
+approvals into card descriptions, plus actual mounted cards fed real engine
+previews produced by a Node subprocess. The subprocess is necessary because
+the DOM test config selects browser exports, which cannot boot engine models.

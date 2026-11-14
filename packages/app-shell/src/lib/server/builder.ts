@@ -107,12 +107,23 @@ export async function runCommand(
                 : command.into,
             }
           : {}),
-        referenceLabels: Object.fromEntries(
-          Object.entries(description.models).map(([name, model]) => [
-            name,
-            model.label ?? name,
-          ]),
-        ),
+        ...(command.type === 'setCalculation' && model
+          ? { fields: model.fields }
+          : {}),
+        ...(command.type === 'mergeRecords'
+          ? {
+              referenceLabels: Object.fromEntries(
+                Object.keys(
+                  (e.plan.preview?.references ?? {}) as Record<string, unknown>,
+                )
+                  .filter((name) => Object.hasOwn(description.models, name))
+                  .map((name) => [
+                    name,
+                    description.models[name].label ?? name,
+                  ]),
+              ),
+            }
+          : {}),
       };
       return requestApproval(
         { kind: 'command', command: pinned, reviewedPreview: e.plan.preview },

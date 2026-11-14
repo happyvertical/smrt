@@ -26,15 +26,19 @@ export function publishDataLines(preview: PublishPreview): string[] {
   return preview.versions.flatMap((v) =>
     (v.dataSteps ?? []).map((step) => {
       const c = step.counts;
+      const model = preview.modelLabels?.[step.model] ?? step.model;
       if (step.op === 'loadRecords')
-        return `Load ${step.model} (${step.mode}): ${c.insert} inserted, ${c.update} updated, ${c.unchanged} unchanged, ${c.rejected} rejected.`;
+        return `Load records into ${model} (${step.mode}): ${c.insert} inserted, ${c.update} updated, ${c.unchanged} unchanged, ${c.rejected} rejected.`;
       if (step.op === 'extractModel')
-        return `Extract ${step.model}: ${c.rows} rows, ${c.distinct} distinct values, ${c.folded} folded, ${c.create} created, ${c.matched} matched.`;
+        return `Extract from ${model}: ${c.rows} records, ${c.distinct} distinct values, ${c.folded} folded, ${c.create} created, ${c.matched} matched.`;
       const references =
         Object.entries((c.references ?? {}) as Record<string, number>)
-          .map(([model, count]) => `${model}: ${count}`)
+          .map(
+            ([model, count]) =>
+              `${count} ${count === 1 ? 'reference' : 'references'} in ${preview.modelLabels?.[model] ?? model}`,
+          )
           .join(', ') || 'none';
-      return `Merge ${step.model}: ${c.removed} removed; references repointed (${references}).`;
+      return `Merge ${c.removed} ${c.removed === 1 ? 'record' : 'records'} in ${model}; references repointed (${references}).`;
     }),
   );
 }
