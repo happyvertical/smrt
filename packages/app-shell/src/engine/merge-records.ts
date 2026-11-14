@@ -1,4 +1,5 @@
 import {
+  archiveAfter,
   archiveRow,
   fieldsOf,
   quote,
@@ -100,6 +101,7 @@ export async function applyMerge(
   const table = quote(tableFor(cmd.model, def.models[cmd.model]));
   if (Object.keys(chosen).length) {
     await archiveRow(db, version, cmd.model, cmd.keep, keep);
+    await archiveAfter(db, version, cmd.model, cmd.keep, chosen);
     await db.query(
       `UPDATE ${table} SET ${Object.keys(chosen)
         .map((c) => `${quote(c)} = ?`)
@@ -114,6 +116,13 @@ export async function applyMerge(
       change.model,
       String(change.row.id),
       change.row,
+    );
+    await archiveAfter(
+      db,
+      version,
+      change.model,
+      String(change.row.id),
+      Object.fromEntries(change.columns.map((c) => [c, cmd.keep])),
     );
     await db.query(
       `UPDATE ${quote(tableFor(change.model, def.models[change.model]))} SET ${change.columns.map((c) => `${quote(c)} = ?`).join(',')} WHERE id = ?`,

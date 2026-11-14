@@ -223,10 +223,10 @@ Preparation uses the record coercer, then collection writes use bounded
 a savepoint never commits the outer transaction; a later-batch failure rolls
 back all earlier batches and archives. Each scope uses core
 `withCallerOwnedDatabaseTransaction` so record hooks and validation stay intact. Original raw rows (including nulls and timestamps) and
-inserted ids are journaled in `_archive` for exact undo. Every load has a
+inserted ids and command-owned column postimages are journaled in `_archive` for undo. Undo restores only the columns changed by the command, preserving later edits to other fields. Changed command-owned columns, user-deleted rows, edited command-created records, and reused removed ids refuse undo transactionally, even with approval. Older row journals without postimages refuse rather than overwrite data. Every load has a
 pre-migration snapshot and stable per-command ids, so draft publish replays the
 load against current live keys and lookup data rather than copying draft rows.
-Undo of a data migration requires approval because it can replace newer data.
+Undo of a data migration requires approval; its preview names affected fields, removals and recreations.
 Load undo refuses surviving references to its inserted rows (including hidden
 references), preserving all rows and the current version on refusal. The shared
 load/extraction guard scans each reference field once against the set of created
@@ -242,7 +242,7 @@ target matches its titleField or first visible text. Exact matching is default;
 rows/distinct/folded/create/matched counts. Empty values retain their exact
 storage. Ambiguous existing labels refuse the command. Undo restores originals
 and deletes only created target rows, refusing surviving references (including
-hidden references) added since extraction. Publish extracts current live values.
+hidden references) added since extraction. Source references written after extraction also refuse undo, including references to pre-existing targets, so ids never become text. Publish extracts current live values.
 
 ## Merging records (#4916)
 
@@ -250,6 +250,6 @@ hidden references) added since extraction. Publish extracts current live values.
 is structural and always risky (1–1000 distinct merged ids). The plan lists
 reference counts by app model, including hidden reference fields. Every reference
 to a removed id is repointed to keep; chosen writable values survive on keep.
-Full raw originals of affected rows are archived before updates/removals. Undo
-restores them and refuses if a removed id has since been reused. Draft publish
+Raw originals and changed-column postimages are archived before updates/removals. Undo
+restores only changed columns and merged-away records; later deletions or conflicting edits refuse the whole undo. A removed id reused since the merge also refuses. Draft publish
 recomputes affected references on current live data. No arbitrary SQL is accepted.

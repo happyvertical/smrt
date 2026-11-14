@@ -191,3 +191,74 @@ it('matches existing targets that have other required fields without inventing v
   expect(raw('u_sales')).toEqual(before);
   expect(raw('u_knowns')).toEqual(targets);
 });
+
+it('keeps later edits outside the extracted column and refuses deleted or changed source rows', async () => {
+  await run({
+    type: 'defineModel',
+    name: 'Order',
+    fields: { vendor: { type: 'text' }, total: { type: 'integer' } },
+  });
+  const orders = [];
+  for (let i = 0; i < 50; i++)
+    orders.push(await host.create('Order', { vendor: 'Acme', total: i }));
+  const extract: Command = {
+    type: 'extractModel',
+    model: 'Order',
+    field: 'vendor',
+    into: 'Vendor',
+  };
+  await run(extract);
+  for (const order of orders)
+    await host.update('Order', String(order.id), { total: 500 });
+  await run({ type: 'undo' });
+  expect((await host.list('Order')).map((r) => [r.vendor, r.total])).toEqual(
+    Array.from({ length: 50 }, () => ['Acme', 500]),
+  );
+  await run(extract);
+  const version = host.version;
+  await host.update('Order', String(orders[0].id), { vendor: null });
+  await expect(run({ type: 'undo' })).rejects.toThrow(/changed since/);
+  expect(host.version).toBe(version);
+  const vendor = (await host.list('Vendor'))[0];
+  await host.update('Order', String(orders[0].id), { vendor: vendor.id });
+  await host.remove('Order', String(orders[1].id));
+  await expect(run({ type: 'undo' })).rejects.toThrow(/deleted since/);
+  expect(await host.list('Order')).toHaveLength(49);
+  expect(host.def.models.Order.fields.vendor.type).toBe('reference');
+});
+
+it('refuses undo of an existing-target extract with a later created or changed reference', async () => {
+  await run({
+    type: 'defineModel',
+    name: 'Supplier',
+    fields: { name: { type: 'text' } },
+  });
+  const vendor = await host.create('Supplier', { name: 'Known' });
+  await run({
+    type: 'defineModel',
+    name: 'Purchase',
+    fields: { vendor: { type: 'text' } },
+  });
+  await host.create('Purchase', { vendor: 'Known' });
+  const blank = await host.create('Purchase', { vendor: null });
+  await run({
+    type: 'extractModel',
+    model: 'Purchase',
+    field: 'vendor',
+    into: 'Supplier',
+  });
+  const late = await host.create('Purchase', { vendor: vendor.id });
+  await expect(run({ type: 'undo' })).rejects.toThrow(
+    /reference written since extraction/,
+  );
+  await host.remove('Purchase', String(late.id));
+  await host.update('Purchase', String(blank.id), { vendor: vendor.id });
+  await expect(run({ type: 'undo' })).rejects.toThrow(
+    /reference written since extraction/,
+  );
+  await host.update('Purchase', String(blank.id), { vendor: null });
+  await run({ type: 'undo' });
+  expect((await host.list('Purchase')).map((r) => r.vendor).sort()).toEqual(
+    ['Known', null].sort(),
+  );
+});

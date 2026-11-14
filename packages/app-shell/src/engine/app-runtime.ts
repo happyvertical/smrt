@@ -557,15 +557,40 @@ export class AppRuntime {
         step.op === 'extractModel' ||
         step.op === 'mergeRecords'
       ) {
-        const count = await this.db.query(
-          "SELECT COUNT(*) AS n FROM _archive WHERE version = ? AND col = '$row'",
-          [version],
-        );
-        out.push({
-          table: step.command.model,
-          column: '*',
-          replaced: Number(count.rows[0].n),
-        });
+        const entries = (
+          await this.db.query(
+            "SELECT tbl, record_id, col, value FROM _archive WHERE version = ? AND col IN ('$row', '$after', '$deleted')",
+            [version],
+          )
+        ).rows as Row[];
+        const counts = new Map<
+          string,
+          { table: string; column: string; replaced: number }
+        >();
+        const add = (model: string, column: string) => {
+          const table = tableFor(model, this.def.models[model]);
+          const key = `${table}:${column}`;
+          const count = counts.get(key) ?? { table, column, replaced: 0 };
+          count.replaced++;
+          counts.set(key, count);
+        };
+        for (const e of entries) {
+          if (e.col === '$after') {
+            const before = entries.find(
+              (b) =>
+                b.col === '$row' &&
+                b.tbl === e.tbl &&
+                b.record_id === e.record_id,
+            );
+            if (before?.value === 'null') continue;
+            for (const column of Object.keys(JSON.parse(String(e.value))))
+              if (column !== 'updated_at') add(String(e.tbl), column);
+          } else if (e.col === '$deleted')
+            add(String(e.tbl), '(recreate merged record)');
+          else if (e.value === 'null')
+            add(String(e.tbl), '(remove created record)');
+        }
+        out.push(...counts.values());
         continue;
       }
       if (step.op === 'calculation') {

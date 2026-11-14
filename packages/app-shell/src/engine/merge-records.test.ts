@@ -150,3 +150,37 @@ it.each([
   expect(raw()).toEqual(before);
   expect(host.version).toBe(version);
 });
+
+it('keeps later note edits, refuses user deletions and changed repointed columns atomically', async () => {
+  await run({
+    type: 'addField',
+    model: 'Note',
+    field: 'body',
+    definition: { type: 'text' },
+  });
+  const first = await host.create('Note', {
+    customer: other,
+    body: 'original',
+  });
+  const second = await host.create('Note', { customer: other, body: 'second' });
+  await run(command());
+  await host.update('Note', String(first.id), { body: 'edited later' });
+  await run({ type: 'undo' });
+  expect(await host.get('Note', String(first.id))).toMatchObject({
+    body: 'edited later',
+    customer: other,
+  });
+  await run(command());
+  await host.update('Note', String(first.id), { customer: null });
+  await expect(run({ type: 'undo' })).rejects.toThrow(/changed since/);
+  expect(await host.list('Customer')).toHaveLength(1);
+  await host.update('Note', String(first.id), { customer: keep });
+  await host.remove('Note', String(second.id));
+  await expect(run({ type: 'undo' })).rejects.toThrow(/deleted since/);
+  expect(await host.list('Customer')).toHaveLength(1);
+  expect((await host.list('Note')).some((r) => r.id === second.id)).toBe(false);
+  expect(await host.get('Note', String(first.id))).toMatchObject({
+    body: 'edited later',
+    customer: keep,
+  });
+});

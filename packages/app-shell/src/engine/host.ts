@@ -1149,7 +1149,7 @@ export class AppHost extends EventEmitter {
         ...preview,
         fields,
         replaced: fields.reduce((n, f) => n + f.rows, 0),
-        note: 'Going back restores the original value of every row in these fields. Values written since the type change are replaced.',
+        note: 'Undo restores archived values in the listed fields, removes command-created records and recreates records removed by a merge. Data-command undo refuses later edits to those fields, deleted rows and reused ids; other fields keep later edits. Type conversions can replace newer values in the converted field.',
       };
     }
     return {
@@ -1250,7 +1250,7 @@ export class AppHost extends EventEmitter {
         ...preview,
         fields,
         replaced: fields.reduce((n, f) => n + f.rows, 0),
-        note: 'Going back restores the original value of every row in these fields. Values written since the type change are replaced.',
+        note: 'Undo restores archived values in the listed fields, removes command-created records and recreates records removed by a merge. Data-command undo refuses later edits to those fields, deleted rows and reused ids; other fields keep later edits. Type conversions can replace newer values in the converted field.',
       };
     }
     const summary = `undo ${undone.length} change${undone.length === 1 ? '' : 's'} back to version ${target}`;

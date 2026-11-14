@@ -359,3 +359,40 @@ it.each([
   expect(raw()).toEqual(before);
   expect(host.version).toBe(version);
 });
+
+it('upsert undo keeps untouched fields and refuses later edits, deletions and edits of inserted rows', async () => {
+  const customer = (await host.list('Customer'))[0];
+  const sale = await host.create('Sale', { code: 'undo-safe', qty: 1 });
+  const cmd: Command = {
+    type: 'loadRecords',
+    model: 'Sale',
+    mode: 'upsert',
+    key: ['code'],
+    rows: [{ code: 'undo-safe', qty: 2 }],
+  };
+  await run(cmd);
+  await host.update('Sale', String(sale.id), { customer: customer.id });
+  await run({ type: 'undo' });
+  expect(await host.get('Sale', String(sale.id))).toMatchObject({
+    qty: 1,
+    customer: customer.id,
+  });
+  await run(cmd);
+  await host.update('Sale', String(sale.id), { qty: 3 });
+  await expect(run({ type: 'undo' })).rejects.toThrow(/changed since/);
+  await host.update('Sale', String(sale.id), { qty: 2 });
+  await host.remove('Sale', String(sale.id));
+  await expect(run({ type: 'undo' })).rejects.toThrow(/deleted since/);
+  await run({
+    type: 'loadRecords',
+    model: 'Sale',
+    mode: 'insert',
+    rows: [{ code: 'insert-undo', qty: 1 }],
+  });
+  const inserted = (await host.list('Sale')).find(
+    (r) => r.code === 'insert-undo',
+  );
+  await host.update('Sale', String(inserted?.id), { qty: 8 });
+  await expect(run({ type: 'undo' })).rejects.toThrow(/changed since/);
+  expect((await host.get('Sale', String(inserted?.id))).qty).toBe(8);
+});

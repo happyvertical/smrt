@@ -371,13 +371,81 @@ export async function applyLoad(
               id: write.id,
             } as never);
         }
+        const batchWrites = prepared.slice(offset, offset + 100);
+        const byId = new Map(batchWrites.map((write) => [write.id, write]));
+        const generated = new Set(
+          Object.entries(fieldsOf(def, cmd.model))
+            .filter(([, fd]) => fd.calculated)
+            .map(([field]) => snake(field)),
+        );
+        const rows = (
+          await batch.query(
+            `SELECT * FROM ${quote(tableFor(cmd.model, def.models[cmd.model]))} WHERE id IN (${batchWrites.map(() => '?').join(',')})`,
+            batchWrites.map((write) => write.id),
+          )
+        ).rows as Row[];
+        await batch.insert(
+          '_archive',
+          rows.map((after) => {
+            const write = byId.get(String(after.id));
+            if (!write)
+              throw new AppError('loaded row missing from prepared batch');
+            const owned = write.before
+              ? Object.fromEntries(
+                  Object.entries(after).filter(
+                    ([column, value]) =>
+                      !same(value, write.before?.[column]) &&
+                      !generated.has(column),
+                  ),
+                )
+              : after;
+            return {
+              version,
+              tbl: cmd.model,
+              col: '$after',
+              record_id: write.id,
+              value: JSON.stringify(owned),
+              created_at: stamp,
+            };
+          }),
+        );
       }),
     );
   }
   return preview;
 }
 
-/** Restore the exact stored rows, omitting database-owned generated columns. */
+/** Save only command-owned columns' postimages; multiple writes share one row. */
+export async function archiveAfter(
+  db: any,
+  version: number,
+  model: string,
+  id: string,
+  after: Row,
+) {
+  const existing = (
+    await db.query(
+      "SELECT value FROM _archive WHERE version = ? AND tbl = ? AND col = '$after' AND record_id = ?",
+      [version, model, id],
+    )
+  ).rows[0];
+  const value = JSON.stringify({
+    ...(existing ? JSON.parse(existing.value) : {}),
+    ...after,
+  });
+  if (existing)
+    await db.query(
+      "UPDATE _archive SET value = ? WHERE version = ? AND tbl = ? AND col = '$after' AND record_id = ?",
+      [value, version, model, id],
+    );
+  else
+    await db.query(
+      'INSERT INTO _archive (version, tbl, col, record_id, value, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [version, model, '$after', id, value, new Date().toISOString()],
+    );
+}
+
+/** Restore owned columns only. Conflicts refuse the entire migration transaction. */
 export async function undoRows(def: AppDefinition, db: any, version: number) {
   const entries = (
     await db.query(
@@ -385,27 +453,76 @@ export async function undoRows(def: AppDefinition, db: any, version: number) {
       [version],
     )
   ).rows as Row[];
-  const inserted = new Map<string, unknown[]>();
+  const metadata = (
+    await db.query(
+      "SELECT tbl, record_id, col, value FROM _archive WHERE version = ? AND col IN ('$after', '$deleted')",
+      [version],
+    )
+  ).rows as Row[];
+  const post = new Map(
+    metadata
+      .filter((e) => e.col === '$after')
+      .map((e) => [
+        `${e.tbl}:${e.record_id}`,
+        JSON.parse(String(e.value)) as Row,
+      ]),
+  );
+  const deleted = new Set(
+    metadata
+      .filter((e) => e.col === '$deleted')
+      .map((e) => `${e.tbl}:${e.record_id}`),
+  );
+  const current = new Map<string, Map<string, Row>>();
+  for (const model of new Set(entries.map((e) => String(e.tbl))))
+    current.set(
+      model,
+      new Map(
+        (Object.hasOwn(def.models, model)
+          ? await rawRows(def, db, model)
+          : ((
+              await db.query(
+                `SELECT * FROM ${quote(tableFor(model, def.models[model]))}`,
+              )
+            ).rows as Row[])
+        ).map((row) => [String(row.id), row]),
+      ),
+    );
+  // Validate all rows before applying any restore. Never resurrect a user deletion,
+  // overwrite a reused id, or erase edits even when the caller approved undo.
   for (const entry of entries) {
-    if (JSON.parse(String(entry.value)) !== null) continue;
-    const table = tableFor(String(entry.tbl), def.models[String(entry.tbl)]);
-    const ids = inserted.get(table) ?? [];
-    ids.push(entry.record_id);
-    inserted.set(table, ids);
-  }
-  for (const [table, all] of inserted)
-    for (let offset = 0; offset < all.length; offset += 500) {
-      const ids = all.slice(offset, offset + 500);
-      await db.query(
-        `DELETE FROM ${quote(table)} WHERE id IN (${ids.map(() => '?').join(',')})`,
-        ids,
-      );
+    const key = `${entry.tbl}:${entry.record_id}`;
+    const row = current.get(String(entry.tbl))?.get(String(entry.record_id));
+    if (deleted.has(key)) {
+      if (row)
+        throw new AppError(
+          `cannot undo: ${key} removed record id has been reused`,
+        );
+      continue;
     }
+    const after = post.get(key);
+    if (!after)
+      throw new AppError(`cannot undo: ${key} has no column conflict journal`);
+    if (!row)
+      throw new AppError(
+        `cannot undo: ${key} was deleted since the command; undo would recreate it`,
+      );
+    for (const [column, value] of Object.entries(after))
+      if (column !== 'updated_at' && !same(row[column], value))
+        throw new AppError(
+          `cannot undo: ${entry.tbl}.${column} on ${entry.record_id} changed since the command; undo would lose that edit`,
+        );
+  }
   for (const entry of entries) {
     const model = String(entry.tbl);
     const table = tableFor(model, def.models[model]);
     const before = JSON.parse(String(entry.value)) as Row | null;
-    if (before === null) continue;
+    const key = `${model}:${entry.record_id}`;
+    if (before === null) {
+      await db.query(`DELETE FROM ${quote(table)} WHERE id = ?`, [
+        entry.record_id,
+      ]);
+      continue;
+    }
     const generated = new Set(
       (
         await db.query(
@@ -414,17 +531,31 @@ export async function undoRows(def: AppDefinition, db: any, version: number) {
         )
       ).rows.map((r: Row) => String(r.name)),
     );
-    const pairs = Object.entries(before).filter(([f]) => !generated.has(f));
-    // Refuse a conflicting id reused since a merged row was removed.
-    await db.query(
-      `INSERT INTO ${quote(table)} (${pairs.map(([f]) => quote(f)).join(',')}) VALUES (${pairs.map(() => '?').join(',')}) ON CONFLICT(id) DO UPDATE SET ${pairs
-        .filter(([f]) => f !== 'id')
-        .map(([f]) => `${quote(f)} = excluded.${quote(f)}`)
-        .join(',')}`,
-      pairs.map(([, v]) => v),
-    );
+    if (deleted.has(key)) {
+      const pairs = Object.entries(before).filter(([f]) => !generated.has(f));
+      // Plain INSERT refuses an id reused since the command removed this row.
+      await db.query(
+        `INSERT INTO ${quote(table)} (${pairs.map(([f]) => quote(f)).join(',')}) VALUES (${pairs.map(() => '?').join(',')})`,
+        pairs.map(([, v]) => v),
+      );
+    } else {
+      const after = post.get(key) as Row;
+      const row = current.get(model)?.get(String(entry.record_id)) as Row;
+      const columns = Object.keys(after).filter(
+        (c) =>
+          c !== 'id' &&
+          !generated.has(c) &&
+          (c !== 'updated_at' || same(row[c], after[c])),
+      );
+      if (columns.length)
+        await db.query(
+          `UPDATE ${quote(table)} SET ${columns.map((c) => `${quote(c)} = ?`).join(',')} WHERE id = ?`,
+          [...columns.map((c) => before[c] ?? null), entry.record_id],
+        );
+    }
   }
-  await db.query("DELETE FROM _archive WHERE version = ? AND col = '$row'", [
-    version,
-  ]);
+  await db.query(
+    "DELETE FROM _archive WHERE version = ? AND col IN ('$row', '$after', '$deleted')",
+    [version],
+  );
 }

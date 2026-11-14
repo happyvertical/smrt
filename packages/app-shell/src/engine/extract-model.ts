@@ -1,4 +1,5 @@
 import {
+  archiveAfter,
   archiveRow,
   collectionFor,
   fieldsOf,
@@ -146,9 +147,19 @@ export async function applyExtract(
         throw new AppError('extracted record id already exists');
       await archiveRow(db, version, cmd.into, id, null);
       await collection.create({ id, [label]: group.value } as never);
+      const created = (
+        await db.query(
+          `SELECT * FROM ${quote(tableFor(cmd.into, def.models[cmd.into]))} WHERE id = ?`,
+          [id],
+        )
+      ).rows[0];
+      await archiveAfter(db, version, cmd.into, id, created);
     }
     for (const row of group.rows) {
       await archiveRow(db, version, cmd.model, String(row.id), row);
+      await archiveAfter(db, version, cmd.model, String(row.id), {
+        [snake(cmd.field)]: id,
+      });
       await db.query(
         `UPDATE ${quote(tableFor(cmd.model, def.models[cmd.model]))} SET ${quote(snake(cmd.field))} = ? WHERE id = ?`,
         [id, row.id],
@@ -219,5 +230,28 @@ export async function undoExtract(
   await assertCanUndoRows(def, db, version, [
     { model: cmd.model, field: cmd.field, ref: cmd.into },
   ]);
+  const journal = (
+    await db.query(
+      "SELECT record_id, value FROM _archive WHERE version = ? AND tbl = ? AND col = '$after'",
+      [version, cmd.model],
+    )
+  ).rows as Row[];
+  const originals = new Map(
+    journal.map((e) => [
+      String(e.record_id),
+      JSON.parse(String(e.value)) as Row,
+    ]),
+  );
+  for (const row of await rawRows(def, db, cmd.model)) {
+    const value = row[snake(cmd.field)];
+    if (
+      value != null &&
+      value !== '' &&
+      originals.get(String(row.id))?.[snake(cmd.field)] !== value
+    )
+      throw new AppError(
+        `cannot undo extract: ${cmd.model}.${cmd.field} has a reference written since extraction; undo would leave a record id as text`,
+      );
+  }
   await undoRows(def, db, version);
 }
