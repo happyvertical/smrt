@@ -3592,6 +3592,9 @@ importers:
         specifier: 8.0.1
         version: 8.0.1
     devDependencies:
+      '@happyvertical/smrt-vitest':
+        specifier: workspace:*
+        version: link:../vitest
       '@modelcontextprotocol/client':
         specifier: 2.4.0
         version: 2.4.0
