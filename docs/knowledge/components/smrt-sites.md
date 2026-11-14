@@ -5,10 +5,10 @@ description: "Site lifecycle management for multi-tenant SMRT networks"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-13T17:10:40Z"
+  at: "2026-11-14T21:42:23Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:fc63b2a26e980c8463008e3839f1e5fbe7a4d9bdd4b876e515e205ce0e7ed81f"
+source_revision: "sha256:c81bb0f4a5894dbe0f32ecae66a16cee2ad24d612bbe571599c12467dc2c31a0"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/sites/package.json"

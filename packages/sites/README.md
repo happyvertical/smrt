@@ -69,6 +69,16 @@ await service.domainsByProject(tenantId, projectId, 'staging'); // role optional
 await service.unassignedDomains(tenantId); // domains with no project link
 ```
 
+Hostname helpers validate what an owner types before you create records:
+
+```typescript
+import { defaultZoneFor, hostnameBelongsToZone, parseHostname } from '@happyvertical/smrt-sites';
+
+const host = parseHostname(' Work.Example.com. '); // 'work.example.com' (null if not a plain multi-label hostname)
+const zone = defaultZoneFor(host); // 'example.com' (last two labels; name the zone yourself for example.co.uk)
+hostnameBelongsToZone(host, zone); // true for the apex or a subdomain, never for 'evilexample.com'
+```
+
 `Site.domain` remains a plain string; it is not yet linked to `Domain`.
 
 ### Portal configuration
