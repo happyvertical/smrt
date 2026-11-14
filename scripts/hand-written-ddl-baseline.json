@@ -30,6 +30,7 @@
     "packages/ledgers/src/migrations/ledger-accounts-table.ts::ALTER TABLE ${quote(foreignKey.table)}": 1,
     "packages/ledgers/src/migrations/ledger-accounts-table.ts::ALTER TABLE accounts": 1,
     "packages/messages/src/migrations/profileRecipients.ts::ALTER TABLE ${quote(table)}": 4,
+    "packages/spreadsheets/src/testing.ts::CREATE TABLE ${quote(key)}": 1,
     "packages/users/src/services/PostgresPermissionPolicies.ts::ALTER TABLE ${qualifiedTable}": 2,
     "packages/vault-relay/src/lease-store.ts::CREATE TABLE vault_relay_leases": 1,
     "packages/vault-relay/src/lease-store.ts::CREATE TABLE vault_relay_upload_fences": 1,
