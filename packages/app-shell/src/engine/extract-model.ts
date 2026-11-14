@@ -229,6 +229,7 @@ export async function assertCanUndoRows(
     ids.add(entry.record_id);
     inserted.set(model, ids);
   }
+  const blockers = new Map<string, string>();
   for (const ref of [...references, ...extraReferences]) {
     const ids = inserted.get(ref.ref);
     if (!ids?.size) continue;
@@ -241,12 +242,23 @@ export async function assertCanUndoRows(
         if (restored === null || restored?.[snake(ref.field)] !== target)
           continue;
       }
-      throw new AppError(
-        `cannot undo: ${ref.model}.${ref.field} still references a created ${ref.ref} record`,
+      const md = def.models[ref.model];
+      const title = titleField(def, ref.model);
+      const label = title ? row[snake(title)] : undefined;
+      blockers.set(
+        key,
+        `${md.label ?? ref.model}${label == null || label === '' ? ' record' : ` “${String(label).slice(0, 120)}”`}: still refers to a record this undo would remove`,
       );
     }
   }
+  if (blockers.size) {
+    const labels = [...blockers.values()].slice(0, 10);
+    throw new AppError(
+      `cannot undo: ${blockers.size} records need attention. ${labels.join('; ')}${blockers.size > labels.length ? `; ${blockers.size - labels.length} more records` : ''}`,
+    );
+  }
 }
+
 export async function undoExtract(
   def: AppDefinition,
   db: any,
@@ -268,16 +280,28 @@ export async function undoExtract(
       JSON.parse(String(e.value)) as Row,
     ]),
   );
+  const blockers: string[] = [];
+  let count = 0;
+  const title = titleField(def, cmd.model);
   for (const row of await rawRows(def, db, cmd.model)) {
     const value = row[snake(cmd.field)];
     if (
       value != null &&
       value !== '' &&
       originals.get(String(row.id))?.[snake(cmd.field)] !== value
-    )
-      throw new AppError(
-        `cannot undo extract: ${cmd.model}.${cmd.field} has a reference written since extraction; undo would leave a record id as text`,
-      );
+    ) {
+      count++;
+      if (blockers.length < 10) {
+        const label = title ? row[snake(title)] : undefined;
+        blockers.push(
+          `${def.models[cmd.model].label ?? cmd.model}${label == null || label === '' ? ' record' : ` “${String(label).slice(0, 120)}”`}: a link was changed since extraction; undo would replace that link with text`,
+        );
+      }
+    }
   }
+  if (count)
+    throw new AppError(
+      `cannot undo: ${count} records need attention. ${blockers.join('; ')}${count > blockers.length ? `; ${count - blockers.length} more records` : ''}`,
+    );
   await undoRows(def, db, version);
 }

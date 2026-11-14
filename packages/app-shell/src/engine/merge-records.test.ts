@@ -151,7 +151,7 @@ it.each([
   expect(host.version).toBe(version);
 });
 
-it('keeps later note edits, refuses user deletions and changed repointed columns atomically', async () => {
+it('keeps later note edits, skips deleted referrers and refuses changed repointed columns atomically', async () => {
   await run({
     type: 'addField',
     model: 'Note',
@@ -176,11 +176,12 @@ it('keeps later note edits, refuses user deletions and changed repointed columns
   expect(await host.list('Customer')).toHaveLength(1);
   await host.update('Note', String(first.id), { customer: keep });
   await host.remove('Note', String(second.id));
-  await expect(run({ type: 'undo' })).rejects.toThrow(/deleted since/);
-  expect(await host.list('Customer')).toHaveLength(1);
+  const undone = await run({ type: 'undo' });
+  expect(undone).toMatchObject({ skipped: 1 });
+  expect(await host.list('Customer')).toHaveLength(2);
   expect((await host.list('Note')).some((r) => r.id === second.id)).toBe(false);
   expect(await host.get('Note', String(first.id))).toMatchObject({
     body: 'edited later',
-    customer: keep,
+    customer: other,
   });
 });

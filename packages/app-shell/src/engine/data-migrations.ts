@@ -482,7 +482,12 @@ export async function archiveAfter(
 }
 
 /** Restore owned columns only. Conflicts refuse the entire migration transaction. */
-export async function undoRows(def: AppDefinition, db: any, version: number) {
+export async function undoRows(
+  def: AppDefinition,
+  db: any,
+  version: number,
+  options: { skipDeletedReferrers?: { model: string; keep: string } } = {},
+) {
   const entries = (
     await db.query(
       "SELECT tbl, record_id, value FROM _archive WHERE version = ? AND col = '$row' ORDER BY id DESC",
@@ -523,32 +528,74 @@ export async function undoRows(def: AppDefinition, db: any, version: number) {
         ).map((row) => [String(row.id), row]),
       ),
     );
-  // Validate all rows before applying any restore. Never resurrect a user deletion,
-  // overwrite a reused id, or erase edits even when the caller approved undo.
+  // Validate every row first and collect a bounded, owner-readable refusal.
+  const skipped = new Set<string>();
+  const conflicts: string[] = [];
+  let conflictCount = 0;
+  const conflict = (entry: Row, row: Row | undefined, reason: string) => {
+    conflictCount++;
+    if (conflicts.length >= 10) return;
+    const model = String(entry.tbl);
+    const md = def.models[model];
+    const before = JSON.parse(String(entry.value)) as Row | null;
+    const title =
+      md?.titleField ??
+      Object.entries(
+        md ? { ...builtInFields(model, md), ...visible(md.fields) } : {},
+      ).find(([, fd]) => !fd.hidden && fd.type === 'text')?.[0];
+    const label = title
+      ? (row?.[snake(title)] ?? before?.[snake(title)])
+      : undefined;
+    conflicts.push(
+      `${md?.label ?? model}${label == null || label === '' ? ' record' : ` “${String(label).slice(0, 120)}”`}: ${reason}`,
+    );
+  };
   for (const entry of entries) {
     const key = `${entry.tbl}:${entry.record_id}`;
     const row = current.get(String(entry.tbl))?.get(String(entry.record_id));
     if (deleted.has(key)) {
-      if (row)
-        throw new AppError(
-          `cannot undo: ${key} removed record id has been reused`,
-        );
+      if (row) conflict(entry, row, 'a removed record has been replaced');
       continue;
     }
     const after = post.get(key);
-    if (!after)
-      throw new AppError(`cannot undo: ${key} has no column conflict journal`);
-    if (!row)
-      throw new AppError(
-        `cannot undo: ${key} was deleted since the command; undo would recreate it`,
+    if (!after) {
+      conflict(
+        entry,
+        row,
+        'the saved information needed to safely undo is unavailable',
       );
-    for (const [column, value] of Object.entries(after))
-      if (column !== 'updated_at' && !same(row[column], value))
-        throw new AppError(
-          `cannot undo: ${entry.tbl}.${column} on ${entry.record_id} changed since the command; undo would lose that edit`,
-        );
+      continue;
+    }
+    if (!row) {
+      const merge = options.skipDeletedReferrers;
+      if (
+        merge &&
+        (entry.tbl !== merge.model || entry.record_id !== merge.keep)
+      ) {
+        skipped.add(key);
+        continue;
+      }
+      conflict(entry, row, 'deleted since the command; undo would recreate it');
+      continue;
+    }
+    if (
+      Object.entries(after).some(
+        ([column, value]) =>
+          column !== 'updated_at' && !same(row[column], value),
+      )
+    )
+      conflict(
+        entry,
+        row,
+        'changed since the command; undo would lose those edits',
+      );
   }
+  if (conflictCount)
+    throw new AppError(
+      `cannot undo: ${conflictCount} records need attention. ${conflicts.join('; ')}${conflictCount > conflicts.length ? `; ${conflictCount - conflicts.length} more records` : ''}`,
+    );
   for (const entry of entries) {
+    if (skipped.has(`${entry.tbl}:${entry.record_id}`)) continue;
     const model = String(entry.tbl);
     const table = tableFor(model, def.models[model]);
     const before = JSON.parse(String(entry.value)) as Row | null;
@@ -594,4 +641,5 @@ export async function undoRows(def: AppDefinition, db: any, version: number) {
     "DELETE FROM _archive WHERE version = ? AND col IN ('$row', '$after', '$deleted')",
     [version],
   );
+  return { skipped: skipped.size };
 }

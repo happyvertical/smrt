@@ -76,6 +76,7 @@ const OWNER = { id: 'owner', roles: ['admin'] };
 const PROFILE_TYPES = '@happyvertical/smrt-profiles:ProfileType';
 
 export interface BootResult {
+  skipped?: number;
   statements: string[];
   snapshot: string | null;
 }
@@ -86,6 +87,7 @@ export class AppRuntime {
   private db: Handle;
   private dataDir: string;
   private snapshots = 0;
+  private skipped = 0;
 
   constructor(dataDir: string, def: AppDefinition, version: number) {
     this.dataDir = dataDir;
@@ -168,7 +170,11 @@ export class AppRuntime {
     ])
       await this.db
         .execute`INSERT INTO _app_meta (key, value) VALUES (${k}, ${v}) ON CONFLICT(key) DO UPDATE SET value = excluded.value`;
-    return { statements, snapshot };
+    return {
+      statements,
+      snapshot,
+      ...(this.skipped ? { skipped: this.skipped } : {}),
+    };
   }
 
   // ---------- registry and tables ----------
@@ -290,7 +296,10 @@ export class AppRuntime {
     switch (step.op) {
       case 'mergeRecords':
         if (up) await applyMerge(this.def, tx, step.command, m.version);
-        else await undoMerge(this.def, tx, step.command, m.version);
+        else
+          this.skipped += (
+            await undoMerge(this.def, tx, step.command, m.version)
+          ).skipped;
         done.push(`-- ${up ? 'merge' : 'undo merge'} records`);
         break;
       case 'extractModel':

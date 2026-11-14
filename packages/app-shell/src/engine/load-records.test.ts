@@ -289,7 +289,7 @@ it.each([
   expect(failure).toBeInstanceOf(EngineError);
   expect(failure).toMatchObject({ code: 'migration_failed' });
   expect(failure.message).toMatch(
-    /Sale.customer still references a created Customer record/,
+    /Sale “(?:created|updated)-reference”: still refers to a record this undo would remove/,
   );
   expect(host.version).toBe(version);
   expect(await host.list('Customer')).toEqual(loaded);

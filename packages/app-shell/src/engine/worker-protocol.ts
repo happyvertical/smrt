@@ -41,6 +41,7 @@ export type WorkerReply =
     };
 
 export interface BootInfo {
+  skipped?: number;
   statements: string[];
   snapshot: string | null;
   bootMs: number;

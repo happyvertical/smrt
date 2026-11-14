@@ -154,14 +154,7 @@ export async function undoMerge(
   cmd: MergeRecordsCommand,
   version: number,
 ) {
-  const current = await rawRows(def, db, cmd.model);
-  if (current.some((row) => cmd.merge.includes(String(row.id))))
-    throw new AppError(
-      'cannot undo merge: a removed record id has been reused',
-    );
-  await undoRows(def, db, version);
-  await db.query(
-    "DELETE FROM _archive WHERE version = ? AND col = '$deleted'",
-    [version],
-  );
+  return undoRows(def, db, version, {
+    skipDeletedReferrers: { model: cmd.model, keep: cmd.keep },
+  });
 }

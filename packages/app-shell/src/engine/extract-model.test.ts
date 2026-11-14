@@ -106,9 +106,13 @@ it('folds only when requested, matches existing targets and refuses undo with ne
   const created = (await host.list('Group')).find((r) => r.id !== existing.id);
   const note = await host.create('Note', { groupId: created?.id });
   const task = await host.create('Task', { groupId: created?.id });
-  await expect(run({ type: 'undo' })).rejects.toThrow(/still references/);
+  await expect(run({ type: 'undo' })).rejects.toThrow(
+    /still refers to a record this undo would remove/,
+  );
   await host.remove('Note', String(note.id));
-  await expect(run({ type: 'undo' })).rejects.toThrow(/Task.groupId/);
+  await expect(run({ type: 'undo' })).rejects.toThrow(
+    /Task record: still refers to a record this undo would remove/,
+  );
   await host.remove('Task', String(task.id));
   await run({ type: 'undo' });
   expect(raw('u_sales')).toEqual(before);
@@ -249,12 +253,12 @@ it('refuses undo of an existing-target extract with a later created or changed r
   });
   const late = await host.create('Purchase', { vendor: vendor.id });
   await expect(run({ type: 'undo' })).rejects.toThrow(
-    /reference written since extraction/,
+    /a link was changed since extraction/,
   );
   await host.remove('Purchase', String(late.id));
   await host.update('Purchase', String(blank.id), { vendor: vendor.id });
   await expect(run({ type: 'undo' })).rejects.toThrow(
-    /reference written since extraction/,
+    /a link was changed since extraction/,
   );
   await host.update('Purchase', String(blank.id), { vendor: null });
   await run({ type: 'undo' });
