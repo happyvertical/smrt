@@ -9,9 +9,12 @@
  *   - Reads `packages/<pkg>/src/**\/*.{ts,tsx,js,mjs}` (tests and generated
  *     files excluded), ignores comments, and finds `CREATE TABLE`,
  *     `ALTER TABLE` and `DROP TABLE` statements.
- *   - Skips the migrator and schema code (MIGRATOR_PATHS) and core's
- *     hand-written `_smrt_*` system tables (SYSTEM_TABLE_PATHS). Both lists
- *     are in this file, each with its reason, so growing one shows in review.
+ *   - Skips the migrator and schema code (MIGRATOR_PATHS), core's
+ *     hand-written `_smrt_*` system tables (SYSTEM_TABLE_PATHS), and the
+ *     code that builds a database it declares runtime-managed
+ *     (RUNTIME_MANAGED_SCHEMA_PATHS, the allow-list of
+ *     `check-runtime-managed-databases.mjs`). Each has its reason, so growing
+ *     one shows in review.
  *   - Fails on any other statement that is not in
  *     `scripts/hand-written-ddl-baseline.json`, naming the file and line.
  *   - The baseline lists today's occurrences, per file and statement. It may
@@ -26,6 +29,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ALLOWED_CALLERS as RUNTIME_MANAGED_OPENERS } from './check-runtime-managed-databases.mjs';
 import { fileAtRef, maskComments, matchBracket, walk } from './lib/source-scan.mjs';
 
 const BASELINE_PATH = 'scripts/hand-written-ddl-baseline.json';
@@ -44,6 +48,18 @@ export const MIGRATOR_PATHS = [
 export const SYSTEM_TABLE_PATHS = [
   ['packages/core/src/system/', 'hand-written _smrt_* system tables and their compatibility checks'],
 ];
+
+/**
+ * Code that builds the schema of a database it opens and declares
+ * runtime-managed (`declareRuntimeManagedDatabase`): core's migrator never runs
+ * there, so this code is that database's migrator. Exactly the files allowed
+ * to make the declaration (`scripts/check-runtime-managed-databases.mjs`), so
+ * the two lists cannot drift; today the app-shell engine's app.db.
+ */
+export const RUNTIME_MANAGED_SCHEMA_PATHS = Object.keys(RUNTIME_MANAGED_OPENERS).map((file) => [
+  file,
+  'builds the schema of the database it declares runtime-managed',
+]);
 
 const STATEMENT =
   /\b(CREATE|ALTER|DROP)\s+(?:(?:GLOBAL\s+|LOCAL\s+)?(?:TEMP|TEMPORARY)\s+|VIRTUAL\s+|UNLOGGED\s+)?TABLE\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?(?:ONLY\s+)?/gi;
@@ -115,7 +131,7 @@ function isScanned(rel, pkg) {
 }
 
 function exemption(rel) {
-  for (const [prefix] of [...MIGRATOR_PATHS, ...SYSTEM_TABLE_PATHS]) {
+  for (const [prefix] of [...MIGRATOR_PATHS, ...SYSTEM_TABLE_PATHS, ...RUNTIME_MANAGED_SCHEMA_PATHS]) {
     if (rel === prefix || rel.startsWith(prefix)) return prefix;
   }
   return undefined;
