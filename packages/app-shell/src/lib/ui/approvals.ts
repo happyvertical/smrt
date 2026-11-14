@@ -42,7 +42,53 @@ function commandLines(
     blocks: [],
     destructive: false,
   };
+  const model = String(preview.modelLabel ?? command.model ?? 'records');
+  const field = String(preview.fieldLabel ?? command.field ?? 'the field');
   switch (op) {
+    case 'mergeRecords': {
+      const references = obj(preview.references);
+      const labels = obj(preview.referenceLabels);
+      return {
+        ...base,
+        lines: [
+          `Merges ${plural(num(preview.removed), `${model} record`)} into ${preview.keepLabel ?? 'the selected record'}.`,
+          ...Object.entries(references).map(
+            ([name, count]) =>
+              `${plural(num(count), 'reference')} in ${labels[name] ?? name} will point to the kept record.`,
+          ),
+          'The merged records are removed. Undo restores them until old archives are cleaned up.',
+        ],
+      };
+    }
+    case 'extractModel':
+      return {
+        ...base,
+        lines: [
+          `Turns ${field} in ${model} into links to ${preview.intoLabel ?? command.into}.`,
+          `${plural(num(preview.rows), 'record')} will be linked: ${num(preview.create)} linked records created and ${num(preview.matched)} existing records matched.`,
+          `${plural(num(preview.distinct), 'distinct value')}; ${num(preview.folded)} values combined by normalization. Undo restores the original values until old archives are cleaned up.`,
+        ],
+      };
+    case 'loadRecords':
+      return {
+        ...base,
+        lines: [
+          `Loads records into ${model}: ${num(preview.insert)} inserted, ${num(preview.update)} updated, ${num(preview.unchanged)} unchanged, ${num(preview.rejected)} rejected.`,
+          'Updates overwrite stored values. Undo restores the originals until old archives are cleaned up.',
+        ],
+      };
+    case 'setCalculation':
+      return {
+        ...base,
+        lines: [
+          `Calculates ${field} in ${model}.`,
+          ...(typeof preview.rows === 'number'
+            ? [`${plural(num(preview.rows), 'record')} will be recalculated.`]
+            : []),
+          'This replaces ordinary stored values with calculated values. Future edits cannot set this field directly. Undo restores the original values until old archives are cleaned up.',
+        ],
+      };
+
     case 'removeField': {
       const n = num(preview.valuesArchived);
       return {

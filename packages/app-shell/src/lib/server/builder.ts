@@ -11,6 +11,8 @@ import {
   EngineError,
   isStructuralCommand,
 } from '../../engine/index.ts';
+import { fieldLabel, recordLabel } from '../ui/fields.ts';
+import type { RecordRow } from '../ui/types.ts';
 import {
   type ApprovalAction,
   type PendingApproval,
@@ -60,9 +62,61 @@ export async function runCommand(
           version: command.version,
           from: host.version,
         };
+      const description = host.describe();
+      const model =
+        'model' in command && Object.hasOwn(description.models, command.model)
+          ? description.models[command.model]
+          : undefined;
+      const field =
+        model &&
+        'field' in command &&
+        Object.hasOwn(model.fields, command.field)
+          ? model.fields[command.field]
+          : undefined;
+      const keep =
+        command.type === 'mergeRecords'
+          ? await host.get(command.model, command.keep)
+          : undefined;
+      const keptLabel =
+        keep && model ? recordLabel(model, keep as RecordRow) : '';
+      const preview = {
+        ...e.plan.preview,
+        ...(model
+          ? {
+              modelLabel:
+                model.label ?? ('model' in command ? command.model : ''),
+            }
+          : {}),
+        ...(field && 'field' in command
+          ? { fieldLabel: fieldLabel(command.field, field) }
+          : {}),
+        ...(keep && model
+          ? {
+              keepLabel:
+                keptLabel &&
+                keptLabel !== String(keep.id) &&
+                !keptLabel.endsWith('…')
+                  ? keptLabel
+                  : 'the selected record',
+            }
+          : {}),
+        ...(command.type === 'extractModel'
+          ? {
+              intoLabel: Object.hasOwn(description.models, command.into)
+                ? (description.models[command.into].label ?? command.into)
+                : command.into,
+            }
+          : {}),
+        referenceLabels: Object.fromEntries(
+          Object.entries(description.models).map(([name, model]) => [
+            name,
+            model.label ?? name,
+          ]),
+        ),
+      };
       return requestApproval(
-        { kind: 'command', command: pinned },
-        e.plan,
+        { kind: 'command', command: pinned, reviewedPreview: e.plan.preview },
+        { ...e.plan, preview },
         author,
       );
     }
