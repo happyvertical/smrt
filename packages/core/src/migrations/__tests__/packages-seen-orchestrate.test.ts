@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtObject } from '../../object.js';
 import { ObjectRegistry } from '../../registry.js';
 import type { SchemaDefinition } from '../../schema/types.js';
+import { registerBuildSchema } from '../build-schema.js';
 import {
   collectMigrateRecordInput,
   readLastMigrateRecord,
@@ -204,33 +205,75 @@ describe('migrateSmrtSchemas missing packages (#4928, SQLite)', () => {
   });
 
   // Lazy activation and run-time model edits (#4954) migrate a table subset.
-  // Such a run is not a migrate of the build: it must not stop on a package it
-  // never loads, and must not write a record that vouches for the build.
-  it('a run limited to tables skips the package comparison and leaves the record as it was', async () => {
-    await seed();
-    const recordBefore = await readLastMigrateRecord(db);
-    const runsBefore = (await db.query('SELECT * FROM _smrt_migrate_runs')).rows
-      .length;
-    expect(
-      (await migrateSmrtSchemas({ db, packageName: '@app/a' })).refused,
-    ).toBe(true);
-    const result = await migrateSmrtSchemas({
-      db,
-      packageName: '@app/a',
-      tables: ['posts'],
+  // Such a run is not a migrate of the build: it never compares the build's
+  // packages and writes no record. So on a table the build owns it may only
+  // add (P22): a registry missing the package that hardened a column must not
+  // relax it behind the package check (review finding on the merge).
+  describe.each([
+    ['the build names the table', true],
+    ['no build is found (the registry has no run-time model on it)', false],
+  ])('a run limited to tables on a build table, %s', (_label, withBuild) => {
+    beforeEach(() => {
+      if (withBuild)
+        registerBuildSchema({
+          fingerprint: 'stamp',
+          tables: { posts: ['@app/a', '@scope/b'] },
+          packages: ['@app/a', '@scope/b'],
+          source: 'registered',
+        });
     });
-    expect(result).toMatchObject({
-      applied: true,
-      refused: false,
-      packageStops: [],
+    afterEach(() => registerBuildSchema(undefined));
+
+    it('refuses to relax a column the missing package required, and changes nothing', async () => {
+      await seed();
+      const before = await snapshot(db);
+      const result = await migrateSmrtSchemas({
+        db,
+        packageName: '@app/a',
+        tables: ['posts'],
+        relaxColumns: true,
+      });
+      expect(result).toMatchObject({ applied: false, refused: true });
+      expect(result.stops.map((stop) => stop.message).join('\n')).toMatch(
+        /posts\.title.*belongs to the build.*smrt db:migrate/s,
+      );
+      expect(await snapshot(db)).toBe(before);
+      expect((await db.getTableSchema?.('posts'))?.columns.title.notNull).toBe(
+        true,
+      );
     });
-    expect((await db.getTableSchema?.('posts'))?.columns).toHaveProperty(
-      'note',
-    );
-    expect(await readLastMigrateRecord(db)).toEqual(recordBefore);
-    expect(
-      (await db.query('SELECT * FROM _smrt_migrate_runs')).rows,
-    ).toHaveLength(runsBefore);
+
+    it('still adds to the table: a new column applies and the record is left as it was', async () => {
+      await db.query(
+        'CREATE TABLE posts (id TEXT PRIMARY KEY NOT NULL, title TEXT)',
+      );
+      await recordSuccessfulMigrate(db, {
+        input: {
+          ...collectMigrateRecordInput(),
+          packages: ['@app/a', '@scope/b'],
+        },
+      });
+      const recordBefore = await readLastMigrateRecord(db);
+      const runsBefore = (await db.query('SELECT * FROM _smrt_migrate_runs'))
+        .rows.length;
+      const result = await migrateSmrtSchemas({
+        db,
+        packageName: '@app/a',
+        tables: ['posts'],
+      });
+      expect(result).toMatchObject({
+        applied: true,
+        refused: false,
+        packageStops: [],
+      });
+      expect((await db.getTableSchema?.('posts'))?.columns).toHaveProperty(
+        'note',
+      );
+      expect(await readLastMigrateRecord(db)).toEqual(recordBefore);
+      expect(
+        (await db.query('SELECT * FROM _smrt_migrate_runs')).rows,
+      ).toHaveLength(runsBefore);
+    });
   });
 
   it('a run limited to tables writes no first record, so it cannot vouch for an unmigrated build', async () => {

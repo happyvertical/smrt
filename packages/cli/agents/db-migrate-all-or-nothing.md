@@ -101,8 +101,14 @@ checks packages itself and returns the same package stops and notices.
 A run limited to `tables` (core's lazy activation and run-time model editor)
 is all or nothing for its own changes but is not a migrate of the build: it
 skips the package comparison and writes no last-migrate record, so it can
-never make an unmigrated build pass the startup check. Those callers call
-`assertMigrationAccepted` before they publish anything.
+never make an unmigrated build pass the startup check. Because it skips the
+comparison, on a table the build owns it may only add (kinds marked
+`additive` in `SCHEMA_CHANGE_KINDS`: new table, column, index, foreign key or
+CHECK). Any relaxing or removing change there is a `build-table` stop that
+refuses the whole run and names `smrt db:migrate`. A build table is one the
+app's build names or, with no build found, any table not held only by
+standalone run-time models; a run-time list's own table stays free. Those
+callers call `assertMigrationAccepted` before they publish anything.
 
 ## `doctor --db`: next migrate
 

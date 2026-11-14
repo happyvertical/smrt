@@ -16,6 +16,12 @@ export interface SchemaChangePolicy {
 export interface SchemaChangeKind {
   type: SchemaChange['type'];
   engines: Record<SchemaChangeEngine, SchemaChangePolicy>;
+  /**
+   * The change only adds (a table, column, index, foreign key or CHECK) and
+   * relaxes or removes nothing. A run limited to tables may apply only these
+   * to a table the build owns (#4927, P22).
+   */
+  additive?: true;
 }
 const engines = (policy: SchemaChangePolicy) => ({
   postgres: policy,
@@ -66,6 +72,7 @@ const unresolvedPolicy = (exception: string): SchemaChangePolicy => ({
 export const SCHEMA_CHANGE_KINDS = {
   'table.add': {
     type: 'add_table',
+    additive: true,
     engines: apply('Create the declared table.'),
   },
   'table.drop': {
@@ -74,6 +81,7 @@ export const SCHEMA_CHANGE_KINDS = {
   },
   'column.add': {
     type: 'add_column',
+    additive: true,
     engines: apply(
       'Add the declared column using the proven default or backfill when needed.',
     ),
@@ -149,6 +157,7 @@ export const SCHEMA_CHANGE_KINDS = {
   },
   'check.add': {
     type: 'alter_column',
+    additive: true,
     engines: {
       postgres: applyPolicy(
         'Add the missing shared-table CHECK after proving no stored row breaks it.',
@@ -201,6 +210,7 @@ export const SCHEMA_CHANGE_KINDS = {
   },
   'index.add': {
     type: 'add_index',
+    additive: true,
     engines: apply(
       'Create or rename the declared index without changing stored rows.',
     ),
@@ -307,6 +317,7 @@ export const SCHEMA_CHANGE_KINDS = {
   },
   'foreign-key.add': {
     type: 'add_foreign_key',
+    additive: true,
     engines: apply(
       'Add or replace the foreign key after checking existing references.',
     ),
@@ -533,6 +544,16 @@ export function classifySchemaChange(
     default:
       return 'unlisted';
   }
+}
+
+/** Whether a kind only adds; see {@link SchemaChangeKind.additive}. */
+export function isAdditiveSchemaChangeKind(
+  kind: SchemaChangeKindId | 'unlisted',
+): boolean {
+  return (
+    kind !== 'unlisted' &&
+    (SCHEMA_CHANGE_KINDS[kind] as SchemaChangeKind).additive === true
+  );
 }
 
 export interface SchemaChangeVerdict {

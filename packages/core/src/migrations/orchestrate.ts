@@ -18,6 +18,7 @@ import { getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import { planForeignKeyCreation } from '../schema/foreign-key-planner.js';
 import type { MigrationResult, SchemaChange } from '../schema/types.js';
+import { resolveBuildSchema } from './build-schema.js';
 import { decideSchemaChange, isCommentOnlySql } from './change-kinds.js';
 import {
   generateSchemaDiff,
@@ -300,6 +301,38 @@ export async function getPendingSchemaStatements(
 }
 
 /**
+ * The changed tables a run limited to tables may only add to (P22): every
+ * table the app's build names, and, when no build is found, every table that
+ * is not held only by standalone run-time models (`runtime-model:` entries
+ * that extend nothing). A run-time list's own table stays free; a built
+ * table, a replacement of a built model and an unknown table do not.
+ */
+function buildOwnedTables(
+  changes: readonly SchemaChange[],
+): ReadonlySet<string> {
+  const build = resolveBuildSchema();
+  const runtimeOnly = new Map<string, boolean>();
+  for (const [key, entry] of ObjectRegistry.getAllClasses()) {
+    const table = ObjectRegistry.getTableName(key);
+    if (!table) continue;
+    const standaloneRuntime =
+      entry.sourceFilePath?.startsWith('runtime-model:') === true &&
+      (!entry.extends || entry.extends === 'SmrtObject') &&
+      !entry.replacedQualifiedNames?.length;
+    runtimeOnly.set(
+      table,
+      (runtimeOnly.get(table) ?? true) && standaloneRuntime,
+    );
+  }
+  const owned = new Set<string>();
+  for (const { table } of changes) {
+    if (build?.tables[table] || runtimeOnly.get(table) !== true)
+      owned.add(table);
+  }
+  return owned;
+}
+
+/**
  * Apply any pending schema changes from `ObjectRegistry` to `db`.
  *
  * Returns `applied: false` (with no error) if the database is already in
@@ -345,7 +378,9 @@ export async function migrateSmrtSchemas(
   // part of the schema, not the build: it does not compare the build's
   // packages and writes no last-migrate record, so it can neither stop on a
   // package it was never meant to load nor vouch for tables it did not touch
-  // (#4926, #4928, #4929). Its own changes are still all or nothing.
+  // (#4926, #4928, #4929). Its own changes are still all or nothing. Because
+  // it skips the package comparison, it may only add to a table the build
+  // owns (P22): relaxing or removing is a stop that names smrt db:migrate.
   const partial = options.tables !== undefined;
   const recordInput = partial ? undefined : collectMigrateRecordInput();
   const last = await readLastMigrateRecord(options.db, {
@@ -363,6 +398,7 @@ export async function migrateSmrtSchemas(
           options.confirmRemovedPackages ?? [],
         )
       : undefined,
+    ...(partial ? { onlyAddTo: buildOwnedTables(pending.diff.changes) } : {}),
   });
   const { stops, heldBack, proceed, packageStops, releaseStop, notices } =
     decision;

@@ -3,6 +3,7 @@
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import {
   decideSchemaChange,
+  isAdditiveSchemaChangeKind,
   type SchemaChangeInput,
   type SchemaChangeVerdict,
 } from './change-kinds.js';
@@ -80,7 +81,8 @@ export interface MigrationReleaseStop {
 export interface MigrationRunStop<T = SchemaChangeInput> {
   change: T;
   kind: SchemaChangeVerdict['kind'];
-  reason: NonNullable<SchemaChangeVerdict['stop']>['reason'];
+  /** `build-table`: a run limited to tables would relax or remove part of a build table. */
+  reason: NonNullable<SchemaChangeVerdict['stop']>['reason'] | 'build-table';
   message: string;
 }
 
@@ -112,6 +114,13 @@ export function decideMigrationRun<T extends SchemaChangeInput>(options: {
   resolvedStops?: ReadonlySet<T>;
   packagesSeen?: PackagesSeenInput;
   recordedRelease?: string | null;
+  /**
+   * Tables a run limited to tables may only add to (the build's tables,
+   * P22). Such a run skips the package comparison, so a change that relaxes or
+   * removes anything on one of these tables is a stop: only a full migrate,
+   * where the package comparison applies, may make it.
+   */
+  onlyAddTo?: ReadonlySet<string>;
 }): MigrationRunDecision<T> {
   const releaseCheck = checkOldestSupportedRelease(
     options.recordedRelease ?? null,
@@ -164,6 +173,20 @@ export function decideMigrationRun<T extends SchemaChangeInput>(options: {
   const applicable: T[] = [];
   for (const change of options.changes) {
     const verdict = decideSchemaChange(change, options.engine);
+    if (
+      verdict.decision === 'apply' &&
+      options.onlyAddTo?.has(change.table) &&
+      !isAdditiveSchemaChangeKind(verdict.kind)
+    ) {
+      const subject = `${change.table}${change.name ? `.${change.name}` : ''}`;
+      stops.push({
+        change,
+        kind: verdict.kind,
+        reason: 'build-table',
+        message: `${subject}: ${change.table} belongs to the build, and this run is limited to some tables (lazy activation or a run-time model edit), so it may only add to it. This change (${verdict.kind}) relaxes or removes part of it. Run smrt db:migrate, a full migrate that compares the build's packages.`,
+      });
+      continue;
+    }
     if (verdict.decision === 'stop' && !options.resolvedStops?.has(change)) {
       stops.push({
         change,
