@@ -5,6 +5,7 @@ import RecordForm from '../lib/components/RecordForm.svelte';
 import RecordList from '../lib/components/RecordList.svelte';
 import { serializeForm } from '../lib/ui/fields.ts';
 import { publishGroups } from '../lib/ui/publish.ts';
+import type { RecordRow } from '../lib/ui/types.ts';
 import { description, preview } from '../test/draft-fixtures.ts';
 import ModelPage from './m/[model]/+page.svelte';
 
@@ -208,16 +209,17 @@ it('resets sorting when navigating to another model with different fields', asyn
     label: 'Other',
     fields: { name: { type: 'text' } },
   };
+  const rows: RecordRow[] = [
+    { id: 'c1', name: 'First', total: 200 },
+    { id: 'c2', name: 'Second', total: 100 },
+  ];
   const list = createClassComponent({
     component: RecordList,
     target: container,
     props: {
       description: d,
       model: 'Customer',
-      rows: [
-        { id: 'c1', name: 'First', total: 200 },
-        { id: 'c2', name: 'Second', total: 100 },
-      ],
+      rows,
     },
   });
   try {
