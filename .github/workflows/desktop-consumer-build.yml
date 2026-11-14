@@ -326,13 +326,17 @@ jobs:
             pnpm --dir "$APP_DIR" exec smrt "${args[@]}"
           fi
 
-      # A directory of files, never an archive. Pull requests upload nothing.
+      # upload-artifact drops Unix modes, which would break a macOS .app, so
+      # the installer directory goes up as one tar archive (modes preserved).
+      - name: Archive the unsigned installer
+        if: github.event_name != 'pull_request'
+        run: tar -C "$RUNNER_TEMP/installer" -cf "$RUNNER_TEMP/installer.tar" .
+
       - name: Upload the unsigned installer
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: desktop-installer-unsigned-${{ matrix.target }}
-          path: ${{ runner.temp }}/installer
-          include-hidden-files: true
+          path: ${{ runner.temp }}/installer.tar
           if-no-files-found: error
           retention-days: 3

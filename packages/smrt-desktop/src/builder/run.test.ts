@@ -10,7 +10,7 @@ import {
 } from './run.js';
 import { APP, BUNDLE, createFixture, OUT, TARGET } from './testing/fixtures.js';
 
-const host = { platform: 'darwin' as const, arch: 'arm64' };
+const host = { platform: 'darwin' as const, arch: 'arm64', cwd: '/' };
 const plan = (extra: Record<string, unknown> = {}) =>
   createBuildPlan(
     { appDir: APP, bundleDir: BUNDLE, outDir: OUT, ...extra },
@@ -28,6 +28,17 @@ async function code(promise: Promise<unknown>): Promise<string> {
 }
 
 describe('createBuildPlan', () => {
+  it('resolves relative paths against the invocation directory', () => {
+    const relative = createBuildPlan(
+      { appDir: '.', bundleDir: 'b/bundle', outDir: '../out' },
+      { ...host, cwd: '/work/app' },
+    );
+    expect(relative).toMatchObject({
+      appDir: '/work/app',
+      bundleDir: '/work/app/b/bundle',
+      outDir: '/work/out',
+    });
+  });
   it('defaults to the host target and rejects unsupported ones', () => {
     expect(plan().target).toBe(TARGET);
     expect(() => plan({ target: 'riscv64-unknown-linux-gnu' })).toThrow(

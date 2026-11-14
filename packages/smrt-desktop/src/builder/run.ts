@@ -33,7 +33,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { join, posix } from 'node:path';
+import { join, posix, resolve } from 'node:path';
 import { parseProductConfig } from '../bundler/product-config.js';
 import {
   BUNDLE_FILES_FILENAME,
@@ -140,7 +140,7 @@ function hostTarget(
 
 export function createBuildPlan(
   input: BuildOptionsInput,
-  host: { platform: NodeJS.Platform; arch: string },
+  host: { platform: NodeJS.Platform; arch: string; cwd: string },
 ): BuildPlan {
   for (const [field, value] of [
     ['app', input.appDir],
@@ -161,9 +161,11 @@ export function createBuildPlan(
     throw new BuildError('smoke_needs_host_target', { field: 'smoke' });
   }
   return {
-    appDir: input.appDir,
-    bundleDir: input.bundleDir,
-    outDir: input.outDir,
+    // Absolute: the child processes run in a scratch directory, so a relative
+    // path would resolve against the wrong place.
+    appDir: resolve(host.cwd, input.appDir),
+    bundleDir: resolve(host.cwd, input.bundleDir),
+    outDir: resolve(host.cwd, input.outDir),
     target,
     smoke,
   };

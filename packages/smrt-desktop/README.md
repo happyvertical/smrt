@@ -799,10 +799,10 @@ The wrapper crate version (`wrapper/Cargo.toml`, and its entry in
 `wrapper/Cargo.lock`) equals the package version. `scripts/sync-desktop-wrapper-version.mjs`
 (root) rewrites both and runs after `changeset version` (the root
 `changeset:version` and `version` scripts); `version-sync.test.ts` fails when
-they differ, and the build refuses a mismatch. The publish workflow's release
-commit stages only `package.json`, `CHANGELOG.md` and similar files, so it must
-also stage these two files or the next run on main fails the test (open item,
-see the issue).
+they differ, and the build refuses a mismatch. The publish workflow runs the
+sync after the final version is settled, puts both files in the versioned
+workspace archive and stages them in the release commit, so the published
+tarball and main stay in step.
 
 ### Reusable workflow
 
@@ -811,7 +811,8 @@ for a consuming repository. It checks out the caller, installs the caller's
 locked tree (`pnpm install --frozen-lockfile --ignore-scripts`), builds the
 app, runs `smrt desktop bundle` and `smrt desktop build --smoke` for each
 target on a hosted runner (macOS arm64, macOS x64, Linux x64) and uploads the
-unsigned installers from non-pull-request runs. It reads nothing from this
+unsigned installers (one `installer.tar` per target, so macOS `.app` modes
+survive; extract with `tar -xf installer.tar`) from non-pull-request runs. It reads nothing from this
 repository and holds no secret on the unsigned path (`contents: read`, no
 environment).
 

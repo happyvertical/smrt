@@ -371,7 +371,7 @@ export async function runDesktopBuild(
         smoke: flag('smoke'),
         ...(target === undefined ? {} : { target }),
       },
-      { platform: process.platform, arch: process.arch },
+      { platform: process.platform, arch: process.arch, cwd: process.cwd() },
     );
     const seams = await builder.createBuildSeams({
       onStage: (stage) => {
