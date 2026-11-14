@@ -234,3 +234,57 @@ test('the isolated Windows profile bases exist before Tauri resolves first-run d
     dispose();
   }
 });
+
+test('smoke-support redaction equals the CLI redactor (the copy cannot drift)', async () => {
+  const cli = await import('../../../cli/src/app/errors.ts');
+  const support = await import('./smoke-support.mjs');
+  const corpus = [
+    'Authorization: Bearer x',
+    'Bearer abcdefghijklmnop and Bearer s',
+    'http://127.0.0.1/setup?launch=unknown-launch-value&token=unknown-token-value',
+    'https://user:password@example.invalid/path and scheme://@host',
+    'plain text [redacted] already masked [redacted]ish',
+    'SECRET_VALUE_12345 appears twice SECRET_VALUE_12345',
+    'multi\nline\nwith ?key=abc123 and &password=p%20w',
+  ];
+  const env = { DEMO_TOKEN: 'SECRET_VALUE_12345', MY_URL: 'u', PATH: '/usr/bin' };
+  for (const text of corpus) {
+    for (const strict of [true, false]) {
+      assert.equal(
+        support.redactSecrets(text, env, { strict }),
+        cli.redactSecrets(text, env, { strict }),
+        text,
+      );
+    }
+  }
+  const long = `${'é'.repeat(50)}\n${'x'.repeat(40)}\n${'ü'.repeat(30)}`;
+  for (const bytes of [10, 40, 64, 500]) {
+    assert.equal(support.boundedTail(long, bytes), cli.boundedTail(long, bytes));
+  }
+});
+
+test('smoke-support isolates and restores the home directory', async () => {
+  const { installIsolatedHome } = await import('./smoke-support.mjs');
+  const before = process.env.HOME;
+  const dispose = installIsolatedHome();
+  assert.notEqual(process.env.HOME, before);
+  assert.ok(existsSync(process.env.HOME));
+  const home = process.env.HOME;
+  dispose();
+  assert.equal(process.env.HOME, before);
+  assert.ok(!existsSync(home));
+});
+
+test('launch-smoke imports nothing from outside the wrapper directory', async () => {
+  const { readFileSync } = await import('node:fs');
+  for (const name of ['launch-smoke.mjs', 'smoke-support.mjs']) {
+    const source = readFileSync(new URL(`./${name}`, import.meta.url), 'utf8');
+    const specifiers = [...source.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]);
+    for (const specifier of specifiers) {
+      assert.ok(
+        specifier.startsWith('node:') || specifier === './smoke-support.mjs',
+        `${name} imports ${specifier}`,
+      );
+    }
+  }
+});

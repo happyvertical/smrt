@@ -280,6 +280,7 @@ describe('sidecar manifest v1', () => {
         'ORIGIN',
         'SMRT_DATA_DIR',
         'SMRT_DESKTOP_OWNER_LINK_SECRET',
+        'SMRT_DESKTOP_KEYCHAIN',
       ]);
     });
 
@@ -456,6 +457,15 @@ describe('buildSidecarEnv', () => {
       SMRT_DESKTOP_OWNER_LINK_SECRET: 'inherited',
     });
     expect('SMRT_DESKTOP_OWNER_LINK_SECRET' in without).toBe(false);
+  });
+
+  it('strips the keychain marker from base and manifest and never sets it', () => {
+    const env = buildSidecarEnv(
+      { env: { smrt_desktop_keychain: '1' } },
+      supplied,
+      { SMRT_DESKTOP_KEYCHAIN: '1', Smrt_Desktop_Keychain: '1' },
+    );
+    expect(Object.keys(env).some((k) => /keychain/i.test(k))).toBe(false);
   });
 
   it('works without a manifest env', () => {

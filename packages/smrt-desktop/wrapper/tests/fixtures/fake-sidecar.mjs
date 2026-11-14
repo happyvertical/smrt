@@ -119,6 +119,7 @@ const server = http.createServer((req, res) => {
         CUSTOM: process.env.CUSTOM,
         INHERITED_MARKER: process.env.INHERITED_MARKER,
         OWNER_LINK_SECRET: process.env.SMRT_DESKTOP_OWNER_LINK_SECRET,
+        KEYCHAIN: process.env.SMRT_DESKTOP_KEYCHAIN,
         lowerHost: process.env.host,
         cwd: process.cwd(),
         argv: process.argv.slice(2),

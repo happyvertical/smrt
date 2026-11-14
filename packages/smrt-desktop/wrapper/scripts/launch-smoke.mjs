@@ -47,8 +47,11 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
-import { boundedTail, redactSecrets } from '../../../cli/src/app/errors.ts';
-import { installTestHome } from '../../../vitest/src/test-home.ts';
+import {
+  boundedTail,
+  installIsolatedHome,
+  redactSecrets,
+} from './smoke-support.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wrapperDir = resolve(here, '..');
@@ -613,7 +616,7 @@ async function main() {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   // The wrapper derives OS data/log paths too, before it starts its sidecar.
   // Even --keep never retains the temporary home or one-time owner links.
-  const disposeTestHome = installTestHome();
+  const disposeTestHome = installIsolatedHome();
   main().finally(disposeTestHome).catch((error) => {
     console.error(`launch-smoke: ${error.message}`);
     process.exit(1);

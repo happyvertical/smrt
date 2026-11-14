@@ -1,6 +1,6 @@
 [package]
 name = "smrt-desktop-wrapper"
-version = "0.1.0"
+version = "0.60.18"
 description = "Reusable Tauri 2 wrapper that supervises a Node sidecar for SMRT desktop apps"
 authors = ["HappyVertical"]
 license = "MIT"

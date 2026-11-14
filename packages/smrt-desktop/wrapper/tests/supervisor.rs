@@ -277,6 +277,7 @@ fn reserved_env_wins_and_the_launch_shape_is_exact() {
                 ("ORIGIN".into(), "https://attacker.example".into()),
                 ("SMRT_DATA_DIR".into(), "/etc".into()),
                 ("host".into(), "lowercase".into()),
+                ("SMRT_DESKTOP_KEYCHAIN".into(), "0".into()),
                 (
                     "SMRT_DESKTOP_OWNER_LINK_SECRET".into(),
                     "inherited-secret".into(),
@@ -294,6 +295,7 @@ fn reserved_env_wins_and_the_launch_shape_is_exact() {
     assert_eq!(seen["PORT"], port.to_string());
     assert_eq!(seen["ORIGIN"], origin);
     assert_eq!(seen["SMRT_DATA_DIR"], h.data.to_str().unwrap());
+    assert_eq!(seen["KEYCHAIN"], "1");
     assert_eq!(seen["CUSTOM"], "from-manifest");
     assert_eq!(seen["INHERITED_MARKER"], "kept");
     // The launch secret reaches only the sidecar, is the one carried by the

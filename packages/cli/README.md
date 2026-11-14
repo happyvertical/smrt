@@ -229,6 +229,7 @@ knowledge index; documentation snapshots use lightweight package discovery.
 | `smrt kitchen [dir]` | Serve the planner on localhost, chat to a cookbook, **Send to kitchen** applies it into `dir` (`--planner`, `--template`, `--no-open`, `--no-install`) |
 | `smrt kitchen apply <url\|file> [dir]` | `cookbook apply` that also takes a plan URL |
 | `smrt desktop bundle --out <dir>` | Bundle a built app with its pinned Node sidecar for a desktop target: `--app`, `--target`, `--bridge`, `--features`, `--max-size`, `--measure`, `--offline`, `--json`. Exit codes: 0 ok, 2 usage, 3 invalid input, 4 provenance, 5 verification, 6 size budget, 7 child failed, 8 io. See the `@happyvertical/smrt-desktop` README |
+| `smrt desktop build --bundle <dir> --out <dir>` | Build an UNSIGNED installer from a `smrt desktop bundle` output with the Tauri wrapper shipped in `@happyvertical/smrt-desktop`: `--app`, `--target`, `--smoke`, `--json`. Needs the pinned Tauri CLI and Rust. Exit codes: 0 ok, 2 usage, 3 invalid input, 5 verification, 7 child failed, 8 io. See "Building an installer" in the `@happyvertical/smrt-desktop` README |
 
 `smrt export` reads the `export` section of `smrt.config.js`. A listed type that
 is not registered fails the command (non-zero exit, naming the type) instead of

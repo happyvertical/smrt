@@ -11,7 +11,19 @@
     "CLAUDE.md",
     "dist",
     "AGENTS.md",
-    "examples/*.json"
+    "examples/*.json",
+    "wrapper/Cargo.toml",
+    "wrapper/Cargo.lock",
+    "wrapper/build.rs",
+    "wrapper/tauri.conf.json",
+    "wrapper/capabilities",
+    "wrapper/frontend",
+    "wrapper/icons",
+    "wrapper/src",
+    "wrapper/scripts/launch-smoke.mjs",
+    "wrapper/scripts/smoke-support.mjs",
+    "wrapper/scripts/release-preflight.mjs",
+    "wrapper/README.md"
   ],
   "exports": {
     ".": {
@@ -21,6 +33,10 @@
     "./bundler": {
       "types": "./dist/bundler.d.ts",
       "import": "./dist/bundler.js"
+    },
+    "./builder": {
+      "types": "./dist/builder.d.ts",
+      "import": "./dist/builder.js"
     },
     "./launcher": {
       "types": "./dist/launcher.d.ts",
