@@ -1,4 +1,5 @@
 import {
+  GeneratedFieldError,
   generatedExpression,
   rejectGeneratedInput,
   validateGeneratedFields,
@@ -815,6 +816,64 @@ export interface CollectionCreateTargets {
  * (even from different package resolution paths) share the same registry state.
  */
 export class ObjectRegistry {
+  private static generatedAncestryChecks = new WeakMap<
+    RegisteredClass,
+    number
+  >();
+
+  /** Pending generated declarations are metadata only until all parents exist. */
+  static assertGeneratedAncestry(name: string): void {
+    const registered = ObjectRegistry.findClass(name);
+    if (!registered) return;
+    const generation = getRegistryGeneration();
+    if (this.generatedAncestryChecks.get(registered) === generation) return;
+    this.validateGeneratedRegistration(registered, undefined, true);
+    this.generatedAncestryChecks.set(registered, generation);
+  }
+
+  /** A newly available parent can invalidate a previously pending child. */
+  static revalidateGeneratedDescendants(parent: RegisteredClass): void {
+    const parentKey = parent.qualifiedName ?? parent.name;
+    let failure: unknown;
+    for (const child of ObjectRegistry.classes.values()) {
+      if (child === parent) continue;
+      let chain: string[];
+      try {
+        chain = ObjectRegistry.getInheritanceChain(
+          child.qualifiedName ?? child.name,
+          child,
+        );
+      } catch (error) {
+        // Ordinary unresolved/ambiguous declarations retain their deferred
+        // diagnostics; only generated declarations participate in this check.
+        if (
+          [...child.fields.values()].some(
+            (field) => generatedExpression(field) !== undefined,
+          )
+        )
+          failure ??= error;
+        continue;
+      }
+      if (!chain.includes(parentKey)) continue;
+      if (
+        !chain.some((key) =>
+          [...(ObjectRegistry.findClass(key)?.fields.values() ?? [])].some(
+            (field) => generatedExpression(field) !== undefined,
+          ),
+        )
+      )
+        continue;
+      // Rejected children remain registered for diagnostics, but every schema
+      // and persistence entry point revalidates them and refuses their use.
+      try {
+        this.validateGeneratedRegistration(child);
+      } catch (error) {
+        failure ??= error;
+      }
+    }
+    if (failure) throw failure;
+  }
+
   /**
    * Checkpoint the named runtime registrations before a transactional schema
    * edit. The caller serializes registry writers and gates these models until
@@ -3018,6 +3077,7 @@ export class ObjectRegistry {
   static getFields(name: string): Map<string, RegisteredField> {
     // Issue #951: Use findClass for multi-strategy lookup (qualified key, classNameMap, case-insensitive)
     const registered = ObjectRegistry.findClass(name);
+    ObjectRegistry.assertGeneratedAncestry(name);
     return registered ? registered.fields : new Map();
   }
 
@@ -3788,6 +3848,7 @@ export class ObjectRegistry {
     // omitted the SmrtHierarchical `parentId` normalization the module applies,
     // so inherited self-FK fields could surface with the wrong shape. Removing
     // the duplicate keeps field merging consistent everywhere.
+    ObjectRegistry.assertGeneratedAncestry(className);
     return _getAllFields(className);
   }
 
@@ -4216,6 +4277,7 @@ export class ObjectRegistry {
   static validateGeneratedRegistration(
     pending: RegisteredClass,
     declaredFields?: Iterable<string>,
+    requireResolved = false,
   ): void {
     const key = pending.qualifiedName ?? pending.name;
     let inherited = new Map<string, RegisteredField>();
@@ -4245,20 +4307,52 @@ export class ObjectRegistry {
       )
     )
       return;
+    const chain = ObjectRegistry.getInheritanceChain(key, pending);
+    const oldest =
+      chain[0] === key ? pending : ObjectRegistry.findClass(chain[0]);
+    if (
+      requireResolved &&
+      oldest?.extends &&
+      !['SmrtObject', 'SmrtClass', 'SmrtCollection'].includes(oldest.extends) &&
+      !findClassStrict(oldest.extends, oldest.packageName)
+    ) {
+      throw new GeneratedFieldError(
+        `${key}: generated-field ancestry unresolved (${oldest.extends})`,
+      );
+    }
+    if (requireResolved) {
+      // Validate each declaration too: an effective field map alone hides a
+      // forbidden override by an intermediate class beneath this reader.
+      for (const ancestorKey of chain) {
+        if (ancestorKey === key) continue;
+        const ancestor = ObjectRegistry.findClass(ancestorKey);
+        if (ancestor) this.validateGeneratedRegistration(ancestor);
+      }
+    }
     const owners = new Set<string>();
-    for (const ancestor of ObjectRegistry.getInheritanceChain(key, pending)) {
+    for (const ancestor of chain) {
       const column = ObjectRegistry.getOwnershipTenantColumn(
         ancestor,
         ancestor === key ? pending : undefined,
       );
       if (column) owners.add(column);
     }
-    validateGeneratedFields(effective, pending.tenantScopedConfig?.field, {
-      inheritedFields: inherited,
-      declaredFields: declaredFields ? new Set(declaredFields) : undefined,
-      ownershipColumns: [...owners],
-      conflictColumns: ObjectRegistry.getConflictColumns(key, pending),
-    });
+    try {
+      validateGeneratedFields(effective, pending.tenantScopedConfig?.field, {
+        inheritedFields: inherited,
+        declaredFields: declaredFields ? new Set(declaredFields) : undefined,
+        ownershipColumns: [...owners],
+        conflictColumns: ObjectRegistry.getConflictColumns(key, pending),
+      });
+    } catch (error) {
+      if (error instanceof GeneratedFieldError)
+        throw new GeneratedFieldError(
+          `${key}: ${error.message}`,
+          error.code,
+          error.details?.field as string | undefined,
+        );
+      throw error;
+    }
   }
 
   /** Subtypes with their own partial unique conflict index. */

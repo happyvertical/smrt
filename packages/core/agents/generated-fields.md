@@ -32,7 +32,17 @@ registration/merge and runtime definitions enforce the same boundary.
 Pre-registration candidates use `ObjectRegistry.getOwnershipTenantColumn()`
 against the shared-table base and every ancestor, and `getConflictColumns()`
 for all natural-key columns. Invalid candidates never enter the registry or
-its inheritance caches. Children cannot turn any inherited ordinary field into
+its inheritance caches when their ancestry is available. A generated declaration
+whose parent has not loaded may register as pending metadata, but schema access
+(including migration inputs) and persistence throw `GeneratedFieldError` with
+`ancestry unresolved` until the full chain is registered. Loading a parent
+revalidates its generated descendants. An invalid descendant makes that parent
+registration call fail with an error naming the child; the valid parent remains
+registered, while the child stays visible for diagnostics and every schema or
+persistence access refuses it. Legitimate pending children become usable when
+their ancestry is complete. Runtime definitions with generated fields can also
+be pending; they use manifest ancestry until the real parent is available.
+Children cannot turn any inherited ordinary field into
 a generated field, or explicitly redeclare an inherited generated field in
 source/runtime definitions. Unchanged inherited generated metadata in a merged
 manifest is inheritance, not a new declaration.

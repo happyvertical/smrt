@@ -1015,6 +1015,8 @@ export function register(
   bumpRegistryGeneration();
   try {
     registerUntracked(ctor, config);
+    const registered = ObjectRegistry.getClassByConstructor(ctor);
+    if (registered) ObjectRegistry.revalidateGeneratedDescendants(registered);
   } finally {
     reconcileSubtypeLineage();
     applyRuntimeOverrides();
@@ -2879,7 +2881,10 @@ export function registerFromManifest(
       ),
     ]),
     methods: new Map(),
-    extends: generatedParentEntry?.qualifiedName ?? generatedParentEntry?.name,
+    extends:
+      generatedParentEntry?.qualifiedName ??
+      generatedParentEntry?.name ??
+      generatedParentName,
     tenantScopedConfig: normalizeTenantScopedConfig(
       objectDef.decoratorConfig?.tenantScoped,
     ),
@@ -2893,6 +2898,8 @@ export function registerFromManifest(
       manifestPackageName,
       runtimeOptions,
     );
+    const registered = getClasses().get(objectDef.qualifiedName ?? name);
+    if (registered) ObjectRegistry.revalidateGeneratedDescendants(registered);
     if (runtimeOptions?.refreshRuntime) {
       const entry = getClasses().get(name);
       if (entry) {

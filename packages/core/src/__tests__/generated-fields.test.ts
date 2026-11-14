@@ -717,6 +717,167 @@ describe('database-generated fields #4915', () => {
   }
 
   for (const path of ['decoration', 'manifest', 'runtime'] as const) {
+    for (const invalid of ['organizationId', 'ordinaryCode', undefined]) {
+      it(`#4972 round4 item1: ${path} child-first ${invalid ? `${invalid} redeclaration is quarantined` : 'own generated field becomes usable'}`, async () => {
+        const packageName = '@test/late-generated';
+        const parentKey = `${packageName}:LateGeneratedParent`;
+        const grandchildKey = `${packageName}:LateGeneratedGrandchild`;
+        const childKey = `${packageName}:LateGeneratedChild`;
+        const Parent = class LateGeneratedParent extends SmrtObject {};
+        const Child = class LateGeneratedChild extends Parent {};
+        const fields: RuntimeModelDefinition['fields'] = {
+          ownerSource: { type: 'text' },
+          qty: { type: 'integer' },
+          [invalid ?? 'total']: {
+            type: invalid ? 'text' : 'integer',
+            generated: { col: invalid ? 'ownerSource' : 'qty' },
+          },
+        };
+        if (path === 'decoration') {
+          for (const [name, fd] of Object.entries(fields))
+            field(fd)(Child.prototype, name);
+          smrt({
+            packageName,
+            tableStrategy: 'sti',
+            tableName: 'late_generated',
+          })(Child);
+        } else if (path === 'runtime') {
+          registerRuntimeModel({
+            name: 'LateGeneratedChild',
+            packageName,
+            tableName: 'late_generated',
+            extends: parentKey,
+            fields,
+          });
+        } else {
+          const entry = runtimeModelEntry({
+            name: 'LateGeneratedChild',
+            packageName,
+            tableName: 'late_generated',
+            fields,
+          });
+          entry.extendsQualified = parentKey as QualifiedClassName;
+          ObjectRegistry.registerFromManifest(childKey, entry, packageName);
+        }
+        const grandchild = runtimeModelEntry({
+          name: 'LateGeneratedGrandchild',
+          packageName,
+          tableName: 'late_generated',
+          fields: {},
+        });
+        grandchild.extendsQualified = childKey as QualifiedClassName;
+        ObjectRegistry.registerFromManifest(
+          grandchildKey,
+          grandchild,
+          packageName,
+        );
+        await expect(
+          ObjectRegistry.getAllFields(grandchildKey),
+        ).rejects.toThrow(
+          expect.objectContaining({
+            name: 'GeneratedFieldError',
+            message: expect.stringContaining('ancestry unresolved'),
+          }),
+        );
+        const unresolved = expect.objectContaining({
+          name: 'GeneratedFieldError',
+          message: expect.stringMatching(
+            /LateGeneratedChild.*ancestry unresolved/i,
+          ),
+        });
+        expect(() => ObjectRegistry.getSchemaDDL(childKey, 'sqlite')).toThrow(
+          unresolved,
+        );
+        expect(() => ObjectRegistry.getAllSchemasAsDefinitions()).toThrow(
+          unresolved,
+        );
+        await expect(ObjectRegistry.getAllFields(childKey)).rejects.toThrow(
+          unresolved,
+        );
+        const db = await getTestDatabase({
+          type: persistenceEngines[0] === 'postgres' ? 'pglite' : 'sqlite',
+          classes: [],
+          includeSystemTables: false,
+        });
+        databases.push(db);
+        await expect(
+          ObjectRegistry.getCollection(childKey, { db }),
+        ).rejects.toThrow(unresolved);
+        await expect(async () =>
+          new SchemaComparer(db).compare(
+            ObjectRegistry.getAllSchemasAsDefinitions(),
+          ),
+        ).rejects.toThrow(unresolved);
+        const Ctor = ObjectRegistry.getClass(childKey)!
+          .constructor as typeof SmrtObject;
+        await expect(async () => new Ctor({ db }).save()).rejects.toThrow(
+          unresolved,
+        );
+        const registerParent = () => {
+          if (path === 'decoration') {
+            field({ type: 'text' })(Parent.prototype, 'ordinaryCode');
+            smrt({
+              packageName,
+              tableStrategy: 'sti',
+              tableName: 'late_generated',
+              tenantScoped: { field: 'organizationId' },
+            })(Parent);
+          } else {
+            const entry = runtimeModelEntry({
+              name: 'LateGeneratedParent',
+              packageName,
+              tableName: 'late_generated',
+              tenantScoped: { field: 'organizationId' },
+              fields: { ordinaryCode: { type: 'text' } },
+            });
+            entry.decoratorConfig!.tableStrategy = 'sti';
+            ObjectRegistry.registerFromManifest(parentKey, entry, packageName);
+          }
+        };
+        if (invalid) {
+          const rejected = expect.objectContaining({
+            name: 'GeneratedFieldError',
+            message: expect.stringContaining('LateGeneratedChild'),
+          });
+          expect(registerParent).toThrow(rejected);
+          await expect(
+            ObjectRegistry.getAllFields(grandchildKey),
+          ).rejects.toThrow(rejected);
+          expect(() => ObjectRegistry.getSchemaDDL(childKey, 'sqlite')).toThrow(
+            rejected,
+          );
+          await expect(
+            ObjectRegistry.getCollection(childKey, { db }),
+          ).rejects.toThrow(rejected);
+        } else {
+          registerParent();
+          const readyDb = await getTestDatabase({
+            type: persistenceEngines[0] === 'postgres' ? 'pglite' : 'sqlite',
+            classes: [childKey],
+            includeSystemTables: false,
+          });
+          databases.push(readyDb);
+          const collection = await ObjectRegistry.getCollection(childKey, {
+            db: readyDb,
+          });
+          const row = await collection.create({
+            organizationId: '11111111-1111-4111-8111-111111111111',
+            qty: 7,
+          });
+          expect(row.toJSON()).toMatchObject({
+            organizationId: '11111111-1111-4111-8111-111111111111',
+            total: 7,
+          });
+          expect(
+            (await readyDb.query('SELECT organization_id FROM late_generated'))
+              .rows[0].organization_id,
+          ).toBe('11111111-1111-4111-8111-111111111111');
+        }
+      });
+    }
+  }
+
+  for (const path of ['decoration', 'manifest', 'runtime'] as const) {
     for (const inherited of [
       'organizationId',
       'ordinaryCode',

@@ -140,6 +140,7 @@ export function getInheritanceChain(
   const visited = new Set<RegisteredClass>(); // Cycle detection using object identity
   let current: RegisteredClass | undefined = registered;
   let circularDetected = false;
+  let complete = true;
   while (current) {
     // Cycle detection: use object identity to handle cases where distinct
     // classes share the same name (e.g., histrio:Performer vs smrt-video:Performer)
@@ -187,6 +188,7 @@ export function getInheritanceChain(
     // installed or the manifest is stale. We gracefully end the chain
     // here instead of mutating registry state during a read operation.
     if (!parent) {
+      complete = false;
       verboseLog(
         `[ObjectRegistry] Parent class '${current.extends}' not found ` +
           `while building inheritance chain. Ensure the parent package ` +
@@ -201,7 +203,7 @@ export function getInheritanceChain(
   // Caching a broken chain from a circular detection would cause all future
   // lookups to return incorrect inheritance data (e.g., ["VideoShot","VideoShot"]
   // instead of ["Content","VideoShot"]), breaking STI table resolution.
-  if (!pending && !circularDetected) {
+  if (!pending && !circularDetected && complete) {
     registered.inheritanceChain = chain;
     cache.set(className, chain);
   }

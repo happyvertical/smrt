@@ -238,7 +238,13 @@ export function runtimeModelEntry(
   const qualifiedName = createQualifiedName(def.packageName, def.name);
   const parentKey = def.extends;
   const parent = parentKey ? ObjectRegistry.getClass(parentKey) : undefined;
-  if (parentKey && !parent) {
+  if (
+    parentKey &&
+    !parent &&
+    !Object.values(def.fields ?? {}).some(
+      (field) => generatedExpression(field) !== undefined,
+    )
+  ) {
     throw new Error(
       `Run-time model ${qualifiedName} extends ${parentKey}, which is not registered`,
     );
@@ -447,7 +453,7 @@ export function runtimeModelEntry(
     ...(displayLabelProjection ? { displayLabelProjection } : {}),
     decoratorConfig:
       decoratorConfig as SmartObjectDefinition['decoratorConfig'],
-    ...(parent
+    ...(parentKey
       ? { extends: parentSimple, extendsQualified: parentKey }
       : { extends: 'SmrtObject' }),
   };

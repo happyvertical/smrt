@@ -3543,6 +3543,7 @@ export class SmrtObject extends SmrtClass {
    * ```
    */
   async save(options: SmrtSaveOptions = {}): Promise<this> {
+    ObjectRegistry.assertGeneratedAncestry(this.getResolvedQualifiedName());
     if (!this._writingThrough && Object.keys(this._writeThroughDraft).length) {
       const own = this as unknown as Record<string, unknown>;
       const links = Object.keys(
