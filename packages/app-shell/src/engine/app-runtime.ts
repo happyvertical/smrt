@@ -3,7 +3,7 @@
 //
 // Migrations here are SQLite-shaped (RENAME/DROP COLUMN, VACUUM INTO,
 // pragma_table_xinfo). Postgres is future work.
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import {
   ObjectRegistry,
@@ -542,9 +542,43 @@ export class AppRuntime {
   }
 
   async previewLoad(cmd: LoadRecordsCommand) {
-    return this.db.transaction(
+    const preview = await this.db.transaction(
       async (tx: Handle) => (await prepareLoad(this.def, tx, cmd)).preview,
     );
+    if (preview.rejected || (!preview.insert && !preview.update))
+      return preview;
+    // SDK defaults, hooks and generated values contribute to the stored journal.
+    // Rehearse the exact apply path on a disposable copy, never the app database.
+    const dir = mkdtempSync(join(this.dataDir, '.load-preview-'));
+    let copy: Handle;
+    try {
+      const path = join(dir, 'app.db');
+      await this.copyTo(path);
+      copy = await getDatabase({ type: 'sqlite', url: path });
+      return await copy.transaction((tx: Handle) =>
+        withCallerOwnedDatabaseTransaction(tx, async () => {
+          await tx.query(
+            'CREATE TABLE IF NOT EXISTS _archive (id INTEGER PRIMARY KEY AUTOINCREMENT, version INTEGER NOT NULL, tbl TEXT NOT NULL, col TEXT NOT NULL, record_id TEXT NOT NULL, value TEXT, created_at TEXT NOT NULL)',
+          );
+          return applyLoad(
+            this.def,
+            tx,
+            cmd,
+            -1,
+            'load-preview',
+            recipeModelFor(cmd.model, this.def.models[cmd.model])
+              ? { typeId: await this.personType(tx) }
+              : {},
+          );
+        }),
+      );
+    } finally {
+      try {
+        await copy?.close?.();
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
   }
 
   async previewConversion(

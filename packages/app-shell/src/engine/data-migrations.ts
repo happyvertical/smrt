@@ -308,6 +308,28 @@ export async function prepareLoad(
       ...(before ? { id: String(before.id), before } : {}),
     });
   }
+  // Budget the original rows and the command-owned postimages before writes.
+  // Insert postimages also contain SDK metadata, so apply checks stored bytes too.
+  let journalBytes = 0;
+  for (const write of writes) {
+    const after = Object.fromEntries(
+      Object.entries(write.data)
+        .map(([field, value]) => [snake(field), stored(value)])
+        .filter(
+          ([column, value]) =>
+            !write.before || !same(value, write.before[String(column)]),
+        ),
+    );
+    journalBytes += Buffer.byteLength(JSON.stringify(write.before ?? null));
+    journalBytes += Buffer.byteLength(JSON.stringify(after));
+  }
+  if (
+    writes.length > JOURNAL_LIMITS.rows ||
+    journalBytes > JOURNAL_LIMITS.bytes
+  )
+    throw new AppError(
+      `undo journal accepts at most ${JOURNAL_LIMITS.rows} rows and ${JOURNAL_LIMITS.bytes} bytes`,
+    );
   return { preview, writes };
 }
 

@@ -153,11 +153,28 @@ it('upserts by key, counts unchanged, requires approval, and restores exact orig
 it('rolls back a mid-load database failure, restarts intact, and replays from a draft', async () => {
   const before = raw();
   const version = host.version;
-  const db = new DatabaseSync(join(dir, 'app.db'));
-  db.exec(
-    "CREATE TRIGGER reject_load BEFORE INSERT ON u_sales WHEN NEW.code = 'fail' BEGIN SELECT RAISE(ABORT, 'injected failure'); END",
-  );
-  db.close();
+  // Inject only after the disposable planning rehearsal: the failure must hit
+  // row 101 of the real migration, after the first savepoint batch succeeded.
+  const caller = host as unknown as {
+    callApp: (op: string, ...args: unknown[]) => Promise<unknown>;
+  };
+  const original = caller.callApp.bind(host);
+  const spy = vi
+    .spyOn(caller, 'callApp')
+    .mockImplementation(async (op, ...args) => {
+      const result = await original(op, ...args);
+      if (op === 'previewLoad') {
+        const db = new DatabaseSync(join(dir, 'app.db'));
+        try {
+          db.exec(
+            "CREATE TRIGGER reject_load BEFORE INSERT ON u_sales WHEN NEW.code = 'fail' BEGIN SELECT RAISE(ABORT, 'injected failure'); END",
+          );
+        } finally {
+          db.close();
+        }
+      }
+      return result;
+    });
   await expect(
     run({
       type: 'loadRecords',
@@ -168,6 +185,7 @@ it('rolls back a mid-load database failure, restarts intact, and replays from a 
       })),
     }),
   ).rejects.toThrow(/not applied/);
+  spy.mockRestore();
   expect(raw()).toEqual(before);
   expect(host.version).toBe(version);
   const db2 = new DatabaseSync(join(dir, 'app.db'));
@@ -436,9 +454,9 @@ it('rechecks load update risk inside the transaction after an insert-only previe
       return preview;
     });
   try {
-    await expect(host.execute(cmd, { author: 't' })).rejects.toThrow(
-      /preview became stale/,
-    );
+    await expect(
+      host.execute(cmd, { author: 't', approved: true }),
+    ).rejects.toThrow(/preview became stale/);
   } finally {
     spy.mockRestore();
   }
