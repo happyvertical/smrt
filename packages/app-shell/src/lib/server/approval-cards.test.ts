@@ -26,8 +26,9 @@ async function card(command: Command) {
   };
   const approval = (await listApprovalViews()).find(
     (view) => view.id === pending.approvalId,
-  )!;
+  );
   expect(approval).toBeTruthy();
+  if (!approval) throw new Error('Expected a stored approval');
   return {
     approval,
     text: describeApproval(approval as ApprovalView).lines.join(' '),

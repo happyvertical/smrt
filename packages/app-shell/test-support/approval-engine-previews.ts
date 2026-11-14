@@ -2,7 +2,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AppHost, type Command, MemoryVersionStore } from '../engine/index.ts';
+import { AppHost, type Command, MemoryVersionStore } from '../src/engine/index.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'approval-engine-'));
 const host = await AppHost.open(dir, { store: new MemoryVersionStore() });

@@ -14,7 +14,7 @@ it('renders real Node engine previews in approval cards for all data and calcula
     const output = join(dir, 'previews.json');
     await promisify(execFile)(
       process.execPath,
-      ['--import', 'tsx', 'src/test/approval-engine-previews.ts', output],
+      ['--import', 'tsx', 'test-support/approval-engine-previews.ts', output],
       { timeout: 60000 },
     );
     const cards = JSON.parse(readFileSync(output, 'utf8')) as {
