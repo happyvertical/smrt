@@ -134,8 +134,29 @@ export async function tuneSqliteForConcurrency(
   }
 }
 
+const enabledPgliteClients = new WeakSet<object>();
+
+/**
+ * Opt a shared SDK PGlite client into PostgreSQL job SQL and main-loop leases.
+ * Call before creating jobs collections or starting runners on that client.
+ * Detection alone never changes existing consumers' engine selection.
+ * @param db - SDK connection whose public client exposes dumpDataDir.
+ */
+export function enablePgliteJobs(db: DatabaseInterface): void {
+  const client = db.client as { dumpDataDir?: unknown } | undefined;
+  if (!client || typeof client.dumpDataDir !== 'function')
+    throw new Error('enablePgliteJobs requires an SDK PGlite client');
+  enabledPgliteClients.add(client);
+}
+
+/** Only explicitly enabled clients use the PGlite jobs path. */
+export function isPglite(db: DatabaseInterface): boolean {
+  return !!db.client && enabledPgliteClients.has(db.client as object);
+}
+
 /** Resolve the database engine for a connection. */
 export function resolveEngine(db: DatabaseInterface): DatabaseEngine {
+  if (isPglite(db)) return 'postgres';
   const withConfig = db as DatabaseInterface & {
     config?: { type?: string };
     type?: string;
@@ -168,6 +189,7 @@ export function isInMemory(db: DatabaseInterface): boolean {
  * main-loop lease renewal + the in-process live set.
  */
 export function offLoopEligible(db: DatabaseInterface): boolean {
+  if (isPglite(db)) return false; // No independent backend can open this WASM instance.
   const engine = resolveEngine(db);
   if (engine === 'postgres') return true;
   if (engine === 'sqlite') return !isInMemory(db);

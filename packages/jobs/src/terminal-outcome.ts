@@ -51,6 +51,7 @@ export interface SmrtJobTerminalSnapshot {
   objectType: string;
   method: string;
   attempts: number;
+  startedAt?: string | null;
 }
 
 export interface TransitionTerminalJobOptions {
@@ -125,6 +126,18 @@ export async function transitionTerminalJob(
     } else if (options.expectedWorkerId !== undefined) {
       where.push('worker_id = ?');
       whereValues.push(options.expectedWorkerId);
+    }
+    if (
+      options.expectedWorkerId !== undefined &&
+      options.job.startedAt !== undefined
+    ) {
+      where.push('attempts = ?');
+      whereValues.push(options.job.attempts);
+      if (options.job.startedAt === null) where.push('started_at IS NULL');
+      else if (options.job.startedAt !== undefined) {
+        where.push('started_at = ?');
+        whereValues.push(options.job.startedAt);
+      }
     }
     if (options.expectedTaskId !== undefined) {
       where.push('task_id = ?');
@@ -230,7 +243,9 @@ export function terminalSnapshot(
   job: Pick<
     SmrtJob,
     'id' | 'tenantId' | 'queue' | 'objectType' | 'method' | 'attempts'
-  >,
+  > &
+    Partial<Pick<SmrtJob, 'startedAt'>>,
+  fenceDispatch = false,
 ): SmrtJobTerminalSnapshot | null {
   if (!job.id) return null;
   return {
@@ -240,5 +255,8 @@ export function terminalSnapshot(
     objectType: job.objectType,
     method: job.method,
     attempts: job.attempts,
+    ...(fenceDispatch && job.startedAt !== undefined
+      ? { startedAt: job.startedAt?.toISOString() ?? null }
+      : {}),
   };
 }

@@ -95,6 +95,15 @@ export {
 } from './job-builder.js';
 // Job handle for tracking
 export {
+  assertAbandonedJobClaim,
+  assertFailedJobDispatch,
+  assertJobClaim,
+  assertJobClaimForRelease,
+  type JobClaim,
+  JobClaimLostError,
+  type JobDispatch,
+} from './job-claim.js';
+export {
   JobHandle,
   type JobResult,
   type WaitOptions,
@@ -149,6 +158,7 @@ export {
 export {
   createTaskRunner,
   getActiveJobExecutionContext,
+  getJobClaim,
   isRunnerExecutionContext,
   JobCancelledError,
   JobTimeoutError,
@@ -188,6 +198,7 @@ export {
 export { SmrtJobDedupeSlot } from './smrt-job-dedupe-slot.js';
 // Durable job telemetry
 export {
+  type GetTerminalOutcomeOptions,
   type JobEventCursor,
   type ListJobEventsOptions,
   type ListTerminalOutcomesOptions,
@@ -208,6 +219,7 @@ export {
 } from './smrt-worker.js';
 export {
   createWorkerKey,
+  enablePgliteJobs,
   isWorkerAlive,
   registerLiveWorker,
   unregisterLiveWorker,

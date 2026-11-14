@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { RetryStrategyConfig } from '@happyvertical/jobs';
 import {
-  detectEngine,
+  type detectEngine,
   ensureJobsSystemTableCompatibility,
   field,
   ObjectRegistry,
@@ -26,6 +26,7 @@ import {
 } from './background-policy.js';
 import { SmrtJobDedupeSlotCollection } from './smrt-job-dedupe-slot.js';
 import { terminalSnapshot, transitionTerminalJob } from './terminal-outcome.js';
+import { resolveEngine } from './worker-liveness.js';
 
 /**
  * Job status type
@@ -191,7 +192,7 @@ export class SmrtJob extends SmrtObject {
   @field({ type: 'text', required: true, default: 'fail' })
   timeoutBehavior: TimeoutBehavior = 'fail';
 
-  /** When execution started */
+  /** When execution started. Public retry and surplus release clear this field. */
   @field({ type: 'datetime', nullable: true })
   startedAt: Date | null = null;
 
@@ -499,10 +500,14 @@ export interface ListReadyOptions {
   tenantIds?: readonly (string | null)[];
 }
 
-/**
- * Options for atomically claiming ready jobs.
- */
+// The DB and worker incarnation own this clock, not the job row. Legacy retry
+// and surplus-release paths may clear started_at without reusing this identity.
+const fencedClaimTimes = new WeakMap<object, Map<string, number>>();
+
+/** Options for atomically claiming ready jobs. */
 export interface ClaimReadyOptions extends ListReadyOptions {
+  /** Opt into dispatch fencing; one unique worker incarnation per DB/process. */
+  claimFencing?: boolean;
   workerId: string;
   now?: Date;
 }
@@ -603,6 +608,23 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
 
     const now = options.now ?? new Date();
     const nowIso = now.toISOString();
+    let startedAt = nowIso;
+    if (options.claimFencing) {
+      let clock = fencedClaimTimes.get(this.db);
+      if (!clock) {
+        clock = new Map();
+        fencedClaimTimes.set(this.db, clock);
+      }
+      // Reserve before awaiting SQL: concurrent claims on this incarnation also
+      // get distinct generations. Clock steps never defer ready work. A restart
+      // must use a new worker incarnation (TaskRunner already guarantees this).
+      const stamp = Math.max(
+        now.getTime(),
+        (clock.get(options.workerId) ?? -Infinity) + 1,
+      );
+      startedAt = new Date(stamp).toISOString();
+      clock.set(options.workerId, stamp);
+    }
     const whereConditions: string[] = [
       "status = 'pending'",
       'run_at <= ?',
@@ -633,7 +655,7 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
               started_at = ?,
               attempts = attempts + 1,
               updated_at = ?`;
-    const setParams = [options.workerId, nowIso, nowIso, nowIso];
+    const setParams = [options.workerId, nowIso, startedAt, nowIso];
 
     // Worker-internal cross-tenant claim; tenant context is restored
     // per-job at execution (SmrtJob is now @TenantScoped, S5 #1402).
@@ -965,11 +987,7 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
 function getDatabaseEngine(
   db: DatabaseInterface,
 ): ReturnType<typeof detectEngine> {
-  const dbWithConfig = db as DatabaseWithConfig;
-  return detectEngine(
-    db.url || dbWithConfig.config?.url || '',
-    dbWithConfig.type || dbWithConfig.config?.type,
-  );
+  return resolveEngine(db);
 }
 
 function compareClaimOrder(left: SmrtJob, right: SmrtJob): number {

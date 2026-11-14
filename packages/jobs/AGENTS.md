@@ -234,3 +234,11 @@ the framework retention sweep in `@happyvertical/smrt-core`.
 - **wait() is polling**: JobHandle.wait() polls DB every 100ms (configurable)
 - **Migrate before start()**: Both runners call core's `assertDatabaseMigratedForBuild` before polling (policy: [schema paths](../core/agents/schema-paths.md)). A missing or different record refuses production start; development warns, test databases are exempt, and the emergency override is logged. `TaskRunner.start()` throws if `_smrt_workers` is missing — run `smrt db:migrate` after upgrading. Tables are never created at runtime.
 - **Recovery is liveness-based**: don't reintroduce heartbeat-threshold recovery; a blocked event loop must not look dead (see Worker liveness section, #1474)
+
+## Transaction-bound claims
+
+Use `getJobClaim`, `assertJobClaim`, `assertJobClaimForRelease`,
+`assertFailedJobDispatch` and `assertAbandonedJobClaim` for dispatch fencing,
+recovery and application lease release. Read [claim and recovery contracts](agents/job-claims.md)
+for opt-in fencing, transaction affinity, liveness, exact outcome lookup and
+PGlite validation. Never infer settlement from cancellation alone.

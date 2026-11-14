@@ -20,6 +20,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { createId } from '@happyvertical/utils';
 import { isBackgroundEligibleMethod } from './background-policy.js';
 import { redactErrorForPersistence } from './error-redaction.js';
+import type { JobClaim } from './job-claim.js';
 import {
   JobContextLogger,
   type JobEventInput,
@@ -73,6 +74,7 @@ import {
 // module-private: a JSON task invocation cannot synthesize the runner-owned
 // execution context that security-sensitive task targets receive.
 const runnerExecutionContextIdentities = new WeakSet<object>();
+const runnerJobClaims = new WeakMap<object, Readonly<JobClaim>>();
 const runnerExecutionContexts = new AsyncLocalStorage<JobExecutionContext>();
 
 /** True only for an execution context constructed by this TaskRunner module. */
@@ -94,9 +96,28 @@ export function getActiveJobExecutionContext():
 }
 
 /**
+ * Read the immutable dispatch-time claim from an authentic runner context.
+ * Reading current job rows cannot recover this identity after ownership changes.
+ * @param context - Context supplied to a handler by TaskRunner.
+ * @returns The captured claim; use assertJobClaim for current ownership proof.
+ */
+export function getJobClaim(context: unknown): Readonly<JobClaim> {
+  const claim = isRunnerExecutionContext(context)
+    ? runnerJobClaims.get(context)
+    : undefined;
+  if (!claim)
+    throw new Error(
+      'Job claim requires TaskRunner context with claimFencing: true',
+    );
+  return claim;
+}
+
+/**
  * TaskRunner configuration
  */
 export interface TaskRunnerConfig {
+  /** Opt into immutable claim proofs and dispatch-fenced runner writes. Default false. */
+  claimFencing?: boolean;
   /** Worker ID (auto-generated if not provided) */
   id?: string;
   /** Resolve live authority for durable tasks at each execution/replay. */
@@ -264,6 +285,7 @@ type ResolvedTaskRunnerConfig = Required<Omit<TaskRunnerConfig, 'tenantIds'>> &
 
 const DEFAULT_CONFIG: ResolvedTaskRunnerConfig = {
   id: '',
+  claimFencing: false,
   authorizeMcpTask: async () => false,
   concurrency: 5,
   queues: ['default'],
@@ -623,6 +645,7 @@ export class TaskRunner extends EventEmitter {
     // Atomically claim ready jobs before processing so multiple workers cannot
     // receive the same pending row.
     const claimed = await this.collection.claimReady({
+      claimFencing: this.config.claimFencing,
       workerId: this.workerKey,
       queues: this.config.queues,
       tenantIds: this.config.tenantIds,
@@ -779,7 +802,7 @@ export class TaskRunner extends EventEmitter {
       // recovered/reclaimed row (worker died, recovery ran, the work finished
       // anyway) is never stomped back to 'completed'.
       const completedAt = new Date();
-      const snapshot = terminalSnapshot(job);
+      const snapshot = terminalSnapshot(job, this.config.claimFencing);
       let event: SmrtJobEvent | null = null;
       try {
         event = snapshot
@@ -1020,6 +1043,7 @@ export class TaskRunner extends EventEmitter {
   private async writeOwnedJob(
     jobId: string,
     assignments: Record<string, unknown>,
+    dispatch?: SmrtJob,
   ): Promise<boolean> {
     if (!this.db) return false;
     const columns = Object.keys(assignments);
@@ -1028,14 +1052,18 @@ export class TaskRunner extends EventEmitter {
     // RETURNING id (not rowCount): the DuckDB/JSON adapters report rowCount as
     // the number of result rows, so an UPDATE that matched nothing still
     // reports 1 — only the returned-row set is a reliable "did it apply".
+    const fenced = this.config.claimFencing && dispatch;
     const result = await this.db.query(
       `UPDATE _smrt_jobs
           SET ${setSql}
-        WHERE id = ? AND worker_id = ? AND status = 'running'
+        WHERE id = ? AND worker_id = ? AND status = 'running'${fenced ? ' AND attempts = ? AND started_at = ?' : ''}
         RETURNING id`,
       ...values,
       jobId,
       this.workerKey,
+      ...(fenced
+        ? [dispatch.attempts, dispatch.startedAt?.toISOString() ?? null]
+        : []),
     );
     return (result.rows?.length ?? 0) > 0;
   }
@@ -1275,14 +1303,18 @@ export class TaskRunner extends EventEmitter {
 
       // Conditional: don't resurrect a row that recovery already failed.
       const applied = await this.persistJobWrite(() =>
-        this.writeOwnedJob(jobId, {
-          status: 'pending',
-          last_error: safeMessage,
-          run_at: nextRunAt.toISOString(),
-          worker_id: null,
-          worker_heartbeat: null,
-          updated_at: new Date().toISOString(),
-        }),
+        this.writeOwnedJob(
+          jobId,
+          {
+            status: 'pending',
+            last_error: safeMessage,
+            run_at: nextRunAt.toISOString(),
+            worker_id: null,
+            worker_heartbeat: null,
+            updated_at: new Date().toISOString(),
+          },
+          job,
+        ),
       );
       if (!applied) return;
 
@@ -1303,7 +1335,7 @@ export class TaskRunner extends EventEmitter {
     } else {
       // Job failed permanently
       const completedAt = new Date();
-      const snapshot = terminalSnapshot(job);
+      const snapshot = terminalSnapshot(job, this.config.claimFencing);
       const event = snapshot
         ? await this.persistJobWrite(() =>
             transitionTerminalJob(this.db as DatabaseInterface, {
@@ -1442,6 +1474,20 @@ export class TaskRunner extends EventEmitter {
         : {}),
     };
     runnerExecutionContextIdentities.add(context);
+    if (this.config.claimFencing)
+      runnerJobClaims.set(
+        context,
+        Object.freeze({
+          jobId: job.id ?? '',
+          workerId: this.workerKey,
+          attempt: job.attempts,
+          startedAt: job.startedAt?.toISOString() ?? '',
+          tenantId: job.tenantId ?? null,
+          objectType: job.objectType,
+          objectId: job.objectId ?? null,
+          method: job.method,
+        }),
+      );
     return context;
   }
 
@@ -1609,7 +1655,7 @@ export class TaskRunner extends EventEmitter {
       '(no fresh liveness lease in _smrt_workers and not running in this process).';
 
     for (const job of orphans) {
-      const snapshot = terminalSnapshot(job);
+      const snapshot = terminalSnapshot(job, this.config.claimFencing);
       if (!snapshot) continue;
       const lastError =
         (job.id ? this.unsettledJobs.get(job.id) : undefined) ?? errorMessage;
@@ -1621,7 +1667,7 @@ export class TaskRunner extends EventEmitter {
           completedAt: recoveredAt,
           expectedStatuses: ['running'],
           expectedWorkerId: job.workerId ?? null,
-          clearWorker: true,
+          clearWorker: !this.config.claimFencing,
           lastError,
           failureKind: 'stale-recovery',
         });
