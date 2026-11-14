@@ -11,6 +11,7 @@ import {
   installDesignRunExecutor,
 } from '@happyvertical/smrt-inference/server';
 import {
+  assertAbandonedJobClaim,
   assertFailedJobDispatch,
   assertJobClaim,
   assertJobClaimForRelease,
@@ -28,7 +29,10 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 export const PACKAGE_NAME = '@happyvertical/smrt-design-runs';
 const target = '@happyvertical/smrt-inference:DesignRunRecord';
 
-type AdmissionState = DesignRunState & { admissionDigest?: string };
+type AdmissionState = DesignRunState & {
+  admissionDigest?: string;
+  leaseClaim?: Readonly<JobClaim>;
+};
 
 /** A key reserves the original JSON request, even if later checks replace input. */
 export class DesignRunKeyConflictError extends Error {
@@ -105,6 +109,7 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
   const snapshot = (state: DesignRunState) => {
     const visible = { ...state } as AdmissionState;
     delete visible.admissionDigest;
+    delete visible.leaseClaim;
     return visible as DesignRunSnapshot<Input, Output>;
   };
   const transaction = async <T>(
@@ -167,8 +172,13 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
     return {
       ...native,
       save(state: DesignRunState, expected: number | null) {
-        const checkpoint: AdmissionState =
-          expected === null ? { ...state, admissionDigest } : state;
+        // Enrich the exact checkpoint object so inference's in-memory state also
+        // retains its host dispatch provenance after the successful CAS.
+        const checkpoint = state as AdmissionState;
+        if (expected === null) checkpoint.admissionDigest = admissionDigest;
+        if (state.leaseRevision === undefined) delete checkpoint.leaseClaim;
+        else if (claim && state.leaseRevision === state.revision)
+          checkpoint.leaseClaim = claim;
         return native.save(checkpoint, expected);
       },
     };
@@ -245,7 +255,7 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
       const state = await load(owner, id);
       const workflow = driver(owner, state.input as Input, claim);
       began = true;
-      return await workflow.run(id, owner.ownerId, controller.signal);
+      return snapshot(await workflow.run(id, owner.ownerId, controller.signal));
     } catch (error) {
       if (!began) {
         try {
@@ -407,12 +417,38 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
         return snapshot(result);
       };
       const resume = async (id: string, budget?: Partial<DesignRunBudget>) => {
-        const state = await authorized(id);
+        let state = await authorized(id);
         if ((await activeJobs(owner, id)).length)
           throw new DesignRunConflictError(
             'The previous job is still settling',
           );
-        if (['running', 'checking'].includes(state.status)) {
+        if (state.status === 'stopped' && state.leaseRevision !== undefined) {
+          const original = (state as AdmissionState).leaseClaim;
+          if (original) {
+            const abandoned = createDesignRunStore({
+              db: options.db,
+              ...owner,
+              enqueue: async () => {},
+              authorizeRelease: async (tx) => {
+                try {
+                  await assertAbandonedJobClaim(tx, original);
+                  return true;
+                } catch (error) {
+                  if (error instanceof JobClaimLostError) return false;
+                  throw error;
+                }
+              },
+            });
+            if (
+              await abandoned.releaseLease?.(id, ownerId, state.leaseRevision)
+            )
+              state = await load(owner, id);
+          }
+        }
+        if (
+          ['running', 'checking'].includes(state.status) ||
+          (state.status === 'stopped' && state.leaseRevision !== undefined)
+        ) {
           if (budget)
             throw new DesignRunConflictError(
               'Recover the job first; raise its budget after a budget stop',
@@ -443,7 +479,9 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
             : null;
           if (!job || outcome?.failureKind !== 'stale-recovery')
             throw new DesignRunConflictError(
-              'TaskRunner has not recovered the previous job',
+              state.status === 'stopped'
+                ? 'The previous pass is still stopping. Try again when it has stopped.'
+                : 'TaskRunner has not recovered the previous job',
             );
           return transaction(async (tx) => {
             const recoveryStore = createDesignRunStore({

@@ -765,6 +765,45 @@ describe('durable design job bridge', () => {
     }
   });
 
+  it('stops an orphan after restart and resumes only after proving its exact original worker dead', async () => {
+    const external = deferred();
+    settled.push(external.resolve);
+    let interrupted = false;
+    const execute: DesignRunDriverOptions['executePass'] = async (request) => {
+      if (!interrupted) {
+        interrupted = true;
+        await external.promise;
+      }
+      return { output: { value: request.pass.index }, metadata };
+    };
+    let bound = install(execute);
+    const run = await bound.start(startInput());
+    const old = await worker({ shutdownTimeout: 1 });
+    await until(() => interrupted);
+    const [job] = await jobs.list({ where: { objectId: run.id } });
+    await old.stop();
+    bound = install(execute);
+    await bound.stop(run.id);
+    expect((await jobs.get({ id: job.id as string }))?.status).toBe(
+      'cancelled',
+    );
+    // The fresh lease still advertises the old process; cancellation is not proof.
+    await expect(bound.resume(run.id)).rejects.toThrow('still stopping');
+    unregisterLiveWorker(job.workerId as string);
+    await (await SmrtWorkerCollection.create({ db })).expireWorker(
+      job.workerId as string,
+    );
+    await bound.resume(run.id);
+    await worker();
+    expect((await end(run.id)).status).toBe('done');
+    const done = await bound.get(run.id);
+    expect(done.leaseRevision).toBeUndefined();
+    expect(done).not.toHaveProperty('leaseClaim');
+    external.resolve();
+    await until(() => old.activeJobCount() === 0);
+    expect(await bound.get(run.id)).toEqual(done);
+  });
+
   it('replays a completed run job without executing any pass again', async () => {
     const execute = vi.fn<DesignRunDriverOptions['executePass']>(async () => ({
       output: { value: 1 },

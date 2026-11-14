@@ -77,3 +77,10 @@ The host retains schemas, pass/profile selection, owner/thread authorization,
 approval decisions, effect replay, legacy migrations, latest-by-thread lookup,
 proposal validation and presentation. `configure` adapts those existing callbacks.
 
+
+Every worker lease acquisition records its authentic dispatch claim as private
+checkpoint metadata. Inference's public `releaseLease` hook may release a
+stopped orphan only after `assertAbandonedJobClaim` proves that exact terminal
+claim's process dead under jobs' liveness contract. A newer inference lease
+revision or job dispatch rejects the release. Metadata is omitted from public
+snapshots; legacy leases lacking provenance remain blocked rather than guessed.

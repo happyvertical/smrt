@@ -86,9 +86,12 @@ replay the interrupted step. Already committed model passes are not repeated;
 checks may replay, so application effects must have stable idempotency identities.
 A live job, ordinary failure or missing job is insufficient recovery proof.
 Budgets reserved by a crashed call remain charged. Recover first without a budget
-override; if it stops for budget, raise totals on the subsequent resume. Stopped runs whose original
-process died with an unsettled lease require a future owning-package recovery
-API; this bridge does not infer safety from elapsed time.
+override; if it stops for budget, raise totals on the subsequent resume. Stopped orphan leases carry private dispatch provenance. Resume uses jobs'
+exact abandoned-terminal-claim proof before the public inference lease-release
+CAS, then performs ordinary admission. Live processes and fresh worker leases
+continue to block overlap; cancellation or a call timeout alone never suffices.
+Legacy stopped leases without dispatch provenance fail closed and require
+operator inspection. No inference API or schema change is required.
 
 ## Validation
 
@@ -119,3 +122,10 @@ totals or throw to refuse ordinary stopped/approval resume. It runs before any
 checkpoint/admission write, and inference validates its returned budget. Without
 the hook, behavior is unchanged. Crash recovery retains its existing totals;
 raise them only on a subsequent budget-stop resume.
+
+Every worker lease acquisition records its authentic dispatch claim as private
+checkpoint metadata. Inference's public `releaseLease` hook may release a
+stopped orphan only after `assertAbandonedJobClaim` proves that exact terminal
+claim's process dead under jobs' liveness contract. A newer inference lease
+revision or job dispatch rejects the release. Metadata is omitted from public
+snapshots; legacy leases lacking provenance remain blocked rather than guessed.
