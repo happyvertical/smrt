@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import ts from 'typescript';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { field } from '../decorators/index.js';
 import {
   compileGeneratedExpression,
@@ -1147,12 +1147,14 @@ describe('database-generated fields #4915', () => {
       for (const sql of getDDLStrategy(engine).generateIndexes(schema))
         await db.query(sql);
       await db.query('INSERT INTO generated_conversion (qty) VALUES (6)');
+      const previousSchemas = { generated_conversion: structuredClone(schema) };
       schema.columns.total = { type: 'INTEGER', defaultValue: 17 };
       const schemas = { generated_conversion: schema };
       const parity = () =>
         checkLiveSchemaParity({
           db,
           schemas,
+          previousSchemas,
           engineHint: engine,
           includeSystemTables: false,
         });
@@ -1162,9 +1164,10 @@ describe('database-generated fields #4915', () => {
           target: 'total',
         }),
       );
-      const diff = await new SchemaComparer(db, { engineHint: engine }).compare(
-        schemas,
-      );
+      const diff = await new SchemaComparer(db, {
+        engineHint: engine,
+        previousSchemas,
+      }).compare(schemas);
       const conversion = diff.changes.find(
         (change) => change.name === 'total',
       )!;
@@ -1210,16 +1213,20 @@ describe('database-generated fields #4915', () => {
       ).toEqual([]);
       expect(
         (
-          await new SchemaComparer(db, { engineHint: engine }).compare(schemas)
+          await new SchemaComparer(db, {
+            engineHint: engine,
+            previousSchemas,
+          }).compare(schemas)
         ).changes.filter((change) => change.name === 'total'),
       ).toEqual([]);
       schema.columns.total = { type: 'INTEGER', generated: { col: 'qty' } };
       expect((await parity()).findings).toContainEqual(
         expect.objectContaining({ kind: 'generated_expression_drift' }),
       );
-      const back = await new SchemaComparer(db, { engineHint: engine }).compare(
-        schemas,
-      );
+      const back = await new SchemaComparer(db, {
+        engineHint: engine,
+        previousSchemas,
+      }).compare(schemas);
       const replacement = back.changes.find(
         (change) => change.name === 'total',
       )!;
@@ -1763,6 +1770,200 @@ describe('database-generated fields #4915', () => {
         'total',
         5,
       );
+    });
+  }
+
+  for (const engine of [...persistenceEngines, 'duckdb'] as const) {
+    it(`#4972 round3 item4: ${engine} ordinary diff and parity make zero generated catalog probes`, async () => {
+      const db =
+        engine === 'duckdb'
+          ? await getDatabase({ type: 'duckdb', url: ':memory:' })
+          : await getTestDatabase({
+              type: engine === 'postgres' ? 'pglite' : 'sqlite',
+              classes: [],
+              includeSystemTables: false,
+            });
+      databases.push(db);
+      await db.query('CREATE TABLE plain_probe (qty INTEGER)');
+      const schemas: Record<string, SchemaDefinition> = {
+        plain_probe: {
+          tableName: 'plain_probe',
+          columns: { qty: { type: 'INTEGER' } },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: '1',
+        },
+      };
+      const query = db.query.bind(db);
+      const probes: string[] = [];
+      const spy = vi
+        .spyOn(db, 'query')
+        .mockImplementation(async (sql, ...values) => {
+          if (
+            /generation_expression|SELECT sql FROM (sqlite_master|duckdb_tables\(\))/i.test(
+              sql,
+            )
+          ) {
+            probes.push(sql);
+            throw new Error('ordinary models must not read generated catalogs');
+          }
+          return query(sql, ...values);
+        });
+      try {
+        await new SchemaComparer(db, { engineHint: engine }).compare(schemas);
+        await checkLiveSchemaParity({
+          db,
+          schemas,
+          engineHint: engine,
+          includeSystemTables: false,
+        });
+        const previousSchemas = structuredClone(schemas);
+        schemas.plain_probe.columns.added = { type: 'INTEGER' };
+        await new SchemaComparer(db, {
+          engineHint: engine,
+          previousSchemas,
+        }).compare(schemas);
+        await checkLiveSchemaParity({
+          db,
+          schemas,
+          previousSchemas,
+          engineHint: engine,
+          includeSystemTables: false,
+        });
+        expect(probes).toEqual([]);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  }
+
+  for (const expectedGenerated of [false, true]) {
+    it(`#4972 round3 item4: failed SQLite fallback probe is ${expectedGenerated ? 'fatal for expected generated' : 'optional for unknown missing'} columns`, async () => {
+      const db = await getTestDatabase({
+        type: 'sqlite',
+        classes: [],
+        includeSystemTables: false,
+      });
+      databases.push(db);
+      await db.query('CREATE TABLE failed_probe (qty INTEGER)');
+      const schemas: Record<string, SchemaDefinition> = {
+        failed_probe: {
+          tableName: 'failed_probe',
+          columns: {
+            qty: { type: 'INTEGER' },
+            total: {
+              type: 'INTEGER',
+              ...(expectedGenerated ? { generated: { col: 'qty' } } : {}),
+            },
+          },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: '1',
+        },
+      };
+      const failure = new Error('catalog unavailable');
+      const query = db.query.bind(db);
+      const spy = vi
+        .spyOn(db, 'query')
+        .mockImplementation(async (sql, ...values) => {
+          if (/SELECT sql FROM sqlite_master/i.test(sql)) throw failure;
+          return query(sql, ...values);
+        });
+      try {
+        const diff = () =>
+          new SchemaComparer(db, { engineHint: 'sqlite' }).compare(schemas);
+        const parity = () =>
+          checkLiveSchemaParity({
+            db,
+            schemas,
+            engineHint: 'sqlite',
+            includeSystemTables: false,
+          });
+        if (expectedGenerated) {
+          await expect(diff()).rejects.toBe(failure);
+          await expect(parity()).rejects.toBe(failure);
+        } else {
+          expect((await diff()).changes).toContainEqual(
+            expect.objectContaining({ type: 'add_column', name: 'total' }),
+          );
+          expect((await parity()).findings).toContainEqual(
+            expect.objectContaining({
+              kind: 'missing_column',
+              target: 'total',
+            }),
+          );
+        }
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  }
+
+  for (const engine of [...persistenceEngines, 'duckdb'] as const) {
+    it(`#4972 round3 items4/5: ${engine} a previous snapshot reveals handwritten generated columns and warns before conversion`, async () => {
+      const db =
+        engine === 'duckdb'
+          ? await getDatabase({ type: 'duckdb', url: ':memory:' })
+          : await getTestDatabase({
+              type: engine === 'sqlite' ? 'sqlite' : 'pglite',
+              classes: [],
+              includeSystemTables: false,
+            });
+      databases.push(db);
+      await db.query(
+        `CREATE TABLE manual_generated (qty INTEGER, total INTEGER GENERATED ALWAYS AS (qty * 2) ${engine === 'postgres' ? 'STORED' : 'VIRTUAL'})`,
+      );
+      await db.query('INSERT INTO manual_generated (qty) VALUES (5)');
+      const schema: SchemaDefinition = {
+        tableName: 'manual_generated',
+        columns: { qty: { type: 'INTEGER' }, total: { type: 'INTEGER' } },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1',
+      };
+      const schemas = { manual_generated: schema };
+      const previousSchemas = structuredClone(schemas);
+      previousSchemas.manual_generated.columns.total.generated = {
+        op: 'mul',
+        left: { col: 'qty' },
+        right: { value: 2 },
+      };
+      const parity = await checkLiveSchemaParity({
+        db,
+        schemas,
+        previousSchemas,
+        engineHint: engine,
+        includeSystemTables: false,
+      });
+      expect(parity.findings).toContainEqual(
+        expect.objectContaining({
+          kind: 'generated_expression_drift',
+          target: 'total',
+        }),
+      );
+      const diff = await new SchemaComparer(db, {
+        engineHint: engine,
+        previousSchemas,
+      }).compare(schemas);
+      const change = diff.changes.find((change) => change.name === 'total')!;
+      expect(change.advisory).toMatchObject({
+        severity: 'warning',
+        message: expect.stringMatching(/(generated|calculated)/i),
+      });
+      await db.transaction!(async (tx) => {
+        for (const sql of change.sqlStatements ?? [change.sql!])
+          await tx.query(sql);
+      });
+      await db.query('UPDATE manual_generated SET qty = 7');
+      expect(
+        (await db.query('SELECT total FROM manual_generated')).rows[0].total,
+      ).toBe(engine === 'postgres' ? 10 : null);
     });
   }
 

@@ -1,7 +1,7 @@
 import {
   type GeneratedExpression,
   generatedExpressionsMatch,
-  readGeneratedColumns,
+  probeGeneratedColumns,
 } from '../generated-fields.js';
 /**
  * Live-schema parity check (#2368)
@@ -134,6 +134,8 @@ export interface LiveSchemaParityOptions {
   db: DatabaseInterface;
   /** Expected application table shapes, keyed by table name. */
   schemas?: Record<string, SchemaDefinition>;
+  /** Previously recorded deployment shapes, used to discover removed generated declarations without querying ordinary tables. */
+  previousSchemas?: Record<string, SchemaDefinition>;
   /** Declared upsert conflict targets, keyed by table name. */
   conflictTargets?: Record<string, ConflictTargetInput[]>;
   /** Include `_smrt_*` system tables (default true). */
@@ -258,7 +260,15 @@ export async function checkLiveSchemaParity(
 
     tablesChecked++;
     const liveColumns = await readLiveColumns(db, table.name);
-    const generated = await readGeneratedColumns(db, table.name, engine);
+    const generated = await probeGeneratedColumns(db, table.name, engine, {
+      expected: table.columns.some((column) => column.generated !== undefined),
+      previous: Object.values(
+        options.previousSchemas?.[table.name]?.columns ?? {},
+      ).some((column) => column.generated !== undefined),
+      missingColumns:
+        !options.previousSchemas?.[table.name] &&
+        table.columns.some((column) => !liveColumns.has(column.name)),
+    });
     if (
       generated.size ||
       table.columns.some((column) => column.generated !== undefined)

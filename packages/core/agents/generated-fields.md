@@ -97,14 +97,39 @@ quoting but otherwise compares expression text. An SDK renderer change can
 report drift for a semantically identical expression; SQLite may replace the
 column, while DuckDB refuses the change. Inspect the plan after SDK upgrades.
 No semantic SQL parser or normalization beyond formatting is promised.
-Introspection runs even when the expected schema declares no generated columns;
-live parity reports `generated_expression_drift` for both conversion directions.
+Generated catalog introspection runs only for tables whose expected schema or
+previously recorded deployment schema contains generated columns. Supply the
+previous deployment shapes through `SchemaComparer` / `generateSchemaDiff`'s
+`previousSchemas` option and `checkLiveSchemaParity({ previousSchemas })` when
+removing the last declaration. These APIs do not own persisted schema snapshots
+and do not add a history-table query; the caller retains and supplies the
+snapshot. An ordinary table with complete live metadata pays zero generated
+catalog queries, including when an engine hint differs from the connection.
+
+Without a previous table snapshot, SQLite also probes when an expected column
+is absent from live metadata: `table_info` hides VIRTUAL columns, so this keeps
+the last-generated-to-ordinary transition discoverable. The same symptom can
+mean a genuinely new ordinary column and pays one best-effort probe for that
+table. A recorded ordinary snapshot disables that fallback. PostgreSQL/DuckDB
+metadata lists generated columns, so removing the final generated declaration
+without a previous snapshot cannot be detected automatically; supply the old
+schema or plan the conversion explicitly. Hand-created generated columns follow
+the same discovery rule.
+
+A failed optional probe (previous snapshot or SQLite missing-column fallback)
+is treated as no generated columns known, preserving ordinary diff/parity
+behavior on catalog-incompatible adapters or test doubles. A probe failure
+always propagates if generated columns are expected; declared generated drift
+is never silently ignored. Optional discovery can therefore miss a conversion
+when the catalog is unavailable. Live parity reports
+`generated_expression_drift` for both conversion directions when discovered.
 
 Generated-to-ordinary migrations have explicit value semantics:
 
 - PostgreSQL uses `ALTER COLUMN ... DROP EXPRESSION`, preserving every STORED
-  value and existing index. Ordinary type/default/nullability changes are then
-  planned by the normal differ.
+  value and existing index. A warning advisory explicitly says the column will
+  stop updating automatically, including for discovered hand-created columns.
+  Ordinary type/default/nullability changes are then planned by the normal differ.
 - SQLite (and DuckDB) VIRTUAL columns have no stored values. The migration drops
   and re-adds the column, recreating declared column indexes. Existing rows
   receive the ordinary declaration's default, or NULL; the previous calculated

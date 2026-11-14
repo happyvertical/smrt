@@ -19,7 +19,7 @@
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { shortenIdentifier } from '../../schema/index-utils.js';
 import type { SchemaDefinition } from '../../schema/types.js';
 import { SchemaComparer } from '../differ.js';
@@ -465,18 +465,6 @@ describe('SchemaComparer index drift', () => {
         // constrain every subtype's rows, so the differ skips it there
         // entirely (a caller-declared partial unique such as
         // `WHERE active = TRUE` still degrades to a full UNIQUE as before).
-        // This SQL-generation test uses SQLite storage with a simulated DuckDB catalog.
-        const query = db.query.bind(db);
-        const catalog = vi
-          .spyOn(db, 'query')
-          .mockImplementation((sql, ...values) =>
-            query(
-              sql.includes('duckdb_tables()')
-                ? "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = $1"
-                : sql,
-              ...values,
-            ),
-          );
         const comparer = new SchemaComparer(db, { engineHint: 'duckdb' });
         const diff = await comparer.compare({
           tenants: tableSchema({
@@ -496,7 +484,6 @@ describe('SchemaComparer index drift', () => {
             ],
           }),
         });
-        catalog.mockRestore();
         const adds = diff.changes
           .filter((c) => c.type === 'add_index')
           .map((c) => c.name);

@@ -516,6 +516,31 @@ export function rejectGeneratedInput(
     }
 }
 
+/**
+ * Catalog work is feature-scoped. With no recorded schema, SQLite's hidden
+ * generated column may look like a missing ordinary column; that fallback is
+ * best-effort. A manifest that expects generated columns always fails closed.
+ */
+export async function probeGeneratedColumns(
+  db: Parameters<typeof readGeneratedColumns>[0],
+  table: string,
+  engine: DatabaseEngine,
+  evidence: { expected: boolean; previous: boolean; missingColumns: boolean },
+): Promise<Map<string, string>> {
+  if (
+    !evidence.expected &&
+    !evidence.previous &&
+    !(engine === 'sqlite' && evidence.missingColumns)
+  )
+    return new Map();
+  try {
+    return await readGeneratedColumns(db, table, engine);
+  } catch (error) {
+    if (evidence.expected) throw error;
+    return new Map();
+  }
+}
+
 /** Introspect generated expressions missing from the SQL SDK's schema metadata. */
 export async function readGeneratedColumns(
   db: {

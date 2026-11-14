@@ -1,7 +1,7 @@
 import {
   GeneratedFieldError,
   generatedExpressionsMatch,
-  readGeneratedColumns,
+  probeGeneratedColumns,
 } from '../generated-fields.js';
 /**
  * Schema Differ
@@ -165,6 +165,12 @@ function isValidSQLDataType(type: string): type is SQLDataType {
  * Options for schema comparison
  */
 export interface DiffOptions {
+  /** Previously recorded deployment shapes; no history/catalog query is added.
+   * Supply these when removing the last generated declaration, especially for
+   * PostgreSQL/DuckDB whose ordinary schema metadata still lists that column.
+   */
+  previousSchemas?: Record<string, SchemaDefinition>;
+
   /**
    * Emit executable `DROP TABLE` entries (`dropped_tables`) for tables that
    * exist in the database but not in the manifest. Default: false. Orphan
@@ -2011,11 +2017,21 @@ export class SchemaComparer {
     dbSchema: SqlTableSchemaInfo,
   ): Promise<SchemaChange[]> {
     const changes: SchemaChange[] = [];
-    // Live generated columns matter even when the last declaration was removed.
-    const generated = await readGeneratedColumns(
+    const generated = await probeGeneratedColumns(
       this.db,
       tableName,
       this.engine,
+      {
+        expected: Object.values(manifest.columns).some(
+          (column) => column.generated !== undefined,
+        ),
+        previous: Object.values(
+          this.options.previousSchemas?.[tableName]?.columns ?? {},
+        ).some((column) => column.generated !== undefined),
+        missingColumns:
+          !this.options.previousSchemas?.[tableName] &&
+          Object.keys(manifest.columns).some((name) => !dbSchema.columns[name]),
+      },
     );
     if (this.engine === 'sqlite' && generated.size) {
       const { rows } = await this.db.query(
@@ -2065,6 +2081,10 @@ export class SchemaComparer {
               name: colName,
               column: colDef,
               sql: `ALTER TABLE ${table} ALTER COLUMN ${column} DROP EXPRESSION`,
+              advisory: {
+                severity: 'warning',
+                message: `Converting generated ${tableName}.${colName} to an ordinary column preserves STORED values but stops automatic expression updates.`,
+              },
               mismatch: {
                 expected: 'ordinary column (stored values preserved)',
                 actual: generated.get(colName)!,

@@ -23,7 +23,7 @@
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SchemaDefinition } from '../../schema/types.js';
 import {
   extractIndexPredicate,
@@ -221,21 +221,6 @@ describe('SchemaComparer partial-index predicate drift (issue #1692)', () => {
   });
 
   describe('engines without partial-index support (DuckDB / JSON)', () => {
-    beforeEach(() => {
-      // engineHint exercises DuckDB DDL while the fixture stores real SQLite data.
-      // Read the generated-column catalog from that fixture's physical engine.
-      const query = db.query.bind(db);
-      vi.spyOn(db, 'query').mockImplementation((sql, ...values) =>
-        query(
-          sql.includes('duckdb_tables()')
-            ? "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = $1"
-            : sql,
-          ...values,
-        ),
-      );
-    });
-    afterEach(() => vi.restoreAllMocks());
-
     // DuckDB — and the DuckDB-backed JSON adapter — reject `CREATE INDEX … WHERE`.
     // The differ must therefore treat a manifest partial index as a full index
     // there: never flag an existing full index as predicate drift, and never

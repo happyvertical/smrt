@@ -95,7 +95,6 @@ describe('checkLiveSchemaParity (application tables)', () => {
         if (sql.includes('information_schema.tables')) {
           return { rows: [{ table_name: 'widgets' }] };
         }
-        if (sql.includes("is_generated = 'ALWAYS'")) return { rows: [] };
         if (sql.includes('information_schema.columns') && params.length > 0) {
           return {
             rows: [{ column_name: 'attempts', data_type: 'integer' }],
