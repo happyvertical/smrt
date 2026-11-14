@@ -925,7 +925,7 @@ jobs:
           retention-days: 7
 
   # Aggregator: keeps the required "Test Packages" status check present after
-  # sharding (the matrix produces "Test Packages (i/3)" checks). Succeeds only if
+  # sharding (the matrix produces "Test Packages (i/4)" checks). Succeeds only if
   # every shard succeeded.
   test-packages-result:
     name: Test Packages
