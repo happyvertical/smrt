@@ -591,6 +591,33 @@ describe('durable design job bridge', () => {
     expect((await end(run.id)).status).toBe('done');
   });
 
+  it('stops when a runner claims between the backing job read and cancellation', async () => {
+    const bound = install();
+    const run = await bound.start(startInput('cancel-claim-race'));
+    // Arm after checkpoint CAS, precisely when SmrtJob.cancel opens its transaction.
+    const original = db.transaction!.bind(db);
+    let calls = 0;
+    const spy = vi
+      .spyOn(db, 'transaction')
+      .mockImplementation(async (callback) => {
+        if (++calls === 2) {
+          const [claimed] = await jobs.claimReady({
+            workerId: 'racing-design-worker',
+          });
+          expect(claimed.objectId).toBe(run.id);
+        }
+        return original(callback);
+      });
+    try {
+      expect((await bound.stop(run.id)).status).toBe('stopped');
+      const [job] = await jobs.list({ where: { objectId: run.id } });
+      expect(job.status).toBe('cancelled');
+      expect(job.attempts).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('can Stop without configure, and resume an initial configuration failure after repair', async () => {
     let broken = false;
     const bound = install(undefined, passes, {
