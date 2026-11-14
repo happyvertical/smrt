@@ -108,10 +108,16 @@ it('lists reports and sends structural changes to the explicit draft', async () 
 });
 
 it('names rename and remove actions by each report title', async () => {
-  const d = data();
-  d.description.reports = {
-    sales: report,
-    other: { ...report, label: 'Outstanding invoices' },
+  const base = data();
+  const d = {
+    ...base,
+    description: {
+      ...base.description,
+      reports: {
+        sales: report,
+        other: { ...report, label: 'Outstanding invoices' },
+      },
+    },
   };
   component = mount(ReportsPage, {
     target: container,
