@@ -652,6 +652,51 @@ export async function undoRows(
         'changed since the command; undo would lose those edits',
       );
   }
+  // Restoring a removed row or command-owned reference must not resurrect a
+  // dangling reference. Assess the final id sets, including rows recreated or
+  // removed by this same undo, before any write takes place.
+  const targetIds = new Map<string, Set<string>>();
+  for (const entry of entries) {
+    const model = String(entry.tbl);
+    const key = `${model}:${entry.record_id}`;
+    if (skipped.has(key)) continue;
+    const before = JSON.parse(String(entry.value)) as Row | null;
+    if (!before) continue;
+    const md = def.models[model];
+    if (!md) continue;
+    const columns = deleted.has(key)
+      ? Object.keys(before)
+      : ownedColumns(post.get(key) ?? {}, before);
+    for (const [field, fd] of Object.entries({
+      ...builtInFields(model, md),
+      ...md.fields,
+    })) {
+      const column = snake(field);
+      if (fd.type !== 'reference' || !columns.includes(column)) continue;
+      const target = before[column];
+      if (target == null || target === '') continue;
+      const ref = fd.ref as string;
+      let ids = targetIds.get(ref);
+      if (!ids) {
+        ids = new Set(
+          (await rawRows(def, db, ref)).map((row) => String(row.id)),
+        );
+        for (const saved of entries) {
+          if (saved.tbl !== ref) continue;
+          if (saved.value === 'null') ids.delete(String(saved.record_id));
+          else if (deleted.has(`${saved.tbl}:${saved.record_id}`))
+            ids.add(String(saved.record_id));
+        }
+        targetIds.set(ref, ids);
+      }
+      if (!ids.has(String(target)))
+        conflict(
+          entry,
+          current.get(model)?.get(String(entry.record_id)),
+          `${field}: the referenced ${ref} record no longer exists`,
+        );
+    }
+  }
   if (conflictCount)
     throw new AppError(
       `cannot undo: ${conflictCount} records need attention. ${conflicts.join('; ')}${conflictCount > conflicts.length ? `; ${conflictCount - conflicts.length} more records` : ''}`,
