@@ -192,7 +192,7 @@ export class SmrtJob extends SmrtObject {
   @field({ type: 'text', required: true, default: 'fail' })
   timeoutBehavior: TimeoutBehavior = 'fail';
 
-  /** Last dispatch start; retained on retry so each subsequent claim must advance. */
+  /** When execution started. Public retry and surplus release clear this field. */
   @field({ type: 'datetime', nullable: true })
   startedAt: Date | null = null;
 
@@ -355,7 +355,7 @@ export class SmrtJob extends SmrtObject {
       }
       const retried = await tx.query(
         `UPDATE _smrt_jobs SET status = 'pending', attempts = 0, last_error = NULL,
-           completed_at = NULL, worker_id = NULL, worker_heartbeat = NULL,
+           started_at = NULL, completed_at = NULL, worker_id = NULL, worker_heartbeat = NULL,
            updated_at = ? WHERE id = ? AND ${tenantPredicate}
            AND status IN ('pending', 'failed', 'cancelled')
            RETURNING ${SMRT_JOB_PORTABLE_SELECT_COLUMNS}`,
@@ -500,10 +500,14 @@ export interface ListReadyOptions {
   tenantIds?: readonly (string | null)[];
 }
 
-/**
- * Options for atomically claiming ready jobs.
- */
+// The DB and worker incarnation own this clock, not the job row. Legacy retry
+// and surplus-release paths may clear started_at without reusing this identity.
+const fencedClaimTimes = new WeakMap<object, Map<string, number>>();
+
+/** Options for atomically claiming ready jobs. */
 export interface ClaimReadyOptions extends ListReadyOptions {
+  /** Opt into dispatch fencing; one unique worker incarnation per DB/process. */
+  claimFencing?: boolean;
   workerId: string;
   now?: Date;
 }
@@ -558,10 +562,9 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
     const whereConditions: string[] = [
       "status = 'pending'",
       'run_at <= ?',
-      '(started_at IS NULL OR started_at < ?)',
       '(task_input_requests IS NULL OR task_input_responses IS NOT NULL)',
     ];
-    const params: unknown[] = [now, now];
+    const params: unknown[] = [now];
 
     if (options.queues?.length) {
       const placeholders = options.queues.map(() => '?').join(', ');
@@ -603,18 +606,31 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
     const limit = options.limit ?? 100;
     if (limit <= 0) return [];
 
-    // started_at is a durable dispatch generation as well as a timestamp.
-    // Retain it across retry/surplus release and claim only at a strictly later
-    // clock reading. Equal/backward clocks leave work pending, never reuse it.
     const now = options.now ?? new Date();
     const nowIso = now.toISOString();
+    let startedAt = nowIso;
+    if (options.claimFencing) {
+      let clock = fencedClaimTimes.get(this.db);
+      if (!clock) {
+        clock = new Map();
+        fencedClaimTimes.set(this.db, clock);
+      }
+      // Reserve before awaiting SQL: concurrent claims on this incarnation also
+      // get distinct generations. Clock steps never defer ready work. A restart
+      // must use a new worker incarnation (TaskRunner already guarantees this).
+      const stamp = Math.max(
+        now.getTime(),
+        (clock.get(options.workerId) ?? -Infinity) + 1,
+      );
+      startedAt = new Date(stamp).toISOString();
+      clock.set(options.workerId, stamp);
+    }
     const whereConditions: string[] = [
       "status = 'pending'",
       'run_at <= ?',
-      '(started_at IS NULL OR started_at < ?)',
       '(task_input_requests IS NULL OR task_input_responses IS NOT NULL)',
     ];
-    const whereParams: unknown[] = [nowIso, nowIso];
+    const whereParams: unknown[] = [nowIso];
 
     if (options.queues?.length) {
       const placeholders = options.queues.map(() => '?').join(', ');
@@ -639,7 +655,7 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
               started_at = ?,
               attempts = attempts + 1,
               updated_at = ?`;
-    const setParams = [options.workerId, nowIso, nowIso, nowIso];
+    const setParams = [options.workerId, nowIso, startedAt, nowIso];
 
     // Worker-internal cross-tenant claim; tenant context is restored
     // per-job at execution (SmrtJob is now @TenantScoped, S5 #1402).

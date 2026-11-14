@@ -43,7 +43,11 @@ describe('transaction-bound job claim proof', () => {
       objectId: randomUUID(),
       method: 'execute',
     });
-    const [job] = await jobs.claimReady({ workerId: 'incarnation', limit: 1 });
+    const [job] = await jobs.claimReady({
+      workerId: 'incarnation',
+      limit: 1,
+      claimFencing: true,
+    });
     claim = {
       jobId: job.id as string,
       workerId: 'incarnation',
@@ -221,6 +225,7 @@ describe('transaction-bound job claim proof', () => {
       queue: 'context',
     });
     const runner = new TaskRunner({
+      claimFencing: true,
       queues: ['context'],
       pollInterval: 10,
       retention: false,
@@ -250,17 +255,74 @@ describe('transaction-bound job claim proof', () => {
     }
   });
 
-  it('fences an old claim after retry and same-worker re-claim, even with a frozen/backward clock', async () => {
+  it('preserves default retry and frozen-clock claim behavior without opt-in', async () => {
+    const jobs = await SmrtJobCollection.create({ db });
+    const job = await jobs.enqueueJob({
+      objectType: 'ClaimProofProbe',
+      method: 'execute',
+      queue: 'legacy',
+    });
+    const now = new Date(Date.now() + 60_000);
+    const [first] = await jobs.claimReady({
+      workerId: 'legacy-worker',
+      queues: ['legacy'],
+      now,
+    });
+    await first.cancel();
+    await first.retry();
+    expect(first.startedAt).toBeNull();
+    expect(
+      (await jobs.listReady({ queues: ['legacy'] })).map((j) => j.id),
+    ).toContain(job.id);
+    const [second] = await jobs.claimReady({
+      workerId: 'legacy-worker',
+      queues: ['legacy'],
+      now,
+    });
+    expect(second.startedAt?.getTime()).toBe(now.getTime());
+    expect(second.attempts).toBe(1);
+  });
+
+  it('does not expose claim proofs from a runner that did not opt in', async () => {
+    const jobs = await SmrtJobCollection.create({ db });
+    const job = await jobs.enqueueJob({
+      objectType: 'ClaimContextProbe',
+      method: 'execute',
+      queue: 'legacy-context',
+      maxAttempts: 1,
+    });
+    const runner = new TaskRunner({
+      queues: ['legacy-context'],
+      pollInterval: 10,
+      retention: false,
+    });
+    await runner.initialize(db);
+    try {
+      const failed = new Promise<Error>((resolve) =>
+        runner.once('job:failed', (_job, error) => resolve(error)),
+      );
+      await runner.start();
+      expect((await failed).message).toContain('claimFencing: true');
+      expect((await jobs.get({ id: job.id as string }))?.status).toBe('failed');
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  it.each([
+    0, -60_000,
+  ])('fences retry and same-worker re-claim without deferral at clock delta %s', async (delta) => {
     const jobs = await SmrtJobCollection.create({ db });
     const job = await jobs.enqueueJob({
       objectType: 'ClaimProofProbe',
       method: 'execute',
       queue: 'generation',
     });
-    const now = new Date(Date.now() + 10000);
+    const now = new Date(Date.now() + 120_000);
     const [first] = await jobs.claimReady({
       workerId: 'same-worker',
       queues: ['generation'],
+      claimFencing: true,
       now,
     });
     const old: JobClaim = {
@@ -273,32 +335,19 @@ describe('transaction-bound job claim proof', () => {
       objectId: null,
       method: 'execute',
     };
-    const snapshot = terminalSnapshot(first);
+    const snapshot = terminalSnapshot(first, true);
     await first.cancel();
     await first.retry();
-    expect(first.startedAt?.toISOString()).toBe(old.startedAt);
-    expect(
-      await jobs.claimReady({
-        workerId: 'same-worker',
-        queues: ['generation'],
-        now,
-      }),
-    ).toEqual([]);
-    expect(
-      await jobs.claimReady({
-        workerId: 'same-worker',
-        queues: ['generation'],
-        now: new Date(now.getTime() - 1),
-      }),
-    ).toEqual([]);
+    expect(first.startedAt).toBeNull(); // unchanged public retry semantics
     const [second] = await jobs.claimReady({
       workerId: 'same-worker',
       queues: ['generation'],
-      now: new Date(now.getTime() + 1),
+      claimFencing: true,
+      now: new Date(now.getTime() + delta),
     });
     expect(second.attempts).toBe(old.attempt);
     expect(second.workerId).toBe(old.workerId);
-    expect(second.startedAt?.toISOString()).not.toBe(old.startedAt);
+    expect(second.startedAt?.getTime()).toBe(Date.parse(old.startedAt) + 1);
     expect(
       await transitionTerminalJob(db, {
         job: snapshot as NonNullable<typeof snapshot>,

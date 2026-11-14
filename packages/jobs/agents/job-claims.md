@@ -12,12 +12,30 @@ rejects pending, recovered and replacement claims. Neither function changes
 job status nor expires the process lease. Return from the handler to park;
 TaskRunner owns job completion. Use only after current host authorization.
 
-Dispatch fencing also compares the captured `startedAt`. `claimReady` only
-claims at a timestamp strictly greater than the row's previous `started_at`;
-retry and surplus release preserve that value. Millisecond resolution is safe
-because equal/backward clock readings leave the row pending until time advances,
-rather than creating a second dispatch with the same generation. Pending jobs
-may therefore retain their last dispatch start. No new column is required.
+Dispatch fencing is opt-in: start `TaskRunner` with `claimFencing: true` to
+use `getJobClaim`. Defaults retain their previous terminal/retry behavior and
+claim timing. Public `retry()` and surplus release clear `started_at` as before.
+The opted-in runner uses `max(now, previousWorkerDispatch + 1ms)` for each claim
+batch, reserved before SQL on its DB/worker incarnation. A frozen/backward clock
+never delays ready work. This logical start may be ahead of wall time; catch-up
+has no bounded wall duration after an arbitrary clock step and does not gate
+scheduling. `runAt` eligibility still uses the normal host clock.
+
+The generation clock belongs to the worker incarnation, not the job row, so
+legacy retry/release clearing `started_at` cannot reuse an opted-in worker's
+claim. A process restart uses a new worker key. Direct `claimReady` users that
+opt into `claimFencing` must use one DB handle and a unique worker incarnation
+per process, consistently enabling fencing for that incarnation. Never share
+worker keys across independent runners or alternate fenced/unfenced claims.
+No schema changes are required.
+
+During rolling deployments, old runners retain their existing semantics and
+cannot supply the new authentic claim proof. New fenced handlers reject an
+unfenced context before doing application work. Route handlers requiring proofs
+to a dedicated queue consumed only by opted-in upgraded runners, or upgrade all
+consumers of that queue before admitting such jobs. Existing ordinary jobs need
+no change. Timestamp clearing by old code is safe for new proofs: a replacement
+worker key differs, and an opted-in original incarnation's clock still advances.
 
 Use `assertFailedJobDispatch(tx, dispatch)` to lock an exact failed dispatch
 before checkpoint recovery and re-admission. It checks tenant, target, attempt

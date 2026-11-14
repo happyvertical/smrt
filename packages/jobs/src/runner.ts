@@ -104,7 +104,10 @@ export function getJobClaim(context: unknown): Readonly<JobClaim> {
   const claim = isRunnerExecutionContext(context)
     ? runnerJobClaims.get(context)
     : undefined;
-  if (!claim) throw new Error('Job claim requires TaskRunner context');
+  if (!claim)
+    throw new Error(
+      'Job claim requires TaskRunner context with claimFencing: true',
+    );
   return claim;
 }
 
@@ -112,6 +115,8 @@ export function getJobClaim(context: unknown): Readonly<JobClaim> {
  * TaskRunner configuration
  */
 export interface TaskRunnerConfig {
+  /** Opt into immutable claim proofs and dispatch-fenced runner writes. Default false. */
+  claimFencing?: boolean;
   /** Worker ID (auto-generated if not provided) */
   id?: string;
   /** Resolve live authority for durable tasks at each execution/replay. */
@@ -279,6 +284,7 @@ type ResolvedTaskRunnerConfig = Required<Omit<TaskRunnerConfig, 'tenantIds'>> &
 
 const DEFAULT_CONFIG: ResolvedTaskRunnerConfig = {
   id: '',
+  claimFencing: false,
   authorizeMcpTask: async () => false,
   concurrency: 5,
   queues: ['default'],
@@ -637,6 +643,7 @@ export class TaskRunner extends EventEmitter {
     // Atomically claim ready jobs before processing so multiple workers cannot
     // receive the same pending row.
     const claimed = await this.collection.claimReady({
+      claimFencing: this.config.claimFencing,
       workerId: this.workerKey,
       queues: this.config.queues,
       tenantIds: this.config.tenantIds,
@@ -725,6 +732,7 @@ export class TaskRunner extends EventEmitter {
               SET status = 'pending',
                   worker_id = NULL,
                   worker_heartbeat = NULL,
+                  started_at = NULL,
                   attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END,
                   updated_at = ?
             WHERE worker_id = ? AND status = 'running' AND id IN (${placeholders})`,
@@ -792,7 +800,7 @@ export class TaskRunner extends EventEmitter {
       // recovered/reclaimed row (worker died, recovery ran, the work finished
       // anyway) is never stomped back to 'completed'.
       const completedAt = new Date();
-      const snapshot = terminalSnapshot(job);
+      const snapshot = terminalSnapshot(job, this.config.claimFencing);
       let event: SmrtJobEvent | null = null;
       try {
         event = snapshot
@@ -1033,6 +1041,7 @@ export class TaskRunner extends EventEmitter {
   private async writeOwnedJob(
     jobId: string,
     assignments: Record<string, unknown>,
+    dispatch?: SmrtJob,
   ): Promise<boolean> {
     if (!this.db) return false;
     const columns = Object.keys(assignments);
@@ -1041,14 +1050,18 @@ export class TaskRunner extends EventEmitter {
     // RETURNING id (not rowCount): the DuckDB/JSON adapters report rowCount as
     // the number of result rows, so an UPDATE that matched nothing still
     // reports 1 — only the returned-row set is a reliable "did it apply".
+    const fenced = this.config.claimFencing && dispatch;
     const result = await this.db.query(
       `UPDATE _smrt_jobs
           SET ${setSql}
-        WHERE id = ? AND worker_id = ? AND status = 'running'
+        WHERE id = ? AND worker_id = ? AND status = 'running'${fenced ? ' AND attempts = ? AND started_at = ?' : ''}
         RETURNING id`,
       ...values,
       jobId,
       this.workerKey,
+      ...(fenced
+        ? [dispatch.attempts, dispatch.startedAt?.toISOString() ?? null]
+        : []),
     );
     return (result.rows?.length ?? 0) > 0;
   }
@@ -1288,14 +1301,18 @@ export class TaskRunner extends EventEmitter {
 
       // Conditional: don't resurrect a row that recovery already failed.
       const applied = await this.persistJobWrite(() =>
-        this.writeOwnedJob(jobId, {
-          status: 'pending',
-          last_error: safeMessage,
-          run_at: nextRunAt.toISOString(),
-          worker_id: null,
-          worker_heartbeat: null,
-          updated_at: new Date().toISOString(),
-        }),
+        this.writeOwnedJob(
+          jobId,
+          {
+            status: 'pending',
+            last_error: safeMessage,
+            run_at: nextRunAt.toISOString(),
+            worker_id: null,
+            worker_heartbeat: null,
+            updated_at: new Date().toISOString(),
+          },
+          job,
+        ),
       );
       if (!applied) return;
 
@@ -1316,7 +1333,7 @@ export class TaskRunner extends EventEmitter {
     } else {
       // Job failed permanently
       const completedAt = new Date();
-      const snapshot = terminalSnapshot(job);
+      const snapshot = terminalSnapshot(job, this.config.claimFencing);
       const event = snapshot
         ? await this.persistJobWrite(() =>
             transitionTerminalJob(this.db as DatabaseInterface, {
@@ -1455,19 +1472,20 @@ export class TaskRunner extends EventEmitter {
         : {}),
     };
     runnerExecutionContextIdentities.add(context);
-    runnerJobClaims.set(
-      context,
-      Object.freeze({
-        jobId: job.id ?? '',
-        workerId: this.workerKey,
-        attempt: job.attempts,
-        startedAt: job.startedAt?.toISOString() ?? '',
-        tenantId: job.tenantId ?? null,
-        objectType: job.objectType,
-        objectId: job.objectId ?? null,
-        method: job.method,
-      }),
-    );
+    if (this.config.claimFencing)
+      runnerJobClaims.set(
+        context,
+        Object.freeze({
+          jobId: job.id ?? '',
+          workerId: this.workerKey,
+          attempt: job.attempts,
+          startedAt: job.startedAt?.toISOString() ?? '',
+          tenantId: job.tenantId ?? null,
+          objectType: job.objectType,
+          objectId: job.objectId ?? null,
+          method: job.method,
+        }),
+      );
     return context;
   }
 
@@ -1635,7 +1653,7 @@ export class TaskRunner extends EventEmitter {
       '(no fresh liveness lease in _smrt_workers and not running in this process).';
 
     for (const job of orphans) {
-      const snapshot = terminalSnapshot(job);
+      const snapshot = terminalSnapshot(job, this.config.claimFencing);
       if (!snapshot) continue;
       const lastError =
         (job.id ? this.unsettledJobs.get(job.id) : undefined) ?? errorMessage;

@@ -22,7 +22,11 @@ it.runIf(Boolean(process.env.SMRT_TEST_PGLITE_MODULE))(
       expect(offLoopEligible(db)).toBe(false);
       const jobs = await SmrtJobCollection.create({ db });
       await jobs.enqueueJob({ objectType: 'PgliteProof', method: 'run' });
-      const [job] = await jobs.claimReady({ workerId: 'pg-worker', limit: 1 });
+      const [job] = await jobs.claimReady({
+        workerId: 'pg-worker',
+        limit: 1,
+        claimFencing: true,
+      });
       await db.transaction?.((tx) =>
         assertJobClaim(tx, {
           jobId: job.id as string,

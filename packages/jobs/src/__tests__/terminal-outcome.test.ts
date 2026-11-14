@@ -269,7 +269,7 @@ describe('atomic terminal job outcomes', () => {
     const { db, events, snapshot } = await fixture();
     await db.query(
       `UPDATE _smrt_jobs
-          SET status = 'running', queue = 'current-queue', object_type = 'CurrentTarget', method = 'current', worker_id = 'worker-a'
+          SET status = 'running', attempts = 1, queue = 'current-queue', object_type = 'CurrentTarget', method = 'current', worker_id = 'worker-a'
         WHERE id = ?`,
       snapshot.id,
     );
@@ -287,7 +287,7 @@ describe('atomic terminal job outcomes', () => {
     ).toMatchObject([
       {
         status: 'cancelled',
-        attempts: 0,
+        attempts: 1,
         queue: 'current-queue',
         objectType: 'CurrentTarget',
         method: 'current',

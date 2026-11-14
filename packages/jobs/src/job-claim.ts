@@ -7,7 +7,7 @@ export interface JobClaim {
   jobId: string;
   workerId: string;
   attempt: number;
-  /** Strictly increasing persisted dispatch timestamp, retained across retries. */
+  /** Monotonic dispatch timestamp for this opted-in worker incarnation. */
   startedAt: string;
   tenantId: string | null;
   objectType: string;
@@ -26,7 +26,8 @@ export class JobClaimLostError extends Error {
 /**
  * Lock and prove a live claim inside the caller's transaction. Keep subsequent
  * application writes on this same transaction and propagate any rejection.
- * This does not grant tenant authority; claims come from trusted runner context.
+ * This does not grant tenant authority; claims come from trusted runner context
+ * with claimFencing enabled. Never reuse a worker incarnation across processes.
  *
  * @param transaction - Caller-owned transaction, not a pool/root connection.
  * @param claim - Identity captured when the runner dispatched this attempt.
