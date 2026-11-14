@@ -239,8 +239,7 @@ risky: text/choice values become references, originals remain archived for undo.
 A new target has a required text title field (`name` by default); an existing
 target matches its titleField or first visible text. Exact matching is default;
 `normalize: true` trims and compares case-insensitively. The preview reports
-rows/distinct/folded/create/matched counts. Empty values retain their exact
-storage. Ambiguous existing labels refuse the command. Undo restores originals
+rows/distinct/folded/create/matched counts. Empty strings (and whitespace-only strings with normalization) become null references; undo restores their exact original text. Null values remain null. Ambiguous existing labels refuse the command. Undo restores originals
 and deletes only created target rows, refusing surviving references (including
 hidden references) added since extraction. Source references written after extraction also refuse undo, including references to pre-existing targets, so ids never become text. Publish extracts current live values.
 

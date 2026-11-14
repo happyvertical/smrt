@@ -83,6 +83,11 @@ export async function prepareExtract(
     group.rows.push(row);
     groups.set(key, group);
   }
+  const blanks = rows.filter(
+    (row) =>
+      row[snake(cmd.field)] != null &&
+      !matching(row[snake(cmd.field)], !!cmd.normalize),
+  );
   let matched = 0;
   for (const [key, group] of groups) {
     const matches = byTitle.get(key) ?? [];
@@ -112,6 +117,7 @@ export async function prepareExtract(
       throw new AppError('extracted value is not a target choice');
   }
   assertJournalBounds([
+    ...blanks,
     ...[...groups.values()].flatMap((group) => group.rows),
     ...[...groups.values()]
       .filter((group) => !group.id)
@@ -120,6 +126,7 @@ export async function prepareExtract(
   return {
     label,
     groups,
+    blanks,
     preview: {
       rows: count,
       distinct: distinct.size,
@@ -139,7 +146,7 @@ export async function applyExtract(
 ) {
   // The running definition already has the destination model and reference;
   // preparation reads the original physical source values within this tx.
-  const { label, groups } = await prepareExtract(def, db, cmd);
+  const { label, groups, blanks } = await prepareExtract(def, db, cmd);
   const collection = await collectionFor(def, db, cmd.into);
   for (const [key, group] of groups) {
     const id = group.id ?? replayId(seed, key);
@@ -174,7 +181,17 @@ export async function applyExtract(
       );
     }
   }
-  // Empty stays empty: both null and the exact original empty string survive.
+  for (const row of blanks) {
+    await archiveRow(db, version, cmd.model, String(row.id), row);
+    await archiveAfter(db, version, cmd.model, String(row.id), {
+      [snake(cmd.field)]: null,
+    });
+    await db.query(
+      `UPDATE ${quote(tableFor(cmd.model, def.models[cmd.model]))} SET ${quote(snake(cmd.field))} = NULL WHERE id = ?`,
+      [row.id],
+    );
+  }
+  // Blank source values become null references; undo retains their exact text.
   // Keep original type data in the version for validation and undo registration.
   void from;
   await assertStoredJournalBounds(db, version);

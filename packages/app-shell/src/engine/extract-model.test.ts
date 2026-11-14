@@ -67,7 +67,7 @@ it('extracts exact distinct nonempty values; undo restores raw source and remove
     (await host.list('Sale'))
       .map((r) => labels.get(r.category) ?? r.category)
       .sort(),
-  ).toEqual(['', ' food ', 'Food', 'Food', null].sort());
+  ).toEqual([null, ' food ', 'Food', 'Food', null].sort());
   await host.close();
   host = await AppHost.open(dir, { store });
   await run({ type: 'undo' });
@@ -261,4 +261,28 @@ it('refuses undo of an existing-target extract with a later created or changed r
   expect((await host.list('Purchase')).map((r) => r.vendor).sort()).toEqual(
     ['Known', null].sort(),
   );
+});
+
+it('turns normalized whitespace and empty strings into null references and restores exact blanks on undo', async () => {
+  await run({
+    type: 'defineModel',
+    name: 'BlankSource',
+    fields: { category: { type: 'text' } },
+  });
+  for (const category of ['', '   ', null, 'Known'])
+    await host.create('BlankSource', { category });
+  const before = raw('u_blank_sources');
+  await run({
+    type: 'extractModel',
+    model: 'BlankSource',
+    field: 'category',
+    into: 'BlankTarget',
+    normalize: true,
+  });
+  const categorys = (await host.list('BlankSource')).map((row) => row.category);
+  expect(categorys.filter((value) => value === null)).toHaveLength(3);
+  expect(categorys).not.toContain('');
+  expect(categorys).not.toContain('   ');
+  await run({ type: 'undo' });
+  expect(raw('u_blank_sources')).toEqual(before);
 });
