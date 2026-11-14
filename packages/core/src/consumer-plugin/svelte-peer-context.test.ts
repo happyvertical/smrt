@@ -140,4 +140,73 @@ describe('consumer Svelte barrels across installed peer contexts (#4318)', () =>
       /from ["']@happyvertical\/smrt-peer-fixture\/svelte["']/,
     );
   });
+  it('compiles a Svelte barrel whose Vite-resolved instance differs from the importer-context instance (#4962)', async () => {
+    const direct = join(
+      directory,
+      'node_modules/.pnpm/peer@1.0.0_app/node_modules',
+      PACKAGE,
+    );
+    const variant = join(
+      directory,
+      'node_modules/.pnpm/peer@1.0.0_variant/node_modules',
+      PACKAGE,
+    );
+    writePackage(direct, PACKAGE, 'app-peer');
+    writePackage(variant, PACKAGE, 'variant-peer');
+    mkdirSync(join(directory, 'node_modules/@happyvertical'), {
+      recursive: true,
+    });
+    symlinkSync(direct, join(directory, 'node_modules', PACKAGE), 'dir');
+    mkdirSync(join(directory, 'src'));
+    // Another plugin resolves the barrel to a different installed
+    // peer-context instance than the importer-relative lookup finds.
+    writeFileSync(
+      join(directory, 'src/entry.js'),
+      `
+      import Barrel from '@happyvertical/smrt-peer-fixture/svelte';
+      import { render } from 'svelte/server';
+      console.log(JSON.stringify({ body: render(Barrel).body }));
+    `,
+    );
+    const variantBarrel = join(variant, 'dist/svelte.js');
+    await build({
+      root: directory,
+      configFile: false,
+      logLevel: 'silent',
+      plugins: [
+        svelte(),
+        smrtConsumer({
+          packages: [PACKAGE],
+          projectRoot: directory,
+          disableScanning: true,
+          generateTypes: false,
+        }),
+        {
+          name: 'test-variant-resolver',
+          enforce: 'pre',
+          resolveId(id, importer) {
+            if (id === `${PACKAGE}/svelte` && importer?.endsWith('entry.js'))
+              return variantBarrel;
+          },
+        },
+      ],
+      build: {
+        ssr: join(directory, 'src/entry.js'),
+        outDir: join(directory, 'server'),
+        emptyOutDir: true,
+        rollupOptions: { output: { entryFileNames: 'entry.mjs' } },
+      },
+    });
+    const entry = join(directory, 'server/entry.mjs');
+    const source = readFileSync(entry, 'utf8');
+    expect(source).not.toMatch(
+      /from ["']@happyvertical\/smrt-peer-fixture\/svelte["']/,
+    );
+    const result = spawnSync(process.execPath, [entry], {
+      cwd: directory,
+      encoding: 'utf8',
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout).body).toContain('variant-peer');
+  });
 });
