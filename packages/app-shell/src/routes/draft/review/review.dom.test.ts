@@ -1,5 +1,11 @@
+import { execFile } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { mount, tick, unmount } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PublishPreview } from '../../../lib/ui/types.ts';
 import {
   description,
   draftInfo,
@@ -294,3 +300,75 @@ it('shows reviewed current-live counts for each replayed data command', async ()
     'Merge 2 records in Customer; references repointed (7 references in Order).',
   );
 });
+
+it('reviews real load and field rename rehearsals without false removals or formula changes', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'draft-review-'));
+  try {
+    const output = join(dir, 'previews.json');
+    await promisify(execFile)(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        'test-support/draft-review-engine-previews.ts',
+        output,
+      ],
+      { timeout: 90000 },
+    );
+    const previews = JSON.parse(readFileSync(output, 'utf8')) as Record<
+      string,
+      PublishPreview
+    >;
+    for (const [name, actual] of Object.entries(previews)) {
+      vi.mocked(fetch).mockResolvedValue(
+        json({ draft: draftInfo, preview: actual }),
+      );
+      await render();
+      const text = container.textContent ?? '';
+      const group = (name: string) =>
+        container.querySelector(`section[aria-label="${name}"]`);
+      expect(text).toContain('Rename field Quantity to units in Orders');
+      expect(text).not.toContain('Order.units');
+      expect(text).not.toContain('Order.quantity');
+      expect(group('Added')?.textContent).toContain('None.');
+      expect(group('Removed')?.textContent).not.toMatch(/Quantity|units/);
+      expect(group('Data')?.textContent).toContain(
+        'Load records into Orders (insert): 1 inserted, 0 updated, 0 unchanged, 0 rejected.',
+      );
+      expect(container.querySelector('ol')?.textContent).toContain(
+        'Load 1 record into Orders',
+      );
+      if (name === 'renamed' || name === 'differingLabels') {
+        expect(group('Changed')?.textContent).not.toContain('calculated as');
+        expect(text).not.toContain('Calculated field changes');
+        expect(group('Archived')?.textContent).toContain('None.');
+        expect(
+          group('Archived')?.querySelector('[data-smrt-component="Badge"]')
+            ?.textContent,
+        ).toBe('0');
+        expect(actual.archives.values).toBeGreaterThan(0); // engine undo journals remain intact
+      }
+      if (name === 'differingLabels')
+        expect(text).toContain('Rename field Notes to Memo in Orders');
+      if (name === 'formulaChanged' || name === 'archived') {
+        expect(text).toContain('Calculated field changes');
+        expect(group('Changed')?.textContent).toContain(
+          'Total in Orders: calculated as',
+        );
+        expect(group('Changed')?.textContent).toContain('10');
+      }
+      if (name === 'archived')
+        expect(group('Archived')?.textContent).toContain('Price in Orders');
+      if (process.env.SMRT_DRAFT_REVIEW_ARTIFACT)
+        writeFileSync(
+          `${process.env.SMRT_DRAFT_REVIEW_ARTIFACT}-${name}.txt`,
+          text,
+        );
+      await unmount(component);
+      component = undefined as never;
+      container.replaceChildren();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 120000);

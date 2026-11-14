@@ -31,7 +31,7 @@ const calculations = $derived(publishCalculations(preview));
 <ol>
   {#each preview.versions as version (version.version)}
     <li>
-      <p>{version.summary}</p>
+      <p>{version.humanSummary ?? version.summary}</p>
     </li>
   {/each}
 </ol>

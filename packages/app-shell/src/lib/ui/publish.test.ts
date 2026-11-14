@@ -14,7 +14,8 @@ describe('publish preview', () => {
     expect(lines).toContain('Models removed: 1. Fields removed: 1.');
     expect(lines).toContain('Customer.age: text to integer');
     expect(lines).toContain('Field type changes: 1.');
-    expect(lines).toContain('Archived values: 7. Archived tables: 1.');
+    expect(lines).toContain('Archived values: 7');
+    expect(lines).toContain('Archived tables: 1');
     expect(
       describeApproval(publishApproval()).blocks.map((b) => b.code),
     ).toEqual(preview.methods.map((m) => m.code));
@@ -119,7 +120,7 @@ it('includes only added or changed calculations, including cleared formulas', ()
   };
   const lines = publishCalculations(p);
   expect(lines).toHaveLength(2);
-  expect(lines.join(' ')).toContain('Add field Customer.added');
+  expect(lines.join(' ')).toContain('Add field Added in Customer');
   expect(lines.join(' ')).toContain('Customer.cleared: remove calculation');
   expect(lines.join(' ')).not.toContain('Customer.same');
 });

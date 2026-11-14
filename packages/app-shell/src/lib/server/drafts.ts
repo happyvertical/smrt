@@ -239,12 +239,19 @@ export async function previewDraft(): Promise<{
   preview.fields = Object.fromEntries(
     Object.entries(host.describe().models).map(([name, model]) => [
       name,
-      model.fields,
+      { ...live.describe().models[name]?.fields, ...model.fields },
     ]),
   );
   const descriptions = { ...live.describe().models, ...host.describe().models };
-  const dataModels = new Set(
-    preview.versions.flatMap((version) =>
+  const relevantModels = new Set([
+    ...preview.definition.modelsAdded,
+    ...preview.definition.modelsRemoved,
+    ...Object.keys(preview.definition.models),
+    ...(preview.fieldRenames ?? []).map((rename) => rename.model),
+    ...preview.methods
+      .filter((method) => method.change !== 'unchanged')
+      .map((method) => method.model),
+    ...preview.versions.flatMap((version) =>
       (version.dataSteps ?? []).flatMap((step) => [
         step.model,
         ...Object.keys(
@@ -252,14 +259,23 @@ export async function previewDraft(): Promise<{
         ),
       ]),
     ),
-  );
+  ]);
   preview.modelLabels = Object.fromEntries(
-    [...dataModels].map((name) => [name, descriptions[name]?.label ?? name]),
+    [...relevantModels].map((name) => [
+      name,
+      descriptions[name]?.label ?? name,
+    ]),
   );
   preview.reportChanges = [];
   for (const version of preview.versions) {
     const record = records.get(version.draftVersion);
     if (!record) continue;
+    (version as typeof version & { humanSummary?: string }).humanSummary =
+      versionSummary(
+        record.summary,
+        records.get(record.parent ?? -1)?.definition,
+        record.definition,
+      );
     const changes = reportChanges(
       records.get(record.parent ?? -1)?.definition.reports ?? {},
       record.definition.reports ?? {},

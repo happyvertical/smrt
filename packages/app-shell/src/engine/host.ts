@@ -165,6 +165,14 @@ export interface PublishPreview {
   fromVersion: number;
   toVersion: number;
   versions: PublishVersionPreview[];
+  /** Recorded column renames, resolved against each command's definitions. */
+  fieldRenames?: {
+    model: string;
+    from: string;
+    to: string;
+    fromLabel: string;
+    toLabel: string;
+  }[];
   /** Live's current definition against the draft's final one. */
   definition: DefinitionDiff;
   /** Archived values and tables the changes create (what undo restores from). */
@@ -1852,6 +1860,37 @@ export class AppHost extends EventEmitter {
           statements: r.boots[i].statements,
           dataSteps: r.dataSteps[i],
         })),
+        fieldRenames: ctx.chain.versions.flatMap((record, index) => {
+          const before = index
+            ? ctx.chain.versions[index - 1].definition
+            : ctx.chain.base.definition;
+          return (record.migration?.steps ?? []).flatMap((step) => {
+            if (step.op !== 'renameColumn') return [];
+            const entry = Object.entries(before.models).find(
+              ([name, model]) => tableFor(name, model) === step.table,
+            );
+            if (!entry) return [];
+            const [model, oldModel] = entry;
+            const from = Object.keys(oldModel.fields).find(
+              (name) => snake(name) === step.from,
+            );
+            const to = Object.keys(
+              record.definition.models[model]?.fields ?? {},
+            ).find((name) => snake(name) === step.to);
+            return from && to
+              ? [
+                  {
+                    model,
+                    from,
+                    to,
+                    fromLabel: oldModel.fields[from].label ?? from,
+                    toLabel:
+                      record.definition.models[model].fields[to].label ?? to,
+                  },
+                ]
+              : [];
+          });
+        }),
         definition: diffDefinitions(ctx.from, final),
         archives: r.archives,
         methods: listMethods(ctx.from, final),

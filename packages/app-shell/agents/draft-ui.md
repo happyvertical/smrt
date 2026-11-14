@@ -128,3 +128,24 @@ Regression evidence includes real SQLite engine plans routed through stored
 approvals into card descriptions, plus actual mounted cards fed real engine
 previews produced by a Node subprocess. The subprocess is necessary because
 the DOM test config selects browser exports, which cannot boot engine models.
+
+## Round 5 review regressions (#4917)
+
+Draft publishing resolves `renameColumn` command steps against their before/after
+model definitions. Renames belong in Changed, never Added/Removed; a calculation
+operand rewritten by that rename is not an independent formula edit. Genuine
+formula edits remain visible. The ordered list uses the same label formatter as
+History and Approval headings. When an explicit label survives a rename, the
+review names that old label and the requested new field name. Data rehearsal
+counts are retained. Load-only undo journals are not archive decisions; when
+removal/conversion archives coexist with data commands, the archive description
+names the affected fields and explains the data-command undo journals.
+
+The mounted review regression uses real Node/SQLite publish rehearsals from
+`test-support/draft-review-engine-previews.ts`, outside the application source.
+It covers load + rename with an unchanged calculated total, a second rename with
+different display labels, a genuine formula edit, and field removal archives.
+The exact rendered decision is “Rename field Quantity to units in Orders.”
+F5 narrow validation: 7 unit tests and 9 review DOM tests passed; the DOM fixture
+preserves nonzero raw archive journal counts while rendering no archive decision
+for load + rename. Full branch validation is the integration owner's gate.

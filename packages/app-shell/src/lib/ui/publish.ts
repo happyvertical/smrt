@@ -1,5 +1,128 @@
+import { fieldLabel, humanize } from './fields.ts';
 import { formulaWords } from './formula.ts';
 import type { FieldDef, PublishPreview, VersionInfo } from './types.ts';
+
+function modelLabel(model: string, preview: PublishPreview) {
+  return preview.modelLabels?.[model] ?? model;
+}
+function fieldName(model: string, field: string, preview: PublishPreview) {
+  const def = preview.fields?.[model]?.[field];
+  return def ? fieldLabel(field, def) : field;
+}
+function fieldSubject(model: string, field: string, preview: PublishPreview) {
+  return preview.fields?.[model]?.[field]
+    ? `${fieldName(model, field, preview)} in ${modelLabel(model, preview)}`
+    : `${model}.${field}`;
+}
+function renames(preview: PublishPreview) {
+  return preview.fieldRenames ?? [];
+}
+function renameLines(preview: PublishPreview) {
+  return renames(preview).map((rename) => {
+    const from =
+      rename.fromLabel === rename.from
+        ? humanize(rename.from)
+        : rename.fromLabel;
+    const to =
+      rename.fromLabel === rename.toLabel
+        ? rename.to
+        : rename.toLabel === rename.to
+          ? humanize(rename.to)
+          : rename.toLabel;
+    return `Rename field ${from}${from === to ? '' : ` to ${to}`} in ${modelLabel(rename.model, preview)}.`;
+  });
+}
+function renamed(
+  preview: PublishPreview,
+  model: string,
+  field: string,
+  side: 'from' | 'to',
+) {
+  return renames(preview).some(
+    (rename) => rename.model === model && rename[side] === field,
+  );
+}
+function rewriteRenamedOperands(
+  value: unknown,
+  model: string,
+  preview: PublishPreview,
+): unknown {
+  if (Array.isArray(value))
+    return value.map((item) => rewriteRenamedOperands(item, model, preview));
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [
+      key,
+      key === 'col' && typeof item === 'string'
+        ? renames(preview)
+            .filter((r) => r.model === model)
+            .reduce((name, r) => (name === r.from ? r.to : name), item)
+        : rewriteRenamedOperands(item, model, preview),
+    ]),
+  );
+}
+function meaningfulChange(
+  model: string,
+  from: FieldDef,
+  to: FieldDef,
+  preview: PublishPreview,
+) {
+  return (
+    JSON.stringify(rewriteRenamedOperands(from, model, preview)) !==
+    JSON.stringify(to)
+  );
+}
+/** Data-command undo journals are not removed app values; show archive decisions only. */
+function archiveItems(preview: PublishPreview) {
+  const steps = preview.versions.flatMap((v) => v.steps);
+  if (
+    !steps.some(
+      (s) =>
+        ['dropColumn', 'convertColumn', 'archiveTable'].includes(s.op) ||
+        (s.op === 'calculation' &&
+          !(s.from as FieldDef | undefined)?.calculated),
+    )
+  )
+    return [];
+  const subjects = [
+    ...preview.definition.modelsRemoved.map((model) =>
+      modelLabel(model, preview),
+    ),
+    ...Object.entries(preview.definition.models).flatMap(([model, diff]) => [
+      ...diff.fieldsRemoved
+        .filter((field) => !renamed(preview, model, field, 'from'))
+        .map((field) => `${fieldSubject(model, field, preview)}`),
+      ...diff.fieldsChanged
+        .filter(
+          (field) =>
+            field.from.type !== field.to.type ||
+            (!field.from.calculated && field.to.calculated),
+        )
+        .map(
+          (field) =>
+            `${fieldName(model, field.field, preview)} in ${modelLabel(model, preview)}`,
+        ),
+    ]),
+  ];
+  if (
+    steps.some((s) =>
+      ['loadRecords', 'extractModel', 'mergeRecords'].includes(s.op),
+    )
+  )
+    subjects.push('data-command undo journals');
+  return [
+    ...(preview.archives.values
+      ? [
+          `Archived values: ${preview.archives.values}${subjects.length ? ` (${subjects.join('; ')})` : ' (original values retained for undo)'}.`,
+        ]
+      : []),
+    ...(preview.archives.tables
+      ? [
+          `Archived tables: ${preview.archives.tables}${preview.definition.modelsRemoved.length ? ` (${preview.definition.modelsRemoved.map((m) => modelLabel(m, preview)).join(', ')})` : ' (removed tables retained for undo)'}.`,
+        ]
+      : []),
+  ];
+}
 
 function fieldChange(
   model: string,
@@ -10,15 +133,15 @@ function fieldChange(
 ) {
   const fields = preview.fields?.[model] ?? { [field]: to };
   if (to.calculated)
-    return `Change ${model}.${field}: calculated as ${formulaWords(to.calculated, fields)}.`;
+    return `Change ${fieldSubject(model, field, preview)}: calculated as ${formulaWords(to.calculated, fields)}.`;
   if (from.calculated)
-    return `Change ${model}.${field}: remove calculation; use ${to.type} values.`;
-  return `Change ${model}.${field}: ${from.type} to ${to.type}.`;
+    return `Change ${fieldSubject(model, field, preview)}: remove calculation; use ${to.type} values.`;
+  return `Change ${fieldSubject(model, field, preview)}: ${from.type} to ${to.type}.`;
 }
 function addedField(model: string, field: string, preview: PublishPreview) {
   const fields = preview.fields?.[model] ?? {};
   const calculation = fields[field]?.calculated;
-  return `Add field ${model}.${field}${calculation ? `: calculated as ${formulaWords(calculation, fields)}` : ''}.`;
+  return `Add field ${fieldSubject(model, field, preview)}${calculation ? `: calculated as ${formulaWords(calculation, fields)}` : ''}.`;
 }
 
 /** Every replayed data step is counted against the current live rehearsal. */
@@ -51,13 +174,16 @@ export function publishCalculations(preview: PublishPreview): string[] {
       if (field.calculated) lines.push(addedField(model, name, preview));
   }
   for (const [model, diff] of Object.entries(preview.definition.models)) {
-    for (const field of diff.fieldsAdded)
+    for (const field of diff.fieldsAdded.filter(
+      (field) => !renamed(preview, model, field, 'to'),
+    ))
       if (preview.fields?.[model]?.[field]?.calculated)
         lines.push(addedField(model, field, preview));
     for (const field of diff.fieldsChanged)
       if (
-        JSON.stringify(field.from.calculated) !==
-        JSON.stringify(field.to.calculated)
+        JSON.stringify(
+          rewriteRenamedOperands(field.from.calculated, model, preview),
+        ) !== JSON.stringify(field.to.calculated)
       )
         lines.push(
           fieldChange(model, field.field, field.from, field.to, preview),
@@ -69,35 +195,29 @@ export function publishCalculations(preview: PublishPreview): string[] {
 /** Summarise the definition and replay: intermediate conversions matter too. */
 export function publishLines(preview: PublishPreview): string[] {
   const d = preview.definition;
-  const lines = [
-    `Models added: ${d.modelsAdded.length}. Fields added: ${Object.values(d.models).reduce((n, m) => n + m.fieldsAdded.length, 0)}.`,
-    ...d.modelsAdded.map((name) => `Add model ${name}.`),
-    `Models removed: ${d.modelsRemoved.length}. Fields removed: ${Object.values(d.models).reduce((n, m) => n + m.fieldsRemoved.length, 0)}.`,
-    ...d.modelsRemoved.map((name) => `Remove model ${name}.`),
+  const added = Object.entries(d.models).reduce(
+    (n, [model, diff]) =>
+      n +
+      diff.fieldsAdded.filter((field) => !renamed(preview, model, field, 'to'))
+        .length,
+    0,
+  );
+  const removed = Object.entries(d.models).reduce(
+    (n, [model, diff]) =>
+      n +
+      diff.fieldsRemoved.filter(
+        (field) => !renamed(preview, model, field, 'from'),
+      ).length,
+    0,
+  );
+  return [
+    `Models added: ${d.modelsAdded.length}. Fields added: ${added}.`,
+    `Models removed: ${d.modelsRemoved.length}. Fields removed: ${removed}.`,
+    ...publishGroups(preview).flatMap((group) => [
+      ...group.items,
+      ...(group.note ? [group.note] : []),
+    ]),
   ];
-  for (const [name, model] of Object.entries(d.models)) {
-    lines.push(...model.fieldsAdded.map((f) => addedField(name, f, preview)));
-    lines.push(...model.fieldsRemoved.map((f) => `Remove field ${name}.${f}.`));
-    lines.push(
-      ...model.fieldsChanged.map((f) =>
-        fieldChange(name, f.field, f.from, f.to, preview),
-      ),
-    );
-  }
-  const conversions = preview.versions
-    .flatMap((v) => v.steps)
-    .filter((s) => s.op === 'convertColumn');
-  lines.push(`Field type changes: ${conversions.length}.`);
-  lines.push(
-    `Archived values: ${preview.archives.values}. Archived tables: ${preview.archives.tables}.`,
-  );
-  lines.push(
-    ...d.recipesAdded.map((r) => `Add recipe ${r}.`),
-    ...d.recipesRemoved.map((r) => `Remove recipe ${r}.`),
-  );
-  lines.push(...(preview.reportChanges ?? []).map((c) => c.text));
-  lines.push(...publishDataLines(preview));
-  return lines;
 }
 
 export interface PublishGroup {
@@ -118,18 +238,26 @@ export function publishGroups(preview: PublishPreview): PublishGroup[] {
     ...d.modelsRemoved.map((name) => `Remove model ${name}.`),
     ...d.recipesRemoved.map((name) => `Remove recipe ${name}.`),
   ];
-  const changed: string[] = [];
+  const changed: string[] = renameLines(preview);
   for (const [name, model] of Object.entries(d.models)) {
     added.push(
-      ...model.fieldsAdded.map((field) => addedField(name, field, preview)),
+      ...model.fieldsAdded
+        .filter((field) => !renamed(preview, name, field, 'to'))
+        .map((field) => addedField(name, field, preview)),
     );
     removed.push(
-      ...model.fieldsRemoved.map((field) => `Remove field ${name}.${field}.`),
+      ...model.fieldsRemoved
+        .filter((field) => !renamed(preview, name, field, 'from'))
+        .map((field) => `Remove field ${fieldSubject(name, field, preview)}.`),
     );
     changed.push(
-      ...model.fieldsChanged.map((field) =>
-        fieldChange(name, field.field, field.from, field.to, preview),
-      ),
+      ...model.fieldsChanged
+        .filter((field) =>
+          meaningfulChange(name, field.from, field.to, preview),
+        )
+        .map((field) =>
+          fieldChange(name, field.field, field.from, field.to, preview),
+        ),
     );
   }
   for (const method of preview.methods) {
@@ -167,11 +295,10 @@ export function publishGroups(preview: PublishPreview): PublishGroup[] {
     },
     {
       name: 'Archived',
-      count: preview.archives.values + preview.archives.tables,
-      items: [
-        `Archived values: ${preview.archives.values}.`,
-        `Archived tables: ${preview.archives.tables}.`,
-      ],
+      count: archiveItems(preview).length
+        ? preview.archives.values + preview.archives.tables
+        : 0,
+      items: archiveItems(preview),
     },
   ];
 }
