@@ -1,5 +1,17 @@
 # @happyvertical/smrt-education
 
+## 0.61.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.61.1
+  - @happyvertical/smrt-assets@0.61.1
+  - @happyvertical/smrt-ingestion@0.61.1
+  - @happyvertical/smrt-profiles@0.61.1
+  - @happyvertical/smrt-tenancy@0.61.1
+  - @happyvertical/smrt-users@0.61.1
+
 ## 0.61.0
 
 ### Minor Changes
