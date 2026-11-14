@@ -56,9 +56,9 @@ new work. The insert CAS and deduplicated job enqueue commit together. A host
 must keep a definition stable for an admitted key, or version its kind as well.
 
 `handler(record, args, context)` is the runner bridge. `install()` connects it to
-inference's single executor slot per database. Hosts using several kinds install
-one `installDesignRunExecutor` router themselves and route `args.kind` to the
-appropriate handler. No second runner is created here.
+inference's single executor slot per database. Several factory instances share one installed executor and route by the host's
+`kind`. Each teardown removes only that instance's kind; the last removes the
+executor. Duplicate kind registration is rejected. No second runner is created here.
 
 ## Stop, cancellation and continuation
 

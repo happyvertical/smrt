@@ -5,7 +5,6 @@ import type {
   DesignRunBudget,
   DesignRunDriverOptions,
 } from '@happyvertical/smrt-inference/server';
-import { installDesignRunExecutor } from '@happyvertical/smrt-inference/server';
 import {
   SmrtJobCollection,
   SmrtJobEventCollection,
@@ -525,7 +524,6 @@ describe('durable design job bridge', () => {
 
   it('routes two host kinds through one executor without duplicate identities', async () => {
     const bound = install();
-    const first = kit;
     const second = createDesignRunJobs<Input, Output>({
       db,
       jobs,
@@ -539,15 +537,13 @@ describe('durable design job bridge', () => {
         readResource: async () => ({ data: null }),
       }),
     });
-    dispose?.();
-    dispose = installDesignRunExecutor(db, (record, args, context) => {
-      const kind = (args as { kind: string }).kind;
-      return (kind === 'example-design' ? first : second).handler(
-        record,
-        args,
-        context,
-      );
-    });
+    const firstDispose = dispose;
+    const secondDispose = second.install();
+    dispose = () => {
+      secondDispose();
+      firstDispose?.();
+    };
+    expect(() => second.install()).toThrow('already installed');
     const other = second.forOwner('owner', null);
     const a = await bound.start(startInput());
     const b = await other.start(startInput());

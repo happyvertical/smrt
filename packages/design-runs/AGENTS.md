@@ -13,8 +13,9 @@ UI, engine selection, product schemas or application effects belong here.
   use jobs' public transaction-bound assertions for checkpoint and settled-lease
   release. No `_smrt_jobs` SQL here, including tests; mutate jobs through public
   APIs when simulating a stolen claim.
-- `install()` occupies inference's one executor slot for the DB. Multi-kind hosts
-  install their own router once and dispatch each saved kind to `handler`.
+- `install()` shares one inference executor per DB and routes all installed
+  kinds. Each teardown removes only its own kind; the last removes the executor.
+  Duplicate kind registration rejects before replacing another handler.
 - `forOwner` must use an authenticated principal. Authorization reruns on every
   operation and job invocation. Driver resource/check callbacks retain host policy.
 - Cancel delegates to inference's resumable Stop (#4995), then cancels the backing

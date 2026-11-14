@@ -26,6 +26,12 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 export const PACKAGE_NAME = '@happyvertical/smrt-design-runs';
 const target = '@happyvertical/smrt-inference:DesignRunRecord';
 
+type Handler = Parameters<typeof installDesignRunExecutor>[1];
+const routers = new WeakMap<
+  DatabaseInterface,
+  { handlers: Map<string, Handler>; dispose: () => void }
+>();
+
 /** Authenticated host binding, never populated from untrusted job arguments. */
 export interface DesignRunOwner {
   ownerId: string;
@@ -212,7 +218,44 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
   return {
     handler,
     /** Install before starting TaskRunner; dispose after stopping it. */
-    install: () => installDesignRunExecutor(options.db, handler),
+    install() {
+      let router = routers.get(options.db);
+      if (!router) {
+        const handlers = new Map<string, Handler>();
+        const dispose = installDesignRunExecutor(
+          options.db,
+          (record, args, context) => {
+            const kind =
+              args && typeof args === 'object'
+                ? (args as { kind?: unknown }).kind
+                : undefined;
+            const selected =
+              typeof kind === 'string' ? handlers.get(kind) : undefined;
+            if (!selected)
+              throw new Error(
+                'No handler is installed for this design job kind',
+              );
+            return selected(record, args, context);
+          },
+        );
+        router = { handlers, dispose };
+        routers.set(options.db, router);
+      }
+      if (router.handlers.has(options.kind))
+        throw new Error('This design job kind is already installed');
+      router.handlers.set(options.kind, handler);
+      const installed = router;
+      let disposed = false;
+      return () => {
+        if (disposed) return;
+        disposed = true;
+        installed.handlers.delete(options.kind);
+        if (!installed.handlers.size) {
+          installed.dispose();
+          routers.delete(options.db);
+        }
+      };
+    },
     forOwner(ownerId: string, tenantId: string | null) {
       if (!ownerId) throw new Error('Design runs require an owner');
       const owner = { ownerId, tenantId };
