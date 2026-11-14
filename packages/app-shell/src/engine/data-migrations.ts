@@ -113,19 +113,23 @@ export async function prepareLoad(
   if (cmd.mode === 'upsert' && (!Array.isArray(cmd.key) || !cmd.key.length))
     throw new AppError('upsert needs key fields');
   for (const key of cmd.key ?? [])
-    if (!fields[key] || fields[key].calculated)
+    if (!Object.hasOwn(fields, key) || fields[key].calculated)
       throw new AppError(`invalid key field '${key}'`);
   const lookups = new Map<string, Row[]>();
   const referenceMaps = new Map<string, Map<string, string[]>>();
   for (const [field, lookup] of Object.entries(cmd.references ?? {})) {
     if (
       !lookup ||
+      !Object.hasOwn(fields, field) ||
       fields[field]?.type !== 'reference' ||
       fields[field].ref !== lookup.model
     )
       throw new AppError(`invalid reference lookup '${field}'`);
-    const target = fieldsOf(def, lookup.model)[lookup.by];
-    if (!target || target.calculated)
+    const targetFields = fieldsOf(def, lookup.model);
+    if (
+      !Object.hasOwn(targetFields, lookup.by) ||
+      targetFields[lookup.by].calculated
+    )
       throw new AppError(`invalid lookup field '${lookup.by}'`);
   }
   // One query per referenced model, including references supplied directly by id.
@@ -181,11 +185,11 @@ export async function prepareLoad(
     }
     const data: Row = {};
     for (const [field, value] of Object.entries(row)) {
-      const fd = fields[field];
-      if (!fd) {
+      if (!Object.hasOwn(fields, field)) {
         problem(field, 'unknown or hidden field');
         continue;
       }
+      const fd = fields[field];
       const lookup = cmd.references?.[field];
       let input = value;
       if (lookup && value != null && value !== '') {

@@ -298,3 +298,64 @@ it.each([
   await run({ type: 'undo' });
   expect(await host.list('Customer')).toEqual(customers);
 });
+
+it.each([
+  'constructor',
+  '__proto__',
+])('rejects inherited load row field %s with the normal unknown-field problem', async (field) => {
+  const before = raw();
+  const version = host.version;
+  const cmd: Command = {
+    type: 'loadRecords',
+    model: 'Sale',
+    mode: 'insert',
+    rows: [{ code: 'unknown-field', [field]: null }],
+  };
+  expect((await host.plan(cmd)).preview).toMatchObject({
+    insert: 0,
+    rejected: 1,
+    problems: [{ row: 0, field, reason: 'unknown or hidden field' }],
+  });
+  await expect(run(cmd)).rejects.toMatchObject({
+    name: 'EngineError',
+    code: 'invalid',
+    message: 'loadRecords rejected 1 rows; no rows loaded',
+  });
+  expect(raw()).toEqual(before);
+  expect(host.version).toBe(version);
+});
+
+it.each([
+  'constructor',
+  '__proto__',
+])('rejects inherited load key and reference lookup field %s before preparation', async (field) => {
+  const before = raw();
+  const version = host.version;
+  const commands: Command[] = [
+    {
+      type: 'loadRecords',
+      model: 'Sale',
+      mode: 'upsert',
+      key: [field],
+      rows: [],
+    },
+    {
+      type: 'loadRecords',
+      model: 'Sale',
+      mode: 'insert',
+      references: { customer: { model: 'Customer', by: field } },
+      rows: [],
+    },
+  ];
+  for (const [index, cmd] of commands.entries()) {
+    const error = {
+      name: 'EngineError',
+      code: 'invalid',
+      message: `invalid ${index === 0 ? 'key' : 'lookup'} field '${field}'`,
+    };
+    await expect(host.plan(cmd)).rejects.toMatchObject(error);
+    await expect(run(cmd)).rejects.toMatchObject(error);
+  }
+  expect(raw()).toEqual(before);
+  expect(host.version).toBe(version);
+});

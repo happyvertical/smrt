@@ -58,7 +58,7 @@ afterAll(async () => {
   await host.close();
   rmSync(dir, { recursive: true, force: true });
 });
-const command = (): Command => ({
+const command = (): Extract<Command, { type: 'mergeRecords' }> => ({
   type: 'mergeRecords',
   model: 'Customer',
   keep,
@@ -131,4 +131,22 @@ it('publishes a draft merge against current live references and undoes them', as
   } finally {
     await draft.discard();
   }
+});
+
+it.each([
+  'constructor',
+  '__proto__',
+])('rejects inherited merge selector field %s with a typed refusal', async (field) => {
+  const before = raw();
+  const version = host.version;
+  const cmd: Command = { ...command(), fields: { [field]: other } };
+  const error = {
+    name: 'EngineError',
+    code: 'invalid',
+    message: `merge field '${field}' is not writable`,
+  };
+  await expect(host.plan(cmd)).rejects.toMatchObject(error);
+  await expect(run(cmd)).rejects.toMatchObject(error);
+  expect(raw()).toEqual(before);
+  expect(host.version).toBe(version);
 });

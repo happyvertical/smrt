@@ -45,7 +45,7 @@ export async function prepareMerge(
     throw new AppError('merge record not found');
   const chosen: Row = {};
   for (const [field, selector] of Object.entries(cmd.fields ?? {})) {
-    if (!fields[field] || fields[field].calculated)
+    if (!Object.hasOwn(fields, field) || fields[field].calculated)
       throw new AppError(`merge field '${field}' is not writable`);
     if (
       selector !== 'keep' &&
