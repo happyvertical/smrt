@@ -86,7 +86,13 @@ describe('undoTo', () => {
         ],
       });
       expect(plan.preview?.fields).toEqual([
-        { model: 'Chore', field: 'points', rows: 0 },
+        {
+          model: 'Chore',
+          modelLabel: 'Chore',
+          field: 'points',
+          fieldLabel: 'points',
+          rows: 0,
+        },
       ]);
       // not approved: nothing changes
       await expect(

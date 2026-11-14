@@ -376,7 +376,7 @@ describe('owner flows', () => {
       preview: { replaced: 1 },
     });
     expect(body.approvalId).toBeTruthy();
-    expect(body.summary).toContain('undo');
+    expect(body.summary).toBe('Undo: field type change in Gauge');
     expect(host.version).toBe(version);
     expect((await host.get('Gauge', row.id as string)).reading).toBe(99);
     // the card is stored against the version it was planned for
