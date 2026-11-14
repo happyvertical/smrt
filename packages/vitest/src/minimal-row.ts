@@ -91,6 +91,16 @@ function fieldOptions(field: RegisteredField) {
   return { ...field._meta, ...field.options, ...field };
 }
 
+/**
+ * A calculated field (`generated`, #4915): the database computes it and a
+ * caller's value is refused, so a minimal row never writes it and readback
+ * does not expect its default.
+ */
+function isGenerated(field: RegisteredField): boolean {
+  const generated = (fieldOptions(field) as { generated?: unknown }).generated;
+  return generated !== undefined && generated !== null;
+}
+
 function required(
   model: string,
   name: string,
@@ -326,6 +336,7 @@ async function buildRow(
       tenant && context.ancestors.length > 0 && context.tenantId !== undefined;
     if (
       systemFields.has(name) ||
+      isGenerated(field) ||
       (!required(identity, name, field) && !parentTenant)
     )
       continue;
@@ -585,6 +596,7 @@ async function exercise(model: string, populatedField?: string): Promise<void> {
         if (
           name === populatedField ||
           systemFields.has(name) ||
+          isGenerated(field) ||
           required(model, name, field) ||
           field.type === 'oneToMany' ||
           field.type === 'manyToMany' ||
@@ -659,6 +671,7 @@ export async function assertMinimalRow(model: string): Promise<void> {
         (!systemFields.has(name) ||
           name === 'createdAt' ||
           name === 'updatedAt') &&
+        !isGenerated(field) &&
         !required(model, name, field),
     );
     const structuredField = errorField(cause);

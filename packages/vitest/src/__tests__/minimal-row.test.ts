@@ -283,6 +283,33 @@ describe('minimal rows', () => {
     await expect(assertMinimalRow(model)).resolves.toBeUndefined();
   });
 
+  it('never writes a calculated field, even a required one (#4915)', async () => {
+    class Priced extends SmrtObject {
+      qty = 0;
+      total = 0;
+    }
+    const model = fixture(
+      'Priced',
+      {
+        qty: { type: 'integer', required: true },
+        total: {
+          type: 'integer',
+          required: true,
+          generated: {
+            op: 'mul',
+            left: { col: 'qty' },
+            right: { value: 2 },
+          },
+        } as Fields[string],
+      },
+      Priced,
+    );
+    const row = await buildMinimalRow(model);
+    expect(row).not.toHaveProperty('total');
+    expect(row).toHaveProperty('qty');
+    await expect(assertMinimalRow(model)).resolves.toBeUndefined();
+  });
+
   it('uses constructor defaults, including clock-based dates, and saves append-only rows once', async () => {
     class AppendOnly extends SmrtObject {
       occurredAt = new Date();
