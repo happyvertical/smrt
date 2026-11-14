@@ -13,7 +13,7 @@ adds) and swaps it in once it is ready. The engine must not import SvelteKit,
   in `commands.ts`. `execute` throws `ApprovalRequiredError` for a risky
   command without `approved: true`; `callAppTool` does the same for
   `<model>_delete`, and `rest` for `DELETE`. Approval carries reviewed mutation counts: the plan is recomputed inside the
-  execute queue and growing load/extract/merge counts require a fresh decision.
+  execute queue and growing load/extract/merge, calculation, field-removal or type-conversion counts require a fresh decision before writes.
 - **Queue.** Work inside the change queue must call `callApp`, never `onApp`
   (which awaits the queue): the old `clean_up` deadlock.
 - **Migrations** (`app-runtime.ts`) run in one transaction in the new worker,
@@ -216,7 +216,7 @@ is structural. Upsert requires visible writable key fields; all modes, including
 require approval outside a draft. Apply re-prepares inside the migration transaction and refuses if updates exceed the reviewed count; callers must plan again. Draft publish prepares fresh bounds in its rehearsal over current live data and pins their counts to the reviewed publish digest. `references[field] = { model, by }`
 resolves lookup values with one query per target model. The dry-run preview
 returns insert/update/unchanged/rejected counts and up to 100 zero-based row,
-field, reason problems, never whole rows. Rejected input refuses the entire load.
+field, reason problems, never whole rows. Rejected input refuses the plan with bounded row/field reasons before approval, and refuses the entire load.
 All data-command undo journals (load, extract and merge) are capped at 10,000 affected rows and 8 MiB of stored JSON. Preparation refuses oversized source journals; a final check inside the migration transaction includes postimages and rolls back the whole command on overflow. Input fields, upsert keys, lookup keys and merge selectors must name own visible
 fields; inherited object keys receive the same typed refusal as unknown fields.
 Bounds: 10,000 rows and 8 MiB total JSON command data per call. Calculated input is refused.

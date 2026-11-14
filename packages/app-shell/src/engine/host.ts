@@ -547,7 +547,14 @@ export class AppHost extends EventEmitter {
         throw new ApprovalRequiredError(a.plan);
       if (
         opts.reviewedPreview &&
-        ['loadRecords', 'extractModel', 'mergeRecords'].includes(cmd.type)
+        [
+          'loadRecords',
+          'extractModel',
+          'mergeRecords',
+          'setCalculation',
+          'removeField',
+          'changeFieldType',
+        ].includes(cmd.type)
       ) {
         const grew = (current: unknown, reviewed: unknown): boolean => {
           if (typeof current === 'number')
@@ -568,7 +575,11 @@ export class AppHost extends EventEmitter {
             ? ['insert', 'update']
             : cmd.type === 'extractModel'
               ? ['rows', 'create', 'matched', 'distinct', 'folded']
-              : ['removed', 'references'];
+              : cmd.type === 'mergeRecords'
+                ? ['removed', 'references']
+                : cmd.type === 'removeField'
+                  ? ['valuesArchived']
+                  : ['rows', 'withValue', 'convertible', 'failingCount'];
         if (
           keys.some((key) =>
             grew(a.plan.preview?.[key], opts.reviewedPreview?.[key]),
@@ -703,6 +714,10 @@ export class AppHost extends EventEmitter {
       }
       case 'loadRecords': {
         const preview = await this.callApp<LoadPreview>('previewLoad', cmd);
+        if (preview.rejected)
+          throw new EngineError(
+            `loadRecords rejected ${preview.rejected} rows; no rows loaded: ${preview.problems.map((p) => `row ${p.row + 1}${p.field ? ` ${p.field}` : ''}: ${p.reason}`).join('; ')}`,
+          );
         const a = change(
           `load ${cmd.rows.length} ${cmd.model} records`,
           this.clone(),
@@ -720,12 +735,6 @@ export class AppHost extends EventEmitter {
           },
         );
         a.plan.risky = true;
-        if (preview.rejected)
-          a.apply = async () => {
-            throw new EngineError(
-              `loadRecords rejected ${preview.rejected} rows; no rows loaded`,
-            );
-          };
         return a;
       }
       case 'defineReport': {
@@ -953,6 +962,12 @@ export class AppHost extends EventEmitter {
                 from: st.fd.type,
                 to: to.type,
                 valuesArchived: 0,
+                rows: await this.callApp<number>('countRows', st.table),
+                withValue: await this.callApp<number>(
+                  'countValues',
+                  st.table,
+                  st.column,
+                ),
                 note: 'The generated column is replaced; its values are derived.',
               },
               steps: [
