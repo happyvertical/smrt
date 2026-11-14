@@ -18,6 +18,7 @@ import { getDatabase } from '@happyvertical/sql';
 import {
   applyLoad,
   type LoadRecordsCommand,
+  ownedColumns,
   prepareLoad,
   undoRows,
 } from './data-migrations.ts';
@@ -621,6 +622,11 @@ export class AppRuntime {
             [version],
           )
         ).rows as Row[];
+        const originals = new Map(
+          entries
+            .filter((e) => e.col === '$row')
+            .map((e) => [JSON.stringify([e.tbl, e.record_id]), e]),
+        );
         const counts = new Map<
           string,
           { table: string; column: string; replaced: number }
@@ -634,14 +640,12 @@ export class AppRuntime {
         };
         for (const e of entries) {
           if (e.col === '$after') {
-            const before = entries.find(
-              (b) =>
-                b.col === '$row' &&
-                b.tbl === e.tbl &&
-                b.record_id === e.record_id,
-            );
+            const before = originals.get(JSON.stringify([e.tbl, e.record_id]));
             if (before?.value === 'null') continue;
-            for (const column of Object.keys(JSON.parse(String(e.value))))
+            for (const column of ownedColumns(
+              JSON.parse(String(e.value)),
+              before ? JSON.parse(String(before.value)) : null,
+            ))
               if (column !== 'updated_at') add(String(e.tbl), column);
           } else if (e.col === '$deleted')
             add(String(e.tbl), '(recreate merged record)');

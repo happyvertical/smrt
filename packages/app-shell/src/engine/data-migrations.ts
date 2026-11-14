@@ -356,7 +356,7 @@ function loadPostimage(
 function isLoadPostimage(after: Row): after is Row & LoadPostimage {
   return after.$load === 1 && !!after.hashes;
 }
-function ownedColumns(after: Row, before: Row | null): string[] {
+export function ownedColumns(after: Row, before: Row | null): string[] {
   if (!isLoadPostimage(after)) return Object.keys(after);
   return Object.keys(after.hashes).filter(
     (column) => !before || after.hashes[column] !== valueHash(before[column]),
@@ -656,6 +656,8 @@ export async function undoRows(
     throw new AppError(
       `cannot undo: ${conflictCount} records need attention. ${conflicts.join('; ')}${conflictCount > conflicts.length ? `; ${conflictCount - conflicts.length} more records` : ''}`,
     );
+  const removals = new Map<string, unknown[]>();
+  const generatedByTable = new Map<string, Set<string>>();
   for (const entry of entries) {
     if (skipped.has(`${entry.tbl}:${entry.record_id}`)) continue;
     const model = String(entry.tbl);
@@ -663,19 +665,23 @@ export async function undoRows(
     const before = JSON.parse(String(entry.value)) as Row | null;
     const key = `${model}:${entry.record_id}`;
     if (before === null) {
-      await db.query(`DELETE FROM ${quote(table)} WHERE id = ?`, [
-        entry.record_id,
-      ]);
+      const ids = removals.get(table) ?? [];
+      ids.push(entry.record_id);
+      removals.set(table, ids);
       continue;
     }
-    const generated = new Set(
-      (
-        await db.query(
-          'SELECT name FROM pragma_table_xinfo(?) WHERE hidden > 1',
-          [table],
-        )
-      ).rows.map((r: Row) => String(r.name)),
-    );
+    let generated = generatedByTable.get(table);
+    if (!generated) {
+      generated = new Set<string>(
+        (
+          await db.query(
+            'SELECT name FROM pragma_table_xinfo(?) WHERE hidden > 1',
+            [table],
+          )
+        ).rows.map((r: Row) => String(r.name)),
+      );
+      generatedByTable.set(table, generated);
+    }
     if (deleted.has(key)) {
       const pairs = Object.entries(before).filter(([f]) => !generated.has(f));
       // Plain INSERT refuses an id reused since the command removed this row.
@@ -702,6 +708,14 @@ export async function undoRows(
         );
     }
   }
+  for (const [table, ids] of removals)
+    for (let offset = 0; offset < ids.length; offset += 500) {
+      const batch = ids.slice(offset, offset + 500);
+      await db.query(
+        `DELETE FROM ${quote(table)} WHERE id IN (${batch.map(() => '?').join(',')})`,
+        batch,
+      );
+    }
   await db.query(
     "DELETE FROM _archive WHERE version = ? AND col IN ('$row', '$after', '$deleted')",
     [version],
