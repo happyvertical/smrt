@@ -307,7 +307,7 @@ describePostgres('claim limit on PostgreSQL (#3145, #3105)', () => {
     expect(
       await count(
         db,
-        "SELECT COUNT(*) AS count FROM _smrt_jobs WHERE status = 'pending' AND attempts = 0 AND worker_id IS NULL AND started_at IS NOT NULL",
+        "SELECT COUNT(*) AS count FROM _smrt_jobs WHERE status = 'pending' AND attempts = 0 AND worker_id IS NULL AND started_at IS NULL",
       ),
     ).toBe(BACKLOG - 1);
     expect(
