@@ -365,6 +365,7 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
               authorizeWrite: async (tx) => {
                 await assertFailedJobDispatch(tx, {
                   jobId: String(job.id),
+                  workerId: job.workerId ?? '',
                   tenantId,
                   attempt: job.attempts,
                   startedAt: job.startedAt?.toISOString() ?? '',
@@ -502,6 +503,7 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
               tx,
               original ?? {
                 jobId: String(job.id),
+                workerId: job.workerId ?? '',
                 tenantId,
                 attempt: job.attempts,
                 startedAt: job.startedAt?.toISOString() ?? '',

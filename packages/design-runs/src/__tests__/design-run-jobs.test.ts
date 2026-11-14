@@ -446,6 +446,9 @@ describe('durable design job bridge', () => {
       async () =>
         (await jobs.get({ id: prior.id as string }))?.status === 'failed',
     );
+    expect((await jobs.get({ id: prior.id as string }))?.workerId).toBe(
+      prior.workerId,
+    );
     const events = await SmrtJobEventCollection.create({ db });
     expect(
       (await events.listTerminalOutcomes({ tenantId: null })).outcomes.some(
