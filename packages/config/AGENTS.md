@@ -60,6 +60,19 @@ file an application's deployment declaration. Guide:
   validates the inputs (hand-written JSON), renders `target` only (`current`
   is passed through, never synthesized), and requires an explicit
   `entrypoint` because the chart's `command` replaces the image's.
+- `src/deployment/hosted-app.ts`: `composeHostedApp()` renders a `deploy`-stage
+  declaration plus caller-supplied `entitlements` into the operator's `HostedApp`
+  (`smrt` preset; see `docs/smrt-preset.md` in happyvertical-operator) or
+  structured `{ code, message }` rejections. Pure and browser-safe; the release
+  id hash is `sha256.ts` (no `node:crypto`). Policy (which bindings/domains/volume
+  size an app may have) stays with the caller: it passes the result in. Never
+  throws, never carries secrets. The operator rejects unknown preset parameters,
+  so add one only after the operator does.
+- `src/deployment-hosting.ts` (`./deployment/hosting`): the I/O half, kept out of
+  the browser-safe entry: `readGitHubComposeDeclaration()` (contents API,
+  `ref=<commit>` only, alias and size caps, no `<<` expansion) and
+  `createHostedAppApplier()` (server-side apply/delete of the one `HostedApp`
+  kind). Errors carry codes and statuses, never tokens, bodies or file text.
 - `charts/smrt-app/fixtures/starter.json` is generated from
   `packages/template-sveltekit/template/compose.yaml` by
   `scripts/compose-contract-fixture.mjs --write`; `scripts/compose-contract.test.mjs`
