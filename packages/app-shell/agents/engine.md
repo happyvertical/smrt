@@ -199,7 +199,9 @@ Renames rewrite field references; destructive field changes list report dependen
 The SQL compiler/runner supplies bounded aggregates on app.db, tenantId null.
 Defaults: 1000 rows, 5000 ms; allowed ceilings: 1000 rows, 10000 ms. A dedicated
 read worker is terminated on query timeout, without killing the app worker.
-Columns carry money/date/choice hints. Reference dimension columns add
+Columns preserve the compiler's money/date hints: counts stay unitless, while
+sum/min/max/avg keep source units. Choice hints are added from the definition.
+Reference dimension columns add
 `reference` and `labelColumn`; rows carry that label next to the original id,
 resolved in one query per target model, using titleField or first visible text.
 The server catalog's engine-tools adapter calls the same owner check and builder

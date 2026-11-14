@@ -90,7 +90,6 @@ export async function runAppReport(
   for (const column of result.columns) {
     const fd = column.field ? fields[column.field] : undefined;
     if (!fd) continue;
-    if (fd.type === 'money' || fd.type === 'date') column.format = fd.type;
     if (fd.choices) column.choices = fd.choices;
     if (column.role !== 'dimension' || fd.type !== 'reference' || !fd.ref)
       continue;

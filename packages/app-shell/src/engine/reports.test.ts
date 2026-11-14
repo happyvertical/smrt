@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
+import { reportCsv } from '@happyvertical/smrt-reports/display';
 import { afterAll, beforeAll, expect, it } from 'vitest';
+import { reportCell } from '../lib/ui/reports.ts';
 import { AppHost, type Command, MemoryVersionStore } from './index.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'reports-4916-'));
@@ -277,4 +279,56 @@ it('normalizes omitted spec defaults and compiles template reports against their
     await imported.close();
     rmSync(`${dir}-import`, { recursive: true, force: true });
   }
+});
+
+it.each([
+  ['count', 'price', 3],
+  ['countDistinct', 'price', 2],
+  ['count', 'day', 3],
+  ['countDistinct', 'day', 3],
+] as const)('keeps %s of %s unitless in display and CSV', async (fn, field, count) => {
+  const result = await host.runReport(
+    spec({ dimensions: [], measures: [{ fn, field, as: 'count' }] }),
+  );
+  expect(result.columns).toHaveLength(1);
+  const column = result.columns[0];
+  expect(column.type).toBe('integer');
+  expect(column.format).toBeUndefined();
+  expect(result.rows).toEqual([{ count }]);
+  expect(reportCell(count, column, result.rows[0])).toBe(String(count));
+  expect(reportCsv(result, reportCell)).toBe(`Count\r\n${count}\r\n`);
+});
+
+it.each([
+  ['sum', 400, '$4.00'],
+  ['min', 100, '$1.00'],
+  ['max', 200, '$2.00'],
+  ['avg', 400 / 3, '$1.33'],
+] as const)('keeps money units for %s in display and CSV', async (fn, amount, display) => {
+  const result = await host.runReport(
+    spec({ dimensions: [], measures: [{ fn, field: 'price', as: 'amount' }] }),
+  );
+  const column = result.columns[0];
+  expect(column.format).toBe('money');
+  expect(result.rows[0].amount).toBeCloseTo(amount);
+  expect(reportCell(result.rows[0].amount, column, result.rows[0])).toBe(
+    display,
+  );
+  expect(reportCsv(result, reportCell)).toBe(`Amount\r\n${display}\r\n`);
+});
+
+it('retains money/date dimension formats and the compiler bucket metadata', async () => {
+  const result = await host.runReport(
+    spec({
+      dimensions: [
+        { field: 'price', as: 'price' },
+        { field: 'day', as: 'day' },
+        { field: 'day', bucket: 'month', as: 'month' },
+      ],
+      measures: [{ fn: 'count', as: 'count' }],
+    }),
+  );
+  expect(result.columns.find((c) => c.id === 'price')?.format).toBe('money');
+  expect(result.columns.find((c) => c.id === 'day')?.format).toBe('date');
+  expect(result.columns.find((c) => c.id === 'month')?.format).toBeUndefined();
 });
