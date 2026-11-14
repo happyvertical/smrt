@@ -137,6 +137,7 @@ describe('durable design job bridge', () => {
     config: ConstructorParameters<typeof TaskRunner>[0] = {},
   ) {
     const runner = new TaskRunner({
+      claimFencing: true,
       concurrency: 1,
       pollInterval: 10,
       cancelPollInterval: 10,

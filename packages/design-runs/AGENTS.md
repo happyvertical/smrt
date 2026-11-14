@@ -9,7 +9,8 @@ UI, engine selection, product schemas or application effects belong here.
   Reconstruct passes and engine/resource adapters from durable input on restart.
 - Start derives a UUID from kind/owner/tenant/key, then uses inference's insert
   CAS and transactional enqueue. Dedupe keys use that run ID, never package names.
-- Job handlers accept authentic runner contexts only. Capture `getJobClaim` once;
+- Host runners must opt into `claimFencing: true`; isolate their queue during
+  rolling upgrades. Job handlers accept authentic runner contexts only. Capture `getJobClaim` once;
   use jobs' public transaction-bound assertions for checkpoint and settled-lease
   release. No `_smrt_jobs` SQL here, including tests; mutate jobs through public
   APIs when simulating a stolen claim.

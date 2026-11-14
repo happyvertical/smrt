@@ -21,6 +21,7 @@ resource reader, deterministic checks and current owner authorization:
 
 ```ts
 import { createDesignRunJobs } from '@happyvertical/smrt-design-runs';
+import { TaskRunner } from '@happyvertical/smrt-jobs';
 
 const designs = createDesignRunJobs<{ prompt: string }, { value: number }>({
   db,
@@ -30,6 +31,8 @@ const designs = createDesignRunJobs<{ prompt: string }, { value: number }>({
   authorize,
   configure: () => ({ passes, validate, executePass, readResource }),
 });
+// The host runner must opt into dispatch fencing.
+const runner = new TaskRunner({ claimFencing: true });
 const dispose = designs.install(); // before starting the host's TaskRunner
 const owner = designs.forOwner(ownerId, tenantId); // authenticated host values
 const run = await owner.start({
@@ -56,7 +59,8 @@ must keep a definition stable for an admitted key, or version its kind as well.
 `handler(record, args, context)` is the runner bridge. `install()` connects it to
 inference's single executor slot per database. Several factory instances share one installed executor and route by the host's
 `kind`. Each teardown removes only that instance's kind; the last removes the
-executor. Duplicate kind registration is rejected. No second runner is created here.
+executor. Duplicate kind registration is rejected. The host must enable `claimFencing: true` on every runner consuming these jobs;
+use a dedicated queue during a rolling upgrade. No second runner is created here.
 
 ## Stop, cancellation and continuation
 
