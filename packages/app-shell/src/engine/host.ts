@@ -672,6 +672,7 @@ export class AppHost extends EventEmitter {
                 op: 'loadRecords',
                 command: structuredClone(cmd),
                 seed: randomUUID(),
+                maxUpdates: preview.update,
               },
             ],
           },
@@ -1659,7 +1660,10 @@ export class AppHost extends EventEmitter {
         throw new EngineError(
           `"${rec.summary}" from the draft is invalid: ${errs.join('; ')}`,
         );
-      const steps = rec.migration?.steps ?? [];
+      // Publish has its own always-approved rehearsal over current live data.
+      const steps = (rec.migration?.steps ?? []).map((step) =>
+        step.op === 'loadRecords' ? { ...step, maxUpdates: undefined } : step,
+      );
       const w = new AppWorker(this.workerUrl, {
         dataDir: dir,
         def: rec.definition,

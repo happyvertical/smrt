@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import {
   AppHost,
   ApprovalRequiredError,
@@ -395,4 +395,61 @@ it('upsert undo keeps untouched fields and refuses later edits, deletions and ed
   await host.update('Sale', String(inserted?.id), { qty: 8 });
   await expect(run({ type: 'undo' })).rejects.toThrow(/changed since/);
   expect((await host.get('Sale', String(inserted?.id))).qty).toBe(8);
+});
+
+it('rechecks load update risk inside the transaction after an insert-only preview', async () => {
+  const row = await host.create('Sale', { code: 'stale-load', qty: 7 });
+  const cmd: Command = {
+    type: 'loadRecords',
+    model: 'Sale',
+    mode: 'upsert',
+    key: ['code'],
+    rows: [{ code: 'stale-load', qty: 99 }],
+  };
+  const version = host.version;
+  const caller = host as unknown as {
+    callApp: (op: string, ...args: unknown[]) => Promise<unknown>;
+  };
+  const original = caller.callApp.bind(host);
+  const spy = vi
+    .spyOn(caller, 'callApp')
+    .mockImplementation(async (op, ...args) => {
+      if (op !== 'previewLoad') return original(op, ...args);
+      const db = new DatabaseSync(join(dir, 'app.db'));
+      try {
+        db.prepare('UPDATE u_sales SET code = ? WHERE id = ?').run(
+          'not-matched',
+          String(row.id),
+        );
+      } finally {
+        db.close();
+      }
+      const preview = await original(op, ...args);
+      const restore = new DatabaseSync(join(dir, 'app.db'));
+      try {
+        restore
+          .prepare('UPDATE u_sales SET code = ? WHERE id = ?')
+          .run('stale-load', String(row.id));
+      } finally {
+        restore.close();
+      }
+      return preview;
+    });
+  try {
+    await expect(host.execute(cmd, { author: 't' })).rejects.toThrow(
+      /preview became stale/,
+    );
+  } finally {
+    spy.mockRestore();
+  }
+  expect(host.version).toBe(version);
+  expect(await host.get('Sale', String(row.id))).toMatchObject({
+    qty: 7,
+    code: 'stale-load',
+  });
+  await expect(host.execute(cmd, { author: 't' })).rejects.toMatchObject({
+    code: 'approval_required',
+  });
+  await run(cmd);
+  expect((await host.get('Sale', String(row.id))).qty).toBe(99);
 });

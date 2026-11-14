@@ -211,7 +211,7 @@ path; app_runreport names the records target, builder commands the structure tar
 
 `loadRecords { model, rows, mode: 'insert'|'upsert', key?, references? }`
 is structural. Upsert requires visible writable key fields; updates of existing
-rows require approval outside a draft. `references[field] = { model, by }`
+rows require approval outside a draft. Apply re-prepares inside the migration transaction and refuses if updates exceed the reviewed count; callers must plan again. Draft publish uses its own always-approved rehearsal over current live data. `references[field] = { model, by }`
 resolves lookup values with one query per target model. The dry-run preview
 returns insert/update/unchanged/rejected counts and up to 100 zero-based row,
 field, reason problems, never whole rows. Rejected input refuses the entire load.

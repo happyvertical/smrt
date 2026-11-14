@@ -646,7 +646,12 @@ export type Step =
       from: FieldDef;
       seed: string;
     }
-  | { op: 'loadRecords'; command: LoadRecordsCommand; seed: string }
+  | {
+      op: 'loadRecords';
+      command: LoadRecordsCommand;
+      seed: string;
+      maxUpdates?: number;
+    }
   | {
       op: 'calculation';
       table: string;

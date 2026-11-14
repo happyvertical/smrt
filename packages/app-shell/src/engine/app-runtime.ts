@@ -320,6 +320,7 @@ export class AppRuntime {
             )
               ? { typeId: await this.personType(tx) }
               : {},
+            step.maxUpdates,
           );
         else {
           await assertCanUndoRows(this.def, tx, m.version);

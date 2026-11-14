@@ -346,8 +346,13 @@ export async function applyLoad(
   version: number,
   seed: string,
   defaults: Row = {},
+  maxUpdates?: number,
 ) {
   const { preview, writes } = await prepareLoad(def, db, cmd);
+  if (maxUpdates !== undefined && preview.update > maxUpdates)
+    throw new AppError(
+      `loadRecords preview became stale: ${preview.update} updates exceed the ${maxUpdates} reviewed updates; plan again for approval`,
+    );
   if (preview.rejected)
     throw new AppError(
       `loadRecords rejected ${preview.rejected} rows; no rows loaded`,
