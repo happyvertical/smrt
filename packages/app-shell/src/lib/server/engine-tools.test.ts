@@ -45,12 +45,37 @@ it('offers engine additions only to the owner and dispatches reports through the
     summary: 'Ran Revenue: 1 row',
     reportName: 'sales',
   });
-  const loaded = await callTool(h.owner, 'app_loadrecords', {
-    model: 'Sale',
-    mode: 'insert',
-    rows: [{ amount: 200 }, { amount: 300 }],
+  await startDraft('Load preview', h.owner.id);
+  const loaded = await callTool(
+    h.owner,
+    'app_loadrecords',
+    {
+      model: 'Sale',
+      mode: 'insert',
+      rows: [{ amount: 200 }, { amount: 300 }],
+    },
+    { structure: 'draft', records: 'draft' },
+  );
+  const repeated = await callTool(
+    h.owner,
+    'app_loadrecords',
+    {
+      model: 'Sale',
+      mode: 'upsert',
+      key: ['amount'],
+      rows: [{ amount: 200 }, { amount: 300 }],
+    },
+    { structure: 'draft', records: 'draft' },
+  );
+  expect(repeated.structuredContent).toMatchObject({
+    summary: 'Loaded 0 Sale: 0 inserted, 0 updated, 2 unchanged',
   });
-  expect(loaded.structuredContent).toMatchObject({ summary: 'Loaded 2 Sale' });
+  await discardNow();
+  await host.create('Sale', { amount: 200 });
+  await host.create('Sale', { amount: 300 });
+  expect(loaded.structuredContent).toMatchObject({
+    summary: 'Loaded 2 Sale: 2 inserted, 0 updated, 0 unchanged',
+  });
   const gated = await callTool(h.owner, 'app_setcalculation', {
     model: 'Sale',
     field: 'amount',
@@ -102,5 +127,39 @@ it('describes a report key rename as a link change without printing either key',
     ).not.toMatch(/sales|draftSummary/);
   } finally {
     await discardNow();
+  }
+});
+
+it('rejects malformed arguments and inherited names without presentation crashes', async () => {
+  for (const [name, args] of [
+    [
+      'app_setcalculation',
+      { model: 'constructor', field: 'toString', calculated: {} },
+    ],
+    [
+      'app_extractmodel',
+      { model: 'Sale', field: 'constructor', into: 'Buyer' },
+    ],
+    ['app_mergerecords', { model: 'Sale', keep: {}, merge: [] }],
+    ['app_renamereport', { from: 'constructor', to: 'renamed' }],
+    ['app_runreport', { report: 'constructor' }],
+    ['app_removereport', { name: {} }],
+  ] as const) {
+    const before = (await getHost()).version;
+    const outcome = await callTool(h.owner, name, args as never).then(
+      (value) => ({ value, error: undefined }),
+      (error: unknown) => ({ value: undefined, error }),
+    );
+    if (outcome.error !== undefined) {
+      expect(String(outcome.error)).not.toMatch(
+        /Cannot read properties|is not a function/,
+      );
+    } else {
+      expect(outcome.value?.isError).toBe(true);
+      expect(JSON.stringify(outcome.value)).not.toMatch(
+        /Cannot read properties|is not a function/,
+      );
+    }
+    expect((await getHost()).version).toBe(before);
   }
 });
