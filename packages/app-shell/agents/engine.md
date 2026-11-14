@@ -228,7 +228,9 @@ pre-migration snapshot and stable per-command ids, so draft publish replays the
 load against current live keys and lookup data rather than copying draft rows.
 Undo of a data migration requires approval because it can replace newer data.
 Load undo refuses surviving references to its inserted rows (including hidden
-references), preserving all rows and the current version on refusal.
+references), preserving all rows and the current version on refusal. The shared
+load/extraction guard scans each reference field once against the set of created
+ids, rather than rescanning its table for every inserted row.
 
 ## Extracting a column (#4916)
 

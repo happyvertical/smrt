@@ -184,27 +184,29 @@ export async function assertCanUndoRows(
       .filter(([, f]) => f.type === 'reference')
       .map(([field, f]) => ({ model, field, ref: f.ref as string })),
   );
+  const inserted = new Map<string, Set<unknown>>();
   for (const entry of entries) {
     if (JSON.parse(String(entry.value)) !== null) continue;
-    const refs = [...references, ...extraReferences].filter(
-      (r) => r.ref === entry.tbl,
-    );
-    for (const ref of refs) {
-      for (const row of await rawRows(def, db, ref.model)) {
-        if (row[snake(ref.field)] !== entry.record_id) continue;
-        const key = `${ref.model}:${row.id}`;
-        if (before.has(key)) {
-          const restored = before.get(key);
-          if (
-            restored === null ||
-            restored?.[snake(ref.field)] !== entry.record_id
-          )
-            continue;
-        }
-        throw new AppError(
-          `cannot undo: ${ref.model}.${ref.field} still references a created ${String(entry.tbl)} record`,
-        );
+    const model = String(entry.tbl);
+    const ids = inserted.get(model) ?? new Set<unknown>();
+    ids.add(entry.record_id);
+    inserted.set(model, ids);
+  }
+  for (const ref of [...references, ...extraReferences]) {
+    const ids = inserted.get(ref.ref);
+    if (!ids?.size) continue;
+    for (const row of await rawRows(def, db, ref.model)) {
+      const target = row[snake(ref.field)];
+      if (!ids.has(target)) continue;
+      const key = `${ref.model}:${row.id}`;
+      if (before.has(key)) {
+        const restored = before.get(key);
+        if (restored === null || restored?.[snake(ref.field)] !== target)
+          continue;
       }
+      throw new AppError(
+        `cannot undo: ${ref.model}.${ref.field} still references a created ${ref.ref} record`,
+      );
     }
   }
 }
