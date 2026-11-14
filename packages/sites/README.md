@@ -69,7 +69,7 @@ await service.domainsByProject(tenantId, projectId, 'staging'); // role optional
 await service.unassignedDomains(tenantId); // domains with no project link
 ```
 
-Hostname helpers validate what an owner types before you create records:
+Hostname helpers validate what an owner types before you create records. Import from `@happyvertical/smrt-sites/hostname` instead of the root in browser-safe code that must not load the models:
 
 ```typescript
 import { defaultZoneFor, hostnameBelongsToZone, parseHostname } from '@happyvertical/smrt-sites';

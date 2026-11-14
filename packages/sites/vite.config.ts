@@ -1,3 +1,5 @@
 import { createPackageConfig } from '../../vite.config.base.js';
 
-export default createPackageConfig('sites');
+// `./hostname` is a dependency-free subpath so browser-safe consumers can
+// import the helpers without loading the models.
+export default createPackageConfig('sites', { entries: ['hostname'] });
