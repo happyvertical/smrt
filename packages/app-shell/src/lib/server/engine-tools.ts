@@ -43,7 +43,7 @@ function validateArgs(name: string, args: Record<string, unknown>) {
   }
   for (const [key, value] of Object.entries(args)) {
     const spec = own(properties, key);
-    if (!spec) continue;
+    if (!spec) throw new EngineError(`unknown tool argument '${key}'`);
     const types = Array.isArray(spec.type) ? spec.type : [spec.type];
     const type =
       value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;

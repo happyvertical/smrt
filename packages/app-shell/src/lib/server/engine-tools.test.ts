@@ -38,7 +38,6 @@ it('offers engine additions only to the owner and dispatches reports through the
   });
   const result = await callTool(h.owner, 'app_runreport', {
     report: 'sales',
-    approved: true,
   });
   expect(JSON.stringify(result.structuredContent)).toContain('100');
   expect(result.structuredContent).toMatchObject({
@@ -80,7 +79,6 @@ it('offers engine additions only to the owner and dispatches reports through the
     model: 'Sale',
     field: 'amount',
     calculated: { value: 9 },
-    approved: true,
   });
   expect(gated.pending?.status).toBe('pending_approval');
   expect((await host.list('Sale')).map((row) => row.amount).sort()).toEqual([
@@ -161,5 +159,32 @@ it('rejects malformed arguments and inherited names without presentation crashes
       );
     }
     expect((await getHost()).version).toBe(before);
+  }
+});
+
+it.each([
+  'approved',
+  'calcluated',
+  'type',
+  'constructor',
+])('refuses unknown tool argument %s without storing a draft step', async (key) => {
+  await startDraft('Argument validation', h.owner.id);
+  try {
+    const { hostFor } = await import('./host.ts');
+    const host = await hostFor('draft');
+    const version = host.version;
+    const definition = structuredClone(host.def);
+    await expect(
+      callTool(
+        h.owner,
+        'app_setcalculation',
+        { model: 'Sale', field: 'amount', calculated: null, [key]: true },
+        { structure: 'draft', records: 'draft' },
+      ),
+    ).rejects.toThrow('unknown tool argument');
+    expect(host.version).toBe(version);
+    expect(host.def).toEqual(definition);
+  } finally {
+    await discardNow();
   }
 });
