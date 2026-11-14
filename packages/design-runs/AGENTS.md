@@ -53,3 +53,27 @@ totals or throw to refuse ordinary stopped/approval resume. It runs before any
 checkpoint/admission write, and inference validates its returned budget. Without
 the hook, behavior is unchanged. Crash recovery retains its existing totals;
 raise them only on a subsequent budget-stop resume.
+
+## Replaces in the cookbook host
+
+The later migration can replace these regions of
+[host/design-runs.ts](../template-sveltekit/host/design-runs.ts):
+
+- `enqueue`: transactional job admission and dedupe configuration.
+- `driver`: store construction, `authorizeWrite`, `authorizeRelease`,
+  `ownsExecution` and common driver/job composition.
+- `installDesignRunExecutor` bridge: authentic context/claim capture, target
+  checks and abort-signal forwarding.
+- `forOwner`: generic start/status/stop/resume and `resumeAfterApproval` plumbing,
+  including verified stale-recovery re-admission.
+
+Jobs' `getJobClaim` replaces the bridge's `SELECT worker_id` capture.
+`assertJobClaim` replaces `authorizeWrite`'s conditional no-op update and
+`ownsExecution`'s ownership SELECT. `assertJobClaimForRelease` replaces
+`authorizeRelease`'s terminal-or-running conditional update. Host-specific
+historical migrations still need their own migration policy and CAS.
+
+The host retains schemas, pass/profile selection, owner/thread authorization,
+approval decisions, effect replay, legacy migrations, latest-by-thread lookup,
+proposal validation and presentation. `configure` adapts those existing callbacks.
+

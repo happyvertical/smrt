@@ -5,9 +5,6 @@ Inference owns ordered passes, validation, bounded repair, budgets and durable
 checkpoints. Jobs owns admission, claims, cancellation and worker recovery. This
 package joins those APIs without product schemas, UI or additional tables.
 
-The intended consumers are the cookbook host and the app shell's workbook import
-flow. Their migrations are separate work; neither consumer is changed here.
-
 ## Installation
 
 ```bash
@@ -92,29 +89,6 @@ Budgets reserved by a crashed call remain charged. Recover first without a budge
 override; if it stops for budget, raise totals on the subsequent resume. Stopped runs whose original
 process died with an unsettled lease require a future owning-package recovery
 API; this bridge does not infer safety from elapsed time.
-
-## Replaces in the cookbook host
-
-The later migration can replace these regions of
-[host/design-runs.ts](../template-sveltekit/host/design-runs.ts):
-
-- `enqueue`: transactional job admission and dedupe configuration.
-- `driver`: store construction, `authorizeWrite`, `authorizeRelease`,
-  `ownsExecution` and common driver/job composition.
-- `installDesignRunExecutor` bridge: authentic context/claim capture, target
-  checks and abort-signal forwarding.
-- `forOwner`: generic start/status/stop/resume and `resumeAfterApproval` plumbing,
-  including verified stale-recovery re-admission.
-
-Jobs' `getJobClaim` replaces the bridge's `SELECT worker_id` capture.
-`assertJobClaim` replaces `authorizeWrite`'s conditional no-op update and
-`ownsExecution`'s ownership SELECT. `assertJobClaimForRelease` replaces
-`authorizeRelease`'s terminal-or-running conditional update. Host-specific
-historical migrations still need their own migration policy and CAS.
-
-The host retains schemas, pass/profile selection, owner/thread authorization,
-approval decisions, effect replay, legacy migrations, latest-by-thread lookup,
-proposal validation and presentation. `configure` adapts those existing callbacks.
 
 ## Validation
 
