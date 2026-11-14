@@ -18,6 +18,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import { generateActivationRegistration } from '../activation/generate.js';
 import { publishArtifactFiles } from '../consumer-plugin/artifact-publication.js';
+import { generatedExpression } from '../generated-fields.js';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
 import {
   type ApiMethodExposure,
@@ -415,7 +416,8 @@ function collectReadonlyFieldNames(objectDef: SmartObjectDefinition): string[] {
     const meta = (def as { _meta?: Record<string, unknown> })._meta;
     if (
       (def as { readonly?: boolean }).readonly === true ||
-      meta?.readonly === true
+      meta?.readonly === true ||
+      generatedExpression(def) !== undefined
     ) {
       names.push(name);
     }

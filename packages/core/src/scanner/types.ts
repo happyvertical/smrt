@@ -1,3 +1,4 @@
+import type { GeneratedExpression } from '../generated-fields.js';
 /**
  * Type definitions for AST scanning and manifest generation
  */
@@ -67,6 +68,12 @@ export interface FieldUIHints {
  * forcing every consumer through `any`.
  */
 export interface FieldMeta {
+  /** Database-owned generated column expression. */
+  generated?: GeneratedExpression | true;
+  generatedInputTypes?: Record<
+    string,
+    import('@happyvertical/sql/query').ExpressionResultType
+  >;
   /** Explicit SQL type override (e.g. 'UUID') applied during schema generation. */
   sqlType?: string;
   /** Storage type for cross-package reference ids ('text' forces TEXT). */
@@ -141,6 +148,8 @@ export type SmrtVisibility =
   | 'test'; // Test-only, never in any published manifest
 
 export interface FieldDefinition {
+  /** Database-owned generated column expression. */
+  generated?: GeneratedExpression;
   type:
     | 'text'
     | 'decimal'
@@ -284,6 +293,8 @@ export interface MethodDefinition {
  * Pre-generated schema column definition for manifest
  */
 export interface ManifestColumnDefinition {
+  generatedInputTypes?: FieldMeta['generatedInputTypes'];
+  generated?: GeneratedExpression;
   type: string; // SQL type: TEXT, INTEGER, DECIMAL, BOOLEAN, DATETIME, JSON
   primaryKey?: boolean;
   /**

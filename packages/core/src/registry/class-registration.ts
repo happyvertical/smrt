@@ -1,3 +1,12 @@
+import {
+  generatedExpression,
+  validateGeneratedFields,
+} from '../generated-fields.js';
+import { ObjectRegistry } from '../registry.js';
+import {
+  declaresGeneratedFields,
+  GeneratedFieldMap,
+} from './generated-state.js';
 /**
  * Class registration module for the SMRT ObjectRegistry.
  *
@@ -57,7 +66,10 @@ import {
 } from './collision-policy.js';
 import { isFrameworkBaseClass } from './framework-base-classes.js';
 import { bumpRegistryGeneration } from './generation';
-import { buildInheritanceChain } from './inheritance-resolver';
+import {
+  buildInheritanceChain,
+  getEffectiveFieldsSync,
+} from './inheritance-resolver';
 import {
   createFieldFromManifest,
   mergeManifestField,
@@ -1010,6 +1022,14 @@ export function register(
   bumpRegistryGeneration();
   try {
     registerUntracked(ctor, config);
+    const registered = ObjectRegistry.getClassByConstructor(ctor);
+    if (registered) {
+      ObjectRegistry.recordGeneratedRegistration(
+        registered,
+        getConstructorFieldDecorators().get(ctor)?.keys(),
+      );
+      ObjectRegistry.revalidateGeneratedDescendants(registered);
+    }
   } finally {
     reconcileSubtypeLineage();
     applyRuntimeOverrides();
@@ -1065,6 +1085,12 @@ function registerUntracked(
     existingKey: string,
     existing: RegisteredClass,
   ): string {
+    if (existing.generatedFields)
+      ObjectRegistry.validateGeneratedRegistration({
+        ...existing,
+        config: { ...existing.config, ...config },
+      });
+
     const nextPackageName = explicitPackageName || existing.packageName;
     const nextKey = nextPackageName
       ? createQualifiedName(nextPackageName, name)
@@ -1532,9 +1558,7 @@ function registerUntracked(
       'CONFIG_TENANT_MANIFEST_CONFLICT',
     );
   }
-  const fields = new Map<string, RegisteredField>(
-    isolatedSubtypeParent?.[1].fields,
-  );
+  const fields = new GeneratedFieldMap(isolatedSubtypeParent?.[1].fields);
   const methods = new Map<string, MethodDefinition>(
     isolatedSubtypeParent?.[1].methods,
   );
@@ -1565,6 +1589,8 @@ function registerUntracked(
         options.description = fieldDef.description;
       if (fieldDef.transient !== undefined)
         options.transient = fieldDef.transient;
+      if (fieldDef.generated !== undefined)
+        options.generated = fieldDef.generated;
 
       // Store field definition as plain object maintaining Field-like structure
       const field: RegisteredField = {
@@ -1802,6 +1828,25 @@ function registerUntracked(
         `[registry] ✅ Injected ${fieldName} field for tenant-scoped class ${name}`,
       );
     }
+  }
+
+  if (fields.hasGenerated) {
+    for (const [fieldName, fd] of Object.entries(manifestEntry?.fields ?? {})) {
+      const existingField = fields.get(fieldName);
+      if (existingField)
+        fields.set(fieldName, mergeManifestField(existingField, fd, true));
+    }
+    const generatedParentKey = registeredParentKey(ctor, undefined);
+    const generatedParent = generatedParentKey
+      ? findClass(generatedParentKey)
+      : undefined;
+    validateGeneratedFields(
+      new Map([
+        ...(generatedParent ? getEffectiveFieldsSync(generatedParent) : []),
+        ...fields,
+      ]),
+      tenantScopedConfig?.field,
+    );
   }
 
   if (manifestEntry?.methods) {
@@ -2055,6 +2100,17 @@ function registerUntracked(
     packageName, // Store package name from manifest for getPackageName() lookup
     sourceFilePath, // Store source file for collision detection (Issue #555)
     extends: extendsClass, // Capture parent class name from manifest OR prototype chain
+    ...(extendsClass &&
+    !extendsClass.includes(':') &&
+    Object.getPrototypeOf(ctor) !== SmrtObject &&
+    !getConstructorIndex().has(Object.getPrototypeOf(ctor)) &&
+    fields.hasGenerated
+      ? {
+          generatedParentConstructor: Object.getPrototypeOf(
+            ctor,
+          ) as typeof SmrtObject,
+        }
+      : {}),
     extendsTypeArg: manifestEntry?.extendsTypeArg, // SmrtCollection<T> generic arg
     inheritedExposure: manifestEntry?.inheritedExposure, // #3468
     collectionOf: manifestEntry?.collectionOf, // #3956 manifest collection classification
@@ -2066,6 +2122,15 @@ function registerUntracked(
     // decorator-registered and manifest-loaded classes.
   };
   // #3338: a deprecated alias must never name a second live class.
+  if (
+    declaresGeneratedFields(registration) ||
+    ObjectRegistry.getClassByConstructor(Object.getPrototypeOf(ctor))
+      ?.generatedFields
+  )
+    ObjectRegistry.validateGeneratedRegistration(
+      registration,
+      getConstructorFieldDecorators().get(registration.constructor)?.keys(),
+    );
   assertQualifiedNameAliasesAvailable(registrationKey, registration);
   if (isolatedSubtypeParent) {
     const [parentKey, parent] = isolatedSubtypeParent;
@@ -2652,6 +2717,21 @@ function mergeManifestIntoExistingRegistration(
     }
   }
 
+  if (declaresGeneratedFields(existing) || existing.generatedFields) {
+    for (const [fieldName, fd] of Object.entries(objectDef.fields ?? {})) {
+      const existingField = existing.fields.get(fieldName);
+      if (existingField)
+        existing.fields.set(
+          fieldName,
+          mergeManifestField(existingField, fd, true),
+        );
+    }
+    ObjectRegistry.recordGeneratedRegistration(existing);
+    ObjectRegistry.assertGeneratedAncestry(
+      existing.qualifiedName ?? existing.name,
+    );
+  }
+
   if (objectDef.methods) {
     for (const [methodName, methodDef] of Object.entries(objectDef.methods)) {
       existing.methods.set(methodName, methodDef);
@@ -2805,6 +2885,11 @@ export function registerFromManifest(
       manifestPackageName,
       runtimeOptions,
     );
+    const registered = getClasses().get(objectDef.qualifiedName ?? name);
+    if (registered) {
+      ObjectRegistry.recordGeneratedRegistration(registered);
+      ObjectRegistry.revalidateGeneratedDescendants(registered);
+    }
     if (runtimeOptions?.refreshRuntime) {
       const entry = getClasses().get(name);
       if (entry) {
@@ -3002,12 +3087,29 @@ function registerFromManifestUntracked(
   Object.defineProperty(stubConstructor, 'name', { value: simpleClassName });
 
   // Convert manifest field definitions to Field objects
-  const fields = new Map<string, RegisteredField>();
+  const fields = new GeneratedFieldMap();
   const decorators = getLegacyFieldDecorators().get(simpleClassName);
   if (objectDef.fields) {
     for (const [fieldName, fd] of Object.entries(objectDef.fields)) {
       fields.set(fieldName, createFieldFromManifest(fd));
     }
+  }
+
+  if (fields.hasGenerated) {
+    for (const [fieldName, fd] of Object.entries(objectDef.fields ?? {})) {
+      const existingField = fields.get(fieldName);
+      if (existingField)
+        fields.set(fieldName, mergeManifestField(existingField, fd, true));
+    }
+    const generatedParent = runtimeParent ?? findClass(qualifiedExtends ?? '');
+    validateGeneratedFields(
+      new Map([
+        ...(generatedParent ? getEffectiveFieldsSync(generatedParent) : []),
+        ...fields,
+      ]),
+      normalizeTenantScopedConfig(objectDef.decoratorConfig?.tenantScoped)
+        ?.field,
+    );
   }
 
   // Load method definitions
@@ -3162,6 +3264,14 @@ function registerFromManifestUntracked(
     getInheritanceCache().clear();
     return;
   }
+  if (
+    declaresGeneratedFields(registration) ||
+    (runtimeParent ?? findClass(qualifiedExtends ?? ''))?.generatedFields
+  )
+    ObjectRegistry.validateGeneratedRegistration(
+      registration,
+      getConstructorFieldDecorators().get(registration.constructor)?.keys(),
+    );
   assertQualifiedNameAliasesAvailable(registrationKey, registration);
   getClasses().set(registrationKey, registration);
   // A run-time class is looked up by constructor to resolve its own identity

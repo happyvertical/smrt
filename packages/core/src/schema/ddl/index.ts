@@ -129,6 +129,7 @@ export function detectEngine(url: string, type?: string): DatabaseEngine {
   const urlLower = url.toLowerCase();
 
   if (
+    urlLower.startsWith('pglite:') ||
     urlLower.startsWith('postgres://') ||
     urlLower.startsWith('postgresql://')
   ) {

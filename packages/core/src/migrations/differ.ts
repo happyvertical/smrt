@@ -1,3 +1,9 @@
+import {
+  GeneratedFieldError,
+  generatedExpressionsMatch,
+  readGeneratedColumnCatalog,
+  readGeneratedColumns,
+} from '../generated-fields.js';
 /**
  * Schema Differ
  *
@@ -88,6 +94,7 @@ import {
 import type { DatabaseInterface, SqlTableSchemaInfo } from './types.js';
 
 const logger = createLogger({ level: 'info' });
+const NO_GENERATED_COLUMNS = new Map<string, string>();
 
 /**
  * DuckDB introspection reports an index column that needs quoting as its
@@ -160,6 +167,12 @@ function isValidSQLDataType(type: string): type is SQLDataType {
  * Options for schema comparison
  */
 export interface DiffOptions {
+  /** Previously recorded deployment shapes; suppress SQLite's missing-column
+   * fallback when the prior table is known to be ordinary. PostgreSQL/DuckDB
+   * discover removed generated declarations in one current-schema catalog read.
+   */
+  previousSchemas?: Record<string, SchemaDefinition>;
+
   /**
    * Emit executable `DROP TABLE` entries (`dropped_tables`) for tables that
    * exist in the database but not in the manifest. Default: false. Orphan
@@ -656,6 +669,10 @@ export class SchemaComparer {
    */
   private indexPredicateCache: Map<string, Map<string, string>> | null = null;
 
+  /** Current-schema generated columns, scoped to one compare() run. */
+  private generatedColumnCatalog: Map<string, Map<string, string>> | null =
+    null;
+
   /**
    * Cross-table batch queries stay bounded regardless of schema shape: this
    * caps how many scalar-subquery columns one probe statement packs into a
@@ -707,6 +724,7 @@ export class SchemaComparer {
     this.liveSchemas.clear();
     this.renameDataPendingCache = null;
     this.indexPredicateCache = null;
+    this.generatedColumnCatalog = null;
 
     // #2878 review: `renameDataPendingCache` is populated below for the
     // duration of this call only. The `finally` clears it again on the way
@@ -722,6 +740,19 @@ export class SchemaComparer {
     // `compare()` call" would be false.
     try {
       // Get list of existing tables
+      this.generatedColumnCatalog = await readGeneratedColumnCatalog(
+        this.db,
+        this.engine,
+        () =>
+          Object.values(manifestSchemas).some((schema) =>
+            Object.values(schema.columns).some(
+              (column) => column.generated !== undefined,
+            ),
+          ),
+        new Set(
+          Object.values(manifestSchemas).map((schema) => schema.tableName),
+        ),
+      );
       const existingTables = await this.getExistingTables();
       this.plannedTables = new Map(
         Object.entries(manifestSchemas).filter(
@@ -811,6 +842,7 @@ export class SchemaComparer {
       this.plannedTables.clear();
       this.renameDataPendingCache = null;
       this.indexPredicateCache = null;
+      this.generatedColumnCatalog = null;
     }
   }
 
@@ -2000,6 +2032,38 @@ export class SchemaComparer {
    *    inserts never supply it and will fail (`23502`); with `relaxColumns`
    *    that orphan gets an executable `DROP NOT NULL` where the engine allows.
    */
+  /** Discovery is allocated and executed only for a declared, recorded or missing SQLite column. */
+  private async probeSqliteColumns(
+    tableName: string,
+    dbSchema: SqlTableSchemaInfo,
+    dbColumnNames: Set<string>,
+  ): Promise<{ columns: Map<string, string>; failure?: { error: unknown } }> {
+    try {
+      const columns = await readGeneratedColumns(this.db, tableName, 'sqlite');
+      if (columns.size) {
+        const { rows } = await this.db.query(
+          'SELECT * FROM pragma_table_xinfo($1)',
+          [tableName],
+        );
+        for (const row of rows) {
+          const name = String(row.name);
+          if (columns.has(name) && !dbSchema.columns[name]) {
+            dbSchema.columns[name] = {
+              type: String(row.type),
+              notNull: Boolean(row.notnull),
+              primaryKey: Boolean(row.pk),
+              defaultValue: row.dflt_value,
+            };
+            dbColumnNames.add(name);
+          }
+        }
+      }
+      return { columns };
+    } catch (error) {
+      return { columns: NO_GENERATED_COLUMNS, failure: { error } };
+    }
+  }
+
   private async compareColumns(
     tableName: string,
     manifest: SchemaDefinition,
@@ -2007,9 +2071,55 @@ export class SchemaComparer {
   ): Promise<SchemaChange[]> {
     const changes: SchemaChange[] = [];
     const dbColumnNames = new Set(Object.keys(dbSchema.columns));
+    let generated =
+      this.engine === 'postgres' || this.engine === 'duckdb'
+        ? ((this.generatedColumnCatalog ??
+            (await readGeneratedColumnCatalog(
+              this.db,
+              this.engine,
+              () =>
+                Object.values(manifest.columns).some(
+                  (column) => column.generated !== undefined,
+                ),
+              new Set([tableName]),
+            )))!.get(tableName) ?? NO_GENERATED_COLUMNS)
+        : NO_GENERATED_COLUMNS;
+    let sqliteProbe:
+      | Awaited<ReturnType<SchemaComparer['probeSqliteColumns']>>
+      | undefined;
+    const previous = this.options.previousSchemas?.[tableName];
+    if (
+      this.engine === 'sqlite' &&
+      previous &&
+      Object.values(previous.columns).some(
+        (column) => column.generated !== undefined,
+      )
+    ) {
+      sqliteProbe = await this.probeSqliteColumns(
+        tableName,
+        dbSchema,
+        dbColumnNames,
+      );
+      generated = sqliteProbe.columns;
+    }
 
     // Check for new and modified columns
     for (const [colName, colDef] of Object.entries(manifest.columns)) {
+      // Reuse the ordinary comparison loop: no declaration/missing-column pre-scan.
+      if (
+        this.engine === 'sqlite' &&
+        (colDef.generated !== undefined ||
+          (!previous && !dbColumnNames.has(colName)))
+      ) {
+        sqliteProbe ??= await this.probeSqliteColumns(
+          tableName,
+          dbSchema,
+          dbColumnNames,
+        );
+        generated = sqliteProbe.columns;
+        if (colDef.generated !== undefined && sqliteProbe.failure)
+          throw sqliteProbe.failure.error;
+      }
       if (!dbColumnNames.has(colName)) {
         // Column doesn't exist - add it
         changes.push(
@@ -2025,8 +2135,167 @@ export class SchemaComparer {
           )),
         );
       } else {
+        if (colDef.generated === undefined && generated.has(colName)) {
+          const table = this.quoteIdentifier(tableName);
+          const column = this.quoteIdentifier(colName);
+          if (this.engine === 'postgres') {
+            // STORED values become ordinary values without dropping the column.
+            changes.push({
+              type: 'alter_column',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              sql: `ALTER TABLE ${table} ALTER COLUMN ${column} DROP EXPRESSION`,
+              advisory: {
+                severity: 'warning',
+                message: `Converting generated ${tableName}.${colName} to an ordinary column preserves STORED values but stops automatic expression updates.`,
+              },
+              mismatch: {
+                expected: 'ordinary column (stored values preserved)',
+                actual: generated.get(colName)!,
+              },
+            });
+            // Continue comparing type/default/nullability for the ordinary column.
+          } else {
+            // Refuse to discard the old column before an impossible required ADD.
+            if (
+              colDef.notNull &&
+              (colDef.defaultValue === undefined ||
+                colDef.defaultValue === null) &&
+              (await this.tableHasRows(tableName))
+            ) {
+              changes.push({
+                type: 'alter_column',
+                table: tableName,
+                name: colName,
+                column: colDef,
+                sql: `-- ${this.engine}: converting generated ${tableName}.${colName} to NOT NULL requires an explicit data migration or non-NULL default`,
+                mismatch: {
+                  expected: 'ordinary NOT NULL column',
+                  actual: generated.get(colName)!,
+                },
+              });
+              continue;
+            }
+            const indexes = manifest.indexes.filter((index) =>
+              index.columns.includes(colName),
+            );
+            const additions = await this.generateAddColumnChanges(
+              tableName,
+              colName,
+              colDef,
+            );
+            const statements = [
+              ...(this.engine === 'sqlite'
+                ? [
+                    `DROP INDEX IF EXISTS ${this.quoteIdentifier(uniqueColumnIndexName(tableName, colName))}`,
+                  ]
+                : []),
+              ...indexes.map(
+                (index) =>
+                  `DROP INDEX IF EXISTS ${this.quoteIdentifier(index.name)}`,
+              ),
+              `ALTER TABLE ${table} DROP COLUMN ${column}`,
+              ...additions.flatMap(
+                (change) =>
+                  change.sqlStatements ?? (change.sql ? [change.sql] : []),
+              ),
+              ...this.ddlStrategy.generateIndexes({ ...manifest, indexes }),
+            ];
+            changes.push({
+              type: 'alter_column',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              sql: statements[0],
+              sqlStatements: statements,
+              advisory: {
+                severity: 'warning',
+                message: `Converting VIRTUAL ${tableName}.${colName} to an ordinary column replaces its calculated results with the declared default or NULL.`,
+              },
+              mismatch: {
+                expected:
+                  'ordinary column (virtual results replaced by default or NULL)',
+                actual: generated.get(colName)!,
+              },
+            });
+            continue;
+          }
+        }
+        if (colDef.generated !== undefined) {
+          const actual = generated.get(colName);
+          if (
+            actual === undefined ||
+            !(await generatedExpressionsMatch(
+              this.db,
+              tableName,
+              actual,
+              colDef.generated,
+              this.engine,
+              colDef.generatedInputTypes,
+            ))
+          ) {
+            if (this.engine === 'duckdb')
+              throw new GeneratedFieldError(
+                `DuckDB cannot add or change generated column ${tableName}.${colName} on an existing table; migrate to a new table explicitly`,
+                'VALIDATION_GENERATED_DIALECT',
+                colName,
+              );
+            const table = this.quoteIdentifier(tableName);
+            const column = this.quoteIdentifier(colName);
+            const indexes = manifest.indexes.filter((index) =>
+              index.columns.includes(colName),
+            );
+            const additions = await this.generateAddColumnChanges(
+              tableName,
+              colName,
+              colDef,
+            );
+            const statements = [
+              ...(this.engine === 'sqlite'
+                ? [
+                    `DROP INDEX IF EXISTS ${this.quoteIdentifier(uniqueColumnIndexName(tableName, colName))}`,
+                  ]
+                : []),
+              ...indexes.map(
+                (index) =>
+                  `DROP INDEX IF EXISTS ${this.quoteIdentifier(index.name)}`,
+              ),
+              `ALTER TABLE ${table} DROP COLUMN ${column}`,
+              ...additions.flatMap(
+                (change) =>
+                  change.sqlStatements ?? (change.sql ? [change.sql] : []),
+              ),
+              ...this.ddlStrategy.generateIndexes({ ...manifest, indexes }),
+            ];
+            changes.push({
+              type: 'alter_column',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              sql: statements[0],
+              sqlStatements: statements,
+              ...(actual === undefined
+                ? {
+                    advisory: {
+                      severity: 'warning' as const,
+                      message: `Converting ${tableName}.${colName} to a generated column will discard existing values and recalculate them from the expression.`,
+                    },
+                  }
+                : {}),
+              mismatch: {
+                expected: JSON.stringify(colDef.generated),
+                actual: actual ?? 'ordinary column',
+              },
+            });
+            continue;
+          }
+        }
         // Column exists - check for type mismatch
         const dbCol = dbSchema.columns[colName];
+        if (colDef.generated !== undefined && this.engine === 'duckdb') {
+          dbCol.defaultValue = undefined;
+        }
         let typeDrifted = false;
 
         // Map manifest's abstract type to engine-specific type
@@ -4966,6 +5235,34 @@ export class SchemaComparer {
     colDef: ColumnDefinition,
     inlineReferences: ForeignKeyDefinition[] = [],
   ): Promise<SchemaChange[]> {
+    if (colDef.generated !== undefined) {
+      if (this.engine === 'duckdb')
+        throw new GeneratedFieldError(
+          `DuckDB cannot add generated column ${tableName}.${colName} to an existing table; migrate to a new table explicitly`,
+          'VALIDATION_GENERATED_DIALECT',
+          colName,
+        );
+      // SQLite accepts UNIQUE in CREATE TABLE, but never ALTER ADD COLUMN.
+      const separateUnique = this.engine === 'sqlite' && colDef.unique;
+      const sql = `ALTER TABLE ${this.quoteIdentifier(tableName)} ADD COLUMN ${this.ddlStrategy.generateColumnDefinition(colName, separateUnique ? { ...colDef, unique: false } : colDef)}`;
+      return [
+        {
+          type: 'add_column',
+          table: tableName,
+          name: colName,
+          column: colDef,
+          sql,
+          ...(separateUnique
+            ? {
+                sqlStatements: [
+                  sql,
+                  `CREATE UNIQUE INDEX ${this.quoteIdentifier(uniqueColumnIndexName(tableName, colName))} ON ${this.quoteIdentifier(tableName)} (${this.quoteIdentifier(colName)})`,
+                ],
+              }
+            : {}),
+        },
+      ];
+    }
     // mapType maps abstract types per dialect (UUID→native uuid / TEXT — R11);
     // invalid types fall back to TEXT, matching the compareColumns guard.
     const validatedType: SQLDataType = isValidSQLDataType(colDef.type)

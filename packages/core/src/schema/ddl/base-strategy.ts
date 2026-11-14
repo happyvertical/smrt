@@ -1,3 +1,7 @@
+import {
+  GeneratedFieldError,
+  generatedColumnClause,
+} from '../../generated-fields.js';
 /**
  * Base DDL Strategy - Shared logic for all database engines
  *
@@ -104,6 +108,28 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
       quoteIdentifier(columnName),
       this.mapType(columnDef.type),
     ];
+
+    if (columnDef.generated !== undefined) {
+      if (
+        this.engine === 'duckdb' &&
+        (columnDef.notNull || columnDef.unique || columnDef.check)
+      )
+        throw new GeneratedFieldError(
+          'DuckDB generated columns do not support column constraints',
+          'VALIDATION_GENERATED_DIALECT',
+        );
+      parts.push(
+        generatedColumnClause(
+          columnDef.generated,
+          this.engine,
+          columnDef.generatedInputTypes,
+        ),
+      );
+      if (columnDef.notNull) parts.push('NOT NULL');
+      if (columnDef.unique) parts.push('UNIQUE');
+      if (columnDef.check) parts.push(`CHECK (${columnDef.check})`);
+      return parts.join(' ');
+    }
 
     // Primary key. NOT NULL is emitted explicitly as well: SQLite's legacy
     // behaviour lets a non-INTEGER PRIMARY KEY column hold NULL, so a bare

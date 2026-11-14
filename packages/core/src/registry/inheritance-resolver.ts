@@ -80,6 +80,10 @@ function findParentClassStrict(
   child: RegisteredClass,
   parentName: string,
 ): RegisteredClass | undefined {
+  if (child.generatedParentConstructor)
+    return ObjectRegistry.getClassByConstructor(
+      child.generatedParentConstructor,
+    );
   try {
     return (
       replacedDeclarations().get(parentName) ??
@@ -108,23 +112,26 @@ function findParentClassStrict(
   }
 }
 
-export function getInheritanceChain(className: string): string[] {
+export function getInheritanceChain(
+  className: string,
+  pending?: RegisteredClass,
+): string[] {
   const cache = getInheritanceCache();
 
   // Check cache first
-  const cached = cache.get(className);
+  const cached = pending ? undefined : cache.get(className);
   if (cached) {
     return cached;
   }
 
   // Get registered class
-  const registered = findClass(className);
+  const registered = pending ?? findClass(className);
   if (!registered) {
     return [];
   }
 
   // Check if already computed and stored
-  if (registered.inheritanceChain) {
+  if (!pending && registered.inheritanceChain) {
     cache.set(className, registered.inheritanceChain);
     return registered.inheritanceChain;
   }
@@ -198,7 +205,7 @@ export function getInheritanceChain(className: string): string[] {
   // Caching a broken chain from a circular detection would cause all future
   // lookups to return incorrect inheritance data (e.g., ["VideoShot","VideoShot"]
   // instead of ["Content","VideoShot"]), breaking STI table resolution.
-  if (!circularDetected) {
+  if (!pending && !circularDetected) {
     registered.inheritanceChain = chain;
     cache.set(className, chain);
   }
@@ -222,6 +229,8 @@ export async function getAllFields(
   if (!registered) {
     return new Map();
   }
+
+  if (registered.generatedFields?.error) throw registered.generatedFields.error;
 
   // Ensure manifest is loaded (handles external packages)
   await ObjectRegistry.ensureManifestLoaded(className);
@@ -419,6 +428,27 @@ export function getOwnTableFieldsSync(
   }
   if (ancestors.length === 0) return registered.fields;
   return resolveRegistryFields(registered, ancestors, 'own-table');
+}
+
+/** Effective ancestry without manifest I/O, including shared-table parents. */
+export function getEffectiveFieldsSync(
+  registered: RegisteredClass,
+): Map<string, RegisteredField> {
+  const key = registered.qualifiedName ?? registered.name;
+  const ancestors: Array<FieldInheritanceLink<InheritedFieldDefinition>> = [];
+  for (const ancestorName of getInheritanceChain(key, registered)) {
+    if (ancestorName === key) continue;
+    const ancestor =
+      replacedDeclarations().get(ancestorName) ?? findClass(ancestorName);
+    if (!ancestor || ancestor === registered) continue;
+    ancestors.push(toLink(ancestor));
+  }
+  if (ancestors.length === 0) return registered.fields;
+  return resolveRegistryFields(
+    registered,
+    ancestors,
+    ObjectRegistry.getSTIBase(key) === null ? 'own-table' : 'shared-table',
+  );
 }
 
 export async function getAllMethods(

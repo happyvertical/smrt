@@ -548,6 +548,8 @@ ${downStatementsStr}
     colName: string,
     colDef: import('../schema/types.js').ColumnDefinition,
   ): string {
+    if (colDef.generated !== undefined)
+      return `ALTER TABLE ${this.quoteIdentifier(tableName)} ADD COLUMN ${getDDLStrategy(this.engine).generateColumnDefinition(colName, colDef)}`;
     const parts: string[] = [this.quoteIdentifier(colName), colDef.type];
 
     if (colDef.notNull) {

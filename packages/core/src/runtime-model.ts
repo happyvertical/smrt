@@ -1,3 +1,9 @@
+import {
+  type GeneratedExpression,
+  GeneratedFieldError,
+  generatedExpression,
+  validateGeneratedFields,
+} from './generated-fields.js';
 /**
  * Run-time models (#4871): define a smrt model from data, with no class
  * source and no rebuild.
@@ -16,13 +22,14 @@
  */
 
 import type { DatabaseEngine } from './migrations/types.js';
-import type { SmrtObject } from './object.js';
+import { SmrtObject } from './object.js';
 import {
   ensureTenantScopedField,
   normalizeTenantScopedConfig,
   registerFromManifest,
 } from './registry/class-registration.js';
 import {
+  getEffectiveFieldsSync,
   getOwnTableFieldsSync,
   inheritsHierarchicalBase,
 } from './registry/inheritance-resolver.js';
@@ -67,6 +74,9 @@ export type RuntimeFieldType =
 
 export interface RuntimeFieldDefinition {
   type: RuntimeFieldType;
+  generated?: GeneratedExpression;
+  sensitive?: boolean;
+  readPermission?: string;
   required?: boolean;
   /** Allowed values of a text field. */
   enum?: string[];
@@ -156,6 +166,8 @@ function toFieldDefinition(def: RuntimeFieldDefinition): FieldDefinition {
       `Run-time ${def.type} field requires a qualified related model`,
     );
   }
+  if (def.generated !== undefined && def.default !== undefined)
+    throw new GeneratedFieldError('Generated fields cannot declare a default');
   const widget = def.ui?.widget;
   if (
     widget !== undefined &&
@@ -174,6 +186,9 @@ function toFieldDefinition(def: RuntimeFieldDefinition): FieldDefinition {
   }
   return {
     type: def.type,
+    ...(def.generated !== undefined ? { generated: def.generated } : {}),
+    ...(def.sensitive !== undefined ? { sensitive: def.sensitive } : {}),
+    ...(def.readPermission ? { readPermission: def.readPermission } : {}),
     required: def.required ?? false,
     ...(def.enum ? { enum: [...def.enum] } : {}),
     ...(def.description ? { description: def.description } : {}),
@@ -223,7 +238,13 @@ export function runtimeModelEntry(
   const qualifiedName = createQualifiedName(def.packageName, def.name);
   const parentKey = def.extends;
   const parent = parentKey ? ObjectRegistry.getClass(parentKey) : undefined;
-  if (parentKey && !parent) {
+  if (
+    parentKey &&
+    !parent &&
+    !Object.values(def.fields ?? {}).some(
+      (field) => generatedExpression(field) !== undefined,
+    )
+  ) {
     throw new Error(
       `Run-time model ${qualifiedName} extends ${parentKey}, which is not registered`,
     );
@@ -249,15 +270,33 @@ export function runtimeModelEntry(
         ]
       : undefined;
   const fields: Record<string, FieldDefinition> = {};
-  // Independent tables carry concrete ancestors' fields through the shared
-  // inheritance rule (#4922). Replacements keep their provider's storage and
-  // requiredness; ordinary subclasses relax the copied fields to optional.
+  let declaresGenerated = Boolean(parent?.generatedFields);
+  // Keep ordinary STI fields on their declaring class, as before #4915.
+  // Copy only generated metadata needed by output/write consumers; validation
+  // below resolves dependencies from the complete effective parent ancestry.
   if (
     parent &&
-    (def.replaces || ObjectRegistry.getSTIBase(parentKey!) === null)
+    (def.replaces ||
+      ObjectRegistry.getSTIBase(parentKey!) === null ||
+      parent.generatedFields)
   ) {
-    const hierarchical = !def.replaces && inheritsHierarchicalBase(parent);
-    for (const [name, inherited] of getOwnTableFieldsSync(parent)) {
+    const sharedTable =
+      Boolean(parent.generatedFields) &&
+      ObjectRegistry.getSTIBase(parentKey!) !== null;
+    const inheritedFields =
+      sharedTable && !def.replaces
+        ? parent.generatedFields!.fields
+        : getOwnTableFieldsSync(parent);
+    const hierarchical =
+      !def.replaces && !sharedTable && inheritsHierarchicalBase(parent);
+    for (const [name, inherited] of inheritedFields) {
+      if (
+        sharedTable &&
+        !def.replaces &&
+        generatedExpression(inherited) === undefined
+      )
+        continue;
+
       const related =
         name === 'parentId' && hierarchical && inherited.related === parent.name
           ? def.name
@@ -265,9 +304,10 @@ export function runtimeModelEntry(
       fields[name] = {
         ...inherited,
         type: inherited.type,
-        required: def.replaces
-          ? (inherited.required ?? inherited._meta?.required ?? false)
-          : false,
+        required:
+          def.replaces || sharedTable
+            ? (inherited.required ?? inherited._meta?.required ?? false)
+            : false,
         ...(related ? { related } : {}),
         ...(inherited._meta
           ? {
@@ -284,6 +324,7 @@ export function runtimeModelEntry(
   }
   for (const [name, fd] of Object.entries(def.fields ?? {})) {
     fields[name] = toFieldDefinition(fd);
+    if (generatedExpression(fd) !== undefined) declaresGenerated = true;
     if (
       fd.type === 'foreignKey' &&
       fd.related &&
@@ -303,6 +344,13 @@ export function runtimeModelEntry(
     normalizeTenantScopedConfig(tenantScoped),
   );
   Object.assign(fields, Object.fromEntries(scopedFields));
+  if (declaresGenerated)
+    validateGeneratedFields(
+      new Map([
+        ...(parent ? getEffectiveFieldsSync(parent) : []),
+        ...Object.entries(fields),
+      ]),
+    );
   const methods: Record<string, MethodDefinition> =
     def.replaces && parent ? Object.fromEntries(parent.methods) : {};
   for (const [name, md] of Object.entries(def.methods ?? {})) {
@@ -356,6 +404,23 @@ export function runtimeModelEntry(
     ...(def.ui ? { ui: { ...def.ui } } : {}),
     ...(def.display ? { display: { ...def.display } } : {}),
   };
+  if (declaresGenerated)
+    ObjectRegistry.validateGeneratedRegistration(
+      {
+        name: def.name,
+        qualifiedName,
+        packageName: def.packageName,
+        constructor: parent?.constructor ?? SmrtObject,
+        fields: new Map<string, RegisteredField>(
+          Object.entries(fields).map(([name, field]) => [name, { ...field }]),
+        ),
+        methods: new Map(),
+        config: decoratorConfig as SmartObjectConfig,
+        extends: parentKey,
+        tenantScopedConfig: normalizeTenantScopedConfig(tenantScoped),
+      },
+      Object.keys(def.fields ?? {}),
+    );
   const label = (decoratorConfig.display as SmartObjectConfig['display'])
     ?.label;
   const displayLabelProjection = resolveDisplayLabelProjection(label);
@@ -399,7 +464,7 @@ export function runtimeModelEntry(
     ...(displayLabelProjection ? { displayLabelProjection } : {}),
     decoratorConfig:
       decoratorConfig as SmartObjectDefinition['decoratorConfig'],
-    ...(parent
+    ...(parentKey
       ? { extends: parentSimple, extendsQualified: parentKey }
       : { extends: 'SmrtObject' }),
   };
@@ -547,6 +612,7 @@ export async function planRuntimeModelDDL(
   if (!registered) {
     throw new Error(`Run-time model ${qualifiedName} is not registered`);
   }
+  if (registered.generatedFields?.error) throw registered.generatedFields.error;
   const table = ObjectRegistry.getTableName(qualifiedName);
   if (!table) throw new Error(`No table for ${qualifiedName}`);
   const definition = ObjectRegistry.getAllSchemasAsDefinitions()[table];
@@ -564,6 +630,12 @@ export async function planRuntimeModelDDL(
   const statements: string[] = [];
   for (const [column, def] of Object.entries(definition.columns)) {
     if (names.has(column)) continue;
+    if (engine === 'duckdb' && def.generated !== undefined)
+      throw new GeneratedFieldError(
+        `DuckDB cannot add generated column ${table}.${column} to an existing table; migrate to a new table explicitly`,
+        'VALIDATION_GENERATED_DIALECT',
+        column,
+      );
     // A column added to an existing table is nullable and without a NOT NULL
     // default requirement: existing rows have no value for it.
     const fragment = strategy.generateColumnDefinition(column, {

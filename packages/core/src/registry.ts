@@ -1,3 +1,17 @@
+import {
+  GeneratedFieldError,
+  generatedExpression,
+  rejectGeneratedInput,
+  validateGeneratedFields,
+} from './generated-fields.js';
+import {
+  clearGeneratedClassState,
+  forgetGeneratedClass,
+  GeneratedFieldMap,
+  generatedClasses,
+  recordGeneratedClass,
+  refreshGeneratedChildren,
+} from './registry/generated-state.js';
 import { writeThroughFields } from './write-through.js';
 /**
  * Global object registry for SMRT classes
@@ -136,6 +150,7 @@ import {
   getAllMethods as _getAllMethods,
   getInheritanceChain as _getInheritanceChain,
   mergeFieldConfigs as _mergeFieldConfigs,
+  getEffectiveFieldsSync,
 } from './registry/inheritance-resolver';
 import {
   createFieldFromManifest,
@@ -809,6 +824,27 @@ export interface CollectionCreateTargets {
  * (even from different package resolution paths) share the same registry state.
  */
 export class ObjectRegistry {
+  /** Read stored state only. Ordinary models never enter generated validation. */
+  static assertGeneratedAncestry(name: string): void {
+    const error = ObjectRegistry.findClass(name)?.generatedFields?.error;
+    if (error) throw error;
+  }
+
+  static recordGeneratedRegistration(
+    entry: RegisteredClass,
+    declaredFields?: Iterable<string>,
+  ): void {
+    recordGeneratedClass(entry, declaredFields);
+  }
+
+  static revalidateGeneratedDescendants(parent: RegisteredClass): void {
+    refreshGeneratedChildren(parent);
+  }
+
+  static getGeneratedClasses(): ReadonlyMap<string, RegisteredClass> {
+    return generatedClasses();
+  }
+
   /**
    * Checkpoint the named runtime registrations before a transactional schema
    * edit. The caller serializes registry writers and gates these models until
@@ -827,7 +863,7 @@ export class ObjectRegistry {
           entry
             ? {
                 ...entry,
-                fields: new Map(entry.fields),
+                fields: new GeneratedFieldMap(entry.fields),
                 methods: new Map(entry.methods),
                 config: { ...entry.config },
                 replacedQualifiedNames: entry.replacedQualifiedNames
@@ -843,6 +879,7 @@ export class ObjectRegistry {
     return () => {
       for (const [key, entry] of saved) {
         const current = ObjectRegistry.classes.get(key);
+        if (current) forgetGeneratedClass(current);
         if (current && current.constructor !== entry?.constructor)
           getConstructorIndex().delete(
             current.constructor as SmrtObjectConstructor,
@@ -860,6 +897,10 @@ export class ObjectRegistry {
       applyRuntimeOverrides();
       ObjectRegistry.collectionCache.clear();
       ObjectRegistry.invalidateAllInheritanceCaches();
+      for (const entry of saved.values()) {
+        if (entry)
+          recordGeneratedClass(entry, entry.generatedFields?.declaredFields);
+      }
     };
   }
   /** Invalidation token for consumers caching generated definitions. */
@@ -1642,6 +1683,7 @@ export class ObjectRegistry {
       ObjectRegistry.getExposureModel(collectionName) ??
       ObjectRegistry.resolveCollectionRegistration(collectionName).registered;
     if (!base) throw new Error(`Unknown create collection: ${collectionName}`);
+    if (base.generatedFields?.error) throw base.generatedFields.error;
     const name = base.qualifiedName || base.name;
     const target = (info: RegisteredClass): CreateTarget => ({
       name: info.qualifiedName || info.name,
@@ -1656,7 +1698,12 @@ export class ObjectRegistry {
         (info.constructor as { _isManifestStub?: boolean })._isManifestStub ===
         true;
       for (const [key, info] of ObjectRegistry.getAllClasses()) {
-        if (info === base || info.config.abstract) continue;
+        if (
+          info.generatedFields?.error ||
+          info === base ||
+          info.config.abstract
+        )
+          continue;
         const descends =
           (!isStub(info) &&
             !isStub(base) &&
@@ -2716,6 +2763,7 @@ export class ObjectRegistry {
    * Clear all registered classes (mainly for testing)
    */
   static clear(): void {
+    clearGeneratedClassState();
     clearRuntimeOverrides();
     clearSubtypeLineage();
     bumpRegistryGeneration();
@@ -3001,9 +3049,19 @@ export class ObjectRegistry {
    * Get field definitions for a registered class.
    * Supports both qualified names and simple class names.
    */
+  /** Reject caller values for database-owned fields before writable-policy filtering. */
+  static assertWritableInput(name: string, data: object): void {
+    const own = this.findClass(name)?.generatedFields;
+    if (!own) return;
+    if (own.error) throw own.error;
+    rejectGeneratedInput(own.fields, data);
+  }
+
   static getFields(name: string): Map<string, RegisteredField> {
     // Issue #951: Use findClass for multi-strategy lookup (qualified key, classNameMap, case-insensitive)
     const registered = ObjectRegistry.findClass(name);
+    if (registered?.generatedFields?.error)
+      throw registered.generatedFields.error;
     return registered ? registered.fields : new Map();
   }
 
@@ -3744,14 +3802,17 @@ export class ObjectRegistry {
    * // ]
    * ```
    */
-  static getInheritanceChain(className: string): string[] {
+  static getInheritanceChain(
+    className: string,
+    pending?: RegisteredClass,
+  ): string[] {
     // Delegate to the single source of truth in registry/inheritance-resolver.
     // The inline copy that used to live here drifted from the module (it lacked
     // the SmrtHierarchical `parentId` normalization in field merging), so the
     // duplication was removed (#1378). The module shares the same name-resolver
     // and shared-state helpers this class delegates to, so behavior is
     // identical aside from the drift fix.
-    return _getInheritanceChain(className);
+    return _getInheritanceChain(className, pending);
   }
 
   /**
@@ -4054,8 +4115,11 @@ export class ObjectRegistry {
    * ObjectRegistry.getTableStrategy('Event'); // 'sti'
    * ```
    */
-  static getTableStrategy(className: string): 'cti' | 'sti' {
-    const registered = ObjectRegistry.findClass(className);
+  static getTableStrategy(
+    className: string,
+    pending?: RegisteredClass,
+  ): 'cti' | 'sti' {
+    const registered = pending ?? ObjectRegistry.findClass(className);
     if (!registered) {
       return 'cti'; // Default for unregistered classes
     }
@@ -4066,9 +4130,12 @@ export class ObjectRegistry {
     }
 
     // Inherit from ancestors
-    const chain = ObjectRegistry.getInheritanceChain(className);
+    const chain = ObjectRegistry.getInheritanceChain(className, pending);
     for (const ancestorName of chain) {
-      const ancestor = ObjectRegistry.findClass(ancestorName);
+      const ancestor =
+        pending && ancestorName === (pending.qualifiedName ?? pending.name)
+          ? pending
+          : ObjectRegistry.findClass(ancestorName);
       if (ancestor?.config?.tableStrategy) {
         return ancestor.config.tableStrategy;
       }
@@ -4124,18 +4191,23 @@ export class ObjectRegistry {
    * // Returns: ['tenant_id', 'slug', 'context']
    * ```
    */
-  static getConflictColumns(className: string): string[] {
-    ObjectRegistry.assertTenantScopedRegistrationValid(className);
-    const registered = ObjectRegistry.findClass(className);
+  static getConflictColumns(
+    className: string,
+    pending?: RegisteredClass,
+  ): string[] {
+    if (!pending) ObjectRegistry.assertTenantScopedRegistrationValid(className);
+    const registered = pending ?? ObjectRegistry.findClass(className);
     if (!registered) {
       return defaultConflictColumns('cti'); // Default for unregistered classes
     }
 
     // The table's key is the schema owner's key: for an STI hierarchy that
     // is the root, whatever class the caller named.
-    const tableStrategy = ObjectRegistry.getTableStrategy(className);
+    const tableStrategy = ObjectRegistry.getTableStrategy(className, pending);
     const ownerName =
-      tableStrategy === 'sti' ? ObjectRegistry.getSTIBase(className) : null;
+      tableStrategy === 'sti'
+        ? ObjectRegistry.getSTIBase(className, pending)
+        : null;
     const owner =
       ownerName && ownerName !== className
         ? (ObjectRegistry.findClass(ownerName) ?? registered)
@@ -4158,7 +4230,7 @@ export class ObjectRegistry {
           return kind === 'group' || kind === 'bucket';
         })
         .map(([fieldName]) => toSnakeCase(fieldName));
-      const tenantColumn = ObjectRegistry.getTenantColumn(className);
+      const tenantColumn = ObjectRegistry.getTenantColumn(className, pending);
 
       return reportConflictColumns.length > 0
         ? [...(tenantColumn ? [tenantColumn] : []), ...reportConflictColumns]
@@ -4176,8 +4248,103 @@ export class ObjectRegistry {
 
     return defaultConflictColumns(
       tableStrategy,
-      ObjectRegistry.getOwnershipTenantColumn(className),
+      ObjectRegistry.getOwnershipTenantColumn(className, pending),
     );
+  }
+
+  /**
+   * Validate an unpublished declaration with the SAME ownership/conflict
+   * resolvers used by saves. Pending declarations never enter the registry or
+   * its inheritance caches, so rejection cannot publish invalid metadata.
+   */
+  static validateGeneratedRegistration(
+    pending: RegisteredClass,
+    declaredFields?: Iterable<string>,
+    requireResolved = false,
+  ): void {
+    const key = pending.qualifiedName ?? pending.name;
+    let inherited = new Map<string, RegisteredField>();
+    try {
+      const parent = pending.generatedParentConstructor
+        ? ObjectRegistry.getClassByConstructor(
+            pending.generatedParentConstructor,
+          )
+        : pending.extends
+          ? findClassStrict(pending.extends, pending.packageName)
+          : undefined;
+      if (parent) inherited = getEffectiveFieldsSync(parent);
+    } catch (error) {
+      // Keep main's deferred ambiguous-parent diagnostic for declarations with
+      // no own generated fields. Ancestry reads still refuse before any save;
+      // never select an arbitrary same-named parent to validate against.
+      if (
+        error instanceof ConfigurationError &&
+        error.code === 'CONFIG_AMBIGUOUS_CLASS' &&
+        ![...pending.fields.values()].some(
+          (field) => generatedExpression(field) !== undefined,
+        )
+      )
+        return;
+      throw error;
+    }
+    const effective = new Map([...inherited, ...pending.fields]);
+    if (
+      ![...effective.values()].some(
+        (field) => generatedExpression(field) !== undefined,
+      )
+    )
+      return;
+    const chain = ObjectRegistry.getInheritanceChain(key, pending);
+    const oldest =
+      chain[0] === key ? pending : ObjectRegistry.findClass(chain[0]);
+    if (
+      requireResolved &&
+      oldest?.extends &&
+      !['SmrtObject', 'SmrtClass', 'SmrtCollection'].includes(oldest.extends) &&
+      !(oldest.generatedParentConstructor
+        ? ObjectRegistry.getClassByConstructor(
+            oldest.generatedParentConstructor,
+          )
+        : findClassStrict(oldest.extends, oldest.packageName))
+    ) {
+      throw new GeneratedFieldError(
+        `${key}: generated-field ancestry unresolved (${oldest.extends})`,
+      );
+    }
+    if (requireResolved) {
+      // Validate each declaration too: an effective field map alone hides a
+      // forbidden override by an intermediate class beneath this reader.
+      for (const ancestorKey of chain) {
+        if (ancestorKey === key) continue;
+        const ancestor = ObjectRegistry.findClass(ancestorKey);
+        if (ancestor?.generatedFields)
+          this.validateGeneratedRegistration(ancestor);
+      }
+    }
+    const owners = new Set<string>();
+    for (const ancestor of chain) {
+      const column = ObjectRegistry.getOwnershipTenantColumn(
+        ancestor,
+        ancestor === key ? pending : undefined,
+      );
+      if (column) owners.add(column);
+    }
+    try {
+      validateGeneratedFields(effective, pending.tenantScopedConfig?.field, {
+        inheritedFields: inherited,
+        declaredFields: declaredFields ? new Set(declaredFields) : undefined,
+        ownershipColumns: [...owners],
+        conflictColumns: ObjectRegistry.getConflictColumns(key, pending),
+      });
+    } catch (error) {
+      if (error instanceof GeneratedFieldError)
+        throw new GeneratedFieldError(
+          `${key}: ${error.message}`,
+          error.code,
+          error.details?.field as string | undefined,
+        );
+      throw error;
+    }
   }
 
   /** Subtypes with their own partial unique conflict index. */
@@ -4219,13 +4386,16 @@ export class ObjectRegistry {
    * @param className - Name of the class (simple or qualified)
    * @returns The snake_case ownership column, or `undefined`
    */
-  static getOwnershipTenantColumn(className: string): string | undefined {
-    const declared = ObjectRegistry.getTenantColumn(className);
-    const registered = ObjectRegistry.findClass(className);
+  static getOwnershipTenantColumn(
+    className: string,
+    pending?: RegisteredClass,
+  ): string | undefined {
+    const declared = ObjectRegistry.getTenantColumn(className, pending);
+    const registered = pending ?? ObjectRegistry.findClass(className);
     if (!registered) return declared;
     const ownerName =
-      ObjectRegistry.getTableStrategy(className) === 'sti'
-        ? ObjectRegistry.getSTIBase(className)
+      ObjectRegistry.getTableStrategy(className, pending) === 'sti'
+        ? ObjectRegistry.getSTIBase(className, pending)
         : null;
     const owner =
       ownerName && ownerName !== className
@@ -4356,13 +4526,16 @@ export class ObjectRegistry {
    * @param className - Name of the class (simple or qualified)
    * @returns The snake_case tenant column name, e.g. `tenant_id`
    */
-  static getTenantColumn(className: string): string | undefined {
-    ObjectRegistry.assertTenantScopedRegistrationValid(className);
-    const registered = ObjectRegistry.findClass(className);
+  static getTenantColumn(
+    className: string,
+    pending?: RegisteredClass,
+  ): string | undefined {
+    if (!pending) ObjectRegistry.assertTenantScopedRegistrationValid(className);
+    const registered = pending ?? ObjectRegistry.findClass(className);
     if (!registered) return undefined;
     const ownerName =
-      ObjectRegistry.getTableStrategy(className) === 'sti'
-        ? ObjectRegistry.getSTIBase(className)
+      ObjectRegistry.getTableStrategy(className, pending) === 'sti'
+        ? ObjectRegistry.getSTIBase(className, pending)
         : null;
     const owner =
       ownerName && ownerName !== className
@@ -4540,8 +4713,11 @@ export class ObjectRegistry {
    * // '@happyvertical/smrt-events:Event'
    * ```
    */
-  static getSTIBase(className: string): string | null {
-    const strategy = ObjectRegistry.getTableStrategy(className);
+  static getSTIBase(
+    className: string,
+    pending?: RegisteredClass,
+  ): string | null {
+    const strategy = ObjectRegistry.getTableStrategy(className, pending);
     if (strategy === 'cti') {
       return null; // Not using STI
     }
@@ -4561,11 +4737,14 @@ export class ObjectRegistry {
     // R5-canon: chain entries are qualified names (when the class has a
     // package context), so the returned STI base is also qualified —
     // ambiguity across packages with same-simple-name STI roots is gone.
-    const chain = ObjectRegistry.getInheritanceChain(className);
+    const chain = ObjectRegistry.getInheritanceChain(className, pending);
 
     // Walk the chain (ordered [root, ..., className]) to find oldest STI base
     for (const ancestorName of chain) {
-      const ancestor = ObjectRegistry.findClass(ancestorName);
+      const ancestor =
+        pending && ancestorName === (pending.qualifiedName ?? pending.name)
+          ? pending
+          : ObjectRegistry.findClass(ancestorName);
       if (!ancestor) continue;
 
       // Check if this ancestor EXPLICITLY declares tableStrategy: 'sti'
@@ -4580,7 +4759,7 @@ export class ObjectRegistry {
     // If no explicit STI ancestor found but we detected STI strategy,
     // this class is its own STI base (it must have declared tableStrategy: 'sti').
     // Return its qualified name when available.
-    const self = ObjectRegistry.findClass(className);
+    const self = pending ?? ObjectRegistry.findClass(className);
     return self?.qualifiedName ?? self?.name ?? className;
   }
 

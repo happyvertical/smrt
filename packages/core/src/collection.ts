@@ -4050,6 +4050,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       registered?.name ||
       instance.constructor.name;
     const fields = await ObjectRegistry.getAllFields(name);
+    if (registered?.generatedFields)
+      ObjectRegistry.assertWritableInput(name, values);
     for (const key of Object.keys(values)) {
       const definition =
         fields.get(key) ?? ObjectRegistry.getWriteThroughFields(name)[key];
@@ -4297,6 +4299,19 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     data: Record<string, unknown>,
     defaults: Record<string, unknown> = {},
   ): Promise<ModelType> {
+    const generated = ObjectRegistry.getClass(
+      this.getResolvedItemQualifiedName(),
+    )?.generatedFields;
+    if (generated) {
+      ObjectRegistry.assertWritableInput(
+        this.getResolvedItemQualifiedName(),
+        data,
+      );
+      ObjectRegistry.assertWritableInput(
+        this.getResolvedItemQualifiedName(),
+        defaults,
+      );
+    }
     const logicalData = this.normalizeLogicalData(data);
     const logicalDefaults = this.normalizeLogicalData(defaults);
     let where: Record<string, unknown> = {};
