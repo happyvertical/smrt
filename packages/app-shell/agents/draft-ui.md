@@ -177,3 +177,9 @@ remain absent. The real engine DOM fixture includes added/changed/unchanged
 methods, labeled field add/remove/type conversion, and model add/remove. Full
 method bodies remain unchanged. Available-column styles use namespaced owned
 classes inside `smrt.structure`; scoped cascade and class/layer gates pass.
+
+Merge cards created before scoped reference labels were saved hydrate only missing
+labels for the referring models counted by that card. Fresh and reused approvals,
+publish counts, and undo merge summaries retain friendly labels without copying
+unrelated model metadata. The DOM merge fixture now uses the real stored builder
+approval rather than a manually supplied reference-label map.

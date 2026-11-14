@@ -1,8 +1,11 @@
+import { writeFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import type { Command } from '../../engine/index.ts';
+import { ApprovalCollection } from '../objects/Approval.ts';
 import { describeApproval } from '../ui/approvals.ts';
+import { publishDataLines } from '../ui/publish.ts';
 import type { ApprovalView } from '../ui/types.ts';
-import { listApprovalViews } from './approvals.ts';
+import { getApprovalView, listApprovalViews } from './approvals.ts';
 import { runCommand } from './builder.ts';
 import { discardNow, previewDraft, startDraft } from './drafts.ts';
 import { getHost } from './host.ts';
@@ -84,6 +87,16 @@ it('projects real engine previews through stored approvals into card text', asyn
     });
     expect(upsert.text).toContain('1 updated');
     expect(upsert.text).toContain('overwrite stored values');
+    await execute({
+      type: 'defineModel',
+      name: 'Order',
+      label: 'Orders',
+      fields: {
+        name: { type: 'text' },
+        customer: { type: 'reference', ref: 'Customer' },
+      },
+    });
+    await host.create('Order', { name: 'First order', customer: second.id });
     const merge = await card({
       type: 'mergeRecords',
       model: 'Customer',
@@ -91,6 +104,12 @@ it('projects real engine previews through stored approvals into card text', asyn
       merge: [String(second.id)],
     });
     expect(merge.text).toContain('1 record in Customers');
+    expect(merge.text).toContain(
+      '1 reference in Orders will point to the kept record.',
+    );
+    expect(merge.approval.preview).toMatchObject({
+      referenceLabels: { Order: 'Orders' },
+    });
     expect(merge.approval.preview).toMatchObject({
       keepLabel: 'Acme',
       removedLabels: ['Other'],
@@ -168,4 +187,91 @@ it('projects only data-step model labels into publish previews', async () =>
     } finally {
       await discardNow();
     }
+  }));
+
+it('hydrates legacy merge reference labels through list, get and reused approval results', async () =>
+  runAs(harness.owner, async () => {
+    await execute({
+      type: 'defineModel',
+      name: 'MergeCustomer',
+      label: 'Customers',
+      fields: { name: { type: 'text' } },
+    });
+    await execute({
+      type: 'defineModel',
+      name: 'MergeOrder',
+      label: 'Orders',
+      fields: {
+        name: { type: 'text' },
+        customer: { type: 'reference', ref: 'MergeCustomer' },
+      },
+    });
+    const host = await getHost();
+    const kept = await host.create('MergeCustomer', { name: 'Acme' });
+    const removed = await host.create('MergeCustomer', {
+      name: `<b>Removed</b> ${'very long record label '.repeat(12)}`,
+    });
+    await host.create('MergeOrder', {
+      name: 'First order',
+      customer: removed.id,
+    });
+    const command: Command = {
+      type: 'mergeRecords',
+      model: 'MergeCustomer',
+      keep: String(kept.id),
+      merge: [String(removed.id)],
+    };
+    const fresh = await card(command);
+    expect(fresh.text).toContain(
+      '1 reference in Orders will point to the kept record.',
+    );
+    const collection = await ApprovalCollection.create({ db: harness.db });
+    const row = await collection.get(fresh.approval.id);
+    if (!row) throw new Error('Expected persisted merge approval');
+    const preview = JSON.parse(row.preview);
+    delete preview.referenceLabels;
+    row.preview = JSON.stringify(preview);
+    await row.save();
+    const legacy = await card(command);
+    const direct = await getApprovalView(row.id as string);
+    expect(legacy.text).toContain(
+      '1 reference in Orders will point to the kept record.',
+    );
+    expect(direct?.preview).toMatchObject({
+      referenceLabels: { MergeOrder: 'Orders' },
+    });
+    expect(JSON.stringify(direct?.preview)).not.toContain(
+      'Unrelated private label',
+    );
+    const reused = await runCommand(command, harness.owner.id, 'live');
+    expect(reused).toMatchObject({
+      approvalId: row.id,
+      preview: { referenceLabels: { MergeOrder: 'Orders' } },
+    });
+    await startDraft('Merge references', harness.owner.id);
+    try {
+      await runCommand(command, harness.owner.id, 'draft');
+      const { preview } = await previewDraft();
+      expect(preview.modelLabels).toMatchObject({
+        MergeCustomer: 'Customers',
+        MergeOrder: 'Orders',
+      });
+      expect(preview.modelLabels).not.toHaveProperty('Hidden');
+      expect(publishDataLines(preview).join(' ')).toContain(
+        '1 reference in Orders',
+      );
+    } finally {
+      await discardNow();
+    }
+    await execute(command);
+    const undo = await card({ type: 'undo' });
+    expect(undo.text).toContain(
+      'recreates 1 removed record and points 1 reference back to those records.',
+    );
+    expect(undo.text).not.toContain('MergeOrder');
+    if (process.env.SMRT_MERGE_APPROVAL_ARTIFACT)
+      writeFileSync(
+        process.env.SMRT_MERGE_APPROVAL_ARTIFACT,
+        JSON.stringify({ merge: legacy.approval, undoMerge: undo.approval }),
+      );
   }));

@@ -33,7 +33,7 @@ async function collect(name: string, command: Command) {
     summary: commandSummary(command,host.def,undefined,plan.preview),
     preview: {
       ...plan.preview,
-      ...(command.type === 'mergeRecords' ? { keepLabel: keep?.name || 'the selected record', removedLabels: mergeRows.map((row) => row?.name || 'the selected record'), referenceLabels: { Order: 'Orders' } } : {}),
+      ...(command.type === 'mergeRecords' ? { keepLabel: keep?.name || 'the selected record', removedLabels: mergeRows.map((row) => row?.name || 'the selected record') } : {}),
       ...(model ? { modelLabel: model.label, fields: model.fields } : {}),
       ...('field' in command && model
         ? { fieldLabel: model.fields[command.field]?.label }
@@ -150,7 +150,12 @@ try {
   } finally {await templateHost.close();rmSync(templateDir,{recursive:true,force:true});}
   const routeOutput = join(dir,'route-approval.json');
   const deleteOutput = join(dir,'route-deletes.json');
-  execFileSync(process.execPath,[fileURLToPath(new URL('../vitest.mjs',import.meta.resolve('vitest'))),'run','src/lib/server/approval-failure.test.ts'],{env:{...process.env,SMRT_ROUTE_APPROVAL_ARTIFACT:routeOutput,SMRT_ROUTE_DELETE_ARTIFACT:deleteOutput},timeout:60000,stdio:'pipe'});
+  const mergeOutput = join(dir,'merge-cards.json');
+  execFileSync(process.execPath,[fileURLToPath(new URL('../vitest.mjs',import.meta.resolve('vitest'))),'run','src/lib/server/approval-failure.test.ts','src/lib/server/approval-cards.test.ts'],{env:{...process.env,SMRT_MERGE_APPROVAL_ARTIFACT:mergeOutput,SMRT_ROUTE_APPROVAL_ARTIFACT:routeOutput,SMRT_ROUTE_DELETE_ARTIFACT:deleteOutput},timeout:60000,stdio:'pipe'});
+  for (const [name, view] of Object.entries(JSON.parse(readFileSync(mergeOutput, 'utf8')))) {
+    const card = cards.find((card: any) => card.name === name) as any;
+    card.view = view;
+  }
   JSON.parse(readFileSync(deleteOutput,'utf8')).forEach((view:unknown,index:number)=>cards.push({name:['recordDelete','toolDelete','restDelete'][index],view}));
   cards.push({name:'undoFailed',view:JSON.parse(readFileSync(routeOutput,'utf8')),preserved:true});
   writeFileSync(process.argv[2], JSON.stringify(cards));

@@ -112,7 +112,31 @@ function iso(value: unknown): string {
   return value instanceof Date ? value.toISOString() : String(value ?? '');
 }
 
-function view(row: Approval): ApprovalView {
+async function view(row: Approval): Promise<ApprovalView> {
+  const preview = parseJson(row.preview) as Record<string, unknown> | null;
+  const action = parseJson(row.command) as ApprovalAction | null;
+  // Pending cards from older releases may predate scoped reference labels.
+  // Fill only the model names whose counts this card actually displays.
+  if (
+    action?.kind === 'command' &&
+    action.command.type === 'mergeRecords' &&
+    preview?.references &&
+    typeof preview.references === 'object'
+  ) {
+    const labels = {
+      ...(preview.referenceLabels as Record<string, string> | undefined),
+    };
+    const missing = Object.keys(preview.references).filter(
+      (name) => !labels[name],
+    );
+    if (missing.length) {
+      const models = (await getHost()).def.models;
+      for (const name of missing)
+        if (Object.hasOwn(models, name))
+          labels[name] = models[name].label ?? name;
+      preview.referenceLabels = labels;
+    }
+  }
   return {
     id: row.id as string,
     status:
@@ -120,7 +144,7 @@ function view(row: Approval): ApprovalView {
         ? 'approved'
         : row.status,
     summary: row.summary,
-    preview: parseJson(row.preview),
+    preview,
     action: parseJson(row.command) as ApprovalAction | null,
     requestedBy: row.requestedBy,
     decidedBy: row.decidedBy,
@@ -183,7 +207,7 @@ export async function requestApproval(
       });
       return created;
     })());
-  const v = view(row);
+  const v = await view(row);
   const pending: PendingApproval = {
     status: 'pending_approval',
     approvalId: v.id,
@@ -210,7 +234,9 @@ export async function listApprovalViews(
     ...(filter.status ? { where: { status: filter.status } } : {}),
     limit: 500,
   });
-  return rows.map(view).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  return (await Promise.all(rows.map(view))).sort((a, b) =>
+    a.createdAt < b.createdAt ? 1 : -1,
+  );
 }
 
 export async function pendingApprovalCount(): Promise<number> {
