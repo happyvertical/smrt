@@ -17,6 +17,7 @@ import {
   isRunnerExecutionContext,
   type JobClaim,
   JobClaimLostError,
+  JobHandle,
   SmrtJobCollection,
   SmrtJobEventCollection,
 } from '@happyvertical/smrt-jobs';
@@ -481,12 +482,26 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
         resume,
         /** Host must first durably record its approval/denial; check replays it. */
         async continueAfterApproval(id: string) {
+          await options.authorize(owner);
+          for (const job of await activeJobs(owner, id)) {
+            if (job.status === 'running')
+              await new JobHandle(String(job.id), await jobs).wait({
+                timeout: 30_000,
+                pollInterval: 25,
+              });
+          }
           const state = await authorized(id);
-          if (state.status !== 'waiting-approval')
-            throw new DesignRunConflictError(
-              'Design run is not waiting for approval',
-            );
-          return resume(id);
+          if (state.status !== 'waiting-approval') return snapshot(state);
+          try {
+            return await resume(id);
+          } catch (error) {
+            if (error instanceof DesignRunConflictError) {
+              const current = await authorized(id);
+              if (current.status !== 'waiting-approval')
+                return snapshot(current);
+            }
+            throw error;
+          }
         },
       };
     },

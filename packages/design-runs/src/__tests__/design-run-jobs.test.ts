@@ -514,12 +514,10 @@ describe('durable design job bridge', () => {
     await expect(allowed.start(startInput(' '))).rejects.toThrow('key');
   });
 
-  it('refuses approval continuation outside an approval wait', async () => {
+  it('returns current status for approval continuation outside an approval wait', async () => {
     const bound = install();
     const run = await bound.start(startInput());
-    await expect(bound.continueAfterApproval(run.id)).rejects.toThrow(
-      'not waiting',
-    );
+    expect((await bound.continueAfterApproval(run.id)).status).toBe('running');
   });
 
   it('routes two host kinds through one executor without duplicate identities', async () => {
@@ -617,6 +615,58 @@ describe('durable design job bridge', () => {
     broken = false;
     await bound.resume(run.id);
     expect((await end(run.id)).status).toBe('done');
+  });
+
+  it('waits for the parking job and makes two approval continuations harmless', async () => {
+    const parked = deferred();
+    const release = deferred();
+    settled.push(release.resolve);
+    let approved = false;
+    const pass: DesignPass = {
+      name: 'Review',
+      schema,
+      check: async () => (approved ? {} : { waitingApproval: true }),
+    };
+    const execute = vi.fn<DesignRunDriverOptions['executePass']>(async () => ({
+      output: { value: 1 },
+      metadata,
+    }));
+    const bound = install(execute, [pass], {
+      configure: () => ({
+        passes: [pass],
+        validate: (schema, output) =>
+          ajv.validate(schema, output) ? [] : ['Invalid'],
+        executePass: execute,
+        readResource: async () => ({ data: null }),
+        onProgress: async (event) => {
+          if (event.status === 'waiting-approval') {
+            parked.resolve();
+            await release.promise;
+          }
+        },
+      }),
+    });
+    const run = await bound.start(startInput());
+    await worker();
+    await parked.promise;
+    expect((await jobs.list({ where: { objectId: run.id } }))[0].status).toBe(
+      'running',
+    );
+    approved = true;
+    let returned = false;
+    const first = bound.continueAfterApproval(run.id).then((state) => {
+      returned = true;
+      return state;
+    });
+    const second = bound.continueAfterApproval(run.id);
+    await delay(40);
+    expect(returned).toBe(false);
+    release.resolve();
+    await Promise.all([first, second]);
+    expect((await end(run.id)).status).toBe('done');
+    expect((await bound.continueAfterApproval(run.id)).status).toBe('done');
+    expect(await jobs.list({ where: { objectId: run.id } })).toHaveLength(2);
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 
   it('replays a completed run job without executing any pass again', async () => {

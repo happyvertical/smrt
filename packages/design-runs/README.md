@@ -127,3 +127,8 @@ then call `resume`; the backing failed job itself is not automatically retried.
 Owner reads reconcile an authoritative routing failure if no handler started.
 A retained lease fails closed instead of treating an early failure as proof of
 settlement. Stop uses the public checkpoint CAS and never calls `configure`.
+
+`continueAfterApproval` waits up to 30 seconds for a running parking job to
+settle, then reloads the checkpoint. If it is no longer waiting, it returns
+current status. Concurrent or repeated continuation calls do not duplicate
+admission; the winner's current state is returned after a CAS conflict.

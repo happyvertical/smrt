@@ -5,10 +5,10 @@ description: "Durable inference design runs composed with background jobs"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-14T17:28:34Z"
+  at: "2026-11-14T17:29:37Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:93de5e0e7f94e7d1708200bf6bb856b2d0593a7fe94f983412a9d8edacf19b58"
+source_revision: "sha256:54730fc23dce72abd18c794c54d3da6dc89ad1749563119598f6a8b2e51da093"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/design-runs/package.json"
