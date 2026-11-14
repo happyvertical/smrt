@@ -438,6 +438,18 @@ list:
 | Two tables that would reference each other | DuckDB stops (the rebuild's kind, "overlap and cannot be combined") | DuckDB can create neither table first, and has no `ADD CONSTRAINT`. |
 | A new table that references a table the migration alters or rebuilds | DuckDB stops (the rebuild's kind, "new table") | The new table is created first, and DuckDB then refuses to alter or drop the table it references. Adding a plain column still works. |
 | Any rebuild | JSON adapter stops | It is DuckDB-backed but has no rebuild. |
+| Calculated column (#4915) added or changed on an existing table (`column.add`, `column.generated-replace`) | DuckDB refuses before planning (`VALIDATION_GENERATED_DIALECT`) | Its driver cannot add a generated column to an existing table. |
+| Calculated column made ordinary (`column.generated-to-ordinary`) | SQLite and DuckDB stop (loses data) | PostgreSQL `DROP EXPRESSION` keeps the stored values; a VIRTUAL column stores none, so its values would become the default or NULL. |
+| `NOT NULL` dropped from a calculated column | SQLite stops (`column.rebuild-unavailable`) | The rebuild does not rewrite a generated column definition. |
+
+Calculated columns otherwise: a changed expression is applied (recalculated,
+not additive, so never by a table-limited run on a build table); making an
+ordinary column calculated stops on every engine
+(`column.generated-from-ordinary`, it would discard stored values); a rebuild
+for another column copies only ordinary columns and keeps the calculated one
+calculated. PostgreSQL compares expression renderings with EXPLAIN on the live
+table and sends no probe for an expression that reads a column the same run
+adds. Tests: `migrations/__tests__/calculated-column-kinds.test.ts`.
 
 How each engine gets there:
 

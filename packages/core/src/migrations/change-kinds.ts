@@ -155,6 +155,54 @@ export const SCHEMA_CHANGE_KINDS = {
       'A caller that runs the rebuild without MigrationTracker would drop the target with foreign keys enabled, and that can delete referencing rows. The differ never produces it (it plans for the tracker); a direct caller of planSqliteTableRebuilds does.',
     ),
   },
+  // Calculated columns (#4915). Adding one to an existing table is
+  // `column.add`; DuckDB refuses that before planning (VALIDATION_GENERATED_DIALECT).
+  'column.generated-replace': {
+    type: 'alter_column',
+    engines: {
+      postgres: applyPolicy(
+        'A changed expression drops and re-adds the calculated column and its indexes; every value is recalculated from columns that stay intact.',
+      ),
+      sqlite: applyPolicy(
+        'A changed expression drops and re-adds the VIRTUAL column and its indexes; nothing was stored in it.',
+      ),
+      duckdb: unresolvedPolicy(
+        'DuckDB cannot add or change a calculated column on an existing table; the differ refuses before planning (VALIDATION_GENERATED_DIALECT).',
+      ),
+    },
+  },
+  'column.generated-from-ordinary': {
+    type: 'alter_column',
+    engines: stop(
+      'loses-data',
+      'Making an existing column calculated discards the values callers stored in it. Copy them to another field first, or declare the calculated field under a new name.',
+    ),
+  },
+  'column.generated-to-ordinary': {
+    type: 'alter_column',
+    engines: {
+      postgres: applyPolicy(
+        'DROP EXPRESSION keeps every stored value and index; the column stops updating itself.',
+      ),
+      sqlite: {
+        decision: 'stop',
+        reason: 'loses-data',
+        why: 'A VIRTUAL column stores nothing: making it ordinary replaces every calculated value with the default or NULL.',
+      },
+      duckdb: {
+        decision: 'stop',
+        reason: 'loses-data',
+        why: 'A VIRTUAL column stores nothing: making it ordinary replaces every calculated value with the default or NULL.',
+      },
+    },
+  },
+  'column.generated-to-ordinary-not-null': {
+    type: 'alter_column',
+    engines: stop(
+      'invents-data',
+      'A required ordinary column replacing a VIRTUAL one needs a value for every existing row and none is declared.',
+    ),
+  },
   'check.add': {
     type: 'alter_column',
     additive: true,

@@ -336,10 +336,13 @@ describe('schema change policy coverage (#4925)', () => {
     expect(hints.filter((hint) => !(hint in SCHEMA_CHANGE_KINDS))).toEqual([]);
   });
 
-  it('differs by engine only for the shared-table CHECK kinds (#4937)', () => {
+  it('differs by engine only for the shared-table CHECK and calculated-column kinds (#4937)', () => {
     // Every other kind applies, reports or stops the same way on all three
     // engines. The CHECK is PostgreSQL only: the rule stays in smrt's
-    // save-time check on SQLite and DuckDB (#4932).
+    // save-time check on SQLite and DuckDB (#4932). Calculated columns
+    // (#4915): DuckDB cannot add or change one on an existing table, and only
+    // PostgreSQL keeps the values when one is made ordinary (VIRTUAL columns
+    // store none). Each is in the engine table in agents/schema-paths.md.
     const differing = Object.entries(SCHEMA_CHANGE_KINDS)
       .filter(
         ([, entry]) =>
@@ -348,7 +351,13 @@ describe('schema change policy coverage (#4925)', () => {
       )
       .map(([kind]) => kind)
       .sort();
-    expect(differing).toEqual(['check.add', 'check.drop', 'check.violated']);
+    expect(differing).toEqual([
+      'check.add',
+      'check.drop',
+      'check.violated',
+      'column.generated-replace',
+      'column.generated-to-ordinary',
+    ]);
   });
 
   it('validates every engine policy and rejects a synthetic non-data stop', () => {

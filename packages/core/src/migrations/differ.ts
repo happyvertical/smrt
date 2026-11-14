@@ -102,6 +102,22 @@ import {
 import type { DatabaseInterface, SqlTableSchemaInfo } from './types.js';
 
 const logger = createLogger({ level: 'info' });
+/** Physical columns a calculated-column expression reads (`col` nodes). */
+function expressionColumns(
+  node: unknown,
+  found = new Set<string>(),
+): Set<string> {
+  if (Array.isArray(node)) {
+    for (const item of node) expressionColumns(item, found);
+  } else if (node && typeof node === 'object') {
+    const record = node as Record<string, unknown>;
+    if (typeof record.col === 'string') found.add(record.col);
+    for (const [key, value] of Object.entries(record))
+      if (key !== 'col') expressionColumns(value, found);
+  }
+  return found;
+}
+
 const NO_GENERATED_COLUMNS = new Map<string, string>();
 
 /**
@@ -2509,6 +2525,7 @@ export class SchemaComparer {
               name: colName,
               column: colDef,
               sql: `ALTER TABLE ${table} ALTER COLUMN ${column} DROP EXPRESSION`,
+              kindHint: 'column.generated-to-ordinary',
               advisory: {
                 severity: 'warning',
                 message: `Converting generated ${tableName}.${colName} to an ordinary column preserves STORED values but stops automatic expression updates.`,
@@ -2533,6 +2550,7 @@ export class SchemaComparer {
                 name: colName,
                 column: colDef,
                 sql: `-- ${this.engine}: converting generated ${tableName}.${colName} to NOT NULL requires an explicit data migration or non-NULL default`,
+                kindHint: 'column.generated-to-ordinary-not-null',
                 mismatch: {
                   expected: 'ordinary NOT NULL column',
                   actual: generated.get(colName)!,
@@ -2572,6 +2590,7 @@ export class SchemaComparer {
               column: colDef,
               sql: statements[0],
               sqlStatements: statements,
+              kindHint: 'column.generated-to-ordinary',
               advisory: {
                 severity: 'warning',
                 message: `Converting VIRTUAL ${tableName}.${colName} to an ordinary column replaces its calculated results with the declared default or NULL.`,
@@ -2587,8 +2606,16 @@ export class SchemaComparer {
         }
         if (colDef.generated !== undefined) {
           const actual = generated.get(colName);
+          // PostgreSQL compares renderings by EXPLAIN against the live table.
+          // An expression naming a column this run adds cannot match the live
+          // one, and the probe would fail (42703) and abort a caller's
+          // transaction, so no probe is sent for it (#4932 probe rule).
+          const readsMissingColumn = [
+            ...expressionColumns(colDef.generated),
+          ].some((name) => !dbColumnNames.has(name));
           if (
             actual === undefined ||
+            readsMissingColumn ||
             !(await generatedExpressionsMatch(
               this.db,
               tableName,
@@ -2638,6 +2665,10 @@ export class SchemaComparer {
               column: colDef,
               sql: statements[0],
               sqlStatements: statements,
+              kindHint:
+                actual === undefined
+                  ? 'column.generated-from-ordinary'
+                  : 'column.generated-replace',
               ...(actual === undefined
                 ? {
                     advisory: {
