@@ -250,7 +250,8 @@ export async function previewDraft(): Promise<{
       record.summary,
     );
     preview.reportChanges.push(...changes);
-    if (changes.length) version.summary = changes.map((c) => c.text).join(' ');
+    if (changes.length)
+      version.summary = `${record.summary} ${changes.map((c) => c.text).join(' ')}`;
   }
   return { draft: (await draftInfo()) as DraftInfo, preview };
 }
@@ -440,7 +441,8 @@ export async function historyFor(target: Target) {
       record.definition.reports ?? {},
       record.summary,
     );
-    if (changes.length) version.summary = changes.map((c) => c.text).join(' ');
+    if (changes.length)
+      version.summary = `${record.summary} ${changes.map((c) => c.text).join(' ')}`;
   }
   if (target === 'draft') {
     const base = host.draft?.baseVersion;

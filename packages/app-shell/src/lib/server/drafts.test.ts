@@ -1,8 +1,10 @@
 // Draft then publish, the shell's half: tables and stores, the lifecycle
 // service, restart recovery with a draft open, and the publish / discard
 // approvals. In-process SQLite, real workers, no network.
+
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EMPTY_APP, type VersionRecord } from '../../engine/index.ts';
 import { App } from '../objects/App.ts';
@@ -542,5 +544,56 @@ describe('an unpublishable draft', () => {
     expect(live.frozen).toBe(false);
     expect(await getDraftSlot()).toBeNull();
     expect((await draftRow(half.id as string))?.status).toBe('discarded');
+  });
+});
+
+describe('structural changes that rewrite reports', () => {
+  it('preserves the rename and report changes in preview and both histories', async () => {
+    await ensureNoDraft();
+    const live = await getHost();
+    await live.execute(
+      {
+        type: 'defineReport',
+        name: 'chores',
+        definition: {
+          label: 'Chore totals',
+          spec: parseRuntimeReportSpec({
+            version: 1,
+            title: 'Chores',
+            source: 'Chore',
+            dimensions: [{ field: 'title', as: 'title' }],
+            measures: [{ fn: 'count', as: 'count' }],
+          }),
+        },
+      },
+      { author: h.owner.id },
+    );
+    await startDraft('Rename with report', h.owner.id);
+    const draft = await hostFor('draft');
+    await draft.execute(
+      { type: 'renameField', model: 'Chore', from: 'title', to: 'task' },
+      { author: h.owner.id },
+    );
+    const actual = (await draft.draftChain()).versions.at(-1)?.summary;
+    expect(actual).toBe('rename Chore.title -> task');
+    const { preview } = await previewDraft();
+    expect(preview.versions.at(-1)?.summary).toContain(actual);
+    expect(preview.versions.at(-1)?.summary).toContain(
+      'Changed report Chore totals.',
+    );
+    expect(preview.reportChanges).toContainEqual({
+      kind: 'changed',
+      text: 'Changed report Chore totals.',
+    });
+    expect((await historyFor('draft')).at(-1)?.summary).toContain(actual);
+    expect((await historyFor('draft')).at(-1)?.summary).toContain(
+      'Changed report Chore totals.',
+    );
+    const pending = await requestPublish(preview.digest, h.owner.id);
+    expect((await decide(pending.approvalId, true)).status).toBe('approved');
+    const summary = (await historyFor('live')).at(-1)?.summary;
+    expect(summary).toContain('[draft: Rename with report]');
+    expect(summary).toContain(actual);
+    expect(summary).toContain('Changed report Chore totals.');
   });
 });
