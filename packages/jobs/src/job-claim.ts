@@ -42,7 +42,7 @@ export async function assertJobClaim(
 /**
  * Authorize release of an application lease after its original promise settles.
  * Accepts the same running or terminal attempt, including cancellation after
- * Stop. Rejects pending/recovered/reclaimed jobs. Does not change job status or
+ * Stop. Rejects pending jobs, cleared ownership and replacement claims. Does not change job status or
  * expire the runner's process lease: return from the handler to park its job.
  *
  * @param transaction - Transaction that also clears the application's lease.
@@ -96,8 +96,8 @@ async function assertClaim(
   if (result.rows.length !== 1) throw new JobClaimLostError();
 }
 
-/** A dispatch remains identifiable after recovery clears its worker ownership. */
-export type JobDispatch = Omit<JobClaim, 'workerId'>;
+/** Exact failed identity; fenced recovery retains the original worker key. */
+export type JobDispatch = JobClaim;
 
 /**
  * Lock a failed dispatch for atomic recovery/admission in a caller transaction.
@@ -111,6 +111,7 @@ export async function assertFailedJobDispatch(
   dispatch: Readonly<JobDispatch>,
 ): Promise<void> {
   if (
+    !dispatch.workerId ||
     !dispatch.startedAt ||
     !Number.isFinite(Date.parse(dispatch.startedAt)) ||
     !Number.isSafeInteger(dispatch.attempt) ||
@@ -123,9 +124,10 @@ export async function assertFailedJobDispatch(
     dispatch.objectId === null ? 'object_id IS NULL' : 'object_id = ?';
   const result = await transaction.query(
     `UPDATE _smrt_jobs SET updated_at = updated_at
-       WHERE id = ? AND status = 'failed' AND attempts = ? AND started_at = ?
+       WHERE id = ? AND status = 'failed' AND worker_id = ? AND attempts = ? AND started_at = ?
          AND object_type = ? AND method = ? AND ${tenant} AND ${target} RETURNING id`,
     dispatch.jobId,
+    dispatch.workerId,
     dispatch.attempt,
     dispatch.startedAt,
     dispatch.objectType,

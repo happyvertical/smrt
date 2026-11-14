@@ -1665,7 +1665,7 @@ export class TaskRunner extends EventEmitter {
           completedAt: recoveredAt,
           expectedStatuses: ['running'],
           expectedWorkerId: job.workerId ?? null,
-          clearWorker: true,
+          clearWorker: !this.config.claimFencing,
           lastError,
           failureKind: 'stale-recovery',
         });

@@ -383,6 +383,44 @@ describe('transaction-bound job claim proof', () => {
     ).rejects.toBeInstanceOf(JobClaimLostError);
   });
 
+  it('rejects a later failed dispatch by a different worker even when start and attempt coincide', async () => {
+    const jobs = await SmrtJobCollection.create({ db });
+    const first = await jobs.get({ id: claim.jobId });
+    if (!first) throw new Error('Missing fixture job');
+    await first.cancel();
+    await first.retry(); // matches legacy retry clearing the stored timestamp
+    const [later] = await jobs.claimReady({
+      workerId: 'different-incarnation',
+      claimFencing: true,
+      now: new Date(claim.startedAt),
+    });
+    expect(later.startedAt?.toISOString()).toBe(claim.startedAt);
+    expect(later.attempts).toBe(claim.attempt);
+    later.status = 'failed';
+    await later.save();
+    await expect(
+      db.transaction?.((tx) => assertFailedJobDispatch(tx, claim)),
+    ).rejects.toBeInstanceOf(JobClaimLostError);
+    await db.transaction?.((tx) =>
+      assertFailedJobDispatch(tx, {
+        ...claim,
+        workerId: 'different-incarnation',
+      }),
+    );
+    await db.query(
+      'UPDATE _smrt_jobs SET worker_id = NULL WHERE id = ?',
+      claim.jobId,
+    );
+    await expect(
+      db.transaction?.((tx) =>
+        assertFailedJobDispatch(tx, {
+          ...claim,
+          workerId: 'different-incarnation',
+        }),
+      ),
+    ).rejects.toBeInstanceOf(JobClaimLostError);
+  });
+
   it('proves abandonment only for the exact terminal claim with no live process or fresh worker lease', async () => {
     await expect(
       db.transaction?.((tx) => assertAbandonedJobClaim(tx, claim)),

@@ -496,7 +496,7 @@ worker key differs, and an opted-in original incarnation's clock still advances.
 
 Use `assertFailedJobDispatch(tx, dispatch)` to lock an exact failed dispatch
 before checkpoint recovery and re-admission. It checks tenant, target, attempt
-and the retained start generation and rejects a concurrent retry/reclaim. Use
+and the original worker/start generation and rejects a concurrent retry/reclaim. Use
 the same caller transaction for the domain CAS and job admission.
 
 `SmrtJobEventCollection.getTerminalOutcome(jobId, { tenantId, attempts?,
@@ -518,3 +518,13 @@ Merely exposing `dumpDataDir` does not change engine selection. Existing hosts
 that do not call this API retain their previous behavior. The isolated fixture
 regression is enabled with `SMRT_TEST_PGLITE_MODULE`; it is not a full PGlite
 backend certification of the jobs suite.
+
+
+With `claimFencing: true`, stale recovery retains the original terminal job's
+worker key instead of clearing it. `JobDispatch` includes that key so the
+failed-dispatch assertion cannot match another worker at the same timestamp.
+This does not retain/renew its process lease or make a failed job executable.
+Default recovery still clears worker ownership. An old/unfenced recovery that
+cleared the key cannot provide the new exact proof and fails closed. Settled
+original handlers may release only their own unchanged application lease;
+running-claim assertions always reject a terminal job.
