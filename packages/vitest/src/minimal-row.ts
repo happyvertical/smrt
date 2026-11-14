@@ -94,11 +94,13 @@ function fieldOptions(field: RegisteredField) {
 /**
  * A calculated field (`generated`, #4915): the database computes it and a
  * caller's value is refused, so a minimal row never writes it and readback
- * does not expect its default.
+ * does not expect its default. Only an expression counts: `_meta.generated:
+ * true` is the older marker for a field the framework added (the tenant
+ * column of `tenantScoped`), which the caller does supply.
  */
 function isGenerated(field: RegisteredField): boolean {
   const generated = (fieldOptions(field) as { generated?: unknown }).generated;
-  return generated !== undefined && generated !== null;
+  return typeof generated === 'object' && generated !== null;
 }
 
 function required(

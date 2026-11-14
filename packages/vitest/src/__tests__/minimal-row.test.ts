@@ -310,6 +310,17 @@ describe('minimal rows', () => {
     await expect(assertMinimalRow(model)).resolves.toBeUndefined();
   });
 
+  it('still writes a field carrying the framework-added marker generated: true', async () => {
+    const model = fixture('Marked', {
+      code: {
+        type: 'text',
+        required: true,
+        _meta: { generated: true, source: 'tenantScoped_decorator' },
+      } as Fields[string],
+    });
+    expect(await buildMinimalRow(model)).toHaveProperty('code');
+  });
+
   it('uses constructor defaults, including clock-based dates, and saves append-only rows once', async () => {
     class AppendOnly extends SmrtObject {
       occurredAt = new Date();
