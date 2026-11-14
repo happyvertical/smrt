@@ -56,7 +56,11 @@ export class McpCallAudit extends SmrtObject {
   @field({ type: 'text', nullable: true })
   identityClientId: string | null = null;
 
-  @field({ type: 'text', required: true, default: '' })
+  /**
+   * The tool the call named. Required for identity: the record exists to say
+   * which tool ran, and `listAudits` looks rows up by it.
+   */
+  @field({ type: 'text', required: true, requiredFor: 'identity', default: '' })
   tool = '';
 
   @field({ type: 'text', required: true, default: 'allowed' })
