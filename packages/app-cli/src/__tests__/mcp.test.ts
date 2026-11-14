@@ -1,3 +1,4 @@
+import { createMcpHandler, Server } from '@modelcontextprotocol/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runMcpCommand } from '../commands/mcp.js';
 import { createAppCli } from '../index.js';
@@ -39,7 +40,7 @@ describe('mcp CLI command', () => {
             { status: 503, headers: { 'content-type': 'application/json' } },
           ),
       },
-      ['tools'],
+      ['tools', '--legacy-rest'],
     );
 
     const output = JSON.parse(String((stdout.write as any).mock.calls[0][0]));
@@ -74,7 +75,7 @@ describe('mcp CLI command', () => {
     await createAppCli({
       name: 'mcp-exit-test',
       defaultServerUrl: 'https://app.test',
-    }).run(['mcp', 'tools']);
+    }).run(['mcp', 'tools', '--legacy-rest']);
 
     expect(process.exitCode).toBe(1);
   });
@@ -104,7 +105,14 @@ describe('mcp remote client flags', () => {
         fetch: fetchMock as unknown as typeof fetch,
         env: { MY_TOKEN: SECRET },
       },
-      ['tools', '--url', 'https://app.test/', '--token-env', 'MY_TOKEN'],
+      [
+        'tools',
+        '--legacy-rest',
+        '--url',
+        'https://app.test/',
+        '--token-env',
+        'MY_TOKEN',
+      ],
     );
     expect(succeeded).toBe(true);
     const [url, init] = fetchMock.mock.calls[0] as unknown as [
@@ -137,6 +145,7 @@ describe('mcp remote client flags', () => {
         },
         [
           'call',
+          '--legacy-rest',
           'send',
           '{"id":"1"}',
           '--url',
@@ -200,7 +209,14 @@ describe('mcp remote client flags', () => {
           )) as unknown as typeof fetch,
         env: { MY_TOKEN: SECRET },
       },
-      ['tools', '--url', 'https://app.test', '--token-env', 'MY_TOKEN'],
+      [
+        'tools',
+        '--legacy-rest',
+        '--url',
+        'https://app.test',
+        '--token-env',
+        'MY_TOKEN',
+      ],
     );
     expect(succeeded).toBe(false);
     expect(JSON.stringify((stdout.write as any).mock.calls)).not.toContain(
@@ -215,7 +231,14 @@ describe('mcp remote client flags', () => {
     const fetchMock = vi.fn(async () => ok({}));
     await runMcpCommand(
       { context, stdout: sink(), stderr: sink(), fetch: fetchMock as any },
-      ['tools', '--mcp-path', '/mcp', '--url', 'https://app.test'],
+      [
+        'tools',
+        '--legacy-rest',
+        '--mcp-path',
+        '/mcp',
+        '--url',
+        'https://app.test',
+      ],
     );
     expect((fetchMock.mock.calls[0] as unknown[])[0]).toBe(
       'https://app.test/mcp/tools',
@@ -233,7 +256,7 @@ describe('mcp remote client flags', () => {
           fetch: fetchMock as any,
           env: { MY_TOKEN: SECRET },
         },
-        ['tools', '--token-env', 'MY_TOKEN'],
+        ['tools', '--legacy-rest', '--token-env', 'MY_TOKEN'],
       ).catch((e) => e as Error);
       expect(String(err)).not.toContain(SECRET);
       expect(err).toBeInstanceOf(Error);
@@ -254,9 +277,99 @@ describe('mcp remote client flags', () => {
         fetch: fetchMock as any,
         env: { MY_TOKEN: SECRET },
       },
-      ['tools', '--url', 'http://localhost:5173', '--token-env', 'MY_TOKEN'],
+      [
+        'tools',
+        '--legacy-rest',
+        '--url',
+        'http://localhost:5173',
+        '--token-env',
+        'MY_TOKEN',
+      ],
     );
     expect(succeeded).toBe(true);
     expect(fetchMock).toHaveBeenCalledOnce();
+  });
+});
+
+describe('mcp modern transport (default)', () => {
+  const SECRET = 'sk-modern-secret-token-456';
+  const context = {
+    envPrefix: 'MCPMODERN',
+    defaultServerUrl: 'https://d.test',
+  };
+  const sink = () => ({ write: vi.fn() }) as unknown as NodeJS.WriteStream;
+  const calls: { url: string; auth: string | null; args?: unknown }[] = [];
+  const handler = createMcpHandler(() => {
+    const server = new Server(
+      { name: 'up', version: '1' },
+      { capabilities: { tools: {} } },
+    );
+    server.setRequestHandler('tools/list', async () => ({
+      tools: [{ name: 'send', inputSchema: { type: 'object' } }],
+    }));
+    server.setRequestHandler('tools/call', async (request) => {
+      calls.push({ url: '', auth: null, args: request.params.arguments });
+      return { content: [{ type: 'text', text: `echo ${SECRET}` }] };
+    });
+    return server;
+  });
+  const fetchImpl = (async (input: any, init: any) => {
+    const request = new Request(input, init);
+    calls.push({
+      url: request.url,
+      auth: request.headers.get('authorization'),
+    });
+    return handler.fetch(request);
+  }) as unknown as typeof fetch;
+
+  it('talks to the exact --mcp-path endpoint, never /tools or /call', async () => {
+    calls.length = 0;
+    const stdout = sink();
+    const ok = await runMcpCommand(
+      { context, stdout, stderr: sink(), fetch: fetchImpl, env: { T: SECRET } },
+      [
+        'tools',
+        '--url',
+        'https://app.test',
+        '--mcp-path',
+        '/mcp',
+        '--token-env',
+        'T',
+      ],
+    );
+    expect(ok).toBe(true);
+    expect(JSON.parse(String((stdout.write as any).mock.calls[0][0]))).toEqual({
+      tools: [{ name: 'send', inputSchema: { type: 'object' } }],
+    });
+    const urls = calls.filter((c) => c.url).map((c) => c.url);
+    expect(urls.length).toBeGreaterThan(0);
+    expect(new Set(urls)).toEqual(new Set(['https://app.test/mcp']));
+    expect(
+      calls.filter((c) => c.url).every((c) => c.auth === `Bearer ${SECRET}`),
+    ).toBe(true);
+  });
+
+  it('injects confirm and scrubs a tool-echoed token', async () => {
+    calls.length = 0;
+    const stdout = sink();
+    const stderr = sink();
+    const ok = await runMcpCommand(
+      { context, stdout, stderr, fetch: fetchImpl, env: { T: SECRET } },
+      [
+        'call',
+        'send',
+        '{"id":"1"}',
+        '--confirm',
+        '--url',
+        'https://app.test',
+        '--token-env',
+        'T',
+      ],
+    );
+    expect(ok).toBe(true);
+    expect(calls.find((c) => c.args)?.args).toEqual({ id: '1', confirm: true });
+    const out = JSON.stringify((stdout.write as any).mock.calls);
+    expect(out).not.toContain(SECRET);
+    expect(out).toContain('[REDACTED]');
   });
 });

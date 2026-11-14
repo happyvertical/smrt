@@ -1,6 +1,7 @@
 /**
  * `<name> mcp tools` / `<name> mcp call <tool> '<json>'` — thin HTTP client
- * for a deployed app's `<mcpPath>/tools` and `<mcpPath>/call`. The stdio
+ * for a deployed app's modern MCP endpoint (`<mcpPath>`, Streamable HTTP) or,
+ * with `--legacy-rest`, its `<mcpPath>/tools` and `<mcpPath>/call`. The stdio
  * bridge lives in `bin/smrt-mcp-bridge` and `bridge.ts`; these are the
  * equivalent one-shot HTTP commands for ad-hoc inspection and owner tooling.
  *
@@ -9,6 +10,9 @@
  *  - `--token-env <NAME>`  read the bearer token from this env var; the token
  *                          is never printed and is scrubbed from all output
  *  - `--mcp-path <path>`   same-server MCP route (default `/api/mcp`)
+ *  - `--legacy-rest`      use the deprecated `<mcpPath>/tools` and
+ *                          `<mcpPath>/call` REST routes instead of the modern
+ *                          MCP endpoint at exactly `<mcpPath>`
  * `mcp call` only:
  *  - `--confirm`           inject `confirm: true` into the call arguments for
  *                          outbound/destructive tools; never added implicitly
@@ -16,8 +20,20 @@
  * @packageDocumentation
  */
 
+import {
+  Client,
+  StreamableHTTPClientTransport,
+} from '@modelcontextprotocol/client';
 import type { CliConfigContext } from '../config.js';
-import { requestJsonResult, resolveMcpPath } from '../config.js';
+import {
+  assertSecureServerUrl,
+  getServerUrl,
+  getStoredToken,
+  loadCliConfig,
+  redactTransportValue,
+  requestJsonResult,
+  resolveMcpPath,
+} from '../config.js';
 
 export interface McpCommandOptions {
   context: CliConfigContext;
@@ -32,7 +48,7 @@ export interface McpCommandOptions {
 
 const USAGE =
   'Usage: mcp tools [flags] | mcp call <tool> [<json>] [--confirm] [flags]\n' +
-  'Flags: --url <server> --token-env <ENV_NAME> --mcp-path <path>';
+  'Flags: --url <server> --token-env <ENV_NAME> --mcp-path <path> --legacy-rest';
 
 interface ParsedMcpArgs {
   positionals: string[];
@@ -40,15 +56,24 @@ interface ParsedMcpArgs {
   tokenEnv?: string;
   mcpPath?: string;
   confirm: boolean;
+  legacyRest: boolean;
 }
 
 function parseMcpArgs(args: string[]): ParsedMcpArgs {
-  const parsed: ParsedMcpArgs = { positionals: [], confirm: false };
+  const parsed: ParsedMcpArgs = {
+    positionals: [],
+    confirm: false,
+    legacyRest: false,
+  };
   const valueFlags = new Set(['--url', '--token-env', '--mcp-path']);
   for (let i = 0; i < args.length; i++) {
     const raw = args[i];
     if (raw === '--confirm') {
       parsed.confirm = true;
+      continue;
+    }
+    if (raw === '--legacy-rest') {
+      parsed.legacyRest = true;
       continue;
     }
     if (raw.startsWith('--')) {
@@ -96,24 +121,11 @@ export async function runMcpCommand(
     /\/+$/u,
     '',
   );
-  const requestOptions = {
-    fetch: options.fetch,
-    ...(parsed.url ? { serverUrl: parsed.url } : {}),
-    ...(token ? { token } : {}),
-  };
-
-  let result: Awaited<ReturnType<typeof requestJsonResult>>;
-  if (sub === 'tools') {
-    result = await requestJsonResult(
-      options.context,
-      `${base}/tools`,
-      { method: 'GET' },
-      requestOptions,
-    );
-  } else {
-    const name = rest[0];
+  let callArguments: unknown;
+  let name: string | undefined;
+  if (sub === 'call') {
+    name = rest[0];
     if (!name) throw new Error('Usage: mcp call <tool> [<json>]');
-    let callArguments: unknown;
     try {
       callArguments = JSON.parse(rest[1] ?? '{}');
     } catch (error) {
@@ -132,6 +144,55 @@ export async function runMcpCommand(
         );
       callArguments = { ...(callArguments as object), confirm: true };
     }
+  }
+
+  const scrub = (text: string) =>
+    token ? text.split(token).join('[REDACTED]') : text;
+
+  if (!parsed.legacyRest) {
+    try {
+      const result = await runModern(options, base, parsed.url, token, () =>
+        sub === 'tools'
+          ? { kind: 'tools' as const }
+          : {
+              kind: 'call' as const,
+              name: name as string,
+              args: callArguments as Record<string, unknown>,
+            },
+      );
+      stdout.write(
+        scrub(
+          `${JSON.stringify(redactTransportValue(result.value), null, 2)}\n`,
+        ),
+      );
+      if (result.isError) {
+        stderr.write('MCP tool call returned an error result.\n');
+        return false;
+      }
+      return true;
+    } catch (error) {
+      // Setup errors (bad URL, insecure token transport) propagate like the
+      // legacy path; only transport failures become a scrubbed failure.
+      if (!(error instanceof McpTransportFailure)) throw error;
+      stderr.write(scrub(`${safeMessage(error)}\n`));
+      return false;
+    }
+  }
+
+  const requestOptions = {
+    fetch: options.fetch,
+    ...(parsed.url ? { serverUrl: parsed.url } : {}),
+    ...(token ? { token } : {}),
+  };
+  let result: Awaited<ReturnType<typeof requestJsonResult>>;
+  if (sub === 'tools') {
+    result = await requestJsonResult(
+      options.context,
+      `${base}/tools`,
+      { method: 'GET' },
+      requestOptions,
+    );
+  } else {
     result = await requestJsonResult(
       options.context,
       `${base}/call`,
@@ -143,10 +204,89 @@ export async function runMcpCommand(
     );
   }
 
-  const scrub = (text: string) =>
-    token ? text.split(token).join('[REDACTED]') : text;
   stdout.write(scrub(`${JSON.stringify(result, null, 2)}\n`));
   if (!result.ok)
     stderr.write(scrub(`${result.error.message ?? result.error.code}\n`));
   return result.ok;
+}
+
+class McpTransportFailure extends Error {}
+
+type ModernOperation =
+  | { kind: 'tools' }
+  | { kind: 'call'; name: string; args: Record<string, unknown> };
+
+function safeMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return String(redactTransportValue(message));
+}
+
+/** One-shot modern MCP client against the exact `<serverUrl><mcpPath>` target. */
+async function runModern(
+  options: McpCommandOptions,
+  path: string,
+  serverUrlOverride: string | undefined,
+  token: string | undefined,
+  operation: () => ModernOperation,
+): Promise<{ value: unknown; isError: boolean }> {
+  const config = await loadCliConfig(options.context);
+  const serverUrl = (
+    serverUrlOverride ?? (await getServerUrl(options.context, config))
+  ).replace(/\/+$/u, '');
+  if (options.context.requireSecureServerUrl || token)
+    assertSecureServerUrl(serverUrl);
+  const bearer =
+    token ?? (await getStoredToken(options.context, config, serverUrl));
+  const target = new URL(`${serverUrl}${path}`);
+  const client = new Client(
+    {
+      name: `${options.context.envPrefix.toLowerCase()}-mcp-cli`,
+      version: '1',
+    },
+    { versionNegotiation: { mode: { pin: '2026-07-28' } } },
+  );
+  const transport = new StreamableHTTPClientTransport(target, {
+    fetch: async (input, init) => {
+      const requested = new URL(
+        input instanceof Request ? input.url : String(input),
+      );
+      if (requested.href !== target.href)
+        throw new Error('MCP target changed.');
+      const headers = new Headers(init?.headers);
+      headers.delete('authorization');
+      if (bearer) headers.set('authorization', `Bearer ${bearer}`);
+      return (options.fetch ?? fetch)(input, {
+        ...init,
+        headers,
+        redirect: 'error',
+      });
+    },
+  });
+  try {
+    await client.connect(transport);
+    const op = operation();
+    if (op.kind === 'tools') {
+      const tools: unknown[] = [];
+      const cursors = new Set<string>();
+      let cursor: string | undefined;
+      do {
+        const page = await client.listTools(cursor ? { cursor } : undefined);
+        tools.push(...page.tools);
+        cursor = page.nextCursor;
+        if (cursor && (cursors.has(cursor) || cursors.size >= 100))
+          throw new Error('Invalid tool catalog pagination.');
+        if (cursor) cursors.add(cursor);
+      } while (cursor);
+      return { value: { tools }, isError: false };
+    }
+    const called = await client.callTool({
+      name: op.name,
+      arguments: op.args,
+    });
+    return { value: called, isError: called.isError === true };
+  } catch (error) {
+    throw new Error(`MCP request failed: ${safeMessage(error)}`);
+  } finally {
+    await client.close().catch(() => undefined);
+  }
 }
