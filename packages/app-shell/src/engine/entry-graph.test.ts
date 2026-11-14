@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
@@ -81,14 +81,28 @@ function inspectGraph(
             `${relative(src, file)} -> ${relative(src, resolved)}`,
           );
         else queue.push(resolved);
-      } else if (specifier.startsWith('.'))
+      } else if (specifier.startsWith('.') || workspacePackage(specifier))
         forbidden.push(`${relative(src, file)}: unresolved ${specifier}`);
     }
   }
   return { seen, forbidden };
 }
 
-const packages = resolve(src, '../../..');
+const packages = resolve(src, '../..');
+const workspaceNames = new Set(
+  readdirSync(packages).flatMap((name) => {
+    const manifest = resolve(packages, name, 'package.json');
+    return existsSync(manifest)
+      ? [JSON.parse(readFileSync(manifest, 'utf8')).name]
+      : [];
+  }),
+);
+function workspacePackage(specifier: string): boolean {
+  const name = specifier.startsWith('@')
+    ? specifier.split('/').slice(0, 2).join('/')
+    : specifier.split('/')[0];
+  return workspaceNames.has(name);
+}
 function resolveWorkspaceImport(
   file: string,
   specifier: string,
@@ -107,15 +121,16 @@ function resolveWorkspaceImport(
   if (!resolved) return undefined;
   // Follow workspace sources rather than terminating at package-name imports or
   // declaration stubs. External dependencies remain outside this repo guard.
+  const canonical = realpathSync(resolved);
   if (
-    !resolved.startsWith(`${packages}/`) ||
-    resolved.includes('/node_modules/')
+    !canonical.startsWith(`${packages}/`) ||
+    canonical.includes('/node_modules/')
   )
     return undefined;
-  const source = resolved
+  const source = canonical
     .replace('/dist/', '/src/')
     .replace(/\.d\.ts$|\.js$/, '.ts');
-  return [source, resolved].find(existsSync);
+  return [source, canonical].find(existsSync);
 }
 
 it('keeps both engine entry graphs independent of shell UI and SvelteKit', () => {
@@ -134,7 +149,8 @@ it('keeps both engine entry graphs independent of shell UI and SvelteKit', () =>
     )
       entries.push(resolve(entry.parentPath, entry.name));
   const { seen, forbidden } = inspectGraph(entries);
-  expect(seen.size).toBeGreaterThan(10);
+  expect(seen).toContain(resolve(packages, 'core/src/index.ts'));
+  expect(seen).toContain(resolve(packages, 'core/src/runtime-model.ts'));
   expect(forbidden).toEqual([]);
 });
 
@@ -156,4 +172,31 @@ it.each([
   expect(
     inspectGraph(['/transitive.ts'], read, resolver).forbidden,
   ).toHaveLength(1);
+});
+
+it('fails closed when a workspace import cannot resolve', () => {
+  const { forbidden } = inspectGraph(
+    ['/entry.ts'],
+    () => "import '@happyvertical/smrt-core/missing-entry';",
+    () => undefined,
+  );
+  expect(forbidden).toEqual([
+    expect.stringContaining(
+      'unresolved @happyvertical/smrt-core/missing-entry',
+    ),
+  ]);
+});
+
+it('detects forbidden imports introduced inside the actual core source graph', () => {
+  const core = resolve(packages, 'core/src/runtime-model.ts');
+  const { seen, forbidden } = inspectGraph(
+    [resolve(src, 'engine/index.ts')],
+    (file) =>
+      readFileSync(file, 'utf8') +
+      (file === core ? "\nimport '@sveltejs/kit';" : ''),
+  );
+  expect(seen).toContain(core);
+  expect(forbidden).toContainEqual(
+    expect.stringContaining('core/src/runtime-model.ts -> @sveltejs/kit'),
+  );
 });
