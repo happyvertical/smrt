@@ -87,7 +87,10 @@ describe('publish review', () => {
       'Customer.age: text to integer',
       'Archived values: 7',
       'Archived tables: 1',
-      'Counts can change until you publish',
+      'Data commands replay against current live records.',
+      'If reviewed counts change, review a fresh preview before publishing.',
+      'Direct record edits made in the draft are discarded;',
+      'records loaded by a draft command are replayed.',
       'All method code (2)',
     ])
       expect(text).toContain(expected);
@@ -166,6 +169,12 @@ it('groups definition changes into counted sections before ordered changes and m
   await render();
   const group = (name: string) =>
     container.querySelector<HTMLElement>(`section[aria-label="${name}"]`);
+  expect(group('Data')?.textContent).toContain(
+    'Replayed against current live records.',
+  );
+  expect(
+    group('Data')?.querySelector('[data-smrt-component="Badge"]')?.textContent,
+  ).toBe('0');
   expect(group('Added')?.textContent).toContain('Add model Order');
   expect(group('Added')?.textContent).toContain('Add field Customer.email');
   expect(
@@ -202,7 +211,7 @@ it('groups definition changes into counted sections before ordered changes and m
   ).toBe(true);
   expect(
     container.querySelectorAll('[data-smrt-component="Card"]').length,
-  ).toBe(4);
+  ).toBe(5);
 });
 
 it('keeps empty change groups visible with zero counts', async () => {
@@ -225,7 +234,7 @@ it('keeps empty change groups visible with zero counts', async () => {
     }),
   );
   await render();
-  for (const name of ['Added', 'Removed', 'Changed', 'Archived']) {
+  for (const name of ['Data', 'Added', 'Removed', 'Changed', 'Archived']) {
     const group = container.querySelector(`section[aria-label="${name}"]`);
     expect(
       group?.querySelector('[data-smrt-component="Badge"]')?.textContent,
@@ -245,4 +254,43 @@ it('does not request a preview when mounted without a ready draft', async () => 
   await tick();
   expect(fetch).not.toHaveBeenCalled();
   expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
+it('shows reviewed current-live counts for each replayed data command', async () => {
+  const withData = structuredClone(preview);
+  withData.versions[0].dataSteps = [
+    {
+      op: 'loadRecords',
+      model: 'Order',
+      mode: 'upsert',
+      counts: { insert: 2, update: 3, unchanged: 4, rejected: 0 },
+    },
+    {
+      op: 'extractModel',
+      model: 'Order',
+      counts: { rows: 9, distinct: 5, folded: 1, create: 3, matched: 2 },
+    },
+    {
+      op: 'mergeRecords',
+      model: 'Customer',
+      counts: { removed: 2, references: { Order: 7 } },
+    },
+  ];
+  vi.mocked(fetch).mockResolvedValue(
+    json({ draft: draftInfo, preview: withData }),
+  );
+  await render();
+  const data = container.querySelector('section[aria-label="Data"]');
+  expect(
+    data?.querySelector('[data-smrt-component="Badge"]')?.textContent,
+  ).toBe('3');
+  expect(data?.textContent).toContain(
+    'Load Order (upsert): 2 inserted, 3 updated, 4 unchanged, 0 rejected.',
+  );
+  expect(data?.textContent).toContain(
+    'Extract Order: 9 rows, 5 distinct values, 1 folded, 3 created, 2 matched.',
+  );
+  expect(data?.textContent).toContain(
+    'Merge Customer: 2 removed; references repointed (Order: 7).',
+  );
 });
