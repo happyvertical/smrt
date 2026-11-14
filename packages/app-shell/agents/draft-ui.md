@@ -161,7 +161,7 @@ browser layout, so these checks do not claim a browser visual pass.
 
 | Fix | Invariant / positive case | Negative or failure case | Evidence / executor |
 |---|---|---|---|
-| F1 Undo decisions | Read-only preflight reuses conflict guards; operation-kind wording names affected data | Known conflicts disable approval; apply still checks freshness | Real SQLite preview + mounted approval cards; owning worker tests |
+| F1 Undo decisions | Read-only preflight reuses conflict guards; operation-kind wording names affected data | Known conflicts refuse before pending storage; legacy cards remain deniable; apply still checks freshness | Real SQLite preview + mounted approval cards; owning worker tests |
 | F2 Refusal wording | Classified engine refusals retain plain singular/plural wording | Actual startup failures retain diagnostics | Engine/server refusal regressions; owning worker tests |
 | F3 Human summaries | History, Approval, publish list share label-based formatter | Machine paths, storage keys and record IDs do not become headings | Real command/version fixtures + mounted History; owning worker tests |
 | F4 Merge scope | Removed record names are bounded with full title; referring models use labels | Markup remains literal; record IDs stay hidden | Real engine merge preview + mounted approval card; owning worker tests |
@@ -183,3 +183,10 @@ labels for the referring models counted by that card. Fresh and reused approvals
 publish counts, and undo merge summaries retain friendly labels without copying
 unrelated model metadata. The DOM merge fixture now uses the real stored builder
 approval rather than a manually supplied reference-label map.
+
+Known-impossible undo requests now return a typed refusal before requesting an
+approval, consistently with other refused builder commands. HTTP returns 409 and
+the assistant tool returns the same sentence-case reason without a pending
+marker. Existing blocked pending cards retain a Deny action through the normal
+decision endpoint. A later edit after a valid preview still fails at apply; the
+engine preflight and migration guards remain in place.

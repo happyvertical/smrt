@@ -254,7 +254,7 @@ export async function assertCanUndoRows(
   if (blockers.size) {
     const labels = [...blockers.values()].slice(0, 10);
     throw new AppError(
-      `cannot undo: ${blockers.size} ${blockers.size === 1 ? 'record needs' : 'records need'} attention. ${labels.join('; ')}${blockers.size > labels.length ? `; ${blockers.size - labels.length} more records` : ''}`,
+      `Cannot undo: ${blockers.size} ${blockers.size === 1 ? 'record needs' : 'records need'} attention. ${labels.join('; ')}${blockers.size > labels.length ? `; ${blockers.size - labels.length} more records` : ''}`,
     );
   }
 }
@@ -302,7 +302,7 @@ export async function undoExtract(
   }
   if (count)
     throw new AppError(
-      `cannot undo: ${count} ${count === 1 ? 'record needs' : 'records need'} attention. ${blockers.join('; ')}${count > blockers.length ? `; ${count - blockers.length} more records` : ''}`,
+      `Cannot undo: ${count} ${count === 1 ? 'record needs' : 'records need'} attention. ${blockers.join('; ')}${count > blockers.length ? `; ${count - blockers.length} more records` : ''}`,
     );
   await undoRows(def, db, version, { previewOnly });
 }

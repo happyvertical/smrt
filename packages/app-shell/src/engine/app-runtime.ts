@@ -607,7 +607,7 @@ export class AppRuntime {
     );
     if (conflict.rows.length)
       throw new AppError(
-        `cannot undo clearing ${step.table}.${step.column}: writable values changed since clearing; restoring the calculation would discard those edits`,
+        `Cannot undo clearing ${step.table}.${step.column}: writable values changed since clearing; restoring the calculation would discard those edits`,
       );
   }
 

@@ -75,9 +75,10 @@ it('renders real Node engine previews in approval cards for all data and calcula
         result: card.result ?? null,
         createdAt: new Date().toISOString(),
       };
+      const ondecide = vi.fn();
       const component = mount(ApprovalCard, {
         target: container,
-        props: { approval, ondecide: () => {} },
+        props: { approval, ondecide },
       });
       try {
         rendered.push(
@@ -107,13 +108,23 @@ it('renders real Node engine previews in approval cards for all data and calcula
             ),
           ).toBe(true);
         }
-        if (card.name === 'undoRefused')
+        if (card.name === 'undoRefused') {
           expect(
             [...container.querySelectorAll('button')].filter(
               (button) =>
                 /Approve/.test(button.textContent ?? '') && !button.disabled,
             ),
           ).toHaveLength(0);
+          const deny = [...container.querySelectorAll('button')].find(
+            (button) => button.textContent?.trim() === 'Deny',
+          );
+          expect(deny?.disabled).toBe(false);
+          deny?.click();
+          expect(ondecide).toHaveBeenCalledWith(false);
+          expect(container.textContent).toContain(
+            'Cannot undo: 1 record needs attention. Orders “QA changed order”',
+          );
+        }
         if (
           [
             'removeField',

@@ -168,3 +168,114 @@ it('the real undo and decision routes preserve records and version after a later
       JSON.stringify(persisted),
     );
 });
+
+it('refuses a known undo conflict before storage through HTTP and the assistant, and can deny legacy cards', async () => {
+  const { runCommand } = await import('./builder.ts');
+  const { POST: undo } = await import('../../routes/api/shell/undo/+server.ts');
+  const { POST: decide } = await import(
+    '../../routes/api/shell/approvals/[id]/+server.ts'
+  );
+  const { pendingApprovalCount, requestApproval, getApprovalView } =
+    await import('./approvals.ts');
+  const host = await getHost();
+  await runCommand(
+    {
+      type: 'defineModel',
+      name: 'Order',
+      label: 'Orders',
+      fields: { name: { type: 'text' }, amount: { type: 'integer' } },
+    },
+    h.owner.id,
+    'live',
+  );
+  const row = await host.create('Order', {
+    name: 'QA changed order',
+    amount: 1,
+  });
+  const load = await runCommand(
+    {
+      type: 'loadRecords',
+      model: 'Order',
+      mode: 'upsert',
+      key: ['name'],
+      rows: [{ name: 'QA changed order', amount: 2 }],
+    },
+    h.owner.id,
+    'live',
+  );
+  if (!('approvalId' in load)) throw new Error('Expected load approval');
+  await decideApproval(load.approvalId, true, h.owner.id);
+  await host.update('Order', String(row.id), { amount: 3 });
+  const count = await pendingApprovalCount();
+  const version = host.version;
+  const reason =
+    'Cannot undo: 1 record needs attention. Orders “QA changed order”: changed since the command; undo would lose those edits';
+  const event = (path: string, body?: unknown, id?: string) => {
+    const url = new URL(path, 'http://localhost:5173');
+    return {
+      url,
+      params: { id },
+      locals: {
+        user: { id: h.owner.id },
+        tenantId: h.owner.tenantId,
+        permissions: [],
+      },
+      request: new Request(url, {
+        method: 'POST',
+        headers: { origin: url.origin, 'content-type': 'application/json' },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      }),
+    } as never;
+  };
+  const response = await undo(event('/api/shell/undo'));
+  expect(response.status).toBe(409);
+  expect(await response.json()).toEqual({ error: reason, code: 'refused' });
+  const tool = await callTool(h.owner, 'app_undo', {});
+  expect(tool.isError).toBe(true);
+  expect(JSON.stringify(tool.content)).toContain(reason);
+  expect(tool).not.toHaveProperty('pending');
+  expect(JSON.stringify(tool)).not.toMatch(
+    /pending_approval|approvalId|did not start|stack/,
+  );
+  expect(await pendingApprovalCount()).toBe(count);
+  expect(host.version).toBe(version);
+  expect((await host.get('Order', String(row.id)))?.amount).toBe(3);
+  // Simulate a pre-upgrade pending row using the real engine conflict preview.
+  const plan = await host.plan({ type: 'undo' });
+  const legacy = await requestApproval(
+    { kind: 'command', command: { type: 'undo', version } },
+    plan,
+    h.owner.id,
+  );
+  const stored = await getApprovalView(legacy.approvalId);
+  if (process.env.SMRT_ROUTE_BLOCKED_ARTIFACT)
+    writeFileSync(
+      process.env.SMRT_ROUTE_BLOCKED_ARTIFACT,
+      JSON.stringify(stored),
+    );
+  const denied = await decide(
+    event(
+      `/api/shell/approvals/${legacy.approvalId}`,
+      { approve: false },
+      legacy.approvalId,
+    ),
+  );
+  expect((await denied.json()).status).toBe('denied');
+  expect(await pendingApprovalCount()).toBe(count);
+  expect(host.version).toBe(version);
+  expect((await host.get('Order', String(row.id)))?.amount).toBe(3);
+  // Removing the conflict restores the ordinary decidable undo path.
+  await host.update('Order', String(row.id), { amount: 2 });
+  const allowed = await undo(event('/api/shell/undo'));
+  expect(allowed.status).toBe(202);
+  const pending = await allowed.json();
+  const applied = await decide(
+    event(
+      `/api/shell/approvals/${pending.approvalId}`,
+      { approve: true },
+      pending.approvalId,
+    ),
+  );
+  expect((await applied.json()).status).toBe('approved');
+  expect((await host.get('Order', String(row.id)))?.amount).toBe(1);
+});

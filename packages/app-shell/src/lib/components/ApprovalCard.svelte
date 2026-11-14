@@ -80,6 +80,9 @@ const badge = $derived(
         {' by '}{authorName(approval.decidedBy, owner)}{/if}{/if}
   </p>
 
+  {#if pending && description.refusal && ondecide}
+    <Button variant="secondary" disabled={busy} aria-label={`Deny: ${approvalHeading(approval)}`} onclick={() => ondecide?.(false)}>Deny</Button>
+  {/if}
   {#if failed}<p class="smrt-app-shell__alert smrt-app-shell__alert-error">{failed}</p>{/if}
   {#if approval.status === 'failed' && approval.action?.kind === 'publish-draft'}
     <Button variant="secondary" href="/draft/review">Review again</Button>

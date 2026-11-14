@@ -4,7 +4,7 @@ import type { Command } from '../../engine/index.ts';
 import { ApprovalCollection } from '../objects/Approval.ts';
 import { describeApproval } from '../ui/approvals.ts';
 import { publishDataLines } from '../ui/publish.ts';
-import type { ApprovalView } from '../ui/types.ts';
+import type { ApprovalView, PublishPreview } from '../ui/types.ts';
 import { getApprovalView, listApprovalViews } from './approvals.ts';
 import { runCommand } from './builder.ts';
 import { discardNow, previewDraft, startDraft } from './drafts.ts';
@@ -257,9 +257,9 @@ it('hydrates legacy merge reference labels through list, get and reused approval
         MergeOrder: 'Orders',
       });
       expect(preview.modelLabels).not.toHaveProperty('Hidden');
-      expect(publishDataLines(preview).join(' ')).toContain(
-        '1 reference in Orders',
-      );
+      expect(
+        publishDataLines(preview as unknown as PublishPreview).join(' '),
+      ).toContain('1 reference in Orders');
     } finally {
       await discardNow();
     }

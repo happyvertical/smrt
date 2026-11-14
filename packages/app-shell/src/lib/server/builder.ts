@@ -71,6 +71,12 @@ export async function runCommand(
     return publicChangeResult(await host.execute(command, { author }));
   } catch (e) {
     if (e instanceof ApprovalRequiredError) {
+      // A known conflict is a refusal, not a decision the owner can approve.
+      if (
+        (command.type === 'undo' || command.type === 'undoTo') &&
+        typeof e.plan.preview?.refusal === 'string'
+      )
+        throw new EngineError(e.plan.preview.refusal, 'refused');
       // Only the live host asks (the draft's autoApprove never throws this).
       // An undo is approved for the version it was planned against: if the app
       // moves on first, approving it must not undo something else.

@@ -702,7 +702,7 @@ export async function undoRows(
   }
   if (conflictCount)
     throw new AppError(
-      `cannot undo: ${conflictCount} ${conflictCount === 1 ? 'record needs' : 'records need'} attention. ${conflicts.join('; ')}${conflictCount > conflicts.length ? `; ${conflictCount - conflicts.length} more records` : ''}`,
+      `Cannot undo: ${conflictCount} ${conflictCount === 1 ? 'record needs' : 'records need'} attention. ${conflicts.join('; ')}${conflictCount > conflicts.length ? `; ${conflictCount - conflicts.length} more records` : ''}`,
     );
   if (options.previewOnly) return { skipped: skipped.size };
   const removals = new Map<string, unknown[]>();
