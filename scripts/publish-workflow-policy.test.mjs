@@ -350,3 +350,24 @@ test('the main-ref check only counts when it is on the job-level if', () => {
   }
   assert.ok(requiresMain("${{ github.ref == 'refs/heads/main' && !inputs.dry-run }}"));
 });
+
+test('the wrapper crate version follows the release: synced, archived and committed (smrt#4965)', () => {
+  const cargo = [
+    'packages/smrt-desktop/wrapper/Cargo.toml',
+    'packages/smrt-desktop/wrapper/Cargo.lock',
+  ];
+  const sync = workflow.indexOf('node scripts/sync-desktop-wrapper-version.mjs');
+  assert.ok(sync > workflow.indexOf('pnpm run changeset:version'));
+  assert.ok(sync < workflow.indexOf('git diff --binary > release-version.patch'));
+  const archive = workflow.slice(
+    workflow.indexOf('name: Create versioned workspace archive'),
+    workflow.indexOf('name: Upload release version patch'),
+  );
+  for (const file of cargo) assert.ok(archive.includes(file), `archive lists ${file}`);
+  const commits = workflow.split('mapfile -t release_files').slice(1);
+  assert.equal(commits.length, 2);
+  for (const part of commits) {
+    const head = part.slice(0, part.indexOf('git commit'));
+    for (const file of cargo) assert.ok(head.includes(file), `release commit stages ${file}`);
+  }
+});
