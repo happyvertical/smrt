@@ -149,3 +149,25 @@ it('redacts compiler and timeout failures for both reads and CSV', async () => {
     timeout.mockRestore();
   }
 });
+
+it('names truncated CSV downloads as bounded samples without changing the CSV body', async () => {
+  const host = await hostFor('live');
+  const result = await host.runReport('sales');
+  const run = vi.spyOn(host, 'runReport');
+  try {
+    run.mockResolvedValueOnce({ ...result, truncated: false });
+    const full = await csv(event(h.owner));
+    expect(full.headers.get('content-disposition')).toBe(
+      'attachment; filename="sales.csv"',
+    );
+    const body = await full.text();
+    run.mockResolvedValueOnce({ ...result, truncated: true });
+    const sample = await csv(event(h.owner));
+    expect(sample.headers.get('content-disposition')).toBe(
+      'attachment; filename="sales-bounded-sample.csv"',
+    );
+    expect(await sample.text()).toBe(body);
+  } finally {
+    run.mockRestore();
+  }
+});

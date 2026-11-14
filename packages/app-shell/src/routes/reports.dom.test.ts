@@ -59,8 +59,20 @@ it.each([
     );
   if (state === 'empty')
     expect(container.textContent).toContain('No matching records');
-  if (state === 'truncated')
+  if (state === 'truncated') {
     expect(container.textContent?.toLowerCase()).toContain('bounded sample');
+    expect(
+      container.querySelector('a[href$="csv?target=draft"]')?.textContent,
+    ).toBe('Download bounded sample CSV');
+    expect(
+      container
+        .querySelector('a[href$="csv?target=draft"]')
+        ?.getAttribute('aria-describedby'),
+    ).toBe('report-csv-sample');
+    expect(
+      container.querySelector('#report-csv-sample')?.textContent,
+    ).toContain('same capped sample');
+  }
   if (state === 'error')
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(
       d.problem,
@@ -93,4 +105,25 @@ it('lists reports and sends structural changes to the explicit draft', async () 
       }),
     ),
   );
+});
+
+it('names rename and remove actions by each report title', async () => {
+  const d = data();
+  d.description.reports = {
+    sales: report,
+    other: { ...report, label: 'Outstanding invoices' },
+  };
+  component = mount(ReportsPage, {
+    target: container,
+    props: { data: d } as never,
+  });
+  await tick();
+  for (const title of ['Sales by customer', 'Outstanding invoices']) {
+    expect(
+      container.querySelector(`button[aria-label="Rename ${title}"]`),
+    ).toBeTruthy();
+    expect(
+      container.querySelector(`button[aria-label="Remove ${title}"]`),
+    ).toBeTruthy();
+  }
 });

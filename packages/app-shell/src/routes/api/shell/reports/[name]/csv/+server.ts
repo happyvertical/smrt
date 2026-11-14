@@ -17,7 +17,7 @@ export const GET: RequestHandler = guarded(async (event) => {
       headers: {
         'content-type': 'text/csv; charset=utf-8',
         'cache-control': 'no-store',
-        'content-disposition': `attachment; filename="${name}.csv"`,
+        'content-disposition': `attachment; filename="${name}${result.truncated ? '-bounded-sample' : ''}.csv"`,
       },
     });
   } catch (error) {
