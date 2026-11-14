@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -300,6 +301,54 @@ describe('keychain-wrapped vault key store', () => {
       expect(fake.calls.set).toBe(0);
       expect(fake.items.size).toBe(0);
       expect(() => readdirSync(sealed)).toThrow();
+    }
+  });
+
+  it('maps a failing stale-lock reclaim to the fixed error and writes no key', async () => {
+    const locks = join(root, 'locks');
+    mkdirSync(locks, { mode: 0o700 });
+    writeFileSync(join(locks, 'lolaus.lock'), '{"pid":2147483646}\n', {
+      mode: 0o600,
+    });
+    chmodSync(locks, 0o500);
+    const fake = fakeKeychain();
+    try {
+      const error = await store(fake.keychain)
+        .set('item', new Uint8Array([1]))
+        .then(
+          () => null,
+          (e: Error) => e,
+        );
+      // A read-only directory may not stop a privileged user from reclaiming.
+      expect(error).not.toBeNull();
+      if (error !== null) {
+        expect(error.message).toBe(
+          'The vault key creation lock is unavailable',
+        );
+        expect(fake.calls.set).toBe(0);
+      }
+    } finally {
+      chmodSync(locks, 0o700);
+    }
+  });
+
+  it('keeps the result when releasing the lock fails', async () => {
+    const locks = join(root, 'locks');
+    const fake = fakeKeychain();
+    const hooked: OsKeychain = {
+      ...fake.keychain,
+      set: async (service, account, secret) => {
+        await fake.keychain.set(service, account, secret);
+        // Make the release (an unlink in the lock directory) fail.
+        chmodSync(locks, 0o500);
+      },
+    };
+    const keys = store(hooked);
+    try {
+      await keys.set('item', new Uint8Array([4]));
+      expect(await keys.get('item')).toEqual(new Uint8Array([4]));
+    } finally {
+      chmodSync(locks, 0o700);
     }
   });
 

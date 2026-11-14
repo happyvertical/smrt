@@ -607,7 +607,11 @@ async function withProductLock<T>(
       }
       const owner = observed === null ? null : lockOwnerPid(observed);
       if (observed !== null && owner !== null && !processExists(owner)) {
-        reclaimStaleRecord(path, observed, isStaleOperationLock);
+        try {
+          reclaimStaleRecord(path, observed, isStaleOperationLock);
+        } catch {
+          throw failure(LOCK_UNAVAILABLE);
+        }
         continue;
       }
       if (Date.now() >= deadline) {
@@ -619,7 +623,10 @@ async function withProductLock<T>(
   try {
     return await callback();
   } finally {
-    await rm(path, { force: true });
+    // Best effort: a failed release must neither replace the callback's result
+    // or error nor leak a path. A leftover lock is reclaimed once its owner
+    // process is gone.
+    await rm(path, { force: true }).catch(() => undefined);
   }
 }
 
