@@ -51,7 +51,10 @@ Runtime definitions with generated fields can also be pending; they use manifest
 Children cannot turn any inherited ordinary field into
 a generated field, or explicitly redeclare an inherited generated field in
 source/runtime definitions. Unchanged inherited generated metadata in a merged
-manifest is inheritance, not a new declaration.
+manifest is inheritance, not a new declaration. Under the shared inheritance
+rule (#4942) a decorated bare restatement inherits the expression, and a
+`generated: null` clear is refused on every path
+(`CONFIG_CALCULATED_FIELD_CLEARED`, `schema/field-inheritance.ts`).
 
 Metadata is cloned and frozen so changing a caller's definition cannot change a
 registered expression. `GeneratedFieldError` carries a validation code;

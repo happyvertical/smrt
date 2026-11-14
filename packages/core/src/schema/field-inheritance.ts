@@ -49,6 +49,9 @@
  * list (a manifest older than the list, or one written by hand) keeps the
  * parent's `required` and is not refused ({@link inferredRequired}).
  *
+ * A calculated field (`generated`, #4915) is inherited like any other option,
+ * but a redeclaration may not clear it ({@link assertCalculatedKept}).
+ *
  * Methods merge by a different rule and are not part of this.
  */
 
@@ -167,6 +170,36 @@ export function assertRequiredNotLoosened(
     `${className}.${fieldName} cannot be made optional. smrt needs it (${reason}). ` +
       'Keep it required, or leave the field out of the subclass.',
     'CONFIG_REQUIRED_FIELD_LOOSENED',
+  );
+}
+
+/** Whether a field is calculated by the database (`generated`, #4915). */
+function isCalculated(field: InheritableField): boolean {
+  const bag = field as { generated?: unknown };
+  const value = bag.generated ?? field._meta?.generated;
+  return value !== undefined && value !== null;
+}
+
+/**
+ * Refuse a redeclaration that turns an inherited calculated field into an
+ * ordinary one (by `generated: null`, or a replacement that drops it). A
+ * calculated column is the database's: an ordinary declaration would make
+ * migrate convert the parent's column (PostgreSQL `DROP EXPRESSION`; SQLite
+ * and DuckDB drop and re-add it). The other direction, an inherited ordinary
+ * field made calculated, is refused by the generated-field validation
+ * (`generated-fields.ts`) on every registration path.
+ */
+export function assertCalculatedKept(
+  className: string,
+  fieldName: string,
+  inherited: InheritableField,
+  resolved: InheritableField,
+): void {
+  if (!isCalculated(inherited) || isCalculated(resolved)) return;
+  throw new ConfigurationError(
+    `${className}.${fieldName} cannot stop being calculated: its parent computes it in the database. ` +
+      'Leave the field out of the subclass, or declare a field with another name.',
+    'CONFIG_CALCULATED_FIELD_CLEARED',
   );
 }
 
@@ -407,6 +440,7 @@ export function resolveInheritedFields<F extends InheritableField>(
       inferredRequired(inherited, incoming),
     );
     assertRequiredNotLoosened(className, name, inherited, resolved);
+    assertCalculatedKept(className, name, inherited, resolved);
     return resolved;
   };
 

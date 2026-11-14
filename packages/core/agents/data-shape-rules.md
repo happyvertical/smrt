@@ -130,6 +130,10 @@ What the subclass inherits:
   `sqlType`, `min`, `max`, `enum`, `default`, `backfill`, `minLength`,
   `maxLength`, `pattern`. Others still are.
 - Methods and every field you do not mention come from the parent unchanged.
+- A calculated field (`generated`, #4915) stays calculated: a restatement
+  inherits the expression, `generated: null` stops with
+  `CONFIG_CALCULATED_FIELD_CLEARED`, and an inherited ordinary field cannot be
+  made calculated (`GeneratedFieldError`).
 
 The app owns its shape: it may tighten or loosen. The one refusal: **an app may
 not loosen a field smrt needs for its own correctness**, which is a required
