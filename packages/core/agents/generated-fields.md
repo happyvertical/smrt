@@ -29,6 +29,13 @@ cross-package references. Tenant columns use the registry's shared ownership
 resolver: an implicit `tenantId` is protected without a tenancy declaration,
 as are explicitly configured or marked tenant fields. Decoration, manifest
 registration/merge and runtime definitions enforce the same boundary.
+Pre-registration candidates use `ObjectRegistry.getOwnershipTenantColumn()`
+against the shared-table base and every ancestor, and `getConflictColumns()`
+for all natural-key columns. Invalid candidates never enter the registry or
+its inheritance caches. Children cannot turn any inherited ordinary field into
+a generated field, or explicitly redeclare an inherited generated field in
+source/runtime definitions. Unchanged inherited generated metadata in a merged
+manifest is inheritance, not a new declaration.
 
 Metadata is cloned and frozen so changing a caller's definition cannot change a
 registered expression. `GeneratedFieldError` carries a validation code;
@@ -59,8 +66,13 @@ columns and datetime literals anywhere in the expression tree, including inside
 boolean comparisons or null checks: a boolean result does not make nested
 TIMESTAMPTZ casts immutable. Portable definitions therefore use date-only
 literals for calendar expressions; datetime inputs are refused with
-`VALIDATION_GENERATED_NON_IMMUTABLE` before DDL. The standalone SQLite renderer
-can still compile temporal expressions for that dialect.
+`VALIDATION_GENERATED_NON_IMMUTABLE` before DDL. This is a known **temporary limit** while
+[happyvertical/sdk#1516](https://github.com/happyvertical/sdk/issues/1516) is
+open: registration refuses expressions using datetime fields or literals on
+**every dialect**, including SQLite-only applications, because registration
+validates portability before a database is selected. Date-only literals remain
+supported. The standalone SQLite renderer can still compile temporal
+expressions for that dialect.
 
 SQLite uses VIRTUAL columns; PostgreSQL uses STORED; DuckDB uses VIRTUAL;
 the JSON adapter is refused. Normal migration and parity paths retain

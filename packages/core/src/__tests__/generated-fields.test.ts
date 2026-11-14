@@ -717,6 +717,200 @@ describe('database-generated fields #4915', () => {
   }
 
   for (const path of ['decoration', 'manifest', 'runtime'] as const) {
+    for (const inherited of ['organizationId', 'ordinaryCode']) {
+      it(`#4972 round3 item1: ${path} refuses generated redeclaration of inherited ${inherited}`, () => {
+        const Root = class InheritedOwnerRoot extends SmrtObject {};
+        field({ type: 'text' })(Root.prototype, 'ownerSource');
+        field({ type: 'text' })(Root.prototype, 'ordinaryCode');
+        smrt({
+          packageName: '@test/inherited-owner',
+          tableStrategy: 'sti',
+          tenantScoped: { field: 'organizationId' },
+        })(Root);
+        const Middle = class InheritedOwnerMiddle extends Root {};
+        smrt({ packageName: '@test/inherited-owner' })(Middle);
+        const parent =
+          ObjectRegistry.getClassByConstructor(Middle)!.qualifiedName!;
+        const def: RuntimeModelDefinition = {
+          name: 'InheritedOwnerLeaf',
+          packageName: '@test/inherited-owner',
+          extends: parent,
+          fields: {
+            [inherited]: { type: 'text', generated: { col: 'ownerSource' } },
+          },
+        };
+        const register = () => {
+          if (path === 'runtime') return registerRuntimeModel(def);
+          if (path === 'manifest') {
+            const entry = runtimeModelEntry({ ...def, fields: {} });
+            entry.fields[inherited] = {
+              type: 'text',
+              generated: { col: 'ownerSource' },
+            };
+            // Reproduce a scanned leaf with no own tenancy declaration/marker.
+            delete entry.decoratorConfig!.tenantScoped;
+            return ObjectRegistry.registerFromManifest(
+              entry.qualifiedName!,
+              entry,
+              def.packageName,
+            );
+          }
+          const Leaf = class InheritedOwnerLeaf extends Middle {};
+          field({ type: 'text', generated: { col: 'ownerSource' } })(
+            Leaf.prototype,
+            inherited,
+          );
+          smrt({ packageName: def.packageName })(Leaf);
+        };
+        expect(register).toThrow(
+          expect.objectContaining({ name: 'GeneratedFieldError' }),
+        );
+        expect(
+          ObjectRegistry.getClass('@test/inherited-owner:InheritedOwnerLeaf'),
+        ).toBeUndefined();
+      });
+    }
+
+    it(`#4972 round3 item3: ${path} refuses every configured natural conflict column`, () => {
+      for (const conflict of ['natural_key', 'naturalKey']) {
+        const def: RuntimeModelDefinition = {
+          name: 'GeneratedNaturalKey',
+          packageName: '@test/generated-conflict',
+          conflictColumns: [conflict],
+          fields: {
+            source: { type: 'text' },
+            naturalKey: { type: 'text', generated: { col: 'source' } },
+          },
+        };
+        const register = () => {
+          if (path === 'runtime') return registerRuntimeModel(def);
+          if (path === 'manifest') {
+            const entry = runtimeModelEntry({
+              ...def,
+              conflictColumns: ['id'],
+            });
+            entry.decoratorConfig!.conflictColumns = [conflict];
+            return ObjectRegistry.registerFromManifest(
+              entry.qualifiedName!,
+              entry,
+              def.packageName,
+            );
+          }
+          const Model = class GeneratedNaturalKey extends SmrtObject {};
+          field({ type: 'text' })(Model.prototype, 'source');
+          field({ type: 'text', generated: { col: 'source' } })(
+            Model.prototype,
+            'naturalKey',
+          );
+          smrt({ packageName: def.packageName, conflictColumns: [conflict] })(
+            Model,
+          );
+        };
+        expect(register).toThrow(
+          expect.objectContaining({ name: 'GeneratedFieldError' }),
+        );
+        expect(
+          ObjectRegistry.getClass(
+            '@test/generated-conflict:GeneratedNaturalKey',
+          ),
+        ).toBeUndefined();
+      }
+    });
+  }
+
+  for (const path of ['decoration', 'runtime'] as const) {
+    it(`#4972 round3 item1: ${path} cannot explicitly redeclare even an inherited generated field`, () => {
+      const parent = registerRuntimeModel(definition());
+      const total = definition().fields!.total;
+      const register = () => {
+        if (path === 'runtime')
+          return registerRuntimeModel({
+            name: 'RedeclaredGeneratedLeaf',
+            packageName: '@test/generated',
+            extends: parent,
+            fields: { total },
+          });
+        const Parent = ObjectRegistry.getClass(parent)!.constructor;
+        const Leaf = class RedeclaredGeneratedLeaf extends Parent {};
+        field({ type: 'integer', generated: total.generated })(
+          Leaf.prototype,
+          'total',
+        );
+        smrt({ packageName: '@test/generated' })(Leaf);
+      };
+      expect(register).toThrow(GeneratedFieldError);
+    });
+  }
+
+  for (const engine of persistenceEngines) {
+    for (const path of ['decoration', 'runtime'] as const) {
+      it(`#4972 round3 item1: ${engine} ${path} three-level rows retain their custom owner`, async () => {
+        const Root = class SavedOwnerRoot extends SmrtObject {};
+        field({ type: 'text' })(Root.prototype, 'ownerSource');
+        field({ type: 'integer' })(Root.prototype, 'qty');
+        smrt({
+          packageName: '@test/saved-owner',
+          tableName: 'saved_owner_rows',
+          tableStrategy: 'sti',
+          tenantScoped: { field: 'organizationId' },
+        })(Root);
+        const Middle = class SavedOwnerMiddle extends Root {};
+        smrt({ packageName: '@test/saved-owner' })(Middle);
+        let name: string;
+        if (path === 'runtime') {
+          name = registerRuntimeModel({
+            name: 'SavedOwnerLeaf',
+            packageName: '@test/saved-owner',
+            extends:
+              ObjectRegistry.getClassByConstructor(Middle)!.qualifiedName!,
+            fields: { total: { type: 'integer', generated: { col: 'qty' } } },
+          });
+        } else {
+          const Leaf = class SavedOwnerLeaf extends Middle {};
+          field({ type: 'integer', generated: { col: 'qty' } })(
+            Leaf.prototype,
+            'total',
+          );
+          smrt({ packageName: '@test/saved-owner' })(Leaf);
+          name = ObjectRegistry.getClassByConstructor(Leaf)!.qualifiedName!;
+        }
+        expect(ObjectRegistry.getOwnershipTenantColumn(name)).toBe(
+          'organization_id',
+        );
+        const db = await getTestDatabase({
+          type: engine === 'sqlite' ? 'sqlite' : 'pglite',
+          classes: [],
+          includeSystemTables: false,
+        });
+        databases.push(db);
+        for (const sql of await planRuntimeModelDDL(
+          name,
+          engine,
+          async () => null,
+        ))
+          await db.query(sql);
+        const collection = await ObjectRegistry.getCollection(name, { db });
+        const owner = '11111111-1111-4111-8111-111111111111';
+        const row = await collection.create({
+          organizationId: owner,
+          ownerSource: 'untrusted',
+          qty: 5,
+        });
+        await collection.update(row.id!, { qty: 7, ownerSource: 'changed' });
+        expect(
+          (
+            await db.query(
+              'SELECT organization_id, total FROM saved_owner_rows',
+            )
+          ).rows,
+        ).toEqual([
+          expect.objectContaining({ organization_id: owner, total: 7 }),
+        ]);
+      });
+    }
+  }
+
+  for (const path of ['decoration', 'manifest', 'runtime'] as const) {
     it(`#4972: refuses implicit tenantId generation at ${path}`, () => {
       const def: RuntimeModelDefinition = {
         name: 'ImplicitGeneratedOwner',

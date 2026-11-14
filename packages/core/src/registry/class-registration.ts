@@ -1,4 +1,5 @@
 import { validateGeneratedFields } from '../generated-fields.js';
+import { ObjectRegistry } from '../registry.js';
 /**
  * Class registration module for the SMRT ObjectRegistry.
  *
@@ -1069,6 +1070,11 @@ function registerUntracked(
     existingKey: string,
     existing: RegisteredClass,
   ): string {
+    ObjectRegistry.validateGeneratedRegistration({
+      ...existing,
+      config: { ...existing.config, ...config },
+    });
+
     const nextPackageName = explicitPackageName || existing.packageName;
     const nextKey = nextPackageName
       ? createQualifiedName(nextPackageName, name)
@@ -2084,6 +2090,10 @@ function registerUntracked(
     // decorator-registered and manifest-loaded classes.
   };
   // #3338: a deprecated alias must never name a second live class.
+  ObjectRegistry.validateGeneratedRegistration(
+    registration,
+    getConstructorFieldDecorators().get(registration.constructor)?.keys(),
+  );
   assertQualifiedNameAliasesAvailable(registrationKey, registration);
   if (isolatedSubtypeParent) {
     const [parentKey, parent] = isolatedSubtypeParent;
@@ -2853,6 +2863,27 @@ export function registerFromManifest(
     ]),
     normalizeTenantScopedConfig(objectDef.decoratorConfig?.tenantScoped)?.field,
   );
+  ObjectRegistry.validateGeneratedRegistration({
+    name: objectDef.className ?? name,
+    qualifiedName: objectDef.qualifiedName,
+    packageName: generatedPackage,
+    constructor: generatedExisting?.constructor ?? SmrtObject,
+    config: {
+      ...generatedExisting?.config,
+      ...objectDef.decoratorConfig,
+    } as SmartObjectConfig,
+    fields: new Map<string, RegisteredField>([
+      ...(generatedExisting?.fields ?? []),
+      ...Object.entries(objectDef.fields ?? {}).map(
+        ([name, field]): [string, RegisteredField] => [name, { ...field }],
+      ),
+    ]),
+    methods: new Map(),
+    extends: generatedParentEntry?.qualifiedName ?? generatedParentEntry?.name,
+    tenantScopedConfig: normalizeTenantScopedConfig(
+      objectDef.decoratorConfig?.tenantScoped,
+    ),
+  });
   // Same invalidation contract as register() (#3047).
   bumpRegistryGeneration();
   try {
@@ -3228,6 +3259,10 @@ function registerFromManifestUntracked(
     getInheritanceCache().clear();
     return;
   }
+  ObjectRegistry.validateGeneratedRegistration(
+    registration,
+    getConstructorFieldDecorators().get(registration.constructor)?.keys(),
+  );
   assertQualifiedNameAliasesAvailable(registrationKey, registration);
   getClasses().set(registrationKey, registration);
   // A run-time class is looked up by constructor to resolve its own identity

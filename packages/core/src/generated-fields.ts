@@ -54,6 +54,12 @@ const numeric = (type: ResultType) => type === 'integer' || type === 'decimal';
 export function validateGeneratedFields(
   fields: Map<string, FieldDefinition>,
   tenantField?: string,
+  authority: {
+    inheritedFields?: ReadonlyMap<string, FieldDefinition>;
+    declaredFields?: ReadonlySet<string>;
+    ownershipColumns?: readonly string[];
+    conflictColumns?: readonly string[];
+  } = {},
 ): void {
   // Share the registry's ownership decision, including undeclared tenantId.
   const ownershipColumn = resolveOwnershipTenantColumn(
@@ -83,11 +89,26 @@ export function validateGeneratedFields(
     if (
       Object.hasOwn(SMRT_SYSTEM_FIELDS, toSnakeCase(name)) ||
       toSnakeCase(name) === ownershipColumn ||
+      authority.ownershipColumns?.includes(toSnakeCase(name)) ||
+      authority.conflictColumns?.some(
+        (column) => toSnakeCase(column) === toSnakeCase(name),
+      ) ||
       name.startsWith('_') ||
       field._meta?.primaryKey ||
       field._meta?.__tenancy?.isTenantIdField
     )
       fail('framework identity and ownership columns cannot be generated');
+    const inherited = authority.inheritedFields?.get(name);
+    // Manifests/runtime entries may carry unchanged inherited generated
+    // metadata. An inherited ordinary field can never become generated, and
+    // an inherited generated expression cannot be redeclared differently.
+    if (
+      inherited &&
+      (authority.declaredFields?.has(name) ||
+        JSON.stringify(generatedExpression(inherited)) !==
+          JSON.stringify(expression))
+    )
+      fail('inherited fields cannot be redeclared as generated');
     let count = 0;
     const inputs = new Set<FieldDefinition>();
     const walk = (node: unknown, depth = 0): ResultType => {

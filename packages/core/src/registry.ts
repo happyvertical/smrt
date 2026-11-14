@@ -1,4 +1,8 @@
-import { rejectGeneratedInput } from './generated-fields.js';
+import {
+  generatedExpression,
+  rejectGeneratedInput,
+  validateGeneratedFields,
+} from './generated-fields.js';
 import { writeThroughFields } from './write-through.js';
 /**
  * Global object registry for SMRT classes
@@ -137,6 +141,7 @@ import {
   getAllMethods as _getAllMethods,
   getInheritanceChain as _getInheritanceChain,
   mergeFieldConfigs as _mergeFieldConfigs,
+  getEffectiveFieldsSync,
 } from './registry/inheritance-resolver';
 import {
   createFieldFromManifest,
@@ -3753,14 +3758,17 @@ export class ObjectRegistry {
    * // ]
    * ```
    */
-  static getInheritanceChain(className: string): string[] {
+  static getInheritanceChain(
+    className: string,
+    pending?: RegisteredClass,
+  ): string[] {
     // Delegate to the single source of truth in registry/inheritance-resolver.
     // The inline copy that used to live here drifted from the module (it lacked
     // the SmrtHierarchical `parentId` normalization in field merging), so the
     // duplication was removed (#1378). The module shares the same name-resolver
     // and shared-state helpers this class delegates to, so behavior is
     // identical aside from the drift fix.
-    return _getInheritanceChain(className);
+    return _getInheritanceChain(className, pending);
   }
 
   /**
@@ -4063,8 +4071,11 @@ export class ObjectRegistry {
    * ObjectRegistry.getTableStrategy('Event'); // 'sti'
    * ```
    */
-  static getTableStrategy(className: string): 'cti' | 'sti' {
-    const registered = ObjectRegistry.findClass(className);
+  static getTableStrategy(
+    className: string,
+    pending?: RegisteredClass,
+  ): 'cti' | 'sti' {
+    const registered = pending ?? ObjectRegistry.findClass(className);
     if (!registered) {
       return 'cti'; // Default for unregistered classes
     }
@@ -4075,9 +4086,12 @@ export class ObjectRegistry {
     }
 
     // Inherit from ancestors
-    const chain = ObjectRegistry.getInheritanceChain(className);
+    const chain = ObjectRegistry.getInheritanceChain(className, pending);
     for (const ancestorName of chain) {
-      const ancestor = ObjectRegistry.findClass(ancestorName);
+      const ancestor =
+        pending && ancestorName === (pending.qualifiedName ?? pending.name)
+          ? pending
+          : ObjectRegistry.findClass(ancestorName);
       if (ancestor?.config?.tableStrategy) {
         return ancestor.config.tableStrategy;
       }
@@ -4133,18 +4147,23 @@ export class ObjectRegistry {
    * // Returns: ['tenant_id', 'slug', 'context']
    * ```
    */
-  static getConflictColumns(className: string): string[] {
-    ObjectRegistry.assertTenantScopedRegistrationValid(className);
-    const registered = ObjectRegistry.findClass(className);
+  static getConflictColumns(
+    className: string,
+    pending?: RegisteredClass,
+  ): string[] {
+    if (!pending) ObjectRegistry.assertTenantScopedRegistrationValid(className);
+    const registered = pending ?? ObjectRegistry.findClass(className);
     if (!registered) {
       return defaultConflictColumns('cti'); // Default for unregistered classes
     }
 
     // The table's key is the schema owner's key: for an STI hierarchy that
     // is the root, whatever class the caller named.
-    const tableStrategy = ObjectRegistry.getTableStrategy(className);
+    const tableStrategy = ObjectRegistry.getTableStrategy(className, pending);
     const ownerName =
-      tableStrategy === 'sti' ? ObjectRegistry.getSTIBase(className) : null;
+      tableStrategy === 'sti'
+        ? ObjectRegistry.getSTIBase(className, pending)
+        : null;
     const owner =
       ownerName && ownerName !== className
         ? (ObjectRegistry.findClass(ownerName) ?? registered)
@@ -4167,7 +4186,7 @@ export class ObjectRegistry {
           return kind === 'group' || kind === 'bucket';
         })
         .map(([fieldName]) => toSnakeCase(fieldName));
-      const tenantColumn = ObjectRegistry.getTenantColumn(className);
+      const tenantColumn = ObjectRegistry.getTenantColumn(className, pending);
 
       return reportConflictColumns.length > 0
         ? [...(tenantColumn ? [tenantColumn] : []), ...reportConflictColumns]
@@ -4185,7 +4204,47 @@ export class ObjectRegistry {
 
     return defaultConflictColumns(
       tableStrategy,
-      ObjectRegistry.getOwnershipTenantColumn(className),
+      ObjectRegistry.getOwnershipTenantColumn(className, pending),
+    );
+  }
+
+  /**
+   * Validate an unpublished declaration with the SAME ownership/conflict
+   * resolvers used by saves. Pending declarations never enter the registry or
+   * its inheritance caches, so rejection cannot publish invalid metadata.
+   */
+  static validateGeneratedRegistration(
+    pending: RegisteredClass,
+    declaredFields?: Iterable<string>,
+  ): void {
+    if (
+      ![...pending.fields.values()].some(
+        (field) => generatedExpression(field) !== undefined,
+      )
+    )
+      return;
+    const key = pending.qualifiedName ?? pending.name;
+    const parent = pending.extends
+      ? findClassStrict(pending.extends, pending.packageName)
+      : undefined;
+    const inherited = parent ? getEffectiveFieldsSync(parent) : new Map();
+    const owners = new Set<string>();
+    for (const ancestor of ObjectRegistry.getInheritanceChain(key, pending)) {
+      const column = ObjectRegistry.getOwnershipTenantColumn(
+        ancestor,
+        ancestor === key ? pending : undefined,
+      );
+      if (column) owners.add(column);
+    }
+    validateGeneratedFields(
+      new Map([...inherited, ...pending.fields]),
+      pending.tenantScopedConfig?.field,
+      {
+        inheritedFields: inherited,
+        declaredFields: declaredFields ? new Set(declaredFields) : undefined,
+        ownershipColumns: [...owners],
+        conflictColumns: ObjectRegistry.getConflictColumns(key, pending),
+      },
     );
   }
 
@@ -4228,13 +4287,16 @@ export class ObjectRegistry {
    * @param className - Name of the class (simple or qualified)
    * @returns The snake_case ownership column, or `undefined`
    */
-  static getOwnershipTenantColumn(className: string): string | undefined {
-    const declared = ObjectRegistry.getTenantColumn(className);
-    const registered = ObjectRegistry.findClass(className);
+  static getOwnershipTenantColumn(
+    className: string,
+    pending?: RegisteredClass,
+  ): string | undefined {
+    const declared = ObjectRegistry.getTenantColumn(className, pending);
+    const registered = pending ?? ObjectRegistry.findClass(className);
     if (!registered) return declared;
     const ownerName =
-      ObjectRegistry.getTableStrategy(className) === 'sti'
-        ? ObjectRegistry.getSTIBase(className)
+      ObjectRegistry.getTableStrategy(className, pending) === 'sti'
+        ? ObjectRegistry.getSTIBase(className, pending)
         : null;
     const owner =
       ownerName && ownerName !== className
@@ -4365,13 +4427,16 @@ export class ObjectRegistry {
    * @param className - Name of the class (simple or qualified)
    * @returns The snake_case tenant column name, e.g. `tenant_id`
    */
-  static getTenantColumn(className: string): string | undefined {
-    ObjectRegistry.assertTenantScopedRegistrationValid(className);
-    const registered = ObjectRegistry.findClass(className);
+  static getTenantColumn(
+    className: string,
+    pending?: RegisteredClass,
+  ): string | undefined {
+    if (!pending) ObjectRegistry.assertTenantScopedRegistrationValid(className);
+    const registered = pending ?? ObjectRegistry.findClass(className);
     if (!registered) return undefined;
     const ownerName =
-      ObjectRegistry.getTableStrategy(className) === 'sti'
-        ? ObjectRegistry.getSTIBase(className)
+      ObjectRegistry.getTableStrategy(className, pending) === 'sti'
+        ? ObjectRegistry.getSTIBase(className, pending)
         : null;
     const owner =
       ownerName && ownerName !== className
@@ -4549,8 +4614,11 @@ export class ObjectRegistry {
    * // '@happyvertical/smrt-events:Event'
    * ```
    */
-  static getSTIBase(className: string): string | null {
-    const strategy = ObjectRegistry.getTableStrategy(className);
+  static getSTIBase(
+    className: string,
+    pending?: RegisteredClass,
+  ): string | null {
+    const strategy = ObjectRegistry.getTableStrategy(className, pending);
     if (strategy === 'cti') {
       return null; // Not using STI
     }
@@ -4570,11 +4638,14 @@ export class ObjectRegistry {
     // R5-canon: chain entries are qualified names (when the class has a
     // package context), so the returned STI base is also qualified —
     // ambiguity across packages with same-simple-name STI roots is gone.
-    const chain = ObjectRegistry.getInheritanceChain(className);
+    const chain = ObjectRegistry.getInheritanceChain(className, pending);
 
     // Walk the chain (ordered [root, ..., className]) to find oldest STI base
     for (const ancestorName of chain) {
-      const ancestor = ObjectRegistry.findClass(ancestorName);
+      const ancestor =
+        pending && ancestorName === (pending.qualifiedName ?? pending.name)
+          ? pending
+          : ObjectRegistry.findClass(ancestorName);
       if (!ancestor) continue;
 
       // Check if this ancestor EXPLICITLY declares tableStrategy: 'sti'
@@ -4589,7 +4660,7 @@ export class ObjectRegistry {
     // If no explicit STI ancestor found but we detected STI strategy,
     // this class is its own STI base (it must have declared tableStrategy: 'sti').
     // Return its qualified name when available.
-    const self = ObjectRegistry.findClass(className);
+    const self = pending ?? ObjectRegistry.findClass(className);
     return self?.qualifiedName ?? self?.name ?? className;
   }
 

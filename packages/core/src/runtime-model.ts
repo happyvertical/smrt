@@ -22,7 +22,7 @@ import {
  */
 
 import type { DatabaseEngine } from './migrations/types.js';
-import type { SmrtObject } from './object.js';
+import { SmrtObject } from './object.js';
 import {
   ensureTenantScopedField,
   normalizeTenantScopedConfig,
@@ -388,6 +388,22 @@ export function runtimeModelEntry(
     ...(def.ui ? { ui: { ...def.ui } } : {}),
     ...(def.display ? { display: { ...def.display } } : {}),
   };
+  ObjectRegistry.validateGeneratedRegistration(
+    {
+      name: def.name,
+      qualifiedName,
+      packageName: def.packageName,
+      constructor: parent?.constructor ?? SmrtObject,
+      fields: new Map<string, RegisteredField>(
+        Object.entries(fields).map(([name, field]) => [name, { ...field }]),
+      ),
+      methods: new Map(),
+      config: decoratorConfig as SmartObjectConfig,
+      extends: parentKey,
+      tenantScopedConfig: normalizeTenantScopedConfig(tenantScoped),
+    },
+    Object.keys(def.fields ?? {}),
+  );
   const label = (decoratorConfig.display as SmartObjectConfig['display'])
     ?.label;
   const displayLabelProjection = resolveDisplayLabelProjection(label);

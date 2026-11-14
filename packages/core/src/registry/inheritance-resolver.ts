@@ -108,23 +108,26 @@ function findParentClassStrict(
   }
 }
 
-export function getInheritanceChain(className: string): string[] {
+export function getInheritanceChain(
+  className: string,
+  pending?: RegisteredClass,
+): string[] {
   const cache = getInheritanceCache();
 
   // Check cache first
-  const cached = cache.get(className);
+  const cached = pending ? undefined : cache.get(className);
   if (cached) {
     return cached;
   }
 
   // Get registered class
-  const registered = findClass(className);
+  const registered = pending ?? findClass(className);
   if (!registered) {
     return [];
   }
 
   // Check if already computed and stored
-  if (registered.inheritanceChain) {
+  if (!pending && registered.inheritanceChain) {
     cache.set(className, registered.inheritanceChain);
     return registered.inheritanceChain;
   }
@@ -198,7 +201,7 @@ export function getInheritanceChain(className: string): string[] {
   // Caching a broken chain from a circular detection would cause all future
   // lookups to return incorrect inheritance data (e.g., ["VideoShot","VideoShot"]
   // instead of ["Content","VideoShot"]), breaking STI table resolution.
-  if (!circularDetected) {
+  if (!pending && !circularDetected) {
     registered.inheritanceChain = chain;
     cache.set(className, chain);
   }
