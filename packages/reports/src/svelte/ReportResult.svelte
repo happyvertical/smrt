@@ -37,6 +37,17 @@ export interface Props {
   view?: 'chart' | 'table';
   locale?: string;
   currency?: string;
+  /** Host-owned labels/formatting; raw values remain available for links. */
+  formatCell?: (
+    value: unknown,
+    column: Column,
+    row: RuntimeReportResult['rows'][number],
+  ) => string | undefined;
+  /** Optional same-origin record destination, used only in the table. */
+  cellHref?: (
+    column: Column,
+    row: RuntimeReportResult['rows'][number],
+  ) => string | undefined;
 }
 let {
   result,
@@ -45,6 +56,8 @@ let {
   view = $bindable('chart'),
   locale = 'en',
   currency = 'USD',
+  formatCell,
+  cellHref,
 }: Props = $props();
 const { t } = useI18n();
 const valid = $derived(validReportResult(result));
@@ -69,14 +82,20 @@ function bucketLabel(value: unknown, column: Column | undefined) {
   }
   return undefined;
 }
-function cell(value: unknown, column: Column) {
+function cell(
+  value: unknown,
+  column: Column,
+  row: RuntimeReportResult['rows'][number],
+) {
+  const formatted = formatCell?.(value, column, row);
+  if (formatted !== undefined) return formatted;
   return typeof value === 'boolean'
     ? t(M[value ? 'reports.yes' : 'reports.no'])
     : (bucketLabel(value, column) ??
         reportCell(value, column, locale, currency));
 }
 const groupLabel = (row: RuntimeReportResult['rows'][number]) =>
-  xColumn ? cell(row[xColumn.id], xColumn) : (measure?.label ?? '');
+  xColumn ? cell(row[xColumn.id], xColumn, row) : (measure?.label ?? '');
 const figures = $derived(
   variant === 'full' && valid && measure
     ? reportFigures(result, measure, {
@@ -193,7 +212,8 @@ const measureOptions = $derived(
             {#each result.rows as row, i (i)}
               <tr>
                 {#each result.columns as column (column.id)}
-                  <td class:smrt-report-result__num={numeric(column)} data-smrt-part="cell">{cell(row[column.id], column)}</td>
+                  {@const href = cellHref?.(column, row)}
+                  <td class:smrt-report-result__num={numeric(column)} data-smrt-part="cell">{#if href?.startsWith('/') && !href.startsWith('//')}<a {href}>{cell(row[column.id], column, row)}</a>{:else}{cell(row[column.id], column, row)}{/if}</td>
                 {/each}
               </tr>
             {/each}

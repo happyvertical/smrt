@@ -29,6 +29,11 @@ chart and report results both consume it.
   `Chart` with a value axis and keyboard/pointer readout. `compact` (preview
   card): a quiet table toggle. Tables format money and time buckets. Money
   fields use integer minor units and the host's ISO currency (default USD).
+- Hosts can pass `ReportResult.formatCell(value, column, row)` for display labels
+  and formatting in tables and chart group labels, and `cellHref(column, row)`
+  for same-origin record links in tables. Raw result values are preserved.
+  The component-free `./display` entry exports `reportCsv` and result validation.
+  `reportCsv` supplies the row to its formatter too, keeping exports consistent.
 - `saved-reports` widget (`SavedReportsWidget`, recipe `sectionDefault`): the
   Reports section page in any host rendering data widgets; it reads through
   the shared browser client unless the host passes `client`.
