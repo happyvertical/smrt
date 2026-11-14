@@ -11,6 +11,7 @@ export default defineConfig({
   },
   test: {
     globals: true,
+    coverage: { provider: 'v8', include: ['src/**/*.ts'], exclude: ['src/**/*.test.ts', 'src/svelte/**'] },
     environment: 'node',
     include: ['src/**/*.test.ts'],
     // Component tests opt into the DOM with `// @vitest-environment jsdom`;

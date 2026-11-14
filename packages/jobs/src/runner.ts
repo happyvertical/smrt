@@ -19,6 +19,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { createId } from '@happyvertical/utils';
 import { isBackgroundEligibleMethod } from './background-policy.js';
 import { redactErrorForPersistence } from './error-redaction.js';
+import type { JobClaim } from './job-claim.js';
 import {
   JobContextLogger,
   type JobEventInput,
@@ -72,6 +73,7 @@ import {
 // module-private: a JSON task invocation cannot synthesize the runner-owned
 // execution context that security-sensitive task targets receive.
 const runnerExecutionContextIdentities = new WeakSet<object>();
+const runnerJobClaims = new WeakMap<object, Readonly<JobClaim>>();
 const runnerExecutionContexts = new AsyncLocalStorage<JobExecutionContext>();
 
 /** True only for an execution context constructed by this TaskRunner module. */
@@ -90,6 +92,20 @@ export function getActiveJobExecutionContext():
   | JobExecutionContext
   | undefined {
   return runnerExecutionContexts.getStore();
+}
+
+/**
+ * Read the immutable dispatch-time claim from an authentic runner context.
+ * Reading current job rows cannot recover this identity after ownership changes.
+ * @param context - Context supplied to a handler by TaskRunner.
+ * @returns The captured claim; use assertJobClaim for current ownership proof.
+ */
+export function getJobClaim(context: unknown): Readonly<JobClaim> {
+  const claim = isRunnerExecutionContext(context)
+    ? runnerJobClaims.get(context)
+    : undefined;
+  if (!claim) throw new Error('Job claim requires TaskRunner context');
+  return claim;
 }
 
 /**
@@ -1440,6 +1456,18 @@ export class TaskRunner extends EventEmitter {
         : {}),
     };
     runnerExecutionContextIdentities.add(context);
+    runnerJobClaims.set(
+      context,
+      Object.freeze({
+        jobId: job.id ?? '',
+        workerId: this.workerKey,
+        attempt: job.attempts,
+        tenantId: job.tenantId ?? null,
+        objectType: job.objectType,
+        objectId: job.objectId ?? null,
+        method: job.method,
+      }),
+    );
     return context;
   }
 

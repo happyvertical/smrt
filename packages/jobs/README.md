@@ -449,3 +449,21 @@ untouched and emits `schedule:blocked`; require the
 `requiredOccurrenceIntegrity` capability before creating such schedules. See
 [durable required admission](agents/scheduling.md#durable-required-admission-3346)
 for the typed policy, authorized rotation and verification-key retention contract.
+
+## Atomic application checkpoints
+
+Capture a handler's dispatch identity with `getJobClaim(context)`. Inside your
+application checkpoint transaction, call `await assertJobClaim(tx, claim)`
+before writing through that same `tx`. The assertion locks the job row and
+throws `JobClaimLostError` if its worker incarnation, attempt, tenant, target
+or running status changed. Propagate the error so the whole transaction rolls
+back. A fresh read of the job's current worker cannot identify an old handler.
+
+After the original operation promise truly settles, use
+`assertJobClaimForRelease(tx, claim)` in the transaction clearing an application
+lease. It accepts that same running/completed/cancelled/failed attempt, but
+rejects pending jobs, cleared recovery ownership and newer claims. It does not
+clear a job claim or expire a runner's process lease. Park approval/stopped work
+by returning from the handler; TaskRunner completes the job. Resume by admitting
+another job after the prior one settles. Claim assertions prove ownership, not
+application permission: hosts must still authorize the owner and tenant.
