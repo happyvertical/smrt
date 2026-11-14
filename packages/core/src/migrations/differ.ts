@@ -958,7 +958,7 @@ export class SchemaComparer {
         dbSchema,
         manifestSchemas,
       )),
-      ...(await this.compareTableChecks(tableName, manifest)),
+      ...(await this.compareTableChecks(tableName, manifest, dbSchema)),
     ];
     // #2370: SQLite cannot change a column's type in place. Turn the
     // "requires table recreation" placeholders those comparisons emit into an
@@ -1664,6 +1664,7 @@ export class SchemaComparer {
   private async compareTableChecks(
     tableName: string,
     manifest: SchemaDefinition,
+    dbSchema?: SqlTableSchemaInfo,
   ): Promise<SchemaChange[]> {
     if (!this.ddlStrategy.supportsTableChecks()) return [];
     const declared = manifest.checks ?? [];
@@ -1692,18 +1693,30 @@ export class SchemaComparer {
       if (live.includes(check.name)) continue;
       const column = check.columns[0];
       const add = `ALTER TABLE ${quotedTable} ADD CONSTRAINT ${this.quoteIdentifier(check.name)} CHECK (${check.expression})`;
-      let violated = false;
-      try {
-        const result = await this.db.query(
-          `SELECT 1 FROM ${quotedTable} WHERE NOT (${check.expression}) LIMIT 1`,
-        );
-        const rows = Array.isArray(result) ? result : result.rows || [];
-        violated = rows.length > 0;
-      } catch {
-        // A column added in this same batch does not exist yet: no rows can
-        // break the rule.
-        violated = false;
+      // A column this same migration adds is not in the live table, and a
+      // query naming it fails; on PostgreSQL that failure aborts a transaction
+      // the caller owns (25P02), even when it is caught. No probe is sent for
+      // it. The column is added NULL for every existing row unless the
+      // manifest gives it a default, so the rule is judged with the column
+      // supplied as NULL, or as its default, in place of the missing one.
+      const columnMissing = dbSchema !== undefined && !dbSchema.columns[column];
+      const manifestDefault = manifest.columns[column]?.defaultValue;
+      let source = quotedTable;
+      if (columnMissing) {
+        const supplied =
+          manifestDefault === undefined || manifestDefault === null
+            ? 'NULL'
+            : this.ddlStrategy.formatDefaultValue(
+                manifestDefault,
+                manifest.columns[column]?.type ?? 'TEXT',
+              );
+        source = `(SELECT *, ${supplied} AS ${this.quoteIdentifier(column)} FROM ${quotedTable}) AS probe`;
       }
+      const result = await this.db.query(
+        `SELECT 1 FROM ${source} WHERE NOT (${check.expression}) LIMIT 1`,
+      );
+      const rows = Array.isArray(result) ? result : result.rows || [];
+      const violated = rows.length > 0;
       changes.push({
         type: 'alter_column',
         table: tableName,
@@ -5539,6 +5552,33 @@ export class SchemaComparer {
     );
   }
 
+  /**
+   * Open a savepoint around a probe whose failure is an expected outcome. Only
+   * PostgreSQL needs one. Outside a transaction block the statement is
+   * refused and nothing is aborted, so the probe then runs unprotected, as
+   * before. Returns the savepoint name, or undefined when none was opened.
+   */
+  private async openProbeSavepoint(): Promise<string | undefined> {
+    if (this.engine !== 'postgres') return undefined;
+    const name = 'smrt_probe';
+    try {
+      await this.db.query(`SAVEPOINT ${name}`);
+      return name;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async closeProbeSavepoint(
+    name: string | undefined,
+    succeeded: boolean,
+  ): Promise<void> {
+    if (!name) return;
+    await this.db.query(
+      succeeded ? `RELEASE SAVEPOINT ${name}` : `ROLLBACK TO SAVEPOINT ${name}`,
+    );
+  }
+
   private async probeBackfill(
     tableName: string,
     colName: string,
@@ -5550,11 +5590,17 @@ export class SchemaComparer {
     const where = existing
       ? `${quotedCol} IS NULL AND (${backfill}) IS NULL`
       : `(${backfill}) IS NULL`;
+    // The expression is free-form SQL, so whether it names a column that is
+    // not live yet (or none at all) is only known by running it. On
+    // PostgreSQL a failed statement aborts a transaction the caller owns
+    // (25P02), so the probe runs under a savepoint that a failure rolls back.
+    const savepoint = await this.openProbeSavepoint();
     try {
       const result = await this.db.query(
         `SELECT 1 AS present FROM ${this.quoteIdentifier(tableName)} WHERE ${where} LIMIT 1`,
       );
       if ((result.rows?.length ?? 0) > 0) {
+        await this.closeProbeSavepoint(savepoint, true);
         return `its declared backfill (${backfill}) yields NULL for at least one existing row, so NOT NULL cannot be enforced; make the expression non-null for every row (e.g. wrap it in COALESCE)`;
       }
       if (unique) {
@@ -5565,11 +5611,14 @@ export class SchemaComparer {
           `SELECT ${value} AS v FROM ${this.quoteIdentifier(tableName)} GROUP BY ${value} HAVING COUNT(*) > 1 LIMIT 1`,
         );
         if ((duplicates.rows?.length ?? 0) > 0) {
+          await this.closeProbeSavepoint(savepoint, true);
           return `its declared backfill (${backfill}) gives two or more existing rows the same value, but the column is unique; derive a per-row value (e.g. from id)`;
         }
       }
+      await this.closeProbeSavepoint(savepoint, true);
       return undefined;
     } catch (err) {
+      await this.closeProbeSavepoint(savepoint, false);
       logger.debug(
         `[SchemaComparer] Backfill probe failed for ${tableName}.${colName}`,
         { error: err instanceof Error ? err.message : String(err) },
