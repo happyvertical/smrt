@@ -430,4 +430,104 @@ describe('mcp modern transport (default)', () => {
     expect(out).not.toContain(SECRET);
     expect(out).toContain('[REDACTED]');
   });
+
+  const modernArgs = ['tools', '--url', 'https://app.test', '--token-env', 'T'];
+
+  it('scrubs a token echoed in a transport error (never thrown raw)', async () => {
+    const stderr = sink();
+    const ok = await runMcpCommand(
+      {
+        context,
+        stdout: sink(),
+        stderr,
+        env: { T: SECRET },
+        fetch: (async () => {
+          throw new Error(`boom ${SECRET}`);
+        }) as any,
+      },
+      modernArgs,
+    );
+    expect(ok).toBe(false);
+    expect(JSON.stringify((stderr.write as any).mock.calls)).not.toContain(
+      SECRET,
+    );
+  });
+
+  it('refuses redirects on the modern path', async () => {
+    let init: RequestInit | undefined;
+    await runMcpCommand(
+      {
+        context,
+        stdout: sink(),
+        stderr: sink(),
+        env: { T: SECRET },
+        fetch: (async (_u: any, i: RequestInit) => {
+          init = i;
+          throw new Error('stop');
+        }) as any,
+      },
+      modernArgs,
+    );
+    expect(init?.redirect).toBe('error');
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('refuses a token over remote http on the modern path', async () => {
+    const fetchMock = vi.fn();
+    await expect(
+      runMcpCommand({ context, env: { T: SECRET }, fetch: fetchMock as any }, [
+        'tools',
+        '--url',
+        'http://evil.test',
+        '--token-env',
+        'T',
+      ]),
+    ).rejects.toThrow(/Invalid server URL/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('caps oversized modern responses', async () => {
+    const stderr = sink();
+    const ok = await runMcpCommand(
+      {
+        context,
+        stdout: sink(),
+        stderr,
+        env: { T: SECRET },
+        fetch: (async () =>
+          new Response('{}', {
+            headers: { 'content-length': String(50 * 1024 * 1024) },
+          })) as any,
+      },
+      modernArgs,
+    );
+    expect(ok).toBe(false);
+    expect(JSON.stringify((stderr.write as any).mock.calls)).toContain(
+      'too large',
+    );
+  });
+
+  it('applies a timeout signal on the modern path', async () => {
+    const spy = vi
+      .spyOn(AbortSignal, 'timeout')
+      .mockImplementation(() =>
+        AbortSignal.abort(new DOMException('t', 'TimeoutError')),
+      );
+    const stderr = sink();
+    const ok = await runMcpCommand(
+      {
+        context,
+        stdout: sink(),
+        stderr,
+        env: { T: SECRET },
+        fetch: (async (_u: any, i: RequestInit) => {
+          if (i.signal?.aborted) throw i.signal.reason;
+          return new Response('{}');
+        }) as any,
+      },
+      modernArgs,
+    );
+    expect(spy).toHaveBeenCalledWith(30_000);
+    expect(ok).toBe(false);
+  });
 });

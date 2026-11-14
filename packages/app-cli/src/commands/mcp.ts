@@ -218,6 +218,32 @@ export async function runMcpCommand(
   return result.ok;
 }
 
+const MODERN_TIMEOUT_MS = 30_000;
+const MODERN_MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
+
+/** Refuse oversized responses by header or by a streaming byte counter. */
+function capResponse(response: Response, max: number): Response {
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > max)
+    throw new Error('Response too large.');
+  if (!response.body) return response;
+  let seen = 0;
+  const counted = response.body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        seen += chunk.byteLength;
+        if (seen > max) controller.error(new Error('Response too large.'));
+        else controller.enqueue(chunk);
+      },
+    }),
+  );
+  return new Response(counted, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
 class McpTransportFailure extends Error {}
 
 type ModernOperation =
@@ -263,11 +289,18 @@ async function runModern(
       const headers = new Headers(init?.headers);
       headers.delete('authorization');
       if (bearer) headers.set('authorization', `Bearer ${bearer}`);
-      return (options.fetch ?? fetch)(input, {
+      const signal = AbortSignal.any(
+        [init?.signal, AbortSignal.timeout(MODERN_TIMEOUT_MS)].filter(
+          (value): value is AbortSignal => value != null,
+        ),
+      );
+      const response = await (options.fetch ?? fetch)(input, {
         ...init,
         headers,
         redirect: 'error',
+        signal,
       });
+      return capResponse(response, MODERN_MAX_RESPONSE_BYTES);
     },
   });
   try {
@@ -293,7 +326,7 @@ async function runModern(
     });
     return { value: called, isError: called.isError === true };
   } catch (error) {
-    throw new Error(`MCP request failed: ${safeMessage(error)}`);
+    throw new McpTransportFailure(`MCP request failed: ${safeMessage(error)}`);
   } finally {
     await client.close().catch(() => undefined);
   }
