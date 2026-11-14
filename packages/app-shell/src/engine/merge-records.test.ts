@@ -1,0 +1,134 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { afterAll, beforeAll, expect, it } from 'vitest';
+import {
+  AppHost,
+  ApprovalRequiredError,
+  type Command,
+  MemoryVersionStore,
+} from './index.ts';
+
+const dir = mkdtempSync(join(tmpdir(), 'merge-4916-'));
+const store = new MemoryVersionStore();
+let host: AppHost;
+const run = (cmd: Command) =>
+  host.execute(cmd, { author: 't', approved: true });
+let keep = '';
+let other = '';
+const raw = () => {
+  const db = new DatabaseSync(join(dir, 'app.db'));
+  try {
+    return ['u_customers', 'u_notes', 'u_tasks'].map((t) =>
+      db.prepare(`SELECT * FROM ${t} ORDER BY id`).all(),
+    );
+  } finally {
+    db.close();
+  }
+};
+beforeAll(async () => {
+  host = await AppHost.open(dir, { store });
+  await run({
+    type: 'defineModel',
+    name: 'Customer',
+    fields: { name: { type: 'text' }, email: { type: 'text' } },
+  });
+  keep = String(
+    (await host.create('Customer', { name: 'Ada', email: null })).id,
+  );
+  other = String(
+    (await host.create('Customer', { name: 'A', email: 'ada@example.test' }))
+      .id,
+  );
+  for (const name of ['Note', 'Task']) {
+    await run({
+      type: 'defineModel',
+      name,
+      fields: {
+        customer: { type: 'reference', ref: 'Customer' },
+        hiddenCustomer: { type: 'reference', ref: 'Customer' },
+      },
+    });
+    await host.create(name, { customer: other, hiddenCustomer: other });
+    await run({ type: 'hideField', model: name, field: 'hiddenCustomer' });
+  }
+});
+afterAll(async () => {
+  await host.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+const command = (): Command => ({
+  type: 'mergeRecords',
+  model: 'Customer',
+  keep,
+  merge: [other],
+  fields: { name: 'keep', email: other },
+});
+
+it('always gates merges; previews every reference, chooses values and undoes raw rows exactly', async () => {
+  const before = raw();
+  expect((await host.plan(command())).preview).toEqual({
+    removed: 1,
+    references: { Note: 2, Task: 2 },
+  });
+  await expect(host.execute(command(), { author: 't' })).rejects.toBeInstanceOf(
+    ApprovalRequiredError,
+  );
+  await run(command());
+  expect(await host.list('Customer')).toHaveLength(1);
+  expect((await host.get('Customer', keep)).email).toBe('ada@example.test');
+  for (const model of ['Note', 'Task'])
+    expect((await host.list(model))[0].customer).toBe(keep);
+  await host.close();
+  host = await AppHost.open(dir, { store });
+  await run({ type: 'undo' });
+  expect(raw()).toEqual(before);
+});
+
+it('refuses invalid ids and selectors; rolls back partial reference changes', async () => {
+  await expect(
+    host.plan({ ...command(), merge: [keep] } as Command),
+  ).rejects.toThrow(/distinct/);
+  await expect(
+    host.plan({ ...command(), fields: { name: 'foreign' } } as Command),
+  ).rejects.toThrow(/selector/);
+  await expect(
+    host.plan({ ...command(), merge: ['missing'] } as Command),
+  ).rejects.toThrow(/not found/);
+  const before = raw();
+  const version = host.version;
+  const db = new DatabaseSync(join(dir, 'app.db'));
+  db.exec(
+    "CREATE TRIGGER reject_merge BEFORE UPDATE ON u_tasks BEGIN SELECT RAISE(ABORT, 'injected merge failure'); END",
+  );
+  db.close();
+  await expect(run(command())).rejects.toThrow(/not applied/);
+  expect(raw()).toEqual(before);
+  expect(host.version).toBe(version);
+  const db2 = new DatabaseSync(join(dir, 'app.db'));
+  db2.exec('DROP TRIGGER reject_merge');
+  db2.close();
+});
+
+it('publishes a draft merge against current live references and undoes them', async () => {
+  const draft = await host.forkDraft(`${dir}-draft`, {
+    store: new MemoryVersionStore(),
+  });
+  try {
+    await draft.execute(command(), { author: 't' });
+    const late = await host.create('Note', { customer: other });
+    const before = raw();
+    const p = await host.previewPublish(draft);
+    await host.publishDraft(draft, {
+      author: 't',
+      approved: true,
+      expect: p.digest,
+    });
+    expect((await host.get('Note', String(late.id))).customer).toBe(keep);
+    await run({ type: 'undo' });
+    expect(raw()).toEqual(before);
+  } finally {
+    await draft.discard();
+  }
+});

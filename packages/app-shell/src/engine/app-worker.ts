@@ -1,6 +1,8 @@
 // The worker entry: runs one AppRuntime in its own thread. The host's handle
 // on it is in worker-handle.ts. Messages are plain JSON-safe values.
+
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
+import { RuntimeReportError } from '@happyvertical/smrt-reports';
 import type { AppDefinition, Migration } from './definition.ts';
 import type { WorkerCall, WorkerReply } from './worker-protocol.ts';
 import { WORKER_OPS } from './worker-protocol.ts';
@@ -22,18 +24,21 @@ const settleStartupJobs = async () => {
 if (!isMainThread && workerData?.appWorker) {
   const { AppRuntime } = await import('./app-runtime.ts');
   const { AppError } = await import('./errors.ts');
-  const { dataDir, def, version, migration } = workerData as {
-    dataDir: string;
-    def: AppDefinition;
-    version: number;
-    migration?: Migration;
-  };
+  const { dataDir, def, version, migration, readOnly, validateOnly } =
+    workerData as {
+      dataDir: string;
+      def: AppDefinition;
+      version: number;
+      migration?: Migration;
+      readOnly?: boolean;
+      validateOnly?: boolean;
+    };
   const rt = new AppRuntime(dataDir, def, version);
   const port = parentPort as NonNullable<typeof parentPort>;
   let ok = false;
   try {
     const t0 = performance.now();
-    const booted = await rt.boot(migration);
+    const booted = await rt.boot(migration, readOnly, validateOnly);
     ok = true;
     await settleStartupJobs();
     port.postMessage({
@@ -64,6 +69,9 @@ if (!isMainThread && workerData?.appWorker) {
           ok: false,
           error: (e as Error).message,
           user: e instanceof AppError,
+          ...(op === 'runReport' && e instanceof RuntimeReportError
+            ? { reportError: { code: e.code, path: e.path } }
+            : {}),
         };
       }
       port.postMessage(reply);

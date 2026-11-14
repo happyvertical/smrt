@@ -2,17 +2,25 @@
 // smrt registry: built fresh from one definition, thrown away on the next.
 //
 // Migrations here are SQLite-shaped (RENAME/DROP COLUMN, VACUUM INTO,
-// pragma_table_info). Postgres is future work.
+// pragma_table_xinfo). Postgres is future work.
 import { existsSync, mkdirSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import {
   ObjectRegistry,
   planRuntimeModelDDL,
   registerRuntimeModel,
+  withCallerOwnedDatabaseTransaction,
 } from '@happyvertical/smrt-core';
 import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
 import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
+import type { RuntimeReportSpec } from '@happyvertical/smrt-reports';
 import { getDatabase } from '@happyvertical/sql';
+import {
+  applyLoad,
+  type LoadRecordsCommand,
+  prepareLoad,
+  undoRows,
+} from './data-migrations.ts';
 import {
   type AppDefinition,
   builtInFields,
@@ -38,6 +46,19 @@ import {
   visible,
 } from './definition.ts';
 import { AppError } from './errors.ts';
+import {
+  applyExtract,
+  type ExtractModelCommand,
+  prepareExtract,
+  undoExtract,
+} from './extract-model.ts';
+import {
+  applyMerge,
+  type MergeRecordsCommand,
+  prepareMerge,
+  undoMerge,
+} from './merge-records.ts';
+import { compileReport, type ReportOptions, runAppReport } from './reports.ts';
 import {
   type MethodOutput,
   runMethod,
@@ -76,13 +97,26 @@ export class AppRuntime {
    * migration's steps (if any) and then the additive changes, all in one
    * transaction. A failure leaves app.db exactly as it was.
    */
-  async boot(migration?: Migration): Promise<BootResult> {
+  async boot(
+    migration?: Migration,
+    readOnly = false,
+    validateOnly = false,
+  ): Promise<BootResult> {
+    if (validateOnly) {
+      await this.register();
+      for (const report of Object.values(this.def.reports ?? {}))
+        await compileReport(this.def, report.spec);
+      return { statements: [], snapshot: null };
+    }
     mkdirSync(join(this.dataDir, 'snapshots'), { recursive: true });
     this.db = await getDatabase({
       type: 'sqlite',
       url: join(this.dataDir, 'app.db'),
     } as any);
     await this.register();
+    for (const report of Object.values(this.def.reports ?? {}))
+      await compileReport(this.def, report.spec);
+    if (readOnly) return { statements: [], snapshot: null };
     const steps = migration?.steps ?? [];
     if (!steps.length) await this.checkColumns(this.db);
     // With steps the tables change first; planning happens inside the transaction.
@@ -96,19 +130,33 @@ export class AppRuntime {
           ? `migrate-v${migration?.version}-${migration?.direction}`
           : 'schema',
       );
-      await this.db.transaction(async (tx: Handle) => {
-        await tx.query(
-          `CREATE TABLE IF NOT EXISTS _archive (id INTEGER PRIMARY KEY AUTOINCREMENT, version INTEGER NOT NULL, tbl TEXT NOT NULL, col TEXT NOT NULL, record_id TEXT NOT NULL, value TEXT, created_at TEXT NOT NULL)`,
-        );
-        const ordered =
-          migration?.direction === 'down' ? [...steps].reverse() : steps;
-        for (const step of ordered)
-          statements.push(
-            ...(await this.runStep(tx, step, migration as Migration)),
+      await this.db.transaction(async (tx: Handle) =>
+        withCallerOwnedDatabaseTransaction(tx, async () => {
+          await tx.query(
+            `CREATE TABLE IF NOT EXISTS _archive (id INTEGER PRIMARY KEY AUTOINCREMENT, version INTEGER NOT NULL, tbl TEXT NOT NULL, col TEXT NOT NULL, record_id TEXT NOT NULL, value TEXT, created_at TEXT NOT NULL)`,
           );
-        await this.checkColumns(tx);
-        statements.push(...(await this.plan(tx, true)));
-      });
+          if (
+            steps.every(
+              (s) =>
+                s.op === 'loadRecords' ||
+                s.op === 'extractModel' ||
+                s.op === 'mergeRecords',
+            )
+          )
+            statements.push(...(await this.plan(tx, true)));
+          await tx.query(
+            'CREATE INDEX IF NOT EXISTS _archive_lookup ON _archive (version, tbl, col, record_id)',
+          );
+          const ordered =
+            migration?.direction === 'down' ? [...steps].reverse() : steps;
+          for (const step of ordered)
+            statements.push(
+              ...(await this.runStep(tx, step, migration as Migration)),
+            );
+          await this.checkColumns(tx);
+          statements.push(...(await this.plan(tx, true)));
+        }),
+      );
     }
     await this.db.query(
       `CREATE TABLE IF NOT EXISTS _app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
@@ -181,7 +229,7 @@ export class AppRuntime {
     table: string,
   ): Promise<string[] | null> {
     const rows = (
-      await h.query(`SELECT name FROM pragma_table_info(?)`, [table])
+      await h.query(`SELECT name FROM pragma_table_xinfo(?)`, [table])
     ).rows;
     return rows.length ? rows.map((r: Row) => String(r.name)) : null;
   }
@@ -207,7 +255,7 @@ export class AppRuntime {
     t: string,
   ): Promise<Map<string, string>> {
     const rows = (
-      await h.query(`SELECT name, type FROM pragma_table_info(?)`, [t])
+      await h.query(`SELECT name, type FROM pragma_table_xinfo(?)`, [t])
     ).rows;
     return new Map(rows.map((r: Row) => [String(r.name), String(r.type)]));
   }
@@ -239,6 +287,67 @@ export class AppRuntime {
     const now = new Date().toISOString();
     const up = m.direction === 'up';
     switch (step.op) {
+      case 'mergeRecords':
+        if (up) await applyMerge(this.def, tx, step.command, m.version);
+        else await undoMerge(this.def, tx, step.command, m.version);
+        done.push(`-- ${up ? 'merge' : 'undo merge'} records`);
+        break;
+      case 'extractModel':
+        if (up)
+          await applyExtract(
+            this.def,
+            tx,
+            step.command,
+            step.from,
+            m.version,
+            step.seed,
+          );
+        else await undoExtract(this.def, tx, step.command, m.version);
+        done.push(`-- ${up ? 'extract' : 'undo extract'} model`);
+        break;
+      case 'loadRecords':
+        if (up)
+          await applyLoad(
+            this.def,
+            tx,
+            step.command,
+            m.version,
+            step.seed,
+            recipeModelFor(
+              step.command.model,
+              this.def.models[step.command.model],
+            )
+              ? { typeId: await this.personType(tx) }
+              : {},
+          );
+        else await undoRows(this.def, tx, m.version);
+        done.push(`-- ${up ? 'load' : 'undo load'} records`);
+        break;
+      case 'calculation': {
+        if (up && step.from && !step.from.calculated)
+          await exec(
+            `INSERT INTO _archive (version, tbl, col, record_id, value, created_at) SELECT ?, ?, ?, id, ${q(step.column)}, ? FROM ${q(step.table)}`,
+            [m.version, step.table, step.column, now],
+          );
+        if ((await this.columnTypes(tx, step.table)).has(step.column))
+          await exec(
+            `ALTER TABLE ${q(step.table)} DROP COLUMN ${q(step.column)}`,
+          );
+        if (!up && step.from && !step.from.calculated) {
+          await exec(
+            `ALTER TABLE ${q(step.table)} ADD COLUMN ${q(step.column)} ${sqlType(step.from.type)}`,
+          );
+          await exec(
+            `UPDATE ${q(step.table)} SET ${q(step.column)} = (SELECT value FROM _archive a WHERE a.version = ? AND a.tbl = ? AND a.col = ? AND a.record_id = ${q(step.table)}.id)`,
+            [m.version, step.table, step.column],
+          );
+          await exec(
+            'DELETE FROM _archive WHERE version = ? AND tbl = ? AND col = ?',
+            [m.version, step.table, step.column],
+          );
+        }
+        break;
+      }
       case 'renameColumn':
         await exec(
           `ALTER TABLE ${q(step.table)} RENAME COLUMN ${q(up ? step.from : step.to)} TO ${q(up ? step.to : step.from)}`,
@@ -346,6 +455,36 @@ export class AppRuntime {
   // ---------- previews and archives ----------
 
   /** What a type change would do to existing values, without changing anything. */
+  async columnInfo(table: string, column: string) {
+    const row = (
+      await this.db.query(
+        'SELECT type, hidden FROM pragma_table_xinfo(?) WHERE name = ?',
+        [table, column],
+      )
+    ).rows[0];
+    return row
+      ? { type: String(row.type), generated: Number(row.hidden) > 1 }
+      : null;
+  }
+
+  async previewMerge(cmd: MergeRecordsCommand) {
+    return this.db.transaction(
+      async (tx: Handle) => (await prepareMerge(this.def, tx, cmd)).preview,
+    );
+  }
+
+  async previewExtract(cmd: ExtractModelCommand) {
+    return this.db.transaction(
+      async (tx: Handle) => (await prepareExtract(this.def, tx, cmd)).preview,
+    );
+  }
+
+  async previewLoad(cmd: LoadRecordsCommand) {
+    return this.db.transaction(
+      async (tx: Handle) => (await prepareLoad(this.def, tx, cmd)).preview,
+    );
+  }
+
   async previewConversion(
     table: string,
     key: string,
@@ -409,6 +548,37 @@ export class AppRuntime {
   async countOverwrites(version: number, steps: Step[]) {
     const out: { table: string; column: string; replaced: number }[] = [];
     for (const step of steps) {
+      if (
+        step.op === 'loadRecords' ||
+        step.op === 'extractModel' ||
+        step.op === 'mergeRecords'
+      ) {
+        const count = await this.db.query(
+          "SELECT COUNT(*) AS n FROM _archive WHERE version = ? AND col = '$row'",
+          [version],
+        );
+        out.push({
+          table: step.command.model,
+          column: '*',
+          replaced: Number(count.rows[0].n),
+        });
+        continue;
+      }
+      if (step.op === 'calculation') {
+        const count = await this.db.query(
+          'SELECT COUNT(*) AS n FROM _archive WHERE version = ? AND tbl = ? AND col = ?',
+          [version, step.table, step.column],
+        );
+        out.push({
+          table: step.table,
+          column: step.column,
+          replaced:
+            step.to && !step.to.calculated
+              ? await this.countValues(step.table, step.column)
+              : Number(count.rows[0].n),
+        });
+        continue;
+      }
       if (step.op !== 'convertColumn') continue;
       let replaced = 0;
       if (
@@ -574,6 +744,13 @@ export class AppRuntime {
 
   // ---------- records ----------
 
+  compileReport(spec: unknown) {
+    return compileReport(this.def, spec);
+  }
+  runReport(input: string | RuntimeReportSpec, options: ReportOptions) {
+    return runAppReport(this.def, this.db, input, options);
+  }
+
   describe() {
     return describeApp(this.def, this.version);
   }
@@ -636,6 +813,8 @@ export class AppRuntime {
           `${model} has no field '${k}' (fields: ${Object.keys(fields).join(', ')})`,
         );
       const fd = fields[k];
+      if (fd.calculated)
+        throw new AppError(`${model}.${k} is read-only (calculated)`);
       const c = coerceValue(fd, v);
       if (!c.ok) throw new AppError(`${model}.${k} ${c.error}`);
       if (refs && fd.type === 'reference' && c.value !== null) {
@@ -648,6 +827,7 @@ export class AppRuntime {
     if (creating)
       for (const [k, fd] of Object.entries(fields))
         if (
+          !fd.calculated &&
           fd.required &&
           (data[k] === undefined || data[k] === null || data[k] === '')
         )
@@ -691,6 +871,8 @@ export class AppRuntime {
       this.modelDef(model);
       for (const row of rows) {
         const { id, createdAt: _c, ...data } = row;
+        for (const [f, fd] of Object.entries(this.fieldsOf(model)))
+          if (fd.calculated) delete data[f];
         await this.create(model, data, {
           id: typeof id === 'string' ? id : undefined,
           refs: false,
@@ -702,9 +884,9 @@ export class AppRuntime {
   }
 
   /** Find or create the real `person` ProfileType (the type of every app Profile). */
-  private async personType(): Promise<string> {
+  private async personType(db: Handle = this.db): Promise<string> {
     const types: any = await ObjectRegistry.getCollection(PROFILE_TYPES, {
-      db: this.db,
+      db,
     });
     const found = (
       await types.list({ where: { slug: 'person' }, limit: 1 })
