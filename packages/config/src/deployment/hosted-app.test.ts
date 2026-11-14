@@ -243,6 +243,32 @@ describe('composeHostedApp', () => {
     );
   });
 
+  it('refuses a discarded image command the preset cannot represent', () => {
+    const doc = document();
+    doc.services.web.entrypoint = [];
+    doc.services.web.command = [];
+    const result = composeHostedApp(input({ document: doc }));
+    expect(rejected(result).map((item) => item.code)).toContain(
+      'startup-command-unsupported',
+    );
+  });
+
+  it('keeps an empty entrypoint when a command is still declared', () => {
+    const doc = document();
+    doc.services.web.entrypoint = [];
+    const result = composeHostedApp(input({ document: doc }));
+    expect(result.ok).toBe(true);
+  });
+
+  it('refuses a web command health check instead of dropping it', () => {
+    const doc = document();
+    doc.services.web['x-happyvertical'].health = { command: ['true'] };
+    const result = composeHostedApp(input({ document: doc }));
+    expect(rejected(result).map((item) => item.code)).toContain(
+      'web-health-command-unsupported',
+    );
+  });
+
   it('surfaces declaration errors from the contract validator', () => {
     const doc = document();
     doc.services.web.privileged = true;

@@ -300,6 +300,28 @@ export function composeHostedApp(
     });
   }
 
+  // The preset takes one argv per workload and a web health path. It cannot
+  // say "run nothing" (Compose `entrypoint: []`/`command: []` discards the
+  // image's own command, which an empty argv would silently restore) and it
+  // has no web health command, so refuse both rather than drop them.
+  for (const workload of declaration.workloads) {
+    const declared =
+      workload.entrypoint !== undefined || workload.command !== undefined;
+    const argv = [...(workload.entrypoint ?? []), ...(workload.command ?? [])];
+    if (declared && argv.length === 0) {
+      rejections.push({
+        code: 'startup-command-unsupported',
+        message: `The ${workload.name} service discards its image's command (empty entrypoint/command), which the hosted preset cannot represent. Declare the command to run, or remove the empty entrypoint/command.`,
+      });
+    }
+    if (workload.role === 'web' && 'command' in workload.health) {
+      rejections.push({
+        code: 'web-health-command-unsupported',
+        message: `The ${workload.name} service declares a command health check, but the hosted preset only supports a web health path. Declare health.path instead.`,
+      });
+    }
+  }
+
   if (rejections.length > 0) return { ok: false, rejections };
 
   const bindings = declaration.bindings.map((binding) => ({
