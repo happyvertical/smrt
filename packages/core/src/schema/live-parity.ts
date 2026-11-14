@@ -33,6 +33,7 @@ import {
   collectIntegerWidthTargets,
   preflightIntegerWidthWidening,
 } from '../migrations/integer-width.js';
+import { isKnownNativeDuckDbHandle } from '../native-duckdb.js';
 import {
   RETIRED_SYSTEM_TABLES,
   SYSTEM_TABLE_TENANT_UUID_COLUMNS,
@@ -1306,6 +1307,7 @@ function resolveEngine(
   db: DatabaseInterface,
   engineHint?: string,
 ): DatabaseEngine {
+  if (isKnownNativeDuckDbHandle(db, engineHint)) return 'duckdb';
   if (typeof (db as { exportTable?: unknown }).exportTable === 'function') {
     return 'json';
   }
