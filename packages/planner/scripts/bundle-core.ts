@@ -11,7 +11,13 @@
  *
  * Usage: node scripts/bundle-core.ts [distDir]   (default: dist)
  */
-import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { build } from 'vite';
@@ -29,7 +35,11 @@ try {
     logLevel: 'warn',
     // Run from the package so workspace dependencies resolve as installed.
     root: resolve(import.meta.dirname, '..'),
-    ssr: { noExternal: true, target: 'node' },
+    // 'webworker' (not 'node') keeps the bundler from emitting its Node
+    // `createRequire(import.meta.url)` runtime shim, which would put an
+    // `import 'node:module'` at the top of an entry that browser client builds
+    // reach (#5000). The entry needs no Node built-ins.
+    ssr: { noExternal: true, target: 'webworker' },
     build: {
       ssr: entry,
       outDir,
@@ -59,6 +69,12 @@ try {
     throw new Error(`bundled ./core still imports: ${bare.join(', ')}`);
   }
   // Copy, not rename: the temporary directory may be on another device.
+  // Guard (#5000): the self-contained entry must stay free of Node built-ins.
+  const text = readFileSync(bundled, 'utf8');
+  const nodeImport = text.match(/(?:from|import\s*\()\s*["']node:[^"']+["']/);
+  if (nodeImport) {
+    throw new Error(`bundled ./core imports a Node built-in: ${nodeImport[0]}`);
+  }
   copyFileSync(bundled, entry);
   console.log(`./core bundled into ${entry}`);
 } finally {

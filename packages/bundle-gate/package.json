@@ -50,6 +50,7 @@
     "@happyvertical/smrt-marketing": "workspace:*",
     "@happyvertical/smrt-messages": "workspace:*",
     "@happyvertical/smrt-personas": "workspace:*",
+    "@happyvertical/smrt-planner": "workspace:*",
     "@happyvertical/smrt-places": "workspace:*",
     "@happyvertical/smrt-playbooks": "workspace:*",
     "@happyvertical/smrt-preferences": "workspace:*",
