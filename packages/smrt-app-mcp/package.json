@@ -1,7 +1,7 @@
 {
   "name": "@happyvertical/smrt-app-mcp",
   "version": "0.60.18",
-  "description": "App-runtime MCP server scaffolding for SMRT apps \u2014 `createMcpAppServer` plus transport adapters (SvelteKit today) for exposing a SMRT app's MCP surface over HTTP.",
+  "description": "App-runtime MCP server scaffolding for SMRT apps — `createMcpAppServer` plus transport adapters (SvelteKit today) for exposing a SMRT app's MCP surface over HTTP.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -21,7 +21,13 @@
     "./host-operations": {
       "types": "./dist/host-operations.d.ts",
       "import": "./dist/host-operations.js"
-    }
+    },
+    "./audit-store": {
+      "types": "./dist/audit-store.d.ts",
+      "import": "./dist/audit-store.js"
+    },
+    "./manifest": "./dist/manifest.json",
+    "./manifest.json": "./dist/manifest.json"
   },
   "files": [
     "CLAUDE.md",
@@ -66,6 +72,7 @@
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-jobs": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@modelcontextprotocol/server": "2.4.0",
     "jose": "^6.2.12",

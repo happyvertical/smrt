@@ -2760,6 +2760,9 @@ importers:
       '@happyvertical/smrt-analytics':
         specifier: workspace:*
         version: link:../analytics
+      '@happyvertical/smrt-app-mcp':
+        specifier: workspace:*
+        version: link:../smrt-app-mcp
       '@happyvertical/smrt-approvals':
         specifier: workspace:*
         version: link:../approvals
@@ -3570,6 +3573,9 @@ importers:
       '@happyvertical/smrt-jobs':
         specifier: workspace:*
         version: link:../jobs
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
       '@happyvertical/sql':
         specifier: ^0.112.3
         version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)

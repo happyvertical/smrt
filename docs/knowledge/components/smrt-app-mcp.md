@@ -5,10 +5,10 @@ description: "App-runtime MCP server scaffolding for SMRT apps — `createMcpApp
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-12T08:37:29Z"
+  at: "2026-11-14T04:34:16Z"
 audience: "internal"
-evidence_level: "manifest-described"
-source_revision: "sha256:5e67af49151d571230b6a09f54809e7172bba2a8a730c722585ce8e3e1956c27"
+evidence_level: "source-inspected"
+source_revision: "sha256:047333aa474fb44103e7f1c112302cdb7ea12ba8734971aca43876e7e0d4b927"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-app-mcp/package.json"
@@ -28,7 +28,7 @@ sources:
 - Directory: `packages/smrt-app-mcp`
 - Private: no
 - Object source: `domain-artifact`
-- Evidence level: `manifest-described`
+- Evidence level: `source-inspected`
 
 ## Documentation
 
@@ -39,6 +39,7 @@ sources:
 
 - [smrt-core](/components/smrt-core.md)
 - [smrt-jobs](/components/smrt-jobs.md)
+- [smrt-tenancy](/components/smrt-tenancy.md)
 
 ## SDK dependencies
 
@@ -47,6 +48,14 @@ sources:
 ## Exports
 
 - `.`
+- `./audit-store`
 - `./auth`
 - `./host-operations`
+- `./manifest`
+- `./manifest.json`
 - `./sveltekit`
+
+## Models
+
+- `McpCallAudit` (collection `mcpcallaudits`, extends `SmrtObject`)
+- `McpCallAuditCollection` (collection `mcpcallaudits`, extends `SmrtCollection`)
