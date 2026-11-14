@@ -717,7 +717,11 @@ describe('database-generated fields #4915', () => {
   }
 
   for (const path of ['decoration', 'manifest', 'runtime'] as const) {
-    for (const inherited of ['organizationId', 'ordinaryCode']) {
+    for (const inherited of [
+      'organizationId',
+      'ordinaryCode',
+      'ordinary_code',
+    ]) {
       it(`#4972 round3 item1: ${path} refuses generated redeclaration of inherited ${inherited}`, () => {
         const Root = class InheritedOwnerRoot extends SmrtObject {};
         field({ type: 'text' })(Root.prototype, 'ownerSource');
@@ -837,6 +841,54 @@ describe('database-generated fields #4915', () => {
           'total',
         );
         smrt({ packageName: '@test/generated' })(Leaf);
+      };
+      expect(register).toThrow(GeneratedFieldError);
+    });
+  }
+
+  for (const path of ['decoration', 'manifest', 'runtime'] as const) {
+    it(`#4972 round3 item3: ${path} cannot choose an inherited generated column as its conflict key`, () => {
+      const Root = class GeneratedKeyRoot extends SmrtObject {};
+      field({ type: 'integer' })(Root.prototype, 'qty');
+      field({ type: 'integer', generated: { col: 'qty' } })(
+        Root.prototype,
+        'total',
+      );
+      smrt({
+        packageName: '@test/generated-key',
+        tableStrategy: 'sti',
+        conflictColumns: ['id'],
+      })(Root);
+      const parent = ObjectRegistry.getClassByConstructor(Root)!.qualifiedName!;
+      const register = () => {
+        if (path === 'runtime')
+          return registerRuntimeModel({
+            name: 'GeneratedKeyLeaf',
+            packageName: '@test/generated-key',
+            extends: parent,
+            conflictColumns: ['total'],
+            fields: {},
+          });
+        if (path === 'manifest') {
+          const entry = runtimeModelEntry({
+            name: 'GeneratedKeyLeaf',
+            packageName: '@test/generated-key',
+            extends: parent,
+            fields: {},
+          });
+          entry.fields = {};
+          entry.decoratorConfig!.conflictColumns = ['total'];
+          return ObjectRegistry.registerFromManifest(
+            entry.qualifiedName!,
+            entry,
+            '@test/generated-key',
+          );
+        }
+        const Leaf = class GeneratedKeyLeaf extends Root {};
+        smrt({
+          packageName: '@test/generated-key',
+          conflictColumns: ['total'],
+        })(Leaf);
       };
       expect(register).toThrow(GeneratedFieldError);
     });

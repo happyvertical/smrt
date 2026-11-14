@@ -98,7 +98,13 @@ export function validateGeneratedFields(
       field._meta?.__tenancy?.isTenantIdField
     )
       fail('framework identity and ownership columns cannot be generated');
-    const inherited = authority.inheritedFields?.get(name);
+    // Logical aliases can name the same persisted column (ordinaryCode /
+    // ordinary_code); inheritance cannot be bypassed by changing the spelling.
+    const inherited =
+      authority.inheritedFields?.get(name) ??
+      [...(authority.inheritedFields ?? [])].find(
+        ([parentName]) => toSnakeCase(parentName) === toSnakeCase(name),
+      )?.[1];
     // Manifests/runtime entries may carry unchanged inherited generated
     // metadata. An inherited ordinary field can never become generated, and
     // an inherited generated expression cannot be redeclared differently.

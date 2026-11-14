@@ -4217,17 +4217,34 @@ export class ObjectRegistry {
     pending: RegisteredClass,
     declaredFields?: Iterable<string>,
   ): void {
+    const key = pending.qualifiedName ?? pending.name;
+    let inherited = new Map<string, RegisteredField>();
+    try {
+      const parent = pending.extends
+        ? findClassStrict(pending.extends, pending.packageName)
+        : undefined;
+      if (parent) inherited = getEffectiveFieldsSync(parent);
+    } catch (error) {
+      // Keep main's deferred ambiguous-parent diagnostic for declarations with
+      // no own generated fields. Ancestry reads still refuse before any save;
+      // never select an arbitrary same-named parent to validate against.
+      if (
+        error instanceof ConfigurationError &&
+        error.code === 'CONFIG_AMBIGUOUS_CLASS' &&
+        ![...pending.fields.values()].some(
+          (field) => generatedExpression(field) !== undefined,
+        )
+      )
+        return;
+      throw error;
+    }
+    const effective = new Map([...inherited, ...pending.fields]);
     if (
-      ![...pending.fields.values()].some(
+      ![...effective.values()].some(
         (field) => generatedExpression(field) !== undefined,
       )
     )
       return;
-    const key = pending.qualifiedName ?? pending.name;
-    const parent = pending.extends
-      ? findClassStrict(pending.extends, pending.packageName)
-      : undefined;
-    const inherited = parent ? getEffectiveFieldsSync(parent) : new Map();
     const owners = new Set<string>();
     for (const ancestor of ObjectRegistry.getInheritanceChain(key, pending)) {
       const column = ObjectRegistry.getOwnershipTenantColumn(
@@ -4236,16 +4253,12 @@ export class ObjectRegistry {
       );
       if (column) owners.add(column);
     }
-    validateGeneratedFields(
-      new Map([...inherited, ...pending.fields]),
-      pending.tenantScopedConfig?.field,
-      {
-        inheritedFields: inherited,
-        declaredFields: declaredFields ? new Set(declaredFields) : undefined,
-        ownershipColumns: [...owners],
-        conflictColumns: ObjectRegistry.getConflictColumns(key, pending),
-      },
-    );
+    validateGeneratedFields(effective, pending.tenantScopedConfig?.field, {
+      inheritedFields: inherited,
+      declaredFields: declaredFields ? new Set(declaredFields) : undefined,
+      ownershipColumns: [...owners],
+      conflictColumns: ObjectRegistry.getConflictColumns(key, pending),
+    });
   }
 
   /** Subtypes with their own partial unique conflict index. */
