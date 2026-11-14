@@ -771,6 +771,11 @@ describe('database-generated fields #4915', () => {
           grandchild,
           packageName,
         );
+        if (path === 'decoration') {
+          // A different package's same-named class is not our actual parent.
+          const UnrelatedParent = class LateGeneratedParent extends SmrtObject {};
+          smrt({ packageName: '@test/unrelated-late-parent' })(UnrelatedParent);
+        }
         await expect(
           ObjectRegistry.getAllFields(grandchildKey),
         ).rejects.toThrow(

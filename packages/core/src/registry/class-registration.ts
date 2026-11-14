@@ -1,4 +1,7 @@
-import { validateGeneratedFields } from '../generated-fields.js';
+import {
+  generatedExpression,
+  validateGeneratedFields,
+} from '../generated-fields.js';
 import { ObjectRegistry } from '../registry.js';
 /**
  * Class registration module for the SMRT ObjectRegistry.
@@ -2081,6 +2084,19 @@ function registerUntracked(
     packageName, // Store package name from manifest for getPackageName() lookup
     sourceFilePath, // Store source file for collision detection (Issue #555)
     extends: extendsClass, // Capture parent class name from manifest OR prototype chain
+    ...(extendsClass &&
+    !extendsClass.includes(':') &&
+    Object.getPrototypeOf(ctor) !== SmrtObject &&
+    !getConstructorIndex().has(Object.getPrototypeOf(ctor)) &&
+    [...fields.values()].some(
+      (field) => generatedExpression(field) !== undefined,
+    )
+      ? {
+          generatedParentConstructor: Object.getPrototypeOf(
+            ctor,
+          ) as typeof SmrtObject,
+        }
+      : {}),
     extendsTypeArg: manifestEntry?.extendsTypeArg, // SmrtCollection<T> generic arg
     inheritedExposure: manifestEntry?.inheritedExposure, // #3468
     collectionOf: manifestEntry?.collectionOf, // #3956 manifest collection classification

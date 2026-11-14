@@ -1168,6 +1168,8 @@ export interface RegisteredClass {
   replacedQualifiedNames?: string[];
   /** Parent class name (for inheritance chain tracking) */
   extends?: string;
+  /** Unqualified generated ancestry must wait for this exact decorator parent. */
+  generatedParentConstructor?: typeof SmrtObject;
   /** Generic type arg from `SmrtCollection<X>` — marks collection classes. */
   extendsTypeArg?: string;
   /**

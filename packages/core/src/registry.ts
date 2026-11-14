@@ -834,6 +834,14 @@ export class ObjectRegistry {
   /** A newly available parent can invalidate a previously pending child. */
   static revalidateGeneratedDescendants(parent: RegisteredClass): void {
     const parentKey = parent.qualifiedName ?? parent.name;
+    // Bind every waiting direct child before walking descendants, independent
+    // of registration order. Another package's same-named class cannot bind it.
+    for (const child of ObjectRegistry.classes.values()) {
+      if (child.generatedParentConstructor !== parent.constructor) continue;
+      child.extends = parentKey;
+      delete child.generatedParentConstructor;
+      _invalidateInheritanceEntries(child);
+    }
     let failure: unknown;
     for (const child of ObjectRegistry.classes.values()) {
       if (child === parent) continue;
@@ -4282,9 +4290,13 @@ export class ObjectRegistry {
     const key = pending.qualifiedName ?? pending.name;
     let inherited = new Map<string, RegisteredField>();
     try {
-      const parent = pending.extends
-        ? findClassStrict(pending.extends, pending.packageName)
-        : undefined;
+      const parent = pending.generatedParentConstructor
+        ? ObjectRegistry.getClassByConstructor(
+            pending.generatedParentConstructor,
+          )
+        : pending.extends
+          ? findClassStrict(pending.extends, pending.packageName)
+          : undefined;
       if (parent) inherited = getEffectiveFieldsSync(parent);
     } catch (error) {
       // Keep main's deferred ambiguous-parent diagnostic for declarations with
@@ -4314,7 +4326,11 @@ export class ObjectRegistry {
       requireResolved &&
       oldest?.extends &&
       !['SmrtObject', 'SmrtClass', 'SmrtCollection'].includes(oldest.extends) &&
-      !findClassStrict(oldest.extends, oldest.packageName)
+      !(oldest.generatedParentConstructor
+        ? ObjectRegistry.getClassByConstructor(
+            oldest.generatedParentConstructor,
+          )
+        : findClassStrict(oldest.extends, oldest.packageName))
     ) {
       throw new GeneratedFieldError(
         `${key}: generated-field ancestry unresolved (${oldest.extends})`,

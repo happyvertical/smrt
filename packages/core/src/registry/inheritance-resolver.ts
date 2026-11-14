@@ -80,6 +80,10 @@ function findParentClassStrict(
   child: RegisteredClass,
   parentName: string,
 ): RegisteredClass | undefined {
+  if (child.generatedParentConstructor)
+    return ObjectRegistry.getClassByConstructor(
+      child.generatedParentConstructor,
+    );
   try {
     return (
       replacedDeclarations().get(parentName) ??

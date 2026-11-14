@@ -40,8 +40,10 @@ revalidates its generated descendants. An invalid descendant makes that parent
 registration call fail with an error naming the child; the valid parent remains
 registered, while the child stays visible for diagnostics and every schema or
 persistence access refuses it. Legitimate pending children become usable when
-their ancestry is complete. Runtime definitions with generated fields can also
-be pending; they use manifest ancestry until the real parent is available.
+their ancestry is complete. An unqualified decorator parent is held by its
+constructor identity while pending: a different package's same-named class
+cannot resolve it. Qualified manifest parent references retain package identity.
+Runtime definitions with generated fields can also be pending; they use manifest ancestry until the real parent is available.
 Children cannot turn any inherited ordinary field into
 a generated field, or explicitly redeclare an inherited generated field in
 source/runtime definitions. Unchanged inherited generated metadata in a merged
