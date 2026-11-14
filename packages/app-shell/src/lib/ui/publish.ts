@@ -1,18 +1,55 @@
+import { versionSummary } from './command-summary.ts';
 import { fieldLabel, humanize } from './fields.ts';
 import { formulaWords } from './formula.ts';
 import type { FieldDef, PublishPreview, VersionInfo } from './types.ts';
 
-function modelLabel(model: string, preview: PublishPreview) {
-  return preview.modelLabels?.[model] ?? model;
+export function publishModelLabel(model: string, preview: PublishPreview) {
+  return preview.modelLabels?.[model]?.trim() || humanize(model);
+}
+const modelLabel = publishModelLabel;
+
+export function publishMethodLabel(
+  method: PublishPreview['methods'][number],
+  preview: PublishPreview,
+) {
+  return `${humanize(method.name)} in ${modelLabel(method.model, preview)}`;
+}
+
+/** Old previews without a saved heading still pass through the common formatter. */
+export function publishVersionSummary(
+  version: PublishPreview['versions'][number],
+  preview: PublishPreview,
+) {
+  if (version.humanSummary) return version.humanSummary;
+  const names = new Set([
+    ...Object.keys(preview.fields ?? {}),
+    ...Object.keys(preview.modelLabels ?? {}),
+  ]);
+  const definition = {
+    models: Object.fromEntries(
+      [...names].map((name) => [
+        name,
+        {
+          label: modelLabel(name, preview),
+          fields: preview.fields?.[name] ?? {},
+        },
+      ]),
+    ),
+  };
+  return versionSummary(version.summary, definition, definition);
 }
 function fieldName(model: string, field: string, preview: PublishPreview) {
   const def = preview.fields?.[model]?.[field];
-  return def ? fieldLabel(field, def) : field;
+  return fieldLabel(
+    field,
+    def ??
+      preview.definition.models[model]?.fieldsChanged.find(
+        (change) => change.field === field,
+      )?.to ?? { type: 'text' },
+  );
 }
 function fieldSubject(model: string, field: string, preview: PublishPreview) {
-  return preview.fields?.[model]?.[field]
-    ? `${fieldName(model, field, preview)} in ${modelLabel(model, preview)}`
-    : `${model}.${field}`;
+  return `${fieldName(model, field, preview)} in ${modelLabel(model, preview)}`;
 }
 function renames(preview: PublishPreview) {
   return preview.fieldRenames ?? [];
@@ -149,7 +186,7 @@ export function publishDataLines(preview: PublishPreview): string[] {
   return preview.versions.flatMap((v) =>
     (v.dataSteps ?? []).map((step) => {
       const c = step.counts;
-      const model = preview.modelLabels?.[step.model] ?? step.model;
+      const model = modelLabel(step.model, preview);
       if (step.op === 'loadRecords')
         return `Load records into ${model} (${step.mode}): ${c.insert} inserted, ${c.update} updated, ${c.unchanged} unchanged, ${c.rejected} rejected.`;
       if (step.op === 'extractModel')
@@ -158,7 +195,7 @@ export function publishDataLines(preview: PublishPreview): string[] {
         Object.entries((c.references ?? {}) as Record<string, number>)
           .map(
             ([model, count]) =>
-              `${count} ${count === 1 ? 'reference' : 'references'} in ${preview.modelLabels?.[model] ?? model}`,
+              `${count} ${count === 1 ? 'reference' : 'references'} in ${modelLabel(model, preview)}`,
           )
           .join(', ') || 'none';
       return `Merge ${c.removed} ${c.removed === 1 ? 'record' : 'records'} in ${model}; references repointed (${references}).`;
@@ -231,12 +268,14 @@ export interface PublishGroup {
 export function publishGroups(preview: PublishPreview): PublishGroup[] {
   const d = preview.definition;
   const added = [
-    ...d.modelsAdded.map((name) => `Add model ${name}.`),
-    ...d.recipesAdded.map((name) => `Add recipe ${name}.`),
+    ...d.modelsAdded.map((name) => `Add model ${modelLabel(name, preview)}.`),
+    ...d.recipesAdded.map((name) => `Add recipe ${humanize(name)}.`),
   ];
   const removed = [
-    ...d.modelsRemoved.map((name) => `Remove model ${name}.`),
-    ...d.recipesRemoved.map((name) => `Remove recipe ${name}.`),
+    ...d.modelsRemoved.map(
+      (name) => `Remove model ${modelLabel(name, preview)}.`,
+    ),
+    ...d.recipesRemoved.map((name) => `Remove recipe ${humanize(name)}.`),
   ];
   const changed: string[] = renameLines(preview);
   for (const [name, model] of Object.entries(d.models)) {
@@ -262,9 +301,9 @@ export function publishGroups(preview: PublishPreview): PublishGroup[] {
   }
   for (const method of preview.methods) {
     if (method.change === 'added')
-      added.push(`Add method ${method.model}.${method.name}().`);
+      added.push(`Add method ${publishMethodLabel(method, preview)}.`);
     if (method.change === 'changed')
-      changed.push(`Change method ${method.model}.${method.name}().`);
+      changed.push(`Change method ${publishMethodLabel(method, preview)}.`);
   }
   for (const change of preview.reportChanges ?? []) {
     (change.kind === 'added'

@@ -12,7 +12,7 @@ describe('publish preview', () => {
     const lines = publishLines(preview).join('\n');
     expect(lines).toContain('Models added: 1. Fields added: 1.');
     expect(lines).toContain('Models removed: 1. Fields removed: 1.');
-    expect(lines).toContain('Customer.age: text to integer');
+    expect(lines).toContain('Age in Customer: text to integer');
     expect(lines).toContain('Field type changes: 1.');
     expect(lines).toContain('Archived values: 7');
     expect(lines).toContain('Archived tables: 1');
@@ -121,7 +121,7 @@ it('includes only added or changed calculations, including cleared formulas', ()
   const lines = publishCalculations(p);
   expect(lines).toHaveLength(2);
   expect(lines.join(' ')).toContain('Add field Added in Customer');
-  expect(lines.join(' ')).toContain('Customer.cleared: remove calculation');
+  expect(lines.join(' ')).toContain('Cleared in Customer: remove calculation');
   expect(lines.join(' ')).not.toContain('Customer.same');
 });
 

@@ -248,9 +248,7 @@ export async function previewDraft(): Promise<{
     ...preview.definition.modelsRemoved,
     ...Object.keys(preview.definition.models),
     ...(preview.fieldRenames ?? []).map((rename) => rename.model),
-    ...preview.methods
-      .filter((method) => method.change !== 'unchanged')
-      .map((method) => method.model),
+    ...preview.methods.map((method) => method.model),
     ...preview.versions.flatMap((version) =>
       (version.dataSteps ?? []).flatMap((step) => [
         step.model,

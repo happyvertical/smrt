@@ -597,3 +597,47 @@ describe('structural changes that rewrite reports', () => {
     expect(summary).toContain('Changed report Chore totals.');
   });
 });
+
+it('labels every method owner shown in a publish while omitting unrelated models', async () =>
+  asOwner(async () => {
+    await ensureNoDraft();
+    const live = await getHost();
+    const execute = (command: Parameters<typeof live.execute>[0]) =>
+      live.execute(command, { author: h.owner.id, approved: true });
+    for (const [name, label] of [
+      ['PublishTouched', 'Reviewed records'],
+      ['PublishCode', 'Saved helpers'],
+      ['PublishPrivate', 'Unrelated private label'],
+    ])
+      await execute({ type: 'defineModel', name, label, fields: {} });
+    await execute({
+      type: 'addMethod',
+      model: 'PublishCode',
+      name: 'savedSummary',
+      method: { description: 'Saved helper', code: 'return { result: 1 };' },
+    });
+    await startDraft('Review labels', h.owner.id);
+    try {
+      await runCommand(
+        {
+          type: 'addField',
+          model: 'PublishTouched',
+          field: 'title',
+          definition: { type: 'text', label: 'Record title' },
+        },
+        h.owner.id,
+        'draft',
+      );
+      const { preview } = await previewDraft();
+      expect(preview.modelLabels).toMatchObject({
+        PublishTouched: 'Reviewed records',
+        PublishCode: 'Saved helpers',
+      });
+      expect(preview.modelLabels).not.toHaveProperty('PublishPrivate');
+      expect(preview.methods).toContainEqual(
+        expect.objectContaining({ model: 'PublishCode', change: 'unchanged' }),
+      );
+    } finally {
+      await discardNow();
+    }
+  }));

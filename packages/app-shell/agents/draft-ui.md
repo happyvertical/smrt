@@ -167,3 +167,13 @@ browser layout, so these checks do not claim a browser visual pass.
 | F4 Merge scope | Removed record names are bounded with full title; referring models use labels | Markup remains literal; record IDs stay hidden | Real engine merge preview + mounted approval card; owning worker tests |
 | F5 Publish decisions | Command-step renames are Changed; genuine formula edits remain; counts preserved | Rename operand rewrites create no false formula/add/remove/archive decision | Real Node/SQLite rehearsals + mounted review; 26 Node and 9 DOM tests passed |
 | F6 Narrow column | 300px main column has one summary track; heading words stay intact | No viewport-only column rule or arbitrary word breaking | Mounted real previews, section structure and CSS assertions; review DOM suite |
+
+Round 5 publish sweep: model additions/removals, field fallbacks, data references,
+method summaries, full-code headings and their accessibility labels all resolve
+friendly owner labels. Legacy preview version headings use the common formatter
+rather than raw persisted summaries. Every method shown in the full-code list
+has its owner label projected, including unchanged methods; unrelated models
+remain absent. The real engine DOM fixture includes added/changed/unchanged
+methods, labeled field add/remove/type conversion, and model add/remove. Full
+method bodies remain unchanged. Available-column styles use namespaced owned
+classes inside `smrt.structure`; scoped cascade and class/layer gates pass.

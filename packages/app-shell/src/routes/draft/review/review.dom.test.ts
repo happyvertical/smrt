@@ -90,7 +90,7 @@ describe('publish review', () => {
       'Better orders',
       'Add model Order',
       'Remove model Note',
-      'Customer.age: text to integer',
+      'Age in Customer: text to integer',
       'Archived values: 7',
       'Archived tables: 1',
       'Data commands replay against current live records.',
@@ -182,17 +182,17 @@ it('groups definition changes into counted sections before ordered changes and m
     group('Data')?.querySelector('[data-smrt-component="Badge"]')?.textContent,
   ).toBe('0');
   expect(group('Added')?.textContent).toContain('Add model Order');
-  expect(group('Added')?.textContent).toContain('Add field Customer.email');
+  expect(group('Added')?.textContent).toContain('Add field Email in Customer');
   expect(
     group('Added')?.querySelector('[data-smrt-component="Badge"]')?.textContent,
   ).toBe('3');
-  expect(group('Added')?.textContent).toContain('Add method Order.total()');
+  expect(group('Added')?.textContent).toContain('Add method Total in Order');
   expect(group('Removed')?.textContent).toContain('Remove model Note');
   expect(group('Removed')?.textContent).toContain(
-    'Remove field Customer.oldName',
+    'Remove field Old name in Customer',
   );
   expect(group('Changed')?.textContent).toContain(
-    'Customer.age: text to integer',
+    'Age in Customer: text to integer',
   );
   expect(group('Archived')?.textContent).toContain('Archived values: 7');
   expect(group('Archived')?.textContent).toContain('Archived tables: 1');
@@ -320,13 +320,18 @@ it('reviews real load and field rename rehearsals without false removals or form
       PublishPreview
     >;
     for (const [name, actual] of Object.entries(previews)) {
+      // Exercise legacy preview heading fallback with real command summaries too.
+      if (name === 'allLabels')
+        for (const version of actual.versions) delete version.humanSummary;
       vi.mocked(fetch).mockResolvedValue(
         json({ draft: draftInfo, preview: actual }),
       );
       await render();
       // The surrounding chat/sidebar can leave a 300px main column even on desktop.
       container.style.width = '300px';
-      const grid = container.querySelector<HTMLElement>('.publish-groups');
+      const grid = container.querySelector<HTMLElement>(
+        '.smrt-publish-preview__groups',
+      );
       expect(grid).toBeTruthy();
       expect(
         [...grid!.children].map((section) =>
@@ -334,7 +339,9 @@ it('reviews real load and field rename rehearsals without false removals or form
         ),
       ).toEqual(['Data', 'Added', 'Removed', 'Changed', 'Archived']);
       for (const section of grid!.children) {
-        const heading = section.querySelector('.publish-group-heading');
+        const heading = section.querySelector(
+          '.smrt-publish-preview__group-heading',
+        );
         expect(heading?.querySelector('h2')).toBeTruthy();
         expect(
           heading?.querySelector('[data-smrt-component="Badge"]'),
@@ -346,7 +353,8 @@ it('reviews real load and field rename rehearsals without false removals or form
       expect(text).toContain('Rename field Quantity to units in Orders');
       expect(text).not.toContain('Order.units');
       expect(text).not.toContain('Order.quantity');
-      expect(group('Added')?.textContent).toContain('None.');
+      if (name !== 'allLabels')
+        expect(group('Added')?.textContent).toContain('None.');
       expect(group('Removed')?.textContent).not.toMatch(/Quantity|units/);
       expect(group('Data')?.textContent).toContain(
         'Load records into Orders (insert): 1 inserted, 0 updated, 0 unchanged, 0 rejected.',
@@ -373,8 +381,51 @@ it('reviews real load and field rename rehearsals without false removals or form
         );
         expect(group('Changed')?.textContent).toContain('10');
       }
-      if (name === 'archived')
+      if (name === 'archived' || name === 'allLabels')
         expect(group('Archived')?.textContent).toContain('Price in Orders');
+      if (name === 'allLabels') {
+        expect(group('Changed')?.textContent).toContain(
+          'Change method Rebuild summary in Orders.',
+        );
+        expect(group('Added')?.textContent).toContain('Add model Deliveries.');
+        expect(group('Added')?.textContent).toContain(
+          'Add field Promised date in Orders.',
+        );
+        expect(group('Added')?.textContent).toContain(
+          'Add method Recalculate total in Orders.',
+        );
+        expect(group('Removed')?.textContent).toContain(
+          'Remove model Retired contacts.',
+        );
+        expect(group('Removed')?.textContent).toContain(
+          'Remove field Previous reference in Orders.',
+        );
+        expect(group('Changed')?.textContent).toContain(
+          'Customer rating in Orders: text to integer',
+        );
+        expect(container.querySelector('ol')?.textContent).toContain(
+          'Change field type: Customer rating in Orders',
+        );
+        const codeHeadings = [...container.querySelectorAll('h3')].map(
+          (heading) => heading.textContent,
+        );
+        expect(codeHeadings).toContain('Show total in Orders · unchanged');
+        expect(codeHeadings).toContain('Recalculate total in Orders · added');
+        expect(codeHeadings).toContain('Rebuild summary in Orders · changed');
+        expect(
+          container.querySelector(
+            'pre[aria-label="Code for Recalculate total in Orders"] code',
+          )?.textContent,
+        ).toBe('return { result: 10 };');
+        expect(text).not.toMatch(
+          /Order\.|RetiredContact|Shipment|legacyField|promisedDate|recalculateTotal/,
+        );
+        expect(
+          [...container.querySelectorAll('pre')]
+            .map((code) => code.getAttribute('aria-label'))
+            .join(' '),
+        ).not.toMatch(/Order\.|recalculateTotal/);
+      }
       if (process.env.SMRT_DRAFT_REVIEW_ARTIFACT)
         writeFileSync(
           `${process.env.SMRT_DRAFT_REVIEW_ARTIFACT}-${name}.txt`,
@@ -394,12 +445,13 @@ it('sizes summary tracks to the available column and keeps heading words intact'
     'src/lib/components/PublishPreview.svelte',
     'utf8',
   );
+  expect(source).toContain('@layer smrt.structure {');
   expect(source).toContain('repeat(auto-fit, minmax(min(100%, 18rem), 1fr))');
   expect(source).toMatch(
-    /\.publish-group-heading\s*\{[^}]*white-space: nowrap;/s,
+    /\.smrt-publish-preview__group-heading\s*\{[^}]*white-space: nowrap;/s,
   );
   expect(source).toMatch(
-    /\.publish-group\s*\{[^}]*overflow-wrap: normal;[^}]*word-break: normal;/s,
+    /\.smrt-publish-preview__group\s*\{[^}]*overflow-wrap: normal;[^}]*word-break: normal;/s,
   );
   expect(source).not.toMatch(
     /word-break:\s*break-all|overflow-wrap:\s*anywhere/,
