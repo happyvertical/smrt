@@ -1450,8 +1450,8 @@ errors are fixed text. `custody()` reports `os-keychain` or `file-fallback`.
   the key is missing, malformed or unreadable: that fails closed, because a
   new key would orphan them. Losing the keychain entry loses the items.
 - Creating the key is serialized across every root of one product by a lock
-  file outside the data roots (a per-user directory under the OS temp
-  directory, named by product id), taken around read, create and confirm, with
+  file outside the data roots (`<account home>/.smrt/locks/<product id>.lock`,
+  the home taken from the OS account record, never `HOME` or `TMPDIR`), taken around read, create and confirm, with
   the key re-read once the lock is held. A dead owner's lock is reclaimed. It
   covers processes of one OS user on one machine, not two machines or users.
 

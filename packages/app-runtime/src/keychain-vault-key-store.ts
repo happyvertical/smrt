@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { lstat, mkdir, open, readdir, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { userInfo } from 'node:os';
 import { join } from 'node:path';
 import { errorCode } from './error-code.js';
 import {
@@ -524,8 +524,9 @@ export interface KeychainVaultKeyStoreOptions {
   fileStoreOptions?: FileVaultKeyStoreOptions;
   /**
    * Private directory for the product-wide lock that serializes creating the
-   * key-encryption key. Defaults to a per-user directory under the OS temp
-   * directory, outside any data root, so every root of one product shares it.
+   * key-encryption key. Defaults to {@link defaultKeychainLockDirectory}
+   * (`<account home>/.smrt/locks`), outside any data root and independent of
+   * the environment, so every root of one product shares it.
    */
   lockDirectory?: string;
 }
@@ -533,8 +534,16 @@ export interface KeychainVaultKeyStoreOptions {
 const LOCK_WAIT_MS = 30_000;
 const LOCK_POLL_MS = 25;
 
-function defaultLockDirectory(): string {
-  return join(tmpdir(), `.smrt-keychain-locks-${process.getuid?.() ?? 'user'}`);
+/**
+ * The product lock directory: `<account home>/.smrt/locks`. The home comes
+ * from the OS account record, never from `HOME`, `USERPROFILE` or `TMPDIR`,
+ * which a launcher or smoke harness may replace, so every process of one OS
+ * user agrees on one lock and no other user can pre-create it.
+ */
+export function defaultKeychainLockDirectory(
+  home: string = userInfo().homedir,
+): string {
+  return join(home, '.smrt', 'locks');
 }
 
 /**
@@ -703,7 +712,7 @@ export function createKeychainVaultKeyStore(
     // this product may have created the key since the read above, and a second
     // writer would overwrite it and orphan whatever the first already sealed.
     return withProductLock(
-      options.lockDirectory ?? defaultLockDirectory(),
+      options.lockDirectory ?? defaultKeychainLockDirectory(),
       productId,
       async (): Promise<Resolved> => {
         let current: Uint8Array | null;

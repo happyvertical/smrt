@@ -7,7 +7,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { tmpdir, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -17,6 +17,7 @@ import {
   createPlatformKeychain,
   createWindowsCredentialKeychain,
   defaultKeychainCommandRunner,
+  defaultKeychainLockDirectory,
   type KeychainCommand,
   type KeychainCommandRunner,
   KeychainOperationError,
@@ -246,6 +247,29 @@ describe('keychain-wrapped vault key store', () => {
     expect(await b.get('y')).toEqual(new Uint8Array([2]));
     expect(fake.calls.set).toBe(1);
     expect(readdirSync(join(root, 'locks'))).toEqual([]);
+  });
+
+  it('derives the default lock directory from the account home, not the environment', () => {
+    const names = ['HOME', 'USERPROFILE', 'TMPDIR', 'TEMP'] as const;
+    const saved = names.map((name) => process.env[name]);
+    try {
+      process.env.HOME = join(root, 'fake-home');
+      process.env.USERPROFILE = join(root, 'fake-home');
+      process.env.TMPDIR = join(root, 'fake-tmp');
+      process.env.TEMP = join(root, 'fake-tmp');
+      const directory = defaultKeychainLockDirectory();
+      expect(directory).toBe(join(userInfo().homedir, '.smrt', 'locks'));
+      expect(directory.startsWith(root)).toBe(false);
+    } finally {
+      names.forEach((name, index) => {
+        const value = saved[index];
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      });
+    }
+    expect(defaultKeychainLockDirectory('/home/u')).toBe(
+      join('/home/u', '.smrt', 'locks'),
+    );
   });
 
   it('reclaims a lock left by a dead process', async () => {
