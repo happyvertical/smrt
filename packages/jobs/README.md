@@ -467,3 +467,10 @@ clear a job claim or expire a runner's process lease. Park approval/stopped work
 by returning from the handler; TaskRunner completes the job. Resume by admitting
 another job after the prior one settles. Claim assertions prove ownership, not
 application permission: hosts must still authorize the owner and tenant.
+
+Dispatch fencing also compares the captured `startedAt`. `claimReady` only
+claims at a timestamp strictly greater than the row's previous `started_at`;
+retry and surplus release preserve that value. Millisecond resolution is safe
+because equal/backward clock readings leave the row pending until time advances,
+rather than creating a second dispatch with the same generation. Pending jobs
+may therefore retain their last dispatch start. No new column is required.

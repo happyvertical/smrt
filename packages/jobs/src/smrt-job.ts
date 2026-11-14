@@ -191,7 +191,7 @@ export class SmrtJob extends SmrtObject {
   @field({ type: 'text', required: true, default: 'fail' })
   timeoutBehavior: TimeoutBehavior = 'fail';
 
-  /** When execution started */
+  /** Last dispatch start; retained on retry so each subsequent claim must advance. */
   @field({ type: 'datetime', nullable: true })
   startedAt: Date | null = null;
 
@@ -354,7 +354,7 @@ export class SmrtJob extends SmrtObject {
       }
       const retried = await tx.query(
         `UPDATE _smrt_jobs SET status = 'pending', attempts = 0, last_error = NULL,
-           started_at = NULL, completed_at = NULL, worker_id = NULL, worker_heartbeat = NULL,
+           completed_at = NULL, worker_id = NULL, worker_heartbeat = NULL,
            updated_at = ? WHERE id = ? AND ${tenantPredicate}
            AND status IN ('pending', 'failed', 'cancelled')
            RETURNING ${SMRT_JOB_PORTABLE_SELECT_COLUMNS}`,
@@ -557,9 +557,10 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
     const whereConditions: string[] = [
       "status = 'pending'",
       'run_at <= ?',
+      '(started_at IS NULL OR started_at < ?)',
       '(task_input_requests IS NULL OR task_input_responses IS NOT NULL)',
     ];
-    const params: unknown[] = [now];
+    const params: unknown[] = [now, now];
 
     if (options.queues?.length) {
       const placeholders = options.queues.map(() => '?').join(', ');
@@ -601,14 +602,18 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
     const limit = options.limit ?? 100;
     if (limit <= 0) return [];
 
+    // started_at is a durable dispatch generation as well as a timestamp.
+    // Retain it across retry/surplus release and claim only at a strictly later
+    // clock reading. Equal/backward clocks leave work pending, never reuse it.
     const now = options.now ?? new Date();
     const nowIso = now.toISOString();
     const whereConditions: string[] = [
       "status = 'pending'",
       'run_at <= ?',
+      '(started_at IS NULL OR started_at < ?)',
       '(task_input_requests IS NULL OR task_input_responses IS NOT NULL)',
     ];
-    const whereParams: unknown[] = [nowIso];
+    const whereParams: unknown[] = [nowIso, nowIso];
 
     if (options.queues?.length) {
       const placeholders = options.queues.map(() => '?').join(', ');

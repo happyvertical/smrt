@@ -5,6 +5,8 @@ export interface JobClaim {
   jobId: string;
   workerId: string;
   attempt: number;
+  /** Strictly increasing persisted dispatch timestamp, retained across retries. */
+  startedAt: string;
   tenantId: string | null;
   objectType: string;
   objectId: string | null;
@@ -60,6 +62,8 @@ async function assertClaim(
     !claim.workerId ||
     !claim.objectType ||
     !claim.method ||
+    !claim.startedAt ||
+    !Number.isFinite(Date.parse(claim.startedAt)) ||
     !Number.isSafeInteger(claim.attempt) ||
     claim.attempt < 1
   )
@@ -75,11 +79,12 @@ async function assertClaim(
   // SELECT alone would leave a gap between ownership proof and domain commit.
   const result = await transaction.query(
     `UPDATE _smrt_jobs SET updated_at = updated_at
-      WHERE id = ? AND worker_id = ? AND attempts = ? AND object_type = ?
+      WHERE id = ? AND worker_id = ? AND attempts = ? AND started_at = ? AND object_type = ?
         AND method = ? AND ${tenant} AND ${target} AND ${status} RETURNING id`,
     claim.jobId,
     claim.workerId,
     claim.attempt,
+    claim.startedAt,
     claim.objectType,
     claim.method,
     ...(claim.tenantId === null ? [] : [claim.tenantId]),

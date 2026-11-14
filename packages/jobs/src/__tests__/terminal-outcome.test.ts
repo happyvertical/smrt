@@ -269,7 +269,7 @@ describe('atomic terminal job outcomes', () => {
     const { db, events, snapshot } = await fixture();
     await db.query(
       `UPDATE _smrt_jobs
-          SET status = 'running', attempts = 1, worker_id = 'worker-a'
+          SET status = 'running', queue = 'current-queue', object_type = 'CurrentTarget', method = 'current', worker_id = 'worker-a'
         WHERE id = ?`,
       snapshot.id,
     );
@@ -284,7 +284,15 @@ describe('atomic terminal job outcomes', () => {
 
     expect(
       (await events.listTerminalOutcomes({ tenantId: 'tenant-a' })).outcomes,
-    ).toMatchObject([{ status: 'cancelled', attempts: 1 }]);
+    ).toMatchObject([
+      {
+        status: 'cancelled',
+        attempts: 0,
+        queue: 'current-queue',
+        objectType: 'CurrentTarget',
+        method: 'current',
+      },
+    ]);
   });
 
   it('preserves the stale-recovery event stage while projecting failed', async () => {

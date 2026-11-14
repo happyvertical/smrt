@@ -10,6 +10,10 @@ import {
 } from '../job-claim.js';
 import { getJobClaim, TaskRunner } from '../runner.js';
 import { SmrtJobCollection } from '../smrt-job.js';
+import {
+  terminalSnapshot,
+  transitionTerminalJob,
+} from '../terminal-outcome.js';
 
 let captured: Readonly<JobClaim> | undefined;
 @smrt()
@@ -36,6 +40,7 @@ describe('transaction-bound job claim proof', () => {
       jobId: job.id as string,
       workerId: 'incarnation',
       attempt: job.attempts,
+      startedAt: job.startedAt?.toISOString() as string,
       tenantId: null,
       objectType: job.objectType,
       objectId: job.objectId,
@@ -188,6 +193,71 @@ describe('transaction-bound job claim proof', () => {
       );
     } finally {
       await runner.stop();
+    }
+  });
+
+  it('fences an old claim after retry and same-worker re-claim, even with a frozen/backward clock', async () => {
+    const jobs = await SmrtJobCollection.create({ db });
+    const job = await jobs.enqueueJob({
+      objectType: 'ClaimProofProbe',
+      method: 'execute',
+      queue: 'generation',
+    });
+    const now = new Date(Date.now() + 10000);
+    const [first] = await jobs.claimReady({
+      workerId: 'same-worker',
+      queues: ['generation'],
+      now,
+    });
+    const old: JobClaim = {
+      jobId: first.id as string,
+      workerId: 'same-worker',
+      attempt: first.attempts,
+      startedAt: first.startedAt?.toISOString() as string,
+      tenantId: null,
+      objectType: first.objectType,
+      objectId: null,
+      method: 'execute',
+    };
+    const snapshot = terminalSnapshot(first);
+    await first.cancel();
+    await first.retry();
+    expect(first.startedAt?.toISOString()).toBe(old.startedAt);
+    expect(
+      await jobs.claimReady({
+        workerId: 'same-worker',
+        queues: ['generation'],
+        now,
+      }),
+    ).toEqual([]);
+    expect(
+      await jobs.claimReady({
+        workerId: 'same-worker',
+        queues: ['generation'],
+        now: new Date(now.getTime() - 1),
+      }),
+    ).toEqual([]);
+    const [second] = await jobs.claimReady({
+      workerId: 'same-worker',
+      queues: ['generation'],
+      now: new Date(now.getTime() + 1),
+    });
+    expect(second.attempts).toBe(old.attempt);
+    expect(second.workerId).toBe(old.workerId);
+    expect(second.startedAt?.toISOString()).not.toBe(old.startedAt);
+    expect(
+      await transitionTerminalJob(db, {
+        job: snapshot as NonNullable<typeof snapshot>,
+        status: 'completed',
+        completedAt: new Date(),
+        expectedStatuses: ['running'],
+        expectedWorkerId: 'same-worker',
+      }),
+    ).toBeNull();
+    for (const assert of [assertJobClaim, assertJobClaimForRelease]) {
+      await expect(
+        db.transaction?.((tx) => assert(tx, old)),
+      ).rejects.toBeInstanceOf(JobClaimLostError);
     }
   });
 

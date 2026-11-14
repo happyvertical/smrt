@@ -246,3 +246,10 @@ allowing a settled handler to clear its application's lease after Stop. It
 rejects pending, recovered and replacement claims. Neither function changes
 job status nor expires the process lease. Return from the handler to park;
 TaskRunner owns job completion. Use only after current host authorization.
+
+Dispatch fencing also compares the captured `startedAt`. `claimReady` only
+claims at a timestamp strictly greater than the row's previous `started_at`;
+retry and surplus release preserve that value. Millisecond resolution is safe
+because equal/backward clock readings leave the row pending until time advances,
+rather than creating a second dispatch with the same generation. Pending jobs
+may therefore retain their last dispatch start. No new column is required.

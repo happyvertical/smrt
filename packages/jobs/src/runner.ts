@@ -725,7 +725,6 @@ export class TaskRunner extends EventEmitter {
               SET status = 'pending',
                   worker_id = NULL,
                   worker_heartbeat = NULL,
-                  started_at = NULL,
                   attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END,
                   updated_at = ?
             WHERE worker_id = ? AND status = 'running' AND id IN (${placeholders})`,
@@ -1462,6 +1461,7 @@ export class TaskRunner extends EventEmitter {
         jobId: job.id ?? '',
         workerId: this.workerKey,
         attempt: job.attempts,
+        startedAt: job.startedAt?.toISOString() ?? '',
         tenantId: job.tenantId ?? null,
         objectType: job.objectType,
         objectId: job.objectId ?? null,
