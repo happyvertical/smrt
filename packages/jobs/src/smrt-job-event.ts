@@ -75,6 +75,13 @@ export interface ListTerminalOutcomesOptions {
   methods?: string[];
 }
 
+/** Exact-job lookup; optional dispatch outcome fields bind a current job snapshot. */
+export interface GetTerminalOutcomeOptions {
+  tenantId: string | null;
+  attempts?: number;
+  completedAt?: string;
+}
+
 export interface SmrtJobTerminalOutcomePage {
   outcomes: SmrtJobTerminalOutcome[];
   limit: number;
@@ -430,6 +437,47 @@ export class SmrtJobEventCollection extends SmrtCollection<SmrtJobEvent> {
           ? scanned.toCursor()
           : null,
     };
+  }
+
+  /**
+   * Read one job's newest matching authoritative outcome, independently of the
+   * tenant-wide feed's 1,000-candidate limit. Retention still applies.
+   * @param jobId - Authorized job identity; the caller owns resource authorization.
+   * @param options - Explicit tenant and optional current completion identity.
+   * @returns A safe outcome or null; never raw errors, arguments or results.
+   */
+  async getTerminalOutcome(
+    jobId: string,
+    options: GetTerminalOutcomeOptions,
+  ): Promise<SmrtJobTerminalOutcome | null> {
+    if (!Object.hasOwn(options, 'tenantId') || options.tenantId === undefined)
+      throw new Error(
+        'Terminal outcome queries require tenantId or tenantId: null',
+      );
+    const where = [
+      'job_id = ?',
+      "stage IN ('completed', 'failed', 'cancelled', 'stale-recovery')",
+    ];
+    const params: unknown[] = [jobId];
+    this.addTenantPredicate(where, params, options);
+    const events = await this.query(
+      `SELECT ${JOB_EVENT_STORAGE_COLUMNS} FROM _smrt_job_events
+        WHERE ${where.join(' AND ')} ORDER BY ${this.createdAtComparableExpression()} DESC, id DESC`,
+      params,
+      { allowRawOnTenantScoped: true },
+    );
+    for (const event of events) {
+      const outcome = terminalOutcome(event);
+      if (
+        outcome &&
+        (options.attempts === undefined ||
+          options.attempts === outcome.attempts) &&
+        (options.completedAt === undefined ||
+          options.completedAt === outcome.completedAt)
+      )
+        return outcome;
+    }
+    return null;
   }
 
   private addTenantPredicate(

@@ -197,6 +197,7 @@ export {
 export { SmrtJobDedupeSlot } from './smrt-job-dedupe-slot.js';
 // Durable job telemetry
 export {
+  type GetTerminalOutcomeOptions,
   type JobEventCursor,
   type ListJobEventsOptions,
   type ListTerminalOutcomesOptions,

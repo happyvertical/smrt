@@ -479,3 +479,8 @@ Use `assertFailedJobDispatch(tx, dispatch)` to lock an exact failed dispatch
 before checkpoint recovery and re-admission. It checks tenant, target, attempt
 and the retained start generation and rejects a concurrent retry/reclaim. Use
 the same caller transaction for the domain CAS and job admission.
+
+`SmrtJobEventCollection.getTerminalOutcome(jobId, { tenantId, attempts?,
+completedAt? })` reads the safe outcome for that exact job and completion,
+without depending on the tenant feed's 1,000 candidates. Event retention still
+applies, and callers must authorize the resource as well as supply its tenant.
