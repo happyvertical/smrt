@@ -47,3 +47,9 @@ metadata, independently of mutable pass input and resumed budgets. Object-key
 order does not affect identity. Legacy checkpoints without this metadata fail
 closed on replay because their original request cannot be verified. The digest
 is private bridge metadata and is omitted from public snapshots.
+
+Hosts may supply `resumeBudget(owner, state, proposed)` to return capped effective
+totals or throw to refuse ordinary stopped/approval resume. It runs before any
+checkpoint/admission write, and inference validates its returned budget. Without
+the hook, behavior is unchanged. Crash recovery retains its existing totals;
+raise them only on a subsequent budget-stop resume.

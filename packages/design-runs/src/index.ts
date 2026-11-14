@@ -68,6 +68,12 @@ export interface DesignRunJobsOptions<Input> {
   definition: string;
   queue?: string;
   authorize(owner: DesignRunOwner): Promise<void>;
+  /** Host may cap or refuse effective totals on ordinary stopped/approval resume. */
+  resumeBudget?(
+    owner: DesignRunOwner,
+    state: Readonly<DesignRunState>,
+    proposed: Readonly<DesignRunBudget>,
+  ): Promise<DesignRunBudget>;
   /** Reconstructed after restart from durable input, never process-local closures. */
   configure(
     owner: DesignRunOwner,
@@ -467,8 +473,19 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
             return snapshot(next);
           });
         }
+        const approvedBudget = options.resumeBudget
+          ? await options.resumeBudget(
+              owner,
+              snapshot(state),
+              Object.freeze({ ...state.budget, ...budget }),
+            )
+          : budget;
         return snapshot(
-          await driver(owner, state.input as Input).resume(id, ownerId, budget),
+          await driver(owner, state.input as Input).resume(
+            id,
+            ownerId,
+            approvedBudget,
+          ),
         );
       };
       return {

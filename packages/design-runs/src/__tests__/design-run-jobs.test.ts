@@ -713,6 +713,35 @@ describe('durable design job bridge', () => {
     ).rejects.toBeInstanceOf(DesignRunKeyConflictError);
   });
 
+  it('lets the host refuse or cap resumed totals before checkpoint or job admission', async () => {
+    let denied = true;
+    const policy = vi.fn<
+      NonNullable<DesignRunJobsOptions<Input>['resumeBudget']>
+    >(async (_owner, _state, proposed) => {
+      if (denied) throw new Error('Budget policy refused');
+      return { ...proposed, maxTokens: Math.min(proposed.maxTokens, 20) };
+    });
+    const bound = install(undefined, passes, { resumeBudget: policy });
+    const run = await bound.start(startInput());
+    await bound.stop(run.id);
+    const stopped = await bound.get(run.id);
+    await expect(bound.resume(run.id, { maxTokens: 1000 })).rejects.toThrow(
+      'Budget policy refused',
+    );
+    expect(await bound.get(run.id)).toEqual(stopped);
+    expect(await jobs.list({ where: { objectId: run.id } })).toHaveLength(1);
+    denied = false;
+    expect(
+      (await bound.resume(run.id, { maxTokens: 1000 })).budget.maxTokens,
+    ).toBe(20);
+    expect(policy.mock.calls[1][0]).toEqual({
+      ownerId: 'owner',
+      tenantId: null,
+    });
+    await worker();
+    expect((await end(run.id)).status).toBe('done');
+  });
+
   it('replays a completed run job without executing any pass again', async () => {
     const execute = vi.fn<DesignRunDriverOptions['executePass']>(async () => ({
       output: { value: 1 },
