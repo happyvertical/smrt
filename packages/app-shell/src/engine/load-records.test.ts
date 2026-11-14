@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { afterAll, beforeAll, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import {
   AppHost,
   ApprovalRequiredError,
@@ -11,20 +11,24 @@ import {
   MemoryVersionStore,
 } from './index.ts';
 
-const dir = mkdtempSync(join(tmpdir(), 'load-4916-'));
-const store = new MemoryVersionStore();
+let dir: string;
+let store: MemoryVersionStore;
 let host: AppHost;
 const run = (cmd: Command) =>
   host.execute(cmd, { author: 't', approved: true });
-const raw = () => {
-  const db = new DatabaseSync(join(dir, 'app.db'));
+const raw = (dataDir = dir) => {
+  const db = new DatabaseSync(join(dataDir, 'app.db'));
   try {
     return db.prepare('SELECT * FROM u_sales ORDER BY id').all();
   } finally {
     db.close();
   }
 };
-beforeAll(async () => {
+beforeEach(async () => {
+  // Each attempt owns its data and history. A failed assertion must not leave
+  // committed loads behind for another test or the CI runner's next attempt.
+  dir = mkdtempSync(join(tmpdir(), 'load-4916-'));
+  store = new MemoryVersionStore();
   host = await AppHost.open(dir, { store });
   await run({
     type: 'defineModel',
@@ -46,7 +50,8 @@ beforeAll(async () => {
     },
   });
 });
-afterAll(async () => {
+afterEach(async () => {
+  vi.restoreAllMocks();
   await host.close();
   rmSync(dir, { recursive: true, force: true });
 });
@@ -151,8 +156,15 @@ it('upserts by key, counts unchanged, requires approval, and restores exact orig
 });
 
 it('rolls back a mid-load database failure, restarts intact, and replays from a draft', async () => {
+  await host.create('Sale', { code: 'later', qty: 9 });
   const before = raw();
   const version = host.version;
+  const history = await store.list();
+  const journal = new DatabaseSync(join(dir, 'app.db'));
+  const archiveBefore = journal
+    .prepare('SELECT * FROM _archive ORDER BY id')
+    .all();
+  journal.close();
   // Inject only after the disposable planning rehearsal: the failure must hit
   // row 101 of the real migration, after the first savepoint batch succeeded.
   const caller = host as unknown as {
@@ -188,7 +200,12 @@ it('rolls back a mid-load database failure, restarts intact, and replays from a 
   spy.mockRestore();
   expect(raw()).toEqual(before);
   expect(host.version).toBe(version);
+  expect(await store.list()).toEqual(history);
+  expect(await store.current()).toBe(version);
   const db2 = new DatabaseSync(join(dir, 'app.db'));
+  expect(db2.prepare('SELECT * FROM _archive ORDER BY id').all()).toEqual(
+    archiveBefore,
+  );
   db2.exec('DROP TRIGGER reject_load');
   db2.close();
   await host.close();
@@ -198,6 +215,7 @@ it('rolls back a mid-load database failure, restarts intact, and replays from a 
     store: new MemoryVersionStore(),
   });
   try {
+    expect(raw(draft.dataDir)).toEqual(before);
     await draft.execute(
       {
         type: 'loadRecords',
@@ -212,7 +230,9 @@ it('rolls back a mid-load database failure, restarts intact, and replays from a 
     )?.id;
     await draft.create('Sale', { code: 'draft-only' });
     await host.create('Sale', { code: 'live-only' });
+    const liveBeforePublish = raw();
     const p = await host.previewPublish(draft);
+    expect(raw()).toEqual(liveBeforePublish);
     await host.publishDraft(draft, {
       author: 't',
       approved: true,
@@ -224,11 +244,17 @@ it('rolls back a mid-load database failure, restarts intact, and replays from a 
       'live-only',
       'replayed',
     ]);
+    expect(
+      raw()
+        .map((r) => r.code)
+        .sort(),
+    ).toEqual(['later', 'live-only', 'replayed']);
     await run({ type: 'undo' });
     expect((await host.list('Sale')).map((r) => r.code).sort()).toEqual([
       'later',
       'live-only',
     ]);
+    expect(raw()).toEqual(liveBeforePublish);
   } finally {
     await draft.discard();
   }
