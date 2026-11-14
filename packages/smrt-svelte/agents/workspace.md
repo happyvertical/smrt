@@ -76,7 +76,9 @@ toggles, focus tools, mounted drawer, or edit-mode controls. A default
 `AdminShell` still shows its brand, so its header stays; an app with no
 footer content and no dock tools has no footer and no right strip.
 
-**Phone defaults.** `phone.scrim` and `phone.swipeToClose` are on (pass `false`
+**Phone defaults.** `AppShell` navigation starts closed on phones, independent of the saved desktop sidebar state. Phone open/close gestures do not overwrite that desktop preference. The header renders the full brand title, with CSS ellipsis when space runs out.
+
+ `phone.scrim` and `phone.swipeToClose` are on (pass `false`
 to turn one off). Opening the left or right surface collapses the other
 (`ShellState.closeExclusivePeers`, not persisted), and starting a layout edit
 closes any open surface. The Menu opener is an icon button (hamburger, name
@@ -163,6 +165,53 @@ leftSidebar.header -> footer.end; rightSidebar.footer -> footer.end ->
 header.end -> leftSidebar.footer. The legacy `tenantFooter` prop keeps its own
 `footerInHeader` fallback.
 
+### Docked panel (sidebar, panel, content)
+
+`AdminShell`/`AppShell` `panel?: Snippet<[{ viewport, open }]>` adds a docked
+column between the left sidebar and the main area (a chat, say). It is opt-in:
+without `panel` no wrapper or separator renders and the grid is unchanged. Not
+a fifth edge: it lives in `.smrt-admin-shell__body` (grid column 2, row 3)
+beside `<main>`, so `PANEL_EDGES`, `ShellLayout.panels` and the four regions do
+not change. It stays mounted while closed (`hidden`), so chat state survives a
+toggle. Props: `panelOpen` (host-owned; `AppShell` `bind:panelOpen`),
+`panelLabel`, `panelResize` (`true`, limits, or `false`), `panelSize` (px until
+resized, default 400), `panelEnabled` (`AppShell`; turn it off without
+removing the snippet, e.g. plugin mode). The content keeps
+`--smrt-admin-shell-panel-main-min` (20rem) via CSS.
+
+Resizing reuses the edge machinery: `ShellSizeKey = PanelEdge | 'panel'`,
+`ShellState.resizeLimits('panel')` (`dockedPanelLimits`, set from
+`panelResize` by `AdminShell`; defaults `DEFAULT_SHELL_DOCKED_PANEL_RESIZE`
+280-800 px, step 16), `panelSize('panel')`, `setPanelSize('panel', n | null)`,
+`clampPanelSize`, and the same pointer/keyboard handlers as the edges (drag
+persists once on release, Arrow/Shift+Arrow/Home/End, Enter and double-click
+reset, `role="separator"` with `aria-valuenow|min|max`, `data-testid`
+`admin-shell-resizer-panel`). The width is stored as `ShellSettingsDelta.sizes.panel`
+(`sanitizeShellSettingsDelta` accepts that key only for `sizes`). On phones the
+panel is a full-size view over main (main is `inert`), no separator.
+
+`sidebarFooterDivider` (default `true`, `AdminShell` and `AppShell`) draws the hairline above the sidebar footer slots and the collapsed rail's footer; `false` sets `data-footer-divider="off"` on the shell root and removes them, for a host whose neighbouring column draws its own line at that height.
+
+`AppShell` builds on it: `panelToggle: { label, icon?, slot? }` is the built-in
+`item:panel-toggle` (icon `ShellIconButton`, `aria-pressed`, default slot
+`leftSidebar.footer`); on a phone with `phoneTabBar` it is the "panel" tab
+instead (`PhoneTabBar` `panelTab`), the open state is internal (starts closed,
+closes on `currentHref` change). `voiceToggle: { label, state: 'off' | 'on' |
+'unavailable', unavailableLabel?, onpress?, slot? }` is `item:voice` above it:
+a toggle, or a dimmed `aria-disabled` control with no pressed state that never
+calls `onpress`. `ShellSlotItem.rail` (and these two items) keeps a
+`leftSidebar.footer` item as an icon above the avatar in the collapsed rail
+instead of falling back to another region (the footer slot wraps so the full
+account row takes its own line).
+
+Account menu items: `AppShell` `accountMenu: { slot?, items?, theme? }`. `items`
+are caller-owned `WorkspaceAccountMenuItem`s (`{ id, label, href?, onselect?,
+badge?, badgeLabel? }`) listed before Settings; a positive `badge` shows on the
+item and the summed count on the closed trigger (also in its accessible name).
+`theme: true` adds a "Theme: Light|Dark" item that toggles the shell's
+`ThemeProvider` scheme (`ShellAccountMenu`, which reads the theme context).
+Order: items, Theme, Settings, Sign out.
+
 ### Edge toggles and hotkeys are opt-in (#3661)
 
 `AdminShell`/`AppShell` `edgeToggles?: boolean | Partial<Record<PanelEdge,
@@ -245,6 +294,15 @@ types `AppShellCommandPalette`/`AppShellAccountMenu` from `./app`): it owns the
 dialog and the global shortcut, so it mounts once. Planner-style hosts that
 rendered their own `header.end` assistant toggle should pass `dockToggles`
 (`dock:assistant`) and `user` instead.
+
+Sectioned settings: `ShellSettingsPage basePath="/settings"` lists the
+sections (`SHELL_SETTINGS_SECTIONS`, Shortcuts only when hotkeys are
+available, plus `extraSections` the host adds) as a menu linking to
+`${basePath}/${id}`; with `section="layout"` (or children for a host section,
+with `title`) it renders that one page with a back link. `ShellSettingsPanel`
+takes the same `section` prop. Without `basePath` the page stays the one-page
+Appearance + Account + Layout mode. `isShellSettingsSection()` is a ready
+SvelteKit param matcher for the `[section]` route.
 
 Async sign-out (#3860): `onSignOut?: () => void | Promise<void>` (AppShell,
 `WorkspaceAccountMenu`, `ShellSettingsPage`/`ShellSettingsPanel`) is awaited.
@@ -689,6 +747,11 @@ lives beside, not inside, `./workspace` so the AdminShell barrel stays free of
   form is a plain `method="POST"`; pass `enhance` from `$app/forms` to enhance
   it. The token is a hidden field only and is never stored, logged or shown.
   Single-use, loopback-only enforcement stays server-side.
+  Optional `data.launchMode: 'desktop'` selects translated reopen guidance for the
+  existing desktop launch flow, suppressing forms, tokens and terminal/server
+  messages for missing, expired or unavailable links. An explicit ready
+  invitation keeps the manual form for non-autoClaim owner-link consumers. The
+  runtime owns detection and authorization; the component only presents its data.
 
 `AppShell chrome={false}` omits generated chrome while retaining Provider,
 ThemeProvider, shell layout context and the canonical `useAdminShell()` state.

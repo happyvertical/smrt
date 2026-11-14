@@ -30,6 +30,7 @@ export interface SmrtDecoratorConfig {
 /** Input capabilities, not a replacement for the application's full config. */
 export interface SmrtUserConfig {
   root?: string;
+  ssr?: { external?: string[] | true };
   mode?: string;
   plugins?: readonly unknown[];
   oxc?: false | { decorator?: SmrtDecoratorConfig };
@@ -183,7 +184,11 @@ export interface SmrtVitePlugin<Api = undefined> {
     ) => SmrtAwaitable<string | SmrtResolvedId | null | void>
   >;
   load?: SmrtHook<
-    (this: SmrtHookContext, id: string) => SmrtAwaitable<string | null | void>
+    (
+      this: SmrtHookContext,
+      id: string,
+      options?: { ssr?: boolean },
+    ) => SmrtAwaitable<string | null | void>
   >;
   transformIndexHtml?: SmrtHook<
     (

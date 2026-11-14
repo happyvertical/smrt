@@ -46,7 +46,9 @@ const snapshot: PlanSnapshot = {
       id: 'section:sales',
       label: 'Sales',
       hidden: false,
-      items: [{ id: 'nav:a', label: 'Orders', hidden: false }],
+      items: [
+        { id: 'nav:a', label: 'Orders', icon: 'fileText', hidden: false },
+      ],
     },
   ],
   focus: { tab: null, section: null },

@@ -1201,6 +1201,12 @@ describe('ObjectRegistry', () => {
       });
 
       const definitions = ObjectRegistry.getAllSchemasAsDefinitions();
+      expect(
+        definitions.text_id_fallback_objects.columns._sync_origin_device_id,
+      ).toEqual({ type: 'TEXT' });
+      expect(
+        definitions.text_id_fallback_objects.columns._sync_revision,
+      ).toEqual({ type: 'INTEGER' });
       expect(definitions.text_id_fallback_objects.columns.id).toEqual(
         expect.objectContaining({
           type: 'TEXT',

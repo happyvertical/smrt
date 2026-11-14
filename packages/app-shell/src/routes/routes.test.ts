@@ -419,3 +419,26 @@ describe('owner flows', () => {
     ac.abort();
   });
 });
+
+it('keeps builder and approved-command snapshot paths server-side', async () => {
+  const out = await runAs(h.owner, () =>
+    App.defineModel('PrivateSnapshot', { value: { type: 'text' } }),
+  );
+  expect(out).not.toHaveProperty('snapshot');
+  const pending = (await runAs(h.owner, () =>
+    App.removeField('PrivateSnapshot', 'value'),
+  )) as { approvalId: string };
+  const response = await approvalRoute.POST(
+    event(h.owner, 'POST', `/api/shell/approvals/${pending.approvalId}`, {
+      body: { approve: true },
+      params: { id: pending.approvalId },
+    }),
+  );
+  const approved = await response.json();
+  expect(approved.status).toBe('approved');
+  expect(approved.result).not.toHaveProperty('snapshot');
+  const views = await listApprovalViews({ status: 'approved' });
+  expect(
+    views.find((a) => a.id === pending.approvalId)?.result,
+  ).not.toHaveProperty('snapshot');
+});

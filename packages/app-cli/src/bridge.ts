@@ -91,6 +91,8 @@ export interface McpStdioBridgeOptions extends CliConfigContext {
    * Override fetch implementation (used by tests so we never hit the network).
    */
   fetch?: typeof fetch;
+  /** Re-list a stateless upstream and notify stdio clients. Default 2 seconds. */
+  catalogPollMs?: number;
 }
 
 /**
@@ -161,7 +163,7 @@ function createModernBridge(options: McpStdioBridgeOptions): {
 } {
   const path = resolveMcpPath(options.mcpPath);
   const server = new Server(options.serverInfo, {
-    capabilities: { tools: {}, resources: {} },
+    capabilities: { tools: { listChanged: true }, resources: {} },
     cacheHints: { 'tools/list': { ttlMs: 0, cacheScope: 'private' } },
   });
   async function forward<T>(
@@ -204,12 +206,69 @@ function createModernBridge(options: McpStdioBridgeOptions): {
       await client.close().catch(() => undefined);
     }
   }
+  let catalog: string | null | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let closed = false;
+  const pollMs = options.catalogPollMs ?? 2_000;
+  if (!Number.isSafeInteger(pollMs) || pollMs < 10)
+    throw new TypeError('Invalid catalog polling interval');
+  const fingerprint = (result: ListToolsResult) =>
+    JSON.stringify(
+      [...result.tools].sort((a, b) => compareToolNames(a.name, b.name)),
+    );
+  function schedule() {
+    if (closed || timer) return;
+    timer = setTimeout(async () => {
+      timer = undefined;
+      try {
+        const next = fingerprint(
+          await forward(async (client) => {
+            const tools: ListToolsResult['tools'] = [];
+            const cursors = new Set<string>();
+            let cursor: string | undefined;
+            do {
+              const page = await client.listTools(
+                cursor ? { cursor } : undefined,
+              );
+              tools.push(...page.tools);
+              cursor = page.nextCursor;
+              if (cursor && (cursors.has(cursor) || cursors.size >= 100))
+                throw new Error('Invalid catalog pagination');
+              if (cursor) cursors.add(cursor);
+            } while (cursor);
+            return { tools };
+          }),
+        );
+        const changed = catalog !== undefined && next !== catalog;
+        catalog = next;
+        if (changed) {
+          await server.sendToolListChanged();
+        }
+      } catch {
+        // Revocation/offline upstream invalidates a formerly visible catalog.
+        if (catalog !== undefined && catalog !== null) {
+          catalog = null;
+          await server.sendToolListChanged().catch(() => undefined);
+        }
+      } finally {
+        schedule();
+      }
+    }, pollMs);
+    timer.unref();
+  }
+  server.onclose = () => {
+    closed = true;
+    if (timer) clearTimeout(timer);
+  };
   server.setRequestHandler('tools/list', (request) =>
-    forward(async (client) => ({
-      ...(await client.listTools(request.params)),
-      ttlMs: 0,
-      cacheScope: 'private' as const,
-    })),
+    forward(async (client) => {
+      const result = await client.listTools(request.params);
+      // Paginated lists must not establish an incomplete baseline.
+      if (!request.params?.cursor && !result.nextCursor)
+        catalog = fingerprint(result);
+      schedule();
+      return { ...result, ttlMs: 0, cacheScope: 'private' as const };
+    }),
   );
   server.setRequestHandler('tools/call', (request) =>
     forward((client) => client.callTool(request.params)),

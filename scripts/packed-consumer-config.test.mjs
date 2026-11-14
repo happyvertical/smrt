@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
-import { copyPackedProducerSupportFiles } from './packed-consumer.mjs';
+import { copyPackedProducerSupportFiles, packedExternalVersions } from './packed-consumer.mjs';
 
 test('isolated producer resolves unselected project references without borrowing their runtime tree', () => {
   const fixture = mkdtempSync(resolve(tmpdir(), 'smrt-config-copy-'));
@@ -66,3 +68,59 @@ test('mobile-contract verification gets exact checked-in support files only when
  assert.equal(existsSync(resolve(producer,'packages/cli/package.json')),false);
  } finally { rmSync(fixture,{recursive:true,force:true}); }
  });
+
+
+test('packed consumers retain different MCP SDK versions for each parent', () => {
+  const fixture = mkdtempSync(resolve(tmpdir(), 'smrt-parent-versions-'));
+  try {
+    const parents = ['cli', 'smrt-app-mcp'].map(name => {
+      const manifest = JSON.parse(readFileSync(resolve(`packages/${name}/package.json`), 'utf8'));
+      const dependency = '@modelcontextprotocol/server';
+      const resolvedVersion = JSON.parse(readFileSync(resolve(`packages/${name}/node_modules/${dependency}/package.json`), 'utf8')).version;
+      const dir = resolve(fixture, name);
+      mkdirSync(dir);
+      writeFileSync(resolve(dir, 'package.json'), JSON.stringify({
+        name: manifest.name, version: manifest.version,
+        dependencies: { [dependency]: '*' },
+      }));
+      return { parent: manifest.name, version: manifest.version, dependency, resolvedVersion, dir };
+    });
+    assert.deepEqual(parents.map(p => p.resolvedVersion), ['2.3.1', '2.4.0']);
+    const overrides = packedExternalVersions(parents);
+    assert.equal(Object.keys(overrides).length, 2);
+    assert.throws(() => packedExternalVersions([...parents, { ...parents[0], resolvedVersion: '0.0.0' }]), /Conflicting external versions/);
+    writeFileSync(resolve(fixture, 'package.json'), JSON.stringify({ private: true,
+      dependencies: Object.fromEntries(parents.map(p => [p.parent, `file:${p.dir}`])),
+    }));
+    // This test checks pnpm's parent selectors, not SDK implementation. Use
+    // SDK-shaped archives at the actual installed versions so it stays offline
+    // even when a registry's tarball cache has been pruned. The packed host gate
+    // separately boots the real SDK dependency graph.
+    const archives = new Map();
+    for (const parent of parents) {
+      assert.equal(overrides[`${parent.parent}@${parent.version}>${parent.dependency}`], parent.resolvedVersion);
+      const sdk = resolve(fixture, `sdk-${parent.resolvedVersion}`);
+      const output = resolve(fixture, `packed-${parent.resolvedVersion}`);
+      mkdirSync(resolve(sdk, 'dist'), { recursive: true });
+      mkdirSync(output);
+      writeFileSync(resolve(sdk, 'package.json'), JSON.stringify({
+        name: parent.dependency, version: parent.resolvedVersion, main: './dist/index.js',
+      }));
+      writeFileSync(resolve(sdk, 'dist/index.js'), `module.exports = { version: '${parent.resolvedVersion}' };`);
+      execFileSync('pnpm', ['pack', '--pack-destination', output], { cwd: sdk, stdio: 'pipe', encoding: 'utf8' });
+      const tarballs = readdirSync(output).filter(file => file.endsWith('.tgz'));
+      assert.equal(tarballs.length, 1);
+      archives.set(parent.resolvedVersion, `file:${resolve(output, tarballs[0])}`);
+    }
+    writeFileSync(resolve(fixture, 'pnpm-workspace.yaml'), JSON.stringify({
+      packages: [], overrides: Object.fromEntries(Object.entries(overrides).map(([parent, version]) => [parent, archives.get(version)])),
+    }));
+    execFileSync('pnpm', ['install', '--offline', '--ignore-scripts', '--no-frozen-lockfile'], { cwd: fixture, stdio: 'pipe', encoding: 'utf8' });
+    for (const parent of parents) {
+      const require = createRequire(resolve(fixture, 'package.json'));
+      const installed = require.resolve(`${parent.parent}/package.json`);
+      const parentRequire = createRequire(installed);
+      assert.equal(JSON.parse(readFileSync(resolve(parentRequire.resolve(parent.dependency), '../../package.json'), 'utf8')).version, parent.resolvedVersion);
+    }
+  } finally { rmSync(fixture, { recursive: true, force: true }); }
+});

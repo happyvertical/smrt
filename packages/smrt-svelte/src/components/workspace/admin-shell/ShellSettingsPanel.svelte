@@ -11,6 +11,7 @@ import { useAdminShell } from './context.js';
 import HotkeyInput from './HotkeyInput.svelte';
 import { tryUseShellLayout } from './layout-context.js';
 import { resolveHotkey } from './settings.js';
+import type { ShellSettingsSection } from './settings-sections.js';
 import { SHELL_REGION_MESSAGES } from './slot-labels.js';
 import type { ShellRegion } from './slots.js';
 import type { PanelEdge, ShellHotkeyBinding } from './types.js';
@@ -28,6 +29,11 @@ interface Props {
    * a rejection shows an inline error and leaves the section as it was.
    */
   onSignOut?: () => unknown;
+  /**
+   * Render only this section (Appearance and Account then show without their
+   * flags). Omit for the one-page mode the flags control.
+   */
+  section?: ShellSettingsSection;
 }
 
 const {
@@ -35,12 +41,19 @@ const {
   account = false,
   signOutHref,
   onSignOut,
+  section,
 }: Props = $props();
 
 const { t } = useI18n();
 const shell = useAdminShell();
 const layout = tryUseShellLayout();
-const auth = account ? useAuth() : null;
+const showAppearance = $derived(
+  section ? section === 'appearance' : appearance,
+);
+const showAccount = section ? section === 'account' : account;
+const showLayout = $derived(!section || section === 'layout');
+const showShortcuts = $derived(!section || section === 'shortcuts');
+const auth = showAccount ? useAuth() : null;
 const edges: PanelEdge[] = ['top', 'left', 'bottom', 'right'];
 /** The identity `User` carries no display name; hosts may attach one (e.g. from the profile). */
 const accountName = $derived.by(() => {
@@ -126,7 +139,7 @@ function conflictFor(edge: PanelEdge): string | null {
   class="smrt-shell-settings-panel"
   aria-label={t(M['ui.shell_settings_panel.shell_settings'])} data-smrt-component="ShellSettingsPanel"
 >
-  {#if appearance}
+  {#if showAppearance}
     <section data-smrt-part="appearance" aria-labelledby="smrt-shell-settings-appearance">
       <h3 id="smrt-shell-settings-appearance">{t(M['ui.shell_settings.appearance'])}</h3>
       <div class="smrt-shell-settings-panel__controls" data-smrt-part="controls">
@@ -175,6 +188,7 @@ function conflictFor(edge: PanelEdge): string | null {
     </section>
   {/if}
 
+  {#if showLayout}
   <section data-smrt-part="layout" aria-labelledby="smrt-shell-settings-layout">
     <h3 id="smrt-shell-settings-layout">{t(M['ui.shell_settings.layout'])}</h3>
     <p>{t(M['ui.shell_settings_panel.description'])}</p>
@@ -262,8 +276,9 @@ function conflictFor(edge: PanelEdge): string | null {
       {/each}
     </div>
   </section>
+  {/if}
 
-  {#if shell.hotkeysAvailable}
+  {#if showShortcuts && shell.hotkeysAvailable}
     <section data-smrt-part="shortcuts" aria-labelledby="smrt-shell-settings-shortcuts">
       <header>
         <h3 id="smrt-shell-settings-shortcuts">{t(M['ui.shell_settings.shortcuts'])}</h3>

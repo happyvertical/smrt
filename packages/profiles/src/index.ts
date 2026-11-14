@@ -160,7 +160,7 @@ export {
   promptMessageOptions,
   smrtProfilesGenerateBioPrompt,
 } from './prompts';
-export { AuditLogRecipe } from './recipes.js';
+export { AuditLogRecipe, ProfileIdentityRecipe } from './recipes.js';
 // Export types
 export type {
   ReciprocalHandler,

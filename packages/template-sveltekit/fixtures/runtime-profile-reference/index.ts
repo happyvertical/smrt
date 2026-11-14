@@ -59,6 +59,9 @@ import { ReferenceWorkItemAssetCollection } from './overlay/src/lib/objects/Refe
 
 const fixtureRoot = dirname(fileURLToPath(import.meta.url));
 const overlayRoot = join(fixtureRoot, 'overlay');
+// The Note example is not part of the template; tests that need a registered,
+// tenant-scoped object receive it from here.
+const noteExampleRoot = join(fixtureRoot, '..', '..', 'examples', 'notes');
 
 export const REFERENCE_RUNTIME_PROFILES = [
   'local',
@@ -171,16 +174,33 @@ export function copyRuntimeProfileReference(
     name: '@smrt-fixtures/runtime-profile-reference',
     overwrite: true,
   });
+  cpSync(join(noteExampleRoot, 'src'), join(destination, 'src'), {
+    recursive: true,
+    force: true,
+  });
   cpSync(overlayRoot, destination, { recursive: true, force: true });
 
-  // Preserve the public template's Note export while making the overlay
-  // discoverable to a copied application's ordinary object barrel.
+  // The template ships an empty object barrel; register the Note example and
+  // the overlay objects in it, and link the example page from the nav.
+  const layoutPath = join(destination, 'src', 'routes', '+layout.svelte');
+  const layout = readFileSync(layoutPath, 'utf8');
+  const navAnchor = 'const nav: ShellNavItem[] = [\n';
+  if (!layout.includes(navAnchor)) {
+    throw new Error('Reference fixture requires the template nav array.');
+  }
+  writeFileSync(
+    layoutPath,
+    layout.replace(
+      navAnchor,
+      `${navAnchor}    { href: '/notes', label: 'Notes', icon: 'book', description: 'Your workspace notes' },\n`,
+    ),
+  );
   const objectsIndexPath = join(destination, 'src', 'lib', 'objects', 'index.ts');
   const objectsIndex = readFileSync(objectsIndexPath, 'utf8');
   if (!objectsIndex.includes('ReferenceWorkItem')) {
     writeFileSync(
       objectsIndexPath,
-      `${objectsIndex.trimEnd()}\n\nexport { ReferenceWorkItem, ReferenceWorkItemCollection } from './ReferenceWorkItem.js';\nexport { ReferenceWorkItemAsset, ReferenceWorkItemAssetCollection } from './ReferenceWorkItemAsset.js';\n`,
+      `${objectsIndex.trimEnd()}\n\nexport { Note, NoteCollection } from './Note.js';\nexport { ReferenceWorkItem, ReferenceWorkItemCollection } from './ReferenceWorkItem.js';\nexport { ReferenceWorkItemAsset, ReferenceWorkItemAssetCollection } from './ReferenceWorkItemAsset.js';\n`,
     );
   }
 

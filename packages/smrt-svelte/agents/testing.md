@@ -27,3 +27,9 @@ await expectNoA11yViolations(container); // axe; color-contrast off (jsdom has n
 - **Hook-dependent components** (anything calling `useAppState`/`useSTT`/`useAuth` — they throw outside `<Provider>`): `vi.mock` the hook module with stub defaults. See `src/components/forms/__tests__/Form.test.ts`.
 - **Form-input a11y** (programmatic labels, `aria-describedby`, axe-clean for `Input`/`TextInput`/etc.) is L1's deliverable (#1420) on top of this harness — bare primitives like `Input` get behavior tests here, labelled axe coverage there.
 - Existing reference suites: Button, Input, Modal, DataTable, Form. The pattern is what sweep S11 (#1416) rolls out repo-wide.
+
+The full standalone `pnpm test` runs published-entry conformance after unit and
+script tests. Its `ensure-conformance-build.mjs` rebuilds this package and its
+dependencies. Do not overlap it with a root or filtered build in the same
+worktree: either build can replace `dist` while the other reads declarations.
+Run the complete suite, then the build/knowledge checks sequentially.

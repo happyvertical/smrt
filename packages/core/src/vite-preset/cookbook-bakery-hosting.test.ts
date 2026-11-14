@@ -88,7 +88,8 @@ describe('the bakery cookbook over the real workspace manifests (#3749)', () => 
           '**/test-support/**',
         ],
         outputDir: join(root, '.manifest-out', pkg),
-        outputMode: 'build',
+        // Keep real package build artifacts intact during concurrent package tests.
+        outputMode: 'explicit',
         outputName: 'manifest.json',
         generateTypeStub: false,
         injectPackageInfo: true,

@@ -1,295 +1,390 @@
-/* Page-level styles for the shell's own pages. Colors and spacing come from
-   the smrt-ui tokens (light and dark follow the theme provider). */
-.smrt-app-shell__page {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 64rem;
-  margin: 0 auto;
-  padding: var(--smrt-spacing-lg, 1rem);
-  color: var(--smrt-color-on-surface, inherit);
-  overflow-wrap: anywhere;
+@layer smrt.reset, smrt.structure, smrt.theme;
+
+@layer smrt.structure {
+  /* Page-level styles for the shell's own pages. Colors and spacing come from
+  the smrt-ui tokens (light and dark follow the theme provider). */
+  .smrt-app-shell__page {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 64rem;
+    margin: 0 auto;
+    padding: var(--smrt-spacing-lg, 1rem);
+    overflow-wrap: anywhere;
+  }
+  .smrt-app-shell__page *,
+  .smrt-app-shell__page *::before,
+  .smrt-app-shell__page *::after {
+    box-sizing: border-box;
+  }
+  .smrt-app-shell__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-md, 0.75rem);
+    margin-block-end: var(--smrt-spacing-lg, 1rem);
+  }
+  .smrt-app-shell__head h1 {
+    margin: 0;
+  }
+  .smrt-app-shell__sub {
+    margin: 0.25rem 0 0;
+  }
+  .smrt-app-shell__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-sm, 0.5rem);
+  }
+  .smrt-app-shell__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    min-height: var(--smrt-control-target-min, 2.5rem);
+    padding: 0 var(--smrt-spacing-lg, 1rem);
+    cursor: pointer;
+  }
+  .smrt-app-shell__btn:disabled {
+    cursor: not-allowed;
+  }
+  .smrt-app-shell__btn-small {
+    min-height: 2rem;
+    padding: 0 var(--smrt-spacing-md, 0.75rem);
+  }
+  .smrt-app-shell__card {
+    padding: var(--smrt-spacing-lg, 1rem);
+  }
+  .smrt-app-shell__card + .smrt-app-shell__card {
+    margin-block-start: var(--smrt-spacing-md, 0.75rem);
+  }
+  .smrt-app-shell__empty {
+    padding: var(--smrt-spacing-2xl, 2rem) var(--smrt-spacing-lg, 1rem);
+  }
+  .smrt-app-shell__alert {
+    margin: 0 0 var(--smrt-spacing-md, 0.75rem);
+    padding: var(--smrt-spacing-md, 0.75rem);
+  }
+  .smrt-app-shell__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-block-end: var(--smrt-spacing-lg, 1rem);
+  }
+  .smrt-app-shell__input {
+    width: 100%;
+    min-height: var(--smrt-control-target-min, 2.5rem);
+    padding: 0.4rem 0.6rem;
+  }
+  textarea.smrt-app-shell__input {
+    min-height: 7rem;
+    resize: vertical;
+  }
+  .smrt-app-shell__check {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: var(--smrt-control-target-min, 2.5rem);
+  }
+  .smrt-app-shell__check input {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+  .smrt-app-shell__error {
+    margin: 0;
+  }
+  .smrt-app-shell__hint {
+    margin: 0;
+  }
+  .smrt-app-shell__tablewrap {
+    overflow-x: auto;
+  }
+  .smrt-app-shell__table {
+    width: 100%;
+  }
+  .smrt-app-shell__table th,
+  .smrt-app-shell__table td {
+    padding: 0.6rem 0.75rem;
+  }
+  .smrt-app-shell__table th {
+    white-space: nowrap;
+  }
+  .smrt-app-shell__table td.smrt-app-shell__row-actions {
+    white-space: nowrap;
+  }
+  .smrt-app-shell__tiles {
+    display: grid;
+    gap: var(--smrt-spacing-md, 0.75rem);
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr));
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .smrt-app-shell__tile {
+    display: block;
+    height: 100%;
+    padding: var(--smrt-spacing-lg, 1rem);
+  }
+  .smrt-app-shell__tile strong {
+    display: block;
+  }
+  .smrt-app-shell__code {
+    max-height: 20rem;
+    margin: var(--smrt-spacing-sm, 0.5rem) 0;
+    padding: var(--smrt-spacing-md, 0.75rem);
+    overflow: auto;
+    white-space: pre;
+  }
+  .smrt-app-shell__badge {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+  }
+  .smrt-app-shell__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .smrt-app-shell__list > li + li {
+    margin-block-start: var(--smrt-spacing-md, 0.75rem);
+  }
+  .smrt-app-shell__dialog {
+    max-width: min(28rem, calc(100vw - 2rem));
+    padding: var(--smrt-spacing-lg, 1rem);
+  }
+  .smrt-app-shell__dialog h2 {
+    margin-block-start: 0;
+  }
+  .smrt-app-shell__dialog-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--smrt-spacing-sm, 0.5rem);
+    margin-block-start: var(--smrt-spacing-lg, 1rem);
+  }
+  .smrt-app-shell__grid2 {
+    display: grid;
+    gap: var(--smrt-spacing-lg, 1rem);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  }
+  /* Text for assistive technology only. */
+  .smrt-app-shell__sr-only {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  /* A selectable choice (welcome steps): a bordered card around a radio. */
+  .smrt-app-shell__choice {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--smrt-spacing-md, 0.75rem);
+    padding: var(--smrt-spacing-md, 0.75rem);
+    cursor: pointer;
+  }
+  .smrt-app-shell__choice > span {
+    display: flex;
+    flex-direction: column;
+  }
+  .smrt-app-shell__choice-off {
+    cursor: not-allowed;
+  }
 }
-.smrt-app-shell__page *,
-.smrt-app-shell__page *::before,
-.smrt-app-shell__page *::after {
-  box-sizing: border-box;
-}
-.smrt-app-shell__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--smrt-spacing-md, 0.75rem);
-  margin-block-end: var(--smrt-spacing-lg, 1rem);
-}
-.smrt-app-shell__head h1 {
-  margin: 0;
-  font-size: 1.5rem;
-}
-.smrt-app-shell__sub {
-  margin: 0.25rem 0 0;
-  color: var(--smrt-color-on-surface-variant, inherit);
-}
-.smrt-app-shell__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--smrt-spacing-sm, 0.5rem);
-}
-.smrt-app-shell__btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  min-height: var(--smrt-control-target-min, 2.5rem);
-  padding: 0 var(--smrt-spacing-lg, 1rem);
-  border: 1px solid var(--smrt-color-outline);
-  border-radius: var(--smrt-radius-md, 0.5rem);
-  background: var(--smrt-color-surface, transparent);
-  color: var(--smrt-color-on-surface, inherit);
-  font: inherit;
-  text-decoration: none;
-  cursor: pointer;
-}
-.smrt-app-shell__btn:hover:not(:disabled) {
-  background: var(--smrt-color-surface-container-high, rgb(128 128 128 / 0.15));
-}
-.smrt-app-shell__btn:focus-visible,
-.smrt-app-shell__input:focus-visible,
-.smrt-app-shell__link:focus-visible,
-.smrt-app-shell__tile:focus-visible {
-  outline: 2px solid var(--smrt-color-primary, currentColor);
-  outline-offset: 2px;
-}
-.smrt-app-shell__btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-.smrt-app-shell__btn-primary {
-  background: var(--smrt-color-primary);
-  border-color: var(--smrt-color-primary);
-  color: var(--smrt-color-on-primary);
-}
-.smrt-app-shell__btn-primary:hover:not(:disabled) {
-  background: var(--smrt-color-primary);
-  filter: brightness(1.1);
-}
-.smrt-app-shell__btn-danger {
-  border-color: var(--smrt-color-error);
-  color: var(--smrt-color-error);
-}
-.smrt-app-shell__btn-small {
-  min-height: 2rem;
-  padding: 0 var(--smrt-spacing-md, 0.75rem);
-  font-size: 0.875rem;
-}
-.smrt-app-shell__link {
-  color: var(--smrt-color-primary);
-}
-.smrt-app-shell__card {
-  padding: var(--smrt-spacing-lg, 1rem);
-  border: 1px solid var(--smrt-color-outline-variant);
-  border-radius: var(--smrt-radius-lg, 0.75rem);
-  background: var(--smrt-color-surface-container-low, transparent);
-}
-.smrt-app-shell__card + .smrt-app-shell__card {
-  margin-block-start: var(--smrt-spacing-md, 0.75rem);
-}
-.smrt-app-shell__muted {
-  color: var(--smrt-color-on-surface-variant, inherit);
-  font-size: 0.875rem;
-}
-.smrt-app-shell__empty {
-  padding: var(--smrt-spacing-2xl, 2rem) var(--smrt-spacing-lg, 1rem);
-  text-align: center;
-  border: 1px dashed var(--smrt-color-outline-variant);
-  border-radius: var(--smrt-radius-lg, 0.75rem);
-}
-.smrt-app-shell__alert {
-  margin: 0 0 var(--smrt-spacing-md, 0.75rem);
-  padding: var(--smrt-spacing-md, 0.75rem);
-  border-radius: var(--smrt-radius-md, 0.5rem);
-  background: var(--smrt-color-surface-container, rgb(128 128 128 / 0.12));
-}
-.smrt-app-shell__alert-error {
-  background: var(--smrt-color-error-container);
-  color: var(--smrt-color-on-error-container);
-}
-.smrt-app-shell__alert-warn {
-  background: var(--smrt-color-warning-container);
-  color: var(--smrt-color-on-warning-container);
-}
-.smrt-app-shell__alert-ok {
-  background: var(--smrt-color-success-container);
-  color: var(--smrt-color-on-success-container);
-}
-.smrt-app-shell__field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  margin-block-end: var(--smrt-spacing-lg, 1rem);
-}
-.smrt-app-shell__field label,
-.smrt-app-shell__label {
-  font-weight: 600;
-}
-.smrt-app-shell__req {
-  color: var(--smrt-color-error);
-}
-.smrt-app-shell__input {
-  width: 100%;
-  min-height: var(--smrt-control-target-min, 2.5rem);
-  padding: 0.4rem 0.6rem;
-  border: 1px solid var(--smrt-color-outline);
-  border-radius: var(--smrt-radius-md, 0.5rem);
-  background: var(--smrt-color-surface, transparent);
-  color: var(--smrt-color-on-surface, inherit);
-  font: inherit;
-}
-textarea.smrt-app-shell__input {
-  min-height: 7rem;
-  resize: vertical;
-}
-.smrt-app-shell__input[aria-invalid='true'] {
-  border-color: var(--smrt-color-error);
-}
-.smrt-app-shell__check {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: var(--smrt-control-target-min, 2.5rem);
-}
-.smrt-app-shell__check input {
-  width: 1.25rem;
-  height: 1.25rem;
-}
-.smrt-app-shell__error {
-  margin: 0;
-  color: var(--smrt-color-error);
-  font-size: 0.875rem;
-}
-.smrt-app-shell__hint {
-  margin: 0;
-  color: var(--smrt-color-on-surface-variant, inherit);
-  font-size: 0.8125rem;
-}
-.smrt-app-shell__tablewrap {
-  overflow-x: auto;
-  border: 1px solid var(--smrt-color-outline-variant);
-  border-radius: var(--smrt-radius-lg, 0.75rem);
-}
-.smrt-app-shell__table {
-  width: 100%;
-  border-collapse: collapse;
-}
-.smrt-app-shell__table th,
-.smrt-app-shell__table td {
-  padding: 0.6rem 0.75rem;
-  text-align: start;
-  vertical-align: top;
-  border-block-end: 1px solid var(--smrt-color-outline-variant);
-}
-.smrt-app-shell__table tbody tr:last-child td {
-  border-block-end: 0;
-}
-.smrt-app-shell__table th {
-  font-size: 0.8125rem;
-  color: var(--smrt-color-on-surface-variant, inherit);
-  white-space: nowrap;
-}
-.smrt-app-shell__table td.smrt-app-shell__row-actions {
-  white-space: nowrap;
-  text-align: end;
-}
-.smrt-app-shell__tiles {
-  display: grid;
-  gap: var(--smrt-spacing-md, 0.75rem);
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr));
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.smrt-app-shell__tile {
-  display: block;
-  height: 100%;
-  padding: var(--smrt-spacing-lg, 1rem);
-  border: 1px solid var(--smrt-color-outline-variant);
-  border-radius: var(--smrt-radius-lg, 0.75rem);
-  background: var(--smrt-color-surface-container-low, transparent);
-  color: inherit;
-  text-decoration: none;
-}
-.smrt-app-shell__tile:hover {
-  background: var(--smrt-color-surface-container-high, rgb(128 128 128 / 0.15));
-}
-.smrt-app-shell__tile strong {
-  display: block;
-  font-size: 1.75rem;
-  line-height: 1.2;
-}
-.smrt-app-shell__code {
-  max-height: 20rem;
-  margin: var(--smrt-spacing-sm, 0.5rem) 0;
-  padding: var(--smrt-spacing-md, 0.75rem);
-  overflow: auto;
-  border-radius: var(--smrt-radius-md, 0.5rem);
-  background: var(--smrt-color-surface-container-highest, rgb(128 128 128 / 0.18));
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.8125rem;
-  white-space: pre;
-}
-.smrt-app-shell__badge {
-  display: inline-block;
-  padding: 0.1rem 0.5rem;
-  border-radius: var(--smrt-radius-full);
-  background: var(--smrt-color-secondary-container, rgb(128 128 128 / 0.2));
-  color: var(--smrt-color-on-secondary-container, inherit);
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-.smrt-app-shell__badge-warn {
-  background: var(--smrt-color-warning-container);
-  color: var(--smrt-color-on-warning-container);
-}
-.smrt-app-shell__badge-ok {
-  background: var(--smrt-color-success-container);
-  color: var(--smrt-color-on-success-container);
-}
-.smrt-app-shell__badge-bad {
-  background: var(--smrt-color-error-container);
-  color: var(--smrt-color-on-error-container);
-}
-.smrt-app-shell__list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.smrt-app-shell__list > li + li {
-  margin-block-start: var(--smrt-spacing-md, 0.75rem);
-}
-.smrt-app-shell__dialog {
-  max-width: min(28rem, calc(100vw - 2rem));
-  padding: var(--smrt-spacing-lg, 1rem);
-  border: 1px solid var(--smrt-color-outline);
-  border-radius: var(--smrt-radius-lg, 0.75rem);
-  background: var(--smrt-color-surface, Canvas);
-  color: var(--smrt-color-on-surface, CanvasText);
-}
-.smrt-app-shell__dialog::backdrop {
-  background: var(--smrt-color-scrim, rgb(0 0 0 / 0.5));
-}
-.smrt-app-shell__dialog h2 {
-  margin-block-start: 0;
-  font-size: 1.125rem;
-}
-.smrt-app-shell__dialog-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--smrt-spacing-sm, 0.5rem);
-  margin-block-start: var(--smrt-spacing-lg, 1rem);
-}
-.smrt-app-shell__grid2 {
-  display: grid;
-  gap: var(--smrt-spacing-lg, 1rem);
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+
+@layer smrt.theme {
+  /* Page-level styles for the shell's own pages. Colors and spacing come from
+  the smrt-ui tokens (light and dark follow the theme provider). */
+  .smrt-app-shell__page {
+    color: var(--smrt-color-on-surface, inherit);
+  }
+  .smrt-app-shell__head h1 {
+    font-size: 1.5rem;
+  }
+  .smrt-app-shell__sub {
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-app-shell__btn {
+    border: 1px solid var(--smrt-color-outline);
+    border-radius: var(--smrt-radius-md, 0.5rem);
+    background: var(--smrt-color-surface, transparent);
+    color: var(--smrt-color-on-surface, inherit);
+    font: inherit;
+    text-decoration: none;
+  }
+  .smrt-app-shell__btn:hover:not(:disabled) {
+    background: var(--smrt-color-surface-container-high, rgb(128 128 128 / 0.15));
+  }
+  .smrt-app-shell__btn:focus-visible,
+  .smrt-app-shell__input:focus-visible,
+  .smrt-app-shell__link:focus-visible,
+  .smrt-app-shell__tile:focus-visible {
+    outline: 2px solid var(--smrt-color-primary, currentColor);
+    outline-offset: 2px;
+  }
+  .smrt-app-shell__btn:disabled {
+    opacity: 0.55;
+  }
+  .smrt-app-shell__btn-primary {
+    background: var(--smrt-color-primary);
+    border-color: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+  }
+  .smrt-app-shell__btn-primary:hover:not(:disabled) {
+    background: var(--smrt-color-primary);
+    filter: brightness(1.1);
+  }
+  .smrt-app-shell__btn-danger {
+    border-color: var(--smrt-color-error);
+    color: var(--smrt-color-error);
+  }
+  .smrt-app-shell__btn-small {
+    font-size: 0.875rem;
+  }
+  .smrt-app-shell__link {
+    color: var(--smrt-color-primary);
+  }
+  .smrt-app-shell__card {
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-lg, 0.75rem);
+    background: var(--smrt-color-surface-container-low, transparent);
+  }
+  .smrt-app-shell__muted {
+    color: var(--smrt-color-on-surface-variant, inherit);
+    font-size: 0.875rem;
+  }
+  .smrt-app-shell__empty {
+    text-align: center;
+    border: 1px dashed var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-lg, 0.75rem);
+  }
+  .smrt-app-shell__alert {
+    border-radius: var(--smrt-radius-md, 0.5rem);
+    background: var(--smrt-color-surface-container, rgb(128 128 128 / 0.12));
+  }
+  .smrt-app-shell__alert-error {
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
+  }
+  .smrt-app-shell__alert-warn {
+    background: var(--smrt-color-warning-container);
+    color: var(--smrt-color-on-warning-container);
+  }
+  .smrt-app-shell__alert-ok {
+    background: var(--smrt-color-success-container);
+    color: var(--smrt-color-on-success-container);
+  }
+  .smrt-app-shell__field label,
+  .smrt-app-shell__label {
+    font-weight: 600;
+  }
+  .smrt-app-shell__req {
+    color: var(--smrt-color-error);
+  }
+  .smrt-app-shell__input {
+    border: 1px solid var(--smrt-color-outline);
+    border-radius: var(--smrt-radius-md, 0.5rem);
+    background: var(--smrt-color-surface, transparent);
+    color: var(--smrt-color-on-surface, inherit);
+    font: inherit;
+  }
+  .smrt-app-shell__input[aria-invalid='true'] {
+    border-color: var(--smrt-color-error);
+  }
+  .smrt-app-shell__error {
+    color: var(--smrt-color-error);
+    font-size: 0.875rem;
+  }
+  .smrt-app-shell__hint {
+    color: var(--smrt-color-on-surface-variant, inherit);
+    font-size: 0.8125rem;
+  }
+  .smrt-app-shell__tablewrap {
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-lg, 0.75rem);
+  }
+  .smrt-app-shell__table {
+    border-collapse: collapse;
+  }
+  .smrt-app-shell__table th,
+  .smrt-app-shell__table td {
+    text-align: start;
+    vertical-align: top;
+    border-block-end: 1px solid var(--smrt-color-outline-variant);
+  }
+  .smrt-app-shell__table tbody tr:last-child td {
+    border-block-end: 0;
+  }
+  .smrt-app-shell__table th {
+    font-size: 0.8125rem;
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-app-shell__table td.smrt-app-shell__row-actions {
+    text-align: end;
+  }
+  .smrt-app-shell__tile {
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-lg, 0.75rem);
+    background: var(--smrt-color-surface-container-low, transparent);
+    color: inherit;
+    text-decoration: none;
+  }
+  .smrt-app-shell__tile:hover {
+    background: var(--smrt-color-surface-container-high, rgb(128 128 128 / 0.15));
+  }
+  .smrt-app-shell__tile strong {
+    font-size: 1.75rem;
+    line-height: 1.2;
+  }
+  .smrt-app-shell__code {
+    border-radius: var(--smrt-radius-md, 0.5rem);
+    background: var(--smrt-color-surface-container-highest, rgb(128 128 128 / 0.18));
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.8125rem;
+  }
+  .smrt-app-shell__badge {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-secondary-container, rgb(128 128 128 / 0.2));
+    color: var(--smrt-color-on-secondary-container, inherit);
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .smrt-app-shell__badge-warn {
+    background: var(--smrt-color-warning-container);
+    color: var(--smrt-color-on-warning-container);
+  }
+  .smrt-app-shell__badge-ok {
+    background: var(--smrt-color-success-container);
+    color: var(--smrt-color-on-success-container);
+  }
+  .smrt-app-shell__badge-bad {
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
+  }
+  .smrt-app-shell__dialog {
+    border: 1px solid var(--smrt-color-outline);
+    border-radius: var(--smrt-radius-lg, 0.75rem);
+    background: var(--smrt-color-surface, Canvas);
+    color: var(--smrt-color-on-surface, CanvasText);
+  }
+  .smrt-app-shell__dialog::backdrop {
+    background: var(--smrt-color-scrim, rgb(0 0 0 / 0.5));
+  }
+  .smrt-app-shell__dialog h2 {
+    font-size: 1.125rem;
+  }
+  /* A selectable choice (welcome steps): a bordered card around a radio. */
+  .smrt-app-shell__choice {
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md, 0.5rem);
+  }
+  .smrt-app-shell__choice-on {
+    border-color: var(--smrt-color-primary);
+  }
+  .smrt-app-shell__choice-off {
+    opacity: 0.7;
+  }
+  .smrt-app-shell__choice:focus-within {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: 2px;
+  }
 }

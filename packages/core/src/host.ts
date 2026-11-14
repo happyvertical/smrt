@@ -13,10 +13,16 @@
 
 export {
   buildWhere,
-  getDatabase,
   NestedTransactionError,
   raw,
-} from '@happyvertical/sql';
+} from '@happyvertical/sql/query';
+
+/** Load SQL adapters only when opening a database, not when importing a model. */
+export const getDatabase: typeof import('@happyvertical/sql').getDatabase =
+  async (options) => {
+    const sql = await import('@happyvertical/sql');
+    return sql.getDatabase(options);
+  };
 
 /** The AI SDK, loaded on first use to keep it off the cold-start path (#2894). */
 export function importAI(): Promise<typeof import('@happyvertical/ai')> {

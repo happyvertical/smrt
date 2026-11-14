@@ -6,8 +6,14 @@ Envelope encryption for per-tenant secret storage with key rotation and audit lo
 
 ```
 Secret value → encrypted with TDEK (per-tenant Data Encryption Key)
-  TDEK → wrapped with AMK (Application Master Key, from env SMRT_SECRET_MASTER_KEY)
+  TDEK → wrapped with AMK (Application Master Key, from env SMRT_SECRET_MASTER_KEY,
+         or `masterKeyProvider` when the env var is unset; env always wins)
 ```
+
+The SDK store reads the AMK only from the process environment, so the provider's
+key is placed there for one synchronous step (`primeProvidedMasterKey`) that makes
+the store cache it, then removed. Never widen that window or log the key. There is
+no default key anywhere in this package.
 
 ## Models
 

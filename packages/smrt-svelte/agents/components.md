@@ -115,3 +115,18 @@ Escape at the document level wherever focus is (returns focus to the trigger),
 and activating a notice link (closes without refocusing, so navigation keeps
 focus). Notice titles are links styled in `--smrt-color-primary` with an
 underline, not the browser default (#4567).
+
+`RecordHistory` also accepts `UndatedHistoryEntry` for authorized host journals
+without timestamp provenance. This is separate from `AuditHistoryEntry`, which
+still requires a real `occurredAt` and `profileId`; `AuditList` remains dated.
+Its generic presentation callbacks retain the dated audit type by default. A
+list containing undated entries preserves the supplied host order and renders
+no date for those rows. Omit unknown actors rather than inventing an identity.
+The component still escapes summaries, labels and changed values and never
+fetches, authorizes or restores a journal entry.
+
+The cookbook host's read-only `history(event)` projects normal owner-authorized
+`app.history` into this presentation shape. Consumer settings can load that method
+server-side and mount the existing `RecordHistory` with label `Change history`;
+a thin GET route may expose the same projection. This adds no consumer authority,
+raw cookbook payload, timestamp, or promise of data restoration.

@@ -15,6 +15,7 @@
  */
 
 import { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
+import './settings-registry';
 
 export const runtime = createSmrtSvelteKitRuntime({
   // Deployed profiles prove authentication, asset, and secret readiness

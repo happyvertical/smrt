@@ -1,3 +1,4 @@
+import { toolSummary } from './tool-summary.js';
 /**
  * Persona-bound conversation — the bridge from an {@link AgentSession} (a
  * conversation) to an `AgentPersona`/`TenantAgent` (a tenant-scoped, principal-
@@ -617,11 +618,12 @@ async function authorConversationReply(input: {
       tenantId: input.tenantId,
       agentSessionId: input.session.id as string,
       threadId: input.threadId,
-      content: JSON.stringify(invocation.observation),
+      content: toolSummary(invocation.slug, invocation.observation),
       kind: 'tool',
       messageType: 'tool_result',
       toolCallData: {
         name: invocation.slug,
+        label: toolSummary(invocation.slug, invocation.observation),
         args: invocation.args,
         ...(invocation.deduped ? { deduped: true } : {}),
       },

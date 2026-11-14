@@ -13,6 +13,7 @@
 import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
+  'ui.cookbook.assistant': 'Assistant',
   // browser-ai/svelte/components/STTTest.svelte
   'ui.stt_test.heading': 'STT Adapter Test',
   'ui.stt_test.adapter_browser': 'Browser (Web Speech API)',
@@ -58,6 +59,7 @@ export const M = defineMessages({
   'ui.admin_shell.close_panel': 'Close {label}',
   'ui.admin_shell.open_panel': 'Open {label}',
   'ui.admin_shell.resize_panel': 'Resize {label}',
+  'ui.admin_shell.panel': 'Panel',
   'ui.shell_nav_toggle.collapse': 'Collapse {label}',
   'ui.shell_nav_toggle.expand': 'Expand {label}',
   'ui.shell_nav_toggle.navigation': 'navigation',
@@ -111,6 +113,16 @@ export const M = defineMessages({
   'ui.shell_settings_page.heading': 'Settings',
   'ui.shell_settings_page.description':
     'Adjust appearance, your account, and the workspace layout.',
+  'ui.shell_settings_page.back': 'All settings',
+  'ui.shell_settings_page.menu_label': 'Settings sections',
+  'ui.shell_settings_page.appearance_description':
+    'Theme and light or dark color scheme.',
+  'ui.shell_settings_page.account_description':
+    'Who you are signed in as, and sign out.',
+  'ui.shell_settings_page.layout_description':
+    'Show or hide workspace areas and reset the layout.',
+  'ui.shell_settings_page.shortcuts_description':
+    'Keyboard shortcuts for the workspace areas.',
   'ui.hotkey_input.capture_title': 'Press a key to capture it',
   'ui.hotkey_input.conflicts_with': 'Conflicts with',
   'ui.shell_settings_panel.shell_settings': 'Shell settings',
@@ -124,7 +136,9 @@ export const M = defineMessages({
   'ui.owner_setup.link_missing_heading':
     'This setup link is missing or has expired',
   'ui.owner_setup.link_missing_body':
-    'Setup links work once and only for a short time. Run one of these in the terminal where the app runs.',
+    'Setup links work once and only for a short time. Run these commands from the app folder. Recovery requires stopping the app first.',
+  'ui.owner_setup.desktop_reopen':
+    'Reopen the desktop app to sign in with a fresh link.',
   'ui.owner_setup.recovery_open': 'Open a fresh setup link',
   'ui.owner_setup.recovery_recover': 'Recover the setup invitation',
   'ui.shell_settings.appearance': 'Appearance',
@@ -208,6 +222,7 @@ export const M = defineMessages({
   'ui.workspace_account_menu.open': 'Open account menu',
   'ui.workspace_account_menu.current_tenant': '{tenant} — current',
   'ui.workspace_account_menu.sign_out': 'Sign out',
+  'ui.workspace_account_menu.pending': '{count} waiting',
 
   // web/activity-feed adapter demo (#1779) — playground/admin-shell-activity-feed
   'ui.activity_feed.title': 'Live activity feed',
@@ -253,6 +268,10 @@ export const M = defineMessages({
   'ui.app_shell.color_scheme_to_light': 'Switch to light mode',
   'ui.app_shell.command_palette_item': 'Search',
   'ui.app_shell.account_settings': 'Settings',
+  'ui.app_shell.theme_item': 'Theme: {mode}',
+  'ui.app_shell.theme_light': 'Light',
+  'ui.app_shell.theme_dark': 'Dark',
+  'ui.app_shell.panel_toggle': 'Panel',
 
   // components/app/DockToggles not-ready state (issue #3860)
   'ui.dock_toggles.set_up': 'Set up {label}',

@@ -41,6 +41,7 @@ const VARIANT_B = '@fixture/pkg-b3490:Variant';
 
 describe('MCP STI create across same-named subtypes (#3490)', () => {
   const StiShape = named(class extends SmrtObject {}, 'StiShape');
+  const Unrelated = named(class extends SmrtObject {}, 'Unrelated');
   const VariantA = named(class extends StiShape {}, 'Variant');
   const VariantB = named(class extends StiShape {}, 'Variant');
   let restoreRegistry: () => void;
@@ -53,6 +54,10 @@ describe('MCP STI create across same-named subtypes (#3490)', () => {
       tableName: 'sti_shapes',
       tableStrategy: 'sti',
       mcp: { include: ['create'] },
+    });
+    ObjectRegistry.register(Unrelated, {
+      packageName: '@fixture/shapes3490',
+      mcp: false,
     });
     ObjectRegistry.register(VariantA, {
       packageName: '@fixture/pkg-a3490',
@@ -103,6 +108,38 @@ describe('MCP STI create across same-named subtypes (#3490)', () => {
     expect(variants).toEqual(
       expect.arrayContaining([BASE, VARIANT_A, VARIANT_B]),
     );
+  });
+
+  it('creates the base when no discriminator is supplied', async () => {
+    created.length = 0;
+    const response = await new MCPGenerator(
+      { classNames: [BASE] },
+      { user },
+    ).handleToolCall({
+      method: 'tools/call',
+      params: { name: 'stishape_create', arguments: {} },
+    });
+    expect(response.isError).not.toBe(true);
+    expect(created.map((entry) => entry.by)).toEqual(['base']);
+  });
+
+  it.each([
+    '@fixture/unknown:Missing',
+    '@fixture/shapes3490:Unrelated',
+  ])('refuses an unknown or unrelated discriminator %s without creating', async (discriminator) => {
+    created.length = 0;
+    const response = await new MCPGenerator(
+      { classNames: [BASE] },
+      { user },
+    ).handleToolCall({
+      method: 'tools/call',
+      params: {
+        name: 'stishape_create',
+        arguments: { _meta_type: discriminator },
+      },
+    });
+    expect(response.isError).toBe(true);
+    expect(created).toHaveLength(0);
   });
 
   it.each([

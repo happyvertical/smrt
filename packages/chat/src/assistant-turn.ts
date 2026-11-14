@@ -1,3 +1,18 @@
+import {
+  type AssistantApprovalBridge,
+  type AssistantApprovalPolicy,
+  requiresOwnerApproval,
+} from './assistant-approvals.js';
+import {
+  type DescribeAssistantTool,
+  describeAssistantTool,
+} from './tool-summary.js';
+import {
+  type AssistantWorkProfileOptions,
+  assertWorkProfileTool,
+  WORK_RUN_ACCOUNTING,
+  WorkProfileEscalation,
+} from './work-profile.js';
 /**
  * Streamed assistant turn over the bounded tool loop (#2908).
  *
@@ -39,6 +54,15 @@ import type {
   PrincipalTool,
 } from '@happyvertical/smrt-agents';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import type {
+  AssistantApprovalWaiter,
+  AssistantTurnDriver,
+  AssistantTurnDriverContext,
+} from './assistant-turn-driver.js';
+import {
+  recordDesignHandoff,
+  runExternalAssistantTurn,
+} from './assistant-turn-driver.js';
 import type {
   AssistantStatus,
   AssistantTurnEvent,
@@ -87,6 +111,8 @@ export interface AssistantTurnContinuation {
   clientTools: ClientToolDefinition[];
   /** Tokens the turn used so far (for `maxTurnTokens`). Absent: 0. */
   tokens?: number;
+  /** Whether every earlier completion explicitly reported token counts. */
+  usageKnown?: boolean;
   /** `Date.now()` when the turn started (for `maxTurnMs`). Absent: `createdAt`. */
   startedAt?: number;
   /**
@@ -298,10 +324,11 @@ export interface AssistantTurnAuthor {
   agentSessionId: string;
   tenantId: string;
   threadId?: string | null;
+  /** Trusted per-turn provenance stamped on every agent-authored row. Never request input. */
+  metadata?: Readonly<Record<string, unknown>>;
   /**
    * Maps a SUCCESSFUL server tool invocation to a persisted message, or
-   * `null` to keep it out of the conversation (the default for successful
-   * calls). Failed calls go through {@link authorFailedInvocation}, which
+   * `null` to keep it out of the conversation. The default is a short summary. Failed calls go through {@link authorFailedInvocation}, which
    * persists them by default (#4383, a behaviour change: before, nothing was
    * persisted for a failed call). The message's `toolCallData` tool name
    * must be on the session's `allowedTools` — `sendAgentReply`'s gate is
@@ -350,8 +377,20 @@ function defaultFailedInvocationReply(
 }
 
 /** Options for {@link runAssistantTurn}. */
-export interface AssistantTurnOptions<M = Record<string, unknown>> {
-  ai: AIInterface;
+export interface AssistantTurnOptions<M = Record<string, unknown>>
+  extends AssistantWorkProfileOptions {
+  /** Required for the default tool loop; unused by an external driver. */
+  ai?: Pick<AIInterface, 'chat'>;
+  /** Omitted: today's bounded tool loop, including browser continuations. */
+  turnDriver?: AssistantTurnDriver;
+  /** Host-owned durable approval bridge. Absent: approval requests fail closed. */
+  waitForApproval?: AssistantApprovalWaiter;
+  /** Durable host gate. Default destructive policy fails closed without a store. */
+  approvals?: AssistantApprovalBridge;
+  /** Trusted policy retained when an external driver owns its approval waiter. */
+  approvalPolicy?: AssistantApprovalPolicy;
+  /** Server-selected thread identity passed to an external driver. */
+  thread?: AssistantTurnDriverContext['thread'];
   /** The already-authorized principal every server tool runs as. */
   principal: PrincipalBinding;
   db?: SmrtClassOptions['db'];
@@ -469,7 +508,7 @@ export interface AssistantTurnOptions<M = Record<string, unknown>> {
    * On a tool call it also gets the call's arguments, so a label can name
    * the target ("Opening Events"); keep it free of ids and raw values.
    */
-  describeTool?: (name: string, args?: Record<string, unknown>) => string;
+  describeTool?: DescribeAssistantTool;
   /** Mint continuation ids (tests). Default `crypto.randomUUID()`. */
   createId?: () => string;
   /**
@@ -529,6 +568,7 @@ function providerErrorReplyText(
 
 /** What {@link runAssistantTurn} returns when its generator completes. */
 export interface AssistantTurnResult {
+  runId?: string;
   stoppedReason: AssistantTurnStopReason | 'client_tools' | 'error';
   /** Why tools were withdrawn on the final round, when they were (#4379). */
   capReason?: 'max_steps' | 'budget' | 'repeated_calls';
@@ -543,10 +583,6 @@ function defaultSerialize<M>(message: unknown): M {
   return (
     typeof candidate?.toJSON === 'function' ? candidate.toJSON() : message
   ) as M;
-}
-
-function defaultDescribe(name: string): string {
-  return name.replace(/[_.-]+/g, ' ').trim();
 }
 
 /** What the browser is told when a turn fails unexpectedly. */
@@ -602,7 +638,13 @@ export async function* runAssistantTurn<M = Record<string, unknown>>(
   options: AssistantTurnOptions<M>,
 ): AsyncGenerator<AssistantTurnEvent<M>, AssistantTurnResult> {
   const serialize = options.serializeMessage ?? defaultSerialize<M>;
-  const describe = options.describeTool ?? defaultDescribe;
+  const describe: DescribeAssistantTool = (...args) => {
+    try {
+      return options.describeTool?.(...args) || describeAssistantTool(...args);
+    } catch {
+      return describeAssistantTool(...args);
+    }
+  };
   const status = (value: AssistantStatus): AssistantTurnEvent<M> => ({
     type: 'status',
     status: value,
@@ -714,9 +756,31 @@ async function runTurn<M>(
   emit: (event: AssistantTurnEvent<M>) => void,
   status: (value: AssistantStatus) => AssistantTurnEvent<M>,
   serialize: (message: unknown) => M,
-  describe: (name: string, args?: Record<string, unknown>) => string,
+  describe: DescribeAssistantTool,
   leg: TurnLeg,
 ): Promise<AssistantTurnResult> {
+  if (options.workProfile) {
+    const profile = options.workProfile;
+    options = {
+      ...options,
+      model: profile.model,
+      maxSteps: profile.budgets.maxSteps,
+      maxTokens: profile.budgets.maxTokens,
+      maxTurnTokens: profile.budgets.maxTurnTokens,
+      maxTurnMs: profile.budgets.turnTimeoutMs,
+      requestTimeoutMs: profile.budgets.requestTimeoutMs,
+    };
+  }
+  options = {
+    ...options,
+    [WORK_RUN_ACCOUNTING]: options[WORK_RUN_ACCOUNTING] ?? {
+      startedAt: Date.now(),
+      tokens: 0,
+      usageKnown: true,
+      toolCalls: 0,
+    },
+  };
+  const accounting = options[WORK_RUN_ACCOUNTING]!;
   const { principal, author } = options;
   const report = reporter(options, leg);
   const now = options.now ?? (() => Date.now());
@@ -727,6 +791,54 @@ async function runTurn<M>(
       `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
   emit(status({ state: 'working', label: 'Thinking…', cancellable: true }));
+
+  if (
+    options.deferDesignTurn &&
+    options.workProfile?.name === 'design' &&
+    options.onDesignEscalation &&
+    !options.resume
+  ) {
+    await report('running');
+    const accepted = await options.onDesignEscalation({
+      tool: '',
+      history: options.history ?? [],
+      userMessage: options.userMessage,
+      thread: options.thread,
+      originMessageId: options.originMessageId,
+    });
+    const { content, message } = await recordDesignHandoff(
+      options,
+      accepted,
+      emit,
+      serialize,
+    );
+    emit(status({ state: 'working', label: content, cancellable: true }));
+    await report('completed');
+    emit({
+      type: 'done',
+      stoppedReason: 'stop',
+      runId: accepted.runId,
+      ...(message ? { message } : {}),
+    });
+    return {
+      content,
+      stoppedReason: 'stop',
+      runId: accepted.runId,
+      originMessageId: options.originMessageId,
+    };
+  }
+
+  if (options.turnDriver) {
+    if (options.resume)
+      throw new AssistantTurnUserError(
+        'External turns cannot resume browser tool calls.',
+        'driver_resume_unsupported',
+      );
+    await report('running');
+    return runExternalAssistantTurn(options, emit, serialize, describe, report);
+  }
+  if (!options.ai)
+    throw new Error('The default turn driver needs an AI client.');
 
   // ---- the transcript: a fresh turn, or a resumed suspension -------------
   let messages: AIMessage[];
@@ -778,7 +890,10 @@ async function runTurn<M>(
     );
     initialSteps = continuation.steps;
     initialTokens = Number(continuation.tokens) || 0;
+    accounting.tokens = initialTokens;
+    accounting.usageKnown = continuation.usageKnown === true;
     startedAt = Number(continuation.startedAt) || continuation.createdAt;
+    accounting.startedAt = startedAt;
     // A fresh declaration reflects the page as it is now; fall back to what
     // was offered when the turn suspended.
     if (clientTools.length === 0) clientTools = continuation.clientTools;
@@ -845,6 +960,7 @@ async function runTurn<M>(
   // Names the model called that resolved to a registered tool. A step for any
   // other name must not echo model-chosen text as its tool or label (#4453).
   const registered = new Set<string>();
+  const resultLabels = new Map<string, string>();
   const sendAgentReply = author
     ? (await import('./services/ChatService.js')).sendAgentReply
     : null;
@@ -865,7 +981,16 @@ async function runTurn<M>(
       ? author.authorFailedInvocation
         ? author.authorFailedInvocation(invocation)
         : defaultFailedInvocationReply(failure)
-      : author.authorInvocation?.(invocation);
+      : author.authorInvocation
+        ? author.authorInvocation(invocation)
+        : {
+            content: describe(invocation.slug, invocation.args, invocation),
+            toolCallData: {
+              name: invocation.slug,
+              args: invocation.args,
+              status: 'success',
+            },
+          };
     if (!reply) return;
     try {
       const message = await sendAgentReply(author.chatService, {
@@ -876,17 +1001,21 @@ async function runTurn<M>(
         kind: 'tool',
         content: reply.content,
         messageType: reply.messageType ?? 'tool_result',
-        toolCallData: reply.toolCallData ?? null,
-        ...(failure
-          ? {
-              metadata: {
+        toolCallData: {
+          ...reply.toolCallData,
+          label: describe(invocation.slug, invocation.args, invocation),
+        },
+        metadata: {
+          ...author.metadata,
+          ...(failure
+            ? {
                 toolStatus: failure.status,
                 errorKind: failure.errorKind,
                 errorCode: failure.errorCode,
                 ...(failure.recoverable ? { recoverable: true } : {}),
-              },
-            }
-          : {}),
+              }
+            : {}),
+        },
       });
       emit({ type: 'message', message: serialize(message) });
     } catch (error) {
@@ -914,120 +1043,271 @@ async function runTurn<M>(
     }
   };
 
-  const outcome = await runToolLoop({
-    ai: options.ai,
-    messages,
-    tools: options.tools ?? [],
-    extraTools,
-    clientTools,
-    initialSteps,
-    principal,
-    db: options.db,
-    maxSteps: options.maxSteps ?? DEFAULT_MAX_STEPS,
-    ...(options.maxRepeatedCalls !== undefined
-      ? { maxRepeatedCalls: options.maxRepeatedCalls }
-      : {}),
-    ...(options.maxTurnTokens !== undefined
-      ? { maxTotalTokens: options.maxTurnTokens, initialTokens }
-      : {}),
-    ...(options.maxTurnMs !== undefined
-      ? { deadline: startedAt + options.maxTurnMs, now }
-      : {}),
-    model: options.model,
-    temperature: options.temperature,
-    maxTokens: options.maxTokens,
-    toolChoice: options.toolChoice,
-    ...(options.requestTimeoutMs !== undefined
-      ? { requestTimeoutMs: options.requestTimeoutMs }
-      : {}),
-    ...(options.answerFromReasoning ? { answerFromReasoning: true } : {}),
-    ...(options.onReasoning ? { onReasoning: options.onReasoning } : {}),
-    signal: options.signal,
-    onUsage: options.onUsage,
-    permissions: options.permissions,
-    audit: options.audit,
-    postgresRls: options.postgresRls,
-    onBehalfOfUserId: options.onBehalfOfUserId,
-    agentClass: options.agentClass,
-    onToken: (text) => {
-      if (text) emit({ type: 'token', text });
-    },
-    onStep: (event) => {
-      // A blank round is retried inside the loop (#4379); it is not a step
-      // the dock shows.
-      if (event.type === 'empty_round') return;
-      if (event.type === 'round') {
-        if (event.step > initialSteps) {
-          emit({ type: 'step', step: { kind: 'thinking', step: event.step } });
-          emit(
-            status({ state: 'working', label: 'Thinking…', cancellable: true }),
+  const runLoop = () =>
+    runToolLoop({
+      ai: options.ai!,
+      toolResultChars: options.workProfile?.budgets.toolResultChars,
+      ...(options.workProfile
+        ? { reasoning: { effort: options.workProfile.effort } }
+        : {}),
+      messages,
+      tools: options.tools ?? [],
+      extraTools,
+      clientTools,
+      beforeToolExecution: (tool) => assertWorkProfileTool(options, tool),
+      holdTool: async ({ id, tool, args, permissions, authorize }) => {
+        if (
+          !requiresOwnerApproval(
+            tool,
+            args,
+            options.approvals?.policy ?? options.approvalPolicy,
+          )
+        )
+          return;
+        await authorize();
+        if (!options.approvals)
+          throw new AssistantTurnUserError(
+            'Owner approval is unavailable.',
+            'approval_unavailable',
           );
+        const request = await options.approvals.request({
+          id,
+          tool,
+          args,
+          permissions,
+          ...(originMessageId ? { originMessageId } : {}),
+        });
+        if (author && sendAgentReply) {
+          const message = await sendAgentReply(author.chatService, {
+            tenantId: author.tenantId,
+            agentSessionId: author.agentSessionId,
+            threadId: author.threadId ?? null,
+            replyToMessageId: originMessageId ?? null,
+            kind: 'tool',
+            messageType: 'tool_call',
+            content: request.summary,
+            toolCallData: { id, name: tool.slug, args, approval: request },
+            metadata: author.metadata,
+          });
+          emit({ type: 'message', message: serialize(message) });
         }
-        return;
-      }
-      if (event.type === 'tool_call') {
-        registered.add(event.slug);
-        let label = labelFor(event.slug);
-        try {
-          label = describe(event.slug, event.args) || label;
-        } catch {
-          // A host label callback never breaks the turn.
+        emit({ type: 'approval_needed', approval: request });
+        return request;
+      },
+      initialSteps,
+      principal,
+      db: options.db,
+      maxSteps: options.maxSteps ?? DEFAULT_MAX_STEPS,
+      ...(options.maxRepeatedCalls !== undefined
+        ? { maxRepeatedCalls: options.maxRepeatedCalls }
+        : {}),
+      ...(options.maxTurnTokens !== undefined
+        ? { maxTotalTokens: options.maxTurnTokens, initialTokens }
+        : {}),
+      ...(options.maxTurnMs !== undefined
+        ? { deadline: startedAt + options.maxTurnMs, now }
+        : {}),
+      model: options.model,
+      temperature: options.temperature,
+      maxTokens: options.maxTokens,
+      toolChoice: options.toolChoice,
+      ...(options.requestTimeoutMs !== undefined
+        ? { requestTimeoutMs: options.requestTimeoutMs }
+        : {}),
+      ...(options.answerFromReasoning ? { answerFromReasoning: true } : {}),
+      ...(options.onReasoning ? { onReasoning: options.onReasoning } : {}),
+      signal: options.signal,
+      onModel: (model) => {
+        accounting.model = model;
+      },
+      onUsageUnknown: () => {
+        accounting.usageKnown = false;
+      },
+      onUsage: (usage) => {
+        accounting.tokens += usage.totalTokens ?? 0;
+        options.onUsage?.(usage);
+      },
+      permissions: options.permissions,
+      audit: options.audit,
+      postgresRls: options.postgresRls,
+      onBehalfOfUserId: options.onBehalfOfUserId,
+      agentClass: options.agentClass,
+      onToken: (text) => {
+        if (text) emit({ type: 'token', text });
+      },
+      onStep: (event) => {
+        // A blank round is retried inside the loop (#4379); it is not a step
+        // the dock shows.
+        if (event.type === 'empty_round') return;
+        if (event.type === 'round') {
+          if (event.step > initialSteps) {
+            emit({
+              type: 'step',
+              step: { kind: 'thinking', step: event.step },
+            });
+            emit(
+              status({
+                state: 'working',
+                label: 'Thinking…',
+                cancellable: true,
+              }),
+            );
+          }
+          return;
         }
+        if (event.type === 'tool_call') {
+          registered.add(event.slug);
+          let label = labelFor(event.slug);
+          try {
+            label = describe(event.slug, event.args) || label;
+          } catch {
+            // A host label callback never breaks the turn.
+          }
+          emit({
+            type: 'step',
+            step: {
+              kind: 'tool_call',
+              callId: event.callId,
+              tool: event.slug,
+              label,
+              location: event.location,
+            },
+          });
+          if (event.location === 'server') {
+            emit(
+              status({
+                state: 'working',
+                label: `${label}…`,
+                cancellable: true,
+              }),
+            );
+          }
+          return;
+        }
+        const known = registered.has(event.slug);
         emit({
           type: 'step',
           step: {
-            kind: 'tool_call',
+            kind: 'tool_result',
             callId: event.callId,
-            tool: event.slug,
-            label,
-            location: event.location,
+            tool: known ? event.slug : UNKNOWN_TOOL_STEP_NAME,
+            label: known
+              ? (resultLabels.get(event.slug) ?? labelFor(event.slug))
+              : UNKNOWN_TOOL_STEP_LABEL,
+            ok: event.ok,
+            ...(event.error ? { error: event.error } : {}),
           },
         });
-        if (event.location === 'server') {
-          emit(
-            status({ state: 'working', label: `${label}…`, cancellable: true }),
-          );
-        }
-        return;
-      }
-      const known = registered.has(event.slug);
-      emit({
-        type: 'step',
-        step: {
-          kind: 'tool_result',
-          callId: event.callId,
-          tool: known ? event.slug : UNKNOWN_TOOL_STEP_NAME,
-          label: known ? labelFor(event.slug) : UNKNOWN_TOOL_STEP_LABEL,
-          ok: event.ok,
-          ...(event.error ? { error: event.error } : {}),
-        },
-      });
-    },
-    onInvocation: async (invocation) => {
-      if (!author || !sendAgentReply) return;
-      const failure = toolFailureRecord(invocation);
-      // A deduped repeat of a failed call (#4382) has no failure record and
-      // is not a success either: keep it out of `authorInvocation`.
-      if (!invocation.ok && !failure) return;
-      if (collapseRecovered) {
-        if (invocation.ok) {
-          // A later success of the same tool recovers its held rejections.
-          for (let index = heldFailures.length - 1; index >= 0; index -= 1) {
-            if (heldFailures[index].invocation.slug === invocation.slug) {
-              heldFailures.splice(index, 1);
+      },
+      onInvocation: async (invocation) => {
+        accounting.toolCalls++;
+        if (invocation.approvalId) return;
+        resultLabels.set(
+          invocation.slug,
+          describe(invocation.slug, invocation.args, invocation),
+        );
+        if (!author || !sendAgentReply) return;
+        const failure = toolFailureRecord(invocation);
+        // A deduped repeat of a failed call (#4382) has no failure record and
+        // is not a success either: keep it out of `authorInvocation`.
+        if (!invocation.ok && !failure) return;
+        if (collapseRecovered) {
+          if (invocation.ok) {
+            // A later success of the same tool recovers its held rejections.
+            for (let index = heldFailures.length - 1; index >= 0; index -= 1) {
+              if (heldFailures[index].invocation.slug === invocation.slug) {
+                heldFailures.splice(index, 1);
+              }
             }
+          } else if (failure?.recoverable) {
+            heldFailures.push({ invocation, failure });
+            return;
           }
-        } else if (failure?.recoverable) {
-          heldFailures.push({ invocation, failure });
-          return;
         }
+        await persistInvocation(invocation, failure);
+      },
+    });
+  let outcome: { loop: ToolLoopResult } | { failure: unknown };
+  try {
+    let loop: ToolLoopResult;
+    try {
+      loop = await runLoop();
+    } catch (error) {
+      if (
+        !(error instanceof WorkProfileEscalation) ||
+        (!options.resolveWorkProfile && !options.onDesignEscalation)
+      )
+        throw error;
+      if (options.onDesignEscalation) {
+        const accepted = await options.onDesignEscalation({
+          tool: error.tool,
+          history: error.messages ?? options.history ?? [],
+          userMessage: options.userMessage,
+          thread: options.thread,
+          originMessageId: options.originMessageId,
+        });
+        const { content, message } = await recordDesignHandoff(
+          options,
+          accepted,
+          emit,
+          serialize,
+        );
+        emit({
+          type: 'status',
+          status: { state: 'working', label: content, cancellable: true },
+        });
+        await report('completed');
+        emit({
+          type: 'done',
+          stoppedReason: 'stop',
+          runId: accepted.runId,
+          ...(message ? { message } : {}),
+        });
+        return {
+          content,
+          stoppedReason: 'stop',
+          originMessageId: options.originMessageId,
+          runId: accepted.runId,
+        };
       }
-      await persistInvocation(invocation, failure);
-    },
-  }).then(
-    (value) => ({ loop: value }),
-    (error: unknown) => ({ failure: error }),
-  );
+      const profile = await options.resolveWorkProfile!('design');
+      if (profile.name !== 'design')
+        throw new Error('Design escalation requires the design profile.');
+      const runtime = await options.resolveWorkProfileRuntime?.(profile);
+      options = {
+        ...options,
+        ...runtime,
+        workProfile: profile,
+        model: profile.model,
+        maxSteps: profile.budgets.maxSteps,
+        maxTokens: profile.budgets.maxTokens,
+        maxTurnTokens: profile.budgets.maxTurnTokens,
+        maxTurnMs: profile.budgets.turnTimeoutMs,
+        requestTimeoutMs: profile.budgets.requestTimeoutMs,
+      };
+      messages = error.messages ?? messages;
+      initialTokens = accounting.tokens;
+      emit(
+        status({
+          state: 'working',
+          label: 'Thinking this through',
+          cancellable: true,
+        }),
+      );
+      if (options.turnDriver)
+        return runExternalAssistantTurn(
+          { ...options, history: messages },
+          emit,
+          serialize,
+          describe,
+          report,
+        );
+      loop = await runLoop();
+    }
+    outcome = { loop };
+  } catch (failure) {
+    outcome = { failure };
+  }
   // Rejections no later call of their tool recovered are persisted now, in
   // call order, before the turn's reply (#4505).
   for (const held of heldFailures.splice(0)) {
@@ -1057,10 +1337,13 @@ async function runTurn<M>(
         replyToMessageId: originMessageId ?? null,
         kind: 'assistant',
         content: text,
-        metadata: replyMetadataFor(
-          { stoppedReason: 'provider_error' },
-          { content: text, fallback: 'provider_error' },
-        ),
+        metadata: {
+          ...replyMetadataFor(
+            { stoppedReason: 'provider_error' },
+            { content: text, fallback: 'provider_error' },
+          ),
+          ...author.metadata,
+        },
       });
       finalMessage = serialize(message);
       emit({ type: 'message', message: finalMessage });
@@ -1093,6 +1376,7 @@ async function runTurn<M>(
       pending: loop.pendingClientToolCalls,
       clientTools,
       tokens: initialTokens + loop.totalTokens,
+      usageKnown: accounting.usageKnown,
       startedAt,
       ...(originMessageId ? { originMessageId } : {}),
     };
@@ -1146,8 +1430,49 @@ async function runTurn<M>(
   // Never store `''` or a content-free 'Done.' (#4379). A fallback reply is
   // marked `metadata.fallback` so it is never replayed as a model answer.
   const reply = resolveTurnReply(loop, options.emptyAnswerFallback);
-  const content = reply.content;
-  const replyMetadata = replyMetadataFor(loop, reply);
+  const formatted = !reply.fallback
+    ? options.formatAssistantReply?.(reply.content)
+    : undefined;
+  const content = formatted?.content ?? reply.content;
+  const replyMetadata = {
+    ...replyMetadataFor(loop, reply),
+    ...formatted?.metadata,
+  };
+  if (options.workProfile) {
+    const workRun = {
+      profile: options.workProfile.name,
+      engine: options.workProfile.engine,
+      ...(accounting.model ? { model: accounting.model } : {}),
+      effort: options.workProfile.effort,
+      durationMs: Date.now() - accounting.startedAt,
+      ...(accounting.usageKnown ? { tokens: accounting.tokens } : {}),
+      toolCalls: accounting.toolCalls,
+    };
+    const observed = (
+      options.ai as
+        | {
+            getWorkRunMetadata?():
+              | import('@happyvertical/smrt-inference').WorkRunMetadata
+              | undefined;
+          }
+        | undefined
+    )?.getWorkRunMetadata?.();
+    if (observed)
+      Object.assign(workRun, {
+        model: accounting.model ?? observed.model,
+        fallback: observed.fallback,
+      });
+    replyMetadata.workRun = workRun;
+    try {
+      (
+        options.onWorkRun ??
+        // biome-ignore lint/suspicious/noConsole: sanitized turn accounting defaults to the server log; hosts may supply onWorkRun
+        ((value) => console.info('assistant.workRun', value))
+      )(workRun);
+    } catch {
+      /* Telemetry never breaks a turn. */
+    }
+  }
   let finalMessage: M | undefined;
   if (author && sendAgentReply) {
     const message = await sendAgentReply(author.chatService, {
@@ -1157,7 +1482,7 @@ async function runTurn<M>(
       replyToMessageId: originMessageId ?? null,
       kind: 'assistant',
       content,
-      metadata: replyMetadata,
+      metadata: { ...replyMetadata, ...author.metadata },
     });
     finalMessage = serialize(message);
     emit({ type: 'message', message: finalMessage });

@@ -104,6 +104,7 @@ export {
   type SecretKeyDriftRepairAction,
   type SecretKeyDriftRepairResult,
   type SecretKeyDriftReport,
+  type SecretMasterKeyProvider,
   SecretService,
   type SecretServiceOptions,
   type StoreSecretOptions,

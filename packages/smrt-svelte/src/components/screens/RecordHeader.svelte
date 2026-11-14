@@ -17,16 +17,20 @@ import type { RecordStatusTone } from '../overview/widgets/data.js';
 import { statusLabel, statusTone } from '../overview/widgets/record-table.js';
 import { screenTitles } from './fields.js';
 import type { RecordFact, RecordHeaderModel } from './record-header.js';
+import { useScreenReferenceLabels } from './reference-labels.svelte.js';
+import { screenReferenceTarget } from './references.js';
 import type { ScreenRelation } from './relations.js';
 import type {
   ScreenCollectionDefinition,
   ScreenField,
   ScreenRecord,
+  ScreenReferenceSources,
 } from './types.js';
-import { formatScreenValue, shortScreenId } from './values.js';
+import { formatScreenValue } from './values.js';
 
 interface Props {
   definition: ScreenCollectionDefinition;
+  references?: ScreenReferenceSources;
   model: RecordHeaderModel;
   record: ScreenRecord;
   relations?: readonly ScreenRelation[];
@@ -45,6 +49,7 @@ interface Props {
 
 let {
   definition,
+  references = {},
   model,
   record,
   relations = [],
@@ -65,6 +70,13 @@ const { t } = useI18n();
 const titles = $derived(screenTitles(definition));
 const hasMenu = $derived(Boolean(extraActions || ondelete));
 
+const referenceNames = useScreenReferenceLabels(() => ({
+  definition,
+  fields: model.facts.map((fact) => fact.field),
+  rows: [record],
+  references,
+}));
+
 let menuOpen = $state(false);
 let confirmOpen = $state(false);
 let deleteError = $state(false);
@@ -81,6 +93,8 @@ async function confirmDelete(): Promise<void> {
 }
 
 function referenceLabel(field: ScreenField, id: string): string | undefined {
+  const resolved = referenceNames.label(field, id);
+  if (resolved) return resolved;
   const target = relations.find(
     (r) => r.kind === 'reference' && r.field === field.name,
   )?.model;
@@ -174,14 +188,14 @@ function contactHref(fact: RecordFact, text: string): string | undefined {
           <dt data-smrt-part="label">{fact.field.label}</dt>
           <dd>
             {#if fact.kind === 'party'}
-              {@const href = hrefFor?.(fact.field, text)}
+              {@const href = hrefFor?.(fact.field, text) ?? screenReferenceTarget(definition, fact.field, references)?.href?.(text)}
               {@const label = referenceLabel(fact.field, text)}
               {#if href}
-                <a {href}>{#if label}{label}{:else}<code title={text}>{shortScreenId(text)}</code>{/if}</a>
+                <a {href}>{#if label}{label}{:else}<span title={text}>{t(M['ui.screens.reference_unavailable'])}</span>{/if}</a>
               {:else if label}
                 {label}
               {:else}
-                <code title={text}>{shortScreenId(text)}</code>
+                <span title={text}>{t(M['ui.screens.reference_unavailable'])}</span>
               {/if}
             {:else if fact.kind === 'contact' && contactHref(fact, text)}
               <a href={contactHref(fact, text)}>{text}</a>

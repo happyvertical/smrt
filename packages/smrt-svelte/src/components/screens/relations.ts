@@ -16,6 +16,7 @@ import { humanizeLabel, screenTitles } from './fields.js';
 import { deriveFieldRoles, hasLineItemRoles } from './roles.js';
 import type {
   ScreenCollectionDefinition,
+  ScreenReferenceSource,
   ScreenRelationshipDefinition,
 } from './types.js';
 
@@ -68,14 +69,17 @@ function fieldLabel(
   return humanizeLabel(field, definition.fields[field]);
 }
 
-/** Resolve a relationship target by `definitions` key, then by `name`. */
-function targetOf(
-  definitions: Readonly<Record<string, ScreenCollectionDefinition>>,
-  collection: string,
-): ScreenCollectionDefinition | undefined {
+/** Resolve a definition or reference source by collection key, then by model name. */
+export function targetOf<
+  T extends ScreenCollectionDefinition | ScreenReferenceSource,
+>(definitions: Readonly<Record<string, T>>, collection: string): T | undefined {
   return (
     definitions[collection] ??
-    Object.values(definitions).find((d) => d.name === collection)
+    Object.values(definitions).find(
+      (entry) =>
+        ('definition' in entry ? entry.definition.name : entry.name) ===
+        collection,
+    )
   );
 }
 

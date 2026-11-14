@@ -5,8 +5,10 @@ export {
   type ExecuteOptions,
   isRiskyCommand,
   isRiskyTool,
+  isStructuralCommand,
   type Plan,
   RISKY_COMMANDS,
+  STRUCTURAL_COMMANDS,
   type Template,
 } from './commands.ts';
 export {
@@ -40,6 +42,10 @@ export {
   validate,
 } from './definition.ts';
 export {
+  type DraftMarker,
+  removeDraftDirectory as discardDraftDirectory,
+} from './draft.ts';
+export {
   AppError,
   ApprovalRequiredError,
   EngineError,
@@ -51,12 +57,25 @@ export {
   type ChangeResult,
   type CleanUpResult,
   type ExecuteResult,
+  type ForkDraftOptions,
   type HostOptions,
   type MethodResult,
+  type PublishOptions,
+  type PublishPreview,
+  type PublishResult,
+  type PublishStage,
+  type PublishVersionPreview,
   type RestResult,
   type ToolResult,
   type VersionSummary,
 } from './host.ts';
+export type {
+  DefinitionDiff,
+  DraftChain,
+  FieldChange,
+  ModelDiff,
+  PublishMethod,
+} from './publish.ts';
 export {
   checkSyntax,
   type MethodInput,

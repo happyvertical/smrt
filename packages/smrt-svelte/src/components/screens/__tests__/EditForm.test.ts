@@ -1,4 +1,5 @@
 import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
+import { createDefinitionFetchers } from '@happyvertical/smrt-web';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -142,6 +143,50 @@ describe('EditForm', () => {
     ).toBeInTheDocument();
   });
 
+  it.each([
+    {
+      status: 422,
+      payload: {
+        error: {
+          code: 'invalid_name',
+          message: 'Enter a name for this member',
+          status: 422,
+        },
+      },
+      visible: 'Enter a name for this member',
+    },
+    {
+      status: 500,
+      payload: {
+        error: 'private database detail',
+        requestId: 'f62aa6e4-e74b-441f-8c30-96f83b88c1d1',
+      },
+      visible:
+        'Could not save your changes. Reference: f62aa6e4-e74b-441f-8c30-96f83b88c1d1.',
+    },
+  ])('shows the safe message or reference from a real HTTP failure ($status)', async ({
+    status,
+    payload,
+    visible,
+  }) => {
+    const fetchers = createDefinitionFetchers(
+      { name: 'members', endpoint: '/members' },
+      '/api',
+      (async () => Response.json(payload, { status })) as typeof fetch,
+    );
+    render(EditForm, {
+      props: {
+        definition: taskDefinition,
+        policy: taskPolicy,
+        record: taskRows[0],
+        onsubmit: (values) => fetchers.create(values).then(() => undefined),
+      },
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText(visible)).toBeInTheDocument();
+    expect(screen.queryByText(/private database/)).not.toBeInTheDocument();
+  });
+
   it('cancels', async () => {
     const oncancel = vi.fn();
     render(EditForm, {
@@ -203,4 +248,20 @@ describe('EditForm', () => {
     );
     await expectNoA11yViolations(container);
   });
+});
+
+it('never renders an empty form when every field is read-only or hidden', async () => {
+  render(EditForm, {
+    definition: {
+      ...taskDefinition,
+      fields: { displayLabel: { type: 'text', readonly: true } },
+    },
+    onsubmit: vi.fn(),
+  });
+  expect(
+    screen.getByText('No editable fields are available for this record.'),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: 'Save', exact: true }),
+  ).toBeNull();
 });

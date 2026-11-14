@@ -5,8 +5,10 @@
 
 import {
   crossPackageRef,
+  DatabaseError,
   field,
   foreignKey,
+  method,
   SmrtObject,
   type SmrtSaveOptions,
   smrt,
@@ -38,8 +40,24 @@ import {
  */
 @TenantScoped({ mode: 'optional' })
 @smrt({
+  writeThrough: {
+    profileId: {
+      fields: ['name', 'email'],
+      virtualFields: {
+        phone: {
+          type: 'text',
+          description: 'A phone number for reaching this person.',
+          ui: { widget: 'phone' },
+        },
+      },
+    },
+  },
+  display: {
+    list: ['status', 'email', 'phone'],
+    label: { via: 'profileId', field: 'name', fallback: 'Unnamed customer' },
+  },
   api: { include: ['list', 'get', 'create', 'update'] },
-  mcp: { include: ['list', 'get'] },
+  mcp: { include: ['list', 'get', 'create', 'update'] },
   cli: { skipApiCheck: true },
 })
 export class Customer extends SmrtObject {
@@ -55,8 +73,7 @@ export class Customer extends SmrtObject {
    * Plain string for cross-package reference
    */
   @crossPackageRef('@happyvertical/smrt-profiles:Profile', {
-    description:
-      'Links this customer to their profile record, where their name and contact details are kept.',
+    description: 'Choose an existing contact, or enter a new name above.',
   })
   profileId: string = '';
 
@@ -136,6 +153,7 @@ export class Customer extends SmrtObject {
    * Customer status
    */
   @field({
+    default: 'active',
     description:
       'Whether you are still dealing with this customer: active, inactive or suspended.',
   })
@@ -208,6 +226,121 @@ export class Customer extends SmrtObject {
    * Re-normalize contacts after the framework's option-override pass, which
    * re-applies raw option values (including a stored JSON string).
    */
+  /** Virtual fields owned by the linked Profile, never Customer columns. */
+
+  protected override async writeThroughDefaults(
+    via: string,
+  ): Promise<Record<string, unknown>> {
+    if (via !== 'profileId') return super.writeThroughDefaults(via);
+    const { ProfileTypeCollection } = await import(
+      '@happyvertical/smrt-profiles'
+    );
+    const types = await ProfileTypeCollection.create({ db: this.db });
+    const person = await types.getOrCreateBySlug('person', {
+      name: 'Person',
+      description: 'Individual person profile',
+    });
+    return { typeId: person.id };
+  }
+
+  @method({ expose: false })
+  static override async resolveWriteThroughVirtualProjection(
+    via: string,
+    options: import('@happyvertical/smrt-core').SmrtObjectOptions,
+  ): Promise<Record<string, { sql: string; values: unknown[] }>> {
+    if (via !== 'profileId')
+      return super.resolveWriteThroughVirtualProjection(via, options);
+    const {
+      ProfileCollection,
+      ProfileMetadataCollection,
+      ProfileMetafieldCollection,
+    } = await import('@happyvertical/smrt-profiles');
+    const metadata = await ProfileMetadataCollection.create(options);
+    const metafields = await ProfileMetafieldCollection.create(options);
+    // The public column projections validate field policy and run each owning
+    // collection's authorization and tenant interceptors, without fetching rows.
+    try {
+      const fields = await metafields.buildProjectionQuery({
+        where: { slug: 'phone' },
+        select: ['id', 'tenantId'],
+      });
+      const rows = await metadata.buildProjectionQuery({
+        select: ['profileId', 'metafieldId', 'tenantId', 'value'],
+      });
+      const fieldSql = fields.sql.replace(
+        /\$(\d+)/g,
+        (_, index: string) => `$${Number(index) + rows.values.length}`,
+      );
+      return {
+        phone: {
+          sql: `SELECT m."profileId" AS "id", m."tenantId", m."value" FROM (${rows.sql}) m JOIN (${fieldSql}) f ON f."id" = m."metafieldId" AND (f."tenantId" = m."tenantId" OR f."tenantId" IS NULL)`,
+          values: [...rows.values, ...fields.values],
+        },
+      };
+    } catch (error) {
+      if (
+        !(error instanceof DatabaseError) ||
+        error.code !== 'DB_SCHEMA_MISSING' ||
+        ![metadata.tableName, metafields.tableName].includes(
+          String(error.details?.tableName),
+        )
+      )
+        throw error;
+      // Phone storage is optional for an existing contact reader. Compose an
+      // empty public Profile projection so native UUID types stay intact;
+      // core's existing scalar COALESCE supplies the empty phone value.
+      const profiles = await ProfileCollection.create(options);
+      const empty = await profiles.buildProjectionQuery({
+        select: ['id', 'tenantId'],
+      });
+      return {
+        phone: {
+          sql: `SELECT p."id", p."tenantId", '' AS "value" FROM (${empty.sql}) p WHERE 1 = 0`,
+          values: empty.values,
+        },
+      };
+    }
+  }
+
+  protected override async readWriteThroughVirtual(
+    via: string,
+    target: SmrtObject,
+  ): Promise<Record<string, unknown>> {
+    if (via !== 'profileId') return super.readWriteThroughVirtual(via, target);
+    const profile = target as import('@happyvertical/smrt-profiles').Profile;
+    return { phone: (await profile.getMetadata()).phone ?? '' };
+  }
+
+  protected override async saveWriteThroughVirtual(
+    via: string,
+    target: SmrtObject,
+    values: Record<string, unknown>,
+  ): Promise<void> {
+    if (via !== 'profileId')
+      return super.saveWriteThroughVirtual(via, target, values);
+    if (!Object.hasOwn(values, 'phone')) return;
+    if (typeof values.phone !== 'string') throw new Error('Phone must be text');
+    const profile = target as import('@happyvertical/smrt-profiles').Profile;
+    // Empty optional controls mean no phone. Metadata values remain required.
+    if (!values.phone.trim()) {
+      if (Object.hasOwn(await profile.getMetadata(), 'phone'))
+        await profile.removeMetadata('phone');
+      return;
+    }
+    const { ProfileMetafieldCollection } = await import(
+      '@happyvertical/smrt-profiles'
+    );
+    const metafields = await ProfileMetafieldCollection.create({ db: this.db });
+    await metafields.getOrUpsert(
+      { slug: 'phone', tenantId: this.tenantId },
+      {
+        name: 'Phone',
+        validation: { type: 'string' },
+      },
+    );
+    await profile.addMetadata('phone', values.phone);
+  }
+
   override async initialize(): Promise<this> {
     await super.initialize();
     this.contacts = normalizePartyContacts(this.contacts);

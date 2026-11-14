@@ -12,6 +12,14 @@ export interface AuditHistoryEntry {
   changes?: Record<string, { before: unknown; after: unknown }>;
 }
 
+/** Host-ordered history without timestamp provenance. Never synthesize occurredAt. */
+export interface UndatedHistoryEntry
+  extends Omit<AuditHistoryEntry, 'occurredAt' | 'profileId'> {
+  occurredAt?: never;
+  profileId?: string;
+}
+export type RecordHistoryEntry = AuditHistoryEntry | UndatedHistoryEntry;
+
 export interface AuditListFilter {
   profileId: string;
   resourceId: string;
@@ -20,7 +28,9 @@ export interface AuditListFilter {
 }
 
 /** Resolves presentation text for one already-authorized audit entry. */
-export type AuditEntryLabel = (entry: AuditHistoryEntry) => string;
+export type AuditEntryLabel<
+  Entry extends RecordHistoryEntry = AuditHistoryEntry,
+> = (entry: Entry) => string;
 
 /**
  * Resolves an already-authorized destination for an audit entry.
@@ -28,24 +38,24 @@ export type AuditEntryLabel = (entry: AuditHistoryEntry) => string;
  * The component accepts local paths and explicit HTTP(S) URLs only. Consumers
  * must still authorize the referenced resource before exposing its href.
  */
-export type AuditResourceHref = (
-  entry: AuditHistoryEntry,
-) => string | null | undefined;
+export type AuditResourceHref<
+  Entry extends RecordHistoryEntry = AuditHistoryEntry,
+> = (entry: Entry) => string | null | undefined;
 
 /** Resolves a presentation label for one changed field. */
-export type AuditFieldLabel = (
-  field: string,
-  entry: AuditHistoryEntry,
-) => string;
+export type AuditFieldLabel<
+  Entry extends RecordHistoryEntry = AuditHistoryEntry,
+> = (field: string, entry: Entry) => string;
 
-export interface AuditValueFormatContext {
-  entry: AuditHistoryEntry;
+export interface AuditValueFormatContext<
+  Entry extends RecordHistoryEntry = AuditHistoryEntry,
+> {
+  entry: Entry;
   field: string;
   side: 'before' | 'after';
 }
 
 /** Formats an audit value as text. Formatter output is never rendered as HTML. */
-export type AuditValueFormatter = (
-  value: unknown,
-  context: AuditValueFormatContext,
-) => string;
+export type AuditValueFormatter<
+  Entry extends RecordHistoryEntry = AuditHistoryEntry,
+> = (value: unknown, context: AuditValueFormatContext<Entry>) => string;

@@ -92,7 +92,7 @@ async function browserContract(site) {
     response.writeHead(200, { 'content-type': contentType(file) });
     response.end(readFileSync(file));
   });
-  await new Promise((accept) => server.listen(0, '127.0.0.1', accept));
+  await new Promise((accept) => server.listen(Number(process.env.PLANNER_TEST_PORT ?? 0), '127.0.0.1', accept));
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('test server failed');
   const origin = `http://127.0.0.1:${address.port}`;

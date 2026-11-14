@@ -99,8 +99,9 @@ authenticated REST, namespace, exposure and consent semantics).
   as well. The uploaded artifact remains summary-only.
 - **Not a performance or load result.** The gate is about determinism.
 - **Not full permission coverage.** The onboarded owner's role does not grant
-  the template's authored `notes.read` page permission, so the example page
-  renders its access notice. The generated REST surface and the WebMCP read
+  the `notes.read` page permission of the Note example (copied into the fixture
+  from `examples/notes`; the template itself ships no object), so the example
+  page renders its access notice. The generated REST surface and the WebMCP read
   tools are exercised instead.
 - **Generated list tools are not exercised end to end.** The generated REST
   list route answers `{ items, count, limit, offset }` while
@@ -216,6 +217,11 @@ Playwright tracing, video, and screenshots are disabled for every step —
 onboarding carries a single-use token in a URL, and a trace would capture it.
 The harness also masks that token with `::add-mask::` before onboarding runs,
 so a failed navigation cannot echo it into the job log either.
+The server streams stay in a bounded in-memory buffer. Owner setup fails fast
+on a setup/home HTTP 500 and reports only method, pathname, status, an optional
+restricted request ID and a sanitized excerpt. Tokens, full URLs, credentials
+and absolute paths are redacted; no request bodies, cookies or raw server logs
+are retained. Successful runs do not print the buffer.
 Databases, export bundles, browser profiles, cookies, bootstrap artifacts,
 and raw traces are never uploaded, and every temporary root is removed when
 its worker finishes. Retention is seven days.

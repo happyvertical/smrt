@@ -1,3 +1,4 @@
+import { writeThroughFields } from '../write-through.js';
 /**
  * Manifest generator for creating service manifests from AST scan results
  */
@@ -16,6 +17,7 @@ import {
   loadExternalManifestSync,
   lookupInManifest,
 } from '../manifest/manifest-loader.js';
+import { annotateModelReplacements } from '../manifest/model-replacements';
 import { selectObjectDeclarations } from '../manifest/object-declarations.js';
 import { findField, type HelpModel, validateHelp } from '../recipe-help.js';
 import {
@@ -55,6 +57,7 @@ import type {
 } from '../schema/types.js';
 import { generateToolManifest } from '../tools/tool-generator.js';
 import {
+  DISPLAY_LABEL_FIELD,
   displayLabelFieldProblem,
   FIELD_UI_FORMAT_TYPES,
   FIELD_UI_FORMATS,
@@ -65,6 +68,7 @@ import {
   isRelationshipRole,
   RELATIONSHIP_ROLES,
   resolveDisplayLabelField,
+  resolveDisplayLabelProjection,
 } from '../ui-metadata.js';
 import { classnameToTablename, toSnakeCase } from '../utils/naming.js';
 import {
@@ -444,6 +448,51 @@ export class ManifestGenerator {
       assertScopedPackageName(options?.packageName);
     }
 
+    // An app may keep its source constructor name while exporting the upstream name.
+    const publicNames = new Map<string, string>();
+    for (const [key, obj] of Object.entries(manifest.objects)) {
+      const parentName = (obj.extendsQualified ?? obj.extends)
+        ?.split(':')
+        .at(-1);
+      const publicName =
+        obj.decoratorConfig.name ??
+        (obj.exportName === parentName ? obj.exportName : undefined);
+      if (!publicName || publicName === obj.className) continue;
+      const packageName = obj.packageName ?? options?.packageName;
+      if (!packageName) throw new Error(`Missing package for ${key}`);
+      const nextKey = createQualifiedName(packageName, publicName);
+      if (manifest.objects[nextKey] && manifest.objects[nextKey] !== obj) {
+        throw new Error(`Class name collision for public model ${nextKey}`);
+      }
+      publicNames.set(obj.className, publicName);
+      publicNames.set(key, nextKey);
+      obj.className = publicName;
+      obj.name = publicName.toLowerCase();
+      obj.decoratorConfig.name = publicName;
+      obj.qualifiedName = nextKey;
+      delete manifest.objects[key];
+      manifest.objects[obj.qualifiedName] = obj;
+    }
+
+    // Local collection generics, subclasses and references still use the
+    // source identifier; keep those edges attached to its public identity.
+    for (const obj of Object.values(manifest.objects)) {
+      for (const property of [
+        'extends',
+        'extendsQualified',
+        'extendsTypeArg',
+        'collectionOf',
+      ] as const) {
+        const value = obj[property];
+        if (value && publicNames.has(value))
+          obj[property] = publicNames.get(value);
+      }
+      for (const field of Object.values(obj.fields)) {
+        if (field.related && publicNames.has(field.related))
+          field.related = publicNames.get(field.related);
+      }
+    }
+
     // `exclude: ['*']` closes a surface; no generator reads `'*'` as a
     // wildcard, so normalize it before any pass or manifest reader sees it
     // (#3468, smrt-profiles MagicLinkToken).
@@ -589,6 +638,7 @@ export class ManifestGenerator {
     // Fifth pass: Generate schemas for each object (build-time schema generation)
     // This pre-computes DDL, indexes, and columns for efficient external package consumption
     this.generateSchemas(manifest);
+    Object.assign(manifest, annotateModelReplacements(manifest));
     this.assertTenantScopedSchemaContract(manifest);
 
     // Sixth pass: Generate agent manifests for Agent subclasses
@@ -1005,7 +1055,7 @@ export class ManifestGenerator {
    *   accepts (every widget is text-only; `currency` is an ISO 4217 code
    *   picker, not an amount).
    * - `@smrt({ display: { label } })` must name an own, non-sensitive,
-   *   non-transient, non-relationship field.
+   *   non-transient, non-relationship field, or one public reference hop.
    * - A selector slot's `selects` must resolve when it names this package.
    *
    * Also stamps each object's resolved `displayLabelField` (the declared field,
@@ -1013,6 +1063,7 @@ export class ManifestGenerator {
    */
   applyUiMetadata(manifest: SmartObjectManifest): void {
     const failures: string[] = [];
+    const aggregated = this.createAggregatedManifest(manifest);
 
     for (const key of Object.keys(manifest.objects).sort(compareText)) {
       const obj = manifest.objects[key];
@@ -1061,20 +1112,103 @@ export class ManifestGenerator {
         }
       }
 
+      if (obj.decoratorConfig?.writeThrough) {
+        obj.writeThroughFields = writeThroughFields(
+          obj.fields,
+          obj.decoratorConfig.writeThrough,
+          (via) => {
+            const related = obj.fields[via]?.related;
+            const target =
+              typeof related === 'string'
+                ? lookupInManifest(aggregated, related)
+                : undefined;
+            if (!target)
+              throw new Error(`writeThrough target ${related} is unavailable`);
+            return target.fields;
+          },
+        );
+      }
       const display = (obj.decoratorConfig as { display?: unknown } | undefined)
         ?.display;
       let declared: string | undefined;
+      delete obj.displayLabelProjection;
       if (display !== undefined) {
         const label =
           display && typeof display === 'object'
             ? (display as { label?: unknown }).label
             : undefined;
-        if (
+        if (label && typeof label === 'object') {
+          try {
+            const projection = resolveDisplayLabelProjection(label);
+            if (!projection) throw new Error('Invalid display projection.');
+            const edge = obj.fields[projection.via];
+            if (
+              !edge ||
+              (!['foreignKey', 'crossPackageRef'].includes(edge.type) &&
+                !(
+                  edge.type === 'text' &&
+                  typeof obj.decoratorConfig?.display?.references?.[
+                    projection.via
+                  ] === 'string' &&
+                  obj.decoratorConfig.display.references[
+                    projection.via
+                  ].includes(':')
+                )) ||
+              edge.sensitive ||
+              edge._meta?.sensitive ||
+              edge.transient ||
+              edge._meta?.transient ||
+              edge.readPermission ||
+              edge._meta?.readPermission
+            ) {
+              throw new Error(
+                'display.label.via must name a public, persisted foreignKey or crossPackageRef.',
+              );
+            }
+            if (
+              Object.keys(obj.fields).some(
+                (name) => toSnakeCase(name) === 'display_label',
+              )
+            ) {
+              throw new Error(
+                'displayLabel is reserved for the projected label.',
+              );
+            }
+            const related = ['foreignKey', 'crossPackageRef'].includes(
+              edge.type,
+            )
+              ? edge.related
+              : obj.decoratorConfig?.display?.references?.[projection.via];
+            const target =
+              typeof related === 'string'
+                ? lookupInManifest(aggregated, related)
+                : undefined;
+            if (!target)
+              throw new Error(
+                `display.label target ${related} is unavailable; include its owning package in smrtDependencies.`,
+              );
+            const targetField = target.fields[projection.field];
+            const problem =
+              displayLabelFieldProblem(target.fields, projection.field) ??
+              (targetField?.readPermission || targetField?._meta?.readPermission
+                ? 'it is a permission-gated field'
+                : null);
+            if (problem)
+              throw new Error(
+                `display.label target ${related}.${projection.field}: ${problem}.`,
+              );
+            obj.displayLabelProjection = projection;
+          } catch (error) {
+            failures.push(
+              `${owner}: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        } else if (
           label !== undefined &&
           (typeof label !== 'string' || label === '')
         ) {
           failures.push(
-            `${owner}: display.label must be the name of an own field (a string literal), not ${JSON.stringify(label)}.`,
+            `${owner}: display.label must be the name of an own field or a one-hop projection, not ${JSON.stringify(label)}.`,
           );
         } else if (typeof label === 'string') {
           const problem = displayLabelFieldProblem(obj.fields, label);
@@ -1089,7 +1223,9 @@ export class ManifestGenerator {
           failures.push(`${owner}: display must be an object ({ label }).`);
         }
       }
-      const resolved = resolveDisplayLabelField(obj.fields, declared);
+      const resolved = obj.displayLabelProjection
+        ? DISPLAY_LABEL_FIELD
+        : resolveDisplayLabelField(obj.fields, declared);
       if (resolved) {
         obj.displayLabelField = resolved;
       } else {
@@ -2254,6 +2390,21 @@ export class ManifestGenerator {
       //     methods previously went unmerged (the under-report half of
       //     #2624).
       const usesSTI = this.isSTIClass(obj, objectsByName, manifest);
+      const directParent = this.resolveParentDefinition(
+        this.parentRef(obj) ?? obj.extends,
+        obj,
+        manifest,
+        objectsByName,
+      );
+      const replacementParent =
+        directParent?.className === obj.className &&
+        (!obj.decoratorConfig.tableName ||
+          obj.decoratorConfig.tableName ===
+            (directParent.schema?.tableName ??
+              directParent.decoratorConfig.tableName ??
+              this.classNameToTableName(directParent.className)))
+          ? directParent
+          : undefined;
 
       logger.debug(
         `[manifest-generator] Merging inherited fields for ${obj.className} from ${obj.extends}`,
@@ -2386,6 +2537,22 @@ export class ManifestGenerator {
       // Update object definition with merged fields
       obj.fields = mergedFields;
       obj.methods = mergedMethods;
+
+      if (replacementParent) {
+        // Model-move aliases belong to the declaring identity, not subclasses.
+        const { previousQualifiedNames: _aliases, ...parentConfig } =
+          replacementParent.decoratorConfig;
+        obj.decoratorConfig = {
+          ...parentConfig,
+          ...obj.decoratorConfig,
+          tableName:
+            replacementParent.schema?.tableName ??
+            replacementParent.decoratorConfig.tableName ??
+            this.classNameToTableName(replacementParent.className),
+        };
+        obj.collection =
+          obj.decoratorConfig.collection ?? replacementParent.collection;
+      }
 
       // Share storage while allowing an explicit independent route collection.
       const stiBase = this.findSTIBase(obj, objectsByName, manifest);
@@ -3256,7 +3423,7 @@ export class ManifestGenerator {
     obj: SmartObjectDefinition,
     interfaceName: string,
   ): string {
-    const fields = Object.entries(obj.fields)
+    const fields = Object.entries({ ...obj.fields, ...obj.writeThroughFields })
       .map(([name, field]) => {
         const optional = !field.required ? '?' : '';
         const type = this.mapFieldTypeToTS(field.type);

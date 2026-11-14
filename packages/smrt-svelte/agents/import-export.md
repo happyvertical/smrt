@@ -89,3 +89,13 @@ input size and domain validation and retain source evidence independently.
 
 No schema, authorization, transaction, or tenant mutation is introduced by
 this additive export; those behavioral test dimensions are not applicable.
+
+## Cookbook-driven exports
+
+Pass `definition` instead of pre-derived `fields` to `ImportExport` under
+`CookbookApp`. It derives columns with the same resolved cookbook policy as the
+record screens, including collection/field labels. Hidden or policy-omitted
+fields are not offered and cannot reach CSV/TSV, even when rows contain their
+values. `policy` is an optional explicit override. The legacy `fields` input is
+still supported for standalone hosts. Read-only fields remain exportable but
+are not importable; `locked` retains its existing import-default semantics.

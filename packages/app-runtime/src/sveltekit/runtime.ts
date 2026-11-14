@@ -20,6 +20,7 @@
  * using `switchSessionTenant()` from `@happyvertical/smrt-users/sveltekit`.
  */
 
+import { createHash } from 'node:crypto';
 import {
   loadConfig,
   type ResolvedApplicationRuntime,
@@ -31,7 +32,10 @@ import {
   type SmrtCollection,
   type SmrtObject,
 } from '@happyvertical/smrt-core';
-import { OidcIdentityCollection } from '@happyvertical/smrt-profiles';
+import {
+  OidcIdentityCollection,
+  ProfileCollection,
+} from '@happyvertical/smrt-profiles';
 import {
   enableTenancy,
   getCurrentTenant,
@@ -79,8 +83,10 @@ import {
   type LocalApplicationRuntime,
   type LocalMcpTokenPrincipal,
   type LocalOwnerBootstrapInvitation,
+  type LocalOwnerSignInResult,
   type LocalOwnerTenantOptions,
   resolveLocalRuntimePaths,
+  type SignInLocalOwnerInput,
   validateApplicationId,
 } from '../index.js';
 import { windowsSecureFileCustody } from '../local-custody.js';
@@ -99,8 +105,10 @@ import {
 } from '../runtime-diagnostics.js';
 import {
   prepareApplicationStateRoot,
+  removeOnboardingHandoff,
   resolveApplicationStateRoot,
 } from '../state-root.js';
+import type { VaultKeyStore } from '../vault-key-store.js';
 import { acquireWriterLease, type WriterLease } from '../writer-lease.js';
 import {
   createSubdomainTenantSelector,
@@ -118,6 +126,12 @@ export interface SmrtRuntimeLocals extends SessionLocals {
   selectedTenantSlug: string | null;
   /** Full context for the authorized session tenant, when present. */
   tenantContext?: MinimalTenantContext;
+  /**
+   * Display name of the signed-in user, read from the linked profile (the
+   * `User` model has no name; a desktop owner has a name and an empty email).
+   * `null` when signed out or the profile has none. Display only.
+   */
+  userName?: string | null;
 }
 
 /** Provider component whose readiness a deployed web process must prove. */
@@ -252,6 +266,13 @@ export interface SmrtSvelteKitRuntimeOptions {
   readonly ownerTenant?: LocalOwnerTenantOptions;
   /** Server-only policy shared with the application password sign-in service. */
   readonly passwordPolicy?: PasswordPolicyOptions;
+  /**
+   * Custody for the local secrets master key ({@link
+   * SmrtSvelteKitRuntime.secretMasterKey}). Defaults to an owner-only file
+   * store beside the data root; the desktop wrapper injects an OS keychain
+   * provider. Local profile only.
+   */
+  readonly vaultKeyStore?: VaultKeyStore;
   /**
    * Local single-writer lease held for the web process, released when local
    * startup fails. Defaults to the state-root writer lease shared with
@@ -456,8 +477,28 @@ export interface SmrtSvelteKitRuntime {
   resolveMcpPrincipal(
     identity: SmrtRuntimeMcpIdentity,
   ): Promise<SmrtRuntimeMcpPrincipalMapping | null>;
+  /**
+   * The application's open database handle, for services that take a
+   * `DatabaseInterface` rather than collection options (for example
+   * `createPreferenceStore({ db })`). Awaits startup. In an RLS request this
+   * is the transaction-bound request database; otherwise the local or
+   * deployed runtime's own handle. The runtime owns and closes it: never
+   * close it, and never keep a request-scoped one beyond the request.
+   */
+  database(): Promise<DatabaseInterface>;
   /** The local runtime. Rejects outside the `local` profile. */
   localRuntime(): Promise<LocalApplicationRuntime>;
+  /**
+   * The secrets master key for `SecretService.create({ masterKeyProvider })`
+   * (`@happyvertical/smrt-secrets`), as 64 hex characters, or `null` outside
+   * the `local` profile, where the key comes from `SMRT_SECRET_MASTER_KEY`
+   * and nothing is ever generated. On the local profile the first call
+   * creates the key in the vault key store and later calls and restarts load
+   * the same one; the user never sees it. It is for that one call only: never
+   * log it, return it from a route, or keep it. `SecretService` asks only
+   * when the environment variable is unset, so the variable wins.
+   */
+  secretMasterKey(): Promise<string | null>;
   /**
    * Where the desktop wrapper sends the owner: `/setup?token=<one-time token>`
    * while the local owner is unclaimed, `/` otherwise (claimed, deployed, or no
@@ -469,6 +510,19 @@ export interface SmrtSvelteKitRuntime {
    * `claimOwner()`.
    */
   ownerSetupLocation(): Promise<string>;
+  /**
+   * Form-free desktop sign-in for `createOwnerLinkHandler({ autoClaim: true })`:
+   * creates the local owner when none exists, issues a session for the sole
+   * active owner otherwise, and issues nothing when `currentUserId` already is
+   * that owner (see `LocalApplicationRuntime.signInOwner`). Resolves `null`
+   * outside the `local` profile. Rejects (`owner_unavailable`) unless exactly
+   * one active owner exists. The caller must already have proven the local
+   * person: never mount this behind anything but the launch-secret owner link.
+   * The returned session id is for the cookie only; never log it.
+   */
+  signInLocalOwner(
+    input: SignInLocalOwnerInput,
+  ): Promise<LocalOwnerSignInResult | null>;
   /** The deployed runtime. Rejects in the `local` profile. */
   deployedRuntime(): Promise<DeployedApplicationRuntime>;
   /** Liveness body for the health route (awaits startup). */
@@ -653,6 +707,15 @@ export function composeSmrtSvelteKitRuntime(
   ): Promise<SmrtCollection<T>> =>
     ObjectRegistry.getCollection<T>(className, classOptions(className));
 
+  const database = async (): Promise<DatabaseInterface> => {
+    const requestDb = rlsRequestDatabase();
+    if (requestDb) return requestDb as unknown as DatabaseInterface;
+    const runtime = await resolvedRuntime();
+    return runtime.profile === 'local'
+      ? (await localRuntime()).db
+      : (await deployedRuntime()).db;
+  };
+
   const writerLease =
     options.acquireWriterLease === false
       ? undefined
@@ -708,6 +771,7 @@ export function composeSmrtSvelteKitRuntime(
       sessionTtlSeconds: options.sessionTtlSeconds,
       ownerTenant: options.ownerTenant,
       passwordPolicy: options.passwordPolicy,
+      vaultKeyStore: options.vaultKeyStore,
       createSchema: options.createSchema ?? true,
       prepareDatabase: options.prepareDatabase,
       now: options.now,
@@ -740,6 +804,12 @@ export function composeSmrtSvelteKitRuntime(
     return localPromise;
   };
 
+  const secretMasterKey = async (): Promise<string | null> => {
+    if ((await resolvedRuntime()).profile !== 'local') return null;
+    const local = await localRuntime();
+    return local.secretMasterKey ? local.secretMasterKey() : null;
+  };
+
   const ownerSetupLocation = async (): Promise<string> => {
     const resolved = await resolvedRuntime();
     if (resolved.profile !== 'local') return '/';
@@ -760,6 +830,34 @@ export function composeSmrtSvelteKitRuntime(
       // Claimed in the meantime or not issuable: the home page is the answer.
       return '/';
     }
+  };
+
+  const signInLocalOwner = async (
+    input: SignInLocalOwnerInput,
+  ): Promise<LocalOwnerSignInResult | null> => {
+    if ((await resolvedRuntime()).profile !== 'local') return null;
+    const local = await localRuntime();
+    if (!local.signInOwner) {
+      throw new Error('owner_sign_in_unavailable');
+    }
+    const result = await local.signInOwner(input);
+    if (result.outcome === 'claimed') {
+      // The owner now exists: the in-memory invitation and the `smrt app`
+      // hand-off files are spent, exactly as after a form claim.
+      startupInvitation = undefined;
+      try {
+        removeOnboardingHandoff(
+          resolveApplicationStateRoot({
+            appId: applicationId(),
+            dataDirectory,
+            sourceRoot,
+          }),
+        );
+      } catch {
+        // Best effort: the spent token already fails closed.
+      }
+    }
+    return result;
   };
 
   let deployedPromise: Promise<DeployedApplicationRuntime> | undefined;
@@ -960,7 +1058,21 @@ export function composeSmrtSvelteKitRuntime(
     return resolve(event);
   };
 
-  const sessionCookieName = options.session?.cookieName ?? 'sid';
+  const sessionCookieName = () =>
+    options.session?.cookieName ??
+    `smrt_${createHash('sha256')
+      .update(
+        JSON.stringify([
+          applicationId(),
+          resolveApplicationStateRoot({
+            appId: applicationId(),
+            dataDirectory,
+            sourceRoot,
+          }),
+        ]),
+      )
+      .digest('hex')
+      .slice(0, 24)}_sid`;
   const sessionSkipPaths = options.session?.skipPaths ?? [];
   const sessionServiceOptions = (): SessionServiceOptions => ({
     ...baseClassOptions('Session'),
@@ -1176,6 +1288,23 @@ export function composeSmrtSvelteKitRuntime(
     return sessionServicePromise;
   };
 
+  /** The linked profile's name for the layout greeting; never throws. */
+  const profileNameOf = async (
+    user: { profileId?: string } | null,
+  ): Promise<string | null> => {
+    if (!user?.profileId) return null;
+    try {
+      const profiles = await ProfileCollection.create(
+        baseClassOptions('Profile'),
+      );
+      const profile = await profiles.get(user.profileId);
+      const name = (profile as { name?: unknown } | null)?.name;
+      return typeof name === 'string' && name.trim() ? name.trim() : null;
+    } catch {
+      return null;
+    }
+  };
+
   /**
    * Step 2. Downstream code runs at most once: a downstream throw (or a
    * failure after `resolve` was entered, such as an RLS commit) propagates
@@ -1193,9 +1322,15 @@ export function composeSmrtSvelteKitRuntime(
       event.url.pathname.startsWith(path),
     );
     if (skipped && !rls) return resolve(event);
-    const sessionId = skipped
+    const scopedSession = skipped
       ? undefined
-      : event.cookies.get(sessionCookieName);
+      : event.cookies.get(sessionCookieName());
+    // Never replace an existing scoped cookie with a different app's legacy sid.
+    const legacySession =
+      !skipped && !scopedSession && !options.session?.cookieName
+        ? event.cookies.get('sid')
+        : undefined;
+    const sessionId = scopedSession ?? legacySession;
     if (!sessionId && !rls) return resolve(event);
 
     let resolveEntered = false;
@@ -1212,7 +1347,19 @@ export function composeSmrtSvelteKitRuntime(
         },
         async (context) => {
           if (context.session) {
+            if (legacySession && context.sessionId) {
+              const cookie = sessionCookie;
+              event.cookies.set(cookie.name, context.sessionId, {
+                path: cookie.path,
+                ...(cookie.domain ? { domain: cookie.domain } : {}),
+                httpOnly: true,
+                secure: cookie.secure ?? event.url.protocol === 'https:',
+                sameSite: cookie.sameSite,
+                maxAge: cookie.maxAgeSeconds,
+              });
+            }
             locals.user = context.user;
+            locals.userName = await profileNameOf(context.user);
             locals.membership = context.membership ?? null;
             locals.permissions = context.permissions;
             locals.tenantId = context.tenantId;
@@ -1241,7 +1388,9 @@ export function composeSmrtSvelteKitRuntime(
   };
 
   const sessionCookie: SmrtRuntimeSessionCookie = Object.freeze({
-    name: options.session?.cookieName ?? 'sid',
+    get name() {
+      return sessionCookieName();
+    },
     path: options.session?.cookiePath ?? '/',
     ...(options.session?.cookieDomain
       ? { domain: options.session.cookieDomain }
@@ -1280,8 +1429,11 @@ export function composeSmrtSvelteKitRuntime(
     runAsPrincipal,
     verifyLocalMcpToken,
     resolveMcpPrincipal,
+    database,
     localRuntime,
+    secretMasterKey,
     ownerSetupLocation,
+    signInLocalOwner,
     deployedRuntime,
     health,
     readDiagnostics,
@@ -1344,6 +1496,7 @@ function clearSessionLocals(locals: SmrtRuntimeLocals): void {
   locals.sessionId = null;
   locals.authMethod = null;
   locals.sessionParent = null;
+  locals.userName = null;
   locals.tenantContext = undefined;
   verifiedSessionTenants.delete(locals);
 }

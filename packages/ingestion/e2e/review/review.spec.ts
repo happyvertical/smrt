@@ -382,6 +382,7 @@ test('a reviewer completes a needs_review suggestion through the ordinary previe
 test('authenticated originals, CSRF, assignment CAS and foreign tenant boundaries', async ({
   page,
   browser,
+  baseURL,
 }) => {
   await signIn(page);
   const itemId = await upload(
@@ -437,29 +438,20 @@ test('authenticated originals, CSRF, assignment CAS and foreign tenant boundarie
     assigneeId: 'reviewer',
     version: 1,
   });
-  const foreign = await browser.newContext();
-  const response = await foreign.request.post(
-    'http://127.0.0.1:5595/api/session',
-    { data: { username: 'foreign', password: 'review-fixture' } },
-  );
+  const foreign = await browser.newContext({ baseURL });
+  const response = await foreign.request.post('/api/session', {
+    data: { username: 'foreign', password: 'review-fixture' },
+  });
   expect(response.ok()).toBe(true);
   expect(
-    (
-      await foreign.request.get(
-        `http://127.0.0.1:5595/api/load?itemId=${itemId}`,
-      )
-    ).status(),
+    (await foreign.request.get(`/api/load?itemId=${itemId}`)).status(),
+  ).toBe(409);
+  expect(
+    (await foreign.request.get(current.evidence[0].viewUrl)).status(),
   ).toBe(409);
   expect(
     (
-      await foreign.request.get(
-        `http://127.0.0.1:5595${current.evidence[0].viewUrl}`,
-      )
-    ).status(),
-  ).toBe(409);
-  expect(
-    (
-      await foreign.request.post('http://127.0.0.1:5595/api/candidates', {
+      await foreign.request.post('/api/candidates', {
         headers: { 'x-review-csrf': (await response.json()).csrf },
         data: {
           itemId,

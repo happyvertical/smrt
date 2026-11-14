@@ -1,0 +1,113 @@
+# @happyvertical/smrt-spreadsheets
+
+smrt's spreadsheet package. Its first capability is import: turning a spreadsheet
+into records without guessing. A plan says which sheet
+range becomes which table, which column becomes which typed field, and which
+fields are calculated or point at another table. This package validates the
+plan, checks it against the workbook before anything is written, loads the data
+in batches through a target you provide, and then reads the target back to
+prove nothing was lost or changed.
+
+It does not decide what the plan is (a person or a model does that) and it does
+not know where the data goes (your target does). Nothing here is tied to a
+product, a database or an s-m-r-t model layer.
+
+## Installation
+
+```bash
+pnpm add @happyvertical/smrt-spreadsheets
+```
+
+## Entry points
+
+- `.`: type-only re-exports of the import surface; no runtime code or values.
+- `./import`: the browser-safe import API (`runImport`, plan validation, checks
+  and target contracts).
+- `./testing`: the Node-only SQLite reference target for tests.
+
+`./export`, saved mapping and re-import are planned capabilities, not present
+in this version. The root stays types only as new capabilities arrive.
+
+## Usage
+
+```ts
+import { getSpreadsheets } from '@happyvertical/spreadsheets';
+import { runImport } from '@happyvertical/smrt-spreadsheets/import';
+
+const workbook = await (await getSpreadsheets({ type: 'xlsx' })).read(bytes);
+
+const result = await runImport({
+  plan, // validated for you; a bad plan throws ImportPlanError
+  workbook,
+  target, // your ImportTarget
+});
+
+if (!result.ok) console.table(result.findings);
+```
+
+`runImport` validates the plan, refuses a workbook over the size limits, runs
+`checkPlan`, refuses a target that already holds a planned table, builds the
+structure, loads every batch, and runs `checkLoaded`. If `checkPlan` reports
+errors nothing is written. Errors thrown by your target are never caught.
+
+A row is blank only when every mapped column, reference column and calculated
+`cachedColumn` is blank. Calculated-only tables need at least one `cachedColumn`
+to establish their rows; otherwise `validatePlan` throws `no-row-source`.
+
+### Typing
+
+Every cell is typed by one rule (`coerceCell`) and refused when it does not fit:
+integers must be safe whole numbers, money must be an exact number of minor
+units, booleans accept true/false/yes/no/y/n/1/0, dates become `YYYY-MM-DD`,
+choices must match exactly, and error cells are always refused with their
+Excel text. Long digit strings and values with leading zeros in number fields
+are reported as `digits-as-number`: they are identifiers, so map them as text.
+
+### Checks
+
+`checkPlan` reports findings (`coerce-failed`, `digits-as-number`,
+`lookup-key-not-unique`, `lookup-key-blank`, `reference-unresolved`,
+`unmapped-column`, and structural ones) with the cell and row, at most 20
+examples per code, table and field plus a total `count`. It also returns facts:
+rows read, skipped and planned per table, and column sums.
+
+`checkLoaded` compares the target with those facts: row counts, column sums,
+and, for every calculated field with a `cachedColumn`, the target's value
+against the workbook's cached result, row by row. That is how a translated
+formula is proven.
+
+Integer and money sums use exact BigInt accumulation; only the final total
+must fit a safe integer. Number comparisons reject non-finite values before
+applying relative tolerance, including when comparing a calculated cache.
+
+If `ok` is false after a load, the target holds a draft that failed its proof:
+discard it. This package does not undo or recreate anything.
+
+### Targets
+
+Implement `ImportTarget` (`describe`, `applyStructure`, `load`, `count`, `sum`,
+`values`). `load` resolves references by lookup key and is all-or-nothing per
+batch. The target keeps each record's `sourceRow`.
+`sum` returns money in minor units and preserves unsafe integer/money totals as
+`bigint`, so verification reports a mismatch rather than losing precision.
+
+For tests there is a reference target on real in-process SQLite:
+
+```ts
+import { createSqliteReferenceTarget } from '@happyvertical/smrt-spreadsheets/testing';
+
+const target = await createSqliteReferenceTarget();
+```
+
+The `./testing` entry is Node-only; `.` and `./import` are browser-safe.
+
+### Limits
+
+Workbooks over 250,000 cells or tables over 10,000 rows are refused before any
+row is read (`admit`). The cell limit is provisional. Reading is bounded by
+occupied cells, not range size, and by a work budget (`maxWork`, refusal
+`work-over-limit`). That refusal comes before the first call on your target,
+`describe()` included, or not at all: `runImport` plans the whole load and reserves
+the work for reading it back before it writes anything. Plans are bounded too:
+200 tables, 500 fields per table, 2 MB of JSON; all can be raised through
+`validatePlan(plan, limits)`.

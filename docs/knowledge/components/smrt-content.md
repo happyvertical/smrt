@@ -5,10 +5,10 @@ description: "Content processing module for SMRT framework - handles documents, 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-08T08:57:02Z"
+  at: "2026-11-12T08:37:29Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:e4fc45aa6e8a339355ea0b75f7e926371600d218fd3fcd5245b904ae55f18b85"
+source_revision: "sha256:7461555e22eb922236291de5e4a1da83b9c62a24699d09182dd602b06482626f"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/content/package.json"
@@ -19,6 +19,9 @@ sources:
   - id: "agents-2"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/content/agents/content-list.md"
     title: "@happyvertical/smrt-content packages/content/agents/content-list.md"
+  - id: "agents-3"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/content/agents/optional-capabilities.md"
+    title: "@happyvertical/smrt-content packages/content/agents/optional-capabilities.md"
 ---
 
 # @happyvertical/smrt-content
@@ -34,6 +37,7 @@ sources:
 
 - `packages/content/AGENTS.md`
 - `packages/content/agents/content-list.md`
+- `packages/content/agents/optional-capabilities.md`
 
 ## Framework dependencies
 

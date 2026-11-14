@@ -1,3 +1,4 @@
+import { testHomeEnvironment } from '../../../vitest/src/test-home.js';
 /**
  * Opt-in end-to-end test: bundles a tiny fixture app with the REAL pnpm, the
  * REAL nodejs.org download (checked against the committed pin) and the REAL
@@ -24,11 +25,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parseSidecarManifest } from '../sidecar-manifest.js';
 import { buildChildEnv } from './child-env.js';
 import { BundleError } from './errors.js';
+import { measureBundle } from './measure.js';
 import { createBundlePlan, hostTriple } from './options.js';
 import { createPnpmRunner } from './pnpm-runner.js';
 import { parseBundleReport } from './report.js';
 import { runBundle } from './run.js';
-import { createBundleSeams } from './runtime.js';
+import { createBundleSeams, createNodeMeasureSeams } from './runtime.js';
 
 const enabled = process.env.SMRT_DESKTOP_BUNDLE_E2E === '1';
 const host = hostTriple(process.platform, process.arch);
@@ -44,6 +46,18 @@ if (!enabled) {
 }
 
 suite('runtime bundler end to end', () => {
+  // The bundler deliberately sanitizes its child env. Keep the test boundary
+  // on the real measured sidecar without changing the production allow-list.
+  const seams = createBundleSeams();
+  seams.measure = (input) =>
+    measureBundle(
+      {
+        ...input,
+        baseEnv: { ...input.baseEnv, ...testHomeEnvironment() },
+      },
+      createNodeMeasureSeams(),
+    );
+
   let root: string;
   let app: string;
   let out: string;
@@ -107,7 +121,7 @@ suite('runtime bundler end to end', () => {
 
     // A real lockfile, resolved by the real pnpm.
     const pnpm = createPnpmRunner();
-    const env = buildChildEnv(process.env, {});
+    const env = { ...buildChildEnv(process.env, {}), ...testHomeEnvironment() };
     const locked = await pnpm.run({
       cwd: app,
       args: ['install', '--lockfile-only', '--ignore-scripts'],
@@ -128,7 +142,7 @@ suite('runtime bundler end to end', () => {
       measure: true,
       maxSizeMB: 400,
     });
-    const result = await runBundle(plan, createBundleSeams());
+    const result = await runBundle(plan, seams);
 
     const report = parseBundleReport(
       readFileSync(join(out, 'bundle-report.json'), 'utf8'),
@@ -211,7 +225,7 @@ suite('runtime bundler end to end', () => {
         outDir: join(hostile, 'dist', 'bundle'),
         bridgeFile: bridge,
       });
-      const result = await runBundle(plan, createBundleSeams());
+      const result = await runBundle(plan, seams);
       expect(
         result.report.packages.map((p) => `${p.name}@${p.version}`),
       ).toEqual(['ms@2.1.3']);
@@ -248,7 +262,7 @@ suite('runtime bundler end to end', () => {
       bridgeFile: bridge,
     });
     try {
-      await runBundle(plan, createBundleSeams());
+      await runBundle(plan, seams);
       throw new Error('expected the frozen install to fail');
     } catch (error) {
       expect(error).toBeInstanceOf(BundleError);

@@ -23,9 +23,13 @@ export default {
   consumer: {
     packages: [
       '@happyvertical/smrt-profiles',
+      '@happyvertical/smrt-preferences',
+      '@happyvertical/smrt-inference',
+      '@happyvertical/smrt-prompts',
       '@happyvertical/smrt-tenancy',
       '@happyvertical/smrt-users',
       '@happyvertical/smrt-reports',
+      '@happyvertical/smrt-secrets',
     ],
   },
 

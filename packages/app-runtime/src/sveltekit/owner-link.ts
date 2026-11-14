@@ -42,7 +42,24 @@ export interface OwnerLinkHandlerOptions {
    * 403 to every request.
    */
   readonly launchSecret?: string | null;
+  /**
+   * Sign the local person in without a form (opt-in; default false, which
+   * keeps the redirect to the one-time `/setup?token=` page). With a valid
+   * launch secret the handler creates the local owner when none exists, issues
+   * a new session for the sole active owner when the request carries no valid
+   * owner session, sets the session cookie and redirects to `/`. See
+   * `SmrtSvelteKitRuntime.signInLocalOwner`. Needs a runtime that has it.
+   */
+  readonly autoClaim?: boolean;
+  /**
+   * Display name of an owner created by `autoClaim`. Defaults to the OS
+   * account's user name.
+   */
+  readonly ownerName?: string;
 }
+
+type OwnerLinkRuntime = Pick<SmrtSvelteKitRuntime, 'ownerSetupLocation'> &
+  Partial<Pick<SmrtSvelteKitRuntime, 'signInLocalOwner' | 'sessionCookie'>>;
 
 const NO_STORE = {
   'cache-control': 'no-store',
@@ -107,14 +124,23 @@ function isOwnOriginLoopbackRequest(event: {
  * (the app is not running under the desktop wrapper) every request does.
  * Otherwise it answers `302` to `/setup?token=<one-time token>` while the local
  * owner is unclaimed and to `/` in every other case (claimed, deployed profile,
- * nothing issuable). The body is always empty, the response is never cached,
+ * nothing issuable). With `autoClaim` it signs the local person in instead (see
+ * {@link OwnerLinkHandlerOptions.autoClaim}) and always answers `302` to `/`. The body is always empty, the response is never cached,
  * and the token appears nowhere but the `Location` header. The secret and the
  * query string are never logged or echoed.
  */
 export function createOwnerLinkHandler(
-  runtime: Pick<SmrtSvelteKitRuntime, 'ownerSetupLocation'>,
+  runtime: OwnerLinkRuntime,
   options: OwnerLinkHandlerOptions = {},
 ): RequestHandler {
+  if (
+    options.autoClaim &&
+    (!runtime.signInLocalOwner || !runtime.sessionCookie)
+  ) {
+    throw new Error(
+      'createOwnerLinkHandler({ autoClaim: true }) needs a runtime with signInLocalOwner and sessionCookie.',
+    );
+  }
   return async (event) => {
     const secret =
       options.launchSecret !== undefined
@@ -130,6 +156,40 @@ export function createOwnerLinkHandler(
       return new Response(null, { status: 403, headers: NO_STORE });
     }
     let location = '/';
+    if (
+      options.autoClaim &&
+      runtime.signInLocalOwner &&
+      runtime.sessionCookie
+    ) {
+      try {
+        const current = (event.locals as { user?: { id?: unknown } | null })
+          .user?.id;
+        const result = await runtime.signInLocalOwner({
+          ...(options.ownerName ? { name: options.ownerName } : {}),
+          currentUserId: typeof current === 'string' ? current : null,
+          userAgent: event.request.headers.get('user-agent') || undefined,
+          ipAddress: event.getClientAddress(),
+        });
+        if (result?.sessionId) {
+          const cookie = runtime.sessionCookie;
+          event.cookies.set(cookie.name, result.sessionId, {
+            path: cookie.path,
+            ...(cookie.domain ? { domain: cookie.domain } : {}),
+            httpOnly: true,
+            secure: cookie.secure ?? event.url.protocol === 'https:',
+            sameSite: cookie.sameSite,
+            maxAge: cookie.maxAgeSeconds,
+          });
+        }
+      } catch {
+        // No or several active owners, or a store failure: no session is
+        // issued and the person lands on the signed-out page.
+      }
+      return new Response(null, {
+        status: 302,
+        headers: { ...NO_STORE, location: '/' },
+      });
+    }
     try {
       location = await runtime.ownerSetupLocation();
     } catch {

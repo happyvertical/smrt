@@ -6,13 +6,14 @@
       "dependsOn": ["^build", "generate"],
       "inputs": [
         "src/**",
+        "!src/types/virtual-modules.d.ts",
         "scripts/**",
         "package.json",
         "tsconfig*.json",
         "vite.config.ts",
         "../smrt-mobile/src/commonMain/kotlin/com/happyvertical/smrt/mobile/contract/**"
       ],
-      "outputs": ["dist/**", "tsconfig.*.tsbuildinfo"]
+      "outputs": ["dist/**", "tsconfig.*.tsbuildinfo", "src/types/virtual-modules.d.ts"]
     },
     "test": {
       "dependsOn": ["^build", "build", "generate:test"],

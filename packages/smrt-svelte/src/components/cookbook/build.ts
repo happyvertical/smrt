@@ -21,6 +21,8 @@ import {
   type OverviewDefinition,
   type OverviewWidget,
 } from '../overview/types.js';
+import { humanizeLabel, singularScreenLabel } from '../screens/fields.js';
+import type { ScreenCollectionDefinition } from '../screens/types.js';
 import type { ShellLayout } from '../workspace/admin-shell/layout.js';
 import type {
   ShellNavGroup,
@@ -124,6 +126,7 @@ export function buildCookbookShell(
   const recipes = selectRecipes(options, issues);
 
   const entries = new Map<string, CookbookEntry>();
+  const defaultLabels = new Map<string, string>();
   const sections: CookbookSection[] = [];
   const navGroups: ShellNavGroup[] = [];
 
@@ -148,9 +151,13 @@ export function buildCookbookShell(
     });
     const entry: CookbookEntry = {
       id,
-      label: spec.label,
-      icon: spec.icon ?? DEFAULT_ENTRY_ICON,
-      description: entryDescription(spec.description, spec.model),
+      label: cookbook.layout?.items?.[id]?.label ?? spec.label,
+      icon:
+        cookbook.layout?.items?.[id]?.icon ?? spec.icon ?? DEFAULT_ENTRY_ICON,
+      description: entryDescription(spec.description, {
+        ...spec.model,
+        name: cookbook.layout?.items?.[id]?.label ?? spec.noun ?? spec.label,
+      }),
       model: spec.model,
       path,
       href: href(path),
@@ -159,13 +166,15 @@ export function buildCookbookShell(
       ...(spec.filter ? { filter: spec.filter } : {}),
     };
     entries.set(id, entry);
+    defaultLabels.set(id, spec.label);
     return entry;
   };
 
   const toItem = (entry: CookbookEntry): ShellNavItem => ({
     id: entry.id,
     href: entry.href,
-    label: entry.label,
+    // AppShell applies layout overrides and needs the original for Reset.
+    label: defaultLabels.get(entry.id) ?? entry.label,
     icon: entry.icon,
     description: entry.description,
   });
@@ -276,15 +285,18 @@ export function buildCookbookShell(
     // A hand-edited custom id outside the pattern has no overview: its page
     // shows the menu.
     if (!OVERVIEW_PAGE_ID_PATTERN.test(id)) continue;
+    const lead = leads.get(id);
+    const leadEntry =
+      lead && [...entries.values()].find((e) => e.model.id === lead.id);
     const definition: OverviewDefinition = defineOverview({
       id,
       ...(modelIds.length > 0 ? { models: modelIds } : {}),
       defaults: sectionOverviewDefaults({
-        lead: leads.has(id)
+        lead: lead
           ? {
-              id: leads.get(id)!.id,
-              name: humanize(leads.get(id)!.name),
-              plural: pluralize(humanize(leads.get(id)!.name)),
+              id: lead.id,
+              name: leadEntry?.label ?? humanize(lead.name),
+              plural: leadEntry?.label ?? pluralize(humanize(lead.name)),
             }
           : undefined,
         dataWidgets: options.dataWidgets === true,
@@ -361,5 +373,108 @@ export function buildCookbookShell(
     ...(options.settingsHref ? { settingsHref: options.settingsHref } : {}),
     sectionPath: (id) => href(sectionPath(id)),
     issues,
+  };
+}
+
+/** Apply the selected cookbook entry's vocabulary without changing model identity. */
+export function cookbookScreenDefinition(
+  shell: CookbookShell,
+  definition: ScreenCollectionDefinition,
+  entryId?: string,
+): ScreenCollectionDefinition {
+  if (definition.label) return definition;
+  const entry = entryId
+    ? shell.entries.get(entryId)
+    : [...shell.entries.values()].find(
+        (e) =>
+          e.model.id === definition.objectRef ||
+          definition.replacedQualifiedNames?.includes(e.model.id),
+      );
+  if (
+    !entry ||
+    (entry.model.id !== definition.objectRef &&
+      !definition.replacedQualifiedNames?.includes(entry.model.id))
+  )
+    return definition;
+  const singular =
+    shell.layout?.items?.[entry.id]?.singularLabel ??
+    (shell.layout?.items?.[entry.id]?.label
+      ? singularScreenLabel(entry.label)
+      : (entry.noun ?? singularScreenLabel(entry.label)));
+  const vocabularyLabels = new Map<string, string>();
+  for (const candidate of shell.entries.values()) {
+    const noun = humanize(candidate.model.name);
+    const targetSingular =
+      shell.layout?.items?.[candidate.id]?.singularLabel ??
+      singularScreenLabel(candidate.label);
+    // Match the first available target used by reference-field labels below.
+    if (!vocabularyLabels.has(noun.toLowerCase())) {
+      vocabularyLabels.set(noun.toLowerCase(), targetSingular.toLowerCase());
+      vocabularyLabels.set(
+        pluralize(noun).toLowerCase(),
+        candidate.label.toLowerCase(),
+      );
+    }
+  }
+  const noun = humanize(definition.className);
+  vocabularyLabels.set(noun.toLowerCase(), singular.toLowerCase());
+  vocabularyLabels.set(
+    pluralize(noun).toLowerCase(),
+    entry.label.toLowerCase(),
+  );
+  const vocabulary = new RegExp(
+    `\\b(${[...vocabularyLabels.keys()].sort((a, b) => b.length - a.length).join('|')})\\b`,
+    'gi',
+  );
+  const reword = (text: string) =>
+    text.replace(vocabulary, (word) => {
+      const replacement = vocabularyLabels.get(word.toLowerCase()) ?? word;
+      return /^[A-Z]/.test(word)
+        ? replacement.charAt(0).toUpperCase() + replacement.slice(1)
+        : replacement;
+    });
+  const fields = Object.fromEntries(
+    Object.entries(definition.fields).map(([name, field]) => [
+      name,
+      {
+        ...field,
+        ...(reword(field.label ?? humanizeLabel(name, field)) !==
+        (field.label ?? humanizeLabel(name, field))
+          ? { label: reword(field.label ?? humanizeLabel(name, field)) }
+          : {}),
+        ...((field.type === 'foreignKey' || field.type === 'crossPackageRef') &&
+        /Id$/.test(name)
+          ? (() => {
+              const target = [...shell.entries.values()].find(
+                (e) =>
+                  e.model.name.toLowerCase() ===
+                  name.slice(0, -2).toLowerCase(),
+              );
+              if (!target) return {};
+              return {
+                label:
+                  shell.layout?.items?.[target.id]?.singularLabel ??
+                  singularScreenLabel(target.label),
+              };
+            })()
+          : {}),
+        ...(Object.values(definition.fields).some(
+          (input) => input.writeThrough === name,
+        )
+          ? { label: `Existing ${singular.toLowerCase()}` }
+          : {}),
+        ...(field.description
+          ? {
+              description: reword(field.description),
+            }
+          : {}),
+      },
+    ]),
+  );
+  return {
+    ...definition,
+    fields,
+    label: entry.label,
+    singularLabel: singular,
   };
 }

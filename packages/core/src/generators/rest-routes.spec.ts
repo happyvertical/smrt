@@ -232,6 +232,7 @@ describe('REST generator route map (#1500)', () => {
     expect(fault.status).toBe(500);
     await expect(fault.json()).resolves.toEqual({
       error: 'Internal server error',
+      requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
     });
   });
 

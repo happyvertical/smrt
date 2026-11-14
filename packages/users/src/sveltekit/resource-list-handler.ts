@@ -35,11 +35,11 @@ import {
   resolveEffectiveActionMetadata,
   type SmartObjectConfig,
 } from '@happyvertical/smrt-core';
-import { classnameToTablename } from '@happyvertical/smrt-core/utils';
 import {
   methodNameToKebab,
   resolveApiActionSet,
-} from '@happyvertical/smrt-core/vite-plugin';
+} from '@happyvertical/smrt-core/api-actions';
+import { classnameToTablename } from '@happyvertical/smrt-core/utils';
 import {
   type CommandRequirements,
   createDiscoveryConformanceArtifact,

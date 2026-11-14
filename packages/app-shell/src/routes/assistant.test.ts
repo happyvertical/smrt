@@ -167,7 +167,11 @@ describe('not configured', () => {
       event(h.owner, 'GET', '/api/assistant/status'),
     );
     const body = await status.text();
-    expect(JSON.parse(body)).toEqual({ configured: true });
+    expect(JSON.parse(body)).toEqual({
+      configured: true,
+      engine: 'api',
+      engineLabel: 'your API key',
+    });
     expect(body).not.toContain('SECRETKEY123');
   });
 });

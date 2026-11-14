@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,6 +12,26 @@ import {
 } from '@happyvertical/images';
 import sharp from 'sharp';
 import { expect, it } from 'vitest';
+
+it('imports the published image models without loading native image processors', () => {
+  const child = spawnSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      `import { registerHooks } from 'node:module';
+registerHooks({ resolve(specifier, context, next) {
+  if (specifier === 'sharp' || specifier === '@happyvertical/images') throw new Error('image processor loaded at boot');
+  return next(specifier, context);
+} });
+const images = await import(${JSON.stringify(new URL('../../dist/index.js', import.meta.url).href)});
+if (typeof images.Image !== 'function' || typeof images.PhotoCutoutProfileStore !== 'function') process.exit(2);
+`,
+    ],
+    { encoding: 'utf8', timeout: 30_000 },
+  );
+  expect(child.status, child.stderr).toBe(0);
+});
 
 it('processes local images through the required Sharp backend without Jimp', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'smrt-sharp-backend-'));

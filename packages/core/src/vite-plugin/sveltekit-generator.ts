@@ -1,4 +1,5 @@
 import { resolveOperationPermissionAlias } from '../operation-permission.js';
+
 /**
  * SvelteKit route auto-generation from SMRT objects
  * Generates real TypeScript files in src/routes/api/ based on discovered SMRT objects
@@ -15,6 +16,8 @@ import {
 } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
+import { generateActivationRegistration } from '../activation/generate.js';
+import { publishArtifactFiles } from '../consumer-plugin/artifact-publication.js';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
 import {
   type ApiMethodExposure,
@@ -32,6 +35,7 @@ import {
   resolveEffectiveActionMetadata,
   type WireabilityOptions,
 } from '../generators/custom-action.js';
+import { isReplacedModel } from '../manifest/model-replacements';
 import {
   buildDefaultListOrderBy,
   DEFAULT_LIST_LIMIT,
@@ -74,12 +78,20 @@ import {
   computeWebManifestHash,
   findManifestObjectByName,
   isCollectionManifestClass,
+  methodNameToKebab,
   orderedManifestObjectEntries,
+  type ResolvedApiActionRouteConfig,
+  resolveApiActionRouteConfig,
+  resolveApiActionSet,
+  resolveApiCustomActions,
   resolveCollectionItemObject,
   resolveCollectionItemTypeName,
+  resolveStandardCrudActions,
 } from './web-collections.js';
 
 export interface SvelteKitOptions {
+  /** Emit deferred model loaders instead of eager registration. Host installs activation coordinator. */
+  lazyActivation?: boolean;
   enabled: boolean;
   routesDir: string;
   objectsDir: string;
@@ -141,19 +153,21 @@ export interface SvelteKitOptions {
 
 // Keep this aligned with biome.json formatter.lineWidth.
 const BIOME_LINE_WIDTH = 80;
+
+export {
+  methodNameToKebab,
+  type ResolvedApiActionRouteConfig,
+  resolveApiActionRouteConfig,
+  resolveApiActionSet,
+  resolveApiCustomActions,
+} from './web-collections.js';
+
 const GITIGNORE_MANAGED_BLOCK_START =
   '# BEGIN SMRT auto-generated routes (Vite plugin)';
 const GITIGNORE_MANAGED_BLOCK_END =
   '# END SMRT auto-generated routes (Vite plugin)';
 const LEGACY_GITIGNORE_HEADER =
   '# SMRT auto-generated routes (from Vite plugin)';
-
-export interface ResolvedApiActionRouteConfig {
-  scope: 'item' | 'collection';
-  method: ApiHttpMethod;
-  pathSegments: string[];
-  pathParamNames: string[];
-}
 
 interface GeneratedActionRouteSpec {
   lookupClassName: string;
@@ -192,15 +206,6 @@ function extractSimpleClassName(qualifiedName: string): string {
     return qualifiedName.substring(colonIndex + 1);
   }
   return qualifiedName;
-}
-
-/**
- * Check if an object definition represents a SmrtCollection class.
- * Collection classes share route paths with their item class (via inherited `collection` field),
- * so generating routes for both would cause file collisions.
- */
-function isCollectionClass(objectDef: SmartObjectDefinition): boolean {
-  return objectDef.extends === 'SmrtCollection' || !!objectDef.extendsTypeArg;
 }
 
 function getRegistrationPackageName(
@@ -265,6 +270,7 @@ function isSameSerializerReference(
 
 function resolveStandardRouteSerializers(
   apiConfig: unknown,
+  lazyActivation = false,
 ): ResolvedStandardRouteSerializers {
   const config = getApiConfigObject(apiConfig);
   const itemSerializer = config?.serializers?.item;
@@ -274,12 +280,20 @@ function resolveStandardRouteSerializers(
   const importStatements: string[] = [];
   let itemSerializerName: string | undefined;
   let listItemSerializerName: string | undefined;
+  const importSerializer = (
+    serializer: ApiSerializerReference,
+    name: string,
+  ) =>
+    lazyActivation
+      ? `async function ${name}(...args: Parameters<typeof import('${serializer.importPath}').${serializer.exportName}>) {
+  const provider = await import('${serializer.importPath}');
+  return provider.${serializer.exportName}(...args);
+}`
+      : `import { ${serializer.exportName} as ${name} } from '${serializer.importPath}';`;
 
   if (itemSerializer) {
     itemSerializerName = 'serializeItemResponse';
-    importStatements.push(
-      `import { ${itemSerializer.exportName} as ${itemSerializerName} } from '${itemSerializer.importPath}';`,
-    );
+    importStatements.push(importSerializer(itemSerializer, itemSerializerName));
   }
 
   if (listItemSerializer) {
@@ -288,7 +302,7 @@ function resolveStandardRouteSerializers(
     } else {
       listItemSerializerName = 'serializeListItemResponse';
       importStatements.push(
-        `import { ${listItemSerializer.exportName} as ${listItemSerializerName} } from '${listItemSerializer.importPath}';`,
+        importSerializer(listItemSerializer, listItemSerializerName),
       );
     }
   }
@@ -427,8 +441,12 @@ function getApiWritableAllowlist(apiConfig: unknown): string[] | null {
  */
 function generateWritablePolicyHelper(
   objectDef: SmartObjectDefinition,
+  dynamicTarget = false,
 ): string {
-  const readonly = collectReadonlyFieldNames(objectDef);
+  const readonly = [
+    ...collectReadonlyFieldNames(objectDef),
+    ...(objectDef.displayLabelProjection ? ['displayLabel'] : []),
+  ];
   const writable = getApiWritableAllowlist(objectDef.decoratorConfig?.api);
 
   return `
@@ -448,14 +466,22 @@ const SERVER_MANAGED_FIELDS = [
   'updated_at',
 ];
 
-function applyWritablePolicy(data: unknown): Record<string, unknown> {
+function applyWritablePolicy(data: unknown${dynamicTarget ? ', targetName?: string' : ''}): Record<string, unknown> {
   if (!data || typeof data !== 'object') return {};
-  const result: Record<string, unknown> = {};
+${
+  dynamicTarget
+    ? `  const readonlyFields = targetName ? [...ObjectRegistry.getFields(targetName)].filter(([, field]) => field.readonly === true || field._meta?.readonly === true).map(([name]) => name) : READONLY_FIELDS;
+  if (targetName && typeof ObjectRegistry.getConfig(targetName).display?.label === 'object') readonlyFields.push('displayLabel');
+  const api = targetName ? ObjectRegistry.getConfig(targetName).api : undefined;
+  const writable = targetName ? (api && typeof api === 'object' && Array.isArray(api.writable) ? api.writable : null) : WRITABLE_ALLOWLIST;
+`
+    : ''
+}  const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
     if (key.startsWith('_')) continue;
     if (SERVER_MANAGED_FIELDS.includes(key)) continue;
-    if (READONLY_FIELDS.includes(key)) continue;
-    if (WRITABLE_ALLOWLIST && !WRITABLE_ALLOWLIST.includes(key)) continue;
+    if (${dynamicTarget ? 'readonlyFields' : 'READONLY_FIELDS'}.includes(key)) continue;
+    if (${dynamicTarget ? 'writable' : 'WRITABLE_ALLOWLIST'} && !${dynamicTarget ? 'writable' : 'WRITABLE_ALLOWLIST'}.includes(key)) continue;
     result[key] = value;
   }
   return result;
@@ -623,6 +649,22 @@ function generateAuthGuardHelper(
   return `
 // Fail-closed authorization (#1540): generated routes require an authenticated
 // principal on \`locals\` unless explicitly marked \`@smrt({ api: { public } })\`.
+import { isRuntimeModelEnabled } from '@happyvertical/smrt-core';
+const RUNTIME_MODEL = ${JSON.stringify({
+    qualifiedName:
+      permissionObjectDef.qualifiedName ??
+      (permissionObjectDef.packageName
+        ? `${permissionObjectDef.packageName}:${permissionObjectDef.className}`
+        : undefined),
+    replacedQualifiedNames: manifest
+      ? Object.entries(manifest.objects)
+          .filter(
+            ([, candidate]) =>
+              candidate.replacedBy === permissionObjectDef.qualifiedName,
+          )
+          .map(([key]) => key)
+      : [],
+  })};
 const PUBLIC_ACCESS: boolean | 'read' = ${JSON.stringify(publicAccess)};
 const READ_PERMISSION_FIELDS: Array<[string, string]> = ${JSON.stringify(readPermissionFields)};
 // Operation permissions (#2977): mutating handlers require
@@ -652,6 +694,13 @@ function hasAuthenticatedPrincipal(locals: unknown): boolean {
 }
 
 function requireRouteAuth(locals: unknown, mutating: boolean): void {
+  const context = locals && typeof locals === 'object' ? locals as Record<string, unknown> : {};
+  const tenantContext = context.tenantContext && typeof context.tenantContext === 'object'
+    ? context.tenantContext as Record<string, unknown> : {};
+  const tenantId = context.tenantId ?? tenantContext.tenantId;
+  if (!isRuntimeModelEnabled(RUNTIME_MODEL, { surface: 'rest', locals, tenantId: typeof tenantId === 'string' ? tenantId : undefined })) {
+    throw error(404, 'Not found');
+  }
   if (PUBLIC_ACCESS === true) return;
   if (PUBLIC_ACCESS === 'read' && !mutating) return;
   if (!hasAuthenticatedPrincipal(locals)) {
@@ -1037,107 +1086,6 @@ function routeGuardPreamble(
     lines.push('  establishTenantContext(locals);');
   }
   return lines.join('\n');
-}
-
-function normalizeApiHttpMethod(method?: string): ApiHttpMethod {
-  switch (method?.toUpperCase()) {
-    case 'GET':
-    case 'POST':
-    case 'PUT':
-    case 'PATCH':
-    case 'DELETE':
-      return method.toUpperCase() as ApiHttpMethod;
-    default:
-      return 'POST';
-  }
-}
-
-/**
- * Convert a camelCase / PascalCase method name to a kebab-case URL segment.
- * Examples:
- *   discoverFromUrl -> discover-from-url
- *   XMLExport       -> xml-export
- *   URL             -> url
- *   a1B2c3          -> a1-b2c3
- *
- * Known limitation: consecutive uppercase acronyms aren't split apart, e.g.
- * `HTMLAPIExport` becomes `htmlapi-export` rather than `html-api-export`.
- * Override with an explicit `api.routes[name].path` if you need a specific
- * segmentation.
- */
-export function methodNameToKebab(name: string): string {
-  return name
-    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
-    .toLowerCase();
-}
-
-function normalizeCustomRoutePath(
-  actionName: string,
-  path?: string,
-  options: { kebabRoutes?: boolean } = {},
-): string[] {
-  // Explicit path override always wins, and is used verbatim (split on /).
-  if (path) {
-    const segments = path
-      .split('/')
-      .map((segment) => segment.trim())
-      .filter(Boolean);
-    if (segments.length > 0) {
-      return segments;
-    }
-  }
-
-  const segment = options.kebabRoutes
-    ? methodNameToKebab(actionName)
-    : actionName;
-  return [segment];
-}
-
-function extractRoutePathParamNames(pathSegments: string[]): string[] {
-  return pathSegments
-    .filter((segment) => /^\[[^\]]+\]$/.test(segment))
-    .map((segment) => segment.slice(1, -1))
-    .filter(Boolean);
-}
-
-export function resolveApiActionRouteConfig(
-  actionName: string,
-  actionDef: { isStatic?: boolean; decoratorConfig?: Record<string, unknown> },
-  apiConfig: unknown,
-  routeOptions: { kebabRoutes?: boolean } = {},
-  defaultScope: 'item' | 'collection' = actionDef.isStatic
-    ? 'collection'
-    : 'item',
-): ResolvedApiActionRouteConfig {
-  // `@method({ httpMethod, path })` wins field by field over the class-level
-  // `api.routes[action]` entry, so migrating one option off the map does not
-  // reset the ones left on it (#2686).
-  const effective = resolveEffectiveActionMetadata({
-    actionName,
-    method: actionDef,
-    apiConfig,
-  });
-
-  const pathSegments = normalizeCustomRoutePath(
-    actionName,
-    effective.path,
-    routeOptions,
-  );
-
-  const scope = resolveCustomActionMetadata({
-    actionName,
-    method: actionDef,
-    apiConfig,
-    defaultScope,
-  }).scope;
-
-  return {
-    scope,
-    method: normalizeApiHttpMethod(effective.httpMethod),
-    pathSegments,
-    pathParamNames: extractRoutePathParamNames(pathSegments),
-  };
 }
 
 function buildRouteHandlerArgs(
@@ -1991,6 +1939,65 @@ async function generateRegistrationFile(
   const configPath = options.configPath || 'src/lib/server';
   const configDir = join(projectRoot, configPath);
   const registrationFilePath = join(configDir, 'smrt-register.ts');
+  // Collection decorators install their real constructor under the item,
+  // but do not register their own discovery metadata. Publish only explicitly
+  // exposed HTTP CLI action hosts and the collection ancestry needed to resolve
+  // them; ordinary/default collections retain their side-effect-only startup.
+  const collectionMetadata = new Map<string, SmartObjectDefinition>();
+  const manifestKeys = new Map(
+    Object.entries(manifest.objects).map(([key, value]) => [value, key]),
+  );
+  for (const objectDef of Object.values(manifest.objects)) {
+    if (!isCollectionManifestClass(manifest, objectDef)) continue;
+    if (!isCollectionActionResource(manifest, objectDef)) continue;
+    let current: SmartObjectDefinition | undefined = objectDef;
+    const seen = new Set<SmartObjectDefinition>();
+    while (
+      current &&
+      !seen.has(current) &&
+      isCollectionManifestClass(manifest, current)
+    ) {
+      seen.add(current);
+      const key = manifestKeys.get(current);
+      if (key)
+        collectionMetadata.set(
+          key,
+          portableObjectManifest(projectRoot, current),
+        );
+      const parent: string | undefined =
+        current.extendsQualified || current.extends;
+      current = parent
+        ? findManifestObjectByName(manifest, parent, current)
+        : undefined;
+    }
+  }
+  if (options.lazyActivation) {
+    const generated = generateActivationRegistration(manifest, {
+      projectRoot,
+      outputDir: configDir,
+      collectionMetadata: [...collectionMetadata.keys()],
+      splitDeclarations: true,
+    });
+    if (!existsSync(configDir)) mkdirSync(configDir, { recursive: true });
+    // JavaScript is valid TypeScript here; generated metadata is deliberately
+    // JSON, so large superset schemas are never inferred as TypeScript types.
+    for (const file of Object.keys(generated.files))
+      mkdirSync(resolve(configDir, file, '..'), { recursive: true });
+    const smrtDir = join(projectRoot, '.smrt');
+    if (!existsSync(smrtDir)) mkdirSync(smrtDir, { recursive: true });
+    publishArtifactFiles([
+      ...Object.entries(generated.files).map(([file, content]) => ({
+        path: join(configDir, file),
+        content,
+      })),
+      {
+        path: join(smrtDir, 'activation-manifest.json'),
+        content: JSON.stringify(generated.manifest, null, 2),
+      },
+      { path: registrationFilePath, content: generated.source },
+    ]);
+    return;
+  }
   const externalRuntimeDependencies = (manifest.smrtDependencies || []).filter(
     (dependency) => dependency !== '@happyvertical/smrt-core',
   );
@@ -2192,38 +2199,6 @@ async function generateRegistrationFile(
     };
   }
 
-  // Collection decorators install their real constructor under the item,
-  // but do not register their own discovery metadata. Publish only explicitly
-  // exposed HTTP CLI action hosts and the collection ancestry needed to resolve
-  // them; ordinary/default collections retain their side-effect-only startup.
-  const collectionMetadata = new Map<string, SmartObjectDefinition>();
-  const manifestKeys = new Map(
-    Object.entries(manifest.objects).map(([key, value]) => [value, key]),
-  );
-  for (const objectDef of Object.values(manifest.objects)) {
-    if (!isCollectionManifestClass(manifest, objectDef)) continue;
-    if (!isCollectionActionResource(manifest, objectDef)) continue;
-    let current: SmartObjectDefinition | undefined = objectDef;
-    const seen = new Set<SmartObjectDefinition>();
-    while (
-      current &&
-      !seen.has(current) &&
-      isCollectionManifestClass(manifest, current)
-    ) {
-      seen.add(current);
-      const key = manifestKeys.get(current);
-      if (key)
-        collectionMetadata.set(
-          key,
-          portableObjectManifest(projectRoot, current),
-        );
-      const parent: string | undefined =
-        current.extendsQualified || current.extends;
-      current = parent
-        ? findManifestObjectByName(manifest, parent, current)
-        : undefined;
-    }
-  }
   const collectionMetadataLiteral = JSON.stringify(
     JSON.stringify({
       ...manifest,
@@ -2871,89 +2846,6 @@ async function generateCollectionRoutesForObject(
 }
 
 /**
- * Resolve the list of standard CRUD actions exposed by the API for a given
- * apiConfig. Single source of truth for both the route generator and the
- * cli↔api coherence lint.
- */
-function resolveStandardCrudActions(apiConfig: unknown): string[] {
-  if (apiConfig === false) return [];
-  if (apiConfig === true || apiConfig === undefined) {
-    return [...CRUD_OPERATIONS];
-  }
-  if (typeof apiConfig !== 'object' || apiConfig === null) {
-    return [...CRUD_OPERATIONS];
-  }
-
-  const config = apiConfig as { include?: string[]; exclude?: string[] };
-  let crud: string[] = Array.isArray(config.include)
-    ? config.include.filter((a) => isCrudOperation(a))
-    : [...CRUD_OPERATIONS];
-  if (Array.isArray(config.exclude)) {
-    const exclude = config.exclude;
-    crud = crud.filter((a) => !exclude.includes(a));
-  }
-  return crud;
-}
-
-/**
- * Partition an object's custom (non-CRUD) methods into the ones the API
- * exposes and the ones it withholds, with a reason for each rejection.
- *
- * The ONE place route generation, `resolveApiActionSet`, and the knowledge
- * artifact's API projection agree, by all three reading
- * {@link resolveApiMethodExposure}. Before #2686 each re-derived a subset and
- * could disagree — most damagingly, a gate applied only to the coherence
- * resolver would report a method unreachable while the emitter next door still
- * wrote its route file.
- */
-export function resolveApiCustomActions(
-  objectDef: SmartObjectDefinition,
-  manifest: SmartObjectManifest | undefined,
-  objectIsCollectionClass: boolean,
-  wireability: WireabilityOptions = {},
-): {
-  exposed: Array<[string, MethodDefinition]>;
-  rejected: Array<[string, ApiMethodExposure]>;
-} {
-  if (
-    objectIsCollectionClass &&
-    manifest &&
-    resolveCollectionItemObject(manifest, objectDef)?.decoratorConfig
-      ?.abstract === true
-  ) {
-    return { exposed: [], rejected: [] };
-  }
-  const apiConfig = objectDef.decoratorConfig?.api;
-  const isModelClassName =
-    wireability.isModelClassName ?? createManifestClassNamePredicate(manifest);
-  const exposed: Array<[string, MethodDefinition]> = [];
-  const rejected: Array<[string, ApiMethodExposure]> = [];
-
-  for (const [name, method] of Object.entries(objectDef.methods || {})) {
-    const decision = resolveApiMethodExposure({
-      actionName: name,
-      method,
-      apiConfig,
-      isCollectionClass: objectIsCollectionClass,
-      ...(isModelClassName ? { isModelClassName } : {}),
-    });
-    if (decision.exposed) {
-      exposed.push([name, method]);
-      continue;
-    }
-    // CRUD reservation and non-public methods are not "rejections" worth
-    // reporting: neither was ever a candidate custom action, and listing every
-    // private helper would bury the rejections a developer can act on.
-    if (decision.code === 'crud-reserved' || decision.code === 'not-public') {
-      continue;
-    }
-    rejected.push([name, decision]);
-  }
-
-  return { exposed, rejected };
-}
-
-/**
  * Warn about the one rejection class that would be a structural failure rather
  * than a configuration choice: an action whose declared scope has no receiver
  * to bind. Both emitters carried this warning before #2686 moved the check into
@@ -3010,48 +2902,6 @@ function warnDeclaredScopeMismatch(
       `method already lives; it cannot move it. Make ${actionName} static to reach it on the ` +
       'collection, or drop the scope option.',
   );
-}
-
-/**
- * Compute the set of action names (standard CRUD + custom methods) that the
- * API exposes for a given object definition. This is the same resolution used
- * to drive route generation, exposed so coherence checks (e.g. CLI vs API)
- * can ask "what does the API expose?" without re-implementing the logic.
- *
- * Pass a class inventory: without one the wire-ability heuristic cannot tell a
- * model class from an options interface and therefore accepts both, so the
- * caller silently disagrees with the emitters on the LARGEST group of withheld
- * methods (see `WireabilityOptions.isModelClassName`). Supply either
- * `manifest`, or `wireability.isModelClassName` when the caller's inventory is
- * the live registry rather than a manifest — `@happyvertical/smrt-users`' CLI
- * resource listing is the second kind. Both stay optional only because this is
- * public API.
- */
-export function resolveApiActionSet(
-  objectDef: SmartObjectDefinition,
-  manifest?: SmartObjectManifest,
-  wireability: WireabilityOptions = {},
-): Set<string> {
-  const apiConfig = objectDef.decoratorConfig?.api;
-  if (apiConfig === false) return new Set();
-
-  const objectIsCollectionClass = manifest
-    ? isCollectionManifestClass(manifest, objectDef)
-    : isCollectionClass(objectDef);
-  const actions = objectIsCollectionClass
-    ? new Set<string>()
-    : new Set<string>(resolveStandardCrudActions(apiConfig));
-
-  for (const [name] of resolveApiCustomActions(
-    objectDef,
-    manifest,
-    objectIsCollectionClass,
-    wireability,
-  ).exposed) {
-    actions.add(name);
-  }
-
-  return actions;
 }
 
 /**
@@ -3473,10 +3323,10 @@ function isLocalObject(
  */
 function generateTypedRouteErrorHelper(): string {
   return `
-function smrtRouteErrorResponse(cause: unknown) {
+function smrtRouteErrorResponse(cause: unknown, request: Request) {
   const failure = normalizeTypedHttpError(cause);
   if (failure) return json({ error: failure }, { status: failure.status });
-  return json({ error: 'Internal server error' }, { status: 500 });
+  return json(reportUnexpectedHttpError(cause, request), { status: 500 });
 }
 `;
 }
@@ -3501,6 +3351,7 @@ function generateCollectionRouteTemplate(
   );
   const serializers = resolveStandardRouteSerializers(
     objectDef.decoratorConfig?.api,
+    options.lazyActivation,
   );
   const serializerImports = serializers.importStatements.join('\n');
   // A custom list serializer can render related-table data the per-table
@@ -3511,7 +3362,8 @@ function generateCollectionRouteTemplate(
     objectDef,
     semanticManifest,
   );
-  const listUsesPermissionScopedBody = readPermissionFields.length > 0;
+  const listUsesPermissionScopedBody =
+    readPermissionFields.length > 0 || !!objectDef.displayLabelProjection;
   const listUsesBodyHash = listUsesSerializer || listUsesPermissionScopedBody;
   // The build-time web-collection shape digest (#1764) salts the v2 read ETag so
   // a shape-only deploy (no table write) busts every read validator. Deterministic
@@ -3529,11 +3381,12 @@ function generateCollectionRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 import { error${hasPost ? ', json' : ''} } from '@sveltejs/kit';
-${serializerImports ? `${serializerImports}\n` : ''}${hasPost ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
+${hasGet ? "import { parseRestListWhere } from '@happyvertical/smrt-core';\n" : ''}
+${serializerImports ? `${serializerImports}\n` : ''}${hasPost ? "import { ObjectRegistry, normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
 // Note: ${className} is auto-registered by the Vite plugin scanner
-${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPost ? generateWritablePolicyHelper(objectDef, true) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: tenant-scoped reads fail closed to global (NULL-tenant) rows when no
   // tenant context is active (public/anonymous read). Non-tenant models keep the
@@ -3541,12 +3394,10 @@ ${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext
   // #2367: every generated page is ordered. `LIST_ORDER_BY` is emitted as a
   // module constant so the ordering is visible in the generated file rather
   // than implied by the database's row order.
-  const listAndCount = isTenantScoped(objectDef)
-    ? `  const readScope = tenantReadScope();
-  const items = await collection.list({ limit, offset, orderBy: LIST_ORDER_BY, where: readScope });
-  const count = await collection.count({ where: readScope });`
-    : `  const items = await collection.list({ limit, offset, orderBy: LIST_ORDER_BY });
-  const count = await collection.count();`;
+  const listAndCount = `  const where = { ...parseRestListWhere(url.searchParams)${isTenantScoped(objectDef) ? ', ...tenantReadScope()' : ''} };
+  const orderBy = url.searchParams.get('orderBy') || LIST_ORDER_BY;
+  const items = await collection.list({ limit, offset, orderBy, where${objectDef.displayLabelProjection ? ', displayLabel: true' : ''} });
+  const count = await collection.count({ where });`;
 
   const getHandler = hasGet
     ? `
@@ -3594,10 +3445,13 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 ${routeGuardPreamble(objectDef, true, 'create')}
   const publicJsonOptions = getPublicJsonOptions(locals);
   const body: unknown = await request.json();
-  const data = applyWritablePolicy(body);
-
-${generateCollectionLoad(className, { typeName: modelType.typeName })}
   try {
+    const scope = locals as { tenantId?: string; tenantContext?: { tenantId?: string } };
+    const target = ObjectRegistry.resolveCreateTarget('${className}', body, {
+      surface: 'rest', tenantId: scope.tenantId ?? scope.tenantContext?.tenantId, locals, request,
+    });
+    const data = applyWritablePolicy(target.data, target.collectionName === '${className}' ? undefined : target.name);
+    const collection = await getCollection${modelType.typeName ? `<${modelType.typeName}>` : ''}(target.collectionName);
     const item = await collection.create(data);
 ${
   serializers.itemSerializerName
@@ -3612,7 +3466,7 @@ ${
     return json(item.toPublicJSON(publicJsonOptions), { status: 201 });`
 }
   } catch (cause) {
-    return smrtRouteErrorResponse(cause);
+    return smrtRouteErrorResponse(cause, request);
   }
 };
 `
@@ -3695,6 +3549,7 @@ function generateItemRouteTemplate(
   );
   const serializers = resolveStandardRouteSerializers(
     objectDef.decoratorConfig?.api,
+    options.lazyActivation,
   );
   const serializerImports = serializers.importStatements.join('\n');
   // A custom item serializer can render related-table data the per-table
@@ -3705,7 +3560,8 @@ function generateItemRouteTemplate(
     objectDef,
     semanticManifest,
   );
-  const getUsesPermissionScopedBody = readPermissionFields.length > 0;
+  const getUsesPermissionScopedBody =
+    readPermissionFields.length > 0 || !!objectDef.displayLabelProjection;
   const getUsesBodyHash = getUsesSerializer || getUsesPermissionScopedBody;
   // The build-time web-collection shape digest (#1764) salts the v2 read ETag —
   // same value as the list route and the generated virt-web module (see above).
@@ -3721,10 +3577,10 @@ function generateItemRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 import { error${hasPut || hasDelete ? ', json' : ''} } from '@sveltejs/kit';
-${serializerImports ? `${serializerImports}\n` : ''}${hasPut || hasDelete ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
+${serializerImports ? `${serializerImports}\n` : ''}${hasPut || hasDelete ? "import { normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
-${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: a tenant-scoped single read fails closed to global (NULL-tenant)
   // rows when no tenant context is active, so a public/anonymous GET /:id can't
@@ -3733,9 +3589,9 @@ ${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext
   const getForRead = isTenantScoped(objectDef)
     ? `  const readScope = tenantReadScope();
   const item = await collection.get(
-    readScope ? { id: params.id, ...readScope } : params.id,
+    readScope ? { id: params.id, ...readScope } : params.id,${objectDef.displayLabelProjection ? '\n    { displayLabel: true },' : ''}
   );`
-    : `  const item = await collection.get(params.id);`;
+    : `  const item = await collection.get(params.id${objectDef.displayLabelProjection ? ', { displayLabel: true }' : ''});`;
 
   const getHandler = hasGet
     ? `
@@ -3790,7 +3646,7 @@ ${generateNotFoundError(className)}
       await bound.save();
     });
   } catch (cause) {
-    return smrtRouteErrorResponse(cause);
+    return smrtRouteErrorResponse(cause, request);
   }
 ${
   serializers.itemSerializerName
@@ -3808,7 +3664,7 @@ ${
   const deleteHandler = hasDelete
     ? `
 // Delete ${simpleClassName.toLowerCase()}
-export const DELETE: RequestHandler = async ({ locals, params }) => {
+export const DELETE: RequestHandler = async ({ request, locals, params }) => {
 ${routeGuardPreamble(objectDef, true, 'delete')}
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
   const item = await collection.get(params.id);
@@ -3817,7 +3673,7 @@ ${generateNotFoundError(className)}
   try {
     await collection.delete(params.id);
   } catch (cause) {
-    return smrtRouteErrorResponse(cause);
+    return smrtRouteErrorResponse(cause, request);
   }
   return json({ success: true });
 };
@@ -3884,6 +3740,7 @@ function generateActionRouteTemplate(
   const coreImports = [
     'normalizeCustomActionFailure',
     'normalizeTypedHttpError',
+    'reportUnexpectedHttpError',
     ...[...decoderImports].sort(),
   ].join(', ');
   const usesCollection =
@@ -4009,8 +3866,8 @@ function generateActionRouteHandler(
     guardLines.push('  establishTenantContext(locals);');
   }
   const authGuardLine = guardLines.join('\n');
-  const hasInput = actionDef.parameters.length > 0;
-  const needsRequest = hasInput;
+  // Even input-free actions need request context for failure correlation.
+  const needsRequest = true;
   const collectionHandlerArgs = buildRouteHandlerArgs(
     routeConfig.pathParamNames.length > 0,
     needsRequest,
@@ -4059,7 +3916,7 @@ ${optionsLoad}${scopedOptions.source}  let result: unknown;
       invocationArgs,
     )};
   } catch (cause) {
-    return smrtRouteErrorResponse(cause);
+    return smrtRouteErrorResponse(cause, request);
   }
 
   const failure = normalizeCustomActionFailure(result);
@@ -4106,7 +3963,7 @@ ${optionsLoad}${scopedOptions.source}  const ClassRef = registered.constructor a
       invocationArgs,
     )};
   } catch (cause) {
-    return smrtRouteErrorResponse(cause);
+    return smrtRouteErrorResponse(cause, request);
   }
 
   const failure = normalizeCustomActionFailure(result);
@@ -4154,7 +4011,7 @@ ${optionsLoad}  let result: unknown;
       invocationArgs,
     )};
   } catch (cause) {
-    return smrtRouteErrorResponse(cause);
+    return smrtRouteErrorResponse(cause, request);
   }
 
   const failure = normalizeCustomActionFailure(result);

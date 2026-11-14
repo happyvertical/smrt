@@ -96,6 +96,7 @@ console.log('core ok');`,
       '--no-install',
       '--planner',
       plannerDir,
+      ...(process.env.PLANNER_TEST_PORT ? ['--port', process.env.PLANNER_TEST_PORT] : []),
     ],
     { cwd: fixture, env, stdio: ['ignore', 'pipe', 'pipe'] },
   );

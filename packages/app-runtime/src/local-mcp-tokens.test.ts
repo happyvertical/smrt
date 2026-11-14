@@ -188,6 +188,58 @@ describe('local MCP tokens', () => {
     expect(await tokenRows(local.db)).toEqual([]);
   });
 
+  it('checks the sole local owner without creating a credential', async () => {
+    const { local, owner } = await ownedRuntime('owner-session-check');
+    const store = local.mcpTokens!;
+    expect(await store.isOwnerSession?.(owner)).toBe(true);
+    expect(
+      await store.isOwnerSession?.({ ...owner, userId: randomUUID() }),
+    ).toBe(false);
+    expect(
+      await store.isOwnerSession?.({ ...owner, tenantId: randomUUID() }),
+    ).toBe(false);
+    expect(
+      await store
+        .issue({ scopes: [READ] }, { ...owner, userId: randomUUID() })
+        .then(
+          () => 'issued',
+          (error: unknown) =>
+            error instanceof LocalRuntimeError
+              ? error.code
+              : 'unexpected_error',
+        ),
+    ).toBe('owner_unavailable');
+    const tenants = await TenantCollection.create({ db: local.db });
+    const second = await tenants.create({ name: 'Second', slug: 'second' });
+    await second.save();
+    const roles = await RoleCollection.create({ db: local.db });
+    const role = await roles.findSystemRoleBySlug(DEFAULT_ROLE_SLUGS.OWNER);
+    const memberships = await MembershipCollection.create({ db: local.db });
+    const extra = await memberships.create({
+      userId: owner.userId,
+      tenantId: second.id!,
+      roleId: role!.id!,
+    });
+    await extra.save();
+    expect(await store.isOwnerSession?.(owner)).toBe(false);
+    expect(
+      await store.issue({ scopes: [READ] }, owner).then(
+        () => 'issued',
+        (error: unknown) =>
+          error instanceof LocalRuntimeError ? error.code : 'unexpected_error',
+      ),
+    ).toBe('owner_unavailable');
+    extra.status = MembershipStatus.SUSPENDED;
+    await extra.save();
+    expect(await store.isOwnerSession?.(owner)).toBe(true);
+    const users = await UserCollection.create({ db: local.db });
+    const user = await users.get({ id: owner.userId });
+    user!.status = UserStatus.SUSPENDED;
+    await user!.save();
+    expect(await store.isOwnerSession?.(owner)).toBe(false);
+    expect((await tokenRows(local.db)).length).toBe(0);
+  });
+
   it('issues an owner-bound token, stores only its HMAC, and verifies it', async () => {
     const { runtime, local, owner } = await ownedRuntime('issue');
     const store = local.mcpTokens;
@@ -1678,5 +1730,23 @@ describe('desktop local MCP credential handler', () => {
     );
     expect((await desktop(unused)).status).toBe(409);
     await expectDatabaseIntegrity(local.db);
+  });
+});
+
+describe('local MCP client provenance', () => {
+  it('returns only the owner-assigned label and public id after verification', async () => {
+    const { runtime, local } = await ownedRuntime('client-provenance');
+    const issued = await local.mcpTokens.issue({
+      scopes: [READ],
+      label: 'Codex',
+    });
+    const principal = await runtime.verifyLocalMcpToken(issued.token);
+    expect(principal).toMatchObject({
+      clientName: 'Codex',
+      tokenId: issued.id,
+    });
+    expect(JSON.stringify(principal)).not.toContain(issued.token);
+    await local.mcpTokens.revoke(issued.id);
+    expect(await runtime.verifyLocalMcpToken(issued.token)).toBeNull();
   });
 });

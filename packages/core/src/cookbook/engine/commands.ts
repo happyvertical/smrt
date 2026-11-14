@@ -1,4 +1,5 @@
 import type { Cookbook, CookbookPolicyRow } from '@happyvertical/smrt-types';
+import { cookbookModelCatalog } from '../models.js';
 import { validateCookbook } from '../validate.js';
 import {
   type AppSettings,
@@ -356,6 +357,7 @@ const handlers: { [N in CommandName]?: Handler<N> } = {
     );
   },
   set_policy(catalog, state, input) {
+    catalog = cookbookModelCatalog(catalog, state.doc.models);
     const model = findModel(catalog, input.model);
     if (!model)
       return fail('not_found', `No such model: ${input.model}.`, {
@@ -396,7 +398,7 @@ const handlers: { [N in CommandName]?: Handler<N> } = {
       scopeType: 'app',
     };
     const before = JSON.stringify(row);
-    for (const key of ['visibility', 'label', 'help'] as const) {
+    for (const key of ['visibility', 'label', 'help', 'readOnly'] as const) {
       const value = input[key];
       if (value === undefined) continue;
       if (value === null) delete row[key];

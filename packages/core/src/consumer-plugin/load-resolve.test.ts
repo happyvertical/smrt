@@ -22,13 +22,26 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { getDatabase } from '@happyvertical/sql';
 import { build, createServer, type Plugin } from 'vite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { buildActivationManifest } from '../activation/generate.js';
+import { createActivationCoordinator } from '../activation.js';
+import { createCookbookEngine } from '../cookbook/engine/engine.js';
 import {
   serializeSmrtGenerationSnapshot,
   sha256SmrtGenerationSnapshot,
 } from '../generation-snapshot.js';
+import { SmrtObject } from '../object.js';
+import { manifestEntry } from '../registry/__tests__/helpers/consumer-workspace.js';
+import { ObjectRegistry } from '../registry.js';
+import {
+  createCookbookRuntimeExposure,
+  setRuntimeExposureGate,
+} from '../runtime-exposure.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
+import { snapshotObjectRegistryState } from '../test-utils.js';
 import { smrtPlugin } from '../vite-plugin/index.js';
 import {
   contributeSvelteKitRoutes,
@@ -3374,5 +3387,352 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
       /svelteKit\.objects|qualified|unknown/i,
     );
     expect(existsSync(join(projectRoot, 'src/routes/api'))).toBe(false);
+  });
+});
+
+describe('installed recipe surface emission', () => {
+  beforeEach(() => {
+    const pkg = join(projectRoot, 'node_modules/@fixture/surfaces');
+    mkdirSync(pkg, { recursive: true });
+    writePackageJson(projectRoot, {
+      name: 'fixture-host',
+      type: 'module',
+      dependencies: { '@fixture/surfaces': '0.0.0' },
+    });
+    writePackageJson(pkg, {
+      name: '@fixture/surfaces',
+      version: '0.0.0',
+      type: 'module',
+      exports: {
+        '.': './index.js',
+        './server': './server.js',
+        './manifest.json': './manifest.json',
+      },
+    });
+    writeFileSync(
+      join(pkg, 'index.js'),
+      'export function Surface() { return "LAZY_RECIPE_SURFACE_MARKER"; }',
+    );
+    writeFileSync(
+      join(pkg, 'server.js'),
+      'import "node:fs"; export function loadData() {}',
+    );
+    writeFileSync(
+      join(pkg, 'manifest.json'),
+      JSON.stringify({
+        version: '1.0.0',
+        packageName: '@fixture/surfaces',
+        objects: {},
+        recipes: [
+          {
+            id: 'fixture.surface',
+            label: 'Fixture',
+            models: [],
+            nav: [],
+            surfaces: [
+              {
+                kind: 'widget',
+                type: 'fixture-widget',
+                export: '@fixture/surfaces#Surface',
+                label: 'Fixture',
+                data: { load: '@fixture/surfaces/server#loadData' },
+              },
+            ],
+          },
+          { id: 'fixture.generic', label: 'Generic', models: [], nav: [] },
+        ],
+      }),
+    );
+  });
+
+  it('preserves installed recipe manifests and emits a typed map, lazy imports and server-only loader projection', async () => {
+    const plugin = smrtConsumer({
+      packages: ['@fixture/surfaces'],
+      projectRoot,
+    });
+    await buildStart(plugin as Plugin, {});
+    const load = getHook(plugin, 'load');
+    expect(
+      await getHook(plugin, 'resolveId').call(
+        {},
+        '@happyvertical/smrt-svelte/cookbook/surfaces',
+        undefined,
+      ),
+    ).toBe('\0smrt-consumer:web');
+    const client = await load.call({}, '\0smrt-consumer:web');
+    expect(client).toContain('"fixture.surface"');
+    expect(client).toContain('"fixture.generic": []');
+    expect(client).toContain('() => import("@fixture/surfaces")');
+    expect(client).not.toContain('import("@fixture/surfaces/server")');
+    const server = await load.call({}, '\0smrt-consumer:web', { ssr: true });
+    expect(server).toContain('import("@fixture/surfaces/server")');
+    const declarations = readFileSync(
+      join(projectRoot, 'src/types/smrt-generated/smrt-recipe-surfaces.d.ts'),
+      'utf8',
+    );
+    expect(declarations).toContain('readonly "fixture.surface"');
+    expect(declarations).toContain('Component<Record<string, unknown>>');
+    expect(declarations).not.toContain('typeof import("@fixture/surfaces")');
+    const saved = JSON.parse(
+      readFileSync(join(projectRoot, '.smrt/manifest.json'), 'utf8'),
+    );
+    expect(saved.recipes.map((recipe: { id: string }) => recipe.id)).toEqual([
+      'fixture.generic',
+      'fixture.surface',
+    ]);
+  });
+
+  it('keeps a lazy surface package unevaluated until real SQLite activation and live recipe publication', async () => {
+    const model = '@fixture/models:SurfaceRow';
+    const pkg = join(projectRoot, 'node_modules/@fixture/surfaces');
+    const marker = `surface-import:${projectRoot}`;
+    Reflect.set(globalThis, marker, 0);
+    writeFileSync(
+      join(pkg, 'index.js'),
+      `globalThis[${JSON.stringify(marker)}]++; export function Surface() { return 'ready'; }`,
+    );
+    const manifest = JSON.parse(
+      readFileSync(join(pkg, 'manifest.json'), 'utf8'),
+    );
+    manifest.recipes[0].models = [model];
+    writeFileSync(join(pkg, 'manifest.json'), JSON.stringify(manifest));
+    const plugin = smrtConsumer({
+      packages: ['@fixture/surfaces'],
+      projectRoot,
+      lazyActivation: true,
+    });
+    await buildStart(plugin as Plugin, {});
+    const source = await getHook(plugin, 'load').call(
+      {},
+      '\0smrt-consumer:web',
+      { ssr: true },
+    );
+    mkdirSync(join(projectRoot, 'node_modules/@happyvertical'), {
+      recursive: true,
+    });
+    symlinkSync(
+      resolve(__dirname, '../..'),
+      join(projectRoot, 'node_modules/@happyvertical/smrt-core'),
+    );
+    const modulePath = join(projectRoot, 'surfaces.mjs');
+    writeFileSync(modulePath, source);
+    const generated = await import(
+      /* @vite-ignore */ pathToFileURL(modulePath).href
+    );
+    const clientPath = join(projectRoot, 'surfaces-client.mjs');
+    writeFileSync(
+      clientPath,
+      await getHook(plugin, 'load').call({}, '\0smrt-consumer:web', {
+        ssr: false,
+      }),
+    );
+    const client = await import(
+      /* @vite-ignore */ pathToFileURL(clientPath).href
+    );
+    expect(
+      await client.recipeSurfaces['fixture.surface'][0].load(),
+    ).toBeUndefined();
+    expect(
+      await client.recipeSurfaces['fixture.surface'][0].load({ recipes: [] }),
+    ).toBeUndefined();
+    expect(Reflect.get(globalThis, marker)).toBe(0);
+    const restore = snapshotObjectRegistryState();
+    const priorActivation = globalThis.__smrtActivation;
+    const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    const entry = manifestEntry({
+      className: 'SurfaceRow',
+      packageName: '@fixture/models',
+      filePath: '/fixture/row.ts',
+      tableName: 'surface_rows',
+      fields: { title: { type: 'text' } },
+    });
+    entry.schema!.columns = {
+      id: { type: 'TEXT', primaryKey: true },
+      title: { type: 'TEXT' },
+    };
+    const modelManifest: SmartObjectManifest = {
+      version: '1.0.0',
+      timestamp: 0,
+      packageName: '@fixture/models',
+      objects: { [model]: entry },
+    };
+    const graph = buildActivationManifest(modelManifest, {
+      row: { specifier: '/fixture/row.ts', models: [model], dependencies: [] },
+    });
+    const catalog = {
+      models: [
+        { id: model, name: 'SurfaceRow', packageId: 'models', exposed: true },
+      ],
+      recipes: [
+        {
+          id: 'fixture.surface',
+          label: 'Fixture',
+          models: [model],
+          nav: [],
+          requires: [],
+        },
+      ],
+    };
+    const engine = createCookbookEngine({ catalog });
+    const exposure = createCookbookRuntimeExposure({
+      catalog,
+      engineFor: () => engine,
+      allowWithoutTenant: true,
+    });
+    try {
+      ObjectRegistry.clear();
+      const activation = createActivationCoordinator({
+        scope: projectRoot,
+        packageName: '@fixture/models',
+        db,
+        manifest: graph,
+        readEnabled: async () => [],
+        loaders: {
+          row: async () => {
+            class SurfaceRow extends SmrtObject {
+              title = '';
+            }
+            ObjectRegistry.register(SurfaceRow, {
+              name: 'SurfaceRow',
+              packageName: '@fixture/models',
+              _manifest: modelManifest,
+              _manifestKey: model,
+            });
+          },
+        },
+      });
+      setRuntimeExposureGate(activation.gate(exposure));
+      await activation.boot();
+      const load = generated.recipeSurfaces['fixture.surface'][0].load;
+      expect(await load()).toBeUndefined();
+      expect(await load({ recipes: ['fixture.surface'] })).toBeUndefined();
+      expect(
+        await generated.resolveExport('@fixture/surfaces', 'Surface', {
+          recipes: [],
+        }),
+      ).toBeUndefined();
+      expect(Reflect.get(globalThis, marker)).toBe(0);
+      expect(ObjectRegistry.getClass(model)).toBeUndefined();
+      await activation.activate([model]);
+      expect(activation.isReady(model)).toBe(true);
+      expect(Reflect.get(globalThis, marker)).toBe(0);
+      // Readiness alone never publishes the disabled recipe or imports its surface.
+      expect(await load({ recipes: ['fixture.surface'] })).toBeUndefined();
+      expect(
+        engine.run({ name: 'add_recipes', input: { ids: ['fixture.surface'] } })
+          .ok,
+      ).toBe(true);
+      expect(typeof (await load({ recipes: engine.cookbook().recipes }))).toBe(
+        'function',
+      );
+      expect(Reflect.get(globalThis, marker)).toBe(1);
+      expect(
+        typeof (await client.recipeSurfaces['fixture.surface'][0].load({
+          recipes: engine.cookbook().recipes,
+        })),
+      ).toBe('function');
+      expect(
+        engine.run({
+          name: 'remove_recipes',
+          input: { ids: ['fixture.surface'] },
+        }).ok,
+      ).toBe(true);
+      expect(await load({ recipes: ['fixture.surface'] })).toBeUndefined();
+      setRuntimeExposureGate(undefined);
+      expect(await load({ recipes: ['fixture.surface'] })).toBeUndefined();
+    } finally {
+      setRuntimeExposureGate(undefined);
+      exposure.dispose();
+      await db.close?.();
+      restore();
+      globalThis.__smrtActivation = priorActivation;
+      Reflect.deleteProperty(globalThis, marker);
+    }
+  });
+
+  it('compares repeated recipe declarations structurally and refuses conflicting surfaces', async () => {
+    const duplicate = join(projectRoot, 'node_modules/@fixture/duplicate');
+    mkdirSync(duplicate, { recursive: true });
+    writePackageJson(duplicate, {
+      name: '@fixture/duplicate',
+      version: '0.0.0',
+      exports: { './manifest.json': './manifest.json' },
+    });
+    const first = JSON.parse(
+      readFileSync(
+        join(projectRoot, 'node_modules/@fixture/surfaces/manifest.json'),
+        'utf8',
+      ),
+    );
+    const recipe = Object.fromEntries(
+      Object.entries(first.recipes[0]).reverse(),
+    );
+    const manifest = {
+      version: '1.0.0',
+      packageName: '@fixture/duplicate',
+      objects: {},
+      recipes: [recipe],
+    };
+    writeFileSync(join(duplicate, 'manifest.json'), JSON.stringify(manifest));
+    await expect(
+      buildStart(
+        smrtConsumer({
+          packages: ['@fixture/surfaces', '@fixture/duplicate'],
+          projectRoot,
+          generateTypes: false,
+        }) as Plugin,
+        {},
+      ),
+    ).resolves.toBeUndefined();
+    manifest.recipes[0] = { ...recipe, label: 'Conflicting label' };
+    writeFileSync(join(duplicate, 'manifest.json'), JSON.stringify(manifest));
+    await expect(
+      buildStart(
+        smrtConsumer({
+          packages: ['@fixture/surfaces', '@fixture/duplicate'],
+          projectRoot,
+          generateTypes: false,
+        }) as Plugin,
+        {},
+      ),
+    ).rejects.toThrow(/Conflicting recipe/);
+  });
+
+  it('keeps recipe components and server loaders out of the initial browser bundle', async () => {
+    writeFileSync(
+      join(projectRoot, 'index.js'),
+      'export { recipeSurfaces, resolveExport } from "@happyvertical/smrt-svelte/cookbook/surfaces";',
+    );
+    const result = await build({
+      root: projectRoot,
+      configFile: false,
+      logLevel: 'silent',
+      plugins: [
+        smrtConsumer({
+          packages: ['@fixture/surfaces'],
+          projectRoot,
+        }) as Plugin,
+      ],
+      build: {
+        write: false,
+        minify: false,
+        lib: { entry: 'index.js', formats: ['es'] },
+      },
+    });
+    const outputs = (Array.isArray(result) ? result : [result]).flatMap(
+      (output) => ('output' in output ? output.output : []),
+    );
+    const chunks = outputs.filter((output) => output.type === 'chunk');
+    const entry = chunks.find((chunk) => chunk.isEntry);
+    expect(entry).toBeDefined();
+    expect(entry?.code).not.toContain('LAZY_RECIPE_SURFACE_MARKER');
+    expect(entry?.code).not.toContain('node:fs');
+    expect(entry?.dynamicImports.length).toBeGreaterThan(0);
+    expect(
+      chunks.some(
+        (chunk) =>
+          !chunk.isEntry && chunk.code.includes('LAZY_RECIPE_SURFACE_MARKER'),
+      ),
+    ).toBe(true);
   });
 });

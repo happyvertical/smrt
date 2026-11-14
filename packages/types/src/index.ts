@@ -27,12 +27,15 @@ export type {
 // Cookbook v1 document contract (parser: smrt-core/cookbook)
 export type {
   Cookbook,
+  CookbookCustomList,
   CookbookExposureSurface,
   CookbookFieldVisibility,
   CookbookLayout,
   CookbookLayoutItem,
   CookbookLayoutPanel,
   CookbookLayoutSection,
+  CookbookModelField,
+  CookbookModels,
   CookbookOverviewOverride,
   CookbookOverviewWidget,
   CookbookPolicyRow,
@@ -162,6 +165,7 @@ export type {
   RecipeSection,
   RecipeShellSlot,
   RecipeSurface,
+  RecipeSurfaceLoadContext,
 } from './recipe.js';
 export type {
   RecipeWidgetData,

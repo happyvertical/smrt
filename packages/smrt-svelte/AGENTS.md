@@ -242,8 +242,14 @@ for a data-surface one — for exactly the component's lifetime.
 
 ## Dependencies
 
+- Cookbook policy and surface integration: [agents/cookbook-shell.md](agents/cookbook-shell.md).
 - `@happyvertical/smrt-types` (shared types) — includes the identity data contracts (`User`, `Role`, `Membership`, `Tenant`) the role/membership components type against, so no dependency on `smrt-users` / `smrt-profiles` is needed
 - `@happyvertical/smrt-ui` (UI runtime: primitives, theme system, i18n client, module registry) is a hard `dependency`. The agent-admin shells that used to type against `@happyvertical/smrt-agents/ui` moved to `@happyvertical/smrt-agents/svelte` (#1589), so `smrt-agents` is no longer a dependency here — this drops smrt-svelte below smrt-agents in the package DAG.
 - `@happyvertical/smrt-languages` is a hard `dependency` (not an optional peer): the Node-only `/i18n/server` subpath imports its resolver. The browser bundle still excludes it — the client `/i18n` layer never imports the languages root, so it tree-shakes out.
 - `@happyvertical/logger` (SDK) is a `dependency` for voice/AI error reporting in the form components. Consume it **only** through `src/internal/logger.ts`, never `createLogger()` at module scope: it reads `process.env`, which throws `ReferenceError` in the browser under `vite dev` and kills hydration. The wrapper builds the logger lazily and falls back to a bare `ConsoleLogger`.
 - Peer (all optional): `svelte` >=5.18.2, plus the browser-AI engines (`@happyvertical/speech`, `@huggingface/transformers`, `@mlc-ai/web-llm`, `@remotion/whisper-web`) and `chrono-node`.
+
+## Connect AI
+
+Reusable onboarding/settings `./connect-ai` and authenticated `./connect-ai/server`
+mount over inference engine APIs: [agents/connect-ai.md](agents/connect-ai.md).

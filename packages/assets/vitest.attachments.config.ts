@@ -3,5 +3,6 @@ import { defineConfig } from 'vitest/config';
 import { smrtVitestPlugin } from '../vitest/src/index.ts';
 export default defineConfig({
   plugins: [svelte(), smrtVitestPlugin({ verbose: false })],
-  test: { environment: 'node', include: ['src/svelte/attachments/**/*.contract.ts'], fileParallelism: false, pool: 'forks' },
+  // Match this package's main suite for manifest setup; keep test body limits unchanged.
+  test: { environment: 'node', include: ['src/svelte/attachments/**/*.contract.ts'], hookTimeout: 30000, fileParallelism: false, pool: 'forks' },
 });

@@ -90,6 +90,18 @@ describe('catalogFromManifests', () => {
     ]);
   });
 
+  it('keeps recipe help on request without retaining manifest object schemas', () => {
+    const rich = catalogFromManifests(manifests, true);
+    expect(rich.recipes[0]).toEqual(
+      recipe('shop.items', '@acme/smrt-shop:Item'),
+    );
+    expect(rich.models).toEqual(catalogFromManifests(manifests).models);
+    expect(rich).not.toHaveProperty('objects');
+    expect(catalogFromManifests(manifests).recipes[0]).not.toHaveProperty(
+      'help',
+    );
+  });
+
   it("narrows to the cookbook's recipes, their models and its features", () => {
     const catalog = catalogFromManifests(manifests);
     expect(

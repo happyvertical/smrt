@@ -8,7 +8,11 @@
  */
 
 import { getInheritanceChain } from './inheritance-resolver';
-import { findClass } from './name-resolver';
+import {
+  findClass,
+  getClassByConstructor,
+  getReplacementClassByConstructor,
+} from './name-resolver';
 import { getClasses } from './shared-state';
 import type {
   RegisteredClass,
@@ -24,10 +28,13 @@ function resolveTarget(
   const classes = getClasses();
   const ctor = field._meta?.relatedConstructor;
   if (typeof ctor === 'function') {
-    const match = Array.from(classes).find(
-      ([, entry]) => entry.constructor === ctor,
-    );
-    return match ? (match[1].qualifiedName ?? match[0]) : null;
+    const target =
+      getClassByConstructor(ctor as import('./types').SmrtObjectConstructor) ??
+      getReplacementClassByConstructor(
+        ctor as import('./types').SmrtObjectConstructor,
+      ) ??
+      [...classes.values()].find((entry) => entry.constructor === ctor);
+    return target ? (target.qualifiedName ?? target.name) : null;
   }
   const related = field.related;
   if (!related) return null;
@@ -122,13 +129,24 @@ export function getDependencyGraph(): Map<string, string[]> {
  * Returns a map containing all relationships (foreignKey, oneToMany, manyToMany)
  * discovered in registered classes.
  */
-export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
+export function getRelationshipMap(
+  sourceKey?: string,
+): Map<string, RelationshipMetadata[]> {
   const classes = getClasses();
+  const source = sourceKey === undefined ? undefined : findClass(sourceKey);
+  // Single-class introspection must not rebuild every other class's graph.
+  // Target resolution still consults the complete registry below.
+  const entries =
+    sourceKey === undefined
+      ? classes
+      : source
+        ? new Map([[sourceKey, source]])
+        : new Map<string, RegisteredClass>();
   const relationshipMap = new Map<string, RelationshipMetadata[]>();
   const simpleNameEntries = new Map<string, Set<RegisteredClass>>();
 
   // Initialize map with all registered classes
-  for (const [key, entry] of classes) {
+  for (const [key, entry] of entries) {
     // The registry is qualified-name keyed. Keep relationship buckets on that
     // canonical identity as well: classes in separate packages may share a
     // simple name, and a later empty declaration must not overwrite an earlier
@@ -141,7 +159,7 @@ export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
   }
 
   // Scan all fields for relationship types
-  for (const [key, registered] of classes) {
+  for (const [key, registered] of entries) {
     const simpleName = registered.name || key;
     const sourceQualifiedClass = registered.qualifiedName || key;
     const relationships: RelationshipMetadata[] = [];
@@ -206,7 +224,7 @@ export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
   // Preserve the public simple-name map contract where that name identifies
   // exactly one registered class. Colliding names intentionally have no alias:
   // callers with a constructor must use the qualified bucket above.
-  for (const [key, registered] of classes) {
+  for (const [key, registered] of entries) {
     const simpleName = registered.name || key;
     if (simpleNameEntries.get(simpleName)?.size !== 1) continue;
     const qualifiedName = registered.qualifiedName || key;

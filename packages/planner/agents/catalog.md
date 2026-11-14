@@ -45,3 +45,9 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   renderer, one module to swap for the core helper; content in `help/*.md` and
   `help/descriptions.json`). Never import
   `@happyvertical/smrt-fields` until the live-objects work (#4).
+
+`commerce.customers` and `commerce.vendors` now require the owning
+`profiles.identity` recipe. Curated library documents include that dependency
+explicitly, preserving round-trip and add/remove behavior. Dependency-only recipes
+do not add empty navigation sections. Classification lookups never own the
+business records referencing them, even when both appear in one recipe.

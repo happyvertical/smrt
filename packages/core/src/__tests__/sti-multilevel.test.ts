@@ -147,6 +147,20 @@ describe('Multi-Level STI Save Operations', () => {
   });
 
   describe('Save operations', () => {
+    it.each([
+      'STITestOrganizationInvoice',
+      'STITestPerson',
+    ])('rejects explicit create discriminator outside the collection subtree: %s', async (className) => {
+      const organizations = await STITestOrganizationCollection.create({ db });
+      await expect(
+        organizations.create({
+          _meta_type: `@happyvertical/smrt-core:${className}`,
+          name: 'Invalid subtype',
+        }),
+      ).rejects.toThrow('not a subtype');
+      expect(await profiles.list()).toHaveLength(0);
+    });
+
     it('fails closed when a typed cross-package target cannot load', async () => {
       const references = await STITestUnloadedSubtypeReferenceCollection.create(
         {

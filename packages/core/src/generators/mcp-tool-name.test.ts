@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { describe, expect, it, vi } from 'vitest';
 import { SmrtObject } from '../object.js';
@@ -66,6 +67,42 @@ function generator() {
 }
 
 describe('canonical MCP tool identifiers (#3219)', () => {
+  it('opts into workflow-compatible names without changing protocol defaults or collapsing qualified identities', () => {
+    const raw = [
+      'profile_list',
+      '_private_list',
+      'A.b-list',
+      '@fixture/pkg-a:Thing_list',
+      '@fixture/pkg_a:Thing_list',
+      'é_list',
+    ];
+    const entries = raw.map((name) => ({
+      name,
+      target: { objectName: 'Thing', action: 'list' },
+    }));
+    expect(canonicalMcpToolNames(entries).slice(0, 3)).toEqual(raw.slice(0, 3));
+    const names = canonicalMcpToolNames(entries, true);
+    expect(names[0]).toBe('profile_list');
+    expect(names.every((name) => /^[a-z][a-z0-9_]{0,63}$/.test(name))).toBe(
+      true,
+    );
+    expect(new Set(names).size).toBe(raw.length);
+    expect(
+      canonicalMcpToolNames([...entries].reverse(), true).reverse(),
+    ).toEqual(names);
+    expect(() => canonicalMcpToolNames([entries[0], entries[0]], true)).toThrow(
+      'Duplicate',
+    );
+    expect(() =>
+      canonicalMcpToolNames(
+        [
+          entries[1],
+          { name: names[1], target: { objectName: 'Other', action: 'list' } },
+        ],
+        true,
+      ),
+    ).toThrow('collision');
+  });
   it('preserves compliant names and distinguishes long and sanitized common prefixes independent of order', () => {
     const raw = [
       'a'.repeat(64),
@@ -297,6 +334,8 @@ describe('canonical MCP tool identifiers (#3219)', () => {
           };
           // Generated lookups carry the registry key (#3490): '@pkg:Class'.
           const simple = (name) => name.slice(name.lastIndexOf(':') + 1);
+          export { COOKBOOK_TOOL_NAMES, getCookbookToolService } from ${JSON.stringify(fileURLToPath(new URL('../../dist/cookbook/tools.js', import.meta.url)))};
+export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))};
           export const ObjectRegistry = { loadAllManifests() {}, getClass(name) { if (!name.includes(':') || !classes[simple(name)]) throw Error('wrong class '+name); return {constructor: classes[simple(name)]}; }, async getCollection(name) {if(!name.includes(':') || !classes[simple(name)]) throw Error('wrong collection '+name); return {};} };
           export function normalizeCustomActionFailure() {}
           export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';
@@ -310,7 +349,11 @@ describe('canonical MCP tool identifiers (#3219)', () => {
           join(directory, 'package.json'),
           JSON.stringify({
             type: 'module',
-            exports: { '.': './index.js', './stdio': './stdio.js' },
+            exports: {
+              '.': './index.js',
+              './stdio': './stdio.js',
+              './cookbook/tools': './index.js',
+            },
           }),
         );
         for (const [file, content] of Object.entries(files))
@@ -388,8 +431,11 @@ describe('canonical MCP tool identifiers (#3219)', () => {
         },
         '@happyvertical/smrt-core': {
           'index.js': `
+          export { COOKBOOK_TOOL_NAMES, getCookbookToolService } from ${JSON.stringify(fileURLToPath(new URL('../../dist/cookbook/tools.js', import.meta.url)))};
+export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))};
           export const ObjectRegistry = {
             loadAllManifests() {},
+            resolveCreateTarget(name, data) { return { name, collectionName: name, data }; },
             getConfig() { return {}; },
             getFields() { return new Map(); },
             async getCollection(name) {
@@ -409,7 +455,11 @@ describe('canonical MCP tool identifiers (#3219)', () => {
           join(directory, 'package.json'),
           JSON.stringify({
             type: 'module',
-            exports: { '.': './index.js', './stdio': './stdio.js' },
+            exports: {
+              '.': './index.js',
+              './stdio': './stdio.js',
+              './cookbook/tools': './index.js',
+            },
           }),
         );
         for (const [file, content] of Object.entries(files))

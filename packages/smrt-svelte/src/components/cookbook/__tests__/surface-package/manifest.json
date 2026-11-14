@@ -1,0 +1,27 @@
+{
+  "version": "1.0.0",
+  "packageName": "@fixture/cookbook-surfaces",
+  "objects": {},
+  "recipes": [
+    {
+      "id": "fixture.surface",
+      "label": "People",
+      "models": ["@acme/tasks:Task"],
+      "nav": [{"model": "@acme/tasks:Task", "label": "Tasks"}],
+      "surfaces": [{"kind": "route", "path": "/m/tasks/Task/", "export": "@fixture/cookbook-surfaces#FixtureRoute", "label": "Customers"}]
+    },
+    {
+      "id": "fixture.generic",
+      "label": "Archive",
+      "models": ["@acme/tasks:Task"],
+      "nav": [{"model": "@acme/tasks:Task", "key": "generic", "label": "Archive"}]
+    },
+    {
+      "id": "fixture.missing",
+      "label": "Other",
+      "models": ["@acme/tasks:Task"],
+      "nav": [{"model": "@acme/tasks:Task", "key": "missing", "label": "Other"}],
+      "surfaces": [{"kind": "route", "path": "/m/tasks/Task/missing/", "export": "@fixture/cookbook-surfaces#Unavailable", "label": "Other"}]
+    }
+  ]
+}

@@ -1,11 +1,13 @@
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { AIClientOptions } from '@happyvertical/ai';
-import { fetchDocument } from '@happyvertical/documents';
-import { ensureDirectoryExists } from '@happyvertical/files';
 import { createLogger } from '@happyvertical/logger';
 import type { SmrtCollectionOptions } from '@happyvertical/smrt-core';
-import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
+import {
+  importOptionalDependency,
+  SmrtCollection,
+  smrt,
+} from '@happyvertical/smrt-core';
 import type { Image } from '@happyvertical/smrt-images';
 import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import type { DataQueryResult } from '@happyvertical/smrt-types';
@@ -436,6 +438,10 @@ export class Contents extends SmrtCollection<Content> {
     }
 
     // Fetch and process the document via the already-validated terminal URL.
+    const { fetchDocument } = (await importOptionalDependency(
+      '@happyvertical/documents',
+      'Install the documents capability to mirror remote documents.',
+    )) as typeof import('@happyvertical/documents');
     const doc = await fetchDocument(url.toString(), {
       cacheDir: options?.mirrorDir,
     });
@@ -532,6 +538,10 @@ export class Contents extends SmrtCollection<Content> {
       );
     }
 
+    const { ensureDirectoryExists } = (await importOptionalDependency(
+      '@happyvertical/files',
+      'Install the filesystem capability to export content files.',
+    )) as typeof import('@happyvertical/files');
     await ensureDirectoryExists(path.dirname(outputFile));
     await writeFile(outputFile, output);
   }

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import {
   isPostgresDatabase,
   ObjectRegistry,
+  resolveListLimit,
   type SmrtObjectOptions,
 } from '@happyvertical/smrt-core';
 import {
@@ -1448,12 +1449,51 @@ export class ChatService {
    * newest `limit` of those, however many tool rows sit between (#4458).
    * Omitted or empty reads every role.
    */
+  /** Filter trusted agent provenance only; user metadata never changes visibility. */
+  #isConversationMessage(message: ChatMessage): boolean {
+    if (message.role !== 'assistant' && message.role !== 'tool') return true;
+    const metadata = message.getMetadata();
+    return !(
+      metadata &&
+      typeof metadata === 'object' &&
+      (metadata.assistantInternalTurn === true ||
+        (message.role === 'assistant' &&
+          Object.hasOwn(metadata, 'designOutput')))
+    );
+  }
+
+  async #listConversationMessages(
+    options: NonNullable<Parameters<ChatMessageCollection['list']>[0]>,
+  ): Promise<ChatMessage[]> {
+    const visible: ChatMessage[] = [];
+    const limit = resolveListLimit(options.limit, { defaultValue: 200 });
+    const pageSize = 200;
+    const seen = new Set<string>();
+    for (let offset = 0; visible.length < limit; offset += pageSize) {
+      const page = await this.#messages.list({
+        ...options,
+        limit: pageSize,
+        offset,
+      });
+      for (const message of page) {
+        if (seen.has(String(message.id))) continue;
+        seen.add(String(message.id));
+        if (this.#isConversationMessage(message)) visible.push(message);
+        if (visible.length === limit) break;
+      }
+      if (page.length < pageSize) break;
+    }
+    return visible;
+  }
+
   async getThreadMessages(params: {
     threadId: string;
     actorProfileId: string;
     tenantId: string;
     limit?: number;
     roles?: readonly ChatMessageRole[];
+    /** Trusted presentation query only. Raw provider history remains the default. */
+    visibility?: 'conversation';
   }): Promise<ChatMessage[]> {
     const thread = await this.#threads.get({
       id: params.threadId,
@@ -1467,14 +1507,21 @@ export class ChatService {
       params.actorProfileId,
       params.tenantId,
     );
-    const messages = await this.#messages.list({
+    const read =
+      params.visibility === 'conversation'
+        ? this.#listConversationMessages.bind(this)
+        : this.#messages.list.bind(this.#messages);
+    const messages = await read({
       where: {
         tenantId: params.tenantId,
         threadId: params.threadId,
         isDeleted: false,
         ...(params.roles?.length ? { role: [...params.roles] } : {}),
       },
-      orderBy: 'created_at DESC',
+      orderBy:
+        params.visibility === 'conversation'
+          ? ['created_at DESC', 'id DESC']
+          : 'created_at DESC',
       limit: params.limit,
     });
     return messages.reverse();
@@ -1493,6 +1540,7 @@ export class ChatService {
     actorProfileId: string;
     tenantId: string;
     limit?: number;
+    visibility?: 'conversation';
   }): Promise<{ message: ChatMessage; replies: ChatMessage[] } | null> {
     const thread = await this.#threads.get({
       id: params.threadId,
@@ -1511,15 +1559,28 @@ export class ChatService {
       threadId: params.threadId,
       tenantId: params.tenantId,
     });
-    if (!message || message.isDeleted) return null;
-    const replies = await this.#messages.list({
+    if (
+      !message ||
+      message.isDeleted ||
+      (params.visibility === 'conversation' &&
+        !this.#isConversationMessage(message))
+    )
+      return null;
+    const read =
+      params.visibility === 'conversation'
+        ? this.#listConversationMessages.bind(this)
+        : this.#messages.list.bind(this.#messages);
+    const replies = await read({
       where: {
         tenantId: params.tenantId,
         threadId: params.threadId,
         replyToMessageId: params.messageId,
         isDeleted: false,
       },
-      orderBy: 'created_at ASC',
+      orderBy:
+        params.visibility === 'conversation'
+          ? ['created_at ASC', 'id ASC']
+          : 'created_at ASC',
       limit: params.limit ?? 100,
     });
     return { message, replies };

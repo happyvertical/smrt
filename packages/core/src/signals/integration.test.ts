@@ -52,6 +52,57 @@ describe('Universal Signaling System - Integration', () => {
     consoleSpy.mockRestore();
   });
 
+  it('reuses the stateless default logger without rescanning env and preserves per-instance levels', async () => {
+    vi.stubEnv('HAVE_LOGGER_LEVEL', 'debug');
+    const keys = vi.spyOn(Object, 'keys');
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const instances: SmrtClass[] = [];
+    const scans = () =>
+      keys.mock.calls.filter(([input]) => input === process.env).length;
+    try {
+      class TestClass extends SmrtClass {}
+      const first = new TestClass({ logging: true });
+      instances.push(first);
+      await initializeForTest(first);
+      const afterFirst = scans();
+      const second = new TestClass({ logging: true });
+      instances.push(second);
+      await initializeForTest(second);
+      expect(scans()).toBe(afterFirst);
+      expect(first.signalBus).not.toBe(second.signalBus);
+      vi.stubEnv('HAVE_LOGGER_LEVEL', 'error');
+      const third = new TestClass({ logging: true });
+      instances.push(third);
+      await initializeForTest(third);
+      expect(scans()).toBeGreaterThan(afterFirst);
+      const signal: Signal = {
+        id: 'default-logger',
+        objectId: 'object',
+        className: 'TestClass',
+        method: 'probe',
+        type: 'start',
+        timestamp: new Date(),
+      };
+      debug.mockClear();
+      await first.signalBus?.emit(signal);
+      expect(debug).toHaveBeenCalledTimes(1);
+      await third.signalBus?.emit(signal);
+      expect(debug).toHaveBeenCalledTimes(1);
+      const beforeCustom = scans();
+      for (let i = 0; i < 2; i++) {
+        const custom = new TestClass({ logging: { level: 'warn' } });
+        instances.push(custom);
+        await initializeForTest(custom);
+      }
+      expect(scans()).toBe(beforeCustom + 2);
+    } finally {
+      for (const instance of instances) await instance.destroy();
+      keys.mockRestore();
+      debug.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('should disable logging when configured', async () => {
     config({ logging: false });
 

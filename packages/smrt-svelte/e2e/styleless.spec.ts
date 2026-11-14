@@ -20,6 +20,43 @@ const geometry = [
 ];
 
 for (const width of [390, 1280]) {
+  for (const state of ['open', 'closed']) {
+    test(`styleless docked panel keeps its layout and ${state} state at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto(`/?docked-panel=${state}`);
+      const panel = page.getByTestId('admin-shell-panel');
+      const read = () =>
+        panel.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return {
+            hidden: element.hasAttribute('hidden'),
+            display: style.display,
+            position: style.position,
+            flexDirection: style.flexDirection,
+            minContentWidth: style.getPropertyValue(
+              '--smrt-admin-shell-panel-main-min',
+            ),
+          };
+        });
+      const before = await read();
+      expect(before.hidden).toBe(state === 'closed');
+      expect(before.display).toBe(state === 'open' ? 'flex' : 'none');
+      expect(before.position).toBe(width < 768 ? 'absolute' : 'relative');
+      expect(before.minContentWidth.trim()).toBe('20rem');
+      await page.addStyleTag({ content: unstyledCss });
+      expect(await read()).toEqual(before);
+      await expect(panel.locator('input')).toHaveCount(1);
+      if (state === 'open') {
+        await expect(panel.locator('input')).toBeVisible();
+        await expect(panel).toHaveCSS('border-inline-end-width', '0px');
+      }
+    });
+  }
+}
+
+for (const width of [390, 1280]) {
   for (const right of ['collapsed', 'expanded']) {
     test(`styleless shell preserves regions, drawers and sheets at ${width}px (${right})`, async ({
       page,

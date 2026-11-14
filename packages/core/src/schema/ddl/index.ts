@@ -115,6 +115,7 @@ export function detectEngine(url: string, type?: string): DatabaseEngine {
         // structurally (exportTable) or request the `json` strategy directly.
         return 'duckdb';
       case 'postgres':
+      case 'pglite':
       case 'postgresql':
       case 'pg':
         return 'postgres';

@@ -7,6 +7,7 @@ import { defineConfig } from 'vitest/config';
 // the consumer's viewpoint.
 export default defineConfig({
   test: {
+    globalSetup: ['../vitest/src/test-home.global-setup.ts'],
     globals: true,
     environment: 'node',
     include: ['src/__tests__/**/*.spec.ts'],

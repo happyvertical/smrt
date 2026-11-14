@@ -6,6 +6,7 @@ export default defineConfig({
     alias: getWorkspaceViteAliases(__dirname),
   },
   test: {
+    globalSetup: ['../vitest/src/test-home.global-setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,mts}'],
     exclude: [
       '**/node_modules/**',

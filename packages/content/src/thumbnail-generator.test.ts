@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -37,6 +38,26 @@ vi.mock('@happyvertical/smrt-images', () => ({
 import { ThumbnailGenerator } from './thumbnail-generator';
 
 describe('ThumbnailGenerator', () => {
+  it('imports published content without loading unused AI or image SDKs', () => {
+    const child = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `import { registerHooks } from 'node:module';
+registerHooks({ resolve(specifier, context, next) {
+  if (specifier === 'sharp' || specifier === '@happyvertical/images' || specifier === '@happyvertical/ai') throw new Error('image processor loaded at boot');
+  return next(specifier, context);
+} });
+const content = await import(${JSON.stringify(new URL('../dist/index.js', import.meta.url).href)});
+if (typeof content.Content !== 'function' || typeof content.ThumbnailGenerator !== 'function') process.exit(2);
+`,
+      ],
+      { encoding: 'utf8', timeout: 30_000 },
+    );
+    expect(child.status, child.stderr).toBe(0);
+  });
+
   beforeEach(() => {
     imageSaveMock.mockResolvedValue(undefined);
     // Real `SmrtCollection.create()` persists the row itself (calls save), so

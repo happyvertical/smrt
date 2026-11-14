@@ -1,6 +1,8 @@
 {
   "$schema": "https://turborepo.com/schema.json",
-  "extends": ["//"],
+  "extends": [
+    "//"
+  ],
   "tasks": {
     "test": {
       "dependsOn": [
@@ -10,6 +12,13 @@
         "@happyvertical/smrt-inventory#build",
         "@happyvertical/smrt-ledgers#build",
         "@happyvertical/smrt-products#build"
+      ]
+    },
+    "build": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "../template-sveltekit/template/**",
+        "../template-sveltekit/cookbook-template/**"
       ]
     }
   }

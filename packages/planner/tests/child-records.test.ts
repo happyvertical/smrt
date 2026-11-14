@@ -36,6 +36,35 @@ const names = (id: string) =>
   childLinks(catalog, recipes, id).map((l) => `${l.model.name}.${l.fk}`);
 
 describe('childLinks', () => {
+  it('does not make a classification lookup own its referencing records', () => {
+    expect(names('@happyvertical/smrt-profiles:ProfileType')).toEqual([]);
+  });
+
+  it('keeps genuine dependent metadata under a classification lookup', () => {
+    const fixture = structuredClone(catalog);
+    const profiles = fixture.packages.find((pkg) => pkg.id === 'profiles');
+    const metadata = profiles?.models.find(
+      (model) => model.name === 'ProfileMetadata',
+    );
+    const field = metadata?.fields.find((field) => field.name === 'profileId');
+    if (!metadata || !field)
+      throw new Error('ProfileMetadata fixture is missing');
+    field.related = 'ProfileType';
+    const type = '@happyvertical/smrt-profiles:ProfileType';
+    expect(
+      childLinks(
+        fixture,
+        [
+          {
+            models: [type, '@happyvertical/smrt-profiles:Profile', metadata.id],
+            nav: [],
+          },
+        ],
+        type,
+      ).map((link) => link.model.id),
+    ).toEqual([metadata.id]);
+  });
+
   it('puts line items under every Contract subtype', () => {
     for (const parent of [
       'Agreement',

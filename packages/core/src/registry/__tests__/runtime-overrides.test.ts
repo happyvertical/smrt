@@ -3,6 +3,7 @@ import { MCPGenerator } from '../../generators/mcp';
 import { isApiActionEnabledForObject } from '../../generators/preflight-route';
 import { SmrtObject } from '../../object';
 import { ObjectRegistry } from '../../registry';
+import { registerRuntimeModel } from '../../runtime-model.js';
 import type { SmartObjectDefinition } from '../../scanner/types.js';
 
 const key = '@fixture/runtime:OverrideRecord';
@@ -50,6 +51,70 @@ function entry(
 afterEach(() => ObjectRegistry.clear());
 
 describe('consumer runtime overrides', () => {
+  it('never reopens a consumer policy tightened during a registration transaction', () => {
+    ObjectRegistry.registerFromManifest(key, entry());
+    const rollback = ObjectRegistry.checkpointRegistrations([key]);
+    ObjectRegistry.registerOverride(key, closed);
+    rollback();
+    expect(ObjectRegistry.getClass(key)?.config).toMatchObject({
+      api: false,
+      mcp: false,
+      cli: false,
+    });
+    expect(ObjectRegistry.getTenantScopedConfig(key)?.mode).toBe('required');
+  });
+  it('rolls back a scoped runtime replacement without losing policy, lineage or unrelated classes', () => {
+    ObjectRegistry.registerFromManifest(key, entry());
+    ObjectRegistry.registerOverride(key, closed);
+    const rollback = ObjectRegistry.checkpointRegistrations([
+      key,
+      '@fixture/consumer:OverrideRecord',
+    ]);
+    registerRuntimeModel(
+      {
+        name: 'OverrideRecord',
+        packageName: '@fixture/consumer',
+        extends: key,
+        replaces: true,
+        fields: { staged: { type: 'text' } },
+      },
+      { refresh: true },
+    );
+    expect(ObjectRegistry.getFields(key).has('staged')).toBe(true);
+    class Unrelated extends SmrtObject {}
+    ObjectRegistry.register(Unrelated, {
+      packageName: '@fixture/unrelated',
+      tableName: 'unrelated',
+    });
+    rollback();
+    expect(ObjectRegistry.getClass(key)?.qualifiedName).toBe(key);
+    expect(
+      ObjectRegistry.getClass('@fixture/consumer:OverrideRecord'),
+    ).toBeUndefined();
+    expect(ObjectRegistry.getFields(key).has('staged')).toBe(false);
+    expect(
+      ObjectRegistry.getClass('@fixture/unrelated:Unrelated')?.constructor,
+    ).toBe(Unrelated);
+    expect(ObjectRegistry.getClass(key)?.config).toMatchObject({
+      api: false,
+      mcp: false,
+      cli: false,
+    });
+    expect(ObjectRegistry.getTenantScopedConfig(key)?.mode).toBe('required');
+    registerRuntimeModel(
+      {
+        name: 'OverrideRecord',
+        packageName: '@fixture/consumer',
+        extends: key,
+        replaces: true,
+        fields: { retry: { type: 'text' } },
+      },
+      { refresh: true },
+    );
+    expect(ObjectRegistry.getFields(key).has('retry')).toBe(true);
+    expect(isApiActionEnabledForObject(key, 'create')).toBe(false);
+    expect(ObjectRegistry.getFields(key).has('staged')).toBe(false);
+  });
   for (const path of ['runtime', 'manifest'] as const) {
     it(`closes every generated operation without a second registration (${path})`, async () => {
       const ctor = model();

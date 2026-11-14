@@ -352,9 +352,10 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
     );
     // The REAL core engine, so the generated authorize() closure is exercised
     // exactly as a consumer's bundle runs it.
-    const coreEntry = join(
-      dirname(fileURLToPath(import.meta.url)),
-      '../sync/apply.ts',
+    const coreEntry = join(projectRoot, 'core-entry.ts');
+    writeFileSync(
+      coreEntry,
+      `export * from ${JSON.stringify(fileURLToPath(new URL('../sync/apply.ts', import.meta.url)))}; export * from ${JSON.stringify(fileURLToPath(new URL('../runtime-exposure.ts', import.meta.url)))};`,
     );
     const outFile = join(projectRoot, 'route.mjs');
     await build({

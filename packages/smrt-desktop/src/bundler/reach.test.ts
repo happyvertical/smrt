@@ -358,6 +358,7 @@ describe('files a reached module refers to', () => {
     );
     expect(rel).toEqual([
       'a/assets/site.css',
+      'a/index.js',
       'a/notes.json',
       'a/test/setup.js',
       'a/views/page.html',
@@ -407,7 +408,7 @@ describe('files a reached module refers to', () => {
       'helper.json': '{}',
     });
     const report = await scan(['a'], []);
-    expect(report.protectedPaths).toEqual([]);
+    expect(report.protectedPaths).toEqual([join(modules, 'a/index.js')]);
   });
 
   it('extracts only literal module-relative asset paths', () => {

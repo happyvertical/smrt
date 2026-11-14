@@ -1,12 +1,44 @@
 /** Qualified manifest lineage outlives registrations replaced by descendants. */
 
 import { ConfigurationError } from '../errors';
+import { getRegistryGeneration } from './generation';
 import { transferRuntimeOverride } from './runtime-overrides';
 import { getClasses, getInheritanceCache } from './shared-state';
 import type { RegisteredClass } from './types';
 
 declare global {
   var __smrtSubtypeParents: Map<string, string> | undefined;
+  var __smrtReplacedDeclarations: Map<string, RegisteredClass> | undefined;
+}
+/** Keep declared bases for inheritance; I/O resolves their effective replacement. */
+export function replacedDeclarations(): Map<string, RegisteredClass> {
+  globalThis.__smrtReplacedDeclarations ??= new Map();
+  return globalThis.__smrtReplacedDeclarations;
+}
+export function retainReplacedDeclaration(
+  key: string,
+  entry: RegisteredClass,
+): void {
+  replacedDeclarations().set(key, {
+    ...entry,
+    fields: new Map(entry.fields),
+    methods: new Map(entry.methods),
+  });
+}
+let replacementGeneration = -1;
+let replacementIndex = new Map<string, RegisteredClass>();
+export function findReplacement(key: string): RegisteredClass | undefined {
+  const generation = getRegistryGeneration();
+  if (generation !== replacementGeneration) {
+    replacementIndex = new Map();
+    for (const entry of getClasses().values()) {
+      for (const previous of entry.replacedQualifiedNames ?? []) {
+        replacementIndex.set(previous, entry);
+      }
+    }
+    replacementGeneration = generation;
+  }
+  return replacementIndex.get(key);
 }
 function parents(): Map<string, string> {
   globalThis.__smrtSubtypeParents ??= new Map();
@@ -14,6 +46,25 @@ function parents(): Map<string, string> {
 }
 export function clearSubtypeLineage(): void {
   parents().clear();
+  replacedDeclarations().clear();
+}
+
+/** Roll back only the edited identities, retaining unrelated registrations. */
+export function checkpointSubtypeLineage(
+  names: ReadonlySet<string>,
+): () => void {
+  const links = new Map([...names].map((name) => [name, parents().get(name)]));
+  const declarations = new Map(
+    [...names].map((name) => [name, replacedDeclarations().get(name)]),
+  );
+  return () => {
+    for (const [name, parent] of links)
+      if (parent) parents().set(name, parent);
+      else parents().delete(name);
+    for (const [name, declaration] of declarations)
+      if (declaration) replacedDeclarations().set(name, declaration);
+      else replacedDeclarations().delete(name);
+  };
 }
 export function recordSubtypeParent(
   name: string,
@@ -40,9 +91,18 @@ export function isSubtypeOf(child: string, ancestor: string): boolean {
 }
 /** Late intermediate manifests can connect a previously disjoint parent/leaf. */
 export function reconcileSubtypeLineage(): void {
+  if (parents().size === 0) return;
   const classes = getClasses();
+  // Only a recorded child can replace a parent. Avoid allocating a group for
+  // every unrelated class on every registration in a large cookbook.
+  const names = new Set<string>();
+  for (const key of parents().keys()) {
+    const child = classes.get(key);
+    if (child) names.add(child.name);
+  }
   const groups = new Map<string, Array<[string, RegisteredClass]>>();
   for (const pair of classes) {
+    if (!names.has(pair[1].name)) continue;
     const group = groups.get(pair[1].name) ?? [];
     group.push(pair);
     groups.set(pair[1].name, group);
@@ -68,6 +128,7 @@ export function reconcileSubtypeLineage(): void {
           ]),
         ];
         transferRuntimeOverride(parentKey, childKey);
+        retainReplacedDeclaration(parentKey, parent);
         classes.delete(parentKey);
         getInheritanceCache().clear();
         child.inheritanceChain = undefined;

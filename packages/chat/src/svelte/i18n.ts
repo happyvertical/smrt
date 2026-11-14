@@ -12,6 +12,19 @@
 import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
+  'chat.approval.approve': 'Approve',
+  'chat.approval.review_change': 'Review this change',
+  'chat.assistant_dock.review_action': 'Review this action',
+  'chat.approval.deny': 'Deny',
+  'chat.approval.pending': 'Waiting for your approval',
+  'chat.approval.approved': 'Approved',
+  'chat.approval.denied': 'Denied. The tool did not run.',
+  'chat.approval.expired': 'Expired. The tool did not run.',
+  'chat.approval.executing': 'Approved. Running…',
+  'chat.approval.succeeded': 'Approved and completed',
+  'chat.approval.failed': 'The approved tool failed',
+  'chat.approval.error': 'Could not update this approval. Try again.',
+  'chat.approval.unavailable': 'Approval controls are unavailable.',
   // Character conversation workbench
   'chat.character_conversation.saved_conversation':
     'Saved character conversation',
@@ -103,6 +116,7 @@ export const M = defineMessages({
     'There is not a conversation available for this workspace yet.',
   // Streamed turns and browser tools (#2908)
   'chat.assistant_dock.stop': 'Stop',
+  'chat.assistant_dock.resume_design': 'Resume',
   'chat.assistant_dock.tool_request_title': 'The assistant wants to do this:',
   'chat.assistant_dock.choices_pick': 'Pick one to use it.',
   'chat.assistant_dock.choices_none': 'None of these',

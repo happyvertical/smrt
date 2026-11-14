@@ -1,3 +1,4 @@
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import {
   assertTenantReadAllowed,
   getCurrentTenant,
@@ -6,40 +7,18 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import { getCachedFieldPolicy, setCachedFieldPolicy } from './cache.js';
 import { FieldPolicyCollection } from './collections/FieldPolicyCollection.js';
-import {
-  buildCodeSeedDelta,
-  buildCodeSeedVisibility,
-  type FieldDefinitionMap,
-  getCodeSeedGroup,
-  getObjectFieldMap,
-  isPolicyAddressableField,
-  isRequiredField,
-  isUsableRequiredDefault,
-} from './field-definitions.js';
+import { getObjectFieldMap } from './field-definitions.js';
 import type { FieldPolicy } from './models/FieldPolicy.js';
+import { cookbookPolicyLayers, resolveFieldPolicyLayers } from './policy.js';
 import type {
   ExplainedObjectFieldPolicy,
-  FieldPolicyDelta,
-  FieldPolicyLayerContribution,
   FieldPolicyTenantHierarchyProvider,
   FieldPolicyTenantNode,
   FieldPolicyUsersModule,
-  FieldPolicyVisibility,
-  ResolvedFieldPolicy,
   ResolvedObjectFieldPolicy,
   ResolveFieldPolicyOptions,
   SmrtClassOptions,
 } from './types.js';
-
-/** Accumulated merge state for one field while layers apply. */
-interface MergedPolicyState {
-  default?: { value: unknown };
-  visibility: FieldPolicyVisibility;
-  help?: string;
-  label?: string;
-  order?: number;
-  locked?: boolean;
-}
 
 /**
  * Resolve the merged field policy for `objectRef` in the given
@@ -100,7 +79,8 @@ export async function resolveFieldPolicyExplained(
   // unknown refs throw before the cache is consulted.
   const fieldMap = await getObjectFieldMap(objectRef);
 
-  const hasExcludedRows = (options.excludePolicyIds?.size ?? 0) > 0;
+  const hasExcludedRows =
+    (options.excludePolicyIds?.size ?? 0) > 0 || options.cookbook !== undefined;
   if (!hasExcludedRows) {
     const cached = getCachedFieldPolicy(
       objectRef,
@@ -113,9 +93,6 @@ export async function resolveFieldPolicyExplained(
       return cached;
     }
   }
-
-  const policyFields = selectPolicyAddressableFields(fieldMap);
-  const codeVisibility = buildCodeSeedVisibility(fieldMap);
 
   const appRows = collection
     ? await collection.getAppRows(objectRef)
@@ -143,89 +120,33 @@ export async function resolveFieldPolicyExplained(
       ? await collection.getUserRows(objectRef, userId)
       : new Map<string, FieldPolicy>();
 
-  const fields: Record<string, ResolvedFieldPolicy> = {};
-  const layers: Record<string, FieldPolicyLayerContribution[]> = {};
-
-  for (const [fieldName, fieldDef] of policyFields) {
-    const contributions: FieldPolicyLayerContribution[] = [];
-
-    const codeDelta = buildCodeSeedDelta(
-      fieldDef,
-      codeVisibility.get(fieldName) ?? 'basic',
+  const included = (rows: ReadonlyMap<string, FieldPolicy>) =>
+    new Map(
+      [...rows].filter(
+        ([, row]) => !options.excludePolicyIds?.has(String(row.id)),
+      ),
     );
-    contributions.push({ layer: 'code', delta: codeDelta });
-
-    let state: MergedPolicyState = applyDelta(
-      { visibility: 'basic' },
-      codeDelta,
-    );
-
-    const appRow = appRows.get(fieldName);
-    if (appRow && !options.excludePolicyIds?.has(String(appRow.id))) {
-      const delta = rowToDelta(appRow);
-      contributions.push({ layer: 'app', delta });
-      state = applyDelta(state, delta);
-    }
-
-    // Tenant chain walk, root → leaf, over the surviving suffix only (nodes
-    // before the last permission-inheritance break contribute nothing — see
-    // selectSurvivingChainSuffix). Equivalent to smrt-features' baseline
-    // walk, but the explained contributions never list discarded ancestors.
-    for (const node of survivingChain) {
-      const row = tenantRows.get(node.id)?.get(fieldName);
-      if (row && !options.excludePolicyIds?.has(String(row.id))) {
-        const delta = rowToDelta(row);
-        contributions.push({ layer: 'tenant', tenantId: node.id, delta });
-        state = applyDelta(state, delta);
-      }
-    }
-
-    // Org lock: when the code/app/tenant tiers resolve locked, the user tier
-    // is skipped entirely — a stale user row cannot bypass a later lock.
-    const orgLocked = state.locked === true;
-    const userRow = userId ? userRows.get(fieldName) : undefined;
-    if (
-      userRow &&
-      !options.excludePolicyIds?.has(String(userRow.id)) &&
-      !orgLocked
-    ) {
-      const delta = rowToDelta(userRow);
-      contributions.push({ layer: 'user', userId: userId as string, delta });
-      state = applyDelta(state, delta);
-    }
-
-    // Resolver-side required-field safety net: a required field with no
-    // usable resolved default is ALWAYS visible, regardless of stored
-    // visibility — write-time enforcement alone breaks when a DIFFERENT row's
-    // deletion removes the default a demotion relied on.
-    const required = isRequiredField(fieldDef);
-    let visibilityForced = false;
-    if (
-      required &&
-      !isUsableRequiredDefault(state.default) &&
-      state.visibility !== 'basic'
-    ) {
-      state = { ...state, visibility: 'basic' };
-      visibilityForced = true;
-    }
-
-    fields[fieldName] = {
-      fieldName,
-      hasDefault: state.default !== undefined,
-      defaultValue: state.default?.value,
-      visibility: state.visibility,
-      help: state.help ?? null,
-      label: state.label ?? null,
-      order: state.order ?? null,
-      group: getCodeSeedGroup(fieldDef),
-      locked: state.locked === true,
-      required,
-      ...(visibilityForced ? { visibilityForced: true } : {}),
-    };
-    layers[fieldName] = contributions;
-  }
-
-  const explained: ExplainedObjectFieldPolicy = { objectRef, fields, layers };
+  const effectiveModel = ObjectRegistry.getExposureModel(objectRef);
+  const explained = resolveFieldPolicyLayers(objectRef, fieldMap, [
+    { layer: 'app', rows: included(appRows) },
+    ...(options.cookbook
+      ? cookbookPolicyLayers(
+          {
+            objectRef: effectiveModel?.qualifiedName ?? objectRef,
+            replacedQualifiedNames: effectiveModel?.replacedQualifiedNames,
+          },
+          options.cookbook,
+        )
+      : []),
+    ...survivingChain.map((node) => ({
+      layer: 'tenant' as const,
+      tenantId: node.id,
+      rows: included(tenantRows.get(node.id) ?? new Map()),
+    })),
+    ...(userId
+      ? [{ layer: 'user' as const, userId, rows: included(userRows) }]
+      : []),
+  ]);
   if (!hasExcludedRows) {
     setCachedFieldPolicy(
       objectRef,
@@ -282,68 +203,6 @@ function assertResolutionAllowedInContext(
       { tenantId: context.tenantId },
     );
   }
-}
-
-/**
- * Fields that participate in policy resolution: everything except injected
- * framework system fields, relationship pseudo-fields, and STI meta
- * internals (matching the exclusions of the generated web field definitions).
- */
-function selectPolicyAddressableFields(
-  fieldMap: FieldDefinitionMap,
-): FieldDefinitionMap {
-  const selected: FieldDefinitionMap = new Map();
-  for (const [name, field] of fieldMap) {
-    if (isPolicyAddressableField(field)) {
-      selected.set(name, field);
-    }
-  }
-  return selected;
-}
-
-/** A stored row's sparse contribution (NULL columns contribute nothing). */
-function rowToDelta(row: FieldPolicy): FieldPolicyDelta {
-  const delta: FieldPolicyDelta = {};
-
-  if (row.defaultValue !== null && row.defaultValue !== undefined) {
-    try {
-      delta.default = { value: JSON.parse(row.defaultValue) };
-    } catch {
-      // Unparseable stored JSON (should be prevented by save-time validation)
-      // contributes nothing rather than poisoning resolution.
-    }
-  }
-  if (row.visibility !== null && row.visibility !== undefined) {
-    delta.visibility = row.visibility;
-  }
-  if (row.help !== null && row.help !== undefined) {
-    delta.help = row.help;
-  }
-  if (row.label !== null && row.label !== undefined) {
-    delta.label = row.label;
-  }
-  if (row.displayOrder !== null && row.displayOrder !== undefined) {
-    delta.order = row.displayOrder;
-  }
-  if (row.locked !== null && row.locked !== undefined) {
-    delta.locked = row.locked;
-  }
-
-  return delta;
-}
-
-function applyDelta(
-  state: MergedPolicyState,
-  delta: FieldPolicyDelta,
-): MergedPolicyState {
-  return {
-    default: delta.default ?? state.default,
-    visibility: delta.visibility ?? state.visibility,
-    help: delta.help ?? state.help,
-    label: delta.label ?? state.label,
-    order: delta.order ?? state.order,
-    locked: delta.locked ?? state.locked,
-  };
 }
 
 /**

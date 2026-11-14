@@ -1,45 +1,41 @@
 // The model seam. The turn loop talks to an `AssistantModel`; production wraps
 // an `@happyvertical/ai` client built from the configured API key (config.ts),
 // tests inject a stub through the factory so nothing ever reaches a network.
-import type { AIMessage, AITool, AIToolCall } from '@happyvertical/ai';
+import type { AssistantEngineId } from '../../assistant/events.ts';
+import {
+  CHATGPT_SETTINGS_HREF,
+  CHATGPT_TOOL_NAMESPACE,
+  chatgptConnection,
+} from '../chatgpt.ts';
 import type { Principal } from '../owner.ts';
 import type { AssistantConfigOptions } from './config.ts';
-import { assertApiKeyOptions, resolveAssistantOptions } from './config.ts';
+import {
+  assertApiKeyOptions,
+  resolveAssistantOptions,
+  resolveChatGPTAssistantModel,
+} from './config.ts';
 
-/** One call the model asked for. */
-export interface ModelToolCall {
-  id: string;
-  name: string;
-  /** JSON text, as the provider sent it. */
-  arguments: string;
-}
+export {
+  type EngineModel as AssistantModel,
+  EngineModelFailure as ModelFailure,
+  type EngineModelReply as ModelReply,
+  type EngineModelRequest as ModelRequest,
+  type EngineModelToolCall as ModelToolCall,
+} from '@happyvertical/smrt-inference/server';
 
-export interface ModelRequest {
-  messages: AIMessage[];
-  tools: AITool[];
-  maxTokens: number;
-  /** Aborts on client disconnect, the per-call timeout or the turn timeout. */
-  signal: AbortSignal;
-  /** Called with reply text as it arrives (may never be called). */
-  onText(delta: string): void;
-}
+import {
+  type EngineModel as AssistantModel,
+  createChatGPTModel,
+  engineModelReply as toolCallsOf,
+} from '@happyvertical/smrt-inference/server';
 
-export interface ModelReply {
-  text: string;
-  toolCalls: ModelToolCall[];
-  /** Total tokens the call used, when the provider reports it. */
-  totalTokens?: number;
-  /** Provider tool-call records, replayed verbatim on the next step. */
-  raw?: AIToolCall[];
-}
-
-export interface AssistantModel {
-  complete(request: ModelRequest): Promise<ModelReply>;
-}
-
-/** Builds the model for a turn. The principal is the verified owner. */
+/**
+ * Builds the model for a turn. The principal is the verified owner; `engine`
+ * is the owner's choice (`chatgpt` or, by default, the API key).
+ */
 export type AssistantModelFactory = (context: {
   principal: Principal;
+  engine?: AssistantEngineId;
 }) => Promise<AssistantModel>;
 
 /**
@@ -50,7 +46,17 @@ export type AssistantModelFactory = (context: {
 export function createAiModelFactory(
   config: AssistantConfigOptions = {},
 ): AssistantModelFactory {
-  return async ({ principal }) => {
+  return async ({ principal, engine }) => {
+    if (engine === 'chatgpt') {
+      const connection = await chatgptConnection();
+      const model = await resolveChatGPTAssistantModel(principal, config);
+      return createChatGPTModel({
+        connection,
+        model,
+        toolNamespace: CHATGPT_TOOL_NAMESPACE,
+        settingsHref: CHATGPT_SETTINGS_HREF,
+      });
+    }
     const options = await resolveAssistantOptions(principal, config);
     assertApiKeyOptions(options);
     const { getAI } = await import('@happyvertical/ai');
@@ -65,18 +71,7 @@ export function createAiModelFactory(
           stream: true,
           onProgress: request.onText,
         });
-        return {
-          text: response.content ?? '',
-          toolCalls: (response.toolCalls ?? []).map((c) => ({
-            id: c.id,
-            name: c.function.name,
-            arguments: c.function.arguments,
-          })),
-          ...(response.usage?.totalTokens !== undefined
-            ? { totalTokens: response.usage.totalTokens }
-            : {}),
-          ...(response.toolCalls ? { raw: response.toolCalls } : {}),
-        };
+        return toolCallsOf(response);
       },
     };
   };

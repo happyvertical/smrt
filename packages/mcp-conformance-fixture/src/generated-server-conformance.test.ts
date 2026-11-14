@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
 import { ManifestBuilder } from '@happyvertical/smrt-core/manifest';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
+import { testHomeEnvironment } from '@happyvertical/smrt-vitest/test-home';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import {
@@ -94,6 +95,7 @@ beforeAll(async () => {
   await generator.generateServer({ outputPath: generatedPath });
 
   const transport = new StdioClientTransport({
+    env: testHomeEnvironment(),
     command: tsxBin,
     args: [generatedPath],
     cwd: generatedAppDir,
@@ -301,6 +303,7 @@ describe('generated Tier-1 MCP 2026-07-28 conformance', () => {
       cwd: generatedAppDir,
       stderr: 'pipe',
       env: {
+        ...testHomeEnvironment(),
         DATABASE_TYPE: 'sqlite',
         DATABASE_URL: generatedDatabasePath,
       },

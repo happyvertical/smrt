@@ -3,6 +3,7 @@ import type {
   CookbookPolicyRow,
   CookbookTheme,
 } from '@happyvertical/smrt-types';
+import { cookbookModelCatalog } from '../models.js';
 import {
   COOKBOOK_SCHEMA_URL,
   COOKBOOK_VERSION,
@@ -45,6 +46,7 @@ export const emptyCookbook = (): Cookbook => ({
 /** Does the document hold nothing yet (so replacing it needs no say-so)? */
 export function isEmptyCookbook(doc: Cookbook): boolean {
   return (
+    !doc.models &&
     !doc.recipes.length &&
     !doc.features.length &&
     !doc.policies.length &&
@@ -76,6 +78,7 @@ export function canonical(doc: Cookbook): Cookbook {
     'layout',
     'theme',
     'overviews',
+    'models',
   ]);
   const out: Cookbook = {
     $schema: COOKBOOK_SCHEMA_URL,
@@ -93,6 +96,29 @@ export function canonical(doc: Cookbook): Cookbook {
       )
       .map((row) => ({ ...row })),
   };
+  if (doc.models) {
+    const orderedFields = (fields: (typeof doc.models.fields)[string]) =>
+      Object.fromEntries(
+        Object.entries(fields).sort(([a], [b]) => a.localeCompare(b)),
+      );
+    out.models = {
+      version: 1,
+      packageName: doc.models.packageName,
+      lists: Object.fromEntries(
+        Object.entries(doc.models.lists)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([name, list]) => [
+            name,
+            { ...clone(list), fields: orderedFields(list.fields) },
+          ]),
+      ),
+      fields: Object.fromEntries(
+        Object.entries(doc.models.fields)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([name, fields]) => [name, orderedFields(fields)]),
+      ),
+    };
+  }
   const exposure = Object.fromEntries(
     Object.keys(doc.exposure ?? {})
       .sort()
@@ -521,6 +547,7 @@ export function diagnose(
   catalog: EngineCatalog,
   input: Cookbook,
 ): Diagnostic[] {
+  catalog = cookbookModelCatalog(catalog, input.models);
   const out: Diagnostic[] = [];
   const add = (
     severity: Diagnostic['severity'],

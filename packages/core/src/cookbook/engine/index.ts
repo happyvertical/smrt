@@ -6,7 +6,12 @@
  */
 export * from './commands.js';
 export * from './defaults.js';
-export { canonical, diagnose, isEmptyCookbook } from './document.js';
+export {
+  canonical,
+  coveredModels,
+  diagnose,
+  isEmptyCookbook,
+} from './document.js';
 export * from './engine.js';
 export { buildNav, navItemId } from './nav.js';
 export * from './schemas.js';

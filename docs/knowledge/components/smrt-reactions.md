@@ -5,7 +5,7 @@ description: "Tenant-scoped reactions and lightweight polls with shared particip
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-10T22:32:35Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:6a2cfcba071d8e3d9b95655edac1b6190122f94d55f24b87df53680ffa7e783b"

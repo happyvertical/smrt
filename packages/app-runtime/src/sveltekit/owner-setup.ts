@@ -14,10 +14,12 @@ import {
 } from '@happyvertical/smrt-app-runtime';
 import type { Cookies } from '@sveltejs/kit';
 import { type ActionFailure, fail, redirect } from '@sveltejs/kit';
+import { OWNER_LINK_SECRET_ENV } from './owner-link.js';
 import type { SmrtSvelteKitRuntime } from './runtime.js';
 
 /** Data returned by the setup page `load`. */
 export interface OwnerSetupPageData {
+  readonly launchMode?: 'desktop' | 'cli';
   /** False when setup is claimed, disabled (deployed), or not loopback. */
   readonly available: boolean;
   /** One-time token from `?token=` (empty unless available). */
@@ -74,7 +76,7 @@ export const DEFAULT_OWNER_SETUP_MESSAGES: Readonly<
   setup_unavailable: 'Local owner setup is available only from this device.',
   setup_invalid_input: 'Name, email, and a valid setup token are required.',
   setup_invalid:
-    'The setup invitation is invalid, expired, or already used. Run pnpm app:stop, pnpm app:recover, pnpm app:start, then pnpm app:open.',
+    'The setup invitation is invalid, expired, or already used. Reopen the desktop app, or run smrt app stop before smrt app recover, smrt app start, and smrt app open from the app folder.',
   setup_conflict:
     'A workspace with the configured owner tenant slug already exists. Configure ownerTenant with another slug or adoptExisting.',
 });
@@ -151,7 +153,18 @@ export function createOwnerSetupPage(
   options: OwnerSetupPageOptions = {},
 ): OwnerSetupPage {
   const redirectTo = options.redirectTo ?? '/';
-  const messages = { ...DEFAULT_OWNER_SETUP_MESSAGES, ...options.messages };
+  const messages = {
+    ...DEFAULT_OWNER_SETUP_MESSAGES,
+    ...(process.env[OWNER_LINK_SECRET_ENV]
+      ? {
+          setup_invalid:
+            'This sign-in link is no longer valid. Quit and reopen the app.',
+          setup_conflict:
+            'A workspace for this app already exists. Quit and reopen the app.',
+        }
+      : {}),
+    ...options.messages,
+  };
   const failure = (status: number, code: OwnerSetupErrorCode) =>
     fail(status, { code, message: messages[code] } as OwnerSetupFailure);
   const resolveUser =
@@ -159,22 +172,26 @@ export function createOwnerSetupPage(
     ((event: OwnerSetupEvent) => (event.locals as { user?: unknown }).user);
 
   const load = async (event: OwnerSetupEvent): Promise<OwnerSetupPageData> => {
+    const launch = process.env[OWNER_LINK_SECRET_ENV]
+      ? { launchMode: 'desktop' as const }
+      : {};
     if (resolveUser(event)) redirect(303, redirectTo);
     const resolved = await runtime.resolvedRuntime();
     if (resolved.profile !== 'local' || !isLoopbackRequest(event)) {
-      return { available: false, token: '', link: 'unavailable' };
+      return { ...launch, available: false, token: '', link: 'unavailable' };
     }
     const local = await runtime.localRuntime();
     const diagnostics = await local.diagnostics();
     const status = diagnostics.bootstrap.status;
-    if (status === 'claimed') {
-      return { available: false, token: '', link: 'unavailable' };
-    }
     const token = event.url.searchParams.get(OWNER_SETUP_FIELDS.token) || '';
+    if (status === 'claimed') {
+      return { ...launch, available: false, token: '', link: 'unavailable' };
+    }
     if (status === 'expired')
-      return { available: true, token: '', link: 'expired' };
-    if (!token) return { available: true, token: '', link: 'missing' };
-    return { available: true, token, link: 'ready' };
+      return { ...launch, available: true, token: '', link: 'expired' };
+    if (!token)
+      return { ...launch, available: true, token: '', link: 'missing' };
+    return { ...launch, available: true, token, link: 'ready' };
   };
 
   const claim = async (

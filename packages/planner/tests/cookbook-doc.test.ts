@@ -69,6 +69,7 @@ describe('parseCookbook', () => {
     expect(result.cookbook.recipes).toEqual([
       'commerce.customers',
       'commerce.sales',
+      'profiles.identity',
     ]);
     expect(result.cookbook.policies).toEqual(valid.policies);
     expect(result.cookbook.exposure).toEqual({ [ORDER]: ['cli'] });
@@ -176,7 +177,11 @@ describe('legacy url migration', () => {
     const bp = cookbookFromLegacySearch(
       `?p=x&r=commerce.sales,bogus&o=${LEGACY_O}`,
     );
-    expect(bp.recipes).toEqual(['commerce.customers', 'commerce.sales']);
+    expect(bp.recipes).toEqual([
+      'commerce.customers',
+      'commerce.sales',
+      'profiles.identity',
+    ]);
     expect(bp.policies).toEqual([
       {
         objectRef: ORDER,
@@ -195,7 +200,7 @@ describe('legacy url migration', () => {
 
   it('survives garbage options', () => {
     const bp = cookbookFromLegacySearch('?r=commerce.vendors&o=%%%');
-    expect(bp.recipes).toEqual(['commerce.vendors']);
+    expect(bp.recipes).toEqual(['commerce.vendors', 'profiles.identity']);
     expect(bp.policies).toEqual([]);
   });
 });
@@ -232,7 +237,11 @@ describe('CookbookStore', () => {
     const fresh = new CookbookStore();
     expect(fresh.hydrate('', storage)).toBe(false);
     expect(fresh.snapshot()).toEqual(saved);
-    expect(recipeState.ids).toEqual(['commerce.customers', 'commerce.sales']);
+    expect(recipeState.ids).toEqual([
+      'commerce.customers',
+      'commerce.sales',
+      'profiles.identity',
+    ]);
   });
 
   it('works in memory with a notice state when storage throws', () => {
@@ -255,7 +264,11 @@ describe('CookbookStore', () => {
     recipeState.clear();
     const migrated = store.hydrate(`?r=commerce.sales&o=${LEGACY_O}`, storage);
     expect(migrated).toBe(true);
-    expect(recipeState.ids).toEqual(['commerce.customers', 'commerce.sales']);
+    expect(recipeState.ids).toEqual([
+      'commerce.customers',
+      'commerce.sales',
+      'profiles.identity',
+    ]);
     expect(
       JSON.parse(storage.data.get(STORAGE_KEY) ?? '').policies,
     ).toHaveLength(1);
@@ -264,7 +277,11 @@ describe('CookbookStore', () => {
     // A later plain load reads the cookbook and migrates nothing.
     const again = new CookbookStore();
     expect(again.hydrate('', storage)).toBe(false);
-    expect(recipeState.ids).toEqual(['commerce.customers', 'commerce.sales']);
+    expect(recipeState.ids).toEqual([
+      'commerce.customers',
+      'commerce.sales',
+      'profiles.identity',
+    ]);
   });
 
   it('starts empty with a notice when the saved cookbook is unreadable', () => {
@@ -401,6 +418,7 @@ describe('review fixes', () => {
       'commerce.customers',
       'commerce.sales',
       'gone.recipe',
+      'profiles.identity',
     ]);
     expect(
       parseCookbook({ ...valid, recipes: ['commerce.sales', 'gone.recipe'] })

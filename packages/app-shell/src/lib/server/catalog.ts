@@ -15,8 +15,14 @@ import { App } from '../objects/App.ts';
 import { Approval } from '../objects/Approval.ts';
 import { collectIssuedApprovals, type PendingApproval } from './approvals.ts';
 import { runAppTool } from './builder.ts';
-import { getHost, getShellDb, shellDbSync } from './host.ts';
+import { getShellDb, hostFor, shellDbSync } from './host.ts';
 import { runAs } from './owner.ts';
+import {
+  type CallScope,
+  LIVE_SCOPE,
+  type Target,
+  withScope,
+} from './target.ts';
 
 export interface CatalogTool {
   name: string;
@@ -174,9 +180,9 @@ export async function listShellTools(
     }));
 }
 
-/** Tools of the user app, as the running worker generates them. */
-export async function listAppTools(): Promise<CatalogTool[]> {
-  const host = await getHost();
+/** Tools of the user app on one copy, as that copy's running worker generates them. */
+export async function listAppTools(target: Target): Promise<CatalogTool[]> {
+  const host = await hostFor(target);
   return (await host.appTools()).map((t) => ({
     name: t.name,
     description: t.description,
@@ -187,13 +193,21 @@ export async function listAppTools(): Promise<CatalogTool[]> {
   }));
 }
 
-/** Everything, shell first; an app tool never shadows a shell tool. */
+/**
+ * Everything, shell first; an app tool never shadows a shell tool. The app's
+ * tools are those of the copy `scope.records` names (a draft can have models
+ * live does not). Builder tools are the same for both copies; which copy they
+ * change is `scope.structure`, applied at dispatch.
+ */
 export async function listCatalog(
   principal: McpAppPrincipal,
+  scope: CallScope = LIVE_SCOPE,
 ): Promise<CatalogTool[]> {
   const shell = await listShellTools(principal);
   const taken = new Set(shell.map((t) => t.name));
-  const app = (await listAppTools()).filter((t) => !taken.has(t.name));
+  const app = (await listAppTools(scope.records)).filter(
+    (t) => !taken.has(t.name),
+  );
   return [...shell, ...app].sort((a, b) => (a.name < b.name ? -1 : 1));
 }
 
@@ -201,14 +215,18 @@ function asText(value: unknown): { type: 'text'; text: string }[] {
   return [{ type: 'text', text: JSON.stringify(value) }];
 }
 
-/** Dispatch a call to the half that owns `name`. Authorize BEFORE calling. */
+/**
+ * Dispatch a call to the half that owns `name`, on the copies `scope` names.
+ * Authorize BEFORE calling.
+ */
 export async function dispatchTool(
   principal: McpAppPrincipal & { id: string },
   tool: CatalogTool,
   args: Record<string, unknown>,
+  scope: CallScope = LIVE_SCOPE,
 ): Promise<CatalogResponse> {
   const { value, issued } = await collectIssuedApprovals(() =>
-    dispatchInner(principal, tool, args),
+    dispatchInner(principal, tool, args, scope),
   );
   return issued.length ? { ...value, pending: issued[0] } : value;
 }
@@ -217,22 +235,26 @@ async function dispatchInner(
   principal: McpAppPrincipal & { id: string },
   tool: CatalogTool,
   args: Record<string, unknown>,
+  scope: CallScope,
 ): Promise<CatalogResponse> {
   if (tool.side === 'shell') {
     await getShellDb();
     // The model methods check the owner from the async scope's tenant
     // context; run them as the very principal that was authorized.
-    return runAs(
-      { id: principal.id, tenantId: principal.tenantId ?? '' },
-      async () =>
-        (await shellMcpServer().callTool({
-          name: tool.name,
-          arguments: args,
-          principal,
-        })) as CatalogResponse,
+    // The builder methods read the copy from the scope entered here.
+    return runAs({ id: principal.id, tenantId: principal.tenantId ?? '' }, () =>
+      withScope(
+        scope,
+        async () =>
+          (await shellMcpServer().callTool({
+            name: tool.name,
+            arguments: args,
+            principal,
+          })) as CatalogResponse,
+      ),
     );
   }
-  const out = await runAppTool(tool.name, args, principal.id);
+  const out = await runAppTool(tool.name, args, principal.id, scope.records);
   if (
     out &&
     typeof out === 'object' &&

@@ -59,6 +59,135 @@ const descriptor: DataSurfaceDescriptor = {
 };
 
 describe('AssistantDock (mounted component)', () => {
+  it.each([
+    'running',
+    'stopped',
+    'failed',
+    'done',
+  ] as const)('renders durable %s controls without offering unsupported resume', async (status) => {
+    const transport = createInMemoryAssistantTransport();
+    await transport.createThread('Design');
+    const read = vi.fn(async () => ({
+      runId: 'design',
+      pass: { index: 1, count: 2, name: 'Shape the plan' },
+      status,
+    }));
+    transport.designRun = read;
+    transport.stopDesignRun = vi.fn(async () => undefined);
+    transport.resumeDesignRun = vi.fn(async () => undefined);
+    render(AssistantDock, {
+      props: {
+        transport,
+        registry: createDataSurfaceRegistry(),
+        contextMode: 'server',
+        conversations: 'single',
+      },
+    });
+    await vi.waitFor(() => expect(read).toHaveBeenCalled());
+    if (status !== 'done')
+      expect(
+        await screen.findByText(/Thinking this through · Shape the plan/),
+      ).toBeVisible();
+    await vi.waitFor(() => {
+      expect(
+        !!screen.queryByRole('button', { name: 'Stop', exact: true }),
+      ).toBe(status === 'running');
+      expect(
+        !!screen.queryByRole('button', { name: 'Resume', exact: true }),
+      ).toBe(status === 'stopped');
+    });
+  });
+
+  it('shows the existing stopped status after cancelling an active tool step', async () => {
+    const transport = createInMemoryAssistantTransport();
+    await transport.createThread('Stop test');
+    let activeSignal: AbortSignal | undefined;
+    transport.sendMessage = async (input) => {
+      activeSignal = input.signal;
+      input.onEvent?.({
+        type: 'step',
+        step: {
+          kind: 'tool_call',
+          callId: 'active-call',
+          tool: 'customers.read',
+          label: 'Looking up members',
+          location: 'server',
+        },
+      });
+      return new Promise((_, reject) => {
+        input.signal?.addEventListener('abort', () =>
+          reject(new DOMException('Stopped', 'AbortError')),
+        );
+      });
+    };
+    render(AssistantDock, {
+      props: {
+        transport,
+        registry: createDataSurfaceRegistry(),
+        contextMode: 'server',
+        conversations: 'single',
+      },
+    });
+    const input = await screen.findByRole('textbox', { name: 'Message' });
+    await vi.waitFor(() => expect(input).toBeEnabled());
+    await userEvent.type(input, 'What lists are in this app?');
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Stop' }));
+    expect(await screen.findByText('Stopped', { exact: true })).toBeVisible();
+    expect(activeSignal?.aborted).toBe(true);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Retry/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Stop' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows one failed-send message with retry and restores the draft', async () => {
+    const transport: AssistantTransport = {
+      async listThreads() {
+        return [
+          {
+            id: 'one',
+            title: 'Conversation',
+            isResolved: false,
+            messageCount: 0,
+          },
+        ];
+      },
+      async loadMessages() {
+        return [];
+      },
+      async sendMessage() {
+        throw new Error(
+          'The local AI could not start. Reference: test-reference',
+        );
+      },
+    };
+    const { container } = render(AssistantDock, {
+      props: {
+        transport,
+        registry: createDataSurfaceRegistry(),
+        contextMode: 'server',
+        conversations: 'single',
+      },
+    });
+    const input = await screen.findByRole('textbox', { name: 'Message' });
+    await vi.waitFor(() => expect(input).toBeEnabled());
+    await userEvent.type(input, 'What lists are in this app?');
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(
+      await screen.findAllByText(/The local AI could not start/),
+    ).toHaveLength(1);
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /Retry/ })).toBeEnabled();
+    expect(input).toHaveValue('What lists are in this app?');
+    expect(container.querySelector('.assistant-composer-error')).toBeNull();
+    expect(container.querySelector('.assistant-dock-error')).toBeNull();
+    await expectNoA11yViolations(container);
+  });
+
   it('guides a server-context user to an existing conversation without selecting it for them', async () => {
     const registry = createDataSurfaceRegistry();
     const transport: AssistantTransport = {

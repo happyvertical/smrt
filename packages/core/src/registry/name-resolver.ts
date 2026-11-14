@@ -34,6 +34,7 @@ import {
 import { getRegistryGeneration } from './generation';
 import { resolveQualifiedNameAlias } from './qualified-name-aliases';
 import { getClasses, getConstructorIndex, verboseLog } from './shared-state';
+import { findReplacement } from './subtype-lineage';
 import type { RegisteredClass, SmrtObjectConstructor } from './types';
 
 // ── Simple-name iteration (replaces classNameMap reads) ─────────────
@@ -90,33 +91,29 @@ function getSimpleNameIndex(): Map<string, string[]> {
     return simpleNameIndex.keysByName;
   }
 
-  const byName = new Map<string, Map<RegisteredClass, string>>();
+  const keysByName = new Map<string, string[]>();
+  const seen = new Map<RegisteredClass, string>();
   for (const [key, value] of classes.entries()) {
     const lower = value.name?.toLowerCase();
     if (!lower) continue;
 
-    let seen = byName.get(lower);
-    if (!seen) {
-      seen = new Map<RegisteredClass, string>();
-      byName.set(lower, seen);
-    }
-
     const existing = seen.get(value);
     if (!existing) {
+      const keys = keysByName.get(lower);
+      if (keys) keys.push(key);
+      else keysByName.set(lower, [key]);
       seen.set(value, key);
       continue;
     }
 
     // Two keys for the same object: prefer the qualified form.
     if (key.includes(':') && !existing.includes(':')) {
+      const keys = keysByName.get(lower)!;
+      keys[keys.indexOf(existing)] = key;
       seen.set(value, key);
     }
   }
 
-  const keysByName = new Map<string, string[]>();
-  for (const [lower, seen] of byName) {
-    keysByName.set(lower, [...seen.values()]);
-  }
   simpleNameIndex = { generation, classes, keysByName };
   return keysByName;
 }
@@ -185,7 +182,7 @@ export function findClass(
   const classes = getClasses();
 
   // 1. Direct hit on classes map (fast path, works for qualified keys)
-  const registered = classes.get(name);
+  const registered = classes.get(name) ?? findReplacement(name);
   if (registered) {
     return registered;
   }
@@ -263,7 +260,7 @@ export function findClassStrict(
   const classes = getClasses();
 
   // 1. Direct hit on classes map (fast path, works for qualified keys)
-  const registered = classes.get(name);
+  const registered = classes.get(name) ?? findReplacement(name);
   if (registered) {
     return registered;
   }
@@ -277,7 +274,8 @@ export function findClassStrict(
   // 3. If fromPackage provided, try constructing qualified name for direct lookup
   if (fromPackage) {
     const qualifiedAttempt = createQualifiedName(fromPackage, name);
-    const byQualified = classes.get(qualifiedAttempt);
+    const byQualified =
+      classes.get(qualifiedAttempt) ?? findReplacement(qualifiedAttempt);
     if (byQualified) {
       return byQualified;
     }
@@ -463,6 +461,8 @@ export function getReplacementClassByConstructor(
  * A deprecated qualified name declared in a class's `previousQualifiedNames`
  * resolves to that class with a one-time deprecation warning naming
  * `source` (#3338).
+ * Same-name subtype replacements are absent under the upstream key; use
+ * `getClass()` for effective runtime resolution instead of registry inspection.
  */
 export function getClassByQualifiedName(
   qualifiedName: string,
@@ -511,7 +511,7 @@ export function findClassesByName(className: string): RegisteredClass[] {
 export function resolveType(shortName: string): QualifiedClassName {
   // If already qualified, validate and return
   if (shortName.includes(':') && shortName.startsWith('@')) {
-    const registered = getClassByQualifiedName(shortName as QualifiedClassName);
+    const registered = findClassStrict(shortName);
     if (!registered) {
       throw new Error(
         `Class "${shortName}" is not registered. ` +

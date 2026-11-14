@@ -3,7 +3,12 @@
   "extends": ["//"],
   "tasks": {
     "generate:test": {
-      "dependsOn": ["^build", "build"]
+      "dependsOn": [
+        "^build",
+        "build",
+        "@happyvertical/smrt-approvals#build",
+        "@happyvertical/smrt-web#build"
+      ]
     }
   }
 }

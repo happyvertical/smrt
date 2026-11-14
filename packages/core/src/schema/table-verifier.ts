@@ -1,4 +1,5 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { isPerConnectionMemoryUrl } from '../embedded-write-queue.js';
 import { DatabaseError } from '../errors.js';
 import { isTableVerified, markTableVerified } from '../table-cache.js';
 
@@ -17,12 +18,7 @@ function getVerificationKey(db: DatabaseInterface): string {
   }
 
   const dbUrl = db.url || dbWithConfig.config?.url;
-  if (
-    dbUrl &&
-    dbUrl !== ':memory:' &&
-    dbUrl !== 'memory' &&
-    dbUrl !== 'file::memory:'
-  ) {
+  if (dbUrl && !isPerConnectionMemoryUrl(dbUrl)) {
     return dbUrl;
   }
 

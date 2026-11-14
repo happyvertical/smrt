@@ -1,5 +1,12 @@
 # Decorators, build integration, and knowledge
 
+The public `smrt({ generationSnapshot })` preset passes the same verified snapshot
+to consumer and producer plugins. Dependency views retain app replacements for
+dependency models alongside original ancestors, preserving inherited fields,
+restrictions and independent hosted STI routes. The public consumer-plugin
+`separateHostedStiCollections` normalizes the merged manifest before serialization;
+genuine collection namespace collisions still fail.
+
 Key options: `tableName`, `tableStrategy` ('cti'|'sti'), `conflictColumns`, `indexes` (declared multi-column indexes; see [schema-paths.md](schema-paths.md)), `api`/`mcp`/`cli` (generation config), `ai` (callable methods), `hooks` (beforeSave/afterSave/beforeDelete/afterDelete), `embeddings` (auto-generate), `tenantScoped`, `agent`, `ui` (`{ icon, label, description }` — nav/help hints round-tripped through the manifest as plain data; `description` is the object-level seed for form-level help, #2046).
 
 Registration sets `SMRT_TABLE_NAME` static property (survives minification).
@@ -52,12 +59,14 @@ after inheritance, so every producer (Vite plugin, `ManifestBuilder`,
 `generateManifest`) validates the same way.
 
 - **Display label.** `@smrt({ display: { label: '<field>' } })` names the own
-  field generic pickers and assistants use to label a record. Own fields only —
-  no paths into other packages; a model whose label lives elsewhere ships a
-  selector. Undeclared, it defaults to the first of `name`, `title`, `label`,
+  field generic pickers and assistants use to label a record. A linked name
+  uses `label: { via: 'profileId', field: 'name', fallback: 'Unnamed customer' }`
+  through one declared reference; see [collection reads](collection-reads.md#linked-display-names).
+  Undeclared, it defaults to the first of `name`, `title`, `label`,
   `code` that is a usable own field. Build fails when the declared field is
   missing, `sensitive`, `transient`, or a relationship/json field. The resolved
-  field is emitted as `displayLabelField` on the manifest object and in the
+  field is emitted as `displayLabelField` on the manifest object, on generated
+  web collection definitions (for record names and paged pickers), and in the
   knowledge artifact, and generated MCP/WebMCP `list`/`get`/`update`/`delete`
   descriptions end with ``Records are identified by their `<field>` field.``
   (`describeAction` in `generators/tool-schema.ts`; nothing is added when the
@@ -72,7 +81,7 @@ after inheritance, so every producer (Vite plugin, `ManifestBuilder`,
   `findSelectorFor(manifests, qualifiedName)`; generic forms use the selector
   for any `@foreignKey`/`@crossPackageRef` field targeting that model and fall
   back to a generic picker labelled by `displayLabelField`. `display` is read
-  per class: an STI subclass that declares none uses the default lookup rather
+  per class (same-name app replacements inherit it): an STI subclass that declares none uses the default lookup rather
   than its base's declaration, and a CTI child cannot name a parent's field.
 
 ## Worker registration artifact (#3117)
@@ -157,11 +166,30 @@ The consumer resolver records only exact server entry files selected through
 the importer's installed export map. Its dev SSR environment `fetchModule`
 transport returns those files as native external modules; component barrels,
 Svelte and CSS continue through Vite. Production keeps bare external imports.
+`vite-plugin/native-ssr.ts` owns this shared exact-entry boundary: one transport
+interceptor per SSR environment composes the consumer and preset registrations
+and delegates unknown modules to the original bound transport. Canonical
+filenames stay separate from aliases, so repeated server setup cannot strip
+the root from an alias again and capture an unrelated module. The preset also
+uses it for the exact `smrt-app-runtime` root in dev. Its Kit-facing `/sveltekit`
+wrapper compiles against the app's deduped Kit in both modes, while the native
+root and `/sveltekit-runtime` backend stay in Node. Different pnpm Kit peer
+contexts must not turn owner setup's committed 303 redirect into a 500.
+The shared-runtime config hook runs last and removes only the literal runtime
+root from the merged `ssr.external` list. Svelte's dependency crawler otherwise
+adds that root for component-package dependencies, overriding the wrapper's
+`noExternal` exception. Other externals and explicit subpaths remain unchanged.
+`ssr.external: true` cannot express this split and fails with a remedy: use an
+explicit package list; the preset keeps the exact native entries external.
 Never externalize the complete component-bearing package or switch its mutable
 runtime flags to globals to mask duplicate execution. The real `createServer` /
 `ssrLoadModule` regression in `selective-ssr-dev.test.ts` initializes native
 server state and verifies root/subpath reads plus direct and transitive peer
 Svelte/CSS compilation in one dev request.
+The app-runtime `sveltekit-production.test.ts` fixture explicitly separates the
+app/runtime Kit peers, declares a Svelte host depending on the runtime to trigger
+the real dependency crawler, and proves the final root exclusion plus development
+GET/POST redirects and action failures before its adapter-node production checks.
 
 Not covered by contract: a package whose root is a Svelte entry AND whose
 `@smrt()` objects are exported only from that root. The object loop must then
@@ -440,6 +468,10 @@ checks the generated imports with `svelte-check`.
 Core's `generate:test` task depends on its own `build`: both publish the local
 `.smrt` manifest/knowledge pair, so Turbo must serialize production before test
 generation instead of caching an interleaved pair.
+It also builds `smrt-approvals` and `smrt-web` for the cookbook app-tools
+integration tests, which exercise app-runtime's durable owner approval store
+and smrt-svelte's screen source adapter. These test-only prerequisites belong
+in core's task graph, avoiding a production dependency cycle.
 
 ## Model descriptions
 
@@ -465,3 +497,69 @@ declarations (`src/vite-plugin/host-tool-names.ts`). Host-vs-host duplicates fai
 construction; a host name shadowing a generated model tool fails after the scan. The same
 `declaredBy` on several surfaces is one operation and is allowed. Unlike the advisory
 intent-vs-generated check, these throw and fail the build.
+
+## Generated recipe surfaces
+
+The consumer aggregator retains installed `recipes` alongside model declarations
+and rejects conflicting declarations for the same recipe id. The existing
+`web-collections.ts` emitter adds `recipeSurfaces` and `resolveExport` to the web
+virtual module, with literal dynamic imports and per-recipe typed tuples.
+Producer declarations and the consumer's additive
+`smrt-recipe-surfaces.d.ts` use the same renderer. Recipe-only providers are
+supported. Component declarations use the Svelte component contract and literal
+metadata, not `typeof import(package/svelte)`, which would pull browser source
+into Node-only declaration builds. Vite's optional load-hook `ssr` flag controls
+server widget loader imports: browser output excludes them.
+
+Regression gate: `consumer-plugin/load-resolve.test.ts` verifies installed
+manifest aggregation, typed output, SSR/client separation and a real Vite bundle
+whose initial chunk excludes the lazy component marker. The cookbook fixture in
+smrt-svelte exercises rendering and generic fallback without a host export map.
+
+## Cookbook policies with app replacements
+
+`buildWebCollectionDefinition` includes optional `replacedQualifiedNames`, using
+existing `modelReplacements` provenance. The same definition feeds runtime emission
+and cache hashing; producer and consumer declarations retain this optional metadata.
+Screen policy and recipe entry lookups accept only those proven provider identities,
+never a same-name guess. Canonical app policy rows override provider rows sparsely.
+The small declaration mirror in `src/prebuild/index.ts` changes with the producer
+interface; the runtime exposure/REST generators are unchanged.
+
+## Lazy recipe-surface imports
+
+Both web emitters pass `lazyActivation` into the existing surface generator. With
+it enabled, `recipeSurfaces[id][n].load(context)` and `resolveExport(specifier,
+exportName, context)` refuse before invoking any literal dynamic import unless the
+current `context.recipes` contains that export's owning recipe. Per-surface loaders
+bind the owner id; an unrelated enabled recipe cannot unlock a different export.
+No context means generic fallback. Eager hosts retain the previous optional-context
+behavior. Shared type: `smrt-types.RecipeSurfaceLoadContext`.
+
+SSR additionally requires the installed live runtime exposure gate (the host wraps
+it with `activation.gate(...)`) and trusted `context.tenantId` where tenancy applies.
+The generated module imports only the browser-safe gate leaf, not constructors or
+the Node activation coordinator. Readiness without published recipe membership is
+insufficient; unavailable gate/store and stale disabled contexts refuse.
+
+Browsers consume the host's current screen-visible cookbook projection. They cannot
+inspect server SQLite readiness; the host publishes recipe ids after activation and
+refreshes the projection on exposure changes, as in the runtime exposure contract.
+`CookbookApp` supplies that cookbook's recipe ids automatically through its existing
+resolver, without a component mapping or a host-resolved policy map. This UI projection
+is not an authorization token: REST, tools and SSR retain their live server gates.
+
+The installed fixture consumer runs in lazy mode. A separate generated-module test
+boots a real SQLite coordinator, proves map evaluation/disabled calls never evaluate
+the surface package, activates its model and publishes the recipe, then uses the SAME
+server/client modules to load the surface. Disabling and missing server gates refuse.
+The existing bundle test still proves component bytes stay out of the initial chunk.
+
+## Default development UI source
+
+`getDefaultUIModule()` reads the shipped `templates/default-ui.ts` and uses the
+existing on-demand `oxc-transform` seam to return JavaScript. Package builds copy
+the browser template as source; a nonexistent `.js` path must not silently select
+the fallback. Native compiler loading remains inside this build/dev operation,
+not at public-root import time. The load-hook test requires the real dashboard,
+rejects the fallback text and parses the result as JavaScript.

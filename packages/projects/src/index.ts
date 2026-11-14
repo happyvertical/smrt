@@ -58,6 +58,7 @@ export { ProjectGovernanceEventCollection } from './collections/ProjectGovernanc
 export { ProjectIntegrationAuditCollection } from './collections/ProjectIntegrationAudits';
 export { ProjectIntegrationCollection } from './collections/ProjectIntegrations';
 export { ProjectQuestionCollection } from './collections/ProjectQuestions';
+export { ProjectRepositoryCollection } from './collections/ProjectRepositories';
 export { ProjectSpecificationCollection } from './collections/ProjectSpecifications.js';
 export { ProjectCollection } from './collections/Projects';
 export { PullRequestCollection } from './collections/PullRequests';
@@ -110,6 +111,10 @@ export {
   ProjectQuestion,
   type ProjectQuestionOptions,
 } from './models/ProjectQuestion';
+export {
+  ProjectRepository,
+  type ProjectRepositoryOptions,
+} from './models/ProjectRepository';
 export {
   ProjectSpecification,
   type ProjectSpecificationOptions,
@@ -182,7 +187,9 @@ export type {
   ProjectIntegrationCapability,
   ProjectIntegrationStatus,
   ProjectItem,
+  ProjectKind,
   ProjectProviderType,
+  ProjectRepositoryRole,
   ProjectStatus,
   RepositoryCiState,
   RepositoryConfig,
@@ -203,5 +210,6 @@ export type {
   UpdateIssueInput,
   User,
 } from './types';
+export { PROJECT_KINDS, PROJECT_REPOSITORY_ROLES } from './types';
 // Export UI metadata
 export { PROJECTS_MODULE_META, PROJECTS_UI_SLOTS } from './ui';

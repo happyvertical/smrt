@@ -1272,12 +1272,14 @@ describe('SvelteKit Route Generator', () => {
       expect(content).toContain('await collection.create');
       expect(content).not.toContain('await item.save()');
       expect(content).toContain(
-        "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';",
+        "import { ObjectRegistry, normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';",
       );
       expect(content).toContain('function smrtRouteErrorResponse');
-      expect(content).toContain('return smrtRouteErrorResponse(cause);');
       expect(content).toContain(
-        "return json({ error: 'Internal server error' }, { status: 500 });",
+        'return smrtRouteErrorResponse(cause, request);',
+      );
+      expect(content).toContain(
+        'return json(reportUnexpectedHttpError(cause, request), { status: 500 });',
       );
 
       // Should NOT include hardcoded config
@@ -1340,7 +1342,9 @@ describe('SvelteKit Route Generator', () => {
       expect(content).toContain("collection.withAuditMutation(item, 'updated'");
       expect(content).toContain('Object.assign(bound, data)');
       expect(content).toContain('await bound.save()');
-      expect(content).toContain('return smrtRouteErrorResponse(cause);');
+      expect(content).toContain(
+        'return smrtRouteErrorResponse(cause, request);',
+      );
 
       // Should include DELETE handler
       expect(content).toContain('export const DELETE: RequestHandler');
@@ -1413,10 +1417,12 @@ describe('SvelteKit Route Generator', () => {
       expect(analyzeContent).toContain('await item.analyze');
       expect(analyzeContent).toContain("action: 'analyze'");
       expect(analyzeContent).toContain(
-        "import { normalizeCustomActionFailure, normalizeTypedHttpError } from '@happyvertical/smrt-core';",
+        "import { normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';",
       );
       expect(analyzeContent).toContain('let result: unknown;');
-      expect(analyzeContent).toContain('return smrtRouteErrorResponse(cause);');
+      expect(analyzeContent).toContain(
+        'return smrtRouteErrorResponse(cause, request);',
+      );
       expect(analyzeContent).toContain(
         'return json({ error: failure }, { status: failure.status });',
       );
@@ -1552,7 +1558,7 @@ describe('SvelteKit Route Generator', () => {
         'toCustomActionNumber(options.query)',
       );
       expect(searchContent).toContain(
-        "import { normalizeCustomActionFailure, normalizeTypedHttpError, toCustomActionNumber } from '@happyvertical/smrt-core';",
+        "import { normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, toCustomActionNumber } from '@happyvertical/smrt-core';",
       );
 
       const reservedRoute = vi
@@ -2118,7 +2124,7 @@ describe('SvelteKit Route Generator', () => {
         'Invitation',
       );
       expect(content).toContain(
-        'export const POST: RequestHandler = async ({ locals, params }) => {',
+        'export const POST: RequestHandler = async ({ locals, params, request }) => {',
       );
       // Fail-closed auth guard (#1540): POST is a mutating verb.
       expect(content).toContain('requireRouteAuth(locals, true);');
@@ -3308,7 +3314,12 @@ describe('SvelteKit Route Generator', () => {
       expect(collectionContent).toContain(
         'const { limit, offset } = listBounds(url);',
       );
-      expect(collectionContent).toContain('orderBy: LIST_ORDER_BY');
+      expect(collectionContent).toContain(
+        "const orderBy = url.searchParams.get('orderBy') || LIST_ORDER_BY;",
+      );
+      expect(collectionContent).toContain(
+        'const count = await collection.count({ where });',
+      );
       expect(collectionContent).not.toContain(
         "Number(url.searchParams.get('limit')) || 50",
       );

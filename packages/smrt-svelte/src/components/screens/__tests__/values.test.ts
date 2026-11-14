@@ -323,3 +323,34 @@ describe('formatScreenValue formats', () => {
     expect(parseDraft(fields, { status: '' }).values).toEqual({ status: '' });
   });
 });
+
+it('omits stale inline values when choosing an existing contact on create or relinking on edit', () => {
+  const fields = deriveScreenFields(
+    {
+      ...taskDefinition,
+      fields: {
+        profileId: { type: 'text' },
+        name: { type: 'text', writeThrough: 'profileId' },
+      },
+    },
+    null,
+    { mode: 'edit' },
+  );
+  expect(
+    parseDraft(fields, { profileId: 'existing', name: 'Stale name' }).values,
+  ).toEqual({ profileId: 'existing' });
+  expect(
+    parseDraft(
+      fields,
+      { profileId: 'new-selection', name: 'Old name' },
+      { record: { profileId: 'old-selection', name: 'Old name' } },
+    ).values,
+  ).toEqual({ profileId: 'new-selection' });
+  expect(
+    parseDraft(
+      fields,
+      { profileId: 'current', name: 'Updated name' },
+      { record: { profileId: 'current' } },
+    ).values.name,
+  ).toBe('Updated name');
+});

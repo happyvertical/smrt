@@ -10,6 +10,7 @@
  * `basic` markers anywhere => everything basic; any marker => unmarked fields
  * advanced).
  */
+import { screenReferenceTarget } from './references.js';
 import { deriveFieldRoles, type FieldRole } from './roles.js';
 import type {
   ScreenCollectionDefinition,
@@ -18,6 +19,7 @@ import type {
   ScreenInputKind,
   ScreenMode,
   ScreenPolicy,
+  ScreenReferenceSources,
 } from './types.js';
 
 /** Managed by the platform; never editable and never a default column. */
@@ -38,6 +40,8 @@ export const DEFAULT_MAX_LIST_COLUMNS = 6;
 
 export interface DeriveScreenFieldsOptions {
   mode: ScreenMode;
+  /** Navigable references available in this app; inline prerequisites stay inline. */
+  references?: ScreenReferenceSources;
   /**
    * Explicit field names, in the order given. Hidden fields, fields outside
    * the policy, and non-editable system fields are still dropped.
@@ -76,11 +80,27 @@ export function humanizeLabel(
   return humanizeFieldName(name);
 }
 
+/** Conservative English label fallback; cookbook singularLabel wins for irregular nouns. */
+export function singularScreenLabel(label: string): string {
+  if (/(?:series|species|news|status)$/i.test(label)) return label;
+  if (/ies$/i.test(label)) return `${label.slice(0, -3)}y`;
+  if (/(?:sses|xes|zes|ches|shes)$/i.test(label)) return label.slice(0, -2);
+  if (/[^s]s$/i.test(label)) return label.slice(0, -1);
+  return label;
+}
+
 /** Singular and plural display names derived from the class name. */
 export function screenTitles(definition: ScreenCollectionDefinition): {
   singular: string;
   plural: string;
 } {
+  if (definition.label) {
+    return {
+      singular:
+        definition.singularLabel ?? singularScreenLabel(definition.label),
+      plural: definition.label,
+    };
+  }
   const singular = humanizeFieldName(definition.className);
   const last = singular.slice(-1);
   const plural = /(s|x|z|ch|sh)$/i.test(singular)
@@ -197,7 +217,7 @@ function byOrder(
  * - `edit`: basic and advanced tiers, system fields never.
  * - `view`: basic and advanced tiers, then `createdAt`/`updatedAt` as
  *   read-only advanced meta when the definition has them.
- * - `list`: basic tier only, without long text, JSON or raw reference columns,
+ * - `list`: basic tier only, without long text, JSON columns,
  *   capped at {@link DEFAULT_MAX_LIST_COLUMNS}; `include` overrides all of it.
  */
 export function deriveScreenFields(
@@ -208,6 +228,11 @@ export function deriveScreenFields(
   const { mode, include, exclude } = options;
   const excluded = new Set(exclude ?? []);
 
+  const inlineLinks = new Set(
+    Object.values(definition.fields).flatMap((field) =>
+      field.writeThrough ? [field.writeThrough] : [],
+    ),
+  );
   const candidates: Candidate[] = Object.entries(definition.fields)
     .map(([name, fieldDefinition], index) => ({
       name,
@@ -218,7 +243,16 @@ export function deriveScreenFields(
       (c) =>
         isDeclaredName(c.name) &&
         !SYSTEM_FIELDS.has(c.name) &&
-        c.name !== definition.idField,
+        c.name !== definition.idField &&
+        !(
+          inlineLinks.has(c.name) &&
+          options.references &&
+          !screenReferenceTarget(
+            definition,
+            { name: c.name },
+            options.references,
+          )
+        ),
     );
 
   const seedBasic = policy ? null : seedBasicSet(candidates);
@@ -233,13 +267,22 @@ export function deriveScreenFields(
         ? 'basic'
         : 'advanced';
     if (tier === 'hidden') return null;
+    if (mode === 'edit' && c.definition.readonly === true) return null;
     const label = policyField?.label?.trim();
     const help = policyField?.help ?? c.definition.description ?? null;
     const fieldRoles = roles[c.name] ?? [];
     const kind = inputKindFor(c.definition, fieldRoles);
     return {
       name: c.name,
-      label: label || humanizeLabel(c.name, c.definition),
+      readOnly:
+        c.definition.readonly === true || policyField?.readOnly === true,
+      label:
+        label ||
+        c.definition.label ||
+        (c.name === definition.displayLabelField &&
+        definition.displayLabelProjection
+          ? 'Name'
+          : humanizeLabel(c.name, c.definition)),
       help: help && help.trim() !== '' ? help : null,
       type: c.definition.type,
       kind,
@@ -294,21 +337,45 @@ export function deriveScreenFields(
 
   const ordered = decorated
     .map((e) => e.field)
-    .map((field, position) => ({ field, order: field.order, index: position }))
+    .map((field, position) => ({
+      field,
+      order: field.order,
+      index:
+        mode === 'list' && field.name === definition.displayLabelField
+          ? -1
+          : position,
+    }))
     .sort(byOrder)
     .map((e) => e.field);
 
   if (mode === 'list') {
+    const declared = definition.listFields;
+    const safe = ordered.filter(
+      (f) =>
+        f.kind !== 'json' &&
+        f.kind !== 'textarea' &&
+        !/(?:hash|json|authority|provenance|external|synced|revision|metadata|historical|credited|backend|journal)/i.test(
+          f.name,
+        ) &&
+        !(f.type === 'text' && /Id$/.test(f.name)),
+    );
+    const byName = new Map(safe.map((f) => [f.name, f]));
+    const humanName =
+      definition.displayLabelField ??
+      safe.find((f) => f.roles?.includes('title'))?.name ??
+      safe.find((f) => f.roles?.includes('identifier'))?.name ??
+      safe.find((f) => f.kind === 'reference')?.name;
+    const preferred = [humanName, ...(declared ?? [])].filter(
+      (name): name is string => !!name,
+    );
+    const selected = preferred.flatMap((name) =>
+      byName.has(name) ? [byName.get(name)!] : [],
+    );
+    const remaining = declared
+      ? []
+      : safe.filter((f) => !preferred.includes(f.name) && f.tier === 'basic');
     const cap = options.maxListColumns ?? DEFAULT_MAX_LIST_COLUMNS;
-    return ordered
-      .filter(
-        (f) =>
-          f.tier === 'basic' &&
-          f.kind !== 'json' &&
-          f.kind !== 'textarea' &&
-          f.kind !== 'reference',
-      )
-      .slice(0, Math.max(0, cap));
+    return [...new Set(selected), ...remaining].slice(0, Math.max(0, cap));
   }
 
   if (mode === 'view') {
@@ -318,6 +385,18 @@ export function deriveScreenFields(
     return [...ordered, ...metas];
   }
 
+  if (mode === 'edit') {
+    for (const field of ordered) {
+      if (
+        field.required ||
+        field.roles?.includes('title') ||
+        field.roles?.includes('identifier')
+      )
+        field.tier = 'basic';
+    }
+    if (!ordered.some((f) => f.tier === 'basic') && ordered.length)
+      ordered[0].tier = 'basic';
+  }
   return ordered;
 }
 

@@ -7,6 +7,17 @@ generating interfaces, or extending the framework runtime. If you want a full
 application scaffold with users and tenancy already wired, start with
 [`smrt-template-sveltekit`](../template-sveltekit/README.md).
 
+## Live cookbook exposure
+
+Generate the installed superset once with explicit `smrt({ expose })`, then install
+`createCookbookRuntimeExposure()` with `setRuntimeExposureGate()` before serving.
+REST answers 404 for disabled models; MCP/CLI and assistant manifest tools filter
+listings and refuse stale calls. Tenant engines and a host predicate decide each
+request. Enable/disable needs no regeneration or restart. Use the same gate to
+project screen definitions and cookbook navigation. See
+[the host integration contract](agents/runtime-exposure.md) for examples,
+notifications, fail-closed storage handling, and the remaining eager-startup limit.
+
 ## Installation
 
 ```bash
@@ -49,6 +60,30 @@ class ProductCollection extends SmrtCollection<Product> {
   static readonly _itemClass = Product;
 }
 ```
+
+### Extend a package model in your app
+
+Keep a model's public name to replace it throughout your app:
+
+```typescript
+import { Customer as CustomerBase } from '@happyvertical/smrt-commerce';
+import { smrt } from '@happyvertical/smrt-core';
+
+@smrt({})
+export class AppCustomer extends CustomerBase {
+  favoritePose = '';
+}
+export { AppCustomer as Customer };
+```
+
+An empty body works too. The app model inherits the upstream table and columns,
+collection and generated interfaces. Relationships and upstream collections
+resolve to the app model, including its fields and overrides. Build the app,
+then run `smrt db:migrate` to add new fields to the existing table. STI provider
+subclasses retain their original bases and discriminators; CTI children keep
+their own tables. Apps without replacements are unchanged. See the
+[same-name subclass contract](agents/app-subclasses.md) for registration,
+export naming, migration, and compatibility details.
 
 ### Basic CRUD
 
@@ -761,6 +796,7 @@ instead of matching messages.
 | `generateSvelteKitRoutes` | SvelteKit route generator |
 | `resetVerifiedTables` | Resets table verification cache (testing) |
 | `getTestDatabase` | Creates isolated test databases |
+| `snapshotObjectRegistryState()` | Returns a restore callback for sequential tests that mutate the process registry (`@happyvertical/smrt-core/testing`) |
 | `parse` / `stringify` / `clone` | JSON utilities with optional SIMD |
 | `createQualifiedName` / `parseQualifiedName` | STI qualified name helpers |
 

@@ -111,6 +111,7 @@ export interface CommandInputs {
     visibility?: 'basic' | 'advanced' | 'hidden' | null;
     label?: string | null;
     help?: string | null;
+    readOnly?: boolean | null;
   };
   set_theme: {
     preset?: string;
@@ -198,6 +199,8 @@ export interface PlanSnapshot {
   };
   recipes: { id: string; label: string }[];
   features: string[];
+  /** Qualified app lists declared by this cookbook (never inferred from registration). */
+  customModels?: string[];
   /** Recipe and feature ids this catalog lacks; kept on export. */
   unavailable: string[];
   settings: {
@@ -220,7 +223,7 @@ export interface PlanSnapshot {
     id: string;
     label: string;
     hidden: boolean;
-    items: { id: string; label: string; hidden: boolean }[];
+    items: { id: string; label: string; icon: string; hidden: boolean }[];
   }[];
   policies: number;
   /** Undo ids still available, newest last. */

@@ -1,4 +1,8 @@
 import type {
+  ScreenCollectionDefinition,
+  ScreenPolicy,
+} from '../screens/types.js';
+import type {
   ExportFile,
   ImportExportField,
   ImportRunResult,
@@ -6,7 +10,10 @@ import type {
 
 export interface ImportExportProps {
   /** Columns, usually from `fieldsFromCollectionDefinition` (manifest + resolved policy). */
-  fields: ImportExportField[];
+  fields?: ImportExportField[];
+  /** Use generated fields and the active cookbook policy automatically. */
+  definition?: ScreenCollectionDefinition;
+  policy?: ScreenPolicy | null;
   /** Heading context, for example the collection's plural label. */
   collectionLabel?: string;
   /**

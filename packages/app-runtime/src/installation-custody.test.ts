@@ -91,7 +91,7 @@ async function trackInitializationLock(dataDirectory: string) {
 
 /**
  * One machine's workspace. State roots resolve under this test file's own
- * HOME (`test-home.setup.ts`), keyed by data-root path, as in production.
+ * HOME (smrt-vitest global setup), keyed by data-root path, as in production.
  */
 async function machine(label: string) {
   const root = await realpath(

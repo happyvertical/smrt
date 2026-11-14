@@ -9,6 +9,7 @@ export const WORKER_OPS = [
   'callTool',
   'rest',
   'snapshot',
+  'copyTo',
   'previewConversion',
   'countValues',
   'countRows',

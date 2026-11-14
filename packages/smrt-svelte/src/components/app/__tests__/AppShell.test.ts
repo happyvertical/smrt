@@ -59,7 +59,7 @@ describe('AppShell', () => {
     ).not.toBeNull();
   });
 
-  it('uses the existing compact phone brand and retains its full accessible name', async () => {
+  it('shows the full phone brand with its logo and accessible name', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: /max-width:\s*48rem/.test(query),
       addEventListener() {},
@@ -74,10 +74,12 @@ describe('AppShell', () => {
     const brand = container.querySelector(
       '[data-slot="header.start"] .smrt-admin-shell__brand',
     );
-    expect(brand?.classList.contains('smrt-shell-brand__compact')).toBe(true);
+    expect(brand?.classList.contains('smrt-shell-brand__compact')).toBe(false);
     expect(brand?.getAttribute('aria-label')).toBe('Bakery');
     expect(brand?.querySelector('img')?.getAttribute('src')).toBe('/mark.svg');
-    expect(brand?.querySelector('.smrt-admin-shell__brand-text')).toBeNull();
+    expect(
+      brand?.querySelector('.smrt-admin-shell__brand-text')?.textContent,
+    ).toBe('Bakery');
   });
 
   it('renders the shell with and without navigation', async () => {

@@ -23,11 +23,18 @@
  */
 
 import { createHash } from 'node:crypto';
+import { parseRecipeExportRef } from '../cookbook/export-ref.js';
 import {
+  type ApiMethodExposure,
+  CRUD_OPERATIONS,
+  createManifestClassNamePredicate,
   customActionParameterInputName,
   isCrudOperation,
   isCrudToolAction,
+  resolveApiMethodExposure,
   resolveCustomActionMetadata,
+  resolveEffectiveActionMetadata,
+  type WireabilityOptions,
 } from '../generators/custom-action.js';
 import {
   buildToolDescriptors,
@@ -38,11 +45,17 @@ import {
   type ToolIdType,
   type ToolRouteDescriptor,
 } from '../generators/tool-schema.js';
+import {
+  isReplacedModel,
+  modelReplacements,
+} from '../manifest/model-replacements';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import { readFieldEnum } from '../registry/manifest-field-merge.js';
+import type { ApiHttpMethod } from '../registry/types.js';
 import type {
   FieldDefinition,
   FieldUIHints,
+  MethodDefinition,
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
@@ -51,10 +64,253 @@ import {
   isFieldUIWidget,
   isRelationshipRole,
 } from '../ui-metadata.js';
-import {
-  resolveApiActionRouteConfig,
-  resolveApiActionSet,
-} from './sveltekit-generator.js';
+
+export interface ResolvedApiActionRouteConfig {
+  scope: 'item' | 'collection';
+  method: ApiHttpMethod;
+  pathSegments: string[];
+  pathParamNames: string[];
+}
+
+/**
+ * Check if an object definition represents a SmrtCollection class.
+ * Collection classes share route paths with their item class (via inherited `collection` field),
+ * so generating routes for both would cause file collisions.
+ */
+function isCollectionClass(objectDef: SmartObjectDefinition): boolean {
+  return objectDef.extends === 'SmrtCollection' || !!objectDef.extendsTypeArg;
+}
+
+function normalizeApiHttpMethod(method?: string): ApiHttpMethod {
+  switch (method?.toUpperCase()) {
+    case 'GET':
+    case 'POST':
+    case 'PUT':
+    case 'PATCH':
+    case 'DELETE':
+      return method.toUpperCase() as ApiHttpMethod;
+    default:
+      return 'POST';
+  }
+}
+
+/**
+ * Convert a camelCase / PascalCase method name to a kebab-case URL segment.
+ * Examples:
+ *   discoverFromUrl -> discover-from-url
+ *   XMLExport       -> xml-export
+ *   URL             -> url
+ *   a1B2c3          -> a1-b2c3
+ *
+ * Known limitation: consecutive uppercase acronyms aren't split apart, e.g.
+ * `HTMLAPIExport` becomes `htmlapi-export` rather than `html-api-export`.
+ * Override with an explicit `api.routes[name].path` if you need a specific
+ * segmentation.
+ */
+export function methodNameToKebab(name: string): string {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
+    .toLowerCase();
+}
+
+function normalizeCustomRoutePath(
+  actionName: string,
+  path?: string,
+  options: { kebabRoutes?: boolean } = {},
+): string[] {
+  // Explicit path override always wins, and is used verbatim (split on /).
+  if (path) {
+    const segments = path
+      .split('/')
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+    if (segments.length > 0) {
+      return segments;
+    }
+  }
+
+  const segment = options.kebabRoutes
+    ? methodNameToKebab(actionName)
+    : actionName;
+  return [segment];
+}
+
+function extractRoutePathParamNames(pathSegments: string[]): string[] {
+  return pathSegments
+    .filter((segment) => /^\[[^\]]+\]$/.test(segment))
+    .map((segment) => segment.slice(1, -1))
+    .filter(Boolean);
+}
+
+export function resolveApiActionRouteConfig(
+  actionName: string,
+  actionDef: { isStatic?: boolean; decoratorConfig?: Record<string, unknown> },
+  apiConfig: unknown,
+  routeOptions: { kebabRoutes?: boolean } = {},
+  defaultScope: 'item' | 'collection' = actionDef.isStatic
+    ? 'collection'
+    : 'item',
+): ResolvedApiActionRouteConfig {
+  // `@method({ httpMethod, path })` wins field by field over the class-level
+  // `api.routes[action]` entry, so migrating one option off the map does not
+  // reset the ones left on it (#2686).
+  const effective = resolveEffectiveActionMetadata({
+    actionName,
+    method: actionDef,
+    apiConfig,
+  });
+
+  const pathSegments = normalizeCustomRoutePath(
+    actionName,
+    effective.path,
+    routeOptions,
+  );
+
+  const scope = resolveCustomActionMetadata({
+    actionName,
+    method: actionDef,
+    apiConfig,
+    defaultScope,
+  }).scope;
+
+  return {
+    scope,
+    method: normalizeApiHttpMethod(effective.httpMethod),
+    pathSegments,
+    pathParamNames: extractRoutePathParamNames(pathSegments),
+  };
+}
+
+/**
+ * Resolve the list of standard CRUD actions exposed by the API for a given
+ * apiConfig. Single source of truth for both the route generator and the
+ * cli↔api coherence lint.
+ */
+export function resolveStandardCrudActions(apiConfig: unknown): string[] {
+  if (apiConfig === false) return [];
+  if (apiConfig === true || apiConfig === undefined) {
+    return [...CRUD_OPERATIONS];
+  }
+  if (typeof apiConfig !== 'object' || apiConfig === null) {
+    return [...CRUD_OPERATIONS];
+  }
+
+  const config = apiConfig as { include?: string[]; exclude?: string[] };
+  let crud: string[] = Array.isArray(config.include)
+    ? config.include.filter((a) => isCrudOperation(a))
+    : [...CRUD_OPERATIONS];
+  if (Array.isArray(config.exclude)) {
+    const exclude = config.exclude;
+    crud = crud.filter((a) => !exclude.includes(a));
+  }
+  return crud;
+}
+
+/**
+ * Partition an object's custom (non-CRUD) methods into the ones the API
+ * exposes and the ones it withholds, with a reason for each rejection.
+ *
+ * The ONE place route generation, `resolveApiActionSet`, and the knowledge
+ * artifact's API projection agree, by all three reading
+ * {@link resolveApiMethodExposure}. Before #2686 each re-derived a subset and
+ * could disagree — most damagingly, a gate applied only to the coherence
+ * resolver would report a method unreachable while the emitter next door still
+ * wrote its route file.
+ */
+export function resolveApiCustomActions(
+  objectDef: SmartObjectDefinition,
+  manifest: SmartObjectManifest | undefined,
+  objectIsCollectionClass: boolean,
+  wireability: WireabilityOptions = {},
+): {
+  exposed: Array<[string, MethodDefinition]>;
+  rejected: Array<[string, ApiMethodExposure]>;
+} {
+  if (
+    objectIsCollectionClass &&
+    manifest &&
+    resolveCollectionItemObject(manifest, objectDef)?.decoratorConfig
+      ?.abstract === true
+  ) {
+    return { exposed: [], rejected: [] };
+  }
+  const apiConfig = objectDef.decoratorConfig?.api;
+  const isModelClassName =
+    wireability.isModelClassName ?? createManifestClassNamePredicate(manifest);
+  const exposed: Array<[string, MethodDefinition]> = [];
+  const rejected: Array<[string, ApiMethodExposure]> = [];
+
+  for (const [name, method] of Object.entries(objectDef.methods || {})) {
+    const decision = resolveApiMethodExposure({
+      actionName: name,
+      method,
+      apiConfig,
+      isCollectionClass: objectIsCollectionClass,
+      ...(isModelClassName ? { isModelClassName } : {}),
+    });
+    if (decision.exposed) {
+      exposed.push([name, method]);
+      continue;
+    }
+    // CRUD reservation and non-public methods are not "rejections" worth
+    // reporting: neither was ever a candidate custom action, and listing every
+    // private helper would bury the rejections a developer can act on.
+    if (decision.code === 'crud-reserved' || decision.code === 'not-public') {
+      continue;
+    }
+    rejected.push([name, decision]);
+  }
+
+  return { exposed, rejected };
+}
+
+/**
+ * Compute the set of action names (standard CRUD + custom methods) that the
+ * API exposes for a given object definition. This is the same resolution used
+ * to drive route generation, exposed so coherence checks (e.g. CLI vs API)
+ * can ask "what does the API expose?" without re-implementing the logic.
+ *
+ * Pass a class inventory: without one the wire-ability heuristic cannot tell a
+ * model class from an options interface and therefore accepts both, so the
+ * caller silently disagrees with the emitters on the LARGEST group of withheld
+ * methods (see `WireabilityOptions.isModelClassName`). Supply either
+ * `manifest`, or `wireability.isModelClassName` when the caller's inventory is
+ * the live registry rather than a manifest — `@happyvertical/smrt-users`' CLI
+ * resource listing is the second kind. Both stay optional only because this is
+ * public API.
+ */
+export function resolveApiActionSet(
+  objectDef: SmartObjectDefinition,
+  manifest?: SmartObjectManifest,
+  wireability: WireabilityOptions = {},
+  replacements?: ReadonlyMap<string, string>,
+): Set<string> {
+  const apiConfig = objectDef.decoratorConfig?.api;
+  if (
+    apiConfig === false ||
+    (manifest && isReplacedModel(manifest, objectDef, replacements))
+  )
+    return new Set();
+
+  const objectIsCollectionClass = manifest
+    ? isCollectionManifestClass(manifest, objectDef)
+    : isCollectionClass(objectDef);
+  const actions = objectIsCollectionClass
+    ? new Set<string>()
+    : new Set<string>(resolveStandardCrudActions(apiConfig));
+
+  for (const [name] of resolveApiCustomActions(
+    objectDef,
+    manifest,
+    objectIsCollectionClass,
+    wireability,
+  ).exposed) {
+    actions.add(name);
+  }
+
+  return actions;
+}
 
 /**
  * Field types that are relationship pseudo-columns rather than persisted
@@ -95,8 +351,12 @@ export type WebFieldType = Exclude<
 
 /** Informational per-column metadata carried by a collection definition. */
 export interface WebFieldDefinition {
+  /** Link edited by this virtual input; omitted when selecting a different existing record. */
+  writeThrough?: string;
   type: WebFieldType;
   required?: boolean;
+  /** Computed public value, excluded from edit forms and write schemas. */
+  readonly?: boolean;
   /** Whether the public field contract explicitly permits `null`. */
   nullable?: boolean;
   default?: unknown;
@@ -207,13 +467,16 @@ export function compareText(left: string, right: string): number {
 export function orderedManifestObjectEntries(
   manifest: SmartObjectManifest,
 ): Array<[string, SmartObjectDefinition]> {
-  return Object.entries(manifest.objects).sort(
-    ([leftKey, left], [rightKey, right]) =>
-      compareText(
-        left.qualifiedName || leftKey,
-        right.qualifiedName || rightKey,
-      ) || compareText(leftKey, rightKey),
-  );
+  const replacements = modelReplacements(manifest);
+  return Object.entries(manifest.objects)
+    .filter(([, obj]) => !isReplacedModel(manifest, obj, replacements))
+    .sort(
+      ([leftKey, left], [rightKey, right]) =>
+        compareText(
+          left.qualifiedName || leftKey,
+          right.qualifiedName || rightKey,
+        ) || compareText(leftKey, rightKey),
+    );
 }
 
 function manifestObjectPackage(
@@ -386,7 +649,7 @@ function normalizeRelatedName(related: string): string {
  * classes describe access, not row shapes, so they never become web
  * collection definitions.
  *
- * NOTE: deliberately stronger than sveltekit-generator's private
+ * NOTE: deliberately stronger than the legacy no-inventory
  * `isCollectionClass`, which only inspects the direct base / a type argument.
  * A deeper subclass (`SpecialWidgetCollection extends WidgetCollection`)
  * carries no type argument of its own; without walking the extends chain it
@@ -530,7 +793,11 @@ export function isStiChildModel(
   let parentName = child.extendsQualified || child.extends;
   while (parentName && !seen.has(parentName)) {
     seen.add(parentName);
-    const parent = findManifestObjectByName(manifest, parentName, child);
+    // Ancestry retains replaced provider declarations; the public index selects
+    // effective I/O models and intentionally omits those declarations.
+    const parent =
+      manifest.objects[parentName] ??
+      findManifestObjectByName(manifest, parentName, child);
     if (!parent) return false;
     if (parent.collection === obj.collection) return true;
     child = parent;
@@ -569,8 +836,13 @@ function selectEntriesQualifiedBy(
   // without a qualifiedName/packageName): every candidate must be ordered
   // here, including ones that never reach {@link buildWebCollectionDefinition}
   // and so never need a resolvable object ref.
+  const replacements = modelReplacements(manifest);
   const sortedEntries = Object.entries(manifest.objects)
-    .filter(([, obj]) => !isFrameworkBaseClass(obj.className, obj.packageName))
+    .filter(
+      ([, obj]) =>
+        !isFrameworkBaseClass(obj.className, obj.packageName) &&
+        !isReplacedModel(manifest, obj, replacements),
+    )
     .sort(
       ([leftKey, left], [rightKey, right]) =>
         compareText(
@@ -585,7 +857,7 @@ function selectEntriesQualifiedBy(
     // Pass the manifest: without it the wire-ability heuristic cannot tell a
     // model class from an options interface, and this selector would qualify a
     // collection on an action the route emitters withhold (#2686).
-    const exposedActions = resolveApiActionSet(obj, manifest);
+    const exposedActions = resolveApiActionSet(obj, manifest, {}, replacements);
     if (!qualifies(exposedActions)) continue;
 
     const isStiChild = isStiChildModel(manifest, obj);
@@ -659,8 +931,11 @@ export function selectWebMcpToolEntries(
   // resources — filtered once here so every loop below (object owners,
   // custom-action hosts, and the collection-class ownership pass) excludes
   // them, regardless of config (#2642).
+  const replacements = modelReplacements(manifest);
   const manifestObjects = Object.values(manifest.objects).filter(
-    (obj) => !isFrameworkBaseClass(obj.className, obj.packageName),
+    (obj) =>
+      !isFrameworkBaseClass(obj.className, obj.packageName) &&
+      !isReplacedModel(manifest, obj, replacements),
   );
   const sortedObjects = [...manifestObjects].sort((left, right) =>
     compareText(
@@ -728,7 +1003,12 @@ export function selectWebMcpToolEntries(
     const collection = objectOwners.get(host.collection)?.collection;
     if (!collection) continue;
     const bucket = emittedCrudByCollection.get(collection) ?? new Set<string>();
-    for (const action of resolveApiActionSet(host, manifest)) {
+    for (const action of resolveApiActionSet(
+      host,
+      manifest,
+      {},
+      replacements,
+    )) {
       if (isCrudOperation(action)) bucket.add(action);
     }
     emittedCrudByCollection.set(collection, bucket);
@@ -739,9 +1019,9 @@ export function selectWebMcpToolEntries(
     if (!owner) continue;
     const emittedCrud =
       emittedCrudByCollection.get(owner.collection) ?? new Set<string>();
-    for (const action of [...resolveApiActionSet(actionHost, manifest)].sort(
-      compareText,
-    )) {
+    for (const action of [
+      ...resolveApiActionSet(actionHost, manifest, {}, replacements),
+    ].sort(compareText)) {
       // A browser tool id is lowercased whole (`${prefix}_${action}`), so this
       // namespace is case-folded even though the API action set that feeds it
       // is not. Two guards, in order (#2648):
@@ -808,7 +1088,7 @@ export function selectWebMcpToolEntries(
       emittedCrudByCollection.get(collectionClass.collection) ??
       new Set<string>();
     for (const action of [
-      ...resolveApiActionSet(collectionClass, manifest),
+      ...resolveApiActionSet(collectionClass, manifest, {}, replacements),
     ].sort(compareText)) {
       // Same two guards, same order and conditionality as the object loop
       // above — and the same key shape. Both loops share `entries`, so a case-sensitive key here
@@ -930,19 +1210,38 @@ export function buildWebCollectionDefinition(
 ): {
   name: string;
   objectRef: string;
+  replacedQualifiedNames?: string[];
   className: string;
   endpoint: string;
   idField: string;
   actions: string[];
   fields: Record<string, WebFieldDefinition>;
   relationships: WebRelationship[];
+  listFields?: string[];
+  displayLabelField?: string;
+  displayLabelProjection?: SmartObjectDefinition['displayLabelProjection'];
 } {
+  const objectRef = webCollectionObjectRef(manifest, entry.obj);
+  const replacedQualifiedNames = [...modelReplacements(manifest)]
+    .filter(([, target]) => target === objectRef)
+    .map(([source]) => source)
+    .sort(compareText);
   return {
     name: entry.collection,
-    objectRef: webCollectionObjectRef(manifest, entry.obj),
+    objectRef,
+    ...(replacedQualifiedNames.length ? { replacedQualifiedNames } : {}),
     className: entry.obj.className,
     endpoint: `/${entry.collection}`,
     idField: 'id',
+    ...(entry.obj.displayLabelField
+      ? { displayLabelField: entry.obj.displayLabelField }
+      : {}),
+    ...(entry.obj.displayLabelProjection
+      ? { displayLabelProjection: entry.obj.displayLabelProjection }
+      : {}),
+    ...(Array.isArray(entry.obj.decoratorConfig?.display?.list)
+      ? { listFields: entry.obj.decoratorConfig.display.list }
+      : {}),
     actions: entry.actions,
     fields: buildWebFieldDefinitions(entry.obj),
     relationships: buildWebRelationships(entry.obj, manifest),
@@ -959,6 +1258,21 @@ export function buildWebFieldDefinitions(
   obj: SmartObjectDefinition,
 ): Record<string, WebFieldDefinition> {
   const fields: Record<string, WebFieldDefinition> = {};
+  for (const [name, field] of Object.entries(obj.writeThroughFields ?? {})) {
+    fields[name] = {
+      type: field.type as WebFieldType,
+      writeThrough: Object.entries(
+        obj.decoratorConfig?.writeThrough ?? {},
+      ).find(
+        ([, link]) =>
+          link.fields.includes(name) ||
+          Object.hasOwn(link.virtualFields ?? {}, name),
+      )?.[0],
+      required: false,
+      description: readFieldDescription(field),
+      ui: sanitizeFieldUIHints(field._meta?.ui),
+    };
+  }
   for (const [fieldName, field] of Object.entries(obj.fields ?? {})) {
     if (RELATIONSHIP_FIELD_TYPES.has(field.type)) continue;
     if (field.type === 'meta') continue;
@@ -980,6 +1294,9 @@ export function buildWebFieldDefinitions(
       ...(description !== undefined ? { description } : {}),
       ...(ui ? { ui } : {}),
     };
+  }
+  if (obj.displayLabelProjection) {
+    fields.displayLabel = { type: 'text', readonly: true, ui: { basic: true } };
   }
   return fields;
 }
@@ -1050,6 +1367,7 @@ export function buildWebRelationships(
   obj: SmartObjectDefinition,
   manifest: SmartObjectManifest,
 ): WebRelationship[] {
+  const replacements = modelReplacements(manifest);
   // The set of REST collections that are actually materialized as web
   // collections. An edge to a model outside this set has no client cache to
   // invalidate, so it is dropped.
@@ -1066,9 +1384,10 @@ export function buildWebRelationships(
     // Normalize first: `@foreignKey(() => Scene)` thunks serialize as the raw
     // "() => Scene" source, which findManifestObjectByName cannot match on its
     // own.
+    const related = normalizeRelatedName(field.related);
     const target = findManifestObjectByName(
       manifest,
-      normalizeRelatedName(field.related),
+      replacements.get(related) ?? related,
       obj,
     );
     if (!target) continue;
@@ -1156,8 +1475,9 @@ function buildWebToolDescriptorsForHost(input: {
     return true;
   });
   const webFields = buildWebFieldDefinitions(owner);
-  const fields: ToolFieldMeta[] = Object.entries(webFields).map(
-    ([name, def]) => ({
+  const fields: ToolFieldMeta[] = Object.entries(webFields)
+    .filter(([, def]) => !def.readonly)
+    .map(([name, def]) => ({
       name,
       type: def.type,
       ...(def.required !== undefined ? { required: def.required } : {}),
@@ -1173,8 +1493,7 @@ function buildWebToolDescriptorsForHost(input: {
       ...(readFieldEnum(owner.fields?.[name])
         ? { enum: readFieldEnum(owner.fields?.[name]) }
         : {}),
-    }),
-  );
+    }));
   const descriptors = buildToolDescriptors({
     className: owner.className,
     fields,
@@ -1377,7 +1696,11 @@ export function computeWebManifestHash(manifest: SmartObjectManifest): string {
  */
 export function generateWebModule(
   manifest: SmartObjectManifest,
-  options: { kebabRoutes?: boolean } = {},
+  options: {
+    kebabRoutes?: boolean;
+    ssr?: boolean;
+    lazyActivation?: boolean;
+  } = {},
 ): string {
   const definitions: Record<string, unknown> = {};
   for (const entry of selectWebCollectionEntries(manifest)) {
@@ -1395,6 +1718,8 @@ export function generateWebModule(
 // This file is generated automatically - do not edit
 
 export const collectionDefinitions = ${JSON.stringify(definitions, null, 2)};
+
+${renderRecipeSurfaceModule(manifest, options.ssr === true, options.lazyActivation === true)}
 
 // Canonical browser-tool definitions. This export is independent of list
 // materialization, so get-only and custom-action-only API routes are included.
@@ -1417,4 +1742,79 @@ export function getCollectionDefinition(name) {
 
 export { collectionDefinitions as default };
 `;
+}
+
+/** Component references remain inert until a selected recipe surface is loaded. */
+function renderRecipeSurfaceModule(
+  manifest: SmartObjectManifest,
+  ssr: boolean,
+  lazyActivation: boolean,
+): string {
+  const refs = new Set<string>();
+  const owners = new Map<string, string[]>();
+  const addRef = (ref: string, recipeId: string) => {
+    refs.add(ref);
+    owners.set(ref, [...new Set([...(owners.get(ref) ?? []), recipeId])]);
+  };
+  const recipes = manifest.recipes ?? [];
+  const maps = recipes.map((recipe) => {
+    const surfaces = (recipe.surfaces ?? []).map((surface) => {
+      const parsed = parseRecipeExportRef(surface.export);
+      if (!parsed)
+        throw new Error(`Invalid recipe surface export: ${surface.export}`);
+      addRef(surface.export, recipe.id);
+      if (surface.kind === 'widget') {
+        if (surface.optionsEditor) addRef(surface.optionsEditor, recipe.id);
+        if (surface.migrate) addRef(surface.migrate, recipe.id);
+        // A server loader must never pull a Node package root into a browser chunk.
+        if (ssr && surface.data?.load) addRef(surface.data.load, recipe.id);
+      }
+      return `{ surface: ${JSON.stringify(surface)}, load: (context) => resolveExport(${JSON.stringify(parsed.specifier)}, ${JSON.stringify(parsed.exportName)}, { ...context, recipeId: ${JSON.stringify(recipe.id)} }) }`;
+    });
+    return `${JSON.stringify(recipe.id)}: [${surfaces.join(',')}]`;
+  });
+  const loaders = [...refs].sort().map((ref) => {
+    const parsed = parseRecipeExportRef(ref);
+    if (!parsed) throw new Error(`Invalid recipe export: ${ref}`);
+    return `${JSON.stringify(ref)}: () => import(${JSON.stringify(parsed.specifier)}).then(module => module[${JSON.stringify(parsed.exportName)}])`;
+  });
+  const guard = lazyActivation
+    ? `
+${ssr ? "import { hasRuntimeExposureGate, isRuntimeModelEnabled } from '@happyvertical/smrt-core/runtime-exposure';" : ''}
+const recipeExportOwners = ${JSON.stringify(Object.fromEntries(owners))};
+const recipeModels = ${JSON.stringify(Object.fromEntries(recipes.map((recipe) => [recipe.id, recipe.models])))};
+function canLoadRecipeSurface(ref, context) {
+  if (!Array.isArray(context?.recipes)) return false;
+  return (recipeExportOwners[ref] ?? []).some(id => {
+    if ((context.recipeId && context.recipeId !== id) || !context.recipes.includes(id)) return false;
+    return ${ssr ? "hasRuntimeExposureGate() && recipeModels[id].some(qualifiedName => isRuntimeModelEnabled(qualifiedName, { surface: 'screen', tenantId: context.tenantId }))" : 'true'};
+  });
+}`
+    : '';
+  return `${guard}
+// Literal dynamic imports: no recipe component is an initial-module dependency.
+const recipeExportLoaders = { ${loaders.join(',\n')} };
+export const recipeSurfaces = { ${maps.join(',\n')} };
+export async function resolveExport(specifier, exportName, context) {
+  const ref = specifier + '#' + exportName;
+  ${lazyActivation ? 'if (!canLoadRecipeSurface(ref, context)) return undefined;' : ''}
+  return Object.hasOwn(recipeExportLoaders, ref) ? recipeExportLoaders[ref]() : undefined;
+}`;
+}
+
+/** Precise installed recipe ids and export types for both plugin declaration paths. */
+export function renderRecipeSurfaceDeclarations(
+  manifest: SmartObjectManifest,
+): string {
+  const recipes = (manifest.recipes ?? []).map((recipe) => {
+    const surfaces = (recipe.surfaces ?? []).map((surface) => {
+      const parsed = parseRecipeExportRef(surface.export);
+      if (!parsed)
+        throw new Error(`Invalid recipe surface export: ${surface.export}`);
+      return `{ readonly surface: ${JSON.stringify(surface)}; readonly load: (context?: import('@happyvertical/smrt-types').RecipeSurfaceLoadContext) => Promise<import('svelte').Component<Record<string, unknown>> | undefined> }`;
+    });
+    return `readonly ${JSON.stringify(recipe.id)}: readonly [${surfaces.join(', ')}]`;
+  });
+  return `export const recipeSurfaces: { ${recipes.join(';\n')} };
+export function resolveExport(specifier: string, exportName: string, context?: import('@happyvertical/smrt-types').RecipeSurfaceLoadContext): Promise<unknown>;`;
 }

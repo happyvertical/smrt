@@ -18,7 +18,10 @@ export * from './ai-prompt-compare.js';
 export * from './ai-runs.js';
 export * from './ai-transcripts.js';
 export * from './ai-usage-observability.js';
-export { ensureSystemTables } from './bootstrap.js';
+export {
+  ensureSystemTables,
+  runSerializedAgainstSystemTableBootstrap,
+} from './bootstrap.js';
 export * from './compatibility.js';
 export * from './diagnostics.js';
 export * from './retention.js';
