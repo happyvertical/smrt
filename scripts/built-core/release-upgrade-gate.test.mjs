@@ -27,10 +27,10 @@ import {
   validateSeedFiles,
   validateSeedPlan,
   readSeedPlan,
-} from './lib/release-upgrade-gate.mjs';
-import { ManifestGenerator } from '../packages/core/dist/scanner/manifest-generator.js';
+} from '../lib/release-upgrade-gate.mjs';
+import { ManifestGenerator } from '../../packages/core/dist/scanner/manifest-generator.js';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const build = await loadBuild(root, { manifests: false });
 const release = '0.60.17';
 const tableName = 'gate4933s';
