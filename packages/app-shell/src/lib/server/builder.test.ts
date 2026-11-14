@@ -330,3 +330,124 @@ describe('undo that would overwrite newer data', () => {
     expect(out.status).toBeUndefined();
   });
 });
+
+it('requires a fresh approval when merge reference counts grow and performs no writes', async () => {
+  const { runCommand } = await import('./builder.ts');
+  const host = await getHost();
+  await host.execute(
+    {
+      type: 'defineModel',
+      name: 'MergePerson',
+      fields: { name: { type: 'text' } },
+    },
+    { author: 'test' },
+  );
+  await host.execute(
+    {
+      type: 'defineModel',
+      name: 'MergeInvoice',
+      fields: { person: { type: 'reference', ref: 'MergePerson' } },
+    },
+    { author: 'test' },
+  );
+  const keep = await host.create('MergePerson', { name: 'Keep' });
+  const duplicate = await host.create('MergePerson', { name: 'Duplicate' });
+  const pending = (await runCommand(
+    {
+      type: 'mergeRecords',
+      model: 'MergePerson',
+      keep: keep.id as string,
+      merge: [duplicate.id as string],
+    },
+    h.owner.id,
+    'live',
+  )) as { approvalId: string };
+  const invoice = await host.create('MergeInvoice', { person: duplicate.id });
+  const version = host.version;
+  const row = (await (
+    await ApprovalCollection.create({ db: h.db })
+  ).get(pending.approvalId)) as Approval;
+  expect((await runAs(h.owner, () => row.decide(true))).status).toBe('failed');
+  expect(host.version).toBe(version);
+  expect((await host.get('MergeInvoice', invoice.id as string)).person).toBe(
+    duplicate.id,
+  );
+  expect((await host.get('MergePerson', duplicate.id as string)).name).toBe(
+    'Duplicate',
+  );
+  const fresh = (await listApprovalViews({ status: 'pending' })).find(
+    (approval) =>
+      approval.action?.kind === 'command' &&
+      approval.action.command.type === 'mergeRecords',
+  );
+  expect(fresh?.id).not.toBe(pending.approvalId);
+  expect(fresh?.preview).toMatchObject({
+    removed: 1,
+    references: { MergeInvoice: 1 },
+  });
+  if (!fresh) throw new Error('missing fresh approval');
+  const next = (await (
+    await ApprovalCollection.create({ db: h.db })
+  ).get(fresh.id)) as Approval;
+  expect((await runAs(h.owner, () => next.decide(true))).status).toBe(
+    'approved',
+  );
+  expect((await host.get('MergeInvoice', invoice.id as string)).person).toBe(
+    keep.id,
+  );
+});
+
+it.each([
+  'loadRecords',
+  'extractModel',
+] as const)('%s reviews larger affected counts again before writing', async (type) => {
+  const { runCommand } = await import('./builder.ts');
+  const host = await getHost();
+  const model = type === 'loadRecords' ? 'ReviewLoad' : 'ReviewExtract';
+  await host.execute(
+    { type: 'defineModel', name: model, fields: { name: { type: 'text' } } },
+    { author: 'test' },
+  );
+  const first = await host.create(model, { name: 'One' });
+  const command =
+    type === 'loadRecords'
+      ? {
+          type,
+          model,
+          mode: 'upsert' as const,
+          key: ['name'],
+          rows: [{ name: 'One' }, { name: 'Two' }].map((row) => ({ ...row })),
+        }
+      : { type, model, field: 'name', into: 'ReviewExtractTarget' };
+  // A changed field makes the existing load row an overwrite, hence risky.
+  if (type === 'loadRecords') {
+    await host.execute(
+      { type: 'addField', model, field: 'note', definition: { type: 'text' } },
+      { author: 'test' },
+    );
+    (command as { rows: Record<string, unknown>[] }).rows.forEach((row) => {
+      row.note = 'new';
+    });
+  }
+  const pending = (await runCommand(command, h.owner.id, 'live')) as {
+    approvalId: string;
+  };
+  expect(pending.approvalId).toBeTruthy();
+  await host.create(model, { name: 'Two' });
+  const before = await host.list(model);
+  const version = host.version;
+  const row = (await (
+    await ApprovalCollection.create({ db: h.db })
+  ).get(pending.approvalId)) as Approval;
+  expect((await runAs(h.owner, () => row.decide(true))).status).toBe('failed');
+  expect(host.version).toBe(version);
+  expect(await host.list(model)).toEqual(before);
+  expect((await host.get(model, first.id as string)).name).toBe('One');
+  const fresh = (await listApprovalViews({ status: 'pending' })).find(
+    (approval) =>
+      approval.action?.kind === 'command' &&
+      approval.action.command.type === type,
+  );
+  expect(fresh?.id).not.toBe(pending.approvalId);
+  expect(fresh).toBeDefined();
+});

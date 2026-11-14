@@ -1,4 +1,4 @@
-// The app-shell engine: runs a person's own smrt app from a definition.
+// The shared app engine: runs a person's own smrt app from a definition.
 export {
   type Command,
   type CommandType,
@@ -11,6 +11,11 @@ export {
   STRUCTURAL_COMMANDS,
   type Template,
 } from './commands.ts';
+export {
+  LOAD_LIMITS,
+  type LoadPreview,
+  type LoadRecordsCommand,
+} from './data-migrations.ts';
 export {
   type AppDefinition,
   builtInFields,
@@ -52,6 +57,8 @@ export {
   type EngineErrorCode,
   WorkerCrashedError,
 } from './errors.ts';
+export type { ExtractModelCommand, ExtractPreview } from './extract-model.ts';
+export { formulaWords } from './formula.ts';
 export {
   AppHost,
   type ChangeResult,
@@ -69,6 +76,7 @@ export {
   type ToolResult,
   type VersionSummary,
 } from './host.ts';
+export type { MergePreview, MergeRecordsCommand } from './merge-records.ts';
 export type {
   DefinitionDiff,
   DraftChain,
@@ -76,6 +84,7 @@ export type {
   ModelDiff,
   PublishMethod,
 } from './publish.ts';
+export type { AppReportResult, ReportDef, ReportOptions } from './reports.ts';
 export {
   checkSyntax,
   type MethodInput,
@@ -94,3 +103,8 @@ export {
   type VersionRecord,
   type VersionStore,
 } from './store.ts';
+export {
+  ENGINE_COMMAND_TYPES,
+  ENGINE_TOOLS,
+  isEngineTool,
+} from './tool-definitions.ts';

@@ -35,6 +35,17 @@ const nav: ShellNavItem[] = $derived(
         label: item.label,
         icon: item.icon,
         description: item.description,
+        children: item.children?.map((child) => ({
+          ...child,
+          badge:
+            data.description?.mode === 'draft' &&
+            !Object.hasOwn(
+              data.liveDescription?.reports ?? {},
+              child.id.slice(7),
+            )
+              ? 'new'
+              : null,
+        })),
         badge:
           data.description?.mode === 'draft' &&
           item.id.startsWith('model:') &&
@@ -133,7 +144,7 @@ onMount(() => {
   {#snippet panel({ open })}
     <AssistantPanel {open} owner={data.session.user} buildingInDraft={!!data.description?.draft} />
   {/snippet}
-  {#if data.description && (page.url.pathname === '/' || /^\/(m\/|history$|draft\/review$)/.test(page.url.pathname))}<DraftBar description={data.description} />{/if}
+  {#if data.description && (page.url.pathname === '/' || /^\/(m\/|reports(?:\/|$)|history$|draft\/review$)/.test(page.url.pathname))}<DraftBar description={data.description} />{/if}
   {#key data.description?.mode}
     {@render children()}
   {/key}

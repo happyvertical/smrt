@@ -1,3 +1,8 @@
+import type { GeneratedExpression } from '@happyvertical/smrt-core';
+import type {
+  RuntimeReportResult,
+  RuntimeReportSpec,
+} from '@happyvertical/smrt-reports/svelte';
 // Shapes of the shell's JSON routes (see README.md). Kept as plain types so
 // client code never imports the engine or server modules.
 
@@ -19,6 +24,7 @@ export interface FieldDef {
   choices?: string[];
   ref?: string;
   hidden?: boolean;
+  calculated?: GeneratedExpression;
 }
 
 export interface MethodParam {
@@ -61,12 +67,29 @@ export interface DraftInfo {
 }
 
 export interface PublishPreview {
+  fieldRenames?: {
+    model: string;
+    from: string;
+    to: string;
+    fromLabel: string;
+    toLabel: string;
+  }[];
+  modelLabels?: Record<string, string>;
+  fields?: Record<string, Record<string, FieldDef>>;
+  reportChanges?: { kind: 'added' | 'changed' | 'removed'; text: string }[];
   digest: string;
   fromVersion: number;
   toVersion: number;
   versions: {
     version: number;
     summary: string;
+    humanSummary?: string;
+    dataSteps?: {
+      op: 'loadRecords' | 'extractModel' | 'mergeRecords';
+      model: string;
+      mode?: 'insert' | 'upsert';
+      counts: Record<string, unknown>;
+    }[];
     statements: string[];
     steps: {
       op: string;
@@ -100,6 +123,19 @@ export interface PublishPreview {
   }[];
 }
 
+export interface ReportDef {
+  label?: string;
+  description?: string;
+  spec: RuntimeReportSpec;
+}
+export type AppReportResult = Omit<RuntimeReportResult, 'columns'> & {
+  columns: (RuntimeReportResult['columns'][number] & {
+    choices?: string[];
+    reference?: string;
+    labelColumn?: string;
+  })[];
+};
+
 export interface Description {
   mode: Target;
   draft: DraftInfo | null;
@@ -108,6 +144,7 @@ export interface Description {
   version: number;
   recipes: string[];
   models: Record<string, ModelInfo>;
+  reports?: Record<string, ReportDef>;
   pendingApprovals: number;
 }
 
@@ -122,6 +159,7 @@ export interface VersionInfo {
   parent: number | null;
   author: string;
   summary: string;
+  humanSummary?: string;
   createdAt: string;
   purged: boolean;
   current: boolean;
@@ -146,6 +184,7 @@ export interface ApprovalView {
   id: string;
   status: ApprovalStatus;
   summary: string;
+  humanSummary?: string;
   preview: unknown;
   action: ApprovalAction | null;
   requestedBy: string;
@@ -159,6 +198,7 @@ export interface PendingApproval {
   status: 'pending_approval';
   approvalId: string;
   summary: string;
+  humanSummary?: string;
   preview: unknown;
 }
 
@@ -168,6 +208,7 @@ export type ShellEvent =
       target?: 'live' | 'draft';
       version: number;
       summary: string;
+      humanSummary?: string;
     }
   | { type: 'records'; target?: 'live' | 'draft'; model: string | null }
   | {
@@ -181,4 +222,5 @@ export type ShellEvent =
       id: string;
       status: ApprovalStatus;
       summary: string;
+      humanSummary?: string;
     };

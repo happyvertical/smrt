@@ -7,6 +7,7 @@ export interface MenuItem {
   label: string;
   icon: string;
   description?: string;
+  children?: MenuItem[];
 }
 
 /** An item of the user menu (Approvals, History), caller-owned destinations. */
@@ -24,7 +25,7 @@ export function modelHref(model: string): string {
 
 /** The side menu: Home and what the app (the assistant) has built. */
 export function buildMenu(
-  description: Pick<Description, 'models'> | null,
+  description: Pick<Description, 'models' | 'reports'> | null,
 ): MenuItem[] {
   const items: MenuItem[] = [
     { id: 'home', href: '/', label: 'Home', icon: 'home' },
@@ -35,6 +36,20 @@ export function buildMenu(
       href: modelHref(name),
       label: model.label || name,
       icon: 'book',
+    });
+  const reports = Object.entries(description?.reports ?? {});
+  if (reports.length)
+    items.push({
+      id: 'reports',
+      href: '/reports',
+      label: 'Reports',
+      icon: 'chart',
+      children: reports.map(([name, report]) => ({
+        id: `report:${name}`,
+        href: `/reports/${encodeURIComponent(name)}`,
+        label: report.label ?? report.spec.title,
+        icon: 'chart',
+      })),
     });
   return items;
 }

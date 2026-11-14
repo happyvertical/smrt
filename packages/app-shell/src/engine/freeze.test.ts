@@ -23,12 +23,43 @@ afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 /** One sample of every command type (the type makes the list exhaustive). */
 const SAMPLES: Record<CommandType, Command> = {
+  mergeRecords: {
+    type: 'mergeRecords',
+    model: 'Chore',
+    keep: 'a',
+    merge: ['b'],
+  },
+  extractModel: {
+    type: 'extractModel',
+    model: 'Chore',
+    field: 'title',
+    into: 'Category',
+  },
+  loadRecords: {
+    type: 'loadRecords',
+    model: 'Chore',
+    rows: [],
+    mode: 'insert',
+  },
+  defineReport: {
+    type: 'defineReport',
+    name: 'counts',
+    definition: { spec: {} as never },
+  },
+  renameReport: { type: 'renameReport', from: 'a', to: 'b' },
+  removeReport: { type: 'removeReport', name: 'a' },
   defineModel: { type: 'defineModel', name: 'Other' },
   addField: {
     type: 'addField',
     model: 'Chore',
     field: 'notes',
     definition: { type: 'text' },
+  },
+  setCalculation: {
+    type: 'setCalculation',
+    model: 'Chore',
+    field: 'title',
+    calculated: null,
   },
   hideField: { type: 'hideField', model: 'Chore', field: 'title' },
   renameField: {

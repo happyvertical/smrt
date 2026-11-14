@@ -3,7 +3,7 @@
 An ordinary smrt app (SvelteKit + adapter-node, app-runtime **local** profile)
 that builds and runs a person's own smrt app from a versioned JSON definition,
 for one person: the owner. Epic #4867; this package is #4872. The engine is
-documented in [agents/engine.md](agents/engine.md) (it must not import
+documented in [shared engine](agents/engine.md) (it must not import
 SvelteKit or `src/lib`). README has the route and JSON contracts.
 
 Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md](agents/shared-pieces.md).
@@ -22,15 +22,17 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
 | `src/lib/server/version-store.ts` | `ShellVersionStore` (engine `VersionStore` on `AppVersion` + the `App` row; `commit` is one transaction, a publish's draft mark rides in it) and `DraftVersionStore` (`AppDraftVersion` rows of one `AppDraft`). |
 | `src/lib/server/owner.ts` | Owner check, `Principal`, `assertOwner`, `runAs`. |
 | `src/lib/server/approvals.ts`, `approval-store.ts` | Shared-authority storage adapter and shell action executor; the only place `approved: true` is set. |
+| `src/lib/server/engine-tools.ts` | New engine catalog adapters: owner check, explicit structure/record targets, builder approval path. |
 | `src/lib/server/builder.ts` | `runCommand`/`runAppTool`/`runRest`/`requestRecordDelete`: execute or turn into an Approval. |
 | `src/lib/server/catalog.ts`, `policy.ts`, `mcp-server.ts` | Merged tool catalog, the one policy, the `/mcp` server. |
 | `src/lib/server/http.ts`, `events.ts` | Route plumbing; in-process event bus for SSE. |
 | `src/lib/server/inference.ts`, `inference-registry.ts` | smrt-inference host + controller over shell.db and the runtime's master key; `asOwner` runs a settings request as the verified owner; `installShellInference` registers the user resolver (the assistant's key source). |
-| `src/lib/server/assistant/`, `src/lib/assistant/` | Assistant: turn loop, hold, config, routes (`mountAssistantRoutes`), thread store; chat column UI (`AssistantPanel`), pure reducer/stream parser, `guidance/system.md`. |
+| `src/lib/server/assistant/`, `src/lib/assistant/` | Assistant: turn loop, hold, config, routes (`mountAssistantRoutes`), thread store; chat column UI (`AssistantPanel`), pure reducer/stream parser, `guidance/system.md`. Definition report results use shared `ReportResult`; tool projections stay transient and stored summaries keep validated report links. |
 | `src/routes/+layout.svelte`, `src/lib/ui/layout.ts`, `src/lib/ui/menu.ts` | Shell layout over smrt-svelte `AppShell`: left sidebar (the person's app only), the chat column (`panel`), footer voice/assistant toggles, user menu (Approvals with count, History, Theme, Settings, Sign out). Plugin mode (iframe or `?embed=plugin`) has no chat or toggles. Chat open state and the sidebar collapse (`edgeToggles.left`, icon rail) are per owner in localStorage; `sidebarFooterDivider={false}` removes the footer line so it does not clash with the chat composer's border. |
 | `src/lib/server/agent-cli/`, `assistant/agent-turn.ts`, `onboarding.ts` | Thin host adapters over smrt-inference/server (CLI, token scope, shell guidance/approvals), the `assistant` preference (engine, onboarding), onboarding routes; UI `routes/welcome`, `components/ConnectAi.svelte`, `routes/settings/assistant`. |
 | `src/routes/settings/` | Settings menu (`ShellSettingsPage`), built-in sections, owner-only `inference/` (panel + actions over the shared controller). |
-| `src/routes/` | `/api/shell/*`, `/api/app/[...path]`, `/api/events`, `/mcp`, `/setup`, health. UI pages are placeholders. |
+| `src/routes/reports/`, `src/lib/ui/reports.ts`, `formula.ts` | Definition reports use shared `ReportResult`; owner-only result/CSV routes carry an explicit target. Display formulas in one place; never evaluate in the browser. `fields.ts` omits calculated values from save payloads; RecordForm shows outputs and RecordList sorts loaded values. See [draft UI](agents/draft-ui.md). |
+| `src/routes/` | `/api/shell/*`, `/api/app/[...path]`, `/api/events`, `/mcp`, `/setup`, health and owner data pages. |
 
 ## Invariants
 
@@ -135,7 +137,7 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
 
 `vitest run` then `vitest run -c vitest.dom.config.ts` (the layout's jsdom component tests, `*.dom.test.ts`, over smrt-svelte's built `dist`; rebuild smrt-svelte first). Node suite: in-process, SQLite, temp dirs; `test-support.ts` seeds an owner
 and a member; it opens the real driver because the vitest setup would
-pre-create tables). `pnpm build` (tsc engine, `svelte-kit sync`, `vite build`;
+pre-create tables). `pnpm build` (tsc models, `svelte-kit sync`, `vite build`;
 the smrt() plugin generates `src/routes/api/{apps,approvals,_changes,_events,
 _resources}`: git-ignored) and `pnpm typecheck` must pass. The `smrt()` plugin
 needs the models in `src/lib/objects`, set via `objectsDir`.

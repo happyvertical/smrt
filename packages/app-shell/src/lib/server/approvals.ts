@@ -6,7 +6,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { OwnerApprovalError } from '@happyvertical/smrt-app-runtime';
-import type { Command, Plan } from '../../engine/index.ts';
+import {
+  ApprovalRequiredError,
+  type Command,
+  type Plan,
+} from '../../engine/index.ts';
 import { type Approval, ApprovalCollection } from '../objects/Approval.ts';
 import { shellApprovalAuthority } from './approval-store.ts';
 import { discardNow, publishApproved } from './drafts.ts';
@@ -16,7 +20,11 @@ import { publicChangeResult } from './results.ts';
 
 /** What an approval runs once the owner says yes. */
 export type ApprovalAction =
-  | { kind: 'command'; command: Command }
+  | {
+      kind: 'command';
+      command: Command;
+      reviewedPreview?: Record<string, unknown>;
+    }
   | { kind: 'tool'; name: string; args: Record<string, unknown> }
   | { kind: 'rest'; method: string; url: string; body?: string }
   | { kind: 'record-delete'; model: string; id: string }
@@ -104,7 +112,31 @@ function iso(value: unknown): string {
   return value instanceof Date ? value.toISOString() : String(value ?? '');
 }
 
-function view(row: Approval): ApprovalView {
+async function view(row: Approval): Promise<ApprovalView> {
+  const preview = parseJson(row.preview) as Record<string, unknown> | null;
+  const action = parseJson(row.command) as ApprovalAction | null;
+  // Pending cards from older releases may predate scoped reference labels.
+  // Fill only the model names whose counts this card actually displays.
+  if (
+    action?.kind === 'command' &&
+    action.command.type === 'mergeRecords' &&
+    preview?.references &&
+    typeof preview.references === 'object'
+  ) {
+    const labels = {
+      ...(preview.referenceLabels as Record<string, string> | undefined),
+    };
+    const missing = Object.keys(preview.references).filter(
+      (name) => !labels[name],
+    );
+    if (missing.length) {
+      const models = (await getHost()).def.models;
+      for (const name of missing)
+        if (Object.hasOwn(models, name))
+          labels[name] = models[name].label ?? name;
+      preview.referenceLabels = labels;
+    }
+  }
   return {
     id: row.id as string,
     status:
@@ -112,7 +144,7 @@ function view(row: Approval): ApprovalView {
         ? 'approved'
         : row.status,
     summary: row.summary,
-    preview: parseJson(row.preview),
+    preview,
     action: parseJson(row.command) as ApprovalAction | null,
     requestedBy: row.requestedBy,
     decidedBy: row.decidedBy,
@@ -175,7 +207,7 @@ export async function requestApproval(
       });
       return created;
     })());
-  const v = view(row);
+  const v = await view(row);
   const pending: PendingApproval = {
     status: 'pending_approval',
     approvalId: v.id,
@@ -202,7 +234,9 @@ export async function listApprovalViews(
     ...(filter.status ? { where: { status: filter.status } } : {}),
     limit: 500,
   });
-  return rows.map(view).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  return (await Promise.all(rows.map(view))).sort((a, b) =>
+    a.createdAt < b.createdAt ? 1 : -1,
+  );
 }
 
 export async function pendingApprovalCount(): Promise<number> {
@@ -311,6 +345,9 @@ export async function decideApproval(
           await host.execute(action.command, {
             author: row.requestedBy || decidedBy,
             approved: true,
+            reviewedPreview:
+              action.reviewedPreview ??
+              (parseJson(row.preview) as Record<string, unknown>),
           }),
         );
       else if (action.kind === 'tool')
@@ -328,14 +365,31 @@ export async function decideApproval(
       // a non-2xx REST response) instead of throwing: they did not apply.
       if (error === undefined) error = returnedFailure(action.kind, result);
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      if (e instanceof ApprovalRequiredError && action.kind === 'command') {
+        const pending = await requestApproval(
+          { ...action, reviewedPreview: e.plan.preview },
+          {
+            ...e.plan,
+            preview: {
+              ...(parseJson(row.preview) as Record<string, unknown>),
+              ...e.plan.preview,
+            },
+          },
+          row.requestedBy || decidedBy,
+        );
+        result = pending;
+        error =
+          'The affected record counts increased. Review the new approval before applying this change.';
+      } else error = e instanceof Error ? e.message : String(e);
     }
     row.status = error === undefined ? 'approved' : 'failed';
     await authority.complete(
       tenantId,
       id,
       error === undefined,
-      error === undefined ? result : { error },
+      error === undefined
+        ? result
+        : { error, ...(result ? { pending: result } : {}) },
     );
     publish({
       type: 'approval',
