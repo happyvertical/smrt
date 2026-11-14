@@ -173,6 +173,22 @@ it('renders real Node engine previews in approval cards for all data and calcula
           expect(container.querySelector('b')).toBeNull();
           expect(container.textContent).toContain('1 record in total');
         }
+        if (card.name === 'replace') {
+          expect(container.textContent).toContain(
+            'Undo restores the previous calculation',
+          );
+          expect(container.textContent).not.toContain(
+            'Undo restores the original values',
+          );
+        }
+        if (card.name === 'plain')
+          expect(container.textContent).toContain(
+            'Undo restores the original values',
+          );
+        if (['insert', 'upsert', 'merge'].includes(card.name))
+          expect(container.textContent).toContain(
+            'Later edits can prevent undo.',
+          );
         if (['empty', 'replace', 'clear', 'insert'].includes(card.name))
           expect(container.textContent, card.name).not.toContain(
             'will be overwritten',

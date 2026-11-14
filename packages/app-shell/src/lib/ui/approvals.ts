@@ -106,7 +106,7 @@ function commandLines(
               `${plural(num(count), 'reference')} in ${labels[name] ?? humanize(name)} will point to the kept record.`,
           ),
           `Removes ${plural(num(preview.removed), 'record')} in total.`,
-          'The merged records are removed. Undo restores them until old archives are cleaned up.',
+          'The merged records are removed. Undo restores them until old archives are cleaned up. Later edits can prevent undo.',
         ],
       };
     }
@@ -126,10 +126,10 @@ function commandLines(
           `Loads records into ${model}: ${num(preview.insert)} inserted, ${num(preview.update)} updated, ${num(preview.unchanged)} unchanged, ${num(preview.rejected)} rejected.`,
           ...(num(preview.update) > 0
             ? [
-                'Updates overwrite stored values. Undo restores the originals until old archives are cleaned up.',
+                'Updates overwrite stored values. Undo restores the originals until old archives are cleaned up. Later edits can prevent undo.',
               ]
             : [
-                'Undo removes the loaded records until old archives are cleaned up.',
+                'Undo removes the loaded records until old archives are cleaned up. Later edits can prevent undo.',
               ]),
         ],
       };
@@ -160,7 +160,9 @@ function commandLines(
                 `${plural(num(preview.withValue), 'stored value')} will be overwritten with calculated values.`,
               ]
             : []),
-          'Future edits cannot set this field directly. Undo restores the original values until old archives are cleaned up.',
+          from && to
+            ? 'Future edits cannot set this field directly. Undo restores the previous calculation until old archives are cleaned up.'
+            : 'Future edits cannot set this field directly. Undo restores the original values until old archives are cleaned up.',
         ],
       };
     }
