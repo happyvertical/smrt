@@ -21,6 +21,47 @@ function addedField(model: string, field: string, preview: PublishPreview) {
   return `Add field ${model}.${field}${calculation ? `: calculated as ${formulaWords(calculation, fields)}` : ''}.`;
 }
 
+/** Every replayed data step is counted against the current live rehearsal. */
+export function publishDataLines(preview: PublishPreview): string[] {
+  return preview.versions.flatMap((v) =>
+    (v.dataSteps ?? []).map((step) => {
+      const c = step.counts;
+      if (step.op === 'loadRecords')
+        return `Load ${step.model} (${step.mode}): ${c.insert} inserted, ${c.update} updated, ${c.unchanged} unchanged, ${c.rejected} rejected.`;
+      if (step.op === 'extractModel')
+        return `Extract ${step.model}: ${c.rows} rows, ${c.distinct} distinct values, ${c.folded} folded, ${c.create} created, ${c.matched} matched.`;
+      const references =
+        Object.entries((c.references ?? {}) as Record<string, number>)
+          .map(([model, count]) => `${model}: ${count}`)
+          .join(', ') || 'none';
+      return `Merge ${step.model}: ${c.removed} removed; references repointed (${references}).`;
+    }),
+  );
+}
+
+/** Only calculation changes in this publish, including models and fields added. */
+export function publishCalculations(preview: PublishPreview): string[] {
+  const lines: string[] = [];
+  for (const model of preview.definition.modelsAdded) {
+    for (const [name, field] of Object.entries(preview.fields?.[model] ?? {}))
+      if (field.calculated) lines.push(addedField(model, name, preview));
+  }
+  for (const [model, diff] of Object.entries(preview.definition.models)) {
+    for (const field of diff.fieldsAdded)
+      if (preview.fields?.[model]?.[field]?.calculated)
+        lines.push(addedField(model, field, preview));
+    for (const field of diff.fieldsChanged)
+      if (
+        JSON.stringify(field.from.calculated) !==
+        JSON.stringify(field.to.calculated)
+      )
+        lines.push(
+          fieldChange(model, field.field, field.from, field.to, preview),
+        );
+  }
+  return lines;
+}
+
 /** Summarise the definition and replay: intermediate conversions matter too. */
 export function publishLines(preview: PublishPreview): string[] {
   const d = preview.definition;
@@ -51,11 +92,12 @@ export function publishLines(preview: PublishPreview): string[] {
     ...d.recipesRemoved.map((r) => `Remove recipe ${r}.`),
   );
   lines.push(...(preview.reportChanges ?? []).map((c) => c.text));
+  lines.push(...publishDataLines(preview));
   return lines;
 }
 
 export interface PublishGroup {
-  name: 'Added' | 'Removed' | 'Changed' | 'Archived';
+  name: 'Added' | 'Removed' | 'Changed' | 'Archived' | 'Data';
   count: number;
   items: string[];
   note?: string;
@@ -103,7 +145,14 @@ export function publishGroups(preview: PublishPreview): PublishGroup[] {
   const conversions = preview.versions
     .flatMap((v) => v.steps)
     .filter((step) => step.op === 'convertColumn').length;
+  const data = publishDataLines(preview);
   return [
+    {
+      name: 'Data',
+      count: data.length,
+      items: data,
+      note: 'Replayed against current live records.',
+    },
     { name: 'Added', count: added.length, items: added },
     { name: 'Removed', count: removed.length, items: removed },
     {

@@ -75,6 +75,12 @@ export interface PublishPreview {
   versions: {
     version: number;
     summary: string;
+    dataSteps?: {
+      op: 'loadRecords' | 'extractModel' | 'mergeRecords';
+      model: string;
+      mode?: 'insert' | 'upsert';
+      counts: Record<string, unknown>;
+    }[];
     statements: string[];
     steps: {
       op: string;

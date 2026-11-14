@@ -66,6 +66,8 @@ export interface Plan {
 export interface ExecuteOptions {
   author: string;
   approved?: boolean;
+  /** Counts shown in the approval; growth requires a fresh decision. */
+  reviewedPreview?: Record<string, unknown>;
 }
 
 /** A template: the definition (and optionally the records) of an app. */
@@ -89,6 +91,8 @@ export const RISKY_COMMANDS: ReadonlySet<CommandType> = new Set<CommandType>([
   'removeModel',
   'extractModel',
   'mergeRecords',
+  'loadRecords',
+  'removeReport',
   'changeFieldType',
   'setCalculation',
   'cleanUp',
@@ -112,7 +116,6 @@ export function overwritesOnUndo(step: Step): boolean {
 /** Static risk of a command. `undo` is decided by the host from the stored version. */
 export function isRiskyCommand(cmd: Command): boolean {
   if (RISKY_COMMANDS.has(cmd.type)) return true;
-  if (cmd.type === 'loadRecords') return cmd.mode === 'upsert';
   if (cmd.type === 'importTemplate')
     return Object.values(cmd.data?.definition?.models ?? {}).some(
       (m) => Object.keys(m?.methods ?? {}).length > 0,

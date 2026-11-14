@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 // The host: owns the version history (through a VersionStore) and the data
 // directory, and manages the user app, which runs as its own runtime in a
 // worker thread. Every definition change starts a fresh app runtime from the
@@ -137,6 +137,13 @@ export type PublishStage =
   | 'respawned'
   | 'committed';
 
+export interface PublishDataStep {
+  op: 'loadRecords' | 'extractModel' | 'mergeRecords';
+  model: string;
+  mode?: 'insert' | 'upsert';
+  counts: Record<string, unknown>;
+}
+
 export interface PublishVersionPreview {
   /** The number this version gets in live. */
   version: number;
@@ -145,6 +152,7 @@ export interface PublishVersionPreview {
   author: string;
   summary: string;
   steps: Step[];
+  dataSteps?: PublishDataStep[];
   /** The SQL the rehearsal ran for it. */
   statements: string[];
 }
@@ -199,6 +207,8 @@ export interface ChangeResult {
   snapshot: string | null;
   appRestartMs: number;
   affectedMethods?: string[];
+  loadCounts?: LoadPreview;
+  skipped?: number;
   converted?: number;
   emptied?: number;
   undid?: string;
@@ -535,6 +545,37 @@ export class AppHost extends EventEmitter {
       const a = await this.analyse(cmd);
       if (a.plan.risky && opts.approved !== true && !this.#autoApprove)
         throw new ApprovalRequiredError(a.plan);
+      if (
+        opts.reviewedPreview &&
+        ['loadRecords', 'extractModel', 'mergeRecords'].includes(cmd.type)
+      ) {
+        const grew = (current: unknown, reviewed: unknown): boolean => {
+          if (typeof current === 'number')
+            return current > (typeof reviewed === 'number' ? reviewed : 0);
+          if (!current || typeof current !== 'object' || Array.isArray(current))
+            return false;
+          return Object.entries(current).some(([key, value]) =>
+            grew(
+              value,
+              reviewed && typeof reviewed === 'object'
+                ? (reviewed as Record<string, unknown>)[key]
+                : undefined,
+            ),
+          );
+        };
+        const keys =
+          cmd.type === 'loadRecords'
+            ? ['insert', 'update']
+            : cmd.type === 'extractModel'
+              ? ['rows', 'create', 'matched', 'distinct', 'folded']
+              : ['removed', 'references'];
+        if (
+          keys.some((key) =>
+            grew(a.plan.preview?.[key], opts.reviewedPreview?.[key]),
+          )
+        )
+          throw new ApprovalRequiredError(a.plan);
+      }
       return a.apply(opts.author);
     });
   }
@@ -667,6 +708,7 @@ export class AppHost extends EventEmitter {
           this.clone(),
           {
             preview: { ...preview },
+            after: (r) => ({ ...r, loadCounts: preview }),
             steps: [
               {
                 op: 'loadRecords',
@@ -677,7 +719,7 @@ export class AppHost extends EventEmitter {
             ],
           },
         );
-        a.plan.risky = preview.update > 0;
+        a.plan.risky = true;
         if (preview.rejected)
           a.apply = async () => {
             throw new EngineError(
@@ -799,11 +841,17 @@ export class AppHost extends EventEmitter {
           preview: {
             model: cmd.model,
             field: cmd.field,
+            rows: await this.callApp<number>('countRows', st.table),
+            withValue: await this.callApp<number>(
+              'countValues',
+              st.table,
+              st.column,
+            ),
             from: st.fd.calculated ?? null,
             to: cmd.calculated,
           },
         });
-        a.plan.risky = !st.fd.calculated;
+        a.plan.risky = true;
         return a;
       }
       case 'hideField': {
@@ -1173,12 +1221,13 @@ export class AppHost extends EventEmitter {
           migration,
           () => this.store.setCurrent(parent.version),
         );
-        const summary = `undo: ${rec.summary}`;
+        const summary = `undo: ${rec.summary}${swapped.skipped ? `; skipped ${swapped.skipped} deleted referring records` : ''}`;
         this.emit('changed', { version: parent.version, summary });
         return {
           version: parent.version,
           summary,
           undid: rec.summary,
+          ...(swapped.skipped ? { skipped: swapped.skipped } : {}),
           statements: swapped.statements,
           snapshot: swapped.snapshot,
           appRestartMs: swapped.swapMs,
@@ -1261,6 +1310,7 @@ export class AppHost extends EventEmitter {
         const statements: string[] = [];
         let snapshot: string | null = null;
         let appRestartMs = 0;
+        let skipped = 0;
         for (const [i, r] of undone.entries()) {
           try {
             const step = await (await this.analyseUndo(r.version)).apply('');
@@ -1268,6 +1318,7 @@ export class AppHost extends EventEmitter {
             statements.push(...c.statements);
             snapshot = c.snapshot ?? snapshot;
             appRestartMs += c.appRestartMs;
+            skipped += c.skipped ?? 0;
           } catch (e) {
             const code = e instanceof EngineError ? e.code : 'migration_failed';
             throw new EngineError(
@@ -1278,7 +1329,10 @@ export class AppHost extends EventEmitter {
         }
         return {
           version: target,
-          summary,
+          summary:
+            summary +
+            (skipped ? `; skipped ${skipped} deleted referring records` : ''),
+          ...(skipped ? { skipped } : {}),
           undid: undone.map((r) => r.summary).join('; '),
           statements,
           snapshot,
@@ -1650,6 +1704,7 @@ export class AppHost extends EventEmitter {
    */
   private async replay(dir: string, chain: DraftChain, numbers: number[]) {
     const boots: BootInfo[] = [];
+    const dataSteps: PublishDataStep[][] = [];
     const allSteps = chain.versions.flatMap((r) => r.migration?.steps ?? []);
     let archives = { values: 0, tables: 0 };
     const file = join(dir, 'final', 'app.db');
@@ -1660,10 +1715,53 @@ export class AppHost extends EventEmitter {
         throw new EngineError(
           `"${rec.summary}" from the draft is invalid: ${errs.join('; ')}`,
         );
-      // Publish has its own always-approved rehearsal over current live data.
-      const steps = (rec.migration?.steps ?? []).map((step) =>
-        step.op === 'loadRecords' ? { ...step, maxUpdates: undefined } : step,
-      );
+      const steps = structuredClone(rec.migration?.steps ?? []);
+      const impacts: PublishDataStep[] = [];
+      if (
+        steps.some((step) =>
+          ['loadRecords', 'extractModel', 'mergeRecords'].includes(step.op),
+        )
+      ) {
+        const before = new AppWorker(this.workerUrl, {
+          dataDir: dir,
+          def: i ? chain.versions[i - 1].definition : chain.base.definition,
+          version: i ? numbers[i - 1] : chain.baseVersion,
+        });
+        try {
+          await before.ready;
+          for (const step of steps) {
+            if (step.op === 'loadRecords') {
+              const counts = await before.call<LoadPreview>(
+                'previewLoad',
+                step.command,
+              );
+              step.maxUpdates = counts.update;
+              impacts.push({
+                op: step.op,
+                model: step.command.model,
+                mode: step.command.mode,
+                counts: { ...counts },
+              });
+            } else if (
+              step.op === 'extractModel' ||
+              step.op === 'mergeRecords'
+            ) {
+              const counts = await before.call<ExtractPreview | MergePreview>(
+                step.op === 'extractModel' ? 'previewExtract' : 'previewMerge',
+                step.command,
+              );
+              impacts.push({
+                op: step.op,
+                model: step.command.model,
+                counts: { ...counts },
+              });
+            }
+          }
+        } finally {
+          await before.retire();
+        }
+      }
+      dataSteps.push(impacts);
       const w = new AppWorker(this.workerUrl, {
         dataDir: dir,
         def: rec.definition,
@@ -1691,7 +1789,15 @@ export class AppHost extends EventEmitter {
       }
       await w.retire();
     }
-    return { boots, archives, file };
+    return { boots, archives, file, dataSteps };
+  }
+
+  private replayDigest(chain: string, dataSteps: PublishDataStep[][]) {
+    return dataSteps.some((steps) => steps.length)
+      ? createHash('sha256')
+          .update(canonical({ chain, dataSteps }))
+          .digest('hex')
+      : chain;
   }
 
   /**
@@ -1718,7 +1824,7 @@ export class AppHost extends EventEmitter {
       const final =
         ctx.chain.versions[ctx.chain.versions.length - 1].definition;
       return {
-        digest: ctx.digest,
+        digest: this.replayDigest(ctx.digest, r.dataSteps),
         risky: true,
         fromVersion: ctx.at,
         toVersion: ctx.numbers[ctx.numbers.length - 1],
@@ -1729,6 +1835,7 @@ export class AppHost extends EventEmitter {
           summary: rec.summary,
           steps: rec.migration?.steps ?? [],
           statements: r.boots[i].statements,
+          dataSteps: r.dataSteps[i],
         })),
         definition: diffDefinitions(ctx.from, final),
         archives: r.archives,
@@ -1783,7 +1890,14 @@ export class AppHost extends EventEmitter {
     opts: PublishOptions,
   ): Promise<PublishResult> {
     const { chain, digest } = await this.publishInputs(draft);
-    if (digest !== opts.expect)
+    if (
+      !chain.versions.some((rec) =>
+        rec.migration?.steps.some((step) =>
+          ['loadRecords', 'extractModel', 'mergeRecords'].includes(step.op),
+        ),
+      ) &&
+      digest !== opts.expect
+    )
       throw new EngineError(
         'the draft is not what was reviewed (it changed since the preview); review it again',
         'refused',
@@ -1812,6 +1926,11 @@ export class AppHost extends EventEmitter {
       await this.callApp('copyTo', join(dir, 'app.db'));
       await stage('copied');
       const r = await this.replay(dir, chain, numbers);
+      if (this.replayDigest(digest, r.dataSteps) !== opts.expect)
+        throw new EngineError(
+          'the draft or live data counts changed since review; review it again',
+          'refused',
+        );
       archives = r.archives;
       await stage('rehearsed');
       snapshot = join(

@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   AppHost,
@@ -81,9 +82,11 @@ describe('approval gate', () => {
       'changeFieldType',
       'cleanUp',
       'extractModel',
+      'loadRecords',
       'mergeRecords',
       'removeField',
       'removeModel',
+      'removeReport',
       'setCalculation',
     ]);
     expect(isRiskyTool('chore_delete')).toBe(true);
@@ -106,7 +109,7 @@ describe('approval gate', () => {
         mode: 'insert',
         rows: [],
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   for (const [name, make] of risky) {
@@ -234,5 +237,114 @@ describe('approval gate', () => {
     await expect(host.execute({ type: 'undo' }, {} as never)).rejects.toThrow(
       /author/,
     );
+  });
+});
+
+describe('data and definition approval policy', () => {
+  it('requires approval for insert and no-update upsert loads', async () => {
+    for (const mode of ['insert', 'upsert'] as const) {
+      const cmd = {
+        type: 'loadRecords' as const,
+        model: 'Chore',
+        mode,
+        key: mode === 'upsert' ? ['title'] : undefined,
+        rows: [{ title: `approval-${mode}` }],
+      };
+      const version = host.version;
+      expect((await host.plan(cmd)).risky).toBe(true);
+      await expect(host.execute(cmd, asked)).rejects.toBeInstanceOf(
+        ApprovalRequiredError,
+      );
+      expect(host.version).toBe(version);
+      await host.execute(cmd, ok);
+    }
+  });
+  it('requires approval when replacing and clearing an existing calculation', async () => {
+    await host.execute(
+      {
+        type: 'addField',
+        model: 'Chore',
+        field: 'calculatedPoints',
+        definition: { type: 'integer', calculated: { value: 1 } },
+      },
+      asked,
+    );
+    for (const calculated of [{ value: 2 }, null]) {
+      const cmd = {
+        type: 'setCalculation' as const,
+        model: 'Chore',
+        field: 'calculatedPoints',
+        calculated,
+      };
+      expect((await host.plan(cmd)).risky).toBe(true);
+      await expect(host.execute(cmd, asked)).rejects.toBeInstanceOf(
+        ApprovalRequiredError,
+      );
+      await host.execute(cmd, ok);
+    }
+  });
+});
+
+it('requires approval for report removal while rename remains immediate', async () => {
+  await host.execute(
+    {
+      type: 'defineReport',
+      name: 'chores',
+      definition: {
+        spec: parseRuntimeReportSpec({
+          version: 1,
+          title: 'Chores',
+          dimensions: [],
+          source: 'Chore',
+          measures: [{ fn: 'count', as: 'count' }],
+        }),
+      },
+    },
+    asked,
+  );
+  expect(
+    (await host.plan({ type: 'renameReport', from: 'chores', to: 'renamed' }))
+      .risky,
+  ).toBe(false);
+  await host.execute(
+    { type: 'renameReport', from: 'chores', to: 'renamed' },
+    asked,
+  );
+  const cmd = { type: 'removeReport' as const, name: 'renamed' };
+  expect((await host.plan(cmd)).risky).toBe(true);
+  await expect(host.execute(cmd, asked)).rejects.toBeInstanceOf(
+    ApprovalRequiredError,
+  );
+  expect(host.def.reports?.renamed).toBeDefined();
+  await host.execute(cmd, ok);
+  expect(host.def.reports?.renamed).toBeUndefined();
+});
+
+it('refuses approved loads whose current updates exceed reviewed bounds', async () => {
+  const cmd: Command = {
+    type: 'loadRecords',
+    model: 'Chore',
+    mode: 'upsert',
+    key: ['title'],
+    rows: [{ title: 'stale-load', points: 2 }],
+  };
+  const reviewed = await host.plan(cmd);
+  const row = await host.create('Chore', {
+    title: 'stale-load',
+    points: 1,
+  });
+  const before = host.version;
+  await expect(
+    host.execute(cmd, { ...ok, reviewedPreview: reviewed.preview }),
+  ).rejects.toBeInstanceOf(ApprovalRequiredError);
+  expect(host.version).toBe(before);
+  expect((await host.get('Chore', row.id as string)).points).toBe(1);
+  const fresh = await host.plan(cmd);
+  const result = await host.execute(cmd, {
+    ...ok,
+    reviewedPreview: fresh.preview,
+  });
+  expect(result).toMatchObject({
+    loadCounts: { insert: 0, update: 1, unchanged: 0, rejected: 0 },
   });
 });
