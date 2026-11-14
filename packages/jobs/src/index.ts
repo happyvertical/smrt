@@ -95,6 +95,12 @@ export {
 } from './job-builder.js';
 // Job handle for tracking
 export {
+  assertJobClaim,
+  assertJobClaimForRelease,
+  type JobClaim,
+  JobClaimLostError,
+} from './job-claim.js';
+export {
   JobHandle,
   type JobResult,
   type WaitOptions,
@@ -149,6 +155,7 @@ export {
 export {
   createTaskRunner,
   getActiveJobExecutionContext,
+  getJobClaim,
   isRunnerExecutionContext,
   JobCancelledError,
   JobTimeoutError,

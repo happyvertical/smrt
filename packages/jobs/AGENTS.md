@@ -234,3 +234,15 @@ the framework retention sweep in `@happyvertical/smrt-core`.
 - **wait() is polling**: JobHandle.wait() polls DB every 100ms (configurable)
 - **Migrate before start()**: `TaskRunner.start()` throws if `_smrt_workers` is missing — run `smrt db:migrate` after upgrading. Tables are never created at runtime.
 - **Recovery is liveness-based**: don't reintroduce heartbeat-threshold recovery; a blocked event loop must not look dead (see Worker liveness section, #1474)
+
+## Transaction-bound claim proof
+
+`getJobClaim(context)` returns an immutable dispatch-time identity from an
+actual TaskRunner context (never infer its worker from a later row read).
+`assertJobClaim(tx, claim)` locks and proves the same running job, worker,
+attempt, tenant and target before application writes in that transaction.
+`assertJobClaimForRelease(tx, claim)` also accepts the same terminal attempt,
+allowing a settled handler to clear its application's lease after Stop. It
+rejects pending, recovered and replacement claims. Neither function changes
+job status nor expires the process lease. Return from the handler to park;
+TaskRunner owns job completion. Use only after current host authorization.
