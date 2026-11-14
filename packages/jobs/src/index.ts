@@ -95,6 +95,7 @@ export {
 } from './job-builder.js';
 // Job handle for tracking
 export {
+  assertAbandonedJobClaim,
   assertFailedJobDispatch,
   assertJobClaim,
   assertJobClaimForRelease,

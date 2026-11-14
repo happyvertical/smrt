@@ -484,3 +484,9 @@ the same caller transaction for the domain CAS and job admission.
 completedAt? })` reads the safe outcome for that exact job and completion,
 without depending on the tenant feed's 1,000 candidates. Event retention still
 applies, and callers must authorize the resource as well as supply its tenant.
+
+`assertAbandonedJobClaim(tx, claim)` permits an application lease release only
+for its persisted exact terminal dispatch when the original worker is neither
+in the process live set nor holding a fresh worker lease. It uses TaskRunner's
+liveness contract, not an application's timeout. A cancelled row alone never
+proves settlement. Keep the application lease CAS in that same transaction.

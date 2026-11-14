@@ -1,4 +1,6 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { SmrtWorkerCollection } from './smrt-worker.js';
+import { isWorkerAlive } from './worker-liveness.js';
 
 /** Captured worker incarnation and attempt, never reconstructed from a later read. */
 export interface JobClaim {
@@ -131,4 +133,27 @@ export async function assertFailedJobDispatch(
     ...(dispatch.objectId === null ? [] : [dispatch.objectId]),
   );
   if (result.rows.length !== 1) throw new JobClaimLostError();
+}
+
+/**
+ * Prove an exact terminal dispatch abandoned under TaskRunner's worker-liveness
+ * contract. Use only for an application lease already bound to this claim.
+ * Job cancellation alone is not settlement; a live process or fresh worker lease
+ * rejects release. The job row stays locked until the caller commits.
+ * @param transaction - Transaction that also CAS-releases the application lease.
+ * @param claim - Persisted identity of the dispatch that acquired that lease.
+ */
+export async function assertAbandonedJobClaim(
+  transaction: DatabaseInterface,
+  claim: Readonly<JobClaim>,
+): Promise<void> {
+  await assertJobClaimForRelease(transaction, claim);
+  const current = await transaction.query(
+    'SELECT status FROM _smrt_jobs WHERE id = ?',
+    claim.jobId,
+  );
+  if (current.rows[0]?.status === 'running') throw new JobClaimLostError();
+  const workers = await SmrtWorkerCollection.create({ db: transaction });
+  if (isWorkerAlive(claim.workerId, await workers.freshLeaseWorkerKeys()))
+    throw new JobClaimLostError();
 }

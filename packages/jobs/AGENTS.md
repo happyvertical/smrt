@@ -269,3 +269,9 @@ public `dumpDataDir` method (constructor names are minified). They cannot use an
 off-loop worker connection to the same WASM instance. The opt-in regression uses
 `SMRT_TEST_PGLITE_MODULE` from core's documented isolated peer fixture; absent
 that fixture the default suite deliberately skips the WASM case.
+
+`assertAbandonedJobClaim(tx, claim)` permits an application lease release only
+for its persisted exact terminal dispatch when the original worker is neither
+in the process live set nor holding a fresh worker lease. It uses TaskRunner's
+liveness contract, not an application's timeout. A cancelled row alone never
+proves settlement. Keep the application lease CAS in that same transaction.

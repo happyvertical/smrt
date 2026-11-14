@@ -3,6 +3,7 @@ import { getTestDatabase, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  assertAbandonedJobClaim,
   assertFailedJobDispatch,
   assertJobClaim,
   assertJobClaimForRelease,
@@ -11,10 +12,15 @@ import {
 } from '../job-claim.js';
 import { getJobClaim, TaskRunner } from '../runner.js';
 import { SmrtJobCollection } from '../smrt-job.js';
+import { SmrtWorkerCollection } from '../smrt-worker.js';
 import {
   terminalSnapshot,
   transitionTerminalJob,
 } from '../terminal-outcome.js';
+import {
+  registerLiveWorker,
+  unregisterLiveWorker,
+} from '../worker-liveness.js';
 
 let captured: Readonly<JobClaim> | undefined;
 @smrt()
@@ -278,6 +284,41 @@ describe('transaction-bound job claim proof', () => {
     await job.retry();
     await expect(
       db.transaction?.((tx) => assertFailedJobDispatch(tx, claim)),
+    ).rejects.toBeInstanceOf(JobClaimLostError);
+  });
+
+  it('proves abandonment only for the exact terminal claim with no live process or fresh worker lease', async () => {
+    await expect(
+      db.transaction?.((tx) => assertAbandonedJobClaim(tx, claim)),
+    ).rejects.toBeInstanceOf(JobClaimLostError);
+    const jobs = await SmrtJobCollection.create({ db });
+    const job = await jobs.get({ id: claim.jobId });
+    await job?.cancel();
+    registerLiveWorker(claim.workerId);
+    try {
+      await expect(
+        db.transaction?.((tx) => assertAbandonedJobClaim(tx, claim)),
+      ).rejects.toBeInstanceOf(JobClaimLostError);
+    } finally {
+      unregisterLiveWorker(claim.workerId);
+    }
+    const workers = await SmrtWorkerCollection.create({ db });
+    await workers.registerWorker({
+      workerKey: claim.workerId,
+      leaseTtlMs: 60000,
+    });
+    await expect(
+      db.transaction?.((tx) => assertAbandonedJobClaim(tx, claim)),
+    ).rejects.toBeInstanceOf(JobClaimLostError);
+    await workers.expireWorker(claim.workerId);
+    await db.transaction?.((tx) => assertAbandonedJobClaim(tx, claim));
+    await expect(
+      db.transaction?.((tx) =>
+        assertAbandonedJobClaim(tx, {
+          ...claim,
+          startedAt: new Date(0).toISOString(),
+        }),
+      ),
     ).rejects.toBeInstanceOf(JobClaimLostError);
   });
 
