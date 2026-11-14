@@ -285,12 +285,12 @@ it('shows reviewed current-live counts for each replayed data command', async ()
     data?.querySelector('[data-smrt-component="Badge"]')?.textContent,
   ).toBe('3');
   expect(data?.textContent).toContain(
-    'Load Order (upsert): 2 inserted, 3 updated, 4 unchanged, 0 rejected.',
+    'Load records into Order (upsert): 2 inserted, 3 updated, 4 unchanged, 0 rejected.',
   );
   expect(data?.textContent).toContain(
-    'Extract Order: 9 rows, 5 distinct values, 1 folded, 3 created, 2 matched.',
+    'Extract from Order: 9 records, 5 distinct values, 1 folded, 3 created, 2 matched.',
   );
   expect(data?.textContent).toContain(
-    'Merge Customer: 2 removed; references repointed (Order: 7).',
+    'Merge 2 records in Customer; references repointed (7 references in Order).',
   );
 });
