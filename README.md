@@ -203,6 +203,7 @@ Status legend:
 | [`smrt-playbooks`](./packages/playbooks/README.md) | Preview | Layered playbook registry, overrides, and plan resolution. |
 | [`smrt-prompts`](./packages/prompts/README.md) | Stable | Typed prompt registry and tenant-aware overrides. |
 | [`smrt-inference`](./packages/inference/README.md) | Preview | Inference alias chains with recorded fallback, fusions, user and tenant bindings, the settings panel, hosted inference, and `smrt doctor --ai`. |
+| [`smrt-design-runs`](./packages/design-runs/README.md) | Preview | Durable inference design runs on background jobs, with claim-fenced checkpoints and explicit continuation. |
 | [`smrt-projects`](./packages/projects/README.md) | Preview | Provider-neutral projects, repositories, issues, and delivery work. |
 | [`smrt-support`](./packages/support/README.md) | Preview | Support Case intake, lifecycle, routing, targets, and service time. |
 | [`smrt-timesheets`](./packages/timesheets/README.md) | Preview | Shared time entries, approval and correction, and immutable charge/compensation snapshots. |

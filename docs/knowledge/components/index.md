@@ -22,6 +22,7 @@
 * [@happyvertical/smrt-config](/components/smrt-config.md) - Centralized configuration management for SMRT modules
 * [@happyvertical/smrt-content](/components/smrt-content.md) - Content processing module for SMRT framework - handles documents, web content, and media
 * [@happyvertical/smrt-core](/components/smrt-core.md) - Core SMRT framework for business objects, persistence, and generated REST, CLI, MCP, and AI interfaces
+* [@happyvertical/smrt-design-runs](/components/smrt-design-runs.md) - Durable inference design runs composed with background jobs
 * [@happyvertical/smrt-desktop](/components/smrt-desktop.md) - Versioned sidecar manifest, the runtime bundler and the assistant-plugin launcher for SMRT desktop apps
 * [@happyvertical/smrt-dev-mcp](/components/smrt-dev-mcp.md) - Development MCP server for SMRT framework knowledge, review context, architecture context, and code generation
 * [@happyvertical/smrt-education](/components/smrt-education.md) - Tenant-aware learning catalog models and authorized catalog access for SMRT
