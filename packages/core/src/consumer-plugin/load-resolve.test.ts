@@ -33,6 +33,7 @@ import {
   serializeSmrtGenerationSnapshot,
   sha256SmrtGenerationSnapshot,
 } from '../generation-snapshot.js';
+import { computeManifestSchemaFingerprint } from '../migrations/schema-fingerprint.js';
 import { SmrtObject } from '../object.js';
 import { manifestEntry } from '../registry/__tests__/helpers/consumer-workspace.js';
 import { ObjectRegistry } from '../registry.js';
@@ -703,6 +704,9 @@ describe('smrtConsumer buildStart package discovery', () => {
     const aggregatedPath = join(projectRoot, '.smrt', 'manifest.json');
     expect(existsSync(aggregatedPath)).toBe(true);
     const aggregated = JSON.parse(readFileSync(aggregatedPath, 'utf-8'));
+    expect(aggregated.schemaFingerprint).toBe(
+      computeManifestSchemaFingerprint(aggregated),
+    );
     expect(aggregated.objects.Thing).toBeDefined();
     expect(aggregated.objects.Thing.packageName).toBe('@scope/smrt-things');
     // determineImportPath fell back to the package name (main field present).

@@ -1,0 +1,679 @@
+/** One policy for every schema-change producer and migration consumer (#4925). */
+import type { DatabaseEngine } from '../schema/ddl/types.js';
+import type { SchemaChange } from '../schema/types.js';
+import { isSqliteRebuildPlaceholder } from './sqlite-rebuild.js';
+
+export type SchemaChangeEngine = 'postgres' | 'sqlite' | 'duckdb';
+export type SchemaChangeDecision = 'apply' | 'stop' | 'report';
+export type SchemaChangeStopReason = 'loses-data' | 'invents-data';
+export interface SchemaChangePolicy {
+  decision: SchemaChangeDecision;
+  reason?: SchemaChangeStopReason;
+  why: string;
+  /** An explicitly unresolved engine/adapter limitation, never a data rule. */
+  exception?: string;
+}
+export interface SchemaChangeKind {
+  type: SchemaChange['type'];
+  engines: Record<SchemaChangeEngine, SchemaChangePolicy>;
+  /**
+   * The change only adds (a table, column, index, foreign key or CHECK) and
+   * relaxes or removes nothing. A run limited to tables may apply only these
+   * to a table the build owns (#4927, P22).
+   */
+  additive?: true;
+}
+const engines = (policy: SchemaChangePolicy) => ({
+  postgres: policy,
+  sqlite: policy,
+  duckdb: policy,
+});
+const apply = (why: string) => engines({ decision: 'apply', why });
+const report = (why: string) => engines({ decision: 'report', why });
+const stop = (reason: SchemaChangeStopReason, why: string) =>
+  engines({ decision: 'stop', reason, why });
+const unresolved = (exception: string) =>
+  engines({ decision: 'stop', exception, why: exception });
+const applyPolicy = (why: string): SchemaChangePolicy => ({
+  decision: 'apply',
+  why,
+});
+const reportPolicy = (why: string): SchemaChangePolicy => ({
+  decision: 'report',
+  why,
+});
+const unresolvedPolicy = (exception: string): SchemaChangePolicy => ({
+  decision: 'stop',
+  exception,
+  why: exception,
+});
+
+/**
+ * Migrate makes the database match the code whenever that is safe.
+ * It stops only when it would lose or invent data; unresolved exceptions below
+ * preserve existing refusals until their engine/adapter support is implemented.
+ *
+ * Every kind that applies on PostgreSQL applies on SQLite and DuckDB too
+ * (#4937). SQLite rebuilds the table where it has no ALTER (NOT NULL, default,
+ * foreign key, column type). DuckDB moves the indexes out of ALTER's way and
+ * rebuilds the table where ALTER cannot do the change. The entries below say,
+ * per engine, what stays different and why:
+ *
+ * - PostgreSQL alone adds the shared-table CHECK (`check.*`). The rule stays in
+ *   smrt's save-time check on the other two engines (#4932).
+ * - PostgreSQL alone cannot remove a foreign key (`foreign-key.drop-unavailable`):
+ *   the SQL adapter does not give it the live constraint name.
+ * - SQLite cannot rebuild a table declared AUTOINCREMENT: the rebuild would
+ *   lose the sequence.
+ * - DuckDB cannot rebuild a table that references itself: it cannot copy rows
+ *   into a table whose foreign key points at itself in one statement.
+ * - The JSON adapter (DuckDB-backed) has no rebuild.
+ */
+export const SCHEMA_CHANGE_KINDS = {
+  'table.add': {
+    type: 'add_table',
+    additive: true,
+    engines: apply('Create the declared table.'),
+  },
+  'table.drop': {
+    type: 'drop_table',
+    engines: stop('loses-data', 'Dropping the table discards its stored rows.'),
+  },
+  'column.add': {
+    type: 'add_column',
+    additive: true,
+    engines: apply(
+      'Add the declared column using the proven default or backfill when needed.',
+    ),
+  },
+  'column.drop': {
+    type: 'drop_column',
+    engines: apply(
+      'Drop the undeclared column; the differ emits this only when the operator asked for it (--drop-columns).',
+    ),
+  },
+  'column.required-missing': {
+    type: 'alter_column',
+    engines: stop(
+      'invents-data',
+      'Existing rows need a required value with no usable default or backfill.',
+    ),
+  },
+  'column.required-nulls': {
+    type: 'alter_column',
+    engines: stop(
+      'invents-data',
+      'Existing NULLs need a required value with no usable default or backfill.',
+    ),
+  },
+  'column.set-not-null': {
+    type: 'alter_column',
+    engines: apply(
+      'Enforce NOT NULL after the declared backfill or a successful NULL check.',
+    ),
+  },
+  'column.drop-not-null': {
+    type: 'alter_column',
+    engines: apply('Remove NOT NULL while preserving every stored value.'),
+  },
+  'column.set-default': {
+    type: 'alter_column',
+    engines: apply('Set the declared default without replacing stored values.'),
+  },
+  'column.drop-default': {
+    type: 'alter_column',
+    engines: apply('Remove the stale default without replacing stored values.'),
+  },
+  'column.relaxation-report': {
+    type: 'alter_column',
+    engines: report(
+      'A stale default or an orphan NOT NULL has not been opted into (relaxColumns); existing values stay unchanged.',
+    ),
+  },
+  'column.rebuild-covered': {
+    type: 'alter_column',
+    engines: report(
+      'Another change rebuilds this column with the declared constraints.',
+    ),
+  },
+  'column.alter-unsupported': {
+    type: 'alter_column',
+    engines: unresolved(
+      'The engine cannot alter this column in place and no table rebuild was planned for it (the JSON adapter has no rebuild).',
+    ),
+  },
+  'column.rebuild-unavailable': {
+    type: 'alter_column',
+    engines: unresolved(
+      'The table rebuild cannot be planned: the table is AUTOINCREMENT (SQLite), a constraint uses a column the change drops (DuckDB), rebuilds that overlap cannot be combined or a new table references the table (DuckDB), or the live definition cannot be read or rewritten.',
+    ),
+  },
+  'column.rebuild-data-loss': {
+    type: 'alter_column',
+    engines: stop(
+      'loses-data',
+      'A caller that runs the rebuild without MigrationTracker would drop the target with foreign keys enabled, and that can delete referencing rows. The differ never produces it (it plans for the tracker); a direct caller of planSqliteTableRebuilds does.',
+    ),
+  },
+  // Calculated columns (#4915). Adding one to an existing table is
+  // `column.add`; DuckDB refuses that before planning (VALIDATION_GENERATED_DIALECT).
+  'column.generated-replace': {
+    type: 'alter_column',
+    engines: {
+      postgres: applyPolicy(
+        'A changed expression drops and re-adds the calculated column and its indexes; every value is recalculated from columns that stay intact.',
+      ),
+      sqlite: applyPolicy(
+        'A changed expression drops and re-adds the VIRTUAL column and its indexes; nothing was stored in it.',
+      ),
+      duckdb: unresolvedPolicy(
+        'DuckDB cannot add or change a calculated column on an existing table; the differ refuses before planning (VALIDATION_GENERATED_DIALECT).',
+      ),
+    },
+  },
+  'column.generated-from-ordinary': {
+    type: 'alter_column',
+    engines: stop(
+      'loses-data',
+      'Making an existing column calculated discards the values callers stored in it. Copy them to another field first, or declare the calculated field under a new name.',
+    ),
+  },
+  'column.generated-to-ordinary': {
+    type: 'alter_column',
+    engines: {
+      postgres: applyPolicy(
+        'DROP EXPRESSION keeps every stored value and index; the column stops updating itself.',
+      ),
+      sqlite: {
+        decision: 'stop',
+        reason: 'loses-data',
+        why: 'A VIRTUAL column stores nothing: making it ordinary replaces every calculated value with the default or NULL.',
+      },
+      duckdb: {
+        decision: 'stop',
+        reason: 'loses-data',
+        why: 'A VIRTUAL column stores nothing: making it ordinary replaces every calculated value with the default or NULL.',
+      },
+    },
+  },
+  'column.generated-to-ordinary-not-null': {
+    type: 'alter_column',
+    engines: stop(
+      'invents-data',
+      'A required ordinary column replacing a VIRTUAL one needs a value for every existing row and none is declared.',
+    ),
+  },
+  'check.add': {
+    type: 'alter_column',
+    additive: true,
+    engines: {
+      postgres: applyPolicy(
+        'Add the missing shared-table CHECK after proving no stored row breaks it.',
+      ),
+      sqlite: reportPolicy(
+        'SQLite carries no shared-table CHECK: the rule stays in smrt save-time check.',
+      ),
+      duckdb: reportPolicy(
+        'DuckDB carries no shared-table CHECK: it cannot add one to a table and gives it no name; the rule stays in smrt save-time check.',
+      ),
+    },
+  },
+  'check.violated': {
+    type: 'alter_column',
+    engines: {
+      postgres: {
+        decision: 'stop',
+        reason: 'invents-data',
+        why: 'Stored rows break the shared-table CHECK and need a value that smrt cannot choose.',
+      },
+      sqlite: reportPolicy(
+        'SQLite carries no shared-table CHECK: the rule stays in smrt save-time check.',
+      ),
+      duckdb: reportPolicy(
+        'DuckDB carries no shared-table CHECK: the rule stays in smrt save-time check.',
+      ),
+    },
+  },
+  'check.drop': {
+    type: 'alter_column',
+    engines: {
+      postgres: applyPolicy(
+        'Drop the undeclared shared-table CHECK; rows are unchanged.',
+      ),
+      sqlite: reportPolicy('SQLite carries no shared-table CHECK to drop.'),
+      duckdb: reportPolicy('DuckDB carries no shared-table CHECK to drop.'),
+    },
+  },
+  'column.orphan': {
+    type: 'orphan_column',
+    engines: report(
+      'The undeclared column is retained with its stored values.',
+    ),
+  },
+  'column.orphan-not-null': {
+    type: 'orphan_column',
+    engines: report(
+      'The undeclared NOT NULL column can break inserts; retaining it loses or invents no data.',
+    ),
+  },
+  'index.add': {
+    type: 'add_index',
+    additive: true,
+    engines: apply(
+      'Create or rename the declared index without changing stored rows.',
+    ),
+  },
+  'index.drop': {
+    type: 'drop_index',
+    engines: apply('Remove the index without removing stored rows.'),
+  },
+  'index.orphan': {
+    type: 'orphan_index',
+    engines: report(
+      'The undeclared index or unique constraint is retained without changing stored rows.',
+    ),
+  },
+  'rename.pending': {
+    type: 'rename_data_pending',
+    engines: report(
+      'The possible rename is reported while both columns and their values are retained.',
+    ),
+  },
+  'type.incompatible': {
+    type: 'type_mismatch',
+    engines: stop(
+      'loses-data',
+      'The incompatible conversion cannot preserve the existing values.',
+    ),
+  },
+  'type.convert': {
+    type: 'type_upgrade',
+    engines: apply(
+      'Run the value-preserving conversion and its validation statements.',
+    ),
+  },
+  'type.noop': {
+    type: 'type_upgrade',
+    engines: report(
+      'The engine already stores this shape or another change rebuilds this column.',
+    ),
+  },
+  'type.uuid-blocked': {
+    type: 'type_upgrade',
+    engines: stop(
+      'loses-data',
+      'The mixed UUID and text values cannot be converted together without replacing existing values.',
+    ),
+  },
+  'type.uuid-constraints-unavailable': {
+    type: 'type_upgrade',
+    engines: unresolved(
+      'Live foreign keys depend on the UUID conversion targets, but the SQL adapter does not expose their constraint names for replacement.',
+    ),
+  },
+  'type.uuid-probe-unavailable': {
+    type: 'type_upgrade',
+    engines: unresolved(
+      'The UUID value probe could not run, so a value-preserving conversion has not been proven.',
+    ),
+  },
+  'type.narrow-float': {
+    type: 'type_upgrade',
+    engines: stop(
+      'loses-data',
+      'Narrowing the floating-point type can discard stored precision.',
+    ),
+  },
+  'type.invalid-json': {
+    type: 'type_upgrade',
+    engines: stop(
+      'loses-data',
+      'The JSON conversion would discard invalid values or duplicate object keys.',
+    ),
+  },
+  'type.invalid-timestamp': {
+    type: 'type_upgrade',
+    engines: stop(
+      'loses-data',
+      'The timestamp conversion cannot preserve invalid or ambiguous stored values.',
+    ),
+  },
+  'type.default-relaxation-report': {
+    type: 'type_upgrade',
+    engines: report(
+      'Conversion needs a stale default removed, but that relaxation has not been opted into.',
+    ),
+  },
+  'type.preservation-unverified': {
+    type: 'type_upgrade',
+    engines: unresolved(
+      'The JSON duplicate-key preservation probe did not finish, so a safe conversion has not been proven.',
+    ),
+  },
+  'type.rebuild-data-loss': {
+    type: 'type_upgrade',
+    engines: stop(
+      'loses-data',
+      'A caller that runs the rebuild without MigrationTracker would drop the target with foreign keys enabled, and that can delete referencing rows.',
+    ),
+  },
+  'type.rebuild-unavailable': {
+    type: 'type_upgrade',
+    engines: unresolved(
+      'The table rebuild cannot be planned: the live table definition cannot be read or rewritten safely, or on DuckDB rebuilds that overlap cannot be combined or a new table references the table.',
+    ),
+  },
+  'foreign-key.add': {
+    type: 'add_foreign_key',
+    additive: true,
+    engines: apply(
+      'Add or replace the foreign key after checking existing references.',
+    ),
+  },
+  'foreign-key.orphans': {
+    type: 'add_foreign_key',
+    engines: stop(
+      'loses-data',
+      'Enforcing the foreign key requires deleting rows or clearing existing references that have no parent.',
+    ),
+  },
+  'foreign-key.incompatible-types': {
+    type: 'add_foreign_key',
+    engines: stop(
+      'loses-data',
+      'The child and parent types cannot be aligned while preserving the existing values.',
+    ),
+  },
+  'foreign-key.type-convergence-unavailable': {
+    type: 'add_foreign_key',
+    engines: unresolved(
+      'The required UUID conversion is blocked by unavailable constraint names or an unfinished value probe.',
+    ),
+  },
+  'foreign-key.parent-data-missing': {
+    type: 'add_foreign_key',
+    engines: stop(
+      'invents-data',
+      'Existing child references need parent rows that do not exist.',
+    ),
+  },
+  'foreign-key.parent-column-missing': {
+    type: 'add_foreign_key',
+    engines: unresolved(
+      'The planned parent has no referenced column; the manifest must be corrected before SQL can be generated.',
+    ),
+  },
+  'foreign-key.conflicting': {
+    type: 'add_foreign_key',
+    engines: unresolved(
+      'A PostgreSQL foreign key exists with a different target or action and the planner cannot safely identify and replace it. SQLite and DuckDB never report this: the table rebuild that adds the declared key replaces the old one.',
+    ),
+  },
+  'foreign-key.add-unsupported': {
+    type: 'add_foreign_key',
+    engines: unresolved(
+      'The table rebuild that adds the key cannot be planned: the table (or one that references it) references itself on DuckDB, rebuilds that overlap cannot be combined on DuckDB, the table is AUTOINCREMENT on SQLite, or has a definition that cannot be rewritten; the JSON adapter has no rebuild.',
+    ),
+  },
+  'foreign-key.drop': {
+    type: 'drop_foreign_key',
+    engines: apply(
+      'Remove the disabled foreign key without changing stored rows.',
+    ),
+  },
+  'foreign-key.drop-unavailable': {
+    type: 'drop_foreign_key',
+    engines: {
+      postgres: unresolvedPolicy(
+        'The SQL adapter does not expose the live PostgreSQL constraint name.',
+      ),
+      sqlite: unresolvedPolicy(
+        'The table rebuild that removes the key cannot be planned (the table is AUTOINCREMENT, or its definition cannot be rewritten).',
+      ),
+      duckdb: unresolvedPolicy(
+        'The table rebuild that removes the key cannot be planned (the table or one that references it references itself, rebuilds that overlap cannot be combined, a new table references the table, or its definition cannot be rewritten).',
+      ),
+    },
+  },
+} as const satisfies Record<string, SchemaChangeKind>;
+
+export type SchemaChangeKindId = keyof typeof SCHEMA_CHANGE_KINDS;
+
+/** Explicit exceptions to the two data rules, with their implementation gap. */
+export const UNRESOLVED_NON_DATA_STOPS = Object.entries(
+  SCHEMA_CHANGE_KINDS,
+).flatMap(([kind, entry]) =>
+  Object.entries(entry.engines).flatMap(([engine, policy]) => {
+    const exception = (policy as SchemaChangePolicy).exception;
+    return exception
+      ? [
+          {
+            kind: kind as SchemaChangeKindId,
+            engine: engine as SchemaChangeEngine,
+            reason: exception,
+          },
+        ]
+      : [];
+  }),
+);
+
+/** Structural input also accepts the CLI's lightweight schema projection. */
+export type SchemaChangeInput = Pick<
+  SchemaChange,
+  | 'table'
+  | 'name'
+  | 'advisory'
+  | 'mismatch'
+  | 'phase'
+  | 'sql'
+  | 'sqlStatements'
+  | 'foreignKey'
+  | 'orphanBlocked'
+  | 'engineUnsupported'
+  | 'kindHint'
+> & { type: string; alteration?: string };
+
+/** The single comment-only SQL definition, shared by all migration consumers. */
+export function isCommentOnlySql(sql: string): boolean {
+  return (
+    sql
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/--[^\n]*/g, '')
+      .trim().length === 0
+  );
+}
+export function hasExecutableSchemaSql(
+  change: Pick<SchemaChangeInput, 'sql' | 'sqlStatements'>,
+): boolean {
+  return (change.sqlStatements ?? (change.sql ? [change.sql] : [])).some(
+    (sql) => !isCommentOnlySql(sql),
+  );
+}
+/** Only call this for comment-only SQL, never for executable literals. */
+export function isNoOpAdvisorySql(sql: string): boolean {
+  return (
+    isCommentOnlySql(sql) &&
+    (/no change needed/i.test(sql) || /already stores .* as /i.test(sql))
+  );
+}
+
+export function classifySchemaChange(
+  change: SchemaChangeInput,
+): SchemaChangeKindId | 'unlisted' {
+  if (change.kindHint) {
+    const hinted = SCHEMA_CHANGE_KINDS[change.kindHint];
+    return hinted?.type === change.type ? change.kindHint : 'unlisted';
+  }
+  const executable = hasExecutableSchemaSql(change);
+  const statements = change.sqlStatements ?? (change.sql ? [change.sql] : []);
+  const noop = statements.length > 0 && statements.every(isNoOpAdvisorySql);
+  switch (change.type) {
+    case 'add_table':
+      return 'table.add';
+    case 'drop_table':
+      return 'table.drop';
+    case 'add_column':
+      return executable ? 'column.add' : 'unlisted';
+    case 'drop_column':
+      return 'column.drop';
+    case 'orphan_column':
+      return change.advisory?.severity === 'warning'
+        ? 'column.orphan-not-null'
+        : 'column.orphan';
+    case 'orphan_index':
+      return 'index.orphan';
+    case 'rename_data_pending':
+      return 'rename.pending';
+    case 'add_index':
+      return executable ? 'index.add' : 'unlisted';
+    case 'drop_index':
+      return executable ? 'index.drop' : 'unlisted';
+    case 'type_mismatch':
+      return 'type.incompatible';
+    case 'type_upgrade':
+      if (executable) return 'type.convert';
+      if (noop) return 'type.noop';
+      if (
+        change.phase === 'pre_foreign_key' ||
+        change.mismatch?.actual === 'mixed uuid/text'
+      )
+        return 'type.uuid-blocked';
+      if (statements.some(isSqliteRebuildPlaceholder))
+        return 'type.rebuild-unavailable';
+      return 'unlisted';
+    case 'alter_column':
+      if (change.alteration === 'set_check')
+        return executable ? 'check.add' : 'check.violated';
+      if (change.alteration === 'drop_check')
+        return executable ? 'check.drop' : 'unlisted';
+      if (change.mismatch?.actual === '(column not added)')
+        return 'column.required-missing';
+      if (noop) return 'column.rebuild-covered';
+      if (!executable) {
+        if (change.alteration === 'set_not_null' && change.advisory)
+          return 'column.required-nulls';
+        if (
+          (change.alteration === 'drop_default' ||
+            change.alteration === 'drop_not_null') &&
+          change.advisory
+        )
+          return 'column.relaxation-report';
+        return [
+          'set_not_null',
+          'drop_not_null',
+          'set_default',
+          'drop_default',
+        ].includes(change.alteration ?? '')
+          ? 'column.alter-unsupported'
+          : 'unlisted';
+      }
+      switch (change.alteration) {
+        case 'set_not_null':
+          return 'column.set-not-null';
+        case 'drop_not_null':
+          return 'column.drop-not-null';
+        case 'set_default':
+          return 'column.set-default';
+        case 'drop_default':
+          return 'column.drop-default';
+        default:
+          return 'unlisted';
+      }
+    case 'add_foreign_key':
+      if (change.orphanBlocked) return 'foreign-key.orphans';
+      if (change.engineUnsupported) return 'foreign-key.add-unsupported';
+      return executable
+        ? 'foreign-key.add'
+        : change.advisory
+          ? 'foreign-key.conflicting'
+          : 'unlisted';
+    case 'drop_foreign_key':
+      return executable ? 'foreign-key.drop' : 'foreign-key.drop-unavailable';
+    default:
+      return 'unlisted';
+  }
+}
+
+/** Whether a kind only adds; see {@link SchemaChangeKind.additive}. */
+export function isAdditiveSchemaChangeKind(
+  kind: SchemaChangeKindId | 'unlisted',
+): boolean {
+  return (
+    kind !== 'unlisted' &&
+    (SCHEMA_CHANGE_KINDS[kind] as SchemaChangeKind).additive === true
+  );
+}
+
+export interface SchemaChangeVerdict {
+  kind: SchemaChangeKindId | 'unlisted';
+  decision: SchemaChangeDecision;
+  stop?: {
+    reason: SchemaChangeStopReason | 'unlisted' | 'unresolved-non-data-stop';
+    why: string;
+  };
+  message: string;
+}
+export function decideSchemaChange(
+  change: SchemaChangeInput,
+  engine: DatabaseEngine,
+): SchemaChangeVerdict {
+  const kind = classifySchemaChange(change);
+  const subject = `${change.table}${change.foreignKey?.column || change.name ? `.${change.foreignKey?.column ?? change.name}` : ''}`;
+  if (kind === 'unlisted') {
+    const why =
+      'This schema change is unlisted; safe execution has not been proven.';
+    return {
+      kind,
+      decision: 'stop',
+      stop: { reason: 'unlisted', why },
+      message: `${subject}: ${why}`,
+    };
+  }
+  const policy: SchemaChangePolicy =
+    SCHEMA_CHANGE_KINDS[kind].engines[engine === 'json' ? 'duckdb' : engine];
+  const dataReason =
+    policy.reason === 'loses-data' ? 'would lose data' : 'would invent data';
+  return {
+    kind,
+    decision: policy.decision,
+    ...(policy.decision === 'stop'
+      ? {
+          stop: {
+            reason: policy.reason ?? 'unresolved-non-data-stop',
+            why: policy.why,
+          },
+        }
+      : {}),
+    message: `${subject}: ${policy.decision === 'stop' ? (policy.reason ? `${dataReason}. ` : 'unresolved non-data stop: ') : ''}${policy.why}${change.advisory ? ` ${change.advisory.message}` : ''}`,
+  };
+}
+
+/** Runtime validator accepts synthetic tables so tests can prove it rejects bad policy. */
+export function validateChangeKindTable(
+  table: Record<string, SchemaChangeKind>,
+): string[] {
+  const problems: string[] = [];
+  for (const [kind, entry] of Object.entries(table)) {
+    for (const engine of ['postgres', 'sqlite', 'duckdb'] as const) {
+      const policy = entry.engines[engine];
+      if (!policy?.why?.trim()) problems.push(`${kind}/${engine}: missing why`);
+      if (policy?.decision !== 'stop') continue;
+      const exception = UNRESOLVED_NON_DATA_STOPS.find(
+        (item) =>
+          item.kind === kind &&
+          item.engine === engine &&
+          item.reason.trim() &&
+          item.reason === policy.exception,
+      );
+      if (
+        policy.reason !== 'loses-data' &&
+        policy.reason !== 'invents-data' &&
+        !exception
+      )
+        problems.push(
+          `${kind}/${engine}: stop must lose or invent data or name a recorded exception`,
+        );
+    }
+  }
+  return problems;
+}

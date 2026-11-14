@@ -8,7 +8,7 @@
 // Register the package manifest before this module's @smrt() decorator
 // runs, whichever chunk the library build places it in (#3098).
 import '../__smrt-register__.js';
-import { field, smrt } from '@happyvertical/smrt-core';
+import { field, ObjectRegistry, smrt } from '@happyvertical/smrt-core';
 import type {
   EmailOptions,
   MessageSendResult,
@@ -263,7 +263,7 @@ export class Email extends Message {
    * Create a reply to this email with RFC 822 threading
    */
   override createReply(options?: { replyAll?: boolean }): Email {
-    const reply = new Email({
+    const reply = new (ObjectRegistry.resolveEffectiveConstructor(Email))({
       ...this.draftOptions(),
       id: undefined,
       accountId: this.accountId,
@@ -326,7 +326,7 @@ export class Email extends Message {
   override createForward(): Email {
     const forwardBody = this.buildForwardBody();
 
-    const forward = new Email({
+    const forward = new (ObjectRegistry.resolveEffectiveConstructor(Email))({
       ...this.draftOptions(),
       id: undefined,
       accountId: this.accountId,

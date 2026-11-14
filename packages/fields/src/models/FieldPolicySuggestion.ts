@@ -101,11 +101,11 @@ export interface FieldPolicySuggestionOptions extends SmrtObjectOptions {
 })
 export class FieldPolicySuggestion extends SmrtObject {
   /** Qualified class name of the target object (`@package/name:ClassName`). */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   objectRef: string = '';
 
   /** Field name on the target object (validated against the registry). */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   fieldName: string = '';
 
   /** Owning tenant (required — suggestions always target one org). */

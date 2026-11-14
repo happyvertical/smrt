@@ -61,20 +61,20 @@ export class Membership extends SmrtObject implements MembershipContract {
   /**
    * Foreign key to User
    */
-  @foreignKey('User', { required: true })
+  @foreignKey('User', { required: true, requiredFor: 'identity' })
   @field({ description: 'The person who belongs to this organization.' })
   userId?: string;
 
   /**
    * Foreign key to Tenant
    */
-  @foreignKey('Tenant', { required: true })
+  @foreignKey('Tenant', { required: true, requiredFor: 'tenant-scope' })
   tenantId?: string;
 
   /**
    * Foreign key to Role - determines base permissions
    */
-  @foreignKey('Role', { required: true })
+  @foreignKey('Role', { required: true, requiredFor: 'identity' })
   @field({ description: "The role that determines this member's permissions." })
   roleId?: string;
 

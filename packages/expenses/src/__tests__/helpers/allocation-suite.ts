@@ -12,6 +12,7 @@ import {
 import {
   GlobalInterceptors,
   isApiActionEnabledForObject,
+  ObjectRegistry,
 } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import {
@@ -1341,7 +1342,10 @@ export function defineAllocationSuite(getDb: () => DatabaseInterface): void {
         await expect(fresh.save()).rejects.toThrow();
         expect(
           isApiActionEnabledForObject(
-            '@happyvertical/smrt-expenses:ExpenseAllocationPortion',
+            ObjectRegistry.getEffectiveClassByConstructor(
+              ExpenseAllocationPortion,
+            )?.qualifiedName ??
+              '@happyvertical/smrt-expenses:ExpenseAllocationPortion',
             'create',
           ),
         ).toBe(false);

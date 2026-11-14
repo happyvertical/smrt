@@ -31,10 +31,16 @@ export class SceneOwnedAsset extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @foreignKey(() => Scene, { required: true })
+  @foreignKey(() => Scene, {
+    required: true,
+    requiredFor: 'identity',
+  })
   sceneId = '';
 
-  @crossPackageRef('@happyvertical/smrt-assets:Asset', { required: true })
+  @crossPackageRef('@happyvertical/smrt-assets:Asset', {
+    required: true,
+    requiredFor: 'identity',
+  })
   assetId = '';
 
   @field({ required: true })

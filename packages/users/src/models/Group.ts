@@ -48,7 +48,7 @@ export class Group extends SmrtObject {
   /**
    * Foreign key to Tenant
    */
-  @foreignKey('Tenant', { required: true })
+  @foreignKey('Tenant', { required: true, requiredFor: 'tenant-scope' })
   tenantId?: string;
 
   /**

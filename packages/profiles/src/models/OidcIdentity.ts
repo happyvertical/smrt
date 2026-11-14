@@ -37,7 +37,7 @@ export class OidcIdentity extends SmrtObject {
   /**
    * Link to the Profile (Person, Organization, Bot)
    */
-  @foreignKey('Profile', { required: true })
+  @foreignKey('Profile', { required: true, requiredFor: 'identity' })
   profileId?: string;
 
   /**

@@ -66,7 +66,7 @@ export class EarningEvent extends SmrtObject {
    * `EARNING_EVENT_KINDS` for the recommended vocabulary. Plan components
    * match on this via their `trigger`.
    */
-  @field({ required: true })
+  @field()
   eventKind: string = '';
 
   /** When the commercial event occurred (not when it was ingested). */
@@ -114,7 +114,7 @@ export class EarningEvent extends SmrtObject {
    * Idempotency natural key. Required. Callers embed tenant/source identity
    * (see the class doc) — the framework does not synthesize it.
    */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'idempotency' })
   dedupeKey: string = '';
 
   /** Additional metadata as a JSON string. */

@@ -73,8 +73,8 @@ export class Opportunity extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  /** Deal name shown on boards and lists. Required. */
-  @field({ required: true, description: 'What you call this deal.' })
+  /** Deal name shown on boards and lists. */
+  @field({ description: 'What you call this deal.' })
   name: string = '';
 
   /** Originating lead (empty for opportunities created directly). */

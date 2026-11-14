@@ -310,6 +310,24 @@ Generate a complete s-m-r-t class with `@smrt()` decorator, fields, and imports.
 
 Supported property types: `text`, `integer`, `decimal`, `boolean`, `datetime`, `json`.
 
+### `harden-smrt-class`
+
+Suggest a hardening for a s-m-r-t class the app uses, as a same-named subclass
+that overrides fields. It returns the source. It writes the file only when you
+pass `write: true`, and never overwrites one. It never touches a database: the
+build and `smrt db:migrate` turn the override into a constraint, and migrate
+stops with a report if existing rows break it. It refuses a loosening that smrt
+needs for its own correctness (a required field with a stated reason).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `className` | `string` | Yes | The s-m-r-t class the app uses (PascalCase) |
+| `importFrom` | `string` | Yes | Package that exports the class |
+| `overrides` | `object[]` | Yes | Fields to override (`name`, `type?`, `required?`, `maxLength?`, `description?`); `required` defaults to `true` |
+| `directory` | `string` | No | Project directory (default: cwd) |
+| `outputPath` | `string` | No | File to write, relative to `directory` (default `src/models/<ClassName>.ts`) |
+| `write` | `boolean` | No | Write the file (default `false`: suggestion only) |
+
 ### `introspect-project`
 
 Scan a project directory for s-m-r-t objects and return a manifest-equivalent

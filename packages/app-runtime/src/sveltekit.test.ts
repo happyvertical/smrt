@@ -15,6 +15,10 @@ import {
   resolveApplicationRuntime,
 } from '@happyvertical/smrt-config';
 import {
+  computeSchemaFingerprint,
+  registerBuildSchema,
+} from '@happyvertical/smrt-core';
+import {
   disableTenancy,
   getCurrentTenant,
   withSystemContext,
@@ -1355,6 +1359,50 @@ describe('local SvelteKit runtime', () => {
     });
   });
 
+  it('is ready in production only for the build its database was migrated for (#4929)', async () => {
+    const directories = await localDirectories('rule7');
+    const initializeLocal = vi.fn(
+      (await import('./index.js')).initializeLocalApplicationRuntime,
+    );
+    // The bundled registration's build: no app tables, so the first-run
+    // schema step records exactly this stamp.
+    const build = {
+      fingerprint: computeSchemaFingerprint([]),
+      tables: {},
+      packages: [],
+      source: 'bundled build',
+    };
+    registerBuildSchema(build);
+    // Restore only these two afterwards: unstubbing everything would also drop
+    // the suite's own environment stubs.
+    const saved = {
+      NODE_ENV: process.env.NODE_ENV,
+      SMRT_ALLOW_UNMIGRATED_START: process.env.SMRT_ALLOW_UNMIGRATED_START,
+    };
+    process.env.NODE_ENV = 'production';
+    process.env.SMRT_ALLOW_UNMIGRATED_START = '';
+    try {
+      const runtime = composeSmrtSvelteKitRuntime(
+        { ...directories, runtime: LOCAL, env: { HOST: '127.0.0.1' } },
+        { initializeLocal },
+      );
+      openRuntimes.push(runtime);
+      await expect(runtime.ready()).resolves.toBeUndefined();
+      // A newer build loaded into the same process is checked again.
+      registerBuildSchema({ ...build, fingerprint: 'f'.repeat(64) });
+      await expect(runtime.ready()).rejects.toMatchObject({
+        code: 'DB_MIGRATION_REQUIRED',
+        message: expect.stringContaining('smrt db:migrate'),
+      });
+    } finally {
+      registerBuildSchema(undefined);
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
   it('fails closed on migration failure with the stable code and stays retryable', async () => {
     const release = vi.fn();
     const acquireWriterLease = vi.fn(() => ({ release }));
@@ -1424,6 +1472,32 @@ describe('local SvelteKit runtime', () => {
     };
     expect(call.createSchema).toBe(expected);
     expect(call.prepareDatabase).toBe(prepareDatabase);
+  });
+
+  it('forwards confirmRemovedPackages to the local runtime, and leaves it unset when the app sets none (#4928)', async () => {
+    for (const option of [['@gone/package'], undefined]) {
+      const initializeLocal = vi.fn(async () => {
+        throw new Error('stop after capturing the options');
+      });
+      const runtime = composeSmrtSvelteKitRuntime(
+        {
+          appId: 'schema-app',
+          runtime: LOCAL,
+          env: { NODE_ENV: 'development' },
+          acquireWriterLease: false,
+          enableTenancy: false,
+          ...(option ? { confirmRemovedPackages: option } : {}),
+        },
+        { initializeLocal: initializeLocal as never },
+      );
+      await expect(Promise.resolve(runtime.init())).rejects.toThrow(
+        'stop after capturing',
+      );
+      const call = (initializeLocal.mock.calls[0] as unknown[])[0] as {
+        confirmRemovedPackages?: readonly string[];
+      };
+      expect(call.confirmRemovedPackages).toEqual(option);
+    }
   });
 
   it('requires a loopback bind host for local production startup', async () => {

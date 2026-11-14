@@ -49,13 +49,21 @@ export class RolePermission extends SmrtObject {
   /**
    * Foreign key to Role
    */
-  @foreignKey('Role', { required: true, onDelete: 'NO ACTION' })
+  @foreignKey('Role', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'NO ACTION',
+  })
   roleId?: string;
 
   /**
    * Foreign key to Permission
    */
-  @foreignKey('Permission', { required: true, onDelete: 'NO ACTION' })
+  @foreignKey('Permission', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'NO ACTION',
+  })
   permissionId?: string;
 
   constructor(options: RolePermissionOptions = {}) {

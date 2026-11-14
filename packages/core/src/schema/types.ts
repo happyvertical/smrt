@@ -4,6 +4,8 @@ import type { GeneratedExpression } from '../generated-fields.js';
  * Used for build-time schema generation and runtime table management
  */
 
+import type { SchemaChangeKindId } from '../migrations/change-kinds.js';
+
 export type SQLDataType =
   | 'TEXT'
   | 'INTEGER'
@@ -152,6 +154,18 @@ export interface ForeignKeyDefinition {
   engines?: Array<'postgres' | 'sqlite' | 'duckdb' | 'json'>;
 }
 
+/**
+ * A named table-level `CHECK`. Emitted on PostgreSQL only; see
+ * `sti-hardening.ts` for the one producer (#4932).
+ */
+export interface TableCheckDefinition {
+  name: string;
+  /** The columns the expression reads. */
+  columns: string[];
+  /** SQL boolean expression, without the `CHECK (...)` wrapper. */
+  expression: string;
+}
+
 export interface SchemaDefinition {
   tableName: string;
   /**
@@ -185,6 +199,8 @@ export interface SchemaDefinition {
    * a generated schema carries one.
    */
   triggers: TriggerDefinition[];
+  /** Table-level checks (PostgreSQL only; #4932). */
+  checks?: TableCheckDefinition[];
   foreignKeys: ForeignKeyDefinition[];
   version: string; // Hash-based version for change detection
   dependencies: string[]; // Other tables this depends on
@@ -343,7 +359,11 @@ export type ColumnAlteration =
   | 'set_not_null'
   | 'drop_not_null'
   | 'set_default'
-  | 'drop_default';
+  | 'drop_default'
+  /** Add a missing shared-table `CHECK` (#4932). */
+  | 'set_check'
+  /** Drop a `smrt_ck_` constraint the manifest no longer declares (#4932). */
+  | 'drop_check';
 
 /**
  * Advisory attached to a change the differ reports but does not execute
@@ -364,6 +384,8 @@ export interface SchemaChangeAdvisory {
  * Schema difference for a single change
  */
 export interface SchemaChange {
+  /** Producer hint for shapes whose data/engine refusal cannot be inferred from SQL. */
+  kindHint?: SchemaChangeKindId;
   /** Type of change */
   type:
     | 'add_table'
@@ -449,11 +471,8 @@ export interface SchemaChange {
    * True on an advisory-only `add_foreign_key` change specifically blocked
    * because this engine cannot express the constraint at all (SQLite
    * requires a table rebuild; DuckDB has no `ALTER TABLE ADD CONSTRAINT`)
-   * (#2748). Unlike `orphanBlocked` or a type-conflict advisory, this
-   * reason says nothing about the column's own state — a caller (`db:migrate
-   * --apply-unblocked`) must not treat the child column as a dependency
-   * blocker for it, since no rerun on this engine ever resolves it and doing
-   * so would withhold unrelated DDL on that column permanently.
+   * (#2748). This is an engine limitation, not a row-data condition that
+   * `--null-orphans` can resolve. It still stops the whole migration run.
    */
   engineUnsupported?: boolean;
   /**

@@ -1278,6 +1278,7 @@ export class SmrtObject extends SmrtClass {
       this.db,
       this.tableName,
       this.constructor.name,
+      this.getDatabaseEngineHint(),
     );
   }
 

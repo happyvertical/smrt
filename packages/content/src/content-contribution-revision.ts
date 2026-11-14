@@ -55,7 +55,10 @@ function parseMetadata(raw: unknown): Record<string, unknown> {
   cli: { skipApiCheck: true },
 })
 export class ContentContributionRevision extends SmrtObject {
-  @foreignKey('ContentContribution', { required: true })
+  @foreignKey('ContentContribution', {
+    required: true,
+    requiredFor: 'identity',
+  })
   contributionId = '';
 
   revisionNumber = 1;

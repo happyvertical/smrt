@@ -20,7 +20,12 @@ import {
 })
 export class SmrtJobDedupeSlot extends SmrtObject {
   /** SHA-256 identity of the tenant and caller key. */
-  @field({ type: 'text', required: true, unique: true })
+  @field({
+    type: 'text',
+    required: true,
+    requiredFor: 'idempotency',
+    unique: true,
+  })
   slotKey: string = '';
 
   /** Last admitted job, which may already have been pruned by retention. */

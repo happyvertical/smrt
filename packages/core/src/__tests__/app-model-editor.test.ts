@@ -18,7 +18,11 @@ import { field } from '../decorators/index.js';
 import { MCPGenerator } from '../generators/mcp.js';
 import { toProviderToolSchema } from '../generators/provider-tool-schema.js';
 import { APIGenerator } from '../generators/rest.js';
-import { migrateSmrtSchemas } from '../migrations/orchestrate.js';
+import { recordSuccessfulMigrate } from '../migrations/migrate-record.js';
+import {
+  MigrationRefusedError,
+  migrateSmrtSchemas,
+} from '../migrations/orchestrate.js';
 import { MigrationTracker } from '../migrations/tracker.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry } from '../registry.js';
@@ -545,6 +549,27 @@ describe('durable app model editor', () => {
       }),
     ).rejects.toThrow('FIELD_NAME_COLLISION');
     expect(await e.history()).toHaveLength(0);
+  });
+
+  it('fails an edit whose migration is refused and adds no column (#4927)', async () => {
+    const e = await editor();
+    // A record older than the oldest supported release is a release stop:
+    // migrate refuses and applies nothing, so the edit must not publish.
+    await recordSuccessfulMigrate(db, {
+      engineHint: engine,
+      input: { release: '0.1.0', packages: [], fingerprint: 'old' },
+    });
+    await expect(
+      edit(e, {
+        type: 'add_field',
+        model: CUSTOMER,
+        name: 'loyaltyCode',
+        field: { type: 'text' },
+      }),
+    ).rejects.toBeInstanceOf(MigrationRefusedError);
+    expect(
+      (await inspectTableSchema(db, 'customers', engine))?.columns,
+    ).not.toHaveProperty('loyalty_code');
   });
 
   it('extends an STI provider in its existing table without losing sibling fields', async () => {

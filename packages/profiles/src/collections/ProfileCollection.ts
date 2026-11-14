@@ -11,6 +11,7 @@ import {
   removeOwnedAssetFromCollection,
 } from '@happyvertical/smrt-assets';
 import {
+  ObjectRegistry,
   RuntimeError,
   SmrtCollection,
   ValidationError,
@@ -235,7 +236,9 @@ export class ProfileCollection extends SmrtCollection<Profile> {
       return profile;
     }
     if (!activeEmailReservations[0]) {
-      const reservation = new OidcProfileEmailReservation({
+      const reservation = new (ObjectRegistry.resolveEffectiveConstructor(
+        OidcProfileEmailReservation,
+      ))({
         db,
         emailKey: normalizedEmail,
         profileId,

@@ -1,3 +1,4 @@
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { assertContractScheduleInvoiceFreeze } from './contract-billing-schedule.js';
 import {
   getHistoricalSalesMoney,
@@ -1212,7 +1213,9 @@ async function previewInvoiceMoneyOnScope(
   const proposedLines = input.draft?.lines
     ? input.draft.lines.map((proposed) => {
         const line = proposed.id ? storedById.get(proposed.id) : undefined;
-        const result = line ?? new InvoiceLineItem();
+        const result =
+          line ??
+          new (ObjectRegistry.resolveEffectiveConstructor(InvoiceLineItem))();
         for (const field of [
           'description',
           'productId',

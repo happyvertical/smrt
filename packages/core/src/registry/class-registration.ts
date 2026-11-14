@@ -52,6 +52,7 @@ import type {
   ColumnDefinition,
   IndexDefinition,
   SchemaDefinition,
+  TableCheckDefinition,
 } from '../schema/types.js';
 import { tableNameFromClass, toSnakeCase } from '../utils';
 import {
@@ -215,6 +216,33 @@ function assertRegisteredStiParent(ctor: typeof SmrtObject): void {
  * directories come from a bundler (Vite library mode, webpack, Next.js,
  * Nuxt, svelte-kit) that can duplicate module code across chunks.
  */
+
+/**
+ * The options a decorator states, as the scanner's `_meta.__statedOptions`
+ * records them, so the shared inheritance rule knows `@field({ required: false })`
+ * was written (#4942, #4932). Decorator options are exactly what the author
+ * passed. A manifest field with no list contributes what it carries except
+ * `required` and `nullable`, which an older scanner inferred.
+ */
+function statedOptionsFromDecorator(
+  existing: FieldMeta | undefined,
+  decoratorOptions: object,
+): string[] {
+  const authored = Object.entries(decoratorOptions)
+    .filter(([key, value]) => key !== 'type' && value !== undefined)
+    .map(([key]) => key);
+  const carried = Array.isArray(existing?.__statedOptions)
+    ? (existing.__statedOptions as string[])
+    : Object.keys(existing ?? {}).filter(
+        (key) =>
+          key !== 'type' &&
+          key !== 'required' &&
+          key !== 'nullable' &&
+          !key.startsWith('__'),
+      );
+  return [...new Set([...carried, ...authored])];
+}
+
 export function isBundledOutputPath(sourceFile: string | undefined): boolean {
   if (!sourceFile) return false;
   return (
@@ -607,13 +635,23 @@ function buildManifestCollisionInputs(args: {
 
   const newSourceFile = objectDef.filePath;
   const bothSourceFilesKnown = !!(newSourceFile && existing.sourceFilePath);
-  const sameSourceFile =
-    bothSourceFilesKnown && newSourceFile === existing.sourceFilePath;
   const existingIsPackageQualified = !!existing.packageName?.startsWith('@');
   const samePackage =
     !!packageName &&
     !!existing.packageName &&
     packageName === existing.packageName;
+  // Built manifests carry package-relative paths, so two packages' same-named
+  // classes at one relative path (`src/models/Account.ts`) have equal paths
+  // (#4948). A re-export is ONE package's class arriving twice: when both
+  // packages are known and differ, the equal path proves nothing.
+  const differentKnownPackages =
+    !!packageName &&
+    !!existing.packageName &&
+    packageName !== existing.packageName;
+  const sameSourceFile =
+    bothSourceFilesKnown &&
+    newSourceFile === existing.sourceFilePath &&
+    !differentKnownPackages;
 
   return {
     origin: 'manifest',
@@ -649,6 +687,30 @@ function buildManifestCollisionInputs(args: {
   // an objectDef.qualifiedName fallback when packageName is omitted —
   // deriving from packageName alone would miss that case and misroute the
   // coexistence rows. See PR #1140 review (Copilot P1 at line 287).
+}
+
+/**
+ * The shared-table class rules (#4932) a manifest schema carries, copied.
+ * Registration must keep them: the migration plan is built from the registry.
+ */
+function manifestChecksOf(schema: { checks?: TableCheckDefinition[] }): {
+  checks?: TableCheckDefinition[];
+} {
+  return schema.checks?.length
+    ? { checks: schema.checks.map((check) => ({ ...check })) }
+    : {};
+}
+
+/** Union of two check lists by name, the first of each name kept. */
+function mergedChecks(
+  existing: TableCheckDefinition[] | undefined,
+  incoming: TableCheckDefinition[] | undefined,
+): { checks?: TableCheckDefinition[] } {
+  const merged = [...(existing ?? [])];
+  for (const check of incoming ?? []) {
+    if (!merged.some((known) => known.name === check.name)) merged.push(check);
+  }
+  return merged.length > 0 ? { checks: merged } : {};
 }
 
 /**
@@ -1682,6 +1744,10 @@ function registerUntracked(
         const mergedMeta: FieldMeta = {
           ...existingField._meta,
           ...decoratorOptions,
+          __statedOptions: statedOptionsFromDecorator(
+            existingField._meta,
+            decoratorOptions,
+          ),
         };
         const mergedField: RegisteredField = {
           type: opts.type || existingField.type,
@@ -1740,7 +1806,13 @@ function registerUntracked(
         );
       } else {
         // Decorator for field not in manifest - add it
-        const newMeta: FieldMeta = decoratorOptions;
+        const newMeta: FieldMeta = {
+          ...decoratorOptions,
+          __statedOptions: statedOptionsFromDecorator(
+            undefined,
+            decoratorOptions,
+          ),
+        };
         const newField: RegisteredField = {
           type: opts.type || inferDecoratorOnlyFieldType(opts),
           _meta: newMeta,
@@ -1959,6 +2031,9 @@ function registerUntracked(
           jsonPath: idx.jsonPath,
         })) || [],
       triggers: [],
+      // Shared-table class rules (#4932) must survive registration, or the
+      // migration plan built from the registry never creates them.
+      ...manifestChecksOf(manifestEntry.schema),
       tableName: manifestEntry.schema.tableName || tableName,
       // Cast manifest columns to ColumnDefinition (same shape, TypeScript just needs help)
       columns: cloneManifestSchemaColumns(manifestEntry.schema.columns),
@@ -2752,6 +2827,7 @@ function mergeManifestIntoExistingRegistration(
           jsonPath: idx.jsonPath,
         })) || [],
       triggers: [],
+      ...manifestChecksOf(objectDef.schema),
       tableName: objectDef.schema.tableName || manifestTableName,
       columns: cloneManifestSchemaColumns(objectDef.schema.columns),
       foreignKeys: [],
@@ -2776,6 +2852,7 @@ function mergeManifestIntoExistingRegistration(
         manifestSchema.indexes,
       ),
       packageName: packageName || existing.schema?.packageName,
+      ...mergedChecks(existing.schema?.checks, manifestSchema.checks),
     };
   } else if (!existing.schema) {
     existing.schema = {
@@ -3155,6 +3232,7 @@ function registerFromManifestUntracked(
           jsonPath: idx.jsonPath,
         })) || [],
       triggers: [],
+      ...manifestChecksOf(objectDef.schema),
       tableName: objectDef.schema.tableName,
       columns: cloneManifestSchemaColumns(objectDef.schema.columns),
       foreignKeys: [],

@@ -20,7 +20,7 @@ interface DbMigrateLedgerAccountsOptions {
 export const dbMigrateLedgerAccountsCommand: CLICommand = {
   name: 'db:migrate-ledger-accounts',
   description:
-    'Move smrt-ledgers accounts from the legacy shared `accounts` table into `ledger_accounts` (#3098). Run after db:migrate has created ledger_accounts, in a PostgreSQL maintenance window, then run db:migrate again.',
+    'Move smrt-ledgers accounts from the legacy shared `accounts` table into `ledger_accounts` (#3098). Run first, in a PostgreSQL maintenance window: it creates ledger_accounts when missing. Then run db:migrate.',
   aliases: ['migrate-ledger-accounts'],
   args: [],
   options: {

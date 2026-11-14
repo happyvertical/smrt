@@ -19,16 +19,31 @@ export type LocalRuntimeErrorCode =
   | 'owner_identity_conflict'
   | 'owner_unavailable'
   | 'schema_creation_failed'
+  | 'schema_migration_refused'
   | 'secret_master_key_unavailable'
   | 'unsafe_public_exposure';
 
 /** Stable, secret-free local-runtime failure. */
 export class LocalRuntimeError extends Error {
+  /**
+   * For an error with two readers (`schema_migration_refused`): one short line
+   * the app may show its user, with no command or option in it. `message`
+   * starts with it and adds the developer detail.
+   */
+  readonly userMessage?: string;
+  /** What the app's developer needs: what stopped and what to change. */
+  readonly developerDetail?: string;
+
   constructor(
     readonly code: LocalRuntimeErrorCode,
     message: string,
+    audiences?: { userMessage: string; developerDetail: string },
   ) {
     super(message);
+    if (audiences) {
+      this.userMessage = audiences.userMessage;
+      this.developerDetail = audiences.developerDetail;
+    }
     this.name = 'LocalRuntimeError';
   }
 }

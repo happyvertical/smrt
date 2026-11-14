@@ -788,8 +788,9 @@ function toolParameters(
           description:
             field.description ??
             field._meta?.description ??
-            (field as { options?: { description?: string } }).options
-              ?.description,
+            (field as { options?: { description?: string | null } }).options
+              ?.description ??
+            undefined,
           default: field.default ?? field._meta?.default,
           maxLength: field.maxLength,
           minLength: field.minLength,

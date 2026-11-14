@@ -22,7 +22,7 @@ import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 })
 export class UsersCliAuthApproveLimit extends SmrtObject {
   /** Approving browser user whose budget this row protects. */
-  @foreignKey('User', { required: true, unique: true })
+  @foreignKey('User', { required: true, requiredFor: 'identity', unique: true })
   userId = '';
 
   /** Failed attempts plus currently reserved attempts inside the window. */

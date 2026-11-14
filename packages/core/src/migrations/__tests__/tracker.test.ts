@@ -883,3 +883,29 @@ describe('MigrationTracker', () => {
     });
   });
 });
+
+describe('MigrationTracker engine detection', () => {
+  // A PGlite handle opened at a data directory has a path for a URL. With no
+  // hint, the tracker must read it as PostgreSQL, as the system-table checks
+  // do (`getDatabaseEngine`); reading it as SQLite created SQLite-typed
+  // timestamps that the PostgreSQL timestamp check then refused.
+  it('reads a handle that speaks PostgreSQL as PostgreSQL when no hint is given', () => {
+    const db = {
+      url: '/tmp/app/pg-data',
+      client: { query: async () => ({ rows: [] }), exec: async () => [] },
+      query: async () => ({ rows: [] }),
+    } as unknown as DatabaseInterface;
+    expect(new MigrationTracker({ db }).getEngine()).toBe('postgres');
+    expect(new MigrationTracker({ db, engineHint: 'sqlite' }).getEngine()).toBe(
+      'sqlite',
+    );
+  });
+
+  it('still reads a plain SQLite file as SQLite', () => {
+    const db = {
+      url: '/tmp/app/live.db',
+      query: async () => ({ rows: [] }),
+    } as unknown as DatabaseInterface;
+    expect(new MigrationTracker({ db }).getEngine()).toBe('sqlite');
+  });
+});

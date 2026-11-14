@@ -8,6 +8,7 @@ deterministic SMRT ecosystem knowledge, and portable agent workflows.
 | Tool | Purpose |
 |------|---------|
 | `generate-smrt-class` | Generates `@smrt()` class with fields, decorator config, imports |
+| `harden-smrt-class` | Suggests (and, with `write: true`, writes into app code) a same-named subclass overriding fields; never touches a database (#4936) |
 | `introspect-project` | Scans project directory for SMRT objects; compact summary by default, `detail: 'full'` for field/schema/method detail |
 | `review-smrt-project` | Advisory downstream ecosystem alignment review for dependencies, storage, app shell, auth/tenancy, manifest generation, and intent-driven hand-rolled-equivalent detection (#4690) |
 | `reflect-knowledge` | Reports deterministic SMRT + HappyVertical SDK knowledge coverage and freshness |
@@ -203,6 +204,7 @@ when `dist` is missing or older, so rebuild `dist` after server edits. Guarded b
 - `skills/smrt-contribute/SKILL.md` — contributor skill (copy at repo-root `.agents/skills/smrt-contribute/`)
 - `skills/smrt-catalog/SKILL.md` — catalog router skill; `skills/smrt-catalog/evals.json` — its trigger eval set
 - `src/tools/generate-smrt-class.ts` — class generation logic and package-ready templates
+- `src/tools/harden-smrt-class.ts` — hardening suggestion; file write only, no database or SQL (#4936)
 - `src/tools/introspect-project.ts` — manifest-first project scanning, falling back to `@happyvertical/smrt-scanner`
 - `src/dev-plane.ts` — in-app runtime dev-plane (#2782): `createDevPlane({ token, projectRoot, db })` serves JSON + MCP on one mount with loopback/bearer guards and a positive catalog (`registry-live` + the nine runtime tools); mounted by the generated `_dev/[...tool]` SvelteKit route
 - `src/runtime.ts` — `RUNTIME_TOOLS` map for in-process callers (`smrt dev:runtime` fallback)

@@ -37,7 +37,15 @@ test('control-plane tests use the trusted test-suite admission and installed pro
   assert.match(controlPlane, /install-deps: 'true'/);
   assert.match(controlPlane, /setup-playwright: 'false'/);
   assert.match(controlPlane, /pnpm turbo run build --filter='@happyvertical\/smrt-core\^\.\.\.'/);
-  assert.match(controlPlane, /run: pnpm test:ci-scripts/);
+  assert.match(controlPlane, /run: pnpm test:ci-scripts$/m);
+  // Tests that load core's own dist (#4933) build it after the unbuilt lane ran.
+  assert.match(controlPlane, /pnpm turbo run build --filter='@happyvertical\/smrt-core'$/m);
+  assert.match(controlPlane, /run: pnpm test:ci-scripts:built-core$/m);
+  assert.ok(
+    controlPlane.indexOf('run: pnpm test:ci-scripts\n') <
+      controlPlane.indexOf("--filter='@happyvertical/smrt-core'\n"),
+    'the unbuilt lane must run before core is built',
+  );
   assert.doesNotMatch(
     controlPlane,
     /continue-on-error|paths-filter|pnpm (?:run )?build/,
@@ -46,6 +54,7 @@ test('control-plane tests use the trusted test-suite admission and installed pro
     readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
   );
   assert.equal(root.scripts['test:ci-scripts'], 'node --import ./packages/vitest/src/test-home-register.ts --test scripts/*.test.mjs');
+  assert.equal(root.scripts['test:ci-scripts:built-core'], 'node --import ./packages/vitest/src/test-home-register.ts --test scripts/built-core/*.test.mjs');
 });
 
 test('Required CI rejects a failed, cancelled, skipped or absent control-plane result', () => {

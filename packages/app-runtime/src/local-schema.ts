@@ -27,7 +27,12 @@
 
 import { randomBytes } from 'node:crypto';
 import { lstat, unlink } from 'node:fs/promises';
-import { migrateSmrtSchemas } from '@happyvertical/smrt-core/migrations';
+import {
+  assertMigrationAccepted,
+  describeAppMigrationRefusal,
+  MigrationRefusedError,
+  migrateSmrtSchemas,
+} from '@happyvertical/smrt-core/migrations';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { LocalRuntimePaths } from './index.js';
 import { BOOTSTRAP_TABLE } from './local-custody.js';
@@ -100,6 +105,12 @@ export interface PrepareLocalSchemaInput {
   /** Create and upgrade the framework schema (otherwise only run the hook). */
   readonly createSchema: boolean;
   readonly prepareDatabase?: LocalPrepareDatabase;
+  /**
+   * Packages the app removed on purpose, passed to `migrateSmrtSchemas` as
+   * `confirmRemovedPackages` (what `smrt db:migrate --confirm-removed-package`
+   * is for the CLI). Names a package that is not missing: ignored.
+   */
+  readonly confirmRemovedPackages?: readonly string[];
 }
 
 /**
@@ -132,6 +143,46 @@ export function schemaCreationFailed(cause: unknown): LocalRuntimeError {
     ),
     cause,
   );
+}
+
+/**
+ * The framework step was refused: smrt held the whole upgrade back and applied
+ * nothing. Unlike the other failures this one is named, and it has two readers
+ * (core's `describeAppMigrationRefusal` words both, so the CLI's wording is
+ * untouched):
+ * - `userMessage`: one short line an app may show its user, who can run no
+ *   command and set no option: the app could not update this database, nothing
+ *   was changed, contact the developer;
+ * - `developerDetail`: what stopped (table, column, reason, package and release
+ *   stops, what was held back) and what the developer can do about each.
+ * `message` is the user line, then the detail. Schema names and counts only: no
+ * path, SQL or driver text.
+ */
+export function schemaMigrationRefused(
+  refusal: MigrationRefusedError,
+): LocalRuntimeError {
+  const text = describeAppMigrationRefusal(refusal.result);
+  const developerDetail = [
+    text.headline,
+    ...text.developerLines,
+    text.heldBackHeading,
+    ...text.heldBackLines,
+  ].join('\n');
+  return withCause(
+    new LocalRuntimeError(
+      'schema_migration_refused',
+      `${text.userLine}\n\nFor the app's developer:\n${developerDetail}`,
+      { userMessage: text.userLine, developerDetail },
+    ),
+    refusal,
+  );
+}
+
+/** A refused migrate keeps its reasons; any other framework failure is redacted. */
+function frameworkFailure(failure: unknown): LocalRuntimeError {
+  return failure instanceof MigrationRefusedError
+    ? schemaMigrationRefused(failure)
+    : schemaCreationFailed(failure);
 }
 
 function withCause(failure: LocalRuntimeError, cause: unknown) {
@@ -182,7 +233,13 @@ function contextFor(
         packageName: input.appId,
         engineHint: 'sqlite',
         name: uniqueMigrationName(),
+        ...(input.confirmRemovedPackages?.length
+          ? { confirmRemovedPackages: [...input.confirmRemovedPackages] }
+          : {}),
       });
+      // A refused run also reports `applied: false`; never read that as
+      // "nothing to do". Fail the step and say what stopped.
+      assertMigrationAccepted(result);
       return { applied: result.applied };
     },
   });
@@ -207,7 +264,12 @@ export async function prepareLocalSchema(
     try {
       await input.prepareDatabase?.(db, contextFor(db, input, firstRun));
     } catch (failure) {
-      throw new LocalSchemaStepFailure(migrationFailed(failure), false);
+      throw new LocalSchemaStepFailure(
+        failure instanceof MigrationRefusedError
+          ? schemaMigrationRefused(failure)
+          : migrationFailed(failure),
+        false,
+      );
     }
     return;
   }
@@ -230,7 +292,7 @@ export async function prepareLocalSchema(
     try {
       await contextFor(db, input, firstRun).migrateSchemas();
     } catch (failure) {
-      throw new LocalSchemaStepFailure(schemaCreationFailed(failure), false);
+      throw new LocalSchemaStepFailure(frameworkFailure(failure), false);
     }
     try {
       await db.transaction(async (tx) => {
@@ -241,7 +303,12 @@ export async function prepareLocalSchema(
         );
       });
     } catch (failure) {
-      throw new LocalSchemaStepFailure(migrationFailed(failure), false);
+      throw new LocalSchemaStepFailure(
+        failure instanceof MigrationRefusedError
+          ? schemaMigrationRefused(failure)
+          : migrationFailed(failure),
+        false,
+      );
     }
     return;
   }
@@ -263,9 +330,11 @@ export async function prepareLocalSchema(
     });
   } catch (failure) {
     throw new LocalSchemaStepFailure(
-      stage === 'framework'
-        ? schemaCreationFailed(failure)
-        : migrationFailed(failure),
+      failure instanceof MigrationRefusedError
+        ? schemaMigrationRefused(failure)
+        : stage === 'framework'
+          ? schemaCreationFailed(failure)
+          : migrationFailed(failure),
       true,
     );
   }

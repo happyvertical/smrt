@@ -933,6 +933,49 @@ class Product extends SmrtObject {
 }
 ```
 
+### Why a smrt field is required (`requiredFor`)
+
+smrt makes a field required only when its own code would be wrong or unsafe
+without it. A required field in a smrt package says why:
+
+```typescript
+@field({ required: true, requiredFor: 'identity' })
+slug: string = '';
+```
+
+| Value | Meaning |
+|---|---|
+| `identity` | The field identifies the row or what it belongs to. |
+| `tenant-scope` | smrt scopes reads or writes by it. |
+| `idempotency` | smrt uses it to detect a duplicate or replayed write. |
+| `workflow-state` | A smrt service steps the row through its values. |
+| `system-table` | The field is in an internal `_smrt_*` table. |
+| `integrity` | smrt checks stored content against this value (a digest, a hash or a binding), or the value is the content it checks. |
+| `authentication` | smrt authenticates a caller by checking a secret or key against this value. |
+| `integrity` | smrt verifies stored content against this value (a digest, hash or binding), or the value is the content it verifies. |
+| `authentication` | smrt authenticates a caller by checking a secret or key against this value. |
+
+The value is a string literal. It is carried in the manifest as
+`_meta.requiredFor`, so other packages and your app build can read it. An app
+that subclasses a smrt object owns the rest of its shape and may tighten or
+loosen any field that has no reason. It may not loosen a field that has one.
+
+`node scripts/check-required-reasons.mjs` runs with `pnpm lint` and in CI. It
+covers the fields a caller must supply. On save, `required` means the value
+may not be null, undefined or an empty string, so a class initializer that
+holds a real value (`= 0`, `= false`, `= 'active'`) already satisfies it. A
+`default` option alone does not put a value on the object, so it does not.
+`required` is written (`required: true`) or inferred from the declaration (no
+initializer and no `?`). The check fails on such a field in `packages/*/src`
+that has no reason and is not in `scripts/required-reasons-baseline.json`, and
+it names the file, class and field. A required `@tenantId()` is explained by
+itself: it is `tenant-scope`. The baseline lists the fields that have no reason.
+It is empty now, and it may only shrink: give a field a reason or make it
+optional, then run `node scripts/check-required-reasons.mjs --prune`. The
+check does not judge whether a reason is true; review does that. It reads
+decorated properties only, so a plain property that the scanner infers as
+required is outside it.
+
 ### Adding a required column to a table that already has rows
 
 `smrt db:migrate` adds a new `@field({ required: true })` column to a
@@ -962,9 +1005,9 @@ inserts. A constant default alone would give every existing row the same
 value and collide with a unique index.
 
 If there is neither, or if the backfill yields NULL for some row or fails to
-evaluate, `db:migrate` exits 1 and names the table and column. It does not
-add the column, and it holds back any index or foreign key on that column.
-Nothing is left half-applied. A column that an older release already added
+evaluate, `db:migrate` exits 1 and names the table and column. Migrate is all
+or nothing: it applies none of that run's changes, not only the ones on this
+column, and lists what it held back. Nothing is left half-applied. A column that an older release already added
 as nullable is repaired the same way: the backfill fills its NULLs, and
 then NOT NULL is enforced.
 
@@ -2324,7 +2367,11 @@ unique index over exactly those columns (otherwise every save fails with
    new release's manifests. It builds the tenant-led unique under its own name
    (`<table>_tenant_id_slug_idx`) and keeps the global `<table>_slug_context_idx`.
    The new key is a superset of the old one, so the build cannot fail on
-   existing rows. Old and new code both keep saving.
+   existing rows. Old and new code both keep saving. Copies of the old code
+   that are already running keep working, but one that restarts after this step
+   is refused by the startup check, which sees a database migrated for a
+   different build (see the [data shape rules](https://github.com/happyvertical/smrt/blob/main/packages/core/agents/data-shape-rules.md),
+   rule 7). Do not rely on restarting old copies during the rollout.
 2. **Roll out** the new release. While the legacy index stands, a second
    tenant cannot store a slug another tenant already uses: that save fails
    with a unique violation (nothing is overwritten).

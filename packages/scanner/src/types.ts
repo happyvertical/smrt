@@ -718,6 +718,13 @@ export interface FieldTypeInference {
   underlyingType?: InferredFieldType;
 
   /**
+   * The scanner could not resolve the annotated type (an imported enum or
+   * class it cannot see) and fell back to `json`. The field did not state a
+   * type, so a redeclaration inherits its parent's type (#4942).
+   */
+  typeUnresolved?: boolean;
+
+  /**
    * Decorator-derived metadata that should be merged into the manifest
    * field's `_meta` object. Used by `@crossPackageRef`, `@manyToMany`,
    * `@meta` to carry options (`validate`, `through`, `indexed`, `idType`,

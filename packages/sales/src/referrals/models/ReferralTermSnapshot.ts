@@ -54,7 +54,7 @@ export class ReferralTermSnapshot extends SmrtObject {
   tenantId: string | null = null;
 
   /** The Referral this snapshot governs. Required. */
-  @foreignKey('Referral', { required: true })
+  @foreignKey('Referral', { required: true, requiredFor: 'identity' })
   referralId: string = '';
 
   /** Id of the ReferralAgreement the terms came from. */

@@ -50,11 +50,12 @@ The four snapshot options are atomic: supplying any one requires all four.
 | Command | Description |
 |---------|------------|
 | `smrt db:status` | Show pending schema changes and classify failed migration history |
-| `smrt db:migrate` | Apply pending migrations |
+| `smrt db:migrate` | Apply pending migrations and record the build schema fingerprint. All or nothing: if any change would lose or invent data, or a package seen last time is not loaded, it applies none and says what it held back ([guide](agents/db-migrate-all-or-nothing.md)) |
+| `smrt db:migrate --confirm-removed-package <name>` | Confirm that a package seen by the last migrate was removed on purpose. Repeat for each package. `--apply-unblocked` no longer exists |
 | `smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...]` | Force one or more exact generated migrations in one atomic batch while preserving every other guard |
 | `smrt db:migrate-uuid` | Convert schema-declared UUID text columns to native PostgreSQL uuid after data has been remapped |
 | `smrt db:migrate-int8` | Widen legacy pre-#2373 int4 columns to BIGINT after reviewing the maintenance-window preflight |
-| `smrt db:migrate-ledger-accounts [--dry-run]` | Move smrt-ledgers accounts out of the pre-#3098 shared `accounts` table into `ledger_accounts` (PostgreSQL; run between two `db:migrate` passes — see the smrt-ledgers README) |
+| `smrt db:migrate-ledger-accounts [--dry-run]` | Move smrt-ledgers accounts out of the pre-#3098 shared `accounts` table into `ledger_accounts` (PostgreSQL; run before `db:migrate`, which it leaves to add the foreign keys — see the smrt-ledgers README) |
 | `smrt db:migrate-qualified-names [--dry-run] [--tenant <id>] [--force]` | Rewrite stored deprecated qualified names (`@smrt({ previousQualifiedNames })`) to current names. Opt-in, idempotent, tracked in `_smrt_backfills`; `smrt doctor --db` counts what remains (#3338) |
 | `smrt db:drop-framework-base-tables` | One-time removal of the five framework-base tables (`smrt_objects`, `smrt_classes`, `smrt_collections`, `smrt_hierarchicals`, `smrt_polymorphic_associations`) orphaned by #2644; refuses if any target table has rows, an unexpected shape, or an inbound foreign key |
 | `smrt db:drop-framework-base-tables --dry-run` | Print the drop plan (tables and companion indexes) without executing |
@@ -327,6 +328,16 @@ app's `package.json` scripts are one-liners:
 | `smrt app migrate` | Establish local storage custody, then `smrt db:migrate`, under the operation lock |
 | `smrt app worker [task\|schedule]` | Deployed: imports `.smrt/runtime/register.js`, then runs the jobs runner until SIGTERM. The kind defaults to `task`; any other value is a usage error before anything starts |
 | `smrt app dev\|build\|vite [args]` | Run the app's installed Vite with `.env` loaded (shell wins); `build` validates `./mcp-apps` first |
+
+Production persistence and task/schedule workers require the last migrate record
+to match the build's stamp, bundled with the app's generated registration
+(`.smrt/build-schema.js`); a process without it reads the project manifest in
+its working directory or `SMRT_BUILD_MANIFEST`. Finish `smrt db:migrate` before starting new code.
+An old copy that restarts after migrate will not start, and rolling code back
+without the database also refuses startup. `SMRT_ALLOW_UNMIGRATED_START=1` is a
+logged emergency override. Development warns once. `NODE_ENV=test` and databases
+made by `getTestDatabase()` are exempt. Deprecated `db:setup` is only for
+development/test fixtures; it does not stamp a whole-build record.
 
 **Windows (smrt#4837).** The local runtime opens its SQLite database on
 Windows through `@happyvertical/sql`'s `windowsCustody.verify` (the runtime's

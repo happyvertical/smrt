@@ -195,7 +195,7 @@ importers:
         version: link:../vitest
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -274,7 +274,7 @@ importers:
         version: link:../users
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
         specifier: ^0.112.3
         version: 0.112.3
@@ -342,7 +342,7 @@ importers:
         version: link:../vitest
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@sveltejs/package':
         specifier: ^2.5.8
         version: 2.5.8(svelte@5.57.1)(typescript@6.0.3)
@@ -421,7 +421,7 @@ importers:
         version: link:../users
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -494,7 +494,7 @@ importers:
         version: link:../smrt-web
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@modelcontextprotocol/server':
         specifier: 2.3.1
         version: 2.3.1
@@ -546,7 +546,7 @@ importers:
         version: link:../users
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-scanner':
         specifier: workspace:*
@@ -598,7 +598,7 @@ importers:
         version: link:../smrt-ui
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
         specifier: ^0.112.3
         version: 0.112.3
@@ -654,7 +654,7 @@ importers:
         version: link:../core
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -679,7 +679,7 @@ importers:
         version: link:../core
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -694,7 +694,7 @@ importers:
     dependencies:
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -953,7 +953,7 @@ importers:
         version: 0.112.3(@huggingface/transformers@4.3.0(@types/node@24.13.2))
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       gsap:
         specifier: ^3.13.0
         version: 3.15.0
@@ -1056,7 +1056,7 @@ importers:
         version: link:../users
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
         specifier: ^0.112.3
         version: 0.112.3
@@ -1079,6 +1079,9 @@ importers:
         specifier: ^2.9.1
         version: 2.9.1
     devDependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.5.16
+        version: 0.5.16
       '@modelcontextprotocol/client':
         specifier: 2.3.1
         version: 2.3.1
@@ -1187,7 +1190,7 @@ importers:
         version: link:../smrt-ui
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -1327,7 +1330,7 @@ importers:
         version: 1.1.13(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(supports-color@10.2.2)
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
         specifier: ^0.112.3
         version: 0.112.3
@@ -1412,7 +1415,7 @@ importers:
         version: link:../types
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
         specifier: ^0.112.3
         version: 0.112.3
@@ -1512,7 +1515,7 @@ importers:
         version: link:../users
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       pdf-lib:
         specifier: 1.17.1
         version: 1.17.1
@@ -1570,7 +1573,7 @@ importers:
         version: link:../smrt-ui
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
         specifier: ^0.112.3
         version: 0.112.3
@@ -1677,7 +1680,7 @@ importers:
         version: link:../tenancy
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
         specifier: ^0.112.3
         version: 0.112.3
@@ -1760,7 +1763,7 @@ importers:
         version: link:../users
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-cli':
         specifier: workspace:*
@@ -1815,7 +1818,7 @@ importers:
         version: link:../core
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
         specifier: ^0.112.3
         version: 0.112.3
@@ -1852,7 +1855,7 @@ importers:
         version: link:../smrt-ui
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -1929,7 +1932,7 @@ importers:
         version: link:../vitest
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@sveltejs/kit':
         specifier: 2.69.1
         version: 2.69.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.57.1)(vite@8.1.6(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)))(svelte@5.57.1)(typescript@6.0.3)(vite@8.1.6(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
@@ -1986,7 +1989,7 @@ importers:
         version: link:../users
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -2059,7 +2062,7 @@ importers:
         version: 0.112.3(@huggingface/transformers@4.3.0(@types/node@24.13.2))
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       ajv:
         specifier: 8.20.0
         version: 8.20.0
@@ -2138,7 +2141,7 @@ importers:
         version: link:../smrt-ui
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -2172,7 +2175,7 @@ importers:
     dependencies:
       '@happyvertical/jobs':
         specifier: ^0.112.3
-        version: 0.112.3(@aws-sdk/client-sqs@3.1038.0)(@google-cloud/tasks@6.2.1(supports-color@10.2.2))(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)(bull@4.16.5(supports-color@10.2.2))(bullmq@5.76.4(supports-color@10.2.2))
+        version: 0.112.3(@aws-sdk/client-sqs@3.1038.0)(@electric-sql/pglite@0.5.16)(@google-cloud/tasks@6.2.1(supports-color@10.2.2))(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)(bull@4.16.5(supports-color@10.2.2))(bullmq@5.76.4(supports-color@10.2.2))
       '@happyvertical/logger':
         specifier: ^0.112.3
         version: 0.112.3(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
@@ -2193,7 +2196,7 @@ importers:
         version: link:../smrt-ui
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
         specifier: ^0.112.3
         version: 0.112.3
@@ -2254,7 +2257,7 @@ importers:
         version: link:../tenancy
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-cli':
         specifier: workspace:*
@@ -2328,7 +2331,7 @@ importers:
         version: link:../smrt-ui
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -2378,7 +2381,7 @@ importers:
         version: link:../vitest
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@sveltejs/package':
         specifier: ^2.5.8
         version: 2.5.8(svelte@5.57.1)(typescript@6.0.3)
@@ -2465,7 +2468,7 @@ importers:
         version: link:../users
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@modelcontextprotocol/server':
         specifier: 2.4.0
         version: 2.4.0
@@ -2575,7 +2578,7 @@ importers:
         version: link:../users
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
         specifier: ^0.112.3
         version: 0.112.3
@@ -2636,7 +2639,7 @@ importers:
         version: link:../users
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -2694,7 +2697,7 @@ importers:
         version: link:../tenancy
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
         specifier: ^0.112.3
         version: 0.112.3
@@ -2954,7 +2957,7 @@ importers:
         version: link:../types
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -2991,7 +2994,7 @@ importers:
         version: link:../users
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -3046,7 +3049,7 @@ importers:
         version: link:../smrt-web
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
         specifier: ^0.112.3
         version: 0.112.3
@@ -3122,7 +3125,7 @@ importers:
         version: link:../tenancy
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
         specifier: ^0.112.3
         version: 0.112.3
@@ -3195,7 +3198,7 @@ importers:
         version: link:../smrt-ui
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
         specifier: ^0.112.3
         version: 0.112.3
@@ -3247,7 +3250,7 @@ importers:
         version: link:../smrt-ui
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -3300,7 +3303,7 @@ importers:
         version: link:../vitest
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -3327,7 +3330,7 @@ importers:
         version: link:../tenancy
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -3382,7 +3385,7 @@ importers:
         version: link:../smrt-ui
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-scanner':
         specifier: workspace:*
@@ -3437,7 +3440,7 @@ importers:
         version: link:../smrt-ui
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -3505,7 +3508,7 @@ importers:
         version: 0.112.3(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
       '@happyvertical/secrets':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -3514,7 +3517,7 @@ importers:
         version: link:../tenancy
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
         specifier: ^0.112.3
         version: 0.112.3
@@ -3552,7 +3555,7 @@ importers:
         version: link:../vitest
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -3581,7 +3584,7 @@ importers:
         version: link:../tenancy
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@modelcontextprotocol/server':
         specifier: 2.4.0
         version: 2.4.0
@@ -3592,6 +3595,9 @@ importers:
         specifier: 8.0.1
         version: 8.0.1
     devDependencies:
+      '@happyvertical/smrt-vitest':
+        specifier: workspace:*
+        version: link:../vitest
       '@modelcontextprotocol/client':
         specifier: 2.4.0
         version: 2.4.0
@@ -3659,7 +3665,7 @@ importers:
         version: link:../core
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@modelcontextprotocol/client':
         specifier: 2.4.0
         version: 2.4.0
@@ -4077,7 +4083,7 @@ importers:
         version: link:../vitest
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@sveltejs/package':
         specifier: ^2.5.8
         version: 2.5.8(svelte@5.57.1)(typescript@6.0.3)
@@ -4107,7 +4113,7 @@ importers:
         version: 0.112.3(supports-color@10.2.2)
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -4141,7 +4147,7 @@ importers:
         version: link:../users
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/accounting':
         specifier: ^0.112.3
@@ -4208,7 +4214,7 @@ importers:
         version: link:../users
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -4257,7 +4263,7 @@ importers:
         version: link:../tenancy
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
         specifier: ^0.112.3
         version: 0.112.3
@@ -4379,7 +4385,7 @@ importers:
         version: link:../smrt-web
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@modelcontextprotocol/client':
         specifier: 2.3.1
         version: 2.3.1
@@ -4433,7 +4439,7 @@ importers:
         version: link:../smrt-ui
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
         specifier: ^0.112.3
         version: 0.112.3
@@ -4485,7 +4491,7 @@ importers:
         version: link:../users
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -4561,7 +4567,7 @@ importers:
         version: link:../smrt-ui
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@simplewebauthn/browser':
         specifier: ^14.0.0
         version: 14.0.0
@@ -4613,7 +4619,7 @@ importers:
         version: link:../subscriptions
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/encryption':
         specifier: ^0.112.3
@@ -4684,7 +4690,7 @@ importers:
         version: link:../vitest
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -4705,7 +4711,7 @@ importers:
         version: link:../core
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@testing-library/jest-dom':
         specifier: ^7.0.1
         version: 7.0.1(@testing-library/dom@10.4.1)(vitest@4.1.10)
@@ -4773,7 +4779,7 @@ importers:
         version: link:../vitest
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -4803,7 +4809,7 @@ importers:
         version: link:../smrt-ui
       '@happyvertical/sql':
         specifier: ^0.112.3
-        version: 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        version: 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -5537,6 +5543,9 @@ packages:
 
   '@duckdb/node-bindings@1.4.3-r.3':
     resolution: {integrity: sha512-QrkUgZw4Xwn5lNbvUHXcF3F5OvVexf9uQyJnxrLTzs9P93Be0UB+b4hr1EZwf1OMMocchN9iG1R839aVIfSJBg==}
+
+  '@electric-sql/pglite@0.5.16':
+    resolution: {integrity: sha512-Nj8KcIsJL748W408U2N8q4+9IlONdpRIU8MJypIAAINMJ5nqKyqpX7Mgg/5XKkXiAib3AoZGR6hnJFlrlLBrcg==}
 
   '@emnapi/core@1.11.1':
     resolution: {integrity: sha512-RSvbQmHzdKzNsLYa/wHrbc3KN4sYLKAdPZxqiM2HATqv/SBk2/ENSHpvXGaLOMcsAyz0poEGqkmmKYG3OWiJEQ==}
@@ -13345,6 +13354,8 @@ snapshots:
       '@duckdb/node-bindings-linux-x64': 1.4.3-r.3
       '@duckdb/node-bindings-win32-x64': 1.4.3-r.3
 
+  '@electric-sql/pglite@0.5.16': {}
+
   '@emnapi/core@1.11.1':
     dependencies:
       '@emnapi/wasi-threads': 1.2.2
@@ -13741,9 +13752,9 @@ snapshots:
     optionalDependencies:
       sharp: 0.35.5(@types/node@24.13.2)
 
-  '@happyvertical/jobs@0.112.3(@aws-sdk/client-sqs@3.1038.0)(@google-cloud/tasks@6.2.1(supports-color@10.2.2))(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)(bull@4.16.5(supports-color@10.2.2))(bullmq@5.76.4(supports-color@10.2.2))':
+  '@happyvertical/jobs@0.112.3(@aws-sdk/client-sqs@3.1038.0)(@electric-sql/pglite@0.5.16)(@google-cloud/tasks@6.2.1(supports-color@10.2.2))(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)(bull@4.16.5(supports-color@10.2.2))(bullmq@5.76.4(supports-color@10.2.2))':
     dependencies:
-      '@happyvertical/sql': 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+      '@happyvertical/sql': 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils': 0.112.3
     optionalDependencies:
       '@aws-sdk/client-sqs': 3.1038.0
@@ -13846,9 +13857,9 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
-  '@happyvertical/secrets@0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)':
+  '@happyvertical/secrets@0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)':
     dependencies:
-      '@happyvertical/sql': 0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+      '@happyvertical/sql': 0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils': 0.112.3
     transitivePeerDependencies:
       - '@electric-sql/pglite'
@@ -13893,7 +13904,7 @@ snapshots:
       - encoding
       - supports-color
 
-  '@happyvertical/sql@0.112.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)':
+  '@happyvertical/sql@0.112.3(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)':
     dependencies:
       '@duckdb/node-api': 1.4.3-r.3
       '@happyvertical/utils': 0.112.3
@@ -13901,6 +13912,7 @@ snapshots:
       pg: 8.21.0
       sqlite-vss: 0.1.2
     optionalDependencies:
+      '@electric-sql/pglite': 0.5.16
       '@russellthehippo/honker-node': 0.3.3
       '@sqliteai/sqlite-vector': 1.0.0
     transitivePeerDependencies:

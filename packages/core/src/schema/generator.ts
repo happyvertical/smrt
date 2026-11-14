@@ -37,12 +37,14 @@ import {
 import {
   assertIdentifierFits,
   enforceIdentifierLimits,
+  shortenIdentifier,
 } from './index-utils.js';
 import {
   formatDefaultValue as formatDefaultValueShared,
   quoteIdentifier,
   quoteStringLiteral,
 } from './sql-identifiers.js';
+import { stiHardeningChecks } from './sti-hardening.js';
 import type {
   ColumnDefinition,
   DeclaredIndexDefinition,
@@ -136,6 +138,111 @@ type SchemaGeneratorConfig = {
 };
 
 export class SchemaGenerator {
+  /**
+   * Complete indexes after conflict/discriminator/unique indexes are seeded.
+   * Every schema path, including registry column fallback, uses this ordered
+   * tail. Reference coverage MUST run after declarations and automatic lookup
+   * indexes; identifier limits MUST be the final pass (#4946).
+   *
+   * Generators pass the opt-in sets selected while emitting their columns.
+   * The builder instead supplies only fields whose columns its manifest lacked.
+   * Existing manifest indexes remain authoritative and are never replaced here.
+   */
+  completeIndexes(
+    indexes: IndexDefinition[],
+    columns: Record<string, ManifestColumnDefinition>,
+    tableName: string,
+    options: {
+      indexedColumns?: Iterable<string>;
+      indexedMetaFields?: Iterable<string>;
+      fields?: Iterable<[string, RegistryField]>;
+      sti?: boolean;
+      descriptions?: boolean;
+      declaredIndexes?: unknown;
+      subclassDeclarations?: Array<{ className: string; indexes: unknown }>;
+      subtreeOf?: (className: string) => string[];
+    } = {},
+  ): void {
+    const indexedColumns = new Set(options.indexedColumns);
+    const indexedMetaFields = new Set(options.indexedMetaFields);
+    for (const [fieldName, field] of options.fields ?? []) {
+      if (field.transient || field._meta?.transient) continue;
+      if (field.indexed !== true && field._meta?.indexed !== true) continue;
+      if (field.type === 'meta') {
+        if (options.sti) indexedMetaFields.add(fieldName);
+        continue;
+      }
+      const columnName = this.toSnakeCase(fieldName);
+      const column = columns[columnName];
+      if (
+        column &&
+        field.type !== 'foreignKey' &&
+        !column.foreignKey &&
+        !column.primaryKey &&
+        (options.sti || !column.unique)
+      ) {
+        indexedColumns.add(columnName);
+      }
+    }
+
+    // Check the final spelling too: a prebuilt manifest already shortened it.
+    const append = (index: IndexDefinition) => {
+      if (this.hasIndexNamed(indexes, index.name)) return;
+      indexes.push(index);
+    };
+
+    this.ensureSlugLookupIndex(indexes, columns, tableName);
+    for (const fieldName of indexedMetaFields) {
+      append({
+        name: `${tableName}_meta_${this.toSnakeCase(fieldName)}_idx`,
+        columns: [],
+        jsonPath: { column: '_meta_data', path: fieldName },
+        ...(options.descriptions
+          ? {
+              description: `JSON-path index for @meta({ indexed: true }) field ${fieldName}`,
+            }
+          : {}),
+      });
+    }
+    for (const colName of indexedColumns) {
+      append({
+        name: `${tableName}_${colName}_idx`,
+        columns: [colName],
+        ...(options.descriptions
+          ? { description: `Index for ${colName}` }
+          : {}),
+      });
+    }
+    this.appendDeclaredIndexes(
+      indexes,
+      options.declaredIndexes,
+      columns,
+      tableName,
+    );
+    this.appendStiSubclassDeclaredIndexes(
+      indexes,
+      options.subclassDeclarations ?? [],
+      columns,
+      tableName,
+      options.subtreeOf ?? (() => []),
+    );
+    this.ensureDefaultListOrderingIndex(indexes, columns, tableName);
+    this.ensurePolymorphicAssociationIndex(indexes, columns, tableName);
+    this.ensureReferenceColumnIndexes(indexes, columns, tableName);
+    enforceIdentifierLimits(tableName, indexes);
+  }
+
+  /** Recognize both generated names and already-shortened manifest names. */
+  private hasIndexNamed(
+    indexes: ReadonlyArray<{ name: string }>,
+    name: string,
+  ): boolean {
+    const shortened = shortenIdentifier(name);
+    return indexes.some(
+      (index) => index.name === name || index.name === shortened,
+    );
+  }
+
   /**
    * Convert field type to SQL data type
    */
@@ -490,7 +597,7 @@ export class SchemaGenerator {
     if (this.hasUnqualifiedLeadingColumns(indexes, orderingColumns)) return;
 
     const name = `${tableName}_${orderingColumns.join('_')}_idx`;
-    if (indexes.some((index) => index.name === name)) return;
+    if (this.hasIndexNamed(indexes, name)) return;
 
     // Omit descriptive metadata here: this
     // helper feeds the manifest paths as well as the structured ones.
@@ -563,7 +670,7 @@ export class SchemaGenerator {
     if (this.hasUnqualifiedLeadingColumns(indexes, ownerColumns)) return;
 
     const name = `${tableName}_${ownerColumns.join('_')}_idx`;
-    if (indexes.some((index) => index.name === name)) return;
+    if (this.hasIndexNamed(indexes, name)) return;
 
     // Omit descriptive metadata here: this
     // helper feeds the manifest paths as well as the structured ones.
@@ -893,7 +1000,7 @@ export class SchemaGenerator {
       if (this.hasUnqualifiedLeadingIndex(indexes, columnName)) continue;
 
       const name = `${tableName}_${columnName}_idx`;
-      if (indexes.some((index) => index.name === name)) continue;
+      if (this.hasIndexNamed(indexes, name)) continue;
 
       // Omit descriptive metadata here: this
       // helper feeds the manifest paths as well as the structured ones.
@@ -1032,7 +1139,7 @@ export class SchemaGenerator {
     }
 
     const name = `${tableName}_slug_context_idx`;
-    if (indexes.some((index) => index.name === name)) return;
+    if (this.hasIndexNamed(indexes, name)) return;
 
     indexes.push({ name, columns: ['slug', 'context'] });
   }
@@ -1467,39 +1574,11 @@ export class SchemaGenerator {
       }
     }
 
-    // Custom conflict columns replace the (slug, context) index, but slug
-    // loading still filters on it (#2359, A7).
-    this.ensureSlugLookupIndex(indexes, columns, tableName);
-
-    // Emit opt-in column indexes for regular fields tagged with `indexed: true`
-    for (const colName of indexedColumns) {
-      indexes.push({
-        name: `${tableName}_${colName}_idx`,
-        columns: [colName],
-        description: `Index for ${colName}`,
-      });
-    }
-
-    // Indexes declared with `@smrt({ indexes: [...] })` (#2357). Appended
-    // before the reference-column helper so a declared composite leading with
-    // a reference column suppresses the standalone auto index.
-    this.appendDeclaredIndexes(indexes, config?.indexes, columns, tableName);
-
-    // The default list page orders by created_at (#2363) — after the declared
-    // indexes, before the reference-column pass.
-    this.ensureDefaultListOrderingIndex(indexes, columns, tableName);
-
-    // Polymorphic association owner lookup `(meta_type, meta_id)` (#2364,
-    // epic #2382 finding A3) — alongside the default-ordering composite,
-    // before the reference-column pass.
-    this.ensurePolymorphicAssociationIndex(indexes, columns, tableName);
-
-    // Reference columns (@foreignKey / @crossPackageRef / tenant_id) are
-    // always indexed (#2356, #2359).
-    this.ensureReferenceColumnIndexes(indexes, columns, tableName);
-
-    // Last: nothing may lengthen a name after this (#2374).
-    enforceIdentifierLimits(tableName, indexes);
+    this.completeIndexes(indexes, columns, tableName, {
+      indexedColumns,
+      declaredIndexes: config?.indexes,
+      descriptions: true,
+    });
 
     return {
       tableName,
@@ -1835,73 +1914,48 @@ export class SchemaGenerator {
       tableName,
     );
 
-    // Custom conflict columns replace the (slug, context, _meta_type) index,
-    // but slug loading still filters on slug/context (#2359, A7).
-    this.ensureSlugLookupIndex(indexes, columns, tableName);
-
-    // JSON-path indexes for @meta({ indexed: true }) fields
-    for (const fieldName of indexedMetaFields) {
-      indexes.push({
-        name: `${tableName}_meta_${this.toSnakeCase(fieldName)}_idx`,
-        columns: [],
-        jsonPath: { column: '_meta_data', path: fieldName },
-        description: `JSON-path index for @meta({ indexed: true }) field ${fieldName}`,
-      });
-    }
-
-    // Plain column indexes for regular STI columns opted in via `indexed: true`
-    for (const colName of indexedStiColumns) {
-      indexes.push({
-        name: `${tableName}_${colName}_idx`,
-        columns: [colName],
-        description: `Index for ${colName}`,
-      });
-    }
-
-    // Indexes declared on the STI base with `@smrt({ indexes: [...] })`
-    // (#2357) apply to every subtype's reads. Appended before the
-    // reference-column helper so a declared composite leading with a
-    // reference column suppresses the standalone auto index.
-    this.appendDeclaredIndexes(indexes, config?.indexes, columns, tableName);
-    // ...and those declared on descendants (#3299).
-    this.appendStiSubclassDeclaredIndexes(
-      indexes,
-      descendants.map((className) => ({
+    this.completeIndexes(indexes, columns, tableName, {
+      indexedColumns: indexedStiColumns,
+      indexedMetaFields,
+      declaredIndexes: config?.indexes,
+      descriptions: true,
+      subclassDeclarations: descendants.map((className) => ({
         className,
         indexes: ObjectRegistry.getConfig?.(className)?.indexes,
       })),
-      columns,
+      subtreeOf: (className) => ObjectRegistry.getDescendants(className),
+    });
+
+    // A subclass that makes a field required the base leaves optional (#4932).
+    const hardeningChecks = stiHardeningChecks(
       tableName,
-      (className) => ObjectRegistry.getDescendants(className),
+      (fieldName) => this.toSnakeCase(fieldName),
+      await ObjectRegistry.getAllFields(baseClassName),
+      await Promise.all(
+        descendants.map(async (className) => ({
+          className,
+          fields: await ObjectRegistry.getAllFields(className),
+        })),
+      ),
     );
-
-    // The default list page orders by created_at (#2363) — after the declared
-    // indexes, before the reference-column pass.
-    this.ensureDefaultListOrderingIndex(indexes, columns, tableName);
-
-    // Polymorphic association owner lookup `(meta_type, meta_id)` (#2364,
-    // epic #2382 finding A3) — alongside the default-ordering composite,
-    // before the reference-column pass.
-    this.ensurePolymorphicAssociationIndex(indexes, columns, tableName);
-
-    // Reference columns (@foreignKey / @crossPackageRef / tenant_id) are
-    // always indexed (#2356, #2359).
-    this.ensureReferenceColumnIndexes(indexes, columns, tableName);
-
-    // Last: nothing may lengthen a name after this (#2374).
-    enforceIdentifierLimits(tableName, indexes);
 
     return {
       tableName,
       columns,
       indexes,
       triggers: [],
+      ...(hardeningChecks.length > 0 ? { checks: hardeningChecks } : {}),
       foreignKeys: this.extractForeignKeys(columns),
       dependencies: this.extractForeignKeys(columns)
         .map((foreignKey) => foreignKey.referencesTable)
         .filter((dependency) => dependency !== tableName),
       version: sha256Hex(
-        JSON.stringify({ columns, baseClassName, descendants }),
+        JSON.stringify({
+          columns,
+          baseClassName,
+          descendants,
+          ...(hardeningChecks.length > 0 ? { hardeningChecks } : {}),
+        }),
       ).substring(0, 8),
       packageName: 'runtime',
       baseClass: 'SmrtObject',
@@ -2120,61 +2174,28 @@ export class SchemaGenerator {
       tableName,
     );
 
-    // Custom conflict columns replace the (slug, context, _meta_type) index,
-    // but slug loading still filters on slug/context (#2359, A7).
-    this.ensureSlugLookupIndex(indexes, columns, tableName);
-
-    // JSON-path indexes for @meta({ indexed: true }) fields
-    for (const fieldName of indexedMetaFields) {
-      indexes.push({
-        name: `${tableName}_meta_${this.toSnakeCase(fieldName)}_idx`,
-        columns: [],
-        jsonPath: { column: '_meta_data', path: fieldName },
-      });
-    }
-
-    // Plain column indexes for regular STI columns opted in via `indexed: true`
-    for (const colName of indexedStiColumns) {
-      indexes.push({
-        name: `${tableName}_${colName}_idx`,
-        columns: [colName],
-      });
-    }
-
-    // Indexes declared on the STI base with `@smrt({ indexes: [...] })`
-    // (#2357), before the reference-column helper so a declared composite
-    // leading with a reference column suppresses the standalone auto index.
-    this.appendDeclaredIndexes(indexes, config?.indexes, columns, tableName);
-    // ...and those declared on descendants (#3299).
-    this.appendStiSubclassDeclaredIndexes(
-      indexes,
-      descendants.map((className) => ({
+    this.completeIndexes(indexes, columns, tableName, {
+      indexedColumns: indexedStiColumns,
+      indexedMetaFields,
+      declaredIndexes: config?.indexes,
+      subclassDeclarations: descendants.map((className) => ({
         className,
         indexes: manifest.objects[className]?.decoratorConfig?.indexes,
       })),
-      columns,
+      subtreeOf: (className) =>
+        this.findDescendantsInManifest(className, manifest),
+    });
+
+    // A subclass that makes a field required the base leaves optional (#4932).
+    const hardeningChecks = stiHardeningChecks(
       tableName,
-      (className) => this.findDescendantsInManifest(className, manifest),
+      (fieldName) => this.toSnakeCase(fieldName),
+      Object.entries(manifest.objects[baseKey]?.fields ?? {}),
+      descendants.map((className) => ({
+        className,
+        fields: Object.entries(manifest.objects[className]?.fields ?? {}),
+      })),
     );
-
-    // The default list page orders by created_at (#2363) — after the declared
-    // indexes, before the reference-column pass.
-    this.ensureDefaultListOrderingIndex(indexes, columns, tableName);
-
-    // Polymorphic association owner lookup `(meta_type, meta_id)` (#2364,
-    // epic #2382 finding A3) — alongside the default-ordering composite,
-    // before the reference-column pass.
-    this.ensurePolymorphicAssociationIndex(indexes, columns, tableName);
-
-    // Reference columns (@foreignKey / @crossPackageRef / tenant_id) are
-    // always indexed (#2356, #2359). Runs last so every consumer of the
-    // structured `indexes` array (migrations, test databases, aggregation)
-    // creates them; the cached `ddl` string below is CREATE TABLE only and is
-    // not an executable representation of the table (#2358).
-    this.ensureReferenceColumnIndexes(indexes, columns, tableName);
-
-    // Last: nothing may lengthen a name after this (#2374).
-    enforceIdentifierLimits(tableName, indexes);
 
     const schemaDefinition: SchemaDefinition = {
       tableName,
@@ -2189,6 +2210,7 @@ export class SchemaGenerator {
         jsonPath: idx.jsonPath,
       })),
       triggers: [],
+      ...(hardeningChecks.length > 0 ? { checks: hardeningChecks } : {}),
       foreignKeys: this.extractForeignKeys(
         this.convertManifestColumnsToSchemaColumns(columns),
       ),
@@ -2205,7 +2227,12 @@ export class SchemaGenerator {
 
     // Generate version hash
     const version = sha256Hex(
-      JSON.stringify({ columns, baseClassName, descendants }),
+      JSON.stringify({
+        columns,
+        baseClassName,
+        descendants,
+        ...(hardeningChecks.length > 0 ? { hardeningChecks } : {}),
+      }),
     ).substring(0, 8);
 
     return {
@@ -2213,6 +2240,7 @@ export class SchemaGenerator {
       ddl,
       columns,
       indexes,
+      ...(hardeningChecks.length > 0 ? { checks: hardeningChecks } : {}),
       version,
     };
   }
@@ -2359,41 +2387,10 @@ export class SchemaGenerator {
       });
     }
 
-    // Custom conflict columns replace the (slug, context) index, but slug
-    // loading still filters on it (#2359, A7).
-    this.ensureSlugLookupIndex(indexes, columns, tableName);
-
-    // Plain column indexes for regular columns opted in via `indexed: true`.
-    for (const colName of indexedColumns) {
-      indexes.push({
-        name: `${tableName}_${colName}_idx`,
-        columns: [colName],
-      });
-    }
-
-    // Indexes declared with `@smrt({ indexes: [...] })` (#2357), before the
-    // reference-column helper so a declared composite leading with a
-    // reference column suppresses the standalone auto index.
-    this.appendDeclaredIndexes(indexes, config?.indexes, columns, tableName);
-
-    // The default list page orders by created_at (#2363) — after the declared
-    // indexes, before the reference-column pass.
-    this.ensureDefaultListOrderingIndex(indexes, columns, tableName);
-
-    // Polymorphic association owner lookup `(meta_type, meta_id)` (#2364,
-    // epic #2382 finding A3) — alongside the default-ordering composite,
-    // before the reference-column pass.
-    this.ensurePolymorphicAssociationIndex(indexes, columns, tableName);
-
-    // Reference columns (@foreignKey / @crossPackageRef / tenant_id) are
-    // always indexed (#2356, #2359). Runs last so every consumer of the
-    // structured `indexes` array (migrations, test databases, aggregation)
-    // creates them; the cached `ddl` string below is CREATE TABLE only and is
-    // not an executable representation of the table (#2358).
-    this.ensureReferenceColumnIndexes(indexes, columns, tableName);
-
-    // Last: nothing may lengthen a name after this (#2374).
-    enforceIdentifierLimits(tableName, indexes);
+    this.completeIndexes(indexes, columns, tableName, {
+      indexedColumns,
+      declaredIndexes: config?.indexes,
+    });
 
     const schemaDefinition: SchemaDefinition = {
       tableName,

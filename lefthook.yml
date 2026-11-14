@@ -271,6 +271,16 @@ pre-push:
         Use a dependency / devDependency / @crossPackageRef indirection.
         Run: pnpm check:no-smrt-peers
 
+    direct-model-construction:
+      # #4931: smrt package sources build registered models through their
+      # collection (or the registry-resolved constructor), never `new Model()`,
+      # so an app's same-named subclass applies. Baseline may only shrink.
+      run: node scripts/check-direct-model-construction.mjs
+      fail_text: |
+        ❌ A package source builds a registered model with `new Model(...)`.
+        Use the collection's create(), or ObjectRegistry.resolveEffectiveConstructor().
+        Run: pnpm check:direct-model-construction
+
     agents-chain:
       # Instruction-chain budget (#2106, #2108): the root AGENTS.md plus every
       # AGENTS.md down to a package is handed to an agent as one additive chain,
@@ -281,6 +291,26 @@ pre-push:
         Split per-module semantics into packages/<pkg>/agents/<module>.md and link
         them from a Modules table; keep invariants and Gotchas inline. Never add
         nested AGENTS.md files — chains are additive. Run: pnpm check:agents-chain
+
+    required-reasons:
+      # Rule 1 (#4923): a required field in a smrt package states its reason
+      # (`requiredFor`). The baseline of unexplained fields may only shrink.
+      glob: "{packages/*/src/**/*.ts,scripts/required-reasons-baseline.json}"
+      run: node scripts/check-required-reasons.mjs
+      fail_text: |
+        ❌ A required field has no reason, or the baseline is stale.
+        Add requiredFor to the field, or make it optional; then run
+        node scripts/check-required-reasons.mjs --prune to drop fixed entries.
+
+    hand-written-ddl:
+      # Rule 2 (#4930): no new hand-written CREATE/ALTER/DROP TABLE in a package
+      # outside the migrator. The baseline of existing ones may only shrink.
+      glob: "{packages/*/src/**/*.{ts,tsx,js,mjs},scripts/hand-written-ddl-baseline.json}"
+      run: node scripts/check-hand-written-ddl.mjs
+      fail_text: |
+        ❌ A hand-written table statement was added outside the migrator, or the
+        baseline is stale. Declare the shape on a model instead; then run
+        node scripts/check-hand-written-ddl.mjs --prune to drop fixed entries.
 
     mcp-protocol-hygiene:
       run: node scripts/check-mcp-protocol-hygiene.mjs

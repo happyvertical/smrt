@@ -84,6 +84,7 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
     for (const table of [
       '_smrt_migrations',
       '_smrt_schema_migrations',
+      '_smrt_migrate_runs',
       '_smrt_backfills',
     ]) {
       await as(owner, `CREATE TABLE app.${q(table)} (id text)`);
@@ -1045,6 +1046,7 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
     for (const table of [
       '_smrt_migrations',
       '_smrt_schema_migrations',
+      '_smrt_migrate_runs',
       '_smrt_backfills',
     ]) {
       await as(owner, `CREATE TABLE ${q(odd)}.${q(table)} (id text)`);
@@ -1099,6 +1101,7 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
     for (const table of [
       '_smrt_migrations',
       '_smrt_schema_migrations',
+      '_smrt_migrate_runs',
       '_smrt_backfills',
     ]) {
       await as(owner, `DROP TABLE app.${q(table)}`);

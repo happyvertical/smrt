@@ -1,5 +1,6 @@
 import {
   digestRunOnceContent,
+  ObjectRegistry,
   runOnce,
   type SmrtClassOptions,
 } from '@happyvertical/smrt-core';
@@ -380,7 +381,9 @@ export class CommentService {
     if (!body?.trim()) throw new TypeError('Comment body is required.');
     // Validate through the model's public setter before collection.create()
     // persists. Supply its normalized JSON in that single insert.
-    const prepared = new Comment();
+    const prepared = new (ObjectRegistry.resolveEffectiveConstructor(
+      Comment,
+    ))();
     if (mentions !== undefined) prepared.mentionUserIds = mentions;
     if (
       idempotencyKey !== undefined &&

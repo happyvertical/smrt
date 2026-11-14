@@ -10,7 +10,7 @@
  * @packageDocumentation
  */
 
-import { SmrtCollection } from '@happyvertical/smrt-core';
+import { ObjectRegistry, SmrtCollection } from '@happyvertical/smrt-core';
 import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import type { Payment } from '../models/Payment.js';
 import { Payout } from '../models/Payout.js';
@@ -49,7 +49,7 @@ export class PayoutCollection extends SmrtCollection<Payout> {
     const grossAmount = payment.nativeAmount || payment.amount || 0;
     const currency = payment.nativeCurrency || payment.currency || '';
     const backendId = args.backendId ?? payment.backendId ?? '';
-    const payout = new Payout({
+    const payout = new (ObjectRegistry.resolveEffectiveConstructor(Payout))({
       ai: this.options.ai,
       db: this.db,
       _skipLoad: true,

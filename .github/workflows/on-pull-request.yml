@@ -325,6 +325,11 @@ jobs:
       - name: Check smrt package graph is acyclic
         run: node scripts/check-package-dag.mjs
 
+      # Registered models are built through their collection, never `new Model()`
+      # in package sources, so an app's same-named subclass applies (#4931).
+      - name: Check direct model construction
+        run: node scripts/check-direct-model-construction.mjs
+
       # Agent instruction-chain budget (#2106, #2108). The org-wide
       # `hv-agent audit` caps root+package AGENTS.md at 32 KB; this catches a
       # breach on the PR that grew the doc and warns above 80% of the cap.
@@ -468,6 +473,8 @@ jobs:
 
       # Root script tests exercise selectors, receipts and workflow contracts.
       # The production-manifest regression also loads core's built dependencies.
+      # Tests under scripts/built-core load core's own dist (#4933) and run in
+      # a separate step, so `pnpm test:ci-scripts` itself needs no package build.
       - name: Setup environment
         uses: ./.github/actions/setup-environment
         with:
@@ -496,6 +503,12 @@ jobs:
 
       - name: Run CI control-plane regressions
         run: pnpm test:ci-scripts
+
+      - name: Build core for built-core control-plane regressions
+        run: pnpm turbo run build --filter='@happyvertical/smrt-core'
+
+      - name: Run control-plane regressions that need built core
+        run: pnpm test:ci-scripts:built-core
 
   test:
     name: Validate Changes

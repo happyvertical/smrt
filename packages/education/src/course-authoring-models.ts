@@ -76,7 +76,8 @@ function validDate(value: Date) {
 })
 export class CourseRevision extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
   @foreignKey('CourseRevision', { nullable: true }) parentRevisionId:
     | string
     | null = null;
@@ -148,7 +149,8 @@ export class CourseRevisionCollection extends SmrtCollection<CourseRevision> {
 })
 export class LessonRevision extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
   lessonKey = '';
   @foreignKey('LessonRevision', { nullable: true }) parentRevisionId:
     | string
@@ -241,8 +243,10 @@ export class LessonRevisionCollection extends SmrtCollection<LessonRevision> {
 })
 export class CourseDraftHead extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
-  @foreignKey('CourseRevision', { required: true }) headRevisionId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
+  @foreignKey('CourseRevision', { required: true, requiredFor: 'identity' })
+  headRevisionId = '';
   version = 1;
   updatedByUserId = '';
   updatedAt = new Date();
@@ -289,10 +293,13 @@ export class CourseDraftHeadCollection extends SmrtCollection<CourseDraftHead> {
 })
 export class CourseRelease extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
-  @foreignKey('CourseRevision', { required: true }) revisionId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
+  @foreignKey('CourseRevision', { required: true, requiredFor: 'identity' })
+  revisionId = '';
   /** The immutable Course row materialized for this release. */
-  @foreignKey('Course', { required: true }) releaseCourseId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' })
+  releaseCourseId = '';
   releaseNumber = 1;
   reviewId = '';
   actorUserId = '';
@@ -339,12 +346,17 @@ export class CourseReleaseCollection extends SmrtCollection<CourseRelease> {
 })
 export class ReleasedLesson extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
-  @foreignKey('CourseRelease', { required: true }) releaseId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
+  @foreignKey('CourseRelease', { required: true, requiredFor: 'identity' })
+  releaseId = '';
   lessonKey = '';
-  @foreignKey('LessonRevision', { required: true }) lessonRevisionId = '';
-  @foreignKey('Lesson', { required: true }) lessonId = '';
-  @foreignKey('CourseSection', { required: true }) sectionId = '';
+  @foreignKey('LessonRevision', { required: true, requiredFor: 'identity' })
+  lessonRevisionId = '';
+  @foreignKey('Lesson', { required: true, requiredFor: 'identity' }) lessonId =
+    '';
+  @foreignKey('CourseSection', { nullable: true }) sectionId: string | null =
+    null;
   constructor(options: Record<string, unknown> = {}) {
     super(options);
     adopt(this, options);
@@ -380,7 +392,8 @@ export class ReleasedLessonCollection extends SmrtCollection<ReleasedLesson> {
 })
 export class CourseArchiveDecision extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
   action = 'archive';
   sequence = 1;
   actorUserId = '';
@@ -428,7 +441,8 @@ export class CourseArchiveDecisionCollection extends SmrtCollection<CourseArchiv
 })
 export class CourseVisibilityChange extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
   sequence = 1;
   previousVisibility = 'family';
   visibility = 'family';
@@ -481,7 +495,8 @@ export class CourseVisibilityChangeCollection extends SmrtCollection<CourseVisib
 })
 export class CourseCoverChange extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
   sequence = 1;
   previousAssetId = '';
   assetId = '';
@@ -526,7 +541,8 @@ export class CourseCoverChangeCollection extends SmrtCollection<CourseCoverChang
 })
 export class CourseDiscardTombstone extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
   title = '';
   headRevisionId = '';
   revisionCount = 0;
@@ -570,11 +586,15 @@ export class CourseDiscardTombstoneCollection extends SmrtCollection<CourseDisca
 })
 export class EnrollmentReleasePin extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Enrollment', { required: true }) enrollmentId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
+  @foreignKey('Enrollment', { required: true, requiredFor: 'identity' })
+  enrollmentId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
   /** Authored course identity. */
-  @foreignKey('Course', { required: true }) courseId = '';
-  @foreignKey('CourseRelease', { required: true }) releaseId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
+  @foreignKey('CourseRelease', { required: true, requiredFor: 'identity' })
+  releaseId = '';
   @foreignKey('CourseRelease', { nullable: true }) previousReleaseId:
     | string
     | null = null;
@@ -644,7 +664,8 @@ export class EnrollmentReleasePinCollection extends SmrtCollection<EnrollmentRel
 })
 export class CourseUpgradeChoice extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
   /** Empty for a course-level choice. */
   enrollmentId = '';
   enabled = false;
@@ -698,11 +719,15 @@ export class CourseUpgradeChoiceCollection extends SmrtCollection<CourseUpgradeC
 })
 export class EnrollmentAutoUpgradeSkip extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Enrollment', { required: true }) enrollmentId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
+  @foreignKey('Enrollment', { required: true, requiredFor: 'identity' })
+  enrollmentId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
   /** The release the enrollment was not moved to. */
-  @foreignKey('CourseRelease', { required: true }) releaseId = '';
+  @foreignKey('CourseRelease', { required: true, requiredFor: 'identity' })
+  releaseId = '';
   /** 'course' or 'enrollment': the scope of the opt-in that was followed. */
   optInScope = '';
   optInActorUserId = '';
@@ -765,8 +790,10 @@ export class EnrollmentAutoUpgradeSkipCollection extends SmrtCollection<Enrollme
 })
 export class EnrollmentAssignmentRecord extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Enrollment', { required: true }) enrollmentId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
+  @foreignKey('Enrollment', { required: true, requiredFor: 'identity' })
+  enrollmentId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
   actorUserId = '';
   delegatingGuardianUserId = '';
   delegationId = '';
@@ -817,8 +844,10 @@ export class EnrollmentAssignmentRecordCollection extends SmrtCollection<Enrollm
 })
 export class CurriculumCreationRecord extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Curriculum', { required: true }) curriculumId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
+  @foreignKey('Curriculum', { required: true, requiredFor: 'identity' })
+  curriculumId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
   actorUserId = '';
   delegatingGuardianUserId = '';
   delegationId = '';

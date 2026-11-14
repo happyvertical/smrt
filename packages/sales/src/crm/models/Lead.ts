@@ -81,8 +81,8 @@ export class Lead extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  /** Short descriptive name of the prospect/deal-to-be. Required. */
-  @field({ required: true, description: 'What you call this lead.' })
+  /** Short descriptive name of the prospect/deal-to-be. */
+  @field({ description: 'What you call this lead.' })
   name: string = '';
 
   /** Primary human contact name. */

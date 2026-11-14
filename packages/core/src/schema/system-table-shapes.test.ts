@@ -113,6 +113,7 @@ describe('getSystemTableShapes', () => {
       '_smrt_dispatch',
       '_smrt_dispatch_subscriptions',
       '_smrt_embeddings',
+      '_smrt_migrate_runs',
       '_smrt_migrations',
       '_smrt_run_once_claims',
       '_smrt_schema_migrations',

@@ -4,7 +4,11 @@ import { join } from 'node:path';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createActivationCoordinator } from '../activation.js';
-import { migrateSmrtSchemas } from '../migrations/orchestrate.js';
+import { recordSuccessfulMigrate } from '../migrations/migrate-record.js';
+import {
+  MigrationRefusedError,
+  migrateSmrtSchemas,
+} from '../migrations/orchestrate.js';
 import { SmrtObject } from '../object.js';
 import { manifestEntry } from '../registry/__tests__/helpers/consumer-workspace.js';
 import { ObjectRegistry } from '../registry.js';
@@ -366,6 +370,26 @@ describe(`${engine} lazy activation`, () => {
     ).toBe(true);
     expect(loaders[INVOICE]).toHaveBeenCalledOnce();
     expect(await applicationTables()).toHaveLength(4);
+  });
+
+  it('keeps exposure closed when migrate refuses the activation (#4927)', async () => {
+    const { coordinator, enabled } = fixture();
+    await coordinator.boot();
+    enabled.get('a')?.add(INVOICE);
+    // A database last migrated by a release older than the oldest supported
+    // one is a release stop: migrate refuses and applies nothing.
+    await recordSuccessfulMigrate(db, {
+      engineHint: engine,
+      input: { release: '0.1.0', packages: [], fingerprint: 'old' },
+    });
+    await expect(coordinator.activate([INVOICE])).rejects.toBeInstanceOf(
+      MigrationRefusedError,
+    );
+    expect(await applicationTables()).toEqual(['activation_host']);
+    expect(coordinator.isReady(INVOICE)).toBe(false);
+    expect(
+      isRuntimeModelEnabled(INVOICE, { surface: 'rest', tenantId: 'a' }),
+    ).toBe(false);
   });
 
   it('recovers persisted enablement on a new coordinator, reconciles existing tables and retains rows', async () => {

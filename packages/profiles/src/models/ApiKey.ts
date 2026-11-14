@@ -9,6 +9,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import {
   field,
   foreignKey,
+  ObjectRegistry,
   SmrtObject,
   type SmrtObjectOptions,
   smrt,
@@ -41,7 +42,7 @@ export class ApiKey extends SmrtObject {
   /**
    * Link to the Profile (Person, Organization, Bot)
    */
-  @foreignKey('Profile', { required: true })
+  @foreignKey('Profile', { required: true, requiredFor: 'identity' })
   profileId?: string;
 
   /**
@@ -173,7 +174,7 @@ export class ApiKey extends SmrtObject {
     const keyPrefix = key.substring(0, 16);
     const keyHash = ApiKey.hashKey(key);
 
-    const apiKey = new ApiKey({
+    const apiKey = new (ObjectRegistry.resolveEffectiveConstructor(ApiKey))({
       db: options.db || profile.options?.db,
       profileId: profile.id as string,
       name: options.name,

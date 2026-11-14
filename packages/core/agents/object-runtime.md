@@ -203,6 +203,9 @@ instances and never use this path to overwrite a loaded revision.
 
 ## Same-named subclass replaces its parent (#4921)
 
+This is rule 3 of the [data shape rules](data-shape-rules.md): an app hardens a
+smrt class by overriding fields on a subclass, and the name decides the reach.
+
 An app class that extends a smrt class and declares the SAME simple name takes
 over the registry entry (`sti-child-wins`, `registry/collision-policy.ts`) and
 records the old key in `replacedQualifiedNames`. smrt's own collections follow
@@ -222,8 +225,14 @@ package or a class that was never replaced.
   A junction collection is created against the effective class too, and
   `setLinks()` judges batch eligibility on the constructor it will build, so an
   app subclass that overrides the lifecycle takes the sequential path at once.
-- Limit: a direct `new Model(...)` in a service bypasses the collection and still
-  builds the class it imported.
+- A direct `new Model(...)` in a service bypasses the collection and builds the
+  class it imported, so an app subclass never applies. Package sources build
+  registered models through the collection's `create()`, or where no collection
+  fits through `ObjectRegistry.resolveEffectiveConstructor(Model)` (same rule as
+  `resolveItemConstructor()`). `pnpm check:direct-model-construction`
+  (`scripts/check-direct-model-construction.mjs`) fails on a new direct call; its
+  baseline `scripts/direct-model-construction-baseline.json` may only shrink and
+  each entry states why the call must stay (#4931).
 
 ## Child Accessors (R10)
 

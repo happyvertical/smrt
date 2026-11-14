@@ -9,7 +9,6 @@ import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { createLogger } from '@happyvertical/logger';
 import { parsePostgresTimeoutMs } from '../postgres-timeouts.js';
-import { detectEngine } from '../schema/ddl/index.js';
 import { NULL_EQUAL_INDEX_MARKER } from '../schema/ddl/null-equal-index.js';
 // DatabaseEngine comes from the DDL layer (the json-inclusive type that
 // `detectEngine` actually returns), matching `SchemaComparer` in differ.ts.
@@ -25,7 +24,10 @@ import type {
   MigrationStatus,
   SchemaMigrationRecord,
 } from '../schema/types.js';
-import { assertPostgresSystemTimestampsCurrent } from '../system/compatibility.js';
+import {
+  assertPostgresSystemTimestampsCurrent,
+  getDatabaseEngine,
+} from '../system/compatibility.js';
 import {
   CREATE_SMRT_SCHEMA_MIGRATIONS_TABLE,
   getSystemTableDDLForEngine,
@@ -316,11 +318,11 @@ export class MigrationTracker {
    * the orchestrator generated.
    */
   private detectDbEngine(): DatabaseEngine {
-    const dbWithConfig = this.db as DatabaseInterface & {
-      config?: { url?: string };
-    };
-    const url = this.db.url || dbWithConfig.config?.url || '';
-    return detectEngine(url, this.engineHint);
+    // The same detection the system-table checks use (`getDatabaseEngine`):
+    // with no hint, a handle that speaks PostgreSQL (PGlite at a directory
+    // path) is PostgreSQL. URL parsing alone read it as SQLite, so the tracker
+    // created SQLite-typed timestamps that the PostgreSQL check then refused.
+    return getDatabaseEngine(this.db, this.engineHint);
   }
 
   /**

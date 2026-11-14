@@ -27,6 +27,7 @@ import {
   resolveEffectiveApplicationRuntime,
 } from '@happyvertical/smrt-config';
 import {
+  assertDatabaseMigratedForBuild,
   ObjectRegistry,
   type SmrtClassOptions,
   type SmrtCollection,
@@ -245,6 +246,17 @@ export interface SmrtSvelteKitRuntimeOptions {
     db: DatabaseInterface,
     context: PrepareDatabaseContext,
   ) => Promise<void>;
+  /**
+   * Packages this build removed on purpose (local profile, with
+   * `createSchema`). A package the installation's last migrate record lists and
+   * this build lacks refuses the start (`schema_migration_refused`, nothing
+   * changed) unless it is named here: what `smrt db:migrate
+   * --confirm-removed-package <name>` is for the CLI. It confirms only the
+   * names given; a name that is not missing is ignored. Keep a name until every
+   * installation you support has run the release that removed the package.
+   * Deployed profiles migrate through the CLI and ignore this.
+   */
+  readonly confirmRemovedPackages?: readonly string[];
   /**
    * Local HTTP bind host. Defaults to `HOST`, or `127.0.0.1` when
    * `NODE_ENV=development`. Local production startup without one fails.
@@ -775,6 +787,7 @@ export function composeSmrtSvelteKitRuntime(
       vaultKeyStore: options.vaultKeyStore,
       createSchema: options.createSchema ?? true,
       prepareDatabase: options.prepareDatabase,
+      confirmRemovedPackages: options.confirmRemovedPackages,
       now: options.now,
     })
       .then(({ runtime: initialized, bootstrap }) => {
@@ -931,11 +944,14 @@ export function composeSmrtSvelteKitRuntime(
 
   const ready = async (): Promise<void> => {
     const runtime = await resolvedRuntime();
-    if (runtime.profile === 'local') {
-      await localRuntime();
-      return;
-    }
-    await deployedRuntime();
+    const { db } =
+      runtime.profile === 'local'
+        ? await localRuntime()
+        : await deployedRuntime();
+    // Rule 7 (#4929): this build serves only a database migrated for it. The
+    // build's schema comes from its bundled registration; the check runs once
+    // per database and refuses in production, naming smrt db:migrate.
+    await assertDatabaseMigratedForBuild(db);
   };
 
   const configurationFingerprint = (): string =>

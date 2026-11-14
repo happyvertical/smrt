@@ -28,10 +28,13 @@ export class ContentAsset extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @foreignKey('Content', { required: true })
+  @foreignKey('Content', { required: true, requiredFor: 'identity' })
   contentId = '';
 
-  @crossPackageRef('@happyvertical/smrt-assets:Asset', { required: true })
+  @crossPackageRef('@happyvertical/smrt-assets:Asset', {
+    required: true,
+    requiredFor: 'identity',
+  })
   assetId = '';
 
   @field({ required: true })

@@ -20,6 +20,22 @@ export {
   BackfillTracker,
   type BackfillTrackerOptions,
 } from './backfill-tracker.js';
+export {
+  BUILD_MANIFEST_ENV,
+  BUILD_SCHEMA_GLOBAL,
+  BUILD_SCHEMA_MODULE,
+  type BuildSchema,
+  describeManifestSchema,
+  generateBuildSchemaModule,
+  noteAlternativeManifests,
+  PROJECT_MANIFEST_PATHS,
+  readBuildSchemaFile,
+  readProjectBuildSchema,
+  registerBuildSchema,
+  registeredBuildSchema,
+  resolveBuildSchema,
+} from './build-schema.js';
+export * from './change-kinds.js';
 // Checksum utilities
 export {
   computeChecksum,
@@ -94,6 +110,17 @@ export {
   preflightIntegerWidthWidening,
   widenIntegerColumnsToBigInt,
 } from './integer-width.js';
+export {
+  collectMigrateRecordInput,
+  type LastMigrateRecord,
+  type MigrateRecord,
+  type MigrateRecordInput,
+  type MigrateRecordOptions,
+  packagesSeenInput,
+  readLastMigrateRecord,
+  recordSuccessfulMigrate,
+  type UnloadedBuildPackage,
+} from './migrate-record.js';
 // Cross-process serialization of db:migrate runs (#3634)
 export {
   type AcquireMigrationLockOptions,
@@ -105,6 +132,7 @@ export {
   MigrationLockTimeoutError,
   MigrationLockUnsupportedError,
 } from './migration-lock.js';
+export * from './migration-run-decision.js';
 // Money major-units → integer minor-units rescale (#2401)
 export {
   buildMinorUnitsStatements,
@@ -131,11 +159,19 @@ export {
   nullEqualIndexStatements,
   preflightNullEqualIndexes,
 } from './null-equal-indexes.js';
+export {
+  checkOldestSupportedRelease,
+  compareReleases,
+  OLDEST_SUPPORTED_RELEASE,
+} from './oldest-supported.js';
 // High-level schema orchestration over ObjectRegistry
 export {
+  assertMigrationAccepted,
+  createRegisteredTables,
   getPendingSchemaStatements,
   type MigrateSmrtSchemasOptions,
   type MigrateSmrtSchemasResult,
+  MigrationRefusedError,
   migrateSmrtSchemas,
   type PendingSchemaStatementsResult,
   type RelaxedColumn,
@@ -154,6 +190,12 @@ export {
   type LegacyQualifiedNameTarget,
   legacyQualifiedNamesBackfillName,
 } from './qualified-name-aliases.js';
+export {
+  computeManifestSchemaFingerprint,
+  computeSchemaFingerprint,
+  manifestTableEntries,
+  tryComputeManifestSchemaFingerprint,
+} from './schema-fingerprint.js';
 // SQLite table rebuild (type changes SQLite cannot ALTER in place)
 export {
   type BuildSqliteRebuildStatementsInput,
@@ -166,6 +208,7 @@ export {
   type SqliteTableRebuildPlan,
   sqliteRebuildPlaceholderSql,
 } from './sqlite-rebuild.js';
+export { assertDatabaseMigratedForBuild } from './startup-guard.js';
 // Core classes
 export {
   buildConcurrentIndexPlan,

@@ -55,6 +55,7 @@ export {
   type ManifestColumnLike,
   type ManifestIndexLike,
   type ManifestSchemaLike,
+  ManifestTableConflictError,
   manifestColumnsToDefinitions,
   manifestIndexesToDefinitions,
   manifestSchemaToDefinition,

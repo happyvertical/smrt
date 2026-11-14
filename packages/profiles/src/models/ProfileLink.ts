@@ -91,7 +91,11 @@ export class ProfileLink extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @foreignKey('Profile', { required: true, onDelete: 'CASCADE' })
+  @foreignKey('Profile', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'CASCADE',
+  })
   profileId = '';
 
   /** One of {@link PROFILE_LINK_PLATFORMS}. */
@@ -99,7 +103,7 @@ export class ProfileLink extends SmrtObject {
   platform: ProfileLinkPlatform = 'website';
 
   /** A normalized http(s) address. */
-  @field({ required: true, maxLength: 2048 })
+  @field({ required: true, requiredFor: 'identity', maxLength: 2048 })
   url = '';
 
   /** Optional words shown instead of the address ("Campaign site"). */

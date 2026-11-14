@@ -17,7 +17,10 @@ import {
   type RuntimeProviderOverrides,
   resolveApplicationRuntime,
 } from '@happyvertical/smrt-config';
-import { setDatabaseSyncDeviceId } from '@happyvertical/smrt-core';
+import {
+  ObjectRegistry,
+  setDatabaseSyncDeviceId,
+} from '@happyvertical/smrt-core';
 import { TaskRunner, type TaskRunnerConfig } from '@happyvertical/smrt-jobs';
 import { Person, ProfileTypeCollection } from '@happyvertical/smrt-profiles';
 import { withSystemContext } from '@happyvertical/smrt-tenancy';
@@ -223,6 +226,18 @@ export interface LocalApplicationRuntimeOptions
    * may take `(db)`. A rejection surfaces as `migration_failed`.
    */
   prepareDatabase?: LocalPrepareDatabase;
+  /**
+   * Packages this build removed on purpose. A package the last migrate record
+   * lists and this build lacks stops the upgrade (`schema_migration_refused`,
+   * nothing changed) unless it is named here: what `smrt db:migrate
+   * --confirm-removed-package <name>` is for the CLI, and it confirms only the
+   * names given. A name that is not missing is ignored, so a stale name is
+   * harmless, but it pre-confirms a later accidental removal of that package;
+   * drop it once every installation you support has migrated past the removing
+   * release, and when the package comes back. Local profile only, with
+   * {@link LocalApplicationRuntimeOptions.createSchema}.
+   */
+  confirmRemovedPackages?: readonly string[];
   /** Local profile provider overrides (only validated local combinations survive). */
   providers?: RuntimeProviderOverrides;
   /** Short-lived bootstrap token lifetime. Range: 1..900 seconds. */
@@ -764,6 +779,22 @@ function resolveWindowsRuntimePaths(
   });
 }
 
+function validateConfirmedRemovedPackages(
+  value: readonly string[] | undefined,
+): readonly string[] {
+  if (value === undefined) return [];
+  if (
+    !Array.isArray(value) ||
+    value.some((name) => typeof name !== 'string' || name.trim() === '')
+  ) {
+    throw new LocalRuntimeError(
+      'invalid_configuration',
+      'confirmRemovedPackages must be a list of package names.',
+    );
+  }
+  return Object.freeze([...value]);
+}
+
 /**
  * Initialize or reopen a local application runtime.
  *
@@ -789,6 +820,9 @@ export async function initializeLocalApplicationRuntime(
   const paths = resolveLocalRuntimePaths(options);
   const sourceRoot = resolveSourceRoot(options);
   const appId = validateApplicationId(options.appId);
+  const confirmRemovedPackages = validateConfirmedRemovedPackages(
+    options.confirmRemovedPackages,
+  );
   await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
   const initializationLock = await acquireInitializationLock(paths.root);
   let db: DatabaseInterface | undefined;
@@ -818,6 +852,7 @@ export async function initializeLocalApplicationRuntime(
         appId,
         createSchema: options.createSchema === true,
         prepareDatabase: options.prepareDatabase,
+        confirmRemovedPackages,
       });
     } catch (stepFailure) {
       if (!(stepFailure instanceof LocalSchemaStepFailure)) throw stepFailure;
@@ -1402,7 +1437,7 @@ async function createLocalOwnerRecords(
       description: 'An individual person',
     }),
   );
-  const person = new Person({
+  const person = new (ObjectRegistry.resolveEffectiveConstructor(Person))({
     db,
     id: identity.profileId,
     _skipLoad: true,

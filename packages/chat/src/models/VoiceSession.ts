@@ -26,10 +26,13 @@ export class VoiceSession extends SmrtObject {
   tenantId: string = '';
 
   /** Stable session id the gateway places in the top-level `session_id`. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   gatewaySessionId: string = '';
 
-  @crossPackageRef('@happyvertical/smrt-profiles:Profile', { required: true })
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile', {
+    required: true,
+    requiredFor: 'identity',
+  })
   actorProfileId: string = '';
 
   @crossPackageRef('@happyvertical/smrt-users:User', { nullable: true })
@@ -37,13 +40,14 @@ export class VoiceSession extends SmrtObject {
 
   @crossPackageRef('@happyvertical/smrt-personas:AgentPersona', {
     required: true,
+    requiredFor: 'identity',
   })
   personaId: string = '';
 
-  @foreignKey('AgentSession', { required: true })
+  @foreignKey('AgentSession', { required: true, requiredFor: 'identity' })
   agentSessionId: string = '';
 
-  @foreignKey('ChatRoom', { required: true })
+  @foreignKey('ChatRoom', { required: true, requiredFor: 'identity' })
   chatRoomId: string = '';
 
   @foreignKey('ChatThread')

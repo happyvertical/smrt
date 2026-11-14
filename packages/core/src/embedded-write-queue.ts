@@ -3,6 +3,7 @@ import { NestedTransactionError } from './host.js';
 import { noteNativeDuckDbHandle } from './native-duckdb.js';
 import { inheritDatabaseSyncDeviceId } from './sync-device.js';
 import { createAsyncContext } from './utils/async-context.js';
+import { isPerConnectionMemoryUrl } from './utils/database-url.js';
 
 /**
  * In-process write serialization for embedded database engines (#2360).
@@ -132,27 +133,7 @@ export function usesEmbeddedRevisionFallback(db: QueueableDatabase): boolean {
   );
 }
 
-/**
- * Whether `url` identifies a SQLite/DuckDB/PGlite in-memory database that is
- * private to its own connection, as opposed to shared state.
- *
- * PGlite `memory://` directories always create independent handles unless the
- * SDK returns the same cached handle. Bare `:memory:` and `file::memory:`
- * (no query string) each mint a fresh,
- * connection-private database -- `resolveDuckDBUrl(':memory:')` returns it
- * unchanged, with no per-instance suffix -- so two independent handles that
- * both happen to carry this literal string are NOT the same database and
- * must not share a write-queue identity (#2707). A `cache=shared` query
- * parameter (e.g. `file::memory:?cache=shared`) is the opposite case: it is
- * SQLite's own mechanism for making an in-memory database genuinely shared
- * across connections in the process, so a URL carrying it must keep the
- * ordinary string-keyed (shared) behavior.
- */
-export function isPerConnectionMemoryUrl(url: string): boolean {
-  if (url.startsWith('memory://')) return true;
-  if (url.includes('cache=shared')) return false;
-  return url === ':memory:' || url === 'memory' || url === 'file::memory:';
-}
+export { isPerConnectionMemoryUrl };
 
 function queueKey(db: QueueableDatabase): string | object {
   if (typeof db?.url !== 'string' || db.url.length === 0) return db;

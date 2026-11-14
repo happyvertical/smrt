@@ -1,5 +1,5 @@
 {
-  "sourceRevision": "b16fc4c9075e50a6410a6039e1df295a42473c26",
+  "sourceRevision": "0f16192e1b3b5d64b639cce688aaa35075a71464",
   "cases": {
     "plain": {
       "sqliteDeployment": [
@@ -19,7 +19,7 @@
         "source/modular/index.ts": "b9f49a7c9e30a97237272b8fb10648b53b691eb2216ecb8d86cee5b02fee1aea",
         "source/modular/tools/index.ts": "373feae6968fa10d677776e33199797de7bcfd26c81816f4422a739dce08edcb",
         "source/single/index.ts": "c626110cc2ea3d7973f61d1894e8f29a53072c461603ff9008d5fafaef7d79cc",
-        "source/sveltekit/src/lib/server/smrt-register.ts": "a34e6d18e7c707cc73f9a4f041481944ba8faaf524a3ee71a54bac04300ec935",
+        "source/sveltekit/src/lib/server/smrt-register.ts": "b8eda9fded0970e45b0fa9d1e247c38c0e1ed0a3b5888f2a11c5d35a488723b0",
         "source/sveltekit/src/lib/server/smrt.ts": "0ccb2afbd8cc5f2d935fa82bbb52653417890b2e4e225b9fae5c773282f23dbf",
         "source/sveltekit/src/routes/api/_changes/+server.ts": "0d90d327ad6437bc07aee0466797ac19851716d3e93d1781c34c7a457725819e",
         "source/sveltekit/src/routes/api/_events/+server.ts": "7d2cc146aa19cdf11640693976bc506fb86e26483970a82e26232dd3c7cb5040",
@@ -37,12 +37,12 @@
         "CREATE INDEX IF NOT EXISTS \"compat_roots_created_at_idx\" ON \"compat_roots\" (\"created_at\");"
       ],
       "sha256": {
-        "manifest": "ddd86a15d312a159168eaeb594c2b6fd34b25be66e4a09409b91f277ce62d138",
-        "schema": "f01b3e0cd4be9315fa9b5035862d50e233f8fb19f3b5768e08f709b20e89be0b",
-        "registrySchema": "4319766646cc5c3f24630c498b158f67056f1b65dc94375992754bbf40b3b79d",
+        "manifest": "556a2d177ca594c71122705b8eb65f1fc2a1e554160e15e86295b00608071c76",
+        "schema": "724eee631b9b0ac97bbd3931948651d8a51a3ce210f9b5cdc3c94fcdbf6a7c3a",
+        "registrySchema": "80653ae8109611f1d40561133fd67dec7633f8948b20427edb7a77a11c631522",
         "openapi": "167c319364d88ae20242063b2bbf1c6ad769e5ea589b912d13874e41780e902a",
         "ddl/sqlite": "5f2d6a45b32c5c01ebf08d82347eb8e4cffa12a92b5310898f623e35db7c3528",
-        "ddl/postgres": "3dfb0c8b03d48665601763b70e3cc40330abb1459829463ec171edb5b4e6c2cb",
+        "ddl/postgres": "c437e4fda3c50a4dca48f0c5e972b72cefa3711a6172b45abe451c82de6bd63d",
         "ddl/duckdb": "19d3509309e8bad5b325f2576ab0dc7ee1235479b5a51cea0b00331e5f2308ec",
         "migration": "bc5a587ce702dd8fe3c1a841568ca95c57b8458483e28d9d949e1ef31905fc0b",
         "source/modular/config.ts": "4e8b1d0155d884e3bb3d3cddeb4f717723778359b5ce2f22901fca9467921708",
@@ -50,7 +50,7 @@
         "source/modular/index.ts": "b9f49a7c9e30a97237272b8fb10648b53b691eb2216ecb8d86cee5b02fee1aea",
         "source/modular/tools/index.ts": "ad79e570331f654d456fc7f5c938c7cb2a77dd994c123d2f33b19537dec67a4e",
         "source/single/index.ts": "defd01795e648d10600c4e1269b1d06b3c761e51f76237c8ba1219dfb2841152",
-        "source/sveltekit/src/lib/server/smrt-register.ts": "40f8b7ae5798d46d7a4156976671b6d27793da1da8673af72678810b52bb4714",
+        "source/sveltekit/src/lib/server/smrt-register.ts": "03b8ed0ab462163d9eb9ea42232c497aab8291cd32801c6d8ee8fa1c723fe08f",
         "source/sveltekit/src/lib/server/smrt.ts": "0ccb2afbd8cc5f2d935fa82bbb52653417890b2e4e225b9fae5c773282f23dbf",
         "source/sveltekit/src/routes/api/_changes/+server.ts": "51b9498c2881de41b4fc1d18155386746071681028f215478e2365cd03835e6f",
         "source/sveltekit/src/routes/api/_events/+server.ts": "f0473b6d66e0e35cb1a36c3997a2aa06215f20a18ffef3a08b86637191a14927",

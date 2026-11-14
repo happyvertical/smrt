@@ -28,10 +28,13 @@ export class EventAsset extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @foreignKey('Event', { required: true })
+  @foreignKey('Event', { required: true, requiredFor: 'identity' })
   eventId = '';
 
-  @crossPackageRef('@happyvertical/smrt-assets:Asset', { required: true })
+  @crossPackageRef('@happyvertical/smrt-assets:Asset', {
+    required: true,
+    requiredFor: 'identity',
+  })
   assetId = '';
 
   @field({ required: true })

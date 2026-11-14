@@ -5,6 +5,8 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { GroupSharingBoundary } from '../group-sharing-authorization.js';
+import { GroupSharingCommentService } from '../group-sharing-comments.js';
 import {
   canonicalGroupSharingPolicy,
   type GroupSharingPolicyV1,
@@ -14,10 +16,17 @@ import {
   EducationGroup,
   EducationGroupCollection,
   GroupLearnerInvitation,
+  GroupLearnerInvitationCollection,
   GroupLearnerMembership,
   GroupRevisionComment,
+  GroupRevisionCommentCollection,
   GroupSharingPolicy,
+  GroupSharingPolicyCollection,
 } from '../group-sharing-models.js';
+import {
+  groupSharingReadClasses,
+  sharingReadFixture,
+} from './group-sharing-read-workflows.js';
 
 const policy: GroupSharingPolicyV1 = {
   schemaVersion: 1,
@@ -197,6 +206,111 @@ describe('closed group sharing persistence contracts', () => {
         ).rejects.toThrow();
       });
     } finally {
+      await db.close?.();
+    }
+  });
+  it('persists absent creator references and keeps them immutable', async () => {
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: ['EducationGroup'],
+    });
+    try {
+      const tenantId = '11111111-1111-4111-8111-111111111111';
+      await withTenant({ tenantId }, async () => {
+        const groups = await EducationGroupCollection.create({ db });
+        const group = await groups.create({ tenantId, name: 'Unattributed' });
+        const loaded = await groups.get(String(group.id), { cache: false });
+        expect(loaded?.creatorUserId).toBeNull();
+        expect(loaded?.creatorProfileId).toBeNull();
+        group.name = 'Renamed';
+        await group.save();
+        group.creatorProfileId = '33333333-3333-4333-8333-333333333333';
+        await expect(group.save()).rejects.toThrow('immutable');
+      });
+    } finally {
+      await db.close?.();
+    }
+  });
+  it('accepts absent attribution without changing exact consent or revision bindings', async () => {
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: [...groupSharingReadClasses, 'GroupLearnerInvitation'],
+    });
+    let f: Awaited<ReturnType<typeof sharingReadFixture>> | undefined;
+    try {
+      f = await sharingReadFixture(db);
+      const x = f;
+      await x.asSupervisor(async () => {
+        const group = await (await EducationGroupCollection.create({ db })).get(
+          x.scope.groupId,
+        );
+        if (!group) throw new Error('Missing group');
+        const invitation = await (
+          await GroupLearnerInvitationCollection.create({ db })
+        ).create({
+          tenantId: group.tenantId,
+          groupId: x.scope.groupId,
+          familyTenantId: x.scope.familyTenantId,
+          learnerId: x.scope.learnerId,
+          invitedParentUserId: x.parent.actorUserId,
+          expiresAt: new Date(Date.now() + 60_000),
+        });
+        expect(invitation.creatorUserId).toBeNull();
+        await invitation.save();
+      });
+      await x.as(x.parent, async () => {
+        x.edge.consentParentUserId = null;
+        x.edge.policyVersion = 2;
+        await x.edge.save();
+        const snapshot = await (
+          await GroupSharingPolicyCollection.create({ db })
+        ).create({
+          tenantId: x.scope.familyTenantId,
+          membershipId: String(x.edge.id),
+          version: 2,
+          policyJson: canonicalGroupSharingPolicy(policy),
+        });
+        expect(snapshot.actorUserId).toBeNull();
+        const comment = await (
+          await GroupRevisionCommentCollection.create({ db })
+        ).create({
+          tenantId: x.scope.familyTenantId,
+          membershipId: String(x.edge.id),
+          learnerId: x.scope.learnerId,
+          activityId: x.activity.id,
+          attemptId: x.attempt.id,
+          revisionId: x.revision.id,
+          body: 'Unattributed discussion',
+        });
+        expect(comment.authorUserId).toBeNull();
+        expect(comment.authorProfileId).toBeNull();
+        await comment.save();
+        const boundary = new GroupSharingBoundary(db, () => true);
+        const scope = await boundary.requireScope(
+          x.scope,
+          'education.group.share',
+          'guardian',
+        );
+        expect(scope.membership.consentParentUserId).toBeNull();
+        expect(scope.policyRecord.actorUserId).toBeNull();
+        const comments = await new GroupSharingCommentService(
+          db,
+          () => true,
+        ).listRevisionComments({
+          ...x.selector,
+          revisionId: x.revision.id,
+          access: 'guardian',
+        });
+        expect(comments).toHaveLength(1);
+        expect(comments[0]).toMatchObject({
+          authorUserId: null,
+          authorProfileId: null,
+        });
+      });
+    } finally {
+      await f?.cleanup();
       await db.close?.();
     }
   });

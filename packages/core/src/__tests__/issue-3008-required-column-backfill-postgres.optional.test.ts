@@ -244,6 +244,7 @@ for (const { engine, enabled } of engines) {
 
         // Converged: a second run has nothing to do.
         const again = await migrate(schema);
+        expect(again.refused).toBe(false);
         expect(again.applied).toBe(false);
         expect(again.hasManualDrift).toBe(false);
       });

@@ -1,4 +1,7 @@
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  ObjectRegistry,
+  type SmrtClassOptions,
+} from '@happyvertical/smrt-core';
 import { AccountCollection } from '../collections/AccountCollection.js';
 import { MessagingEndpointCollection } from '../collections/MessagingEndpointCollection.js';
 import { PersonaMessageRouteCollection } from '../collections/PersonaMessageRouteCollection.js';
@@ -218,7 +221,9 @@ export class MessagingSettingsService {
         throw new Error('Messaging endpoint belongs to another tenant.');
       }
       if (!endpoint) {
-        endpoint = new MessagingEndpoint({
+        endpoint = new (ObjectRegistry.resolveEffectiveConstructor(
+          MessagingEndpoint,
+        ))({
           db: this.options.db,
           tenantId: this.options.tenantId,
         });
@@ -285,7 +290,9 @@ export class MessagingSettingsService {
         throw new Error('Messaging route belongs to another tenant.');
       }
       if (!route) {
-        route = new PersonaMessageRoute({
+        route = new (ObjectRegistry.resolveEffectiveConstructor(
+          PersonaMessageRoute,
+        ))({
           db: this.options.db,
           tenantId: this.options.tenantId,
         });
@@ -374,15 +381,21 @@ export class MessagingSettingsService {
       providerType: provider.id,
       channelType: provider.channel,
     };
-    if (provider.id === 'zulip') return new ZulipAccount(options);
-    if (provider.id === 'telegram') return new TelegramAccount(options);
+    if (provider.id === 'zulip')
+      return new (ObjectRegistry.resolveEffectiveConstructor(ZulipAccount))(
+        options,
+      );
+    if (provider.id === 'telegram')
+      return new (ObjectRegistry.resolveEffectiveConstructor(TelegramAccount))(
+        options,
+      );
     if (provider.channel === 'email') {
-      return new EmailAccount({
+      return new (ObjectRegistry.resolveEffectiveConstructor(EmailAccount))({
         ...options,
         providerType: provider.id as 'smtp' | 'imap' | 'pop3' | 'gmail',
       });
     }
-    return new Account(options);
+    return new (ObjectRegistry.resolveEffectiveConstructor(Account))(options);
   }
 
   private normalizeCredentials(

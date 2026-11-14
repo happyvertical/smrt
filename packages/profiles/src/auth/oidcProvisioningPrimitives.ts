@@ -1,3 +1,4 @@
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { getDatabase } from '@happyvertical/sql';
 import { ProfileCollection } from '../collections/ProfileCollection';
 import { ProfileTypeCollection } from '../collections/ProfileTypeCollection';
@@ -34,7 +35,9 @@ export async function createOidcProvisioningPerson(
     description: 'Individual person profile',
   });
   const typeId = requireProvisioningId(personType.id, 'Person ProfileType');
-  let profile: Profile = new Person({
+  let profile: Profile = new (ObjectRegistry.resolveEffectiveConstructor(
+    Person,
+  ))({
     db,
     // OIDC display names are not identity keys. A per-profile slug keeps
     // SMRT's natural-key upsert from replacing an unrelated Person.
@@ -62,7 +65,9 @@ export async function insertOidcProvisioningIdentity(
   db: DatabaseInterface,
   input: OidcProvisioningIdentityInput,
 ): Promise<OidcIdentity> {
-  const identity = new OidcIdentity({
+  const identity = new (ObjectRegistry.resolveEffectiveConstructor(
+    OidcIdentity,
+  ))({
     db,
     email: input.email ?? '',
     issuer: input.issuer,

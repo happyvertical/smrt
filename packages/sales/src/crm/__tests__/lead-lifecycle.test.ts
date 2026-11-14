@@ -58,8 +58,10 @@ describe('Lead lifecycle', () => {
     expect(loaded?.status).toBe('new');
   });
 
-  it('requires a name', async () => {
-    await expect(leads.create({ email: 'anon@acme.test' })).rejects.toThrow();
+  it('preserves an empty name when the caller omits it', async () => {
+    const lead = await leads.create({ email: 'anon@acme.test' });
+    expect(lead.name).toBe('');
+    expect((await leads.get({ id: lead.id }))?.name).toBe('');
   });
 
   it('round-trips acquisitionContext and metadata JSON helpers', async () => {

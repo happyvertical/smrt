@@ -29,22 +29,22 @@ export class ReferrerIdentifier extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @foreignKey('Referrer', { required: true })
+  @foreignKey('Referrer', { required: true, requiredFor: 'identity' })
   referrerId: string = '';
 
   @foreignKey('ReferralProgram')
   programId: string | null = null;
 
   /** Open vocabulary, for example email, code, name, or handle. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   kind: string = '';
 
   /** Original spelling as registered by the host. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   value: string = '';
 
   /** Derived with Unicode compatibility normalization and case folding. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   normalizedValue: string = '';
 
   status: ReferrerIdentifierStatus = 'active';

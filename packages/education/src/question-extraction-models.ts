@@ -162,7 +162,11 @@ export class QuestionExtractionRecordCollection extends SmrtCollection<QuestionE
 })
 export class ExtractedQuestionLink extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('QuestionExtractionRecord', { required: true }) extractionId = '';
+  @foreignKey('QuestionExtractionRecord', {
+    required: true,
+    requiredFor: 'identity',
+  })
+  extractionId = '';
   questionKey = '';
   sourceIdentity = '';
   outcome: ExtractedQuestionOutcome = 'needs_review';

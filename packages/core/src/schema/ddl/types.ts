@@ -98,6 +98,9 @@ export interface DDLStrategy {
    */
   supportsTriggers(): boolean;
 
+  /** Whether `SchemaDefinition.checks` become table constraints (#4932). */
+  supportsTableChecks(): boolean;
+
   /**
    * Whether this engine requires inline UNIQUE constraints for UPSERT
    * DuckDB requires this due to issue #12684

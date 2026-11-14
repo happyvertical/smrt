@@ -38,6 +38,8 @@ export default defineConfig({
         test: {
           name: 'postgres',
           include: ['src/**/*.test.ts'],
+          // The generated minimum-data contract always owns a SQLite database.
+          exclude: ['src/__tests__/minimal-row.generated.test.ts'],
           env: {
             TEST_DB_ADAPTER: 'postgres',
             TEST_DB_URL:
@@ -50,6 +52,7 @@ export default defineConfig({
         test: {
           name: 'json',
           include: ['src/**/*.test.ts'],
+          exclude: ['src/__tests__/minimal-row.generated.test.ts'],
           env: {
             TEST_DB_ADAPTER: 'json',
           },

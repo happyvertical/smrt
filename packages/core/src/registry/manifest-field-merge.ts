@@ -24,7 +24,14 @@ function hasOwnDefinedValue(source: object | undefined, key: string): boolean {
 
 function readExistingFieldMeta(
   existingField: RegisteredField,
-  key: 'required' | 'default' | 'description',
+  key:
+    | 'required'
+    | 'default'
+    | 'description'
+    | 'min'
+    | 'max'
+    | 'minLength'
+    | 'maxLength',
 ) {
   if (hasOwnDefinedValue(existingField, key)) {
     return existingField[key];
@@ -50,7 +57,14 @@ function readExistingFieldMeta(
  */
 export function readFieldAttribute(
   fieldDef: ManifestFieldInput,
-  key: 'required' | 'default' | 'description',
+  key:
+    | 'required'
+    | 'default'
+    | 'description'
+    | 'min'
+    | 'max'
+    | 'minLength'
+    | 'maxLength',
 ) {
   if (hasOwnDefinedValue(fieldDef, key)) {
     return fieldDef[key];
@@ -106,7 +120,15 @@ export function createFieldFromManifest(
   // loop value to a union of named keys (`default` is `unknown`, the others
   // narrower) collapses the write target to `undefined`, so route by string.
   const metaRecord = meta as Record<string, unknown>;
-  for (const key of ['required', 'default', 'description'] as const) {
+  for (const key of [
+    'required',
+    'default',
+    'description',
+    'min',
+    'max',
+    'minLength',
+    'maxLength',
+  ] as const) {
     const value = readManifestFieldMeta(fieldDef, key);
     if (value !== undefined) {
       metaRecord[key] = value;
@@ -161,7 +183,15 @@ export function mergeManifestField(
   // See createFieldFromManifest: route writes through the index signature so a
   // shared loop value isn't narrowed to the `undefined`-only union write target.
   const nextMetaRecord = nextMeta as Record<string, unknown>;
-  for (const key of ['required', 'default', 'description'] as const) {
+  for (const key of [
+    'required',
+    'default',
+    'description',
+    'min',
+    'max',
+    'minLength',
+    'maxLength',
+  ] as const) {
     const manifestValue = readManifestFieldMeta(fieldDef, key);
     if (manifestValue !== undefined) {
       nextMetaRecord[key] = manifestValue;

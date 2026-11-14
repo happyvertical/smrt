@@ -113,6 +113,23 @@ excessive, and unsupported privilege sources. A refusal is not a healthy result:
 follow its prerequisite or infrastructure-remediation explanation, then rerun
 the read-only check. Diagnostics inspect catalogs, not application records.
 
+## `doctor --db`: next migrate
+
+Before the permissions report, doctor previews the next ordinary migrate. It
+lists constraints it would remove (and relaxations kept until opt-in), rules in
+code the database is not enforcing, apply changes and new tables, and packages
+seen last time against those loaded now. It lists stops with affected row counts
+and the changes held back. It also compares the last recorded release with the
+oldest supported release, and the build's schema fingerprint with the database's
+(`--verbose` includes full hashes).
+
+This section only reads the registry, schema catalogs, rows for counts, and the
+last migrate record. It creates no tracking tables and changes no rows or
+permissions. Missing packages and migration stops are issues; unsupported age,
+unenforced rules, planned removals and startup fingerprint mismatches warn. An
+unreachable database fails the check. A missing record means the database age is
+unknown and `smrt db:migrate` must run before production startup.
+
 ## Schema evolution and recovery
 
 Defaults belong to the role that actually creates an object. Run migrations as

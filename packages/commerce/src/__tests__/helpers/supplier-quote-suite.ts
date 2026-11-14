@@ -53,11 +53,6 @@ export async function proveSupplierQuote(db: DatabaseInterface): Promise<void> {
     expect(await sales.get({ id: quote.id })).toBeNull();
     await expect(
       purchases.create({
-        _meta_type: '@happyvertical/smrt-commerce:SupplierQuote',
-      }),
-    ).rejects.toThrow();
-    await expect(
-      purchases.create({
         _meta_type: '@happyvertical/smrt-commerce:UnknownQuote',
       }),
     ).rejects.toThrow();

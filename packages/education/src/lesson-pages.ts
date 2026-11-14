@@ -38,8 +38,10 @@ export function validLessonPageKey(value: unknown): value is string {
 })
 export class LessonPage extends SmrtObject {
   @tenantId({ nullable: true }) tenantId: string | null = null;
-  @foreignKey('Course', { required: true }) courseId = '';
-  @foreignKey('Lesson', { required: true }) lessonId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
+  @foreignKey('Lesson', { required: true, requiredFor: 'identity' }) lessonId =
+    '';
   pageKey = '';
   label = '';
   sortOrder = 0;

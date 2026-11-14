@@ -558,6 +558,75 @@ function renderPackageDoc(
   }
 }
 
+/** Heading of the data-shape section of the framework document (#4938). */
+export const DATA_SHAPE_SECTION_HEADING = 'Data shape rules';
+const DATA_SHAPE_DOC = join('agents', 'data-shape-rules.md');
+const DATA_SHAPE_DOC_URL =
+  'https://github.com/happyvertical/smrt/blob/main/packages/core/agents/data-shape-rules.md';
+
+/**
+ * The data-shape rules section (#4938): the seven rules, how each is kept and
+ * how an app hardens a smrt class, taken from the installed `smrt-core`'s
+ * `agents/data-shape-rules.md` so it matches the installed version. Read from
+ * disk on every run, so `docs:agents` always carries the current text. When
+ * `smrt-core` is installed but predates the file, the section is a pointer.
+ * Without `smrt-core` there is nothing to document and the section is empty.
+ */
+export function renderDataShapeSection(packages: PackageInfo[]): string[] {
+  const core = packages.find((pkg) => pkg.name === '@happyvertical/smrt-core');
+  if (!core) return [];
+  const lines = [`## ${DATA_SHAPE_SECTION_HEADING}`, ''];
+  const file = core.directory ? join(core.directory, DATA_SHAPE_DOC) : null;
+  let body: string | null = null;
+  if (file && existsSync(file)) {
+    try {
+      body = readFileSync(file, 'utf-8');
+    } catch {
+      body = null;
+    }
+  }
+  if (body === null) {
+    lines.push(
+      `The installed \`@happyvertical/smrt-core\` (${core.version}) does not ship \`${DATA_SHAPE_DOC.replace(/\\/g, '/')}\`. Update it, then run \`smrt docs:agents\` again. The rules are at ${DATA_SHAPE_DOC_URL}`,
+      '',
+    );
+    return lines;
+  }
+  let fence: string | undefined;
+  let skippedTitle = false;
+  for (const raw of body.replace(/\r\n/g, '\n').trimEnd().split('\n')) {
+    const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(raw);
+    if (fenceMatch) {
+      if (!fence) fence = fenceMatch[1];
+      else if (
+        fenceMatch[1][0] === fence[0] &&
+        fenceMatch[1].length >= fence.length
+      )
+        fence = undefined;
+      lines.push(raw);
+      continue;
+    }
+    if (fence) {
+      lines.push(raw);
+      continue;
+    }
+    if (!skippedTitle && /^# /.test(raw)) {
+      skippedTitle = true;
+      continue;
+    }
+    if (raw === '' && lines[lines.length - 1] === '') continue;
+    // Module links are relative to the package; say where the file is instead.
+    const text = raw.replace(
+      /\[([^\]]+)\]\(([a-z0-9-]+\.md)(?:#[^)]*)?\)/g,
+      (_all, label: string, target: string) =>
+        `${label} (\`@happyvertical/smrt-core\` \`agents/${target}\`)`,
+    );
+    lines.push(/^#{2,5} /.test(text) ? `#${text}` : text);
+  }
+  lines.push('');
+  return lines;
+}
+
 export function generateMarkdown(
   packages: PackageInfo[],
   rootDocs?: RootDocInfo[],
@@ -577,6 +646,8 @@ export function generateMarkdown(
   if (options.intentSection && options.intentSection.length > 0) {
     lines.push(...options.intentSection);
   }
+
+  lines.push(...renderDataShapeSection(packages));
 
   if (rootDocs && rootDocs.length > 0) {
     lines.push('## Framework Documentation');

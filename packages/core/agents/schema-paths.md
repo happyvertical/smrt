@@ -6,6 +6,10 @@ Package orientation, the cross-module invariants, and the traps that apply
 before editing anything live in [../AGENTS.md](../AGENTS.md) — read that first;
 it links the relevant runtime and generation contracts.
 
+The data shape rules these paths implement (required only with a reason, harden
+by subclass, migrate all or nothing) and how each is kept are in
+[data-shape-rules.md](data-shape-rules.md).
+
 ## Four entry points, two of which ship
 
 `src/schema/generator.ts` exposes four index-emitting entry points. Their columns and indexes must agree for the same class.
@@ -35,6 +39,17 @@ Production DDL takes the manifest route:
                         use; no in-repo caller outside its own tests)
 ```
 
+All four entry points share `SchemaGenerator.completeIndexes()` (#4946), the
+single ordered tail after conflict/discriminator/unique indexes: slug lookup,
+opt-in fields (including STI JSON paths), declared indexes (then STI descendant
+declarations), default list ordering, polymorphic owner lookup, reference
+columns **last**, then identifier limits. The registry schema builder calls the
+same sequence after merging every contributor and conflict index whenever it
+adds runtime columns absent from a manifest, or a class has no manifest schema.
+It supplies the missing fields for opt-in indexing and preserves supplied
+manifest indexes; reference suppression sees the complete table's indexes.
+Current manifests that already supply every column retain their index sets.
+
 Since #2359 the two families share one set of index helpers and
 `src/schema/schema-path-parity.test.ts` runs the same fixture manifest through
 the manifest paths, through `ObjectRegistry.registerFromManifest()` + the
@@ -42,7 +57,7 @@ registry paths, and through `getAllSchemasAsDefinitions()`, asserting identical
 column and index sets. Extend that fixture with every generator change; a
 divergence is a bug in the generator, not an exception to add to the test.
 
-### Field inheritance: one rule, one module (#4922, #4940)
+### Field inheritance: one rule, one module (#4922, #4940, #4942)
 
 "What fields does a class have, counting what it inherits" is decided in ONE
 place: `resolveInheritedFields()` in `src/schema/field-inheritance.ts`, a pure
@@ -56,14 +71,41 @@ second merge loop; extend the module and the differential test.
 
 Ancestors apply base to child, then the class's own fields last:
 
-- **Nearest concrete declaration wins**, between ancestors too, for own-table
-  and shared-table (STI) classes alike. The app owns its shape: a nearer
-  declaration may widen or narrow a bound, drop `unique`, relax `required`,
-  or change the type; nothing of the replaced declaration (`required`,
-  `sqlType`, `backfill`, `unique`, `min`/`max`, default) survives. Only a
-  missing `enum` / `description` is filled from the replaced one (registry
-  representation also keeps the tenancy marker, combines validators and keeps
-  a runtime `value`; a manifest carries none of those).
+- **A redeclared field inherits parent options as defaults.** Only options the
+  child states override them. Nearest wins per option, in either direction,
+  for own-table and shared-table (STI) classes. A bare redeclaration keeps all
+  options. To loosen, say so: `required: false`, `unique: false`, a lower `min`
+  or a wider `max`. Scanner-inferred `required` and `default` apply to new
+  fields. A same-type redeclaration keeps the parent value or its absence. A type change may use
+  fresh inferred defaults for the new type. `_meta.__statedOptions` records the
+  written decorator options, plus enum and relationship declarations, before
+  registry normalization can mix inferred values into `_meta`. The decorator
+  path writes the same list from the options the author passed. **An entry
+  with no list** (a manifest built before the list existed, or one written by
+  hand) uses the options it carries, as before this release, when it replaced
+  its parent's field whole: its `default`, `description`, `enum` and the like
+  win. The one exception is `required` and `nullable` over a parent that smrt
+  needs (`requiredFor`): an older scanner inferred `required: false` for fields
+  the author never touched, so they are not taken as stated. The field keeps
+  the parent's `required` and `requiredFor`, and nothing is refused at run time
+  (`CONFIG_REQUIRED_FIELD_LOOSENED` needs a stated `required: false`; an empty
+  list also states nothing). Rebuild the manifest to get the list. The check
+  reads `required` from the field or from `_meta`, since a registry field
+  loaded from a manifest keeps the flag only under `_meta`.
+- A type change drops inherited `sqlType`, `min`, `max`, `enum`, `default`,
+  `backfill`, `minLength`, `maxLength` and `pattern`. Other options still
+  inherit. Type means the field type (`text`, `integer`, etc.); changing it
+  drops these type-bound options even between numeric types. A type the
+  scanner could not resolve (an enum or class imported from a file it cannot
+  read) is not a stated type: the build types it `json` and marks it
+  `_meta.__typeUnresolved`, and the redeclaration keeps the parent's type and
+  options (#4942).
+- `null` clears an inherited option. Leaving it out inherits it. The effective
+  field has no value for a cleared option, at either the top level or in
+  `_meta`. The stated name remains so the clear survives later merges.
+  This applies to `sqlType`, `default`, `backfill`, bounds, `pattern`,
+  `description` and `readPermission`. Registry fields also keep tenancy
+  markers, combine validators and fill a missing runtime `value`.
 - A concrete declaration replaces a framework abstract base's default whole.
 - `SmrtHierarchical.parentId` becomes a nullable self-referencing
   `foreignKey` bound to the class's own table: the class itself (own-table),
@@ -97,6 +139,36 @@ pre-merges shared-table fields at the raw AST level, nearest declaration
 winning, before types are converted. It works on `RawFieldDefinition`s (type
 annotations and decorators), not converted fields, so it does not use this
 module; the two agree because core's rule is nearest-wins as well.
+
+### An app hardens a smrt object by overriding a field (#4932)
+
+The nearest declaration wins, tighter or looser. The one limit: a field that is
+required **and** carries `requiredFor` (`_meta.requiredFor`, #4923) may not be
+made optional by a subclass. `resolveInheritedFields` reports it through
+`onRequiredLoosened`; `ManifestGenerator.mergeInheritedFields()` throws
+`CONFIG_REQUIRED_FIELD_LOOSENED` naming the class and field. The registry does
+not pass the callback: the build is the gate. A required `@tenantId()` carries
+`requiredFor: 'tenant-scope'` (scanner and `smrt-tenancy`), so it is covered by
+the same fact.
+
+What the database does with a stricter subclass field:
+
+- Own-table class: the column is `NOT NULL`.
+- Shared-table (STI) class: every column stays nullable, so `sti-hardening.ts`
+  adds a table `CHECK` on PostgreSQL that is true for every other class:
+  `_meta_type NOT IN ('<class>', ...) OR "col" IS NOT NULL`. One constraint per
+  column lists the requiring classes, descendants included; its name is
+  `smrt_ck_<hash of table, column, rule>`. It is carried as `schema.checks` in
+  the manifest and `SchemaDefinition.checks`.
+- It covers a field the subclass requires and the **base leaves optional**. A
+  field the base itself requires keeps today's nullable column.
+- The differ (`compareTableChecks`) adds a missing constraint (`alter_column`,
+  alteration `set_check`), reports instead when live rows already break the
+  rule, and drops a `smrt_ck_` constraint the manifest no longer declares
+  (`drop_check`). Other constraints are never touched.
+- SQLite and DuckDB get no constraint. SQLite cannot add one in place and
+  DuckDB has no per-class form. There the rule is smrt's save-time check
+  (`VALIDATION_REQUIRED_FIELD`).
 
 ### Index rules (#2359)
 
@@ -200,8 +272,8 @@ module; the two agree because core's rule is nearest-wins as well.
 Extend `src/schema/schema-path-parity.test.ts` for every generator change;
 manifest, registry, and merged migration schemas must agree. Inspect regenerated
 `dist/manifest.json` and schemas across affected packages, not only decorators.
-Runtime `verifyPersistenceTable()` checks table existence only. Database drift
-checks compare with generated artifacts; they cannot detect an omission shared
+Runtime `verifyPersistenceTable()` checks the migrate record and table existence.
+Database drift checks compare with generated artifacts; they cannot detect an omission shared
 by those artifacts. Use `smrt doctor --db` / `db:status --parity` for live parity.
 
 Every new query predicate needs its index or an explicit reason none is needed.
@@ -320,6 +392,110 @@ decorator-only type. A database whose column was built from the old TEXT
 expectation is not auto-cast; parity reports the drift for an explicit
 migration.
 
+### Schema change decisions (#4925)
+
+Migrate makes the database match the code without asking whenever that is safe.
+It stops only when it would lose or invent data.
+
+`src/migrations/change-kinds.ts` owns `SCHEMA_CHANGE_KINDS`, the single table of
+stable kinds and decisions for PostgreSQL, SQLite, and DuckDB (JSON uses DuckDB's
+policy). `classifySchemaChange()` identifies the shape; `decideSchemaChange()`
+returns apply, stop, or report and a message naming the table and column or
+constraint. Producer `kindHint` values distinguish refusal shapes that share
+SQL and flags; consumers never parse the human diagnosis.
+
+Apply kinds carry executable SQL. Report kinds retain data: orphan columns
+(including NOT NULL orphans that can break inserts), orphan indexes/unique
+constraints, stale defaults, unrequested relaxations, possible rename notes,
+and conversions already handled by another rebuild. Reports never set
+`unactionableChanges` or `hasManualDrift`; these now contain exactly stop
+decisions, even when a report has warning severity. Read `diff.changes` to
+show all reports. The differ's executable-DDL helper and the CLI partition use
+the same classification; a data-blocked advisory-only UUID conversion is a
+stop, not a report.
+
+Every data stop says `loses-data` or `invents-data` and explains why.
+`UNRESOLVED_NON_DATA_STOPS` records existing refusals whose engine or adapter
+support is incomplete: column alterations/rebuilds, unfinished JSON/UUID preservation
+probes, live constraints that prevent UUID conversion, foreign-key additions/replacements/removals, and a missing referenced
+parent column. These are explicit exceptions awaiting implementation, not extra
+data rules. Unknown shapes stop as `unlisted`; source-coverage and real-comparer
+tests guard against real differ output reaching that fallback.
+
+### The three engines apply the same kinds (#4937)
+
+Every kind that applies on PostgreSQL applies on SQLite and DuckDB too. The
+table records, per engine, what is still different and why. This is the whole
+list:
+
+| Difference | Engines | Why |
+|---|---|---|
+| Shared-table `CHECK` (`check.*`) | PostgreSQL only | SQLite and DuckDB keep the rule in smrt's save-time check (#4932). DuckDB cannot add a constraint to a table and gives a `CHECK` no name. |
+| Removing a foreign key (`foreign-key.drop-unavailable`) | PostgreSQL stops | The SQL adapter does not give the live PostgreSQL constraint name. SQLite and DuckDB rebuild the table instead. |
+| Table declared `AUTOINCREMENT` | SQLite stops (`column.rebuild-unavailable`) | The rebuild would lose the sequence. |
+| Table that references itself | DuckDB stops, when the change needs a rebuild | DuckDB cannot copy rows into a table whose key points at itself in one statement. A plain `ALTER` still works there. |
+| A constraint on a dropped column | DuckDB stops | The rebuild cannot keep a table constraint that names a dropped column. |
+| Two tables that would reference each other | DuckDB stops (the rebuild's kind, "overlap and cannot be combined") | DuckDB can create neither table first, and has no `ADD CONSTRAINT`. |
+| A new table that references a table the migration alters or rebuilds | DuckDB stops (the rebuild's kind, "new table") | The new table is created first, and DuckDB then refuses to alter or drop the table it references. Adding a plain column still works. |
+| Any rebuild | JSON adapter stops | It is DuckDB-backed but has no rebuild. |
+| Calculated column (#4915) added or changed on an existing table (`column.add`, `column.generated-replace`) | DuckDB refuses before planning (`VALIDATION_GENERATED_DIALECT`) | Its driver cannot add a generated column to an existing table. |
+| Calculated column made ordinary (`column.generated-to-ordinary`) | SQLite and DuckDB stop (loses data) | PostgreSQL `DROP EXPRESSION` keeps the stored values; a VIRTUAL column stores none, so its values would become the default or NULL. |
+| `NOT NULL` dropped from a calculated column | SQLite stops (`column.rebuild-unavailable`) | The rebuild does not rewrite a generated column definition. |
+
+Calculated columns otherwise: a changed expression is applied (recalculated,
+not additive, so never by a table-limited run on a build table); making an
+ordinary column calculated stops on every engine
+(`column.generated-from-ordinary`, it would discard stored values); a rebuild
+for another column copies only ordinary columns and keeps the calculated one
+calculated. PostgreSQL compares expression renderings with EXPLAIN on the live
+table and sends no probe for an expression that reads a column the same run
+adds. Tests: `migrations/__tests__/calculated-column-kinds.test.ts`.
+
+How each engine gets there:
+
+- **SQLite** rebuilds the table (below) for a type, `NOT NULL`, default,
+  foreign key add, replace or remove, and a required column with a backfill.
+  One rebuild carries every change of a table: the plan is built from the live
+  definition, so a second plan would undo the first. `MigrationTracker` turns
+  foreign keys off around it and checks them again before the commit, so a table
+  other tables reference no longer stops the run. Dropping a column drops the
+  indexes that cover it first, as PostgreSQL does.
+- **DuckDB** (`src/migrations/duckdb-rebuild.ts`) refuses `ALTER` when the table
+  has an index, when another table has a key onto it, and after an `UPDATE` in
+  the same transaction. It also has no `ADD CONSTRAINT`. A change that works
+  with `ALTER` once the indexes are out of the way is wrapped in `DROP INDEX`
+  and `CREATE INDEX`. Any other change rebuilds the table, and every table that
+  references it, in the migration's transaction: copy to staging tables, drop,
+  create again from the live definitions, copy back, replay the indexes. DuckDB
+  DDL is transactional, so a failure rolls every table back.
+- **One DuckDB rebuild per connected group** (`combineDuckDbRebuilds`). Rebuilds
+  whose groups share a table, counting keys a rebuild adds, become one plan:
+  each table is created once in its final shape and filled once from its old
+  rows, backfills included. Every other change to a table of the group runs
+  after it; a table the rebuild starts to reference takes its changes before
+  it. The diff order does not change the result. Planned one table at a time,
+  a parent's rebuild created a changed child again from its old definition and
+  lost the change while the migrate succeeded (rv4,
+  `issue-4937-overlapping-rebuilds.test.ts`). Rebuilds that cannot be combined
+  stop the whole migration before anything runs.
+- **The DuckDB rebuild checks itself** before its staging tables are dropped:
+  for every table of the group it compares the columns, indexes, foreign keys
+  and row count with what the plan meant to build, and fails the transaction
+  with the differences. SQLite has no such check: its rebuild touches one table,
+  copies every column in one `INSERT ... SELECT`, and has no `error()` function
+  to fail a transaction from SQL; `MigrationTracker` checks its foreign keys.
+- **Atomic.** A rebuild that fails part-way leaves every table, row, index and
+  foreign-key setting as it was. `sqlite-parity` and `duckdb-parity` tests fail
+  a rebuild mid-way and compare the database before and after.
+- Dropping `NOT NULL` from a manifest-nullable column applies by default on all
+  three engines. A stale default and an orphan `NOT NULL` still need
+  `relaxColumns`.
+
+`packages/cli/src/commands/__tests__/db-migrate-engine-parity.test.ts` runs one
+scenario table on SQLite, DuckDB and PostgreSQL (PGlite). Each scenario gives
+its outcome per engine, and a test fails if a scenario differs by engine without
+an entry in its `DIFFERENCES` list.
+
 ### A SQLite type change is a table rebuild (#2370)
 
 SQLite has no `ALTER TABLE ... ALTER COLUMN ... TYPE`, so
@@ -346,14 +522,17 @@ Four properties of that module are load-bearing; keep them if you touch it:
   affinity on insert — the same conversion a fresh table performs. An explicit
   cast is worse: non-numeric TEXT cast to REAL/INTEGER silently becomes `0`,
   and an ISO timestamp cast to NUMERIC-affinity `DATETIME` becomes its year.
-- **It refuses when any table has a foreign key onto the target and
-  `PRAGMA foreign_keys` is ON** (the SMRT adapter's default). `DROP TABLE`
+- **Called on its own, it refuses when any table has a foreign key onto the
+  target and `PRAGMA foreign_keys` is ON** (the SMRT adapter's default). The
+  differ passes `foreignKeysSuspended` (#4937), because it runs the plan in
+  `MigrationTracker`, which turns foreign keys off and checks them before the
+  commit. Only a caller that runs the plan some other way meets the refusal. `DROP TABLE`
   performs an implicit `DELETE FROM` that fires `ON DELETE CASCADE` on
   children, and `defer_foreign_keys` defers constraint *checks*, not FK
   *actions* — verified: the child rows go. The target's own self-reference
   counts, because the staging table copies that clause and becomes a child of
   the table being dropped (verified: a two-row self-referencing table finishes
-  the rebuild holding one row). Such a column stays manual drift.
+  the rebuild holding one row). Under the tracker (#4937) the rows are kept.
 - **`PRAGMA legacy_alter_table` brackets the rename**, because SQLite ≥ 3.25
   re-parses the schema on `ALTER TABLE ... RENAME` and a view still pointing at
   the just-dropped table makes it fail outright. It is restored immediately
@@ -366,27 +545,45 @@ classifies as no-ops.
 
 ### Explicit SQLite NOT NULL relaxation (#4413)
 
-`relaxColumns: true` / `smrt db:migrate --relax-columns` also supports removing
-an ordinary inline `NOT NULL` clause on a manifest-declared column. The local
-application entry point forwards `smrt app migrate --relax-columns` under its
-existing operation lock and refuses a live application writer. The programmatic
-`migrateSmrtSchemas` / `getPendingSchemaStatements` entry points accept the same
-explicit `relaxColumns` option. On SQLite the default remains advisory (PostgreSQL relaxes `NOT NULL` by default, see above); this does not relax
-orphan columns or change SQLite defaults/tightening behavior.
+Removing an ordinary inline `NOT NULL` clause from a manifest-nullable column
+applies by default on SQLite, as on PostgreSQL (#4937); it used to need
+`relaxColumns: true` / `smrt db:migrate --relax-columns`. The flag still
+controls a stale default and an orphan `NOT NULL` column. The local application
+entry point forwards `smrt app migrate --relax-columns` under its existing
+operation lock and refuses a live application writer.
 
 The rebuild preserves live DDL, indexes/triggers and assigned rowids. Named
 NOT NULL constraints, `ON CONFLICT`, AUTOINCREMENT tables, primary/generated target columns, missing
 clauses and tables shadowing every rowid alias refuse rather than guessing.
-A nullable-relaxation rebuild emits `PRAGMA foreign_keys = OFF` as a tracker
-handoff: `MigrationTracker` suspends FK enforcement **before** opening its
+Every rebuild the differ plans emits `PRAGMA foreign_keys = OFF` as a tracker
+handoff (#4937; at first only the nullable relaxation did): `MigrationTracker` suspends FK enforcement **before** opening its
 transaction, verifies suspension on both the base and transaction connection,
 and checks `PRAGMA foreign_key_check` before commit. This avoids inbound FK
 `ON DELETE` actions and preserves referencing rows. An active borrowed transaction
 that cannot suspend enforcement, a mismatched transaction connection or an
 adapter without transactions refuses. FK and legacy rename settings are restored
 in `finally`, including after rollback. Run this maintenance operation with
-exclusive access to the SQLite connection. Type-only rebuilds retain the older
-inbound-FK refusal described above.
+exclusive access to the SQLite connection.
+
+A caller that runs the returned statements itself (`getPendingSchemaStatements().statements`,
+`getSQLFromDiff`, `planSqliteTableRebuilds`, `buildSqliteRebuildStatements`) in
+its own transaction cannot suspend enforcement: `PRAGMA foreign_keys = OFF` does
+nothing inside a transaction, so `DROP TABLE` would delete the rows of children
+that cascade (verified by `issue-4937-rebuild-caller-executes.test.ts`, which
+failed before the guard: the child rows went). Every plan for a table that other
+tables reference therefore starts with the guard from
+`sqliteForeignKeyGuardStatements()`: an INSERT into a temporary table whose
+CHECK fails, with the reason as the constraint name, when `pragma_foreign_keys`
+is 1. It runs ahead of every statement that changes data, passes under the
+tracker (enforcement is off by then), and the caller's transaction rolls back.
+The planner reads the references whether or not enforcement is on for the
+planning connection. `buildSqliteRebuildStatements` takes `inboundReferences`;
+leaving it out means "not checked" and adds the guard; pass `[]` only after
+checking that nothing references the table. A caller outside any transaction
+runs the marker, which turns enforcement off on that connection until it sets it
+back. The data-loss change kinds (`column.rebuild-data-loss`,
+`type.rebuild-data-loss`) are still produced by a direct planner call without
+`foreignKeysSuspended`; the differ never produces them.
 
 ## What the differ compares (#2369)
 
@@ -394,13 +591,16 @@ inbound-FK refusal described above.
 type, then — unless the type itself is drifting — its nullability and default,
 and always reports what it will not touch:
 
-- **Strengthening** (`SET NOT NULL`, `SET DEFAULT`) is executable on
-  PostgreSQL/DuckDB. `SET NOT NULL` is preceded by an `UPDATE … WHERE c IS NULL`
-  backfill of the manifest default; without a default the live data is probed
+- **Strengthening** (`SET NOT NULL`, `SET DEFAULT`) is executable on all three
+  engines (SQLite by table rebuild, DuckDB by rebuild or index wrap, #4937).
+  `SET NOT NULL` is preceded by an `UPDATE … WHERE c IS NULL`
+  backfill of the manifest default (a DuckDB rebuild copies with `COALESCE`
+  instead, because DuckDB refuses an `ALTER` after an `UPDATE`); without a default the live data is probed
   and, if NULLs exist, the change is reported (comment SQL + `advisory`) instead
   of emitting an ALTER that would abort the atomic batch.
-- **Relaxing.** On PostgreSQL the migrator drops `NOT NULL` from a column the
-  manifest declares nullable by default, with no flag and no opt-out (#4897). It
+- **Relaxing.** On every engine the migrator drops `NOT NULL` from a column the
+  manifest declares nullable by default, with no flag and no opt-out (#4897,
+  #4937). It
   loses no data and rejects no row, and the manifest is already trusted to
   tighten columns (`SET NOT NULL`), so a package release that relaxes a column
   must not strand consumers on `manual_migration_required`. The owner's
@@ -410,11 +610,9 @@ and always reports what it will not touch:
   `Altered column <table>.<column> (drop_not_null)`, and `migrateSmrtSchemas` /
   `getPendingSchemaStatements` return it in `relaxedColumns` (the former also
   logs one `Relaxed <table>.<column>` line each). This covers nullability only.
-  `DROP DEFAULT`, orphan `DROP NOT NULL`, DuckDB (which rejects `ALTER COLUMN`
-  on indexed tables) and the SQLite rebuild remain report-only advisories until
-  the caller passes `relaxColumns` (`db:migrate --relax-columns`); a stricter
-  live column on those engines, and any other kind of drift, is never changed
-  silently.
+  `DROP DEFAULT` and orphan `DROP NOT NULL` remain report-only advisories until
+  the caller passes `relaxColumns` (`db:migrate --relax-columns`); any other
+  kind of drift is never changed silently.
 - **Orphans** — DB columns absent from the manifest, DB tables no manifest
   declares (`SchemaDiff.orphan_tables`), and unclaimed `*_key` unique constraint
   indexes — are always reported. A NOT NULL orphan without a default is a
@@ -450,10 +648,11 @@ and always reports what it will not touch:
   DuckDB/JSON build them as full indexes, so they are probed there (#3015).
   DuckDB refuses `ALTER COLUMN` while any index depends on the table, so its
   `SET NOT NULL` is bracketed by `DROP INDEX`/recreate from `duckdb_indexes().sql`.
-- **SQLite** has no `ALTER COLUMN`: nullability/default alterations are manual
-  (comment SQL → `db:migrate` exit 1), except a NOT NULL tightening with a
-  declared `backfill`, which the rebuild performs (`COALESCE(col, backfill)`
-  in the copy). The rebuild otherwise consumes `type_upgrade` placeholders.
+- **SQLite** has no `ALTER COLUMN`: a nullability or default alteration is a
+  table rebuild (#4937, see "The three engines apply the same kinds"). A NOT NULL
+  tightening with a declared `backfill` is performed by the same rebuild
+  (`COALESCE(col, backfill)` in the copy), which also consumes `type_upgrade`
+  placeholders.
 - Defaults compare through `canonicalizeDefault()`, which folds engine
   renderings (`'x'::text`, `CAST('t' AS BOOLEAN)`, `CURRENT_TIMESTAMP` vs
   `now()`) by manifest type; an unclassifiable rendering skips the comparison
@@ -878,21 +1077,30 @@ query, and `db:status` seeds the orphan report with
 `SchemaComparer.getLiveSchemaSnapshot()`. Never add a per-table or
 per-relationship query to these paths without batching or bounding it.
 
-**Partial apply and opt-in orphan disposition (#2748).** The batch an
-unflagged `db:migrate` attempts already excludes every blocked change (a
-FK-with-orphans, a manual `type_upgrade`/`alter_column`) — those never leave
-`SchemaDiff.changes` as executable SQL, so they never enter the atomic
-tracker batch on their own. `--apply-unblocked` adds a second, opt-in
-safety layer on top of that exclusion: the CLI partitions the remaining
-"safe" bucket by *dependency*, not just by whether a change is individually
-blocked. `computeBlockedColumns()` (`packages/cli/src/commands/
-db-migrate-actions.ts`) reads every manual intervention's blocked
-`table.column` identity; `partitionUnblockedMigrations()` then withholds any
-`add_index`/`add_foreign_key`/`alter_column`/`drop_column` that reads or
-writes one of those columns (an index on a column whose type upgrade is
-blocked, or a FK whose child *or* parent column is blocked) and applies
-everything else through the normal transaction/tracker path. Off by
-default: without the flag, the batch stays exactly what it always was.
+**All-or-nothing migrate (#4927).** `decideMigrationRun()` in
+`migrations/migration-run-decision.ts` is the shared run gate. Pass `changes`,
+`addedTables`, and `engine`. It returns `proceed`, `stops` (original change,
+kind, reason, message), and `heldBack` (plain description, table, optional
+column). Schema stops and unconfirmed missing packages refuse a run. Reports
+never do. Package checks add `packageStops` and `notices` (see below).
+Every new table and apply change is held back if any stop remains. The CLI and
+`migrateSmrtSchemas()` both call this gate; Work-style wrappers need no local
+policy. `getPendingSchemaStatements().decision` exposes the schema-only plan.
+A refused core run returns `applied:false`, `refused:true`, `stops`, and
+`heldBack`, with `packageStops` and `notices`. `unactionableChanges` and
+`hasManualDrift` still describe schema stops only.
+It does not initialize the tracker or stamp a successful migrate record.
+Proceeding/in-sync runs return `refused:false` and empty stops/heldBack.
+Ordinary execution uses `tracker.applyAll(..., {atomic:true})`. A later failure
+rolls back the whole batch. PostgreSQL concurrent-index mode is the declared
+exception: non-index changes commit first and a rerun completes the indexes.
+The batched PostgreSQL index read includes `pg_index.indisvalid`; an INVALID
+index cannot satisfy a declaration by name or signature and is planned again.
+A stop still refuses that mode before any writes. The CLI also defers tracker
+bootstrap and system timestamp conversion until after the decision. Its lock
+uses session advisory locks on PostgreSQL and writes no table rows; other
+engines need no lock. Removed `--apply-unblocked` fails before connecting.
+See [CLI contract](../../cli/agents/db-migrate-all-or-nothing.md).
 
 The FK-orphan advisory branch in `compareForeignKeys()` (`migrations/
 differ.ts`) tags its `SchemaChange` with `orphanBlocked: true` and
@@ -905,7 +1113,9 @@ differ's own suggested `UPDATE ... SET <column> = NULL` (from
 rendered — never re-derived), then rebuilds the `ADD CONSTRAINT NOT VALID` +
 `VALIDATE CONSTRAINT` pair via the shared `renderForeignKeyAddStatements()`
 helper (`schema/foreign-key-ddl.ts`, also used by the differ's own safe-add
-branch) and adds it through the normal tracker path. A NOT NULL child column
+branch) and adds it through the normal atomic tracker batch. The exact original
+change is included in `resolvedStops` for the shared gate. Any other stop
+holds back both this UPDATE and the FK. A NOT NULL child column
 keeps the unconditional "Manual repair required" refusal — nulling isn't an
 option and the flag never deletes rows. `planOrphanDispositions()` fails
 closed (routes to "not nullable"/no-op) if an orphan-blocked change is
@@ -919,9 +1129,8 @@ alone (review, #2748). A manifest relaxed to nullable while the live column
 has not converged yet — the same drift `--relax-columns` handles for plain
 columns — would otherwise report `nullable: true` from the manifest side
 only, and `--null-orphans` would attempt an `UPDATE` PostgreSQL rejects
-outright (`23502`), failing the whole atomic batch instead of refusing just
-that one relationship. Nullable only when both sides agree; a real
-NOT NULL on either side keeps the unconditional refusal.
+outright (`23502`). The whole run now refuses before writes. Nullable only
+when both sides agree; a real NOT NULL on either side keeps the unconditional refusal.
 
 ### Pre-R11 `text` ids converge to `uuid` before any FK statement (#2608)
 
@@ -998,8 +1207,8 @@ consumer reads `SchemaChange.column` — `partitionSchemaChanges()` in
 `@happyvertical/smrt-cli` skips an entry without one — so a conversion missing
 it would drop out of the `db:migrate` batch while `compareForeignKeys()` still
 assumed the converged type. Refused convergences carry the same column plus an
-advisory and no SQL, and the CLI routes them to the report-only advisories
-rather than to manual interventions or the tracker.
+advisory and no SQL. The CLI routes them to manual interventions with the
+table's data-loss reason; they never become executable tracker migrations.
 
 The uuid wording is gated on the manifest. Both the runtime guard and the
 status planner reach their incompatible-type branch for *any* mismatched pair,
@@ -1082,6 +1291,107 @@ Adding live trigger generation requires a migration rollout design.
 `_smrt_signals` and database-persisted registry APIs are retired; see
 `RETIRED_SYSTEM_TABLES` in `src/system/schema.ts`.
 
+## Successful migrate record (#4926)
+
+`migrations/migrate-record.ts` owns `_smrt_migrate_runs`, provisioned by
+`ensureSystemTables` (system schema 1.16.0). A successful whole-schema migrate,
+including an already-current database, records the core release, the build's
+packages and fingerprint (below). Failed, stopped, and dry runs never stamp
+it. Identical release/packages/fingerprint skip the insert; changed values append
+and preserve history. This permanent ledger has no retention/prune task.
+`readLastMigrateRecord` is SELECT-only and returns `state: 'none'` for an absent
+or empty table: the first run under this scheme, not a schema mismatch. The latest
+row orders by `created_at`, then `id`. Call the writer on the caller's database
+handle while its migration lock is held; it also works without a tracker.
+
+### The build's schema (rv1)
+
+`migrations/build-schema.ts`. The build is the app's project manifest: the
+first of `PROJECT_MANIFEST_PATHS` (`.smrt/manifest.json`, `dist/manifest.json`,
+`src/manifest/manifest.json`), the file `smrt db:migrate` already requires.
+`.smrt/manifest.json` is first because the app's bundled description
+(`.smrt/build-schema.js`) is written from it in the same publish, so migrate and
+the bundled app agree by construction. A `dist/manifest.json` is a published
+library manifest (the shell's lists only its own objects); it is the build only
+when nothing else exists. When two project manifests describe different
+schemas, `noteAlternativeManifests` sets `BuildSchema.notice`, which migrate
+prints and doctor shows: it names the one used and why. A tool that filters or
+copies a manifest must recompute `schemaFingerprint` for the objects it writes
+or leave it out; `scripts/check-manifest-stamps.mjs` (part of `pnpm build`)
+fails on a built manifest whose stamp does not match its own objects.
+`describeManifestSchema(manifest)` gives its stamp (`schemaFingerprint`), its
+tables with their owning packages, and the packages that contribute tables
+(framework base classes and collections own none). `resolveBuildSchema()` finds
+it: a registered build, else the file in `SMRT_BUILD_MANIFEST`, else the project
+manifest under the working directory. Under `NODE_ENV=test` only the first two
+count. A build is registered by `registerBuildSchema(manifest)` (CLI discovery
+registers the project manifest it found) or by the app's generated
+`.smrt/build-schema.js`: both manifest writers publish it with
+`.smrt/manifest.json` from the same merged manifest
+(`generateBuildSchemaModule`), and it sets the `BUILD_SCHEMA_GLOBAL` slot without
+importing anything. The generated `smrt-register.ts` (so the server bundle and
+`.smrt/runtime/register.js`) and the consumer's `.smrt/register.js` import it
+first, so a deployed app knows its build with no file and no variable. Library
+`dist` output carries no build module; its stamp, when it has one, describes
+only its own objects and is read only when that file is the project manifest.
+
+`collectMigrateRecordInput(build = resolveBuildSchema())` is the one input for
+both writers (CLI and `migrateSmrtSchemas`): `fingerprint` is
+`computeSchemaFingerprint` over the planned schema restricted to the build's
+tables (equal to the stamp when declarations agree), `packages` is the build's
+list. So the CLI, the app's own migrate, a dev install and a production install
+all record the same values. A build table the run has not planned is an
+unconfirmable package stop ("part of this build, but this run has not loaded
+its tables"). All tables planned but a different shape (installed packages
+newer than the build) proceeds with a notice that the build will be refused
+until rebuilt. With no build, the whole planned schema and every registered
+class's package are recorded, as before.
+
+`migrateSmrtSchemas()` and the CLI pass `packagesSeenInput(current, last,
+confirmed)` to `decideMigrationRun()` before tracker bootstrap or apply.
+Unconfirmed missing packages refuse the whole run. `packageStops` names them
+and explains that a missing declaration could loosen required columns;
+`heldBack` lists the apply changes. Pass `confirmRemovedPackages: string[]`
+with exact recorded names to confirm intentional removals. Added packages are
+fine. A successful run writes the same package list used for this comparison,
+so confirmed removals leave the next record, including on an in-sync run.
+
+`checkPackagesSeen({ recorded, current, confirmedRemoved })` is the pure check
+in `migration-run-decision.ts`. `recorded: null` means no earlier record.
+`decideMigrationRun({ packagesSeen, ... })` folds it into the all-or-nothing
+gate. Package stops are not schema change kinds. `notices` reports ignored
+confirmations for non-missing names and a skipped comparison when no record
+exists. The core migrator logs those notices and returns them to wrappers.
+`getPendingSchemaStatements().decision` covers schema changes only.
+
+The fingerprint hashes canonical sorted JSON of abstract tables, columns,
+defaults, column CHECKs, calculated-column expressions with their input types
+(left out for ordinary columns, #4915), table-level CHECKs (shared-table rules, by name and
+whitespace-normalized expression, left out of the JSON when a table has none),
+physical foreign keys, indexes (including predicates and JSON paths), and
+triggers. It is computed from declarations, never read back from a catalog, so
+how PostgreSQL rewrites a stored expression cannot change it. Defaults use the
+shared DDL formatter; nested JSON keys are canonicalized. Presentation
+metadata, source paths, version hashes, timestamps and registration order do
+not participate. What is left out and why: `referenceKind`, `backfill`,
+column/index/trigger `description`, a check's `columns`, `ddl` (unless the
+table has no columns), `version`, `dependencies`, `packageName`, `baseClass`;
+none is a statement migrate runs. `migrations/__tests__/schema-fingerprint.test.ts`
+lists every attribute of the schema definition as a `Record` over its keys, so
+a new attribute does not compile until someone decides, and checks each
+decision. A new shared-table rule changes the stamp (#4929, #4932): the build
+is refused until migrate has installed the rule. The stamp is computed by the
+same function in the manifest writers, the generated build module, the migrate
+record and startup, so all move together. Release-upgrade snapshots hold no
+stamps. A stamp is never compared across smrt versions except through a fresh
+migrate: after upgrading smrt, rebuild and run migrate before starting. Manifest writers stamp it
+as `schemaFingerprint` after merging local and consumed declarations; the
+schema-path parity test compares the stamp with the registry for the same
+declarations. Only a project manifest's stamp is read. Registered copies leave
+it out: per-class manifests in generated `smrt-register.ts`, the consumer's
+`.smrt/register.js`, and library inline register shims. A manifest whose
+contributors disagree on a shared index has no stamp (generation warns).
+
 ## PostgreSQL migration execution
 
 `MigrationTracker.applyAll({ atomic: true })` sets local lock/statement timeouts
@@ -1121,6 +1431,126 @@ names; validation is memoized by registry generation and binding configuration.
 Configuration must load before first database use and stay
 fixed for that process. This is not an implicit data migration; see
 [consumer table bindings](../../../docs/content/table-bindings.md).
+
+## Migrate before runtime starts (#4929)
+
+`assertDatabaseMigratedForBuild(db, { engineHint })` is exported from core.
+It compares the build's stamp (`resolveBuildSchema()`, above) with the last
+migrate record. It never reads the live registry, so lazy imports, a worker
+loading a subset of packages, installed packages the app never imports and
+run-time models (`planRuntimeModelDDL`, `migrateSmrtSchemas({ tables })`) do
+not affect it. It never
+creates schema or runs migrations. Collection queries and object persistence call
+it beside their table check in `verifyPersistenceTable()`. TaskRunner and
+ScheduleRunner call it before starting their loops. Successful starts share one
+record read per database key per process, including concurrent first uses.
+Refusals are not cached as successes.
+System bootstrap, migrate, doctor and db:status do not call this guard.
+The SvelteKit app runtime's `ready()` (its `init` gate) runs the check at
+start. A process that loads no generated registration (a plain script, a Vite
+app without SvelteKit route generation) finds its build only by
+`SMRT_BUILD_MANIFEST` or the working directory's project manifest. A cached
+start remembers the registered build; a later registration checks again, so a
+query that ran before the registration never fixes the answer. A build with no
+stamp, or no build at all, refuses in production (warns in development):
+migrate refuses the same index conflict, so no database can be migrated for it.
+
+Production refuses a missing record or a different fingerprint and names
+`smrt db:migrate`. The error shows short expected/found fingerprints. An old
+copy of the app that restarts after a migrate will not come back up. Rolling
+code back without the database will not start either. Stop old copies before
+migrating and start the matching build after the migrate succeeds.
+
+`NODE_ENV=development` (also the unset default used by the CLI) warns once per
+database and starts. `NODE_ENV=test` is a quiet exemption, to keep existing
+log assertions and test fixtures stable. Handles successfully prepared by
+`getTestDatabase()` are marked in a module-owned WeakSet and exempt even in
+production mode. The mark belongs to that handle, not every database at its URL.
+
+For an emergency, `SMRT_ALLOW_UNMIGRATED_START=1` starts anyway. It logs once
+per database per process, including when fingerprints match. The warning names
+the override and the expected/found values. Other values do not override.
+
+Whole-schema provisioning is `db:migrate` or `migrateSmrtSchemas`; both record
+success, including an in-sync run. A run limited to `tables` (lazy activation,
+run-time model edits) is not a whole-schema migrate: it skips the package
+comparison and records nothing, and on a build table it may only add (a
+change whose SQL does more than add is a `build-table` stop; see the CLI's
+`db-migrate-all-or-nothing.md`). `smrt app install/setup/migrate` use the CLI
+migrate path. The local app-runtime's first-run `createSchema` hook and its
+`migrateSchemas()` callback use the core migrator, so they also record success.
+The app-shell's additive `prepareShellSchema` and content's `bootstrapSchema`
+hook are local/development bootstraps, not production migration entry points.
+The deprecated `db:setup`, `ensureSchema`, and `SchemaManager.ensureTable(s)`
+fill in missing tables and columns. They do not reconcile all existing
+constraints or prove the whole registry matches. They must not provision
+production databases or stamp that claim.
+Jobs' `ensureSchema` call prepares terminal-event compatibility storage only;
+it does not replace a whole-schema production migrate. The smrt-vitest schema
+builders are test-only. Direct SQL/adapter `createTable` calls are low-level DDL;
+production applications must finish with a successful whole-schema migrate.
+
+## Release upgrade gate
+
+Repository files in `packages/core/release-upgrade/` record the upgrade promise.
+`snapshots/<release>.json` saves every smrt-owned PostgreSQL table as it was
+created by that release's own migrator. It includes columns, constraints,
+indexes, and system bookkeeping rows. `modelTables` records which tables the
+old release declared as models. This includes models named `_smrt_*`; the
+prefix alone does not make a table bookkeeping. `oldest-supported.json` names the oldest
+release we support. The first saved schema is the first supported release.
+Capture normalises bookkeeping timestamps, generated UUIDs, execution times,
+and the migration actor;
+these values must not make two captures of the same build differ.
+
+The release maintainer runs `pnpm release:snapshot` after publishing, on the
+built release checkout, and commits the resulting snapshot. To capture a built
+older checkout, run `node scripts/release-upgrade-gate.mjs save --root <checkout>`.
+Keep the oldest snapshot and the two newest others. A first-hop snapshot named
+by a floor move is also kept while that decision needs it.
+Each release saves its snapshot with `pnpm release:snapshot`; the 0.60.18 snapshot was saved after the fact because 0.60.18 was published before the gate existed.
+
+Run `pnpm build` and `pnpm check:release-upgrade` locally. The full-mode knowledge
+PR job runs the gate after the build. It rehearses the newest saved release at
+or before this build's version, and the oldest supported release. When these
+are the same file it runs once. Each rehearsal restores the old physical schema
+in PGlite and seeds one minimal row per model table. Only old required columns
+without defaults are filled, with deterministic primary keys. Foreign keys and
+enum checks guide seed values. Every model table must get its row (rule 6: a
+rehearsal on an empty table proves nothing). A table that does not, a seeded
+reference that cannot be aligned or points at no row, and a stale plan entry all
+fail the gate, each naming the table and the database error. There is no warning
+path. `seed/<release>.json` holds, per snapshot, the two checked-in escapes:
+`suppliedRows` (`table`, a real minimal `row` of column values, `reason`) for a
+table the generic row cannot satisfy, and `emptyByDesign` (`table`, `reason`) for
+a table that must stay empty. Both start empty. An entry is stale, and fails, when
+its table is not a model table of that release, a supplied column is not in the
+snapshot, or the generic seeder now fills the table. A seed file with no snapshot
+fails too. `save` writes an empty file for a new snapshot; pruning a snapshot
+removes its file.
+
+Any migration stop fails the gate. The output names the table and column,
+the reason, and the work held back. Errors and a second diff that still needs
+work also fail. An old column that the build no longer declares fails if it
+holds data. A NOT NULL orphan without a default fails even if empty, because
+new code cannot insert. Ship a needed data step with the schema change. A field that was optional in the oldest supported release becomes required only together with the data step for rows that lack it.
+`leftover-columns.json` can record intended leftovers. Every entry names
+`table`, `column`, `since` and a non-empty `reason`. Review that reason as a data
+decision. Entries that match no leftover in either rehearsal fail as stale.
+
+Migrate refuses a database whose last migrate record is older than the floor.
+It names the supported release and the first upgrade to run. A database without
+a record is a first run under this scheme and proceeds. To move the floor, run
+`node scripts/release-upgrade-gate.mjs move-oldest --to <release>
+--upgrade-first-to <release> --reason "<why old upgrade code can be removed>"`
+on one shell line. Both releases must have saved snapshots. The command appends
+the previous record to `history` and records the release older databases must
+upgrade to first. Move it when old upgrade code must be deleted, never because
+time passed. Review and commit that decision with the code deletion.
+
+P8: the release workflow is not wired to this gate yet. A release job cannot be
+verified without publishing. This change supplies a tested command and a PR
+job; a later verified release change must wire the publishing path.
 
 Fallback registry aggregation includes `_sync_origin_device_id` and
 `_sync_revision` even without a generated manifest schema. Migration-created

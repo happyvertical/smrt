@@ -52,14 +52,14 @@ export class CommissionAdjustment extends SmrtObject {
   tenantId: string | null = null;
 
   /** The {@link Commission} this adjustment corrects. Required. */
-  @foreignKey('Commission', { required: true })
+  @foreignKey('Commission', { required: true, requiredFor: 'identity' })
   commissionId: string = '';
 
   /**
    * The {@link Earner} the adjustment applies to — denormalized from the
    * parent commission so balance queries never need a join. Required.
    */
-  @foreignKey('Earner', { required: true })
+  @foreignKey('Earner', { required: true, requiredFor: 'identity' })
   earnerId: string = '';
 
   /** What kind of correction this is. */
@@ -74,8 +74,8 @@ export class CommissionAdjustment extends SmrtObject {
   /** ISO 4217 currency — must match the parent commission's. */
   currency: string = 'USD';
 
-  /** Human-readable justification. Required — audit rows explain themselves. */
-  @field({ required: true })
+  /** Human-readable justification. */
+  @field()
   reason: string = '';
 
   /**
