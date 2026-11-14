@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as realBuilder from '@happyvertical/smrt-desktop/builder';
 import * as realBundler from '@happyvertical/smrt-desktop/bundler';
@@ -470,9 +470,9 @@ describe('desktop build', () => {
     expect(code).toBe(0);
     expect(h.runBuild).toHaveBeenCalledWith(
       {
-        appDir: 'a',
-        bundleDir: 'b',
-        outDir: 'o',
+        appDir: resolve('a'),
+        bundleDir: resolve('b'),
+        outDir: resolve('o'),
         target: 'aarch64-apple-darwin',
         smoke: false,
       },
