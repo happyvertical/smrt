@@ -3,6 +3,7 @@ import { getTestDatabase, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  assertFailedJobDispatch,
   assertJobClaim,
   assertJobClaimForRelease,
   type JobClaim,
@@ -259,6 +260,25 @@ describe('transaction-bound job claim proof', () => {
         db.transaction?.((tx) => assert(tx, old)),
       ).rejects.toBeInstanceOf(JobClaimLostError);
     }
+  });
+
+  it('locks only the same failed dispatch and rejects retry/reclaim and tenant mismatch', async () => {
+    const jobs = await SmrtJobCollection.create({ db });
+    const job = await jobs.get({ id: claim.jobId });
+    if (!job) throw new Error('Missing fixture job');
+    await job.cancel();
+    job.status = 'failed';
+    await job.save();
+    await db.transaction?.((tx) => assertFailedJobDispatch(tx, claim));
+    await expect(
+      db.transaction?.((tx) =>
+        assertFailedJobDispatch(tx, { ...claim, tenantId: randomUUID() }),
+      ),
+    ).rejects.toBeInstanceOf(JobClaimLostError);
+    await job.retry();
+    await expect(
+      db.transaction?.((tx) => assertFailedJobDispatch(tx, claim)),
+    ).rejects.toBeInstanceOf(JobClaimLostError);
   });
 
   it('rejects forged execution contexts', () => {

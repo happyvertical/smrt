@@ -253,3 +253,8 @@ retry and surplus release preserve that value. Millisecond resolution is safe
 because equal/backward clock readings leave the row pending until time advances,
 rather than creating a second dispatch with the same generation. Pending jobs
 may therefore retain their last dispatch start. No new column is required.
+
+Use `assertFailedJobDispatch(tx, dispatch)` to lock an exact failed dispatch
+before checkpoint recovery and re-admission. It checks tenant, target, attempt
+and the retained start generation and rejects a concurrent retry/reclaim. Use
+the same caller transaction for the domain CAS and job admission.

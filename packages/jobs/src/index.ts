@@ -95,10 +95,12 @@ export {
 } from './job-builder.js';
 // Job handle for tracking
 export {
+  assertFailedJobDispatch,
   assertJobClaim,
   assertJobClaimForRelease,
   type JobClaim,
   JobClaimLostError,
+  type JobDispatch,
 } from './job-claim.js';
 export {
   JobHandle,

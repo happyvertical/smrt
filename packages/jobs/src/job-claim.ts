@@ -92,3 +92,43 @@ async function assertClaim(
   );
   if (result.rows.length !== 1) throw new JobClaimLostError();
 }
+
+/** A dispatch remains identifiable after recovery clears its worker ownership. */
+export type JobDispatch = Omit<JobClaim, 'workerId'>;
+
+/**
+ * Lock a failed dispatch for atomic recovery/admission in a caller transaction.
+ * A retry, new dispatch, tenant or target change rejects the captured snapshot.
+ * This is a state fence, not an application permission or recovery authorization.
+ * @param transaction - Transaction also used for the caller's checkpoint/admission.
+ * @param dispatch - Exact failed dispatch observed by the trusted host.
+ */
+export async function assertFailedJobDispatch(
+  transaction: DatabaseInterface,
+  dispatch: Readonly<JobDispatch>,
+): Promise<void> {
+  if (
+    !dispatch.startedAt ||
+    !Number.isFinite(Date.parse(dispatch.startedAt)) ||
+    !Number.isSafeInteger(dispatch.attempt) ||
+    dispatch.attempt < 1
+  )
+    throw new JobClaimLostError();
+  const tenant =
+    dispatch.tenantId === null ? 'tenant_id IS NULL' : 'tenant_id = ?';
+  const target =
+    dispatch.objectId === null ? 'object_id IS NULL' : 'object_id = ?';
+  const result = await transaction.query(
+    `UPDATE _smrt_jobs SET updated_at = updated_at
+       WHERE id = ? AND status = 'failed' AND attempts = ? AND started_at = ?
+         AND object_type = ? AND method = ? AND ${tenant} AND ${target} RETURNING id`,
+    dispatch.jobId,
+    dispatch.attempt,
+    dispatch.startedAt,
+    dispatch.objectType,
+    dispatch.method,
+    ...(dispatch.tenantId === null ? [] : [dispatch.tenantId]),
+    ...(dispatch.objectId === null ? [] : [dispatch.objectId]),
+  );
+  if (result.rows.length !== 1) throw new JobClaimLostError();
+}
