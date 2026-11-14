@@ -241,7 +241,7 @@ it('rejects generated writes proposed by sandbox methods', async () => {
   await expect(host.runMethod('Sale', 'badWrite')).rejects.toThrow(/read-only/);
 });
 
-it('counts writable values replaced when undo restores a cleared calculation', async () => {
+it('materializes a cleared calculation and refuses undo that would discard later writable edits', async () => {
   const row = (await host.list('Sale'))[0];
   await run({
     type: 'setCalculation',
@@ -249,6 +249,7 @@ it('counts writable values replaced when undo restores a cleared calculation', a
     field: 'total',
     calculated: null,
   });
+  expect((await host.get('Sale', String(row.id))).total).toBe(row.total);
   await host.update('Sale', String(row.id), { total: 999 });
   const plan = await host.plan({ type: 'undo' });
   expect(plan.risky).toBe(true);
@@ -256,6 +257,13 @@ it('counts writable values replaced when undo restores a cleared calculation', a
   await expect(
     host.execute({ type: 'undo' }, { author: 't' }),
   ).rejects.toMatchObject({ code: 'approval_required' });
+  const version = host.version;
+  await expect(run({ type: 'undo' })).rejects.toThrow(
+    /writable values changed since clearing/,
+  );
+  expect(host.version).toBe(version);
+  expect((await host.get('Sale', String(row.id))).total).toBe(999);
+  await host.update('Sale', String(row.id), { total: row.total });
   await run({ type: 'undo' });
   expect((await host.get('Sale', String(row.id))).total).toBe(
     Number(row.qty) * Number(row.price),

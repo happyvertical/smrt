@@ -170,7 +170,7 @@ is documented here; the shell's tables, approvals and UI sit on top.
 time; hidden inputs and generated-to-generated references are rejected by core.
 SQLite owns the VIRTUAL column. Writes use the common coercer and generated core
 record commands explicitly refuse calculated inputs with typed EngineError (invalid); generated REST/MCP surfaces instead drop them like readonly inputs, allowing whole-record round trips. `setCalculation` replaces the column transactionally;
-clearing creates an empty writable column. Converting a writable field archives
+clearing materializes current calculated values into a writable column. Undoing the clear refuses if writable values differ from that materialized snapshot (including populated rows created later), so it never discards later edits. Converting a writable field archives
 its originals and is risky. Undo restores those originals or the old expression.
 Renames rewrite expressions; hide/remove/type change refuse named dependents.
 Changing a calculated field's type replaces its generated column directly and

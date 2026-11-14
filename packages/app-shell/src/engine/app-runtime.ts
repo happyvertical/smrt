@@ -329,7 +329,19 @@ export class AppRuntime {
         done.push(`-- ${up ? 'load' : 'undo load'} records`);
         break;
       case 'calculation': {
-        if (up && step.from && !step.from.calculated)
+        const clearing =
+          !!step.from?.calculated && !!step.to && !step.to.calculated;
+        if (!up && clearing) {
+          const conflict = await tx.query(
+            `SELECT 1 FROM ${q(step.table)} t LEFT JOIN _archive a ON a.version = ? AND a.tbl = ? AND a.col = ? AND a.record_id = t.id WHERE t.${q(step.column)} IS NOT CAST(a.value AS ${sqlType((step.to ?? (step.from as FieldDef)).type)}) LIMIT 1`,
+            [m.version, step.table, step.column],
+          );
+          if (conflict.rows.length)
+            throw new AppError(
+              `cannot undo clearing ${step.table}.${step.column}: writable values changed since clearing; restoring the calculation would discard those edits`,
+            );
+        }
+        if (up && step.from && (!step.from.calculated || clearing))
           await exec(
             `INSERT INTO _archive (version, tbl, col, record_id, value, created_at) SELECT ?, ?, ?, id, ${q(step.column)}, ? FROM ${q(step.table)}`,
             [m.version, step.table, step.column, now],
@@ -337,6 +349,20 @@ export class AppRuntime {
         if ((await this.columnTypes(tx, step.table)).has(step.column))
           await exec(
             `ALTER TABLE ${q(step.table)} DROP COLUMN ${q(step.column)}`,
+          );
+        if (up && clearing) {
+          await exec(
+            `ALTER TABLE ${q(step.table)} ADD COLUMN ${q(step.column)} ${sqlType((step.to ?? (step.from as FieldDef)).type)}`,
+          );
+          await exec(
+            `UPDATE ${q(step.table)} SET ${q(step.column)} = (SELECT value FROM _archive a WHERE a.version = ? AND a.tbl = ? AND a.col = ? AND a.record_id = ${q(step.table)}.id)`,
+            [m.version, step.table, step.column],
+          );
+        }
+        if (!up && clearing)
+          await exec(
+            'DELETE FROM _archive WHERE version = ? AND tbl = ? AND col = ?',
+            [m.version, step.table, step.column],
           );
         if (!up && step.from && !step.from.calculated) {
           await exec(
