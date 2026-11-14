@@ -51,8 +51,9 @@ from persisted input after restart; do not rely on request-local state. Checks
 may replace input, so keep its shape compatible with the host's input type.
 
 `start` is idempotent for a key scoped to kind, owner and tenant, including after
-completion. Reusing a key returns its original run and input; choose a new key for
-new work. The insert CAS and deduplicated job enqueue commit together. A host
+completion. Reusing a key with an identical JSON request returns the same run. Different
+input, resources or initial budget throws `DesignRunKeyConflictError`; choose a
+new key for new work. The insert CAS and deduplicated job enqueue commit together. A host
 must keep a definition stable for an admitted key, or version its kind as well.
 
 `handler(record, args, context)` is the runner bridge. `install()` connects it to
@@ -132,3 +133,9 @@ settlement. Stop uses the public checkpoint CAS and never calls `configure`.
 settle, then reloads the checkpoint. If it is no longer waiting, it returns
 current status. Concurrent or repeated continuation calls do not duplicate
 admission; the winner's current state is returned after a CAS conflict.
+
+Admission stores a canonical digest of the original JSON request in checkpoint
+metadata, independently of mutable pass input and resumed budgets. Object-key
+order does not affect identity. Legacy checkpoints without this metadata fail
+closed on replay because their original request cannot be verified. The digest
+is private bridge metadata and is omitted from public snapshots.

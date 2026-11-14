@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { stableStringify } from '@happyvertical/smrt-core/knowledge';
 import {
   createDesignRunDriver,
   createDesignRunStore,
@@ -26,6 +27,16 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 /** Informational only; never used for job kinds, row identity or table names. */
 export const PACKAGE_NAME = '@happyvertical/smrt-design-runs';
 const target = '@happyvertical/smrt-inference:DesignRunRecord';
+
+type AdmissionState = DesignRunState & { admissionDigest?: string };
+
+/** A key reserves the original JSON request, even if later checks replace input. */
+export class DesignRunKeyConflictError extends Error {
+  constructor(readonly runId: string) {
+    super('This design key was already used with a different request');
+    this.name = 'DesignRunKeyConflictError';
+  }
+}
 
 type Handler = Parameters<typeof installDesignRunExecutor>[1];
 const routers = new WeakMap<
@@ -85,8 +96,11 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
     ? Promise.resolve(options.jobs)
     : SmrtJobCollection.create({ db: options.db });
   const controllers = new Map<string, AbortController>();
-  const snapshot = (state: DesignRunState) =>
-    state as DesignRunSnapshot<Input, Output>;
+  const snapshot = (state: DesignRunState) => {
+    const visible = { ...state } as AdmissionState;
+    delete visible.admissionDigest;
+    return visible as DesignRunSnapshot<Input, Output>;
+  };
   const transaction = async <T>(
     operation: (tx: DatabaseInterface) => Promise<T>,
   ) => {
@@ -128,8 +142,12 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
       throw error;
     }
   };
-  const store = (owner: DesignRunOwner, claim?: Readonly<JobClaim>) =>
-    createDesignRunStore({
+  const store = (
+    owner: DesignRunOwner,
+    claim?: Readonly<JobClaim>,
+    admissionDigest?: string,
+  ) => {
+    const native = createDesignRunStore({
       db: options.db,
       ...owner,
       enqueue: (tx, state) => enqueue(tx, state, owner),
@@ -140,6 +158,15 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
           }
         : {}),
     });
+    return {
+      ...native,
+      save(state: DesignRunState, expected: number | null) {
+        const checkpoint: AdmissionState =
+          expected === null ? { ...state, admissionDigest } : state;
+        return native.save(checkpoint, expected);
+      },
+    };
+  };
   const load = async (owner: DesignRunOwner, id: string) => {
     const state = await store(owner).load(id, owner.ownerId);
     if (!state || state.definition !== options.definition)
@@ -150,11 +177,12 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
     owner: DesignRunOwner,
     input: Input,
     claim?: Readonly<JobClaim>,
+    admissionDigest?: string,
   ) =>
     createDesignRunDriver({
       ...options.configure(owner, input),
       definition: options.definition,
-      store: store(owner, claim),
+      store: store(owner, claim, admissionDigest),
       ...(claim
         ? { ownsExecution: () => transaction((tx) => proof(tx, claim)) }
         : {}),
@@ -456,13 +484,36 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
             )
             .digest('hex');
           const id = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-8${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+          const admissionDigest = createHash('sha256')
+            .update(
+              stableStringify(
+                JSON.parse(
+                  JSON.stringify({
+                    input: input.input,
+                    resourceIds: input.resourceIds ?? [],
+                    budget: input.budget,
+                  }),
+                ),
+              ),
+            )
+            .digest('hex');
+          const replay = (state: DesignRunState) => {
+            if ((state as AdmissionState).admissionDigest !== admissionDigest)
+              throw new DesignRunKeyConflictError(id);
+            return snapshot(state);
+          };
           const existing = await store(owner).load(id, ownerId);
           if (existing?.definition === options.definition)
-            return snapshot(existing);
+            return replay(existing);
           if (existing) throw new Error('Design run definition changed');
           try {
             return snapshot(
-              await driver(owner, input.input).start({
+              await driver(
+                owner,
+                input.input,
+                undefined,
+                admissionDigest,
+              ).start({
                 id,
                 ownerId,
                 input: input.input,
@@ -472,7 +523,7 @@ export function createDesignRunJobs<Input = unknown, Output = unknown>(
             );
           } catch (error) {
             if (!(error instanceof DesignRunConflictError)) throw error;
-            return snapshot(await load(owner, id));
+            return replay(await load(owner, id));
           }
         },
         get: async (id: string) => snapshot(await authorized(id)),

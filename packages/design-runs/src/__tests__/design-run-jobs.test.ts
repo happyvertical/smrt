@@ -15,7 +15,11 @@ import {
 import type { DatabaseInterface } from '@happyvertical/sql';
 import Ajv from 'ajv/dist/2020.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDesignRunJobs, type DesignRunJobsOptions } from '../index.js';
+import {
+  createDesignRunJobs,
+  type DesignRunJobsOptions,
+  DesignRunKeyConflictError,
+} from '../index.js';
 
 const metadata = {
   profile: 'design',
@@ -196,13 +200,9 @@ describe('durable design job bridge', () => {
     await end(first.id);
     await jobSettled(first.id);
     expect((await bound.start(startInput())).status).toBe('done');
-    const replay = await bound.start({
-      ...startInput(),
-      input: { prompt: 'Ignored replay payload' },
-      budget: { ...budget, maxTokens: 0 },
-    });
-    expect(replay.status).toBe('done');
-    expect(replay.input.prompt).toBe('Design it');
+    await expect(
+      bound.start({ ...startInput(), input: { prompt: 'Different request' } }),
+    ).rejects.toBeInstanceOf(DesignRunKeyConflictError);
     expect(await jobs.list({ where: { objectId: first.id } })).toHaveLength(1);
   });
 
@@ -667,6 +667,50 @@ describe('durable design job bridge', () => {
     expect((await bound.continueAfterApproval(run.id)).status).toBe('done');
     expect(await jobs.list({ where: { objectId: run.id } })).toHaveLength(2);
     expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects concurrent different requests for one key and keeps the original admission through changed check input', async () => {
+    const bound = install(undefined, [
+      {
+        name: 'Transform',
+        schema,
+        check: async () => ({ input: { prompt: 'Derived input' } }),
+      },
+    ]);
+    const attempts = await Promise.allSettled([
+      bound.start(startInput()),
+      bound.start({ ...startInput(), input: { prompt: 'Different' } }),
+    ]);
+    expect(
+      attempts.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1);
+    const rejected = attempts.find((result) => result.status === 'rejected');
+    expect(rejected?.status === 'rejected' && rejected.reason).toBeInstanceOf(
+      DesignRunKeyConflictError,
+    );
+    const accepted = attempts.find((result) => result.status === 'fulfilled');
+    if (accepted?.status !== 'fulfilled')
+      throw new Error('Missing accepted run');
+    const original = accepted.value.input;
+    await worker();
+    await end(accepted.value.id);
+    expect(
+      (await bound.start({ ...startInput(), input: original })).input.prompt,
+    ).toBe('Derived input');
+    await expect(
+      bound.start({
+        ...startInput(),
+        input: original,
+        resourceIds: ['different'],
+      }),
+    ).rejects.toBeInstanceOf(DesignRunKeyConflictError);
+    await expect(
+      bound.start({
+        ...startInput(),
+        input: original,
+        budget: { ...budget, maxTokens: 99 },
+      }),
+    ).rejects.toBeInstanceOf(DesignRunKeyConflictError);
   });
 
   it('replays a completed run job without executing any pass again', async () => {

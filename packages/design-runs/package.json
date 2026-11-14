@@ -27,7 +27,8 @@
   "dependencies": {
     "@happyvertical/smrt-inference": "workspace:*",
     "@happyvertical/smrt-jobs": "workspace:*",
-    "@happyvertical/sql": "catalog:"
+    "@happyvertical/sql": "catalog:",
+    "@happyvertical/smrt-core": "workspace:*"
   },
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
@@ -35,7 +36,6 @@
     "typescript": "6.0.3",
     "vite": "8.1.6",
     "vitest": "4.1.10",
-    "@happyvertical/smrt-core": "workspace:*",
     "ajv": "^8.20.0"
   },
   "keywords": [
