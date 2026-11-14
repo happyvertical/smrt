@@ -1,4 +1,4 @@
 {
-  "@happyvertical/smrt-app-mcp": "^0.60.18",
-  "@happyvertical/smrt-mcp-openai": "^0.60.18"
+  "@happyvertical/smrt-app-mcp": "^0.61.0",
+  "@happyvertical/smrt-mcp-openai": "^0.61.0"
 }

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-spreadsheets",
-  "version": "0.60.18",
+  "version": "0.61.0",
   "description": "Spreadsheet capabilities for smrt, starting with validated import plans, workbook checks and batch loading through a target adapter",
   "type": "module",
   "main": "./dist/index.js",

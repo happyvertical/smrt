@@ -75,31 +75,38 @@ test('release regenerates and commits tracked SvelteKit registration snapshots',
       new RegExp(`packages/${name}/src/lib/server/smrt-register\\.ts`),
     );
   }
-  assert.match(publisher, /-name 'smrt-register\.ts'/);
+  assert.match(publisher, /':\(glob\)packages\/\*\*\/smrt-register\.ts'/);
   // scripts/sync-template-versions.mjs also rewrites the optional MCP Apps
   // pins (mcp-apps-template/package.dependencies.json); the versioned
   // workspace archive and the release commit must both carry them (#3356).
   assert.match(prepare, /-name 'package\.dependencies\.json'/);
-  assert.match(publisher, /-name 'package\.dependencies\.json'/);
+  assert.match(
+    publisher,
+    /':\(glob\)packages\/\*\*\/package\.dependencies\.json'/,
+  );
   assert.ok(
-    publisher.indexOf("-name 'smrt-register.ts'") <
+    publisher.indexOf("packages/**/smrt-register.ts'") <
       publisher.indexOf('git commit -m "chore(release):'),
   );
 });
 
-test('release commit collection never stages build or dependency output (#4711)', () => {
-  // `packages/core` builds with `cp -r scripts dist/`, so a source fixture
-  // package.json reappears under the gitignored dist/. Staging it makes
-  // `git add` refuse the ignored path and fails the release before tagging.
-  const collect = /^ +mapfile -t release_files < <\((find packages .*\| sort)\)$/m;
+test('release commit collection never stages ignored output (#4711, #4989)', () => {
+  // Build output (`packages/core/dist`, `packages/*/.svelte-kit`, ...) can hold
+  // copies of source fixture files. Staging an ignored path makes `git add`
+  // refuse it and fails the release before tagging, so the list must come from
+  // git itself rather than a hand-maintained find prune list.
+  const collect =
+    /^ +mapfile -d '' -t release_files < <\((git ls-files .*\| sort -z)\)$/m;
   const commands = ['seal-release', 'publish-release'].map((name) => {
     const match = job(name).match(collect);
-    assert.ok(match, `${name} must collect release files with find`);
+    assert.ok(match, `${name} must collect release files with git ls-files`);
     return match[1];
   });
   assert.equal(commands[0], commands[1], 'both seal steps must collect identically');
 
   const root = mkdtempSync(join(tmpdir(), 'release-files-'));
+  const git = (...args) =>
+    spawnSync('git', args, { cwd: root, encoding: 'utf8' });
   try {
     const files = {
       collected: [
@@ -115,20 +122,27 @@ test('release commit collection never stages build or dependency output (#4711)'
         'packages/core/dist/CHANGELOG.md',
         'packages/core/node_modules/some-dep/package.json',
         'packages/cli/templates/app/node_modules/x/template.config.js',
+        'packages/smrt-svelte/.svelte-kit/package.json',
+        'packages/smrt-svelte/.svelte-kit/generated/smrt-register.ts',
       ],
     };
+    assert.equal(git('init', '-q').status, 0);
+    writeFileSync(join(root, '.gitignore'), 'dist\nnode_modules\n.svelte-kit\n');
     for (const file of [...files.collected, ...files.excluded]) {
       mkdirSync(join(root, dirname(file)), { recursive: true });
       writeFileSync(join(root, file), '{}');
     }
-    const result = spawnSync('sh', ['-c', commands[0]], { cwd: root, encoding: 'utf8' });
+    const result = spawnSync('sh', ['-c', commands[0]], {
+      cwd: root,
+      encoding: 'utf8',
+    });
     assert.equal(result.status, 0, result.stderr);
-    const listed = result.stdout.split('\n').filter(Boolean);
+    const listed = result.stdout.split('\0').filter(Boolean);
     // Compare as sets: `sort` ordering follows the runner's locale.
     assert.deepEqual([...listed].sort(), [...files.collected].sort());
-    for (const path of listed) {
-      assert.doesNotMatch(path, /(^|\/)(dist|node_modules)\//, path);
-    }
+    // The collected list must be stageable exactly as the workflow stages it.
+    const added = git('add', '--', ...listed);
+    assert.equal(added.status, 0, added.stderr);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -364,7 +378,7 @@ test('the wrapper crate version follows the release: synced, archived and commit
     workflow.indexOf('name: Upload release version patch'),
   );
   for (const file of cargo) assert.ok(archive.includes(file), `archive lists ${file}`);
-  const commits = workflow.split('mapfile -t release_files').slice(1);
+  const commits = workflow.split('mapfile -d \'\' -t release_files').slice(1);
   assert.equal(commits.length, 2);
   for (const part of commits) {
     const head = part.slice(0, part.indexOf('git commit'));

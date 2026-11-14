@@ -770,9 +770,11 @@ jobs:
         run: |
           echo "🚀 Publishing validated release $RELEASE_VERSION"
 
-          # Build (dist/) and dependency (node_modules/) output is gitignored;
-          # staging it makes git add refuse the path and abort the release (#4711).
-          mapfile -t release_files < <(find packages -type d \( -name dist -o -name node_modules \) -prune -o \( -name 'package.json' -o -name 'package.dependencies.json' -o -name 'CHANGELOG.md' -o -name 'template.config.js' -o -name 'smrt-register.ts' \) -print | sort)
+          # Ask git for the files instead of walking the tree: build output
+          # (dist/, .svelte-kit/, ...) and dependencies (node_modules/) are
+          # gitignored, and staging an ignored path makes git add refuse it and
+          # abort the release (#4711, #4989). git ls-files never lists them.
+          mapfile -d '' -t release_files < <(git ls-files -z --cached --others --exclude-standard -- ':(glob)packages/**/package.json' ':(glob)packages/**/package.dependencies.json' ':(glob)packages/**/CHANGELOG.md' ':(glob)packages/**/template.config.js' ':(glob)packages/**/smrt-register.ts' | sort -z)
           release_files+=(packages/smrt-desktop/wrapper/Cargo.toml packages/smrt-desktop/wrapper/Cargo.lock)
           git add package.json
           git add -A .changeset
@@ -1111,9 +1113,11 @@ jobs:
         run: |
           echo "🚀 Publishing validated release $RELEASE_VERSION"
 
-          # Build (dist/) and dependency (node_modules/) output is gitignored;
-          # staging it makes git add refuse the path and abort the release (#4711).
-          mapfile -t release_files < <(find packages -type d \( -name dist -o -name node_modules \) -prune -o \( -name 'package.json' -o -name 'package.dependencies.json' -o -name 'CHANGELOG.md' -o -name 'template.config.js' -o -name 'smrt-register.ts' \) -print | sort)
+          # Ask git for the files instead of walking the tree: build output
+          # (dist/, .svelte-kit/, ...) and dependencies (node_modules/) are
+          # gitignored, and staging an ignored path makes git add refuse it and
+          # abort the release (#4711, #4989). git ls-files never lists them.
+          mapfile -d '' -t release_files < <(git ls-files -z --cached --others --exclude-standard -- ':(glob)packages/**/package.json' ':(glob)packages/**/package.dependencies.json' ':(glob)packages/**/CHANGELOG.md' ':(glob)packages/**/template.config.js' ':(glob)packages/**/smrt-register.ts' | sort -z)
           release_files+=(packages/smrt-desktop/wrapper/Cargo.toml packages/smrt-desktop/wrapper/Cargo.lock)
           git add package.json
           git add -A .changeset
