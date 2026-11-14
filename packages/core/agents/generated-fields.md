@@ -110,8 +110,9 @@ report drift for a semantically identical expression; SQLite may replace the
 column, while DuckDB refuses the change. Inspect the plan after SDK upgrades.
 No semantic SQL parser or normalization beyond formatting is promised.
 PostgreSQL and DuckDB diff and live-parity runs each read generated columns
-for every table in the current schema in **one catalog query per run**, reused
-across all tables. This discovers removal of the last generated declaration,
+in **one catalog query per run**, reused across managed tables. Rows for unmanaged
+tables are ignored before parsing DuckDB DDL, so an unrelated table cannot break
+generated-column discovery. This discovers removal of the last generated declaration,
 including hand-created columns, without requiring deployment snapshots.
 A reused comparer refreshes the catalog for each run; standalone `compareTable`
 calls also make one catalog read each. A database without generated columns

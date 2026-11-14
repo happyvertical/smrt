@@ -747,6 +747,9 @@ export class SchemaComparer {
             (column) => column.generated !== undefined,
           ),
         ),
+        new Set(
+          Object.values(manifestSchemas).map((schema) => schema.tableName),
+        ),
       );
       const existingTables = await this.getExistingTables();
       this.plannedTables = new Map(
@@ -2042,6 +2045,7 @@ export class SchemaComparer {
               Object.values(manifest.columns).some(
                 (column) => column.generated !== undefined,
               ),
+              new Set([tableName]),
             )))!.get(tableName) ?? new Map<string, string>())
         : await probeGeneratedColumns(this.db, tableName, this.engine, {
             expected: Object.values(manifest.columns).some(
@@ -2251,6 +2255,9 @@ export class SchemaComparer {
         }
         // Column exists - check for type mismatch
         const dbCol = dbSchema.columns[colName];
+        if (colDef.generated !== undefined && this.engine === 'duckdb') {
+          dbCol.defaultValue = undefined;
+        }
         let typeDrifted = false;
 
         // Map manifest's abstract type to engine-specific type

@@ -241,6 +241,7 @@ export async function checkLiveSchemaParity(
     expected.some((table) =>
       table.columns.some((column) => column.generated !== undefined),
     ),
+    new Set(expected.map((table) => table.name)),
   );
   const liveTableNames = await listLiveTables(db, engine);
   const indexCatalog = await readIndexCatalog(db, engine);

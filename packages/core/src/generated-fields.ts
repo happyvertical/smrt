@@ -552,6 +552,7 @@ export async function readGeneratedColumnCatalog(
   db: Parameters<typeof readGeneratedColumns>[0],
   engine: DatabaseEngine,
   expected: boolean,
+  managedTables: ReadonlySet<string>,
 ): Promise<Map<string, Map<string, string>> | null> {
   if (engine !== 'postgres' && engine !== 'duckdb') return null;
   const catalog = new Map<string, Map<string, string>>();
@@ -562,7 +563,11 @@ export async function readGeneratedColumnCatalog(
         : 'SELECT table_name, sql FROM duckdb_tables() WHERE schema_name = current_schema()',
     );
     for (const row of rows) {
-      if (typeof row.table_name !== 'string') continue;
+      if (
+        typeof row.table_name !== 'string' ||
+        !managedTables.has(row.table_name)
+      )
+        continue;
       if (engine === 'duckdb') {
         catalog.set(
           row.table_name,
