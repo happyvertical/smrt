@@ -8,7 +8,7 @@ actual TaskRunner context (never infer its worker from a later row read).
 attempt, tenant and target before application writes in that transaction.
 `assertJobClaimForRelease(tx, claim)` also accepts the same terminal attempt,
 allowing a settled handler to clear its application's lease after Stop. It
-rejects pending, recovered and replacement claims. Neither function changes
+rejects pending jobs, cleared ownership and replacement claims. Neither function changes
 job status nor expires the process lease. Return from the handler to park;
 TaskRunner owns job completion. Use only after current host authorization.
 

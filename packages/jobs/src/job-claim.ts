@@ -42,8 +42,8 @@ export async function assertJobClaim(
 /**
  * Authorize release of an application lease after its original promise settles.
  * Accepts the same running or terminal attempt, including cancellation after
- * Stop. Rejects pending jobs, cleared ownership and replacement claims. Does not change job status or
- * expire the runner's process lease: return from the handler to park its job.
+ * Stop. Rejects pending jobs, cleared ownership and replacement claims. Does not
+ * change job status or expire the runner's process lease: return from the handler to park its job.
  *
  * @param transaction - Transaction that also clears the application's lease.
  * @param claim - The original captured claim, retained through settlement.
