@@ -76,7 +76,11 @@ Read this before you upgrade a deployed app.
   migrate is refused too, and so is code rolled back without its database.
   For an emergency, set `SMRT_ALLOW_UNMIGRATED_START=1`; the app starts and
   logs a warning. In development the app warns and starts. Tests are exempt,
-  and so are databases made by `getTestDatabase()`.
+  and so are databases made by `getTestDatabase()`. A database that smrt's
+  migrate never builds, because the code that opens it builds its own schema
+  (today only each app's `app.db` in the app shell), is declared so where it
+  is opened, with its owner and a reason, and is not compared; its tables are
+  still checked.
 - **A redeclared field keeps its parent's options.** If your subclass declares a
   field again, it now inherits every option the parent set and changes only
   what you write. A subclass that wrote the field bare, hoping to reset it, now

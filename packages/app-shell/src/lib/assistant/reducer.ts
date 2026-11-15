@@ -7,7 +7,7 @@ import type {
   TurnStop,
 } from './events.ts';
 
-import { toolSummary } from './tool-summary.ts';
+import { reportLink, reportPresentation, toolSummary } from './tool-summary.ts';
 
 export type ApprovalState =
   | 'pending'
@@ -26,6 +26,8 @@ export type Item =
       name: string;
       state: 'running' | 'ok' | 'error';
       summary: string;
+      report?: ReturnType<typeof reportPresentation>;
+      reportHref?: string;
     }
   | {
       kind: 'approval';
@@ -208,6 +210,9 @@ export function reduce(state: DockState, action: Action): DockState {
             name: m.tool.name,
             state: m.tool.ok ? 'ok' : 'error',
             summary: toolSummary(m.tool.name, m.tool.summary, m.tool.ok),
+            ...(reportLink(m.tool.reportHref)
+              ? { reportHref: reportLink(m.tool.reportHref) }
+              : {}),
             ...(m.tool.copy ? { copy: m.tool.copy } : {}),
           });
       }
@@ -335,6 +340,14 @@ function onEvent(state: DockState, e: TurnEvent): DockState {
             ...(i as Extract<Item, { kind: 'tool' }>),
             state: e.ok ? 'ok' : 'error',
             summary: toolSummary(e.name, e.summary, e.ok),
+            ...(e.report && reportPresentation(e.name, e.report.result, e.ok)
+              ? {
+                  report: {
+                    result: e.report.result,
+                    href: reportLink(e.report.href),
+                  },
+                }
+              : {}),
             ...(e.copy ? { copy: e.copy } : {}),
           }),
         ),
@@ -401,6 +414,17 @@ function onEvent(state: DockState, e: TurnEvent): DockState {
 
 /** A short label for a tool chip: `chore_create` -> `Chore create`. */
 export function toolLabel(name: string): string {
+  const labels: Record<string, string> = {
+    app_definereport: 'Make report',
+    app_renamereport: 'Rename report',
+    app_removereport: 'Remove report',
+    app_runreport: 'Run report',
+    app_setcalculation: 'Calculate field',
+    app_loadrecords: 'Load records',
+    app_extractmodel: 'Make linked records',
+    app_mergerecords: 'Merge records',
+  };
+  if (labels[name]) return labels[name];
   const words = name.replace(/^app_/, '').replace(/[_-]+/g, ' ').trim();
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : name;
 }

@@ -1680,6 +1680,19 @@ log assertions and test fixtures stable. Handles successfully prepared by
 `getTestDatabase()` are marked in a module-owned WeakSet and exempt even in
 production mode. The mark belongs to that handle, not every database at its URL.
 
+A database whose schema core's migrate never builds is declared by the code
+that opens it: `declareRuntimeManagedDatabase(db, { owner, reason })`
+(`src/migrations/runtime-managed-database.ts`). The check then skips the
+migrate-record and build-stamp comparison for that handle, and for the
+transactions opened on its connection; another handle opened on the same file
+is not covered. Nothing else changes: collections still verify that each table
+exists, and nothing is written to the database. It is not a test exemption and
+has no environment switch. Today the only caller is the app-shell engine,
+which opens each app's `app.db` and builds its schema from the app definition.
+`scripts/check-runtime-managed-databases.mjs` (in `pnpm lint`) fails when any
+other file uses it; a new caller is added to its allow-list on purpose, with
+its reason.
+
 For an emergency, `SMRT_ALLOW_UNMIGRATED_START=1` starts anyway. It logs once
 per database per process, including when fingerprints match. The warning names
 the override and the expected/found values. Other values do not override.

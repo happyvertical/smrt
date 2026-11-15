@@ -376,16 +376,21 @@ describe('owner flows', () => {
       preview: { replaced: 1 },
     });
     expect(body.approvalId).toBeTruthy();
-    expect(body.summary).toContain('undo');
+    expect(body.summary).toBe('Undo: field type change in Gauge');
     expect(host.version).toBe(version);
     expect((await host.get('Gauge', row.id as string)).reading).toBe(99);
     // the card is stored against the version it was planned for
     const stored = (await listApprovalViews({ status: 'pending' })).find(
       (a) => a.id === body.approvalId,
     );
-    expect(stored?.action).toEqual({
+    expect(stored?.action).toMatchObject({
       kind: 'command',
       command: { type: 'undo', version },
+      reviewedPreview: {
+        version,
+        replaced: 1,
+        fields: [{ model: 'Gauge', field: 'reading', rows: 1 }],
+      },
     });
     const decided = await runAs(h.owner, async () =>
       (

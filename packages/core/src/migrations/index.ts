@@ -215,6 +215,11 @@ export {
   readRetiredTablesFromPackageJson,
 } from './retired-tables.js';
 export {
+  declareRuntimeManagedDatabase,
+  type RuntimeManagedDatabaseDeclaration,
+  runtimeManagedDatabaseDeclaration,
+} from './runtime-managed-database.js';
+export {
   computeManifestSchemaFingerprint,
   computeSchemaFingerprint,
   manifestTableEntries,

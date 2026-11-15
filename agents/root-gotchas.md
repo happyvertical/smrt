@@ -27,6 +27,11 @@ use named `$props()` interfaces to avoid recursive inline intersections.
   (`--prune` drops fixed entries).
 - `pnpm lint` also runs `scripts/check-hand-written-ddl.mjs` (#4930): a new
   hand-written `CREATE`/`ALTER`/`DROP TABLE` in `packages/*/src` outside the
-  migrator, the schema code and core's `system/` tables fails, naming file and
-  line. Existing ones sit in `scripts/hand-written-ddl-baseline.json`, which
-  only shrinks (`--prune`). Declare the shape on a model instead.
+  migrator, the schema code, core's `system/` tables and the code that builds
+  a database it declares runtime-managed (the allow-list of
+  `scripts/check-runtime-managed-databases.mjs`, today the app-shell engine)
+  fails, naming file and line. Existing ones sit in
+  `scripts/hand-written-ddl-baseline.json`, which only shrinks (`--prune`).
+  Declare the shape on a model instead.
+- `pnpm lint` also runs `scripts/check-runtime-managed-databases.mjs` (#4927):
+  only its allow-list may call `declareRuntimeManagedDatabase`.

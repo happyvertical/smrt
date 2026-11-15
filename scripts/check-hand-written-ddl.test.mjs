@@ -159,3 +159,21 @@ test('the repository passes its own check', () => {
   const out = spawnSync(process.execPath, [script], { encoding: 'utf8' });
   assert.equal(out.status, 0, out.stderr);
 });
+
+test('the code that builds a declared runtime-managed database is exempt, and only that file', () => {
+  const root = repo(
+    {
+      'packages/app-shell/src/engine/app-runtime.ts': SQL,
+      'packages/app-shell/src/engine/other.ts': SQL,
+    },
+    {},
+  );
+  try {
+    const out = run(root);
+    assert.equal(out.status, 1);
+    assert.doesNotMatch(out.stderr, /engine\/app-runtime\.ts/);
+    assert.match(out.stderr, /packages\/app-shell\/src\/engine\/other\.ts:\d+ hand-written CREATE TABLE widgets/);
+  } finally {
+    cleanup(root);
+  }
+});

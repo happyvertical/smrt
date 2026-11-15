@@ -290,3 +290,21 @@ it('refuses malformed proposal projections before showing approval', () => {
     expect(validReportProposal(value)).toBe(false);
   }
 });
+
+describe('host report display', () => {
+  it('uses host labels and safe record links while keeping raw ids', () => {
+    const linked = { ...result, chart: { type: 'table' as const } };
+    const dimension = linked.columns.find((c) => c.role === 'dimension')!;
+    render(ReportResult, {
+      result: linked,
+      formatCell: (value, column) =>
+        column.id === dimension.id ? 'Acme Ltd' : String(value),
+      cellHref: (column) =>
+        column.id === dimension.id ? '/m/Customer/acme' : 'javascript:alert(1)',
+    });
+    expect(
+      screen.getAllByRole('link', { name: 'Acme Ltd' })[0].getAttribute('href'),
+    ).toBe('/m/Customer/acme');
+    expect(document.querySelector('[href^="javascript:"]')).toBeNull();
+  });
+});

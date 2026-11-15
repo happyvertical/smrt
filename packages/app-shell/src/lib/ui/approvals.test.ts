@@ -24,7 +24,7 @@ describe('approval descriptions', () => {
         preview: { model: 'Chore', field: 'notes', valuesArchived: 1 },
       }),
     );
-    expect(d.lines.join(' ')).toContain('Chore.notes');
+    expect(d.lines.join(' ')).toContain('Notes from Chore');
     expect(d.lines.join(' ')).toContain('1 stored value will be archived');
     expect(d.destructive).toBe(false);
   });
@@ -60,7 +60,7 @@ describe('approval descriptions', () => {
       }),
     );
     expect(d.blocks).toEqual([
-      { title: 'Chore.complete()', code: 'return 1;' },
+      { title: 'Complete in Chore', code: 'return 1;' },
     ]);
   });
 
@@ -92,7 +92,7 @@ describe('approval descriptions', () => {
     );
     expect(d.lines.join(' ')).toContain('2 code methods');
     expect(d.blocks.map((b) => b.code)).toEqual(['return 1;', 'return 2;']);
-    expect(d.blocks[0].title).toContain('Chore.done()');
+    expect(d.blocks[0].title).toContain('Done in Chore');
   });
 
   it('describes an undo that overwrites newer values', () => {
@@ -101,14 +101,22 @@ describe('approval descriptions', () => {
         action: { kind: 'command', command: { type: 'undo', version: 3 } },
         preview: {
           version: 3,
-          fields: [{ model: 'Chore', field: 'points', rows: 2 }],
+          undoKinds: [
+            {
+              kind: 'convertColumn',
+              modelLabel: 'Chores',
+              fieldLabel: 'Points',
+            },
+          ],
           replaced: 2,
         },
       }),
     );
-    expect(d.lines.join(' ')).toContain('Chore.points');
-    expect(d.lines.join(' ')).toContain('2 records changed since');
-    expect(d.destructive).toBe(true);
+    expect(d.lines.join(' ')).toContain('Points in Chores');
+    expect(d.lines.join(' ')).toContain(
+      'Values written since the type change can be overwritten',
+    );
+    expect(d.destructive).toBe(false);
   });
 
   it('flags cleanUp and deletes as permanent', () => {
@@ -141,3 +149,64 @@ describe('approval descriptions', () => {
     expect(failureText(view({ status: 'approved' }))).toBeNull();
   });
 });
+
+for (const [type, preview, expected] of [
+  [
+    'mergeRecords',
+    {
+      modelLabel: 'Customers',
+      keepLabel: 'Acme',
+      removed: 2,
+      references: { Order: 3 },
+      referenceLabels: { Order: 'Orders' },
+    },
+    ['2 records in Customers', '3 references in Orders'],
+  ],
+  [
+    'extractModel',
+    {
+      modelLabel: 'Orders',
+      fieldLabel: 'Customer name',
+      intoLabel: 'Customers',
+      rows: 4,
+      create: 2,
+      matched: 1,
+      distinct: 3,
+      folded: 1,
+    },
+    [
+      'Customer name',
+      '4 records',
+      '2 linked records created',
+      '1 existing record matched',
+    ],
+  ],
+  [
+    'loadRecords',
+    { modelLabel: 'Orders', insert: 1, update: 2, unchanged: 3, rejected: 0 },
+    [
+      'Orders',
+      '1 inserted, 2 updated, 3 unchanged, 0 rejected',
+      'overwrite stored values',
+    ],
+  ],
+  [
+    'setCalculation',
+    {
+      modelLabel: 'Orders',
+      fieldLabel: 'Invoice total',
+      rows: 4,
+      withValue: 2,
+    },
+    ['Invoice total', '4 records', '2 stored values will be overwritten'],
+  ],
+] as const) {
+  it(`explains ${type} using reviewed counts and human labels`, () => {
+    const description = describeApproval(
+      view({ action: { kind: 'command', command: { type } }, preview }),
+    );
+    for (const text of expected)
+      expect(description.lines.join(' ')).toContain(text);
+    expect(description.lines.join(' ')).toContain('Undo restores');
+  });
+}

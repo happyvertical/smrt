@@ -333,3 +333,11 @@ smrt-svelte dependency and receives no authority from widget options.
 `{ reportId, measure, dimension? }`; the authenticated server host supplies the
 loader's `reportPrincipal`. Static hosts render the Reports route unavailable.
 Rename, scheduling and manual report construction remain deferred.
+
+SQLite integer outputs travel from SQL to the runner as exact text, after
+numeric aggregation, filtering and sorting. Cell normalization returns safe
+JavaScript numbers and raises `RuntimeReportError` (`invalid_result`, with the
+output column id as `path`) for integers outside the exact range. This keeps
+the driver from rejecting the value before the report error can be classified.
+
+Generated-field aggregation parity uses the ordinary SQLite suite and `pnpm test:pglite` for in-process PostgreSQL through core's isolated SDK/PGlite fixture. Keep the optional peer outside the workspace, as main's core tests do.

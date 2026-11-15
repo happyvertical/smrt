@@ -1,7 +1,12 @@
 <script lang="ts">
 import { AssistantApprovalCard } from '@happyvertical/smrt-chat/svelte';
 import { Button } from '@happyvertical/smrt-ui';
-import { describeApproval, failureText, statusLabel } from '$lib/ui/approvals';
+import {
+  approvalHeading,
+  describeApproval,
+  failureText,
+  statusLabel,
+} from '$lib/ui/approvals';
 import {
   authorName,
   fullTime,
@@ -42,14 +47,20 @@ const badge = $derived(
 </script>
 
 <AssistantApprovalCard presentation={{
-  id: approval.id, summary: approval.summary,
+  id: approval.id, summary: approvalHeading(approval),
   statusLabel: statusLabel(approval.status), badgeClass: badge,
-  pending, busy, message, ondecide, busyLabel: 'Working…', headingSize: '1.0625rem',
+  pending: pending && !description.refusal, busy, message, ondecide, busyLabel: 'Working…', headingSize: '1.0625rem',
 }}>
 {#snippet detail()}
   {#each description.lines as line, i (i)}
     <p class:smrt-approval-card__warn={description.destructive && i === description.lines.length - 1}>{line}</p>
   {/each}
+
+  {#if description.keptLabel}<p>Kept record:</p><p class="smrt-approval-card__record" title={description.keptLabel}>{description.keptLabel.length > 90 ? `${description.keptLabel.slice(0, 89)}…` : description.keptLabel}</p>{/if}
+  {#if description.labels?.length}
+    <p>Records removed:</p>
+    <ul>{#each description.labels as label}<li class="smrt-approval-card__record" title={label}>{label.length > 90 ? `${label.slice(0, 89)}…` : label}</li>{/each}</ul>
+  {/if}
 
   {#each description.blocks as block, i (i)}
     <p class="smrt-app-shell__muted" id="{uid}-code-{i}">Code for {block.title}</p>
@@ -69,6 +80,9 @@ const badge = $derived(
         {' by '}{authorName(approval.decidedBy, owner)}{/if}{/if}
   </p>
 
+  {#if pending && description.refusal && ondecide}
+    <Button variant="secondary" disabled={busy} aria-label={`Deny: ${approvalHeading(approval)}`} onclick={() => ondecide?.(false)}>Deny</Button>
+  {/if}
   {#if failed}<p class="smrt-app-shell__alert smrt-app-shell__alert-error">{failed}</p>{/if}
   {#if approval.status === 'failed' && approval.action?.kind === 'publish-draft'}
     <Button variant="secondary" href="/draft/review">Review again</Button>
@@ -80,6 +94,12 @@ const badge = $derived(
 @layer smrt.reset, smrt.structure, smrt.theme;
 
 @layer smrt.structure {
+  .smrt-approval-card__record {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   p {
     margin: var(--smrt-spacing-sm, 0.5rem) 0;
   }

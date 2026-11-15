@@ -5,12 +5,18 @@
 // the request. There is no default. On the LIVE copy a risky change becomes an
 // Approval; on the DRAFT copy the draft host approves its own risky changes
 // (`autoApprove`, engine-enforced to draft hosts only), so none is asked.
+
+import { routeFor, toolNamesFor } from '../../engine/definition.ts';
 import {
+  type AppHost,
   ApprovalRequiredError,
   type Command,
   EngineError,
   isStructuralCommand,
 } from '../../engine/index.ts';
+import { commandSummary } from '../ui/command-summary.ts';
+import { fieldLabel, humanize } from '../ui/fields.ts';
+import type { RecordRow } from '../ui/types.ts';
 import {
   type ApprovalAction,
   type PendingApproval,
@@ -21,6 +27,25 @@ import { type PublicExecuteResult, publicChangeResult } from './results.ts';
 import type { Target } from './target.ts';
 
 export type BuilderResult = PublicExecuteResult | PendingApproval;
+
+/** Owner-facing delete details, separate from executable model keys and record ids. */
+async function recordPreview(host: AppHost, model: string, id?: string) {
+  const definition = host.def.models[model];
+  const record = id ? await host.get(model, id) : undefined;
+  const title =
+    definition?.titleField ??
+    Object.entries(definition?.fields ?? {}).find(
+      ([, f]) => !f.hidden && f.type === 'text',
+    )?.[0];
+  const label = title ? record?.[title] : undefined;
+  return {
+    modelLabel: definition?.label ?? humanize(model),
+    recordLabel:
+      label == null || String(label).trim() === ''
+        ? 'the selected record'
+        : String(label),
+  };
+}
 
 /** The refusal for a structural request that names the live copy while a draft is open. */
 async function refuseLiveStructure(): Promise<never> {
@@ -46,6 +71,12 @@ export async function runCommand(
     return publicChangeResult(await host.execute(command, { author }));
   } catch (e) {
     if (e instanceof ApprovalRequiredError) {
+      // A known conflict is a refusal, not a decision the owner can approve.
+      if (
+        (command.type === 'undo' || command.type === 'undoTo') &&
+        typeof e.plan.preview?.refusal === 'string'
+      )
+        throw new EngineError(e.plan.preview.refusal, 'refused');
       // Only the live host asks (the draft's autoApprove never throws this).
       // An undo is approved for the version it was planned against: if the app
       // moves on first, approving it must not undo something else.
@@ -60,9 +91,106 @@ export async function runCommand(
           version: command.version,
           from: host.version,
         };
+      const description = host.describe();
+      const model =
+        'model' in command && Object.hasOwn(description.models, command.model)
+          ? description.models[command.model]
+          : undefined;
+      const field =
+        model &&
+        'field' in command &&
+        Object.hasOwn(model.fields, command.field)
+          ? model.fields[command.field]
+          : undefined;
+      const keep =
+        command.type === 'mergeRecords'
+          ? await host.get(command.model, command.keep)
+          : undefined;
+      const labelFor = (record: RecordRow | undefined) => {
+        if (!record || !model) return 'the selected record';
+        const title =
+          host.def.models['model' in command ? command.model : '']
+            ?.titleField ??
+          Object.entries(model.fields).find(
+            ([, f]) => !f.hidden && f.type === 'text',
+          )?.[0];
+        const value = title ? record[title] : undefined;
+        return value == null || String(value).trim() === ''
+          ? 'the selected record'
+          : String(value);
+      };
+      const removedLabels =
+        command.type === 'mergeRecords'
+          ? await Promise.all(
+              command.merge
+                .slice(0, 10)
+                .map(async (id) =>
+                  labelFor(
+                    (await host.get(command.model, id)) as
+                      | RecordRow
+                      | undefined,
+                  ),
+                ),
+            )
+          : [];
+      const preview = {
+        ...e.plan.preview,
+        ...(command.type === 'importTemplate'
+          ? {
+              modelLabels: Object.fromEntries(
+                Object.entries(command.data.definition.models).map(
+                  ([name, md]) => [name, md.label ?? humanize(name)],
+                ),
+              ),
+            }
+          : {}),
+        ...(model
+          ? {
+              modelLabel:
+                model.label ?? ('model' in command ? command.model : ''),
+            }
+          : {}),
+        ...(field && 'field' in command
+          ? { fieldLabel: fieldLabel(command.field, field) }
+          : {}),
+        ...(keep && model
+          ? {
+              keepLabel: labelFor(keep as RecordRow),
+              removedLabels,
+            }
+          : {}),
+        ...(command.type === 'extractModel'
+          ? {
+              intoLabel: Object.hasOwn(description.models, command.into)
+                ? (description.models[command.into].label ?? command.into)
+                : command.into,
+            }
+          : {}),
+        ...(command.type === 'setCalculation' && model
+          ? { fields: model.fields }
+          : {}),
+        ...(command.type === 'mergeRecords'
+          ? {
+              referenceLabels: Object.fromEntries(
+                Object.keys(
+                  (e.plan.preview?.references ?? {}) as Record<string, unknown>,
+                )
+                  .filter((name) => Object.hasOwn(description.models, name))
+                  .map((name) => [
+                    name,
+                    description.models[name].label ?? name,
+                  ]),
+              ),
+            }
+          : {}),
+      };
       return requestApproval(
-        { kind: 'command', command: pinned },
-        e.plan,
+        { kind: 'command', command: pinned, reviewedPreview: e.plan.preview },
+        {
+          ...e.plan,
+          summary: commandSummary(command, host.def, undefined, preview),
+          preview,
+        },
         author,
       );
     }
@@ -81,8 +209,27 @@ export async function runAppTool(
   try {
     return await host.callAppTool(name, args);
   } catch (e) {
-    if (e instanceof ApprovalRequiredError)
-      return requestApproval({ kind: 'tool', name, args }, e.plan, author);
+    if (e instanceof ApprovalRequiredError) {
+      const model = Object.entries(host.def.models).find(([model, md]) =>
+        toolNamesFor(model, md).includes(name),
+      )?.[0];
+      const details = model
+        ? await recordPreview(
+            host,
+            model,
+            typeof args.id === 'string' ? args.id : undefined,
+          )
+        : {};
+      return requestApproval(
+        { kind: 'tool', name, args },
+        {
+          ...e.plan,
+          summary: `Delete record${'modelLabel' in details ? ` in ${details.modelLabel}` : ''}`,
+          preview: { ...e.plan.preview, ...details },
+        },
+        author,
+      );
+    }
     throw e;
   }
 }
@@ -104,7 +251,26 @@ export async function runRest(
         url: req.url,
         ...(req.body ? { body: req.body } : {}),
       };
-      return requestApproval(action, e.plan, author);
+      const route = req.url.split('?')[0].split('/');
+      const model = Object.entries(host.def.models).find(
+        ([name, md]) => routeFor(name, md) === route[2],
+      )?.[0];
+      const details = model
+        ? await recordPreview(
+            host,
+            model,
+            route[3] ? decodeURIComponent(route[3]) : undefined,
+          )
+        : {};
+      return requestApproval(
+        action,
+        {
+          ...e.plan,
+          summary: `Delete record${'modelLabel' in details ? ` in ${details.modelLabel}` : ''}`,
+          preview: { ...e.plan.preview, ...details },
+        },
+        author,
+      );
     }
     throw e;
   }
@@ -135,9 +301,9 @@ export async function requestRecordDelete(
   return requestApproval(
     { kind: 'record-delete', model, id },
     {
-      summary: `Delete ${model} record ${id}`,
+      summary: `Delete record in ${host.def.models[model]?.label ?? humanize(model)}`,
       risky: true,
-      preview: { model, id, record },
+      preview: { model, id, record, ...(await recordPreview(host, model, id)) },
     },
     author,
   );
