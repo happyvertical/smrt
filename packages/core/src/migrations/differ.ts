@@ -99,7 +99,7 @@ import {
   planDuckDbTableChanges,
 } from './duckdb-rebuild.js';
 import { resolveRetirementContext } from './retire-context.js';
-import { planTableRetirements } from './retire-plan.js';
+import { planTableRetirements, retireTypeEquivalence } from './retire-plan.js';
 import {
   planSqliteTableRebuildsWithConstraints,
   sqliteBackfillPlaceholderSql,
@@ -333,6 +333,13 @@ export interface DiffOptions {
    * Without it nothing is retired: only a declared table is ever dropped.
    */
   retireDeclaredTables?: boolean;
+  /**
+   * @internal The retire step's own definition comparison (#5005) sets it,
+   * nothing else: types are normalized with {@link retireTypeEquivalence}
+   * as well, so a live SQLite column declared `INT4` matches a retired
+   * definition's INTEGER. The ordinary migrate never sets it.
+   */
+  retireComparison?: boolean;
 }
 
 /**
@@ -946,6 +953,7 @@ export class SchemaComparer {
           compareDefinition: (table, schema) =>
             new SchemaComparer(this.db, {
               engineHint: this.engine,
+              retireComparison: true,
               postgresTimestampMigration:
                 this.options.postgresTimestampMigration,
               emptyTextAsNull: this.options.emptyTextAsNull,
@@ -5850,13 +5858,14 @@ export class SchemaComparer {
       .trim()
       .replace(/\(\s*\d+\s*\)/g, '');
 
-    // Integer types (INT2/INT4/INT8 as SQLite reports a column declared so;
-    // they have its INTEGER affinity, #5005)
-    if (
-      /^(INTEGER|INT|BIGINT|SMALLINT|TINYINT|MEDIUMINT|INT2|INT4|INT8)$/i.test(
-        upper,
-      )
-    ) {
+    // The retire step's comparison only, never the ordinary migrate (#5005).
+    const retireEquivalent = this.options.retireComparison
+      ? retireTypeEquivalence(this.engine, upper)
+      : undefined;
+    if (retireEquivalent) return retireEquivalent;
+
+    // Integer types
+    if (/^(INTEGER|INT|BIGINT|SMALLINT|TINYINT)$/i.test(upper)) {
       return 'INTEGER';
     }
 

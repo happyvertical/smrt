@@ -24,7 +24,9 @@
  *    its columns (read from the catalog as well, so no live column is
  *    skipped) and every type difference is one the ordinary migrate would
  *    converge without losing data (a live PostgreSQL `int4` declared
- *    INTEGER, `varchar(n)` declared TEXT, a uuid held as text). A difference
+ *    INTEGER, `varchar(n)` declared TEXT, a uuid held as text), and on
+ *    SQLite a column declared `INT4` and its kin (see
+ *    `retireTypeEquivalence`, which only this comparison applies). A difference
  *    the ordinary migrate would stop on (an incompatible type; a legacy
  *    PostgreSQL `timestamp` without `postgresTimestampMigration`) stays a
  *    mismatch. This proves the table, not just its name, and needs no
@@ -75,6 +77,26 @@ import {
   type RetiredTableDefinition,
 } from './retired-tables.js';
 import { readStoredRuntimeModelTables } from './stored-runtime-models.js';
+
+/**
+ * Type spellings the retire step's definition comparison treats as one type,
+ * beyond the ordinary migrate's own normalization: on SQLite a column
+ * declared `INT2`, `INT4`, `INT8` or `MEDIUMINT` reports that spelling and
+ * has INTEGER affinity, so it is the INTEGER a retired definition lists.
+ * Used only to decide whether the live table is the retired one (the
+ * differ's `retireComparison` option); the ordinary migrate does not apply
+ * it, so the same column on a model table is still its own finding.
+ * Returns the normalized type, or undefined when nothing applies.
+ */
+export function retireTypeEquivalence(
+  engine: DatabaseEngine,
+  normalizedUpper: string,
+): string | undefined {
+  if (engine !== 'sqlite') return undefined;
+  return /^(MEDIUMINT|INT2|INT4|INT8)$/.test(normalizedUpper)
+    ? 'INTEGER'
+    : undefined;
+}
 
 /** The PostgreSQL schema the migrator reads and writes. */
 export const RETIRE_POSTGRES_SCHEMA = 'public';
