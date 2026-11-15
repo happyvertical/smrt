@@ -1,0 +1,8 @@
+{
+  "capturedFrom": "migrateSmrtSchemas on an empty database",
+  "engine": "postgres",
+  "format": 1,
+  "modelTables": [],
+  "release": "0.61.3",
+  "tables": {}
+}
