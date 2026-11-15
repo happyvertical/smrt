@@ -73,7 +73,7 @@ services:
       database:
         condition: service_healthy
   database:
-    image: postgres:18-alpine@sha256:6c538e7206ea40ff740ef27883529390a690b6ead6ba96b44c67a9f7c638e8fd
+    image: postgres:18-alpine@sha256:1018733457011bf88d81db98cf43aac6d5150afc18787dbe204771fedf80ff95
     environment:
       POSTGRES_DB: smrt_app
       POSTGRES_USER: smrt_app
