@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.61.2
+
+### Patch Changes
+
+- ### Features
+  
+  - export hostname parsing and zone-membership helpers (#5007) (sites)
+  - engine calculated fields, reports and reversible data commands (#4988) (app-shell)
+- @happyvertical/smrt-config@0.61.2
+  - @happyvertical/smrt-scanner@0.61.2
+  - @happyvertical/smrt-types@0.61.2
+
 ## 0.61.1
 
 ### Patch Changes

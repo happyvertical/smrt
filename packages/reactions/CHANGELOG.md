@@ -1,5 +1,14 @@
 # @happyvertical/smrt-reactions
 
+## 0.61.2
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.61.2
+  - @happyvertical/smrt-comments@0.61.2
+  - @happyvertical/smrt-tenancy@0.61.2
+
 ## 0.61.1
 
 ### Patch Changes
