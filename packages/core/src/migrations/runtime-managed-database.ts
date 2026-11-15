@@ -1,4 +1,8 @@
+import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { getVerificationKey } from '../table-cache.js';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Who builds a runtime-managed database's schema, and why core's migrate does
@@ -32,6 +36,22 @@ const declaredClients = new WeakMap<
   RuntimeManagedDatabaseDeclaration
 >();
 
+/**
+ * What identifies the database in the log: the key the startup check already
+ * uses (id, file path, or connection URL). A URL loses its credentials and
+ * query string.
+ */
+function describeDatabase(db: DatabaseInterface): string {
+  const key = getVerificationKey(db);
+  if (!key.includes('://')) return key;
+  try {
+    const url = new URL(key);
+    return `${url.protocol}//${url.host}${url.pathname}`;
+  } catch {
+    return '(unparseable connection URL)';
+  }
+}
+
 function clientOf(db: DatabaseInterface): object | undefined {
   const client = (db as { client?: unknown }).client;
   return client && typeof client === 'object' ? client : undefined;
@@ -44,9 +64,12 @@ function clientOf(db: DatabaseInterface): object | undefined {
  * the build's stamp. Everything else still applies to the handle: collections
  * still verify that each table exists.
  *
- * Call it once, where the handle is opened. Callers are limited to an
- * allow-list (`scripts/check-runtime-managed-databases.mjs`); a new caller is
- * added there on purpose.
+ * Call it once, where the handle is opened. Inside this repository, callers
+ * are limited to an allow-list (`scripts/check-runtime-managed-databases.mjs`);
+ * that check cannot see other repositories, so outside it the declaration is
+ * the app author's own choice. For that reason the first declaration of each
+ * handle is logged at `info` (owner, reason, database), and the function is
+ * exported from `@happyvertical/smrt-core/migrations` only.
  */
 export function declareRuntimeManagedDatabase(
   db: DatabaseInterface,
@@ -63,6 +86,11 @@ export function declareRuntimeManagedDatabase(
       'declareRuntimeManagedDatabase needs an owner and a reason',
     );
   const record = Object.freeze({ owner, reason });
+  if (!declaredHandles.has(db))
+    logger.info(
+      `Runtime-managed database declared: owner ${owner}; reason: ${reason}; database ${describeDatabase(db)}. ` +
+        "Core's migrate-record and build-stamp check is skipped for this handle.",
+    );
   declaredHandles.set(db, record);
   const client = clientOf(db);
   if (client) declaredClients.set(client, record);

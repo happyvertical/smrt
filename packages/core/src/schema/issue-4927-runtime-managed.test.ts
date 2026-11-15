@@ -3,7 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as browserEntry from '../browser.js';
+import * as rootEntry from '../index.js';
 import { registerBuildSchema } from '../migrations/build-schema.js';
+import * as migrationsEntry from '../migrations/index.js';
 import {
   declareRuntimeManagedDatabase,
   runtimeManagedDatabaseDeclaration,
@@ -117,5 +120,70 @@ describe('runtime-managed databases and the startup check (#4927)', () => {
       declareRuntimeManagedDatabase(db, { owner: 'x', reason: '  ' }),
     ).toThrow(TypeError);
     expect(runtimeManagedDatabaseDeclaration(db)).toBeUndefined();
+  });
+
+  it('logs each declaration once per handle, naming owner, reason and database', async () => {
+    const logs: string[] = [];
+    const spies = (['info', 'warn', 'log', 'debug', 'error'] as const).map(
+      (m) =>
+        vi.spyOn(console, m).mockImplementation((...a: unknown[]) => {
+          logs.push(a.map(String).join(' '));
+        }),
+    );
+    try {
+      const db = await open(file);
+      handles.push(db);
+      declareRuntimeManagedDatabase(db, DECLARATION);
+      declareRuntimeManagedDatabase(db, DECLARATION);
+      await assertDatabaseMigratedForBuild(db);
+      await assertDatabaseMigratedForBuild(db);
+      const mine = logs.filter((l) => /runtime-managed/i.test(l));
+      expect(mine).toHaveLength(1);
+      expect(mine[0]).toContain(DECLARATION.owner);
+      expect(mine[0]).toContain(DECLARATION.reason);
+      expect(mine[0]).toContain(file);
+      const other = await open(join(dir, 'other.db'));
+      handles.push(other);
+      declareRuntimeManagedDatabase(other, DECLARATION);
+      expect(logs.filter((l) => /runtime-managed/i.test(l))).toHaveLength(2);
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+
+  it('does not put credentials from a connection URL in the log', async () => {
+    const logs: string[] = [];
+    const spies = (['info', 'warn', 'log', 'debug', 'error'] as const).map(
+      (m) =>
+        vi.spyOn(console, m).mockImplementation((...a: unknown[]) => {
+          logs.push(a.map(String).join(' '));
+        }),
+    );
+    try {
+      const db = await open(file);
+      handles.push(db);
+      (db as { url?: string }).url =
+        'postgres://admin:s3cret@db.example.com:5432/app?password=s3cret';
+      declareRuntimeManagedDatabase(db, DECLARATION);
+      const text = logs.join('\n');
+      expect(text).toContain('db.example.com');
+      expect(text).not.toContain('s3cret');
+      expect(text).not.toContain('admin');
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+
+  it('is exported from the migrations entry only', () => {
+    for (const entry of [rootEntry, browserEntry] as Record<
+      string,
+      unknown
+    >[]) {
+      expect(entry.declareRuntimeManagedDatabase).toBeUndefined();
+      expect(entry.runtimeManagedDatabaseDeclaration).toBeUndefined();
+    }
+    expect(typeof migrationsEntry.declareRuntimeManagedDatabase).toBe(
+      'function',
+    );
   });
 });

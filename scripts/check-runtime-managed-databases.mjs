@@ -25,12 +25,10 @@ export const ALLOWED_CALLERS = {
     "The app-shell engine opens each app's app.db here (live, drafts, publish rehearsal, the read-only report worker) and builds its schema from the app definition; core's migrate never runs against it.",
 };
 
-/** Core's definition and its re-exports; these name the API without using it. */
+/** Core's definition and its one re-export (the `/migrations` subpath); these name the API without using it. */
 export const DEFINITION_FILES = new Set([
   'packages/core/src/migrations/runtime-managed-database.ts',
   'packages/core/src/migrations/index.ts',
-  'packages/core/src/index.ts',
-  'packages/core/src/browser.ts',
 ]);
 
 const NAME = 'declareRuntimeManagedDatabase';

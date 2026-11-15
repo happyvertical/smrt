@@ -6,7 +6,6 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import {
-  declareRuntimeManagedDatabase,
   ObjectRegistry,
   planRuntimeModelDDL,
   registerRuntimeModel,
@@ -14,6 +13,7 @@ import {
 } from '@happyvertical/smrt-core';
 import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
 import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
+import { declareRuntimeManagedDatabase } from '@happyvertical/smrt-core/migrations';
 import type { RuntimeReportSpec } from '@happyvertical/smrt-reports';
 import { getDatabase } from '@happyvertical/sql';
 import {
