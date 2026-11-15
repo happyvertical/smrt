@@ -1,5 +1,8 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "cacheMaxAge": "14d",
+  "cacheMaxSize": "10GB",
+  "concurrency": "4",
   "globalDependencies": [
     "pnpm-lock.yaml",
     "tsconfig*.json",
