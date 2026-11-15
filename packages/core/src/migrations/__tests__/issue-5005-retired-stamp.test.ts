@@ -60,10 +60,12 @@ function build(retire: boolean): SmartObjectManifest {
                     since: '1.0.0',
                     reason: 'Folded into orders.',
                     rows: 'discard',
-                    definition: {
-                      release: '0.9.0',
-                      columns: { id: { type: 'TEXT' } },
-                    },
+                    definitions: [
+                      {
+                        release: '0.9.0',
+                        columns: { id: { type: 'TEXT' } },
+                      },
+                    ],
                   },
                 ],
               },
@@ -199,10 +201,12 @@ describe('a build whose only change is a retirement (#5005)', () => {
     // The build: two packages, each retiring its own table.
     const OTHER = '@r5005/billing';
     const next = build(true);
-    const definition = {
-      release: '0.9.0',
-      columns: { id: { type: 'TEXT' as const } },
-    };
+    const definitions = [
+      {
+        release: '0.9.0',
+        columns: { id: { type: 'TEXT' as const } },
+      },
+    ];
     const app = {
       ...next,
       packageName: 'r5005-app',
@@ -215,7 +219,7 @@ describe('a build whose only change is a retirement (#5005)', () => {
           since: '1.0.0',
           reason: 'Moved to the ledger.',
           rows: 'discard' as const,
-          definition,
+          definitions,
           packageName: OTHER,
         },
       ],
@@ -233,7 +237,7 @@ describe('a build whose only change is a retirement (#5005)', () => {
           since: '1.0.0',
           reason: 'Loaded at run time only.',
           rows: 'discard',
-          definition,
+          definitions,
           packageName: '@r5005/runtime-only',
         },
       ],

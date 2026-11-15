@@ -28,10 +28,12 @@ const entry = (extra: Record<string, unknown> = {}) => ({
   since: '1.4.0',
   reason: 'Drafts are kept on the order itself.',
   rows: 'discard' as const,
-  definition: {
-    release: '1.3.2',
-    columns: { id: { type: 'UUID' as const, referenceKind: 'id' as const } },
-  },
+  definitions: [
+    {
+      release: '1.3.2',
+      columns: { id: { type: 'UUID' as const, referenceKind: 'id' as const } },
+    },
+  ],
   ...extra,
 });
 const packageJson = (...list: unknown[]) => ({
@@ -80,32 +82,52 @@ describe('the retired-table declaration (#5005)', () => {
       /only smrt's own packages/,
     ],
     [
-      'no definition',
-      { definition: undefined },
+      'no definitions',
+      { definitions: undefined },
       /retired-table-facts\.mjs definition/,
+    ],
+    ['an empty list of definitions', { definitions: [] }, /"definitions"/],
+    [
+      'the old single definition',
+      { definition: { release: '1.3.2', columns: { id: { type: 'UUID' } } } },
+      /unknown key\(s\) definition/,
     ],
     [
       'a definition without columns',
-      { definition: { release: '1.3.2', columns: {} } },
-      /"definition.columns"/,
+      { definitions: [{ release: '1.3.2', columns: {} }] },
+      /definition of release 1\.3\.2 must list/,
     ],
     [
       'a definition with an unknown type',
       {
-        definition: { release: '1.3.2', columns: { id: { type: 'VARCHAR' } } },
+        definitions: [
+          { release: '1.3.2', columns: { id: { type: 'VARCHAR' } } },
+        ],
       },
-      /column id of "definition"/,
+      /column id of the definition of release 1\.3\.2/,
     ],
     [
       'a definition with an extra key',
       {
-        definition: {
-          release: '1.3.2',
-          columns: { id: { type: 'UUID' } },
-          hash: 'abc',
-        },
+        definitions: [
+          {
+            release: '1.3.2',
+            columns: { id: { type: 'UUID' } },
+            hash: 'abc',
+          },
+        ],
       },
       /unknown key\(s\) hash/,
+    ],
+    [
+      'two definitions of one release',
+      {
+        definitions: [
+          { release: '1.3.2', columns: { id: { type: 'UUID' } } },
+          { release: '1.3.2', columns: { id: { type: 'TEXT' } } },
+        ],
+      },
+      /lists release 1\.3\.2 twice/,
     ],
   ])('refuses %s, naming the table', (_name, bad, message) => {
     const attempt = () =>
@@ -202,6 +224,39 @@ describe('the build stamp covers the retired list (#5005)', () => {
         { ...entry({ table: 'a' }) } as never,
       ]).map((item) => item.table),
     ).toEqual(['a', 'z']);
+  });
+
+  it("covers every release's definition: the columns, not the release they came from", () => {
+    const older = {
+      release: '1.2.0',
+      columns: { id: { type: 'TEXT' as const } },
+    };
+    const both = [
+      {
+        ...entry({ definitions: [older, ...entry().definitions] }),
+        packageName: PKG,
+      },
+    ];
+    const stamped = computeSchemaFingerprint(tables, { retired: both });
+    // Another shape a database may hold changes what migrate drops.
+    expect(stamped).not.toBe(
+      computeSchemaFingerprint(tables, { retired: retired('discard') }),
+    );
+    expect(retiredTablesStampInput(both)[0].definitions).toHaveLength(2);
+    // The release a definition was read from is provenance.
+    expect(
+      computeSchemaFingerprint(tables, {
+        retired: [
+          {
+            ...both[0],
+            definitions: both[0].definitions.map((definition) => ({
+              ...definition,
+              release: `${definition.release}-rc.1`,
+            })),
+          },
+        ],
+      }),
+    ).toBe(stamped);
   });
 });
 

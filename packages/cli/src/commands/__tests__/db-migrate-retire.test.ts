@@ -121,10 +121,12 @@ describe('db:migrate retires declared tables (#5005)', () => {
           since: '1.2.0',
           reason: 'Drafts live on the order.',
           ...(rows ? { rows } : {}),
-          definition: {
-            release: '1.1.0',
-            columns: { id: { type: 'UUID', referenceKind: 'id' } },
-          },
+          definitions: [
+            {
+              release: '1.1.0',
+              columns: { id: { type: 'UUID', referenceKind: 'id' } },
+            },
+          ],
           packageName: PKG,
         },
       ],

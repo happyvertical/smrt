@@ -126,10 +126,12 @@ describe('doctor next migrate (#4934)', () => {
             since: '1.2.0',
             reason: 'Drafts live on the order.',
             ...(rows ? { rows } : {}),
-            definition: {
-              release: '1.1.0',
-              columns: { id: { type: 'TEXT' } },
-            },
+            definitions: [
+              {
+                release: '1.1.0',
+                columns: { id: { type: 'TEXT' } },
+              },
+            ],
             packageName: '@doctor/pkg',
           },
         ],

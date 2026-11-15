@@ -185,7 +185,12 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
   {
     reason:
       'Run-time model registration for a Node host (an app worker): registers into the process registry and plans DDL through the Node-only schema strategies (#4871)',
-    names: ['planRuntimeModelDDL', 'registerRuntimeModel', 'runtimeModelEntry'],
+    names: [
+      'RetiredTableInUseError',
+      'planRuntimeModelDDL',
+      'registerRuntimeModel',
+      'runtimeModelEntry',
+    ],
   },
   {
     reason:

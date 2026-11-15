@@ -28,17 +28,19 @@ function buildStart(plugin: Plugin): Promise<void> {
   );
 }
 
-const definition = {
-  release: '1.2.2',
-  columns: { id: { type: 'UUID', referenceKind: 'id' } },
-};
+const definitions = [
+  {
+    release: '1.2.2',
+    columns: { id: { type: 'UUID', referenceKind: 'id' } },
+  },
+];
 const entry = (packageName: string, table: string, extra = {}) => ({
   table,
   lastOwner: `${packageName}:Gone`,
   since: '1.2.3',
   reason: 'Folded into another table.',
   rows: 'discard',
-  definition,
+  definitions,
   packageName,
   ...extra,
 });
@@ -125,9 +127,9 @@ describe('smrtConsumer carries checked retirements (#5005)', () => {
       /belongs to another package/,
     ],
     [
-      'an entry without a definition',
-      entry('@test/pkg', 'pkg_forged', { definition: undefined }),
-      /"definition"/,
+      'an entry without definitions',
+      entry('@test/pkg', 'pkg_forged', { definitions: undefined }),
+      /"definitions"/,
     ],
     [
       'an app package retiring a smrt table',

@@ -17,10 +17,19 @@
  * 2. `table.retire-declared`: a model, a stored run-time model or smrt itself
  *    still declares the table.
  * 3. `table.retire-mismatch`: the live table is not the table the declaration
- *    describes. Its `definition` (the columns and types the owning model last
- *    declared) is compared with the live table by the differ, and any
- *    difference beyond the drift the differ already tolerates stops it. This
- *    proves the table, not just its name, and needs no migrate record.
+ *    describes. Each of its `definitions` (the columns and types the owning
+ *    model declared, one per supported release) is compared with the live
+ *    table by the differ, with the run's own options; the table matches when
+ *    one of them does. A definition matches when the live table has exactly
+ *    its columns (read from the catalog as well, so no live column is
+ *    skipped) and every type difference is one the ordinary migrate would
+ *    converge without losing data (a live PostgreSQL `int4` declared
+ *    INTEGER, `varchar(n)` declared TEXT, a uuid held as text). A difference
+ *    the ordinary migrate would stop on (an incompatible type; a legacy
+ *    PostgreSQL `timestamp` without `postgresTimestampMigration`) stays a
+ *    mismatch. This proves the table, not just its name, and needs no
+ *    migrate record. The check is about identity, not convergence: a missing
+ *    or extra column is a mismatch, a convertible type is not.
  * 4. `table.retire-rows`: the table holds rows and a declaration does not say
  *    `rows: 'discard'`.
  * 5. `table.retire-dependent`: something undeclared depends on it. One stop
@@ -39,7 +48,10 @@
  * schema, the one the differ reads live tables from, whatever the
  * `search_path`.
  *
- * A table that is not live is nothing to do, so the step is idempotent. Only a
+ * A table that is not live is nothing to do, so the step is idempotent; one
+ * another run drops while this one plans or applies is nothing to do as well
+ * (the row count re-reads the catalog, the batch's lock and row check
+ * tolerate it). Only a
  * declared table is ever considered; nothing here reads orphans. Reads are
  * SELECT-only; the statements run inside the migrate run's one atomic batch.
  */
@@ -51,8 +63,12 @@ import {
   quoteStringLiteral,
 } from '../schema/sql-identifiers.js';
 import type { SchemaChange, SchemaDefinition } from '../schema/types.js';
-import { classifySchemaChange } from './change-kinds.js';
-import { retireRowsGuardSql } from './retire-guard.js';
+import { decideSchemaChange } from './change-kinds.js';
+import {
+  duckdbTableMatch,
+  retireLockSql,
+  retireRowsGuardSql,
+} from './retire-guard.js';
 import {
   parseCarriedRetiredTable,
   type RetiredTable,
@@ -92,7 +108,9 @@ export interface PlanTableRetirementsOptions extends RetirementContext {
   liveTables: ReadonlySet<string>;
   /**
    * The differ's comparison of a declared table with the live one, as for a
-   * model table. Its changes are the drift beyond what it tolerates.
+   * model table, with the run's own options (`postgresTimestampMigration`,
+   * `emptyTextAsNull`, `relaxColumns`). Its changes are the drift beyond what
+   * it tolerates.
    */
   compareDefinition: (
     table: string,
@@ -133,17 +151,87 @@ function qualified(engine: DatabaseEngine, table: string): string {
     : quoteIdentifier(table);
 }
 
+interface RowCount {
+  /** Visible rows, or null when they could not be counted. */
+  rows: number | null;
+  /** DuckDB only: committed rows in storage (`estimated_size`). */
+  physical?: number;
+}
+
 async function countRows(
   db: DatabaseInterface,
   engine: DatabaseEngine,
   table: string,
-): Promise<number | null> {
+): Promise<RowCount> {
   try {
     const rows = rowsOf(
       await db.query(`SELECT COUNT(*) AS n FROM ${qualified(engine, table)}`),
     );
     const n = Number(String(rows[0]?.n ?? rows[0]?.count));
-    return Number.isFinite(n) ? n : null;
+    if (!Number.isFinite(n)) return { rows: null };
+    if (engine !== 'duckdb') return { rows: n };
+    // DuckDB's in-batch check compares storage growth with this (see
+    // retire-guard.ts): it is read after the count, so a row written in
+    // between is either counted here or seen as growth in the batch.
+    const physical = Number(
+      String(
+        rowsOf(
+          await db.query(
+            `SELECT estimated_size AS e FROM duckdb_tables() WHERE ${duckdbTableMatch(table)}`,
+          ),
+        )[0]?.e,
+      ),
+    );
+    return Number.isFinite(physical) ? { rows: n, physical } : { rows: null };
+  } catch {
+    return { rows: null };
+  }
+}
+
+/** Whether `table` is still live: another run may drop it meanwhile. */
+async function isLive(
+  db: DatabaseInterface,
+  engine: DatabaseEngine,
+  table: string,
+): Promise<boolean> {
+  const literal = quoteStringLiteral(table);
+  const sql =
+    engine === 'postgres'
+      ? `SELECT 1 AS live FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = ${quoteStringLiteral(RETIRE_POSTGRES_SCHEMA)} AND c.relname = ${literal} AND c.relkind IN ('r', 'p')`
+      : engine === 'duckdb'
+        ? `SELECT 1 AS live FROM duckdb_tables() WHERE ${duckdbTableMatch(table)}`
+        : `SELECT 1 AS live FROM sqlite_master WHERE type = 'table' AND lower(name) = lower(${literal})`;
+  try {
+    return rowsOf(await db.query(sql)).length > 0;
+  } catch {
+    // Unknown is live: the caller then stops instead of skipping.
+    return true;
+  }
+}
+
+/**
+ * Every live column of `table`, from the catalog: generated and hidden
+ * columns included, which a table schema read may leave out. Null when the
+ * catalog cannot be read.
+ */
+async function readLiveColumnNames(
+  db: DatabaseInterface,
+  engine: DatabaseEngine,
+  table: string,
+): Promise<Set<string> | null> {
+  const literal = quoteStringLiteral(table);
+  try {
+    if (engine === 'sqlite')
+      return new Set(
+        rowsOf(
+          await db.query(`PRAGMA table_xinfo(${quoteIdentifier(table)})`),
+        ).map((row) => text(row.name)),
+      );
+    const sql =
+      engine === 'postgres'
+        ? `SELECT a.attname AS name FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = ${quoteStringLiteral(RETIRE_POSTGRES_SCHEMA)} AND c.relname = ${literal} AND a.attnum > 0 AND NOT a.attisdropped`
+        : `SELECT column_name AS name FROM duckdb_columns() WHERE ${duckdbTableMatch(table)}`;
+    return new Set(rowsOf(await db.query(sql)).map((row) => text(row.name)));
   } catch {
     return null;
   }
@@ -416,7 +504,7 @@ function stop(item: Retiring, kind: StopKind, message: string): SchemaChange {
   };
 }
 
-/** The declared definition as a table the differ can compare. */
+/** One release's definition as a table the differ can compare. */
 function definitionSchema(
   table: string,
   definition: RetiredTableDefinition,
@@ -443,12 +531,26 @@ function definitionSchema(
 }
 
 /**
- * What the differ found between the declared columns and the live ones: a
- * missing or extra column, or a type it does not tolerate. Constraints,
- * defaults and indexes are not part of the definition and are ignored.
+ * What keeps the live table from being the one a definition describes: a
+ * missing or extra column (from the catalog, so none is skipped), or a type
+ * difference the ordinary migrate would stop on. A type difference it would
+ * converge without losing data, or only report, is the same table.
+ * Constraints, defaults and indexes are not part of the definition and are
+ * ignored.
  */
-function shapeDifferences(changes: readonly SchemaChange[]): string[] {
+function shapeDifferences(
+  engine: DatabaseEngine,
+  definition: RetiredTableDefinition,
+  live: ReadonlySet<string>,
+  changes: readonly SchemaChange[],
+): string[] {
   const out: string[] = [];
+  const declared = new Set(Object.keys(definition.columns));
+  for (const column of declared)
+    if (!live.has(column)) out.push(`column ${column} is missing`);
+  for (const column of live)
+    if (!declared.has(column))
+      out.push(`column ${column} is not in the definition`);
   for (const change of changes) {
     const column = change.name ?? '?';
     switch (change.type) {
@@ -460,12 +562,14 @@ function shapeDifferences(changes: readonly SchemaChange[]): string[] {
         out.push(`column ${column} is not in the definition`);
         break;
       case 'type_mismatch':
-      case 'type_upgrade':
-        if (classifySchemaChange(change) === 'type.noop') break;
+      case 'type_upgrade': {
+        const verdict = decideSchemaChange(change, engine);
+        if (verdict.decision !== 'stop') break;
         out.push(
-          `column ${column} is ${change.mismatch?.actual ?? 'another type'}, declared ${change.mismatch?.expected ?? 'otherwise'}`,
+          `column ${column} is ${change.mismatch?.actual ?? 'another type'}, declared ${change.mismatch?.expected ?? 'otherwise'}, which migrate would not convert (${verdict.kind})`,
         );
         break;
+      }
       case 'rename_data_pending':
         out.push(`column ${column} looks renamed`);
         break;
@@ -474,6 +578,57 @@ function shapeDifferences(changes: readonly SchemaChange[]): string[] {
     }
   }
   return [...new Set(out)].sort(byName);
+}
+
+/**
+ * Whether the live table is the one each declaration describes: undefined
+ * when every declaration has a definition it matches, `'gone'` when the table
+ * went away meanwhile, else the stop's message, naming every release tried.
+ */
+async function matchDefinitions(
+  options: PlanTableRetirementsOptions,
+  item: Retiring,
+): Promise<string | undefined | 'gone'> {
+  const { db, engine } = options;
+  const live = await readLiveColumnNames(db, engine, item.table);
+  if (live && live.size === 0 && !(await isLive(db, engine, item.table)))
+    return 'gone';
+  for (const entry of item.entries) {
+    const tried: string[] = [];
+    let matched = false;
+    for (const definition of entry.definitions) {
+      let differences: string[];
+      if (!live)
+        differences = [
+          "its columns could not be read from the engine's catalog",
+        ];
+      else
+        try {
+          differences = shapeDifferences(
+            engine,
+            definition,
+            live,
+            await options.compareDefinition(
+              item.table,
+              definitionSchema(item.table, definition),
+            ),
+          );
+        } catch (error) {
+          differences = [
+            `it could not be compared (${error instanceof Error ? error.message : String(error)})`,
+          ];
+        }
+      if (!differences.length) {
+        matched = true;
+        break;
+      }
+      tried.push(`release ${definition.release}: ${differences.join('; ')}`);
+    }
+    if (matched) continue;
+    if (!(await isLive(db, engine, item.table))) return 'gone';
+    return `${item.table} is declared retired (${label(item)}) but the live table is not the one ${entry.packageName} describes in any release it lists (${tried.join(' | ')}). It is not dropped.`;
+  }
+  return undefined;
 }
 
 /**
@@ -569,29 +724,12 @@ export async function planTableRetirements(
       );
       continue;
     }
-    // The live table must be the table the declaration describes.
-    let mismatch: string | undefined;
-    for (const entry of item.entries) {
-      let differences: string[];
-      try {
-        differences = shapeDifferences(
-          await options.compareDefinition(
-            item.table,
-            definitionSchema(item.table, entry.definition),
-          ),
-        );
-      } catch (error) {
-        differences = [
-          `it could not be compared (${error instanceof Error ? error.message : String(error)})`,
-        ];
-      }
-      if (differences.length) {
-        mismatch = `${item.table} is declared retired (${label(item)}) but the live table is not the one ${entry.packageName} describes (its definition from release ${entry.definition.release}): ${differences.join('; ')}. It is not dropped.`;
-        break;
-      }
-    }
-    if (mismatch) {
-      stops.push(stop(item, 'table.retire-mismatch', mismatch));
+    // The live table must be the table every declaration describes, in one
+    // of the releases it lists.
+    const verdict = await matchDefinitions(options, item);
+    if (verdict === 'gone') continue; // Another run dropped it: nothing to do.
+    if (verdict) {
+      stops.push(stop(item, 'table.retire-mismatch', verdict));
       continue;
     }
     candidates.push(item);
@@ -600,9 +738,18 @@ export async function planTableRetirements(
 
   // Edges between tables retired in this run: the referencing table goes first.
   const edges = new Map<string, Set<string>>();
-  const droppable: Array<{ item: Retiring; rows: number | null }> = [];
+  const droppable: Array<{
+    item: Retiring;
+    rows: number | null;
+    physical?: number;
+  }> = [];
   for (const item of candidates) {
-    const rows = await countRows(db, engine, item.table);
+    const count = await countRows(db, engine, item.table);
+    // A count that failed because another run dropped the table meanwhile:
+    // nothing to do.
+    if (count.rows === null && !(await isLive(db, engine, item.table)))
+      continue;
+    const { rows } = count;
     if (!item.discard && (rows === null || rows > 0)) {
       stops.push(
         stop(
@@ -655,7 +802,7 @@ export async function planTableRetirements(
         );
       continue;
     }
-    droppable.push({ item, rows });
+    droppable.push({ item, rows, physical: count.physical });
   }
 
   // Drop referencing tables first. What cannot be ordered is a cycle: named.
@@ -682,19 +829,23 @@ export async function planTableRetirements(
       ),
     );
 
-  const drops = ordered.map(({ item, rows }): SchemaChange => {
+  const drops = ordered.map(({ item, rows, physical }): SchemaChange => {
     const target = qualified(engine, item.table);
     const sql = `DROP TABLE IF EXISTS ${target}`;
     // The count above ran outside any transaction. Without rows: 'discard'
     // the batch counts again right before the drop and rolls back if rows
-    // appeared; PostgreSQL first locks out every writer (R2).
+    // appeared; PostgreSQL first locks out every writer, DuckDB also counts
+    // rows committed after the batch's snapshot (R2, retire-guard.ts).
     const sqlStatements = item.discard
       ? [sql]
       : [
-          ...(engine === 'postgres'
-            ? [`LOCK TABLE ${target} IN ACCESS EXCLUSIVE MODE`]
-            : []),
-          retireRowsGuardSql(target),
+          ...(engine === 'postgres' ? [retireLockSql(target)] : []),
+          retireRowsGuardSql(
+            target,
+            engine === 'duckdb'
+              ? { table: item.table, duckdbPhysicalRows: physical ?? 0 }
+              : {},
+          ),
           sql,
         ];
     const [entry] = item.entries;

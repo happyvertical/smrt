@@ -10,6 +10,7 @@
 
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { resolveRetiredTables } from '../migrations/build-schema.js';
 import {
   type DatabaseEngine,
   detectEngine,
@@ -360,6 +361,18 @@ export class SchemaManager {
    * @param schemas - Array of schema definitions
    */
   async ensureTables(schemas: SchemaDefinition[]): Promise<void> {
+    // A table under a retired name would be dropped by the next whole-schema
+    // migrate (#5005): never create or add to one.
+    const retired = new Map(
+      resolveRetiredTables().map((entry) => [entry.table.toLowerCase(), entry]),
+    );
+    for (const { tableName } of schemas) {
+      const entry = retired.get(tableName.toLowerCase());
+      if (entry)
+        throw new Error(
+          `${tableName}: this table is declared retired (by ${entry.packageName} in ${entry.since}: ${entry.reason}), so it is not created or added to. Remove the retirement, or the model that uses the table.`,
+        );
+    }
     const plan = planForeignKeyCreation(schemas, this.engine);
     const schemasByTable = new Map(
       schemas.map((schema) => [schema.tableName, schema]),

@@ -844,7 +844,7 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
         since: '1.0.0',
         reason: 'Folded into another table.',
         rows: 'discard',
-        definition: { release: '0.9.0', columns: { id: { type: 'UUID' } } },
+        definitions: [{ release: '0.9.0', columns: { id: { type: 'UUID' } } }],
         packageName,
       });
       writeFileSync(

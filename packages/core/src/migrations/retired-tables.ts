@@ -15,10 +15,12 @@
  *         "since": "1.4.0",
  *         "reason": "Drafts are kept on the order itself.",
  *         "rows": "discard",
- *         "definition": {
- *           "release": "1.3.2",
- *           "columns": { "id": { "type": "UUID", "referenceKind": "id" } }
- *         }
+ *         "definitions": [
+ *           {
+ *             "release": "1.3.2",
+ *             "columns": { "id": { "type": "UUID", "referenceKind": "id" } }
+ *           }
+ *         ]
  *       }
  *     ]
  *   }
@@ -30,11 +32,14 @@
  * what registration, the app's build and `smrt db:migrate` read, so the
  * declaration reaches every install of the package.
  *
- * `definition` proves the table, not just its name: the columns and types the
- * owning model declared in the last release that had it. It is written by
- * `scripts/retired-table-facts.mjs definition` from that release's published
- * manifests, never by hand, and migrate compares it with the live table
- * (`table.retire-mismatch` on any difference).
+ * `definitions` prove the table, not just its name: the columns and types the
+ * owning model declared, one entry per published release whose shape a
+ * supported database may still have (a table can change shape between
+ * releases). Each is written by `scripts/retired-table-facts.mjs definition`
+ * from that release's published manifests, never by hand. Migrate drops the
+ * live table only when it matches one of them, where a column matches when
+ * the ordinary migrate would converge it to the declared type without losing
+ * data (`table.retire-mismatch` otherwise).
  *
  * This module is pure and import-free: the manifest generator, the build
  * stamp and the registry all load it.
@@ -60,11 +65,12 @@ export interface RetiredTableDeclaration {
    */
   rows?: 'discard';
   /**
-   * The table as the owning model last declared it, generated from a
-   * published release's manifests. Migrate drops only a live table that
-   * matches it.
+   * The table as the owning model declared it, one entry per published
+   * release whose shape a supported database may hold, each generated from
+   * that release's manifests. Migrate drops only a live table that matches
+   * one of them. Sorted by release, one entry per release.
    */
-  definition: RetiredTableDefinition;
+  definitions: RetiredTableDefinition[];
 }
 
 /** One column of a {@link RetiredTableDefinition}. */
@@ -74,11 +80,11 @@ export interface RetiredTableColumn {
   referenceKind?: NonNullable<ColumnDefinition['referenceKind']>;
 }
 
-/** A retired table's last declared shape. */
+/** A retired table's shape in one release. */
 export interface RetiredTableDefinition {
   /** The published release whose manifests it was generated from. */
   release: string;
-  /** Column name to its declared type, as the last release declared them. */
+  /** Column name to its declared type, as that release declared them. */
   columns: Record<string, RetiredTableColumn>;
 }
 
@@ -113,7 +119,7 @@ const DECLARATION_KEYS = new Set([
   'since',
   'reason',
   'rows',
-  'definition',
+  'definitions',
 ]);
 const SQL_TYPES: ReadonlySet<string> = new Set<SQLDataType>([
   'TEXT',
@@ -132,7 +138,7 @@ const REFERENCE_KINDS: ReadonlySet<string> = new Set([
   'tenantId',
 ]);
 
-/** The script that writes a declaration's `definition`. */
+/** The script that writes one release's entry of a declaration's `definitions`. */
 export const RETIRED_TABLE_DEFINITION_SCRIPT =
   'node scripts/retired-table-facts.mjs definition';
 
@@ -207,33 +213,64 @@ export function parseRetiredTable(
     throw new RetiredTableDeclarationError(
       `${where} ${name}: "rows" is either left out or the string 'discard'.`,
     );
-  const definition = parseDefinition(value.definition, `${where} ${name}`);
+  const definitions = parseDefinitions(value, `${where} ${name}`);
   return {
     table: value.table,
     lastOwner: value.lastOwner,
     since: value.since,
     reason: value.reason.trim(),
     ...(value.rows === 'discard' ? { rows: 'discard' as const } : {}),
-    definition,
+    definitions,
     packageName,
   };
+}
+
+const releaseParts = (release: string) =>
+  release.replace(/^v/, '').split(/[-+]/)[0].split('.').map(Number);
+
+/** Release order for sorting definitions: numeric, then the full text. */
+function byRelease(a: string, b: string): number {
+  const [x, y] = [releaseParts(a), releaseParts(b)];
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i];
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function parseDefinitions(
+  value: Record<string, unknown>,
+  where: string,
+): RetiredTableDefinition[] {
+  const command = `${RETIRED_TABLE_DEFINITION_SCRIPT} --package <name> --table <table> --release <release>`;
+  const missing = `${where}: "definitions" must list the table's declared columns, one entry per supported release, each written from that release's published manifests by ${command}. Never write it by hand.`;
+  const list = value.definitions;
+  if (!Array.isArray(list) || !list.length)
+    throw new RetiredTableDeclarationError(missing);
+  const parsed = list.map((item) => parseDefinition(item, where, missing));
+  const seen = new Set<string>();
+  for (const { release } of parsed) {
+    if (seen.has(release))
+      throw new RetiredTableDeclarationError(
+        `${where}: "definitions" lists release ${release} twice. ${missing}`,
+      );
+    seen.add(release);
+  }
+  return parsed.sort((a, b) => byRelease(a.release, b.release));
 }
 
 function parseDefinition(
   value: unknown,
   where: string,
+  missing: string,
 ): RetiredTableDefinition {
-  const missing = `${where}: "definition" must be the table's last declared columns, written from that release's published manifests by ${RETIRED_TABLE_DEFINITION_SCRIPT} --package <name> --table <table> --release <release>. Never write it by hand.`;
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new RetiredTableDeclarationError(missing);
   const { release, columns, ...rest } = value as Record<string, unknown>;
   if (Object.keys(rest).length)
     throw new RetiredTableDeclarationError(
-      `${where}: "definition" has unknown key(s) ${Object.keys(rest).join(', ')}. ${missing}`,
+      `${where}: a definition has unknown key(s) ${Object.keys(rest).join(', ')}. ${missing}`,
     );
   if (typeof release !== 'string' || !RELEASE.test(release))
     throw new RetiredTableDeclarationError(
-      `${where}: "definition.release" must name the published release it was read from. ${missing}`,
+      `${where}: each definition's "release" must name the published release it was read from. ${missing}`,
     );
   if (
     !columns ||
@@ -242,7 +279,7 @@ function parseDefinition(
     !Object.keys(columns).length
   )
     throw new RetiredTableDeclarationError(
-      `${where}: "definition.columns" must list the table's columns. ${missing}`,
+      `${where}: the definition of release ${release} must list the table's columns. ${missing}`,
     );
   const parsed: Record<string, RetiredTableColumn> = {};
   for (const [column, spec] of Object.entries(columns).sort(([a], [b]) =>
@@ -264,7 +301,7 @@ function parseDefinition(
           !REFERENCE_KINDS.has(referenceKind)))
     )
       throw new RetiredTableDeclarationError(
-        `${where}: column ${column} of "definition" must be { type, referenceKind? } with a declared smrt type. ${missing}`,
+        `${where}: column ${column} of the definition of release ${release} must be { type, referenceKind? } with a declared smrt type. ${missing}`,
       );
     parsed[column] = {
       type: type as SQLDataType,
@@ -453,8 +490,10 @@ export function retiredTablesStampInput(
     };
     // The columns decide whether the live table matches; the release they
     // were read from is provenance.
-    const columns = entry.definition?.columns ?? {};
-    merged.definitions.add(JSON.stringify(sortedColumns(columns)));
+    for (const definition of entry.definitions ?? [])
+      merged.definitions.add(
+        JSON.stringify(sortedColumns(definition.columns ?? {})),
+      );
     byName.set(entry.table, merged);
   }
   return [...byName]

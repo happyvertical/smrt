@@ -940,10 +940,16 @@ export class SchemaComparer {
           db: this.db,
           engine: this.engine,
           liveTables: existingTables,
-          // A fresh comparer: this run's per-table state stays its own.
+          // A fresh comparer: this run's per-table state stays its own. It
+          // compares with the run's opt-ins, so a column the ordinary
+          // migrate would convert counts as a match (#5005 M1, M2).
           compareDefinition: (table, schema) =>
             new SchemaComparer(this.db, {
               engineHint: this.engine,
+              postgresTimestampMigration:
+                this.options.postgresTimestampMigration,
+              emptyTextAsNull: this.options.emptyTextAsNull,
+              relaxColumns: this.options.relaxColumns,
             }).compareTable(table, schema, { [table]: schema }),
         });
         if (retirements.length > 0) {
@@ -5844,8 +5850,13 @@ export class SchemaComparer {
       .trim()
       .replace(/\(\s*\d+\s*\)/g, '');
 
-    // Integer types
-    if (/^(INTEGER|INT|BIGINT|SMALLINT|TINYINT)$/i.test(upper)) {
+    // Integer types (INT2/INT4/INT8 as SQLite reports a column declared so;
+    // they have its INTEGER affinity, #5005)
+    if (
+      /^(INTEGER|INT|BIGINT|SMALLINT|TINYINT|MEDIUMINT|INT2|INT4|INT8)$/i.test(
+        upper,
+      )
+    ) {
       return 'INTEGER';
     }
 

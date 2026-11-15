@@ -7,6 +7,11 @@
  * `pnpm test:pglite` on PGlite for PostgreSQL semantics. The real-server
  * counterpart is `table-retire-postgres.optional.test.ts`.
  */
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { field } from '../../decorators/index.js';
@@ -14,6 +19,7 @@ import { SmrtObject } from '../../object.js';
 import { ObjectRegistry } from '../../registry.js';
 import {
   planRuntimeModelDDL,
+  RetiredTableInUseError,
   registerRuntimeModel,
 } from '../../runtime-model.js';
 import { appModelChangesMigrations } from '../../system/app-model-changes.js';
@@ -21,6 +27,7 @@ import { snapshotObjectRegistryState } from '../../test-utils.js';
 import { getTestDatabase } from '../../testing/database.js';
 import { registerBuildSchema } from '../build-schema.js';
 import { classifySchemaChange, decideSchemaChange } from '../change-kinds.js';
+import { SchemaComparer } from '../differ.js';
 import { readLastMigrateRecord } from '../migrate-record.js';
 import {
   type MigrateSmrtSchemasResult,
@@ -46,20 +53,24 @@ const retired = (
   reason: `${table} moved onto the order`,
   rows: 'discard',
   // The shape `make()` creates.
-  definition: {
-    release: '0.9.0',
-    columns: { id: { type: 'TEXT' }, v: { type: 'TEXT' } },
-  },
+  definitions: [
+    {
+      release: '0.9.0',
+      columns: { id: { type: 'TEXT' }, v: { type: 'TEXT' } },
+    },
+  ],
   packageName: PKG,
   ...extra,
 });
 
-const shape = (...columns: string[]) => ({
-  release: '0.9.0',
-  columns: Object.fromEntries(
-    columns.map((name) => [name, { type: 'TEXT' as const }]),
-  ),
-});
+const shape = (...columns: string[]) => [
+  {
+    release: '0.9.0',
+    columns: Object.fromEntries(
+      columns.map((name) => [name, { type: 'TEXT' as const }]),
+    ),
+  },
+];
 
 describe.each(engines)('retire step on %s (#5005)', (engine) => {
   const hint = engine === 'pglite' ? 'postgres' : engine;
@@ -287,7 +298,7 @@ describe.each(engines)('retire step on %s (#5005)', (engine) => {
     expect(await exists('retire_race_fresh')).toBe(false);
     if (hint === 'postgres')
       expect(result.statements).toContain(
-        `LOCK TABLE ${target('retire_race')} IN ACCESS EXCLUSIVE MODE`,
+        `DO $smrt_retire$ BEGIN LOCK TABLE ${target('retire_race')} IN ACCESS EXCLUSIVE MODE; EXCEPTION WHEN undefined_table THEN NULL; END $smrt_retire$`,
       );
   });
 
@@ -371,7 +382,7 @@ describe.each(engines)('retire step on %s (#5005)', (engine) => {
     await db.query(`INSERT INTO "retire_c" VALUES ('c', '0')`);
     declare(
       retired('retire_p'),
-      retired('retire_c', { definition: shape('id', 'p') }),
+      retired('retire_c', { definitions: shape('id', 'p') }),
     );
 
     const result = await migrate();
@@ -388,7 +399,7 @@ describe.each(engines)('retire step on %s (#5005)', (engine) => {
     );
     await db.query(`INSERT INTO "retire_tree" VALUES ('root', NULL)`);
     await db.query(`INSERT INTO "retire_tree" VALUES ('leaf', 'root')`);
-    declare(retired('retire_tree', { definition: shape('id', 'parent') }));
+    declare(retired('retire_tree', { definitions: shape('id', 'parent') }));
 
     const result = await migrate();
 
@@ -506,9 +517,23 @@ describe.each(engines)('retire step on %s (#5005)', (engine) => {
       tableName: 'retire_runtime_items',
       fields: { title: { type: 'text' } },
     });
-    await expect(
-      planRuntimeModelDDL(name, hint, async () => null),
-    ).rejects.toThrow(/retire_runtime_items.*declared retired/);
+    const refused = await planRuntimeModelDDL(name, hint, async () => null)
+      .then(() => undefined)
+      .catch((error: unknown) => error);
+    // The named stop a run limited to tables returns, not a bare error (T3).
+    expect(refused).toBeInstanceOf(RetiredTableInUseError);
+    expect((refused as RetiredTableInUseError).stop).toMatchObject({
+      kind: 'table.add',
+      reason: 'retired-table',
+      table: 'retire_runtime_items',
+    });
+    expect((refused as Error).message).toMatch(
+      /retire_runtime_items.*declared retired/,
+    );
+    const adding = await planRuntimeModelDDL(name, hint, async () => ['id'])
+      .then(() => undefined)
+      .catch((error: unknown) => error);
+    expect((adding as RetiredTableInUseError).stop.kind).toBe('column.add');
   });
 
   it('stops when the live table is not the one the declaration describes (R3: the table, not the name)', async () => {
@@ -794,6 +819,467 @@ describe.each(engines)('retire step on %s (#5005)', (engine) => {
         await db.query(
           'DROP FUNCTION IF EXISTS "pgdeps_count"(), "pgdeps_unrelated"()',
         );
+      }
+    },
+  );
+
+  // M1, M6: a column the ordinary migrate would converge without losing data
+  // is the same table; the check proves identity, not convergence.
+  const typed = (
+    table: string,
+    columns: Record<
+      string,
+      RetiredTable['definitions'][number]['columns'][string]
+    >,
+    extra: Partial<RetiredTable> = {},
+  ) =>
+    retired(table, {
+      definitions: [{ release: '0.9.0', columns }],
+      ...extra,
+    });
+
+  it('matches a live int4 column declared INTEGER', async () => {
+    await db.query(`CREATE TABLE "retire_int4" (id TEXT PRIMARY KEY, n INT4)`);
+    await db.query(`INSERT INTO "retire_int4" VALUES ('a', 3)`);
+    declare(
+      typed('retire_int4', { id: { type: 'TEXT' }, n: { type: 'INTEGER' } }),
+    );
+    const result = await migrate();
+    expect(result.stops).toEqual([]);
+    expect(result).toMatchObject({ refused: false, applied: true });
+    expect(await exists('retire_int4')).toBe(false);
+  });
+
+  it('matches a live VARCHAR(n) column declared TEXT', async () => {
+    await db.query(
+      `CREATE TABLE "retire_varchar" (id TEXT PRIMARY KEY, code VARCHAR(40))`,
+    );
+    await db.query(`INSERT INTO "retire_varchar" VALUES ('a', 'x')`);
+    declare(
+      typed('retire_varchar', { id: { type: 'TEXT' }, code: { type: 'TEXT' } }),
+    );
+    const result = await migrate();
+    expect(result.stops).toEqual([]);
+    expect(await exists('retire_varchar')).toBe(false);
+  });
+
+  it('matches a uuid held as text, for an id and a reference', async () => {
+    await db.query(
+      `CREATE TABLE "retire_uuid_text" (id TEXT PRIMARY KEY, owner_id TEXT)`,
+    );
+    await db.query(
+      `INSERT INTO "retire_uuid_text" VALUES ('00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002')`,
+    );
+    declare(
+      typed('retire_uuid_text', {
+        id: { type: 'UUID', referenceKind: 'id' },
+        owner_id: { type: 'UUID', referenceKind: 'foreignKey' },
+      }),
+    );
+    const result = await migrate();
+    expect(result.stops).toEqual([]);
+    expect(await exists('retire_uuid_text')).toBe(false);
+  });
+
+  it('a live timestamp column declared TIMESTAMP: on PostgreSQL only with postgresTimestampMigration, as the ordinary migrate (M1, M2)', async () => {
+    await db.query(
+      `CREATE TABLE "retire_ts" (id TEXT PRIMARY KEY, seen_at TIMESTAMP)`,
+    );
+    await db.query(
+      `INSERT INTO "retire_ts" VALUES ('a', '2024-01-02 03:04:05')`,
+    );
+    declare(
+      typed('retire_ts', {
+        id: { type: 'TEXT' },
+        seen_at: { type: 'TIMESTAMP' },
+      }),
+    );
+    if (hint === 'postgres') {
+      // Without the opt-in the ordinary migrate stops on timestamp ->
+      // timestamptz, so the retirement does too.
+      const plain = await migrate();
+      expect(kinds(plain)).toEqual(['table.retire-mismatch']);
+      expect(plain.stops[0].message).toContain('column seen_at is');
+      expect(plain.stops[0].message).toContain('release 0.9.0');
+      expect(await exists('retire_ts')).toBe(true);
+    }
+    const result = await migrate({
+      postgresTimestampMigration: { legacyTimezone: 'UTC' },
+    });
+    expect(result.stops).toEqual([]);
+    expect(await exists('retire_ts')).toBe(false);
+  });
+
+  it.runIf(engine === 'pglite')(
+    'honours emptyTextAsNull: empty text in a column declared TIMESTAMP (M2)',
+    async () => {
+      await db.query(
+        `CREATE TABLE "retire_empty_ts" (id TEXT PRIMARY KEY, at TEXT)`,
+      );
+      await db.query(
+        `INSERT INTO "retire_empty_ts" VALUES ('a', ''), ('b', '2024-01-02T03:04:05Z')`,
+      );
+      declare(
+        typed('retire_empty_ts', {
+          id: { type: 'TEXT' },
+          at: { type: 'TIMESTAMP' },
+        }),
+      );
+      expect(kinds(await migrate())).toEqual(['table.retire-mismatch']);
+      const result = await migrate({ emptyTextAsNull: true });
+      expect(result.stops).toEqual([]);
+      expect(await exists('retire_empty_ts')).toBe(false);
+    },
+  );
+
+  it("compares with the run's opt-ins: postgresTimestampMigration, emptyTextAsNull, relaxColumns (M2)", async () => {
+    await make('retire_optins', 0);
+    declare(retired('retire_optins'));
+    const seen: Array<Record<string, unknown>> = [];
+    // A plain wrapper: record the comparer's options, then compare as usual.
+    const original = SchemaComparer.prototype.compareTable;
+    SchemaComparer.prototype.compareTable = async function (
+      this: SchemaComparer,
+      ...args: Parameters<SchemaComparer['compareTable']>
+    ) {
+      if (String(args[1]?.version).startsWith('retired:'))
+        seen.push(
+          (this as unknown as { options: Record<string, unknown> }).options,
+        );
+      return original.apply(this, args);
+    };
+    try {
+      await migrate({
+        postgresTimestampMigration: { legacyTimezone: 'UTC' },
+        emptyTextAsNull: true,
+        relaxColumns: true,
+      });
+    } finally {
+      SchemaComparer.prototype.compareTable = original;
+    }
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({
+      postgresTimestampMigration: { legacyTimezone: 'UTC' },
+      emptyTextAsNull: true,
+      relaxColumns: true,
+    });
+    expect(await exists('retire_optins')).toBe(false);
+  });
+
+  // T7: shapes that are not the declared table.
+  it('stops when the definition lists only some of the live columns', async () => {
+    await db.query(
+      `CREATE TABLE "retire_subset" (id TEXT PRIMARY KEY, v TEXT, extra TEXT)`,
+    );
+    declare(retired('retire_subset'));
+    const result = await migrate();
+    expect(kinds(result)).toEqual(['table.retire-mismatch']);
+    expect(result.stops[0].message).toContain(
+      'column extra is not in the definition',
+    );
+    expect(result.stops[0].message).not.toContain('is missing');
+    expect(await exists('retire_subset')).toBe(true);
+  });
+
+  it('stops when the live table lacks a declared column', async () => {
+    await db.query(`CREATE TABLE "retire_short" (id TEXT PRIMARY KEY)`);
+    declare(retired('retire_short'));
+    const result = await migrate();
+    expect(kinds(result)).toEqual(['table.retire-mismatch']);
+    expect(result.stops[0].message).toContain('column v is missing');
+    expect(await exists('retire_short')).toBe(true);
+  });
+
+  it.runIf(engine === 'sqlite')(
+    'reads every live column, generated ones included (T8)',
+    async () => {
+      await db.query(
+        `CREATE TABLE "retire_gen" (id TEXT PRIMARY KEY, v TEXT, g TEXT GENERATED ALWAYS AS (v) VIRTUAL)`,
+      );
+      declare(retired('retire_gen'));
+      const result = await migrate();
+      expect(kinds(result)).toEqual(['table.retire-mismatch']);
+      expect(result.stops[0].message).toContain(
+        'column g is not in the definition',
+      );
+      expect(await exists('retire_gen')).toBe(true);
+    },
+  );
+
+  it('a database at an older table shape matches that release of the definitions, and only that', async () => {
+    // The table as release 0.9.0 left it; 1.0.0 added a column.
+    await make('retire_older', 1);
+    const v1 = {
+      release: '1.0.0',
+      columns: {
+        id: { type: 'TEXT' as const },
+        v: { type: 'TEXT' as const },
+        w: { type: 'TEXT' as const },
+      },
+    };
+    declare(retired('retire_older', { definitions: [v1] }));
+    const latestOnly = await migrate();
+    expect(kinds(latestOnly)).toEqual(['table.retire-mismatch']);
+    expect(latestOnly.stops[0].message).toContain(
+      'release 1.0.0: column w is missing',
+    );
+    expect(await exists('retire_older')).toBe(true);
+
+    declare(
+      retired('retire_older', {
+        definitions: [...retired('x').definitions, v1],
+      }),
+    );
+    const both = await migrate();
+    expect(both).toMatchObject({ refused: false, applied: true });
+    expect(await exists('retire_older')).toBe(false);
+  });
+
+  it.runIf(engine !== 'duckdb')(
+    'a journal that is not there is nothing; one that cannot be read stops the retirement (T7)',
+    async () => {
+      await make('retire_journal', 0);
+      declare(retired('retire_journal'));
+      const tracker = new MigrationTracker({ db, engineHint: hint });
+      await tracker.applyAll(
+        appModelChangesMigrations(hint === 'postgres' ? 'postgres' : 'sqlite'),
+        { postgresSafe: false, reconcile: false },
+      );
+      await db.query(
+        `INSERT INTO _smrt_app_model_changes (application, tenant_id, revision, request_id, actor, command, before_doc, after_doc, status) VALUES ('app', '00000000-0000-4000-8000-0000000000aa', 1, 'r1', 'a', 'add', '{}', 'not json', 'applied')`,
+      );
+      const result = await migrate();
+      expect(kinds(result)).toEqual(['table.retire-declared']);
+      expect(result.stops[0].message).toContain('is not valid JSON');
+      expect(await exists('retire_journal')).toBe(true);
+
+      await db.query('DROP TABLE _smrt_app_model_changes');
+      const clean = await migrate();
+      expect(clean).toMatchObject({ refused: false, applied: true });
+      expect(await exists('retire_journal')).toBe(false);
+    },
+  );
+
+  it.runIf(engine === 'sqlite')(
+    'drops with SQLite foreign keys off when nothing depends on the table',
+    async () => {
+      await db.query('PRAGMA foreign_keys = OFF');
+      await make('retire_fk_off_free', 2);
+      declare(retired('retire_fk_off_free'));
+      const result = await migrate();
+      expect(result).toMatchObject({ refused: false, applied: true });
+      expect(await exists('retire_fk_off_free')).toBe(false);
+    },
+  );
+
+  // T2: two migrate runs at once both plan the drop. The second finds the
+  // table gone and ends cleanly: nothing to do.
+  it.each([
+    ['without', undefined],
+    ['with', 'discard' as const],
+  ])("two concurrent whole-schema runs both end cleanly, %s rows: 'discard' (T2)", async (_label, rows) => {
+    await make('retire_twice', 0);
+    declare(retired('retire_twice', { rows }));
+    const [first, second] = await Promise.all([migrate(), migrate()]);
+    for (const result of [first, second]) {
+      expect(result.refused).toBe(false);
+      expect(result.stops).toEqual([]);
+    }
+    expect(await exists('retire_twice')).toBe(false);
+    expect((await migrate()).statements).toEqual([]);
+  });
+
+  it('a run whose planned table another run dropped before its batch ends cleanly (T2)', async () => {
+    await make('retire_gone_meanwhile', 0);
+    declare(retired('retire_gone_meanwhile', { rows: undefined }));
+    // The other run's drop commits right after this run's plan counted rows.
+    let dropped = false;
+    const racing = new Proxy(db, {
+      get(target, key, receiver) {
+        const value = Reflect.get(target, key, receiver);
+        if (key !== 'query' || typeof value !== 'function')
+          return typeof value === 'function' ? value.bind(target) : value;
+        return async (sql: string, ...args: unknown[]) => {
+          const result = await value.call(target, sql, ...args);
+          if (
+            !dropped &&
+            /^SELECT COUNT\(\*\) AS n FROM/.test(sql) &&
+            sql.includes('retire_gone_meanwhile')
+          ) {
+            dropped = true;
+            await value.call(target, 'DROP TABLE "retire_gone_meanwhile"');
+          }
+          return result;
+        };
+      },
+    });
+    const result = await migrateSmrtSchemas({
+      db: racing,
+      packageName: '@retire/app',
+      name: `retire_${++runs}`,
+      engineHint: hint,
+      ...options,
+    });
+    expect(dropped).toBe(true);
+    expect(result).toMatchObject({ refused: false });
+    expect(result.stops).toEqual([]);
+    expect(await exists('retire_gone_meanwhile')).toBe(false);
+  });
+
+  it('a run whose count finds the table already dropped by another run plans nothing for it (T2)', async () => {
+    await make('retire_gone_first', 0);
+    declare(retired('retire_gone_first', { rows: undefined }));
+    let dropped = false;
+    const racing = new Proxy(db, {
+      get(target, key, receiver) {
+        const value = Reflect.get(target, key, receiver);
+        if (key !== 'query' || typeof value !== 'function')
+          return typeof value === 'function' ? value.bind(target) : value;
+        return async (sql: string, ...args: unknown[]) => {
+          if (
+            !dropped &&
+            /^SELECT COUNT\(\*\) AS n FROM/.test(sql) &&
+            sql.includes('retire_gone_first')
+          ) {
+            dropped = true;
+            await value.call(target, 'DROP TABLE "retire_gone_first"');
+          }
+          return value.call(target, sql, ...args);
+        };
+      },
+    });
+    const result = await migrateSmrtSchemas({
+      db: racing,
+      packageName: '@retire/app',
+      name: `retire_${++runs}`,
+      engineHint: hint,
+      ...options,
+    });
+    expect(dropped).toBe(true);
+    expect(result).toMatchObject({ refused: false, applied: false });
+    expect(result.stops).toEqual([]);
+  });
+
+  it.runIf(engine === 'duckdb')(
+    'DuckDB: a row another connection commits after the batch began stops the drop, and survives (T1)',
+    async () => {
+      // Two connections to one database: the adapter opens its own instance,
+      // so share one through DuckDB's instance cache for this test.
+      const sqlDir = path.dirname(
+        realpathSync(
+          path.join(
+            path.dirname(fileURLToPath(import.meta.url)),
+            '../../../node_modules/@happyvertical/sql/package.json',
+          ),
+        ),
+      );
+      const { DuckDBInstance } = createRequire(
+        path.join(sqlDir, 'package.json'),
+      )('@duckdb/node-api') as {
+        DuckDBInstance: {
+          create: (...args: unknown[]) => Promise<unknown>;
+          fromCache: (...args: unknown[]) => Promise<unknown>;
+        };
+      };
+      const dir = mkdtempSync(path.join(tmpdir(), 'retire-duck-'));
+      const file = path.join(dir, 'race.duckdb');
+      const create = DuckDBInstance.create;
+      DuckDBInstance.create = (...args) => DuckDBInstance.fromCache(...args);
+      let mine: typeof db | undefined;
+      let other: typeof db | undefined;
+      try {
+        mine = (await getDatabase({ type: 'duckdb', url: file })) as typeof db;
+        other = (await getDatabase({ type: 'duckdb', url: file })) as typeof db;
+      } finally {
+        DuckDBInstance.create = create;
+      }
+      try {
+        await mine.query(
+          `CREATE TABLE "retire_duck_race" (id TEXT PRIMARY KEY, v TEXT)`,
+        );
+        // Both connections see one database.
+        expect(
+          Number(
+            (await other.query('SELECT COUNT(*) AS n FROM "retire_duck_race"'))
+              .rows[0].n,
+          ),
+        ).toBe(0);
+        declare(retired('retire_duck_race', { rows: undefined }));
+        let wrote = false;
+        const writer = other;
+        const racing = new Proxy(mine, {
+          get(target, key, receiver) {
+            const value = Reflect.get(target, key, receiver);
+            if (key !== 'transaction' || typeof value !== 'function')
+              return typeof value === 'function' ? value.bind(target) : value;
+            return (work: (tx: typeof db) => Promise<unknown>) =>
+              value.call(target, async (tx: typeof db) =>
+                work({
+                  ...tx,
+                  query: async (sql: string, ...args: unknown[]) => {
+                    if (!wrote && sql.includes('smrt_retire_guard_rows')) {
+                      wrote = true;
+                      // The batch's snapshot is taken; then an old instance
+                      // commits a row on its own connection.
+                      await tx.query('SELECT COUNT(*) FROM "retire_duck_race"');
+                      await writer.query(
+                        `INSERT INTO "retire_duck_race" VALUES ('late', 'x')`,
+                      );
+                    }
+                    return tx.query(sql, ...(args as []));
+                  },
+                } as typeof db),
+              );
+          },
+        });
+        const result = await migrateSmrtSchemas({
+          db: racing,
+          packageName: '@retire/app',
+          name: `retire_${++runs}`,
+          engineHint: 'duckdb',
+        });
+        expect(wrote).toBe(true);
+        expect(result).toMatchObject({ refused: true, applied: false });
+        expect(kinds(result)).toEqual(['table.retire-rows']);
+        const left = await other.query(
+          'SELECT COUNT(*) AS n FROM "retire_duck_race"',
+        );
+        expect(Number(left.rows[0].n)).toBe(1);
+      } finally {
+        await other?.close?.().catch(() => {});
+        await mine?.close?.().catch(() => {});
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.runIf(engine === 'duckdb')(
+    'the JSON adapter stops end to end and never drops (R7, T7)',
+    async () => {
+      const dir = mkdtempSync(path.join(tmpdir(), 'retire-json-'));
+      const json = (await getDatabase({
+        type: 'json',
+        url: dir,
+      } as never)) as typeof db;
+      try {
+        await json.query(
+          `CREATE TABLE "retire_json_e2e" (id TEXT PRIMARY KEY, v TEXT)`,
+        );
+        declare(retired('retire_json_e2e'));
+        const result = await migrateSmrtSchemas({
+          db: json,
+          packageName: '@retire/app',
+          name: `retire_${++runs}`,
+        });
+        expect(result.refused).toBe(true);
+        expect(kinds(result)).toEqual(['table.retire-unsupported']);
+        const still = await json.query(
+          `SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_name = 'retire_json_e2e'`,
+        );
+        expect(Number(still.rows[0].n)).toBe(1);
+      } finally {
+        await json.close?.();
+        rmSync(dir, { recursive: true, force: true });
       }
     },
   );

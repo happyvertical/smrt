@@ -9,8 +9,9 @@
  * What only a server proves: a failed DROP rolls back the rest of its batch;
  * materialized views and PL/pgSQL trigger functions are named; a concurrent
  * writer cannot get a row in between the in-batch count and the drop; the
- * drop stays in the atomic part in concurrent-index mode; and a non-public
- * search_path reads, counts and drops the public table.
+ * drop stays in the atomic part in concurrent-index mode; two runs on
+ * separate connections both end cleanly; and a non-public search_path reads,
+ * counts and drops the public table.
  */
 import { randomUUID } from 'node:crypto';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
@@ -45,10 +46,12 @@ const retired = (
   since: '1.0.0',
   reason: 'Moved onto the order.',
   rows: 'discard',
-  definition: {
-    release: '0.9.0',
-    columns: { id: { type: 'TEXT' }, v: { type: 'TEXT' } },
-  },
+  definitions: [
+    {
+      release: '0.9.0',
+      columns: { id: { type: 'TEXT' }, v: { type: 'TEXT' } },
+    },
+  ],
   packageName: PKG,
   ...extra,
 });
@@ -232,7 +235,7 @@ describe.skipIf(!pgUrl)('retire step on real PostgreSQL (#5005)', () => {
     // Once the batch holds its lock, a second connection tries to write.
     const hooked = hookAfter(
       db,
-      (sql) => /^LOCK TABLE "public"\."r5005_pg_locked"/.test(sql),
+      (sql) => sql.includes('LOCK TABLE "public"."r5005_pg_locked"'),
       async () => {
         try {
           await writer.transaction?.(async (tx) => {
@@ -249,6 +252,20 @@ describe.skipIf(!pgUrl)('retire step on real PostgreSQL (#5005)', () => {
     expect(String(writerError)).toMatch(/lock timeout|canceling statement/i);
     expect(result).toMatchObject({ refused: false, applied: true });
     expect(await exists('r5005_pg_locked')).toBe(false);
+  });
+
+  it('two migrate runs on separate connections both end cleanly: the second finds the table gone (T2)', async () => {
+    await make('r5005_pg_twice', 0);
+    registerRetiredTables(PKG, [
+      retired('r5005_pg_twice', { rows: undefined }),
+    ]);
+    const other = await connect();
+    const [first, second] = await Promise.all([migrate(db), migrate(other)]);
+    for (const result of [first, second]) {
+      expect(result.refused).toBe(false);
+      expect(result.stops).toEqual([]);
+    }
+    expect(await exists('r5005_pg_twice')).toBe(false);
   });
 
   it('rows written after the plan stop the run, in concurrent-index mode too: the drop is in the atomic part', async () => {

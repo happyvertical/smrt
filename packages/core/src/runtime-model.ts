@@ -661,6 +661,34 @@ export function registerRuntimeModel(
   return qualifiedName;
 }
 
+/**
+ * `planRuntimeModelDDL`'s named stop (#5005): the model's table is declared
+ * retired, so a table created or added to now would be dropped by the next
+ * whole-schema migrate. `stop` has the shape and wording of the stop
+ * `migrateSmrtSchemas({ tables })` returns for the same table (reason
+ * `retired-table`).
+ */
+export class RetiredTableInUseError extends Error {
+  readonly code = 'MIGRATION_RETIRED_TABLE' as const;
+  readonly stop: {
+    kind: 'table.add' | 'column.add';
+    reason: 'retired-table';
+    table: string;
+    message: string;
+  };
+  constructor(
+    readonly qualifiedName: string,
+    table: string,
+    kind: 'table.add' | 'column.add',
+    declaration: string,
+  ) {
+    const message = `${table}: this table is declared retired (${declaration}), and run-time model ${qualifiedName} would ${kind === 'table.add' ? 'create' : 'add to'} it. A table cannot be both retired and in use. Remove the retirement, or give the model another table name.`;
+    super(message);
+    this.name = 'RetiredTableInUseError';
+    this.stop = { kind, reason: 'retired-table', table, message };
+  }
+}
+
 /** Existing columns of a table, by name; `null` when the table does not exist. */
 export type RuntimeTableIntrospector = (
   table: string,
@@ -685,20 +713,29 @@ export async function planRuntimeModelDDL(
   if (registered.generatedFields?.error) throw registered.generatedFields.error;
   const table = ObjectRegistry.getTableName(qualifiedName);
   if (!table) throw new Error(`No table for ${qualifiedName}`);
-  // A table under a retired name would be dropped by the next whole-schema
-  // migrate (#5005): never create or add to one.
-  const retired = resolveRetiredTables().filter(
-    (entry) => entry.table.toLowerCase() === table.toLowerCase(),
-  );
-  if (retired.length)
-    throw new Error(
-      `Run-time model ${qualifiedName} uses table ${table}, which is declared retired (${retired.map((entry) => `${entry.packageName} in ${entry.since}: ${entry.reason}`).join('; ')}). Give the model another table name.`,
-    );
   const definition = ObjectRegistry.getAllSchemasAsDefinitions()[table];
   if (!definition) throw new Error(`No schema for table ${table}`);
   const { getDDLStrategy } = await import('./schema/ddl/index.js');
   const strategy = getDDLStrategy(engine);
   const have = await existingColumns(table);
+  // A table under a retired name would be dropped by the next whole-schema
+  // migrate (#5005): never create or add to one. The same named stop a run
+  // limited to tables returns.
+  const retired = resolveRetiredTables().filter(
+    (entry) => entry.table.toLowerCase() === table.toLowerCase(),
+  );
+  if (retired.length)
+    throw new RetiredTableInUseError(
+      qualifiedName,
+      table,
+      have ? 'column.add' : 'table.add',
+      retired
+        .map(
+          (entry) =>
+            `by ${entry.packageName} in ${entry.since}: ${entry.reason}`,
+        )
+        .join('; '),
+    );
   if (!have) {
     return [
       strategy.generateCreateTable(definition),
