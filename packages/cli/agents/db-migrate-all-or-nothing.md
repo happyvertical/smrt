@@ -66,15 +66,19 @@ Named stops hold the whole run back, like any other stop, each saying
   the app model journal, still declares the table. Remove the retirement or
   the model.
 - `table.retire-mismatch`: the live table is not the one the declaration
-  describes. The message names each missing or extra column and each type that
-  differs from the declaration's `definition` (written from a published
-  release by `scripts/retired-table-facts.mjs`). It may be another table under
-  the same name: check what it holds.
+  describes in any release it lists. The message names, per release of the
+  declaration's `definitions` (each written from a published release by
+  `scripts/retired-table-facts.mjs`), each missing or extra column and each
+  type migrate would not convert. A type migrate would convert without losing
+  data is the same table; the run's `--postgres-timestamp-legacy-timezone UTC`
+  and `--empty-text-as-null` opt-ins count. It may be another table under the
+  same name: check what it holds.
 - `table.retire-rows`: the table holds rows and its declaration does not say
   `rows: 'discard'`. The message gives the row count. The count runs again
   inside the batch, right before the drop (after `LOCK TABLE` on
-  PostgreSQL), so rows a still-running old instance writes after the plan roll
-  the whole batch back with the same stop.
+  PostgreSQL; on DuckDB it also counts rows another connection committed after
+  the batch began), so rows a still-running old instance writes after the plan
+  roll the whole batch back with the same stop.
 - `table.retire-dependent`: something undeclared depends on the table. One stop
   per dependent names it: a foreign key (`child.column`), a view or
   materialized view, a trigger on another table, a function whose body names

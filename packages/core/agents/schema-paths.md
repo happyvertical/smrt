@@ -542,13 +542,15 @@ ships it and every install sees it:
         "since": "1.4.0",
         "reason": "Drafts are kept on the order itself.",
         "rows": "discard",
-        "definition": {
-          "release": "1.3.2",
-          "columns": {
-            "id": { "type": "UUID", "referenceKind": "id" },
-            "title": { "type": "TEXT" }
+        "definitions": [
+          {
+            "release": "1.3.2",
+            "columns": {
+              "id": { "type": "UUID", "referenceKind": "id" },
+              "title": { "type": "TEXT" }
+            }
           }
-        }
+        ]
       }
     ]
   }
@@ -567,9 +569,12 @@ rows is the owner's decision. Without it a retired table that holds rows stops
 the migrate. The model class is removed in the same release that declares the
 retirement.
 
-`definition` proves the table, not just its name: the table's columns and
-types as the owning model declared them in the last release that had it, and
-that release. It is generated, never typed:
+`definitions` prove the table, not just its name: the table's columns and
+types as the owning model declared them, one entry per published release, each
+naming its release. A table can change shape between releases, and a database
+may be at any supported release, so the declaration carries one definition for
+each shape a supported database may still hold; migrate drops the live table
+when it matches any one of them. Each is generated, never typed:
 
 ```sh
 node scripts/retired-table-facts.mjs definition \
@@ -577,9 +582,23 @@ node scripts/retired-table-facts.mjs definition \
 ```
 
 reads that release's published package manifests (from npm, or `--from` an
-install), projects them through the registry as the release would, checks that
-`lastOwner` declared the table there, and writes `definition` into the
-declaration. A declaration without one fails the build and names the command.
+install), projects them through the registry, checks that `lastOwner`
+declared the table there, and writes that release's entry of `definitions`
+(replacing only that release's entry; the list stays in release order). Run it
+for each supported release whose shape differs. A declaration without
+`definitions` (or with the old single `definition`) fails the build and names
+the command. `node scripts/retired-table-facts.mjs check` regenerates every
+definition and every owners file from the published manifests and fails on any
+difference, so a hand edit is caught (it fetches from npm, so it is not part of
+the offline gate).
+
+The projection runs through the current build's core, not the release's: a
+base column or reference kind core gained after the release would show in a
+definition and not in the release's tables. The upgrade gate compares each
+definition with the release snapshots' physical columns (below), so that drift
+fails the build. Between 0.61.0 and the time of writing no such drift
+exists: every model table of the 0.61.0 and 0.61.1 snapshots has exactly the
+columns the projection gives.
 
 **How it travels** (`migrations/retired-tables.ts`): the manifest generator
 (`applyRetiredTables`, run before the schemas so the stamp covers it) reads
@@ -625,7 +644,7 @@ out.
 |---|---|---|
 | `table.retire-owner` | stop (loses data) | An entry fails its checks (a `lastOwner` outside the package, a `_smrt_` table of a package outside smrt, no definition). The loaders refuse these already; the plan checks again, since a build description can be registered directly. |
 | `table.retire-declared` | stop (loses data) | A model, a run-time list stored in the app model journal (even one this process never registered), or smrt itself still declares the table. A journal that cannot be read stops every retirement. |
-| `table.retire-mismatch` | stop (loses data) | The live table is not the one the declaration describes: the differ compares `definition` with the live table (`compareTable` on a fresh comparer) and any missing or extra column, or a type it does not tolerate, stops it. Constraints, defaults and indexes are not part of the definition. It needs no recorded owner, so it works for a database upgrading straight from 0.61.x. |
+| `table.retire-mismatch` | stop (loses data) | The live table is not the one the declaration describes in any release it lists. Each definition is compared with the live table by the differ (`compareTable` on a fresh comparer, with the run's `postgresTimestampMigration`, `emptyTextAsNull` and `relaxColumns`), and its columns with the catalog's (generated and hidden columns included). A missing or extra column stops it. A type difference counts as the same table when the ordinary migrate would converge it without losing data or only report it (`decideSchemaChange` is not `stop`: a live `int4` declared INTEGER, `varchar(n)` declared TEXT, a uuid held as text, a PostgreSQL `timestamp` declared TIMESTAMP under `postgresTimestampMigration`), and stops it when the ordinary migrate would stop (an incompatible type; that `timestamp` without the opt-in). The check proves identity, not convergence. Constraints, defaults and indexes are not part of the definition. It needs no recorded owner, so it works for a database upgrading straight from 0.61.x. |
 | `table.retire-rows` | stop (loses data) | The table holds rows and a declaration does not say `rows: 'discard'` (or the rows could not be counted). |
 | `table.retire-dependent` | stop (loses data) | Something undeclared depends on it, one stop per dependent (see below). |
 | `table.retire-unsupported` | stop (loses data) | The JSON adapter: it never drops, so a live retired table stops the run and no migrate record says it is gone. |
@@ -634,16 +653,26 @@ out.
 These are named stops in the ordinary decision (`stops`, `heldBack`), never a
 thrown error. An absent table is nothing to do, so the step is idempotent. Two
 packages retiring one table drop it once, and only when both say
-`rows: 'discard'`.
+`rows: 'discard'`. Two whole-schema migrate runs at once may both plan the
+drop; the one that finds the table gone (its row count, its lock or its
+in-batch count) has nothing to do for it and ends cleanly.
 
 **Rows written after the plan.** The plan counts rows outside any transaction.
 A retirement without `rows: 'discard'` therefore carries a second count right
 before its `DROP TABLE`, in the same atomic batch (`retire-guard.ts`, run by
-the tracker); on PostgreSQL the batch first takes `LOCK TABLE ... IN ACCESS
-EXCLUSIVE MODE`, so no writer gets a row in between. Rows found there roll the
-whole batch back, and `migrateSmrtSchemas` returns the named stop
-`table.retire-rows` (the CLI fails with it). The lock, count and drop stay in
-the atomic part in PostgreSQL concurrent-index mode.
+the tracker). On PostgreSQL the batch first takes `LOCK TABLE ... IN ACCESS
+EXCLUSIVE MODE` (in a `DO` block that tolerates a table another run dropped
+meanwhile), so no writer gets a row in between. DuckDB has no table locks and
+its batch reads one snapshot: a row another connection commits after the batch
+began is invisible to the count and would be dropped with the table, with no
+conflict raised (proven on DuckDB 1.4.3 with two connections). So the DuckDB
+count also compares the table's storage row count (`duckdb_tables()
+.estimated_size`, which counts every committed row whatever the snapshot) with
+the one the plan read: any growth counts as rows. A write still uncommitted
+when the drop commits fails at its own commit. SQLite has one writer at a
+time. Rows found there roll the whole batch back, and `migrateSmrtSchemas`
+returns the named stop `table.retire-rows` (the CLI fails with it). The lock,
+count and drop stay in the atomic part in PostgreSQL concurrent-index mode.
 
 **Dependents.** SQLite: `PRAGMA foreign_key_list` (whether foreign keys are
 enforced or not) and views and triggers whose SQL names the table as a whole
@@ -668,11 +697,29 @@ activation, the run-time model editor, `requireComplete`) neither plans nor
 reports retirements: retiring waits for the next whole-schema migrate. A
 limited run writes no migrate record, so the build stamp still forces that
 migrate before production starts. It stops only when it would create or add to
-a table on the retired list (reason `retired-table`), and
-`planRuntimeModelDDL` refuses a run-time table under a retired name.
+a table on the retired list (reason `retired-table`). `planRuntimeModelDDL`
+throws `RetiredTableInUseError` for a run-time table under a retired name; its
+`stop` is that same named stop (`reason: 'retired-table'`, kind `table.add` or
+`column.add`). The deprecated dev/test `ensureSchema` (`SchemaManager
+.ensureTables`) refuses a retired name too. Nothing else creates a table at run
+time: `generateDDLFromColumns` (registry/schema-builder.ts) and
+`SchemaGenerator.generateSQL` only render preview text.
+
+**Run-time lists.** The app model editor journals every list in
+`_smrt_app_model_changes`; a whole-schema migrate in any process reads it
+(`public` on PostgreSQL, like every other read) and counts each list's table,
+its snake-cased plural, as declared. `createAppModelEditor` therefore refuses a
+custom `store` that does not append through a store `createAppModelHistory`
+made (`MODEL_HISTORY_JOURNAL_REQUIRED`); a wrapper that delegates to one is
+fine. A run-time model app code registers directly with `registerRuntimeModel`
+is not in the journal: only the process that registered it knows it, so in any
+other process only the retirement's definition match protects its table. The
+template host's own tables (`template-sveltekit/host/state.ts`,
+`onboarding.ts`) are created with raw `CREATE TABLE`, are not models and are
+unknown to the retire step; that matters only if a retirement ever names one.
 
 **Build stamp.** `retiredTablesStampInput()` (table, whether rows may be
-discarded, and the definition's columns) is part of
+discarded, and the columns of each definition, not their releases) is part of
 `computeSchemaFingerprint()`; the key is left out when nothing is retired, so
 no existing build's stamp moves. The plan and the stamp read one set
 (`resolveRetiredTables`). Parity tests: `issue-5005-retired-stamp.test.ts` (a
@@ -686,17 +733,27 @@ ON (and OFF for the foreign-key stop), DuckDB, and on PGlite under
 `table-retire-postgres.optional.test.ts` runs it on a real server (a failed
 DROP rolls back its batch, materialized-view and PL/pgSQL trigger dependents,
 a concurrent writer held off by the lock, concurrent-index mode, a non-public
-`search_path`). `retired-tables.test.ts` and
-`consumer-plugin/retired-tables.test.ts` cover the declaration and every way
-into the registry and the build.
+`search_path`). It also covers the type equivalences per engine (an `int4`,
+a `varchar(n)`, a uuid held as text, a PostgreSQL `timestamp` with and without
+the opt-in, `emptyTextAsNull`), a definition with only some of the columns, a
+live table without a declared column, a generated column, a database at an
+older shape, a missing and an unreadable journal, the JSON adapter end to end,
+two concurrent runs, and the DuckDB race with a second connection.
+`retired-tables.test.ts` and `consumer-plugin/retired-tables.test.ts` cover
+the declaration and every way into the registry and the build.
 
-**Upgrade gate.** For each snapshot that holds a retired table the gate seeds
-it as for any model table, migrates, and asserts the table is gone and the
-schema converges (a `table.retire-mismatch` there means the definition does not
-match the table that release made). `checkRetiredDeclarations()` fails a
-declaration whose table is in no supported snapshot (stale, so the list
-shrinks), whose `lastOwner` did not declare the table in a supported release,
-or whose `lastOwner` is not a class of the declaring package. Who declared
+**Upgrade gate.** For each snapshot that holds a retired table the gate
+restores that table in the shape the release created (and fails if it was not
+restored, since a missing table would prove nothing), seeds it as for any model
+table, migrates, and asserts the table was dropped by its retirement and the
+schema converges (a `table.retire-mismatch` there means no definition matches
+the table that release made; the gate test runs this against a real 0.61.1
+model table). `checkRetiredDeclarations()` fails a declaration whose table is
+in no supported snapshot (stale, so the list shrinks), whose `lastOwner` did
+not declare the table in a supported release, whose `lastOwner` is not a class
+of the declaring package, or none of whose definitions has exactly the columns
+a supported snapshot holding the table has (projection drift, or a release
+shape not declared; the failure names the command). Who declared
 what comes from `release-upgrade/owners/<release>.json`, written by
 `node scripts/retired-table-facts.mjs owners --release <release>` from that
 release's published manifests, never by editing the snapshot. An owners file is
