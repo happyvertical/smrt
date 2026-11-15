@@ -203,37 +203,37 @@ minimumReleaseAgeExclude:
   - '@happyvertical/ocr@0.62.1'
 
 catalog:
-  '@aws-sdk/client-sqs': ^3.1136.0
-  '@google-cloud/tasks': ^7.1.1
-  '@happyvertical/accounting': ^0.112.3
-  '@happyvertical/ai': ^0.112.3
-  '@happyvertical/auth': ^0.112.3
-  '@happyvertical/cache': ^0.112.3
-  '@happyvertical/documents': ^0.112.3
-  '@happyvertical/email': ^0.112.3
-  '@happyvertical/encryption': ^0.112.3
-  '@happyvertical/files': ^0.112.3
-  '@happyvertical/geo': ^0.112.3
-  '@happyvertical/images': ^0.112.3
-  '@happyvertical/jobs': ^0.112.3
-  '@happyvertical/payments': ^0.112.3
-  '@happyvertical/json': ^0.112.3
-  '@happyvertical/logger': ^0.112.3
-  '@happyvertical/messages': ^0.112.3
+  '@aws-sdk/client-sqs': ^3.1169.0
+  '@google-cloud/tasks': ^7.3.1
+  '@happyvertical/accounting': ^0.113.0
+  '@happyvertical/ai': ^0.113.0
+  '@happyvertical/auth': ^0.113.0
+  '@happyvertical/cache': ^0.113.0
+  '@happyvertical/documents': ^0.113.0
+  '@happyvertical/email': ^0.113.0
+  '@happyvertical/encryption': ^0.113.0
+  '@happyvertical/files': ^0.113.0
+  '@happyvertical/geo': ^0.113.0
+  '@happyvertical/images': ^0.113.0
+  '@happyvertical/jobs': ^0.113.0
+  '@happyvertical/payments': ^0.113.0
+  '@happyvertical/json': ^0.113.0
+  '@happyvertical/logger': ^0.113.0
+  '@happyvertical/messages': ^0.113.0
   '@happyvertical/ocr': ^0.62.1
-  '@happyvertical/pdf': ^0.65.9
-  '@happyvertical/projects': ^0.112.3
-  '@happyvertical/repos': ^0.112.3
-  '@happyvertical/secrets': ^0.112.3
-  '@happyvertical/signatures': ^0.112.3
-  '@happyvertical/speech': ^0.112.3
-  '@happyvertical/spreadsheets': ^0.112.3
+  '@happyvertical/pdf': ^0.67.2
+  '@happyvertical/projects': ^0.113.0
+  '@happyvertical/repos': ^0.113.0
+  '@happyvertical/secrets': ^0.113.0
+  '@happyvertical/signatures': ^0.113.0
+  '@happyvertical/speech': ^0.113.0
+  '@happyvertical/spreadsheets': ^0.113.0
   '@happyvertical/spider': ^1.1.13
-  '@happyvertical/sql': ^0.112.3
-  '@happyvertical/utils': ^0.112.3
-  '@sentry/node': ^10.75.0
+  '@happyvertical/sql': ^0.113.0
+  '@happyvertical/utils': ^0.113.0
+  '@sentry/node': ^11.12.0
   bull: ^4.16.5
-  bullmq: ^6.3.8
+  bullmq: ^6.7.6
   sharp: ^0.35.5
 
 allowBuilds:
