@@ -32,7 +32,7 @@ These words mean one thing everywhere in the s-m-r-t docs.
 | **mode** | A principal's stored choice: `byo`, `local`, `hosted` or `off`. |
 | **source** | Where a binding came from: `byo`, `local`, `hosted` or `app`. Recorded on every usage row. |
 | **call** | One model request; one `_smrt_ai_usage` row. |
-| **run** | One fusion execution; one `_smrt_ai_runs` row plus one usage row per seat call. |
+| **run** | One piece of AI work with its own record (a fusion, a chat turn, a workflow): one `_smrt_ai_runs` row, its events, and one usage row per call. A call on its own is not a run. See [AI runs](./ai-runs.md). |
 | **evaluation** | A judgment recorded later about a call or a run (a label such as `good` or `wrong`, a score), by a person, the app or a grader. |
 | **transcript** | The stored, redacted text of a call, opt-in; one `_smrt_ai_transcripts` row. |
 
@@ -157,8 +157,11 @@ that seat, and a gate adds one decision call.
   first live output and the run is recorded `degraded`. When every seat
   dies the call throws `InferenceFusionError` (`INFERENCE_FUSION_FAILED`);
   an empty answer is never returned.
-- Each run writes one `_smrt_ai_runs` row (`ok | degraded | failed`) and one
-  usage row per seat call, all sharing the `runId`.
+- Each fusion is a `fusion` run: its `_smrt_ai_runs` row is written when it
+  starts and ends `done` (with `degraded` set when a seat died or
+  substituted), `failed`, or `stopped` at a budget limit; every seat call has
+  its own usage row and `call` event in the run. A fusion needs usage
+  persistence on. See [AI runs](./ai-runs.md).
 
 ### Worked example
 
@@ -344,7 +347,8 @@ and run id are indexed columns; the rest stay in `tags`.
 
 ```bash
 smrt ai:usage --by prompt,model,tier --since 7d
-smrt ai:usage --by fusion          # also totals _smrt_ai_runs per fusion
+smrt ai:usage --by fusion          # also totals fusion runs (_smrt_ai_runs)
+smrt ai:usage --runs               # runs of every type, by status
 smrt ai:usage --by source --tenant <id>
 ```
 

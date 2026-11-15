@@ -1,10 +1,11 @@
-# AI usage observability (#3077, #4751, #4753, #4760, #4780, #4782)
+# AI usage observability and AI runs (#3077, #4751, #4753, #4760, #4780, #4782, #5005)
 
 `_smrt_ai_usage` answers "how does model X do on prompt Y". Sources:
 `src/adapters/ai-usage.ts` (persistence), `src/adapters/ai-usage-recorder.ts`
 (the shared pipeline and public recorder, #3077),
 `src/system/ai-usage-observability.ts` (evaluations, report), `src/class.ts`
-(`listAiUsage` / `summarizeAiUsage`).
+(`listAiUsage` / `summarizeAiUsage`). AI runs, events, budgets and their
+retention (#5005) are under [AI runs](#ai-runs-_smrt_ai_runs-4753-5005).
 
 ## Recording from any client (#3077)
 
@@ -90,47 +91,162 @@ and finds nothing to change on a second run. Other old rows keep NULL columns
 and their `tags`. A writer must not depend on the columns without
 `ensureSystemTables()` having run. `pruneAiUsage()` is unchanged.
 
-## Run records (`_smrt_ai_runs`, #4753)
+## AI runs (`_smrt_ai_runs`, #4753, #5005)
 
-Source: `src/system/ai-runs.ts`. The table holds one row for
-every kind of run since schema 1.17.0 (#5005: `type`, `definition_key`,
-status `running | waiting-approval | stopped | failed | done`, budget, own,
-inclusive and reserved totals, retention flags; column list in
-`CREATE_SMRT_AI_RUNS_TABLE`, rules in `docs/content/ai-runs.md`). This module
-reads and writes the `fusion` rows in the fusion vocabulary: `ok` is `done`,
-`degraded` is `done` with `degraded` set, `failed` is `failed` with stop reason
-`error`. A fusion row has `id` (the `runId` every seat's usage row carries in
-`run_id`), `definition_key` (the fusion key), `mode`, `tenant_id` /
-`class_name` (the instance's, like a usage row), `prompt_key` of the entry
-call, `seats` that ran, `degraded_seats` (died or answered through a
-substitution), `status`, `duration` and `details` (JSON, per seat: `persona` (the seat name), prompt,
-status, target and model labels, token usage, substitutions, failure class; gate verdict). Never
-prompts, inputs, outputs or keys. Seat usage rows also carry the `fusionKey`
-and `seat` tags (`seat: 'gate'` for the gate's decision row).
+The model, its words and its rules are in
+[docs/content/ai-runs.md](../../../docs/content/ai-runs.md); this section maps
+them to code. Every model call is recorded once, as its usage row; a run
+(a fusion, a chat turn, a workflow, an owner's `@scope/pkg:type`) is laid over
+those rows. A call on its own is not a run (`run_id` NULL).
 
-- Writer: the executor context's `recordRun()` (`class.ts`), only when usage
-  is enabled and persisted and the instance has a database; a write failure is
-  logged, never thrown. Direct API: `recordAiRun(db, input)`.
-- Readers: `listAiRuns(db, { id?, fusionKey?, status?, tenantId?, since?,
-  until?, limit? })` (newest first) and `reportAiRuns(db, { since, until,
-  tenantId })` (per fusion: runs, ok/degraded/failed, seats, degraded seats,
-  p50 duration; other tenants counted in `excluded`). `smrt ai:usage --by
-  fusion` prints it beside the usage report.
-- Indexes: `created_at`, `(definition_key, created_at)`, `(tenant_id,
-  created_at)`, `parent_run_id`; `status` is always read with one of them. `tenant_id` stays
-  TEXT like `_smrt_ai_usage.tenant_id`. `run_id` is not a foreign key.
-- Retention: the sweep's `ai-usage` task prunes runs with the AI usage age
-  bound (`pruneAiRuns()`); a usage row-count bound does not apply to runs.
-- Schema 1.14.0 created the table. Schema 1.17.0 rebuilds it once
-  (`ensureAiRunsSystemTableCompatibility()`, only while it still has
-  `fusion_key`: create the new shape, copy the rows as `type 'fusion'` with
-  `finished_at = created_at` and `started_at = created_at - duration`, drop,
-  rename) because `fusion_key` became `definition_key` and `mode`, `seats` and
-  `degraded_seats` stopped being NOT NULL; then one guarded UPDATE moves the
-  stored statuses. On PostgreSQL a table with legacy timezone-naive
-  timestamps is left alone and the bootstrap fails closed until the audited
-  timestamp migration has run. PostgreSQL lane:
-  `issue-4753-ai-runs-postgres.optional.test.ts`.
+| Source | Holds |
+|---|---|
+| `src/system/ai-run-model.ts` | `AiRunRow`, statuses and stop reasons, budget keys, the typed errors, `withAiRunTransaction` (5 tries, 10-500 ms jitter, `lock_timeout` on PostgreSQL), chain and subtree readers, `lockAiRunChainFenced` (claim fence first) |
+| `src/system/ai-run-lifecycle.ts` | `openAiRun` (tracking check, durable checkpoint, retry, child `handoff`), guarded status changes (`transitionAiRun`, `stopAiRun`, `cancelAiRun`, `finishAiRun`, `waitAiRunApproval`), `startAiRunStep`, checkpoints, `resumeAiRun`, `stopAiRunForChild`, `closeAiRunForJob` |
+| `src/system/ai-run-accounting.ts` | Reservation sizing and `reserveAiCall(s)` (all or none), `settleAiCall`, `releaseAiCall`, reconciliation, the pending settlement list, `sweepAiRuns`, `checkAiRunTotals` / `repairAiRunTotals` |
+| `src/system/ai-run-events.ts` | `appendAiRunEvent` (seq in the insert's transaction, redact then cap), `closeAiRunHandoff`, `countAiRunEvents` / `aiRunApprovalRate`, `getRunTrajectory` |
+| `src/system/ai-run-calls.ts`, `src/ai-run-client.ts` | The explicit `AiRunContext` (and its job-payload form), held reservations, `beginAiRunCall` / `runAiRunCall`, the tracked client proxy |
+| `src/system/ai-run-entry.ts` | `openAiEntryRun`: the run of a multi-call entry call (a fusion), opened at its start |
+| `src/system/ai-run-retention.ts` | `pruneAiRunTrajectories`, `pruneAiRuns`, `isAiRunTrajectorySampled` |
+| `src/system/ai-runs.ts` | Readers `listAiRuns` / `reportAiRuns`; deprecated `recordAiRun` |
+| `src/system/ai-run-policy.ts` | The six decided product rules as constants (`AI_RUN_POLICY`) |
+
+**Tables.** `_smrt_ai_runs` (one row per run: type, definition, status,
+stop fields, budget, own, inclusive and reserved totals, saved check and
+approval counts, `retain`, `trajectory_pruned`), `_smrt_ai_run_events`
+(`(run_id, seq)` unique inline; `call` events carry the reservation state and
+amounts as typed columns), `_smrt_ai_run_checkpoints` (durable runs only: a
+checkpoint row is what makes a run durable; `revision` is compare-and-swap),
+`_smrt_ai_evaluations`. No foreign keys between them: retention deletes in
+its own order and an evaluation may outlive its target.
+
+**Opening needs tracking.** `openAiRun(store, input)` throws
+`AiRunTrackingDisabledError` while `store.usageTracking` is off
+(`SmrtClass#aiRunStore()` says on only while usage is enabled and persisted
+and the instance has a database), before anything is written or sent. The
+check is made only at open: settlements of an open run always write their
+usage row inside the settle transaction, whatever the setting says later.
+
+**Statuses** move only by a guarded update from the expected status
+(`AI_RUN_TRANSITIONS`; `waiting-approval` and leaving `stopped` are durable
+only). A stop of a run that is not durable is final. `cancelAiRun` is the one
+subtree write: in one transaction it cancels the run and every descendant
+that is not final (`running`, `waiting-approval`, durable `stopped`), locking
+the run, then descendants by depth and id; each gets `stopped_by_run_id` the
+cancelled run, `stop_detail` NULL, `finished_at` set. Every other stop reaches
+descendants lazily, at their next reservation or step start. `resumeAiRun`
+reads the whole chain and refuses with `AiRunResumeRefusedError`:
+`not_resumable`, `ancestor_missing`, `ancestor_final`, `budget_unchanged`,
+`budget_lowered`, `above_ceiling`, `definition_changed`; a retry (`openAiRun`
+with `retryOfRunId`) adds `not_retryable` and `retry_source_pruned` (the
+failed run or its checkpoint is gone).
+
+**Accounting.** Run totals are the budget authority and change only in short
+transactions that lock the chain root first (claim fence, then run rows by
+depth and id, then event rows) together with the event that justifies the
+change; usage rows are the billing ledger and are never read for a budget.
+A call is charged once: own totals of its run, inclusive totals of the run
+and every ancestor. The reservation state machine is `reserved` → `settled`
+| `released` | `abandoned` → `settled_late`, plus `unreserved`; every move is
+guarded on the expected state. A refused reservation stops the calling run
+with a typed reason and `stop_detail` and throws `AiRunStoppedError`; a
+child's stop reaches its parent as a stop (`stopAiRunForChild`). Settlement
+never asserts the claim and never looks at status.
+
+**Call ids.** Every tracked call gets a call id before it is sent; its usage
+row is written with `id = call_id` (`ON CONFLICT (id) DO NOTHING`), so a
+retried save never makes a second row. `entry_call_id` is the entry call's id
+(the `callId` tag), shared by every call of an alias chain or fusion. A
+transcript joins on `_smrt_ai_usage.entry_call_id = _smrt_ai_transcripts.call_id`.
+
+**The tracked client.** `getAiClient(tier, { runTracking: true })` returns a
+client whose calls that carry a `runContext` option are calls of that run:
+reserved (or, with a held reservation, taking it), sent with the run's usage
+tags and the output limit the reservation decided, then settled with their
+usage row; the usage handlers run only after the settle commits. The run
+context is always passed explicitly, never read from a process-wide variable;
+`serializeAiRunContext` / `restoreAiRunContext` carry it through a job payload
+(tenant-checked). Without `runTracking` a client is exactly as before.
+
+**Fusions.** The executor opens the fusion run through the context's
+`openRun()` (`SmrtClass#openInferenceRun` → `openAiEntryRun`) before the
+first seat and closes it at the end; `recordRun()` is no longer passed. A
+fusion tier does not run untracked (`AiRunTrackingDisabledError` from
+`openRun`). Every seat and the judge reserve together, all or none
+(`stop_detail.requested` is the sum over all of them); a seat's first call
+takes its share, the judge checks its chain is still `running` first, and
+shares never taken are released at the end. Inside a run (the entry call
+carries a `runContext`), the fusion is a child run and the parent gets a
+`handoff` event (`child_run_id`, `call_id` = the entry call, no reservation),
+written with the child's row and ended `done`, `stopped`, `cancelled` or
+`failed` with it. Seat usage rows carry `run_id` = the fusion run, `fusionKey`
+and `seat` tags; the gate's decision call is not a call of the run (no
+reservation, no `runId` tag). `details` hold identities and totals only
+(seat persona, prompt key, target and model labels, usage, substitutions,
+failure class; gate verdict): never prompts, inputs, outputs or keys.
+
+**Events.** `call` (a pointer to its usage row), `action`, `observation`,
+`check` (`passed | failed`), `approval` (`requested`, then a decision
+`approved | refused` whose `parent_event_id` is the request, possibly in an
+earlier run, possibly pruned) and `handoff` (`running` until its child ends).
+A `check` or `approval` request points at the judged `call` or `handoff`
+event. A decision counts once, in the run that recorded it; a request counts
+only as requested; approval rate = approved / (approved + refused).
+Payloads are redacted (host redactor, then the transcript redactor) and
+capped (head and tail kept, `truncated`); `payload_ref` points at content the
+host owns, and the framework stores nothing behind it.
+
+**The `ai-runs` task** (retention sweep, `sweepAiRuns`): reconciles `call`
+reservations older than the smallest `callTimeoutMs` on their chain plus a
+minute (else an hour) by settling from a usage row or abandoning; closes a
+run that is not durable after 24 quiet hours as `failed` / `abandoned`;
+cancels any run left under a cancelled ancestor and any `waiting-approval` or
+durable `stopped` run under a final or missing ancestor; then prunes
+trajectories and run rows (below). Worker reconciliation on claim:
+`reconcileAiRunOnClaim`.
+
+**Retention** (page section 8). A finished, unprotected run keeps its
+trajectory `aiRuns.trajectoryMaxAgeDays` (30) after `finished_at`; with
+`trajectorySampleRate` below 1, a run outside the sample (decided from its
+id) loses it once finished. Pruning saves the check and approval counts on
+the row and sets `trajectory_pruned` in the same transaction as the events
+are deleted, and deletes the checkpoint unless the run `failed`. Protected:
+`running`, `waiting-approval`, durable `stopped`, `experiment_id` set,
+`retain` set, and (through the top-down order) every descendant of a
+protected run; a child is never pruned before its parent, and a run with a
+call still `reserved` keeps its events. Run rows go with their usage rows at
+the `aiUsage.maxAgeDays` limit (90) counted from `finished_at`, never while
+the trajectory is kept, top down; the failed run's checkpoint goes with its
+row. Usage rows keep their own policy. Evaluations are never swept. Index:
+`idx_smrt_ai_runs_finished` (schema 1.19.0).
+
+**Readers.** `listAiRuns(db, { id?, type?, definitionKey?, status?,
+parentRunId?, experimentId?, tenantId?, since?, until?, limit? })` returns
+every type in the run vocabulary (a legacy `ok` / `degraded` row reads as
+`done`, with `degraded`; the `fusionKey` and `ok` / `degraded` filters still
+work). `reportAiRuns(db, { type?, since?, until?, tenantId? })` groups by
+`(type, definition_key)`: runs per status, degraded, seats, own calls,
+tokens and cost, checks and approval decisions with their rates (from the
+events, or the saved counts of a pruned trajectory), p50 active time; other
+tenants counted in `excluded`. `getRunTrajectory(runId | { callId })` is the
+one reader for a call in a run and a call on its own. CLI: `smrt ai:usage
+--runs` (every type), `--by fusion` (fusion runs).
+
+**Upgrades.** Schema 1.14.0 created the fusion table; 1.17.0 rebuilt it once
+(`ensureAiRunsSystemTableCompatibility()`, only while it still has
+`fusion_key`: new shape, rows copied as `type 'fusion'` with `finished_at =
+created_at` and `started_at = created_at - duration`), moved stored `ok` /
+`degraded` to `done` (with `degraded`) and `failed` to `failed` / `error` in
+one guarded UPDATE, and added events, checkpoints and evaluations; later
+1.17.0 work added `stop_detail`, `retry_of_run_id` and double-precision cost
+columns; 1.19.0 adds `idx_smrt_ai_runs_finished`. On PostgreSQL a table with
+legacy timezone-naive timestamps is left alone and the bootstrap fails closed
+until the audited timestamp migration has run.
+
+Tests: `issue-5005-ai-run-lifecycle.test.ts`, `-accounting`, `-cancel-resume`,
+`-entry`, `-retention`, `-readers`, `-tracked-client`, `-schema`,
+`issue-4753-ai-runs.test.ts`; PostgreSQL lanes `*-postgres.optional.test.ts`;
+fusion runs end to end in smrt-inference `issue-5005-fusion-runs.test.ts`.
 
 ## Evaluations
 
@@ -149,12 +265,18 @@ recorded when the verdict is known. Rules:
   the target's tenant, and an explicit `tenantId` must match it, as must every
   row of a run (`AI_EVALUATION_TENANT_MISMATCH`). Never relax this into a
   cross-tenant write.
+- A run is judged by its run row's tenant (its usage rows only when the row
+  is gone), so a run with no call, or whose usage was pruned, can be judged.
 - `call_id` / `run_id` are not foreign keys: retention prunes usage rows and
-  must neither be blocked by nor cascade into evaluations. Evaluations are
-  low-volume and not swept; a pruned target leaves the evaluation with an
-  empty `usage` join.
+  run rows and must neither be blocked by nor cascade into evaluations.
+  Evaluations are never swept; a pruned target leaves the evaluation with an
+  empty `usage` join and `target: null`, never an error.
 - `listAiEvaluations(db, filters)` returns evaluations newest first with the
-  judged rows (`usage`), joined only within the evaluation's tenant.
+  judged rows (`usage`) and `target` (`{ kind: 'call', usage }` or `{ kind:
+  'run', id, type, definitionKey, status, promptKey, templateHash }`, NULL
+  once pruned), joined only within the evaluation's tenant. Per-prompt
+  measures reach a prompt through the target, so they leave such an
+  evaluation out.
 - The 1.17.0 upgrade copies old labels across
   (`ensureAiEvaluationsSystemTableCompatibility()`): a `usage_id` becomes the
   `call_id`; a label with only an entry `call_id` goes to the call whose
@@ -309,7 +431,17 @@ rows of one prompt key; no model judges anything (labels come from
   `callIds` (distinct entry calls), `transcriptCount` and `transcripts` (ids, call ids, labels,
   worst score; worst-labelled first, unlabelled last). Rates are per usage
   row, the unit `ai:usage` counts. Label counting follows `reportAiUsage()`:
-  a call's label on its row, a run label once per side.
+  a call's label on its row, a run label once per side. #5005 adds
+  `steps` / `repairedSteps` / `repairRate` (distinct `run_id:step_instance_id`
+  among the side's rows, repaired when one has `attempt > 1`),
+  `checksPassed` / `checksFailed` / `checkPassRate` and `approvalsGiven` /
+  `approvalsRefused` / `approvalRate`: a check (or an approval decision,
+  through its request, even from another run) counts against the side whose
+  call it judged, or, for a `templateHash` side, whose fusion run (same
+  prompt key and template hash) a judged `handoff` names. A decision whose
+  request is gone is left out; the counts saved on a pruned run are per run,
+  not per prompt, and are not counted here. `templateHash` matches the
+  `template_hash` column, else the tag.
 - Accounting: `rows` (every row of the prompt in scope), `unmatched`
   (neither side), `inBoth` (totalled on both), `excluded.externalAgent`.
   `costBasis` is the report's.
