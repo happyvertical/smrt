@@ -10,6 +10,7 @@
 
 import { userInfo } from 'node:os';
 import type {
+  AiEvaluationRecord,
   AiTranscriptListOptions,
   AiTranscriptWithUsage,
 } from '@happyvertical/smrt-core';
@@ -112,13 +113,13 @@ export function formatAiTranscript(transcript: AiTranscriptWithUsage): string {
   );
   lines.push(`Usage:     ${transcript.usage.length} row(s), ${tokens} tokens`);
   lines.push(
-    `Outcomes:  ${
-      transcript.outcomes.length === 0
+    `Evaluations: ${
+      transcript.evaluations.length === 0
         ? '-'
-        : transcript.outcomes
+        : transcript.evaluations
             .map(
-              (outcome) =>
-                `${outcome.label}${outcome.score === null ? '' : ` (${outcome.score})`} by ${outcome.actor}`,
+              (evaluation) =>
+                `${evaluation.label ?? evaluation.metric}${evaluationScore(evaluation) === null ? '' : ` (${evaluationScore(evaluation)})`} by ${evaluation.evaluator}`,
             )
             .join('; ')
     }`,
@@ -148,10 +149,18 @@ export function formatAiTranscript(transcript: AiTranscriptWithUsage): string {
   return lines.join('\n');
 }
 
-/** Lowest score of a transcript's labels; `null` when none is scored. */
+/** An evaluation's numeric value; `null` for any other value type. */
+function evaluationScore(evaluation: AiEvaluationRecord): number | null {
+  return evaluation.valueType === 'number' &&
+    typeof evaluation.value === 'number'
+    ? evaluation.value
+    : null;
+}
+
+/** Lowest score of a transcript's evaluations; `null` when none is scored. */
 function worstScore(transcript: AiTranscriptWithUsage): number | null {
-  const scores = transcript.outcomes
-    .map((outcome) => outcome.score)
+  const scores = transcript.evaluations
+    .map(evaluationScore)
     .filter((score): score is number => score !== null);
   return scores.length > 0 ? Math.min(...scores) : null;
 }
@@ -165,7 +174,9 @@ export function worstLabelledTranscripts(
   limit: number,
 ): AiTranscriptWithUsage[] {
   return transcripts
-    .filter((transcript) => transcript.outcomes.length > 0)
+    .filter((transcript) =>
+      transcript.evaluations.some((evaluation) => evaluation.label !== null),
+    )
     .sort((a, b) => {
       const scoreA = worstScore(a);
       const scoreB = worstScore(b);
@@ -191,7 +202,13 @@ export function formatWorstLabelledTranscripts(
     transcript.promptKey ?? '(unattributed)',
     `${transcript.provider ?? '?'}:${transcript.model ?? '?'}`,
     worstScore(transcript)?.toString() ?? '-',
-    [...new Set(transcript.outcomes.map((outcome) => outcome.label))].join(','),
+    [
+      ...new Set(
+        transcript.evaluations.flatMap((evaluation) =>
+          evaluation.label === null ? [] : [evaluation.label],
+        ),
+      ),
+    ].join(','),
     transcript.createdAt.toISOString(),
   ]);
   const header = ['call id', 'prompt', 'model', 'worst', 'labels', 'created'];

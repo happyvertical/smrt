@@ -72,19 +72,62 @@ describe.skipIf(!pgUrl)('fusion run records on PostgreSQL (#4753)', () => {
     await ensureSystemTables(db, 'postgres');
     await ensureSystemTables(db, 'postgres');
 
+    const text = [
+      'id',
+      'type',
+      'definition_key',
+      'definition_version',
+      'tenant_id',
+      'class_name',
+      'prompt_key',
+      'template_hash',
+      'owner_id',
+      'parent_run_id',
+      'experiment_id',
+      'dataset_item',
+      'tags',
+      'status',
+      'stop_reason',
+      'stopped_by_run_id',
+      'budget',
+      'mode',
+      'details',
+    ];
+    const bigint = [
+      'degraded',
+      'tokens',
+      'calls',
+      'uncosted_calls',
+      'steps_used',
+      'duration',
+      'inclusive_tokens',
+      'inclusive_calls',
+      'inclusive_uncosted_calls',
+      'reserved_tokens',
+      'reserved_calls',
+      'checks_passed',
+      'checks_failed',
+      'approvals_given',
+      'approvals_refused',
+      'retain',
+      'trajectory_pruned',
+      'seats',
+      'degraded_seats',
+    ];
+    const real = ['cost_used', 'inclusive_cost', 'reserved_cost'];
+    const timestamps = [
+      'active_since',
+      'started_at',
+      'finished_at',
+      'created_at',
+    ];
     expect(await liveColumns()).toEqual({
-      id: 'text',
-      fusion_key: 'text',
-      mode: 'text',
-      tenant_id: 'text',
-      class_name: 'text',
-      prompt_key: 'text',
-      seats: 'bigint',
-      degraded_seats: 'bigint',
-      status: 'text',
-      duration: 'bigint',
-      details: 'text',
-      created_at: 'timestamp with time zone',
+      ...Object.fromEntries(text.map((name) => [name, 'text'])),
+      ...Object.fromEntries(bigint.map((name) => [name, 'bigint'])),
+      ...Object.fromEntries(real.map((name) => [name, 'real'])),
+      ...Object.fromEntries(
+        timestamps.map((name) => [name, 'timestamp with time zone']),
+      ),
     });
     const indexes = rowsOf(
       await db.query(
@@ -95,7 +138,8 @@ describe.skipIf(!pgUrl)('fusion run records on PostgreSQL (#4753)', () => {
     expect(indexes).toEqual(
       expect.arrayContaining([
         'idx_smrt_ai_runs_created',
-        'idx_smrt_ai_runs_fusion_created',
+        'idx_smrt_ai_runs_definition_created',
+        'idx_smrt_ai_runs_parent',
         'idx_smrt_ai_runs_tenant_created',
       ]),
     );

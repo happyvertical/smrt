@@ -80,7 +80,7 @@ export interface InferenceSettingsPanelProps {
   appEditable?: boolean;
   /**
    * The host's transcript route for a Usage-tab row (#4781). Rows with
-   * stored transcripts link their count and outcome labels there; the panel
+   * stored transcripts link their count and evaluation labels there; the panel
    * renders no transcript content.
    */
   transcriptHref?: (

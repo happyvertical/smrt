@@ -1,5 +1,11 @@
 /**
- * Multi-call run records (`_smrt_ai_runs`, #4753).
+ * Fusion run records over `_smrt_ai_runs` (#4753).
+ *
+ * `_smrt_ai_runs` holds a row for every kind of run since #5005 (see
+ * `CREATE_SMRT_AI_RUNS_TABLE`); this module reads and writes the `fusion` rows
+ * only, in the fusion vocabulary its callers use (`ok`, `degraded`, `failed`),
+ * mapped to the run columns: `ok` is `done`, `degraded` is `done` with the
+ * `degraded` flag, `failed` is `failed` with stop reason `error`.
  *
  * A fusion runs several model calls for one answer. Every call keeps its own
  * `_smrt_ai_usage` row (tagged `runId`, `fusionKey`, `seat`); the run row
@@ -40,7 +46,7 @@ function count(value: unknown): number {
   return Number.isFinite(number) ? number : 0;
 }
 
-/** `_smrt_ai_runs.status` values. */
+/** The fusion statuses this module speaks; stored as run status and flag. */
 export const AI_RUN_STATUSES = ['ok', 'degraded', 'failed'] as const;
 
 /** Input for {@link recordAiRun}. */
@@ -111,11 +117,14 @@ export async function recordAiRun(
   const seats = requireCount(input.seats, 'seats');
   const degradedSeats = requireCount(input.degradedSeats, 'degradedSeats');
   const duration = Math.max(0, Math.round(Number(input.duration) || 0));
+  const createdAt = input.createdAt ?? new Date();
   await db.query(
     `INSERT INTO _smrt_ai_runs
-      (id, fusion_key, mode, tenant_id, class_name, prompt_key, seats,
-       degraded_seats, status, duration, details, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      (id, type, definition_key, mode, tenant_id, class_name, prompt_key, seats,
+       degraded_seats, status, degraded, stop_reason, duration, details,
+       started_at, finished_at, created_at)
+     VALUES ($1, 'fusion', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+             $14, $15, $16)`,
     id,
     fusionKey,
     mode,
@@ -124,10 +133,14 @@ export async function recordAiRun(
     input.promptKey ?? null,
     seats,
     degradedSeats,
-    input.status,
+    input.status === 'failed' ? 'failed' : 'done',
+    input.status === 'degraded' ? 1 : 0,
+    input.status === 'failed' ? 'error' : null,
     duration,
     JSON.stringify(input.details ?? {}),
-    (input.createdAt ?? new Date()).toISOString(),
+    new Date(createdAt.getTime() - duration).toISOString(),
+    createdAt.toISOString(),
+    createdAt.toISOString(),
   );
 }
 
@@ -143,12 +156,26 @@ function parseDetails(value: unknown): Record<string, unknown> {
   }
 }
 
+/** The fusion vocabulary of a run row's `status` and `degraded` columns. */
+function fusionStatus(row: Record<string, unknown>): InferenceRunStatus {
+  const status = String(row.status);
+  if (status === 'failed') return 'failed';
+  return count(row.degraded) > 0 ? 'degraded' : 'ok';
+}
+
+/** SQL for one fusion status, over the run columns. */
+const FUSION_STATUS_SQL: Record<InferenceRunStatus, string> = {
+  ok: "status = 'done' AND degraded = 0",
+  degraded: "status = 'done' AND degraded <> 0",
+  failed: "status = 'failed'",
+};
+
 function toRunRecord(row: Record<string, unknown>): AiRunRecord {
   return {
     id: String(row.id),
-    fusionKey: String(row.fusion_key),
+    fusionKey: String(row.definition_key),
     mode: String(row.mode),
-    status: String(row.status) as InferenceRunStatus,
+    status: fusionStatus(row),
     seats: count(row.seats),
     degradedSeats: count(row.degraded_seats),
     duration: count(row.duration),
@@ -185,8 +212,14 @@ export async function listAiRuns(
     conditions.push(sql.replace('?', `$${params.length}`));
   };
   if (options.id) add('id = ?', options.id);
-  if (options.fusionKey) add('fusion_key = ?', options.fusionKey);
-  if (options.status) add('status = ?', options.status);
+  conditions.push("type = 'fusion'");
+  if (options.fusionKey) add('definition_key = ?', options.fusionKey);
+  if (options.status) {
+    const sql = FUSION_STATUS_SQL[options.status];
+    if (!sql)
+      throw new TypeError(`listAiRuns: unknown status ${options.status}`);
+    conditions.push(sql);
+  }
   if (options.tenantId === null) conditions.push('tenant_id IS NULL');
   else if (options.tenantId) add('tenant_id = ?', options.tenantId);
   if (options.since) add('created_at >= ?', options.since.toISOString());
@@ -195,8 +228,8 @@ export async function listAiRuns(
   params.push(limit);
   const rows = getRows(
     await db.query(
-      `SELECT id, fusion_key, mode, tenant_id, class_name, prompt_key, seats,
-              degraded_seats, status, duration, details, created_at
+      `SELECT id, definition_key, mode, tenant_id, class_name, prompt_key, seats,
+              degraded_seats, status, degraded, duration, details, created_at
          FROM _smrt_ai_runs
         ${conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''}
         ORDER BY created_at DESC, id DESC
@@ -278,7 +311,7 @@ export async function reportAiRuns(
   db: DatabaseInterface,
   options: AiRunReportOptions = {},
 ): Promise<AiRunReport> {
-  const windowConditions: string[] = [];
+  const windowConditions: string[] = ["type = 'fusion'"];
   const windowParams: unknown[] = [];
   if (options.since) {
     windowParams.push(options.since.toISOString());
@@ -304,7 +337,8 @@ export async function reportAiRuns(
     params.push(REPORT_PAGE_SIZE);
     const page = getRows(
       await db.query(
-        `SELECT id, fusion_key, tenant_id, seats, degraded_seats, status, duration
+        `SELECT id, definition_key, tenant_id, seats, degraded_seats, status,
+                degraded, duration
            FROM _smrt_ai_runs
           ${conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''}
           ORDER BY id ASC
@@ -322,7 +356,7 @@ export async function reportAiRuns(
         excluded.otherTenants++;
         continue;
       }
-      const key = String(row.fusion_key);
+      const key = String(row.definition_key);
       let bucket = buckets.get(key);
       if (!bucket) {
         bucket = emptyStats();
@@ -330,10 +364,7 @@ export async function reportAiRuns(
       }
       for (const acc of [totals, bucket]) {
         acc.stats.runs++;
-        const status = String(row.status);
-        if (status === 'ok' || status === 'degraded' || status === 'failed') {
-          acc.stats[status]++;
-        }
+        acc.stats[fusionStatus(row)]++;
         acc.stats.seats += count(row.seats);
         acc.stats.degradedSeats += count(row.degraded_seats);
         acc.durations.push(count(row.duration));

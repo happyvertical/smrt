@@ -189,7 +189,7 @@ export interface InferenceUsageView {
     totalTokens: number;
     estimatedCost: number;
     uncostedCalls?: number;
-    outcomes?: Record<string, number>;
+    evaluations?: Record<string, number>;
     /** Calls with a stored transcript (`usage({ transcripts: true })`, #4781). */
     transcripts?: number;
   }>;
@@ -239,7 +239,8 @@ export interface InferenceTranscriptSettingsChange {
 export interface InferenceTranscriptLinkFilters {
   promptKey?: string;
   templateHash?: string;
-  outcome?: string;
+  /** An evaluation label (`listAiTranscripts({ label })`). */
+  label?: string;
   /** ISO timestamps of the report window. */
   since?: string;
   until?: string;
@@ -356,13 +357,13 @@ export function defaultTierRevertPreview(
 
 /**
  * The transcript-route filters for one usage bucket (and, optionally, one
- * outcome label): the prompt key and template hash when the report was
+ * evaluation label): the prompt key and template hash when the report was
  * grouped by them, and the report window.
  */
 export function transcriptLinkFilters(
   view: Pick<InferenceUsageView, 'since' | 'until'>,
   key: Record<string, string | null | undefined>,
-  outcome?: string,
+  label?: string,
 ): InferenceTranscriptLinkFilters {
   const filters: InferenceTranscriptLinkFilters = {};
   if (typeof key.prompt === 'string' && key.prompt) {
@@ -371,7 +372,7 @@ export function transcriptLinkFilters(
   if (typeof key.template === 'string' && key.template) {
     filters.templateHash = key.template;
   }
-  if (outcome) filters.outcome = outcome;
+  if (label) filters.label = label;
   const iso = (value: Date | string | null | undefined) =>
     value instanceof Date
       ? value.toISOString()

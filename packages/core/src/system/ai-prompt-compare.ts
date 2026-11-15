@@ -15,7 +15,7 @@
  * totalled on both and counted in `inBoth`, hosted-gate blocks count beside
  * calls, and external-agent measurements are counted as excluded.
  *
- * Labels come from `recordAiUsageOutcome()` only; nothing here asks a model
+ * Labels come from `recordAiEvaluation()` only; nothing here asks a model
  * to judge anything. Transcript content is not read: a side lists the ids of
  * its stored transcripts, and `listAiTranscripts()` (audited) reads them.
  */
@@ -291,7 +291,7 @@ export interface AiPromptCompareTranscriptRef {
   callId: string;
   tenantId: string | null;
   createdAt: Date;
-  /** Labels on the call, its run or its usage rows (same tenant). */
+  /** Evaluation labels on the call's usage rows or run (same tenant). */
   labels: string[];
   /** Lowest score among those labels; `null` when none is scored. */
   worstScore: number | null;
@@ -322,18 +322,17 @@ export interface AiPromptCompareSide {
   degradedCalls: number;
   degradedRate: number | null;
   /**
-   * Label distribution. A label on a usage row counts on that row; a run or
-   * call label counts once per side holding the run or call (the
-   * `reportAiUsage()` rule).
+   * Label distribution. A label on a call counts on that call's row; a run
+   * label counts once per side holding the run (the `reportAiUsage()` rule).
    */
-  outcomes: Record<string, number>;
-  /** Labels counted in `outcomes`. */
+  evaluations: Record<string, number>;
+  /** Labels counted in `evaluations`. */
   labels: number;
   /** Counted labels that carry a score. */
   scoredLabels: number;
   /** Mean score of `scoredLabels`; `null` when none. */
   meanScore: number | null;
-  /** Distinct call ids (`call_id`, #4780) among the side's calls. */
+  /** Distinct entry call ids (`entry_call_id`, #4780) among the side's calls. */
   callIds: number;
   /** Stored transcripts of the side's calls (total, before the limit). */
   transcriptCount: number;
@@ -437,9 +436,9 @@ interface SideAccumulator {
   side: AiPromptCompareSide;
   durations: number[];
   scoreSum: number;
-  /** `(tenant, run)` and `(tenant, call)` keys whose labels were counted. */
+  /** `(tenant, run)` keys whose labels were counted. */
   countedTargets: Set<string>;
-  /** `(tenant, callId)` of the side's calls. */
+  /** `(tenant, entry call id)` of the side's calls. */
   calls: Set<string>;
 }
 
@@ -469,7 +468,7 @@ function emptySide(
       degradedRate: null,
       // Null prototype: labels are free text, and `constructor` or
       // `__proto__` must count like any other label.
-      outcomes: Object.create(null) as Record<string, number>,
+      evaluations: Object.create(null) as Record<string, number>,
       labels: 0,
       scoredLabels: 0,
       meanScore: null,
@@ -493,9 +492,9 @@ interface LabelRow {
 function countLabels(acc: SideAccumulator, labels: LabelRow[]): void {
   const side = acc.side;
   for (const label of labels) {
-    side.outcomes[label.label] =
-      (Object.hasOwn(side.outcomes, label.label)
-        ? (side.outcomes[label.label] ?? 0)
+    side.evaluations[label.label] =
+      (Object.hasOwn(side.evaluations, label.label)
+        ? (side.evaluations[label.label] ?? 0)
         : 0) + 1;
     side.labels++;
     if (label.score !== null) {
@@ -509,13 +508,13 @@ const DEFAULT_TRANSCRIPT_LIMIT = 50;
 const MAX_TRANSCRIPT_LIMIT = 500;
 
 const USAGE_COLUMNS = `id, provider, model, operation, tenant_id, tier_requested,
-       tier_resolved, run_id, call_id, prompt_tokens, completion_tokens,
+       tier_resolved, run_id, entry_call_id, prompt_tokens, completion_tokens,
        total_tokens, estimated_cost, duration, tags`;
 
 /**
  * Compare two versions of a prompt, or two models or tiers on it, over the
  * recorded usage of one prompt key: per side calls, tokens, cost, latency
- * percentiles, fallback and degraded rates, the outcome label distribution
+ * percentiles, fallback and degraded rates, the evaluation label distribution
  * with its mean score, and the side's stored transcripts (ids only).
  *
  * Tenant-scoped: pass `tenantId` (`null` for global rows) or
@@ -552,8 +551,8 @@ export async function compareAiPromptRuns(
   let inBoth = 0;
   const excluded = { externalAgent: 0 };
 
-  // Per matched row, what later joins need: its tenant, id, run, call and
-  // which sides it landed on.
+  // Per matched row, what later joins need: its tenant, id (its call id), run,
+  // entry call and which sides it landed on.
   interface Matched {
     tenant: string | null;
     id: string;
@@ -592,7 +591,7 @@ export async function compareAiPromptRuns(
         tenant: nullableString(row.tenant_id),
         id: String(row.id),
         runId: nullableString(row.run_id),
-        callId: nullableString(row.call_id),
+        callId: nullableString(row.entry_call_id),
         on,
         blocked,
       };
@@ -636,44 +635,36 @@ export async function compareAiPromptRuns(
     scope,
     (inList, tenantWhere) =>
       `SELECT id, tenant_id FROM _smrt_ai_runs
-        WHERE id IN (${inList}) AND status IN ('degraded', 'failed')${tenantWhere}`,
+        WHERE id IN (${inList}) AND (status = 'failed' OR degraded <> 0)${tenantWhere}`,
     'tenant_id',
   )) {
     degradedRuns.add(tenantKey(nullableString(row.tenant_id), String(row.id)));
   }
 
-  // Labels naming the totalled rows, their runs or their calls, joined by
-  // (tenant, target). A label naming several targets judges the narrowest
-  // (usage row, then run, then call), as in reportAiUsage().
+  // Evaluation labels naming the totalled calls or their runs, joined by
+  // (tenant, target). An evaluation judges one call or one run.
   const labelsByUsage = new Map<string, LabelRow[]>();
   const labelsByRun = new Map<string, LabelRow[]>();
-  const labelsByCall = new Map<string, LabelRow[]>();
   {
     const seen = new Set<string>();
-    const outcomeQuery = (column: string) => (inList: string, where: string) =>
-      `SELECT id, usage_id, run_id, call_id, label, score, tenant_id
-         FROM _smrt_ai_usage_outcomes
-        WHERE ${column} IN (${inList})${where}`;
+    const evaluationQuery =
+      (column: string) => (inList: string, where: string) =>
+        `SELECT id, call_id, run_id, label, value, value_type, tenant_id
+           FROM _smrt_ai_evaluations
+          WHERE label IS NOT NULL AND ${column} IN (${inList})${where}`;
     const labelRows = [
       ...(await inChunks(
         db,
         usageIds,
         scope,
-        outcomeQuery('usage_id'),
+        evaluationQuery('call_id'),
         'tenant_id',
       )),
       ...(await inChunks(
         db,
         runIds,
         scope,
-        outcomeQuery('run_id'),
-        'tenant_id',
-      )),
-      ...(await inChunks(
-        db,
-        callIds,
-        scope,
-        outcomeQuery('call_id'),
+        evaluationQuery('run_id'),
         'tenant_id',
       )),
     ];
@@ -682,23 +673,23 @@ export async function compareAiPromptRuns(
       if (seen.has(id)) continue;
       seen.add(id);
       const tenant = nullableString(row.tenant_id);
-      const usageId = nullableString(row.usage_id);
-      const runId = nullableString(row.run_id);
       const callId = nullableString(row.call_id);
-      const [map, target] = usageId
-        ? [labelsByUsage, usageId]
+      const runId = nullableString(row.run_id);
+      const [map, target] = callId
+        ? [labelsByUsage, callId]
         : runId
           ? [labelsByRun, runId]
-          : callId
-            ? [labelsByCall, callId]
-            : [null, ''];
+          : [null, ''];
       if (!map) continue;
       const key = tenantKey(tenant, target);
       const list = map.get(key) ?? [];
       list.push({
         id,
         label: String(row.label),
-        score: nullableNumber(row.score),
+        score:
+          String(row.value_type) === 'number'
+            ? nullableNumber(row.value)
+            : null,
       });
       map.set(key, list);
     }
@@ -708,7 +699,6 @@ export async function compareAiPromptRuns(
     const usageLabels =
       labelsByUsage.get(tenantKey(entry.tenant, entry.id)) ?? [];
     const runKey = entry.runId ? tenantKey(entry.tenant, entry.runId) : null;
-    const callKey = entry.callId ? tenantKey(entry.tenant, entry.callId) : null;
     const degraded = runKey !== null && degradedRuns.has(runKey);
     for (const acc of entry.on) {
       if (degraded) acc.side.degradedCalls++;
@@ -717,10 +707,6 @@ export async function compareAiPromptRuns(
         acc.countedTargets.add(`r${runKey}`);
         countLabels(acc, labelsByRun.get(runKey) ?? []);
       }
-      if (callKey && !acc.countedTargets.has(`c${callKey}`)) {
-        acc.countedTargets.add(`c${callKey}`);
-        countLabels(acc, labelsByCall.get(callKey) ?? []);
-      }
     }
   }
 
@@ -728,12 +714,12 @@ export async function compareAiPromptRuns(
   // by (tenant, call id).
   const transcriptsByCall = new Map<string, AiPromptCompareTranscriptRef[]>();
   if (callIds.length > 0) {
-    // Labels for a call: its own, its run's, and its usage rows'.
+    // Labels for an entry call: its calls' own and its runs'.
     const callLabels = new Map<string, LabelRow[]>();
     for (const entry of totalled) {
       if (!entry.callId) continue;
       const key = tenantKey(entry.tenant, entry.callId);
-      const list = callLabels.get(key) ?? [...(labelsByCall.get(key) ?? [])];
+      const list = callLabels.get(key) ?? [];
       const add = (rows: LabelRow[] | undefined) => {
         for (const row of rows ?? []) {
           if (!list.some((existing) => existing.id === row.id)) list.push(row);

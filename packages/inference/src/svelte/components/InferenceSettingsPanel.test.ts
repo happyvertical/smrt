@@ -552,7 +552,7 @@ describe('InferenceSettingsPanel usage tab', () => {
       'Calls',
       'Tokens',
       'Est. cost',
-      'Outcomes',
+      'Evaluations',
     ]);
     expect(target.textContent).toContain('openai:gpt-mini');
     expect(target.textContent).toContain('(unattributed)');
@@ -710,7 +710,7 @@ describe('InferenceSettingsPanel transcripts (#4781)', () => {
             calls: 4,
             totalTokens: 40,
             estimatedCost: 0,
-            outcomes: { bad: 2 },
+            evaluations: { bad: 2 },
             transcripts: 3,
           },
           {
@@ -718,7 +718,7 @@ describe('InferenceSettingsPanel transcripts (#4781)', () => {
             calls: 1,
             totalTokens: 10,
             estimatedCost: 0,
-            outcomes: { good: 1 },
+            evaluations: { good: 1 },
             transcripts: 0,
           },
         ],
@@ -741,11 +741,11 @@ describe('InferenceSettingsPanel transcripts (#4781)', () => {
     expect(links[0]?.getAttribute('href')).toBe(
       '/transcripts?promptKey=p.one&templateHash=h1&since=2026-11-01T00%3A00%3A00.000Z',
     );
-    const outcomes = target.querySelectorAll<HTMLAnchorElement>(
-      '[data-testid="inference-transcript-outcome-link"]',
+    const evaluations = target.querySelectorAll<HTMLAnchorElement>(
+      '[data-testid="inference-transcript-evaluation-link"]',
     );
-    expect(outcomes).toHaveLength(1);
-    expect(outcomes[0]?.getAttribute('href')).toContain('outcome=bad');
+    expect(evaluations).toHaveLength(1);
+    expect(evaluations[0]?.getAttribute('href')).toContain('label=bad');
     expect(transcriptHref).not.toHaveBeenCalledWith(
       expect.objectContaining({ promptKey: 'p.two' }),
     );

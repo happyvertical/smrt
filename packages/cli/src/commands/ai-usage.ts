@@ -5,7 +5,7 @@
  * through core's `reportAiUsage()`: calls, tokens, estimated cost (with its
  * basis stated and uncosted calls counted beside the total), hosted-gate
  * blocks counted beside calls (#4760), p50 duration,
- * recorded substitutions and outcome labels per bucket.
+ * recorded substitutions and evaluation labels per bucket.
  *
  * A filter selects what is totalled, never what is accounted for: calls
  * without a prompt key print as unattributed, and rows a `--tenant` filter
@@ -135,8 +135,8 @@ function formatCost(stats: AiUsageReportStats): string {
     : cost;
 }
 
-function formatOutcomes(outcomes: Record<string, number>): string {
-  const entries = Object.entries(outcomes).sort(([a], [b]) =>
+function formatEvaluations(evaluations: Record<string, number>): string {
+  const entries = Object.entries(evaluations).sort(([a], [b]) =>
     a.localeCompare(b),
   );
   return entries.length === 0
@@ -156,7 +156,7 @@ function row(
     formatCost(stats),
     stats.p50DurationMs === null ? '-' : `${formatInt(stats.p50DurationMs)}ms`,
     formatInt(stats.substitutions),
-    formatOutcomes(stats.outcomes),
+    formatEvaluations(stats.evaluations),
   ];
 }
 
@@ -170,7 +170,7 @@ export function formatAiUsageReport(report: AiUsageReport): string {
     'est. cost',
     'p50',
     'subst.',
-    'outcomes',
+    'evaluations',
   ];
   const rows = report.buckets.map((bucket) =>
     row(
@@ -427,7 +427,7 @@ export const aiUsageCommand: CLICommand = {
     } catch (error) {
       const raw = error instanceof Error ? error.message : String(error);
       const hint =
-        /prompt_key|_smrt_ai_usage_outcomes|_smrt_ai_runs|_smrt_ai_transcripts|call_id/.test(
+        /prompt_key|_smrt_ai_evaluations|_smrt_ai_runs|_smrt_ai_transcripts|call_id/.test(
           raw,
         )
           ? ' (system tables predate #4751/#4753/#4780: start the app once, or run `smrt db:migrate`, to upgrade them)'

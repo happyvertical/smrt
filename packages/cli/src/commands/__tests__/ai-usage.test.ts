@@ -7,8 +7,8 @@
 import {
   AiUsagePersistenceHandler,
   ensureSystemTables,
+  recordAiEvaluation,
   recordAiRun,
-  recordAiUsageOutcome,
   reportAiRuns,
   reportAiUsage,
 } from '@happyvertical/smrt-core';
@@ -99,10 +99,10 @@ describe('formatAiUsageReport', () => {
       duration: 10,
       tags: { promptKey: 'content.summarize' },
     });
-    await recordAiUsageOutcome(db, {
+    await recordAiEvaluation(db, {
       runId: 'run-1',
       label: 'accepted',
-      actor: 'test',
+      evaluator: 'human',
     });
   });
 

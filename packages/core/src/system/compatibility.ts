@@ -3,6 +3,9 @@ import { usesPostgresDialect } from '../embedded-write-queue.js';
 import { detectEngine } from '../schema/ddl/index.js';
 import {
   CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
+  CREATE_SMRT_AI_EVALUATIONS_TABLE,
+  CREATE_SMRT_AI_RUNS_TABLE,
+  getSystemTableDDLForEngine,
   LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY,
 } from './schema.js';
 
@@ -1069,15 +1072,51 @@ export async function ensureDeferredSystemTableCompatibility(
   return { settled: jobsExists && jobEventsExists };
 }
 
+/** An INTEGER column added to an existing system table (BIGINT off SQLite). */
+function integerColumnType(db: DatabaseInterface, typeHint?: string): string {
+  return getDatabaseEngine(db, typeHint) === 'sqlite' ? 'INTEGER' : 'BIGINT';
+}
+
 /**
- * Prompt-run observability columns on `_smrt_ai_usage` (#4751) and the
- * `call_id` columns on `_smrt_ai_usage` / `_smrt_ai_usage_outcomes` (#4780).
+ * The columns of `_smrt_ai_usage` that older installs lack, with their types:
+ * prompt-run observability (#4751), the transcript `call_id` (#4780) and the
+ * run model (#5005): the entry call id, the prompt version and the workflow
+ * step, step instance and attempt of the call.
+ */
+function aiUsageAddedColumns(
+  db: DatabaseInterface,
+  typeHint?: string,
+): [string, string][] {
+  const integer = integerColumnType(db, typeHint);
+  return [
+    ['prompt_key', 'TEXT'],
+    ['tier_requested', 'TEXT'],
+    ['tier_resolved', 'TEXT'],
+    ['run_id', 'TEXT'],
+    ['call_id', 'TEXT'],
+    ['entry_call_id', 'TEXT'],
+    ['template_hash', 'TEXT'],
+    ['step_index', integer],
+    ['step_name', 'TEXT'],
+    ['step_instance_id', 'TEXT'],
+    ['attempt', integer],
+  ];
+}
+
+/**
+ * Columns on `_smrt_ai_usage`: the prompt-run observability columns (#4751),
+ * the transcript `call_id` (#4780) and the run-model columns (#5005).
  *
- * Nullable TEXT, populated from usage tags by `AiUsagePersistenceHandler`;
- * existing rows keep NULL (no backfill: `tags` still holds the full copy).
- * Each ALTER is guarded by a column-existence probe on every engine, and must
- * run before the DDL replay because its `CREATE INDEX` clauses reference the
- * new columns.
+ * New columns are nullable, so existing rows keep NULL, except the call id
+ * split: a usage row's `id` is its call id, and the shared fusion or
+ * transcript id that `call_id` used to hold moves to `entry_call_id` (a row
+ * that had none is its own entry call). That is one UPDATE,
+ * `entry_call_id = call_id` then `call_id = id`, guarded so a
+ * second run finds nothing to change. The old `call_id` index goes first:
+ * the replay creates its replacement on `entry_call_id`, and an update of an
+ * indexed column is not safe on every engine (DuckDB). Each ALTER is guarded
+ * by a column-existence probe on every engine, and must run before the DDL
+ * replay because its `CREATE INDEX` clauses reference the new columns.
  */
 export async function ensureAiUsageSystemTableCompatibility(
   db: DatabaseInterface,
@@ -1087,18 +1126,24 @@ export async function ensureAiUsageSystemTableCompatibility(
     return;
   }
 
-  for (const column of [
-    'prompt_key',
-    'tier_requested',
-    'tier_resolved',
-    'run_id',
-    // AI call transcripts (#4780).
-    'call_id',
-  ]) {
-    await addColumnIfMissing(db, '_smrt_ai_usage', column, 'TEXT', typeHint);
+  for (const [column, definition] of aiUsageAddedColumns(db, typeHint)) {
+    await addColumnIfMissing(
+      db,
+      '_smrt_ai_usage',
+      column,
+      definition,
+      typeHint,
+    );
   }
+  await dropIndexIfExists(db, 'idx_smrt_ai_usage_call', typeHint);
+  await db.query(
+    `UPDATE _smrt_ai_usage
+        SET entry_call_id = COALESCE(call_id, id), call_id = id
+      WHERE call_id IS NULL OR call_id <> id`,
+  );
   // `_smrt_ai_usage_outcomes` (#4751) gains `call_id` with #4780; a 1.13.0 or
-  // 1.14.0 install has the table without it.
+  // 1.14.0 install has the table without it. It is carried into
+  // `_smrt_ai_evaluations` by ensureAiEvaluationsSystemTableCompatibility().
   if (await tableExists(db, '_smrt_ai_usage_outcomes', typeHint)) {
     await addColumnIfMissing(
       db,
@@ -1108,6 +1153,222 @@ export async function ensureAiUsageSystemTableCompatibility(
       typeHint,
     );
   }
+}
+
+/** Old `_smrt_ai_runs` column to new column, for the one-time rebuild. */
+const AI_RUNS_REBUILD_COPY: [string, string][] = [
+  ['id', 'id'],
+  ['fusion_key', 'definition_key'],
+  ['tenant_id', 'tenant_id'],
+  ['class_name', 'class_name'],
+  ['prompt_key', 'prompt_key'],
+  ['status', 'status'],
+  ['duration', 'duration'],
+  ['mode', 'mode'],
+  ['seats', 'seats'],
+  ['degraded_seats', 'degraded_seats'],
+  ['details', 'details'],
+  ['created_at', 'created_at'],
+];
+
+/**
+ * `created_at` minus `duration` milliseconds, for an old run row: runs were
+ * written when the fusion ended, so the start is derived. Falls back to
+ * `created_at` itself when the arithmetic yields NULL.
+ */
+function aiRunStartedAtSql(engine: ReturnType<typeof detectEngine>): string {
+  if (engine === 'postgres') {
+    return `COALESCE(created_at - (duration * INTERVAL '1 millisecond'), created_at)`;
+  }
+  if (engine === 'sqlite') {
+    return `COALESCE(strftime('%Y-%m-%dT%H:%M:%fZ', created_at, '-' || (duration / 1000.0) || ' seconds'), created_at)`;
+  }
+  return `COALESCE(created_at - (duration * INTERVAL 1 MILLISECOND), created_at)`;
+}
+
+/**
+ * Run table shape and status vocabulary (#5005).
+ *
+ * `_smrt_ai_runs` was written for fusions only: `fusion_key`, and `mode`,
+ * `seats` and `degraded_seats` NOT NULL. The run model needs the key renamed
+ * and those three nullable for runs that are not fusions, so the table is
+ * rebuilt once, as `_smrt_dispatch_subscriptions` was: create the new shape,
+ * copy the rows, drop the old table, rename. The step runs only while the
+ * table still has `fusion_key`, and a rebuild interrupted after the old table
+ * was dropped is finished from the leftover `_smrt_ai_runs_new`. Indexes are
+ * left to the DDL replay that follows, which creates them on the new table.
+ * On PostgreSQL a table that still has legacy timezone-naive timestamps is not
+ * touched: the audited timestamp migration has to convert it first, and the
+ * bootstrap fails closed until it has.
+ *
+ * Then one idempotent UPDATE moves the stored fusion statuses to the run
+ * vocabulary: `ok` becomes `done`; `degraded` becomes `done` with `degraded`
+ * set; a `failed` row without a `stop_reason` gets `error`. Old rows are
+ * typed `fusion` with `finished_at = created_at` and `started_at` derived.
+ */
+export async function ensureAiRunsSystemTableCompatibility(
+  db: DatabaseInterface,
+  typeHint?: string,
+): Promise<void> {
+  const engine = getDatabaseEngine(db, typeHint);
+  const hasRuns = await tableExists(db, '_smrt_ai_runs', typeHint);
+  const hasRebuilt = await tableExists(db, '_smrt_ai_runs_new', typeHint);
+
+  if (!hasRuns && hasRebuilt) {
+    await finishAiRunsRebuild(db, engine);
+  } else if (
+    hasRuns &&
+    (await columnExists(db, '_smrt_ai_runs', 'fusion_key', typeHint))
+  ) {
+    if (
+      engine === 'postgres' &&
+      (await postgresColumnIsTimezoneNaive(db, '_smrt_ai_runs', 'created_at'))
+    ) {
+      return;
+    }
+    await db.query('DROP TABLE IF EXISTS _smrt_ai_runs_new');
+    const createNew = getSystemTableDDLForEngine(
+      CREATE_SMRT_AI_RUNS_TABLE.split(';')[0] ?? '',
+      engine,
+    ).replace('_smrt_ai_runs', '_smrt_ai_runs_new');
+    await db.query(createNew);
+    const legacy = AI_RUNS_REBUILD_COPY.filter(
+      ([from]) => from !== 'created_at',
+    );
+    await db.query(
+      `INSERT INTO _smrt_ai_runs_new
+         (type, ${legacy.map(([, to]) => to).join(', ')}, created_at,
+          started_at, finished_at)
+       SELECT 'fusion', ${legacy.map(([from]) => from).join(', ')}, created_at,
+              ${aiRunStartedAtSql(engine)}, created_at
+         FROM _smrt_ai_runs`,
+    );
+    await db.query('DROP TABLE _smrt_ai_runs');
+    await finishAiRunsRebuild(db, engine);
+  }
+
+  if (!(await tableExists(db, '_smrt_ai_runs', typeHint))) return;
+  await db.query(
+    `UPDATE _smrt_ai_runs
+        SET degraded = CASE WHEN status = 'degraded' THEN 1 ELSE degraded END,
+            stop_reason = CASE
+              WHEN status = 'failed' AND stop_reason IS NULL THEN 'error'
+              ELSE stop_reason END,
+            status = CASE WHEN status IN ('ok', 'degraded') THEN 'done' ELSE status END
+      WHERE status IN ('ok', 'degraded')
+         OR (status = 'failed' AND stop_reason IS NULL)`,
+  );
+}
+
+async function finishAiRunsRebuild(
+  db: DatabaseInterface,
+  engine: ReturnType<typeof detectEngine>,
+): Promise<void> {
+  await db.query('ALTER TABLE _smrt_ai_runs_new RENAME TO _smrt_ai_runs');
+  if (engine === 'postgres') {
+    // The primary key keeps the name it was created under.
+    await db.query(
+      'ALTER INDEX IF EXISTS _smrt_ai_runs_new_pkey RENAME TO _smrt_ai_runs_pkey',
+    );
+  }
+}
+
+async function postgresColumnIsTimezoneNaive(
+  db: DatabaseInterface,
+  tableName: string,
+  columnName: string,
+): Promise<boolean> {
+  const rows = getQueryRows(
+    await db.query(
+      `SELECT data_type FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = $1 AND column_name = $2`,
+      tableName,
+      columnName,
+    ),
+  );
+  return rows[0]?.data_type === 'timestamp without time zone';
+}
+
+/**
+ * `_smrt_ai_usage_outcomes` becomes `_smrt_ai_evaluations` (#5005).
+ *
+ * Creates the evaluations table, copies each label across and drops the old
+ * table, so the step runs only while the old table exists, and a copy that
+ * was interrupted is finished by the `NOT EXISTS` guard. Targets follow the
+ * label's old columns: a `usage_id` is the call (`call_id = usage_id`); a
+ * label with only a `call_id` goes to the call whose `entry_call_id` matches,
+ * or to the run those calls share when several match (a fusion), or, when
+ * several match without a shared run, to the latest of them; a label with only
+ * a `run_id` goes to the run. A label that named both a usage row and a run
+ * keeps the usage row. `score` becomes `value` (`value_type` `number`, no
+ * scale), `actor` becomes `evaluator` unchanged and `metric` is `outcome`.
+ * It must follow ensureAiUsageSystemTableCompatibility(), which fills
+ * `entry_call_id`.
+ */
+export async function ensureAiEvaluationsSystemTableCompatibility(
+  db: DatabaseInterface,
+  typeHint?: string,
+): Promise<void> {
+  if (!(await tableExists(db, '_smrt_ai_usage_outcomes', typeHint))) {
+    return;
+  }
+  const engine = getDatabaseEngine(db, typeHint);
+  for (const statement of getSystemTableDDLForEngine(
+    CREATE_SMRT_AI_EVALUATIONS_TABLE,
+    engine,
+  )
+    .split(';')
+    .map((value) => value.trim())
+    .filter(Boolean)) {
+    await db.query(statement);
+  }
+  await addColumnIfMissing(
+    db,
+    '_smrt_ai_usage_outcomes',
+    'call_id',
+    'TEXT',
+    typeHint,
+  );
+  const hasUsage = await tableExists(db, '_smrt_ai_usage', typeHint);
+  const matches = (select: string) =>
+    `(SELECT ${select} FROM _smrt_ai_usage u WHERE u.entry_call_id = o.call_id)`;
+  const matchCount = matches('COUNT(*)');
+  const callTarget = hasUsage
+    ? `CASE
+         WHEN o.usage_id IS NOT NULL THEN o.usage_id
+         WHEN o.run_id IS NOT NULL THEN NULL
+         WHEN o.call_id IS NULL THEN NULL
+         WHEN ${matchCount} = 0 THEN o.call_id
+         WHEN ${matchCount} = 1 OR ${matches('COUNT(u.run_id)')} < ${matchCount}
+           OR ${matches('COUNT(DISTINCT u.run_id)')} <> 1
+           THEN (SELECT u.id FROM _smrt_ai_usage u
+                  WHERE u.entry_call_id = o.call_id
+                  ORDER BY u.created_at DESC, u.id DESC LIMIT 1)
+         ELSE NULL END`
+    : `CASE WHEN o.usage_id IS NOT NULL THEN o.usage_id
+            WHEN o.run_id IS NULL THEN o.call_id ELSE NULL END`;
+  const runTarget = hasUsage
+    ? `CASE
+         WHEN o.usage_id IS NOT NULL THEN NULL
+         WHEN o.run_id IS NOT NULL THEN o.run_id
+         WHEN o.call_id IS NULL THEN NULL
+         WHEN ${matchCount} > 1 AND ${matches('COUNT(u.run_id)')} = ${matchCount}
+           AND ${matches('COUNT(DISTINCT u.run_id)')} = 1
+           THEN ${matches('MIN(u.run_id)')}
+         ELSE NULL END`
+    : `CASE WHEN o.usage_id IS NULL THEN o.run_id ELSE NULL END`;
+  await db.query(
+    `INSERT INTO _smrt_ai_evaluations
+       (id, call_id, run_id, metric, value, value_type, label, evidence,
+        evaluator, tenant_id, created_at)
+     SELECT o.id, ${callTarget}, ${runTarget}, 'outcome',
+            CASE WHEN o.score IS NULL THEN NULL ELSE CAST(o.score AS TEXT) END,
+            'number', o.label, o.evidence, o.actor, o.tenant_id, o.created_at
+       FROM _smrt_ai_usage_outcomes o
+      WHERE NOT EXISTS (SELECT 1 FROM _smrt_ai_evaluations e WHERE e.id = o.id)`,
+  );
+  await db.query('DROP TABLE _smrt_ai_usage_outcomes');
 }
 
 /**
@@ -1132,6 +1393,8 @@ export async function ensureBootstrapSystemTableCompatibility(
   await ensureDispatchSystemTableCompatibility(db, typeHint);
   await ensureDispatchSubscriptionsSystemTableCompatibility(db, typeHint);
   await ensureAiUsageSystemTableCompatibility(db, typeHint);
+  await ensureAiRunsSystemTableCompatibility(db, typeHint);
+  await ensureAiEvaluationsSystemTableCompatibility(db, typeHint);
 }
 
 /**

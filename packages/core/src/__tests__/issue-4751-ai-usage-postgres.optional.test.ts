@@ -3,8 +3,8 @@
  *
  * Proves the additive `_smrt_ai_usage` columns reach an existing PostgreSQL
  * database through `ensureSystemTables()` (column-existence-guarded ALTERs,
- * then the 1.13.0 DDL replay creates the indexes and the outcomes table), that
- * a second run is a no-op, and that the handler, outcome API and report run
+ * then the DDL replay creates the indexes and the evaluations table), that
+ * a second run is a no-op, and that the handler, evaluation API and report run
  * with `$n` placeholders against TIMESTAMPTZ columns.
  *
  * Runs only when `SMRT_TEST_POSTGRES_URL` is set; point it at a DISPOSABLE
@@ -16,8 +16,8 @@ import { getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AiUsagePersistenceHandler } from '../adapters/ai-usage';
 import {
-  listAiUsageOutcomes,
-  recordAiUsageOutcome,
+  listAiEvaluations,
+  recordAiEvaluation,
   reportAiUsage,
 } from '../system/ai-usage-observability';
 import { ensureSystemTables } from '../system/bootstrap';
@@ -26,6 +26,17 @@ import { getTestDatabase } from '../testing/database';
 
 const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
 const NEW_COLUMNS = ['prompt_key', 'tier_requested', 'tier_resolved', 'run_id'];
+// Columns later releases added (#4780, #5005), dropped to reshape the table
+// to the pre-#4751 install.
+const LATER_COLUMNS = [
+  'call_id',
+  'entry_call_id',
+  'template_hash',
+  'step_index',
+  'step_name',
+  'step_instance_id',
+  'attempt',
+];
 
 function rowsOf(result: unknown): Record<string, unknown>[] {
   if (Array.isArray(result)) return result as Record<string, unknown>[];
@@ -52,7 +63,7 @@ describe.skipIf(!pgUrl)(
 
     afterAll(async () => {
       if (!db) return;
-      await db.query('DELETE FROM _smrt_ai_usage_outcomes');
+      await db.query('DELETE FROM _smrt_ai_evaluations');
       await db.query('DELETE FROM _smrt_ai_usage');
     });
 
@@ -79,23 +90,24 @@ describe.skipIf(!pgUrl)(
     }
 
     it('upgrades a pre-1.13 _smrt_ai_usage in place, idempotently', async () => {
-      await db.query('DELETE FROM _smrt_ai_usage_outcomes');
+      await db.query('DELETE FROM _smrt_ai_evaluations');
       await db.query('DELETE FROM _smrt_ai_usage');
       await db.query(
         `INSERT INTO _smrt_ai_usage (id, provider, model, operation, duration)
        VALUES ('legacy-1', 'openai', 'gpt-4o', 'chat', 5)`,
       );
 
-      // Reshape to the pre-#4751 install: no columns, indexes, outcomes table
-      // or 1.13.0 stamp.
+      // Reshape to the pre-#4751 install: no columns, indexes, evaluations
+      // table or current stamp.
       await db.query('DROP INDEX IF EXISTS idx_smrt_ai_usage_prompt_key');
       await db.query('DROP INDEX IF EXISTS idx_smrt_ai_usage_run');
-      for (const column of NEW_COLUMNS) {
+      await db.query('DROP INDEX IF EXISTS idx_smrt_ai_usage_entry_call');
+      for (const column of [...NEW_COLUMNS, ...LATER_COLUMNS]) {
         await db.query(
           `ALTER TABLE _smrt_ai_usage DROP COLUMN IF EXISTS ${column}`,
         );
       }
-      await db.query('DROP TABLE IF EXISTS _smrt_ai_usage_outcomes');
+      await db.query('DROP TABLE IF EXISTS _smrt_ai_evaluations');
       await db.query(
         'DELETE FROM _smrt_migrations WHERE version = $1',
         SMRT_SCHEMA_VERSION,
@@ -113,11 +125,11 @@ describe.skipIf(!pgUrl)(
           'idx_smrt_ai_usage_run',
         ]),
       );
-      expect(await liveIndexes('_smrt_ai_usage_outcomes')).toEqual(
+      expect(await liveIndexes('_smrt_ai_evaluations')).toEqual(
         expect.arrayContaining([
-          'idx_smrt_ai_usage_outcomes_usage',
-          'idx_smrt_ai_usage_outcomes_run',
-          'idx_smrt_ai_usage_outcomes_tenant_created',
+          'idx_smrt_ai_evaluations_call',
+          'idx_smrt_ai_evaluations_run',
+          'idx_smrt_ai_evaluations_tenant_created',
         ]),
       );
       const legacy = rowsOf(
@@ -129,7 +141,7 @@ describe.skipIf(!pgUrl)(
     });
 
     it('persists lifted tags and reports and labels them', async () => {
-      await db.query('DELETE FROM _smrt_ai_usage_outcomes');
+      await db.query('DELETE FROM _smrt_ai_evaluations');
       await db.query('DELETE FROM _smrt_ai_usage');
       const handler = new AiUsagePersistenceHandler(db);
       const tenantId = '7d3c1e0a-1a2b-4c5d-8e9f-0a1b2c3d4e5f';
@@ -167,19 +179,19 @@ describe.skipIf(!pgUrl)(
         key: { tier: 'good' },
       });
 
-      const outcome = await recordAiUsageOutcome(db, {
+      const evaluation = await recordAiEvaluation(db, {
         runId: 'pg-run',
         label: 'accepted',
-        score: 1,
-        actor: 'pg-test',
+        value: 1,
+        evaluator: 'human',
       });
-      expect(outcome.tenantId).toBe(tenantId);
-      const [read] = await listAiUsageOutcomes(db, { runId: 'pg-run' });
+      expect(evaluation.tenantId).toBe(tenantId);
+      const [read] = await listAiEvaluations(db, { runId: 'pg-run' });
       expect(read?.usage).toHaveLength(2);
       expect(read?.createdAt).toBeInstanceOf(Date);
 
       const labelled = await reportAiUsage(db, { by: ['prompt'], tenantId });
-      expect(labelled.totals.outcomes).toEqual({ accepted: 1 });
+      expect(labelled.totals.evaluations).toEqual({ accepted: 1 });
     });
   },
 );

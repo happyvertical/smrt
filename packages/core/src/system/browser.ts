@@ -12,9 +12,10 @@
 // need outside this package — e.g. to assert against the version
 // `ensureSystemTables()` stamps into `_smrt_migrations` — without hardcoding
 // a literal that goes stale on every bump (#3080).
-// Prompt-run observability: outcome labels and the ai:usage report (#4751),
+// Prompt-run observability: evaluations and the ai:usage report (#4751),
 // fusion run records (#4753), prompt comparison and template history (#4782).
 export * from './ai-prompt-compare.js';
+export * from './ai-run-policy.js';
 export * from './ai-runs.js';
 export * from './ai-transcripts.js';
 export * from './ai-usage-observability.js';

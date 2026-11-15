@@ -9,7 +9,7 @@
  * worst-labelled transcripts of each side side by side; that is a
  * transcript read through `listAiTranscripts()`, audited under `--actor`.
  *
- * Labels come from `recordAiUsageOutcome()`; nothing here asks a model to
+ * Labels come from `recordAiEvaluation()`; nothing here asks a model to
  * judge. Rows of the prompt matching neither side are counted, not dropped.
  */
 
@@ -110,8 +110,8 @@ function formatMs(value: number | null): string {
   return value === null ? '-' : `${formatInt(value)}ms`;
 }
 
-function formatOutcomes(outcomes: Record<string, number>): string {
-  const entries = Object.entries(outcomes).sort(([x], [y]) =>
+function formatEvaluations(evaluations: Record<string, number>): string {
+  const entries = Object.entries(evaluations).sort(([x], [y]) =>
     x.localeCompare(y),
   );
   return entries.length === 0
@@ -136,7 +136,7 @@ function sideCells(side: AiPromptCompareSide): string[] {
     formatMs(side.latencyMs.p99),
     `${formatRate(side.fallbackRate)} (${formatInt(side.fallbackCalls)})`,
     `${formatRate(side.degradedRate)} (${formatInt(side.degradedCalls)})`,
-    formatOutcomes(side.outcomes),
+    formatEvaluations(side.evaluations),
     side.meanScore === null
       ? '-'
       : `${side.meanScore.toFixed(3)} (n=${formatInt(side.scoredLabels)})`,
@@ -156,7 +156,7 @@ const METRICS = [
   'p99',
   'fallback',
   'degraded',
-  'outcomes',
+  'evaluations',
   'mean score',
   'transcripts',
 ];
@@ -239,7 +239,7 @@ export function formatSideBySide(
 function errorMessage(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
   const hint =
-    /prompt_key|_smrt_ai_usage_outcomes|_smrt_ai_runs|_smrt_ai_transcripts|call_id/.test(
+    /prompt_key|_smrt_ai_evaluations|_smrt_ai_runs|_smrt_ai_transcripts|call_id/.test(
       raw,
     )
       ? ' (system tables predate #4751/#4753/#4780: start the app once, or run `smrt db:migrate`, to upgrade them)'

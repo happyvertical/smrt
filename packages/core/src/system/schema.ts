@@ -248,7 +248,13 @@ CREATE TABLE IF NOT EXISTS _smrt_ai_usage (
   tier_requested TEXT,
   tier_resolved TEXT,
   run_id TEXT,
-  call_id TEXT
+  call_id TEXT,
+  entry_call_id TEXT,
+  template_hash TEXT,
+  step_index INTEGER,
+  step_name TEXT,
+  step_instance_id TEXT,
+  attempt INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_created
@@ -279,85 +285,214 @@ CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_prompt_key
 CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_run
   ON _smrt_ai_usage(run_id);
 
--- AI call transcripts (#4780): call_id is lifted from the callId usage tag
--- that core mints per call while transcripts are enabled. It links the usage
--- row to its transcript and labels.
-CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_call
-  ON _smrt_ai_usage(call_id);
+-- AI runs (#5005): id is the call id, so a call is found by primary key and
+-- call_id carries no index of its own. entry_call_id is the id the entry call
+-- shares across its alias-chain and fusion calls, the one a transcript's
+-- call_id holds. The index is non-unique on purpose.
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_entry_call
+  ON _smrt_ai_usage(entry_call_id);
 `;
 
 /**
- * Outcome labels for AI usage (#4751).
+ * Evaluations of AI calls and runs (#5005; the outcome labels of #4751).
  *
- * A run cannot rate itself, so whether an answer was any good is a label
- * recorded later, when it is known, by `recordAiUsageOutcome()`. A label
- * targets one usage row (`usage_id`), a whole run (`run_id`), or both. Neither
- * is a foreign key: `pruneAiUsage()` deletes usage rows on its own schedule and
- * must never be blocked by, or cascade into, the labels.
+ * A run cannot rate itself: whether an answer was any good is known later, by
+ * a person, the app or an automated grader, and is recorded then by
+ * `recordAiEvaluation()`. An evaluation attaches to exactly one call
+ * (`call_id`, the `_smrt_ai_usage.id` of the call) or exactly one run
+ * (`run_id`), never both. `value` holds the measure as text, read through
+ * `value_type` (`number`, `boolean` or `text`) and the optional `scale`
+ * (for example `0..1`). `evaluator` is `human`, `app` or
+ * `grader:<name>@<version>`. Neither target is a foreign key: `pruneAiUsage()`
+ * deletes usage rows on its own schedule and must never be blocked by, or
+ * cascade into, the evaluations.
+ *
+ * Replaces `_smrt_ai_usage_outcomes`; existing labels are carried over by
+ * `ensureAiRunsSystemTableCompatibility()`.
  */
-export const CREATE_SMRT_AI_USAGE_OUTCOMES_TABLE = `
-CREATE TABLE IF NOT EXISTS _smrt_ai_usage_outcomes (
+export const CREATE_SMRT_AI_EVALUATIONS_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_ai_evaluations (
   id TEXT PRIMARY KEY,
-  usage_id TEXT,
-  run_id TEXT,
   call_id TEXT,
-  label TEXT NOT NULL,
-  score REAL,
+  run_id TEXT,
+  metric TEXT NOT NULL,
+  value TEXT,
+  value_type TEXT NOT NULL DEFAULT 'number',
+  scale TEXT,
+  label TEXT,
   evidence TEXT,
-  actor TEXT NOT NULL,
+  evaluator TEXT NOT NULL,
   tenant_id TEXT,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_outcomes_usage
-  ON _smrt_ai_usage_outcomes(usage_id);
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_evaluations_call
+  ON _smrt_ai_evaluations(call_id);
 
-CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_outcomes_run
-  ON _smrt_ai_usage_outcomes(run_id);
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_evaluations_run
+  ON _smrt_ai_evaluations(run_id);
 
-CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_outcomes_tenant_created
-  ON _smrt_ai_usage_outcomes(tenant_id, created_at);
-
-CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_outcomes_call
-  ON _smrt_ai_usage_outcomes(call_id);
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_evaluations_tenant_created
+  ON _smrt_ai_evaluations(tenant_id, created_at);
 `;
 
 /**
- * Multi-call run records (#4753).
+ * AI run records (#4753, widened by #5005).
  *
- * One row per fusion run: what ran (`fusion_key`, `mode`, the entry call's
- * `prompt_key`), how it went (`status`: ok | degraded | failed; `seats` that
- * ran, `degraded_seats` that died or answered through a substitution), and
- * `details`, JSON with per-seat persona, target, model, usage, substitutions
- * and the gate result. Each seat's own `_smrt_ai_usage` row carries the run's
- * id in `run_id`; that is not a foreign key, for the same retention reason as
- * the outcome labels. `tenant_id` matches `_smrt_ai_usage.tenant_id` (TEXT).
- * `status` has no index: it is always read beside a fusion key or a window.
+ * One row per run, of any type (`fusion`, `turn`, `workflow` or an app's own
+ * namespaced type): what ran (`type`, `definition_key`, `definition_version`,
+ * the entry call's `prompt_key` and `template_hash`), who started it
+ * (`owner_id`, `parent_run_id`), how it stands (`status`: running |
+ * waiting-approval | stopped | failed | done; `degraded`; the typed
+ * `stop_reason`; `stopped_by_run_id`), its `budget` as JSON and its totals.
+ * `tokens`, `cost_used`, `calls`, `uncosted_calls`, `steps_used` and
+ * `duration` are the run's own; the `inclusive_*` totals add every descendant
+ * run; `reserved_*` is room held for calls in flight, descendants included.
+ * `checks_*` and `approvals_*` are the counts saved when the trajectory is
+ * pruned. `mode`, `seats`, `degraded_seats` and `details` stay fusion-only
+ * and are NULL for other types. Flags are INTEGER 0/1 (system tables store
+ * flags that way, like `_smrt_ai_transcripts.truncated`). `created_at` is the
+ * insert time its indexes and retention read.
+ *
+ * Each call's own `_smrt_ai_usage` row carries the run's id in `run_id`; that
+ * is not a foreign key, for the same retention reason as the evaluations.
+ * `tenant_id` matches `_smrt_ai_usage.tenant_id` (TEXT). `status` has no
+ * index: it is always read beside a definition key or a window.
+ *
+ * The table was rebuilt once from the fusion-only shape (`fusion_key`, NOT
+ * NULL `mode`, `seats`, `degraded_seats`) by
+ * `ensureAiRunsSystemTableCompatibility()`.
  */
 export const CREATE_SMRT_AI_RUNS_TABLE = `
 CREATE TABLE IF NOT EXISTS _smrt_ai_runs (
   id TEXT PRIMARY KEY,
-  fusion_key TEXT NOT NULL,
-  mode TEXT NOT NULL,
+  type TEXT NOT NULL,
+  definition_key TEXT,
+  definition_version TEXT,
   tenant_id TEXT,
   class_name TEXT,
   prompt_key TEXT,
-  seats INTEGER NOT NULL,
-  degraded_seats INTEGER NOT NULL,
+  template_hash TEXT,
+  owner_id TEXT,
+  parent_run_id TEXT,
+  experiment_id TEXT,
+  dataset_item TEXT,
+  tags TEXT,
   status TEXT NOT NULL,
-  duration INTEGER NOT NULL,
-  details TEXT,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  degraded INTEGER NOT NULL DEFAULT 0,
+  stop_reason TEXT,
+  stopped_by_run_id TEXT,
+  budget TEXT,
+  tokens INTEGER NOT NULL DEFAULT 0,
+  cost_used REAL NOT NULL DEFAULT 0,
+  calls INTEGER NOT NULL DEFAULT 0,
+  uncosted_calls INTEGER NOT NULL DEFAULT 0,
+  steps_used INTEGER NOT NULL DEFAULT 0,
+  duration INTEGER NOT NULL DEFAULT 0,
+  active_since TIMESTAMP,
+  inclusive_tokens INTEGER NOT NULL DEFAULT 0,
+  inclusive_cost REAL NOT NULL DEFAULT 0,
+  inclusive_calls INTEGER NOT NULL DEFAULT 0,
+  inclusive_uncosted_calls INTEGER NOT NULL DEFAULT 0,
+  reserved_tokens INTEGER NOT NULL DEFAULT 0,
+  reserved_cost REAL NOT NULL DEFAULT 0,
+  reserved_calls INTEGER NOT NULL DEFAULT 0,
+  checks_passed INTEGER NOT NULL DEFAULT 0,
+  checks_failed INTEGER NOT NULL DEFAULT 0,
+  approvals_given INTEGER NOT NULL DEFAULT 0,
+  approvals_refused INTEGER NOT NULL DEFAULT 0,
+  retain INTEGER NOT NULL DEFAULT 0,
+  trajectory_pruned INTEGER NOT NULL DEFAULT 0,
+  started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  mode TEXT,
+  seats INTEGER,
+  degraded_seats INTEGER,
+  details TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_created
   ON _smrt_ai_runs(created_at);
 
-CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_fusion_created
-  ON _smrt_ai_runs(fusion_key, created_at);
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_definition_created
+  ON _smrt_ai_runs(definition_key, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_tenant_created
   ON _smrt_ai_runs(tenant_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_parent
+  ON _smrt_ai_runs(parent_run_id);
+`;
+
+/**
+ * Ordered events of one AI run (#5005): the trajectory.
+ *
+ * `seq` is append order within the run, allocated in the same transaction as
+ * the insert; `(run_id, seq)` is unique, declared inline because DuckDB
+ * honours `ON CONFLICT` only against an inline constraint. `parent_event_id`
+ * carries cause. `type` is `call`, `action`, `observation`, `check`,
+ * `approval` or `handoff`. A `call` event points at its usage row through
+ * `call_id` and holds the call's budget reservation in typed columns
+ * (`reservation` state, `reserved_tokens`, `reserved_cost`), never in the
+ * capped `payload`. A `handoff` to a child run names it in `child_run_id`.
+ * `payload_ref` points at content the host stores; the framework stores
+ * nothing behind it. `truncated` is INTEGER 0/1. `run_id` and `call_id` are
+ * not foreign keys, so usage retention never blocks on events.
+ *
+ * `idx_smrt_ai_run_events_sweep` serves the reservation reconciliation sweep.
+ */
+export const CREATE_SMRT_AI_RUN_EVENTS_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_ai_run_events (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  parent_event_id TEXT,
+  type TEXT NOT NULL,
+  call_id TEXT,
+  step_index INTEGER,
+  name TEXT,
+  status TEXT,
+  duration INTEGER,
+  payload TEXT,
+  payload_ref TEXT,
+  truncated INTEGER NOT NULL DEFAULT 0,
+  child_run_id TEXT,
+  reservation TEXT,
+  reserved_tokens INTEGER,
+  reserved_cost REAL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(run_id, seq)
+);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_run_events_call
+  ON _smrt_ai_run_events(call_id);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_run_events_child
+  ON _smrt_ai_run_events(child_run_id);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_run_events_sweep
+  ON _smrt_ai_run_events(type, reservation, created_at);
+`;
+
+/**
+ * The saved state of a durable AI run (#5005), one row per run.
+ *
+ * `revision` is the compare-and-swap counter of saves; `lease` identifies the
+ * runner holding the run; `last_seq` is the last event `seq` the saved state
+ * covers; `definition_version` is the version that wrote it; `state` is
+ * versioned, validated JSON owned by the run type. Deleted with the run's
+ * trajectory.
+ */
+export const CREATE_SMRT_AI_RUN_CHECKPOINTS_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_ai_run_checkpoints (
+  run_id TEXT PRIMARY KEY,
+  revision INTEGER NOT NULL DEFAULT 0,
+  lease TEXT,
+  last_seq INTEGER NOT NULL DEFAULT 0,
+  definition_version TEXT,
+  state TEXT NOT NULL
+);
 `;
 
 /**
@@ -1340,8 +1475,10 @@ export const ALL_SYSTEM_TABLES = [
   CREATE_SMRT_DISPATCH_TABLE,
   CREATE_SMRT_DISPATCH_SUBSCRIPTIONS_TABLE,
   CREATE_SMRT_AI_USAGE_TABLE,
-  CREATE_SMRT_AI_USAGE_OUTCOMES_TABLE,
+  CREATE_SMRT_AI_EVALUATIONS_TABLE,
   CREATE_SMRT_AI_RUNS_TABLE,
+  CREATE_SMRT_AI_RUN_EVENTS_TABLE,
+  CREATE_SMRT_AI_RUN_CHECKPOINTS_TABLE,
   CREATE_SMRT_AI_TRANSCRIPTS_TABLE,
   CREATE_SMRT_CHANGES_TABLE,
   CREATE_SMRT_SYNC_TOMBSTONES_TABLE,
@@ -1426,7 +1563,7 @@ export const RETIRED_SYSTEM_TABLES: readonly string[] = [
  * - `_smrt_ai_usage.tenant_id`: model usage writes tenant UUIDs, but the
  *   published external-agent usage API accepts any non-empty text tenant id,
  *   so converting it is a contract change tracked separately;
- * - `_smrt_ai_usage_outcomes.tenant_id`, `_smrt_ai_runs.tenant_id` and
+ * - `_smrt_ai_evaluations.tenant_id`, `_smrt_ai_runs.tenant_id` and
  *   `_smrt_ai_transcripts.tenant_id`: match `_smrt_ai_usage.tenant_id`, the
  *   column they are read beside, and convert with it.
  */
@@ -1526,7 +1663,12 @@ function toPostgresTenantUuid(ddl: string): string {
  * (with indexes) on `_smrt_ai_usage` and `_smrt_ai_usage_outcomes` (#4780).
  */
 // 1.16.0 adds the successful whole-schema migrate ledger (#4926).
-export const SMRT_SCHEMA_VERSION = '1.16.0';
+// 1.17.0 widens the AI run model (#5005): step, attempt, template and entry-call
+// columns on `_smrt_ai_usage` (its `call_id` index becomes an `entry_call_id`
+// one), the widened and rebuilt `_smrt_ai_runs`, the new `_smrt_ai_run_events`
+// and `_smrt_ai_run_checkpoints`, and `_smrt_ai_evaluations` in place of
+// `_smrt_ai_usage_outcomes`.
+export const SMRT_SCHEMA_VERSION = '1.17.0';
 
 /**
  * Canonical form of the system DDL that {@link SMRT_SCHEMA_DDL_CHECKSUMS} covers.
@@ -1581,4 +1723,6 @@ export const SMRT_SCHEMA_DDL_CHECKSUMS: Readonly<Record<string, string>> =
       '6a1a58c1b2f137d8a1e3378f667587074dd6d1049c8d2f119427ff1232c0323b',
     '1.16.0':
       '8f7f6a9f5a7f3d28ac4858841a665328698a06467bcab4a8d2055cc651db263a',
+    '1.17.0':
+      '99f88aa94550ec830af22afb8026660c9199b2caabb63d71662043f0d806d210',
   });
