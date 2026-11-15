@@ -465,7 +465,7 @@
     "workbook_photo_intakes",
     "zones"
   ],
-  "release": "0.61.0",
+  "release": "0.61.2",
   "tables": {
     "_smrt_agent_schedules": {
       "columns": {
@@ -7111,14 +7111,14 @@
           "checksum": "fd1fd8a1c4db26d167192d69ac70dfea855d77242030771c1fa60fc9ffd78a99",
           "error_message": null,
           "execution_time_ms": 0,
-          "id": "8ff5c126-f9dd-411b-8a87-5a2746984a42",
+          "id": "7d5ad44d-2bdd-4b7a-83da-da5afa273160",
           "is_reversible": 0,
           "name": "release_gate_capture",
           "package_name": "@happyvertical/release-gate",
           "rolled_back_at": null,
           "source_file": null,
           "status": "completed",
-          "version": "0.61.0"
+          "version": "0.61.2"
         }
       ]
     },
