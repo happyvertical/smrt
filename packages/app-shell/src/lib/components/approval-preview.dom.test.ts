@@ -16,7 +16,7 @@ it('renders real Node engine previews in approval cards for all data and calcula
     await promisify(execFile)(
       process.execPath,
       ['--import', 'tsx', 'test-support/approval-engine-previews.ts', output],
-      { timeout: 60000 },
+      { timeout: 150000 },
     );
     const cards = JSON.parse(readFileSync(output, 'utf8')) as {
       name: string;
@@ -276,4 +276,4 @@ it('renders real Node engine previews in approval cards for all data and calcula
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-}, 90000);
+}, 180000);

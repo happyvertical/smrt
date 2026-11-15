@@ -283,6 +283,12 @@ export default defineConfig({
 > `maxWorkers`. The `poolOptions.forks.singleFork` option was removed in
 > Vitest 4, and a flat `test.singleFork` was never valid at any version; a
 > stray `singleFork` key is silently ignored rather than rejected.
+>
+> Vitest also reads `VITEST_MAX_WORKERS` natively, and it is applied after the
+> `fileParallelism: false` pin, so it overrides the one-worker cap. Never export
+> it globally (shell profile, CI-wide env); set it for a single run only. A
+> package whose suite is too slow serially (for example `packages/cli`, ~125
+> files) may use `maxWorkers: 4` without `fileParallelism: false` instead.
 
 #### `isolate: false` is an opt-in exception, not the default
 
