@@ -334,6 +334,33 @@ export interface AiPromptCompareSide {
   meanScore: number | null;
   /** Distinct entry call ids (`entry_call_id`, #4780) among the side's calls. */
   callIds: number;
+  /**
+   * Workflow step instances (`run_id`, `step_instance_id`) among the side's
+   * calls, and those with a call of `attempt > 1` (#5005).
+   */
+  steps: number;
+  repairedSteps: number;
+  /** `repairedSteps / steps`; `null` without a step. */
+  repairRate: number | null;
+  /**
+   * `check` events judging the side's calls, or a fusion run that answered
+   * the prompt (attributed through the fusion run's prompt and template;
+   * only for a `templateHash` side). A pruned trajectory's saved counts are
+   * per run, not per prompt, and are not counted here (page section 5).
+   */
+  checksPassed: number;
+  checksFailed: number;
+  /** `checksPassed / (checksPassed + checksFailed)`; `null` without a check. */
+  checkPassRate: number | null;
+  /**
+   * Approval decisions attributed through their request to a judged event
+   * of the side, the way checks are; requests are not counted, and a
+   * decision whose request no longer resolves is left out.
+   */
+  approvalsGiven: number;
+  approvalsRefused: number;
+  /** `approvalsGiven / (approvalsGiven + approvalsRefused)`, or `null`. */
+  approvalRate: number | null;
   /** Stored transcripts of the side's calls (total, before the limit). */
   transcriptCount: number;
   /**
@@ -410,7 +437,10 @@ function matchesSelector(
 ): boolean {
   switch (kind) {
     case 'templateHash':
-      return tagString(tags, 'templateHash') === value;
+      return (
+        (nullableString(row.template_hash) ??
+          tagString(tags, 'templateHash')) === value
+      );
     case 'model': {
       const model = String(row.model);
       return model === value || `${String(row.provider)}:${model}` === value;
@@ -440,6 +470,9 @@ interface SideAccumulator {
   countedTargets: Set<string>;
   /** `(tenant, entry call id)` of the side's calls. */
   calls: Set<string>;
+  /** `run:step instance` keys of the side's calls, and the repaired ones. */
+  steps: Set<string>;
+  repaired: Set<string>;
 }
 
 function emptySide(
@@ -473,6 +506,15 @@ function emptySide(
       scoredLabels: 0,
       meanScore: null,
       callIds: 0,
+      steps: 0,
+      repairedSteps: 0,
+      repairRate: null,
+      checksPassed: 0,
+      checksFailed: 0,
+      checkPassRate: null,
+      approvalsGiven: 0,
+      approvalsRefused: 0,
+      approvalRate: null,
       transcriptCount: 0,
       transcripts: [],
     },
@@ -480,6 +522,8 @@ function emptySide(
     scoreSum: 0,
     countedTargets: new Set(),
     calls: new Set(),
+    steps: new Set(),
+    repaired: new Set(),
   };
 }
 
@@ -509,7 +553,8 @@ const MAX_TRANSCRIPT_LIMIT = 500;
 
 const USAGE_COLUMNS = `id, provider, model, operation, tenant_id, tier_requested,
        tier_resolved, run_id, entry_call_id, prompt_tokens, completion_tokens,
-       total_tokens, estimated_cost, duration, tags`;
+       total_tokens, estimated_cost, duration, tags, template_hash,
+       step_instance_id, attempt`;
 
 /**
  * Compare two versions of a prompt, or two models or tiers on it, over the
@@ -615,6 +660,12 @@ export async function compareAiPromptRuns(
         acc.durations.push(Number(row.duration ?? 0));
         if (hasSubstitution(tags)) side.fallbackCalls++;
         if (entry.callId) acc.calls.add(tenantKey(entry.tenant, entry.callId));
+        const instance = nullableString(row.step_instance_id);
+        if (instance !== null) {
+          const step = `${String(row.run_id ?? '')}:${instance}`;
+          acc.steps.add(step);
+          if (Number(row.attempt ?? 1) > 1) acc.repaired.add(step);
+        }
       }
     }
   }
@@ -710,6 +761,128 @@ export async function compareAiPromptRuns(
     }
   }
 
+  // Checks and approvals (#5005): judged call events of the side's calls,
+  // and handoffs to fusion runs that answered the prompt.
+  {
+    const sidesByCall = new Map<string, SideAccumulator[]>();
+    for (const entry of totalled) sidesByCall.set(entry.id, entry.on);
+    const judged = new Map<string, SideAccumulator[]>();
+    const judgedEvents = async (
+      ids: string[],
+      column: 'call_id' | 'child_run_id',
+      type: 'call' | 'handoff',
+      sidesOf: (id: string) => SideAccumulator[] | undefined,
+    ) => {
+      for (let start = 0; start < ids.length; start += IN_CHUNK) {
+        const chunk = ids.slice(start, start + IN_CHUNK);
+        const marks = chunk.map((_, i) => `$${i + 1}`).join(', ');
+        for (const row of getRows(
+          await db.query(
+            `SELECT id, ${column} AS target FROM _smrt_ai_run_events
+              WHERE type = '${type}' AND ${column} IN (${marks})`,
+            ...chunk,
+          ),
+        )) {
+          const on = sidesOf(String(row.target));
+          if (on && on.length > 0) judged.set(String(row.id), on);
+        }
+      }
+    };
+    await judgedEvents(usageIds, 'call_id', 'call', (id) =>
+      sidesByCall.get(id),
+    );
+    const fusionSides = new Map<string, SideAccumulator[]>();
+    const templateSides = sides.filter((acc) => acc.kind === 'templateHash');
+    if (templateSides.length > 0) {
+      let lastId: string | null = null;
+      for (;;) {
+        const params: unknown[] = [promptKey];
+        const conditions = ["type = 'fusion'", 'prompt_key = $1'];
+        addTenantPredicate('tenant_id', scope, conditions, params);
+        if (options.since) {
+          params.push(options.since.toISOString());
+          conditions.push(`created_at >= $${params.length}`);
+        }
+        if (options.until) {
+          params.push(options.until.toISOString());
+          conditions.push(`created_at <= $${params.length}`);
+        }
+        if (lastId !== null) {
+          params.push(lastId);
+          conditions.push(`id > $${params.length}`);
+        }
+        params.push(PAGE_SIZE);
+        const page = getRows(
+          await db.query(
+            `SELECT id, template_hash FROM _smrt_ai_runs
+              WHERE ${conditions.join(' AND ')}
+              ORDER BY id ASC LIMIT $${params.length}`,
+            ...params,
+          ),
+        );
+        for (const row of page) {
+          const hash = nullableString(row.template_hash);
+          const on = templateSides.filter((acc) => acc.value === hash);
+          if (on.length > 0) fusionSides.set(String(row.id), on);
+        }
+        if (page.length < PAGE_SIZE) break;
+        lastId = String(page[page.length - 1]?.id);
+      }
+    }
+    await judgedEvents(
+      [...fusionSides.keys()],
+      'child_run_id',
+      'handoff',
+      (id) => fusionSides.get(id),
+    );
+
+    const judgedIds = [...judged.keys()];
+    const requests = new Map<string, SideAccumulator[]>();
+    for (let start = 0; start < judgedIds.length; start += IN_CHUNK) {
+      const chunk = judgedIds.slice(start, start + IN_CHUNK);
+      const marks = chunk.map((_, i) => `$${i + 1}`).join(', ');
+      for (const row of getRows(
+        await db.query(
+          `SELECT id, parent_event_id, type, status FROM _smrt_ai_run_events
+            WHERE parent_event_id IN (${marks})
+              AND (type = 'check'
+                   OR (type = 'approval' AND status = 'requested'))`,
+          ...chunk,
+        ),
+      )) {
+        const on = judged.get(String(row.parent_event_id)) ?? [];
+        if (String(row.type) === 'approval') {
+          requests.set(String(row.id), on);
+          continue;
+        }
+        for (const acc of on) {
+          if (String(row.status) === 'passed') acc.side.checksPassed++;
+          else if (String(row.status) === 'failed') acc.side.checksFailed++;
+        }
+      }
+    }
+    // A decision may sit in another run (the next chat turn); it is found
+    // through its request, wherever it was recorded.
+    const requestIds = [...requests.keys()];
+    for (let start = 0; start < requestIds.length; start += IN_CHUNK) {
+      const chunk = requestIds.slice(start, start + IN_CHUNK);
+      const marks = chunk.map((_, i) => `$${i + 1}`).join(', ');
+      for (const row of getRows(
+        await db.query(
+          `SELECT parent_event_id, status FROM _smrt_ai_run_events
+            WHERE type = 'approval' AND status IN ('approved', 'refused')
+              AND parent_event_id IN (${marks})`,
+          ...chunk,
+        ),
+      )) {
+        for (const acc of requests.get(String(row.parent_event_id)) ?? []) {
+          if (String(row.status) === 'approved') acc.side.approvalsGiven++;
+          else acc.side.approvalsRefused++;
+        }
+      }
+    }
+  }
+
   // Stored transcripts of the totalled calls (ids, never content), joined
   // by (tenant, call id).
   const transcriptsByCall = new Map<string, AiPromptCompareTranscriptRef[]>();
@@ -793,6 +966,18 @@ export async function compareAiPromptRuns(
       meanScore:
         side.scoredLabels > 0 ? acc.scoreSum / side.scoredLabels : null,
       callIds: acc.calls.size,
+      steps: acc.steps.size,
+      repairedSteps: acc.repaired.size,
+      repairRate:
+        acc.steps.size > 0 ? acc.repaired.size / acc.steps.size : null,
+      checkPassRate:
+        side.checksPassed + side.checksFailed > 0
+          ? side.checksPassed / (side.checksPassed + side.checksFailed)
+          : null,
+      approvalRate:
+        side.approvalsGiven + side.approvalsRefused > 0
+          ? side.approvalsGiven / (side.approvalsGiven + side.approvalsRefused)
+          : null,
       transcriptCount: transcripts.length,
       transcripts: transcripts.slice(0, transcriptLimit),
     };

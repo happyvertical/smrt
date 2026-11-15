@@ -206,16 +206,26 @@ describe('formatAiRunReport (--by fusion, #4753)', () => {
 
   it('totals runs per fusion with outcome counts and exclusions', async () => {
     const text = formatAiRunReport(
-      await reportAiRuns(db, { tenantId: 'tenant-a' }),
+      await reportAiRuns(db, { tenantId: 'tenant-a', type: 'fusion' }),
     );
-    expect(text).toMatch(/review-pair\s+2\s+1\s+1\s+0\s+6\s+1\s+100ms/);
-    expect(text).toMatch(/total\s+2\s+1\s+1\s+0/);
+    // runs, done, degraded, open, stopped, cancelled, failed, seats,
+    // degraded seats, tokens, check pass, approval, p50.
+    expect(text).toMatch(
+      /review-pair\s+2\s+2\s+1\s+0\s+0\s+0\s+0\s+6\s+1\s+0\s+-\s+-\s+100ms/,
+    );
+    expect(text).toMatch(/total\s+2\s+2\s+1\s+0/);
+    expect(
+      formatAiRunReport(await reportAiRuns(db, { tenantId: 'tenant-a' })),
+    ).toMatch(/fusion review-pair\s+2\s+2\s+1/);
     expect(text).toContain('Excluded from totals: 1 run(s) of other tenants');
   });
 
   it('says so when no run was recorded', async () => {
     const text = formatAiRunReport(
-      await reportAiRuns(db, { since: new Date('2999-01-01T00:00:00Z') }),
+      await reportAiRuns(db, {
+        since: new Date('2999-01-01T00:00:00Z'),
+        type: 'fusion',
+      }),
     );
     expect(text).toContain('(no fusion runs recorded in this window)');
   });
@@ -226,6 +236,7 @@ describe('aiUsageCommand', () => {
     expect(aiUsageCommand.name).toBe('ai:usage');
     expect(Object.keys(aiUsageCommand.options ?? {})).toEqual([
       'by',
+      'runs',
       'since',
       'until',
       'tenant',

@@ -136,6 +136,13 @@ function sideCells(side: AiPromptCompareSide): string[] {
     formatMs(side.latencyMs.p99),
     `${formatRate(side.fallbackRate)} (${formatInt(side.fallbackCalls)})`,
     `${formatRate(side.degradedRate)} (${formatInt(side.degradedCalls)})`,
+    `${formatRate(side.repairRate)} (${formatInt(side.repairedSteps)}/${formatInt(side.steps)} steps)`,
+    `${formatRate(side.checkPassRate)} (${formatInt(side.checksPassed)}/${formatInt(
+      side.checksPassed + side.checksFailed,
+    )})`,
+    `${formatRate(side.approvalRate)} (${formatInt(side.approvalsGiven)}/${formatInt(
+      side.approvalsGiven + side.approvalsRefused,
+    )})`,
     formatEvaluations(side.evaluations),
     side.meanScore === null
       ? '-'
@@ -156,6 +163,9 @@ const METRICS = [
   'p99',
   'fallback',
   'degraded',
+  'repair rate',
+  'check pass',
+  'approval',
   'evaluations',
   'mean score',
   'transcripts',

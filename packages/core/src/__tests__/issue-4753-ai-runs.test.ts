@@ -75,9 +75,12 @@ describe('_smrt_ai_runs (#4753)', () => {
     expect(all.map((run) => run.id)).toEqual(['r3', 'r2', 'r1']);
     const r1 = all.find((run) => run.id === 'r1');
     expect(r1).toMatchObject({
+      type: 'fusion',
+      definitionKey: 'review-pair',
       fusionKey: 'review-pair',
       mode: 'pair',
-      status: 'ok',
+      status: 'done',
+      degraded: false,
       seats: 3,
       degradedSeats: 0,
       duration: 100,
@@ -93,6 +96,19 @@ describe('_smrt_ai_runs (#4753)', () => {
     expect(
       (await listAiRuns(db, { status: 'failed' })).map((r) => r.id),
     ).toEqual(['r3']);
+    // The legacy fusion vocabulary still filters.
+    expect(
+      (await listAiRuns(db, { status: 'degraded' })).map((r) => r.id),
+    ).toEqual(['r2']);
+    expect((await listAiRuns(db, { status: 'ok' })).map((r) => r.id)).toEqual([
+      'r1',
+    ]);
+    expect((await listAiRuns(db, { status: 'done' })).map((r) => r.id)).toEqual(
+      ['r2', 'r1'],
+    );
+    expect((await listAiRuns(db, { type: 'turn' })).map((r) => r.id)).toEqual(
+      [],
+    );
     expect((await listAiRuns(db, { tenantId: 't2' })).map((r) => r.id)).toEqual(
       ['r3'],
     );
@@ -110,36 +126,35 @@ describe('_smrt_ai_runs (#4753)', () => {
   it('reports runs by fusion and counts other tenants as excluded', async () => {
     await seed();
     const report = await reportAiRuns(db);
-    expect(report.totals).toEqual({
+    expect(report.totals).toMatchObject({
       runs: 3,
+      done: 2,
       ok: 1,
       degraded: 1,
       failed: 1,
+      running: 0,
+      stopped: 0,
       seats: 8,
       degradedSeats: 3,
+      checkPassRate: null,
+      approvalRate: null,
       p50DurationMs: 100,
     });
-    expect(report.buckets).toEqual([
-      {
-        fusionKey: 'review-pair',
-        runs: 2,
-        ok: 1,
-        degraded: 1,
-        failed: 0,
-        seats: 6,
-        degradedSeats: 1,
-        p50DurationMs: 100,
-      },
-      {
-        fusionKey: 'draft-review',
-        runs: 1,
-        ok: 0,
-        degraded: 0,
-        failed: 1,
-        seats: 2,
-        degradedSeats: 2,
-        p50DurationMs: 50,
-      },
+    expect(
+      report.buckets.map((bucket) => [
+        bucket.type,
+        bucket.definitionKey,
+        bucket.runs,
+        bucket.ok,
+        bucket.degraded,
+        bucket.failed,
+        bucket.seats,
+        bucket.degradedSeats,
+        bucket.p50DurationMs,
+      ]),
+    ).toEqual([
+      ['fusion', 'review-pair', 2, 1, 1, 0, 6, 1, 100],
+      ['fusion', 'draft-review', 1, 0, 0, 1, 2, 2, 50],
     ]);
     const scoped = await reportAiRuns(db, { tenantId: 't2' });
     expect(scoped.tenantId).toBe('t2');

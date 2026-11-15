@@ -191,6 +191,10 @@ describe('ai:compare over SQLite', () => {
     expect(text).toMatch(/metric\s+A hash:h1\s+B hash:h2/);
     expect(text).toMatch(/calls\s+2\s+1/);
     expect(text).toMatch(/p50\s+100ms\s+50ms/);
+    // #5005: repair, check and approval rates, '-' with nothing to rate.
+    expect(text).toMatch(/repair rate\s+- \(0\/0 steps\)\s+- \(0\/0 steps\)/);
+    expect(text).toMatch(/check pass\s+- \(0\/0\)\s+- \(0\/0\)/);
+    expect(text).toMatch(/approval\s+- \(0\/0\)\s+- \(0\/0\)/);
     expect(text).toMatch(/evaluations\s+rejected=1\s+accepted=1/);
     expect(text).toMatch(/mean score\s+0\.100 \(n=1\)\s+0\.900 \(n=1\)/);
     expect(text).toContain(
