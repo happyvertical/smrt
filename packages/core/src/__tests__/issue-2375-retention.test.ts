@@ -426,6 +426,8 @@ describe('runRetentionSweep (#2375)', () => {
       'contexts',
       'dispatch',
       'run-once-claims',
+      // Reconciles and closes; it deletes nothing (#5005).
+      'ai-runs',
     ]);
     expect(await countRows('_smrt_changes')).toBe(1);
     expect(await countRows('_smrt_ai_usage')).toBe(1);

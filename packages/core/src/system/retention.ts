@@ -51,6 +51,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { pruneChangeFeed } from '../change-feed.js';
 import { detectEngine } from '../schema/ddl/index.js';
 import { toSafeInteger } from '../utils/safe-integer.js';
+import { sweepAiRuns } from './ai-run-accounting.js';
 import { RUN_ONCE_CLAIMS_TABLE } from './schema.js';
 
 const logger = createLogger({ level: 'info' });
@@ -121,6 +122,21 @@ export interface DispatchRetentionPolicy {
  * `maxAgeDays` must stay comfortably longer than any realistic client retry
  * window.
  */
+/**
+ * The `ai-runs` sweep task (#5005; docs/content/ai-runs.md section 6.7). It
+ * deletes nothing: it reconciles `call` reservations older than their
+ * threshold and closes runs that are not durable once they have been quiet
+ * for `staleRunHours`. Under `dryRun` it does nothing.
+ */
+export interface AiRunsSweepPolicy {
+  /** Run this task (default `true`). */
+  enabled?: boolean;
+  /** A non-durable run quiet this long is closed as abandoned (default 24). */
+  staleRunHours?: number;
+  /** Reservation threshold when no `callTimeoutMs` is set (default 1 hour). */
+  staleReservationMinutes?: number;
+}
+
 export interface RunOnceClaimsRetentionPolicy {
   /** Run this task (default `true`). */
   enabled?: boolean;
@@ -152,6 +168,11 @@ export interface RetentionPolicy {
   dispatch?: DispatchRetentionPolicy | false;
   /** `_smrt_run_once_claims` retention, or `false` to skip. */
   runOnceClaims?: RunOnceClaimsRetentionPolicy | false;
+  /**
+   * The `ai-runs` sweep (#5005): stale reservations reconciled, quiet runs
+   * that are not durable closed as abandoned; or `false` to skip.
+   */
+  aiRuns?: AiRunsSweepPolicy | false;
   /**
    * Enable/disable individual tasks contributed through
    * {@link registerRetentionTask}, keyed by task name. Unlisted tasks run.
@@ -244,7 +265,7 @@ export interface RetentionTask {
 const RETENTION_TASKS_KEY = Symbol.for('smrt.retention-tasks');
 
 /**
- * Names {@link builtInTasks} always uses for the five framework-owned tables.
+ * Names {@link builtInTasks} always uses for the framework-owned tables.
  *
  * Reserved against contributed tasks: `RetentionTaskResult.task` is
  * documented unique within a sweep, and a contributed task sharing one of
@@ -261,6 +282,7 @@ const RESERVED_TASK_NAMES = new Set([
   'contexts',
   'dispatch',
   'run-once-claims',
+  'ai-runs',
 ]);
 
 /**
@@ -783,6 +805,7 @@ function builtInTasks(policy: RetentionPolicy): BuiltInRetentionTask[] {
       table: RUN_ONCE_CLAIMS_TABLE,
       task: runOnceClaimsTask(policy),
     },
+    { name: 'ai-runs', table: AI_RUNS_TABLE, task: aiRunsSweepTask(policy) },
   ];
 }
 
@@ -914,6 +937,36 @@ function dispatchTask(policy: RetentionPolicy): RetentionTask | null {
         details: {
           completed: result.completedDeleted,
           failed: result.failedDeleted,
+        },
+      };
+    },
+  };
+}
+
+function aiRunsSweepTask(policy: RetentionPolicy): RetentionTask | null {
+  const config = resolveEntry<AiRunsSweepPolicy>(policy.aiRuns, {});
+  if (!config) return null;
+  return {
+    name: 'ai-runs',
+    description:
+      'Reconcile stale AI run reservations and close abandoned non-durable runs (_smrt_ai_runs)',
+    run: async (db, context) => {
+      if (context.dryRun) return { pruned: 0 };
+      const result = await sweepAiRuns(db, {
+        now: () => context.now,
+        ...(config.staleRunHours != null
+          ? { staleRunMs: config.staleRunHours * 60 * 60_000 }
+          : {}),
+        ...(config.staleReservationMinutes != null
+          ? { staleReservationMs: config.staleReservationMinutes * 60_000 }
+          : {}),
+      });
+      return {
+        pruned: 0,
+        details: {
+          settled: result.settled,
+          abandoned: result.abandoned,
+          closedRuns: result.closedRuns.length,
         },
       };
     },
