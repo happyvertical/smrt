@@ -24,6 +24,7 @@ try {
       to: { type: 'string' },
       'upgrade-first-to': { type: 'string' },
       reason: { type: 'string' },
+      'verify-owners': { type: 'boolean' },
     },
   });
   const root = path.resolve(values.root ?? repoRoot);
@@ -46,11 +47,21 @@ try {
       break;
     }
     case 'check':
-      process.exitCode = (await check({ root, directory })).ok ? 0 : 1;
+      process.exitCode = (
+        await check({
+          root,
+          directory,
+          verifyOwners: Boolean(values['verify-owners']),
+        })
+      ).ok
+        ? 0
+        : 1;
       break;
     case 'save': {
-      const { snapshot, kept } = await save({ root, directory });
-      console.log(`Saved smrt ${snapshot.release}. Kept: ${kept.join(', ')}`);
+      const { snapshot, kept, owners } = await save({ root, directory });
+      console.log(
+        `Saved smrt ${snapshot.release} and ${path.relative(directory, owners)}. Kept: ${kept.join(', ')}`,
+      );
       break;
     }
     case 'move-oldest': {
@@ -69,7 +80,7 @@ try {
     }
     default:
       throw new Error(
-        'Usage: release-upgrade-gate.mjs capture|check|save|move-oldest [--root <built checkout>]',
+        'Usage: release-upgrade-gate.mjs capture|check [--verify-owners]|save|move-oldest [--root <built checkout>]',
       );
   }
 } catch (error) {

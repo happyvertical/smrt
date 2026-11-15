@@ -13,9 +13,14 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareReleases } from '../../packages/core/dist/migrations.js';
 import {
+  loadCheckoutManifests,
+  loadCore,
   ownersFileName,
   readOwnersOverlay,
+  releaseFacts,
   validateOwnersFiles,
+  verifyRetiredFactsOnline,
+  writeOwnersOverlay,
 } from './retired-table-facts.mjs';
 import {
   getSystemTableShapes,
@@ -1027,10 +1032,20 @@ export function moveOldest({
   return next;
 }
 
+/** The repository this script runs from: its core projects manifests. */
+const harnessRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../..',
+);
+
 export async function check({
   root,
   directory = path.join(root, 'packages/core/release-upgrade'),
   report = console.log,
+  // Opt in (`check --verify-owners`): regenerate the owners files and
+  // definitions of the supported snapshots from npm and compare (#5005).
+  verifyOwners = false,
+  verify = verifyRetiredFactsOnline,
 }) {
   const build = await loadBuild(root);
   const versions = snapshotVersions(directory);
@@ -1100,6 +1115,21 @@ export async function check({
     owners,
   });
   for (const failure of retiredFailures) report(`FAIL retired table: ${failure}`);
+  // Asked for, so it fails when npm cannot answer rather than skipping.
+  if (verifyOwners) {
+    const verdict = await verify({
+      root,
+      directory,
+      releases: supportedVersions,
+      log: report,
+    });
+    report(verdict.message);
+    for (const failure of verdict.failures)
+      retiredFailures.push(`owners check: ${failure}`);
+    if (verdict.state === 'skipped')
+      retiredFailures.push(`owners check: ${verdict.message}`);
+    for (const failure of verdict.failures) report(`FAIL owners: ${failure}`);
+  }
   const matched = new Set(results.flatMap((result) => result.matchedLeftovers));
   const stale = leftovers.filter(
     (entry) => !matched.has(`${entry.table}.${entry.column}`),
@@ -1116,8 +1146,42 @@ export async function check({
   return { ok, results, stale, retiredFailures };
 }
 
-export async function save({ root, directory }) {
-  const snapshot = await capture({ root });
+/**
+ * Write the owners overlay of `release` (#5005) from a built checkout's own
+ * manifests: the checkout the snapshot is captured from, so no registry is
+ * needed. The manifests are projected through `coreRoot`'s core (this
+ * script's build), as `retired-table-facts.mjs refresh` and `check` project
+ * the published ones, so the three agree.
+ */
+export async function writeSnapshotOwners({
+  root,
+  directory,
+  release,
+  coreRoot = harnessRoot,
+}) {
+  const facts = releaseFacts(
+    await loadCore(coreRoot),
+    loadCheckoutManifests({ root, release }),
+  );
+  return writeOwnersOverlay({ directory, release, owners: facts.owners });
+}
+
+/**
+ * Capture the built checkout's snapshot, write its empty seed plan and its
+ * owners overlay (from the same checkout), prune, and, when npm can answer,
+ * check the overlay and the release's definitions against the published
+ * manifests (skipped with a message when it cannot). A check that finds a
+ * difference fails the save after the files are written.
+ */
+export async function save({
+  root,
+  directory,
+  captureSnapshot = capture,
+  coreRoot = harnessRoot,
+  verify = verifyRetiredFactsOnline,
+  report = console.log,
+}) {
+  const snapshot = await captureSnapshot({ root });
   mkdirSync(path.join(directory, 'snapshots'), { recursive: true });
   const build = await loadBuild(root, { manifests: false });
   const compare = build.compareReleases ?? compareReleases;
@@ -1133,5 +1197,24 @@ export async function save({ root, directory }) {
       path.join(directory, seedFileName(snapshot.release)),
       stableJSON(emptySeedPlan()),
     );
-  return { snapshot, kept: prune(directory, oldest.release, compare) };
+  // And its owners overlay, from the checkout it was captured from.
+  const owners = await writeSnapshotOwners({
+    root,
+    directory,
+    release: snapshot.release,
+    coreRoot,
+  });
+  const kept = prune(directory, oldest.release, compare);
+  const verdict = await verify({
+    root: coreRoot,
+    directory,
+    releases: [snapshot.release],
+    log: (line) => console.error(line),
+  });
+  report(verdict.message);
+  if (verdict.state === 'failed')
+    throw new Error(
+      `${verdict.message}:\n${verdict.failures.join('\n')}\nThe snapshot and ${path.relative(directory, owners)} were written; regenerate with ${'pnpm release-upgrade:refresh-owners'} and compare.`,
+    );
+  return { snapshot, kept, owners, verified: verdict.state };
 }

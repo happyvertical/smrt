@@ -147,6 +147,119 @@ export function loadReleaseManifests({ root, release, from, log = () => {} }) {
   );
 }
 
+/**
+ * The manifests a built checkout of `release` would publish, read from the
+ * checkout itself (`packages/<pkg>/dist/manifest.json`, #5005): every
+ * publishable package at version `release` with a built manifest, as
+ * `loadReleaseManifests` reads them from npm (a package at another version
+ * was not published at `release`; one without a manifest declares no
+ * models). No registry is needed, so a snapshot's owners overlay is written
+ * from the checkout it was captured from.
+ */
+export function loadCheckoutManifests({ root, release }) {
+  const manifests = [];
+  for (const [name, dir] of repositoryPackages(root)) {
+    const pkg = readJSON(path.join(dir, 'package.json'));
+    if (pkg.version !== release) continue;
+    const file = path.join(dir, 'dist/manifest.json');
+    if (!existsSync(file)) continue;
+    const manifest = readJSON(file);
+    if (manifest.packageName && manifest.packageName !== name)
+      throw new Error(`${file} names ${manifest.packageName}, not ${name}.`);
+    manifests.push({ packageName: name, manifest });
+  }
+  if (!manifests.length)
+    throw new Error(
+      `No built manifests at release ${release} in ${root}. Run pnpm build in the checkout first.`,
+    );
+  return manifests.sort((a, b) =>
+    a.packageName === '@happyvertical/smrt-core'
+      ? -1
+      : b.packageName === '@happyvertical/smrt-core'
+        ? 1
+        : a.packageName.localeCompare(b.packageName),
+  );
+}
+
+/**
+ * Whether npm can answer for `release` of core: `online`, `unpublished`
+ * (npm answers, the release is not there) or `offline` (npm could not
+ * answer: no network, no npm, a timeout or a registry error), with npm's
+ * message.
+ */
+export function probeNpmRelease(release) {
+  try {
+    execFileSync(
+      'npm',
+      ['view', `@happyvertical/smrt-core@${release}`, 'version', '--json'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 },
+    );
+    return { state: 'online' };
+  } catch (error) {
+    const text = String(error.stderr || error.message || error);
+    if (/E404|No matching version|is not in this registry/.test(text))
+      return { state: 'unpublished', message: text.trim().split('\n')[0] };
+    // Anything else (no network, no npm, a timeout, a proxy or registry
+    // error) means npm could not answer: the check is skipped, not failed.
+    return {
+      state: 'offline',
+      message: text.trim().split('\n')[0] || String(error.code ?? error),
+    };
+  }
+}
+
+/**
+ * Regenerate `releases`' owners files and definitions from npm and compare
+ * them with the repository (`checkRetiredFacts`), when npm can answer.
+ * Returns `{ state: 'verified' | 'failed' | 'skipped', failures, message }`;
+ * skipped when npm is unreachable or a release is not published, with the
+ * reason and the command to run later.
+ */
+export async function verifyRetiredFactsOnline({
+  root,
+  directory,
+  releases,
+  probe = probeNpmRelease,
+  factsFor,
+  log = () => {},
+}) {
+  const later = `Run node scripts/retired-table-facts.mjs check${releases.length === 1 ? ` --release ${releases[0]}` : ''} when it is.`;
+  for (const release of releases) {
+    const answer = probe(release);
+    if (answer.state === 'offline')
+      return {
+        state: 'skipped',
+        failures: [],
+        message: `Owners check skipped: npm is not reachable (${answer.message}). ${later}`,
+      };
+    if (answer.state === 'unpublished')
+      return {
+        state: 'skipped',
+        failures: [],
+        message: `Owners check skipped: smrt ${release} is not on npm yet (${answer.message}). ${later}`,
+      };
+  }
+  let read = factsFor;
+  if (!read) {
+    const core = await loadCore(root);
+    read = (release) =>
+      releaseFacts(core, loadReleaseManifests({ root, release, log }));
+  }
+  const failures = checkRetiredFacts({
+    root,
+    directory,
+    releases,
+    factsFor: read,
+  });
+  return {
+    state: failures.length ? 'failed' : 'verified',
+    failures,
+    message: failures.length
+      ? `Owners check: FAIL for ${releases.join(', ')} (${failures.length} failure(s))`
+      : `Owners check: ${releases.join(', ')} match the published manifests`,
+  };
+}
+
 /** The current build's core, used to project the manifests. */
 export async function loadCore(root) {
   return import(

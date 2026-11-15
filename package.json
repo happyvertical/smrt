@@ -58,6 +58,7 @@
     "check:manifest-paths": "node scripts/check-manifest-paths.mjs",
     "check:manifest-stamps": "node scripts/check-manifest-stamps.mjs",
     "check:release-upgrade": "node scripts/release-upgrade-gate.mjs check",
+    "check:release-upgrade:owners": "node scripts/release-upgrade-gate.mjs check --verify-owners",
     "release-upgrade:refresh-owners": "node scripts/retired-table-facts.mjs refresh",
     "release:snapshot": "node scripts/release-upgrade-gate.mjs save",
     "check:node-roots": "node scripts/survey-node-root-load.mjs --strict --allow=@happyvertical/smrt-products",

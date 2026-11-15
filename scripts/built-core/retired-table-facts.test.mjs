@@ -15,10 +15,12 @@ import { readRetiredTablesFromPackageJson } from '../../packages/core/dist/migra
 import { ManifestGenerator } from '../../packages/core/dist/scanner/manifest-generator.js';
 import {
   checkRetiredFacts,
+  loadCheckoutManifests,
   loadCore,
   loadReleaseManifests,
   refreshRetiredFacts,
   releaseFacts,
+  verifyRetiredFactsOnline,
   writeDefinition,
   writeOwnersOverlay,
 } from '../lib/retired-table-facts.mjs';
@@ -362,4 +364,91 @@ test('refresh brings overlays and definitions in line with the snapshot set, ide
   once();
   assert.deepEqual(read(), first);
   assert.deepEqual(checkRetiredFacts({ root: repo, directory: gate, factsFor }), []);
+});
+
+test("reads a built checkout's own manifests: only packages published at the release", () => {
+  const dir = path.join(scratch, 'checkout');
+  const put = (folder, json, content) => {
+    mkdirSync(path.join(dir, 'packages', folder, 'dist'), { recursive: true });
+    writeFileSync(
+      path.join(dir, 'packages', folder, 'package.json'),
+      JSON.stringify(json),
+    );
+    if (content)
+      writeFileSync(
+        path.join(dir, 'packages', folder, 'dist/manifest.json'),
+        JSON.stringify(content),
+      );
+  };
+  put('orders', { name: PKG, version: '1.4.0' }, ordersManifest());
+  put('stale', { name: '@facts5005/stale', version: '1.3.0' }, ordersManifest());
+  put('hidden', { name: '@facts5005/hidden', version: '1.4.0', private: true }, ordersManifest());
+  put('plain', { name: '@facts5005/plain', version: '1.4.0' });
+  const manifests = loadCheckoutManifests({ root: dir, release: '1.4.0' });
+  assert.deepEqual(
+    manifests.map((entry) => entry.packageName),
+    [PKG],
+  );
+  assert.deepEqual(releaseFacts(core, manifests).owners, {
+    facts_order_drafts: [`${PKG}:OrderDraft`],
+  });
+  assert.throws(
+    () => loadCheckoutManifests({ root: dir, release: '9.9.9' }),
+    /No built manifests at release 9\.9\.9.*pnpm build/,
+  );
+  put('liar', { name: '@facts5005/liar', version: '1.4.0' }, ordersManifest());
+  assert.throws(
+    () => loadCheckoutManifests({ root: dir, release: '1.4.0' }),
+    /names @facts5005\/orders, not @facts5005\/liar/,
+  );
+});
+
+test('the online owners check is skipped with a message when npm cannot answer, and compares when it can', async () => {
+  const directory = path.join(scratch, 'verify');
+  mkdirSync(path.join(directory, 'snapshots'), { recursive: true });
+  writeFileSync(
+    path.join(directory, 'snapshots/1.4.0.json'),
+    JSON.stringify({ release: '1.4.0', tables: {}, modelTables: ['facts_order_drafts'] }),
+  );
+  const owners = { facts_order_drafts: [`${PKG}:OrderDraft`] };
+  writeOwnersOverlay({ directory, release: '1.4.0', owners });
+  const emptyRepo = path.join(scratch, 'verify-repo');
+  mkdirSync(path.join(emptyRepo, 'packages'), { recursive: true });
+  let read = 0;
+  const factsFor = () => {
+    read++;
+    return { owners, columns: {} };
+  };
+  const run = (probe, facts = factsFor) =>
+    verifyRetiredFactsOnline({
+      root: emptyRepo,
+      directory,
+      releases: ['1.4.0'],
+      probe,
+      factsFor: facts,
+    });
+
+  const offline = await run(() => ({ state: 'offline', message: 'getaddrinfo ENOTFOUND registry.npmjs.org' }));
+  assert.equal(offline.state, 'skipped');
+  assert.equal(
+    offline.message,
+    'Owners check skipped: npm is not reachable (getaddrinfo ENOTFOUND registry.npmjs.org). Run node scripts/retired-table-facts.mjs check --release 1.4.0 when it is.',
+  );
+  const unpublished = await run(() => ({ state: 'unpublished', message: 'E404' }));
+  assert.equal(unpublished.state, 'skipped');
+  assert.match(unpublished.message, /smrt 1\.4\.0 is not on npm yet/);
+  assert.equal(read, 0);
+
+  const verified = await run(() => ({ state: 'online' }));
+  assert.deepEqual(verified, {
+    state: 'verified',
+    failures: [],
+    message: 'Owners check: 1.4.0 match the published manifests',
+  });
+  const differs = await run(
+    () => ({ state: 'online' }),
+    () => ({ owners: { facts_order_drafts: [`${PKG}:Other`] }, columns: {} }),
+  );
+  assert.equal(differs.state, 'failed');
+  assert.match(differs.failures.join(), /owners\/1\.4\.0\.json is not what release 1\.4\.0/);
 });

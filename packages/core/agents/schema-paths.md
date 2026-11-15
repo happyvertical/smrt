@@ -592,22 +592,41 @@ definition and every owners file from the published manifests and fails on any
 difference, so a hand edit is caught (it fetches from npm, so it is not part of
 the offline gate).
 
+**Saving a snapshot writes its overlay.** `pnpm release:snapshot`
+(`node scripts/release-upgrade-gate.mjs save [--root <built checkout>]`)
+writes the new snapshot's `owners/<release>.json` from the same built checkout
+the snapshot is captured from: that checkout's `packages/*/dist/manifest.json`
+for every publishable package at the release's version (a package at another
+version was not published at it), projected through this script's core as
+`refresh` and `check` project the published ones. No registry is needed, so it
+works offline. When npm answers, `save` then runs the `check` below for that
+release, so the files are verified when they are created; offline, or before
+the release is on npm, it says the check was skipped and names the command to
+run later. A difference fails the save after the files are written. `prune`
+removes an overlay with its snapshot.
+
 **One command keeps them current.** The owners overlays and the definitions
 both follow the snapshot set, so a change to `release-upgrade/snapshots/`
-(a base merge that saved or pruned a snapshot, a rebase, `release:snapshot`)
-makes them stale. Run
+that `save` did not make (a base merge that adds a snapshot, a rebase) makes
+them stale. Run
 
 ```sh
 pnpm release-upgrade:refresh-owners   # node scripts/retired-table-facts.mjs refresh
 ```
 
-after any such change (it reads npm, so it needs network). It is idempotent:
+after any such change, in particular after a base merge that adds a snapshot
+(it reads npm, so it needs network). It is the backfill and repair tool for
+overlays and definitions; it is idempotent:
 it writes `owners/<release>.json` for each snapshot lacking one and rewrites
 the others from the published manifests, deletes an overlay whose snapshot is
 gone, and for every retired-table declaration in a package.json sets
 `definitions` to one entry per snapshot release whose snapshot holds the table.
 The gate fails on a snapshot with no overlay and on an overlay with no
-snapshot, and names this command.
+snapshot, and names this command. `pnpm check:release-upgrade:owners`
+(`release-upgrade-gate.mjs check --verify-owners`) also regenerates the
+supported snapshots' overlays and definitions from npm and fails on a
+difference, or when npm cannot answer. It is opt-in: the gate does not run it
+by default, and PR CI does not pass it.
 
 The projection runs through the current build's core, not the release's: a
 base column or reference kind core gained after the release would show in a
@@ -1901,7 +1920,12 @@ time passed. Review and commit that decision with the code deletion.
 
 P8: the release workflow is not wired to this gate yet. A release job cannot be
 verified without publishing. This change supplies a tested command and a PR
-job; a later verified release change must wire the publishing path.
+job; a later verified release change must wire the publishing path. Wiring the
+gate and `retired-table-facts.mjs check` (or `check:release-upgrade:owners`) into the
+release workflow is a follow-up for the release owner. Until then the manual
+step after publishing is `pnpm release:snapshot` on the built release checkout
+(which writes and, online, checks the overlay), then commit the snapshot, its
+seed plan and its owners file.
 
 Fallback registry aggregation includes `_sync_origin_device_id` and
 `_sync_revision` even without a generated manifest schema. Migration-created

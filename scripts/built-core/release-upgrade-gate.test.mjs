@@ -7,6 +7,7 @@ import {
   rmSync,
   existsSync,
   unlinkSync,
+  symlinkSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -29,6 +30,7 @@ import {
   validateSeedFiles,
   validateSeedPlan,
   readSeedPlan,
+  save,
 } from '../lib/release-upgrade-gate.mjs';
 import {
   readOwnersOverlay,
@@ -704,6 +706,175 @@ test('an owners file goes with its snapshot: pruned with it, stale without it (#
     () => readOwnersOverlay(directory, '0.60.19'),
     /must have exactly owners, release, source/,
   );
+});
+
+/**
+ * A built checkout: core's built dist (this build's) under a release
+ * version, a package with a built manifest at that version, one at another
+ * version and a private one, neither of which was published at it.
+ */
+function checkout(name, version) {
+  const dir = path.join(scratch, name);
+  const pkg = (folder, json, manifestJson) => {
+    mkdirSync(path.join(dir, 'packages', folder), { recursive: true });
+    writeFileSync(
+      path.join(dir, 'packages', folder, 'package.json'),
+      JSON.stringify(json),
+    );
+    if (!manifestJson) return;
+    mkdirSync(path.join(dir, 'packages', folder, 'dist'), { recursive: true });
+    writeFileSync(
+      path.join(dir, 'packages', folder, 'dist/manifest.json'),
+      JSON.stringify(manifestJson),
+    );
+  };
+  pkg('core', { name: '@happyvertical/smrt-core', version });
+  symlinkSync(
+    path.join(root, 'packages/core/dist'),
+    path.join(dir, 'packages/core/dist'),
+  );
+  const generated = (packageName, className, table) =>
+    JSON.parse(
+      JSON.stringify(
+        new ManifestGenerator().generateManifest(
+          [
+            {
+              filePath: `/${packageName}`,
+              errors: [],
+              objects: [
+                {
+                  name: className.toLowerCase(),
+                  className,
+                  collection: table,
+                  filePath: `/${packageName}/model.ts`,
+                  fields: { value: { type: 'text' } },
+                  methods: {},
+                  decoratorConfig: {},
+                  packageName,
+                  extends: 'SmrtObject',
+                },
+              ],
+            },
+          ],
+          { packageName },
+        ),
+      ),
+    );
+  pkg(
+    'gate',
+    { name: '@test/gate4933', version },
+    generated('@test/gate4933', 'Gate4933', tableName),
+  );
+  pkg(
+    'older',
+    { name: '@test/older', version: '0.0.1' },
+    generated('@test/older', 'Older', tableName),
+  );
+  pkg(
+    'private',
+    { name: '@test/private', version, private: true },
+    generated('@test/private', 'Hidden', tableName),
+  );
+  return dir;
+}
+test('save writes the snapshot\'s owners overlay from the checkout it captured, offline (#5005)', async () => {
+  const directory = records('save');
+  const version = '0.60.21';
+  const root = checkout('save-checkout', version);
+  const lines = [];
+  const checked = [];
+  const result = await save({
+    root,
+    directory,
+    captureSnapshot: async () => ({
+      ...oldSnapshot(),
+      release: version,
+      modelTables: [tableName],
+    }),
+    verify: async (options) => {
+      checked.push(options.releases);
+      return {
+        state: 'skipped',
+        failures: [],
+        message: 'Owners check skipped: npm is not reachable (offline).',
+      };
+    },
+    report: (line) => lines.push(line),
+  });
+  assert.equal(result.verified, 'skipped');
+  assert.deepEqual(checked, [[version]]);
+  assert.deepEqual(lines, [
+    'Owners check skipped: npm is not reachable (offline).',
+  ]);
+  // Only the package published at the release owns the table.
+  assert.deepEqual(readOwnersOverlay(directory, version), {
+    release: version,
+    source: 'published package manifests',
+    owners: { [tableName]: ['@test/gate4933:Gate4933'] },
+  });
+  assert.equal(existsSync(path.join(directory, `seed/${version}.json`)), true);
+  // Pruned with its snapshot: 0.60.18 and 0.60.19 go, with their overlays.
+  assert.deepEqual(result.kept, ['0.60.17', '0.60.20', '0.60.21']);
+  const versions = ['0.60.17', '0.60.20', '0.60.21'];
+  for (const kept of ['0.60.17', '0.60.20'])
+    writeFileSync(
+      path.join(directory, `owners/${kept}.json`),
+      stableJSON({
+        release: kept,
+        source: 'published package manifests',
+        owners: {},
+      }),
+    );
+  validateOwnersFiles(
+    directory,
+    new Map(
+      versions.map((v) => [
+        v,
+        JSON.parse(readFileSync(path.join(directory, `snapshots/${v}.json`))),
+      ]),
+    ),
+  );
+  // A later save prunes this one's overlay with its snapshot.
+  for (const next of ['0.60.22', '0.60.23']) {
+    const again = checkout(`save-checkout-${next}`, next);
+    await save({
+      root: again,
+      directory,
+      captureSnapshot: async () => ({
+        ...oldSnapshot(),
+        release: next,
+        modelTables: [tableName],
+      }),
+      verify: async () => ({ state: 'skipped', failures: [], message: '' }),
+      report: () => {},
+    });
+  }
+  assert.equal(existsSync(path.join(directory, `snapshots/${version}.json`)), false);
+  assert.equal(existsSync(path.join(directory, `owners/${version}.json`)), false);
+  assert.equal(existsSync(path.join(directory, 'owners/0.60.23.json')), true);
+});
+test('save fails after writing when the online owners check disagrees', async () => {
+  const directory = records('save-fail');
+  const version = '0.60.21';
+  await assert.rejects(
+    save({
+      root: checkout('save-fail-checkout', version),
+      directory,
+      captureSnapshot: async () => ({
+        ...oldSnapshot(),
+        release: version,
+        modelTables: [tableName],
+      }),
+      verify: async () => ({
+        state: 'failed',
+        failures: ['owners/0.60.21.json is not what release 0.60.21 gives'],
+        message: 'Owners check: FAIL for 0.60.21 (1 failure(s))',
+      }),
+      report: () => {},
+    }),
+    /Owners check: FAIL for 0\.60\.21[\s\S]*owners\/0\.60\.21\.json is not what/,
+  );
+  assert.equal(existsSync(path.join(directory, `owners/${version}.json`)), true);
 });
 
 test('prune keeps oldest supported snapshot and the newest two others', () => {
