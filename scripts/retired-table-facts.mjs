@@ -22,6 +22,14 @@
  *     caught. Without --release it checks every release that has an owners
  *     file or a definition (fetching each from npm).
  *
+ *   node scripts/retired-table-facts.mjs refresh
+ *     (pnpm release-upgrade:refresh-owners) All of the above for the whole
+ *     snapshot set in one idempotent run: write an owners file for each
+ *     snapshot, delete one whose snapshot is gone, and rewrite every
+ *     declaration's definitions to the snapshot releases holding its table.
+ *     Run it after a base merge or a `release:snapshot` that changes
+ *     snapshots/. Needs npm.
+ *
  * Run `pnpm build` first: the manifests are read with this build's core.
  */
 import path from 'node:path';
@@ -30,6 +38,7 @@ import { parseArgs } from 'node:util';
 import {
   checkRetiredFacts,
   loadCore,
+  refreshRetiredFacts,
   loadReleaseManifests,
   releaseFacts,
   writeDefinition,
@@ -50,13 +59,28 @@ try {
   });
   const command = positionals[0];
   if (
-    !['owners', 'definition', 'check'].includes(command) ||
-    (command !== 'check' && !values.release)
+    !['owners', 'definition', 'check', 'refresh'].includes(command) ||
+    (!['check', 'refresh'].includes(command) && !values.release)
   )
     throw new Error(
-      'Usage: retired-table-facts.mjs owners --release <release> [--from <dir>] | definition --package <name> --table <table> --release <release> [--from <dir>] | check [--release <release> [--from <dir>]]',
+      'Usage: retired-table-facts.mjs owners --release <release> [--from <dir>] | definition --package <name> --table <table> --release <release> [--from <dir>] | refresh | check [--release <release> [--from <dir>]]',
     );
-  if (command === 'check') {
+  if (command === 'refresh') {
+    const core = await loadCore(root);
+    const summary = refreshRetiredFacts({
+      root,
+      directory,
+      factsFor: (release) =>
+        releaseFacts(
+          core,
+          loadReleaseManifests({ root, release, log: (line) => console.error(line) }),
+        ),
+      log: (line) => console.error(line),
+    });
+    console.log(
+      `Refreshed owners for ${summary.owners.join(', ') || 'no release'}; removed ${summary.removed.join(', ') || 'none'}; ${summary.definitions.length} declaration(s) updated.`,
+    );
+  } else if (command === 'check') {
     if (values.from && !values.release)
       throw new Error('check --from needs --release: the directory holds one release.');
     const core = await loadCore(root);

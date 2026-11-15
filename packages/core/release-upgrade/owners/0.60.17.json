@@ -66,9 +66,6 @@
     "_smrt_forge_projection_checkpoints": [
       "@happyvertical/smrt-jobs:ForgeProjectionCheckpoint"
     ],
-    "_smrt_inference_design_runs": [
-      "@happyvertical/smrt-inference:DesignRunRecord"
-    ],
     "_smrt_inference_overrides": [
       "@happyvertical/smrt-inference:InferenceOverride"
     ],
@@ -220,12 +217,6 @@
     ],
     "api_keys": [
       "@happyvertical/smrt-profiles:ApiKey"
-    ],
-    "app_draft_versions": [
-      "@happyvertical/smrt-app-shell:AppDraftVersion"
-    ],
-    "app_drafts": [
-      "@happyvertical/smrt-app-shell:AppDraft"
     ],
     "app_versions": [
       "@happyvertical/smrt-app-shell:AppVersion"
@@ -567,14 +558,8 @@
     "directive_proposals": [
       "@happyvertical/smrt-personas:DirectiveProposal"
     ],
-    "dns_zones": [
-      "@happyvertical/smrt-sites:DnsZone"
-    ],
     "document_taxes": [
       "@happyvertical/smrt-commerce:DocumentTax"
-    ],
-    "domains": [
-      "@happyvertical/smrt-sites:Domain"
     ],
     "earner_source_attributions": [
       "@happyvertical/smrt-sales:EarnerSourceAttribution"
@@ -1060,9 +1045,6 @@
     "project_delivery_events": [
       "@happyvertical/smrt-projects:ProjectDeliveryEvent"
     ],
-    "project_domains": [
-      "@happyvertical/smrt-sites:ProjectDomain"
-    ],
     "project_governance_events": [
       "@happyvertical/smrt-projects:ProjectGovernanceEvent"
     ],
@@ -1074,9 +1056,6 @@
     ],
     "project_questions": [
       "@happyvertical/smrt-projects:ProjectQuestion"
-    ],
-    "project_repositories": [
-      "@happyvertical/smrt-projects:ProjectRepository"
     ],
     "project_specifications": [
       "@happyvertical/smrt-projects:ProjectSpecification"
@@ -1200,9 +1179,6 @@
     ],
     "sites": [
       "@happyvertical/smrt-sites:Site"
-    ],
-    "smrt_mcp_call_audits": [
-      "@happyvertical/smrt-app-mcp:McpCallAudit"
     ],
     "social_accounts": [
       "@happyvertical/smrt-social:SocialAccount"
@@ -1433,6 +1409,6 @@
       "@happyvertical/smrt-properties:Zone"
     ]
   },
-  "release": "0.61.0",
+  "release": "0.60.17",
   "source": "published package manifests"
 }

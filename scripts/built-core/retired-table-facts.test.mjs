@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
@@ -10,6 +17,7 @@ import {
   checkRetiredFacts,
   loadCore,
   loadReleaseManifests,
+  refreshRetiredFacts,
   releaseFacts,
   writeDefinition,
   writeOwnersOverlay,
@@ -286,4 +294,72 @@ test('only model classes own a table: a collection class is never an owner', () 
     },
   ]);
   assert.deepEqual(facts.owners.facts_order_drafts, [`${PKG}:OrderDraft`]);
+});
+
+test('refresh brings overlays and definitions in line with the snapshot set, idempotently', () => {
+  const repo = path.join(scratch, 'refresh-repo');
+  const pkgDir = path.join(repo, 'packages/orders');
+  const gate = path.join(repo, 'packages/core/release-upgrade');
+  mkdirSync(pkgDir, { recursive: true });
+  mkdirSync(path.join(gate, 'snapshots'), { recursive: true });
+  mkdirSync(path.join(gate, 'owners'), { recursive: true });
+  const snapshot = (release, modelTables) =>
+    writeFileSync(
+      path.join(gate, `snapshots/${release}.json`),
+      JSON.stringify({ release, tables: {}, modelTables }),
+    );
+  // 1.3.0 predates the table; 1.4.0 and 1.5.0 hold it; 1.2.0 is gone.
+  snapshot('1.3.0', []);
+  snapshot('1.4.0', ['facts_order_drafts']);
+  snapshot('1.5.0', ['facts_order_drafts']);
+  writeFileSync(
+    path.join(gate, 'owners/1.2.0.json'),
+    JSON.stringify({ release: '1.2.0', source: 'published package manifests', owners: {} }),
+  );
+  writeFileSync(
+    path.join(pkgDir, 'package.json'),
+    JSON.stringify({
+      name: PKG,
+      version: '1.5.0',
+      smrt: {
+        retiredTables: [
+          {
+            table: 'facts_order_drafts',
+            lastOwner: `${PKG}:OrderDraft`,
+            since: '1.5.0',
+            reason: 'Drafts live on the order.',
+            rows: 'discard',
+            definitions: [{ release: '1.2.0', columns: {} }],
+          },
+        ],
+      },
+    }),
+  );
+  const facts = releaseFacts(core, [{ packageName: PKG, manifest: ordersManifest() }]);
+  const factsFor = () => facts;
+  const once = () => refreshRetiredFacts({ root: repo, directory: gate, factsFor });
+  const summary = once();
+  assert.deepEqual(summary.owners, ['1.3.0', '1.4.0', '1.5.0']);
+  assert.deepEqual(summary.removed, ['1.2.0']);
+  const read = () => ({
+    owners: readdirSync(path.join(gate, 'owners')).sort(),
+    package: readFileSync(path.join(pkgDir, 'package.json'), 'utf8'),
+    overlay: readFileSync(path.join(gate, 'owners/1.4.0.json'), 'utf8'),
+  });
+  const first = read();
+  assert.deepEqual(first.owners, ['1.3.0.json', '1.4.0.json', '1.5.0.json']);
+  assert.deepEqual(
+    JSON.parse(first.package).smrt.retiredTables[0].definitions.map(
+      (definition) => definition.release,
+    ),
+    ['1.4.0', '1.5.0'],
+  );
+  // The 1.3.0 snapshot holds no such table: its overlay is empty.
+  assert.deepEqual(
+    JSON.parse(readFileSync(path.join(gate, 'owners/1.3.0.json'))).owners,
+    {},
+  );
+  once();
+  assert.deepEqual(read(), first);
+  assert.deepEqual(checkRetiredFacts({ root: repo, directory: gate, factsFor }), []);
 });

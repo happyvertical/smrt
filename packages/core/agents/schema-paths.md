@@ -592,6 +592,23 @@ definition and every owners file from the published manifests and fails on any
 difference, so a hand edit is caught (it fetches from npm, so it is not part of
 the offline gate).
 
+**One command keeps them current.** The owners overlays and the definitions
+both follow the snapshot set, so a change to `release-upgrade/snapshots/`
+(a base merge that saved or pruned a snapshot, a rebase, `release:snapshot`)
+makes them stale. Run
+
+```sh
+pnpm release-upgrade:refresh-owners   # node scripts/retired-table-facts.mjs refresh
+```
+
+after any such change (it reads npm, so it needs network). It is idempotent:
+it writes `owners/<release>.json` for each snapshot lacking one and rewrites
+the others from the published manifests, deletes an overlay whose snapshot is
+gone, and for every retired-table declaration in a package.json sets
+`definitions` to one entry per snapshot release whose snapshot holds the table.
+The gate fails on a snapshot with no overlay and on an overlay with no
+snapshot, and names this command.
+
 The projection runs through the current build's core, not the release's: a
 base column or reference kind core gained after the release would show in a
 definition and not in the release's tables. The upgrade gate compares each

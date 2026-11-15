@@ -663,6 +663,14 @@ test('an owners file goes with its snapshot: pruned with it, stale without it (#
           ),
         ]),
     );
+  // A snapshot without its owners file is refused, naming the command.
+  assert.throws(
+    () => validateOwnersFiles(directory, snapshots()),
+    /Missing owners file owners\/0\.60\.17\.json.*release-upgrade:refresh-owners/,
+  );
+  for (const version of snapshots().keys())
+    if (!existsSync(path.join(directory, `owners/${version}.json`)))
+      overlay(version, {});
   overlay('0.60.18');
   validateOwnersFiles(directory, snapshots());
   assert.deepEqual(readOwnersOverlay(directory, '0.60.18').owners, {
@@ -674,7 +682,7 @@ test('an owners file goes with its snapshot: pruned with it, stale without it (#
   overlay('0.60.18');
   assert.throws(
     () => validateOwnersFiles(directory, snapshots()),
-    /Stale owners file owners\/0\.60\.18\.json/,
+    /Stale owners file owners\/0\.60\.18\.json.*release-upgrade:refresh-owners/,
   );
   unlinkSync(path.join(directory, 'owners/0.60.18.json'));
   // A table its snapshot does not hold, or a hand-added key, is refused.

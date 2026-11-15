@@ -112,6 +112,12 @@ and repository rules.
   PostgreSQL schema version is not yet stamped: inside a caller's transaction it
   is held until that transaction ends (#2868). Application tables still require migrations;
   runtime verification checks table existence and the last migrate fingerprint.
+- After a base merge, a rebase, or a `release:snapshot` that changes
+  `release-upgrade/snapshots/`, run `pnpm release-upgrade:refresh-owners`
+  (needs npm): it writes an `owners/<release>.json` for every snapshot, deletes
+  one whose snapshot is gone, and regenerates every retired-table declaration's
+  `definitions` for the snapshot set (#5005). The gate fails on a missing or
+  stale overlay. Details: [agents/schema-paths.md](agents/schema-paths.md).
 - Manifest generation fails closed on scanner errors, including unresolved
   decorator spreads. Never emit partial, default-open registration.
 - Generated registration repairs bundled class identity using the exact imported

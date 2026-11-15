@@ -30,6 +30,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -39,6 +40,7 @@ import { pathToFileURL } from 'node:url';
 const readJSON = (file) => JSON.parse(readFileSync(file, 'utf8'));
 const OVERLAY_KEYS = ['owners', 'release', 'source'];
 export const OWNERS_SOURCE = 'published package manifests';
+export const REFRESH_COMMAND = 'pnpm release-upgrade:refresh-owners';
 
 function sortKeys(value) {
   if (Array.isArray(value)) return value.map(sortKeys);
@@ -241,13 +243,20 @@ export function validateOwnersOverlay(overlay, release) {
  */
 export function validateOwnersFiles(directory, snapshots) {
   const folder = path.join(directory, 'owners');
+  // The other direction: every snapshot has its overlay, so a base merge or a
+  // saved snapshot that changed the snapshot set cannot leave one behind.
+  for (const release of snapshots.keys())
+    if (!existsSync(path.join(directory, ownersFileName(release))))
+      throw new Error(
+        `Missing owners file ${ownersFileName(release)}: the ${release} snapshot has none. Run ${REFRESH_COMMAND} to write it.`,
+      );
   if (!existsSync(folder)) return;
   for (const name of readdirSync(folder).filter((n) => n.endsWith('.json'))) {
     const release = name.slice(0, -5);
     const snapshot = snapshots.get(release);
     if (!snapshot)
       throw new Error(
-        `Stale owners file owners/${name}: there is no snapshot for ${release}. Delete it.`,
+        `Stale owners file owners/${name}: there is no snapshot for ${release}. Run ${REFRESH_COMMAND} to remove it.`,
       );
     const overlay = readOwnersOverlay(directory, release);
     const held = new Set(snapshot.modelTables ?? Object.keys(snapshot.tables));
@@ -394,4 +403,86 @@ export function checkRetiredFacts({ root, directory, factsFor, releases }) {
       }
   }
   return failures;
+}
+
+/** The releases that have a snapshot, oldest first. */
+function snapshotReleases(directory) {
+  const folder = path.join(directory, 'snapshots');
+  return existsSync(folder)
+    ? readdirSync(folder)
+        .filter((name) => name.endsWith('.json'))
+        .map((name) => name.slice(0, -5))
+        .sort(releaseOrder)
+    : [];
+}
+
+/**
+ * Bring every generated retire-step fact in line with the snapshot set, from
+ * the published manifests; idempotent. Run it after anything that changes
+ * `snapshots/` (a base merge, `release:snapshot`):
+ *
+ * - writes the owners overlay of every snapshot, and deletes the overlay of
+ *   a release whose snapshot is gone;
+ * - for every retired-table declaration in the repository's package.json
+ *   files, rewrites `definitions` to one entry per snapshot release whose
+ *   snapshot holds the table (the supported release set), dropping the
+ *   entries of any other release.
+ *
+ * `factsFor(release)` reads a release's facts; each is read once. Returns a
+ * summary of what was written and removed.
+ */
+export function refreshRetiredFacts({ root, directory, factsFor, log = () => {} }) {
+  const releases = snapshotReleases(directory);
+  const cache = new Map();
+  const facts = (release) => {
+    if (!cache.has(release)) cache.set(release, factsFor(release));
+    return cache.get(release);
+  };
+  const summary = { owners: [], removed: [], definitions: [] };
+  const folder = path.join(directory, 'owners');
+  if (existsSync(folder))
+    for (const name of readdirSync(folder).filter((n) => n.endsWith('.json'))) {
+      const release = name.slice(0, -5);
+      if (releases.includes(release)) continue;
+      unlinkSync(path.join(folder, name));
+      summary.removed.push(release);
+      log(`removed owners/${name}: no snapshot for ${release}`);
+    }
+  for (const release of releases) {
+    writeOwnersOverlay({ directory, release, owners: facts(release).owners });
+    summary.owners.push(release);
+    log(`wrote owners/${release}.json`);
+  }
+  for (const [packageName, dir] of repositoryPackages(root)) {
+    const file = path.join(dir, 'package.json');
+    const json = readJSON(file);
+    const entries = json.smrt?.retiredTables ?? [];
+    if (!entries.length) continue;
+    for (const entry of entries) {
+      const definitions = [];
+      for (const release of releases) {
+        const snapshot = readJSON(
+          path.join(directory, `snapshots/${release}.json`),
+        );
+        const held = new Set(snapshot.modelTables ?? Object.keys(snapshot.tables));
+        if (!held.has(entry.table)) continue;
+        definitions.push(
+          definitionFromFacts({
+            table: entry.table,
+            release,
+            facts: facts(release),
+            lastOwner: entry.lastOwner,
+          }),
+        );
+      }
+      entry.definitions = definitions;
+      summary.definitions.push({
+        packageName,
+        table: entry.table,
+        releases: definitions.map((definition) => definition.release),
+      });
+    }
+    writeFileSync(file, `${JSON.stringify(json, null, 2)}\n`);
+  }
+  return summary;
 }
