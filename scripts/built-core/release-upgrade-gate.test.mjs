@@ -6,19 +6,23 @@ import {
   readFileSync,
   rmSync,
   existsSync,
+  readdirSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
+  assertSnapshotPlausible,
   capture,
+  check,
   introspect,
   loadBuild,
   moveOldest,
   prune,
   rehearse,
   restore,
+  save,
   seed,
   selectPrevious,
   stableJSON,
@@ -793,4 +797,62 @@ test('snapshot model ownership excludes private bookkeeping from seed and orphan
   assert.equal(result.seededTables, 1);
   assert.deepEqual(result.seedFailures, []);
   assert.equal(result.ok, true, textOf(result));
+});
+
+function plausible(count, version = release) {
+  const modelTables = Array.from({ length: count }, (_, i) => `t${i}`);
+  return {
+    release: version,
+    modelTables,
+    tables: Object.fromEntries(modelTables.map((name) => [name, {}])),
+  };
+}
+test('an empty or shrunken snapshot is refused by the plausibility rule', () => {
+  assert.throws(
+    () => assertSnapshotPlausible({ release: '0.61.3', modelTables: [], tables: {} }),
+    /Refusing release snapshot 0\.61\.3: it holds 0 model table/,
+  );
+  assert.throws(
+    () => assertSnapshotPlausible(plausible(89), plausible(100)),
+    /89 model table\(s\) is fewer than 90% of the 100 in 0\.60\.17/,
+  );
+  assertSnapshotPlausible(plausible(90, '0.60.18'), plausible(100));
+  assertSnapshotPlausible(plausible(5));
+});
+test('save refuses a capture far smaller than the newest snapshot and writes nothing', async () => {
+  const directory = records('save-shrunk', ['0.60.17']);
+  writeFileSync(
+    path.join(directory, 'snapshots/0.60.17.json'),
+    stableJSON(plausible(100000)),
+  );
+  await assert.rejects(
+    save({ root, directory }),
+    /Refusing release snapshot .*fewer than 90% of the 100000 in 0\.60\.17/,
+  );
+  assert.deepEqual(
+    readdirSync(path.join(directory, 'snapshots')),
+    ['0.60.17.json'],
+  );
+});
+test('check refuses to rehearse from a hand-placed empty snapshot', async () => {
+  const directory = records('check-empty', ['0.60.17']);
+  writeFileSync(
+    path.join(directory, 'snapshots/0.60.17.json'),
+    stableJSON({ ...oldSnapshot(), modelTables: [], tables: {} }),
+  );
+  writeFileSync(
+    path.join(directory, 'leftover-columns.json'),
+    readFileSync(
+      path.join(root, 'packages/core/release-upgrade/leftover-columns.json'),
+    ),
+  );
+  mkdirSync(path.join(directory, 'seed'), { recursive: true });
+  writeFileSync(
+    path.join(directory, 'seed/0.60.17.json'),
+    stableJSON({ emptyByDesign: [], suppliedRows: [] }),
+  );
+  await assert.rejects(
+    check({ root, directory, report: () => {} }),
+    /Refusing release snapshot 0\.60\.17: it holds 0 model table/,
+  );
 });
