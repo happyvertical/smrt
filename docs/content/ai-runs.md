@@ -15,7 +15,8 @@ Everything here follows one idea: **every model call is recorded once, in one
 place, and anything that groups calls (a fusion, a chat turn, a workflow) is a
 run laid over those records.** There is no second ledger of calls. A run keeps
 running totals of what its calls spent, and those totals are what its budget
-is enforced against (section 6.2).
+is enforced against (section 6.2). Section 6.9 follows one workflow run, with
+a fusion inside a step, through a budget stop and a resume, row by row.
 
 Lines that begin with **Proposed:** are details this page adds to the agreed
 design. They are part of the specification code is built from, and they are
@@ -261,6 +262,23 @@ is not protected from retention as a resumable run (section 8). Cancel is not
 used for a shutdown, and `interrupted` replaces the earlier `host_stopped`.
 Cancelling a run sets `stopped_by_run_id` to the run itself.
 
+**A cancel reaches every descendant at once.** A running descendant would
+notice a cancelled ancestor at its next reservation, but a durable descendant
+that is `stopped` or `waiting-approval` never reserves, so it would never
+notice: it would stay protected from retention forever (section 8), its
+cancelled ancestor could be pruned before it, and resuming it would read a
+missing ancestor chain. So a cancel moves the run **and every descendant that
+is not final** (`running`, `waiting-approval`, or a durable `stopped`) to
+`cancelled`, in the same call and the same transaction, locking the run and
+then its descendants in the lock order of section 6.5 (shallowest first).
+Each descendant gets reason `cancelled`, `stopped_by_run_id` set to the
+cancelled run, `stop_detail` NULL and `finished_at` set. A descendant already
+final, including a stopped run that is not durable, is left as it is. Calls a
+cancelled descendant already has in flight still settle (settlement does not
+look at status). A descendant opened under the run while the cancel was
+running, or one left behind for any other reason, is repaired by the
+`ai-runs` sweep (section 6.7).
+
 Proposed: the code `interrupted` (rather than `host_stopped`), because the
 stop is the same whether a host, a person or a shutdown asked for it, and the
 status `cancelled` (rather than `stopped` or `failed` with a `cancelled`
@@ -314,6 +332,30 @@ output it judges: the `call` event, or the `handoff` event when the output came
 from a child run. That link is how checks and approvals are attributed to a
 prompt (section 5).
 
+**Approval events.** An approval is two events: the **request**, with
+`status` `requested`, whose `parent_event_id` is the judged event as above,
+and the **decision**, with `status` `approved` or `refused`, whose
+`parent_event_id` is the request event. In a durable run both are in the same
+run. A chat turn does not wait (section 3): its request is in the turn that
+asked, which ends `done`, and the decision is recorded in the run of the
+**next** turn. That decision's `parent_event_id` points at the request event
+**in another run**. This is the one place a `parent_event_id` may cross runs,
+and it is allowed. It is a plain reference: the request's run may have been
+pruned, so a reader must accept a decision whose request no longer resolves.
+
+Proposed: approvals are counted per run by these rules, so neither half of a
+cross-run approval skews a rate:
+
+- A **decision** is counted in the run that recorded it, once: `approved` in
+  `approvals_given`, `refused` in `approvals_refused`, whether or not its
+  request is in the same run or still exists.
+- A **request** is counted only as requested. It is never a decision, so a
+  request with no decision in its own run (the turn that asked) counts
+  neither as approved nor as refused.
+- The **approval rate** is decisions approved divided by decisions made
+  (`approved / (approved + refused)`). Requests are not in the denominator,
+  so a turn that asked and a turn that decided each give the right rate.
+
 `(run_id, seq)` is unique, declared inline in the table definition (DuckDB
 honours `ON CONFLICT` only against an inline constraint). `seq` is allocated
 in the same transaction as the insert, as one more than the run's largest
@@ -360,6 +402,11 @@ Proposed: the columns are `id`, `call_id`, `run_id`, `metric`, `value`,
 `value_type` (`number`, `boolean` or `text`), `scale` (for example `0..1`),
 `label`, `evidence`, `evaluator`, `tenant_id` and `created_at`.
 
+`call_id` and `run_id` are plain references, not foreign keys. An evaluation
+is never swept, so it may outlive the call or run it judged and then name an
+id that no longer resolves; readers return it with an empty target (section
+8).
+
 ### Checkpoint row
 
 See [section 7](#7-resuming).
@@ -372,7 +419,7 @@ See [section 7](#7-resuming).
 | `do()`, `is()`, `describe()` whose tier is bound to a fusion | A `fusion` run, as below. |
 | A fusion | One `fusion` run, one usage row and one `call` event per seat. The run row is written when the fusion starts, not when it ends. |
 | A chat turn | One `turn` run, one usage row and one `call` event per model call in the tool loop, `action` and `observation` events for tool use. |
-| A chat turn that needs approval | The turn records a requested `approval` event and ends `done`, with the approval pending; it does not wait. The next turn carries on, and the person's decision is recorded as an `approval` event in that turn's run, as approval cards behave today. |
+| A chat turn that needs approval | The turn records a requested `approval` event and ends `done`, with the approval pending; it does not wait. The next turn carries on, and the person's decision is recorded as an `approval` event in that turn's run, as approval cards behave today. The decision's `parent_event_id` points back at the request in the earlier turn (section 2, approval events). |
 | A workflow run | One `workflow` run, a checkpoint, usage rows that carry the step and attempt, one `call` event per call, `check` and `approval` events. |
 | A retried workflow run | A new `workflow` run with `retry_of_run_id` naming the failed run, a checkpoint that starts with the failed run's accepted step outputs, and its own usage rows and events from the step it starts at. |
 | A fusion inside a workflow step | A child `fusion` run whose `parent_run_id` is the workflow run, and a `handoff` event in the workflow run naming it. The step's `check` event points at that `handoff`. |
@@ -402,6 +449,16 @@ turn all fail with that error until persistence is turned on. Single calls
 (a tier bound to a model or an alias chain) still work without it; they open
 no run, and no usage row is written for them.
 
+**Tracking switched off while a run is open.** The check is made **only when
+a run opens**. Resuming a stopped run, a step start, a reservation and a
+settlement do not make it again. Every settlement of an open run writes its
+usage row inside the settle transaction (section 6.4) whatever the setting
+says by then, because the run's totals and its `settled` events must agree
+with the ledger. So a run opened while tracking was on finishes with every
+call it made recorded; only runs opened after tracking was turned off are
+refused, and single calls made after that write no usage row. The other usage
+handlers follow their own settings.
+
 ## 4. Reading it: trajectories
 
 `getRunTrajectory(runId)` returns the run row and its events in `seq` order,
@@ -425,7 +482,7 @@ models or two tiers.
 | Latency p50, p95 | Nearest-rank percentiles of `duration` over the group's rows. |
 | Repair rate | Step instances in the group with at least one usage row where `attempt > 1`, divided by step instances in the group. |
 | Check pass rate | `check` events whose judged event (its `parent_event_id`) used the group's prompt and template, passed divided by all. A judged `call` event is attributed through its usage row; a judged `handoff` to a fusion, through the fusion run's `prompt_key` and `template_hash`. |
-| Approval rate | `approval` events attributed the same way, approved divided by decided. |
+| Approval rate | Decision events (`approved` or `refused`), attributed through their request (`parent_event_id`) to the request's judged event, the same way as a check; approved divided by decided. Requests are not counted. A decision whose request no longer resolves (its run was pruned) cannot be attributed to a prompt and is left out here, though it still counts in its own run (section 2). |
 | Labels, scores | Evaluations on the group's calls, and on runs whose calls used the group's prompt, counted once per group. |
 
 For example, repair rate per template version:
@@ -534,13 +591,15 @@ added to an ancestor's own totals. Each run's `maxCalls`, `maxTokens` and
 spending counts against its own budget, its parent's and every ancestor's.
 `maxSteps` and `maxDurationMs` are checked against the run's own numbers only.
 
-Proposed: when an ancestor's limit is reached, or an ancestor is stopped or
-cancelled, its descendants stop as well, each at its own next reservation or
-step start. Each one takes the ancestor's status and reason: under a
-`cancelled` ancestor it moves to `cancelled` with `cancelled`, under a
-`stopped` ancestor to `stopped` with the ancestor's reason. It copies the
-ancestor's `stopped_by_run_id` (the ancestor itself, unless something below it
-stopped it) and `stop_detail`. No transaction writes a whole subtree.
+Proposed: when an ancestor's limit is reached, or an ancestor is stopped, its
+descendants stop as well, each at its own next reservation or step start. Each
+one moves to `stopped` with the ancestor's reason and copies the ancestor's `stopped_by_run_id` (the ancestor itself,
+unless something below it stopped it) and `stop_detail`. No stop writes a
+whole subtree. A **cancel** is the one exception: it is written to every
+descendant that is not final at the moment of the cancel (section 2). Because
+both lock the descendant's row, a descendant's reservation either commits
+before the cancel (its call is sent and settles normally) or after it, and
+is then refused because the run is no longer `running` (section 6.4).
 
 **A child's stop reaches its parent as a stop, never as a failed call.** When
 an entry call is answered by a child run (a fusion inside a workflow step or a
@@ -568,7 +627,7 @@ Because it is a stop, the run that made the entry call does not count a
 failed attempt, does not use a repair, and does not end `failed`: a workflow
 step whose fusion stopped on the root's `maxTokens` leaves the workflow
 `stopped` with `max_tokens`, resumable once the budget is raised, and never
-`failed` with `repairs_exhausted`. The same holds up any depth of nesting.
+`failed` with `repairs_exhausted` (section 6.9 walks through exactly this). The same holds up any depth of nesting.
 Proposed: a fusion whose reservation is refused stops; it does not go on as
 `degraded` with fewer seats, because a degraded answer would hide the stop.
 
@@ -728,7 +787,9 @@ a new one.
 Each call's reservation is written on its `call` event, in the `reservation`
 column, and moves from state to state as the call goes. Every move is a
 conditional update that succeeds only from the expected state, so the same
-move can never be applied twice. The states are:
+move can never be applied twice. The worked example (section 6.9, points B,
+C, E and F) shows a call reserved and settled, a fusion's joint reservation
+refused, and the same reservation succeeding after a resume. The states are:
 
 | State | What it means | Room still held | Call charged |
 |---|---|---|---|
@@ -844,7 +905,7 @@ budget, or other calls in flight held the room. Its keys:
 | `limitValue` | That run's limit. |
 | `used` | That run's total the limit is checked against: inclusive for calls, tokens and cost; own for steps and active time. |
 | `reserved` | Room that run held for other calls in flight (calls, tokens and cost only). |
-| `requested` | What the refused call or step asked for: 1 call, `R` tokens, `C` cost or 1 step. Absent for `maxDurationMs`. |
+| `requested` | What the refused call or step asked for: 1 call, `R` tokens, `C` cost or 1 step; for a fusion's joint reservation (section 6.3), the sum over all its seats, judge included. Absent for `maxDurationMs`. |
 | `room` | `limitValue - used - reserved`; zero or below when there was no room at all. |
 
 A step start refused by `maxSteps` or `maxDurationMs` records the same keys.
@@ -918,7 +979,8 @@ persistence handler, deduplicated on `id = call_id`.
 
 Every change to a run's totals happens in a short transaction. This section
 says in what order those transactions lock rows, so that two of them never
-deadlock, and how each database engine runs them.
+deadlock, and how each database engine runs them. In the worked example
+(section 6.9, point E) the fusion's joint reservation locks `W`, then `F2`.
 
 Every accounting transaction (reserve, settle, release, abandon, step start,
 totals repair) is short, never spans a model call or an action, and is safe
@@ -933,10 +995,14 @@ to retry as a whole, because every move is guarded by its expected state.
    locked.
 
 A chain from the root to a run has one run per depth, so "root first" follows
-this order. Today no transaction locks a subtree, because subtree stops are
-noticed lazily (section 6.2); any future operation that does must follow the
-same order. Two transactions that take locks in one total order cannot
-deadlock.
+this order. Stops are noticed lazily (section 6.2), so the one transaction
+that locks a subtree is a **cancel** (section 2): it finds the descendants
+through `parent_run_id` (which never changes) and locks the cancelled run and
+then its descendants by increasing depth and, within a depth, increasing
+`id`, the same order. The `ai-runs` sweep's repair of a descendant (section
+6.7) locks its chain root first, like a reservation. Any future operation
+that locks several runs must follow the same order. Two transactions that take
+locks in one total order cannot deadlock.
 
 | Engine | How the transaction runs |
 |---|---|
@@ -952,7 +1018,8 @@ fails the call before it is sent.
 
 Run totals are trusted, not recomputed. This section gives an operator two
 tools: one that checks them against the usage rows, and one that fixes them
-on request.
+on request. The worked example (section 6.9, point F) ends with totals that
+`checkAiRunTotals` agrees with.
 
 Because run totals change only inside the transactions above, together with
 the event that justifies each change, they do not drift through crashes or
@@ -979,7 +1046,9 @@ held for a call that will never settle. Recovery finds such reservations and
 either charges them, when the call's usage row reached the table, or gives
 the room back. A durable run, with the runs under it that are not durable, is
 recovered by the worker that takes over its job; a run with no durable
-ancestor, and anything left behind, by a periodic sweep.
+ancestor, and anything left behind, by a periodic sweep. The worked example
+(section 6.9, point E) shows what reconciliation on claim does when a
+durable run is resumed after a stop.
 
 A process can die between reserve and settle. The records that make recovery
 possible are the `call` events still `reserved` and the usage rows. A
@@ -1041,6 +1110,21 @@ or run-row write for 24 hours (configurable). If its process was only slow,
 the guarded status change and the `running` check on every reservation stop
 it from spending more or writing `done` over `failed` (section 2).
 
+**Descendants left under a final ancestor.** A cancel moves the descendants
+that are not final at once (section 2). The `ai-runs` sweep repairs any it
+missed, and any left behind by an ancestor that ended some other way, so that
+no run stays protected under an ancestor that can no longer resume it. It
+moves to `cancelled`, with reason `cancelled`, in a guarded change with its
+chain locked root first:
+
+- any run that is not final and has a `cancelled` ancestor;
+- any run that is `waiting-approval`, or durable and `stopped`, and has an
+  ancestor that is final (`failed`, `done`, or a `stopped` run that is not
+  durable) or an ancestor whose row is missing.
+
+`stopped_by_run_id` is the nearest such ancestor, or the run itself when the
+ancestor's row is missing; `stop_detail` is NULL and `finished_at` is set.
+
 **Only durable runs wait for approval.** Waiting needs a checkpoint to resume
 from, so only a durable run may move to `waiting-approval`; for a run that is
 not durable the guarded change is refused. A chat turn that needs approval
@@ -1057,6 +1141,113 @@ accounting.
 The budget limits stay as they were unless the resume raises them (up to the
 app's ceiling). Spending already made stays counted. The run continues with the
 remaining room; `maxDurationMs` counts active time across all resumes.
+
+### 6.9 A worked example
+
+One run followed from start to finish, showing every row this page
+describes. The numbers are tokens; cost columns move the same way and are
+left out.
+
+**The setup.** A durable `workflow` run `W` with two steps and the budget
+`{ "maxTokens": 20000 }`. Step 1 (`outline`) makes one call with an output
+limit of 2,000. Step 2 (`draft`) makes one entry call whose tier is bound to a
+fusion of two panelists and a judge. The fusion's definition has no budget of
+its own. Each panelist's input is about 6,000 tokens and its prompt declares
+`expectedOutputTokens` 3,000; the judge's own prompt is about 1,000 tokens
+and declares 2,000.
+
+**A. Start.** `openAiRun` writes `W`: `running`, `budget` as above, every total
+0, `steps_used` 0, `active_since` set. Its checkpoint is revision 0 with no
+step counted. No event yet.
+
+**B. Step 1.** The step start checks `W` is `running` and has steps and time
+left, adds one to `steps_used` (now 1), and writes checkpoint revision 1
+(highest counted step 1) with step instance `s1`. Call `c1` has `E` 1,000 and
+`O` 2,000, so `R` is 3,000 (section 6.3).
+
+| When | `W` totals | Events of `W` |
+|---|---|---|
+| reserve `c1` | `reserved_tokens` 3,000, `reserved_calls` 1 | seq 1 `call`, `c1`, `reserved`, `reserved_tokens` 3,000 |
+| settle `c1` (used 1,000 in + 1,400 out) | `tokens` 2,400, `calls` 1; inclusive 2,400 / 1; reserved 0 | seq 1 → `settled` |
+| host check passes | unchanged | seq 2 `check`, `passed`, `parent_event_id` = seq 1 |
+
+The settle writes usage row `c1` (`id` = `call_id` = `entry_call_id` = `c1`,
+`run_id` `W`, `step_index` 1, `step_instance_id` `s1`, `attempt` 1,
+`total_tokens` 2,400) in the same transaction. Checkpoint revision 2 stores
+step 1's accepted output.
+
+**C. Step 2 starts and reserves the fusion's seats.** The step start counts
+step 2 (`steps_used` 2, checkpoint revision 3, highest counted step 2,
+instance `s2`). The entry call `e2` opens a child `fusion` run `F` (not
+durable, `parent_run_id` `W`), and `W` records seq 3, a `handoff` event with
+`child_run_id` `F`, `call_id` `e2` and no reservation. `F` sizes its seats
+together (section 6.3): each panelist `R` = 6,000 + 3,000 = 9,000; the judge's
+`E` is its prompt plus the panelists' output allowances, 1,000 + 2 × 3,000 =
+7,000, so its `R` is 7,000 + 2,000 = 9,000. The joint reservation asks for 3
+calls and 27,000 tokens, checked on `F` (no limits) and `W`:
+2,400 + 0 + 27,000 = 29,400 > 20,000.
+
+**D. Stop.** The reservation is refused all or none: no seat is sent, `F` has
+no `call` event and no usage row. In that transaction `F` moves from `running`
+to `stopped` with `max_tokens`, `stopped_by_run_id` `W`, `finished_at` set
+(it is not durable, so the stop is final for `F`), and:
+
+```json
+{ "limit": "maxTokens", "runId": "W", "limitValue": 20000, "used": 2400,
+  "reserved": 0, "requested": 27000, "room": 17600 }
+```
+
+The tracked client then moves `W` from `running` to `stopped` with the same
+`stop_reason`, `stopped_by_run_id` and `stop_detail` (section 6.2), closes its
+active period (`active_since` NULL), sets the `handoff` event's `status` to
+`stopped`, and only then throws `AiRunStoppedError`. Step 2 is not completed,
+counts no failed attempt and uses no repair; `W` is `stopped`, not `failed`.
+`W` is protected from retention (a durable stopped run), and `F` with it.
+
+**E. Resume with a larger budget.** The host resumes `W` with
+`{ "maxTokens": 40000 }`. The resume reads the chain (`W` is a root, so it
+stands), and the change is to the limit named in `stop_detail.limit` on the
+run named in `stopped_by_run_id`, so it is allowed (section 7). Reconciliation
+on claim finds no `call` event still `reserved` in `W` or below it, and `F` is
+already final, so nothing changes there (section 6.7). `W` returns to
+`running` with the new budget and a new active period; its totals are as in
+D. Step 2 is re-entered: its index is not above the highest counted, so
+`steps_used` stays 2 (section 6.3), checkpoint revision 4 records a new
+instance `s2b`, and the new entry call `e2b` opens a **new** fusion run `F2`,
+seq 4 in `W` (`handoff`, `child_run_id` `F2`, `call_id` `e2b`).
+
+The same joint reservation of 27,000 now fits: 2,400 + 0 + 27,000 = 29,400 <=
+40,000. In one transaction, root first, `W` and `F2` each get
+`reserved_tokens` 27,000 and `reserved_calls` 3, and `F2` records seq 1 to 3,
+three `call` events `reserved` at 9,000 each.
+
+**F. Finish.**
+
+| Seat | Used | Event of `F2` | Note |
+|---|---|---|---|
+| panelist 1 | 6,000 in + 2,500 out = 8,500 | seq 1 → `settled` | |
+| panelist 2 | 6,000 in + 3,400 out = 9,400 | seq 2 → `settled` | 400 over its `R`, charged in full |
+| judge | 6,900 in + 1,800 out = 8,700 | seq 3 → `settled` | sent under its reservation after a `running` check on `F2` and `W` |
+
+Each settle writes that seat's usage row (`run_id` `F2`, `entry_call_id`
+`e2b`), returns 9,000 of reservation on `F2` and `W`, and adds the actual to
+`F2`'s own and inclusive totals and to `W`'s inclusive totals only. `F2` ends
+`done`. The host check passes: seq 5 in `W`, a `check` whose
+`parent_event_id` is the `handoff` seq 4, so it is attributed to the prompt
+the fusion answered (section 5). Checkpoint revision 5 stores step 2's
+output, and `W` ends `done` with `finished_at` set.
+
+| Run | Status | Own tokens / calls | Inclusive tokens / calls | Reserved | `steps_used` |
+|---|---|---|---|---|---|
+| `W` | `done` | 2,400 / 1 | 29,000 / 4 | 0 | 2 |
+| `F` | `stopped` (`max_tokens`, by `W`) | 0 / 0 | 0 / 0 | 0 | 0 |
+| `F2` | `done` | 26,600 / 3 | 26,600 / 3 | 0 | 0 |
+
+`W`'s inclusive total is its own 2,400 plus `F2`'s 26,600; `F` spent nothing. The `handoff` seq 4 has `status` `done`.
+There are four usage rows (`c1` and `F2`'s three seats), and
+`checkAiRunTotals` agrees for each run (section 6.6). With the defaults, `W`'s trajectory is kept 30 days after
+it finishes and its row 90 (section 8); `F` and `F2` go with it, never before
+it, although `F` finished earlier.
 
 ## 7. Resuming
 
@@ -1083,6 +1274,13 @@ in one transaction.
   the same or a larger budget. A stopped run that is not durable is not
   resumed (section 2). A `cancelled` run is never resumed, and neither is a
   `failed` one; a failed workflow run may be retried instead (below).
+- **The ancestor chain must still stand.** Resuming a run, from `stopped` or
+  from `waiting-approval`, reads its whole chain. If an ancestor's row is
+  missing, or an ancestor is final (`cancelled`, `failed`, `done`, or a
+  `stopped` run that is not durable), the resume is refused with
+  `AiRunResumeRefusedError`, reason `ancestor_missing` or `ancestor_final`,
+  and nothing is written; the sweep later moves the run to `cancelled`
+  (section 6.7).
 - **Retrying a failed run.** A host may retry a `failed` durable workflow run
   from its last accepted step. The retry is a **new run**, never the failed
   run resumed in place: a durable `workflow` run of the same
@@ -1100,8 +1298,12 @@ in one transaction.
   inherited step). The failed run's spend stays where it was charged, on the
   failed run and its ancestors, and is never charged again to anyone. A retry
   needs the failed run's checkpoint, so it is possible for as long as the
-  failed run's row is kept (section 8). A failed run may be retried more than
-  once; each retry names it in `retry_of_run_id`.
+  failed run's row is kept (section 8). Once that row (and with it the
+  checkpoint) has been pruned, a retry is refused with
+  `AiRunResumeRefusedError`, reason `retry_source_pruned`, and no run is
+  opened; the same reason is given when the row exists but its checkpoint does
+  not. A failed run may be retried more than once; each retry names it in
+  `retry_of_run_id`.
 - **A budget stop needs a budget change.** Proposed: a resume of a run that
   stopped at a budget limit is refused with a typed `AiRunResumeRefusedError`
   unless it changes a limit that stopped the run: the limit named in
@@ -1118,6 +1320,19 @@ in one transaction.
   for other reasons (`interrupted` and `definition_changed`) are not subject
   to this rule.
 
+Proposed: one error, `AiRunResumeRefusedError`, refuses both resumes and
+retries, and its `reason` is one typed code:
+
+| Reason | Refused because |
+|---|---|
+| `not_resumable` | The run is not a durable run that is `stopped` or `waiting-approval`. |
+| `ancestor_missing`, `ancestor_final` | An ancestor's row is gone, or an ancestor is final. |
+| `budget_unchanged` | A budget stop, and the resume changes none of the limits that stopped it. |
+| `budget_lowered`, `above_ceiling` | The resume lowers a limit, or raises one past the app's ceiling. |
+| `definition_changed` | The definition version does not accept the checkpoint. |
+| `not_retryable` | A retry of a run that is not a `failed` durable `workflow` run of the same `definition_key`. |
+| `retry_source_pruned` | A retry whose failed run, or its checkpoint, has been pruned. |
+
 ## 8. Retention
 
 - **Trajectory.** Every run keeps its whole trajectory for **30 days** after it
@@ -1130,7 +1345,12 @@ in one transaction.
   cannot be resumed, and a `cancelled` run is final, so each is pruned like a
   finished run, counting from its `finished_at`, unless an ancestor protects
   it (next item). A `failed` run is not protected either; its checkpoint is
-  kept longer than its trajectory (below), but not its row.
+  kept longer than its trajectory (below), but not its row. A run's own
+  protection never outlives an ancestor that can no longer resume it: a
+  cancel moves every descendant that is not final to `cancelled` (section 2),
+  and the `ai-runs` sweep does the same for a `stopped` or `waiting-approval`
+  descendant of any final or missing ancestor (section 6.7), so each is then
+  pruned like a finished run.
 - **Protection is inherited.** A run is protected while **any ancestor** is
   protected, and it is pruned only after the protecting ancestor is pruned.
   So a final child, such as a stopped fusion under a durable `stopped`
@@ -1140,8 +1360,10 @@ in one transaction.
   trajectories and, where run rows are pruned (below), to run rows alike.
   More generally, a child is never pruned before its parent: it goes with it
   or after it.
-- **When a trajectory is deleted**, the counts of checks and approvals passed and
-  failed are first saved on the run row and `trajectory_pruned` is set. The run
+- **When a trajectory is deleted**, the counts of checks passed and failed and
+  of approval decisions given and refused (counted in the run that recorded
+  each decision, section 2) are first saved on the run row and
+  `trajectory_pruned` is set. The run
   row is kept until the run-row rule below removes it.
 - **Run rows.** An unprotected run row is pruned **together with its usage
   rows**, by the usage age limit (90 days by default, adjustable by the app),
@@ -1160,6 +1382,15 @@ in one transaction.
   optionally by row count). They are not part of a trajectory, and they may be
   pruned while their run is still alive; budgets do not depend on them
   (section 6.2).
+- **Evaluations** are never swept. An evaluation is a judgment someone made,
+  often by hand, and it stays after the call or run it judged is gone: when
+  that call's usage row or that run's row is pruned, the evaluation keeps its
+  `call_id` or `run_id`, which then no longer resolves. Readers tolerate this:
+  a reader that returns evaluations returns such an evaluation with its
+  target empty (NULL), never an error, and per-prompt measures (section 5),
+  which reach a prompt through the judged call's usage row or the judged run's
+  row, leave it out. An app that wants evaluations removed deletes them
+  itself.
 - **Payloads by reference.** `payload_ref` points at content the host owns,
   such as a chat message or a file. The framework owns none of it, so pruning a
   trajectory deletes only the events, never what they point at.
