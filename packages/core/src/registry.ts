@@ -83,6 +83,7 @@ import {
   clearRegisteredRetiredTables,
   getRegisteredRetiredTables,
   type RetiredTable,
+  readManifestRetiredTables,
   registerRetiredTables,
 } from './migrations/retired-tables.js';
 import type { SmrtObject } from './object';
@@ -2757,7 +2758,14 @@ export class ObjectRegistry {
     // The package's declared table retirements (#5005), which migrate reads
     // wherever the package is installed.
     if (packageName) {
-      registerRetiredTables(packageName, manifest.retiredTables);
+      // Checked: a package's manifest carries only its own entries (#5005).
+      registerRetiredTables(
+        packageName,
+        readManifestRetiredTables({
+          packageName,
+          retiredTables: manifest.retiredTables,
+        }),
+      );
     }
 
     verboseLog(
@@ -2815,12 +2823,27 @@ export class ObjectRegistry {
     return getRegisteredRetiredTables();
   }
 
-  /** Register a package's retired tables, replacing its earlier list. */
-  static registerRetiredTables(
-    packageName: string,
-    retired: readonly RetiredTable[] | undefined,
+  /**
+   * Register the retirements a loaded manifest file carries (#5005), checked.
+   * A package's manifest carries only its own; an app's merged manifest
+   * (`consumed`: the packages it depends on) also its dependencies', and an
+   * entry of a package it no longer depends on is left out. Each entry keeps
+   * its own package; each package's list replaces what it registered before.
+   * `registerPackageManifest` does this for a package manifest already.
+   */
+  static registerManifestRetiredTables(
+    manifest: { packageName?: string; retiredTables?: unknown },
+    options: { consumed?: Iterable<string>; source?: string } = {},
   ): void {
-    registerRetiredTables(packageName, retired);
+    const entries = readManifestRetiredTables(manifest, options);
+    const packages = new Set(entries.map((entry) => entry.packageName));
+    // The manifest's own package always replaces its list, empty or not.
+    if (manifest.packageName) packages.add(manifest.packageName);
+    for (const packageName of packages)
+      registerRetiredTables(
+        packageName,
+        entries.filter((entry) => entry.packageName === packageName),
+      );
   }
 
   /**

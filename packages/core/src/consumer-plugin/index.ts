@@ -30,6 +30,8 @@ import {
 import {
   mergeRetiredTables,
   type RetiredTable,
+  RetiredTableDeclarationError,
+  readManifestRetiredTables,
 } from '../migrations/retired-tables.js';
 import { tryComputeManifestSchemaFingerprint } from '../migrations/schema-fingerprint.js';
 import { generateDeclarations } from '../prebuild/index.js';
@@ -1679,13 +1681,14 @@ async function aggregateTypeManifests(
               `[smrt:consumer] Loaded manifest from ${packageName} (${Object.keys(manifest.objects).length} objects)`,
             );
 
-            for (const entry of manifest.retiredTables ?? []) {
-              retiredTables.push({
-                ...entry,
-                // A manifest written by hand may omit it; the owner is the package.
-                packageName: entry.packageName ?? packageName,
-              });
-            }
+            // Checked: a package's manifest carries only its own entries,
+            // each labelled with that package (#5005).
+            retiredTables.push(
+              ...readManifestRetiredTables(
+                { packageName, retiredTables: manifest.retiredTables },
+                { source: `the manifest of ${packageName}` },
+              ),
+            );
 
             for (const recipe of manifest.recipes ?? []) {
               const prior = recipes.get(recipe.id);
@@ -1750,6 +1753,8 @@ async function aggregateTypeManifests(
       }
     } catch (error) {
       if (error instanceof AmbiguousProviderGraphError) throw error;
+      // A malformed or mislabelled retirement fails the build by name (#5005).
+      if (error instanceof RetiredTableDeclarationError) throw error;
       console.warn(
         `[smrt:consumer] Error loading manifest from ${packageName}:`,
         error,
@@ -1890,13 +1895,22 @@ async function saveAggregatedManifest(
               : {}),
             objects: { ...existing.objects, ...manifest.objects },
           };
-          // The consumed packages' retirements replace what the file held for
-          // them; the local package's own (written by smrtPlugin) stay (#5005).
-          const consumed = new Set(manifest.smrtDependencies ?? []);
+          // Rebuilt from the current dependencies each time (#5005): only the
+          // local package's own entries (written by smrtPlugin) stay from the
+          // file, so a package the app no longer depends on drops out.
+          const local = existing.packageName;
           const unioned = mergeRetiredTables(
-            (existing.retiredTables ?? []).filter(
-              (entry) => !consumed.has(entry.packageName),
-            ),
+            local
+              ? readManifestRetiredTables(
+                  {
+                    packageName: local,
+                    retiredTables: (existing.retiredTables ?? []).filter(
+                      (entry) => entry?.packageName === local,
+                    ),
+                  },
+                  { source: manifestPath },
+                )
+              : [],
             manifest.retiredTables,
           );
           if (unioned.length > 0) merged.retiredTables = unioned;

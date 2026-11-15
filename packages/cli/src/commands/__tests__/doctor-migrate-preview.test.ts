@@ -117,18 +117,27 @@ describe('doctor next migrate (#4934)', () => {
   });
   describe('declared table retirements (#5005)', () => {
     const declare = (rows?: 'discard') =>
-      ObjectRegistry.registerRetiredTables('@doctor/pkg', [
-        {
-          table: 'old_drafts',
-          lastOwner: '@doctor/pkg:Draft',
-          since: '1.2.0',
-          reason: 'Drafts live on the order.',
-          ...(rows ? { rows } : {}),
-          packageName: '@doctor/pkg',
-        },
-      ]);
+      ObjectRegistry.registerManifestRetiredTables({
+        packageName: '@doctor/pkg',
+        retiredTables: [
+          {
+            table: 'old_drafts',
+            lastOwner: '@doctor/pkg:Draft',
+            since: '1.2.0',
+            reason: 'Drafts live on the order.',
+            ...(rows ? { rows } : {}),
+            definition: {
+              release: '1.1.0',
+              columns: { id: { type: 'TEXT' } },
+            },
+            packageName: '@doctor/pkg',
+          },
+        ],
+      });
     afterEach(() =>
-      ObjectRegistry.registerRetiredTables('@doctor/pkg', undefined),
+      ObjectRegistry.registerManifestRetiredTables({
+        packageName: '@doctor/pkg',
+      }),
     );
 
     it('lists each retirement with its reason and the rows that go, as a warning', async () => {

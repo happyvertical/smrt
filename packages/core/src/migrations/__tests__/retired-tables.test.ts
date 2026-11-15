@@ -16,6 +16,7 @@ import {
   mergeRetiredTables,
   RetiredTableDeclarationError,
   readRetiredTablesFromPackageJson,
+  registerRetiredTables,
   retiredTablesStampInput,
 } from '../retired-tables.js';
 import { computeSchemaFingerprint } from '../schema-fingerprint.js';
@@ -27,6 +28,10 @@ const entry = (extra: Record<string, unknown> = {}) => ({
   since: '1.4.0',
   reason: 'Drafts are kept on the order itself.',
   rows: 'discard' as const,
+  definition: {
+    release: '1.3.2',
+    columns: { id: { type: 'UUID' as const, referenceKind: 'id' as const } },
+  },
   ...extra,
 });
 const packageJson = (...list: unknown[]) => ({
@@ -63,6 +68,45 @@ describe('the retired-table declaration (#5005)', () => {
       /belongs to another package/,
     ],
     ['a smrt system table', { table: '_smrt_migrate_runs' }, /system table/],
+    // SQLite and DuckDB compare table names without case (R4).
+    [
+      'a mixed-case table name',
+      { table: 'Acme_Order_Drafts' },
+      /plain table name/,
+    ],
+    [
+      'a _smrt_ table from a package outside smrt',
+      { table: '_smrt_order_drafts' },
+      /only smrt's own packages/,
+    ],
+    [
+      'no definition',
+      { definition: undefined },
+      /retired-table-facts\.mjs definition/,
+    ],
+    [
+      'a definition without columns',
+      { definition: { release: '1.3.2', columns: {} } },
+      /"definition.columns"/,
+    ],
+    [
+      'a definition with an unknown type',
+      {
+        definition: { release: '1.3.2', columns: { id: { type: 'VARCHAR' } } },
+      },
+      /column id of "definition"/,
+    ],
+    [
+      'a definition with an extra key',
+      {
+        definition: {
+          release: '1.3.2',
+          columns: { id: { type: 'UUID' } },
+          hash: 'abc',
+        },
+      },
+      /unknown key\(s\) hash/,
+    ],
   ])('refuses %s, naming the table', (_name, bad, message) => {
     const attempt = () =>
       readRetiredTablesFromPackageJson(packageJson(entry(bad)), PKG, (table) =>
@@ -70,6 +114,23 @@ describe('the retired-table declaration (#5005)', () => {
       );
     expect(attempt).toThrow(message);
     expect(attempt).toThrow(RetiredTableDeclarationError);
+  });
+
+  it("lets smrt's own packages retire a _smrt_ table", () => {
+    const name = '@happyvertical/smrt-inference';
+    expect(
+      readRetiredTablesFromPackageJson(
+        {
+          name,
+          smrt: {
+            retiredTables: [
+              entry({ table: '_smrt_old_runs', lastOwner: `${name}:OldRun` }),
+            ],
+          },
+        },
+        name,
+      )[0].table,
+    ).toBe('_smrt_old_runs');
   });
 
   it('refuses a table declared twice in one package', () => {
@@ -189,6 +250,93 @@ describe('a package carries its retirement into manifest, build and registry (#5
     ]);
     ObjectRegistry.clear();
     expect(ObjectRegistry.getRetiredTables()).toEqual([]);
+  });
+
+  it('keeps each entry its own package: one labelled with another is refused, never relabelled (R11)', () => {
+    const own = { ...entry(), packageName: PKG };
+    expect(() => registerRetiredTables('@acme/app', [own])).toThrow(
+      /labelled @acme\/orders, but @acme\/app registered it/,
+    );
+    expect(() =>
+      ObjectRegistry.registerPackageManifest({
+        ...manifestFor(packageJson(entry())),
+        retiredTables: [
+          {
+            ...entry({ lastOwner: '@other/pkg:OrderDraft' }),
+            packageName: '@other/pkg',
+          },
+        ],
+      }),
+    ).toThrow(/carries only its own retirements/);
+    expect(ObjectRegistry.getRetiredTables()).toEqual([]);
+  });
+
+  it('checks a loaded manifest file: forged owners fail, stale entries of an app manifest drop out', () => {
+    const forgedOwner = {
+      ...entry({ lastOwner: '@other/pkg:OrderDraft' }),
+      packageName: PKG,
+    };
+    expect(() =>
+      ObjectRegistry.registerManifestRetiredTables({
+        packageName: PKG,
+        retiredTables: [forgedOwner],
+      }),
+    ).toThrow(/belongs to another package/);
+    expect(() =>
+      ObjectRegistry.registerManifestRetiredTables({
+        packageName: PKG,
+        retiredTables: [
+          {
+            ...entry({ lastOwner: '@other/pkg:OrderDraft' }),
+            packageName: '@other/pkg',
+          },
+        ],
+      }),
+    ).toThrow(/carries only its own retirements/);
+
+    // An app's merged manifest: its dependencies' entries, not a stale one.
+    ObjectRegistry.registerManifestRetiredTables(
+      {
+        packageName: '@acme/app',
+        retiredTables: [
+          { ...entry(), packageName: PKG },
+          {
+            ...entry({ table: 'gone_table', lastOwner: '@gone/pkg:Old' }),
+            packageName: '@gone/pkg',
+          },
+        ],
+      },
+      { consumed: [PKG] },
+    );
+    expect(
+      ObjectRegistry.getRetiredTables().map((item) => item.packageName),
+    ).toEqual([PKG]);
+    // A package's manifest with no entries clears its list.
+    ObjectRegistry.registerManifestRetiredTables({ packageName: PKG });
+    expect(ObjectRegistry.getRetiredTables()).toEqual([]);
+  });
+
+  it('describes the build with only the packages it depends on, and stamps the same set', () => {
+    const app = {
+      packageName: '@acme/app',
+      smrtDependencies: [PKG],
+      objects: {},
+      retiredTables: [
+        { ...entry(), packageName: PKG },
+        {
+          ...entry({ table: 'gone_table', lastOwner: '@gone/pkg:Old' }),
+          packageName: '@gone/pkg',
+        },
+      ],
+    };
+    const build = describeManifestSchema(app);
+    expect(build.retired?.map((item) => item.table)).toEqual([
+      'acme_order_drafts',
+    ]);
+    expect(build.fingerprint).toBe(
+      describeManifestSchema({ ...app, retiredTables: [app.retiredTables[0]] })
+        .fingerprint,
+    );
   });
 
   it("is part of the build's description, and resolves with the registry's", () => {

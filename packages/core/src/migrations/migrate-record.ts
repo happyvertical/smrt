@@ -9,9 +9,12 @@ import {
   runSerializedAgainstSystemTableBootstrap,
 } from '../system/bootstrap.js';
 import { getDatabaseEngine, tableExists } from '../system/compatibility.js';
-import { type BuildSchema, resolveBuildSchema } from './build-schema.js';
+import {
+  type BuildSchema,
+  resolveBuildSchema,
+  resolveRetiredTables,
+} from './build-schema.js';
 import type { PackagesSeenInput } from './migration-run-decision.js';
-import { getRegisteredRetiredTables } from './retired-tables.js';
 import { computeSchemaFingerprint } from './schema-fingerprint.js';
 
 export interface MigrateRecordInput {
@@ -79,8 +82,9 @@ export function collectMigrateRecordInput(
     return {
       release: corePackage.version,
       packages: [...packages].sort(),
+      // The retired list the plan uses, so the stamp covers what it drops.
       fingerprint: computeSchemaFingerprint(schemas, {
-        retired: getRegisteredRetiredTables(),
+        retired: resolveRetiredTables(build),
       }),
     };
   }
@@ -99,8 +103,11 @@ export function collectMigrateRecordInput(
   return {
     release: corePackage.version,
     packages: [...build.packages],
-    // The build's own retired list, which the build's stamp covers.
-    fingerprint: computeSchemaFingerprint(planned, { retired: build.retired }),
+    // The retired list the plan uses (the build's own), which the build's
+    // stamp covers (#5005).
+    fingerprint: computeSchemaFingerprint(planned, {
+      retired: resolveRetiredTables(build),
+    }),
     build: {
       source: build.source,
       ...(build.fingerprint ? { fingerprint: build.fingerprint } : {}),

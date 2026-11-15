@@ -19,10 +19,6 @@ import {
   readBuildSchemaFile,
   registerBuildSchema,
 } from '@happyvertical/smrt-core';
-import {
-  mergeRetiredTables,
-  type RetiredTable,
-} from '@happyvertical/smrt-core/migrations';
 import { glob } from 'tinyglobby';
 import { resolveManifestEntryPackageName } from './manifest-identity.js';
 
@@ -367,22 +363,23 @@ export async function loadManifest(manifestPath: string): Promise<void> {
     ObjectRegistry.registerFromManifest(name, definition, packageName);
   }
 
-  // Tables a package declares retired travel in its manifest (#5005). The
-  // app's merged manifest lists each consumed package's own entries.
-  const retired = Array.isArray(manifest.retiredTables)
-    ? (manifest.retiredTables as RetiredTable[])
-    : [];
-  for (const packageName of new Set(retired.map((item) => item.packageName))) {
-    ObjectRegistry.registerRetiredTables(
-      packageName,
-      mergeRetiredTables(
-        ObjectRegistry.getRetiredTables().filter(
-          (item) => item.packageName === packageName,
-        ),
-        retired.filter((item) => item.packageName === packageName),
-      ),
+  // Tables a package declares retired travel in its manifest (#5005),
+  // checked on load. The app's merged manifest carries each consumed
+  // package's own entries; one of a package it no longer depends on is left
+  // out, and an entry labelled with another package is refused.
+  if (manifest.retiredTables !== undefined)
+    ObjectRegistry.registerManifestRetiredTables(
+      {
+        packageName: manifest.packageName,
+        retiredTables: manifest.retiredTables,
+      },
+      {
+        source: manifestPath,
+        ...(Array.isArray(manifest.smrtDependencies)
+          ? { consumed: manifest.smrtDependencies as string[] }
+          : {}),
+      },
     );
-  }
 }
 
 /**

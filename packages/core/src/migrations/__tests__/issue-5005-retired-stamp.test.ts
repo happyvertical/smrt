@@ -13,12 +13,13 @@ import { ObjectRegistry } from '../../registry.js';
 import { ManifestGenerator } from '../../scanner/manifest-generator.js';
 import type { SmartObjectManifest } from '../../scanner/types.js';
 import { snapshotObjectRegistryState } from '../../test-utils.js';
-import { registerBuildSchema } from '../build-schema.js';
+import { registerBuildSchema, resolveRetiredTables } from '../build-schema.js';
 import {
   collectMigrateRecordInput,
   readLastMigrateRecord,
 } from '../migrate-record.js';
 import { migrateSmrtSchemas } from '../orchestrate.js';
+import { computeSchemaFingerprint } from '../schema-fingerprint.js';
 import { assertDatabaseMigratedForBuild } from '../startup-guard.js';
 
 const PKG = '@r5005/orders';
@@ -59,6 +60,10 @@ function build(retire: boolean): SmartObjectManifest {
                     since: '1.0.0',
                     reason: 'Folded into orders.',
                     rows: 'discard',
+                    definition: {
+                      release: '0.9.0',
+                      columns: { id: { type: 'TEXT' } },
+                    },
                   },
                 ],
               },
@@ -140,7 +145,7 @@ describe('a build whose only change is a retirement (#5005)', () => {
     const next = build(true);
     deploy(next);
     // The package's retirement reaches migrate through its manifest.
-    ObjectRegistry.registerRetiredTables(PKG, next.retiredTables);
+    ObjectRegistry.registerManifestRetiredTables(next);
     const migrator = await copy('migrate.db', 'app.db');
     const app = await copy('app-before.db', 'app.db');
     try {
@@ -178,15 +183,101 @@ describe('a build whose only change is a retirement (#5005)', () => {
   it('records the same stamp at migrate (registry path) as the build made (manifest path)', () => {
     const next = build(true);
     deploy(next);
-    ObjectRegistry.registerRetiredTables(PKG, next.retiredTables);
+    ObjectRegistry.registerManifestRetiredTables(next);
     expect(collectMigrateRecordInput().fingerprint).toBe(
       next.schemaFingerprint,
     );
     // And without the registry's copy, from the build description alone.
-    ObjectRegistry.registerRetiredTables(PKG, undefined);
+    ObjectRegistry.registerManifestRetiredTables({ packageName: PKG });
     registerBuildSchema(next);
     expect(collectMigrateRecordInput().fingerprint).toBe(
       next.schemaFingerprint,
+    );
+  });
+
+  it('plans and stamps the same retired set: a declaration outside the build is neither (R8, R12)', async () => {
+    // The build: two packages, each retiring its own table.
+    const OTHER = '@r5005/billing';
+    const next = build(true);
+    const definition = {
+      release: '0.9.0',
+      columns: { id: { type: 'TEXT' as const } },
+    };
+    const app = {
+      ...next,
+      packageName: 'r5005-app',
+      smrtDependencies: [OTHER, PKG],
+      retiredTables: [
+        ...(next.retiredTables ?? []),
+        {
+          table: 'r5005_invoices_old',
+          lastOwner: `${OTHER}:OldInvoice`,
+          since: '1.0.0',
+          reason: 'Moved to the ledger.',
+          rows: 'discard' as const,
+          definition,
+          packageName: OTHER,
+        },
+      ],
+    };
+    deploy(app as SmartObjectManifest);
+    registerBuildSchema(app as SmartObjectManifest);
+    // A package loaded at run time, not part of the build, retires a live
+    // table: the build's stamp does not cover it, so it is not honoured.
+    ObjectRegistry.registerManifestRetiredTables({
+      packageName: '@r5005/runtime-only',
+      retiredTables: [
+        {
+          table: 'r5005_runtime_only',
+          lastOwner: '@r5005/runtime-only:Old',
+          since: '1.0.0',
+          reason: 'Loaded at run time only.',
+          rows: 'discard',
+          definition,
+          packageName: '@r5005/runtime-only',
+        },
+      ],
+    });
+    for (const table of [TABLE, 'r5005_invoices_old', 'r5005_runtime_only'])
+      await db.query(`CREATE TABLE ${table} (id TEXT PRIMARY KEY)`);
+
+    const result = await migrateSmrtSchemas({
+      db,
+      packageName: 'r5005-app',
+      name: 'r5005_parity',
+    });
+
+    expect(result.refused).toBe(false);
+    const dropped = result.statements.filter((sql) => sql.startsWith('DROP'));
+    expect(dropped).toEqual([
+      'DROP TABLE IF EXISTS "r5005_drafts"',
+      'DROP TABLE IF EXISTS "r5005_invoices_old"',
+    ]);
+    // The record's stamp covers exactly what the plan used.
+    const record = await readLastMigrateRecord(db);
+    expect(record).toMatchObject({
+      record: {
+        fingerprint: computeSchemaFingerprint(
+          Object.values(ObjectRegistry.getAllSchemasAsDefinitions()),
+          { retired: resolveRetiredTables() },
+        ),
+      },
+    });
+    expect(resolveRetiredTables().map((entry) => entry.table)).toEqual([
+      'r5005_drafts',
+      'r5005_invoices_old',
+    ]);
+    // Without a build, the registry is both the plan and the stamp.
+    registerBuildSchema(undefined);
+    vi.stubEnv('SMRT_BUILD_MANIFEST', '');
+    vi.stubEnv('NODE_ENV', 'test');
+    expect(resolveRetiredTables().map((entry) => entry.table)).toEqual([
+      'r5005_runtime_only',
+    ]);
+    expect(collectMigrateRecordInput().fingerprint).toBe(
+      computeSchemaFingerprint(ObjectRegistry.getAllSchemasAsDefinitions(), {
+        retired: resolveRetiredTables(),
+      }),
     );
   });
 });

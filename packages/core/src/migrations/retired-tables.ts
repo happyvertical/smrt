@@ -14,7 +14,11 @@
  *         "lastOwner": "@acme/orders:OrderDraft",
  *         "since": "1.4.0",
  *         "reason": "Drafts are kept on the order itself.",
- *         "rows": "discard"
+ *         "rows": "discard",
+ *         "definition": {
+ *           "release": "1.3.2",
+ *           "columns": { "id": { "type": "UUID", "referenceKind": "id" } }
+ *         }
  *       }
  *     ]
  *   }
@@ -26,9 +30,16 @@
  * what registration, the app's build and `smrt db:migrate` read, so the
  * declaration reaches every install of the package.
  *
+ * `definition` proves the table, not just its name: the columns and types the
+ * owning model declared in the last release that had it. It is written by
+ * `scripts/retired-table-facts.mjs definition` from that release's published
+ * manifests, never by hand, and migrate compares it with the live table
+ * (`table.retire-mismatch` on any difference).
+ *
  * This module is pure and import-free: the manifest generator, the build
  * stamp and the registry all load it.
  */
+import type { ColumnDefinition, SQLDataType } from '../schema/types.js';
 
 /** What a package declares. See {@link RetiredTable} for the carried form. */
 export interface RetiredTableDeclaration {
@@ -48,6 +59,27 @@ export interface RetiredTableDeclaration {
    * that holds rows stops the migrate and is never dropped.
    */
   rows?: 'discard';
+  /**
+   * The table as the owning model last declared it, generated from a
+   * published release's manifests. Migrate drops only a live table that
+   * matches it.
+   */
+  definition: RetiredTableDefinition;
+}
+
+/** One column of a {@link RetiredTableDefinition}. */
+export interface RetiredTableColumn {
+  type: SQLDataType;
+  /** As the model declared it: decides whether `UUID` and `TEXT` agree. */
+  referenceKind?: NonNullable<ColumnDefinition['referenceKind']>;
+}
+
+/** A retired table's last declared shape. */
+export interface RetiredTableDefinition {
+  /** The published release whose manifests it was generated from. */
+  release: string;
+  /** Column name to its declared type, as the last release declared them. */
+  columns: Record<string, RetiredTableColumn>;
 }
 
 /** A declaration as carried in a manifest and the registry. */
@@ -68,7 +100,11 @@ export class RetiredTableDeclarationError extends Error {
   }
 }
 
-const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+/**
+ * Lower case only: SQLite and DuckDB compare table names without case, so a
+ * mixed-case declaration could name a model's table spelled differently.
+ */
+const IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
 const RELEASE = /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const QUALIFIED_OWNER = /^(@[^/:\s]+\/[^/:\s]+|[^@/:\s]+):([A-Za-z_$][\w$]*)$/;
 const DECLARATION_KEYS = new Set([
@@ -77,7 +113,33 @@ const DECLARATION_KEYS = new Set([
   'since',
   'reason',
   'rows',
+  'definition',
 ]);
+const SQL_TYPES: ReadonlySet<string> = new Set<SQLDataType>([
+  'TEXT',
+  'INTEGER',
+  'REAL',
+  'BLOB',
+  'BOOLEAN',
+  'JSON',
+  'TIMESTAMP',
+  'UUID',
+]);
+const REFERENCE_KINDS: ReadonlySet<string> = new Set([
+  'id',
+  'foreignKey',
+  'crossPackageRef',
+  'tenantId',
+]);
+
+/** The script that writes a declaration's `definition`. */
+export const RETIRED_TABLE_DEFINITION_SCRIPT =
+  'node scripts/retired-table-facts.mjs definition';
+
+/** smrt's own packages: only they may retire a `_smrt_` table. */
+export const FRAMEWORK_PACKAGE_PREFIX = '@happyvertical/smrt-';
+export const isFrameworkPackage = (packageName: string) =>
+  packageName.startsWith(FRAMEWORK_PACKAGE_PREFIX);
 
 /** The package part of a qualified class name, or undefined when malformed. */
 export function ownerPackage(lastOwner: string): string | undefined {
@@ -118,6 +180,10 @@ export function parseRetiredTable(
     throw new RetiredTableDeclarationError(
       `${where} ${name}: ${name} is a smrt system table, which no package may retire.`,
     );
+  if (value.table.startsWith('_smrt_') && !isFrameworkPackage(packageName))
+    throw new RetiredTableDeclarationError(
+      `${where} ${name}: only smrt's own packages (${FRAMEWORK_PACKAGE_PREFIX}*) may retire a _smrt_ table.`,
+    );
   if (
     typeof value.lastOwner !== 'string' ||
     !QUALIFIED_OWNER.test(value.lastOwner)
@@ -141,14 +207,132 @@ export function parseRetiredTable(
     throw new RetiredTableDeclarationError(
       `${where} ${name}: "rows" is either left out or the string 'discard'.`,
     );
+  const definition = parseDefinition(value.definition, `${where} ${name}`);
   return {
     table: value.table,
     lastOwner: value.lastOwner,
     since: value.since,
     reason: value.reason.trim(),
     ...(value.rows === 'discard' ? { rows: 'discard' as const } : {}),
+    definition,
     packageName,
   };
+}
+
+function parseDefinition(
+  value: unknown,
+  where: string,
+): RetiredTableDefinition {
+  const missing = `${where}: "definition" must be the table's last declared columns, written from that release's published manifests by ${RETIRED_TABLE_DEFINITION_SCRIPT} --package <name> --table <table> --release <release>. Never write it by hand.`;
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new RetiredTableDeclarationError(missing);
+  const { release, columns, ...rest } = value as Record<string, unknown>;
+  if (Object.keys(rest).length)
+    throw new RetiredTableDeclarationError(
+      `${where}: "definition" has unknown key(s) ${Object.keys(rest).join(', ')}. ${missing}`,
+    );
+  if (typeof release !== 'string' || !RELEASE.test(release))
+    throw new RetiredTableDeclarationError(
+      `${where}: "definition.release" must name the published release it was read from. ${missing}`,
+    );
+  if (
+    !columns ||
+    typeof columns !== 'object' ||
+    Array.isArray(columns) ||
+    !Object.keys(columns).length
+  )
+    throw new RetiredTableDeclarationError(
+      `${where}: "definition.columns" must list the table's columns. ${missing}`,
+    );
+  const parsed: Record<string, RetiredTableColumn> = {};
+  for (const [column, spec] of Object.entries(columns).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  )) {
+    const { type, referenceKind, ...other } = (spec ?? {}) as Record<
+      string,
+      unknown
+    >;
+    if (
+      !IDENTIFIER.test(column) ||
+      typeof spec !== 'object' ||
+      Array.isArray(spec) ||
+      Object.keys(other).length ||
+      typeof type !== 'string' ||
+      !SQL_TYPES.has(type) ||
+      (referenceKind !== undefined &&
+        (typeof referenceKind !== 'string' ||
+          !REFERENCE_KINDS.has(referenceKind)))
+    )
+      throw new RetiredTableDeclarationError(
+        `${where}: column ${column} of "definition" must be { type, referenceKind? } with a declared smrt type. ${missing}`,
+      );
+    parsed[column] = {
+      type: type as SQLDataType,
+      ...(referenceKind
+        ? {
+            referenceKind:
+              referenceKind as RetiredTableColumn['referenceKind'] & string,
+          }
+        : {}),
+    };
+  }
+  return { release, columns: parsed };
+}
+
+/**
+ * Check a carried entry (`packageName` included), as it arrives from a
+ * manifest, a build description or the registry. Every way into the registry
+ * and the build runs this; the planner runs it again.
+ */
+export function parseCarriedRetiredTable(entry: unknown): RetiredTable {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry))
+    throw new RetiredTableDeclarationError(
+      'A carried retired-table entry must be an object.',
+    );
+  const { packageName, ...declaration } = entry as Record<string, unknown>;
+  if (typeof packageName !== 'string' || !packageName.trim())
+    throw new RetiredTableDeclarationError(
+      `Retired table ${String((entry as { table?: unknown }).table)}: the entry names no packageName.`,
+    );
+  return parseRetiredTable(declaration, packageName);
+}
+
+/**
+ * The entries a manifest carries, checked. A package's own manifest may carry
+ * only its own declarations: an entry labelled with another package is
+ * refused, never relabelled. An app's merged manifest (with `consumed`, the
+ * packages it depends on) carries its own and its dependencies' entries; an
+ * entry of a package it no longer depends on is stale and left out.
+ */
+export function readManifestRetiredTables(
+  manifest: {
+    packageName?: string;
+    retiredTables?: unknown;
+  },
+  options: { consumed?: Iterable<string>; source?: string } = {},
+): RetiredTable[] {
+  const list = manifest.retiredTables;
+  if (list === undefined) return [];
+  const source = options.source ?? manifest.packageName ?? 'a manifest';
+  if (!Array.isArray(list))
+    throw new RetiredTableDeclarationError(
+      `retiredTables in ${source} must be an array.`,
+    );
+  const consumed = options.consumed ? new Set(options.consumed) : undefined;
+  const out: RetiredTable[] = [];
+  for (const item of list) {
+    const entry = parseCarriedRetiredTable(item);
+    if (entry.packageName === manifest.packageName) {
+      out.push(entry);
+      continue;
+    }
+    if (!consumed)
+      throw new RetiredTableDeclarationError(
+        `Retired table ${entry.table} in ${source} is labelled ${entry.packageName}, not ${manifest.packageName ?? 'its own package'}. A package's manifest carries only its own retirements.`,
+      );
+    if (consumed.has(entry.packageName)) out.push(entry);
+  }
+  return mergeRetiredTables(out);
 }
 
 /**
@@ -189,6 +373,23 @@ export function readRetiredTablesFromPackageJson(
     seen.add(entry.table);
   }
   return sortRetiredTables(parsed);
+}
+
+/**
+ * The declarations a manifest's build honours, checked: the manifest's own
+ * package's and, in an app's merged manifest, those of the packages it still
+ * depends on (`smrtDependencies`). The build description and the build stamp
+ * both read this, so they cover the same set.
+ */
+export function honouredRetiredTables(manifest: {
+  packageName?: string;
+  retiredTables?: unknown;
+  smrtDependencies?: readonly string[];
+}): RetiredTable[] {
+  return readManifestRetiredTables(
+    manifest,
+    manifest.smrtDependencies ? { consumed: manifest.smrtDependencies } : {},
+  );
 }
 
 const byTable = (a: RetiredTable, b: RetiredTable) =>
@@ -232,16 +433,57 @@ export function mergeRetiredTables(
  */
 export function retiredTablesStampInput(
   list: readonly RetiredTableDeclaration[] | undefined,
-): Array<{ table: string; rows: 'discard' | 'keep' }> {
-  const byName = new Map<string, 'discard' | 'keep'>();
+): Array<{
+  table: string;
+  rows: 'discard' | 'keep';
+  definitions: Array<Record<string, RetiredTableColumn>>;
+}> {
+  const byName = new Map<
+    string,
+    { rows: 'discard' | 'keep'; definitions: Set<string> }
+  >();
   for (const entry of list ?? []) {
-    const rows = entry.rows === 'discard' ? 'discard' : 'keep';
+    const rows: 'discard' | 'keep' =
+      entry.rows === 'discard' ? 'discard' : 'keep';
+    const prior = byName.get(entry.table);
     // Two packages naming one table agree only if both discard.
-    byName.set(entry.table, byName.get(entry.table) === 'keep' ? 'keep' : rows);
+    const merged = {
+      rows: prior?.rows === 'keep' ? ('keep' as const) : rows,
+      definitions: prior?.definitions ?? new Set<string>(),
+    };
+    // The columns decide whether the live table matches; the release they
+    // were read from is provenance.
+    const columns = entry.definition?.columns ?? {};
+    merged.definitions.add(JSON.stringify(sortedColumns(columns)));
+    byName.set(entry.table, merged);
   }
   return [...byName]
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([table, rows]) => ({ table, rows }));
+    .map(([table, { rows, definitions }]) => ({
+      table,
+      rows,
+      definitions: [...definitions]
+        .sort()
+        .map((json) => JSON.parse(json) as Record<string, RetiredTableColumn>),
+    }));
+}
+
+function sortedColumns(
+  columns: Record<string, RetiredTableColumn>,
+): Record<string, RetiredTableColumn> {
+  return Object.fromEntries(
+    Object.keys(columns)
+      .sort()
+      .map((name) => [
+        name,
+        {
+          type: columns[name].type,
+          ...(columns[name].referenceKind
+            ? { referenceKind: columns[name].referenceKind }
+            : {}),
+        },
+      ]),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -258,19 +500,29 @@ function slot(): Map<string, RetiredTable[]> {
   return holder[SLOT];
 }
 
-/** Register a package's declarations, replacing what it registered before. */
+/**
+ * Register a package's declarations, replacing what it registered before.
+ * Each entry is checked and keeps its own `packageName`: one labelled with
+ * another package is refused, never relabelled. Internal: packages register
+ * through their manifest (`ObjectRegistry.registerPackageManifest`, or
+ * `ObjectRegistry.registerManifestRetiredTables` for a loaded manifest file).
+ * @internal
+ */
 export function registerRetiredTables(
   packageName: string,
-  list: readonly RetiredTable[] | undefined,
+  list: readonly unknown[] | undefined,
 ): void {
   if (!list?.length) {
     slot().delete(packageName);
     return;
   }
-  slot().set(
-    packageName,
-    list.map((entry) => ({ ...entry, packageName })),
-  );
+  const parsed = list.map(parseCarriedRetiredTable);
+  for (const entry of parsed)
+    if (entry.packageName !== packageName)
+      throw new RetiredTableDeclarationError(
+        `Retired table ${entry.table} is labelled ${entry.packageName}, but ${packageName} registered it. A package registers only its own retirements.`,
+      );
+  slot().set(packageName, mergeRetiredTables(parsed));
 }
 
 /** Every registered declaration, in stable order. */

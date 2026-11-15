@@ -24,7 +24,7 @@ import {
   type MigrateSmrtSchemasResult,
   migrateSmrtSchemas,
 } from '../orchestrate.js';
-import type { RetiredTable } from '../retired-tables.js';
+import { type RetiredTable, registerRetiredTables } from '../retired-tables.js';
 import { MigrationTracker } from '../tracker.js';
 
 const PKG = '@retire/fixture';
@@ -43,6 +43,11 @@ const retired = (
   since: '1.0.0',
   reason: `${table} moved onto the order`,
   rows: 'discard',
+  // The shape `make()` creates.
+  definition: {
+    release: '0.9.0',
+    columns: { id: { type: 'TEXT' }, v: { type: 'TEXT' } },
+  },
   packageName: PKG,
   ...extra,
 });
@@ -92,7 +97,7 @@ describe.each(engines)('retire step on %s (#5005)', (engine) => {
       ...extra,
     });
   const declare = (...tables: RetiredTable[]) =>
-    ObjectRegistry.registerRetiredTables(PKG, tables);
+    registerRetiredTables(PKG, tables);
   const exists = async (table: string) => {
     const result = await db.query(
       engine === 'pglite'

@@ -104,7 +104,7 @@ describe('db:migrate retires declared tables (#5005)', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
   afterEach(async () => {
-    ObjectRegistry.registerRetiredTables(PKG, undefined);
+    ObjectRegistry.registerManifestRetiredTables({ packageName: PKG });
     await client?.close();
     h.db = undefined;
     clearCache();
@@ -112,16 +112,23 @@ describe('db:migrate retires declared tables (#5005)', () => {
     process.exitCode = undefined;
   });
   const declare = (rows?: 'discard') =>
-    ObjectRegistry.registerRetiredTables(PKG, [
-      {
-        table: 'old_drafts',
-        lastOwner: `${PKG}:Draft`,
-        since: '1.2.0',
-        reason: 'Drafts live on the order.',
-        ...(rows ? { rows } : {}),
-        packageName: PKG,
-      },
-    ]);
+    ObjectRegistry.registerManifestRetiredTables({
+      packageName: PKG,
+      retiredTables: [
+        {
+          table: 'old_drafts',
+          lastOwner: `${PKG}:Draft`,
+          since: '1.2.0',
+          reason: 'Drafts live on the order.',
+          ...(rows ? { rows } : {}),
+          definition: {
+            release: '1.1.0',
+            columns: { id: { type: 'UUID', referenceKind: 'id' } },
+          },
+          packageName: PKG,
+        },
+      ],
+    });
   async function run(...flags: string[]) {
     process.exitCode = undefined;
     logs.mockClear();

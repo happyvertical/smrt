@@ -667,13 +667,20 @@ function mergeExternalManifestEntries(
     }
   }
 
+  const scannedDependencies = new Set(readManifestDependencies(manifest));
+  const mergedDependencies = new Set([
+    ...scannedDependencies,
+    ...readManifestDependencies(existing),
+  ]);
   // Retirements declared by consumed packages stay with the file as their
-  // objects do; the local scan owns the local package's own list (#5005).
+  // objects do, but only for a package the app still depends on; the local
+  // scan owns the local package's own list (#5005).
   const preservedRetired = Array.isArray(existing.retiredTables)
     ? existing.retiredTables.filter(
         (entry) =>
           typeof entry?.packageName === 'string' &&
-          !localPackageNames.has(entry.packageName),
+          !localPackageNames.has(entry.packageName) &&
+          mergedDependencies.has(entry.packageName),
       )
     : [];
   const retiredTables = mergeRetiredTables(
@@ -683,11 +690,6 @@ function mergeExternalManifestEntries(
   const carriesRetired =
     retiredTables.length > (manifest.retiredTables?.length ?? 0);
 
-  const scannedDependencies = new Set(readManifestDependencies(manifest));
-  const mergedDependencies = new Set([
-    ...scannedDependencies,
-    ...readManifestDependencies(existing),
-  ]);
   // The union can only grow, so equal sizes mean the scan already covers it.
   const carriesExtraDependency =
     mergedDependencies.size > scannedDependencies.size;

@@ -16,6 +16,7 @@ import { isRefusedTestArtifact } from '../manifest/test-artifacts.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import {
   getRegisteredRetiredTables,
+  honouredRetiredTables,
   mergeRetiredTables,
   type RetiredTable,
 } from './retired-tables.js';
@@ -73,7 +74,7 @@ type ManifestLike = Pick<SmartObjectManifest, 'objects'> &
   Partial<
     Pick<
       SmartObjectManifest,
-      'packageName' | 'schemaFingerprint' | 'retiredTables'
+      'packageName' | 'schemaFingerprint' | 'retiredTables' | 'smrtDependencies'
     >
   >;
 
@@ -116,7 +117,7 @@ export function describeManifestSchema(
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       .map(([table, owners]) => [table, [...owners].sort()]),
   );
-  const retired = mergeRetiredTables(manifest.retiredTables);
+  const retired = honouredRetiredTables(manifest);
   return {
     ...(fingerprint ? { fingerprint } : {}),
     ...(missingReason ? { missingReason } : {}),
@@ -266,12 +267,16 @@ export function resolveBuildSchema(): BuildSchema | undefined {
 }
 
 /**
- * Every table a loaded package or the build declares retired: the registry's
- * (filled as package manifests register) and the build's own list, one entry
- * per table and package.
+ * The tables this run treats as declared retired (#5005), and the list the
+ * migrate record's stamp covers: the same set, always. With a build, the
+ * build's own list (which the build's stamp covers): a declaration only a
+ * package loaded at run time carries is not honoured. Without one, the
+ * registry's, filled as package manifests register.
  */
 export function resolveRetiredTables(
   build: BuildSchema | undefined = resolveBuildSchema(),
 ): RetiredTable[] {
-  return mergeRetiredTables(getRegisteredRetiredTables(), build?.retired);
+  return build
+    ? mergeRetiredTables(build.retired)
+    : getRegisteredRetiredTables();
 }

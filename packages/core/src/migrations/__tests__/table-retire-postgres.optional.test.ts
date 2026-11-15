@@ -12,7 +12,7 @@ import { ObjectRegistry } from '../../registry.js';
 import { snapshotObjectRegistryState } from '../../test-utils.js';
 import { decideMigrationRun } from '../migration-run-decision.js';
 import { getPendingSchemaStatements } from '../orchestrate.js';
-import type { RetiredTable } from '../retired-tables.js';
+import { type RetiredTable, registerRetiredTables } from '../retired-tables.js';
 
 const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
 const PKG = '@retire5005/pg';
@@ -34,6 +34,7 @@ const retired = (
   since: '1.0.0',
   reason: 'Moved onto the order.',
   rows: 'discard',
+  definition: { release: '0.9.0', columns: { id: { type: 'TEXT' } } },
   packageName: PKG,
   ...extra,
 });
@@ -62,7 +63,7 @@ describe.skipIf(!pgUrl)('retire step on real PostgreSQL (#5005)', () => {
     restore = snapshotObjectRegistryState();
     ObjectRegistry.clear();
     await clean();
-    ObjectRegistry.registerRetiredTables(PKG, declared);
+    registerRetiredTables(PKG, declared);
   };
   const plan = async () => {
     const pending = await getPendingSchemaStatements(db, {

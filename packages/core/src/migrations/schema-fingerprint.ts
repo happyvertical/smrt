@@ -11,6 +11,7 @@ import { formatDefaultValue } from '../schema/sql-identifiers.js';
 import type { SchemaDefinition } from '../schema/types.js';
 import { sha256Hex } from '../utils/sha256.js';
 import {
+  honouredRetiredTables,
   type RetiredTableDeclaration,
   retiredTablesStampInput,
 } from './retired-tables.js';
@@ -158,13 +159,19 @@ export function computeSchemaFingerprint(
 /** Build-only projection of the same declarations used by the runtime hash. */
 export function computeManifestSchemaFingerprint(
   manifest: Pick<SmartObjectManifest, 'objects'> &
-    Partial<Pick<SmartObjectManifest, 'retiredTables'>>,
+    Partial<
+      Pick<
+        SmartObjectManifest,
+        'retiredTables' | 'packageName' | 'smrtDependencies'
+      >
+    >,
 ): string {
   return computeSchemaFingerprint(
     [...collectManifestTables(manifestTableEntries(manifest)).values()].map(
       (table) => table.definition,
     ),
-    { retired: manifest.retiredTables },
+    // The honoured set, the same the build description carries (#5005).
+    { retired: honouredRetiredTables(manifest) },
   );
 }
 
@@ -196,7 +203,12 @@ export function manifestTableEntries(
  */
 export function tryComputeManifestSchemaFingerprint(
   manifest: Pick<SmartObjectManifest, 'objects'> &
-    Partial<Pick<SmartObjectManifest, 'retiredTables'>>,
+    Partial<
+      Pick<
+        SmartObjectManifest,
+        'retiredTables' | 'packageName' | 'smrtDependencies'
+      >
+    >,
   onConflict?: (error: ManifestTableConflictError) => void,
 ): string | undefined {
   try {
