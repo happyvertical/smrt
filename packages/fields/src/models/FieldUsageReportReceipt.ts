@@ -35,13 +35,13 @@ export class FieldUsageReportReceipt extends SmrtObject {
   @crossPackageRef('@happyvertical/smrt-users:User')
   userId: string = '';
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'idempotency' })
   objectRef: string = '';
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'idempotency' })
   fieldName: string = '';
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'idempotency' })
   period: string = '';
 
   constructor(options: FieldUsageReportReceiptOptions = {}) {

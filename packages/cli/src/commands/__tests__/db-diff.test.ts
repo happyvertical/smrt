@@ -370,6 +370,31 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
     expect(out.slice(notApplied)).toContain('duplicate keys block it');
   });
 
+  it('uses the table for comment-only rebuild refusals and covered sibling reports (#4925)', async () => {
+    mockDiff([
+      {
+        type: 'type_upgrade',
+        table: 'widgets',
+        name: 'blocked',
+        kindHint: 'type.rebuild-data-loss',
+        sql: '-- SQLite rebuild would fire ON DELETE actions',
+      },
+      {
+        type: 'type_upgrade',
+        table: 'widgets',
+        name: 'covered',
+        sql: '-- rebuilt with sibling (no change needed)',
+      },
+    ]);
+    await requireCommandHandler(dbDiffCommand)([], { verbose: true });
+    const out = output();
+    expect(out).not.toContain('(auto-applied by smrt db:migrate)');
+    expect(out).toContain('Type upgrades not applied (advisory only) (1)');
+    expect(out).toContain('widgets.blocked');
+    expect(out).toContain('widgets.covered');
+    expect(out).toContain('another change rebuilds this column');
+  });
+
   it('renders an index rename as ~ old -> new, not a new index (#3307)', async () => {
     mockDiff([
       {

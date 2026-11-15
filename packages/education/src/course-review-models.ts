@@ -45,8 +45,10 @@ import {
 })
 export class CourseReview extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
-  @foreignKey('CourseRevision', { required: true }) revisionId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
+  @foreignKey('CourseRevision', { required: true, requiredFor: 'identity' })
+  revisionId = '';
   sequence = 1;
   @field({ type: 'text' }) contextJson = '{}';
   contextDigest = '';
@@ -111,9 +113,12 @@ export class CourseReviewCollection extends SmrtCollection<CourseReview> {
 })
 export class CourseReviewFinding extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('CourseReview', { required: true }) reviewId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
-  @foreignKey('CourseRevision', { required: true }) revisionId = '';
+  @foreignKey('CourseReview', { required: true, requiredFor: 'identity' })
+  reviewId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
+  @foreignKey('CourseRevision', { required: true, requiredFor: 'identity' })
+  revisionId = '';
   ordinal = 0;
   section = 'general-level';
   targetKind = 'course-revision';
@@ -172,8 +177,10 @@ export class CourseReviewFindingCollection extends SmrtCollection<CourseReviewFi
 })
 export class CourseReviewOutdatedMarker extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('CourseReview', { required: true }) reviewId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
+  @foreignKey('CourseReview', { required: true, requiredFor: 'identity' })
+  reviewId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
   reason = 'revision-changed';
   @field({ type: 'text', nullable: true }) supersedingRevisionId:
     | string
@@ -214,9 +221,15 @@ export class CourseReviewOutdatedMarkerCollection extends SmrtCollection<CourseR
 })
 export class CourseFindingResolution extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('CourseReviewFinding', { required: true }) findingId = '';
-  @foreignKey('CourseReview', { required: true }) reviewId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
+  @foreignKey('CourseReviewFinding', {
+    required: true,
+    requiredFor: 'identity',
+  })
+  findingId = '';
+  @foreignKey('CourseReview', { required: true, requiredFor: 'identity' })
+  reviewId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
   resolution = 'addressed';
   @field({ type: 'text' }) note = '';
   actorUserId = '';

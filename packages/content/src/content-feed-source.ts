@@ -81,10 +81,10 @@ export class ContentFeedSource extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @field({ required: true })
+  @field()
   name = '';
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   feedUrl = '';
 
   homepageUrl: string | null = null;

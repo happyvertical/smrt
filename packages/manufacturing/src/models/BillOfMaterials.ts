@@ -63,6 +63,7 @@ export class BillOfMaterials extends SmrtObject {
    */
   @field({
     required: true,
+    requiredFor: 'identity',
     description: 'The assembly this list of parts is for.',
   })
   productId: string = '';

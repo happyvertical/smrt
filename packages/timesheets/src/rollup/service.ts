@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import {
   isEmbeddedDatabase,
   isPostgresDatabase,
+  ObjectRegistry,
   withEmbeddedWriteTransaction,
 } from '@happyvertical/smrt-core';
 import { getTenantId, withTenant } from '@happyvertical/smrt-tenancy';
@@ -276,7 +277,9 @@ export class PeriodRollupService {
         throw new Error('Resolver classification must conserve total seconds.');
       const card =
         prior ??
-        (await new PeriodTimecard({ db, id, _skipLoad: true }).initialize());
+        (await new (ObjectRegistry.resolveEffectiveConstructor(PeriodTimecard))(
+          { db, id, _skipLoad: true },
+        ).initialize());
       if (!prior) card.requireInsertOnSave();
       Object.assign(card, this.actor, {
         startsAt: period.startsAt,
@@ -388,7 +391,9 @@ export class PeriodRollupService {
         adjustments,
         'overtimeSeconds',
       );
-      const row = await new TimecardReopening({
+      const row = await new (ObjectRegistry.resolveEffectiveConstructor(
+        TimecardReopening,
+      ))({
         db,
         id: reopeningId,
         _skipLoad: true,
@@ -501,7 +506,9 @@ export class PeriodRollupService {
         integer(regular + input.regularSeconds) +
           integer(overtime + input.overtimeSeconds),
       );
-      const adjustment = await new TimecardAdjustment({
+      const adjustment = await new (ObjectRegistry.resolveEffectiveConstructor(
+        TimecardAdjustment,
+      ))({
         db,
         id: adjustmentId,
         _skipLoad: true,

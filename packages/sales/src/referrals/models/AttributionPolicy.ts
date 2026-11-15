@@ -133,7 +133,7 @@ export class AttributionPolicy extends SmrtObject {
   tenantId: string | null = null;
 
   /** Stable policy identity shared by every version of the policy. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   policyKey: string = '';
 
   /** Monotonic version within `policyKey`. Amendments insert `max + 1`. */

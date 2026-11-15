@@ -46,11 +46,11 @@ export class AttributionException extends SmrtObject {
   tenantId: string | null = null;
 
   /** Target the conflicting attribution is about. Required. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   targetKind: string = '';
 
   /** Identifier within the {@link targetKind} namespace. Required. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   targetId: string = '';
 
   /** The ReferralProgram the contention belongs to. */

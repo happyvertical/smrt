@@ -11,6 +11,7 @@ import { withRuntimeSchemaActivation } from '../activation.js';
 import { getRuntimeManifest } from '../generators/rest.js';
 import { stableStringify } from '../knowledge-graph.js';
 import {
+  assertMigrationAccepted,
   getPendingSchemaStatements,
   migrateSmrtSchemas,
 } from '../migrations/orchestrate.js';
@@ -610,7 +611,9 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         throw new Error(
           `MODEL_MIGRATION_REQUIRED: ${JSON.stringify(pending.unactionableChanges)}`,
         );
-      await migrateSmrtSchemas({
+      // A refused run applies nothing (a release stop, for example); the edit
+      // must fail rather than publish fields whose columns do not exist.
+      const migrated = await migrateSmrtSchemas({
         db,
         packageName: options.packageName,
         version: String(revision),
@@ -622,6 +625,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         tables,
         requireComplete: true,
       });
+      assertMigrationAccepted(migrated);
     }
     doc = structuredClone(target);
     return publishNow ? publish() : projection();

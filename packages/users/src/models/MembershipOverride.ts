@@ -62,13 +62,21 @@ export class MembershipOverride extends SmrtObject {
   /**
    * Foreign key to Membership
    */
-  @foreignKey('Membership', { required: true, onDelete: 'NO ACTION' })
+  @foreignKey('Membership', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'NO ACTION',
+  })
   membershipId?: string;
 
   /**
    * Foreign key to Permission
    */
-  @foreignKey('Permission', { required: true, onDelete: 'NO ACTION' })
+  @foreignKey('Permission', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'NO ACTION',
+  })
   permissionId?: string;
 
   /**

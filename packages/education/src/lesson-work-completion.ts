@@ -32,14 +32,21 @@ import {
 })
 export class WorkCompletionDecision extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
-  @foreignKey('LessonActivity', { required: true }) activityId = '';
-  @foreignKey('WorkAttempt', { required: true }) attemptId = '';
-  @foreignKey('Submission', { required: true }) submissionId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
+  @foreignKey('LessonActivity', { required: true, requiredFor: 'identity' })
+  activityId = '';
+  @foreignKey('WorkAttempt', { required: true, requiredFor: 'identity' })
+  attemptId = '';
+  @foreignKey('Submission', { required: true, requiredFor: 'identity' })
+  submissionId = '';
   @foreignKey('WorkAssessmentRevision', { nullable: true }) feedbackHeadId:
     | string
     | null = null;
-  @crossPackageRef('@happyvertical/smrt-users:User', { required: true })
+  @crossPackageRef('@happyvertical/smrt-users:User', {
+    required: true,
+    requiredFor: 'identity',
+  })
   actorUserId = '';
   requestKey = '';
   recordedAt = new Date();

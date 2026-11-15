@@ -7,6 +7,7 @@ import type {
   PackageBrowserCapability,
   RecipeDefinition,
 } from '@happyvertical/smrt-types';
+import type { RequiredForReason } from '../decorators/index.js';
 import type { SmartObjectConfig } from '../registry.js';
 
 /**
@@ -68,6 +69,8 @@ export interface FieldUIHints {
  * forcing every consumer through `any`.
  */
 export interface FieldMeta {
+  /** Written options, before registry normalization adds inferred values. */
+  __statedOptions?: string[];
   /** Database-owned generated column expression. */
   generated?: GeneratedExpression | true;
   generatedInputTypes?: Record<
@@ -86,6 +89,8 @@ export interface FieldMeta {
   default?: unknown;
   /** Per-row SQL backfill for adding/tightening a required column (#3008). */
   backfill?: string;
+  /** Why smrt's own code needs this required field (#4923). */
+  requiredFor?: RequiredForReason;
   /** Marks the field as the primary key column. */
   primaryKey?: boolean;
   /** Marks the column as unique. */
@@ -344,6 +349,8 @@ export interface ManifestSchema {
   ddl: string;
   columns: Record<string, ManifestColumnDefinition>;
   indexes: ManifestIndexDefinition[];
+  /** Table-level checks (PostgreSQL only; #4932). */
+  checks?: Array<{ name: string; columns: string[]; expression: string }>;
   version: string; // Hash of schema definition for migration tracking
 }
 
@@ -697,6 +704,8 @@ export interface ManifestUISelector {
 }
 
 export interface SmartObjectManifest {
+  /** Expected whole schema of this artifact, using computeSchemaFingerprint. */
+  schemaFingerprint?: string;
   version: string;
   /** Always {@link MANIFEST_TIMESTAMP} for build-output manifests. */
   timestamp: number;

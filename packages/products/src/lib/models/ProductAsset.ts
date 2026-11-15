@@ -32,10 +32,13 @@ export class ProductAsset extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @foreignKey('Product', { required: true })
+  @foreignKey('Product', { required: true, requiredFor: 'identity' })
   productId = '';
 
-  @crossPackageRef('@happyvertical/smrt-assets:Asset', { required: true })
+  @crossPackageRef('@happyvertical/smrt-assets:Asset', {
+    required: true,
+    requiredFor: 'identity',
+  })
   assetId = '';
 
   @field({ required: true })

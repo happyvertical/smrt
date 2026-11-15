@@ -85,9 +85,16 @@ vi.mock('@happyvertical/smrt-core', () => ({
   collectForeignKeyOrphanCounts: collectForeignKeyOrphanCountsMock,
 }));
 
-vi.mock('@happyvertical/smrt-core/migrations', () => ({
-  MigrationTracker: MigrationTrackerMock,
-}));
+vi.mock('@happyvertical/smrt-core/migrations', async () => {
+  const actual = await vi.importActual<
+    typeof import('@happyvertical/smrt-core/migrations')
+  >('@happyvertical/smrt-core/migrations');
+  return {
+    MigrationTracker: MigrationTrackerMock,
+    decideSchemaChange: actual.decideSchemaChange,
+    hasExecutableSchemaSql: actual.hasExecutableSchemaSql,
+  };
+});
 
 import { getSyntheticMigrationNameForChange } from '../db-migrate-actions.js';
 import {
@@ -150,22 +157,25 @@ describe('db:status', () => {
 
   it("keeps a probe-blocked type upgrade's own diagnosis (#3041)", () => {
     expect(
-      summarizeSchemaDiff({
-        added_tables: [],
-        changes: [
-          {
-            type: 'type_upgrade',
-            table: 'accounts',
-            name: '_meta_data',
-            mismatch: { expected: 'JSONB', actual: 'json' },
-            advisory: {
-              severity: 'warning',
-              message:
-                'blocked: accounts._meta_data is declared JSON but 2 JSON object(s) carry duplicate keys that jsonb would silently collapse.',
+      summarizeSchemaDiff(
+        {
+          added_tables: [],
+          changes: [
+            {
+              type: 'type_upgrade',
+              table: 'accounts',
+              name: '_meta_data',
+              mismatch: { expected: 'JSONB', actual: 'json' },
+              advisory: {
+                severity: 'warning',
+                message:
+                  'blocked: accounts._meta_data is declared JSON but 2 JSON object(s) carry duplicate keys that jsonb would silently collapse.',
+              },
             },
-          },
-        ],
-      }),
+          ],
+        },
+        'sqlite',
+      ),
     ).toEqual([
       {
         name: 'accounts._meta_data',
@@ -178,57 +188,60 @@ describe('db:status', () => {
 
   it('summarizes live schema drift into actionable status entries', () => {
     expect(
-      summarizeSchemaDiff({
-        added_tables: [{ tableName: 'contents' }],
-        changes: [
-          {
-            type: 'add_column',
-            table: 'contents',
-            name: 'script_text',
-          },
-          {
-            type: 'type_upgrade',
-            table: 'contents',
-            name: 'published_at',
-            sql: '-- SQLite: Type upgrade for "published_at" requires table recreation',
-          },
-          {
-            type: 'type_mismatch',
-            table: 'contents',
-            name: 'video_asset_id',
-            mismatch: {
-              expected: 'TEXT',
-              actual: 'INTEGER',
+      summarizeSchemaDiff(
+        {
+          added_tables: [{ tableName: 'contents' }],
+          changes: [
+            {
+              type: 'add_column',
+              table: 'contents',
+              name: 'script_text',
             },
-          },
-          {
-            type: 'add_foreign_key',
-            table: 'contents',
-            name: 'contents_author_id_users_id_fkey',
-            foreignKey: {
-              column: 'author_id',
-              referencesTable: 'users',
-              referencesColumn: 'id',
+            {
+              type: 'type_upgrade',
+              table: 'contents',
+              name: 'published_at',
+              sql: '-- SQLite: Type upgrade for "published_at" requires table recreation',
             },
-            sqlStatements: ['ALTER TABLE contents ADD CONSTRAINT ...'],
-          },
-          {
-            type: 'drop_foreign_key',
-            table: 'contents',
-            name: 'contents_legacy_id_legacy_id_fkey',
-            foreignKey: {
-              column: 'legacy_id',
-              referencesTable: 'legacy',
-              referencesColumn: 'id',
+            {
+              type: 'type_mismatch',
+              table: 'contents',
+              name: 'video_asset_id',
+              mismatch: {
+                expected: 'TEXT',
+                actual: 'INTEGER',
+              },
             },
-            advisory: {
-              severity: 'warning',
-              message:
-                'Exact live constraint-name introspection is unavailable; remove it deliberately, then rerun.',
+            {
+              type: 'add_foreign_key',
+              table: 'contents',
+              name: 'contents_author_id_users_id_fkey',
+              foreignKey: {
+                column: 'author_id',
+                referencesTable: 'users',
+                referencesColumn: 'id',
+              },
+              sqlStatements: ['ALTER TABLE contents ADD CONSTRAINT ...'],
             },
-          },
-        ],
-      }),
+            {
+              type: 'drop_foreign_key',
+              table: 'contents',
+              name: 'contents_legacy_id_legacy_id_fkey',
+              foreignKey: {
+                column: 'legacy_id',
+                referencesTable: 'legacy',
+                referencesColumn: 'id',
+              },
+              advisory: {
+                severity: 'warning',
+                message:
+                  'Exact live constraint-name introspection is unavailable; remove it deliberately, then rerun.',
+              },
+            },
+          ],
+        },
+        'sqlite',
+      ),
     ).toEqual([
       {
         name: 'contents',
@@ -296,7 +309,7 @@ describe('db:status', () => {
       ],
     };
 
-    expect(summarizeSchemaDiff(diff)).toEqual([]);
+    expect(summarizeSchemaDiff(diff, 'sqlite')).toEqual([]);
     expect(summarizeSchemaNotes(diff)).toEqual([
       {
         name: 'tenants.hierarchy_path',
@@ -716,17 +729,20 @@ describe('db:status', () => {
 
   it('omits no-op type upgrades from drift output', () => {
     expect(
-      summarizeSchemaDiff({
-        added_tables: [],
-        changes: [
-          {
-            type: 'type_upgrade',
-            table: 'contents',
-            name: 'metadata',
-            sql: '-- SQLite: "metadata" already stores JSON as TEXT (no change needed)',
-          },
-        ],
-      }),
+      summarizeSchemaDiff(
+        {
+          added_tables: [],
+          changes: [
+            {
+              type: 'type_upgrade',
+              table: 'contents',
+              name: 'metadata',
+              sql: '-- SQLite: "metadata" already stores JSON as TEXT (no change needed)',
+            },
+          ],
+        },
+        'sqlite',
+      ),
     ).toEqual([]);
   });
 

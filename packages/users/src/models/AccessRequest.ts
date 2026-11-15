@@ -83,7 +83,7 @@ export class AccessRequest extends SmrtObject {
    * multiple requests over time (e.g. an old GRADUATED record plus a new
    * REQUESTED one); dedup is enforced on *open* requests by the service.
    */
-  @field({ required: true, indexed: true })
+  @field({ required: true, requiredFor: 'identity', indexed: true })
   email: string = '';
 
   /**

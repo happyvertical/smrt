@@ -8,7 +8,9 @@ import {
   clearManifestCache,
   discoverManifestEntry,
   discoverManifestSync,
+  manifestEntrySourceKey,
 } from '../manifest-loader.js';
+import { getManifestCache } from '../store.js';
 
 function writeScopedPackage(
   appDir: string,
@@ -384,5 +386,38 @@ describe('Manifest loader contract', () => {
     } finally {
       warnSpy.mockRestore();
     }
+  });
+});
+
+describe('manifestEntrySourceKey: same relative path in two packages (#4948)', () => {
+  const found = (packageName: string, declaring = packageName) => ({
+    packageName,
+    filePath: 'src/models/Account.ts',
+    entry: {
+      className: 'Account',
+      packageName: declaring,
+      filePath: 'src/models/Account.ts',
+    } as never,
+  });
+
+  it('keeps two packages apart so they are reported as a collision', () => {
+    expect(
+      manifestEntrySourceKey(found('@fixture/ledgers'), 'Account'),
+    ).not.toBe(manifestEntrySourceKey(found('@fixture/messages'), 'Account'));
+  });
+
+  it('keeps a verbatim re-export under a consumer manifest as one key', () => {
+    expect(manifestEntrySourceKey(found('@fixture/ledgers'), 'Account')).toBe(
+      manifestEntrySourceKey(
+        found('@fixture/consumer', '@fixture/ledgers'),
+        'Account',
+      ),
+    );
+  });
+
+  it('compares workspace paths from the last packages/ segment', () => {
+    const a = { ...found('@a/x'), filePath: '/ci/packages/x/src/A.ts' };
+    const b = { ...found('@a/y'), filePath: '/home/u/packages/x/src/A.ts' };
+    expect(manifestEntrySourceKey(a, 'A')).toBe(manifestEntrySourceKey(b, 'A'));
   });
 });

@@ -227,7 +227,9 @@ export async function generateSchema(
  *
  * This compatibility helper is kept for tooling flows such as CLI commands that
  * explicitly prepare schema ahead of runtime. Core runtime no longer calls this
- * automatically.
+ * automatically. This partial table creator is for development/test fixtures,
+ * not production provisioning. Use migrateSmrtSchemas or smrt db:migrate in
+ * production; only a successful whole-schema migration can write its record.
  *
  * @deprecated Prefer explicit migration/bootstrap tooling. Runtime verifies
  * schema and fails fast when tables are missing.

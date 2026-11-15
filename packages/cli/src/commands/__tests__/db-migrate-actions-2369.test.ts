@@ -122,6 +122,7 @@ describe('partitionSchemaChanges (#2369)', () => {
           dropColumn,
         ],
         className,
+        'sqlite',
       );
 
     expect(migrations.map((m) => `${m.type}:${m.columnName}`)).toEqual([
@@ -206,6 +207,7 @@ describe('synthetic migration names (#2369)', () => {
     const { migrations } = partitionSchemaChanges(
       [executableSetNotNull, dropColumn],
       className,
+      'sqlite',
     );
     expect(getSyntheticMigrationNameForAction(migrations[0])).toBe(alterName);
     expect(getSyntheticMigrationNameForAction(migrations[1])).toBe(
@@ -214,12 +216,15 @@ describe('synthetic migration names (#2369)', () => {
   });
 
   it('classifies failed alter_column/drop_column rows against live drift like the other generated repairs', () => {
-    const unresolved = getUnresolvedGeneratedMigrationNames([
-      executableSetNotNull,
-      manualSqliteSetDefault,
-      advisoryDropNotNull,
-      dropColumn,
-    ]);
+    const unresolved = getUnresolvedGeneratedMigrationNames(
+      [
+        executableSetNotNull,
+        manualSqliteSetDefault,
+        advisoryDropNotNull,
+        dropColumn,
+      ],
+      'sqlite',
+    );
     const alterName = getSyntheticMigrationNameForChange(
       executableSetNotNull,
     ) as string;
@@ -253,7 +258,7 @@ describe('db:status summarizeSchemaDiff / summarizeSchemaNotes (#2369)', () => {
         orphanUnique,
       ],
     };
-    const drift = summarizeSchemaDiff(diff);
+    const drift = summarizeSchemaDiff(diff, 'sqlite');
     expect(drift.map((d) => `${d.name}:${d.type}`)).toEqual([
       'items.status:nullability_drift',
       'items.kind:default_drift',
@@ -281,6 +286,7 @@ describe('printSchemaAdvisories (#2369)', () => {
     const { advisories } = partitionSchemaChanges(
       [advisoryDropNotNull, orphanBlocking, orphanInfo, orphanUnique],
       className,
+      'sqlite',
     );
     const lines: string[] = [];
     printSchemaAdvisories(advisories, {

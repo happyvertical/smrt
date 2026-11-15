@@ -1,6 +1,6 @@
 # @happyvertical/smrt-cli
 
-CLI with lazy-loaded commands, manifest discovery, and class introspection.
+CLI: lazy commands, manifest discovery, class introspection.
 
 ## Commands
 
@@ -13,10 +13,11 @@ smrt db:status               # Pending schema changes + failed migration classif
 smrt db:status --parity      # Same, plus live-schema parity (see below)
 smrt db:orphans              # agents/db-orphans.md
 smrt users:provision-owner   # Trusted PostgreSQL owner provisioning; password from private file/stdin, never argv/env (users README)
-smrt db:migrate              # agents/type-drift.md, agents/db-migrate-concurrency.md
+smrt db:migrate              # agents/type-drift.md, agents/db-migrate-concurrency.md; success (in-sync too) records core release/packages/schema fingerprint in _smrt_migrate_runs; stops/errors/dry runs never stamp; no record = first run (../core/agents/schema-paths.md)
 smrt db:migrate --postgres-safe # PostgreSQL concurrent-index mode (see below)
 smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...] # Force exact generated migrations in one atomic batch
-smrt db:migrate --apply-unblocked / --null-orphans # agents/db-migrate-partial-apply.md
+smrt db:migrate --null-orphans # agents/db-migrate-all-or-nothing.md; stops hold the whole run
+smrt db:migrate --confirm-removed-package <name> # Repeat for each missing package; see same guide
 smrt db:migrate-uuid         # Convert schema-declared UUID text columns after data remap (incl. PG system tenant ids, #3297)
 smrt db:migrate-int8
 smrt db:migrate-null-equal-indexes # ../core/agents/null-equal-indexes.md
@@ -60,8 +61,8 @@ smrt app <op>                # App install/setup/start/migrate/worker…: agents
 
 DB target: config `database.url` > `DATABASE_URL` > `:memory:` (README).
 
-File-backed SQL/TypeScript migration generation is not supported. SMRT schema
-migrations are manifest-driven through registered objects and project manifests.
+File-backed SQL/TypeScript migration generation is unsupported. Schema migrations
+use registered objects and project manifests.
 
 `smrt test` is **deprecated** — use vitest plugin directly.
 
@@ -72,8 +73,8 @@ cycles are created without the cyclic clauses first, then receive named
 constraints after both tables exist. When a same-package constraint is missing
 on an existing table, `db:migrate` probes the exact child/parent columns for
 orphans before `ADD ... NOT VALID` and `VALIDATE CONSTRAINT`; orphaned data or a
-failed probe stays manual with detector/repair SQL by default
-(agents/db-migrate-partial-apply.md).
+failed probe stops the whole run with detector/repair SQL
+(agents/db-migrate-all-or-nothing.md).
 
 `db:migrate --dry-run` and deprecated `db:setup --dry-run` print the same
 engine-specific dependency plan used for execution, including exact table DDL
@@ -217,10 +218,9 @@ atomic batch as everything else. It is no longer a "manual intervention" that
 makes `db:migrate` exit 1 on every run (#2370). All drifted columns of one
 table are fixed by one rebuild; `--dry-run` prints the whole statement list.
 
-The rebuild refuses — and the column stays manual drift — when another table
-declares a foreign key onto the target while `PRAGMA foreign_keys` is ON,
-because `DROP TABLE` would fire those children's `ON DELETE` actions. Fix that
-one by hand (or against a connection with enforcement disabled).
+A table other tables reference is rebuilt too: the tracker turns foreign keys
+off around the rebuild and checks them before the commit (#4937). DuckDB rebuilds
+the same way; see `agents/db-migrate-all-or-nothing.md`.
 
 ## `db:rollback` is execute-or-refuse
 
@@ -289,11 +289,11 @@ skipping it: agents/db-drop-framework-base-tables.md.
 
 ## Architecture
 
-- **Lazy command loading**: commands loaded on-demand via dynamic import (~100ms overhead on first use)
+- **Lazy commands**: dynamic imports (~100ms on first use)
 - **Manifest discovery**: finds `.smrt/manifest.json` + scans `node_modules/@happyvertical/smrt-*`
 - **Aggregate manifest identity**: preload/schema discovery resolve package ownership per entry (`definition.packageName` before the container), keeping dependency objects' qualified registrations
 - **Class loading order**: config.entryPoint → package.json exports['.'] → package.json main → `./dist/index.js`
-- **Object method exposure**: custom SMRT object methods auto-become CLI commands
+- **Methods**: custom SMRT object methods become CLI commands
 
 ## Key Files
 

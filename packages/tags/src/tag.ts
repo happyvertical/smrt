@@ -37,7 +37,6 @@ export class Tag extends SmrtHierarchical {
   }
 
   @field({
-    required: true,
     description: 'The name people see when they pick or browse tags.',
   })
   name: string = ''; // Display name

@@ -56,7 +56,7 @@ export class ProjectDecision extends SmrtPolymorphicAssociation {
   @tenantId()
   tenantId = '';
 
-  @field({ required: true })
+  @field()
   question = '';
 
   /** JSON array; use getOptions()/setOptions(). */
@@ -130,8 +130,6 @@ export class ProjectDecision extends SmrtPolymorphicAssociation {
     this.ownerId = this.ownerId.trim();
     if (!['internal', 'client'].includes(this.visibility))
       throw new TypeError('Invalid project governance visibility.');
-    if (!this.question)
-      throw new TypeError('Project decision question is required.');
     if (!['open', 'decided', 'deferred', 'superseded'].includes(this.status))
       throw new TypeError('Invalid project decision status.');
     if (this.ownerType && !['user', 'agent', 'system'].includes(this.ownerType))

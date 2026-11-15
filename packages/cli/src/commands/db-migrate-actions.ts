@@ -1,4 +1,11 @@
 import { createHash } from 'node:crypto';
+import {
+  decideSchemaChange,
+  hasExecutableSchemaSql,
+  type SchemaChangeInput,
+  type SchemaChangeKindId,
+  type SchemaChangeVerdict,
+} from '@happyvertical/smrt-core/migrations';
 
 /**
  * Which column property an `alter_column` change repairs (mirrors
@@ -8,7 +15,9 @@ export type ColumnAlterationLike =
   | 'set_not_null'
   | 'drop_not_null'
   | 'set_default'
-  | 'drop_default';
+  | 'drop_default'
+  | 'set_check'
+  | 'drop_check';
 
 /**
  * Report-only detail attached to a change the differ surfaces but does not
@@ -29,7 +38,7 @@ export type ForeignKeyActionLike =
 
 /**
  * Local mirror of core's `ForeignKeyDefinition` — just enough shape for
- * dependency analysis (#2748) and for rebuilding the `ADD CONSTRAINT`
+ * the orphan disposition and for rebuilding the `ADD CONSTRAINT`
  * statements after an orphan-FK disposition repairs the blocking rows.
  */
 export interface ForeignKeyDefinitionLike {
@@ -41,16 +50,10 @@ export interface ForeignKeyDefinitionLike {
 }
 
 export interface MigrationAction {
-  type:
-    | 'add_column'
-    | 'drop_column'
-    | 'alter_column'
-    | 'add_foreign_key'
-    | 'drop_foreign_key'
-    | 'add_index'
-    | 'drop_index'
-    | 'type_mismatch'
-    | 'type_upgrade';
+  kind?: SchemaChangeKindId | 'unlisted';
+  stopReason?: SchemaChangeVerdict['stop'];
+  decisionMessage?: string;
+  type: SchemaChangeLike['type'];
   tableName: string;
   className: string;
   column?: {
@@ -114,12 +117,7 @@ export interface MigrationAction {
  * db:status; never turned into a tracker migration.
  */
 export interface SchemaAdvisory {
-  type:
-    | 'orphan_column'
-    | 'orphan_index'
-    | 'alter_column'
-    | 'type_upgrade'
-    | 'rename_data_pending';
+  type: SchemaChangeLike['type'];
   tableName: string;
   className: string;
   name: string;
@@ -129,6 +127,7 @@ export interface SchemaAdvisory {
 }
 
 export interface SchemaChangeLike {
+  kindHint?: SchemaChangeKindId;
   type:
     | 'add_table'
     | 'drop_table'
@@ -203,9 +202,7 @@ export function isAdvisoryOnlyChangeLike(change: {
   sql?: string;
   sqlStatements?: string[];
 }): boolean {
-  if (!change.advisory) return false;
-  const statements = change.sqlStatements ?? (change.sql ? [change.sql] : []);
-  return statements.length === 0;
+  return Boolean(change.advisory) && !hasExecutableSchemaSql(change);
 }
 
 export type TypeUpgradeExecutionKind = 'executable' | 'manual' | 'noop';
@@ -308,25 +305,52 @@ function typeUpgradeFingerprint(action: {
     .slice(0, 8);
 }
 
-export function classifyTypeUpgradeSql(sql?: string): TypeUpgradeExecutionKind {
-  const trimmed = sql?.trim();
+/** The engines the table of change kinds distinguishes (`json` reads as DuckDB). */
+export type SchemaChangeEngineName = 'postgres' | 'sqlite' | 'duckdb' | 'json';
 
-  if (!trimmed) {
-    return 'manual';
+/**
+ * The engine a configured database type decides changes with (#4934). The
+ * table of change kinds differs by engine for a few kinds, so every command
+ * that shows or decides a change names the engine the diff was read from.
+ */
+export function resolveSchemaChangeEngine(
+  dbType: string | undefined,
+): SchemaChangeEngineName {
+  switch (dbType) {
+    case 'postgres':
+    case 'postgresql':
+    case 'pg':
+    case 'pglite':
+      return 'postgres';
+    case 'duckdb':
+      return 'duckdb';
+    case 'json':
+      return 'json';
+    default:
+      return 'sqlite';
   }
+}
 
-  if (!trimmed.startsWith('--')) {
-    return 'executable';
+export function classifyTypeUpgradeSql(
+  changeOrSql: string | SchemaChangeInput | undefined,
+  engine: SchemaChangeEngineName,
+): TypeUpgradeExecutionKind {
+  const change =
+    typeof changeOrSql === 'object'
+      ? changeOrSql
+      : {
+          type: 'type_upgrade' as const,
+          table: '(unknown)',
+          sql: changeOrSql,
+        };
+  switch (decideSchemaChange(change, engine).decision) {
+    case 'apply':
+      return 'executable';
+    case 'report':
+      return 'noop';
+    case 'stop':
+      return 'manual';
   }
-
-  if (
-    /no change needed/i.test(trimmed) ||
-    /already stores .* as /i.test(trimmed)
-  ) {
-    return 'noop';
-  }
-
-  return 'manual';
 }
 
 /**
@@ -525,7 +549,7 @@ export function shouldFailDbMigrate(state: DbMigrateFailureState): boolean {
     (state.tableErrorCount ?? 0) > 0 ||
     (state.migrationErrorCount ?? 0) > 0 ||
     (state.stiErrorCount ?? 0) > 0 ||
-    (!state.dryRun && (state.manualInterventionCount ?? 0) > 0)
+    (state.manualInterventionCount ?? 0) > 0
   );
 }
 
@@ -559,6 +583,7 @@ export function classifyFailedMigration(
 
 export function getUnresolvedGeneratedMigrationNames(
   changes: SchemaChangeLike[],
+  engine: SchemaChangeEngineName,
 ): Set<string> {
   const names = new Set<string>();
 
@@ -578,7 +603,7 @@ export function getUnresolvedGeneratedMigrationNames(
 
     if (
       change.type === 'type_upgrade' &&
-      classifyTypeUpgradeSql(change.sql) === 'noop'
+      classifyTypeUpgradeSql(change, engine) === 'noop'
     ) {
       continue;
     }
@@ -653,17 +678,36 @@ export function summarizeFailedMigrations(
   return buckets;
 }
 
+/** Where `db:diff` lists a column alteration. Each lands in exactly one. */
+export type AlterationListing = 'automatic' | 'manual' | 'report';
+
+/**
+ * The one place that says which of the three lists `db:diff` prints a column
+ * alteration under, decided by the table of change kinds for the engine
+ * (#4934). A change that applies is automatic; one that stops is manual; one
+ * that only reports is printed with the advisories.
+ */
+export function listAlteration(
+  change: SchemaChangeInput,
+  engine: SchemaChangeEngineName,
+): AlterationListing {
+  switch (decideSchemaChange(change, engine).decision) {
+    case 'apply':
+      return 'automatic';
+    case 'stop':
+      return 'manual';
+    case 'report':
+      return 'report';
+  }
+}
+
 export function partitionSchemaChanges(
   changes: SchemaChangeLike[],
   getClassForTable: (tableName: string) => string,
+  engine: SchemaChangeEngineName,
 ): {
   migrations: MigrationAction[];
   manualInterventions: MigrationAction[];
-  /**
-   * Report-only findings (#2369): orphan columns/indexes and relaxations the
-   * operator has not opted into. Printed, never executed, and they never
-   * fail db:migrate on their own.
-   */
   advisories: SchemaAdvisory[];
 } {
   const migrations: MigrationAction[] = [];
@@ -672,266 +716,79 @@ export function partitionSchemaChanges(
 
   for (const change of changes) {
     const className = getClassForTable(change.table);
-
-    switch (change.type) {
-      case 'orphan_column':
-      case 'orphan_index':
-      case 'rename_data_pending': {
-        if (!change.name || !change.advisory) continue;
-        advisories.push({
-          type: change.type,
-          tableName: change.table,
-          className,
-          name: change.name,
-          actual: change.mismatch?.actual,
-          advisory: change.advisory,
-        });
-        break;
-      }
-
-      case 'drop_column': {
-        if (!change.name) continue;
-        migrations.push({
-          type: 'drop_column',
-          tableName: change.table,
-          className,
-          columnName: change.name,
-          mismatch: change.mismatch
-            ? {
-                column: change.name,
-                expected: change.mismatch.expected,
-                actual: change.mismatch.actual,
-              }
-            : undefined,
-          sql: change.sql,
-          ...(change.sqlStatements
-            ? { sqlStatements: change.sqlStatements }
-            : {}),
-        });
-        break;
-      }
-
-      case 'alter_column': {
-        if (!change.name) continue;
-        if (isAdvisoryOnlyChangeLike(change) && change.advisory) {
-          advisories.push({
-            type: 'alter_column',
-            tableName: change.table,
-            className,
-            name: change.name,
-            alteration: change.alteration,
-            actual: change.mismatch?.actual,
-            advisory: change.advisory,
-          });
-          break;
-        }
-        const action: MigrationAction = {
-          type: 'alter_column',
-          tableName: change.table,
-          className,
-          columnName: change.name,
-          alteration: change.alteration,
-          ...(change.column
-            ? {
-                column: {
-                  name: change.name,
-                  type: change.column.type,
-                  notNull: change.column.notNull,
-                  defaultValue: change.column.defaultValue,
-                  unique: change.column.unique,
-                },
-              }
-            : {}),
-          mismatch: change.mismatch
-            ? {
-                column: change.name,
-                expected: change.mismatch.expected,
-                actual: change.mismatch.actual,
-              }
-            : undefined,
-          sql: change.sql,
-          ...(change.sqlStatements
-            ? { sqlStatements: change.sqlStatements }
-            : {}),
-        };
-        // Same executable / manual split as type upgrades: comment-only SQL
-        // means the engine cannot alter the column in place (SQLite) or the
-        // differ found live data that blocks the repair.
-        if (classifyTypeUpgradeSql(change.sql) === 'executable') {
-          migrations.push(action);
-        } else {
-          manualInterventions.push(action);
-        }
-        break;
-      }
-
-      case 'add_column': {
-        const col = change.column;
-        if (!change.name || !col) continue;
-        migrations.push({
-          type: 'add_column',
-          tableName: change.table,
-          className,
-          column: {
-            name: change.name,
-            type: col.type,
-            notNull: col.notNull,
-            defaultValue: col.defaultValue,
-            unique: col.unique,
-          },
-          sql: change.sql,
-          ...(change.sqlStatements
-            ? { sqlStatements: change.sqlStatements }
-            : {}),
-        });
-        break;
-      }
-
-      case 'add_index': {
-        const idx = change.index;
-        if (!idx) continue;
-        migrations.push({
-          type: 'add_index',
-          tableName: change.table,
-          className,
-          index: {
-            name: idx.name,
-            columns: idx.columns,
-            unique: idx.unique,
-          },
-          sql: change.sql,
-          ...(change.sqlStatements
-            ? { sqlStatements: change.sqlStatements }
-            : {}),
-          ...(change.renamedFrom ? { renamedFrom: change.renamedFrom } : {}),
-        });
-        break;
-      }
-
-      case 'add_foreign_key':
-      case 'drop_foreign_key': {
-        const action: MigrationAction = {
-          type: change.type,
-          tableName: change.table,
-          className,
-          sql: change.sql,
-          ...(change.sqlStatements
-            ? { sqlStatements: change.sqlStatements }
-            : {}),
-          advisory: change.advisory,
-          ...(change.foreignKey ? { foreignKey: change.foreignKey } : {}),
-          ...(change.orphanBlocked !== undefined
-            ? { orphanBlocked: change.orphanBlocked }
-            : {}),
-          ...(change.orphanNullable !== undefined
-            ? { orphanNullable: change.orphanNullable }
-            : {}),
-          ...(change.engineUnsupported !== undefined
-            ? { engineUnsupported: change.engineUnsupported }
-            : {}),
-          ...(change.note ? { note: change.note } : {}),
-        };
-        if (isAdvisoryOnlyChangeLike(change)) {
-          manualInterventions.push(action);
-        } else {
-          migrations.push(action);
-        }
-        break;
-      }
-
-      case 'drop_index': {
-        // Issue #1165: shape-drift repair pushes `drop_index` then
-        // `add_index` for the same name in change-order. We preserve that
-        // order in `migrations` by pushing here, so the drop runs before
-        // the add and the recreate actually happens (otherwise the add's
-        // `IF NOT EXISTS` silently no-ops against the wrong-shape index).
-        // Orphan-index drops (opt-in via includeDroppedIndexes) flow
-        // through the same path.
-        if (!change.name) continue;
-        migrations.push({
-          type: 'drop_index',
-          tableName: change.table,
-          className,
-          indexName: change.name,
-          sql: change.sql,
-          ...(change.sqlStatements
-            ? { sqlStatements: change.sqlStatements }
-            : {}),
-        });
-        break;
-      }
-
-      case 'type_mismatch': {
-        const mm = change.mismatch;
-        if (!change.name || !mm) continue;
-        manualInterventions.push({
-          type: 'type_mismatch',
-          tableName: change.table,
-          className,
-          mismatch: {
-            column: change.name,
-            expected: mm.expected,
-            actual: mm.actual,
-          },
-        });
-        break;
-      }
-
-      case 'type_upgrade': {
-        const mm = change.mismatch;
-        const col = change.column;
-        // #2608: a refused uuid convergence is report-only — it carries an
-        // advisory and no SQL. Surfacing it as a manual intervention would
-        // claim `db:migrate` can fix it; it belongs with the other blocked
-        // findings so the operator sees the reason and the manual repair.
-        if (isAdvisoryOnlyChangeLike(change) && change.advisory) {
-          if (!change.name) continue;
-          advisories.push({
-            type: 'type_upgrade',
-            tableName: change.table,
-            className,
-            name: change.name,
-            actual: mm?.actual,
-            advisory: change.advisory,
-          });
-          break;
-        }
-        if (!change.name || !mm || !col) continue;
-        const action: MigrationAction = {
-          type: 'type_upgrade',
-          tableName: change.table,
-          className,
-          column: {
-            name: change.name,
-            type: col.type,
-            notNull: col.notNull,
-            defaultValue: col.defaultValue,
-            unique: col.unique,
-          },
-          ...(change.phase ? { phase: change.phase } : {}),
-          mismatch: {
-            column: change.name,
-            expected: mm.expected,
-            actual: mm.actual,
-          },
-          sql: change.sql,
-          ...(change.sqlStatements
-            ? { sqlStatements: change.sqlStatements }
-            : {}),
-          ...(change.note ? { note: change.note } : {}),
-        };
-        const executionKind = classifyTypeUpgradeSql(change.sql);
-
-        if (executionKind === 'executable') {
-          migrations.push(action);
-        } else if (executionKind === 'manual') {
-          manualInterventions.push(action);
-        }
-        break;
-      }
+    const verdict = decideSchemaChange(change, engine);
+    if (verdict.decision === 'report') {
+      advisories.push({
+        type: change.type,
+        tableName: change.table,
+        className,
+        name:
+          change.name ??
+          change.foreignKey?.column ??
+          change.index?.name ??
+          change.table,
+        alteration: change.alteration,
+        actual: change.mismatch?.actual,
+        advisory: change.advisory ?? {
+          severity: 'info',
+          message: verdict.message,
+        },
+      });
+      continue;
     }
+    // New tables have their own dependency-ordered creation path in utilities.
+    if (verdict.decision === 'apply' && change.type === 'add_table') continue;
+    if (
+      verdict.decision === 'apply' &&
+      ((change.type === 'add_index' && !change.index) ||
+        (change.type === 'drop_index' && !change.name) ||
+        (change.type === 'add_column' && (!change.name || !change.column)) ||
+        (change.type === 'type_upgrade' &&
+          (!change.name || !change.column || !change.mismatch)))
+    )
+      continue;
+    const action: MigrationAction = {
+      type: change.type,
+      tableName: change.table,
+      className,
+      ...((change.type === 'alter_column' || change.type === 'drop_column') &&
+      change.name
+        ? { columnName: change.name }
+        : {}),
+      ...(change.column && change.name
+        ? { column: { ...change.column, name: change.name } }
+        : {}),
+      index: change.index,
+      indexName: change.type === 'drop_index' ? change.name : undefined,
+      mismatch: change.mismatch
+        ? {
+            ...change.mismatch,
+            column: change.name ?? change.foreignKey?.column ?? '',
+          }
+        : undefined,
+      alteration: change.alteration,
+      phase: change.phase,
+      sql: change.sql,
+      ...(change.sqlStatements ? { sqlStatements: change.sqlStatements } : {}),
+      advisory: change.advisory,
+      foreignKey: change.foreignKey,
+      orphanBlocked: change.orphanBlocked,
+      orphanNullable: change.orphanNullable,
+      engineUnsupported: change.engineUnsupported,
+      note: change.note,
+      renamedFrom: change.renamedFrom,
+      ...(verdict.decision === 'stop'
+        ? {
+            kind: verdict.kind,
+            stopReason: verdict.stop,
+            decisionMessage: verdict.message,
+          }
+        : {}),
+    };
+    (verdict.decision === 'stop' ? manualInterventions : migrations).push(
+      action,
+    );
   }
-
   return { migrations, manualInterventions, advisories };
 }
 
@@ -1012,292 +869,6 @@ function describeAdvisory(item: SchemaAdvisory): string {
     default:
       return `${item.tableName}.${item.name}: ${item.alteration ?? 'alter_column'}${item.actual ? ` (live: ${item.actual})` : ''}`;
   }
-}
-
-// ---------------------------------------------------------------------------
-// #2748: `db:migrate --apply-unblocked` partial-apply partition.
-// ---------------------------------------------------------------------------
-
-/** `table.column` identity used to key a blocked column across actions. */
-function blockedColumnKey(tableName: string, columnName: string): string {
-  return `${tableName}.${columnName}`;
-}
-
-/**
- * Column that a manual-intervention action blocks, if any. `type_mismatch`,
- * a manual `type_upgrade`, and a manual `alter_column` each name exactly one
- * live column via `mismatch.column`; a blocked `add_foreign_key` names its
- * child column via `foreignKey.column` — unless the block reason is
- * `engineUnsupported` (this engine cannot express `ALTER TABLE ADD
- * CONSTRAINT` at all, e.g. SQLite/DuckDB): that says nothing about the
- * column's own state, no rerun on this engine ever resolves it, and
- * treating it as a blocked column would withhold unrelated dependent DDL
- * on that column permanently (review finding, #2748). That case blocks no
- * column identity and is excluded from dependency analysis.
- */
-function blockedColumnForAction(action: MigrationAction): string | undefined {
-  if (
-    action.type === 'add_foreign_key' &&
-    action.foreignKey &&
-    !action.engineUnsupported
-  ) {
-    return blockedColumnKey(action.tableName, action.foreignKey.column);
-  }
-  const column =
-    action.mismatch?.column ?? action.columnName ?? action.column?.name;
-  return column ? blockedColumnKey(action.tableName, column) : undefined;
-}
-
-/**
- * Every column a manual intervention blocks, keyed `table.column`, with the
- * human-readable reason (the action's advisory message, or a description of
- * the type mismatch) a dependent change is withheld for. `advisories`
- * includes only report-only `type_upgrade` findings (the #2608 refused
- * uuid convergence) — that shape is a genuine, permanent column-state block
- * that names a column just as concretely as a manual intervention does, so
- * omitting it let `--apply-unblocked` apply an index/alter/drop against a
- * column whose type convergence is itself blocked (review finding, #2748).
- *
- * `alter_column` advisories are deliberately excluded even though the type
- * exists on `SchemaAdvisory`: an advisory-only `alter_column` is produced
- * only by an un-opted-into relaxation (`drop_default`/`drop_not_null` when
- * `--relax-columns` was not passed) — it says the live column is *stricter*
- * than the manifest, not that the column's state blocks anything, and it
- * reappears on every run regardless of `--apply-unblocked`. Treating it as
- * a blocked column reproduced the exact defect this function's
- * `engineUnsupported` exclusion fixed for `add_foreign_key`: permanently
- * withholding unrelated executable DDL on that column (review finding,
- * #2748, second pass). A genuinely blocked `alter_column` (e.g. NOT NULL
- * required with live NULLs and no default) carries executable-looking SQL
- * as a comment and already reaches `manualInterventions` instead, where it
- * is covered by the loop above via `columnName`.
- */
-export function computeBlockedColumns(
-  manualInterventions: MigrationAction[],
-  advisories: SchemaAdvisory[] = [],
-): Map<string, string> {
-  const blocked = new Map<string, string>();
-  for (const action of manualInterventions) {
-    const key = blockedColumnForAction(action);
-    if (!key || blocked.has(key)) continue;
-    blocked.set(key, describeBlockedReason(action));
-  }
-  for (const advisory of advisories) {
-    if (advisory.type !== 'type_upgrade') continue;
-    const key = blockedColumnKey(advisory.tableName, advisory.name);
-    if (blocked.has(key)) continue;
-    blocked.set(
-      key,
-      advisory.advisory.message ??
-        `${advisory.type} requires manual intervention`,
-    );
-  }
-  return blocked;
-}
-
-function describeBlockedReason(action: MigrationAction): string {
-  if (action.advisory?.message) return action.advisory.message;
-  if (action.mismatch) {
-    return `expected ${action.mismatch.expected}, found ${action.mismatch.actual}`;
-  }
-  return `${action.type} requires manual intervention`;
-}
-
-/**
- * `table.column` keys whose only manual-intervention block is an
- * orphan-blocked `add_foreign_key` on that same (child) column — a
- * row-data condition (existing rows don't match a parent), not a
- * column-state one. An un-opted-into `--relax-columns` relaxation on that
- * column (`DROP NOT NULL`/`DROP DEFAULT`) is not unsafe against orphan
- * rows; it is in fact the exact remediation that makes a NOT-NULL-child
- * orphan block eventually resolvable by `--null-orphans` on a later run.
- * Gating that `alter_column` on the orphan block made `--apply-unblocked
- * --relax-columns` withhold it forever — the relaxation never applies, the
- * live column never becomes nullable, the orphan block never clears, in a
- * stable non-converging loop (review finding, #2748). Every other
- * dependent shape on that column (an index, an unrelated foreign key, a
- * `drop_column`) still correctly stays gated by the orphan block; this set
- * narrows the exclusion to `alter_column` alone at the call site.
- */
-export function computeOrphanOnlyBlockedColumns(
-  manualInterventions: MigrationAction[],
-): Set<string> {
-  const orphanOnly = new Set<string>();
-  const otherwiseBlocked = new Set<string>();
-  for (const action of manualInterventions) {
-    const key = blockedColumnForAction(action);
-    if (!key) continue;
-    if (action.type === 'add_foreign_key' && action.orphanBlocked) {
-      orphanOnly.add(key);
-    } else {
-      otherwiseBlocked.add(key);
-    }
-  }
-  for (const key of otherwiseBlocked) orphanOnly.delete(key);
-  return orphanOnly;
-}
-
-/** One migration withheld under `--apply-unblocked` and why. */
-export interface WithheldMigration {
-  action: MigrationAction;
-  /** `table.column` of the blocked change this one depends on. */
-  dependsOn: string;
-  reason: string;
-}
-
-/**
- * Column(s) an executable migration action reads or writes, for dependency
- * analysis against `computeBlockedColumns()`. An `add_index` depends on
- * every indexed column; an `add_foreign_key` depends on its own child
- * column AND the parent column it references (a parent whose type upgrade
- * is blocked is just as unsafe to reference); `alter_column`/`drop_column`
- * depend on the single column they touch. `add_column`/`type_upgrade`/
- * `drop_index` never depend on another column's state — they are either the
- * fix itself or fully self-contained.
- */
-function actionColumnDependencies(
-  action: MigrationAction,
-): { tableName: string; columnName: string }[] {
-  switch (action.type) {
-    case 'add_index':
-      return (action.index?.columns ?? []).map((columnName) => ({
-        tableName: action.tableName,
-        columnName,
-      }));
-    case 'add_foreign_key': {
-      if (!action.foreignKey) return [];
-      return [
-        { tableName: action.tableName, columnName: action.foreignKey.column },
-        {
-          tableName: action.foreignKey.referencesTable,
-          columnName: action.foreignKey.referencesColumn,
-        },
-      ];
-    }
-    case 'alter_column':
-    case 'drop_column': {
-      const columnName = action.columnName ?? action.column?.name;
-      return columnName ? [{ tableName: action.tableName, columnName }] : [];
-    }
-    default:
-      return [];
-  }
-}
-
-/**
- * Partition executable migrations (the differ's "safe DDL" bucket) into
- * those independent of every blocked column and those that depend on one
- * (#2748's dependency rule): an index or foreign key on a column whose type
- * upgrade is blocked, or a foreign key whose orphan rows block it, stays
- * withheld; everything else is applied. Pure and order-preserving so a
- * dry-run preview and a real apply partition identically.
- *
- * A `drop_index` carries no column list of its own (a DB-side index being
- * removed; see `MigrationAction.indexName`'s doc comment), so it is never
- * itself a dependency target — EXCEPT when it is the drop half of the
- * #1165 shape-drift recreate pair (`drop_index` then `add_index` for the
- * SAME name, in that order, in the same batch). Withholding the `add_index`
- * half alone while letting its paired `drop_index` proceed would remove the
- * existing index/uniqueness enforcement with no replacement — reachable and
- * unsafe (review, #2748) — so a `drop_index` withholds together with any
- * `add_index` of the same name that this partition withheld.
- */
-export function partitionUnblockedMigrations(
-  migrations: MigrationAction[],
-  blockedColumns: Map<string, string>,
-  orphanOnlyBlockedColumns: Set<string> = new Set(),
-): { applied: MigrationAction[]; withheld: WithheldMigration[] } {
-  const directDependency = (
-    action: MigrationAction,
-  ): { dependsOn: string; reason: string } | undefined => {
-    const dependency = actionColumnDependencies(action).find((dep) => {
-      const key = blockedColumnKey(dep.tableName, dep.columnName);
-      if (!blockedColumns.has(key)) return false;
-      // An orphan-blocked FK is a row-data condition, not a column-state
-      // one; an `alter_column` relaxation is the remediation for it, not
-      // something unsafe against it (review, #2748) — see
-      // `computeOrphanOnlyBlockedColumns()`.
-      if (action.type === 'alter_column' && orphanOnlyBlockedColumns.has(key)) {
-        return false;
-      }
-      return true;
-    });
-    if (!dependency) return undefined;
-    const dependsOn = blockedColumnKey(
-      dependency.tableName,
-      dependency.columnName,
-    );
-    return {
-      dependsOn,
-      reason: blockedColumns.get(dependsOn) ?? 'depends on a blocked change',
-    };
-  };
-
-  // First pass: every directly-dependent action, and which add_index names
-  // were withheld (so a same-named drop_index can be paired with it below).
-  const withheldAddIndexDependency = new Map<
-    string,
-    { dependsOn: string; reason: string }
-  >();
-  const direct = migrations.map((action) => {
-    const dependency = directDependency(action);
-    if (dependency && action.type === 'add_index' && action.index?.name) {
-      withheldAddIndexDependency.set(action.index.name, dependency);
-    }
-    return { action, dependency };
-  });
-
-  const applied: MigrationAction[] = [];
-  const withheld: WithheldMigration[] = [];
-
-  for (const { action, dependency } of direct) {
-    if (dependency) {
-      withheld.push({ action, ...dependency });
-      continue;
-    }
-    const paired =
-      action.type === 'drop_index' && action.indexName
-        ? withheldAddIndexDependency.get(action.indexName)
-        : undefined;
-    if (paired) {
-      withheld.push({
-        action,
-        dependsOn: paired.dependsOn,
-        reason: `paired with the withheld rebuild of index ${action.indexName} (${paired.reason})`,
-      });
-      continue;
-    }
-    applied.push(action);
-  }
-
-  return { applied, withheld };
-}
-
-/**
- * Drop any pending post-apply report entry whose `action` reference was
- * withheld by `partitionUnblockedMigrations()` (review finding, #2748): a
- * `--null-orphans` combined null+add-FK migration can itself depend on a
- * separately blocked *parent* column and get withheld under
- * `--apply-unblocked` even though it already resolved out of
- * `manualInterventions`. Without this filter, the post-apply report printed
- * a `✓ ... resolved` line for a disposition that never executed — the same
- * relationship the `🔒 Withheld` listing (from `withheld`) already names.
- * Matches by object identity, not by table/column, since the caller pushed
- * the exact `MigrationAction` reference into both `migrations` and the
- * pending entry.
- */
-export function filterUnresolvedOrphanDispositions<
-  T extends { action: MigrationAction },
->(pending: T[], withheld: WithheldMigration[]): T[] {
-  // Always a fresh array (recall finding, #2748): a caller that replaces
-  // its source array in place via `.length = 0; .push(...result)` — as
-  // `utilities.ts` does for `pendingOrphanDispositions` — would otherwise
-  // truncate `pending` itself out from under `result` on this common
-  // nothing-withheld path, since `.length = 0` on the same reference
-  // clears what `result` still pointed at before the subsequent spread.
-  if (withheld.length === 0) return [...pending];
-  const withheldActions = new Set(withheld.map((item) => item.action));
-  return pending.filter((item) => !withheldActions.has(item.action));
 }
 
 // ---------------------------------------------------------------------------

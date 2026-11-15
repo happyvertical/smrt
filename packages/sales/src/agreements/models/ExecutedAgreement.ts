@@ -25,13 +25,13 @@ export class ExecutedAgreement extends SmrtObject {
   @tenantId()
   tenantId: string = '';
 
-  @foreignKey('AgreementExecution', { required: true })
+  @foreignKey('AgreementExecution', { required: true, requiredFor: 'identity' })
   executionId: string = '';
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   sourceKind: string = '';
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   sourceId: string = '';
 
   sourceVersion: number = 1;

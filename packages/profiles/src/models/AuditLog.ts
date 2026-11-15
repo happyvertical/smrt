@@ -9,6 +9,7 @@ import {
   type AuditChange,
   field,
   foreignKey,
+  ObjectRegistry,
   SmrtObject,
   type SmrtObjectOptions,
   smrt,
@@ -46,7 +47,7 @@ export class AuditLog extends SmrtObject {
   /**
    * The profile who performed the action
    */
-  @foreignKey('Profile', { required: true })
+  @foreignKey('Profile', { required: true, requiredFor: 'identity' })
   profileId?: string;
 
   /**
@@ -139,7 +140,7 @@ export class AuditLog extends SmrtObject {
       onBehalfOf?: Profile | null;
     },
   ): Promise<AuditLog> {
-    const log = new AuditLog({
+    const log = new (ObjectRegistry.resolveEffectiveConstructor(AuditLog))({
       ...options,
       profileId: options.profile.id as string,
       onBehalfOfId: options.onBehalfOf?.id as string | undefined,

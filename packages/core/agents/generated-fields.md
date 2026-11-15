@@ -51,7 +51,10 @@ Runtime definitions with generated fields can also be pending; they use manifest
 Children cannot turn any inherited ordinary field into
 a generated field, or explicitly redeclare an inherited generated field in
 source/runtime definitions. Unchanged inherited generated metadata in a merged
-manifest is inheritance, not a new declaration.
+manifest is inheritance, not a new declaration. Under the shared inheritance
+rule (#4942) a decorated bare restatement inherits the expression, and a
+`generated: null` clear is refused on every path
+(`CONFIG_CALCULATED_FIELD_CLEARED`, `schema/field-inheritance.ts`).
 
 Metadata is cloned and frozen so changing a caller's definition cannot change a
 registered expression. `GeneratedFieldError` carries a validation code;
@@ -200,8 +203,9 @@ and update reference the same allocated component. Plain models retain their
 original component references.
 
 `src/__tests__/generated-fields-compatibility.test.ts` compares exact byte
-digests with checked-in expectations captured from `origin/main` at
-`b16fc4c9075e50a6410a6039e1df295a42473c26`. It covers a plain model and a
+digests with checked-in expectations captured before #4972 (first from
+`origin/main` at `b16fc4c907`, recaptured at the data-shape release branch
+`0f16192e1b`, whose plain-model output differs on purpose). It covers a plain model and a
 three-level STI hierarchy with a middle-class unique field, including a live
 migration diff against the captured SQLite deployment. The fixture includes
 OpenAPI, monolithic/modular MCP and every generated SvelteKit TypeScript file;

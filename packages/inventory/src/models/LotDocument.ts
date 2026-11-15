@@ -54,6 +54,7 @@ export class LotDocument extends SmrtObject {
   /** The lot the document belongs to. */
   @foreignKey(Lot, {
     required: true,
+    requiredFor: 'identity',
     onDelete: 'RESTRICT',
     onUpdate: 'RESTRICT',
     // DuckDB cannot enforce the constraint; the id is never rewritten.

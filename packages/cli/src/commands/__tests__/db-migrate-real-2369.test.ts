@@ -238,7 +238,7 @@ describe('db:migrate (real SQLite, #2369)', () => {
 
     await requireCommandHandler(utilityCommands['db:migrate'])([], {});
     const out = output();
-    expect(out).toContain('requires manual intervention');
+    expect(out).toContain('Migrate stopped:');
     expect(out).toContain('posts.owner_id was not added');
     expect(out).toContain('backfill');
     expect(out).not.toContain('Applying');

@@ -23,10 +23,10 @@ export class ContentReference extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @foreignKey('Content', { required: true })
+  @foreignKey('Content', { required: true, requiredFor: 'identity' })
   sourceId = '';
 
-  @foreignKey('Content', { required: true })
+  @foreignKey('Content', { required: true, requiredFor: 'identity' })
   targetId = '';
 
   @field({ type: 'integer', nullable: true })

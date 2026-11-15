@@ -52,15 +52,26 @@ export function knownPasskeyTransports(
 })
 export class UsersPasskeyCredential extends SmrtObject {
   /** The person this passkey signs in. A person may hold several. */
-  @foreignKey('User', { required: true })
+  @foreignKey('User', { required: true, requiredFor: 'identity' })
   userId = '';
 
   /** The authenticator's credential id, base64url. Unique across all people. */
-  @field({ type: 'text', required: true, unique: true, sensitive: true })
+  @field({
+    type: 'text',
+    required: true,
+    requiredFor: 'identity',
+    unique: true,
+    sensitive: true,
+  })
   credentialId = '';
 
   /** The credential public key (COSE), base64url. */
-  @field({ type: 'text', required: true, sensitive: true })
+  @field({
+    type: 'text',
+    required: true,
+    requiredFor: 'authentication',
+    sensitive: true,
+  })
   publicKey = '';
 
   /** The authenticator's signature counter at its last accepted assertion. */
@@ -72,7 +83,7 @@ export class UsersPasskeyCredential extends SmrtObject {
   transports: string | null = null;
 
   /** The name the person gave this passkey ("MacBook", "YubiKey"). */
-  @field({ type: 'text', required: true })
+  @field({ type: 'text' })
   name = '';
 
   /** The authenticator model's AAGUID, when it reported one. */

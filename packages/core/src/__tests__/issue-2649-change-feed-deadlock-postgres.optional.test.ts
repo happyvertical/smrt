@@ -241,6 +241,7 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
   async function driveRowLockThenAppendCycle(): Promise<string[]> {
     const crawlHoldsRowLock = deferred();
     const ownerHoldsSeq = deferred();
+    const ownerSeenBlocked = deferred();
 
     const crawlSide = runTransaction(crawl, async (tx) => {
       await tx.query(
@@ -254,6 +255,9 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
         rowId: ROW_A,
         operation: 'update',
       });
+      // A staged append never waits, so without this the crawl could commit
+      // and release ROW_A before the observer ever saw the owner blocked on it.
+      await ownerSeenBlocked.promise;
     })
       .then(() => 'ok')
       .catch((error: unknown) => {
@@ -282,7 +286,11 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
 
     await crawlHoldsRowLock.promise;
     await ownerHoldsSeq.promise;
-    await waitUntilBlocked(observer, `UPDATE ${ROWS_TABLE} SET status`);
+    try {
+      await waitUntilBlocked(observer, `UPDATE ${ROWS_TABLE} SET status`);
+    } finally {
+      ownerSeenBlocked.resolve();
+    }
     return Promise.all([crawlSide, ownerSide]);
   }
 

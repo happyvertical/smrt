@@ -81,11 +81,19 @@ export class StockMovement extends SmrtObject {
   tenantId: string | null = null;
 
   /** Plain string reference to the {@link Sku} being moved. */
-  @field({ required: true, description: 'The item that moved.' })
+  @field({
+    required: true,
+    requiredFor: 'identity',
+    description: 'The item that moved.',
+  })
   skuId: string = '';
 
   /** Plain string reference to the {@link InventoryLocation} being mutated. */
-  @field({ required: true, description: 'The place it moved at.' })
+  @field({
+    required: true,
+    requiredFor: 'identity',
+    description: 'The place it moved at.',
+  })
   locationId: string = '';
 
   /**

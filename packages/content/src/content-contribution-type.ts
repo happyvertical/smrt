@@ -59,7 +59,7 @@ function parseJSON<T>(raw: unknown, fallback: T): T {
   cli: { skipApiCheck: true },
 })
 export class ContentContributionType extends SmrtObject {
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   key = '';
 
   label = '';

@@ -154,9 +154,11 @@ export class Thing extends SmrtObject {}
   });
 
   it('records stamping in the published manifest of a scoped package', () => {
-    expect(stampedLibraryManifest(manifest).stampsConstructors).toBe(true);
+    expect(stampedLibraryManifest(manifest, '/pkg').stampsConstructors).toBe(
+      true,
+    );
     expect(
-      stampedLibraryManifest({ ...manifest, packageName: 'unscoped' })
+      stampedLibraryManifest({ ...manifest, packageName: 'unscoped' }, '/pkg')
         .stampsConstructors,
     ).toBeUndefined();
   });

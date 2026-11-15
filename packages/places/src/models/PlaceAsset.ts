@@ -28,11 +28,16 @@ export class PlaceAsset extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @foreignKey('Place', { required: true, onDelete: 'CASCADE' })
+  @foreignKey('Place', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'CASCADE',
+  })
   placeId = '';
 
   @crossPackageRef('@happyvertical/smrt-assets:Asset', {
     required: true,
+    requiredFor: 'identity',
     onDelete: 'CASCADE',
   })
   assetId = '';

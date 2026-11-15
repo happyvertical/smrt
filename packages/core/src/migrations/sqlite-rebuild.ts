@@ -88,6 +88,29 @@ export const SQLITE_REBUILD_TABLE_PREFIX = '_smrt_rebuild_';
 /** Executable handoff to MigrationTracker: suspend FKs outside its transaction. */
 export const SQLITE_RELAX_REBUILD_MARKER = 'PRAGMA foreign_keys = OFF';
 
+/** Why the guard below refuses; it is the name of the constraint that fails. */
+const SQLITE_REBUILD_GUARD_REASON =
+  'smrt table rebuild refused: foreign keys are on, so DROP TABLE would delete rows of child tables. Run it through MigrationTracker (smrt db:migrate), which turns foreign keys off outside its transaction';
+
+/**
+ * The statements that make a rebuild of a referenced table refuse to run where
+ * foreign keys are on (#4937). `PRAGMA foreign_keys = OFF` does nothing inside a
+ * transaction, so a caller that runs a plan itself in its own transaction would
+ * `DROP TABLE` the parent with `ON DELETE` actions live and lose child rows.
+ * The first statement that cannot be skipped is a failing INSERT, ahead of
+ * every statement that changes data. The tracker has foreign keys off by then,
+ * so the guard passes there.
+ */
+export function sqliteForeignKeyGuardStatements(): string[] {
+  const guard = quoteIdentifier('_smrt_rebuild_guard');
+  return [
+    `DROP TABLE IF EXISTS temp.${guard}`,
+    `CREATE TEMP TABLE ${guard} ("foreign_keys" INTEGER CONSTRAINT ${quoteIdentifier(SQLITE_REBUILD_GUARD_REASON)} CHECK ("foreign_keys" = 0))`,
+    `INSERT INTO temp.${guard} ("foreign_keys") SELECT "foreign_keys" FROM pragma_foreign_keys`,
+    `DROP TABLE temp.${guard}`,
+  ];
+}
+
 /**
  * The advisory SQL the differ emits for a SQLite type upgrade it cannot
  * perform with an `ALTER TABLE`. `planSqliteTableRebuilds` replaces it with an
@@ -185,7 +208,48 @@ export interface PlanSqliteTableRebuildsOptions {
    * to `"<name>" <type> NOT NULL [CHECK (...)]`.
    */
   addedColumnDefinition?: (change: SchemaChange) => string;
+  /**
+   * #4937: the table's foreign-key and CHECK changes. They share the one
+   * rebuild with the column changes, because a second plan built from the same
+   * live definition would undo the first.
+   */
+  constraintChanges?: SchemaChange[];
+  /**
+   * #4937: the plan runs in `MigrationTracker`, which turns foreign keys off
+   * outside the transaction and checks them before it commits. The rebuild may
+   * then replace a table that other tables reference, and the plan carries the
+   * marker statement that asks for this.
+   */
+  foreignKeysSuspended?: boolean;
+  /** #4937: the SQL literal of the default a `set_default` change declares. */
+  formatDefault?: (change: SchemaChange) => string | undefined;
+  /** #4937: the table-level constraint text for an added foreign key. */
+  foreignKeyDefinition?: (change: SchemaChange) => string | undefined;
 }
+
+export interface SqliteRebuildPlanResult {
+  /** The column changes, with the rebuild hoisted to the front. */
+  changes: SchemaChange[];
+  /** The constraint changes; covered ones are gone. */
+  constraintChanges: SchemaChange[];
+  /**
+   * True when the plan is carried by the first entry of `constraintChanges`
+   * (the table had no column change). The caller orders it before the indexes.
+   */
+  planInConstraints: boolean;
+}
+
+const hasExecutableSql = (change: SchemaChange): boolean =>
+  (change.sqlStatements ?? (change.sql ? [change.sql] : [])).some(
+    (sql) => !sql.trim().startsWith('--'),
+  );
+
+const isRecreationPlaceholder = (change: SchemaChange): boolean =>
+  change.type === 'alter_column' &&
+  Boolean(change.name) &&
+  !change.advisory &&
+  change.kindHint !== 'column.required-nulls' &&
+  Boolean(change.sql?.includes('requires table recreation'));
 
 /**
  * Replace every "requires table recreation" placeholder for `tableName` with
@@ -211,7 +275,20 @@ export interface PlanSqliteTableRebuildsOptions {
 export async function planSqliteTableRebuilds(
   options: PlanSqliteTableRebuildsOptions,
 ): Promise<SchemaChange[]> {
+  return (await planSqliteTableRebuildsWithConstraints(options)).changes;
+}
+
+/** The same plan, also returning the table's foreign-key and CHECK changes. */
+export async function planSqliteTableRebuildsWithConstraints(
+  options: PlanSqliteTableRebuildsOptions,
+): Promise<SqliteRebuildPlanResult> {
   const { db, tableName, changes, mapType } = options;
+  const constraints = options.constraintChanges ?? [];
+  const unplanned: SqliteRebuildPlanResult = {
+    changes,
+    constraintChanges: constraints,
+    planInConstraints: false,
+  };
 
   const retypes = changes.filter(
     (change) =>
@@ -229,26 +306,96 @@ export async function planSqliteTableRebuilds(
   );
   const relaxations = changes.filter(
     (change) =>
-      change.type === 'alter_column' &&
-      change.alteration === 'drop_not_null' &&
-      change.name &&
-      !change.advisory &&
-      change.sql?.includes('requires table recreation'),
+      isRecreationPlaceholder(change) && change.alteration === 'drop_not_null',
   );
-  const pending = [...retypes, ...backfills, ...relaxations];
+  // #4937: defaults and NOT NULL are table-definition text in SQLite too.
+  const alterations = changes.filter(
+    (change) =>
+      isRecreationPlaceholder(change) &&
+      (change.alteration === 'set_default' ||
+        change.alteration === 'drop_default' ||
+        change.alteration === 'set_not_null') &&
+      !backfills.includes(change),
+  );
+  const constraintOps = constraints.filter(
+    (change) =>
+      (change.type === 'add_foreign_key' &&
+        change.engineUnsupported === true &&
+        !change.orphanBlocked &&
+        change.foreignKey !== undefined) ||
+      (change.type === 'drop_foreign_key' && change.foreignKey !== undefined),
+  );
+  // A foreign key on a column this same run adds cannot be inlined in ADD COLUMN
+  // when the column has a default or NOT NULL, so the rebuild adds the column
+  // too (#4937).
+  const keyedColumns = new Set(
+    constraintOps.flatMap((change) =>
+      change.type === 'add_foreign_key' && change.foreignKey
+        ? [change.foreignKey.column]
+        : [],
+    ),
+  );
+  const keyedAdds = changes.filter(
+    (change) =>
+      change.type === 'add_column' &&
+      change.name &&
+      change.column &&
+      keyedColumns.has(change.name) &&
+      !backfills.includes(change) &&
+      hasExecutableSql(change),
+  );
+  const pendingColumns = [
+    ...retypes,
+    ...backfills,
+    ...relaxations,
+    ...alterations,
+    ...keyedAdds,
+  ];
+  const pending = [...pendingColumns, ...constraintOps];
   if (pending.length === 0) {
-    return changes;
+    return unplanned;
   }
 
-  const block = (reason: string): SchemaChange[] => {
+  const block = (
+    reason: string,
+    losesData = false,
+  ): SqliteRebuildPlanResult => {
     logger.debug(
-      `[SQLiteRebuild] Cannot rebuild ${tableName}: ${reason}; leaving ${pending.length} type upgrade(s) as manual drift`,
+      `[SQLiteRebuild] Cannot rebuild ${tableName}: ${reason}; leaving ${pending.length} change(s) as manual drift`,
     );
-    return changes.map((change) =>
-      pending.includes(change)
-        ? { ...change, sql: blockedSql(change.name as string, reason) }
-        : change,
-    );
+    const hint = (change: SchemaChange): SchemaChange['kindHint'] =>
+      change.type === 'type_upgrade'
+        ? losesData
+          ? 'type.rebuild-data-loss'
+          : 'type.rebuild-unavailable'
+        : losesData
+          ? 'column.rebuild-data-loss'
+          : 'column.rebuild-unavailable';
+    return {
+      changes: changes.map((change) =>
+        pendingColumns.includes(change)
+          ? {
+              ...change,
+              kindHint: hint(change),
+              sql: blockedSql(change.name as string, reason),
+            }
+          : change,
+      ),
+      constraintChanges: constraints.map((change) => {
+        if (!constraintOps.includes(change)) return change;
+        if (change.type === 'add_foreign_key' && change.advisory) {
+          return {
+            ...change,
+            advisory: {
+              ...change.advisory,
+              message: `${change.advisory.message} The table rebuild is not possible: ${reason}.`,
+            },
+          };
+        }
+        return change;
+      }),
+      planInConstraints: false,
+    };
   };
 
   let context: SqliteRebuildContext;
@@ -263,9 +410,11 @@ export async function planSqliteTableRebuilds(
   if (!context.createTableSql) {
     return block('no CREATE TABLE statement found in sqlite_master');
   }
-  if (relaxations.length && /\bAUTOINCREMENT\b/i.test(context.createTableSql)) {
+  const newOperations =
+    relaxations.length + alterations.length + constraintOps.length > 0;
+  if (newOperations && /\bAUTOINCREMENT\b/i.test(context.createTableSql)) {
     return block(
-      'AUTOINCREMENT sequence preservation is not supported for nullable relaxation',
+      'AUTOINCREMENT sequence preservation is not supported for this rebuild',
     );
   }
   if (context.columns.length === 0) {
@@ -274,7 +423,8 @@ export async function planSqliteTableRebuilds(
   if (
     context.foreignKeysEnabled &&
     context.inboundReferences.length > 0 &&
-    relaxations.length === 0
+    relaxations.length === 0 &&
+    !options.foreignKeysSuspended
   ) {
     return block(
       `PRAGMA foreign_keys is ON and ${context.inboundReferences
@@ -282,6 +432,7 @@ export async function planSqliteTableRebuilds(
         .join(
           ', ',
         )} declare a foreign key onto this table, so DROP TABLE would fire their ON DELETE actions`,
+      true,
     );
   }
 
@@ -295,6 +446,10 @@ export async function planSqliteTableRebuilds(
 
   const appendColumns: SqliteAppendedColumn[] = [];
   const tightenColumns = new Map<string, string>();
+  const setDefaults = new Map<string, string>();
+  const dropDefaults = new Set<string>();
+  const removeForeignKeyColumns = new Set<string>();
+  const appendConstraints: string[] = [];
   const followUps: string[] = [];
   for (const change of backfills) {
     const name = change.name as string;
@@ -317,6 +472,63 @@ export async function planSqliteTableRebuilds(
       );
     }
   }
+  for (const change of keyedAdds) {
+    appendColumns.push({
+      name: change.name as string,
+      definition:
+        options.addedColumnDefinition?.(change) ??
+        `${quoteIdentifier(change.name as string)} ${mapType((change.column as { type: SQLDataType }).type)}`,
+      copyExpression: options.formatDefault?.(change) ?? 'NULL',
+    });
+    followUps.push(...(options.addedColumnFollowUps?.(change) ?? []));
+  }
+  for (const change of alterations) {
+    const name = change.name as string;
+    if (change.alteration === 'drop_default') {
+      dropDefaults.add(name);
+      continue;
+    }
+    const declared = options.formatDefault?.(change);
+    if (change.alteration === 'set_default') {
+      if (declared === undefined)
+        return block(`the default of "${name}" cannot be written as SQL`);
+      setDefaults.set(name, declared);
+      continue;
+    }
+    // set_not_null: rows holding NULL take the declared default, as on
+    // PostgreSQL; the differ has already stopped a column with NULLs and no
+    // default to fill them with.
+    tightenColumns.set(
+      name,
+      declared === undefined
+        ? quoteIdentifier(name)
+        : `COALESCE(${quoteIdentifier(name)}, ${declared})`,
+    );
+  }
+  const knownColumns = new Set(
+    [...context.columns, ...appendColumns.map((column) => column.name)].map(
+      (name) => name.toLowerCase(),
+    ),
+  );
+  for (const change of constraintOps) {
+    const keyColumn = change.foreignKey?.column;
+    if (keyColumn && !knownColumns.has(keyColumn.toLowerCase()))
+      return block(
+        `the table has no column "${keyColumn}" for the foreign key`,
+      );
+    if (change.type === 'drop_foreign_key') {
+      removeForeignKeyColumns.add(
+        (change.foreignKey as { column: string }).column,
+      );
+    } else if (change.type === 'add_foreign_key') {
+      const definition = options.foreignKeyDefinition?.(change);
+      if (!definition) return block('the foreign key cannot be written as SQL');
+      removeForeignKeyColumns.add(
+        (change.foreignKey as { column: string }).column,
+      );
+      appendConstraints.push(definition);
+    }
+  }
 
   const plan = buildSqliteRebuildStatements({
     tableName,
@@ -330,6 +542,12 @@ export async function planSqliteTableRebuilds(
     nullableColumns: new Set(
       relaxations.map((change) => change.name as string),
     ),
+    setDefaults,
+    dropDefaults,
+    removeForeignKeyColumns,
+    appendConstraints,
+    preserveRowid: newOperations,
+    inboundReferences: context.inboundReferences,
   });
 
   if (!plan) {
@@ -338,30 +556,43 @@ export async function planSqliteTableRebuilds(
     );
   }
 
-  const [primary, ...covered] = pending;
+  const primary = pendingColumns[0] ?? constraintOps[0];
   const statements = [
-    ...(relaxations.length ? [SQLITE_RELAX_REBUILD_MARKER] : []),
+    ...(relaxations.length || options.foreignKeysSuspended
+      ? [SQLITE_RELAX_REBUILD_MARKER]
+      : []),
     ...plan.statements,
     ...followUps,
   ];
-  const rebuilt = changes.map((change) => {
-    if (change === primary) {
-      return {
-        ...change,
-        // `sql` stays a real statement so the CLI classifies this upgrade as
-        // executable; every consumer that actually runs the change prefers
-        // `sqlStatements`.
-        sql: statements[0],
-        sqlStatements: statements,
-      };
+  const carry = (change: SchemaChange): SchemaChange => {
+    const carried: SchemaChange = {
+      ...change,
+      // `sql` stays a real statement so the CLI classifies this upgrade as
+      // executable; every consumer that actually runs the change prefers
+      // `sqlStatements`.
+      sql: statements[0],
+      sqlStatements: statements,
+    };
+    // The report-only markers of a foreign key that the rebuild now applies
+    // would keep it classified as a stop.
+    if (
+      change.type === 'add_foreign_key' ||
+      change.type === 'drop_foreign_key'
+    ) {
+      delete carried.engineUnsupported;
+      delete carried.advisory;
     }
-    if (covered.includes(change) && change.type === 'add_column') {
+    return carried;
+  };
+  const rebuilt = changes.map((change) => {
+    if (change === primary) return carry(change);
+    if (pendingColumns.includes(change) && change.type === 'add_column') {
       // Nothing left to run: the primary's rebuild adds this column. An
       // `add_column` is always executed, so it cannot stay as a no-op
       // comment the way a covered type upgrade does — drop it.
       return null;
     }
-    if (covered.includes(change)) {
+    if (pendingColumns.includes(change)) {
       const { sqlStatements: _dropped, ...rest } = change;
       return {
         ...rest,
@@ -375,12 +606,27 @@ export async function planSqliteTableRebuilds(
   // groups in their original relative order. Consumers execute `diff.changes`
   // in order, and the plan was built from the pre-batch table shape.
   const rebuildPositions = new Set(
-    pending.map((change) => changes.indexOf(change)),
+    pendingColumns.map((change) => changes.indexOf(change)),
   );
-  return [
+  const hoisted = [
     ...rebuilt.filter((_, index) => rebuildPositions.has(index)),
     ...rebuilt.filter((_, index) => !rebuildPositions.has(index)),
   ].filter((change): change is SchemaChange => change !== null);
+
+  // Covered constraint changes have nothing left to run: the rebuild adds,
+  // replaces or drops them. One that carries the plan moves to the front.
+  const planInConstraints = pendingColumns.length === 0;
+  const carried = planInConstraints ? carry(primary) : undefined;
+  const remaining = constraints
+    .filter((change) => change === primary || !constraintOps.includes(change))
+    .map((change) => (change === primary && carried ? carried : change));
+  return {
+    changes: hoisted,
+    constraintChanges: carried
+      ? [carried, ...remaining.filter((change) => change !== carried)]
+      : remaining,
+    planInConstraints,
+  };
 }
 
 /**
@@ -433,9 +679,9 @@ async function readSqliteRebuildContext(
     await db.query('PRAGMA legacy_alter_table'),
   );
 
-  const inboundReferences = foreignKeysEnabled
-    ? await readInboundForeignKeys(db, tableName)
-    : [];
+  // Read whether or not enforcement is on for this connection: the statements
+  // may run on another one (#4937).
+  const inboundReferences = await readInboundForeignKeys(db, tableName);
 
   return {
     createTableSql,
@@ -519,6 +765,22 @@ export interface BuildSqliteRebuildStatementsInput {
   tightenColumns?: Map<string, string>;
   /** Explicit NOT NULL relaxations; all other clauses remain unchanged. */
   nullableColumns?: Set<string>;
+  /** #4937: default changes, constraint changes, and rowid preservation. */
+  setDefaults?: Map<string, string>;
+  dropDefaults?: Set<string>;
+  removeForeignKeyColumns?: Set<string>;
+  removeConstraintNames?: Set<string>;
+  appendConstraints?: string[];
+  /** Copy `rowid` across too, so rows keep their identity (default: only for relaxations). */
+  preserveRowid?: boolean;
+  /**
+   * The tables that declare a foreign key onto this one (itself included when
+   * it references itself). When any exist, or when this is left out because the
+   * caller has not looked, the plan starts with the guard that refuses to run
+   * where foreign keys are on (#4937). Pass `[]` only after checking that
+   * nothing references the table.
+   */
+  inboundReferences?: string[];
 }
 
 /** A column a rebuild appends to the table (#3008). */
@@ -562,6 +824,7 @@ export function buildSqliteRebuildStatements(
     tightenColumns = new Map<string, string>(),
     nullableColumns = new Set<string>(),
   } = input;
+  const preserveRowid = input.preserveRowid ?? nullableColumns.size > 0;
 
   const stagingTable = `${SQLITE_REBUILD_TABLE_PREFIX}${tableName}`;
   const createStaging = rewriteSqliteCreateTable(createTableSql, {
@@ -570,6 +833,11 @@ export function buildSqliteRebuildStatements(
     notNullColumns: new Set(tightenColumns.keys()),
     nullableColumns,
     appendDefinitions: appendColumns.map((column) => column.definition),
+    setDefaults: input.setDefaults,
+    dropDefaults: input.dropDefaults,
+    removeForeignKeyColumns: input.removeForeignKeyColumns,
+    removeConstraintNames: input.removeConstraintNames,
+    appendConstraints: input.appendConstraints,
   });
   if (!createStaging) {
     return null;
@@ -586,7 +854,7 @@ export function buildSqliteRebuildStatements(
   // Keep gaps/assigned identities; refuse when every SQLite alias is shadowed.
   let rowidColumns: string[] = [];
   if (
-    nullableColumns.size &&
+    preserveRowid &&
     !/\bWITHOUT\s+ROWID\b/i.test(
       parseCreateTableBody(createTableSql)?.tail ?? '',
     )
@@ -612,7 +880,12 @@ export function buildSqliteRebuildStatements(
     ...appendColumns.map((column) => column.copyExpression),
   ].join(', ');
 
+  const guard =
+    input.inboundReferences === undefined || input.inboundReferences.length > 0
+      ? sqliteForeignKeyGuardStatements()
+      : [];
   const statements = [
+    ...guard,
     // Deferred FK enforcement survives the window where the table is absent.
     // Unlike `PRAGMA foreign_keys`, this one is honored inside a transaction
     // and resets itself at COMMIT/ROLLBACK.
@@ -661,6 +934,18 @@ export function rewriteSqliteCreateTable(
     nullableColumns?: Set<string>;
     /** #3008: column definitions appended after the existing columns. */
     appendDefinitions?: string[];
+    /** #4937: column name to the SQL default it now carries. */
+    setDefaults?: Map<string, string>;
+    /** #4937: columns that lose their default. */
+    dropDefaults?: Set<string>;
+    /** #4937: columns whose foreign key is removed (inline or table-level). */
+    removeForeignKeyColumns?: Set<string>;
+    /** #4937: table-level constraints, by name, that are removed. */
+    removeConstraintNames?: Set<string>;
+    /** #4937: table-level constraints added after the last item. */
+    appendConstraints?: string[];
+    /** #4937: columns that are removed from the table. */
+    dropColumns?: Set<string>;
   },
 ): string | null {
   const parsed = parseCreateTableBody(createTableSql);
@@ -680,12 +965,60 @@ export function rewriteSqliteCreateTable(
   const nullable = new Set(
     [...(target.nullableColumns ?? [])].map((name) => name.toLowerCase()),
   );
+  const lower = (names?: Iterable<string>) =>
+    new Set([...(names ?? [])].map((name) => name.toLowerCase()));
+  const setDefaults = new Map(
+    [...(target.setDefaults ?? [])].map(([name, sql]) => [
+      name.toLowerCase(),
+      sql,
+    ]),
+  );
+  const dropDefaults = lower(target.dropDefaults);
+  const removeForeignKeys = lower(target.removeForeignKeyColumns);
+  const removeConstraints = lower(target.removeConstraintNames);
+  const dropColumns = lower(target.dropColumns);
   const rewritten: string[] = [];
   let lastColumnIndex = -1;
   for (const item of parsed.items) {
     const columnName = readColumnDefinitionName(item);
+    if (!columnName) {
+      const constraintName = readTableConstraintName(item);
+      if (
+        constraintName &&
+        removeConstraints.delete(constraintName.toLowerCase())
+      )
+        continue;
+      const fkColumns = readTableForeignKeyColumns(item);
+      if (
+        fkColumns?.length === 1 &&
+        removeForeignKeys.has(fkColumns[0].toLowerCase())
+      ) {
+        continue;
+      }
+    }
+    if (columnName && dropColumns.delete(columnName.toLowerCase())) continue;
     if (columnName) lastColumnIndex = rewritten.length;
     let current = item;
+    if (columnName && removeForeignKeys.has(columnName.toLowerCase())) {
+      const stripped = removeInlineReferences(current);
+      if (stripped === null) return null;
+      current = stripped;
+    }
+    if (columnName && setDefaults.has(columnName.toLowerCase())) {
+      const changed = replaceColumnDefault(
+        current,
+        setDefaults.get(columnName.toLowerCase()) as string,
+      );
+      if (changed === null) return null;
+      current = changed;
+      setDefaults.delete(columnName.toLowerCase());
+    }
+    if (columnName && dropDefaults.has(columnName.toLowerCase())) {
+      const changed = replaceColumnDefault(current, null);
+      if (changed === null) return null;
+      current = changed;
+      dropDefaults.delete(columnName.toLowerCase());
+    }
     if (columnName && nullable.has(columnName.toLowerCase())) {
       const relaxed = removeColumnNotNull(current);
       if (relaxed === null) return null;
@@ -711,11 +1044,19 @@ export function rewriteSqliteCreateTable(
     wanted.delete(columnName.toLowerCase());
   }
 
-  if (tighten.size > 0 || nullable.size > 0) {
+  if (
+    tighten.size > 0 ||
+    nullable.size > 0 ||
+    setDefaults.size > 0 ||
+    dropDefaults.size > 0 ||
+    dropColumns.size > 0 ||
+    removeConstraints.size > 0
+  ) {
     return null;
   }
   // Column definitions must precede table-level constraints.
   rewritten.splice(lastColumnIndex + 1, 0, ...(target.appendDefinitions ?? []));
+  rewritten.push(...(target.appendConstraints ?? []));
 
   if (wanted.size > 0) {
     // A column the differ wants retyped is not in the live DDL. Rebuilding
@@ -1029,4 +1370,201 @@ export function replaceColumnType(
   const rest = item.slice(typeEnd);
   const separator = rest.length === 0 || /^\s/.test(rest) ? '' : ' ';
   return `${head} ${newType}${separator}${rest}`;
+}
+
+interface TopLevelWord {
+  text: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * The bare words of one definition item that sit outside quotes, comments and
+ * parentheses. A comment makes in-place edits unsafe (text added after it
+ * would be commented out), so the caller is told about it.
+ */
+function scanTopLevelWords(
+  item: string,
+  from: number,
+): { words: TopLevelWord[]; hasComment: boolean } {
+  const words: TopLevelWord[] = [];
+  let hasComment = false;
+  let depth = 0;
+  for (let index = from; index < item.length; ) {
+    const skipped = skipQuotedOrComment(item, index);
+    if (skipped !== null) {
+      if (item[index] === '-' || item[index] === '/') hasComment = true;
+      index = skipped;
+      continue;
+    }
+    const char = item[index];
+    if (char === '(') depth++;
+    if (char === ')') depth--;
+    const word = /^[A-Za-z_][\w$]*/.exec(item.slice(index));
+    if (word) {
+      if (depth === 0)
+        words.push({
+          text: word[0].toLowerCase(),
+          start: index,
+          end: index + word[0].length,
+        });
+      index += word[0].length;
+    } else index++;
+  }
+  return { words, hasComment };
+}
+
+/** The index just past the group that opens at `open`, or null if it never closes. */
+function skipParenGroup(text: string, open: number): number | null {
+  let depth = 0;
+  for (let index = open; index < text.length; ) {
+    const skipped = skipQuotedOrComment(text, index);
+    if (skipped !== null) {
+      index = skipped;
+      continue;
+    }
+    if (text[index] === '(') depth++;
+    if (text[index] === ')') {
+      depth--;
+      if (depth === 0) return index + 1;
+    }
+    index++;
+  }
+  return null;
+}
+
+/** The end of the value after a `DEFAULT` keyword: a literal, a call or a group. */
+function readDefaultValueEnd(item: string, from: number): number | null {
+  let index = from;
+  while (index < item.length && /\s/.test(item[index])) index++;
+  if (item[index] === '+' || item[index] === '-') index++;
+  if (item[index] === '(') return skipParenGroup(item, index);
+  if (/["'`[]/.test(item[index] ?? '')) return skipQuotedOrComment(item, index);
+  const token = /^[\w$.]+/.exec(item.slice(index));
+  if (!token) return null;
+  index += token[0].length;
+  return item[index] === '(' ? skipParenGroup(item, index) : index;
+}
+
+/**
+ * Set or remove the default of one column definition. Returns null when the
+ * item cannot be edited safely (a comment inside it, an unreadable default).
+ *
+ * @internal exported for testing
+ */
+export function replaceColumnDefault(
+  item: string,
+  defaultSql: string | null,
+): string | null {
+  const identifier = readLeadingIdentifier(item);
+  if (!identifier) return null;
+  const { words, hasComment } = scanTopLevelWords(item, identifier.end);
+  if (hasComment) return null;
+  const keyword = words.find((word) => word.text === 'default');
+  if (!keyword) {
+    return defaultSql === null ? item : `${item} DEFAULT ${defaultSql}`;
+  }
+  const end = readDefaultValueEnd(item, keyword.end);
+  if (end === null) return null;
+  const head = item.slice(0, keyword.start).replace(/\s+$/, '');
+  const tail = item.slice(end);
+  if (defaultSql === null) return `${head}${tail}`;
+  return `${head} DEFAULT ${defaultSql}${tail}`;
+}
+
+/**
+ * Remove an inline `REFERENCES` clause (with its actions and any `CONSTRAINT
+ * name`) from one column definition. Returns the item unchanged when it has
+ * none, and null when it cannot be edited safely.
+ *
+ * @internal exported for testing
+ */
+export function removeInlineReferences(item: string): string | null {
+  const identifier = readLeadingIdentifier(item);
+  if (!identifier) return null;
+  const { words, hasComment } = scanTopLevelWords(item, identifier.end);
+  const at = words.findIndex((word) => word.text === 'references');
+  if (at === -1) return item;
+  if (hasComment) return null;
+  let cursor = words[at].end;
+  while (cursor < item.length && /\s/.test(item[cursor])) cursor++;
+  const table = /^["`[]/.test(item[cursor] ?? '')
+    ? skipQuotedOrComment(item, cursor)
+    : cursor + (/^[\w$]+/.exec(item.slice(cursor))?.[0].length ?? 0);
+  if (table === null || table === cursor) return null;
+  cursor = table;
+  let probe = cursor;
+  while (probe < item.length && /\s/.test(item[probe])) probe++;
+  if (item[probe] === '(') {
+    const closed = skipParenGroup(item, probe);
+    if (closed === null) return null;
+    cursor = closed;
+  }
+  let last = at + 1;
+  while (last < words.length && words[last].start < cursor) last++;
+  let end = cursor;
+  for (let index = last; index < words.length; ) {
+    const word = words[index].text;
+    const next = words[index + 1]?.text;
+    if (word === 'on' && (next === 'delete' || next === 'update')) {
+      const action = words[index + 2]?.text;
+      const span = action === 'set' || action === 'no' ? 4 : 3;
+      if (!action || index + span > words.length) return null;
+      end = words[index + span - 1].end;
+      index += span;
+      continue;
+    }
+    if (word === 'match' && next) {
+      end = words[index + 1].end;
+      index += 2;
+      continue;
+    }
+    if (word === 'not' && next === 'deferrable') {
+      end = words[index + 1].end;
+      index += 2;
+      continue;
+    }
+    if (word === 'deferrable') {
+      end = words[index].end;
+      index++;
+      continue;
+    }
+    if (word === 'initially' && next) {
+      end = words[index + 1].end;
+      index += 2;
+      continue;
+    }
+    break;
+  }
+  let start = words[at].start;
+  if (at >= 2 && words[at - 2].text === 'constraint')
+    start = words[at - 2].start;
+  return `${item.slice(0, start).replace(/\s+$/, '')}${item.slice(end)}`;
+}
+
+/** The name of a table-level `CONSTRAINT name ...` item, if it has one. */
+function readTableConstraintName(item: string): string | null {
+  const match =
+    /^\s*constraint\s+("(?:[^"]|"")+"|`[^`]+`|\[[^\]]+\]|[\w$]+)/i.exec(item);
+  if (!match) return null;
+  const raw = match[1];
+  return /^["`[]/.test(raw)
+    ? raw
+        .slice(1, -1)
+        .split(raw[0] + raw[0])
+        .join(raw[0])
+    : raw;
+}
+
+/** The columns of a table-level `FOREIGN KEY (...)` item, or null if it is not one. */
+function readTableForeignKeyColumns(item: string): string[] | null {
+  const match =
+    /^\s*(?:constraint\s+(?:"(?:[^"]|"")+"|`[^`]+`|\[[^\]]+\]|[\w$]+)\s+)?foreign\s+key\s*\(([^)]*)\)/i.exec(
+      item,
+    );
+  if (!match) return null;
+  return match[1]
+    .split(',')
+    .map((part) => part.trim().replace(/^["`[]|["`\]]$/g, ''))
+    .filter(Boolean);
 }

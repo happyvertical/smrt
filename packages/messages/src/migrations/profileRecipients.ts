@@ -339,6 +339,9 @@ export async function planNotificationProfileRecipients(
         (await db.query('PRAGMA legacy_alter_table')).rows[0]
           ?.legacy_alter_table,
       ),
+      // Checked above: no other table references this one, so the plan needs
+      // no guard against a cascade (#4937).
+      inboundReferences: [],
       nullableColumns: new Set(
         Number(
           state.columns.find((c) => c.name === 'recipient_user_id')?.notnull,

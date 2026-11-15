@@ -120,7 +120,8 @@ export class LearningObjectiveCollection extends SmrtCollection<LearningObjectiv
 })
 export class LearningObjectiveRevision extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('LearningObjective', { required: true }) objectiveId = '';
+  @foreignKey('LearningObjective', { required: true, requiredFor: 'identity' })
+  objectiveId = '';
   @foreignKey('LearningObjectiveRevision', { nullable: true })
   parentRevisionId: string | null = null;
   sequence = 1;
@@ -230,7 +231,8 @@ export class QuestionCollection extends SmrtCollection<Question> {
 })
 export class QuestionRevision extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Question', { required: true }) questionId = '';
+  @foreignKey('Question', { required: true, requiredFor: 'identity' })
+  questionId = '';
   @foreignKey('QuestionRevision', { nullable: true }) parentRevisionId:
     | string
     | null = null;
@@ -316,9 +318,12 @@ export class QuestionRevisionCollection extends SmrtCollection<QuestionRevision>
 })
 export class QuestionResponse extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
-  @foreignKey('Enrollment', { required: true }) enrollmentId = '';
-  @foreignKey('QuestionRevision', { required: true }) questionRevisionId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
+  @foreignKey('Enrollment', { required: true, requiredFor: 'identity' })
+  enrollmentId = '';
+  @foreignKey('QuestionRevision', { required: true, requiredFor: 'identity' })
+  questionRevisionId = '';
   @foreignKey('LessonRevision', { nullable: true }) lessonRevisionId:
     | string
     | null = null;
@@ -417,11 +422,15 @@ export class QuestionResponseCollection extends SmrtCollection<QuestionResponse>
 })
 export class GeneratedPrintable extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Lesson', { required: true }) lessonId = '';
+  @foreignKey('Lesson', { required: true, requiredFor: 'identity' }) lessonId =
+    '';
   worksheetVersionId = '';
   /** `learner` (relationship `printable`) or `guardian` (relationship `answer-key`). */
   audience: GeneratedPrintableAudience = 'learner';
-  @crossPackageRef('@happyvertical/smrt-assets:Asset', { required: true })
+  @crossPackageRef('@happyvertical/smrt-assets:Asset', {
+    required: true,
+    requiredFor: 'identity',
+  })
   assetId = '';
   /** Provenance only: checked in `save()`, not a database constraint, so the table depends on lessons and assets alone. */
   lessonRevisionId = '';

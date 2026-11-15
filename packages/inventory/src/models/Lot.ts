@@ -92,7 +92,6 @@ export class Lot extends SmrtObject {
 
   /** The identifier as the caller wrote it: batch code, supplier lot, serial number. */
   @field({
-    required: true,
     maxLength: 128,
     description: 'The batch code, supplier lot or serial number.',
   })
@@ -108,6 +107,7 @@ export class Lot extends SmrtObject {
   /** What the database keeps unique. Service-maintained; never write it directly. */
   @field({
     required: true,
+    requiredFor: 'identity',
     maxLength: 160,
     description: 'Internal identity that keeps lots from being created twice.',
   })

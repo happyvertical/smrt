@@ -270,7 +270,9 @@ export {
   method,
   type NumericFieldOptions,
   oneToMany,
+  REQUIRED_FOR_REASONS,
   type RelationshipFieldOptions,
+  type RequiredForReason,
   type TextFieldOptions,
 } from './decorators/index';
 // Dispatch system (inter-agent communication)
@@ -769,6 +771,46 @@ export {
 
 export * from './external-agent-usage.js';
 export { modelReplacements } from './manifest/model-replacements.js';
+export {
+  BUILD_MANIFEST_ENV,
+  BUILD_SCHEMA_GLOBAL,
+  BUILD_SCHEMA_MODULE,
+  type BuildSchema,
+  describeManifestSchema,
+  generateBuildSchemaModule,
+  noteAlternativeManifests,
+  PROJECT_MANIFEST_PATHS,
+  readBuildSchemaFile,
+  readProjectBuildSchema,
+  registerBuildSchema,
+  registeredBuildSchema,
+  resolveBuildSchema,
+} from './migrations/build-schema.js';
+export * from './migrations/change-kinds.js';
+export {
+  collectMigrateRecordInput,
+  type LastMigrateRecord,
+  type MigrateRecord,
+  type MigrateRecordInput,
+  type MigrateRecordOptions,
+  packagesSeenInput,
+  readLastMigrateRecord,
+  recordSuccessfulMigrate,
+  type UnloadedBuildPackage,
+} from './migrations/migrate-record.js';
+export * from './migrations/migration-run-decision.js';
+export {
+  checkOldestSupportedRelease,
+  compareReleases,
+  OLDEST_SUPPORTED_RELEASE,
+} from './migrations/oldest-supported.js';
+export {
+  computeManifestSchemaFingerprint,
+  computeSchemaFingerprint,
+  manifestTableEntries,
+  tryComputeManifestSchemaFingerprint,
+} from './migrations/schema-fingerprint.js';
+export { assertDatabaseMigratedForBuild } from './migrations/startup-guard.js';
 export {
   type OperationPermissionAlias,
   resolveOperationPermissionAlias,

@@ -96,14 +96,14 @@ export class EarnerSourceAttribution extends SmrtObject {
   tenantId: string | null = null;
 
   /** The {@link Earner} credited for this external key. Required. */
-  @foreignKey('Earner', { required: true })
+  @foreignKey('Earner', { required: true, requiredFor: 'identity' })
   earnerId: string = '';
 
   /**
    * Consumer-defined attribution kind (`ad_network_property`,
    * `marketplace_storefront`, …). Required.
    */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   sourceKind: string = '';
 
   /**
@@ -112,7 +112,7 @@ export class EarnerSourceAttribution extends SmrtObject {
    * without a tenant predicate (the natural-key index is led by
    * `tenant_id`, which tenant-context lookups use).
    */
-  @field({ required: true, indexed: true })
+  @field({ required: true, requiredFor: 'identity', indexed: true })
   sourceId: string = '';
 
   /**

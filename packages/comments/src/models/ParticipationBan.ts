@@ -6,10 +6,10 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 @smrt({ tableName: 'participation_bans', api: false, mcp: false, cli: false })
 export class ParticipationBan extends SmrtObject {
   @tenantId() tenantId = '';
-  @field({ required: true }) actorUserId = '';
+  @field({ required: true, requiredFor: 'identity' }) actorUserId = '';
   @field() recordType = '';
   @field() recordId = '';
-  @field({ required: true }) reason = '';
+  @field() reason = '';
   @field({ type: 'datetime', nullable: true }) expiresAt: Date | null = null;
   protected override async validateBeforeSave(): Promise<void> {
     for (const identity of [this.tenantId, this.actorUserId, this.recordId]) {

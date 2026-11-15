@@ -1,5 +1,6 @@
 /** Exact original issued sales authority. Host review is distinct from original issue/approval. */
 import { createHash } from 'node:crypto';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
 import { CustomerCollection } from './collections/CustomerCollection.js';
@@ -618,7 +619,9 @@ export async function recordHistoricalSalesMoney(
     await invoice.saveDerived(DOCUMENT_MONEY_WRITE);
     if (facts.detail.kind === 'lines')
       for (const line of facts.detail.lines) {
-        const child = await new HistoricalSalesLine({
+        const child = await new (ObjectRegistry.resolveEffectiveConstructor(
+          HistoricalSalesLine,
+        ))({
           db,
           id: lineIdentity(String(invoice.id), line.sourceKey),
           tenantId: input.tenantId,

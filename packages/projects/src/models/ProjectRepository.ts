@@ -34,10 +34,10 @@ export class ProjectRepository extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @foreignKey('Project', { required: true })
+  @foreignKey('Project', { required: true, requiredFor: 'identity' })
   projectId = '';
 
-  @foreignKey('Repository', { required: true })
+  @foreignKey('Repository', { required: true, requiredFor: 'identity' })
   repositoryId = '';
 
   /** primary | shared-library | infrastructure */

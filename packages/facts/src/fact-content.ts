@@ -23,10 +23,13 @@ import type { FactContentOptions, FactContentRelationship } from './types';
   cli: { skipApiCheck: true },
 })
 export class FactContent extends SmrtObject {
-  @foreignKey('Fact', { required: true })
+  @foreignKey('Fact', { required: true, requiredFor: 'identity' })
   factId: string = '';
 
-  @crossPackageRef('@happyvertical/smrt-content:Content', { required: true })
+  @crossPackageRef('@happyvertical/smrt-content:Content', {
+    required: true,
+    requiredFor: 'identity',
+  })
   contentId: string = '';
 
   @field({ required: true })

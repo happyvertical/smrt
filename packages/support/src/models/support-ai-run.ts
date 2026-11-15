@@ -34,7 +34,7 @@ export class SupportAiRun extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @foreignKey('SupportCase', { required: true })
+  @foreignKey('SupportCase', { required: true, requiredFor: 'identity' })
   caseId: string = '';
 
   /** Inbound interaction that triggered this run, when applicable. */

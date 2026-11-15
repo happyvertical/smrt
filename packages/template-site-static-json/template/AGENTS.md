@@ -5,6 +5,7 @@
 
 - Framework reference: `.agents/smrt-framework.md`
 - Intent index: `.agents/smrt-knowledge/intents/index.md`
+- Data shape rules (what smrt requires of a field, how to harden a smrt class in this app): the "Data shape rules" section of the framework reference.
 - Before adding infrastructure, utility or integration code, read the intent index.
 - If smrt has the home package but lacks the behaviour, or lacks it entirely, file an issue on happyvertical/smrt and mark any local shim temporary: framework first, no glue.
 - Refresh this block and the references: `smrt docs:agents`.

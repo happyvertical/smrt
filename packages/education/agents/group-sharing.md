@@ -307,3 +307,13 @@ courses. They are read from the same resolved course, placement and gates as
 `courseId`/`subject`: only for items the policy shares, null where the course is
 unknown, and the lesson title only when the lesson belongs to that course. Filed
 work names its placement's page; routed work reads the lesson's first page.
+
+## Optional stored attribution
+
+Group creator user/profile, invitation creator, membership consenting parent,
+policy actor and revision comment author user/profile references may be null.
+The services still record the authenticated actor on their writes. Reads authorize
+against the current session, exact family learner/edge, group role and policy,
+not these attribution columns. Creator and comment attribution remain immutable,
+including an initially null value. Apps that need mandatory attribution must
+harden those fields in same-named subclasses and reject null.

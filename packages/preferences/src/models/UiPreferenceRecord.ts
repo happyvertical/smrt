@@ -86,11 +86,11 @@ export class UiPreferenceRecord extends SmrtObject {
   tenantId: string = '';
 
   /** The registered preference kind (`overview`, `shell-layout`, ...). */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   kind: string = '';
 
   /** The surface within the kind (an overview id, a shell key). */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   surfaceId: string = '';
 
   /** `tenant` (the tenant default) or `user` (one person's preference). */
@@ -108,11 +108,11 @@ export class UiPreferenceRecord extends SmrtObject {
    * `scopeType` / `userId` on every write, so the owner read predicate
    * (`read-guard.ts`) can filter on it in one condition.
    */
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
   scopeKey: string = '';
 
   /** The kind's canonical payload as JSON text. */
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'system-table' })
   payloadJson: string = '';
 
   /** The kind's format version the payload was written at. */

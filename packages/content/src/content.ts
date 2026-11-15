@@ -783,7 +783,6 @@ export class Content
    * Human-readable name for SMRT framework compatibility
    */
   @field({
-    required: true,
     description: 'A short name used to find this piece in lists.',
   })
   public name: string = '';

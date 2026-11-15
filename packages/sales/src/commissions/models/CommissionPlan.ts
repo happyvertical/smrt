@@ -186,7 +186,7 @@ export class CommissionPlan extends SmrtObject {
   tenantId: string | null = null;
 
   /** Stable plan identity shared by every version of the plan. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   planKey: string = '';
 
   /** Monotonic version within `planKey`. Amendments insert `max + 1`. */

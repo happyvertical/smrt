@@ -2408,6 +2408,7 @@ describe('hasActionableChanges', () => {
           table: 'users',
           name: 'email',
           column: { type: 'TEXT' },
+          sql: 'ALTER TABLE users ADD COLUMN email TEXT',
         },
       ],
     };
@@ -2426,6 +2427,7 @@ describe('hasActionableChanges', () => {
           table: 'users',
           name: 'idx_email',
           index: { name: 'idx_email', columns: ['email'], unique: false },
+          sql: 'CREATE INDEX idx_email ON users (email)',
         },
       ],
     };

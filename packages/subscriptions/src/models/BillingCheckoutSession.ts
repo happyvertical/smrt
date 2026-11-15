@@ -41,7 +41,7 @@ export type BillingCheckoutSessionStatus =
   mcp: false,
 })
 export class BillingCheckoutSession extends SmrtObject {
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'idempotency' })
   sessionId: string = '';
   @field({ description: 'The tenant the host created the session for.' })
   targetTenantId: string = '';

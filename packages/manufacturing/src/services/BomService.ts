@@ -297,7 +297,7 @@ export class BomService {
       steps.push({
         stepId: step.id as string,
         sequence: step.sequence,
-        operationId: step.operationId,
+        operationId: step.operationId ?? '',
         operationCode: operation?.code ?? '',
         operationName: operation?.name ?? '',
         estimatedMinutes: minutes,

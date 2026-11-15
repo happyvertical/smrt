@@ -68,11 +68,17 @@ export class VideoShotCharacter extends SmrtObject {
   tenantId: string | null = null;
 
   /** Video shot ID */
-  @foreignKey(() => VideoShot, { required: true })
+  @foreignKey(() => VideoShot, {
+    required: true,
+    requiredFor: 'identity',
+  })
   videoShotId: string = '';
 
   /** Character ID */
-  @foreignKey(() => Character, { required: true })
+  @foreignKey(() => Character, {
+    required: true,
+    requiredFor: 'identity',
+  })
   characterId: string = '';
 
   /** Role of the character in this shot */

@@ -11,6 +11,23 @@ import {
 // biome-ignore lint/suspicious/noControlCharactersInRegex: strips ANSI escapes
 const ANSI = /\u001b\[[0-9;]*m/g;
 
+/**
+ * Optional peers the application supplies, kept out of the gated graph.
+ *
+ * `@happyvertical/sql/pglite` imports `@electric-sql/pglite` lazily, and the
+ * package is the app's choice, not model-package code. Its Emscripten loader
+ * imports `node:module`, `node:fs`, `zlib` and the like only behind runtime
+ * `ENVIRONMENT_IS_NODE` checks, so they are bundler-visible but never run in a
+ * browser; `pnpm --filter @happyvertical/smrt-core test:browser` evaluates the
+ * real package in Chromium (`--pglite-cascade`). Without this, the gate's result
+ * would depend on whether the workspace happens to install PGlite. Only this
+ * exact package (and its subpaths) is excluded; a Node-only import in any other
+ * module, including core's own, is still reported.
+ */
+export const BROWSER_PEER_EXTERNALS: RegExp[] = [
+  /^@electric-sql\/pglite(?:\/|$)/,
+];
+
 interface BundlerError {
   code?: string;
   id?: string;
@@ -85,7 +102,10 @@ export async function buildPackageForBrowser(
         sourcemap: false,
         target: 'esnext',
         modulePreload: false,
-        rollupOptions: { input: { entry: pkg.entry } },
+        rollupOptions: {
+          input: { entry: pkg.entry },
+          external: BROWSER_PEER_EXTERNALS,
+        },
       },
     });
   } catch (error) {

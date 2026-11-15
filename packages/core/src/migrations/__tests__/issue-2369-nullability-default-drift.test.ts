@@ -23,10 +23,12 @@ import {
   REQUIRED_COLUMN_NOT_ADDED,
   SchemaComparer,
 } from '../differ.js';
+import { createMigrationDefinition } from '../generator.js';
 import {
   collectRelaxedColumns,
   getPendingSchemaStatements,
 } from '../orchestrate.js';
+import { MigrationTracker } from '../tracker.js';
 
 function schema(
   tableName: string,
@@ -86,6 +88,22 @@ async function applyStatements(db: DatabaseInterface, statements: string[]) {
   for (const sql of statements) {
     await db.query(sql);
   }
+}
+
+/** The statements as `db:migrate` runs them: one atomic unit through the tracker. */
+async function applyAtomically(db: DatabaseInterface, statements: string[]) {
+  const tracker = new MigrationTracker({ db });
+  await tracker.initialize();
+  const results = await tracker.applyAll(
+    [
+      createMigrationDefinition(
+        'drift',
+        statements.filter((sql) => !sql.startsWith('--')),
+      ),
+    ],
+    { atomic: true },
+  );
+  expect(results.every((result) => result.success)).toBe(true);
 }
 
 const engines: Array<{
@@ -894,7 +912,7 @@ for (const { name, type, engine } of engines) {
         expect((await comparer().compare(manifest)).changes).toEqual([]);
       });
 
-      it('refuses the column, with the reason, when the SQLite rebuild is unsafe (inbound foreign keys) (#3008)', async () => {
+      it('backfills a required column through a rebuild even when other tables reference the table (#3008, #4937)', async () => {
         await db.query('PRAGMA foreign_keys = ON');
         await db.query('CREATE TABLE items (id TEXT PRIMARY KEY, name TEXT)');
         await db.query(
@@ -902,7 +920,7 @@ for (const { name, type, engine } of engines) {
         );
         await db.query("INSERT INTO items (id, name) VALUES ('i1', 'a')");
         await db.query("INSERT INTO lines (id, item_id) VALUES ('l1', 'i1')");
-        const diff = await comparer().compare({
+        const manifest = {
           items: schema(
             'items',
             {
@@ -922,25 +940,25 @@ for (const { name, type, engine } of engines) {
               },
             ],
           ),
-        });
-        expect(diff.changes).toHaveLength(1);
-        expect(diff.changes[0].mismatch?.actual).toBe(
-          REQUIRED_COLUMN_NOT_ADDED,
-        );
-        expect(diff.changes[0].advisory?.message).toMatch(
-          /^items\.claim_key was not added: .*"lines" declare a foreign key/,
-        );
-        expect(diff.changes[0].advisory?.message).toContain(
-          'index items_claim_key_idx',
-        );
-        expect(getSQLFromDiff(diff).filter((s) => !s.startsWith('--'))).toEqual(
-          [],
-        );
+        };
+        const diff = await comparer().compare(manifest);
+        await applyAtomically(db, getSQLFromDiff(diff));
+        // The child row survives: dropping the table did not cascade.
+        expect((await db.query('SELECT id, item_id FROM lines')).rows).toEqual([
+          { id: 'l1', item_id: 'i1' },
+        ]);
+        expect((await db.query('SELECT claim_key FROM items')).rows).toEqual([
+          { claim_key: 'closed:i1' },
+        ]);
+        expect((await comparer().compare(manifest)).changes).toEqual([]);
       });
 
-      it('keeps default/tightening drift manual and explicitly rebuilds SQLite NOT NULL relaxation', async () => {
+      it('rebuilds once for default, NOT NULL and relaxation drift, and converges (#4937)', async () => {
         await db.query(
           "CREATE TABLE items (id TEXT PRIMARY KEY, status TEXT, note TEXT NOT NULL, kind TEXT DEFAULT 'a')",
+        );
+        await db.query(
+          "INSERT INTO items (id, status, note, kind) VALUES ('i1', NULL, 'n', 'a'), ('i2', 'live', 'm', 'a')",
         );
         const manifest = {
           items: schema('items', {
@@ -952,43 +970,30 @@ for (const { name, type, engine } of engines) {
         };
 
         const diff = await comparer().compare(manifest);
-        const byKey = Object.fromEntries(
-          diff.changes.map((c) => [`${c.name}:${c.alteration}`, c]),
+        const executable = getSQLFromDiff(diff).filter(
+          (sql) => !sql.startsWith('--'),
         );
-        // Strengthening → manual (comment-only SQL), never executable.
-        expect(byKey['status:set_default'].sql).toMatch(
-          /^-- SQLite: setting the default/,
-        );
-        expect(byKey['status:set_not_null'].sql).toMatch(
-          /^-- SQLite: enforcing NOT NULL/,
-        );
-        expect(byKey['kind:set_default'].sql).toMatch(/^-- SQLite/);
-        // Relaxing → advisory (no SQL) by default …
-        expect(byKey['note:drop_not_null'].advisory?.severity).toBe('warning');
-        expect(byKey['note:drop_not_null'].sql).toBeUndefined();
-        expect(getSQLFromDiff(diff).every((s) => s.startsWith('--'))).toBe(
-          true,
-        );
-
-        // … and executable through the owning rebuild when opted in.
-        const relaxed = await comparer({ relaxColumns: true }).compare(
-          manifest,
-        );
-        const relaxNote = relaxed.changes.find(
-          (c) => c.name === 'note' && c.alteration === 'drop_not_null',
-        ) as SchemaChange;
-        expect(relaxNote.advisory).toBeUndefined();
+        // One rebuild carries every change: a second plan would undo the first.
         expect(
-          relaxNote.sqlStatements?.some((sql) =>
-            sql.includes('_smrt_rebuild_items'),
-          ),
-        ).toBe(true);
+          executable.filter((sql) => sql.startsWith('CREATE TABLE')),
+        ).toHaveLength(1);
+        await applyAtomically(db, executable);
 
-        // Orchestrator: nothing executable, manual drift surfaced.
-        const pending = await getPendingSchemaStatements(db, {
-          engineHint: 'sqlite',
-        });
-        expect(pending.statements.every((s) => !s.startsWith('--'))).toBe(true);
+        expect(
+          (
+            await db.query(
+              'SELECT id, status, note, kind FROM items ORDER BY id',
+            )
+          ).rows,
+        ).toEqual([
+          { id: 'i1', status: 'draft', note: 'n', kind: 'a' },
+          { id: 'i2', status: 'live', note: 'm', kind: 'a' },
+        ]);
+        await db.query("INSERT INTO items (id, status) VALUES ('i3', 'x')");
+        expect(
+          (await db.query("SELECT note, kind FROM items WHERE id = 'i3'")).rows,
+        ).toEqual([{ note: null, kind: 'b' }]);
+        expect((await comparer().compare(manifest)).changes).toEqual([]);
       });
 
       it('an orphan NOT NULL column on SQLite points at --drop-columns (no in-place relax)', async () => {
@@ -1029,12 +1034,13 @@ for (const { name, type, engine } of engines) {
         expect(
           diff.changes.map((c) => `${c.type}:${c.alteration}`).sort(),
         ).toEqual(['alter_column:set_default', 'alter_column:set_not_null']);
-        expect(getSQLFromDiff(diff)).toEqual([
-          `ALTER TABLE "items" ALTER COLUMN "status" SET DEFAULT 'draft'`,
-          `UPDATE "items" SET "status" = 'draft' WHERE "status" IS NULL`,
-          `ALTER TABLE "items" ALTER COLUMN "status" SET NOT NULL`,
-        ]);
-        await applyStatements(db, getSQLFromDiff(diff));
+        // DuckDB refuses an ALTER after an UPDATE in the same transaction, so
+        // the table is rebuilt (#4937). Running the statements one by one used
+        // to hide that.
+        expect(
+          getSQLFromDiff(diff).some((sql) => sql.startsWith('UPDATE')),
+        ).toBe(false);
+        await applyAtomically(db, getSQLFromDiff(diff));
 
         const rows = (
           await db.query('SELECT id, status FROM items ORDER BY id')
@@ -1090,21 +1096,22 @@ for (const { name, type, engine } of engines) {
           }),
         };
 
+        // Dropping NOT NULL applies by default on every engine (#4937); a
+        // stale default is only reported until relaxColumns is set.
         const reportOnly = await comparer().compare(manifest);
         expect(reportOnly.changes.map((c) => c.alteration).sort()).toEqual([
           'drop_default',
           'drop_not_null',
         ]);
-        expect(reportOnly.changes.every(isAdvisoryOnlyChange)).toBe(true);
-        expect(hasActionableChanges(reportOnly)).toBe(false);
         expect(
           reportOnly.changes.find((c) => c.alteration === 'drop_not_null')
-            ?.advisory?.severity,
-        ).toBe('warning');
+            ?.advisory,
+        ).toBeUndefined();
         expect(
           reportOnly.changes.find((c) => c.alteration === 'drop_default')
             ?.advisory?.severity,
         ).toBe('info');
+        expect(hasActionableChanges(reportOnly)).toBe(true);
 
         const relaxed = await comparer({ relaxColumns: true }).compare(
           manifest,

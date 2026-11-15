@@ -30,7 +30,11 @@ export interface ContentReviewOptions extends SmrtObjectOptions {
   cli: { skipApiCheck: true },
 })
 export class ContentReview extends SmrtObject {
-  @foreignKey('Content', { required: true, onDelete: 'CASCADE' })
+  @foreignKey('Content', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'CASCADE',
+  })
   @field({ description: 'The piece that was reviewed.' })
   contentId = '';
 
