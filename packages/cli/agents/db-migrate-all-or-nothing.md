@@ -56,24 +56,43 @@ Migrate drops a table only when its owning package has declared it retired
 absent table is nothing to do, so a rerun is a no-op. Nothing undeclared is ever
 dropped: a table with no declaration stays, whatever the code declares.
 
-Three named stops hold the whole run back, like any other stop, each saying
+Named stops hold the whole run back, like any other stop, each saying
 `loses-data` and naming the table:
 
-- `table.retire-declared`: a model in the build still declares the table.
-  Remove the retirement or the model.
+- `table.retire-owner`: the declaration fails its checks (a `lastOwner`
+  outside the declaring package, a `_smrt_` table retired by a package outside
+  smrt, no generated definition).
+- `table.retire-declared`: a model in the build, or a run-time list stored in
+  the app model journal, still declares the table. Remove the retirement or
+  the model.
+- `table.retire-mismatch`: the live table is not the one the declaration
+  describes. The message names each missing or extra column and each type that
+  differs from the declaration's `definition` (written from a published
+  release by `scripts/retired-table-facts.mjs`). It may be another table under
+  the same name: check what it holds.
 - `table.retire-rows`: the table holds rows and its declaration does not say
-  `rows: 'discard'`. The message gives the row count.
+  `rows: 'discard'`. The message gives the row count. The count runs again
+  inside the batch, right before the drop (after `LOCK TABLE` on
+  PostgreSQL), so rows a still-running old instance writes after the plan roll
+  the whole batch back with the same stop.
 - `table.retire-dependent`: something undeclared depends on the table. One stop
-  per dependent names it: a foreign key (`child.column`), a view, or a trigger
-  on another table. Drop or move each first.
+  per dependent names it: a foreign key (`child.column`), a view or
+  materialized view, a trigger on another table, a function whose body names
+  it, a DuckDB macro, or on PostgreSQL a policy, a column default on its
+  sequence, a column of its row type or an inheriting table. Drop or move each
+  first.
+- `table.retire-unsupported`: the JSON adapter never drops a table.
 
-Retiring is not additive. A run limited to named tables (lazy activation, the
-run-time model editor) refuses it as a `whole-schema-only` stop that names
-`smrt db:migrate`, whatever tables it names. `--dry-run` and `db:diff` list
-each table that would be dropped (**Tables to retire**) with its reason, and
-`db:migrate` prints the same list before it applies, because the rows go with
-the table. The retired list is part of the build's stamp, so production refuses
-to start a build that retires a table until `db:migrate` has run.
+On PostgreSQL the statements name `"public"."<table>"`, whatever the
+`search_path`. A run limited to named tables (lazy activation, the run-time
+model editor) neither plans nor reports retirements, and is not held back by
+one: retiring waits for the next `smrt db:migrate`. It stops only when it would
+create or add to a table on the retired list (reason `retired-table`).
+`--dry-run` and `db:diff` list each table that would be dropped (**Tables to
+retire**) with its reason, and `db:migrate` prints the same list before it
+applies, because the rows go with the table. The retired list is part of the
+build's stamp, so production refuses to start a build that retires a table
+until `db:migrate` has run.
 
 ## `--null-orphans`
 

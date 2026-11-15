@@ -6,6 +6,7 @@ import {
   readFileSync,
   rmSync,
   existsSync,
+  unlinkSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -29,6 +30,10 @@ import {
   validateSeedPlan,
   readSeedPlan,
 } from '../lib/release-upgrade-gate.mjs';
+import {
+  readOwnersOverlay,
+  validateOwnersFiles,
+} from '../lib/retired-table-facts.mjs';
 import { ManifestGenerator } from '../../packages/core/dist/scanner/manifest-generator.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -452,7 +457,6 @@ test('capture is stable and restore round trips catalogs and bookkeeping', async
       stableJSON(
         await introspect(db, first.release, {
           modelTables: first.modelTables,
-          modelOwners: first.modelOwners,
         }),
       ),
       stableJSON(first),
@@ -637,6 +641,63 @@ test('oldest record validator refuses mismatched file name, release and empty de
     /does not match/,
   );
 });
+test('an owners file goes with its snapshot: pruned with it, stale without it (#5005)', () => {
+  const directory = records('owners');
+  const overlay = (version, owners = { [tableName]: ['@test/gate4933:Gate4933'] }) => {
+    mkdirSync(path.join(directory, 'owners'), { recursive: true });
+    writeFileSync(
+      path.join(directory, `owners/${version}.json`),
+      stableJSON({ release: version, source: 'published package manifests', owners }),
+    );
+  };
+  const snapshots = () =>
+    new Map(
+      ['0.60.17', '0.60.18', '0.60.19', '0.60.20']
+        .filter((version) =>
+          existsSync(path.join(directory, `snapshots/${version}.json`)),
+        )
+        .map((version) => [
+          version,
+          JSON.parse(
+            readFileSync(path.join(directory, `snapshots/${version}.json`)),
+          ),
+        ]),
+    );
+  overlay('0.60.18');
+  validateOwnersFiles(directory, snapshots());
+  assert.deepEqual(readOwnersOverlay(directory, '0.60.18').owners, {
+    [tableName]: ['@test/gate4933:Gate4933'],
+  });
+  prune(directory, release, build.compareReleases);
+  assert.equal(existsSync(path.join(directory, 'owners/0.60.18.json')), false);
+  // Without its snapshot an owners file is stale.
+  overlay('0.60.18');
+  assert.throws(
+    () => validateOwnersFiles(directory, snapshots()),
+    /Stale owners file owners\/0\.60\.18\.json/,
+  );
+  unlinkSync(path.join(directory, 'owners/0.60.18.json'));
+  // A table its snapshot does not hold, or a hand-added key, is refused.
+  overlay('0.60.19', { not_in_snapshot: ['@x/y:Z'] });
+  assert.throws(
+    () => validateOwnersFiles(directory, snapshots()),
+    /not_in_snapshot.*does not hold/,
+  );
+  writeFileSync(
+    path.join(directory, 'owners/0.60.19.json'),
+    stableJSON({
+      release: '0.60.19',
+      source: 'published package manifests',
+      owners: {},
+      note: 'hand edit',
+    }),
+  );
+  assert.throws(
+    () => readOwnersOverlay(directory, '0.60.19'),
+    /must have exactly owners, release, source/,
+  );
+});
+
 test('prune keeps oldest supported snapshot and the newest two others', () => {
   const directory = records('prune');
   assert.deepEqual(prune(directory, release, build.compareReleases), [
@@ -821,24 +882,47 @@ function snapshotWithRetiredTable(extra = {}) {
     ...extra,
   };
   snapshot.modelTables = [tableName, retiredTable];
-  snapshot.modelOwners = {
-    [tableName]: ['@test/gate4933:Gate4933'],
-    [retiredTable]: [retiredOwner],
-  };
   return snapshot;
 }
-const declareRetired = (extra = {}) =>
-  build.ObjectRegistry.registerRetiredTables('@test/gate4933', [
-    {
-      table: retiredTable,
-      lastOwner: retiredOwner,
-      since: '0.61.2',
-      reason: 'Folded into gate4933s.',
-      rows: 'discard',
-      packageName: '@test/gate4933',
-      ...extra,
-    },
+// The release's owners file (owners/<release>.json), as
+// scripts/retired-table-facts.mjs writes it from published manifests.
+const ownersOf = (snapshot, recorded = [retiredOwner]) =>
+  new Map([
+    [
+      snapshot.release,
+      {
+        release: snapshot.release,
+        source: 'published package manifests',
+        owners: {
+          [tableName]: ['@test/gate4933:Gate4933'],
+          ...(recorded ? { [retiredTable]: recorded } : {}),
+        },
+      },
+    ],
   ]);
+const retiredDefinition = {
+  release: '0.60.17',
+  columns: {
+    id: { type: 'UUID', referenceKind: 'id' },
+    slug: { type: 'TEXT' },
+  },
+};
+const declareRetired = (extra = {}) =>
+  build.ObjectRegistry.registerManifestRetiredTables({
+    packageName: '@test/gate4933',
+    retiredTables: [
+      {
+        table: retiredTable,
+        lastOwner: retiredOwner,
+        since: '0.61.2',
+        reason: 'Folded into gate4933s.',
+        rows: 'discard',
+        definition: retiredDefinition,
+        packageName: '@test/gate4933',
+        ...extra,
+      },
+    ],
+  });
 
 test('a declared retired table is seeded, dropped by the upgrade, and the schema converges', async () => {
   current();
@@ -888,43 +972,46 @@ test('retired declarations are checked against the supported snapshots', () => {
   ];
   const holding = snapshotWithRetiredTable();
   assert.deepEqual(
-    checkRetiredDeclarations({ retired, supported: [holding] }),
+    checkRetiredDeclarations({
+      retired,
+      supported: [holding],
+      owners: ownersOf(holding),
+    }),
     [],
   );
   // Stale: the table is in no supported snapshot.
   const stale = checkRetiredDeclarations({
     retired,
     supported: [oldSnapshot()],
+    owners: new Map(),
   });
   assert.equal(stale.length, 1);
   assert.match(stale[0], /gate5005_old.*stale.*no supported release snapshot/);
   // The recorded owner is not the declared lastOwner.
-  const wrongOwner = snapshotWithRetiredTable();
-  wrongOwner.modelOwners[retiredTable] = ['@test/gate4933:Other'];
   assert.match(
-    checkRetiredDeclarations({ retired, supported: [wrongOwner] }).join('\n'),
+    checkRetiredDeclarations({
+      retired,
+      supported: [holding],
+      owners: ownersOf(holding, ['@test/gate4933:Other']),
+    }).join('\n'),
     /did not declare the table.*@test\/gate4933:Other/,
   );
-  // A snapshot made before owners were recorded cannot vouch for it.
-  const unattributed = snapshotWithRetiredTable();
-  delete unattributed.modelOwners;
-  assert.match(
-    checkRetiredDeclarations({ retired, supported: [unattributed] }).join('\n'),
-    /records no owner.*modelOwners\.gate5005_old/,
-  );
+  // Without the release's owners file nothing vouches for the owner; the
+  // fix is the script, never an edit of the snapshot.
+  for (const owners of [new Map(), ownersOf(holding, null)])
+    assert.match(
+      checkRetiredDeclarations({ retired, supported: [holding], owners }).join(
+        '\n',
+      ),
+      /no owners file.*retired-table-facts\.mjs owners --release 0\.60\.17.*Never edit the snapshot/,
+    );
   // A package retires only its own tables.
   assert.match(
     checkRetiredDeclarations({
       retired: [{ ...retired[0], packageName: '@test/elsewhere' }],
       supported: [holding],
+      owners: ownersOf(holding),
     }).join('\n'),
     /not a class of @test\/elsewhere/,
   );
-});
-test('capture records which classes declare each model table', async () => {
-  current();
-  const snapshot = await capture({ root, build });
-  assert.deepEqual(snapshot.modelOwners[tableName], [
-    '@test/gate4933:Gate4933',
-  ]);
 });

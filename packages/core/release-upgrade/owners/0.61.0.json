@@ -1,0 +1,1887 @@
+{
+  "owners": {
+    "_smrt_agent_schedules": [
+      "@happyvertical/smrt-agents:AgentSchedule",
+      "@happyvertical/smrt-agents:AgentScheduleCollection"
+    ],
+    "_smrt_billing_accounts": [
+      "@happyvertical/smrt-commerce:BillingAccount",
+      "@happyvertical/smrt-commerce:BillingAccountCollection"
+    ],
+    "_smrt_billing_adjustments": [
+      "@happyvertical/smrt-subscriptions:BillingAdjustment",
+      "@happyvertical/smrt-subscriptions:BillingAdjustmentCollection"
+    ],
+    "_smrt_billing_checkout_sessions": [
+      "@happyvertical/smrt-subscriptions:BillingCheckoutSession",
+      "@happyvertical/smrt-subscriptions:BillingCheckoutSessionCollection"
+    ],
+    "_smrt_billing_line_sources": [
+      "@happyvertical/smrt-commerce:BillingLineSource",
+      "@happyvertical/smrt-commerce:BillingLineSourceCollection"
+    ],
+    "_smrt_billing_payment_attempts": [
+      "@happyvertical/smrt-commerce:BillingPaymentAttempt",
+      "@happyvertical/smrt-commerce:BillingPaymentAttemptCollection"
+    ],
+    "_smrt_billing_period_closes": [
+      "@happyvertical/smrt-commerce:BillingPeriodClose",
+      "@happyvertical/smrt-commerce:BillingPeriodCloseCollection"
+    ],
+    "_smrt_billing_relationships": [
+      "@happyvertical/smrt-tenancy:BillingRelationship",
+      "@happyvertical/smrt-tenancy:BillingRelationshipCollection"
+    ],
+    "_smrt_client_charges": [
+      "@happyvertical/smrt-subscriptions:ClientCharge",
+      "@happyvertical/smrt-subscriptions:ClientChargeCollection"
+    ],
+    "_smrt_credit_grants": [
+      "@happyvertical/smrt-subscriptions:CreditGrant",
+      "@happyvertical/smrt-subscriptions:CreditGrantCollection"
+    ],
+    "_smrt_data_surface_action_idempotency": [
+      "@happyvertical/smrt-agents:DataSurfaceActionIdempotencyState"
+    ],
+    "_smrt_data_surface_action_tasks": [
+      "@happyvertical/smrt-agents:SmrtDataSurfaceActionTask"
+    ],
+    "_smrt_data_surface_action_tokens": [
+      "@happyvertical/smrt-agents:DataSurfaceActionTokenState"
+    ],
+    "_smrt_feature_definitions": [
+      "@happyvertical/smrt-features:FeatureDefinition",
+      "@happyvertical/smrt-features:FeatureDefinitionCollection"
+    ],
+    "_smrt_feature_overrides": [
+      "@happyvertical/smrt-features:FeatureOverride",
+      "@happyvertical/smrt-features:FeatureOverrideCollection"
+    ],
+    "_smrt_field_policies": [
+      "@happyvertical/smrt-fields:FieldPolicy",
+      "@happyvertical/smrt-fields:FieldPolicyCollection"
+    ],
+    "_smrt_field_policy_suggestions": [
+      "@happyvertical/smrt-fields:FieldPolicySuggestion",
+      "@happyvertical/smrt-fields:FieldPolicySuggestionCollection"
+    ],
+    "_smrt_field_usage_counters": [
+      "@happyvertical/smrt-fields:FieldUsageCounter",
+      "@happyvertical/smrt-fields:FieldUsageCounterCollection"
+    ],
+    "_smrt_field_usage_learning_agents": [
+      "@happyvertical/smrt-fields:FieldUsageLearningAgent"
+    ],
+    "_smrt_field_usage_report_receipts": [
+      "@happyvertical/smrt-fields:FieldUsageReportReceipt",
+      "@happyvertical/smrt-fields:FieldUsageReportReceiptCollection"
+    ],
+    "_smrt_forge_deliveries": [
+      "@happyvertical/smrt-jobs:ForgeDelivery",
+      "@happyvertical/smrt-jobs:ForgeDeliveryCollection"
+    ],
+    "_smrt_forge_projection_checkpoints": [
+      "@happyvertical/smrt-jobs:ForgeProjectionCheckpoint"
+    ],
+    "_smrt_inference_design_runs": [
+      "@happyvertical/smrt-inference:DesignRunRecord"
+    ],
+    "_smrt_inference_overrides": [
+      "@happyvertical/smrt-inference:InferenceOverride",
+      "@happyvertical/smrt-inference:InferenceOverrideCollection"
+    ],
+    "_smrt_job_dedupe_slots": [
+      "@happyvertical/smrt-jobs:SmrtJobDedupeSlot",
+      "@happyvertical/smrt-jobs:SmrtJobDedupeSlotCollection"
+    ],
+    "_smrt_job_events": [
+      "@happyvertical/smrt-jobs:SmrtJobEvent",
+      "@happyvertical/smrt-jobs:SmrtJobEventCollection"
+    ],
+    "_smrt_jobs": [
+      "@happyvertical/smrt-jobs:SmrtJob",
+      "@happyvertical/smrt-jobs:SmrtJobCollection"
+    ],
+    "_smrt_language_overrides": [
+      "@happyvertical/smrt-languages:LanguageOverride",
+      "@happyvertical/smrt-languages:LanguageOverrideCollection"
+    ],
+    "_smrt_playbook_overrides": [
+      "@happyvertical/smrt-playbooks:PlaybookOverride",
+      "@happyvertical/smrt-playbooks:PlaybookOverrideCollection"
+    ],
+    "_smrt_price_book_assignments": [
+      "@happyvertical/smrt-subscriptions:PriceBookAssignment",
+      "@happyvertical/smrt-subscriptions:PriceBookAssignmentCollection"
+    ],
+    "_smrt_price_books": [
+      "@happyvertical/smrt-subscriptions:PriceBook",
+      "@happyvertical/smrt-subscriptions:PriceBookCollection"
+    ],
+    "_smrt_pricing_rules": [
+      "@happyvertical/smrt-subscriptions:PricingRule",
+      "@happyvertical/smrt-subscriptions:PricingRuleCollection"
+    ],
+    "_smrt_principal_report_refresh_tasks": [
+      "@happyvertical/smrt-reports:SmrtPrincipalReportRefreshTask"
+    ],
+    "_smrt_prompt_overrides": [
+      "@happyvertical/smrt-prompts:PromptOverride",
+      "@happyvertical/smrt-prompts:PromptOverrideCollection"
+    ],
+    "_smrt_report_locks": [
+      "@happyvertical/smrt-reports:SmrtReportLock",
+      "@happyvertical/smrt-reports:SmrtReportLockCollection"
+    ],
+    "_smrt_report_refresh_tasks": [
+      "@happyvertical/smrt-reports:SmrtReportRefreshTask"
+    ],
+    "_smrt_report_runs": [
+      "@happyvertical/smrt-reports:SmrtReportRun",
+      "@happyvertical/smrt-reports:SmrtReportRunCollection"
+    ],
+    "_smrt_report_schedules": [
+      "@happyvertical/smrt-reports:SmrtReportSchedule",
+      "@happyvertical/smrt-reports:SmrtReportScheduleCollection"
+    ],
+    "_smrt_report_watermarks": [
+      "@happyvertical/smrt-reports:SmrtReportWatermark",
+      "@happyvertical/smrt-reports:SmrtReportWatermarkCollection"
+    ],
+    "_smrt_retail_charges": [
+      "@happyvertical/smrt-subscriptions:RetailCharge",
+      "@happyvertical/smrt-subscriptions:RetailChargeCollection"
+    ],
+    "_smrt_spending_policies": [
+      "@happyvertical/smrt-subscriptions:SpendingPolicy",
+      "@happyvertical/smrt-subscriptions:SpendingPolicyCollection"
+    ],
+    "_smrt_subscription_plan_versions": [
+      "@happyvertical/smrt-subscriptions:SubscriptionPlanVersion",
+      "@happyvertical/smrt-subscriptions:SubscriptionPlanVersionCollection"
+    ],
+    "_smrt_subscription_plans": [
+      "@happyvertical/smrt-subscriptions:SubscriptionPlan",
+      "@happyvertical/smrt-subscriptions:SubscriptionPlanCollection"
+    ],
+    "_smrt_tenant_payment_webhook_events": [
+      "@happyvertical/smrt-commerce:TenantPaymentWebhookEvent",
+      "@happyvertical/smrt-commerce:TenantPaymentWebhookEventCollection"
+    ],
+    "_smrt_tenant_subscriptions": [
+      "@happyvertical/smrt-subscriptions:TenantSubscription",
+      "@happyvertical/smrt-subscriptions:TenantSubscriptionCollection"
+    ],
+    "_smrt_tenant_usage_metrics": [
+      "@happyvertical/smrt-subscriptions:TenantUsageMetric",
+      "@happyvertical/smrt-subscriptions:TenantUsageMetricCollection"
+    ],
+    "_smrt_ui_preferences": [
+      "@happyvertical/smrt-preferences:UiPreferenceRecord",
+      "@happyvertical/smrt-preferences:UiPreferenceRecordCollection"
+    ],
+    "_smrt_webhook_cursors": [
+      "@happyvertical/smrt-webhooks:WebhookCursor"
+    ],
+    "_smrt_webhook_deliveries": [
+      "@happyvertical/smrt-webhooks:WebhookDelivery",
+      "@happyvertical/smrt-webhooks:WebhookDeliveryCollection"
+    ],
+    "_smrt_webhook_delivery_tasks": [
+      "@happyvertical/smrt-webhooks:WebhookDeliveryTask"
+    ],
+    "_smrt_webhook_subscriptions": [
+      "@happyvertical/smrt-webhooks:WebhookSubscription",
+      "@happyvertical/smrt-webhooks:WebhookSubscriptionCollection"
+    ],
+    "_smrt_workers": [
+      "@happyvertical/smrt-jobs:SmrtWorker",
+      "@happyvertical/smrt-jobs:SmrtWorkerCollection"
+    ],
+    "access_requests": [
+      "@happyvertical/smrt-users:AccessRequest",
+      "@happyvertical/smrt-users:AccessRequestCollection"
+    ],
+    "accounts": [
+      "@happyvertical/smrt-messages:Account",
+      "@happyvertical/smrt-messages:AccountCollection",
+      "@happyvertical/smrt-messages:EmailAccount",
+      "@happyvertical/smrt-messages:EmailAccountCollection",
+      "@happyvertical/smrt-messages:SlackAccount",
+      "@happyvertical/smrt-messages:TelegramAccount",
+      "@happyvertical/smrt-messages:TwitterAccount",
+      "@happyvertical/smrt-messages:ZulipAccount"
+    ],
+    "ad_delivery_tiers": [
+      "@happyvertical/smrt-ads:AdDeliveryTier",
+      "@happyvertical/smrt-ads:AdDeliveryTierCollection"
+    ],
+    "ad_events": [
+      "@happyvertical/smrt-ads:AdEvent",
+      "@happyvertical/smrt-ads:AdEventCollection"
+    ],
+    "ad_formats": [
+      "@happyvertical/smrt-ads:AdFormat",
+      "@happyvertical/smrt-ads:AdFormatCollection"
+    ],
+    "ad_groups": [
+      "@happyvertical/smrt-ads:AdGroup",
+      "@happyvertical/smrt-ads:AdGroupCollection"
+    ],
+    "ad_variations": [
+      "@happyvertical/smrt-ads:AdVariation",
+      "@happyvertical/smrt-ads:AdVariationCollection"
+    ],
+    "agent_configs": [
+      "@happyvertical/smrt-agents:AgentConfig",
+      "@happyvertical/smrt-agents:AgentConfigCollection"
+    ],
+    "agent_feedback": [
+      "@happyvertical/smrt-personas:Feedback",
+      "@happyvertical/smrt-personas:FeedbackCollection"
+    ],
+    "agent_personas": [
+      "@happyvertical/smrt-personas:AgentPersona",
+      "@happyvertical/smrt-personas:AgentPersonaCollection"
+    ],
+    "agent_sessions": [
+      "@happyvertical/smrt-chat:AgentSession",
+      "@happyvertical/smrt-chat:AgentSessionCollection"
+    ],
+    "agents": [
+      "@happyvertical/smrt-agents:Agent"
+    ],
+    "agreement_execution_events": [
+      "@happyvertical/smrt-sales:AgreementExecutionEvent",
+      "@happyvertical/smrt-sales:AgreementExecutionEventCollection"
+    ],
+    "agreement_executions": [
+      "@happyvertical/smrt-sales:AgreementExecution",
+      "@happyvertical/smrt-sales:AgreementExecutionCollection"
+    ],
+    "agreements": [
+      "@happyvertical/smrt-sales:Agreement",
+      "@happyvertical/smrt-sales:AgreementCollection"
+    ],
+    "analytics_data_streams": [
+      "@happyvertical/smrt-analytics:AnalyticsDataStream",
+      "@happyvertical/smrt-analytics:AnalyticsDataStreamCollection"
+    ],
+    "analytics_events": [
+      "@happyvertical/smrt-analytics:AnalyticsEvent",
+      "@happyvertical/smrt-analytics:AnalyticsEventCollection"
+    ],
+    "analytics_properties": [
+      "@happyvertical/smrt-analytics:AnalyticsProperty",
+      "@happyvertical/smrt-analytics:AnalyticsPropertyCollection"
+    ],
+    "analytics_reports": [
+      "@happyvertical/smrt-analytics:AnalyticsReport",
+      "@happyvertical/smrt-analytics:AnalyticsReportCollection"
+    ],
+    "api_keys": [
+      "@happyvertical/smrt-profiles:ApiKey",
+      "@happyvertical/smrt-profiles:ApiKeyCollection"
+    ],
+    "app_draft_versions": [
+      "@happyvertical/smrt-app-shell:AppDraftVersion",
+      "@happyvertical/smrt-app-shell:AppDraftVersionCollection"
+    ],
+    "app_drafts": [
+      "@happyvertical/smrt-app-shell:AppDraft",
+      "@happyvertical/smrt-app-shell:AppDraftCollection"
+    ],
+    "app_versions": [
+      "@happyvertical/smrt-app-shell:AppVersion",
+      "@happyvertical/smrt-app-shell:AppVersionCollection"
+    ],
+    "approval_events": [
+      "@happyvertical/smrt-approvals:ApprovalEvent",
+      "@happyvertical/smrt-approvals:ApprovalEventCollection"
+    ],
+    "approval_policies": [
+      "@happyvertical/smrt-approvals:ApprovalPolicy",
+      "@happyvertical/smrt-approvals:ApprovalPolicyCollection"
+    ],
+    "approval_requests": [
+      "@happyvertical/smrt-approvals:ApprovalRequest",
+      "@happyvertical/smrt-approvals:ApprovalRequestCollection"
+    ],
+    "approvals": [
+      "@happyvertical/smrt-app-shell:Approval",
+      "@happyvertical/smrt-app-shell:ApprovalCollection"
+    ],
+    "apps": [
+      "@happyvertical/smrt-app-shell:App",
+      "@happyvertical/smrt-app-shell:AppCollection"
+    ],
+    "asset_associations": [
+      "@happyvertical/smrt-assets:AssetAssociation",
+      "@happyvertical/smrt-assets:AssetAssociationCollection"
+    ],
+    "asset_metafields": [
+      "@happyvertical/smrt-assets:AssetMetafield",
+      "@happyvertical/smrt-assets:AssetMetafieldCollection"
+    ],
+    "asset_statuses": [
+      "@happyvertical/smrt-assets:AssetStatus",
+      "@happyvertical/smrt-assets:AssetStatusCollection"
+    ],
+    "asset_tags": [
+      "@happyvertical/smrt-assets:AssetTag",
+      "@happyvertical/smrt-assets:AssetTagCollection"
+    ],
+    "asset_types": [
+      "@happyvertical/smrt-assets:AssetType",
+      "@happyvertical/smrt-assets:AssetTypeCollection"
+    ],
+    "assets": [
+      "@happyvertical/smrt-assets:Asset",
+      "@happyvertical/smrt-assets:AssetCollection",
+      "@happyvertical/smrt-images:Image",
+      "@happyvertical/smrt-images:ImageCollection",
+      "@happyvertical/smrt-video:CharacterAsset",
+      "@happyvertical/smrt-video:PerformerAsset",
+      "@happyvertical/smrt-video:SceneAsset",
+      "@happyvertical/smrt-video:VideoCompositionAsset",
+      "@happyvertical/smrt-video:VideoSequenceAsset",
+      "@happyvertical/smrt-video:VideoShotAsset"
+    ],
+    "assistance_request_events": [
+      "@happyvertical/smrt-projects:AssistanceRequestEvent",
+      "@happyvertical/smrt-projects:AssistanceRequestEventCollection"
+    ],
+    "assistance_requests": [
+      "@happyvertical/smrt-projects:AssistanceRequest",
+      "@happyvertical/smrt-projects:AssistanceRequestCollection"
+    ],
+    "assistant_messages": [
+      "@happyvertical/smrt-app-shell:AssistantMessage",
+      "@happyvertical/smrt-app-shell:AssistantMessageCollection"
+    ],
+    "assistant_threads": [
+      "@happyvertical/smrt-app-shell:AssistantThread",
+      "@happyvertical/smrt-app-shell:AssistantThreadCollection"
+    ],
+    "attachments": [
+      "@happyvertical/smrt-messages:Attachment",
+      "@happyvertical/smrt-messages:AttachmentCollection"
+    ],
+    "attendance_breaks": [
+      "@happyvertical/smrt-timesheets:AttendanceBreak",
+      "@happyvertical/smrt-timesheets:AttendanceBreakCollection"
+    ],
+    "attendance_corrections": [
+      "@happyvertical/smrt-timesheets:AttendanceCorrection",
+      "@happyvertical/smrt-timesheets:AttendanceCorrectionCollection"
+    ],
+    "attendance_punches": [
+      "@happyvertical/smrt-timesheets:AttendancePunch",
+      "@happyvertical/smrt-timesheets:AttendancePunchCollection"
+    ],
+    "attendance_replays": [
+      "@happyvertical/smrt-timesheets:AttendanceReplay",
+      "@happyvertical/smrt-timesheets:AttendanceReplayCollection"
+    ],
+    "attendance_segments": [
+      "@happyvertical/smrt-timesheets:AttendanceSegment",
+      "@happyvertical/smrt-timesheets:AttendanceSegmentCollection"
+    ],
+    "attribution_exceptions": [
+      "@happyvertical/smrt-sales:AttributionException",
+      "@happyvertical/smrt-sales:AttributionExceptionCollection"
+    ],
+    "attribution_policies": [
+      "@happyvertical/smrt-sales:AttributionPolicy",
+      "@happyvertical/smrt-sales:AttributionPolicyCollection"
+    ],
+    "audit_logs": [
+      "@happyvertical/smrt-profiles:AuditLog",
+      "@happyvertical/smrt-profiles:AuditLogCollection"
+    ],
+    "blacklists": [
+      "@happyvertical/smrt-messages:Blacklist",
+      "@happyvertical/smrt-messages:BlacklistCollection"
+    ],
+    "book_context_revisions": [
+      "@happyvertical/smrt-education:BookContextRevision",
+      "@happyvertical/smrt-education:BookContextRevisionCollection"
+    ],
+    "campaign_channels": [
+      "@happyvertical/smrt-marketing:CampaignChannel",
+      "@happyvertical/smrt-marketing:CampaignChannelCollection"
+    ],
+    "campaign_metric_snapshots": [
+      "@happyvertical/smrt-marketing:CampaignMetricSnapshot",
+      "@happyvertical/smrt-marketing:CampaignMetricSnapshotCollection"
+    ],
+    "campaigns": [
+      "@happyvertical/smrt-marketing:Campaign",
+      "@happyvertical/smrt-marketing:CampaignCollection"
+    ],
+    "catalog_acquisitions": [
+      "@happyvertical/smrt-education:CatalogAcquisition",
+      "@happyvertical/smrt-education:CatalogAcquisitionCollection"
+    ],
+    "catalog_providers": [
+      "@happyvertical/smrt-education:CatalogProvider",
+      "@happyvertical/smrt-education:CatalogProviderCollection"
+    ],
+    "catalog_resources": [
+      "@happyvertical/smrt-education:CatalogResource",
+      "@happyvertical/smrt-education:CatalogResourceCollection"
+    ],
+    "catalog_selections": [
+      "@happyvertical/smrt-education:CatalogSelection",
+      "@happyvertical/smrt-education:CatalogSelectionCollection"
+    ],
+    "catalog_sync_states": [
+      "@happyvertical/smrt-education:CatalogSyncState",
+      "@happyvertical/smrt-education:CatalogSyncStateCollection"
+    ],
+    "character_assets": [
+      "@happyvertical/smrt-video:CharacterOwnedAsset",
+      "@happyvertical/smrt-video:CharacterOwnedAssetCollection"
+    ],
+    "characters": [
+      "@happyvertical/smrt-video:Character",
+      "@happyvertical/smrt-video:CharacterCollection"
+    ],
+    "chat_messages": [
+      "@happyvertical/smrt-chat:ChatMessage",
+      "@happyvertical/smrt-chat:ChatMessageCollection"
+    ],
+    "chat_participants": [
+      "@happyvertical/smrt-chat:ChatParticipant",
+      "@happyvertical/smrt-chat:ChatParticipantCollection"
+    ],
+    "chat_reactions": [
+      "@happyvertical/smrt-chat:ChatReaction",
+      "@happyvertical/smrt-chat:ChatReactionCollection"
+    ],
+    "chat_rooms": [
+      "@happyvertical/smrt-chat:ChatRoom",
+      "@happyvertical/smrt-chat:ChatRoomCollection"
+    ],
+    "chat_threads": [
+      "@happyvertical/smrt-chat:ChatThread",
+      "@happyvertical/smrt-chat:ChatThreadCollection"
+    ],
+    "comment_reports": [
+      "@happyvertical/smrt-comments:CommentReport",
+      "@happyvertical/smrt-comments:CommentReportCollection"
+    ],
+    "comment_revisions": [
+      "@happyvertical/smrt-comments:CommentRevision",
+      "@happyvertical/smrt-comments:CommentRevisionCollection"
+    ],
+    "comments": [
+      "@happyvertical/smrt-projects:Comment",
+      "@happyvertical/smrt-projects:CommentCollection"
+    ],
+    "commission_adjustment_operations": [
+      "@happyvertical/smrt-sales:CommissionAdjustmentOperation",
+      "@happyvertical/smrt-sales:CommissionAdjustmentOperationCollection"
+    ],
+    "commission_adjustments": [
+      "@happyvertical/smrt-sales:CommissionAdjustment",
+      "@happyvertical/smrt-sales:CommissionAdjustmentCollection"
+    ],
+    "commission_payouts": [
+      "@happyvertical/smrt-sales:CommissionPayout",
+      "@happyvertical/smrt-sales:CommissionPayoutCollection"
+    ],
+    "commission_plans": [
+      "@happyvertical/smrt-sales:CommissionPlan",
+      "@happyvertical/smrt-sales:CommissionPlanCollection"
+    ],
+    "commissions": [
+      "@happyvertical/smrt-sales:Commission",
+      "@happyvertical/smrt-sales:CommissionCollection"
+    ],
+    "composite_jobs": [
+      "@happyvertical/smrt-video:CompositeJob"
+    ],
+    "content_assets": [
+      "@happyvertical/smrt-content:ContentAsset",
+      "@happyvertical/smrt-content:ContentAssetCollection"
+    ],
+    "content_contribution_attachments": [
+      "@happyvertical/smrt-content:ContentContributionAttachment",
+      "@happyvertical/smrt-content:ContentContributionAttachmentCollection"
+    ],
+    "content_contribution_revisions": [
+      "@happyvertical/smrt-content:ContentContributionRevision",
+      "@happyvertical/smrt-content:ContentContributionRevisionCollection"
+    ],
+    "content_contribution_types": [
+      "@happyvertical/smrt-content:ContentContributionType",
+      "@happyvertical/smrt-content:ContentContributionTypeCollection"
+    ],
+    "content_contributions": [
+      "@happyvertical/smrt-content:ContentContribution",
+      "@happyvertical/smrt-content:ContentContributions"
+    ],
+    "content_contributors": [
+      "@happyvertical/smrt-content:ContentContributor",
+      "@happyvertical/smrt-content:ContentContributorCollection"
+    ],
+    "content_corrections": [
+      "@happyvertical/smrt-content:ContentCorrection",
+      "@happyvertical/smrt-content:ContentCorrectionCollection"
+    ],
+    "content_feed_sources": [
+      "@happyvertical/smrt-content:ContentFeedSource",
+      "@happyvertical/smrt-content:ContentFeedSourceCollection"
+    ],
+    "content_governance_assignments": [
+      "@happyvertical/smrt-content:ContentGovernanceAssignment",
+      "@happyvertical/smrt-content:ContentGovernanceAssignmentCollection"
+    ],
+    "content_governance_policies": [
+      "@happyvertical/smrt-content:ContentGovernancePolicy",
+      "@happyvertical/smrt-content:ContentGovernancePolicyCollection"
+    ],
+    "content_governance_profiles": [
+      "@happyvertical/smrt-content:ContentGovernanceProfile",
+      "@happyvertical/smrt-content:ContentGovernanceProfileCollection"
+    ],
+    "content_references": [
+      "@happyvertical/smrt-content:ContentReference",
+      "@happyvertical/smrt-content:ContentReferences"
+    ],
+    "content_reviews": [
+      "@happyvertical/smrt-content:ContentReview",
+      "@happyvertical/smrt-content:ContentReviewCollection"
+    ],
+    "content_versions": [
+      "@happyvertical/smrt-content:ContentVersion",
+      "@happyvertical/smrt-content:ContentVersionCollection"
+    ],
+    "contents": [
+      "@happyvertical/smrt-content:Article",
+      "@happyvertical/smrt-content:Content",
+      "@happyvertical/smrt-content:ContentDocument",
+      "@happyvertical/smrt-content:Contents",
+      "@happyvertical/smrt-content:Mirror",
+      "@happyvertical/smrt-video:VideoComposition",
+      "@happyvertical/smrt-video:VideoCompositionCollection",
+      "@happyvertical/smrt-video:VideoSequence",
+      "@happyvertical/smrt-video:VideoSequenceCollection",
+      "@happyvertical/smrt-video:VideoShot",
+      "@happyvertical/smrt-video:VideoShotCollection",
+      "@happyvertical/smrt-voice:VoiceOutput"
+    ],
+    "contract_line_items": [
+      "@happyvertical/smrt-commerce:ContractLineItem",
+      "@happyvertical/smrt-commerce:ContractLineItemCollection"
+    ],
+    "contracts": [
+      "@happyvertical/smrt-commerce:Agreement",
+      "@happyvertical/smrt-commerce:Cart",
+      "@happyvertical/smrt-commerce:Contract",
+      "@happyvertical/smrt-commerce:ContractCollection",
+      "@happyvertical/smrt-commerce:Estimate",
+      "@happyvertical/smrt-commerce:Lease",
+      "@happyvertical/smrt-commerce:LicenseSale",
+      "@happyvertical/smrt-commerce:Order",
+      "@happyvertical/smrt-commerce:ProductionOrder",
+      "@happyvertical/smrt-commerce:PurchaseContract",
+      "@happyvertical/smrt-commerce:PurchaseContractCollection",
+      "@happyvertical/smrt-commerce:PurchaseOrder",
+      "@happyvertical/smrt-commerce:SalesContract",
+      "@happyvertical/smrt-commerce:SalesContractCollection",
+      "@happyvertical/smrt-commerce:SupplierQuote",
+      "@happyvertical/smrt-commerce:WholesaleOrder"
+    ],
+    "course_archive_decisions": [
+      "@happyvertical/smrt-education:CourseArchiveDecision",
+      "@happyvertical/smrt-education:CourseArchiveDecisionCollection"
+    ],
+    "course_assets": [
+      "@happyvertical/smrt-education:CourseAsset",
+      "@happyvertical/smrt-education:CourseAssetCollection"
+    ],
+    "course_bundle_attachments": [
+      "@happyvertical/smrt-education:CourseBundleAttachment",
+      "@happyvertical/smrt-education:CourseBundleAttachmentCollection"
+    ],
+    "course_bundle_audience_choices": [
+      "@happyvertical/smrt-education:CourseBundleAudienceChoice",
+      "@happyvertical/smrt-education:CourseBundleAudienceChoiceCollection"
+    ],
+    "course_bundle_imports": [
+      "@happyvertical/smrt-education:CourseBundleImport",
+      "@happyvertical/smrt-education:CourseBundleImportCollection"
+    ],
+    "course_bundle_members": [
+      "@happyvertical/smrt-education:CourseBundleMember",
+      "@happyvertical/smrt-education:CourseBundleMemberCollection"
+    ],
+    "course_bundle_placements": [
+      "@happyvertical/smrt-education:CourseBundlePlacement",
+      "@happyvertical/smrt-education:CourseBundlePlacementCollection"
+    ],
+    "course_bundle_renderings": [
+      "@happyvertical/smrt-education:CourseBundleRendering",
+      "@happyvertical/smrt-education:CourseBundleRenderingCollection"
+    ],
+    "course_bundle_supersessions": [
+      "@happyvertical/smrt-education:CourseBundleSupersession",
+      "@happyvertical/smrt-education:CourseBundleSupersessionCollection"
+    ],
+    "course_bundle_units": [
+      "@happyvertical/smrt-education:CourseBundleUnit",
+      "@happyvertical/smrt-education:CourseBundleUnitCollection"
+    ],
+    "course_cover_changes": [
+      "@happyvertical/smrt-education:CourseCoverChange",
+      "@happyvertical/smrt-education:CourseCoverChangeCollection"
+    ],
+    "course_discard_tombstones": [
+      "@happyvertical/smrt-education:CourseDiscardTombstone",
+      "@happyvertical/smrt-education:CourseDiscardTombstoneCollection"
+    ],
+    "course_draft_heads": [
+      "@happyvertical/smrt-education:CourseDraftHead",
+      "@happyvertical/smrt-education:CourseDraftHeadCollection"
+    ],
+    "course_finding_resolutions": [
+      "@happyvertical/smrt-education:CourseFindingResolution",
+      "@happyvertical/smrt-education:CourseFindingResolutionCollection"
+    ],
+    "course_generation_briefs": [
+      "@happyvertical/smrt-education:CourseGenerationBriefRecord",
+      "@happyvertical/smrt-education:CourseGenerationBriefRecordCollection"
+    ],
+    "course_generation_events": [
+      "@happyvertical/smrt-education:CourseGenerationEvent",
+      "@happyvertical/smrt-education:CourseGenerationEventCollection"
+    ],
+    "course_generation_jobs": [
+      "@happyvertical/smrt-education:CourseGenerationJob",
+      "@happyvertical/smrt-education:CourseGenerationJobCollection"
+    ],
+    "course_proposal_decisions": [
+      "@happyvertical/smrt-education:CourseProposalDecision",
+      "@happyvertical/smrt-education:CourseProposalDecisionCollection"
+    ],
+    "course_proposals": [
+      "@happyvertical/smrt-education:CourseProposal",
+      "@happyvertical/smrt-education:CourseProposalCollection"
+    ],
+    "course_releases": [
+      "@happyvertical/smrt-education:CourseRelease",
+      "@happyvertical/smrt-education:CourseReleaseCollection"
+    ],
+    "course_review_findings": [
+      "@happyvertical/smrt-education:CourseReviewFinding",
+      "@happyvertical/smrt-education:CourseReviewFindingCollection"
+    ],
+    "course_review_outdated_markers": [
+      "@happyvertical/smrt-education:CourseReviewOutdatedMarker",
+      "@happyvertical/smrt-education:CourseReviewOutdatedMarkerCollection"
+    ],
+    "course_reviews": [
+      "@happyvertical/smrt-education:CourseReview",
+      "@happyvertical/smrt-education:CourseReviewCollection"
+    ],
+    "course_revisions": [
+      "@happyvertical/smrt-education:CourseRevision",
+      "@happyvertical/smrt-education:CourseRevisionCollection"
+    ],
+    "course_sections": [
+      "@happyvertical/smrt-education:CourseSection",
+      "@happyvertical/smrt-education:CourseSectionCollection"
+    ],
+    "course_sources": [
+      "@happyvertical/smrt-education:CourseSource",
+      "@happyvertical/smrt-education:CourseSourceCollection"
+    ],
+    "course_upgrade_choices": [
+      "@happyvertical/smrt-education:CourseUpgradeChoice",
+      "@happyvertical/smrt-education:CourseUpgradeChoiceCollection"
+    ],
+    "course_visibility_changes": [
+      "@happyvertical/smrt-education:CourseVisibilityChange",
+      "@happyvertical/smrt-education:CourseVisibilityChangeCollection"
+    ],
+    "courses": [
+      "@happyvertical/smrt-education:AuthoredCourse",
+      "@happyvertical/smrt-education:AuthoredCourseCollection",
+      "@happyvertical/smrt-education:Course",
+      "@happyvertical/smrt-education:CourseCollection",
+      "@happyvertical/smrt-education:ExternalCourse",
+      "@happyvertical/smrt-education:ExternalCourseCollection"
+    ],
+    "curricula": [
+      "@happyvertical/smrt-education:Curriculum",
+      "@happyvertical/smrt-education:CurriculumCollection"
+    ],
+    "curriculum_creation_records": [
+      "@happyvertical/smrt-education:CurriculumCreationRecord",
+      "@happyvertical/smrt-education:CurriculumCreationRecordCollection"
+    ],
+    "customers": [
+      "@happyvertical/smrt-commerce:Customer",
+      "@happyvertical/smrt-commerce:CustomerCollection"
+    ],
+    "development_request_histories": [
+      "@happyvertical/smrt-projects:DevelopmentRequestHistory",
+      "@happyvertical/smrt-projects:DevelopmentRequestHistoryCollection"
+    ],
+    "development_request_work_links": [
+      "@happyvertical/smrt-projects:DevelopmentRequestWorkLink",
+      "@happyvertical/smrt-projects:DevelopmentRequestWorkLinkCollection"
+    ],
+    "development_requests": [
+      "@happyvertical/smrt-projects:DevelopmentRequest",
+      "@happyvertical/smrt-projects:DevelopmentRequestCollection"
+    ],
+    "directive_proposals": [
+      "@happyvertical/smrt-personas:DirectiveProposal",
+      "@happyvertical/smrt-personas:DirectiveProposalCollection"
+    ],
+    "dns_zones": [
+      "@happyvertical/smrt-sites:DnsZone",
+      "@happyvertical/smrt-sites:DnsZoneCollection"
+    ],
+    "document_taxes": [
+      "@happyvertical/smrt-commerce:DocumentTax",
+      "@happyvertical/smrt-commerce:DocumentTaxCollection"
+    ],
+    "domains": [
+      "@happyvertical/smrt-sites:Domain",
+      "@happyvertical/smrt-sites:DomainCollection"
+    ],
+    "earner_source_attributions": [
+      "@happyvertical/smrt-sales:EarnerSourceAttribution",
+      "@happyvertical/smrt-sales:EarnerSourceAttributionCollection"
+    ],
+    "earners": [
+      "@happyvertical/smrt-sales:Earner",
+      "@happyvertical/smrt-sales:EarnerCollection"
+    ],
+    "earning_events": [
+      "@happyvertical/smrt-sales:EarningEvent",
+      "@happyvertical/smrt-sales:EarningEventCollection"
+    ],
+    "education_groups": [
+      "@happyvertical/smrt-education:EducationGroup",
+      "@happyvertical/smrt-education:EducationGroupCollection"
+    ],
+    "email_attachments": [
+      "@happyvertical/smrt-messages:EmailAttachment",
+      "@happyvertical/smrt-messages:EmailAttachmentCollection"
+    ],
+    "email_folders": [
+      "@happyvertical/smrt-messages:EmailFolder",
+      "@happyvertical/smrt-messages:EmailFolderCollection"
+    ],
+    "employment_changes": [
+      "@happyvertical/smrt-human-resources:EmploymentChange",
+      "@happyvertical/smrt-human-resources:EmploymentChangeCollection"
+    ],
+    "employment_terms": [
+      "@happyvertical/smrt-human-resources:EmploymentTerm",
+      "@happyvertical/smrt-human-resources:EmploymentTermCollection"
+    ],
+    "employments": [
+      "@happyvertical/smrt-human-resources:Employment",
+      "@happyvertical/smrt-human-resources:EmploymentCollection"
+    ],
+    "enrollment_assignment_records": [
+      "@happyvertical/smrt-education:EnrollmentAssignmentRecord",
+      "@happyvertical/smrt-education:EnrollmentAssignmentRecordCollection"
+    ],
+    "enrollment_auto_upgrade_skips": [
+      "@happyvertical/smrt-education:EnrollmentAutoUpgradeSkip",
+      "@happyvertical/smrt-education:EnrollmentAutoUpgradeSkipCollection"
+    ],
+    "enrollment_pace_changes": [
+      "@happyvertical/smrt-education:EnrollmentPaceChange",
+      "@happyvertical/smrt-education:EnrollmentPaceChangeCollection"
+    ],
+    "enrollment_parent_notes": [
+      "@happyvertical/smrt-education:EnrollmentParentNote",
+      "@happyvertical/smrt-education:EnrollmentParentNoteCollection"
+    ],
+    "enrollment_release_pins": [
+      "@happyvertical/smrt-education:EnrollmentReleasePin",
+      "@happyvertical/smrt-education:EnrollmentReleasePinCollection"
+    ],
+    "enrollment_status_changes": [
+      "@happyvertical/smrt-education:EnrollmentStatusChange",
+      "@happyvertical/smrt-education:EnrollmentStatusChangeCollection"
+    ],
+    "enrollments": [
+      "@happyvertical/smrt-education:Enrollment",
+      "@happyvertical/smrt-education:EnrollmentCollection"
+    ],
+    "event_assets": [
+      "@happyvertical/smrt-events:EventAsset",
+      "@happyvertical/smrt-events:EventAssetCollection"
+    ],
+    "event_participants": [
+      "@happyvertical/smrt-events:EventParticipant",
+      "@happyvertical/smrt-events:EventParticipantCollection"
+    ],
+    "event_series": [
+      "@happyvertical/smrt-events:EventSeries",
+      "@happyvertical/smrt-events:EventSeriesCollection"
+    ],
+    "event_types": [
+      "@happyvertical/smrt-events:EventType",
+      "@happyvertical/smrt-events:EventTypeCollection"
+    ],
+    "events": [
+      "@happyvertical/smrt-events:Event",
+      "@happyvertical/smrt-events:EventCollection"
+    ],
+    "executed_agreements": [
+      "@happyvertical/smrt-sales:ExecutedAgreement",
+      "@happyvertical/smrt-sales:ExecutedAgreementCollection"
+    ],
+    "expense_allocation_billings": [
+      "@happyvertical/smrt-expenses:Billings",
+      "@happyvertical/smrt-expenses:ExpenseAllocationBilling"
+    ],
+    "expense_allocation_portions": [
+      "@happyvertical/smrt-expenses:ExpenseAllocationPortion",
+      "@happyvertical/smrt-expenses:Portions"
+    ],
+    "expense_allocation_revisions": [
+      "@happyvertical/smrt-expenses:ExpenseAllocationRevision",
+      "@happyvertical/smrt-expenses:Revisions"
+    ],
+    "expense_receipts": [
+      "@happyvertical/smrt-expenses:ExpenseReceipt",
+      "@happyvertical/smrt-expenses:ExpenseReceiptCollection"
+    ],
+    "expenses": [
+      "@happyvertical/smrt-expenses:Expense",
+      "@happyvertical/smrt-expenses:ExpenseCollection"
+    ],
+    "extracted_question_links": [
+      "@happyvertical/smrt-education:ExtractedQuestionLink",
+      "@happyvertical/smrt-education:ExtractedQuestionLinkCollection"
+    ],
+    "fact_contents": [
+      "@happyvertical/smrt-facts:FactContent",
+      "@happyvertical/smrt-facts:FactContentCollection"
+    ],
+    "fact_evidences": [
+      "@happyvertical/smrt-facts:FactEvidence",
+      "@happyvertical/smrt-facts:FactEvidenceCollection"
+    ],
+    "fact_sources": [
+      "@happyvertical/smrt-facts:FactSource",
+      "@happyvertical/smrt-facts:FactSourceCollection"
+    ],
+    "fact_subjects": [
+      "@happyvertical/smrt-facts:FactSubject",
+      "@happyvertical/smrt-facts:FactSubjectCollection"
+    ],
+    "fact_tags": [
+      "@happyvertical/smrt-facts:FactTag",
+      "@happyvertical/smrt-facts:FactTagCollection"
+    ],
+    "facts": [
+      "@happyvertical/smrt-facts:Fact",
+      "@happyvertical/smrt-facts:FactCollection"
+    ],
+    "family_intake_assets": [
+      "@happyvertical/smrt-education:FamilyIntakeAsset",
+      "@happyvertical/smrt-education:FamilyIntakeAssetCollection"
+    ],
+    "family_intake_decisions": [
+      "@happyvertical/smrt-education:FamilyIntakeDecision",
+      "@happyvertical/smrt-education:FamilyIntakeDecisionCollection"
+    ],
+    "family_intakes": [
+      "@happyvertical/smrt-education:FamilyIntake",
+      "@happyvertical/smrt-education:FamilyIntakeCollection"
+    ],
+    "folders": [
+      "@happyvertical/smrt-assets:Folder",
+      "@happyvertical/smrt-assets:FolderCollection"
+    ],
+    "fulfillment_line_items": [
+      "@happyvertical/smrt-commerce:FulfillmentLineItem",
+      "@happyvertical/smrt-commerce:FulfillmentLineItemCollection"
+    ],
+    "fulfillments": [
+      "@happyvertical/smrt-commerce:Fulfillment",
+      "@happyvertical/smrt-commerce:FulfillmentCollection"
+    ],
+    "generated_printables": [
+      "@happyvertical/smrt-education:GeneratedPrintable",
+      "@happyvertical/smrt-education:GeneratedPrintableCollection"
+    ],
+    "grades": [
+      "@happyvertical/smrt-education:Grade",
+      "@happyvertical/smrt-education:GradeCollection"
+    ],
+    "group_learner_invitations": [
+      "@happyvertical/smrt-education:GroupLearnerInvitation",
+      "@happyvertical/smrt-education:GroupLearnerInvitationCollection"
+    ],
+    "group_learner_memberships": [
+      "@happyvertical/smrt-education:GroupLearnerMembership",
+      "@happyvertical/smrt-education:GroupLearnerMembershipCollection"
+    ],
+    "group_learner_roster_entries": [
+      "@happyvertical/smrt-education:GroupLearnerRosterEntry",
+      "@happyvertical/smrt-education:GroupLearnerRosterEntryCollection"
+    ],
+    "group_members": [
+      "@happyvertical/smrt-users:GroupMember",
+      "@happyvertical/smrt-users:GroupMemberCollection"
+    ],
+    "group_revision_comments": [
+      "@happyvertical/smrt-education:GroupRevisionComment",
+      "@happyvertical/smrt-education:GroupRevisionCommentCollection"
+    ],
+    "group_roles": [
+      "@happyvertical/smrt-users:GroupRole",
+      "@happyvertical/smrt-users:GroupRoleCollection"
+    ],
+    "group_sharing_policies": [
+      "@happyvertical/smrt-education:GroupSharingPolicy",
+      "@happyvertical/smrt-education:GroupSharingPolicyCollection"
+    ],
+    "groups": [
+      "@happyvertical/smrt-users:Group",
+      "@happyvertical/smrt-users:GroupCollection"
+    ],
+    "held_qualification_changes": [
+      "@happyvertical/smrt-human-resources:HeldQualificationChange",
+      "@happyvertical/smrt-human-resources:HeldQualificationChangeCollection"
+    ],
+    "held_qualifications": [
+      "@happyvertical/smrt-human-resources:HeldQualification",
+      "@happyvertical/smrt-human-resources:HeldQualificationCollection"
+    ],
+    "historical_customer_funds": [
+      "@happyvertical/smrt-commerce:HistoricalCustomerFunds",
+      "@happyvertical/smrt-commerce:HistoricalCustomerFundsCollection"
+    ],
+    "historical_customer_funds_allocations": [
+      "@happyvertical/smrt-commerce:HistoricalCustomerFundsAllocation",
+      "@happyvertical/smrt-commerce:HistoricalCustomerFundsAllocationCollection"
+    ],
+    "historical_sales_lines": [
+      "@happyvertical/smrt-commerce:HistoricalSalesLine",
+      "@happyvertical/smrt-commerce:HistoricalSalesLineCollection"
+    ],
+    "intake_actions": [
+      "@happyvertical/smrt-ingestion:IntakeAction"
+    ],
+    "intake_analyses": [
+      "@happyvertical/smrt-ingestion:IntakeAnalysis"
+    ],
+    "intake_analysis_attempts": [
+      "@happyvertical/smrt-ingestion:IntakeAnalysisAttempt"
+    ],
+    "intake_deletions": [
+      "@happyvertical/smrt-ingestion:IntakeDeletion"
+    ],
+    "intake_dispatches": [
+      "@happyvertical/smrt-ingestion:IntakeDispatch"
+    ],
+    "intake_dispositions": [
+      "@happyvertical/smrt-ingestion:IntakeDisposition"
+    ],
+    "intake_evidence": [
+      "@happyvertical/smrt-ingestion:IntakeEvidence"
+    ],
+    "intake_executions": [
+      "@happyvertical/smrt-ingestion:IntakeExecution"
+    ],
+    "intake_feedback": [
+      "@happyvertical/smrt-ingestion:IntakeFeedback"
+    ],
+    "intake_items": [
+      "@happyvertical/smrt-ingestion:IntakeItem"
+    ],
+    "intake_plans": [
+      "@happyvertical/smrt-ingestion:IntakePlan"
+    ],
+    "intake_proposals": [
+      "@happyvertical/smrt-ingestion:IntakeProposal"
+    ],
+    "intake_review_decisions": [
+      "@happyvertical/smrt-ingestion:IntakeReviewDecision"
+    ],
+    "inventory_locations": [
+      "@happyvertical/smrt-inventory:InventoryLocation",
+      "@happyvertical/smrt-inventory:InventoryLocationCollection"
+    ],
+    "inventory_lot_corrections": [
+      "@happyvertical/smrt-inventory:LotCorrection",
+      "@happyvertical/smrt-inventory:LotCorrectionCollection"
+    ],
+    "inventory_lot_documents": [
+      "@happyvertical/smrt-inventory:LotDocument",
+      "@happyvertical/smrt-inventory:LotDocumentCollection"
+    ],
+    "inventory_lot_stock_levels": [
+      "@happyvertical/smrt-inventory:LotStockLevel",
+      "@happyvertical/smrt-inventory:LotStockLevelCollection"
+    ],
+    "inventory_lot_usages": [
+      "@happyvertical/smrt-inventory:LotUsage",
+      "@happyvertical/smrt-inventory:LotUsageCollection"
+    ],
+    "inventory_lots": [
+      "@happyvertical/smrt-inventory:Lot",
+      "@happyvertical/smrt-inventory:LotCollection"
+    ],
+    "inventory_stock_levels": [
+      "@happyvertical/smrt-inventory:StockLevel",
+      "@happyvertical/smrt-inventory:StockLevelCollection"
+    ],
+    "inventory_stock_movements": [
+      "@happyvertical/smrt-inventory:StockMovement",
+      "@happyvertical/smrt-inventory:StockMovementCollection"
+    ],
+    "invoice_line_items": [
+      "@happyvertical/smrt-commerce:InvoiceLineItem",
+      "@happyvertical/smrt-commerce:InvoiceLineItemCollection"
+    ],
+    "invoices": [
+      "@happyvertical/smrt-commerce:Invoice",
+      "@happyvertical/smrt-commerce:InvoiceCollection"
+    ],
+    "issues": [
+      "@happyvertical/smrt-projects:Issue",
+      "@happyvertical/smrt-projects:IssueCollection",
+      "@happyvertical/smrt-projects:PullRequest",
+      "@happyvertical/smrt-projects:PullRequestCollection"
+    ],
+    "journal_entries": [
+      "@happyvertical/smrt-ledgers:JournalEntry",
+      "@happyvertical/smrt-ledgers:JournalEntryCollection"
+    ],
+    "journals": [
+      "@happyvertical/smrt-ledgers:Journal",
+      "@happyvertical/smrt-ledgers:JournalCollection"
+    ],
+    "labels": [
+      "@happyvertical/smrt-projects:Label"
+    ],
+    "language_translation_tasks": [
+      "@happyvertical/smrt-languages:LanguageTranslationTask"
+    ],
+    "leads": [
+      "@happyvertical/smrt-sales:Lead",
+      "@happyvertical/smrt-sales:LeadCollection"
+    ],
+    "learner_interest_theme_changes": [
+      "@happyvertical/smrt-education:LearnerInterestThemeChange",
+      "@happyvertical/smrt-education:LearnerInterestThemeChangeCollection"
+    ],
+    "learners": [
+      "@happyvertical/smrt-education:Learner",
+      "@happyvertical/smrt-education:LearnerCollection"
+    ],
+    "learning_objective_revisions": [
+      "@happyvertical/smrt-education:LearningObjectiveRevision",
+      "@happyvertical/smrt-education:LearningObjectiveRevisionCollection"
+    ],
+    "learning_objectives": [
+      "@happyvertical/smrt-education:LearningObjective",
+      "@happyvertical/smrt-education:LearningObjectiveCollection"
+    ],
+    "ledger_accounts": [
+      "@happyvertical/smrt-ledgers:Account",
+      "@happyvertical/smrt-ledgers:AccountCollection"
+    ],
+    "ledgers": [
+      "@happyvertical/smrt-ledgers:Ledger",
+      "@happyvertical/smrt-ledgers:LedgerCollection"
+    ],
+    "legal_member_references": [
+      "@happyvertical/smrt-users:LegalMemberReference",
+      "@happyvertical/smrt-users:LegalMemberReferenceCollection"
+    ],
+    "legal_member_status_history": [
+      "@happyvertical/smrt-users:LegalMemberStatusHistory",
+      "@happyvertical/smrt-users:LegalMemberStatusHistoryCollection"
+    ],
+    "legal_members": [
+      "@happyvertical/smrt-users:LegalMember",
+      "@happyvertical/smrt-users:LegalMemberCollection"
+    ],
+    "lesson_assets": [
+      "@happyvertical/smrt-education:LessonAsset",
+      "@happyvertical/smrt-education:LessonAssetCollection"
+    ],
+    "lesson_completion_records": [
+      "@happyvertical/smrt-education:LessonCompletionRecord",
+      "@happyvertical/smrt-education:LessonCompletionRecordCollection"
+    ],
+    "lesson_external_videos": [
+      "@happyvertical/smrt-education:LessonExternalVideo",
+      "@happyvertical/smrt-education:LessonExternalVideoCollection"
+    ],
+    "lesson_pages": [
+      "@happyvertical/smrt-education:LessonPage",
+      "@happyvertical/smrt-education:LessonPageCollection"
+    ],
+    "lesson_progress": [
+      "@happyvertical/smrt-education:LessonProgress",
+      "@happyvertical/smrt-education:LessonProgressCollection"
+    ],
+    "lesson_progress_transitions": [
+      "@happyvertical/smrt-education:LessonProgressTransition",
+      "@happyvertical/smrt-education:LessonProgressTransitionCollection"
+    ],
+    "lesson_revisions": [
+      "@happyvertical/smrt-education:LessonRevision",
+      "@happyvertical/smrt-education:LessonRevisionCollection"
+    ],
+    "lesson_self_attestations": [
+      "@happyvertical/smrt-education:LessonSelfAttestation",
+      "@happyvertical/smrt-education:LessonSelfAttestationCollection"
+    ],
+    "lesson_work_filings": [
+      "@happyvertical/smrt-education:LessonWorkFiling",
+      "@happyvertical/smrt-education:LessonWorkFilingCollection"
+    ],
+    "lessons": [
+      "@happyvertical/smrt-education:Exercise",
+      "@happyvertical/smrt-education:ExerciseCollection",
+      "@happyvertical/smrt-education:Lesson",
+      "@happyvertical/smrt-education:LessonCollection",
+      "@happyvertical/smrt-education:Reading",
+      "@happyvertical/smrt-education:ReadingCollection",
+      "@happyvertical/smrt-education:Video",
+      "@happyvertical/smrt-education:VideoCollection",
+      "@happyvertical/smrt-education:Worksheet",
+      "@happyvertical/smrt-education:WorksheetCollection"
+    ],
+    "magic_link_tokens": [
+      "@happyvertical/smrt-profiles:MagicLinkToken",
+      "@happyvertical/smrt-profiles:MagicLinkTokenCollection"
+    ],
+    "manufacturing_bom_lines": [
+      "@happyvertical/smrt-manufacturing:BomLine",
+      "@happyvertical/smrt-manufacturing:BomLineCollection"
+    ],
+    "manufacturing_boms": [
+      "@happyvertical/smrt-manufacturing:BillOfMaterials",
+      "@happyvertical/smrt-manufacturing:BillOfMaterialsCollection"
+    ],
+    "manufacturing_operations": [
+      "@happyvertical/smrt-manufacturing:Operation",
+      "@happyvertical/smrt-manufacturing:OperationCollection"
+    ],
+    "manufacturing_production_run_completions": [
+      "@happyvertical/smrt-manufacturing:ProductionRunCompletion",
+      "@happyvertical/smrt-manufacturing:ProductionRunCompletionCollection"
+    ],
+    "manufacturing_production_runs": [
+      "@happyvertical/smrt-manufacturing:ProductionRun",
+      "@happyvertical/smrt-manufacturing:ProductionRunCollection"
+    ],
+    "manufacturing_routing_steps": [
+      "@happyvertical/smrt-manufacturing:RoutingStep",
+      "@happyvertical/smrt-manufacturing:RoutingStepCollection"
+    ],
+    "member_classes": [
+      "@happyvertical/smrt-users:MemberClass",
+      "@happyvertical/smrt-users:MemberClassCollection"
+    ],
+    "member_eligibility_snapshots": [
+      "@happyvertical/smrt-users:MemberEligibilitySnapshot",
+      "@happyvertical/smrt-users:MemberEligibilitySnapshotCollection"
+    ],
+    "member_officer_appointments": [
+      "@happyvertical/smrt-users:MemberOfficerAppointment",
+      "@happyvertical/smrt-users:MemberOfficerAppointmentCollection"
+    ],
+    "membership_overrides": [
+      "@happyvertical/smrt-users:MembershipOverride",
+      "@happyvertical/smrt-users:MembershipOverrideCollection"
+    ],
+    "memberships": [
+      "@happyvertical/smrt-users:Membership",
+      "@happyvertical/smrt-users:MembershipCollection"
+    ],
+    "messages": [
+      "@happyvertical/smrt-messages:Email",
+      "@happyvertical/smrt-messages:EmailCollection",
+      "@happyvertical/smrt-messages:Message",
+      "@happyvertical/smrt-messages:MessageCollection",
+      "@happyvertical/smrt-messages:SlackMessage",
+      "@happyvertical/smrt-messages:Tweet"
+    ],
+    "messaging_endpoints": [
+      "@happyvertical/smrt-messages:MessagingEndpoint",
+      "@happyvertical/smrt-messages:MessagingEndpointCollection"
+    ],
+    "nostr_identities": [
+      "@happyvertical/smrt-profiles:NostrIdentity",
+      "@happyvertical/smrt-profiles:NostrIdentityCollection"
+    ],
+    "notification_deliveries": [
+      "@happyvertical/smrt-messages:NotificationDelivery",
+      "@happyvertical/smrt-messages:NotificationDeliveryCollection"
+    ],
+    "notification_opt_outs": [
+      "@happyvertical/smrt-messages:NotificationOptOut",
+      "@happyvertical/smrt-messages:NotificationOptOutCollection"
+    ],
+    "oauth_states": [
+      "@happyvertical/smrt-social:OAuthState",
+      "@happyvertical/smrt-social:OAuthStateCollection"
+    ],
+    "oidc_identities": [
+      "@happyvertical/smrt-profiles:OidcIdentity",
+      "@happyvertical/smrt-profiles:OidcIdentityCollection"
+    ],
+    "oidc_profile_email_reservations": [
+      "@happyvertical/smrt-profiles:OidcProfileEmailReservation",
+      "@happyvertical/smrt-profiles:OidcProfileEmailReservationCollection"
+    ],
+    "opportunities": [
+      "@happyvertical/smrt-sales:Opportunity",
+      "@happyvertical/smrt-sales:OpportunityCollection"
+    ],
+    "opportunity_conversions": [
+      "@happyvertical/smrt-sales:OpportunityConversion",
+      "@happyvertical/smrt-sales:OpportunityConversionCollection"
+    ],
+    "participation_bans": [
+      "@happyvertical/smrt-comments:ParticipationBan",
+      "@happyvertical/smrt-comments:ParticipationBanCollection"
+    ],
+    "participation_policies": [
+      "@happyvertical/smrt-comments:ParticipationPolicy",
+      "@happyvertical/smrt-comments:ParticipationPolicyCollection"
+    ],
+    "participation_rate_buckets": [
+      "@happyvertical/smrt-comments:ParticipationRateBucket",
+      "@happyvertical/smrt-comments:ParticipationRateBucketCollection"
+    ],
+    "payment_allocations": [
+      "@happyvertical/smrt-commerce:PaymentAllocation",
+      "@happyvertical/smrt-commerce:PaymentAllocationCollection"
+    ],
+    "payment_instruments": [
+      "@happyvertical/smrt-commerce:PaymentInstrument",
+      "@happyvertical/smrt-commerce:PaymentInstrumentCollection"
+    ],
+    "payment_intents": [
+      "@happyvertical/smrt-commerce:PaymentIntent",
+      "@happyvertical/smrt-commerce:PaymentIntentCollection"
+    ],
+    "payments": [
+      "@happyvertical/smrt-commerce:Payment",
+      "@happyvertical/smrt-commerce:PaymentCollection"
+    ],
+    "payouts": [
+      "@happyvertical/smrt-commerce:Payout",
+      "@happyvertical/smrt-commerce:PayoutCollection"
+    ],
+    "performer_assets": [
+      "@happyvertical/smrt-video:PerformerOwnedAsset",
+      "@happyvertical/smrt-video:PerformerOwnedAssetCollection"
+    ],
+    "performers": [
+      "@happyvertical/smrt-video:Performer"
+    ],
+    "period_timecards": [
+      "@happyvertical/smrt-timesheets:PeriodTimecard",
+      "@happyvertical/smrt-timesheets:PeriodTimecardCollection"
+    ],
+    "permissions": [
+      "@happyvertical/smrt-users:Permission",
+      "@happyvertical/smrt-users:PermissionCollection"
+    ],
+    "persona_message_routes": [
+      "@happyvertical/smrt-messages:PersonaMessageRoute",
+      "@happyvertical/smrt-messages:PersonaMessageRouteCollection"
+    ],
+    "pipeline_definitions": [
+      "@happyvertical/smrt-sales:PipelineDefinition",
+      "@happyvertical/smrt-sales:PipelineDefinitionCollection"
+    ],
+    "pipeline_stages": [
+      "@happyvertical/smrt-sales:PipelineStage",
+      "@happyvertical/smrt-sales:PipelineStageCollection"
+    ],
+    "place_assets": [
+      "@happyvertical/smrt-places:PlaceAsset",
+      "@happyvertical/smrt-places:PlaceAssetCollection"
+    ],
+    "place_types": [
+      "@happyvertical/smrt-places:PlaceType",
+      "@happyvertical/smrt-places:PlaceTypeCollection"
+    ],
+    "places": [
+      "@happyvertical/smrt-places:Place",
+      "@happyvertical/smrt-places:PlaceCollection"
+    ],
+    "poll_votes": [
+      "@happyvertical/smrt-reactions:PollVote",
+      "@happyvertical/smrt-reactions:PollVoteCollection"
+    ],
+    "preview_approvals": [
+      "@happyvertical/smrt-projects:PreviewApproval",
+      "@happyvertical/smrt-projects:PreviewApprovalCollection"
+    ],
+    "products": [
+      "@happyvertical/smrt-manufacturing:Assembly",
+      "@happyvertical/smrt-products:Material",
+      "@happyvertical/smrt-products:MaterialCollection",
+      "@happyvertical/smrt-products:Product",
+      "@happyvertical/smrt-products:ProductCollection"
+    ],
+    "profile_assets": [
+      "@happyvertical/smrt-profiles:ProfileAsset",
+      "@happyvertical/smrt-profiles:ProfileAssetCollection"
+    ],
+    "profile_links": [
+      "@happyvertical/smrt-profiles:ProfileLink",
+      "@happyvertical/smrt-profiles:ProfileLinkCollection"
+    ],
+    "profile_metadata": [
+      "@happyvertical/smrt-profiles:ProfileMetadata",
+      "@happyvertical/smrt-profiles:ProfileMetadataCollection"
+    ],
+    "profile_metafields": [
+      "@happyvertical/smrt-profiles:ProfileMetafield",
+      "@happyvertical/smrt-profiles:ProfileMetafieldCollection"
+    ],
+    "profile_relationship_terms": [
+      "@happyvertical/smrt-profiles:ProfileRelationshipTerm",
+      "@happyvertical/smrt-profiles:ProfileRelationshipTermCollection"
+    ],
+    "profile_relationship_types": [
+      "@happyvertical/smrt-profiles:ProfileRelationshipType",
+      "@happyvertical/smrt-profiles:ProfileRelationshipTypeCollection"
+    ],
+    "profile_relationships": [
+      "@happyvertical/smrt-profiles:ProfileRelationship",
+      "@happyvertical/smrt-profiles:ProfileRelationshipCollection"
+    ],
+    "profile_types": [
+      "@happyvertical/smrt-profiles:ProfileType",
+      "@happyvertical/smrt-profiles:ProfileTypeCollection"
+    ],
+    "profiles": [
+      "@happyvertical/smrt-profiles:Bot",
+      "@happyvertical/smrt-profiles:Organization",
+      "@happyvertical/smrt-profiles:Person",
+      "@happyvertical/smrt-profiles:Profile",
+      "@happyvertical/smrt-profiles:ProfileCollection"
+    ],
+    "project_decisions": [
+      "@happyvertical/smrt-projects:ProjectDecision",
+      "@happyvertical/smrt-projects:ProjectDecisionCollection"
+    ],
+    "project_delivery_events": [
+      "@happyvertical/smrt-projects:ProjectDeliveryEvent",
+      "@happyvertical/smrt-projects:ProjectDeliveryEventCollection"
+    ],
+    "project_domains": [
+      "@happyvertical/smrt-sites:ProjectDomain",
+      "@happyvertical/smrt-sites:ProjectDomainCollection"
+    ],
+    "project_governance_events": [
+      "@happyvertical/smrt-projects:ProjectGovernanceEvent",
+      "@happyvertical/smrt-projects:ProjectGovernanceEventCollection"
+    ],
+    "project_integration_audits": [
+      "@happyvertical/smrt-projects:ProjectIntegrationAudit",
+      "@happyvertical/smrt-projects:ProjectIntegrationAuditCollection"
+    ],
+    "project_integrations": [
+      "@happyvertical/smrt-projects:ProjectIntegration",
+      "@happyvertical/smrt-projects:ProjectIntegrationCollection"
+    ],
+    "project_questions": [
+      "@happyvertical/smrt-projects:ProjectQuestion",
+      "@happyvertical/smrt-projects:ProjectQuestionCollection"
+    ],
+    "project_repositories": [
+      "@happyvertical/smrt-projects:ProjectRepository",
+      "@happyvertical/smrt-projects:ProjectRepositoryCollection"
+    ],
+    "project_specifications": [
+      "@happyvertical/smrt-projects:ProjectSpecification",
+      "@happyvertical/smrt-projects:ProjectSpecificationCollection"
+    ],
+    "projects": [
+      "@happyvertical/smrt-projects:Project",
+      "@happyvertical/smrt-projects:ProjectCollection"
+    ],
+    "properties": [
+      "@happyvertical/smrt-properties:Property",
+      "@happyvertical/smrt-properties:PropertyCollection"
+    ],
+    "purchase_price_observations": [
+      "@happyvertical/smrt-commerce:PurchasePriceObservation",
+      "@happyvertical/smrt-commerce:PurchasePriceObservationCollection"
+    ],
+    "qualifications": [
+      "@happyvertical/smrt-human-resources:Qualification",
+      "@happyvertical/smrt-human-resources:QualificationCollection"
+    ],
+    "question_extractions": [
+      "@happyvertical/smrt-education:QuestionExtractionRecord",
+      "@happyvertical/smrt-education:QuestionExtractionRecordCollection"
+    ],
+    "question_responses": [
+      "@happyvertical/smrt-education:QuestionResponse",
+      "@happyvertical/smrt-education:QuestionResponseCollection"
+    ],
+    "question_revisions": [
+      "@happyvertical/smrt-education:QuestionRevision",
+      "@happyvertical/smrt-education:QuestionRevisionCollection"
+    ],
+    "questions": [
+      "@happyvertical/smrt-education:Question",
+      "@happyvertical/smrt-education:QuestionCollection"
+    ],
+    "record_comments": [
+      "@happyvertical/smrt-comments:Comment",
+      "@happyvertical/smrt-comments:CommentCollection"
+    ],
+    "record_polls": [
+      "@happyvertical/smrt-reactions:Poll",
+      "@happyvertical/smrt-reactions:PollCollection"
+    ],
+    "record_reactions": [
+      "@happyvertical/smrt-reactions:Reaction",
+      "@happyvertical/smrt-reactions:ReactionCollection"
+    ],
+    "referral_agreements": [
+      "@happyvertical/smrt-sales:ReferralAgreement",
+      "@happyvertical/smrt-sales:ReferralAgreementCollection"
+    ],
+    "referral_click_operations": [
+      "@happyvertical/smrt-sales:ReferralClickOperation",
+      "@happyvertical/smrt-sales:ReferralClickOperationCollection"
+    ],
+    "referral_links": [
+      "@happyvertical/smrt-sales:ReferralLink",
+      "@happyvertical/smrt-sales:ReferralLinkCollection"
+    ],
+    "referral_programs": [
+      "@happyvertical/smrt-sales:ReferralProgram",
+      "@happyvertical/smrt-sales:ReferralProgramCollection"
+    ],
+    "referral_term_snapshots": [
+      "@happyvertical/smrt-sales:ReferralTermSnapshot",
+      "@happyvertical/smrt-sales:ReferralTermSnapshotCollection"
+    ],
+    "referral_touches": [
+      "@happyvertical/smrt-sales:ReferralTouch",
+      "@happyvertical/smrt-sales:ReferralTouchCollection"
+    ],
+    "referrals": [
+      "@happyvertical/smrt-sales:Referral",
+      "@happyvertical/smrt-sales:ReferralCollection"
+    ],
+    "referrer_identifiers": [
+      "@happyvertical/smrt-sales:ReferrerIdentifier",
+      "@happyvertical/smrt-sales:ReferrerIdentifierCollection"
+    ],
+    "referrers": [
+      "@happyvertical/smrt-sales:Referrer",
+      "@happyvertical/smrt-sales:ReferrerCollection"
+    ],
+    "released_lessons": [
+      "@happyvertical/smrt-education:ReleasedLesson",
+      "@happyvertical/smrt-education:ReleasedLessonCollection"
+    ],
+    "repositories": [
+      "@happyvertical/smrt-projects:Repository",
+      "@happyvertical/smrt-projects:RepositoryCollection"
+    ],
+    "resource_grants": [
+      "@happyvertical/smrt-users:ResourceGrant",
+      "@happyvertical/smrt-users:ResourceGrantCollection"
+    ],
+    "role_permissions": [
+      "@happyvertical/smrt-users:RolePermission",
+      "@happyvertical/smrt-users:RolePermissionCollection"
+    ],
+    "roles": [
+      "@happyvertical/smrt-users:Role",
+      "@happyvertical/smrt-users:RoleCollection"
+    ],
+    "runtime_reports": [
+      "@happyvertical/smrt-reports:RuntimeReport",
+      "@happyvertical/smrt-reports:RuntimeReportCollection"
+    ],
+    "sales_activities": [
+      "@happyvertical/smrt-sales:SalesActivity",
+      "@happyvertical/smrt-sales:SalesActivityCollection"
+    ],
+    "sales_governance_events": [
+      "@happyvertical/smrt-sales:SalesGovernanceEvent",
+      "@happyvertical/smrt-sales:SalesGovernanceEventCollection"
+    ],
+    "sales_governance_states": [
+      "@happyvertical/smrt-sales:SalesGovernanceState",
+      "@happyvertical/smrt-sales:SalesGovernanceStateCollection"
+    ],
+    "sales_representatives": [
+      "@happyvertical/smrt-sales:SalesRepresentative",
+      "@happyvertical/smrt-sales:SalesRepresentativeCollection"
+    ],
+    "scene_assets": [
+      "@happyvertical/smrt-video:SceneOwnedAsset",
+      "@happyvertical/smrt-video:SceneOwnedAssetCollection"
+    ],
+    "scenes": [
+      "@happyvertical/smrt-video:Scene"
+    ],
+    "secret_audit_logs": [
+      "@happyvertical/smrt-secrets:SecretAuditLog",
+      "@happyvertical/smrt-secrets:SecretAuditLogCollection"
+    ],
+    "secrets": [
+      "@happyvertical/smrt-secrets:Secret",
+      "@happyvertical/smrt-secrets:SecretCollection"
+    ],
+    "service_charge_snapshots": [
+      "@happyvertical/smrt-timesheets:ServiceChargeSnapshot",
+      "@happyvertical/smrt-timesheets:ServiceChargeSnapshotCollection"
+    ],
+    "service_compensation_snapshots": [
+      "@happyvertical/smrt-timesheets:ServiceCompensationSnapshot",
+      "@happyvertical/smrt-timesheets:ServiceCompensationSnapshotCollection"
+    ],
+    "service_time_entries": [
+      "@happyvertical/smrt-support:ServiceTimeEntry",
+      "@happyvertical/smrt-support:ServiceTimeEntryCollection",
+      "@happyvertical/smrt-timesheets:ServiceTimeEntryCollection"
+    ],
+    "sessions": [
+      "@happyvertical/smrt-users:Session",
+      "@happyvertical/smrt-users:SessionCollection"
+    ],
+    "site_agent_bindings": [
+      "@happyvertical/smrt-sites:SiteAgentBinding",
+      "@happyvertical/smrt-sites:SiteAgentBindingCollection"
+    ],
+    "sites": [
+      "@happyvertical/smrt-sites:Site",
+      "@happyvertical/smrt-sites:SiteCollection"
+    ],
+    "smrt_mcp_call_audits": [
+      "@happyvertical/smrt-app-mcp:McpCallAudit",
+      "@happyvertical/smrt-app-mcp:McpCallAuditCollection"
+    ],
+    "social_accounts": [
+      "@happyvertical/smrt-social:SocialAccount",
+      "@happyvertical/smrt-social:SocialAccountCollection"
+    ],
+    "social_post_analytics_snapshots": [
+      "@happyvertical/smrt-social:SocialPostAnalyticsSnapshot",
+      "@happyvertical/smrt-social:SocialPostAnalyticsSnapshotCollection"
+    ],
+    "social_posts": [
+      "@happyvertical/smrt-social:SocialPost",
+      "@happyvertical/smrt-social:SocialPostCollection"
+    ],
+    "submission_assets": [
+      "@happyvertical/smrt-education:SubmissionAsset",
+      "@happyvertical/smrt-education:SubmissionAssetCollection"
+    ],
+    "submission_intake_bindings": [
+      "@happyvertical/smrt-education:SubmissionIntakeBinding",
+      "@happyvertical/smrt-education:SubmissionIntakeBindingCollection"
+    ],
+    "submissions": [
+      "@happyvertical/smrt-education:Attestation",
+      "@happyvertical/smrt-education:AttestationCollection",
+      "@happyvertical/smrt-education:ExternalCompletion",
+      "@happyvertical/smrt-education:ExternalCompletionCollection",
+      "@happyvertical/smrt-education:ScannedSubmission",
+      "@happyvertical/smrt-education:ScannedSubmissionCollection",
+      "@happyvertical/smrt-education:Submission",
+      "@happyvertical/smrt-education:SubmissionCollection"
+    ],
+    "support_ai_runs": [
+      "@happyvertical/smrt-support:SupportAiRun",
+      "@happyvertical/smrt-support:SupportAiRunCollection"
+    ],
+    "support_availability_windows": [
+      "@happyvertical/smrt-support:SupportAvailability",
+      "@happyvertical/smrt-support:SupportAvailabilityCollection"
+    ],
+    "support_case_events": [
+      "@happyvertical/smrt-support:SupportCaseEvent",
+      "@happyvertical/smrt-support:SupportCaseEventCollection"
+    ],
+    "support_cases": [
+      "@happyvertical/smrt-support:SupportCase",
+      "@happyvertical/smrt-support:SupportCaseCollection"
+    ],
+    "support_channel_bindings": [
+      "@happyvertical/smrt-support:SupportChannelBinding",
+      "@happyvertical/smrt-support:SupportChannelBindingCollection"
+    ],
+    "support_charges": [
+      "@happyvertical/smrt-support:SupportCharge",
+      "@happyvertical/smrt-support:SupportChargeCollection"
+    ],
+    "support_compensation_plans": [
+      "@happyvertical/smrt-support:SupportCompensationPlan",
+      "@happyvertical/smrt-support:SupportCompensationPlanCollection"
+    ],
+    "support_compensations": [
+      "@happyvertical/smrt-support:SupportCompensation",
+      "@happyvertical/smrt-support:SupportCompensationCollection"
+    ],
+    "support_escalations": [
+      "@happyvertical/smrt-support:SupportEscalation",
+      "@happyvertical/smrt-support:SupportEscalationCollection"
+    ],
+    "support_interactions": [
+      "@happyvertical/smrt-support:SupportInteraction",
+      "@happyvertical/smrt-support:SupportInteractionCollection"
+    ],
+    "support_plans": [
+      "@happyvertical/smrt-support:SupportPlan",
+      "@happyvertical/smrt-support:SupportPlanCollection"
+    ],
+    "support_policies": [
+      "@happyvertical/smrt-support:SupportPolicy",
+      "@happyvertical/smrt-support:SupportPolicyCollection"
+    ],
+    "support_qualifications": [
+      "@happyvertical/smrt-support:SupportQualification",
+      "@happyvertical/smrt-support:SupportQualificationCollection"
+    ],
+    "support_service_targets": [
+      "@happyvertical/smrt-support:SupportServiceTarget",
+      "@happyvertical/smrt-support:SupportServiceTargetCollection"
+    ],
+    "support_specialists": [
+      "@happyvertical/smrt-support:SupportSpecialist",
+      "@happyvertical/smrt-support:SupportSpecialistCollection"
+    ],
+    "support_work_links": [
+      "@happyvertical/smrt-support:SupportWorkLink",
+      "@happyvertical/smrt-support:SupportWorkLinkCollection"
+    ],
+    "tag_aliases": [
+      "@happyvertical/smrt-tags:TagAlias",
+      "@happyvertical/smrt-tags:TagAliasCollection"
+    ],
+    "tags": [
+      "@happyvertical/smrt-tags:Tag",
+      "@happyvertical/smrt-tags:TagCollection"
+    ],
+    "tax_codes": [
+      "@happyvertical/smrt-commerce:TaxCode",
+      "@happyvertical/smrt-commerce:TaxCodeCollection"
+    ],
+    "tax_components": [
+      "@happyvertical/smrt-commerce:TaxComponent",
+      "@happyvertical/smrt-commerce:TaxComponentCollection"
+    ],
+    "tax_settings": [
+      "@happyvertical/smrt-commerce:TaxSettings",
+      "@happyvertical/smrt-commerce:TaxSettingsCollection"
+    ],
+    "tax_summary_reports": [
+      "@happyvertical/smrt-commerce:TaxSummaryReport",
+      "@happyvertical/smrt-commerce:TaxSummaryReportCollection"
+    ],
+    "tenant_agents": [
+      "@happyvertical/smrt-agents:TenantAgent",
+      "@happyvertical/smrt-agents:TenantAgentCollection"
+    ],
+    "tenant_integrations": [
+      "@happyvertical/smrt-users:TenantIntegration",
+      "@happyvertical/smrt-users:TenantIntegrationCollection"
+    ],
+    "tenant_keys": [
+      "@happyvertical/smrt-secrets:TenantKey",
+      "@happyvertical/smrt-secrets:TenantKeyCollection"
+    ],
+    "tenant_payment_accounts": [
+      "@happyvertical/smrt-commerce:TenantPaymentAccount",
+      "@happyvertical/smrt-commerce:TenantPaymentAccountCollection"
+    ],
+    "tenant_payment_disputes": [
+      "@happyvertical/smrt-commerce:TenantPaymentDispute",
+      "@happyvertical/smrt-commerce:TenantPaymentDisputeCollection"
+    ],
+    "tenant_permission_overrides": [
+      "@happyvertical/smrt-users:TenantPermissionOverride",
+      "@happyvertical/smrt-users:TenantPermissionOverrideCollection"
+    ],
+    "tenants": [
+      "@happyvertical/smrt-users:Tenant",
+      "@happyvertical/smrt-users:TenantCollection"
+    ],
+    "timecard_adjustments": [
+      "@happyvertical/smrt-timesheets:TimecardAdjustment",
+      "@happyvertical/smrt-timesheets:TimecardAdjustmentCollection"
+    ],
+    "timecard_reopenings": [
+      "@happyvertical/smrt-timesheets:TimecardReopening",
+      "@happyvertical/smrt-timesheets:TimecardReopeningCollection"
+    ],
+    "tutor_exchanges": [
+      "@happyvertical/smrt-education:TutorExchange",
+      "@happyvertical/smrt-education:TutorExchangeCollection"
+    ],
+    "tutor_session_closures": [
+      "@happyvertical/smrt-education:TutorSessionClosure",
+      "@happyvertical/smrt-education:TutorSessionClosureCollection"
+    ],
+    "tutor_sessions": [
+      "@happyvertical/smrt-education:TutorSession",
+      "@happyvertical/smrt-education:TutorSessionCollection"
+    ],
+    "user_notifications": [
+      "@happyvertical/smrt-messages:UserNotification",
+      "@happyvertical/smrt-messages:UserNotificationCollection"
+    ],
+    "users": [
+      "@happyvertical/smrt-users:User",
+      "@happyvertical/smrt-users:UserCollection"
+    ],
+    "users_cli_auth_approve_limits": [
+      "@happyvertical/smrt-users:UsersCliAuthApproveLimit",
+      "@happyvertical/smrt-users:UsersCliAuthApproveLimitCollection"
+    ],
+    "users_cli_auth_requests": [
+      "@happyvertical/smrt-users:UsersCliAuthRequest",
+      "@happyvertical/smrt-users:UsersCliAuthRequestCollection"
+    ],
+    "users_login_attempts": [
+      "@happyvertical/smrt-users:UsersLoginAttempt",
+      "@happyvertical/smrt-users:UsersLoginAttemptCollection"
+    ],
+    "users_login_audit_events": [
+      "@happyvertical/smrt-users:UsersLoginAuditEvent",
+      "@happyvertical/smrt-users:UsersLoginAuditEventCollection"
+    ],
+    "users_magic_link_tokens": [
+      "@happyvertical/smrt-users:UsersMagicLinkToken",
+      "@happyvertical/smrt-users:UsersMagicLinkTokenCollection"
+    ],
+    "users_oauth_access_token_revocations": [
+      "@happyvertical/smrt-users:UsersOAuthAccessTokenRevocation",
+      "@happyvertical/smrt-users:UsersOAuthAccessTokenRevocationCollection"
+    ],
+    "users_oauth_authorization_codes": [
+      "@happyvertical/smrt-users:UsersOAuthAuthorizationCode",
+      "@happyvertical/smrt-users:UsersOAuthAuthorizationCodeCollection"
+    ],
+    "users_oauth_authorizations": [
+      "@happyvertical/smrt-users:UsersOAuthAuthorization",
+      "@happyvertical/smrt-users:UsersOAuthAuthorizationCollection"
+    ],
+    "users_oauth_clients": [
+      "@happyvertical/smrt-users:UsersOAuthClient",
+      "@happyvertical/smrt-users:UsersOAuthClientCollection"
+    ],
+    "users_oauth_refresh_families": [
+      "@happyvertical/smrt-users:UsersOAuthRefreshFamily",
+      "@happyvertical/smrt-users:UsersOAuthRefreshFamilyCollection"
+    ],
+    "users_oauth_refresh_grants": [
+      "@happyvertical/smrt-users:UsersOAuthRefreshGrant",
+      "@happyvertical/smrt-users:UsersOAuthRefreshGrantCollection"
+    ],
+    "users_passkey_challenges": [
+      "@happyvertical/smrt-users:UsersPasskeyChallenge",
+      "@happyvertical/smrt-users:UsersPasskeyChallengeCollection"
+    ],
+    "users_passkey_credentials": [
+      "@happyvertical/smrt-users:UsersPasskeyCredential",
+      "@happyvertical/smrt-users:UsersPasskeyCredentialCollection"
+    ],
+    "users_password_credentials": [
+      "@happyvertical/smrt-users:UsersPasswordCredential",
+      "@happyvertical/smrt-users:UsersPasswordCredentialCollection"
+    ],
+    "users_pin_credentials": [
+      "@happyvertical/smrt-users:UsersPinCredential",
+      "@happyvertical/smrt-users:UsersPinCredentialCollection"
+    ],
+    "vendors": [
+      "@happyvertical/smrt-commerce:Vendor",
+      "@happyvertical/smrt-commerce:VendorCollection"
+    ],
+    "video_shot_characters": [
+      "@happyvertical/smrt-video:VideoShotCharacter",
+      "@happyvertical/smrt-video:VideoShotCharacterCollection"
+    ],
+    "video_workflows": [
+      "@happyvertical/smrt-video:VideoWorkflow"
+    ],
+    "voice_gateway_turns": [
+      "@happyvertical/smrt-chat:VoiceGatewayTurn",
+      "@happyvertical/smrt-chat:VoiceGatewayTurnCollection"
+    ],
+    "voice_profiles": [
+      "@happyvertical/smrt-voice:VoiceProfile"
+    ],
+    "voice_samples": [
+      "@happyvertical/smrt-voice:VoiceSample"
+    ],
+    "voice_sessions": [
+      "@happyvertical/smrt-chat:VoiceSession",
+      "@happyvertical/smrt-chat:VoiceSessionCollection"
+    ],
+    "whitelists": [
+      "@happyvertical/smrt-messages:Whitelist",
+      "@happyvertical/smrt-messages:WhitelistCollection"
+    ],
+    "workbook_activities": [
+      "@happyvertical/smrt-education:LessonActivity",
+      "@happyvertical/smrt-education:LessonActivityCollection"
+    ],
+    "workbook_assessment_revisions": [
+      "@happyvertical/smrt-education:WorkAssessmentRevision",
+      "@happyvertical/smrt-education:WorkAssessmentRevisionCollection"
+    ],
+    "workbook_attempts": [
+      "@happyvertical/smrt-education:WorkAttempt",
+      "@happyvertical/smrt-education:WorkAttemptCollection"
+    ],
+    "workbook_completion_decisions": [
+      "@happyvertical/smrt-education:WorkCompletionDecision",
+      "@happyvertical/smrt-education:WorkCompletionDecisionCollection"
+    ],
+    "workbook_feedback_deliveries": [
+      "@happyvertical/smrt-education:WorkFeedbackDelivery",
+      "@happyvertical/smrt-education:WorkFeedbackDeliveryCollection"
+    ],
+    "workbook_feedback_releases": [
+      "@happyvertical/smrt-education:WorkFeedbackRelease",
+      "@happyvertical/smrt-education:WorkFeedbackReleaseCollection"
+    ],
+    "workbook_photo_assets": [
+      "@happyvertical/smrt-education:WorkbookPhotoAsset",
+      "@happyvertical/smrt-education:WorkbookPhotoAssetCollection"
+    ],
+    "workbook_photo_decisions": [
+      "@happyvertical/smrt-education:WorkbookPhotoDecision",
+      "@happyvertical/smrt-education:WorkbookPhotoDecisionCollection"
+    ],
+    "workbook_photo_intakes": [
+      "@happyvertical/smrt-education:WorkbookPhotoIntake",
+      "@happyvertical/smrt-education:WorkbookPhotoIntakeCollection"
+    ],
+    "zones": [
+      "@happyvertical/smrt-properties:Zone",
+      "@happyvertical/smrt-properties:ZoneCollection"
+    ]
+  },
+  "release": "0.61.0",
+  "source": "published package manifests"
+}
