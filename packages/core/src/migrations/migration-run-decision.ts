@@ -85,12 +85,13 @@ export interface MigrationRunStop<T = SchemaChangeInput> {
   kind: SchemaChangeVerdict['kind'];
   /**
    * `build-table`: a run limited to tables would relax or remove part of a
-   * build table. `whole-schema-only`: it would retire (drop) a table (#5005).
+   * build table. `retired-table`: it would create or add to a table a package
+   * declares retired (#5005).
    */
   reason:
     | NonNullable<SchemaChangeVerdict['stop']>['reason']
     | 'build-table'
-    | 'whole-schema-only';
+    | 'retired-table';
   message: string;
 }
 
@@ -129,6 +130,13 @@ export function decideMigrationRun<T extends SchemaChangeInput>(options: {
    * where the package comparison applies, may make it.
    */
   onlyAddTo?: ReadonlySet<string>;
+  /**
+   * A run limited to tables (with `onlyAddTo`) never plans a retirement
+   * (#5005): retiring waits for the next whole-schema migrate. It stops only
+   * when it would create or add to a table on this list: lower-cased table
+   * name to the declaration, as an operator reads it.
+   */
+  retiredTables?: ReadonlyMap<string, string>;
 }): MigrationRunDecision<T> {
   const releaseCheck = checkOldestSupportedRelease(
     options.recordedRelease ?? null,
@@ -181,15 +189,15 @@ export function decideMigrationRun<T extends SchemaChangeInput>(options: {
   const applicable: T[] = [];
   for (const change of options.changes) {
     const verdict = decideSchemaChange(change, options.engine);
-    // Retiring is not additive: it removes a table. A run limited to tables
-    // never does it, whatever tables it names; only a whole-schema migrate,
-    // where the package comparison applies, may (#5005).
-    if (options.onlyAddTo && verdict.kind === 'table.retire') {
+    const retired = options.onlyAddTo
+      ? retiredTableProblem(change.table, options.retiredTables)
+      : null;
+    if (retired) {
       stops.push({
         change,
         kind: verdict.kind,
-        reason: 'whole-schema-only',
-        message: `${change.table}: this table is declared retired and would be dropped, but this run is limited to some tables (lazy activation or a run-time model edit), and only a whole-schema migrate retires a table. Run smrt db:migrate, a full migrate that compares the build's packages.`,
+        reason: 'retired-table',
+        message: retired,
       });
       continue;
     }
@@ -220,6 +228,19 @@ export function decideMigrationRun<T extends SchemaChangeInput>(options: {
       applicable.push(change);
     }
   }
+  // A new table under a retired name: created now, it would be dropped by
+  // the next whole-schema migrate (#5005).
+  if (options.onlyAddTo)
+    for (const { tableName } of options.addedTables ?? []) {
+      const retired = retiredTableProblem(tableName, options.retiredTables);
+      if (retired)
+        stops.push({
+          change: { type: 'add_table', table: tableName } as unknown as T,
+          kind: 'table.add',
+          reason: 'retired-table',
+          message: retired,
+        });
+    }
   if (stops.length === 0 && packageStops.length === 0 && !releaseStop)
     return {
       proceed: true,
@@ -250,6 +271,16 @@ export function decideMigrationRun<T extends SchemaChangeInput>(options: {
     notices,
     heldBack,
   };
+}
+
+/** Why a table-limited run may not create or add to `table`, or null (#5005). */
+function retiredTableProblem(
+  table: string,
+  retiredTables: ReadonlyMap<string, string> | undefined,
+): string | null {
+  const declaration = retiredTables?.get(table.toLowerCase());
+  if (!declaration) return null;
+  return `${table}: this table is declared retired (${declaration}), and this run (lazy activation or a run-time model edit) would create or add to it. A table cannot be both retired and in use. Remove the retirement, or the model that uses the table, then run smrt db:migrate.`;
 }
 
 /**

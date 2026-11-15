@@ -151,20 +151,4 @@ describe.skipIf(!pgUrl)('retire step on real PostgreSQL (#5005)', () => {
       new Set(['table.retire-dependent']),
     );
   });
-
-  it('refuses a run limited to tables', async () => {
-    await start(retired('r5005_pg_empty'));
-    await db.query('CREATE TABLE "r5005_pg_empty" (id TEXT PRIMARY KEY)');
-    const { pending } = await plan();
-    const decision = decideMigrationRun({
-      changes: pending.diff.changes,
-      engine: 'postgres',
-      onlyAddTo: new Set<string>(),
-    });
-    expect(decision.proceed).toBe(false);
-    expect(decision.stops[0]).toMatchObject({
-      kind: 'table.retire',
-      reason: 'whole-schema-only',
-    });
-  });
 });

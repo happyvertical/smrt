@@ -12,6 +12,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { field } from '../../decorators/index.js';
 import { SmrtObject } from '../../object.js';
 import { ObjectRegistry } from '../../registry.js';
+import {
+  planRuntimeModelDDL,
+  registerRuntimeModel,
+} from '../../runtime-model.js';
+import { appModelChangesMigrations } from '../../system/app-model-changes.js';
 import { snapshotObjectRegistryState } from '../../test-utils.js';
 import { getTestDatabase } from '../../testing/database.js';
 import { classifySchemaChange, decideSchemaChange } from '../change-kinds.js';
@@ -20,6 +25,7 @@ import {
   migrateSmrtSchemas,
 } from '../orchestrate.js';
 import type { RetiredTable } from '../retired-tables.js';
+import { MigrationTracker } from '../tracker.js';
 
 const PKG = '@retire/fixture';
 const OWNER = `${PKG}:Gone`;
@@ -374,35 +380,119 @@ describe.each(engines)('retire step on %s (#5005)', (engine) => {
     expect(await exists('retire_tree')).toBe(false);
   });
 
-  it('a run limited to named tables refuses the retirement and drops nothing', async () => {
+  const registerKeep = (tableName = 'retire_keep') => {
     class Keep extends SmrtObject {
       code = '';
     }
     field({ type: 'text' })(Keep.prototype, 'code');
-    ObjectRegistry.register(Keep, {
-      packageName: '@retire/other',
-      tableName: 'retire_keep',
-    });
+    ObjectRegistry.register(Keep, { packageName: '@retire/other', tableName });
+  };
+
+  it('a run limited to unrelated tables goes ahead, neither planning nor reporting the retirement (R1)', async () => {
+    registerKeep();
     await make('retire_limited', 1);
     declare(retired('retire_limited'));
 
     const limited = await migrate({ tables: ['retire_keep'] });
 
-    expect(limited).toMatchObject({ refused: true, applied: false });
-    expect(limited.stops).toHaveLength(1);
-    expect(limited.stops[0]).toMatchObject({
-      kind: 'table.retire',
-      reason: 'whole-schema-only',
-    });
-    expect(limited.stops[0].message).toContain('smrt db:migrate');
+    expect(limited).toMatchObject({ refused: false, applied: true });
+    expect(limited.stops).toEqual([]);
+    expect(limited.statements.join('\n')).not.toContain('retire_limited');
+    expect(await exists('retire_keep')).toBe(true);
+    // Retiring waits for the next whole-schema migrate.
     expect(await exists('retire_limited')).toBe(true);
-    // Nothing of the limited run was created either.
-    expect(await exists('retire_keep')).toBe(false);
 
     const whole = await migrate();
     expect(whole).toMatchObject({ refused: false, applied: true });
     expect(await exists('retire_limited')).toBe(false);
+  });
+
+  it('requireComplete (lazy activation, the model editor) is not held back by a retirement that would stop (R1)', async () => {
+    registerKeep();
+    await make('retire_stopping', 2);
+    // A whole-schema migrate stops on its rows; a limited run is unrelated.
+    declare(retired('retire_stopping', { rows: undefined }));
+
+    const limited = await migrate({
+      tables: ['retire_keep'],
+      requireComplete: true,
+    });
+
+    expect(limited).toMatchObject({ refused: false, applied: true });
     expect(await exists('retire_keep')).toBe(true);
+    expect(await exists('retire_stopping')).toBe(true);
+    expect(kinds(await migrate())).toEqual(['table.retire-rows']);
+  });
+
+  it('a run limited to tables stops when it would create a table under a retired name (R1, R10)', async () => {
+    registerKeep('retire_reused');
+    declare(retired('retire_reused'));
+
+    const limited = await migrate({ tables: ['retire_reused'] });
+
+    expect(limited).toMatchObject({ refused: true, applied: false });
+    expect(limited.stops).toHaveLength(1);
+    expect(limited.stops[0]).toMatchObject({ reason: 'retired-table' });
+    expect(limited.stops[0].message).toContain('retire_reused');
+    expect(limited.stops[0].message).toContain(PKG);
+    expect(await exists('retire_reused')).toBe(false);
+  });
+
+  it('a run limited to tables stops when it would add to a live table under a retired name', async () => {
+    registerKeep('retire_reused_live');
+    await db.query(`CREATE TABLE "retire_reused_live" (id TEXT PRIMARY KEY)`);
+    declare(retired('retire_reused_live'));
+
+    const limited = await migrate({ tables: ['retire_reused_live'] });
+
+    expect(limited.refused).toBe(true);
+    expect(new Set(limited.stops.map((stop) => stop.reason))).toEqual(
+      new Set(['retired-table']),
+    );
+  });
+
+  it.runIf(engine !== 'duckdb')(
+    'a run-time list stored in the app model journal counts as a declarer, even unregistered (R10)',
+    async () => {
+      // An app model editor made a list "Note" (table notes) and its rows; the
+      // process running db:migrate never registered that run-time model.
+      const tracker = new MigrationTracker({ db, engineHint: hint });
+      await tracker.applyAll(
+        appModelChangesMigrations(hint === 'postgres' ? 'postgres' : 'sqlite'),
+        { postgresSafe: false, reconcile: false },
+      );
+      const doc = (lists: Record<string, unknown>) =>
+        JSON.stringify({
+          $schema: 'x',
+          version: 1,
+          models: { version: 1, packageName: '@retire/app', lists, fields: {} },
+        });
+      await db.query(
+        `INSERT INTO _smrt_app_model_changes (application, tenant_id, revision, request_id, actor, command, before_doc, after_doc, status) VALUES ('app', '00000000-0000-4000-8000-0000000000aa', 1, 'r1', 'a', 'add', '${doc({})}', '${doc({ note: { label: 'Notes', icon: 'n', displayField: 'title', fields: {} } })}', 'applied')`,
+      );
+      await make('notes', 2);
+      declare(retired('notes'));
+
+      const result = await migrate();
+
+      expect(result).toMatchObject({ refused: true, applied: false });
+      expect(kinds(result)).toEqual(['table.retire-declared']);
+      expect(result.stops[0].message).toContain('@retire/app:note');
+      expect(await exists('notes')).toBe(true);
+    },
+  );
+
+  it('planRuntimeModelDDL refuses to create a run-time table under a retired name (R10)', async () => {
+    declare(retired('retire_runtime_items'));
+    const name = registerRuntimeModel({
+      packageName: '@retire/app',
+      name: 'RetireRuntimeItem',
+      tableName: 'retire_runtime_items',
+      fields: { title: { type: 'text' } },
+    });
+    await expect(
+      planRuntimeModelDDL(name, hint, async () => null),
+    ).rejects.toThrow(/retire_runtime_items.*declared retired/);
   });
 
   it('classifies every retire change in the table of kinds', async () => {

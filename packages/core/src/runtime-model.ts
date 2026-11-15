@@ -21,6 +21,7 @@ import {
  * @module
  */
 
+import { resolveRetiredTables } from './migrations/build-schema.js';
 import type { DatabaseEngine } from './migrations/types.js';
 import { SmrtObject } from './object.js';
 import {
@@ -37,6 +38,7 @@ import {
 import { fieldsToColumns } from './registry/schema-builder.js';
 import type { RegisteredField, SmartObjectConfig } from './registry/types.js';
 import { ObjectRegistry } from './registry.js';
+import { runtimeListTableName } from './runtime-list-table.js';
 import type {
   FieldDefinition,
   FieldUIHints,
@@ -152,12 +154,7 @@ const WIRE_TYPE: Record<RuntimeFieldType, string> = {
 
 const CRUD = ['list', 'get', 'create', 'update', 'delete'];
 
-function pluralize(name: string): string {
-  const s = toSnakeCase(name).replace(/^_/, '');
-  if (s.endsWith('s')) return s;
-  if (/[^aeiou]y$/.test(s)) return `${s.slice(0, -1)}ies`;
-  return `${s}s`;
-}
+const pluralize = runtimeListTableName;
 
 /**
  * A run-time field as a manifest field. The options the caller wrote are the
@@ -688,6 +685,15 @@ export async function planRuntimeModelDDL(
   if (registered.generatedFields?.error) throw registered.generatedFields.error;
   const table = ObjectRegistry.getTableName(qualifiedName);
   if (!table) throw new Error(`No table for ${qualifiedName}`);
+  // A table under a retired name would be dropped by the next whole-schema
+  // migrate (#5005): never create or add to one.
+  const retired = resolveRetiredTables().filter(
+    (entry) => entry.table.toLowerCase() === table.toLowerCase(),
+  );
+  if (retired.length)
+    throw new Error(
+      `Run-time model ${qualifiedName} uses table ${table}, which is declared retired (${retired.map((entry) => `${entry.packageName} in ${entry.since}: ${entry.reason}`).join('; ')}). Give the model another table name.`,
+    );
   const definition = ObjectRegistry.getAllSchemasAsDefinitions()[table];
   if (!definition) throw new Error(`No schema for table ${table}`);
   const { getDDLStrategy } = await import('./schema/ddl/index.js');

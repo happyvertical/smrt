@@ -29,6 +29,7 @@ import {
 import type { SchemaChange, SchemaDefinition } from '../schema/types.js';
 import { retireRowsGuardSql } from './retire-guard.js';
 import type { RetiredTable } from './retired-tables.js';
+import { readStoredRuntimeModelTables } from './stored-runtime-models.js';
 
 /** One thing that depends on a retired table. */
 export interface RetireDependent {
@@ -284,9 +285,27 @@ export async function planTableRetirements(
 
   const stops: SchemaChange[] = [];
   const candidates: RetiredTable[] = [];
+  // Run-time models stored in the database declare tables too, though this
+  // process never registered them (R10).
+  const stored = live.length
+    ? await readStoredRuntimeModelTables(db, engine, liveTables)
+    : { tables: new Map<string, string[]>() };
   for (const entry of live) {
-    const owners = declaredBy.get(entry.table);
-    if (owners?.length) {
+    if (stored.unreadable) {
+      stops.push(
+        stop(
+          entry,
+          'table.retire-declared',
+          `${entry.table} is declared retired (${label(entry)}: ${entry.reason}) but ${stored.unreadable}, so a run-time model may still declare the table. It is not dropped.`,
+        ),
+      );
+      continue;
+    }
+    const owners = [
+      ...(declaredBy.get(entry.table) ?? []),
+      ...(stored.tables.get(entry.table.toLowerCase()) ?? []),
+    ];
+    if (owners.length) {
       stops.push(
         stop(
           entry,

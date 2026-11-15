@@ -18,7 +18,7 @@ import { getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import { planForeignKeyCreation } from '../schema/foreign-key-planner.js';
 import type { MigrationResult, SchemaChange } from '../schema/types.js';
-import { resolveBuildSchema } from './build-schema.js';
+import { resolveBuildSchema, resolveRetiredTables } from './build-schema.js';
 import { decideSchemaChange, isCommentOnlySql } from './change-kinds.js';
 import {
   generateSchemaDiff,
@@ -280,9 +280,13 @@ export async function getPendingSchemaStatements(
     postgresTimestampMigration: options.postgresTimestampMigration,
     emptyTextAsNull: options.emptyTextAsNull,
     relaxColumns: options.relaxColumns,
-    // Declared retirements (#5005). A run limited to tables plans them too, so
-    // decideMigrationRun can refuse them by name: only a whole-schema run drops.
-    retirement: resolveRetirementContext(schemas),
+    // Declared retirements (#5005), in a whole-schema run only. A run limited
+    // to tables neither plans nor reports them: retiring waits for the next
+    // whole-schema migrate, which the build stamp forces before production
+    // starts (a limited run writes no migrate record).
+    ...(options.tables
+      ? {}
+      : { retirement: resolveRetirementContext(schemas) }),
   });
   const statements = collectStatementsFromDiff(diff, db, options.engineHint);
   const unactionableChanges = collectUnactionableChanges(
@@ -339,6 +343,21 @@ function buildOwnedTables(
     if (runtimeOnly.get(table) !== true) owned.add(table);
   }
   return owned;
+}
+
+/**
+ * The tables declared retired, by lower-cased name, each with its declaration
+ * as an operator reads it (#5005). A run limited to tables stops when it would
+ * create or add to one.
+ */
+function retiredTableNames(): ReadonlyMap<string, string> {
+  const names = new Map<string, string>();
+  for (const entry of resolveRetiredTables()) {
+    const key = entry.table.toLowerCase();
+    const said = `by ${entry.packageName} in ${entry.since}: ${entry.reason}`;
+    names.set(key, names.has(key) ? `${names.get(key)}; ${said}` : said);
+  }
+  return names;
 }
 
 /**
@@ -407,7 +426,12 @@ export async function migrateSmrtSchemas(
           options.confirmRemovedPackages ?? [],
         )
       : undefined,
-    ...(partial ? { onlyAddTo: buildOwnedTables(pending.diff.changes) } : {}),
+    ...(partial
+      ? {
+          onlyAddTo: buildOwnedTables(pending.diff.changes),
+          retiredTables: retiredTableNames(),
+        }
+      : {}),
   });
   const { stops, heldBack, proceed, packageStops, releaseStop, notices } =
     decision;
