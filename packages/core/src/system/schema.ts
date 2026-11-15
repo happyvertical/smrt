@@ -342,9 +342,11 @@ CREATE INDEX IF NOT EXISTS idx_smrt_ai_evaluations_tenant_created
  * One row per run, of any type (`fusion`, `turn`, `workflow` or an app's own
  * namespaced type): what ran (`type`, `definition_key`, `definition_version`,
  * the entry call's `prompt_key` and `template_hash`), who started it
- * (`owner_id`, `parent_run_id`), how it stands (`status`: running |
- * waiting-approval | stopped | failed | done; `degraded`; the typed
- * `stop_reason`; `stopped_by_run_id`), its `budget` as JSON and its totals.
+ * (`owner_id`, `parent_run_id`; `retry_of_run_id` for a retry of a failed
+ * run), how it stands (`status`: running | waiting-approval | stopped |
+ * cancelled | failed | done; `degraded`; the typed `stop_reason`, such as
+ * `max_tokens` or `interrupted`; `stopped_by_run_id`; `stop_detail`, JSON
+ * describing a budget stop), its `budget` as JSON and its totals.
  * `tokens`, `cost_used`, `calls`, `uncosted_calls`, `steps_used` and
  * `duration` are the run's own; the `inclusive_*` totals add every descendant
  * run; `reserved_*` is room held for calls in flight, descendants included.
@@ -352,7 +354,10 @@ CREATE INDEX IF NOT EXISTS idx_smrt_ai_evaluations_tenant_created
  * pruned. `mode`, `seats`, `degraded_seats` and `details` stay fusion-only
  * and are NULL for other types. Flags are INTEGER 0/1 (system tables store
  * flags that way, like `_smrt_ai_transcripts.truncated`). `created_at` is the
- * insert time its indexes and retention read.
+ * insert time its indexes and retention read. The accumulating cost columns
+ * (`cost_used`, `inclusive_cost`, `reserved_cost`) are DOUBLE PRECISION:
+ * REAL is 32-bit on PostgreSQL and DuckDB, and a total added to call by call
+ * would drift.
  *
  * Each call's own `_smrt_ai_usage` row carries the run's id in `run_id`; that
  * is not a foreign key, for the same retention reason as the evaluations.
@@ -375,6 +380,7 @@ CREATE TABLE IF NOT EXISTS _smrt_ai_runs (
   template_hash TEXT,
   owner_id TEXT,
   parent_run_id TEXT,
+  retry_of_run_id TEXT,
   experiment_id TEXT,
   dataset_item TEXT,
   tags TEXT,
@@ -382,20 +388,21 @@ CREATE TABLE IF NOT EXISTS _smrt_ai_runs (
   degraded INTEGER NOT NULL DEFAULT 0,
   stop_reason TEXT,
   stopped_by_run_id TEXT,
+  stop_detail TEXT,
   budget TEXT,
   tokens INTEGER NOT NULL DEFAULT 0,
-  cost_used REAL NOT NULL DEFAULT 0,
+  cost_used DOUBLE PRECISION NOT NULL DEFAULT 0,
   calls INTEGER NOT NULL DEFAULT 0,
   uncosted_calls INTEGER NOT NULL DEFAULT 0,
   steps_used INTEGER NOT NULL DEFAULT 0,
   duration INTEGER NOT NULL DEFAULT 0,
   active_since TIMESTAMP,
   inclusive_tokens INTEGER NOT NULL DEFAULT 0,
-  inclusive_cost REAL NOT NULL DEFAULT 0,
+  inclusive_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
   inclusive_calls INTEGER NOT NULL DEFAULT 0,
   inclusive_uncosted_calls INTEGER NOT NULL DEFAULT 0,
   reserved_tokens INTEGER NOT NULL DEFAULT 0,
-  reserved_cost REAL NOT NULL DEFAULT 0,
+  reserved_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
   reserved_calls INTEGER NOT NULL DEFAULT 0,
   checks_passed INTEGER NOT NULL DEFAULT 0,
   checks_failed INTEGER NOT NULL DEFAULT 0,
@@ -423,6 +430,9 @@ CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_tenant_created
 
 CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_parent
   ON _smrt_ai_runs(parent_run_id);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_retry_of
+  ON _smrt_ai_runs(retry_of_run_id);
 `;
 
 /**
@@ -437,7 +447,9 @@ CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_parent
  * (`reservation` state, `reserved_tokens`, `reserved_cost`), never in the
  * capped `payload`. A `handoff` to a child run names it in `child_run_id`.
  * `payload_ref` points at content the host stores; the framework stores
- * nothing behind it. `truncated` is INTEGER 0/1. `run_id` and `call_id` are
+ * nothing behind it. `truncated` is INTEGER 0/1. `reserved_cost` is DOUBLE
+ * PRECISION like the run's `reserved_cost` it is subtracted from, so a
+ * release returns exactly what the reservation added. `run_id` and `call_id` are
  * not foreign keys, so usage retention never blocks on events.
  *
  * `idx_smrt_ai_run_events_sweep` serves the reservation reconciliation sweep.
@@ -460,7 +472,7 @@ CREATE TABLE IF NOT EXISTS _smrt_ai_run_events (
   child_run_id TEXT,
   reservation TEXT,
   reserved_tokens INTEGER,
-  reserved_cost REAL,
+  reserved_cost DOUBLE PRECISION,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(run_id, seq)
 );
@@ -1667,7 +1679,9 @@ function toPostgresTenantUuid(ddl: string): string {
 // columns on `_smrt_ai_usage` (its `call_id` index becomes an `entry_call_id`
 // one), the widened and rebuilt `_smrt_ai_runs`, the new `_smrt_ai_run_events`
 // and `_smrt_ai_run_checkpoints`, and `_smrt_ai_evaluations` in place of
-// `_smrt_ai_usage_outcomes`.
+// `_smrt_ai_usage_outcomes`. Run rows carry `stop_detail` and an indexed
+// `retry_of_run_id`, and the run's accumulating cost columns are DOUBLE
+// PRECISION.
 export const SMRT_SCHEMA_VERSION = '1.17.0';
 
 /**
@@ -1724,5 +1738,5 @@ export const SMRT_SCHEMA_DDL_CHECKSUMS: Readonly<Record<string, string>> =
     '1.16.0':
       '8f7f6a9f5a7f3d28ac4858841a665328698a06467bcab4a8d2055cc651db263a',
     '1.17.0':
-      '99f88aa94550ec830af22afb8026660c9199b2caabb63d71662043f0d806d210',
+      '45aff3bebeae72b046051a1461f375e67c42e4b6962de0ec33dc6d98fb23b6c2',
   });

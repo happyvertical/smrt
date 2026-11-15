@@ -22,6 +22,7 @@ import {
   getDatabaseEngine,
 } from '../system/compatibility';
 import {
+  CREATE_SMRT_AI_RUN_EVENTS_TABLE,
   CREATE_SMRT_AI_RUNS_TABLE,
   getSystemTableDDLForEngine,
   SMRT_SCHEMA_VERSION,
@@ -408,6 +409,65 @@ describe.each(engines)('AI run schema upgrade on %s (#5005)', (engine) => {
     expect((await readShape(db, engine))._smrt_ai_runs).toEqual(
       (await readShape(fresh, engine))._smrt_ai_runs,
     );
+  });
+
+  it('ends an early 1.17.0 run table (no stop_detail or retry_of_run_id, REAL costs) in the fresh shape', async () => {
+    const early = (ddl: string) =>
+      ddl
+        .replace(/\s*retry_of_run_id TEXT,/, '')
+        .replace(/\s*stop_detail TEXT,/, '')
+        .replace(/DOUBLE PRECISION/g, 'REAL')
+        .replace(
+          /CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_retry_of\s+ON _smrt_ai_runs\(retry_of_run_id\);/,
+          '',
+        );
+    const db = await newDatabase(engine);
+    for (const ddl of [
+      CREATE_SMRT_AI_RUNS_TABLE,
+      CREATE_SMRT_AI_RUN_EVENTS_TABLE,
+    ]) {
+      for (const statement of getSystemTableDDLForEngine(
+        early(ddl),
+        engineOf(engine),
+      )
+        .split(';')
+        .map((value) => value.trim())
+        .filter(Boolean)) {
+        await db.query(statement);
+      }
+    }
+    await db.query(
+      `INSERT INTO _smrt_ai_runs (id, type, status, cost_used, inclusive_cost)
+       VALUES ('r1', 'workflow', 'running', 0.1, 0.1)`,
+    );
+    await bootstrap(db, engine);
+    const fresh = await newDatabase(engine);
+    await bootstrap(fresh, engine);
+    // SQLite keeps a column's declared type text, but REAL and DOUBLE
+    // PRECISION are the same 8-byte float there, so only its spelling differs.
+    const declared = (value: TableShape | undefined) =>
+      engine === 'sqlite'
+        ? value?.columns.map((column) =>
+            column.replace(':DOUBLE PRECISION:', ':REAL:'),
+          )
+        : value?.columns;
+    const shape = await readShape(db, engine);
+    const freshShape = await readShape(fresh, engine);
+    for (const table of ['_smrt_ai_runs', '_smrt_ai_run_events']) {
+      expect(declared(shape[table])).toEqual(declared(freshShape[table]));
+      expect(shape[table]?.indexes).toEqual(freshShape[table]?.indexes);
+    }
+    expect(
+      freshShape._smrt_ai_runs?.columns.some((column) =>
+        /^cost_used:(DOUBLE|double precision)/.test(column),
+      ),
+    ).toBe(true);
+    const rows = rowsOf(
+      await db.query(
+        "SELECT stop_detail, retry_of_run_id FROM _smrt_ai_runs WHERE id = 'r1'",
+      ),
+    );
+    expect(rows).toEqual([{ stop_detail: null, retry_of_run_id: null }]);
   });
 
   it('upgrades a database with no AI tables at all by creating them', async () => {
