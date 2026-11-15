@@ -72,3 +72,66 @@ it('covers a draft copy and the read-only report worker', async () => {
     await draft.discard();
   }
 });
+
+// The engine runs table changes and _archive writes inside this.db.transaction
+// (a transaction handle is a new object over the same client). Each case below
+// boots a worker (a new one per definition change) or a rehearsal copy that
+// must declare its own handle, under NODE_ENV=production.
+it('boots a new worker with a migration, then reads and writes the added field', async () => {
+  const before = await live.create('Note', { title: 'pre-migration', size: 1 });
+  await run(live, {
+    type: 'addField',
+    model: 'Note',
+    field: 'rank',
+    definition: { type: 'integer' },
+  });
+  const after = await live.create('Note', { title: 'post', size: 3, rank: 7 });
+  expect((await live.get('Note', String(after.id)))?.rank).toBe(7);
+  expect((await live.get('Note', String(before.id)))?.title).toBe(
+    'pre-migration',
+  );
+});
+
+it('undoes the migration (the down steps), then reads', async () => {
+  await run(live, { type: 'undo' });
+  const rows = await live.list('Note');
+  expect(rows.length).toBeGreaterThan(0);
+  expect(rows.some((row) => row.title === 'post')).toBe(true);
+  expect(live.def.models.Note.fields.rank).toBeUndefined();
+});
+
+it('publishes a draft that adds a field and reads it from live', async () => {
+  const publishRoot = join(root, 'publish');
+  const host = await AppHost.open(join(publishRoot, 'live'), {
+    store: new MemoryVersionStore(),
+  });
+  try {
+    await run(host, {
+      type: 'defineModel',
+      name: 'Chore',
+      fields: { title: { type: 'text' } },
+    });
+    await host.create('Chore', { title: 'Bins' });
+    const draft = await host.forkDraft(join(publishRoot, 'draft'), {
+      store: new MemoryVersionStore(),
+    });
+    host.setFrozen(true);
+    await run(draft, {
+      type: 'addField',
+      model: 'Chore',
+      field: 'points',
+      definition: { type: 'integer' },
+    });
+    const preview = await host.previewPublish(draft);
+    await host.publishDraft(draft, {
+      author: 't',
+      approved: true,
+      expect: preview.digest,
+    });
+    const row = await host.create('Chore', { title: 'Dishes', points: 5 });
+    expect((await host.get('Chore', String(row.id)))?.points).toBe(5);
+    await draft.close().catch(() => {});
+  } finally {
+    await host.close();
+  }
+});
