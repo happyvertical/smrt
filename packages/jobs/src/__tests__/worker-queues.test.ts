@@ -66,7 +66,8 @@ describe('SmrtWorker.queues (#3902)', () => {
     await workers.registerWorker({ workerKey: 'tw', leaseTtlMs: 10_000 });
     const ticker = await runLivenessTicker({
       url: dbUrl,
-      type: 'sqlite',
+      reopen: seed.reopenOptions?.(),
+      expectedEngine: seed.engine,
       workerKey: 'tw',
       leaseTtlMs: 10_000,
       leaseTickMs: 60_000,

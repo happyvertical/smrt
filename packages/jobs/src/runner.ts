@@ -60,10 +60,10 @@ import {
 import {
   createWorkerKey,
   isWorkerAlive,
-  offLoopEligible,
+  type LivenessConnectionPlan,
+  planLivenessConnection,
   registerLiveWorker,
   resolveEngine,
-  resolveUrl,
   tuneSqliteForConcurrency,
   unregisterLiveWorker,
 } from './worker-liveness.js';
@@ -442,11 +442,19 @@ export class TaskRunner extends EventEmitter {
     // Renew the worker lease. Prefer an off-loop worker thread so a CPU-bound
     // synchronous handler can never starve renewal (#1474); fall back to
     // main-loop renewal for engines a second connection can't reach
-    // (in-memory SQLite, DuckDB) or if the thread fails to start.
-    if (offLoopEligible(this.db as DatabaseInterface)) {
-      const threadStarted = await this.startLivenessThread();
-      if (!threadStarted) this.startLeaseRenewal();
-    } else {
+    // (in-memory SQLite, DuckDB), for SQLite when no second connection on the
+    // runtime's own engine is available (#4978), or if the thread fails to
+    // start.
+    const plan = planLivenessConnection(this.db as DatabaseInterface);
+    if (plan.kind === 'none') {
+      this.logger.warn(
+        `Liveness thread not used: ${plan.reason}. Renewing the worker lease on the main loop; a long synchronous handler can delay renewal, so keep leaseTtlMs well above the longest synchronous section.`,
+      );
+      this.startLeaseRenewal();
+    } else if (!(await this.startLivenessThread(plan))) {
+      this.logger.warn(
+        'Liveness thread did not start; renewing the worker lease on the main loop.',
+      );
       this.startLeaseRenewal();
     }
 
@@ -1674,7 +1682,9 @@ export class TaskRunner extends EventEmitter {
    * false if the thread can't be resolved or fails to start, so the caller can
    * fall back to main-loop renewal.
    */
-  private async startLivenessThread(): Promise<boolean> {
+  private async startLivenessThread(
+    plan: Exclude<LivenessConnectionPlan, { kind: 'none' }>,
+  ): Promise<boolean> {
     if (!this.db) return false;
     let entry: string;
     try {
@@ -1691,8 +1701,13 @@ export class TaskRunner extends EventEmitter {
     try {
       worker = new Worker(new URL(entry), {
         workerData: {
-          url: resolveUrl(this.db),
-          type: resolveEngine(this.db),
+          ...(plan.kind === 'reopen'
+            ? {
+                url: '',
+                reopen: plan.reopen,
+                expectedEngine: plan.engine,
+              }
+            : { url: plan.url, type: plan.type }),
           workerKey: this.workerKey,
           leaseTtlMs: this.effectiveLeaseTtlMs,
           leaseTickMs: this.config.leaseTickMs,

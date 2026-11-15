@@ -54,7 +54,8 @@ describe('off-loop liveness (Stage 2)', () => {
 
     const ticker = await runLivenessTicker({
       url: dbUrl,
-      type: 'sqlite',
+      reopen: seed.reopenOptions?.(),
+      expectedEngine: seed.engine,
       workerKey: 'tick-w',
       leaseTtlMs: 10_000,
       leaseTickMs: 40,

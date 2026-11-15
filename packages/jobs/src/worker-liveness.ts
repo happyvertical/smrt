@@ -1,5 +1,9 @@
 import { detectEngine } from '@happyvertical/smrt-core';
-import type { DatabaseInterface } from '@happyvertical/sql';
+import type {
+  DatabaseInterface,
+  ReopenOptions,
+  DatabaseEngine as SqlEngine,
+} from '@happyvertical/sql';
 import { createId } from '@happyvertical/utils';
 
 type DatabaseEngine = ReturnType<typeof detectEngine>;
@@ -109,6 +113,16 @@ export function resolveUrl(db: DatabaseInterface): string {
 }
 
 /**
+ * Busy timeout, in milliseconds, applied to the runner's SQLite connection and
+ * to the liveness thread's reopened connection. It matches the value the local
+ * runtime sets on its own connection (`tuneLocalSqlite` in
+ * `@happyvertical/smrt-app-runtime`). Neither SQLite engine waits for a lock
+ * by default, and a reopened connection does not inherit the first one's
+ * PRAGMAs.
+ */
+export const SQLITE_BUSY_TIMEOUT_MS = 5000;
+
+/**
  * Tune a SQLite connection for the off-loop liveness topology.
  *
  * The runner's main connection and the off-loop ticker's connection both touch
@@ -127,7 +141,7 @@ export async function tuneSqliteForConcurrency(
   db: DatabaseInterface,
 ): Promise<void> {
   try {
-    await db.query('PRAGMA busy_timeout = 5000');
+    await db.query(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
     await db.query('PRAGMA journal_mode = WAL');
   } catch {
     // Best-effort connection tuning.
@@ -160,16 +174,88 @@ export function isInMemory(db: DatabaseInterface): boolean {
 }
 
 /**
- * Whether the off-loop liveness thread can run against this connection.
+ * How the off-loop liveness thread gets its database connection, or why it
+ * must not run.
  *
- * Requires a second independent connection to the same data: true for Postgres
- * and file-backed SQLite. In-memory SQLite cannot be reached from another
- * connection, and DuckDB is single-writer per file — both fall back to
- * main-loop lease renewal + the in-process live set.
+ * - `reopen`: file-backed SQLite whose connection can be reopened on the same
+ *   engine (`db.engine` plus `db.reopenOptions()`). The thread opens exactly
+ *   those options and checks that the engine it got is `engine`.
+ * - `url`: PostgreSQL, which has no second-engine hazard. The thread builds its
+ *   own pooled connection from the URL, as it always has.
+ * - `none`: no safe second connection; the runner renews the lease on its own
+ *   connection from the main loop and logs `reason` once.
+ *
+ * Two SQLite engines (`node:sqlite`, `@libsql/client`) hold their own copy of
+ * SQLite whose file locks do not coordinate, so a second connection on the
+ * other engine can corrupt a WAL file (#4978). A connection that does not say
+ * which engine it uses is treated as unsafe to share.
  */
-export function offLoopEligible(db: DatabaseInterface): boolean {
+export type LivenessConnectionPlan =
+  | {
+      kind: 'reopen';
+      engine: SqlEngine;
+      reopen: ReopenOptions;
+    }
+  | { kind: 'url'; url: string; type: string }
+  | { kind: 'none'; reason: string };
+
+/** Decide how (and whether) the liveness thread may open its connection. */
+export function planLivenessConnection(
+  db: DatabaseInterface,
+  platform: NodeJS.Platform = process.platform,
+): LivenessConnectionPlan {
   const engine = resolveEngine(db);
-  if (engine === 'postgres') return true;
-  if (engine === 'sqlite') return !isInMemory(db);
-  return false;
+  if (engine === 'postgres') {
+    return { kind: 'url', url: resolveUrl(db), type: engine };
+  }
+  if (engine !== 'sqlite') {
+    return {
+      kind: 'none',
+      reason: `the ${engine} engine has one owner per database`,
+    };
+  }
+  if (isInMemory(db)) {
+    return {
+      kind: 'none',
+      reason:
+        'an in-memory SQLite database cannot be reached by a second connection',
+    };
+  }
+  const dbEngine = db.engine;
+  if (dbEngine !== 'node-sqlite' && dbEngine !== 'libsql') {
+    return {
+      kind: 'none',
+      reason:
+        'the connection does not report which SQLite engine it uses, so a second connection may use a different engine on the same file',
+    };
+  }
+  if (typeof db.reopenOptions !== 'function') {
+    return {
+      kind: 'none',
+      reason: 'the connection cannot give options to reopen the same database',
+    };
+  }
+  let reopen: ReopenOptions;
+  try {
+    reopen = db.reopenOptions();
+  } catch (error) {
+    return {
+      kind: 'none',
+      reason: `the connection cannot be reopened on the same engine (${
+        error instanceof Error ? error.message : String(error)
+      })`,
+    };
+  }
+  if (
+    platform === 'win32' &&
+    dbEngine === 'node-sqlite' &&
+    (reopen as { secureFile?: unknown }).secureFile
+  ) {
+    return {
+      kind: 'none',
+      reason:
+        'on Windows the secure SQLite custody verifier cannot be handed to a worker thread',
+    };
+  }
+  return { kind: 'reopen', engine: dbEngine, reopen };
 }
