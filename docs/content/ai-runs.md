@@ -19,9 +19,9 @@ is enforced against (section 6.2).
 
 Lines that begin with **Proposed:** are details this page adds to the agreed
 design. They are part of the specification code is built from, and they are
-marked so a reviewer can accept or change each one. A few of them state two
-options, marked **(a)** and **(b)**: those are product decisions still open,
-and this page does not choose between them.
+marked so a reviewer can accept or change each one. Everything else on the
+page, including the product rules on cancelling, retrying a failed run,
+waiting for approval, usage persistence and run-row retention, is decided.
 
 ## 1. Terms
 
@@ -41,8 +41,10 @@ and this page does not choose between them.
 | **Workflow run** | A run of type `workflow`. The host fixes the order: a list of **steps**, each with a schema-checked output and a host check. It is linear, with repair and an approval pause; there is no branching and no parallel step. It replaces "design run". |
 | **Step** | One host-defined stage of a workflow. It replaces "pass". In a model-driven loop the equivalent round is an **iteration**. Each time a step is started it is a new **step instance**, with its own `step_instance_id`. |
 | **Attempt** | One try at a step's call. A repair is attempt 2 of the same step. |
-| **Durable** | A property of a run, not a run type: a durable run keeps a checkpoint and can be resumed after a restart. Any run type can be durable. |
+| **Durable** | A property of a run, not a run type: a durable run keeps a checkpoint and can be resumed after a restart. Any run type can be durable. Only a durable run may wait for approval. |
 | **Checkpoint** | The saved state a durable run resumes from. |
+| **Stop, cancel** | A **stop** pauses a run with a reason; a durable run can be resumed from it. A **cancel** ends a run for good: a cancelled run is never resumed. |
+| **Retry** | A new run that picks up the completed steps of a failed durable workflow run and names it in `retry_of_run_id`. A failed run is never resumed in place (section 7). |
 | **Lease** | A time-limited claim a worker process holds on the background job that runs a durable run. The worker renews it while it works; if the worker dies, the lease expires and another worker may take the job. |
 | **Claim fencing** | The check in `smrt-jobs` that a write comes from the worker holding the job's current claim. A worker whose claim has been taken over is refused, so a stale worker cannot write. |
 | **Event** | One ordered entry in a run: a call, an action, an observation, a check, an approval or a hand-off. |
@@ -79,6 +81,7 @@ through the tier, latency, reasoning effort and the budget.
  run (_smrt_ai_runs)                                                       |
    type, definition, status, budget, totals                                |
    parent_run_id ----> the parent run (none for a root run)                |
+   retry_of_run_id --> the failed run it retries (none otherwise)          |
     |                                                                      |
     +-- events (_smrt_ai_run_events), ordered by seq, each with run_id     |
     |     call event ------------------ call_id ---------------------------+
@@ -105,6 +108,8 @@ Reading the picture:
   are the authority for the run's budget and are never rebuilt automatically
   (see [section 6](#6-budgets-and-how-they-are-accounted)).
 - `parent_run_id` points **up**, from a child run to the run that started it.
+  `retry_of_run_id` points **back**, from a retry to the failed run it picks
+  up from.
 - **Events** are the ordered record of what happened. `seq` is append order,
   not causal order; `parent_event_id` carries cause.
 - A **checkpoint** exists only for a durable run and holds what resuming needs.
@@ -164,10 +169,11 @@ charged as a call with no reservation (section 6.4).
 | `type`, `definition_key`, `definition_version` | What ran. `definition_key` is today's `fusion_key`, renamed. |
 | `prompt_key`, `template_hash` | The prompt key (kept) and prompt version (new) of the entry call that started the run, if any. A fusion's seats may use prompts of their own; these say which prompt the fusion answered. |
 | `owner_id`, `parent_run_id` | Who started it; the run that started it. |
+| `retry_of_run_id` | For a retry, the failed run it retries (section 7); NULL otherwise. A plain reference: it may name a run whose row has since been pruned. |
 | `experiment_id`, `dataset_item`, `tags` | Grouping. `tags` records **what was varied** in the run (for example the model or the template version under test), so runs can be compared. |
 | `status`, `degraded`, `stop_reason` | How it stands (below). |
 | `stopped_by_run_id` | The run whose limit or stop stopped this one: itself, an ancestor, or a child whose own limit stopped it (section 6.2). |
-| `stop_detail` | For a stop at a budget limit: which limit, how much was asked for and how much room was left, as JSON (section 6.4). NULL for any other stop. |
+| `stop_detail` | A JSON column. For a stop at a budget limit: which limit, how much was asked for and how much room was left (section 6.4). NULL for any other stop. |
 | `budget` | The limits, as JSON (section 6.1). |
 | `tokens`, `cost_used`, `calls`, `uncosted_calls`, `steps_used`, `duration` | **Own totals**: this run's own calls and steps. `duration` is active time in milliseconds, following the existing `duration` columns. |
 | `active_since` | When the current active period began; NULL while stopped, waiting or finished. |
@@ -178,9 +184,10 @@ charged as a call with no reservation (section 6.4).
 | `started_at`, `finished_at`, `created_at` | `created_at` is kept as the row's insert time, so its indexes and retention keep working; for a new run it equals `started_at`. |
 | `mode`, `seats`, `degraded_seats`, `details` | Kept for fusion runs, as today: the fusion's mode, seats that ran, seats degraded, and per-seat identities as JSON. NULL for other run types. |
 
-Proposed: the column names `stopped_by_run_id`, `stop_detail`, `uncosted_calls`,
-`inclusive_uncosted_calls`, `active_since`, `checks_passed`, `checks_failed`,
-`approvals_given` and `approvals_refused`, and the run-row `template_hash`.
+Proposed: the column names `stopped_by_run_id`, `stop_detail`,
+`retry_of_run_id`, `uncosted_calls`, `inclusive_uncosted_calls`,
+`active_since`, `checks_passed`, `checks_failed`, `approvals_given` and
+`approvals_refused`, and the run-row `template_hash`.
 
 Steps and duration have **no inclusive total**. A child run's steps are its
 own, and a child runs inside its parent's active time, so adding the child's
@@ -191,10 +198,14 @@ duration to the parent's would count the same time twice.
 | Status | Meaning |
 |---|---|
 | `running` | Work is in progress (or was, and nothing has said otherwise yet). |
-| `waiting-approval` | Paused at an approval event until a person decides. Resumable. |
-| `stopped` | Stopped with a `stop_reason`. **Resumable** when the run is durable; final when it is not (below). |
-| `failed` | Something went wrong. Not resumable. |
-| `done` | Finished. |
+| `waiting-approval` | Paused at an approval event until a person decides. Resumable. Durable runs only (section 6.7). |
+| `stopped` | Paused with a `stop_reason`: a budget limit, an interruption or a definition change. **Resumable** when the run is durable; final when it is not (below). |
+| `cancelled` | Ended for good by the host or a person. Never resumed and never retried. Final. |
+| `failed` | Something went wrong. Never resumed in place; a failed durable workflow run may be retried as a new run (section 7). Final. |
+| `done` | Finished. Final. |
+
+`finished_at` is set when a run reaches `cancelled`, `failed` or `done`, and
+when a run that is not durable stops.
 
 **A stopped run that is not durable.** A fusion or chat turn that stops (at a
 budget limit, say) has no checkpoint, so it cannot be resumed. Its stop is
@@ -218,10 +229,10 @@ refused, never applied over the newer status. The allowed moves are:
 
 | From | To |
 |---|---|
-| `running` | `waiting-approval`, `stopped`, `failed`, `done` |
-| `waiting-approval` | `running` (decided and resumed), `stopped`, `failed` |
-| `stopped` | `running` (resumed; durable runs only) |
-| `failed`, `done` | nothing: both are final |
+| `running` | `waiting-approval` (durable runs only), `stopped`, `cancelled`, `failed`, `done` |
+| `waiting-approval` | `running` (decided and resumed), `stopped`, `cancelled`, `failed` |
+| `stopped` | `running` (resumed; durable runs only), `cancelled` (durable runs only; a stopped run that is not durable is already final) |
+| `cancelled`, `failed`, `done` | nothing: all three are final |
 
 So a slow run that the sweep has already set to `failed` (section 6.7) cannot
 later write `done` over it, and, because a reservation and a step start both
@@ -230,35 +241,39 @@ call either. What it already spent is still settled: settlement does not look
 at status, because spending that happened must be counted.
 
 `stop_reason` is one column holding a typed code, never free text. It says why
-a run stopped or failed:
+a run stopped, was cancelled or failed:
 
 | Code | Status | Meaning |
 |---|---|---|
 | `max_steps`, `max_calls`, `max_cost`, `max_tokens`, `max_duration` | `stopped` | A budget limit was reached. |
-| `cancelled` | `stopped` | The host asked the run to stop. Whether this is resumable is an open decision (below). |
+| `interrupted` | `stopped` | The host or a person paused the run, or the host stopped it because it is shutting down. Resumable when durable. |
 | `definition_changed` | `stopped` | The definition changed and does not accept the run's checkpoint. |
+| `cancelled` | `cancelled` | The host or a person ended the run for good. |
 | `repairs_exhausted`, `check_failed` | `failed` | A step's output never passed. |
 | `abandoned` | `failed` | The process running a run that is not durable disappeared (section 6.7). |
 | `error` | `failed` | Anything else that went wrong. |
 
-Proposed: `cancelled` replaces the earlier `host_stopped`. Whether it can be
-resumed is open: either **(a)** `cancelled` is a resumable stop, used for any
-reason the host has, a person or a shutdown alike; or **(b)** `cancelled` is
-final (the run is not resumed), and a separate resumable stop,
-`interrupted`, is used when the host stops a run only because it is shutting
-down.
+**Interrupting and cancelling are different.** An interruption pauses: a
+durable run stopped with `interrupted` is resumed later, from its checkpoint,
+exactly as after a budget stop. A cancel ends: the run moves to the final
+status `cancelled` with reason `cancelled`, is never resumed or retried, and
+is not protected from retention as a resumable run (section 8). Cancel is not
+used for a shutdown, and `interrupted` replaces the earlier `host_stopped`.
+Cancelling a run sets `stopped_by_run_id` to the run itself.
 
-Proposed: `abandoned` is a new code. There is no stop for a call to a model
-with no price: such a call is allowed (section 6.3).
+Proposed: the code `interrupted` (rather than `host_stopped`), because the
+stop is the same whether a host, a person or a shutdown asked for it, and the
+status `cancelled` (rather than `stopped` or `failed` with a `cancelled`
+reason), because `stopped` means resumable and `failed` means something went
+wrong. `abandoned` is a new code. There is no stop for a call to a model with
+no price: such a call is allowed (section 6.3).
 
-Proposed: a `failed` run is not resumed in place. How a host tries again is
-open: either **(a)** a failed workflow run is always started again from the
-beginning, as a new run; or **(b)** a host may retry it from its last accepted
-step, keeping the accepted outputs of the steps before it. Option (b) needs
-two things option (a) does not: a lineage column on the new run naming the
-failed run it retries (for example `retry_of_run_id`), and keeping a failed
-run's checkpoint until it is retried or pruned. The tables on this page do not
-include them; they are added only if (b) is chosen.
+**A failed run is never resumed in place.** A host may **retry** a failed
+durable workflow run from its last accepted step: it opens a new run with
+`retry_of_run_id` naming the failed run, and that new run picks up the
+completed steps of the failed one (section 7). To make that possible, a failed
+run's checkpoint is kept after its trajectory is pruned, for as long as the
+failed run's row is kept (section 8).
 
 A worker that loses its lease does not change the run: another worker takes
 the job and continues the same run. Losing a lease is something that happens
@@ -357,12 +372,15 @@ See [section 7](#7-resuming).
 | `do()`, `is()`, `describe()` whose tier is bound to a fusion | A `fusion` run, as below. |
 | A fusion | One `fusion` run, one usage row and one `call` event per seat. The run row is written when the fusion starts, not when it ends. |
 | A chat turn | One `turn` run, one usage row and one `call` event per model call in the tool loop, `action` and `observation` events for tool use. |
+| A chat turn that needs approval | The turn records a requested `approval` event and ends `done`, with the approval pending; it does not wait. The next turn carries on, and the person's decision is recorded as an `approval` event in that turn's run, as approval cards behave today. |
 | A workflow run | One `workflow` run, a checkpoint, usage rows that carry the step and attempt, one `call` event per call, `check` and `approval` events. |
+| A retried workflow run | A new `workflow` run with `retry_of_run_id` naming the failed run, a checkpoint that starts with the failed run's accepted step outputs, and its own usage rows and events from the step it starts at. |
 | A fusion inside a workflow step | A child `fusion` run whose `parent_run_id` is the workflow run, and a `handoff` event in the workflow run naming it. The step's `check` event points at that `handoff`. |
 | A fusion inside a chat turn | A child `fusion` run whose `parent_run_id` is the `turn` run, and a `handoff` event in the turn naming it. |
 
-A caller that wants a status, a budget or a trajectory opens a run. A caller that
-wants only the answer makes a call.
+A caller that wants a status, a budget or a trajectory opens a run, which
+needs usage tracking (below). A caller that wants only the answer makes a
+call.
 
 The run a call belongs to is **passed explicitly**, as a run context on the
 call, never read from a process-wide variable. A background job carries the run
@@ -375,11 +393,14 @@ client, and every tracked call carries a prompt key, resolved through
 model call outside the tracked client. It has a short allow-list of
 exceptions, each with a written reason.
 
-Proposed: runs need usage persistence, and what happens without it is open.
-When usage persistence is off for a database, either **(a)** fusions and chat
-turns still run there but untracked: no run is opened, and asking for a budget
-is an error; or **(b)** usage persistence is required: a fusion or chat turn is
-refused on that database until persistence is turned on.
+**Runs need usage tracking.** Opening a run requires usage persistence (usage
+tracking) to be on for the run's database. When it is off, opening a run of
+any type fails with a typed `AiRunTrackingDisabledError` that says so, before
+any call is sent. Fusions and chat turns do not run untracked: a fusion, a
+`do()`, `is()` or `describe()` whose tier is bound to a fusion, and a chat
+turn all fail with that error until persistence is turned on. Single calls
+(a tier bound to a model or an alias chain) still work without it; they open
+no run, and no usage row is written for them.
 
 ## 4. Reading it: trajectories
 
@@ -513,30 +534,35 @@ added to an ancestor's own totals. Each run's `maxCalls`, `maxTokens` and
 spending counts against its own budget, its parent's and every ancestor's.
 `maxSteps` and `maxDurationMs` are checked against the run's own numbers only.
 
-Proposed: when an ancestor's limit is reached, or an ancestor is stopped, its
-descendants stop as well, each at its own next reservation or step start. Each
-one stops with the ancestor's reason (`cancelled` when the ancestor itself was
-cancelled) and copies the ancestor's `stopped_by_run_id` (the ancestor itself,
-unless something below it stopped it) and `stop_detail`. No transaction
-writes a whole subtree.
+Proposed: when an ancestor's limit is reached, or an ancestor is stopped or
+cancelled, its descendants stop as well, each at its own next reservation or
+step start. Each one takes the ancestor's status and reason: under a
+`cancelled` ancestor it moves to `cancelled` with `cancelled`, under a
+`stopped` ancestor to `stopped` with the ancestor's reason. It copies the
+ancestor's `stopped_by_run_id` (the ancestor itself, unless something below it
+stopped it) and `stop_detail`. No transaction writes a whole subtree.
 
 **A child's stop reaches its parent as a stop, never as a failed call.** When
 an entry call is answered by a child run (a fusion inside a workflow step or a
-chat turn) and that child stops, whether at a limit of its own or of an
-ancestor, or because it or an ancestor was cancelled, the entry call returns
-neither an answer nor an ordinary failure. Proposed: it raises a typed
-`AiRunStoppedError` carrying the `stop_reason`, `stopped_by_run_id` and
-`stop_detail`.
+chat turn) and that child stops or is cancelled, whether at a limit of its own
+or of an ancestor, or because it or an ancestor was interrupted or cancelled,
+the entry call returns neither an answer nor an ordinary failure. Proposed: it
+raises a typed `AiRunStoppedError` carrying the child's `status`,
+`stop_reason`, `stopped_by_run_id` and `stop_detail`.
 
 **The framework writes the parent's stop, before it raises.** Proposed: the
-tracked client first sets the run that made the entry call from `running` to
-`stopped`, with the child's reason, `stopped_by_run_id` and `stop_detail` (a
+tracked client first moves the run that made the entry call out of `running`
+with the child's status, reason, `stopped_by_run_id` and `stop_detail` (a
 guarded change, section 2; if the run has already left `running`, nothing is
-written), and only then throws `AiRunStoppedError`. The stop is in the
-database, not only in the exception, so catching the error does not revive the
-run: if host step code catches it and returns a fallback answer, the run is
-still `stopped`, its next reservation or step boundary is refused (section
-6.4), and the step is not recorded as completed.
+written), and only then throws `AiRunStoppedError`. One exception: a child
+that was cancelled on its own (its `stopped_by_run_id` is the child itself)
+does not cancel its parent; the parent moves to `stopped` with `interrupted`,
+so the host decides whether to resume it, which repeats the step with a new
+child, or to cancel it. The stop is in the database, not only in the
+exception, so catching the error does not revive the run: if host step code
+catches it and returns a fallback answer, the run is still `stopped` (or
+`cancelled`), its next reservation or step boundary is refused (section 6.4),
+and the step is not recorded as completed.
 
 Because it is a stop, the run that made the entry call does not count a
 failed attempt, does not use a repair, and does not end `failed`: a workflow
@@ -779,17 +805,19 @@ are each one short transaction. Step by step:
    (section 6.3). Limits are read inside the locked transaction, so they
    cannot change underneath it. Proposed: a budget is only ever changed when a
    stopped run is resumed.
-4. If the calling run itself is not `running` (it was stopped, failed or
-   abandoned underneath its process), refuse the call, write nothing, and
-   commit; the caller gets the run's own status and reason. If another check
-   fails: set the calling run from `running` to `stopped` with the reason,
-   `stopped_by_run_id` and `stop_detail` (a guarded change, section 2), insert
-   nothing else, and commit. When a run lacked room, `stopped_by_run_id` is
-   that run (the calling run or an ancestor) and `stop_detail` describes its
-   limit (below). When an ancestor was no longer `running`, the calling run
-   takes that ancestor's `stop_reason` (`cancelled` if it was cancelled),
-   `stopped_by_run_id` and `stop_detail`. Only the calling run's row changes;
-   the others find out at their own next reservation.
+4. If the calling run itself is not `running` (it was stopped, cancelled,
+   failed or abandoned underneath its process), refuse the call, write
+   nothing, and commit; the caller gets the run's own status and reason. If
+   another check fails: set the calling run from `running` to `stopped` with
+   the reason, `stopped_by_run_id` and `stop_detail` (a guarded change,
+   section 2), insert nothing else, and commit. When a run lacked room,
+   `stopped_by_run_id` is that run (the calling run or an ancestor) and
+   `stop_detail` describes its limit (below). When an ancestor was no longer
+   `running`, the calling run takes that ancestor's `stop_reason`,
+   `stopped_by_run_id` and `stop_detail`, and moves to `cancelled` instead of
+   `stopped` when that ancestor is `cancelled` (section 6.2). Only the
+   calling run's row changes; the others find out at their own next
+   reservation.
 5. Otherwise, for each run, root first:
 
    ```sql
@@ -1004,7 +1032,7 @@ hour, and a tight budget would stop the resumed run at its first call with
 
 Proposed: if the job ends for good (failed or cancelled) while the run is
 still `running`, the run is set from `running` to `failed` with `error`, or to
-`stopped` with `cancelled`, to match; the sweep catches any run left behind.
+`cancelled` with `cancelled`, to match; the sweep catches any run left behind.
 
 **Runs that are not durable** (a fusion, a chat turn) have no lease and cannot
 resume. Proposed: the sweep sets such a run from `running` to `failed` with
@@ -1013,12 +1041,12 @@ or run-row write for 24 hours (configurable). If its process was only slow,
 the guarded status change and the `running` check on every reservation stop
 it from spending more or writing `done` over `failed` (section 2).
 
-Proposed: whether a run that is not durable may wait for approval is open:
-either **(a)** only a durable run may wait for approval, because waiting needs
-a checkpoint to resume from; or **(b)** a chat turn may also wait in-process,
-holding its state in memory, in which case the wait is lost if the process
-ends, and the sweep treats a non-durable run left `waiting-approval` as it
-treats one left `running`.
+**Only durable runs wait for approval.** Waiting needs a checkpoint to resume
+from, so only a durable run may move to `waiting-approval`; for a run that is
+not durable the guarded change is refused. A chat turn that needs approval
+does not wait: it records the requested `approval` event and ends `done` with
+the approval pending, and the next turn carries on once the person decides
+(section 3). So no run that is not durable is ever left `waiting-approval`.
 
 A call that was running when its process died, whose provider response was
 lost, is never charged. That is the documented limit of best-effort
@@ -1053,7 +1081,27 @@ in one transaction.
   `definition_changed`.
 - **After a stop.** A `stopped` durable run resumes from its checkpoint with
   the same or a larger budget. A stopped run that is not durable is not
-  resumed (section 2).
+  resumed (section 2). A `cancelled` run is never resumed, and neither is a
+  `failed` one; a failed workflow run may be retried instead (below).
+- **Retrying a failed run.** A host may retry a `failed` durable workflow run
+  from its last accepted step. The retry is a **new run**, never the failed
+  run resumed in place: a durable `workflow` run of the same
+  `definition_key`, with `retry_of_run_id` naming the failed run, opened like
+  any other run (its own owner, parent and budget). It inherits only the
+  **accepted outputs of the completed steps** in the failed run's checkpoint:
+  its first checkpoint starts with them, and it starts at the step the failed
+  run did not complete. The definition version must match under the same rule
+  as a resume (see **Versions**); otherwise the retry is refused with
+  `AiRunResumeRefusedError` and no run is opened. It does **not** inherit the
+  failed run's budget used, events, repair counts or reservations: its totals
+  start at zero, its own budget applies, its trajectory begins with its own
+  first event, and the inherited steps are not counted against its
+  `maxSteps` (its checkpoint's highest counted step index starts at the last
+  inherited step). The failed run's spend stays where it was charged, on the
+  failed run and its ancestors, and is never charged again to anyone. A retry
+  needs the failed run's checkpoint, so it is possible for as long as the
+  failed run's row is kept (section 8). A failed run may be retried more than
+  once; each retry names it in `retry_of_run_id`.
 - **A budget stop needs a budget change.** Proposed: a resume of a run that
   stopped at a budget limit is refused with a typed `AiRunResumeRefusedError`
   unless it changes a limit that stopped the run: the limit named in
@@ -1067,8 +1115,8 @@ in one transaction.
   `stop_detail.requested` (the calls that held the room have since settled or
   been released), the resume is allowed without a change. A host must not
   resume a budget-stopped run automatically without a budget change. Stops
-  for other reasons (`cancelled`, where resumable, and `definition_changed`)
-  are not subject to this rule.
+  for other reasons (`interrupted` and `definition_changed`) are not subject
+  to this rule.
 
 ## 8. Retention
 
@@ -1076,11 +1124,13 @@ in one transaction.
   finishes, by default. An app can change the period or turn on sampling. The
   decision is made **once per run**, never per call: a trajectory is kept whole
   or deleted whole.
-- **Not pruned.** A run that is `running` or `waiting-approval`, a durable run
-  that is `stopped` (it can still be resumed), a run in an experiment, and a run
-  with `retain` set. A `stopped` run that is not durable cannot be resumed, so
-  it is pruned like a finished run, counting from its `finished_at`, unless an
-  ancestor protects it (next item).
+- **Not pruned (protected).** A run that is `running` or `waiting-approval`, a
+  durable run that is `stopped` (it can still be resumed), a run in an
+  experiment, and a run with `retain` set. A `stopped` run that is not durable
+  cannot be resumed, and a `cancelled` run is final, so each is pruned like a
+  finished run, counting from its `finished_at`, unless an ancestor protects
+  it (next item). A `failed` run is not protected either; its checkpoint is
+  kept longer than its trajectory (below), but not its row.
 - **Protection is inherited.** A run is protected while **any ancestor** is
   protected, and it is pruned only after the protecting ancestor is pruned.
   So a final child, such as a stopped fusion under a durable `stopped`
@@ -1092,11 +1142,20 @@ in one transaction.
   or after it.
 - **When a trajectory is deleted**, the counts of checks and approvals passed and
   failed are first saved on the run row and `trajectory_pruned` is set. The run
-  row is kept.
-- **Run rows.** A protected run row is never pruned. Proposed: what happens to
-  an unprotected run row is open: either **(a)** it is pruned by the usage age
-  limit, together with its usage rows, as fusion run rows are today; or **(b)**
-  it is kept, and only its trajectory is pruned.
+  row is kept until the run-row rule below removes it.
+- **Run rows.** An unprotected run row is pruned **together with its usage
+  rows**, by the usage age limit (90 days by default, adjustable by the app),
+  counting from its `finished_at`; age only, never row count. A protected run
+  row is never pruned, and protection is inherited as above, so a child's row
+  goes with its parent's or after it. A run row is never pruned while its
+  trajectory is still kept; pruning it deletes whatever events and checkpoint
+  it still has.
+- **How the two periods fit together.** With the defaults, a finished run
+  keeps its whole trajectory for 30 days; then its events are deleted, its
+  counts are saved and `trajectory_pruned` is set, and the row alone (with its
+  totals, budget, stop fields and counts) stays until the usage age limit, 90
+  days, when it is pruned with its usage rows. A protected run keeps both for
+  as long as it is protected.
 - **Usage rows** follow their existing retention policy (by age, and
   optionally by row count). They are not part of a trajectory, and they may be
   pruned while their run is still alive; budgets do not depend on them
@@ -1104,7 +1163,11 @@ in one transaction.
 - **Payloads by reference.** `payload_ref` points at content the host owns,
   such as a chat message or a file. The framework owns none of it, so pruning a
   trajectory deletes only the events, never what they point at.
-- **Checkpoints of finished runs** are deleted with the trajectory.
+- **Checkpoints of finished runs.** The checkpoint of a `done` or `cancelled`
+  run is deleted with the trajectory. The checkpoint of a `failed` run is
+  kept after its trajectory is pruned, for as long as the failed run's row is
+  kept, so the run can still be retried (section 7); it is deleted with the
+  row.
 - **Payload size.** Each event payload is capped (head and tail kept, `truncated`
   set). Full request and response text of a call is stored only when
   transcripts are enabled.
@@ -1158,3 +1221,8 @@ shaped so that adding them later adds rows and event types rather than
 renames: a coding agent would be a run type owned by the agents package, one
 run per task, one event per action and observation, a grader writing an
 evaluation, and many runs compared as one experiment.
+
+Also left out on purpose: resuming a `failed` or `cancelled` run in place (a
+failed workflow is retried as a new run, section 7), a run opened without
+usage persistence (section 3), and a run that is not durable waiting for
+approval (section 6.7).
