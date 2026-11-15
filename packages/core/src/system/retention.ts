@@ -37,7 +37,8 @@
  * Every predicate below is indexed by the system DDL in `system/schema.ts`
  * (`_smrt_contexts(expires_at)`, `_smrt_ai_usage(tenant_id, created_at)`,
  * `_smrt_dispatch(status, processed_at)` / `(status, updated_at)`,
- * `_smrt_run_once_claims(status, completed_at)`) or by the jobs compatibility
+ * `_smrt_run_once_claims(status, completed_at)`, `_smrt_ai_runs(finished_at)`
+ * and `(parent_run_id)`) or by the jobs compatibility
  * path in `system/compatibility.ts` (`_smrt_jobs(status, completed_at)`,
  * `_smrt_job_events(created_at)`). A new retention predicate must ship with
  * its index.
@@ -52,6 +53,11 @@ import { pruneChangeFeed } from '../change-feed.js';
 import { detectEngine } from '../schema/ddl/index.js';
 import { toSafeInteger } from '../utils/safe-integer.js';
 import { sweepAiRuns } from './ai-run-accounting.js';
+import {
+  AI_RUN_RETENTION_DEFAULTS,
+  pruneAiRuns,
+  pruneAiRunTrajectories,
+} from './ai-run-retention.js';
 import { RUN_ONCE_CLAIMS_TABLE } from './schema.js';
 
 const logger = createLogger({ level: 'info' });
@@ -123,10 +129,15 @@ export interface DispatchRetentionPolicy {
  * window.
  */
 /**
- * The `ai-runs` sweep task (#5005; docs/content/ai-runs.md section 6.7). It
- * deletes nothing: it reconciles `call` reservations older than their
- * threshold and closes runs that are not durable once they have been quiet
- * for `staleRunHours`. Under `dryRun` it does nothing.
+ * The `ai-runs` task (#5005; docs/content/ai-runs.md sections 6.7 and 8).
+ * It reconciles `call` reservations older than their threshold, closes runs
+ * that are not durable once they have been quiet for `staleRunHours`,
+ * cancels descendants left under a final or missing ancestor, and then
+ * prunes the trajectories of finished, unprotected runs past
+ * `trajectoryMaxAgeDays` (saving their check and approval counts first).
+ * Under `dryRun` it only counts the trajectories it would prune. Run rows
+ * are pruned with their usage rows by the `aiUsage` age limit (the
+ * `ai-usage` task), counting from `finished_at`.
  */
 export interface AiRunsSweepPolicy {
   /** Run this task (default `true`). */
@@ -135,7 +146,18 @@ export interface AiRunsSweepPolicy {
   staleRunHours?: number;
   /** Reservation threshold when no `callTimeoutMs` is set (default 1 hour). */
   staleReservationMinutes?: number;
+  /** Keep a finished run's trajectory this many days (default 30). */
+  trajectoryMaxAgeDays?: number;
+  /**
+   * Sampling (0 to 1): the share of runs whose trajectory is kept for the
+   * period; the others lose it once finished. Default 1. Decided once per
+   * run.
+   */
+  trajectorySampleRate?: number;
 }
+
+/** @deprecated The `ai-runs` task does more than sweep; same type. */
+export type AiRunsRetentionPolicy = AiRunsSweepPolicy;
 
 export interface RunOnceClaimsRetentionPolicy {
   /** Run this task (default `true`). */
@@ -196,6 +218,7 @@ export const DEFAULT_RETENTION_POLICY: {
   contexts: ContextsRetentionPolicy;
   dispatch: DispatchRetentionPolicy;
   runOnceClaims: RunOnceClaimsRetentionPolicy;
+  aiRuns: AiRunsSweepPolicy;
 } = {
   changes: { maxAgeDays: 30 },
   aiUsage: { maxAgeDays: 90 },
@@ -208,6 +231,11 @@ export const DEFAULT_RETENTION_POLICY: {
   // see RunOnceClaimsRetentionPolicy for the replay consequence of a shorter
   // window.
   runOnceClaims: { maxAgeDays: 30 },
+  // A finished run keeps its trajectory 30 days; its row goes with its
+  // usage rows at the aiUsage age limit (docs/content/ai-runs.md section 8).
+  aiRuns: {
+    trajectoryMaxAgeDays: AI_RUN_RETENTION_DEFAULTS.trajectoryMaxAgeDays,
+  },
 };
 
 // ============================================================================
@@ -381,46 +409,17 @@ export interface AiUsageRetention {
 /** Name of the AI usage telemetry table. */
 const AI_USAGE_TABLE = '_smrt_ai_usage';
 
-/** Name of the fusion run table (#4753). */
+/** Name of the AI run table (#4753, #5005). */
 const AI_RUNS_TABLE = '_smrt_ai_runs';
 
-/** Options for {@link pruneAiRuns}. */
-export interface AiRunsRetention {
-  /** Delete runs older than this many milliseconds. */
-  maxAgeMs: number;
-  /** One tenant (`null`: global runs); omit for every tenant. */
-  tenantId?: string | null;
-  dryRun?: boolean;
-  now?: Date;
-}
-
-/**
- * Prune fusion run records (`_smrt_ai_runs`, #4753) older than `maxAgeMs`.
- * The retention sweep applies the AI usage age bound to runs too, so a run
- * row never outlives its usage rows by the policy; a usage row-count bound
- * does not apply to runs. Served by `idx_smrt_ai_runs_tenant_created` /
- * `idx_smrt_ai_runs_created`.
- */
-export async function pruneAiRuns(
-  db: DatabaseInterface,
-  retention: AiRunsRetention,
-): Promise<{ pruned: number }> {
-  const { maxAgeMs, dryRun = false } = retention;
-  if (!Number.isFinite(maxAgeMs) || maxAgeMs < 0) {
-    throw new Error(`pruneAiRuns maxAgeMs must be >= 0, got ${maxAgeMs}`);
-  }
-  const now = retention.now ?? new Date();
-  const scope = tenantScopeClause(retention);
-  const cutoff = new Date(now.getTime() - maxAgeMs).toISOString();
-  const pruned = await deleteFrom(
-    db,
-    AI_RUNS_TABLE,
-    [...scope.conditions, 'created_at < ?'],
-    [...scope.params, cutoff],
-    dryRun,
-  );
-  return { pruned };
-}
+export {
+  AI_RUN_RETENTION_DEFAULTS,
+  type AiRunsRetention,
+  type AiRunTrajectoryRetention,
+  isAiRunTrajectorySampled,
+  pruneAiRuns,
+  pruneAiRunTrajectories,
+} from './ai-run-retention.js';
 
 /** Name of the AI call transcript table (#4780). */
 const AI_TRANSCRIPTS_TABLE = '_smrt_ai_transcripts';
@@ -842,8 +841,7 @@ function aiUsageTask(policy: RetentionPolicy): RetentionTask | null {
 
   return {
     name: 'ai-usage',
-    description:
-      'Prune AI usage telemetry (_smrt_ai_usage) and, by age, fusion runs (_smrt_ai_runs)',
+    description: 'Prune AI usage telemetry (_smrt_ai_usage)',
     run: async (db, context) => {
       const maxAgeMs =
         config.maxAgeDays == null ? undefined : config.maxAgeDays * MS_PER_DAY;
@@ -853,15 +851,7 @@ function aiUsageTask(policy: RetentionPolicy): RetentionTask | null {
         dryRun: context.dryRun,
         now: context.now,
       });
-      if (maxAgeMs == null || !(await tableExists(db, AI_RUNS_TABLE))) {
-        return pruned;
-      }
-      const runs = await pruneAiRuns(db, {
-        maxAgeMs,
-        dryRun: context.dryRun,
-        now: context.now,
-      });
-      return pruned + runs.pruned;
+      return pruned;
     },
   };
 }
@@ -944,14 +934,53 @@ function dispatchTask(policy: RetentionPolicy): RetentionTask | null {
 }
 
 function aiRunsSweepTask(policy: RetentionPolicy): RetentionTask | null {
-  const config = resolveEntry<AiRunsSweepPolicy>(policy.aiRuns, {});
+  const config = resolveEntry<AiRunsSweepPolicy>(
+    policy.aiRuns,
+    DEFAULT_RETENTION_POLICY.aiRuns,
+  );
   if (!config) return null;
+  // Run rows go with their usage rows, by the usage age limit (none while
+  // the ai-usage task is off or has no age bound).
+  const usage = resolveEntry<AiUsageRetentionPolicy>(
+    policy.aiUsage,
+    DEFAULT_RETENTION_POLICY.aiUsage,
+  );
+  const rowMaxAgeMs =
+    usage?.maxAgeDays == null ? null : usage.maxAgeDays * MS_PER_DAY;
+  const rows = async (db: DatabaseInterface, context: RetentionTaskContext) =>
+    rowMaxAgeMs === null
+      ? 0
+      : (
+          await pruneAiRuns(db, {
+            maxAgeMs: rowMaxAgeMs,
+            dryRun: context.dryRun,
+            now: context.now,
+          })
+        ).pruned;
+  const trajectories = (db: DatabaseInterface, context: RetentionTaskContext) =>
+    pruneAiRunTrajectories(db, {
+      maxAgeMs:
+        (config.trajectoryMaxAgeDays ??
+          AI_RUN_RETENTION_DEFAULTS.trajectoryMaxAgeDays) * MS_PER_DAY,
+      ...(config.trajectorySampleRate != null
+        ? { sampleRate: config.trajectorySampleRate }
+        : {}),
+      dryRun: context.dryRun,
+      now: context.now,
+    });
   return {
     name: 'ai-runs',
     description:
-      'Reconcile stale AI run reservations and close abandoned non-durable runs (_smrt_ai_runs)',
-    run: async (db, context) => {
-      if (context.dryRun) return { pruned: 0 };
+      'Reconcile stale AI run reservations, close abandoned runs, cancel orphaned descendants, prune finished run trajectories (_smrt_ai_run_events) and, by the AI usage age from finished_at, unprotected run rows (_smrt_ai_runs) with their usage rows',
+    run: async (db, context): Promise<RetentionTaskOutcome> => {
+      if (context.dryRun) {
+        const { pruned } = await trajectories(db, context);
+        const runRows = await rows(db, context);
+        return {
+          pruned: pruned + runRows,
+          details: { trajectories: pruned, runs: runRows },
+        };
+      }
       const result = await sweepAiRuns(db, {
         now: () => context.now,
         ...(config.staleRunHours != null
@@ -961,9 +990,13 @@ function aiRunsSweepTask(policy: RetentionPolicy): RetentionTask | null {
           ? { staleReservationMs: config.staleReservationMinutes * 60_000 }
           : {}),
       });
+      const { pruned } = await trajectories(db, context);
+      const runRows = await rows(db, context);
       return {
-        pruned: 0,
+        pruned: pruned + runRows,
         details: {
+          trajectories: pruned,
+          runs: runRows,
           settled: result.settled,
           abandoned: result.abandoned,
           closedRuns: result.closedRuns.length,

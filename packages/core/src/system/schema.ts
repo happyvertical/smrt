@@ -433,6 +433,9 @@ CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_parent
 
 CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_retry_of
   ON _smrt_ai_runs(retry_of_run_id);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_finished
+  ON _smrt_ai_runs(finished_at);
 `;
 
 /**
@@ -1685,7 +1688,9 @@ function toPostgresTenantUuid(ddl: string): string {
 // PRECISION.
 // 1.18.0 adds `_smrt_migrate_runs.confirmed_retirements`, the JSON list of
 // retirements a run dropped over a confirmed definition mismatch (#5005).
-export const SMRT_SCHEMA_VERSION = '1.18.0';
+// 1.19.0 adds `idx_smrt_ai_runs_finished`, the `finished_at` index behind
+// AI run trajectory and row retention (#5005, `system/ai-run-retention.ts`).
+export const SMRT_SCHEMA_VERSION = '1.19.0';
 
 /**
  * Canonical form of the system DDL that {@link SMRT_SCHEMA_DDL_CHECKSUMS} covers.
@@ -1744,4 +1749,6 @@ export const SMRT_SCHEMA_DDL_CHECKSUMS: Readonly<Record<string, string>> =
       '45aff3bebeae72b046051a1461f375e67c42e4b6962de0ec33dc6d98fb23b6c2',
     '1.18.0':
       'bf633cf10615ca092df662552a3cfe58c593c7219c99e8d63163487763f26ee9',
+    '1.19.0':
+      '64d1652f27856d861024009d50d39f4fdd33742c69250fe37e394751afa3f96c',
   });

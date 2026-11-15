@@ -52,6 +52,52 @@ export const AI_RUN_EVENT_TYPES: readonly AiRunEventType[] = Object.freeze([
   'handoff',
 ]);
 
+/** A `check` event's status: the host check passed or failed. */
+export const AI_RUN_CHECK_STATUSES = Object.freeze([
+  'passed',
+  'failed',
+] as const);
+
+/**
+ * An `approval` event's status (page section 2): the request is `requested`;
+ * the decision is `approved` or `refused` and its `parent_event_id` is the
+ * request (which may be in another run, the earlier chat turn, and may no
+ * longer resolve).
+ */
+export const AI_RUN_APPROVAL_STATUSES = Object.freeze([
+  'requested',
+  'approved',
+  'refused',
+] as const);
+
+/**
+ * A `handoff` event's status: `running` while its child runs, then the
+ * child's end: `done`, `stopped`, `cancelled` or `failed`.
+ */
+export const AI_RUN_HANDOFF_STATUSES = Object.freeze([
+  'running',
+  'done',
+  'stopped',
+  'cancelled',
+  'failed',
+] as const);
+
+function checkEventStatus(type: AiRunEventType, status: string | null): void {
+  const allowed: readonly string[] | null =
+    type === 'check'
+      ? AI_RUN_CHECK_STATUSES
+      : type === 'approval'
+        ? AI_RUN_APPROVAL_STATUSES
+        : type === 'handoff'
+          ? AI_RUN_HANDOFF_STATUSES
+          : null;
+  if (allowed && (status === null || !allowed.includes(status))) {
+    throw new TypeError(
+      `A ${type} event's status must be one of ${allowed.join(', ')}, got ${String(status)}`,
+    );
+  }
+}
+
 /** A call event's reservation state (page section 6.4). */
 export type AiRunReservationState =
   | 'reserved'
@@ -261,6 +307,7 @@ export async function appendAiRunEvent(
   if (!AI_RUN_EVENT_TYPES.includes(input.type)) {
     throw new TypeError(`appendAiRunEvent: unknown event type ${input.type}`);
   }
+  checkEventStatus(input.type, input.status ?? null);
   const redacted = await redactPayload(input, runId, options.redact);
   const capped = capAiRunEventPayload(redacted, options.maxPayloadBytes);
   const id = input.id ?? newAiRunId();
@@ -601,4 +648,128 @@ export async function getRunTrajectory(
     if (page.length < PAGE) break;
   }
   return { run, evaluations: runEvaluations, entries, pruned: null };
+}
+
+/**
+ * Move a `handoff` event to the end of its child run (page section 2): from
+ * `running` to `done`, `stopped`, `cancelled` or `failed`. Guarded on
+ * `running`, so it is written once; returns whether it was. The parent's row
+ * is locked first on PostgreSQL, as for any write of its events.
+ */
+export async function closeAiRunHandoff(
+  db: DatabaseInterface,
+  runId: string,
+  eventId: string,
+  status: Exclude<(typeof AI_RUN_HANDOFF_STATUSES)[number], 'running'>,
+  options: AiRunTxOptions = {},
+): Promise<boolean> {
+  checkEventStatus('handoff', status);
+  return withAiRunTransaction(
+    db,
+    async (tx) => {
+      const locked = getRows(
+        await aiRunQuery(
+          tx.db,
+          `SELECT id FROM _smrt_ai_runs WHERE id = $1${forUpdate(tx)}`,
+          runId,
+        ),
+      );
+      if (!locked[0]) return false;
+      const rows = getRows(
+        await aiRunQuery(
+          tx.db,
+          `UPDATE _smrt_ai_run_events SET status = $3
+            WHERE run_id = $1 AND id = $2 AND type = 'handoff'
+              AND status = 'running'
+            RETURNING id`,
+          runId,
+          eventId,
+          status,
+        ),
+      );
+      return rows.length > 0;
+    },
+    options,
+  );
+}
+
+/** A run's check and approval counts (page sections 2 and 8). */
+export interface AiRunEventCounts {
+  checksPassed: number;
+  checksFailed: number;
+  /** Decisions `approved` recorded in this run. */
+  approvalsGiven: number;
+  /** Decisions `refused` recorded in this run. */
+  approvalsRefused: number;
+  /** Requests recorded in this run; never a decision. */
+  approvalsRequested: number;
+}
+
+/**
+ * Count a run's checks and approvals from its events, by the page's rules: a
+ * decision counts once, in the run that recorded it, whether or not its
+ * request is in the same run or still exists; a request counts only as
+ * requested. The approval rate is `approvalsGiven / (approvalsGiven +
+ * approvalsRefused)`. A pruned trajectory returns its saved counts
+ * (`approvalsRequested` is then not known and is 0).
+ */
+export async function countAiRunEvents(
+  db: DatabaseInterface,
+  runId: string,
+): Promise<AiRunEventCounts> {
+  const run = getRows(
+    await aiRunQuery(
+      db,
+      `SELECT trajectory_pruned, checks_passed, checks_failed, approvals_given,
+              approvals_refused
+         FROM _smrt_ai_runs WHERE id = $1`,
+      runId,
+    ),
+  )[0];
+  if (
+    run &&
+    (num(run.trajectory_pruned) !== 0 || run.trajectory_pruned === true)
+  ) {
+    return {
+      checksPassed: num(run.checks_passed),
+      checksFailed: num(run.checks_failed),
+      approvalsGiven: num(run.approvals_given),
+      approvalsRefused: num(run.approvals_refused),
+      approvalsRequested: 0,
+    };
+  }
+  const counts: AiRunEventCounts = {
+    checksPassed: 0,
+    checksFailed: 0,
+    approvalsGiven: 0,
+    approvalsRefused: 0,
+    approvalsRequested: 0,
+  };
+  for (const row of getRows(
+    await aiRunQuery(
+      db,
+      `SELECT type, status, COUNT(*) AS n FROM _smrt_ai_run_events
+        WHERE run_id = $1 AND type IN ('check', 'approval')
+        GROUP BY type, status`,
+      runId,
+    ),
+  )) {
+    const n = num(row.n);
+    const key = `${String(row.type)}:${String(row.status)}`;
+    if (key === 'check:passed') counts.checksPassed += n;
+    else if (key === 'check:failed') counts.checksFailed += n;
+    else if (key === 'approval:approved') counts.approvalsGiven += n;
+    else if (key === 'approval:refused') counts.approvalsRefused += n;
+    else if (key === 'approval:requested') counts.approvalsRequested += n;
+  }
+  return counts;
+}
+
+/** `approved / (approved + refused)`, or null when nothing was decided. */
+export function aiRunApprovalRate(counts: {
+  approvalsGiven: number;
+  approvalsRefused: number;
+}): number | null {
+  const decided = counts.approvalsGiven + counts.approvalsRefused;
+  return decided > 0 ? counts.approvalsGiven / decided : null;
 }

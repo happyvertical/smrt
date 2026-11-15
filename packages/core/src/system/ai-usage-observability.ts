@@ -181,16 +181,27 @@ async function targetTenants(
     for (const row of rows) tenants.add(nullableString(row.tenant_id));
   }
   if (runId) {
-    const rows = getRows(
+    // The run row names its tenant; a run whose usage rows were pruned, or
+    // that made no call yet, is judged by it. Without a row, its usage rows.
+    const run = getRows(
       await db.query(
-        'SELECT DISTINCT tenant_id FROM _smrt_ai_usage WHERE run_id = $1',
+        'SELECT tenant_id FROM _smrt_ai_runs WHERE id = $1',
         runId,
       ),
     );
+    const rows =
+      run.length > 0
+        ? run
+        : getRows(
+            await db.query(
+              'SELECT DISTINCT tenant_id FROM _smrt_ai_usage WHERE run_id = $1',
+              runId,
+            ),
+          );
     if (rows.length === 0) {
       throw new AiEvaluationTargetError(
         'AI_EVALUATION_UNKNOWN_TARGET',
-        `recordAiEvaluation: no _smrt_ai_usage row has run_id "${runId}"`,
+        `recordAiEvaluation: no _smrt_ai_runs or _smrt_ai_usage row has run_id "${runId}"`,
       );
     }
     for (const row of rows) tenants.add(nullableString(row.tenant_id));
@@ -380,6 +391,23 @@ export interface AiEvaluationUsageRow {
   createdAt: Date;
 }
 
+/** The run an evaluation judges, as an evaluation read shows it. */
+export interface AiEvaluationRunTarget {
+  kind: 'run';
+  id: string;
+  type: string;
+  definitionKey: string | null;
+  status: string;
+  promptKey: string | null;
+  templateHash: string | null;
+}
+
+/** The call an evaluation judges: its usage row. */
+export interface AiEvaluationCallTarget {
+  kind: 'call';
+  usage: AiEvaluationUsageRow;
+}
+
 /** An evaluation with the usage rows it judges. */
 export interface AiEvaluationWithUsage extends AiEvaluationRecord {
   /**
@@ -388,6 +416,12 @@ export interface AiEvaluationWithUsage extends AiEvaluationRecord {
    * survives.
    */
   usage: AiEvaluationUsageRow[];
+  /**
+   * What it judges: the call's usage row or the run's row. NULL (never an
+   * error) once that row was pruned: evaluations are never swept and keep
+   * an id that no longer resolves (page section 8).
+   */
+  target: AiEvaluationCallTarget | AiEvaluationRunTarget | null;
 }
 
 function hydrateEvaluation(row: Record<string, unknown>): AiEvaluationRecord {
@@ -503,16 +537,54 @@ export async function listAiEvaluations(
     ),
   ).map(hydrateUsageRow);
 
-  return evaluations.map((evaluation) => ({
-    ...evaluation,
-    usage: usageRows.filter(
+  const runTargets = new Map<
+    string,
+    AiEvaluationRunTarget & { tenantId: string | null }
+  >();
+  if (runIds.length > 0) {
+    const marks = runIds.map((_, i) => `$${i + 1}`).join(', ');
+    for (const row of getRows(
+      await db.query(
+        `SELECT id, type, definition_key, status, prompt_key, template_hash,
+                tenant_id
+           FROM _smrt_ai_runs WHERE id IN (${marks})`,
+        ...runIds,
+      ),
+    )) {
+      runTargets.set(String(row.id), {
+        kind: 'run',
+        id: String(row.id),
+        type: String(row.type),
+        definitionKey: nullableString(row.definition_key),
+        status: String(row.status),
+        promptKey: nullableString(row.prompt_key),
+        templateHash: nullableString(row.template_hash),
+        tenantId: nullableString(row.tenant_id),
+      });
+    }
+  }
+
+  return evaluations.map((evaluation) => {
+    const usage = usageRows.filter(
       (row) =>
         // An evaluation never joins usage of another tenant.
         row.tenantId === evaluation.tenantId &&
         ((evaluation.callId !== null && row.id === evaluation.callId) ||
           (evaluation.runId !== null && row.runId === evaluation.runId)),
-    ),
-  }));
+    );
+    let target: AiEvaluationWithUsage['target'] = null;
+    if (evaluation.callId !== null) {
+      const call = usage.find((row) => row.id === evaluation.callId);
+      if (call) target = { kind: 'call', usage: call };
+    } else if (evaluation.runId !== null) {
+      const run = runTargets.get(evaluation.runId);
+      if (run && run.tenantId === evaluation.tenantId) {
+        const { tenantId: _tenant, ...shown } = run;
+        target = shown;
+      }
+    }
+    return { ...evaluation, usage, target };
+  });
 }
 
 // ============================================================================

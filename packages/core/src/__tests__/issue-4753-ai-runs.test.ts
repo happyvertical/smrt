@@ -7,7 +7,11 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { listAiRuns, recordAiRun, reportAiRuns } from '../system/ai-runs';
-import { pruneAiRuns, runRetentionSweep } from '../system/retention';
+import {
+  pruneAiRuns,
+  pruneAiRunTrajectories,
+  runRetentionSweep,
+} from '../system/retention';
 import { getTestDatabase } from '../testing/database';
 
 const DAY = 86_400_000;
@@ -164,9 +168,16 @@ describe('_smrt_ai_runs (#4753)', () => {
     );
   });
 
-  it('prunes runs by age, alone and through the AI usage sweep', async () => {
+  it('prunes run rows by the usage age from finished_at, once their trajectory is gone (#5005)', async () => {
     await seed();
     const now = new Date('2026-11-03T12:00:00Z');
+    // A row is never pruned while its trajectory is kept.
+    expect(await pruneAiRuns(db, { maxAgeMs: DAY, now, dryRun: true })).toEqual(
+      { pruned: 0 },
+    );
+    expect(await pruneAiRunTrajectories(db, { maxAgeMs: 0, now })).toEqual({
+      pruned: 3,
+    });
     expect(await pruneAiRuns(db, { maxAgeMs: DAY, now, dryRun: true })).toEqual(
       { pruned: 2 },
     );
@@ -183,8 +194,8 @@ describe('_smrt_ai_runs (#4753)', () => {
       dispatch: false,
       runOnceClaims: false,
     });
-    expect(sweep.tasks.find((task) => task.task === 'ai-usage')).toMatchObject({
-      pruned: 2,
+    expect(sweep.tasks.find((task) => task.task === 'ai-runs')).toMatchObject({
+      details: { runs: 2 },
     });
     expect(await listAiRuns(db)).toEqual([]);
   });
