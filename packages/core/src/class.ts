@@ -95,7 +95,8 @@ import {
   type InferenceRequest,
   type InferenceResolution,
   type InferenceResolver,
-  type InferenceRunRecord,
+  type InferenceRunHandle,
+  type InferenceRunOpenInput,
   type InferenceTarget,
   type InferenceTier,
   type InferenceTierRequest,
@@ -138,8 +139,9 @@ import {
 } from './postgres-timeouts.js';
 import { detectEngine } from './schema/ddl/index.js';
 import { SignalBus } from './signals/bus.js';
+import { isAiRunContext } from './system/ai-run-calls.js';
+import { openAiEntryRun } from './system/ai-run-entry.js';
 import type { AiRunStore } from './system/ai-run-lifecycle.js';
-import { recordAiRun } from './system/ai-runs.js';
 import { ensureSystemTables as ensureFrameworkSystemTables } from './system/bootstrap.js';
 import {
   ensureDeferredSystemTableCompatibility,
@@ -1041,6 +1043,7 @@ export class SmrtClass {
       const executor = inferenceExecutorFor(resolution.target);
       if (executor) {
         const tenantId = this.currentTenantId();
+        const isFusion = inferenceTargetKind(resolution.target) === 'fusion';
         const chainClient = executor.createClient({
           request: {
             className: this._className,
@@ -1053,10 +1056,11 @@ export class SmrtClass {
           ...(options.allowPartial ? { allowPartial: true } : {}),
           clientFor: async (target) => {
             await this.enforceHostedInferenceGate(request, resolution, target);
+            // A fusion's calls are always calls of its run (#5005).
             return (await this.getAiClientForTarget(
               target,
               undefined,
-              options.runTracking,
+              options.runTracking || isFusion,
             )) as unknown as InferenceModelClient;
           },
           resolveTier: (next, overrides) =>
@@ -1073,7 +1077,7 @@ export class SmrtClass {
           ...(this._db ? { db: this._db } : {}),
           decide: (decisionRequest, decisionOptions) =>
             this.decideForInference(decisionRequest, decisionOptions),
-          recordRun: (record) => this.recordInferenceRun(record),
+          openRun: (input) => this.openInferenceRun(input),
           observeUsage: (runId, listener) =>
             this.observeRunUsage(runId, listener),
           lookupFusion: (key) => this.lookupInferenceFusion(key, request),
@@ -1867,26 +1871,94 @@ export class SmrtClass {
    * Write a fusion run record (#4753) when usage persistence is on. A write
    * failure is logged, never thrown: it must not mask the run's own result.
    */
-  private async recordInferenceRun(record: InferenceRunRecord): Promise<void> {
-    // A degraded or failed run forces the transcript of its call (#4780),
-    // whether or not usage is persisted.
-    noteAiTranscriptRun(record.id, record.status);
-    const usageConfig =
+  /**
+   * Open the run of a multi-call entry call at its start (#5005): the
+   * executor's `openRun`. Throws `AiRunTrackingDisabledError` while usage
+   * persistence is off, before any call is sent.
+   */
+  private async openInferenceRun(
+    input: InferenceRunOpenInput,
+  ): Promise<InferenceRunHandle> {
+    const store = await this.aiRunStore();
+    const callOptions = (input.callOptions ?? {}) as Record<string, unknown> & {
+      usageTags?: Record<string, string>;
+    };
+    const parent = isAiRunContext(callOptions.runContext)
+      ? callOptions.runContext
+      : null;
+    const tags = callOptions.usageTags ?? {};
+    const usageConfig = () =>
       this._aiUsageResolvedConfig ?? this.mergeAiUsageConfig(config.toJSON());
-    if (!usageConfig.enabled || !usageConfig.persist || !this._db) return;
-    try {
-      await recordAiRun(this._db, {
-        ...record,
-        className: this._className,
-        tenantId: this.currentTenantId() ?? null,
-      });
-    } catch (error) {
-      logger.warn(
-        `[smrt] AI run record failed for fusion ${record.fusionKey}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
+    const templateHash = input.templateHash ?? tags.templateHash;
+    const entry = await openAiEntryRun(store, {
+      type: input.type,
+      definitionKey: input.definitionKey,
+      ...(input.mode ? { mode: input.mode } : {}),
+      ...(input.promptKey ? { promptKey: input.promptKey } : {}),
+      ...(templateHash ? { templateHash } : {}),
+      parent,
+      entryCallId: tags.callId || null,
+      rateFor: (provider, model) => {
+        const resolved = usageConfig();
+        if (!resolved.estimateCosts) return null;
+        return lookupAiCostRate(provider, model, resolved.costRates) ?? null;
+      },
+    });
+    return {
+      runId: entry.runId,
+      entryCallId: entry.entryCallId,
+      seatOptions: (name) => ({ runContext: entry.contextFor(name) }),
+      reserve: (shares) =>
+        entry.reserve(
+          shares.map((share) => {
+            const identity = share.target
+              ? inferenceTargetIdentity(share.target)
+              : {};
+            return {
+              name: share.name,
+              ...(identity.provider ? { provider: identity.provider } : {}),
+              ...(identity.model ? { model: identity.model } : {}),
+              ...(share.inputTokens !== undefined
+                ? { inputTokens: share.inputTokens }
+                : {}),
+              ...(share.inputChars !== undefined
+                ? { inputChars: share.inputChars }
+                : {}),
+              ...(share.outputLimit !== undefined
+                ? { outputLimit: share.outputLimit }
+                : {}),
+              ...(share.expectedOutputTokens !== undefined
+                ? { expectedOutputTokens: share.expectedOutputTokens }
+                : {}),
+              ...(share.later ? { later: true } : {}),
+            };
+          }),
+        ),
+      close: async (outcome) => {
+        // A degraded or failed run forces the transcript of its call
+        // (#4780), whether or not usage is persisted.
+        noteAiTranscriptRun(entry.runId, outcome.status);
+        const fields = {
+          ...(outcome.seats !== undefined ? { seats: outcome.seats } : {}),
+          ...(outcome.degradedSeats !== undefined
+            ? { degradedSeats: outcome.degradedSeats }
+            : {}),
+          ...(outcome.details !== undefined
+            ? { details: outcome.details }
+            : {}),
+        };
+        await entry.close(
+          outcome.status === 'failed'
+            ? { status: 'failed', ...fields }
+            : {
+                status: 'done',
+                degraded: outcome.status === 'degraded',
+                ...fields,
+              },
+        );
+      },
+      stop: (error) => entry.stop(error),
+    };
   }
 
   private observeRunUsage(

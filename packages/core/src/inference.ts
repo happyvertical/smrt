@@ -1063,6 +1063,78 @@ export interface InferenceRunRecord {
   details: Record<string, unknown>;
 }
 
+/** What {@link InferenceExecutionContext.openRun} opens (#5005). */
+export interface InferenceRunOpenInput {
+  /** `fusion` for a fusion. */
+  type: string;
+  /** The fusion key. */
+  definitionKey: string;
+  mode?: string;
+  /** The prompt the entry call answered. */
+  promptKey?: string;
+  /** Its version; else the entry call's `templateHash` usage tag. */
+  templateHash?: string;
+  /**
+   * The entry call's options: a `runContext` there makes the new run a
+   * child of that run (with a `handoff` event in it), and its `callId`
+   * usage tag is the entry call id.
+   */
+  callOptions?: InferenceCallOptions;
+}
+
+/** One call's share of a run's joint reservation (#5005). */
+export interface InferenceRunCallShare {
+  /** The seat name; one share per name. */
+  name: string;
+  /** The target the seat's first call goes to, for its price. */
+  target?: InferenceTarget;
+  /** `E` from a token count, or `inputChars` (divided by 4). */
+  inputTokens?: number;
+  inputChars?: number;
+  /** The call's own output limit. */
+  outputLimit?: number;
+  /** The prompt's declared output allowance. */
+  expectedOutputTokens?: number;
+  /** Sent after the first stage (the judge): checked `running` first. */
+  later?: boolean;
+}
+
+/** How a run opened through `openRun` ended without a stop. */
+export interface InferenceRunOutcome {
+  status: InferenceRunStatus;
+  seats?: number;
+  degradedSeats?: number;
+  details?: Record<string, unknown>;
+}
+
+/**
+ * A run opened at the start of a multi-call entry call (#5005,
+ * docs/content/ai-runs.md): its row is written before the first call, its
+ * calls carry `seatOptions(name)` (a `runContext`) and reserve together
+ * through `reserve()`, all or none, and it is closed at the end.
+ */
+export interface InferenceRunHandle {
+  readonly runId: string;
+  /** The entry call id every call of the run shares (`entry_call_id`). */
+  readonly entryCallId: string;
+  /** Options to merge into the call named `name` (its `runContext`). */
+  seatOptions(name: string): Record<string, unknown>;
+  /**
+   * Reserve every share together, all or none (the panel and the judge).
+   * A refusal stops the run before anything is sent and throws core's
+   * `AiRunStoppedError` (code `AI_RUN_STOPPED`).
+   */
+  reserve(shares: readonly InferenceRunCallShare[]): Promise<void>;
+  /** Close the run: `ok`/`degraded` end it `done`, `failed` ends it `failed`. */
+  close(outcome: InferenceRunOutcome): Promise<void>;
+  /**
+   * The run stopped (an `AI_RUN_STOPPED` error reached the executor):
+   * returns the error to raise for the entry call, after the calling run
+   * (if any) took the stop. Never a failed call.
+   */
+  stop(error: unknown): Promise<unknown>;
+}
+
 /** What core hands an {@link InferenceExecutor} for one call. */
 export interface InferenceExecutionContext {
   /** The tier request as the caller made it. */
@@ -1116,8 +1188,17 @@ export interface InferenceExecutionContext {
     options?: { usageTags?: Record<string, string>; signal?: AbortSignal },
   ): Promise<DecisionResult | undefined>;
   /**
-   * Persist a run record into `_smrt_ai_runs` when usage persistence is on;
-   * a no-op otherwise. Never throws for a write failure (logged instead).
+   * Open the run of this entry call at its start (#5005): a `fusion` run,
+   * a child of the caller's run when the call options carry a
+   * `runContext`. Throws `AiRunTrackingDisabledError` while usage
+   * persistence is off: a fusion does not run untracked. Absent on older
+   * cores, which take {@link recordRun} at the end instead.
+   */
+  openRun?(input: InferenceRunOpenInput): Promise<InferenceRunHandle>;
+  /**
+   * @deprecated Since #5005 core opens the run at the start through
+   * {@link openRun} and no longer passes this. Persisted a run record at
+   * the end on older cores.
    */
   recordRun?(record: InferenceRunRecord): Promise<void>;
   /**

@@ -14,6 +14,7 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { insertAiRunEventTx } from './ai-run-events.js';
 import {
   AI_RUN_FINAL_STATUSES,
   AI_RUN_LIMIT_REASONS,
@@ -466,6 +467,20 @@ export interface OpenAiRunInput {
   /** Fusion runs only. */
   mode?: string | null;
   /**
+   * A child run answering an entry call of its parent (page section 2): the
+   * `handoff` event written in the parent, in the same transaction as the
+   * child's row, with `child_run_id` the new run, `call_id` the entry call
+   * and status `running`. Needs `parentRunId`.
+   */
+  handoff?: {
+    /** Minted when absent. */
+    eventId?: string;
+    callId?: string | null;
+    name?: string | null;
+    stepIndex?: number | null;
+    parentEventId?: string | null;
+  };
+  /**
    * Open a retry of this failed durable workflow run (page section 7). The
    * new run is durable and its first checkpoint carries what
    * `retry.carry` takes from the failed run's checkpoint.
@@ -562,6 +577,8 @@ export async function openAiRun(
         const parent = locked.get(input.parentRunId);
         if (!parent) throw new AiRunNotFoundError(input.parentRunId);
         if (parent.status !== 'running') throw aiRunStoppedError(parent);
+      } else if (input.handoff) {
+        throw new TypeError('openAiRun: a handoff needs parentRunId');
       }
       if (retryOf) {
         initial = await retryStartTx(
@@ -610,6 +627,19 @@ export async function openAiRun(
           input.definitionVersion ?? null,
           envelope(initial.highestStepIndex, initial.state),
         );
+      }
+      if (input.parentRunId && input.handoff) {
+        // The parent's row is locked above, as every write of its events.
+        await insertAiRunEventTx(tx, input.parentRunId, {
+          id: input.handoff.eventId ?? newAiRunId(),
+          type: 'handoff',
+          childRunId: id,
+          callId: input.handoff.callId ?? null,
+          name: input.handoff.name ?? null,
+          stepIndex: input.handoff.stepIndex ?? null,
+          parentEventId: input.handoff.parentEventId ?? null,
+          status: 'running',
+        });
       }
     },
     options,

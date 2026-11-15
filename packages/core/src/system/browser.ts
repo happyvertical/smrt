@@ -18,6 +18,7 @@ export * from './ai-prompt-compare.js';
 // The AI run lifecycle, events, trajectories and accounting (#5005).
 export * from './ai-run-accounting.js';
 export * from './ai-run-calls.js';
+export * from './ai-run-entry.js';
 export * from './ai-run-events.js';
 export * from './ai-run-lifecycle.js';
 export {

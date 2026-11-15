@@ -17,6 +17,7 @@ import { AI_OWN_CALL_ID_TAG } from '../adapters/ai-usage.js';
 import {
   type AiCallRate,
   type AiCallReservation,
+  assertAiRunStillRunning,
   deferAiRunSettlement,
   releaseAiCall,
   reserveAiCall,
@@ -42,6 +43,28 @@ export interface AiRunCallStep {
   attempt?: number;
 }
 
+/**
+ * A reservation already made for the next call sent under a context: one
+ * seat's share of a fusion's joint reservation (page section 6.3). The
+ * first call actually sent takes it instead of reserving; a later call (an
+ * alias-chain fallback of the same seat) reserves on its own.
+ */
+export interface AiRunHeldReservation {
+  reservation: AiCallReservation;
+  /**
+   * Sent after the first stage (the judge): just before it is sent the
+   * chain is checked to be still `running`; when it is not, the
+   * reservation is released and the call is refused with the stop.
+   */
+  checkRunning?: boolean;
+}
+
+/** Where a context keeps its held reservations. */
+export interface AiRunHeldReservations {
+  /** The held reservation for the next call sent, at most once. */
+  take(): AiRunHeldReservation | undefined;
+}
+
 /** The run a call belongs to, on one database. */
 export interface AiRunContext extends AiRunCallStep {
   runId: string;
@@ -50,6 +73,8 @@ export interface AiRunContext extends AiRunCallStep {
   tenantId?: string | null;
   /** The claim fence of the job running the nearest durable run. */
   fence?: AiRunClaimFence;
+  /** Reservations made ahead of the calls (a fusion seat's share). */
+  reservations?: AiRunHeldReservations;
 }
 
 /** {@link AiRunContext} as a job payload carries it: plain JSON. */
@@ -229,35 +254,43 @@ export async function beginAiRunCall(
   context: AiRunContext,
   request: AiRunCallRequest,
 ): Promise<AiRunCallHandle> {
-  const callId = request.callId ?? newAiRunId();
+  const held = context.reservations?.take();
+  if (held?.checkRunning) {
+    await assertAiRunStillRunning(context.db, context.runId, {
+      releaseCallId: held.reservation.callId,
+    });
+  }
+  const callId = held?.reservation.callId ?? request.callId ?? newAiRunId();
   const entryCallId = request.entryCallId ?? callId;
-  const reservation: AiCallReservation = await reserveAiCall(
-    context.db,
-    context.runId,
-    {
-      callId,
-      ...(request.inputTokens !== undefined
-        ? { inputTokens: request.inputTokens }
-        : {}),
-      ...(request.inputChars !== undefined
-        ? { inputChars: request.inputChars }
-        : {}),
-      ...(request.outputLimit !== undefined
-        ? { outputLimit: request.outputLimit }
-        : {}),
-      ...(request.expectedOutputTokens !== undefined
-        ? { expectedOutputTokens: request.expectedOutputTokens }
-        : {}),
-      ...(request.modelMaxOutput !== undefined
-        ? { modelMaxOutput: request.modelMaxOutput }
-        : {}),
-      rate: request.rate ?? null,
-      stepIndex: context.stepIndex ?? null,
-      name: request.name ?? context.stepName ?? null,
-      parentEventId: request.parentEventId ?? null,
-    },
-    context.fence ? { fence: context.fence } : {},
-  );
+  const reservation: AiCallReservation = held
+    ? held.reservation
+    : await reserveAiCall(
+        context.db,
+        context.runId,
+        {
+          callId,
+          ...(request.inputTokens !== undefined
+            ? { inputTokens: request.inputTokens }
+            : {}),
+          ...(request.inputChars !== undefined
+            ? { inputChars: request.inputChars }
+            : {}),
+          ...(request.outputLimit !== undefined
+            ? { outputLimit: request.outputLimit }
+            : {}),
+          ...(request.expectedOutputTokens !== undefined
+            ? { expectedOutputTokens: request.expectedOutputTokens }
+            : {}),
+          ...(request.modelMaxOutput !== undefined
+            ? { modelMaxOutput: request.modelMaxOutput }
+            : {}),
+          rate: request.rate ?? null,
+          stepIndex: context.stepIndex ?? null,
+          name: request.name ?? context.stepName ?? null,
+          parentEventId: request.parentEventId ?? null,
+        },
+        context.fence ? { fence: context.fence } : {},
+      );
 
   const slot: { event?: SmrtAiUsageEvent; ended?: true } = {};
   const timeout =

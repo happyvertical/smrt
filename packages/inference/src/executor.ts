@@ -37,7 +37,11 @@ import {
   type InferenceTier,
   isInferenceUnavailableError,
 } from '@happyvertical/smrt-core';
-import { classifyInferenceFailure, isInferenceAbort } from './classify.js';
+import {
+  classifyInferenceFailure,
+  isAiRunInterruption,
+  isInferenceAbort,
+} from './classify.js';
 import {
   type ChainStep,
   expandTarget,
@@ -440,7 +444,8 @@ class ChainCall {
           // own error.
           if (
             !isInferenceAbort(outcome.error) &&
-            !isInferenceUnavailableError(outcome.error)
+            !isInferenceUnavailableError(outcome.error) &&
+            !isAiRunInterruption(outcome.error)
           ) {
             // The trail always ends with `to: null` on a failure row.
             this.substitutions.push({
