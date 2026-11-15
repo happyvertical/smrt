@@ -24,6 +24,7 @@ import type {
 } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
+  AI_OWN_CALL_ID_TAG,
   AiUsageCollector,
   AiUsagePersistenceHandler,
 } from './adapters/ai-usage.js';
@@ -41,7 +42,15 @@ import {
   resolveAiUsageTenantId,
   unwrapAiUsageSink,
 } from './adapters/ai-usage-recorder.js';
-import { estimateAiUsageCost } from './adapters/cost-rates.js';
+import {
+  estimateAiUsageCost,
+  lookupAiCostRate,
+} from './adapters/cost-rates.js';
+import {
+  type AiRunClientHooks,
+  withAiRunEntryCallId,
+  withAiRunTracking,
+} from './ai-run-client.js';
 import {
   type AiTranscriptContext,
   aiTranscriptsEnabled,
@@ -129,6 +138,7 @@ import {
 } from './postgres-timeouts.js';
 import { detectEngine } from './schema/ddl/index.js';
 import { SignalBus } from './signals/bus.js';
+import type { AiRunStore } from './system/ai-run-lifecycle.js';
 import { recordAiRun } from './system/ai-runs.js';
 import { ensureSystemTables as ensureFrameworkSystemTables } from './system/bootstrap.js';
 import {
@@ -541,6 +551,17 @@ export class SmrtClass {
     string,
     Set<(event: InferenceUsageObservation) => void>
   >();
+  /**
+   * Tracked calls of a run waiting for their usage event (#5005), keyed by
+   * the call's own id (`aiCallId` tag): the event is written with the call's
+   * settlement and the handlers run only after it commits.
+   */
+  private readonly _aiRunCallCaptures = new Map<
+    string,
+    (event: SmrtAiUsageEvent) => void
+  >();
+  /** Run-tracking hooks per provider-bound client (#5005). */
+  private readonly _aiRunClientHooks = new WeakMap<object, AiRunClientHooks>();
 
   /**
    * Tracks whether optional runtime services (signals, AI, fs) are ready.
@@ -959,6 +980,12 @@ export class SmrtClass {
    * client is built when the resolution is unavailable (mode `off`, ...),
    * when a registered resolver's `mode()` says `off` for an untiered call,
    * or when nothing is configured (`unconfigured`).
+   *
+   * `runTracking: true` (#5005) returns a client whose calls that carry a
+   * `runContext` option are tracked calls of that run: each call actually
+   * sent (every alias-chain candidate tried) is reserved, sent under its own
+   * call id, and settled with its usage row. Other calls on it are unchanged.
+   * Without it a client is exactly as before; never pass `runContext` to one.
    */
   protected async getAiClient(
     tier?: InferenceTierRequest,
@@ -968,6 +995,7 @@ export class SmrtClass {
       resolution?: InferenceResolution;
       minimumTier?: InferenceTier;
       allowPartial?: boolean;
+      runTracking?: boolean;
     } = {},
   ): Promise<AIClient> {
     // While the app stores transcripts (#4780) the returned client carries a
@@ -984,6 +1012,7 @@ export class SmrtClass {
       resolution?: InferenceResolution;
       minimumTier?: InferenceTier;
       allowPartial?: boolean;
+      runTracking?: boolean;
     } = {},
   ): Promise<AIClient> {
     await this.ensureRuntimeServicesInitialized();
@@ -1012,7 +1041,7 @@ export class SmrtClass {
       const executor = inferenceExecutorFor(resolution.target);
       if (executor) {
         const tenantId = this.currentTenantId();
-        return executor.createClient({
+        const chainClient = executor.createClient({
           request: {
             className: this._className,
             ...(tenantId !== undefined ? { tenantId } : {}),
@@ -1026,6 +1055,8 @@ export class SmrtClass {
             await this.enforceHostedInferenceGate(request, resolution, target);
             return (await this.getAiClientForTarget(
               target,
+              undefined,
+              options.runTracking,
             )) as unknown as InferenceModelClient;
           },
           resolveTier: (next, overrides) =>
@@ -1046,11 +1077,15 @@ export class SmrtClass {
           observeUsage: (runId, listener) =>
             this.observeRunUsage(runId, listener),
           lookupFusion: (key) => this.lookupInferenceFusion(key, request),
-        }) as unknown as AIClient;
+        });
+        return (options.runTracking
+          ? withAiRunEntryCallId(chainClient)
+          : chainClient) as unknown as AIClient;
       }
       return this.getAiClientForTarget(
         resolution.target,
         resolution.tierResolved,
+        options.runTracking,
       );
     }
 
@@ -1067,7 +1102,8 @@ export class SmrtClass {
     // the configured client, so a `local` or keyless `byo` choice never runs
     // on the app's provider.
     if (modeState) return this.resolveAiClient('auto', options);
-    return this.requireConfiguredAi();
+    const configured = this.requireConfiguredAi();
+    return options.runTracking ? this.aiRunTracked(configured) : configured;
   }
 
   /**
@@ -1128,6 +1164,74 @@ export class SmrtClass {
    * (a raw `getAI()` client attributed to an explicit tenant) build a fresh
    * one. Subclasses that build their own `getAI()` client pass it here.
    */
+  /**
+   * Where this instance's AI runs are kept (#5005): its database and tenant,
+   * with usage tracking on only while usage is enabled and persisted there.
+   * `openAiRun(await this.aiRunStore(), input)` throws
+   * `AiRunTrackingDisabledError` otherwise, before any call is sent.
+   */
+  protected async aiRunStore(): Promise<AiRunStore> {
+    await this.ensureRuntimeServicesInitialized();
+    const usage =
+      this._aiUsageResolvedConfig ?? this.mergeAiUsageConfig(config.toJSON());
+    return {
+      db: this._db ?? null,
+      usageTracking: Boolean(usage.enabled && usage.persist && this._db),
+      tenantId: this.currentTenantId() ?? null,
+      className: this._className,
+    };
+  }
+
+  /**
+   * `client` with run tracking (#5005): a call whose options carry a
+   * `runContext` is reserved, sent with its own call id, and settled with
+   * its usage row in the run's database; other calls are unchanged.
+   * `target` names the provider and model the client sends to, when it is
+   * not the configured client.
+   */
+  private aiRunTracked<T>(
+    client: T,
+    target: { provider?: string; model?: string } = {},
+  ): T {
+    if (!client || typeof client !== 'object') return client;
+    const key = client as unknown as object;
+    let hooks = this._aiRunClientHooks.get(key);
+    if (!hooks) {
+      const usageConfig = () =>
+        this._aiUsageResolvedConfig ?? this.mergeAiUsageConfig(config.toJSON());
+      hooks = {
+        target: () => {
+          const base = this._aiClientConfig ?? {};
+          const field = (name: string) =>
+            typeof base[name] === 'string' ? (base[name] as string) : '';
+          return {
+            provider: target.provider ?? (field('provider') || 'unknown'),
+            model: target.model ?? (field('model') || 'unknown'),
+          };
+        },
+        rateFor: (provider, model) => {
+          const resolved = usageConfig();
+          if (!resolved.estimateCosts) return null;
+          return lookupAiCostRate(provider, model, resolved.costRates) ?? null;
+        },
+        className: this._className,
+        tenantId: () => this.currentTenantId() ?? null,
+        registerCapture: (callId, capture) => {
+          this._aiRunCallCaptures.set(callId, capture);
+          return () => {
+            if (this._aiRunCallCaptures.get(callId) === capture) {
+              this._aiRunCallCaptures.delete(callId);
+            }
+          };
+        },
+        afterSettle: (event) =>
+          dispatchAiUsageEvent(event, this._aiUsageHandlers, usageConfig()),
+      };
+      this._aiRunClientHooks.set(key, hooks);
+    }
+    return withAiRunTracking(client, hooks);
+  }
+
   protected transcriptClient<T>(
     client: T,
     transcript?: boolean,
@@ -1617,6 +1721,21 @@ export class SmrtClass {
    * provider's own key variable.
    */
   private async getAiClientForTarget(
+    target: InferenceTarget,
+    tier?: InferenceTier,
+    runTracking = false,
+  ): Promise<AIClient> {
+    const client = await this.getUntrackedAiClientForTarget(target, tier);
+    if (!runTracking) return client;
+    const identity = inferenceTargetIdentity(target);
+    return this.aiRunTracked(client, {
+      ...(identity.provider ? { provider: identity.provider } : {}),
+      ...(identity.model ? { model: identity.model } : {}),
+    });
+  }
+
+  /** {@link getAiClientForTarget} without run tracking. */
+  private async getUntrackedAiClientForTarget(
     target: InferenceTarget,
     tier?: InferenceTier,
   ): Promise<AIClient> {
@@ -2693,9 +2812,12 @@ export class SmrtClass {
     // raw event first, whatever the usage config says.
     observeAiTranscriptUsage(event);
     const observed = this._aiRunUsageListeners.size > 0;
+    // A tracked call of a run (#5005) is waiting for its usage either way.
+    const tracked = this._aiRunCallCaptures.size > 0;
     if (
-      !usageConfig.enabled ||
-      (this._aiUsageHandlers.length === 0 && !observed)
+      !tracked &&
+      (!usageConfig.enabled ||
+        (this._aiUsageHandlers.length === 0 && !observed))
     ) {
       return;
     }
@@ -2713,6 +2835,27 @@ export class SmrtClass {
     if (!normalizedEvent) {
       return;
     }
+
+    // A tracked call of a run (#5005) writes its usage row with its
+    // settlement; the handlers run once that commits (ai-run-client.ts).
+    const ownCallId = normalizedEvent.tags?.[AI_OWN_CALL_ID_TAG];
+    const capture = ownCallId
+      ? this._aiRunCallCaptures.get(ownCallId)
+      : undefined;
+    if (capture) {
+      if (usageConfig.estimateCosts) {
+        normalizedEvent.estimatedCost = estimateAiUsageCost(
+          normalizedEvent.provider,
+          normalizedEvent.model,
+          normalizedEvent.usage,
+          usageConfig.costRates,
+        );
+      }
+      if (observed) this.notifyRunUsage(normalizedEvent);
+      capture(normalizedEvent);
+      return;
+    }
+    if (!usageConfig.enabled) return;
 
     if (observed) {
       // Fusion run observers (#4753) see the event with its estimated cost;
