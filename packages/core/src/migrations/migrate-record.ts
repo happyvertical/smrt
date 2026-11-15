@@ -3,7 +3,11 @@ import corePackage from '../../package.json' with { type: 'json' };
 import { withEmbeddedWriteQueue } from '../embedded-write-queue.js';
 import { ObjectRegistry } from '../registry.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
-import type { SchemaDefinition } from '../schema/types.js';
+import type {
+  RetireConfirmationSource,
+  SchemaChange,
+  SchemaDefinition,
+} from '../schema/types.js';
 import {
   ensureSystemTables,
   runSerializedAgainstSystemTableBootstrap,
@@ -36,6 +40,47 @@ export interface MigrateRecordInput {
   };
 }
 
+/**
+ * A retirement the operator confirmed over a definition mismatch (#5005), as
+ * the migrate run that dropped the table records it.
+ */
+export interface ConfirmedRetirement {
+  table: string;
+  /** The declaring package(s). */
+  packageName: string;
+  lastOwner: string;
+  since: string;
+  /** `flag`: `--confirm-retire-table`; `code`: `confirmRetireTables`. */
+  by: RetireConfirmationSource;
+  /** The differences confirmed, one per release tried. */
+  differences: string[];
+}
+
+/** The confirmed retirements among a run's planned drops. */
+export function confirmedRetirementsOf(
+  changes: readonly SchemaChange[],
+): ConfirmedRetirement[] {
+  return changes.flatMap((change) => {
+    const retirement = change.retirement;
+    if (
+      change.type !== 'retire_table' ||
+      change.kindHint !== 'table.retire' ||
+      !retirement?.confirmed
+    )
+      return [];
+    return [
+      {
+        table: change.table,
+        packageName: retirement.packageName,
+        lastOwner: retirement.lastOwner,
+        since: retirement.since,
+        by: retirement.confirmed.by,
+        differences: [...retirement.confirmed.differences],
+      },
+    ];
+  });
+}
+
 export interface UnloadedBuildPackage {
   packageName: string;
   tables: string[];
@@ -54,6 +99,13 @@ export type LastMigrateRecord =
 
 export interface MigrateRecordOptions {
   engineHint?: DatabaseEngine;
+}
+
+/** A migrate record that carries confirmed retirements (#5005). */
+export interface ConfirmedRetirementRecord {
+  createdAt: string;
+  release: string;
+  retirements: ConfirmedRetirement[];
 }
 
 function packageOf(name: string): string {
@@ -183,10 +235,19 @@ export async function readLastMigrateRecord(
  */
 export async function recordSuccessfulMigrate(
   db: DatabaseInterface,
-  options: MigrateRecordOptions & { input?: MigrateRecordInput } = {},
+  options: MigrateRecordOptions & {
+    input?: MigrateRecordInput;
+    /**
+     * Retirements this run dropped over a confirmed definition mismatch
+     * (#5005). A run with any writes a record even when its declarations are
+     * unchanged, so every confirmation is on the ledger.
+     */
+    confirmedRetirements?: readonly ConfirmedRetirement[];
+  } = {},
 ): Promise<{ written: boolean; record: MigrateRecord }> {
   const input = options.input ?? collectMigrateRecordInput();
   const packages = [...new Set(input.packages)].sort();
+  const confirmed = options.confirmedRetirements ?? [];
   return withEmbeddedWriteQueue(
     db,
     getDatabaseEngine(db, options.engineHint) !== 'postgres',
@@ -198,6 +259,7 @@ export async function recordSuccessfulMigrate(
         async (scopedDb) => {
           const previous = await readLastMigrateRecord(scopedDb, options);
           if (
+            confirmed.length === 0 &&
             previous.state === 'recorded' &&
             previous.record.release === input.release &&
             previous.record.fingerprint === input.fingerprint &&
@@ -223,13 +285,44 @@ export async function recordSuccessfulMigrate(
           };
           const id = crypto.randomUUID();
           const serializedPackages = JSON.stringify(packages);
+          const confirmedRetirements = confirmed.length
+            ? JSON.stringify(confirmed)
+            : null;
           await scopedDb.execute`
-      INSERT INTO _smrt_migrate_runs (id, release, packages, fingerprint, created_at)
-      VALUES (${id}, ${input.release}, ${serializedPackages}, ${input.fingerprint}, ${createdAt})
+      INSERT INTO _smrt_migrate_runs (id, release, packages, fingerprint, created_at, confirmed_retirements)
+      VALUES (${id}, ${input.release}, ${serializedPackages}, ${input.fingerprint}, ${createdAt}, ${confirmedRetirements})
     `;
           return { written: true, record };
         },
       );
     },
   );
+}
+
+/**
+ * The migrate records that carry confirmed retirements, oldest first
+ * (#5005). SELECT-only; empty when there is no ledger.
+ */
+export async function readConfirmedRetirements(
+  db: DatabaseInterface,
+  options: MigrateRecordOptions = {},
+): Promise<ConfirmedRetirementRecord[]> {
+  if (!(await tableExists(db, '_smrt_migrate_runs', options.engineHint)))
+    return [];
+  const result = await db.query(
+    'SELECT release, created_at, confirmed_retirements FROM _smrt_migrate_runs WHERE confirmed_retirements IS NOT NULL ORDER BY created_at, id',
+  );
+  const rows = Array.isArray(result) ? result : result.rows;
+  return rows.map((row) => {
+    return {
+      release: String(row.release),
+      createdAt:
+        row.created_at instanceof Date
+          ? row.created_at.toISOString()
+          : String(row.created_at),
+      retirements: JSON.parse(
+        String(row.confirmed_retirements),
+      ) as ConfirmedRetirement[],
+    };
+  });
 }

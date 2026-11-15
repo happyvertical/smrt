@@ -644,8 +644,10 @@ loaded at run time carries is not honoured); without one, the registry's.
 `readRetiredTablesFromPackageJson`, `readManifestRetiredTables`,
 `honouredRetiredTables`, `parseCarriedRetiredTable`, `mergeRetiredTables`,
 `ObjectRegistry.getRetiredTables()` and `registerManifestRetiredTables()`, the
-in-batch stop `RetiredTableRowsAppearedError`, and the comparer flag
-`DiffOptions.retireDeclaredTables`. Internal: `registerRetiredTables`,
+in-batch stop `RetiredTableRowsAppearedError`, the comparer flags
+`DiffOptions.retireDeclaredTables` and `DiffOptions.confirmRetireTables`,
+`confirmRetireTables` on `migrateSmrtSchemas` / `getPendingSchemaStatements`,
+and `readConfirmedRetirements` / `confirmedRetirementsOf`. Internal: `registerRetiredTables`,
 `planTableRetirements` and `resolveRetirementContext`. A run plans retirements
 only with `retireDeclaredTables` (`getPendingSchemaStatements` without
 `tables`, `db:migrate` and `db:diff` set it). The comparer then resolves the
@@ -661,11 +663,42 @@ out.
 |---|---|---|
 | `table.retire-owner` | stop (loses data) | An entry fails its checks (a `lastOwner` outside the package, a `_smrt_` table of a package outside smrt, no definition). The loaders refuse these already; the plan checks again, since a build description can be registered directly. |
 | `table.retire-declared` | stop (loses data) | A model, a run-time list stored in the app model journal (even one this process never registered), or smrt itself still declares the table. A journal that cannot be read stops every retirement. |
-| `table.retire-mismatch` | stop (loses data) | The live table is not the one the declaration describes in any release it lists. Each definition is compared with the live table by the differ (`compareTable` on a fresh comparer, with the run's `postgresTimestampMigration`, `emptyTextAsNull` and `relaxColumns`), and its columns with the catalog's (generated and hidden columns included). A missing or extra column stops it. A type difference counts as the same table when the ordinary migrate would converge it without losing data or only report it (`decideSchemaChange` is not `stop`: a live `int4` declared INTEGER, `varchar(n)` declared TEXT, a uuid held as text, a PostgreSQL `timestamp` declared TIMESTAMP under `postgresTimestampMigration`), and stops it when the ordinary migrate would stop (an incompatible type; that `timestamp` without the opt-in). The check proves identity, not convergence. Constraints, defaults and indexes are not part of the definition. It needs no recorded owner, so it works for a database upgrading straight from 0.61.x. |
+| `table.retire-mismatch` | stop (loses data; the operator may confirm it, below) | The live table is not the one the declaration describes in any release it lists. Each definition is compared with the live table by the differ (`compareTable` on a fresh comparer, with the run's `postgresTimestampMigration`, `emptyTextAsNull` and `relaxColumns`), and its columns with the catalog's (generated and hidden columns included). A missing or extra column stops it. A type difference counts as the same table when the ordinary migrate would converge it without losing data or only report it (`decideSchemaChange` is not `stop`: a live PostgreSQL `int4` declared INTEGER, `varchar(n)` declared TEXT, a uuid held as text, a PostgreSQL `timestamp` declared TIMESTAMP under `postgresTimestampMigration`), and stops it when the ordinary migrate would stop (an incompatible type; that `timestamp` without the opt-in). On SQLite a column declared `INT2`, `INT4`, `INT8` or `MEDIUMINT` (SQLite reports the spelling; its affinity is INTEGER) also matches INTEGER, through `retireTypeEquivalence`, which only this comparison applies (`DiffOptions.retireComparison`); the ordinary migrate still stops on such a column (#5016). The check proves identity, not convergence. Constraints, defaults and indexes are not part of the definition. It needs no recorded owner, so it works for a database upgrading straight from 0.61.x. |
 | `table.retire-rows` | stop (loses data) | The table holds rows and a declaration does not say `rows: 'discard'` (or the rows could not be counted). |
 | `table.retire-dependent` | stop (loses data) | Something undeclared depends on it, one stop per dependent (see below). |
 | `table.retire-unsupported` | stop (loses data) | The JSON adapter: it never drops, so a live retired table stops the run and no migrate record says it is gone. |
 | `table.retire` | apply | None of the above. `DROP TABLE IF EXISTS`, last in the atomic batch, referencing retired tables first. Never `CASCADE`. |
+
+**Confirming a mismatch (M3).** When the live table is the retired table at a
+shape no supported release made (a hand edit, a release whose shape was never
+declared), the operator confirms it by exact table name:
+`smrt db:migrate --confirm-retire-table <table>` (repeatable), or in code
+`confirmRetireTables: ['<table>']` on `migrateSmrtSchemas` and
+`getPendingSchemaStatements` (`DiffOptions.confirmRetireTables`, with how it
+was confirmed). Names are exact, never patterns, and match as live tables do
+(without case on SQLite and DuckDB, exactly on PostgreSQL). The confirmation
+lifts `table.retire-mismatch` alone, and only when the differences were read
+(a catalog that could not be read or a comparison that threw still stops). The
+table then goes through the rows, dependents and cycle checks like any other;
+the owner, still-declared and JSON-adapter stops come first and are never
+lifted. The stop message names, per release tried, every difference and the
+rerun line (flag and code form), so the operator confirms what they can see;
+`smrt doctor --db` (**Next migrate**) shows the same message. The drop carries
+`retirement.confirmed` (`by: 'flag' | 'code'`, the differences); its note and
+the CLI's drop list print them, and the successful run writes them, with the
+table, package, last owner and release, to the migrate record
+(`_smrt_migrate_runs.confirmed_retirements`, read by
+`readConfirmedRetirements`; a run with a confirmation always writes a record).
+A name that lifted nothing is a notice ("Ignoring ...").
+
+**The code form's hazard.** In code the confirmation applies to every
+installation of the app, including one where the mismatch means the live table
+really is a different table under the retired name: the accident the
+definition match exists to catch, and with `rows: 'discard'` its rows go with
+it. It is meant for a local or desktop app where no operator can answer the
+stop, after the differences were checked; anywhere an operator runs migrate,
+use the flag. `confirmRemovedPackages` is the precedent. `smrt doctor --db`
+cannot see an app's code options, so it still shows the stop.
 
 These are named stops in the ordinary decision (`stops`, `heldBack`), never a
 thrown error. An absent table is nothing to do, so the step is idempotent. Two
@@ -1589,7 +1622,10 @@ Adding live trigger generation requires a migration rollout design.
 including an already-current database, records the core release, the build's
 packages and fingerprint (below). Failed, stopped, and dry runs never stamp
 it. Identical release/packages/fingerprint skip the insert; changed values append
-and preserve history. This permanent ledger has no retention/prune task.
+and preserve history. A run that dropped a retired table over a confirmed
+definition mismatch always appends, with `confirmed_retirements` (system schema
+1.18.0; JSON, one entry per table: table, package, last owner, release, `by`
+flag or code, the differences confirmed); other rows leave it NULL. This permanent ledger has no retention/prune task.
 `readLastMigrateRecord` is SELECT-only and returns `state: 'none'` for an absent
 or empty table: the first run under this scheme, not a schema mismatch. The latest
 row orders by `created_at`, then `id`. Call the writer on the caller's database

@@ -11,6 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   collectMigrateRecordInput,
+  confirmedRetirementsOf,
   ensureDeferredSystemTableCompatibility,
   ensureSystemTables,
   generateDDLForEngine,
@@ -24,9 +25,10 @@ import {
   recordSuccessfulMigrate,
   SchemaComparer,
 } from '@happyvertical/smrt-core';
-import type {
-  MigrationDefinition,
-  MigrationResult,
+import {
+  type MigrationDefinition,
+  type MigrationResult,
+  unusedRetireConfirmations,
 } from '@happyvertical/smrt-core/migrations';
 import { renderForeignKeyAddStatements } from '@happyvertical/smrt-core/schema';
 import type { DomainKnowledgeManifest } from '@happyvertical/smrt-types';
@@ -349,6 +351,7 @@ interface DbMigrateOptions {
   force?: boolean;
   'force-migration'?: string | readonly string[];
   'confirm-removed-package'?: string | readonly string[];
+  'confirm-retire-table'?: string | readonly string[];
   'repair-data'?: boolean;
   'upgrade-sti'?: boolean;
   'drop-indexes'?: boolean;
@@ -1750,6 +1753,12 @@ export default testManifest;
           'Confirm one missing package was removed on purpose. Repeat for each package.',
         multiple: true,
       },
+      'confirm-retire-table': {
+        type: 'string',
+        description:
+          'Retire one declared table although the live table is not the one any release its declaration lists describes. Exact table name, no patterns; repeat for each table. Lifts only that stop: rows, dependents and declarations still stop.',
+        multiple: true,
+      },
       'force-migration': {
         type: 'string',
         description:
@@ -2091,6 +2100,13 @@ export default testManifest;
         // same-name shape drift detection is always on (unblocks issue
         // #1165 automatically); orphan-index drops are gated behind
         // --drop-indexes for safety.
+        const retireOption = options['confirm-retire-table'];
+        const confirmRetireTables =
+          typeof retireOption === 'string'
+            ? [retireOption]
+            : Array.isArray(retireOption)
+              ? [...retireOption]
+              : [];
         const comparer = new SchemaComparer(db, {
           includeDroppedIndexes: Boolean(options['drop-indexes']),
           includeDroppedColumns: Boolean(options['drop-columns']),
@@ -2101,6 +2117,15 @@ export default testManifest;
           // Tables a package declares retired (#5005): dropped here, in this
           // whole-schema run, and nowhere else.
           retireDeclaredTables: true,
+          // Each named table's definition mismatch, confirmed by the operator.
+          ...(confirmRetireTables.length
+            ? {
+                confirmRetireTables: {
+                  tables: confirmRetireTables,
+                  by: 'flag' as const,
+                },
+              }
+            : {}),
         });
         const diff = await comparer.compare(manifestSchemas);
         const engine = tracker.getEngine();
@@ -2288,6 +2313,12 @@ export default testManifest;
           ),
         });
         for (const notice of runDecision.notices) console.log(notice);
+        for (const notice of unusedRetireConfirmations(
+          confirmRetireTables,
+          diff.changes,
+          '--confirm-retire-table',
+        ))
+          console.log(notice);
         if (!runDecision.proceed) {
           // The same wording the local runtime shows when it migrates itself.
           const refusal = describeMigrationRefusal(runDecision, {
@@ -3176,6 +3207,10 @@ export default testManifest;
             await recordSuccessfulMigrate(db, {
               engineHint: dbType,
               input: recordInput,
+              // Every drop over a confirmed definition mismatch (#5005).
+              confirmedRetirements: applySchemaMigrations
+                ? confirmedRetirementsOf(diff.changes)
+                : [],
             });
           }
         }

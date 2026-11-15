@@ -28,8 +28,12 @@ import { getTestDatabase } from '../../testing/database.js';
 import { registerBuildSchema } from '../build-schema.js';
 import { classifySchemaChange, decideSchemaChange } from '../change-kinds.js';
 import { SchemaComparer } from '../differ.js';
-import { readLastMigrateRecord } from '../migrate-record.js';
 import {
+  readConfirmedRetirements,
+  readLastMigrateRecord,
+} from '../migrate-record.js';
+import {
+  getPendingSchemaStatements,
   type MigrateSmrtSchemasResult,
   migrateSmrtSchemas,
 } from '../orchestrate.js';
@@ -564,6 +568,172 @@ describe.each(engines)('retire step on %s (#5005)', (engine) => {
     expect(kinds(result)).toEqual(['table.retire-mismatch']);
     expect(result.stops[0].message).toMatch(/column v is .*declared TEXT/i);
     expect(await exists('retire_typed')).toBe(true);
+  });
+
+  // M3: the operator confirms a mismatch for named tables. Only the mismatch
+  // stop is lifted; rows, dependents and declarations still stop.
+  describe('a confirmed mismatch (confirmRetireTables)', () => {
+    const collide = async (table: string, rows = 1) => {
+      await db.query(
+        `CREATE TABLE "${table}" (id TEXT PRIMARY KEY, payload TEXT)`,
+      );
+      for (let i = 0; i < rows; i++)
+        await db.query(`INSERT INTO "${table}" VALUES ('${i}', 'x')`);
+    };
+
+    it('names the flag, the code form and the differences in the stop', async () => {
+      await collide('retire_confirm_msg');
+      declare(retired('retire_confirm_msg'));
+      const result = await migrate();
+      expect(kinds(result)).toEqual(['table.retire-mismatch']);
+      const [stopped] = result.stops;
+      expect(stopped.message).toContain(
+        'release 0.9.0: column payload is not in the definition; column v is missing',
+      );
+      expect(stopped.message).toContain(
+        "rerun with --confirm-retire-table retire_confirm_msg (in code: confirmRetireTables: ['retire_confirm_msg']) to retire it anyway; rows, dependents and declarations still stop.",
+      );
+    });
+
+    it('drops the mismatching table and records who confirmed which differences', async () => {
+      await collide('retire_confirm_drop', 2);
+      await make('retire_confirm_keep', 0);
+      declare(retired('retire_confirm_drop'));
+
+      const result = await migrate({
+        confirmRetireTables: ['retire_confirm_drop'],
+      });
+
+      expect(result.stops).toEqual([]);
+      expect(result).toMatchObject({ refused: false, applied: true });
+      expect(result.statements).toEqual([drop('retire_confirm_drop')]);
+      expect(await exists('retire_confirm_drop')).toBe(false);
+      expect(await exists('retire_confirm_keep')).toBe(true);
+      expect(result.notices.join()).not.toContain('Ignoring');
+
+      const records = await readConfirmedRetirements(db, { engineHint: hint });
+      expect(records).toHaveLength(1);
+      expect(records[0].retirements).toEqual([
+        {
+          table: 'retire_confirm_drop',
+          packageName: PKG,
+          lastOwner: OWNER,
+          since: '1.0.0',
+          by: 'code',
+          differences: [
+            'release 0.9.0: column payload is not in the definition; column v is missing',
+          ],
+        },
+      ]);
+      // A later run with nothing to confirm adds no confirmation.
+      expect((await migrate()).refused).toBe(false);
+      expect(
+        await readConfirmedRetirements(db, { engineHint: hint }),
+      ).toHaveLength(1);
+    });
+
+    it('plans the confirmed drop with its differences in getPendingSchemaStatements', async () => {
+      await collide('retire_confirm_plan', 0);
+      declare(retired('retire_confirm_plan'));
+      const pending = await getPendingSchemaStatements(db, {
+        engineHint: hint,
+        confirmRetireTables: ['retire_confirm_plan'],
+      });
+      const change = pending.diff.changes.find(
+        (item) => item.table === 'retire_confirm_plan',
+      );
+      expect(change?.kindHint).toBe('table.retire');
+      expect(change?.retirement?.confirmed).toEqual({
+        by: 'code',
+        differences: [
+          'release 0.9.0: column payload is not in the definition; column v is missing',
+        ],
+      });
+      expect(change?.note).toContain(
+        'Confirmed by confirmRetireTables in code',
+      );
+      expect(await exists('retire_confirm_plan')).toBe(true);
+    });
+
+    it("still stops on rows without rows: 'discard'", async () => {
+      await collide('retire_confirm_rows', 2);
+      declare(retired('retire_confirm_rows', { rows: undefined }));
+      const result = await migrate({
+        confirmRetireTables: ['retire_confirm_rows'],
+      });
+      expect(result).toMatchObject({ refused: true, applied: false });
+      expect(kinds(result)).toEqual(['table.retire-rows']);
+      expect(result.stops[0].message).toContain('holds 2 row(s)');
+      expect(await exists('retire_confirm_rows')).toBe(true);
+      expect(await readConfirmedRetirements(db, { engineHint: hint })).toEqual(
+        [],
+      );
+    });
+
+    it('still stops on a dependent', async () => {
+      await collide('retire_confirm_parent', 1);
+      await db.query(
+        `CREATE TABLE "confirm_child" (id TEXT PRIMARY KEY, parent_id TEXT REFERENCES "retire_confirm_parent"(id))`,
+      );
+      await db.query(`INSERT INTO "confirm_child" VALUES ('c', '0')`);
+      declare(retired('retire_confirm_parent'));
+      const result = await migrate({
+        confirmRetireTables: ['retire_confirm_parent'],
+      });
+      expect(result.refused).toBe(true);
+      expect(kinds(result)).toEqual(['table.retire-dependent']);
+      expect(result.stops[0].message).toContain(
+        'foreign key confirm_child.parent_id',
+      );
+      expect(await exists('retire_confirm_parent')).toBe(true);
+    });
+
+    it('still stops while a model declares the table', async () => {
+      class Still extends SmrtObject {
+        code = '';
+      }
+      field({ type: 'text' })(Still.prototype, 'code');
+      ObjectRegistry.register(Still, {
+        packageName: '@retire/still',
+        tableName: 'retire_confirm_declared',
+      });
+      expect((await migrate()).refused).toBe(false);
+      declare(retired('retire_confirm_declared'));
+      const result = await migrate({
+        confirmRetireTables: ['retire_confirm_declared'],
+      });
+      expect(result.refused).toBe(true);
+      expect(kinds(result)).toEqual(['table.retire-declared']);
+      expect(await exists('retire_confirm_declared')).toBe(true);
+    });
+
+    it('takes exact names only: no patterns, no prefixes; case as the engine compares names (R4)', async () => {
+      await collide('retire_confirm_exact', 0);
+      declare(retired('retire_confirm_exact'));
+      for (const name of [
+        'retire_confirm_%',
+        'retire_confirm_*',
+        'retire_confirm',
+        'retire_confirm_exact ',
+      ]) {
+        const result = await migrate({ confirmRetireTables: [name] });
+        expect(kinds(result)).toEqual(['table.retire-mismatch']);
+        expect(result.notices).toContain(
+          `Ignoring confirmRetireTables ${name}: no declared retirement of exactly this table stops on a definition mismatch.`,
+        );
+      }
+      const upper = await migrate({
+        confirmRetireTables: ['RETIRE_CONFIRM_EXACT'],
+      });
+      if (hint === 'postgres') {
+        // PostgreSQL names the table exactly.
+        expect(kinds(upper)).toEqual(['table.retire-mismatch']);
+        expect(await exists('retire_confirm_exact')).toBe(true);
+      } else {
+        expect(upper).toMatchObject({ refused: false, applied: true });
+        expect(await exists('retire_confirm_exact')).toBe(false);
+      }
+    });
   });
 
   it('stops on an entry that fails its checks however it arrived (R3, R9)', async () => {

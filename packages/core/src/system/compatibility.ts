@@ -1466,10 +1466,30 @@ export async function ensureAiEvaluationsSystemTableCompatibility(
  * (issue #2376). {@link ensureDeferredSystemTableCompatibility} runs outside
  * the lock instead.
  */
+/**
+ * `_smrt_migrate_runs.confirmed_retirements` (#5005): the retirements a run
+ * dropped over a confirmed definition mismatch. Nullable, so older rows and
+ * older writers stay valid.
+ */
+export async function ensureMigrateRunsSystemTableCompatibility(
+  db: DatabaseInterface,
+  typeHint?: string,
+): Promise<void> {
+  if (!(await tableExists(db, '_smrt_migrate_runs', typeHint))) return;
+  await addColumnIfMissing(
+    db,
+    '_smrt_migrate_runs',
+    'confirmed_retirements',
+    'TEXT',
+    typeHint,
+  );
+}
+
 export async function ensureBootstrapSystemTableCompatibility(
   db: DatabaseInterface,
   typeHint?: string,
 ): Promise<void> {
+  await ensureMigrateRunsSystemTableCompatibility(db, typeHint);
   await ensureDispatchSystemTableCompatibility(db, typeHint);
   await ensureDispatchSubscriptionsSystemTableCompatibility(db, typeHint);
   await ensureAiUsageSystemTableCompatibility(db, typeHint);

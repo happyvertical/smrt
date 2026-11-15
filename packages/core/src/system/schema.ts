@@ -1467,7 +1467,8 @@ CREATE TABLE IF NOT EXISTS _smrt_migrate_runs (
   release TEXT NOT NULL,
   packages TEXT NOT NULL,
   fingerprint TEXT NOT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  confirmed_retirements TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_smrt_migrate_runs_latest
   ON _smrt_migrate_runs(created_at, id);
@@ -1682,7 +1683,9 @@ function toPostgresTenantUuid(ddl: string): string {
 // `_smrt_ai_usage_outcomes`. Run rows carry `stop_detail` and an indexed
 // `retry_of_run_id`, and the run's accumulating cost columns are DOUBLE
 // PRECISION.
-export const SMRT_SCHEMA_VERSION = '1.17.0';
+// 1.18.0 adds `_smrt_migrate_runs.confirmed_retirements`, the JSON list of
+// retirements a run dropped over a confirmed definition mismatch (#5005).
+export const SMRT_SCHEMA_VERSION = '1.18.0';
 
 /**
  * Canonical form of the system DDL that {@link SMRT_SCHEMA_DDL_CHECKSUMS} covers.
@@ -1739,4 +1742,6 @@ export const SMRT_SCHEMA_DDL_CHECKSUMS: Readonly<Record<string, string>> =
       '8f7f6a9f5a7f3d28ac4858841a665328698a06467bcab4a8d2055cc651db263a',
     '1.17.0':
       '45aff3bebeae72b046051a1461f375e67c42e4b6962de0ec33dc6d98fb23b6c2',
+    '1.18.0':
+      'bf633cf10615ca092df662552a3cfe58c593c7219c99e8d63163487763f26ee9',
   });

@@ -99,7 +99,11 @@ import {
   planDuckDbTableChanges,
 } from './duckdb-rebuild.js';
 import { resolveRetirementContext } from './retire-context.js';
-import { planTableRetirements, retireTypeEquivalence } from './retire-plan.js';
+import {
+  planTableRetirements,
+  type RetireTableConfirmations,
+  retireTypeEquivalence,
+} from './retire-plan.js';
 import {
   planSqliteTableRebuildsWithConstraints,
   sqliteBackfillPlaceholderSql,
@@ -340,6 +344,14 @@ export interface DiffOptions {
    * definition's INTEGER. The ordinary migrate never sets it.
    */
   retireComparison?: boolean;
+  /**
+   * Retire these declared tables although the live table is not the one any
+   * release their declaration lists describes (#5005): exact names, and how
+   * they were confirmed (`--confirm-retire-table` or `confirmRetireTables`).
+   * Lifts only the `table.retire-mismatch` stop; rows, dependents,
+   * declarations, owners and the JSON adapter still stop.
+   */
+  confirmRetireTables?: RetireTableConfirmations;
 }
 
 /**
@@ -947,6 +959,7 @@ export class SchemaComparer {
           db: this.db,
           engine: this.engine,
           liveTables: existingTables,
+          confirmRetireTables: this.options.confirmRetireTables,
           // A fresh comparer: this run's per-table state stays its own. It
           // compares with the run's opt-ins, so a column the ordinary
           // migrate would convert counts as a match (#5005 M1, M2).

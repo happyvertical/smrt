@@ -181,6 +181,26 @@ describe('doctor next migrate (#4934)', () => {
       expect(report.stops.join()).toContain('2 row(s)');
       expect(out).toContain('Create table new_table');
     });
+
+    it('shows a mismatch with the differences an operator would confirm (M3)', async () => {
+      await db.query(
+        'CREATE TABLE old_drafts (id TEXT PRIMARY KEY, note TEXT, n INTEGER)',
+      );
+      declare('discard');
+      const { report, out } = await preview();
+      expect(report.retired).toEqual([]);
+      const line = report.stops.join('\n');
+      expect(line).toContain('table.retire-mismatch');
+      expect(line).toContain(
+        'release 1.1.0: column n is not in the definition; column note is not in the definition',
+      );
+      expect(line).toContain('--confirm-retire-table old_drafts');
+      expect(out).toContain('What the next migrate stops on:');
+      expect(out).toContain('column note is not in the definition');
+      expect(report.issues.join()).toContain(
+        'Next migrate: table.retire-mismatch',
+      );
+    });
   });
   it('lists live NOT NULL removal on PostgreSQL and opt-in default retention', async () => {
     await pg();

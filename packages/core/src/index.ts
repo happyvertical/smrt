@@ -515,12 +515,16 @@ export {
   SchemaComparer,
 } from './migrations/differ';
 export {
+  type ConfirmedRetirement,
+  type ConfirmedRetirementRecord,
   collectMigrateRecordInput,
+  confirmedRetirementsOf,
   type LastMigrateRecord,
   type MigrateRecord,
   type MigrateRecordInput,
   type MigrateRecordOptions,
   packagesSeenInput,
+  readConfirmedRetirements,
   readLastMigrateRecord,
   recordSuccessfulMigrate,
   type UnloadedBuildPackage,

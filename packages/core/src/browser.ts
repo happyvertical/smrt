@@ -788,12 +788,16 @@ export {
 } from './migrations/build-schema.js';
 export * from './migrations/change-kinds.js';
 export {
+  type ConfirmedRetirement,
+  type ConfirmedRetirementRecord,
   collectMigrateRecordInput,
+  confirmedRetirementsOf,
   type LastMigrateRecord,
   type MigrateRecord,
   type MigrateRecordInput,
   type MigrateRecordOptions,
   packagesSeenInput,
+  readConfirmedRetirements,
   readLastMigrateRecord,
   recordSuccessfulMigrate,
   type UnloadedBuildPackage,

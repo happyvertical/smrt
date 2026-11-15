@@ -174,6 +174,7 @@ vi.mock('@happyvertical/smrt-core', () => ({
   })),
   readLastMigrateRecord: vi.fn(async () => ({ state: 'none' })),
   recordSuccessfulMigrate: vi.fn(async () => {}),
+  confirmedRetirementsOf: vi.fn(() => []),
   ObjectRegistry: h.registry,
   SchemaComparer: class {
     constructor(_db: unknown, options?: unknown) {
@@ -249,6 +250,7 @@ vi.mock('@happyvertical/smrt-core/migrations', async () => {
       applyAll = h.trackerApplyAll;
     },
     parsePostgresTimeoutMs: actual.parsePostgresTimeoutMs,
+    unusedRetireConfirmations: actual.unusedRetireConfirmations,
     // No retired tables in these fixtures (#5005).
     shortChecksum: (s: string) => (s ? s.slice(0, 8) : 'nochk'),
   };

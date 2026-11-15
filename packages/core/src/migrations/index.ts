@@ -11,6 +11,10 @@
 
 // Installs the tenant-type-agnostic change-feed helpers before a conversion.
 export { ensurePostgresChangeFeedAppendFunction } from '../change-feed.js';
+export type {
+  RetireConfirmation,
+  RetireConfirmationSource,
+} from '../schema/types.js';
 // System-table tenant columns converted by `smrt db:migrate-uuid` (#3297)
 export { SYSTEM_TABLE_TENANT_UUID_COLUMNS } from '../system/schema.js';
 // Backfill tracking (data corrections, not schema migrations)
@@ -112,12 +116,16 @@ export {
   widenIntegerColumnsToBigInt,
 } from './integer-width.js';
 export {
+  type ConfirmedRetirement,
+  type ConfirmedRetirementRecord,
   collectMigrateRecordInput,
+  confirmedRetirementsOf,
   type LastMigrateRecord,
   type MigrateRecord,
   type MigrateRecordInput,
   type MigrateRecordOptions,
   packagesSeenInput,
+  readConfirmedRetirements,
   readLastMigrateRecord,
   recordSuccessfulMigrate,
   type UnloadedBuildPackage,
@@ -176,6 +184,7 @@ export {
   migrateSmrtSchemas,
   type PendingSchemaStatementsResult,
   type RelaxedColumn,
+  unusedRetireConfirmations,
 } from './orchestrate.js';
 // Stored deprecated qualified names: doctor counts + opt-in backfill (#3338)
 export {
@@ -199,7 +208,12 @@ export {
   isRetiredTableRowsAppeared,
   RetiredTableRowsAppearedError,
 } from './retire-guard.js';
-export { RETIRE_POSTGRES_SCHEMA, type RetireDependent } from './retire-plan.js';
+export {
+  isRetireTableConfirmed,
+  RETIRE_POSTGRES_SCHEMA,
+  type RetireDependent,
+  type RetireTableConfirmations,
+} from './retire-plan.js';
 export {
   FRAMEWORK_PACKAGE_PREFIX,
   honouredRetiredTables,

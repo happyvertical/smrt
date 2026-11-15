@@ -3,6 +3,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import {
   ObjectRegistry,
+  readConfirmedRetirements,
   type SchemaDefinition,
 } from '@happyvertical/smrt-core';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
@@ -239,6 +240,62 @@ describe('db:migrate retires declared tables (#5005)', () => {
     const out = await run();
     expect(process.exitCode).toBe(1);
     expect(out).toContain('column note is not in the definition');
+    expect(out).toContain('rerun with --confirm-retire-table old_drafts');
+    expect(await exists('old_drafts')).toBe(true);
+  });
+
+  it('--confirm-retire-table drops it, prints the differences and records the confirmation (M3)', async () => {
+    declare('discard');
+    await db.query('ALTER TABLE old_drafts ADD COLUMN note TEXT');
+    const dry = await run('--dry-run', '--confirm-retire-table', 'old_drafts');
+    expect(process.exitCode ?? 0, dry).toBe(0);
+    expect(dry).toContain(
+      'Confirmed by --confirm-retire-table old_drafts although the live table is not the one any listed release describes (release 1.1.0: column note is not in the definition)',
+    );
+    expect(await exists('old_drafts')).toBe(true);
+
+    const out = await run('--confirm-retire-table', 'old_drafts');
+    expect(process.exitCode ?? 0, out).toBe(0);
+    expect(out).toContain('Retired table old_drafts');
+    expect(await exists('old_drafts')).toBe(false);
+    const [record] = await readConfirmedRetirements(db, {
+      engineHint: 'postgres',
+    });
+    expect(record.retirements).toEqual([
+      {
+        table: 'old_drafts',
+        packageName: PKG,
+        lastOwner: `${PKG}:Draft`,
+        since: '1.2.0',
+        by: 'flag',
+        differences: ['release 1.1.0: column note is not in the definition'],
+      },
+    ]);
+  });
+
+  it('--confirm-retire-table still stops on rows and dependents, and names an unused confirmation', async () => {
+    declare();
+    await db.query('ALTER TABLE old_drafts ADD COLUMN note TEXT');
+    const rows = await run('--confirm-retire-table', 'old_drafts');
+    expect(process.exitCode).toBe(1);
+    expect(rows).toContain('old_drafts holds 2 row(s)');
+    expect(await exists('old_drafts')).toBe(true);
+
+    declare('discard');
+    await db.query(
+      'CREATE TABLE child (id UUID PRIMARY KEY, d UUID REFERENCES old_drafts(id))',
+    );
+    const deps = await run(
+      '--confirm-retire-table',
+      'old_drafts',
+      '--confirm-retire-table',
+      'old_%',
+    );
+    expect(process.exitCode).toBe(1);
+    expect(deps).toContain('foreign key child.d');
+    expect(deps).toContain(
+      'Ignoring --confirm-retire-table old_%: no declared retirement of exactly this table stops on a definition mismatch.',
+    );
     expect(await exists('old_drafts')).toBe(true);
   });
 });

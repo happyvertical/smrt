@@ -72,7 +72,13 @@ Named stops hold the whole run back, like any other stop, each saying
   type migrate would not convert. A type migrate would convert without losing
   data is the same table; the run's `--postgres-timestamp-legacy-timezone UTC`
   and `--empty-text-as-null` opt-ins count. It may be another table under the
-  same name: check what it holds.
+  same name: check what it holds. When it is the retired table at a shape no
+  supported release made, `--confirm-retire-table <table>` (exact name, no
+  patterns; repeat per table) retires it anyway. It lifts this stop alone:
+  rows, dependents and declarations still stop. The differences it confirms
+  are printed with the drop (`--dry-run` shows them first) and written to the
+  run's migrate record (`_smrt_migrate_runs.confirmed_retirements`, with
+  `by: 'flag'`). A name that lifts nothing is printed as ignored.
 - `table.retire-rows`: the table holds rows and its declaration does not say
   `rows: 'discard'`. The message gives the row count. The count runs again
   inside the batch, right before the drop (after `LOCK TABLE` on

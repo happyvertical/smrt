@@ -31,7 +31,12 @@
  *    PostgreSQL `timestamp` without `postgresTimestampMigration`) stays a
  *    mismatch. This proves the table, not just its name, and needs no
  *    migrate record. The check is about identity, not convergence: a missing
- *    or extra column is a mismatch, a convertible type is not.
+ *    or extra column is a mismatch, a convertible type is not. The operator
+ *    may confirm a mismatch for a named table (`--confirm-retire-table`, or
+ *    `confirmRetireTables` in code): the table then goes on to the checks
+ *    below with the differences it confirmed carried on the drop. Only this
+ *    stop is lifted, and only when the differences were read; every other
+ *    stop still holds.
  * 4. `table.retire-rows`: the table holds rows and a declaration does not say
  *    `rows: 'discard'`.
  * 5. `table.retire-dependent`: something undeclared depends on it. One stop
@@ -64,7 +69,11 @@ import {
   quoteIdentifier,
   quoteStringLiteral,
 } from '../schema/sql-identifiers.js';
-import type { SchemaChange, SchemaDefinition } from '../schema/types.js';
+import type {
+  RetireConfirmationSource,
+  SchemaChange,
+  SchemaDefinition,
+} from '../schema/types.js';
 import { decideSchemaChange } from './change-kinds.js';
 import {
   duckdbTableMatch,
@@ -138,6 +147,32 @@ export interface PlanTableRetirementsOptions extends RetirementContext {
     table: string,
     schema: SchemaDefinition,
   ) => Promise<SchemaChange[]>;
+  /**
+   * Tables whose definition mismatch the operator confirmed, by exact name
+   * (no patterns; without case on SQLite and DuckDB, exactly on PostgreSQL,
+   * as live tables match), and how. Lifts `table.retire-mismatch` only.
+   */
+  confirmRetireTables?: RetireTableConfirmations;
+}
+
+/** Tables confirmed over a definition mismatch, and how (#5005). */
+export interface RetireTableConfirmations {
+  tables: readonly string[];
+  by: RetireConfirmationSource;
+}
+
+/** Whether `confirmations` names `table` (R4 case rules; never a pattern). */
+export function isRetireTableConfirmed(
+  engine: DatabaseEngine,
+  table: string,
+  confirmations: RetireTableConfirmations | undefined,
+): boolean {
+  if (!confirmations) return false;
+  return confirmations.tables.some((name) =>
+    engine === 'postgres'
+      ? name === table
+      : name.toLowerCase() === table.toLowerCase(),
+  );
 }
 
 type Row = Record<string, unknown>;
@@ -492,6 +527,8 @@ interface Retiring {
   entries: RetiredTable[];
   /** Rows may go only when every declaration says so. */
   discard: boolean;
+  /** Set when the operator confirmed a definition mismatch. */
+  confirmed?: NonNullable<SchemaChange['retirement']>['confirmed'];
 }
 
 const label = (item: Retiring) =>
@@ -513,6 +550,7 @@ function retirementOf(
     since: entry.since,
     reason: entry.reason,
     rows,
+    ...(item.confirmed ? { confirmed: item.confirmed } : {}),
   };
 }
 
@@ -602,19 +640,35 @@ function shapeDifferences(
   return [...new Set(out)].sort(byName);
 }
 
+/** The outcome of comparing the live table with its declarations. */
+type MatchVerdict =
+  | { state: 'match' }
+  | { state: 'gone' }
+  | {
+      state: 'mismatch';
+      message: string;
+      /** Every release tried, `release <v>: <differences>`. */
+      differences: string[];
+      /** False when a difference is that the table could not be read. */
+      readable: boolean;
+    };
+
 /**
- * Whether the live table is the one each declaration describes: undefined
- * when every declaration has a definition it matches, `'gone'` when the table
- * went away meanwhile, else the stop's message, naming every release tried.
+ * Whether the live table is the one each declaration describes: a match when
+ * every declaration has a definition it matches, `gone` when the table went
+ * away meanwhile, else the mismatch with every release tried and its
+ * differences.
  */
 async function matchDefinitions(
   options: PlanTableRetirementsOptions,
   item: Retiring,
-): Promise<string | undefined | 'gone'> {
+): Promise<MatchVerdict> {
   const { db, engine } = options;
   const live = await readLiveColumnNames(db, engine, item.table);
   if (live && live.size === 0 && !(await isLive(db, engine, item.table)))
-    return 'gone';
+    return { state: 'gone' };
+  const mismatched: Array<{ entry: RetiredTable; tried: string[] }> = [];
+  let readable = Boolean(live);
   for (const entry of item.entries) {
     const tried: string[] = [];
     let matched = false;
@@ -636,6 +690,7 @@ async function matchDefinitions(
             ),
           );
         } catch (error) {
+          readable = false;
           differences = [
             `it could not be compared (${error instanceof Error ? error.message : String(error)})`,
           ];
@@ -646,11 +701,26 @@ async function matchDefinitions(
       }
       tried.push(`release ${definition.release}: ${differences.join('; ')}`);
     }
-    if (matched) continue;
-    if (!(await isLive(db, engine, item.table))) return 'gone';
-    return `${item.table} is declared retired (${label(item)}) but the live table is not the one ${entry.packageName} describes in any release it lists (${tried.join(' | ')}). It is not dropped.`;
+    if (!matched) mismatched.push({ entry, tried });
   }
-  return undefined;
+  if (!mismatched.length) return { state: 'match' };
+  if (!(await isLive(db, engine, item.table))) return { state: 'gone' };
+  const [{ entry, tried }] = mismatched;
+  const t = item.table;
+  return {
+    state: 'mismatch',
+    message:
+      `${t} is declared retired (${label(item)}) but the live table is not the one ${entry.packageName} describes in any release it lists (${tried.join(' | ')}). It is not dropped.` +
+      (readable
+        ? ` If this is the retired table at a shape no supported release made, rerun with --confirm-retire-table ${t} (in code: confirmRetireTables: ['${t}']) to retire it anyway; rows, dependents and declarations still stop.`
+        : ''),
+    differences: mismatched.flatMap((found) =>
+      found.tried.map((line) =>
+        item.entries.length > 1 ? `${found.entry.packageName} ${line}` : line,
+      ),
+    ),
+    readable,
+  };
 }
 
 /**
@@ -749,10 +819,23 @@ export async function planTableRetirements(
     // The live table must be the table every declaration describes, in one
     // of the releases it lists.
     const verdict = await matchDefinitions(options, item);
-    if (verdict === 'gone') continue; // Another run dropped it: nothing to do.
-    if (verdict) {
-      stops.push(stop(item, 'table.retire-mismatch', verdict));
-      continue;
+    if (verdict.state === 'gone') continue; // Another run dropped it.
+    if (verdict.state === 'mismatch') {
+      // The operator's confirmation lifts this stop alone, and only over
+      // differences that were read; the checks below still run.
+      const confirmations = options.confirmRetireTables;
+      if (
+        !confirmations ||
+        !verdict.readable ||
+        !isRetireTableConfirmed(engine, item.table, confirmations)
+      ) {
+        stops.push(stop(item, 'table.retire-mismatch', verdict.message));
+        continue;
+      }
+      item.confirmed = {
+        by: confirmations.by,
+        differences: verdict.differences,
+      };
     }
     candidates.push(item);
   }
@@ -882,6 +965,10 @@ export async function planTableRetirements(
           ? rows === null
             ? ' Its rows are discarded.'
             : ` ${rows} row(s) discarded.`
+          : ''
+      }${
+        item.confirmed
+          ? ` Confirmed by ${item.confirmed.by === 'flag' ? `--confirm-retire-table ${item.table}` : `confirmRetireTables in code`} although the live table is not the one any listed release describes (${item.confirmed.differences.join(' | ')}).`
           : ''
       }`,
       retirement: retirementOf(item, rows),
