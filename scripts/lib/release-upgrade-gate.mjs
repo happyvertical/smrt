@@ -657,6 +657,28 @@ export async function rehearse({
         (failure) => `Seeding smrt ${snapshot.release}: ${failure}`,
       ),
     );
+    // A retired table the snapshot holds is restored in its real shape and
+    // seeded, so the upgrade compares its definitions with the table the
+    // release created, not with a fixture (#5005).
+    const listTables = async () =>
+      new Set(
+        (
+          await db.query(
+            `SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p')`,
+          )
+        ).rows.map((row) => row.name),
+      );
+    const heldRetired = (build.ObjectRegistry.getRetiredTables?.() ?? []).filter(
+      (entry) => snapshotModelTables(snapshot).has(entry.table),
+    );
+    if (heldRetired.length) {
+      const restored = await listTables();
+      for (const entry of heldRetired)
+        if (!restored.has(entry.table))
+          failures.push(
+            `Retired table ${entry.table} was not restored from the smrt ${snapshot.release} snapshot, so the rehearsal proves nothing about its retirement.`,
+          );
+    }
     onProgress(`${label}: applying the upgrade`);
     const result = await build.migrateSmrtSchemas({
       db,
@@ -672,20 +694,21 @@ export async function rehearse({
     if (!result.refused) {
       // A snapshot that holds a table a package declares retired: it is gone
       // after the upgrade (#5005).
-      const held = snapshotModelTables(snapshot);
-      const gone = new Set(
-        (
-          await db.query(
-            `SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p')`,
-          )
-        ).rows.map((row) => row.name),
-      );
-      for (const entry of build.ObjectRegistry.getRetiredTables?.() ?? []) {
-        if (!held.has(entry.table)) continue;
+      const live = await listTables();
+      for (const entry of heldRetired) {
         retiredChecked.push(entry.table);
-        if (gone.has(entry.table))
+        if (live.has(entry.table))
           failures.push(
             `Retired table ${entry.table} is still there after the upgrade from smrt ${snapshot.release}.`,
+          );
+        // Dropped by its retirement, which matched the restored table.
+        else if (
+          !result.statements.includes(
+            `DROP TABLE IF EXISTS "public"."${entry.table}"`,
+          )
+        )
+          failures.push(
+            `Retired table ${entry.table} went away in the upgrade from smrt ${snapshot.release}, but not by its retirement.`,
           );
       }
       onProgress(`${label}: checking convergence`);
@@ -824,6 +847,13 @@ function snapshotModelTables(snapshot) {
  *   naming the command.
  * - A package retires only a table its own models declared: `lastOwner` must
  *   be a class of the declaring package.
+ * - Every supported snapshot that holds the table matches one of the
+ *   declaration's `definitions` column for column, by name. The definitions
+ *   are the published manifests projected through this build's core; a base
+ *   column or reference kind core gained since that release would appear in
+ *   them and not in the release's tables, and migrate would then refuse the
+ *   retirement. This fails it at build time instead. (Types are proven by the
+ *   rehearsal: migrate compares each definition with the restored table.)
  *
  * `supported` are the snapshots at or after the oldest supported release;
  * `owners` maps a release to its owners file, when it has one.
@@ -846,6 +876,25 @@ export function checkRetiredDeclarations({ retired, supported, owners }) {
       continue;
     }
     for (const snapshot of holding) {
+      const physical = Object.keys(
+        snapshot.tables[entry.table]?.columns ?? {},
+      ).sort();
+      const definitions = entry.definitions ?? [];
+      const matching = definitions.find((definition) => {
+        const declared = Object.keys(definition.columns ?? {}).sort();
+        return declared.join(',') === physical.join(',');
+      });
+      if (!matching) {
+        const tried = definitions.map((definition) => {
+          const declared = new Set(Object.keys(definition.columns ?? {}));
+          const lacks = physical.filter((name) => !declared.has(name));
+          const extra = [...declared].filter((name) => !physical.includes(name));
+          return `release ${definition.release}${lacks.length ? ` lacks ${lacks.join(', ')}` : ''}${extra.length ? `${lacks.length ? ' and' : ''} has ${extra.join(', ')}` : ''}`;
+        });
+        failures.push(
+          `${where}: no definition has the columns smrt ${snapshot.release} created (${physical.join(', ')})${tried.length ? `: ${tried.join('; ')}` : ''}. Either that release's shape is not declared (run node scripts/retired-table-facts.mjs definition --package ${entry.packageName} --table ${entry.table} --release ${snapshot.release}) or this build's core projects the manifests differently from that release, and migrate would refuse the retirement.`,
+        );
+      }
       const recorded = owners?.get(snapshot.release)?.owners?.[entry.table];
       if (!recorded)
         failures.push(

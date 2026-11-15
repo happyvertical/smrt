@@ -10,11 +10,17 @@
  *     checks a retirement's lastOwner against it.
  *
  *   node scripts/retired-table-facts.mjs definition \
- *     --package @happyvertical/smrt-inference \
- *     --table _smrt_inference_design_runs --release 0.61.1
- *     The definition of that retirement in the package's package.json: the
- *     table's columns and types as the release declared them. Migrate drops
- *     the live table only when it matches.
+ *     --package @acme/orders --table acme_order_drafts --release 1.3.2
+ *     That release's entry of the retirement's `definitions` in the
+ *     package's package.json: the table's columns and types as the release
+ *     declared them. Run it once per supported release the table's shape may
+ *     differ in. Migrate drops the live table only when it matches one.
+ *
+ *   node scripts/retired-table-facts.mjs check [--release <release>]
+ *     Regenerate every owners file and every declaration's definitions from
+ *     the published manifests and fail on any difference: a hand edit is
+ *     caught. Without --release it checks every release that has an owners
+ *     file or a definition (fetching each from npm).
  *
  * Run `pnpm build` first: the manifests are read with this build's core.
  */
@@ -22,6 +28,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import {
+  checkRetiredFacts,
   loadCore,
   loadReleaseManifests,
   releaseFacts,
@@ -42,10 +49,38 @@ try {
     },
   });
   const command = positionals[0];
-  if (!values.release || !['owners', 'definition'].includes(command))
+  if (
+    !['owners', 'definition', 'check'].includes(command) ||
+    (command !== 'check' && !values.release)
+  )
     throw new Error(
-      'Usage: retired-table-facts.mjs owners --release <release> [--from <dir>] | definition --package <name> --table <table> --release <release> [--from <dir>]',
+      'Usage: retired-table-facts.mjs owners --release <release> [--from <dir>] | definition --package <name> --table <table> --release <release> [--from <dir>] | check [--release <release> [--from <dir>]]',
     );
+  if (command === 'check') {
+    if (values.from && !values.release)
+      throw new Error('check --from needs --release: the directory holds one release.');
+    const core = await loadCore(root);
+    const failures = checkRetiredFacts({
+      root,
+      directory,
+      releases: values.release ? [values.release] : undefined,
+      factsFor: (release) =>
+        releaseFacts(
+          core,
+          loadReleaseManifests({
+            root,
+            release,
+            from: values.release === release ? values.from : undefined,
+            log: (line) => console.error(line),
+          }),
+        ),
+    });
+    for (const failure of failures) console.error(`FAIL ${failure}`);
+    console.log(
+      `Retired table facts: ${failures.length ? 'FAIL' : 'PASS'} (${failures.length} failure(s))`,
+    );
+    if (failures.length) process.exitCode = 1;
+  } else {
   const manifests = loadReleaseManifests({
     root,
     release: values.release,
@@ -71,6 +106,7 @@ try {
       facts,
     });
     console.log(`Wrote the definition of ${values.table} into ${path.relative(root, file)}.`);
+  }
   }
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);

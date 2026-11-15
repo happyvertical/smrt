@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { readRetiredTablesFromPackageJson } from '../../packages/core/dist/migrations.js';
 import { ManifestGenerator } from '../../packages/core/dist/scanner/manifest-generator.js';
 import {
+  checkRetiredFacts,
   loadCore,
   loadReleaseManifests,
   releaseFacts,
@@ -142,10 +143,68 @@ test('writes a definition core accepts, only for a lastOwner that declared the t
     release: '1.4.0',
     facts,
   });
+  const read = () => {
+    const json = JSON.parse(readFileSync(path.join(pkgDir, 'package.json')));
+    return readRetiredTablesFromPackageJson(json, PKG)[0];
+  };
+  let parsed = read();
+  assert.equal(parsed.definitions.length, 1);
+  assert.equal(parsed.definitions[0].release, '1.4.0');
+  assert.deepEqual(parsed.definitions[0].columns.total, { type: 'INTEGER' });
+
+  // One definition per release: an older release's shape joins it, in
+  // release order, and writing a release again replaces only its own.
+  const older = releaseFacts(core, [
+    {
+      packageName: PKG,
+      manifest: manifest(PKG, [
+        {
+          name: 'orderdraft',
+          className: 'OrderDraft',
+          collection: 'facts_order_drafts',
+          decoratorConfig: { tableName: 'facts_order_drafts' },
+          fields: { title: { type: 'text' } },
+        },
+      ]),
+    },
+  ]);
+  writeDefinition({
+    root: repo,
+    packageName: PKG,
+    table: 'facts_order_drafts',
+    release: '1.3.0',
+    facts: older,
+  });
+  writeDefinition({
+    root: repo,
+    packageName: PKG,
+    table: 'facts_order_drafts',
+    release: '1.4.0',
+    facts,
+  });
+  parsed = read();
+  assert.deepEqual(
+    parsed.definitions.map((definition) => definition.release),
+    ['1.3.0', '1.4.0'],
+  );
+  assert.equal(parsed.definitions[0].columns.total, undefined);
+  assert.deepEqual(parsed.definitions[1].columns.total, { type: 'INTEGER' });
+
+  // The check regenerates each definition from that release's manifests: a
+  // hand edit fails, naming the command that writes it.
+  const factsFor = (release) => (release === '1.3.0' ? older : facts);
+  const gate = path.join(repo, 'packages/core/release-upgrade');
+  assert.deepEqual(
+    checkRetiredFacts({ root: repo, directory: gate, factsFor }),
+    [],
+  );
   const json = JSON.parse(readFileSync(path.join(pkgDir, 'package.json')));
-  const [parsed] = readRetiredTablesFromPackageJson(json, PKG);
-  assert.equal(parsed.definition.release, '1.4.0');
-  assert.deepEqual(parsed.definition.columns.total, { type: 'INTEGER' });
+  json.smrt.retiredTables[0].definitions[1].columns.total = { type: 'TEXT' };
+  writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify(json));
+  assert.match(
+    checkRetiredFacts({ root: repo, directory: gate, factsFor }).join('\n'),
+    /definition of release 1\.4\.0 is not what that release's published manifests give.*--release 1\.4\.0/,
+  );
 
   assert.throws(
     () =>
@@ -184,4 +243,47 @@ test('writes an owners file only beside its snapshot, holding its model tables',
     release: '1.4.0',
     source: 'published package manifests',
   });
+
+  // The check regenerates the owners file: a hand edit fails.
+  const owners = { facts_order_drafts: [`${PKG}:OrderDraft`] };
+  const emptyRepo = path.join(scratch, 'empty-repo');
+  mkdirSync(path.join(emptyRepo, 'packages'), { recursive: true });
+  const factsFor = () => ({ owners, columns: {} });
+  assert.deepEqual(
+    checkRetiredFacts({ root: emptyRepo, directory, factsFor }),
+    [],
+  );
+  const edited = JSON.parse(readFileSync(file));
+  edited.owners.facts_order_drafts.push(`${PKG}:Forged`);
+  writeFileSync(file, JSON.stringify(edited));
+  assert.match(
+    checkRetiredFacts({ root: emptyRepo, directory, factsFor }).join('\n'),
+    /owners\/1\.4\.0\.json is not what release 1\.4\.0's published manifests give/,
+  );
+});
+
+test('only model classes own a table: a collection class is never an owner', () => {
+  const facts = releaseFacts(core, [
+    {
+      packageName: PKG,
+      manifest: manifest(PKG, [
+        {
+          name: 'orderdraft',
+          className: 'OrderDraft',
+          collection: 'facts_order_drafts',
+          decoratorConfig: { tableName: 'facts_order_drafts' },
+          fields: { title: { type: 'text' } },
+        },
+        {
+          name: 'orderdraftcollection',
+          className: 'OrderDraftCollection',
+          collection: 'facts_order_drafts',
+          extends: 'SmrtCollection',
+          collectionOf: `${PKG}:OrderDraft`,
+          fields: {},
+        },
+      ]),
+    },
+  ]);
+  assert.deepEqual(facts.owners.facts_order_drafts, [`${PKG}:OrderDraft`]);
 });

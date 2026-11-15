@@ -860,27 +860,30 @@ test('snapshot model ownership excludes private bookkeeping from seed and orphan
 
 // The retire step (#5005): the gate seeds a snapshot that holds the table,
 // migrates, asserts the table is gone and the schema converges; a stale
-// declaration and a wrong owner fail.
+// declaration and a wrong owner fail. The retired table is a real one: the
+// table smrt 0.61.1 created for a model (its uuid id, timestamptz and bigint
+// columns, text defaults, NOT NULLs and indexes), restored from that
+// release's snapshot under another name, and its definition is what
+// scripts/retired-table-facts.mjs projects from that release's published
+// manifests. So the rehearsal compares the definition with a real table's
+// PostgreSQL shape, not with a fixture made to match.
 const retiredTable = 'gate5005_old';
 const retiredOwner = '@test/gate4933:OldThing';
+const realRetired = JSON.parse(
+  JSON.stringify(
+    JSON.parse(
+      readFileSync(
+        path.join(root, 'packages/core/release-upgrade/snapshots/0.61.1.json'),
+        'utf8',
+      ),
+    ).tables._smrt_inference_design_runs,
+  )
+    .replaceAll('_smrt_inference_design_runs', retiredTable)
+    .replaceAll('idx_inference_design_runs_owner', `${retiredTable}_owner_idx`),
+);
 function snapshotWithRetiredTable(extra = {}) {
   const snapshot = oldSnapshot();
-  snapshot.tables[retiredTable] = {
-    columns: { id: col('uuid', true), slug: col('text', true) },
-    primaryKey: ['id'],
-    indexes: [],
-    constraints: [
-      {
-        name: `${retiredTable}_pkey`,
-        type: 'p',
-        definition: 'PRIMARY KEY (id)',
-        columns: ['id'],
-        referencesTable: null,
-        referencesColumns: [],
-      },
-    ],
-    ...extra,
-  };
+  snapshot.tables[retiredTable] = { ...structuredClone(realRetired), ...extra };
   snapshot.modelTables = [tableName, retiredTable];
   return snapshot;
 }
@@ -900,13 +903,22 @@ const ownersOf = (snapshot, recorded = [retiredOwner]) =>
       },
     ],
   ]);
-const retiredDefinition = {
-  release: '0.60.17',
-  columns: {
-    id: { type: 'UUID', referenceKind: 'id' },
-    slug: { type: 'TEXT' },
-  },
+// node scripts/retired-table-facts.mjs projects _smrt_inference_design_runs
+// from the published 0.61.1 manifests to these columns.
+const realColumns = {
+  _sync_origin_device_id: { type: 'TEXT' },
+  _sync_revision: { type: 'INTEGER' },
+  context: { type: 'TEXT' },
+  created_at: { type: 'TIMESTAMP' },
+  id: { type: 'UUID', referenceKind: 'id' },
+  owner_id: { type: 'TEXT' },
+  payload: { type: 'TEXT' },
+  revision: { type: 'INTEGER' },
+  slug: { type: 'TEXT' },
+  tenant_id: { type: 'UUID' },
+  updated_at: { type: 'TIMESTAMP' },
 };
+const retiredDefinitions = [{ release: '0.60.17', columns: realColumns }];
 const declareRetired = (extra = {}) =>
   build.ObjectRegistry.registerManifestRetiredTables({
     packageName: '@test/gate4933',
@@ -917,7 +929,7 @@ const declareRetired = (extra = {}) =>
         since: '0.61.2',
         reason: 'Folded into gate4933s.',
         rows: 'discard',
-        definition: retiredDefinition,
+        definitions: retiredDefinitions,
         packageName: '@test/gate4933',
         ...extra,
       },
@@ -967,6 +979,7 @@ test('retired declarations are checked against the supported snapshots', () => {
       since: '0.61.2',
       reason: 'x',
       rows: 'discard',
+      definitions: retiredDefinitions,
       packageName: '@test/gate4933',
     },
   ];
@@ -1014,4 +1027,65 @@ test('retired declarations are checked against the supported snapshots', () => {
     }).join('\n'),
     /not a class of @test\/elsewhere/,
   );
+});
+
+test('a definition that does not have the columns a supported release created fails the gate by name (projection drift)', () => {
+  const holding = snapshotWithRetiredTable();
+  const owners = ownersOf(holding);
+  const base = {
+    table: retiredTable,
+    lastOwner: retiredOwner,
+    since: '0.61.2',
+    reason: 'x',
+    rows: 'discard',
+    packageName: '@test/gate4933',
+  };
+  // A base column core gained after the release shows in the definition and
+  // not in the release's table.
+  const drifted = checkRetiredDeclarations({
+    retired: [
+      {
+        ...base,
+        definitions: [
+          {
+            release: '0.60.17',
+            columns: { ...realColumns, _added_later: { type: 'TEXT' } },
+          },
+        ],
+      },
+    ],
+    supported: [holding],
+    owners,
+  }).join('\n');
+  assert.match(
+    drifted,
+    /gate5005_old.*no definition has the columns smrt 0\.60\.17 created.*release 0\.60\.17 has _added_later/,
+  );
+  assert.match(drifted, /--table gate5005_old --release 0\.60\.17/);
+  // One matching definition among several releases is enough.
+  const { owner_id: _dropped, ...older } = realColumns;
+  assert.deepEqual(
+    checkRetiredDeclarations({
+      retired: [
+        {
+          ...base,
+          definitions: [
+            { release: '0.59.0', columns: older },
+            { release: '0.60.17', columns: realColumns },
+          ],
+        },
+      ],
+      supported: [holding],
+      owners,
+    }),
+    [],
+  );
+});
+test("a retired table whose definitions do not match the restored table's real shape fails the rehearsal with the named stop", async () => {
+  current();
+  const { owner_id: _dropped, ...older } = realColumns;
+  declareRetired({ definitions: [{ release: '0.60.17', columns: older }] });
+  const result = await run(snapshotWithRetiredTable());
+  assert.equal(result.ok, false);
+  assert.match(textOf(result), /gate5005_old.*column owner_id is not in the definition/);
 });

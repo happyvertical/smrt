@@ -2,15 +2,25 @@
  * Facts about a published release's models, read from that release's
  * published package manifests (#5005), for the retire step:
  *
- * - `owners`: which qualified classes declared each model table. The release
- *   upgrade gate checks a retirement's `lastOwner` against it. Written to
+ * - `owners`: which qualified model classes declared each model table
+ *   (collection classes are not owners). The release upgrade gate checks a
+ *   retirement's `lastOwner` against it. Written to
  *   `packages/core/release-upgrade/owners/<release>.json`, beside the
  *   release's snapshot, and pruned and checked for staleness with it.
- * - `definition`: one table's columns and types as its models declared them.
- *   A retirement carries it, and migrate compares it with the live table.
+ * - `definition`: one table's columns and types as its models declared them
+ *   in one release. A retirement carries one per supported release
+ *   (`definitions`), and migrate compares them with the live table.
  *
  * Both come from the same projection of the same manifests, the one smrt's
- * registry makes of them, so they agree. Nothing here is written by hand.
+ * registry makes of them, so they agree. Nothing here is written by hand:
+ * `checkRetiredFacts` regenerates both from the published manifests and
+ * fails on any difference, so a hand edit is caught.
+ *
+ * The projection runs through this build's core, not the release's. A base
+ * column or reference kind core gained after the release would show in the
+ * definition and not in the release's tables; the release upgrade gate
+ * compares every definition with the release snapshots' physical columns,
+ * so such drift fails the build.
  */
 import { execFileSync } from 'node:child_process';
 import {
@@ -162,6 +172,8 @@ export function releaseFacts(core, manifests) {
     }
     const owners = {};
     for (const [key, entry] of registry.getAllClasses()) {
+      // A collection class names its model's table; it never declared one.
+      if (registry.isCollectionClass?.(key)) continue;
       const table = registry.getTableName(key);
       if (!table) continue;
       const name = entry.qualifiedName ?? key;
@@ -255,22 +267,52 @@ export function writeOwnersOverlay({ directory, release, owners }) {
       `There is no snapshot for ${release}; an owners file goes beside its snapshot.`,
     );
   mkdirSync(path.join(directory, 'owners'), { recursive: true });
-  const overlay = { release, source: OWNERS_SOURCE, owners };
-  const snapshot = readJSON(snapshotFile);
-  const held = new Set(snapshot.modelTables ?? Object.keys(snapshot.tables));
-  // Only the snapshot's model tables: a table the release published but the
-  // gate's snapshot does not hold is not the gate's to vouch for.
-  overlay.owners = Object.fromEntries(
-    Object.entries(owners).filter(([table]) => held.has(table)),
-  );
+  const overlay = {
+    release,
+    source: OWNERS_SOURCE,
+    owners: ownersForSnapshot(directory, release, owners),
+  };
   const file = path.join(directory, ownersFileName(release));
   writeFileSync(file, stableJSON(validateOwnersOverlay(overlay, release)));
   return file;
 }
 
+/** The owners overlay `release`'s facts give, limited to its snapshot. */
+function ownersForSnapshot(directory, release, owners) {
+  const snapshot = readJSON(path.join(directory, `snapshots/${release}.json`));
+  const held = new Set(snapshot.modelTables ?? Object.keys(snapshot.tables));
+  // Only the snapshot's model tables: a table the release published but the
+  // gate's snapshot does not hold is not the gate's to vouch for.
+  return Object.fromEntries(
+    Object.entries(owners).filter(([table]) => held.has(table)),
+  );
+}
+
+/** One release's definition of `table` from its facts, checked against lastOwner. */
+export function definitionFromFacts({ table, release, facts, lastOwner }) {
+  const columns = facts.columns[table];
+  if (!columns)
+    throw new Error(`No model of release ${release} declares ${table}.`);
+  const owners = facts.owners[table] ?? [];
+  if (!owners.includes(lastOwner))
+    throw new Error(
+      `lastOwner ${lastOwner} did not declare ${table} in release ${release} (declared by ${owners.join(', ') || 'nothing'}).`,
+    );
+  return { release, columns };
+}
+
+const releaseOrder = (a, b) => {
+  const parts = (release) =>
+    release.replace(/^v/, '').split(/[-+]/)[0].split('.').map(Number);
+  const [x, y] = [parts(a), parts(b)];
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i];
+  return a < b ? -1 : a > b ? 1 : 0;
+};
+
 /**
- * Write `definition` into the declaration of `table` in the package's
- * `package.json` (`smrt.retiredTables`), from the release's facts. The
+ * Write `release`'s entry of `definitions` into the declaration of `table` in
+ * the package's `package.json` (`smrt.retiredTables`), from the release's
+ * facts, replacing that release's entry and keeping the others. The
  * declaration must already name the table, its lastOwner, since and reason;
  * lastOwner must be a class that declared the table in that release.
  */
@@ -284,15 +326,72 @@ export function writeDefinition({ root, packageName, table, release, facts }) {
     throw new Error(
       `${packageName} declares no retirement of ${table}. Add the declaration (table, lastOwner, since, reason) to smrt.retiredTables first.`,
     );
-  const columns = facts.columns[table];
-  if (!columns)
-    throw new Error(`No model of release ${release} declares ${table}.`);
-  const owners = facts.owners[table] ?? [];
-  if (!owners.includes(entry.lastOwner))
-    throw new Error(
-      `lastOwner ${entry.lastOwner} did not declare ${table} in release ${release} (declared by ${owners.join(', ') || 'nothing'}).`,
-    );
-  entry.definition = { release, columns };
+  const definition = definitionFromFacts({
+    table,
+    release,
+    facts,
+    lastOwner: entry.lastOwner,
+  });
+  entry.definitions = [
+    ...(entry.definitions ?? []).filter((item) => item.release !== release),
+    definition,
+  ].sort((a, b) => releaseOrder(a.release, b.release));
   writeFileSync(file, `${JSON.stringify(json, null, 2)}\n`);
   return file;
+}
+
+/**
+ * Regenerate every owners file and every declaration's definitions from the
+ * published manifests and compare them with what the repository holds. A
+ * hand edit, or a file written from other manifests, is a failure naming the
+ * command that writes it. `factsFor(release)` reads a release's facts (the
+ * published manifests projected through this build's core); `releases`, when
+ * given, limits the check to those releases. Returns the failures.
+ */
+export function checkRetiredFacts({ root, directory, factsFor, releases }) {
+  const only = releases ? new Set(releases) : undefined;
+  const wanted = (release) => !only || only.has(release);
+  const failures = [];
+  const cache = new Map();
+  const facts = (release) => {
+    if (!cache.has(release)) cache.set(release, factsFor(release));
+    return cache.get(release);
+  };
+  const folder = path.join(directory, 'owners');
+  if (existsSync(folder))
+    for (const name of readdirSync(folder).filter((n) => n.endsWith('.json'))) {
+      const release = name.slice(0, -5);
+      if (!wanted(release)) continue;
+      const held = readOwnersOverlay(directory, release);
+      const fresh = ownersForSnapshot(directory, release, facts(release).owners);
+      if (stableJSON(sortKeys(held.owners)) !== stableJSON(sortKeys(fresh)))
+        failures.push(
+          `owners/${name} is not what release ${release}'s published manifests give. Regenerate it with node scripts/retired-table-facts.mjs owners --release ${release}; never edit it by hand.`,
+        );
+    }
+  for (const [packageName, dir] of repositoryPackages(root)) {
+    const json = readJSON(path.join(dir, 'package.json'));
+    for (const entry of json.smrt?.retiredTables ?? [])
+      for (const definition of entry.definitions ?? []) {
+        if (!wanted(definition.release)) continue;
+        const where = `Retired table ${entry.table} (${packageName}), definition of release ${definition.release}`;
+        let fresh;
+        try {
+          fresh = definitionFromFacts({
+            table: entry.table,
+            release: definition.release,
+            facts: facts(definition.release),
+            lastOwner: entry.lastOwner,
+          });
+        } catch (error) {
+          failures.push(`${where}: ${error.message}`);
+          continue;
+        }
+        if (stableJSON(definition) !== stableJSON(fresh))
+          failures.push(
+            `${where} is not what that release's published manifests give. Regenerate it with node scripts/retired-table-facts.mjs definition --package ${packageName} --table ${entry.table} --release ${definition.release}; never edit it by hand.`,
+          );
+      }
+  }
+  return failures;
 }
