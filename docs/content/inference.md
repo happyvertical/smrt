@@ -33,7 +33,7 @@ These words mean one thing everywhere in the s-m-r-t docs.
 | **source** | Where a binding came from: `byo`, `local`, `hosted` or `app`. Recorded on every usage row. |
 | **call** | One model request; one `_smrt_ai_usage` row. |
 | **run** | One fusion execution; one `_smrt_ai_runs` row plus one usage row per seat call. |
-| **outcome** | A label recorded later about a call or a run (`good`, `wrong`, a score). |
+| **evaluation** | A judgment recorded later about a call or a run (a label such as `good` or `wrong`, a score), by a person, the app or a grader. |
 | **transcript** | The stored, redacted text of a call, opt-in; one `_smrt_ai_transcripts` row. |
 
 ## 1. One provider
@@ -353,10 +353,12 @@ a prompt key print as `(unattributed)`, calls without a cost rate are counted
 as uncosted, hosted-gate blocks count as `blocked`, and other tenants' rows
 are counted as excluded.
 
-**Outcome labels.** A call cannot grade itself, so record the verdict when
-you know it: `recordAiUsageOutcome(db, { usageId | runId | callId, label,
-score?, evidence?, actor })`. Labels stay in the call's tenant and are never pruned
-with usage rows; `smrt ai:usage` reports them per bucket.
+**Evaluations.** A call cannot grade itself, so record the verdict when
+you know it: `recordAiEvaluation(db, { callId | runId, label?, value?,
+metric?, scale?, evidence?, evaluator })`, where `callId` is the usage row's
+id and `evaluator` is `human`, `app` or `grader:<name>@<version>`. A fusion
+is judged through its run. Evaluations stay in the call's tenant and are never
+pruned with usage rows; `smrt ai:usage` reports their labels per bucket.
 
 **What is recorded.** Usage and run rows hold metadata only: never
 prompts, responses or keys (content is the opt-in transcript below). The
@@ -375,7 +377,8 @@ always runs after it: the client's key, the object's `sensitive` field values
 and known secret shapes are masked. Chat is excluded (it keeps its own
 history), each row is capped at `maxBytes` with a head-and-tail cut, and
 transcripts are pruned after 30 days while usage rows and labels stay for
-90. Usage row, transcript and outcome share a `callId`. Reads name a tenant
+90. A transcript's `callId` is the entry call's id, which its usage rows carry
+in `entry_call_id`. Reads name a tenant
 and are audited: `listAiTranscripts(db, { actor, tenantId, ... })`,
 `smrt ai:transcript <callId> --tenant <id>`, and `smrt ai:usage
 --with-transcripts --tenant <id> [--prompt <key>]` for the worst-labelled
@@ -390,7 +393,12 @@ setTranscriptRedactor((messages, { part }) =>
   messages.map((m) => ({ ...m, content: scrubEmails(m.content) })),
 );
 const [t] = await listAiTranscripts(db, { actor: user.id, tenantId, callId });
-await recordAiUsageOutcome(db, { callId, label: 'wrong', score: 0, actor: user.id });
+await recordAiEvaluation(db, {
+  callId: t.usage[0].id,
+  label: 'wrong',
+  value: 0,
+  evaluator: 'human',
+});
 ```
 
 **Comparing.** `smrt ai:compare --prompt <key> --a hash:<h1> --b

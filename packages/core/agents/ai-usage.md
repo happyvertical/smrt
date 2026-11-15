@@ -3,7 +3,7 @@
 `_smrt_ai_usage` answers "how does model X do on prompt Y". Sources:
 `src/adapters/ai-usage.ts` (persistence), `src/adapters/ai-usage-recorder.ts`
 (the shared pipeline and public recorder, #3077),
-`src/system/ai-usage-observability.ts` (outcome labels, report), `src/class.ts`
+`src/system/ai-usage-observability.ts` (evaluations, report), `src/class.ts`
 (`listAiUsage` / `summarizeAiUsage`).
 
 ## Recording from any client (#3077)
@@ -54,8 +54,9 @@ present and `persist` is on, plus `usage.handlers`; instances also keep an
 ## Tags and lifted columns
 
 Usage tags arrive through the AI SDK's per-call `usageTags`, merged into the
-event's `tags`. `AiUsagePersistenceHandler` copies five of them into nullable
-indexed TEXT columns (`AI_USAGE_TAG_COLUMNS`); `tags` always keeps the full map.
+event's `tags`. `AiUsagePersistenceHandler` copies six of them into nullable
+TEXT columns (`AI_USAGE_TAG_COLUMNS`); `tags` always keeps the full map. The
+row's own `id` is its call id and is written to `call_id` too (#5005).
 
 | Tag | Column | Producer |
 |---|---|---|
@@ -63,34 +64,46 @@ indexed TEXT columns (`AI_USAGE_TAG_COLUMNS`); `tags` always keeps the full map.
 | `tierRequested` | `tier_requested` | inference tier path (#4750) |
 | `tierResolved` | `tier_resolved` | inference tier path (#4750); fallback (#4752) |
 | `runId` | `run_id` | multi-call runs, e.g. fusions (#4753) |
-| `callId` | `call_id` | transcript wrapper, while transcripts are enabled (#4780) |
+| `callId` | `entry_call_id` | transcript wrapper, while transcripts are enabled (#4780); the entry call's id, shared by the calls of a chain or fusion. A row without the tag is its own entry call |
+| `templateHash` | `template_hash` | prompt version (smrt-prompts, #5005) |
 
-Tag-only keys read by the report: `promptLayer` and `templateHash` (prompts),
+Tag-only keys read by the report: `promptLayer` (prompts),
 `substitutions` (JSON array, #4752), `fusionKey` (#4753), `source` (binding
 origin `byo | local | hosted | app`, #4756). `userId` (#4760) and the hosted
 gate's audit tags (`reason`, `policy`, `cap`, `spend`, `resetsAt`,
 `disabledBy` on `operation: 'blocked'` rows) stay in `tags`; smrt-subscriptions
 meters `source`/`userId` with a case-sensitive exact-fragment match on `tags`. Indexes:
 `idx_smrt_ai_usage_prompt_key (prompt_key, created_at)`, `idx_smrt_ai_usage_run (run_id)`,
-`idx_smrt_ai_usage_call (call_id)`.
+`idx_smrt_ai_usage_entry_call (entry_call_id)` (non-unique: it replaced the
+`call_id` index, and `call_id` equals the primary key). Schema 1.17.0 (#5005)
+also added the nullable `step_index`, `step_name`, `step_instance_id` and
+`attempt` columns, written by the run driver (`docs/content/ai-runs.md`).
 The tier filters of `listAiUsage()` have no index on purpose: four-value
 columns, always read with a time window that `idx_smrt_ai_usage_created` serves.
 
 Existing databases receive the columns from
 `ensureAiUsageSystemTableCompatibility()` inside the bootstrap compatibility
 pass (column-existence-guarded ALTER on SQLite, PostgreSQL, DuckDB) before the
-1.13.0 DDL replay creates the indexes. No backfill: old rows keep NULL columns
+DDL replay creates the indexes. No backfill, except the call id split: one
+guarded UPDATE sets `entry_call_id = COALESCE(call_id, id)`, then `call_id = id`,
+and finds nothing to change on a second run. Other old rows keep NULL columns
 and their `tags`. A writer must not depend on the columns without
 `ensureSystemTables()` having run. `pruneAiUsage()` is unchanged.
 
 ## Run records (`_smrt_ai_runs`, #4753)
 
-Source: `src/system/ai-runs.ts`. One row per multi-call run (a fusion):
-`id` (the `runId` every seat's usage row carries in `run_id`), `fusion_key`,
-`mode`, `tenant_id` / `class_name` (the instance's, like a usage row),
-`prompt_key` of the entry call, `seats` that ran, `degraded_seats` (died or
-answered through a substitution), `status` (`ok | degraded | failed`),
-`duration` and `details` (JSON, per seat: `persona` (the seat name), prompt,
+Source: `src/system/ai-runs.ts`. The table holds one row for
+every kind of run since schema 1.17.0 (#5005: `type`, `definition_key`,
+status `running | waiting-approval | stopped | failed | done`, budget, own,
+inclusive and reserved totals, retention flags; column list in
+`CREATE_SMRT_AI_RUNS_TABLE`, rules in `docs/content/ai-runs.md`). This module
+reads and writes the `fusion` rows in the fusion vocabulary: `ok` is `done`,
+`degraded` is `done` with `degraded` set, `failed` is `failed` with stop reason
+`error`. A fusion row has `id` (the `runId` every seat's usage row carries in
+`run_id`), `definition_key` (the fusion key), `mode`, `tenant_id` /
+`class_name` (the instance's, like a usage row), `prompt_key` of the entry
+call, `seats` that ran, `degraded_seats` (died or answered through a
+substitution), `status`, `duration` and `details` (JSON, per seat: `persona` (the seat name), prompt,
 status, target and model labels, token usage, substitutions, failure class; gate verdict). Never
 prompts, inputs, outputs or keys. Seat usage rows also carry the `fusionKey`
 and `seat` tags (`seat: 'gate'` for the gate's decision row).
@@ -103,39 +116,58 @@ and `seat` tags (`seat: 'gate'` for the gate's decision row).
   tenantId })` (per fusion: runs, ok/degraded/failed, seats, degraded seats,
   p50 duration; other tenants counted in `excluded`). `smrt ai:usage --by
   fusion` prints it beside the usage report.
-- Indexes: `created_at`, `(fusion_key, created_at)`, `(tenant_id,
-  created_at)`; `status` is always read with one of them. `tenant_id` stays
+- Indexes: `created_at`, `(definition_key, created_at)`, `(tenant_id,
+  created_at)`, `parent_run_id`; `status` is always read with one of them. `tenant_id` stays
   TEXT like `_smrt_ai_usage.tenant_id`. `run_id` is not a foreign key.
 - Retention: the sweep's `ai-usage` task prunes runs with the AI usage age
   bound (`pruneAiRuns()`); a usage row-count bound does not apply to runs.
-- Schema 1.14.0 creates the table through `ensureSystemTables()` (new table,
-  no compatibility ALTERs). PostgreSQL lane:
+- Schema 1.14.0 created the table. Schema 1.17.0 rebuilds it once
+  (`ensureAiRunsSystemTableCompatibility()`, only while it still has
+  `fusion_key`: create the new shape, copy the rows as `type 'fusion'` with
+  `finished_at = created_at` and `started_at = created_at - duration`, drop,
+  rename) because `fusion_key` became `definition_key` and `mode`, `seats` and
+  `degraded_seats` stopped being NOT NULL; then one guarded UPDATE moves the
+  stored statuses. On PostgreSQL a table with legacy timezone-naive
+  timestamps is left alone and the bootstrap fails closed until the audited
+  timestamp migration has run. PostgreSQL lane:
   `issue-4753-ai-runs-postgres.optional.test.ts`.
 
-## Outcome labels
+## Evaluations
 
-`recordAiUsageOutcome(db, { usageId?, runId?, callId?, label, score?,
-evidence?, actor, tenantId?, createdAt? })` writes `_smrt_ai_usage_outcomes`
-(`callId`, #4780: every usage row of the call, else its transcript, names
-the tenant). A run cannot rate
-itself, so labels are recorded when the verdict is known. Rules:
+`recordAiEvaluation(db, { callId | runId, metric?, value?, valueType?, scale?,
+label?, evidence?, evaluator, tenantId?, createdAt? })` writes
+`_smrt_ai_evaluations` (#5005; it replaced `_smrt_ai_usage_outcomes` and
+`recordAiUsageOutcome`). An evaluation attaches to exactly one call (`callId`,
+the usage row's id) or exactly one run (`runId`); a fusion is judged through
+its run. `metric` defaults to `outcome`; `value` is stored as text and read
+back through `valueType` (`number | boolean | text`, inferred from the value);
+`evaluator` is `human`, `app` or `grader:<name>@<version>`, so the evaluator's
+version is part of the string. A run cannot rate itself, so evaluations are
+recorded when the verdict is known. Rules:
 
-- The target must exist (`AI_USAGE_OUTCOME_UNKNOWN_TARGET`); the label takes the
-  target's tenant, and an explicit `tenantId` must match it, as must every row
-  of a run (`AI_USAGE_OUTCOME_TENANT_MISMATCH`). Never relax this into a
+- The target must exist (`AI_EVALUATION_UNKNOWN_TARGET`); the evaluation takes
+  the target's tenant, and an explicit `tenantId` must match it, as must every
+  row of a run (`AI_EVALUATION_TENANT_MISMATCH`). Never relax this into a
   cross-tenant write.
-- `usage_id` / `run_id` are not foreign keys: retention prunes usage rows and
-  must neither be blocked by nor cascade into labels. Labels are low-volume and
-  not swept; a pruned target leaves the label with an empty `usage` join.
-- `listAiUsageOutcomes(db, filters)` returns labels newest first with the
-  judged rows (`usage`), joined only within the label's tenant.
+- `call_id` / `run_id` are not foreign keys: retention prunes usage rows and
+  must neither be blocked by nor cascade into evaluations. Evaluations are
+  low-volume and not swept; a pruned target leaves the evaluation with an
+  empty `usage` join.
+- `listAiEvaluations(db, filters)` returns evaluations newest first with the
+  judged rows (`usage`), joined only within the evaluation's tenant.
+- The 1.17.0 upgrade copies old labels across
+  (`ensureAiEvaluationsSystemTableCompatibility()`): a `usage_id` becomes the
+  `call_id`; a label with only an entry `call_id` goes to the call whose
+  `entry_call_id` matches, else the run those calls share, else the latest of
+  them, else (usage pruned) keeps the id; a `run_id` stays; `score` becomes
+  `value` (`number`), `actor` becomes `evaluator`, `metric` is `outcome`.
 
 ## Report (`smrt ai:usage`)
 
 `reportAiUsage(db, { by, since, until, tenantId, transcripts? })` groups by
 `prompt`, `model`, `tier`, `class`, `tenant`, `fusion`, `source`, `template`
 (the `templateHash` tag, #4781). `transcripts: true` adds `transcripts` to each
-bucket and the totals: calls (distinct `call_id`) with a transcript row of
+bucket and the totals: calls (distinct `entry_call_id`) with a transcript row of
 the same tenant, looked up per page by id; never content, so not audited. It reads bounded keyset pages and
 aggregates in memory so the median and tag dimensions stay portable. Pages
 are keyed on `id` within the `created_at` window: correct, but on very large
@@ -177,8 +209,8 @@ a call for prompt tuning; usage rows stay metadata-only.
   (`assertInferenceTranscriptsConfig()`, also in `assertInferenceConfig()`).
 - **Disabled means untouched.** Clients are not wrapped, no `callId` is
   minted, call options are byte-identical (the #4750 parity contract). So
-  `call_id` is set only while transcripts are enabled, on every call then,
-  sampled or not.
+  a usage row's `entry_call_id` is its own id unless transcripts are enabled,
+  when it is the minted `callId` on every call, sampled or not.
 - **Capture point.** `withAiTranscripts(client, context)` is a `Proxy` that
   intercepts `message`, `chat`, `complete` and `stream` (chunks assembled),
   consumes the per-call `transcript` option, merges `callId` into
@@ -188,7 +220,8 @@ a call for prompt tuning; usage rows stay metadata-only.
   `prepareAiOperation()`, which takes `transcript` from the options), the
   `ai` getter and `getOptionalAiClient()`; wrappers are cached per raw
   client. Inner executor clients (`clientFor`) are never wrapped, so a chain
-  or fusion is one transcript whose seats share its `callId`. The typed
+  or fusion is one transcript whose seats share its `callId` (their usage rows'
+  `entry_call_id`). The typed
   decision route captures through `captureAiTranscriptCall()` with the
   request and its answers. Raw `getAI()` sites: subclasses pass their client
   to `this.transcriptClient(client, undefined, { tenantId, secrets })`
@@ -230,10 +263,10 @@ a call for prompt tuning; usage rows stay metadata-only.
   row's attribution; `run_id` the call's fusion run. A write failure is
   logged once, never thrown; without a database nothing is stored.
 - **Reads.** `listAiTranscripts(db, { actor, reason?, tenantId |
-  allowCrossTenant, callId?, runId?, promptKey?, templateHash?, outcome?,
+  allowCrossTenant, callId?, runId?, promptKey?, templateHash?, label?,
   labelled?, since?, until?, limit? = 50 (max 500), audit? })`, newest first,
-  each with `usage` (rows sharing `call_id`) and `outcomes` (by `call_id`,
-  `run_id` or a usage id), joined only within the row's tenant. Without
+  each with `usage` (rows sharing `entry_call_id`) and `evaluations` (by a
+  usage row's id or `run_id`), joined only within the row's tenant. Without
   `tenantId` (`null` = global rows) it throws `AiTranscriptScopeError` unless
   `allowCrossTenant: true`. Every read audits: one `AuditEntry` per returned
   row (`action: 'read'`, `resourceType: '_smrt_ai_transcripts'`) through
@@ -246,7 +279,8 @@ a call for prompt tuning; usage rows stay metadata-only.
   `aiUsage` so labels and metrics outlive content.
 - **Schema 1.15.0**: the table (indexes `call_id`, `run_id`, `created_at`,
   `(tenant_id, created_at)`, `(prompt_key, created_at)`) and `call_id` on
-  `_smrt_ai_usage` and `_smrt_ai_usage_outcomes`, added to existing tables by
+  `_smrt_ai_usage` and `_smrt_ai_usage_outcomes` (since replaced, see
+  Evaluations), added to existing tables by
   `ensureAiUsageSystemTableCompatibility()`. Tests:
   `issue-4780-ai-transcripts.test.ts`, PostgreSQL lane
   `issue-4780-ai-transcripts-postgres.optional.test.ts`.
@@ -255,7 +289,7 @@ a call for prompt tuning; usage rows stay metadata-only.
 
 Source: `src/system/ai-prompt-compare.ts`. Read-only helpers over the usage
 rows of one prompt key; no model judges anything (labels come from
-`recordAiUsageOutcome()`).
+`recordAiEvaluation()`).
 
 - **Scope.** Both take `tenantId` (`null` = global rows) or
   `allowCrossTenant: true`, else throw `AiUsageScopeError`
@@ -271,11 +305,11 @@ rows of one prompt key; no model judges anything (labels come from
   `costedCalls` / `uncostedCalls` / `meanCost`, `latencyMs` p50/p90/p95/p99
   (nearest rank), `fallbackCalls`/`fallbackRate` (non-empty `substitutions`),
   `degradedCalls`/`degradedRate` (the row's `_smrt_ai_runs` run is
-  `degraded | failed`), `outcomes`, `labels`, `scoredLabels`, `meanScore`,
-  `callIds`, `transcriptCount` and `transcripts` (ids, call ids, labels,
+  `degraded | failed`), `evaluations`, `labels`, `scoredLabels`, `meanScore`,
+  `callIds` (distinct entry calls), `transcriptCount` and `transcripts` (ids, call ids, labels,
   worst score; worst-labelled first, unlabelled last). Rates are per usage
   row, the unit `ai:usage` counts. Label counting follows `reportAiUsage()`:
-  a usage label on its row, a run or call label once per side.
+  a call's label on its row, a run label once per side.
 - Accounting: `rows` (every row of the prompt in scope), `unmatched`
   (neither side), `inBoth` (totalled on both), `excluded.externalAgent`.
   `costBasis` is the report's.

@@ -1113,7 +1113,11 @@ additionally needs an `addColumnIfMissing()` entry in `system/compatibility.ts`
 upgrades to exactly the shape a fresh install gets.
 Bootstrap-table columns go in `ensureBootstrapSystemTableCompatibility()`,
 which runs before the replay so its indexes find them: `_smrt_ai_usage`'s
-#4751 columns are the model (`agents/ai-usage.md`).
+#4751 columns are the model (`agents/ai-usage.md`). A table whose columns must
+stop being NOT NULL or be renamed is rebuilt instead, once and only while the
+old shape is present (`_smrt_ai_runs`, 1.17.0, #5005: `ensureAiRunsSystemTableCompatibility()`);
+a table that is replaced by another is copied and dropped the same way
+(`_smrt_ai_usage_outcomes` into `_smrt_ai_evaluations`).
 
 `_smrt_jobs` / `_smrt_job_events` are dual-owned: `db:migrate` creates them,
 the compatibility pass reshapes them. On a fresh install bootstrap runs first,

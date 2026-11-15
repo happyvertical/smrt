@@ -128,9 +128,9 @@ sweep's `retention.aiTranscripts.maxAgeDays` and is shown read-only.
 In the Usage tab, build the report with
 `settings.usage({ by, tenantId, transcripts: true })` to show a transcript
 count per row, and pass `transcriptHref(filters)` to link each count and
-outcome label to your own transcript page. `filters` holds `promptKey`
+evaluation label to your own transcript page. `filters` holds `promptKey`
 and `templateHash` (when the report is grouped by prompt or template),
-`outcome`, `since` and `until`, which map onto `listAiTranscripts()`. The
+`label`, `since` and `until`, which map onto `listAiTranscripts()`. The
 panel never shows transcript text. When transcripts are off, the tab says
 so in one line.
 
