@@ -27,6 +27,7 @@ import {
   quoteStringLiteral,
 } from '../schema/sql-identifiers.js';
 import type { SchemaChange, SchemaDefinition } from '../schema/types.js';
+import { retireRowsGuardSql } from './retire-guard.js';
 import type { RetiredTable } from './retired-tables.js';
 
 /** One thing that depends on a retired table. */
@@ -384,12 +385,27 @@ export async function planTableRetirements(
     );
 
   const drops = ordered.map(({ entry, rows }): SchemaChange => {
-    const sql = `DROP TABLE IF EXISTS ${quoteIdentifier(entry.table)}`;
+    const target = quoteIdentifier(entry.table);
+    const sql = `DROP TABLE IF EXISTS ${target}`;
+    // The count above ran outside any transaction. Without rows: 'discard'
+    // the batch counts again right before the drop and rolls back if rows
+    // appeared; PostgreSQL first locks out every writer (R2).
+    const sqlStatements =
+      entry.rows === 'discard'
+        ? [sql]
+        : [
+            ...(engine === 'postgres'
+              ? [`LOCK TABLE ${target} IN ACCESS EXCLUSIVE MODE`]
+              : []),
+            retireRowsGuardSql(target),
+            sql,
+          ];
     return {
       type: 'retire_table',
       kindHint: 'table.retire',
       table: entry.table,
       sql,
+      ...(sqlStatements.length > 1 ? { sqlStatements } : {}),
       note: `Retired in ${entry.since} (${entry.lastOwner}): ${entry.reason}${
         entry.rows === 'discard'
           ? rows === null

@@ -208,6 +208,67 @@ describe.each(engines)('retire step on %s (#5005)', (engine) => {
     expect(await exists('retire_rows')).toBe(true);
   });
 
+  it("rows that land between the plan's count and the drop stop the run, and survive", async () => {
+    class Fresh extends SmrtObject {
+      code = '';
+    }
+    field({ type: 'text' })(Fresh.prototype, 'code');
+    ObjectRegistry.register(Fresh, {
+      packageName: '@retire/other',
+      tableName: 'retire_race_fresh',
+    });
+    await make('retire_race', 0);
+    declare(retired('retire_race', { rows: undefined }));
+    // An old instance of a rolling deploy writes right after the plan counted
+    // the table empty (#5005 R2).
+    let wrote = false;
+    const racing = new Proxy(db, {
+      get(target, key, receiver) {
+        const value = Reflect.get(target, key, receiver);
+        if (key !== 'query' || typeof value !== 'function')
+          return typeof value === 'function' ? value.bind(target) : value;
+        return async (sql: string, ...args: unknown[]) => {
+          const result = await value.call(target, sql, ...args);
+          if (
+            !wrote &&
+            /COUNT\(\*\)/i.test(sql) &&
+            sql.includes('retire_race')
+          ) {
+            wrote = true;
+            await value.call(
+              target,
+              `INSERT INTO "retire_race" VALUES ('late', 'x')`,
+            );
+          }
+          return result;
+        };
+      },
+    });
+
+    const result = await migrateSmrtSchemas({
+      db: racing,
+      packageName: '@retire/app',
+      name: `retire_${++runs}`,
+      engineHint: hint,
+      ...options,
+    });
+
+    expect(wrote).toBe(true);
+    expect(result).toMatchObject({ refused: true, applied: false });
+    expect(kinds(result)).toEqual(['table.retire-rows']);
+    expect(result.stops[0].message).toContain('retire_race');
+    expect(await exists('retire_race')).toBe(true);
+    const left = await db.query('SELECT COUNT(*) AS n FROM "retire_race"');
+    expect(Number(left.rows[0].n)).toBe(1);
+    // The count ran inside the one batch: the table it would have created
+    // went back with it.
+    expect(await exists('retire_race_fresh')).toBe(false);
+    if (hint === 'postgres')
+      expect(result.statements).toContain(
+        'LOCK TABLE "retire_race" IN ACCESS EXCLUSIVE MODE',
+      );
+  });
+
   it("an empty retired table needs no rows: 'discard'", async () => {
     await make('retire_empty', 0);
     declare(retired('retire_empty', { rows: undefined }));

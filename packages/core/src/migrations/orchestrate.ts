@@ -43,6 +43,7 @@ import {
   type MigrationRunDecision,
 } from './migration-run-decision.js';
 import { resolveRetirementContext } from './retire-context.js';
+import { isRetiredTableRowsAppeared } from './retire-guard.js';
 import { MigrationTracker } from './tracker.js';
 
 const logger = createLogger({ level: 'info' });
@@ -479,6 +480,47 @@ export async function migrateSmrtSchemas(
   });
 
   const failed = results.find((result) => !result.success);
+  if (failed && isRetiredTableRowsAppeared(failed.error)) {
+    // Rows reached a retired table after the plan counted it empty (#5005).
+    // The batch rolled back; report it as the named stop it is.
+    const appeared = failed.error;
+    const changes = pending.diff.changes.map((change) =>
+      change.type === 'retire_table' &&
+      change.kindHint === 'table.retire' &&
+      change.table === appeared.table
+        ? {
+            type: change.type,
+            table: change.table,
+            kindHint: appeared.kind,
+            advisory: {
+              severity: 'warning' as const,
+              message: appeared.message,
+            },
+            ...(change.retirement ? { retirement: change.retirement } : {}),
+          }
+        : change,
+    );
+    const refusal = decideMigrationRun({
+      changes,
+      addedTables: pending.diff.added_tables,
+      engine: resolveMigrationEngine(options.db, options.engineHint),
+    });
+    return {
+      applied: false,
+      refused: true,
+      stops: refusal.stops,
+      packageStops,
+      releaseStop,
+      notices,
+      heldBack: refusal.heldBack,
+      results,
+      statements: pending.statements,
+      schemaCount: pending.schemaCount,
+      unactionableChanges: pending.unactionableChanges,
+      hasManualDrift: pending.hasManualDrift,
+      relaxedColumns: [],
+    };
+  }
   if (failed) {
     throw failed.error instanceof Error
       ? failed.error
