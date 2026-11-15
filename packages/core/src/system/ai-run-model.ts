@@ -293,7 +293,12 @@ export class AiRunStoppedError extends AiRunError {
   }
 }
 
-/** A resume or a retry the rules of page section 7 refuse. */
+/**
+ * A resume or a retry the rules of page section 7 refuse. `reason` is one
+ * typed code of the page's table: `not_resumable`, `ancestor_missing`,
+ * `ancestor_final`, `budget_unchanged`, `budget_lowered`, `above_ceiling`,
+ * `definition_changed`, `not_retryable` or `retry_source_pruned`.
+ */
 export class AiRunResumeRefusedError extends AiRunError {
   constructor(
     message: string,
@@ -304,7 +309,10 @@ export class AiRunResumeRefusedError extends AiRunError {
       | 'budget_lowered'
       | 'above_ceiling'
       | 'definition_changed'
-      | 'not_retryable',
+      | 'not_retryable'
+      | 'ancestor_missing'
+      | 'ancestor_final'
+      | 'retry_source_pruned',
   ) {
     super(message, 'AI_RUN_RESUME_REFUSED', 'runtime', { runId, reason });
   }
@@ -518,6 +526,22 @@ export async function getAiRun(
   return rows[0] ? toAiRunRow(rows[0]) : null;
 }
 
+/**
+ * Whether a run is final: `cancelled`, `failed` or `done`, or `stopped`
+ * without a checkpoint (a stop of a run that is not durable is final, page
+ * section 2).
+ */
+export function isAiRunFinal(
+  run: Pick<AiRunRow, 'status' | 'durable'>,
+): boolean {
+  return (
+    run.status === 'cancelled' ||
+    run.status === 'failed' ||
+    run.status === 'done' ||
+    (run.status === 'stopped' && !run.durable)
+  );
+}
+
 /** The run's active time at `now`: closed periods plus the open one. */
 export function aiRunActiveTime(run: AiRunRow, now: Date): number {
   if (!run.activeSince) return run.duration;
@@ -671,6 +695,44 @@ export async function readAiRunChainIds(
     current = text(rows[0].parent_run_id);
   }
   return ids.reverse();
+}
+
+/**
+ * The run's descendants, found through `parent_run_id` (which never changes),
+ * in the page's lock order: by increasing depth below the run, then by `id`
+ * within a depth (page section 6.5). Read without locks.
+ */
+export async function readAiRunDescendantIds(
+  db: DatabaseInterface,
+  runId: string,
+): Promise<string[]> {
+  const out: string[] = [];
+  const seen = new Set<string>([runId]);
+  let level = [runId];
+  for (let depth = 0; level.length > 0; depth++) {
+    if (depth >= MAX_CHAIN_DEPTH) {
+      throw new TypeError(`AI run ${runId} has a subtree that is too deep`);
+    }
+    const next: string[] = [];
+    for (const parent of level) {
+      for (const row of getRows(
+        await aiRunQuery(
+          db,
+          'SELECT id FROM _smrt_ai_runs WHERE parent_run_id = $1',
+          parent,
+        ),
+      )) {
+        const id = String(row.id);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        next.push(id);
+      }
+    }
+    next.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    out.push(...next);
+    level = next;
+  }
+  return out;
 }
 
 /**

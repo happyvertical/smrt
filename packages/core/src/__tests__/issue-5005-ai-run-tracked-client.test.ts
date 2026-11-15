@@ -133,6 +133,43 @@ describe('SmrtClass run tracking (#5005)', () => {
     );
   });
 
+  it('writes every settlement of an open run after tracking was switched off', async () => {
+    const opener = new RunProbe({
+      db: ':memory:',
+      ai: { provider: 'openai', model: 'gpt-4o' },
+    } as never);
+    await opener.init();
+    const store = await opener.store();
+    const run = await openAiRun(store, { type: 'turn' });
+    // The check is made only when a run opens: a client whose usage is now
+    // off still records the calls of the run it was handed.
+    const later = new RunProbe({
+      db: ':memory:',
+      ai: { provider: 'openai', model: 'gpt-4o' },
+      usage: { enabled: false, persist: false },
+    } as never);
+    await later.init();
+    expect((await later.store()).usageTracking).toBe(false);
+    const tracked = await later.client(true);
+    await tracked.message('hello', {
+      runContext: { runId: run.id, db: store.db },
+    } as never);
+    const rows = rowsOf(
+      await (store.db as DatabaseInterface).query(
+        'SELECT total_tokens FROM _smrt_ai_usage WHERE run_id = $1',
+        run.id,
+      ),
+    );
+    expect(rows.map((row) => Number(row.total_tokens))).toEqual([12]);
+    expect(await getAiRun(store.db as DatabaseInterface, run.id)).toMatchObject(
+      { calls: 1, tokens: 12 },
+    );
+    // A new run on the switched-off store is refused.
+    await expect(
+      openAiRun(await later.store(), { type: 'turn' }),
+    ).rejects.toBeInstanceOf(AiRunTrackingDisabledError);
+  });
+
   it('refuses to open a run while usage persistence is off', async () => {
     const probe = new RunProbe({
       db: ':memory:',

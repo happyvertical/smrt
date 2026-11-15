@@ -38,6 +38,7 @@ import {
   foldActive,
   getAiRun,
   getRows,
+  isAiRunFinal,
   isValidAiRunType,
   lockAiRun,
   lockAiRunChainFenced,
@@ -46,6 +47,7 @@ import {
   num,
   parseJsonObject,
   readAiRunChainIds,
+  readAiRunDescendantIds,
   text,
   withAiRunTransaction,
   writeAiRunTotals,
@@ -623,11 +625,16 @@ async function retryStartTx(
   failedId: string,
   input: OpenAiRunInput,
 ): Promise<{ state: unknown; highestStepIndex: number | null }> {
-  if (!failed) throw new AiRunNotFoundError(failedId);
   const refuse = (
     message: string,
-    reason: 'not_retryable' | 'definition_changed',
+    reason: 'not_retryable' | 'definition_changed' | 'retry_source_pruned',
   ) => new AiRunResumeRefusedError(message, failedId, reason);
+  if (!failed) {
+    throw refuse(
+      `AI run ${failedId} is gone (pruned); there is nothing to retry from`,
+      'retry_source_pruned',
+    );
+  }
   if (failed.status !== 'failed') {
     throw refuse(
       `AI run ${failedId} is ${failed.status}, not failed`,
@@ -646,8 +653,8 @@ async function retryStartTx(
   const checkpoint = await readAiRunCheckpoint(tx.db, failedId);
   if (!checkpoint) {
     throw refuse(
-      `AI run ${failedId} has no checkpoint to retry from`,
-      'not_retryable',
+      `AI run ${failedId} has no checkpoint to retry from (pruned)`,
+      'retry_source_pruned',
     );
   }
   const version = input.definitionVersion ?? null;
@@ -731,10 +738,17 @@ export async function stopAiRun(
 }
 
 /**
- * End a run for good: `cancelled` with `cancelled`, `stopped_by_run_id`
- * itself. Its descendants take the cancel at their own next reservation or
- * step start (no transaction writes a subtree). Returns null when the run is
- * already final (a stopped run that is not durable is final too).
+ * End a run for good, with every descendant that is not final (page section
+ * 2): in one transaction the run moves to `cancelled` with `cancelled` and
+ * `stopped_by_run_id` itself, and each descendant that is `running`,
+ * `waiting-approval` or a durable `stopped` moves to `cancelled` with
+ * `cancelled`, `stopped_by_run_id` the cancelled run, `stop_detail` NULL and
+ * `finished_at` set. A descendant already final is left as it is. Cancel is
+ * the one transaction that locks a subtree: the run, then its descendants by
+ * increasing depth and, within a depth, increasing id (section 6.5). Calls a
+ * cancelled descendant has in flight still settle. Returns null when the run
+ * is already final (a stopped run that is not durable is final too); a
+ * descendant opened while the cancel ran is left to the `ai-runs` sweep.
  */
 export async function cancelAiRun(
   db: DatabaseInterface,
@@ -749,12 +763,23 @@ export async function cancelAiRun(
       if (!isAiRunTransitionAllowed(run.status, 'cancelled', run.durable)) {
         return null;
       }
-      return (await writeAiRunStatusTx(tx, run, 'cancelled', {
-        stopReason: 'cancelled',
-        stoppedByRunId: runId,
-      }))
-        ? run
-        : null;
+      if (
+        !(await writeAiRunStatusTx(tx, run, 'cancelled', {
+          stopReason: 'cancelled',
+          stoppedByRunId: runId,
+        }))
+      ) {
+        return null;
+      }
+      for (const id of await readAiRunDescendantIds(tx.db, runId)) {
+        const descendant = await lockAiRun(tx, id);
+        if (!descendant || isAiRunFinal(descendant)) continue;
+        await writeAiRunStatusTx(tx, descendant, 'cancelled', {
+          stopReason: 'cancelled',
+          stoppedByRunId: runId,
+        });
+      }
+      return run;
     },
     options,
   );
@@ -1142,15 +1167,34 @@ export async function resumeAiRun(
         message: string,
         reason: AiRunResumeRefusedError['reason'],
       ) => new AiRunResumeRefusedError(message, runId, reason);
+      if (
+        run.status !== 'waiting-approval' &&
+        (run.status !== 'stopped' || !run.durable)
+      ) {
+        throw refuse(
+          `AI run ${runId} is ${run.status}${run.durable ? '' : ' and not durable'}; only a stopped or waiting durable run resumes`,
+          'not_resumable',
+        );
+      }
+      // The ancestor chain must still stand (page section 7). Nothing is
+      // written; the ai-runs sweep later moves the run to cancelled.
+      const oldest = chain[0] as AiRunRow;
+      if (oldest.parentRunId !== null) {
+        throw refuse(
+          `AI run ${runId} cannot resume: its ancestor ${oldest.parentRunId} no longer exists`,
+          'ancestor_missing',
+        );
+      }
+      const finalAncestor = chain.slice(0, -1).find(isAiRunFinal);
+      if (finalAncestor) {
+        throw refuse(
+          `AI run ${runId} cannot resume: its ancestor ${finalAncestor.id} is ${finalAncestor.status}`,
+          'ancestor_final',
+        );
+      }
       if (run.status === 'waiting-approval') {
         await writeAiRunStatusTx(tx, run, 'running');
         return run;
-      }
-      if (run.status !== 'stopped' || !run.durable) {
-        throw refuse(
-          `AI run ${runId} is ${run.status}${run.durable ? '' : ' and not durable'}; only a stopped durable run resumes`,
-          'not_resumable',
-        );
       }
       const checkpoint = await readAiRunCheckpoint(tx.db, runId);
       if (options.definitionVersion !== undefined && checkpoint) {

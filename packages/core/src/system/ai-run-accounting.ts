@@ -39,6 +39,7 @@ import {
   dateOrNull,
   getAiRun,
   getRows,
+  isAiRunFinal,
   lockAiRun,
   lockAiRunChain,
   lockAiRunChainFenced,
@@ -831,6 +832,8 @@ export interface AiRunSweepResult {
   abandoned: number;
   /** Non-durable runs set `failed` with `abandoned`. */
   closedRuns: string[];
+  /** Descendants of a final or missing ancestor moved to `cancelled`. */
+  cancelledRuns: string[];
 }
 
 /**
@@ -840,7 +843,9 @@ export interface AiRunSweepResult {
  * run that is not durable from `running` to `failed` with `abandoned` when
  * it holds no reservation and has had no event or run-row write for 24
  * hours. Every change is guarded, so a slow but live process can neither
- * spend more nor write `done` over the result.
+ * spend more nor write `done` over the result. Last, it moves to
+ * `cancelled` every descendant left under a cancelled, final or missing
+ * ancestor (see {@link repairOrphanedAiRuns}).
  */
 export async function sweepAiRuns(
   db: DatabaseInterface,
@@ -853,7 +858,12 @@ export async function sweepAiRuns(
     options.staleReservationMs ?? AI_RUN_SWEEP_DEFAULTS.staleReservationMs;
   const staleRunMs = options.staleRunMs ?? AI_RUN_SWEEP_DEFAULTS.staleRunMs;
   const batch = options.batch ?? AI_RUN_SWEEP_DEFAULTS.batch;
-  const out: AiRunSweepResult = { settled: 0, abandoned: 0, closedRuns: [] };
+  const out: AiRunSweepResult = {
+    settled: 0,
+    abandoned: 0,
+    closedRuns: [],
+    cancelledRuns: [],
+  };
 
   const candidates = getRows(
     await aiRunQuery(
@@ -952,7 +962,88 @@ export async function sweepAiRuns(
     );
     if (closed) out.closedRuns.push(id);
   }
+
+  out.cancelledRuns = await repairOrphanedAiRuns(db, batch, options);
   return out;
+}
+
+/**
+ * The sweep's repair of descendants left under a final ancestor (page
+ * section 6.7): any run that is not final and has a `cancelled` ancestor,
+ * and any `waiting-approval` or durable `stopped` run with an ancestor that
+ * is final or whose row is missing, moves to `cancelled` with `cancelled`
+ * (guarded, its chain locked root first). `stopped_by_run_id` is the nearest
+ * such ancestor, or the run itself when the ancestor's row is missing.
+ * Candidates are read by their parent, so a deeper descendant is repaired
+ * in a later round of the same sweep, once its parent has been.
+ */
+async function repairOrphanedAiRuns(
+  db: DatabaseInterface,
+  batch: number,
+  options: AiRunTxOptions,
+): Promise<string[]> {
+  const repaired: string[] = [];
+  const tried = new Set<string>();
+  for (let round = 0; round < 64; round++) {
+    const candidates = getRows(
+      await aiRunQuery(
+        db,
+        `SELECT r.id FROM _smrt_ai_runs r
+           LEFT JOIN _smrt_ai_runs p ON p.id = r.parent_run_id
+          WHERE r.parent_run_id IS NOT NULL
+            AND (
+              (r.status = 'running' AND p.status = 'cancelled')
+              OR ((r.status = 'waiting-approval'
+                   OR (r.status = 'stopped'
+                       AND EXISTS (SELECT 1 FROM _smrt_ai_run_checkpoints c
+                                    WHERE c.run_id = r.id)))
+                  AND (p.id IS NULL
+                       OR p.status IN ('cancelled', 'failed', 'done')
+                       OR (p.status = 'stopped'
+                           AND NOT EXISTS (SELECT 1 FROM _smrt_ai_run_checkpoints pc
+                                            WHERE pc.run_id = p.id))))
+            )
+          ORDER BY r.id LIMIT $1`,
+        batch,
+      ),
+    )
+      .map((row) => String(row.id))
+      .filter((id) => !tried.has(id));
+    if (candidates.length === 0) break;
+    for (const id of candidates) {
+      tried.add(id);
+      const cancelled = await withAiRunTransaction(
+        db,
+        async (tx) => {
+          const chain = await lockAiRunChain(tx, id).catch((error) => {
+            if (error instanceof AiRunNotFoundError) return null;
+            throw error;
+          });
+          if (!chain) return false;
+          const run = chain[chain.length - 1] as AiRunRow;
+          if (isAiRunFinal(run)) return false;
+          const ancestors = chain.slice(0, -1).reverse();
+          const cancelledAncestor = ancestors.find(
+            (ancestor) => ancestor.status === 'cancelled',
+          );
+          let stoppedBy: string | null = cancelledAncestor?.id ?? null;
+          if (!stoppedBy && run.status !== 'running') {
+            stoppedBy =
+              ancestors.find(isAiRunFinal)?.id ??
+              ((chain[0] as AiRunRow).parentRunId !== null ? run.id : null);
+          }
+          if (!stoppedBy) return false;
+          return writeAiRunStatusTx(tx, run, 'cancelled', {
+            stopReason: 'cancelled',
+            stoppedByRunId: stoppedBy,
+          });
+        },
+        options,
+      );
+      if (cancelled) repaired.push(id);
+    }
+  }
+  return repaired;
 }
 
 // ---------------------------------------------------------------------------

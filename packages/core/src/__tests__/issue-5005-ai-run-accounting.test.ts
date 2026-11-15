@@ -618,7 +618,7 @@ describe.each(aiRunTestEngines)('AI run accounting on %s (#5005)', (engine) => {
     });
   });
 
-  it('spreads a cancel down at each descendant next reservation', async () => {
+  it('reaches every descendant with a cancel; their next reservation is refused', async () => {
     const database = await db();
     const root = await openAiRun(store(database), {
       type: 'workflow',
@@ -632,18 +632,31 @@ describe.each(aiRunTestEngines)('AI run accounting on %s (#5005)', (engine) => {
       type: 'fusion',
       parentRunId: child.id,
     });
+    const inFlight = await reserveAiCall(database, grandchild.id, {
+      inputTokens: 10,
+      outputLimit: 10,
+    });
     await cancelAiRun(database, root.id);
-    // Nothing below was written by the cancel itself.
-    expect((await getAiRun(database, child.id))?.status).toBe('running');
+    for (const id of [child.id, grandchild.id]) {
+      expect(await getAiRun(database, id)).toMatchObject({
+        status: 'cancelled',
+        stopReason: 'cancelled',
+        stoppedByRunId: root.id,
+      });
+    }
     await expect(
       reserveAiCall(database, grandchild.id, { inputTokens: 1 }),
     ).rejects.toMatchObject({ status: 'cancelled', stopReason: 'cancelled' });
-    expect(await getAiRun(database, grandchild.id)).toMatchObject({
-      status: 'cancelled',
-      stopReason: 'cancelled',
-      stoppedByRunId: root.id,
+    // A call already in flight still settles: settlement ignores status.
+    await settleAiCall(database, {
+      runId: grandchild.id,
+      callId: inFlight.callId,
+      usage: usageEvent(15),
     });
-    expect((await getAiRun(database, child.id))?.status).toBe('running');
+    expect(await getAiRun(database, root.id)).toMatchObject({
+      inclusiveTokens: 15,
+      reservedTokens: 0,
+    });
   });
 
   it('charges overshoot in full, so the next reservation is refused', async () => {

@@ -967,6 +967,7 @@ function aiRunsSweepTask(policy: RetentionPolicy): RetentionTask | null {
           settled: result.settled,
           abandoned: result.abandoned,
           closedRuns: result.closedRuns.length,
+          cancelledRuns: result.cancelledRuns.length,
         },
       };
     },
