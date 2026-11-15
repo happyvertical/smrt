@@ -29,6 +29,10 @@ pool to a single worker and Vitest overrides any user-supplied value. Do not add
 `singleFork` either: it was `poolOptions.forks.singleFork` in Vitest 3 and does
 not exist in Vitest 4, and unknown keys are ignored rather than rejected.
 
+Vitest reads `VITEST_MAX_WORKERS` natively and applies it after the pin, so it
+overrides `fileParallelism: false`. Do not export it globally; set it for one
+run only. A package too slow serially (`packages/cli`) uses `maxWorkers: 4`.
+
 Keep the default `isolate: true`. Disabling isolation shares one module registry
 across test files and makes them order-dependent, which is only worth it for
 unusually heavy packages and only after verifying that suite under randomized
