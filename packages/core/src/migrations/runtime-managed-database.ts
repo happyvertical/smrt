@@ -15,6 +15,14 @@ export interface RuntimeManagedDatabaseDeclaration {
 // Keyed by the handle and by its driver client: a transaction handle is a new
 // object over the same client, so it stays declared; a second handle opened
 // on the same file has its own client and is not.
+//
+// A declaration is keyed by object identity only: no file path, and it is not
+// shared across threads (a worker thread has its own module instance and
+// registry). The app-shell engine therefore declares in `AppRuntime.boot`, once
+// per handle it opens: each engine worker is its own thread with its own
+// handle, and a new worker is spawned on every definition change; a draft copy
+// or publish rehearsal is a different file with its own handle. Each of those
+// boots declares its own handle; none inherits another's.
 const declaredHandles = new WeakMap<
   object,
   RuntimeManagedDatabaseDeclaration

@@ -23,6 +23,13 @@ export { ProjectDomainCollection } from './collections/ProjectDomainCollection';
 export { SiteAgentBindingCollection } from './collections/SiteAgentBindingCollection';
 export { SiteCollection } from './collections/SiteCollection';
 
+// Export hostname helpers
+export {
+  defaultZoneFor,
+  hostnameBelongsToZone,
+  parseHostname,
+} from './hostname';
+
 // Export models
 export { DnsZone } from './models/DnsZone';
 export { Domain } from './models/Domain';
