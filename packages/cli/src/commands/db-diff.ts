@@ -211,7 +211,7 @@ export const dbDiffCommand: CLICommand = {
       const schemaDefinitions = ObjectRegistry.getAllSchemasAsDefinitions();
 
       // 6. Import diff utilities
-      const { resolveRetirementContext, SchemaComparer } = await import(
+      const { SchemaComparer } = await import(
         '@happyvertical/smrt-core/migrations'
       );
 
@@ -236,7 +236,7 @@ export const dbDiffCommand: CLICommand = {
         // The engine the command decides changes with is the engine it reads.
         engineHint: dbType,
         // Tables a package declares retired (#5005), as db:migrate plans them.
-        retirement: resolveRetirementContext(schemaDefinitions),
+        retireDeclaredTables: true,
       });
 
       const diff = await comparer.compare(schemaDefinitions);

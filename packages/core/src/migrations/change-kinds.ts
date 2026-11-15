@@ -88,6 +88,27 @@ export const SCHEMA_CHANGE_KINDS = {
       'Drop the table a package declares retired, with its rows, indexes and own triggers. It is declared in the owning package, no model declares it, it holds no rows (or the declaration says rows: discard) and nothing undeclared depends on it.',
     ),
   },
+  'table.retire-owner': {
+    type: 'retire_table',
+    engines: stop(
+      'loses-data',
+      'The retirement fails its own checks: its lastOwner is not a class of the declaring package, a package outside smrt retires a _smrt_ table, or it carries no definition generated from a published release. A package retires only a table its own models declared.',
+    ),
+  },
+  'table.retire-mismatch': {
+    type: 'retire_table',
+    engines: stop(
+      'loses-data',
+      "The live table is not the table the retirement describes: its columns or types differ from the definition the owning model last declared, beyond the drift the differ tolerates. It may be another table under the same name. Check what the table holds; fix the declaration's definition (regenerate it from the right release) or the table.",
+    ),
+  },
+  'table.retire-unsupported': {
+    type: 'retire_table',
+    engines: stop(
+      'loses-data',
+      'The JSON adapter has no catalog to check what depends on a table, so it never retires one. Remove the table by hand.',
+    ),
+  },
   'table.retire-declared': {
     type: 'retire_table',
     engines: stop(

@@ -191,19 +191,27 @@ export {
   type LegacyQualifiedNameTarget,
   legacyQualifiedNamesBackfillName,
 } from './qualified-name-aliases.js';
-// Declared table retirements (#5005)
-export { resolveRetirementContext } from './retire-context.js';
+// Declared table retirements (#5005). Planning is the differ's
+// (`DiffOptions.retireDeclaredTables`); packages declare in package.json and
+// register through their manifest (`ObjectRegistry.registerPackageManifest`,
+// `ObjectRegistry.registerManifestRetiredTables`).
 export {
-  type PlanTableRetirementsOptions,
-  planTableRetirements,
-  type RetireDependent,
-  type RetirementContext,
-} from './retire-plan.js';
+  isRetiredTableRowsAppeared,
+  RetiredTableRowsAppearedError,
+} from './retire-guard.js';
+export { RETIRE_POSTGRES_SCHEMA, type RetireDependent } from './retire-plan.js';
 export {
+  FRAMEWORK_PACKAGE_PREFIX,
+  honouredRetiredTables,
   mergeRetiredTables,
+  parseCarriedRetiredTable,
+  RETIRED_TABLE_DEFINITION_SCRIPT,
   type RetiredTable,
+  type RetiredTableColumn,
   type RetiredTableDeclaration,
   RetiredTableDeclarationError,
+  type RetiredTableDefinition,
+  readManifestRetiredTables,
   readRetiredTablesFromPackageJson,
 } from './retired-tables.js';
 export {

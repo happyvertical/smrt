@@ -2015,7 +2015,6 @@ export default testManifest;
           describeMigrationRefusal,
           MigrationTracker,
           parsePostgresTimeoutMs,
-          resolveRetirementContext,
           shortChecksum,
         } = await import('@happyvertical/smrt-core/migrations');
 
@@ -2101,7 +2100,7 @@ export default testManifest;
           emptyTextAsNull: Boolean(options['empty-text-as-null']),
           // Tables a package declares retired (#5005): dropped here, in this
           // whole-schema run, and nowhere else.
-          retirement: resolveRetirementContext(manifestSchemas),
+          retireDeclaredTables: true,
         });
         const diff = await comparer.compare(manifestSchemas);
         const engine = tracker.getEngine();

@@ -98,7 +98,8 @@ import {
   type DuckDbRebuildPlan,
   planDuckDbTableChanges,
 } from './duckdb-rebuild.js';
-import { planTableRetirements, type RetirementContext } from './retire-plan.js';
+import { resolveRetirementContext } from './retire-context.js';
+import { planTableRetirements } from './retire-plan.js';
 import {
   planSqliteTableRebuildsWithConstraints,
   sqliteBackfillPlaceholderSql,
@@ -324,11 +325,14 @@ export interface DiffOptions {
    */
   introspectionConcurrency?: number;
   /**
-   * Declared table retirements (#5005): the tables packages declare retired
-   * and what still declares tables. Resolve with `resolveRetirementContext()`.
+   * Plan declared table retirements (#5005): a whole-schema run sets it. The
+   * comparer resolves what is retired and what still declares each table
+   * itself (the build's or the registry's declarations, every registered
+   * model, the compared schemas, stored run-time models and smrt's own
+   * tables), so a caller cannot hand it a list or leave a declarer out.
    * Without it nothing is retired: only a declared table is ever dropped.
    */
-  retirement?: RetirementContext;
+  retireDeclaredTables?: boolean;
 }
 
 /**
@@ -927,12 +931,20 @@ export class SchemaComparer {
 
       // Declared retirements (#5005). Planned last so a drop follows every
       // other change of the run, and never read from the orphan list above.
-      if (this.options.retirement?.retired.length) {
+      const retirement = this.options.retireDeclaredTables
+        ? resolveRetirementContext(manifestSchemas)
+        : undefined;
+      if (retirement?.retired.length) {
         const retirements = await planTableRetirements({
-          ...this.options.retirement,
+          ...retirement,
           db: this.db,
           engine: this.engine,
           liveTables: existingTables,
+          // A fresh comparer: this run's per-table state stays its own.
+          compareDefinition: (table, schema) =>
+            new SchemaComparer(this.db, {
+              engineHint: this.engine,
+            }).compareTable(table, schema, { [table]: schema }),
         });
         if (retirements.length > 0) {
           diff.changes.push(...retirements);

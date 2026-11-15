@@ -156,7 +156,7 @@ describe('db:migrate retires declared tables (#5005)', () => {
     expect(out).toContain('old_drafts');
     expect(out).toContain('Drafts live on the order.');
     expect(out).toContain('2 row(s) discarded');
-    expect(out).toContain('DROP TABLE IF EXISTS "old_drafts"');
+    expect(out).toContain('DROP TABLE IF EXISTS "public"."old_drafts"');
     expect(await exists('old_drafts')).toBe(true);
   });
 
@@ -196,6 +196,47 @@ describe('db:migrate retires declared tables (#5005)', () => {
     expect(process.exitCode).toBe(1);
     expect(out).toContain('foreign key child.d');
     expect(out).toContain('view drafts_view');
+    expect(await exists('old_drafts')).toBe(true);
+  });
+
+  it('counts again inside the batch: a row written after the plan rolls everything back (R2)', async () => {
+    declare();
+    await db.query('DELETE FROM old_drafts');
+    schemas.fresh = { ...kept, tableName: 'fresh' };
+    let wrote = false;
+    const base = h.db as DatabaseInterface;
+    h.db = {
+      ...base,
+      query: async (sql: string, ...args: unknown[]) => {
+        const result = await (base.query as (...a: unknown[]) => unknown)(
+          sql,
+          ...args,
+        );
+        if (
+          !wrote &&
+          /COUNT\(\*\) AS n FROM/.test(sql) &&
+          sql.includes('old_drafts')
+        ) {
+          wrote = true;
+          await db.query('INSERT INTO old_drafts VALUES (gen_random_uuid())');
+        }
+        return result;
+      },
+    } as DatabaseInterface;
+    const out = await run();
+    expect(wrote).toBe(true);
+    expect(process.exitCode).toBe(1);
+    expect(out).toContain('table.retire-rows');
+    expect(await exists('old_drafts')).toBe(true);
+    expect(await exists('fresh')).toBe(false);
+  });
+
+  it('stops when the live table is not the one the declaration describes (R3)', async () => {
+    declare('discard');
+    await db.query('ALTER TABLE old_drafts ADD COLUMN note TEXT');
+    const out = await run();
+    expect(process.exitCode).toBe(1);
+    expect(out).toContain('column note is not in the definition');
     expect(await exists('old_drafts')).toBe(true);
   });
 });

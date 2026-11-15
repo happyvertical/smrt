@@ -19,7 +19,9 @@ import {
 import { appModelChangesMigrations } from '../../system/app-model-changes.js';
 import { snapshotObjectRegistryState } from '../../test-utils.js';
 import { getTestDatabase } from '../../testing/database.js';
+import { registerBuildSchema } from '../build-schema.js';
 import { classifySchemaChange, decideSchemaChange } from '../change-kinds.js';
+import { readLastMigrateRecord } from '../migrate-record.js';
 import {
   type MigrateSmrtSchemasResult,
   migrateSmrtSchemas,
@@ -50,6 +52,13 @@ const retired = (
   },
   packageName: PKG,
   ...extra,
+});
+
+const shape = (...columns: string[]) => ({
+  release: '0.9.0',
+  columns: Object.fromEntries(
+    columns.map((name) => [name, { type: 'TEXT' as const }]),
+  ),
 });
 
 describe.each(engines)('retire step on %s (#5005)', (engine) => {
@@ -113,6 +122,10 @@ describe.each(engines)('retire step on %s (#5005)', (engine) => {
     for (let i = 0; i < rows; i++)
       await db.query(`INSERT INTO "${table}" VALUES ('${i}', 'x')`);
   };
+  // PostgreSQL statements name the schema the migrator reads (R5).
+  const target = (table: string) =>
+    hint === 'postgres' ? `"public"."${table}"` : `"${table}"`;
+  const drop = (table: string) => `DROP TABLE IF EXISTS ${target(table)}`;
   const kinds = (result: MigrateSmrtSchemasResult) =>
     result.stops.map((stop) => stop.kind);
 
@@ -124,9 +137,7 @@ describe.each(engines)('retire step on %s (#5005)', (engine) => {
     const result = await migrate();
 
     expect(result).toMatchObject({ refused: false, applied: true });
-    expect(result.statements).toEqual([
-      'DROP TABLE IF EXISTS "retire_orders_old"',
-    ]);
+    expect(result.statements).toEqual([drop('retire_orders_old')]);
     expect(await exists('retire_orders_old')).toBe(false);
     // Nothing undeclared goes with it.
     expect(await exists('keep_me')).toBe(true);
@@ -276,7 +287,7 @@ describe.each(engines)('retire step on %s (#5005)', (engine) => {
     expect(await exists('retire_race_fresh')).toBe(false);
     if (hint === 'postgres')
       expect(result.statements).toContain(
-        'LOCK TABLE "retire_race" IN ACCESS EXCLUSIVE MODE',
+        `LOCK TABLE ${target('retire_race')} IN ACCESS EXCLUSIVE MODE`,
       );
   });
 
@@ -358,15 +369,15 @@ describe.each(engines)('retire step on %s (#5005)', (engine) => {
       `CREATE TABLE "retire_c" (id TEXT PRIMARY KEY, p TEXT REFERENCES "retire_p"(id))`,
     );
     await db.query(`INSERT INTO "retire_c" VALUES ('c', '0')`);
-    declare(retired('retire_p'), retired('retire_c'));
+    declare(
+      retired('retire_p'),
+      retired('retire_c', { definition: shape('id', 'p') }),
+    );
 
     const result = await migrate();
 
     expect(result).toMatchObject({ refused: false, applied: true });
-    expect(result.statements).toEqual([
-      'DROP TABLE IF EXISTS "retire_c"',
-      'DROP TABLE IF EXISTS "retire_p"',
-    ]);
+    expect(result.statements).toEqual([drop('retire_c'), drop('retire_p')]);
     expect(await exists('retire_p')).toBe(false);
     expect(await exists('retire_c')).toBe(false);
   });
@@ -377,7 +388,7 @@ describe.each(engines)('retire step on %s (#5005)', (engine) => {
     );
     await db.query(`INSERT INTO "retire_tree" VALUES ('root', NULL)`);
     await db.query(`INSERT INTO "retire_tree" VALUES ('leaf', 'root')`);
-    declare(retired('retire_tree'));
+    declare(retired('retire_tree', { definition: shape('id', 'parent') }));
 
     const result = await migrate();
 
@@ -499,6 +510,293 @@ describe.each(engines)('retire step on %s (#5005)', (engine) => {
       planRuntimeModelDDL(name, hint, async () => null),
     ).rejects.toThrow(/retire_runtime_items.*declared retired/);
   });
+
+  it('stops when the live table is not the one the declaration describes (R3: the table, not the name)', async () => {
+    // Another table under the retired name: same name, other columns.
+    await db.query(
+      `CREATE TABLE "retire_collide" (id TEXT PRIMARY KEY, payload TEXT, amount INTEGER)`,
+    );
+    await db.query(`INSERT INTO "retire_collide" VALUES ('a', 'keep me', 3)`);
+    declare(retired('retire_collide'));
+
+    const result = await migrate();
+
+    expect(result).toMatchObject({ refused: true, applied: false });
+    expect(kinds(result)).toEqual(['table.retire-mismatch']);
+    expect(result.stops[0].message).toContain('column v is missing');
+    expect(result.stops[0].message).toContain(
+      'column payload is not in the definition',
+    );
+    expect(await exists('retire_collide')).toBe(true);
+  });
+
+  it('stops on a declared type the live column does not have', async () => {
+    await db.query(
+      `CREATE TABLE "retire_typed" (id TEXT PRIMARY KEY, v INTEGER)`,
+    );
+    declare(retired('retire_typed'));
+    const result = await migrate();
+    expect(kinds(result)).toEqual(['table.retire-mismatch']);
+    expect(result.stops[0].message).toMatch(/column v is .*declared TEXT/i);
+    expect(await exists('retire_typed')).toBe(true);
+  });
+
+  it('stops on an entry that fails its checks however it arrived (R3, R9)', async () => {
+    await make('retire_forged', 0);
+    // A build description registered directly skips every loader.
+    registerBuildSchema({
+      tables: {},
+      packages: [],
+      source: 'forged',
+      retired: [retired('retire_forged', { lastOwner: '@else/where:Gone' })],
+    });
+    try {
+      const result = await migrate();
+      expect(result.refused).toBe(true);
+      expect(kinds(result)).toEqual(['table.retire-owner']);
+      expect(result.stops[0].message).toContain('belongs to another package');
+      expect(await exists('retire_forged')).toBe(true);
+    } finally {
+      registerBuildSchema(undefined);
+    }
+  });
+
+  it('matches names without case where the engine does, and stops on a model spelled otherwise (R4)', async () => {
+    class Shout extends SmrtObject {
+      code = '';
+    }
+    field({ type: 'text' })(Shout.prototype, 'code');
+    ObjectRegistry.register(Shout, {
+      packageName: '@retire/other',
+      tableName: 'RETIRE_SHOUT',
+    });
+    expect((await migrate()).refused).toBe(false);
+    declare(retired('retire_shout'));
+    const result = await migrate();
+    if (hint === 'postgres') {
+      // "RETIRE_SHOUT" is another table on PostgreSQL: nothing is live.
+      expect(result.stops).toEqual([]);
+    } else {
+      expect(kinds(result)).toEqual(['table.retire-declared']);
+      expect(result.stops[0].message).toContain('@retire/other');
+    }
+    expect(await exists('RETIRE_SHOUT')).toBe(true);
+  });
+
+  it.runIf(engine !== 'pglite')(
+    'drops a mixed-case live table its lower-case declaration names (R4)',
+    async () => {
+      await db.query(
+        `CREATE TABLE "Retire_Mixed" (id TEXT PRIMARY KEY, v TEXT)`,
+      );
+      declare(retired('retire_mixed'));
+      const result = await migrate();
+      expect(result).toMatchObject({ refused: false, applied: true });
+      expect(await exists('Retire_Mixed')).toBe(false);
+    },
+  );
+
+  it('stops while a single-table-inheritance subclass in another package declares the table', async () => {
+    const object = (
+      packageName: string,
+      className: string,
+      extra: Record<string, unknown>,
+    ) =>
+      ({
+        name: className.toLowerCase(),
+        className,
+        collection: `${className.toLowerCase()}s`,
+        filePath: `/${packageName}/${className}.ts`,
+        fields: { code: { type: 'text' } },
+        methods: {},
+        packageName,
+        ...extra,
+      }) as never;
+    ObjectRegistry.registerFromManifest(
+      '@retire/base:RetireBase',
+      object('@retire/base', 'RetireBase', {
+        decoratorConfig: { tableStrategy: 'sti', tableName: 'retire_sti' },
+        extends: 'SmrtObject',
+      }),
+      '@retire/base',
+    );
+    ObjectRegistry.registerFromManifest(
+      '@retire/sti-child:RetireSub',
+      object('@retire/sti-child', 'RetireSub', {
+        decoratorConfig: {},
+        extends: '@retire/base:RetireBase',
+      }),
+      '@retire/sti-child',
+    );
+    expect((await migrate()).refused).toBe(false);
+    expect(await exists('retire_sti')).toBe(true);
+    declare(retired('retire_sti'));
+    const result = await migrate();
+    expect(kinds(result)).toEqual(['table.retire-declared']);
+    expect(result.stops[0].message).toContain('@retire/sti-child:RetireSub');
+    expect(await exists('retire_sti')).toBe(true);
+  });
+
+  it('two packages retiring one table: dropped once, and only when both let the rows go', async () => {
+    const OTHER = '@retire/second';
+    await make('retire_shared', 1);
+    const second = (extra: Partial<RetiredTable> = {}) =>
+      retired('retire_shared', {
+        lastOwner: `${OTHER}:Gone`,
+        packageName: OTHER,
+        ...extra,
+      });
+    declare(retired('retire_shared'));
+    registerRetiredTables(OTHER, [second({ rows: undefined })]);
+
+    const kept = await migrate();
+    expect(kinds(kept)).toEqual(['table.retire-rows']);
+    expect(kept.stops[0].message).toContain(`${OTHER}:Gone`);
+    expect(await exists('retire_shared')).toBe(true);
+
+    registerRetiredTables(OTHER, [second()]);
+    const dropped = await migrate();
+    expect(dropped).toMatchObject({ refused: false, applied: true });
+    expect(dropped.statements).toEqual([drop('retire_shared')]);
+    expect(await exists('retire_shared')).toBe(false);
+  });
+
+  it.runIf(engine === 'sqlite')(
+    'names a foreign key with SQLite foreign keys off, where DROP would not refuse',
+    async () => {
+      await db.query('PRAGMA foreign_keys = OFF');
+      await make('retire_fk_off', 1);
+      await db.query(
+        `CREATE TABLE "fk_off_child" (id TEXT PRIMARY KEY, p TEXT REFERENCES "retire_fk_off"(id))`,
+      );
+      await db.query(`INSERT INTO "fk_off_child" VALUES ('c', '0')`);
+      declare(retired('retire_fk_off'));
+      const result = await migrate();
+      expect(kinds(result)).toEqual(['table.retire-dependent']);
+      expect(result.stops[0].message).toContain('foreign key fk_off_child.p');
+      expect(await exists('retire_fk_off')).toBe(true);
+    },
+  );
+
+  it.runIf(engine === 'duckdb')(
+    'names a DuckDB macro that reads the table',
+    async () => {
+      await make('retire_macro_src', 0);
+      await db.query(
+        `CREATE MACRO retire_macro_count() AS (SELECT count(*) FROM retire_macro_src)`,
+      );
+      declare(retired('retire_macro_src'));
+      const result = await migrate();
+      expect(kinds(result)).toEqual(['table.retire-dependent']);
+      expect(result.stops[0].message).toContain('macro retire_macro_count');
+    },
+  );
+
+  it.runIf(engine === 'duckdb')(
+    'the JSON adapter never drops, and records no migrate while the table is live (R7)',
+    async () => {
+      await make('retire_json', 0);
+      declare(retired('retire_json'));
+      const refused = await migrate({ engineHint: 'json' });
+      expect(refused.refused).toBe(true);
+      expect(kinds(refused)).toEqual(['table.retire-unsupported']);
+      expect(await exists('retire_json')).toBe(true);
+      expect((await readLastMigrateRecord(db)).state).toBe('none');
+
+      await db.query('DROP TABLE "retire_json"');
+      const clean = await migrate({ engineHint: 'json' });
+      expect(clean.refused).toBe(false);
+      expect((await readLastMigrateRecord(db)).state).toBe('recorded');
+    },
+  );
+
+  it.runIf(engine === 'pglite')(
+    'reads, counts and drops the public table whatever the search_path (R5)',
+    async () => {
+      await make('retire_sp', 0);
+      await db.query('CREATE SCHEMA IF NOT EXISTS "retire_other"');
+      await db.query(
+        `CREATE TABLE "retire_other"."retire_sp" (id TEXT PRIMARY KEY, v TEXT)`,
+      );
+      await db.query(
+        `INSERT INTO "retire_other"."retire_sp" VALUES ('keep', 'x')`,
+      );
+      declare(retired('retire_sp', { rows: undefined }));
+      await db.query('SET search_path TO "retire_other", public');
+      try {
+        const result = await migrate();
+        expect(result).toMatchObject({ refused: false, applied: true });
+        expect(result.statements).toContain(drop('retire_sp'));
+      } finally {
+        await db.query('SET search_path TO public');
+      }
+      expect(await exists('retire_sp')).toBe(false);
+      const other = await db.query(
+        `SELECT COUNT(*) AS n FROM "retire_other"."retire_sp"`,
+      );
+      expect(Number(other.rows[0].n)).toBe(1);
+    },
+  );
+
+  it.runIf(engine === 'pglite')(
+    'names every PostgreSQL dependent pg_depend records, and functions whose body names the table (R6)',
+    async () => {
+      await db.query(
+        `CREATE TABLE "retire_pgdeps" (id TEXT PRIMARY KEY, v TEXT)`,
+      );
+      await db.query(
+        'CREATE SEQUENCE "retire_pgdeps_seq" OWNED BY "retire_pgdeps"."v"',
+      );
+      // Another table's default uses the sequence it owns.
+      await db.query(
+        `CREATE TABLE "pgdeps_seq_user" (id TEXT PRIMARY KEY, n BIGINT DEFAULT nextval('retire_pgdeps_seq'))`,
+      );
+      // A column of its row type.
+      await db.query(
+        `CREATE TABLE "pgdeps_rowtype" (id TEXT PRIMARY KEY, snap "retire_pgdeps")`,
+      );
+      // A table that inherits it.
+      await db.query(
+        `CREATE TABLE "pgdeps_child" (extra TEXT) INHERITS ("retire_pgdeps")`,
+      );
+      // A policy on another table that reads it.
+      await db.query(`CREATE TABLE "pgdeps_guarded" (id TEXT PRIMARY KEY)`);
+      await db.query(
+        `CREATE POLICY "pgdeps_policy" ON "pgdeps_guarded" USING (EXISTS (SELECT 1 FROM "retire_pgdeps" r WHERE r.id = "pgdeps_guarded".id))`,
+      );
+      // A function, not a trigger, whose body names it.
+      await db.query(
+        `CREATE FUNCTION "pgdeps_count"() RETURNS bigint AS $$ BEGIN RETURN (SELECT count(*) FROM retire_pgdeps); END $$ LANGUAGE plpgsql`,
+      );
+      // Not a dependent: a function naming a longer table.
+      await db.query(
+        `CREATE FUNCTION "pgdeps_unrelated"() RETURNS bigint AS $$ BEGIN RETURN (SELECT count(*) FROM pgdeps_guarded) + length('retire_pgdeps_x'); END $$ LANGUAGE plpgsql`,
+      );
+      declare(retired('retire_pgdeps'));
+      try {
+        const result = await migrate();
+        expect(result.refused).toBe(true);
+        expect(new Set(kinds(result))).toEqual(
+          new Set(['table.retire-dependent']),
+        );
+        const messages = result.stops.map((stop) => stop.message).join('\n');
+        expect(messages).toContain('column default pgdeps_seq_user.n');
+        expect(messages).toContain('column pgdeps_rowtype.snap');
+        expect(messages).toContain('inheriting table pgdeps_child');
+        expect(messages).toContain('policy pgdeps_policy on pgdeps_guarded');
+        expect(messages).toContain('function pgdeps_count()');
+        expect(messages).not.toContain('pgdeps_unrelated');
+        expect(await exists('retire_pgdeps')).toBe(true);
+      } finally {
+        await db.query(
+          'DROP TABLE IF EXISTS "pgdeps_seq_user", "pgdeps_rowtype", "pgdeps_child", "pgdeps_guarded", "retire_pgdeps" CASCADE',
+        );
+        await db.query(
+          'DROP FUNCTION IF EXISTS "pgdeps_count"(), "pgdeps_unrelated"()',
+        );
+      }
+    },
+  );
 
   it('classifies every retire change in the table of kinds', async () => {
     await make('retire_kinds', 1);

@@ -12,7 +12,13 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { runtimeListTableName } from '../runtime-list-table.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
-import { APP_MODEL_CHANGES_TABLE } from '../system/app-model-changes.js';
+
+/**
+ * `APP_MODEL_CHANGES_TABLE` of `system/app-model-changes.ts`, spelled here:
+ * that module loads the migration generator (and Node's crypto), which the
+ * browser entry of the differ must not.
+ */
+const APP_MODEL_CHANGES_TABLE = '_smrt_app_model_changes';
 
 export interface StoredRuntimeModelTables {
   /** Lower-cased table name to the stored run-time models that use it. */

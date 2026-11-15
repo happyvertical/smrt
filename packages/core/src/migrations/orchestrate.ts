@@ -42,7 +42,6 @@ import {
   formatMigrationRefusal,
   type MigrationRunDecision,
 } from './migration-run-decision.js';
-import { resolveRetirementContext } from './retire-context.js';
 import { isRetiredTableRowsAppeared } from './retire-guard.js';
 import { MigrationTracker } from './tracker.js';
 
@@ -284,9 +283,7 @@ export async function getPendingSchemaStatements(
     // to tables neither plans nor reports them: retiring waits for the next
     // whole-schema migrate, which the build stamp forces before production
     // starts (a limited run writes no migrate record).
-    ...(options.tables
-      ? {}
-      : { retirement: resolveRetirementContext(schemas) }),
+    ...(options.tables ? {} : { retireDeclaredTables: true }),
   });
   const statements = collectStatementsFromDiff(diff, db, options.engineHint);
   const unactionableChanges = collectUnactionableChanges(
