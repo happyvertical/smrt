@@ -146,51 +146,7 @@ jobs:
       - name: Restore the core test manifest
         run: pnpm turbo run generate:test --filter='@happyvertical/smrt-core'
 
-      - name: DIAG powershell stages with the allow-listed environment
-        run: |
-          cat > "$RUNNER_TEMP/probe.mjs" <<'PROBE_EOF'
-          import { spawnSync } from 'node:child_process';
-          const root = process.env.SystemRoot;
-          const ps = `${root}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
-          const names = ['SystemRoot','windir','SystemDrive','TEMP','TMP','USERPROFILE','LOCALAPPDATA','APPDATA','ProgramData','ProgramFiles','COMPUTERNAME','USERNAME','USERDOMAIN','PATHEXT'];
-          const lookup = (n) => Object.keys(process.env).find((k) => k.toLowerCase() === n.toLowerCase());
-          const base = {};
-          for (const n of names) { const k = lookup(n); if (k) base[n] = process.env[k]; }
-          base.SMRT_CUSTODY_PATHS = 'C:\\\\';
-          const script = String.raw`
-          $sw=[Diagnostics.Stopwatch]::StartNew()
-          $d = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID='C:'"
-          [Console]::Error.WriteLine(('cim {0:n1}s' -f $sw.Elapsed.TotalSeconds))
-          `;
-          const enc = Buffer.from(script, 'utf16le').toString('base64');
-          const args = ['-NoLogo','-NoProfile','-NonInteractive','-InputFormat','None','-EncodedCommand',enc];
-          const time = (env) => {
-            const t = Date.now();
-            spawnSync(ps, args, { env, encoding: 'utf8', timeout: 90000, windowsHide: true, shell: false, stdio: ['ignore','pipe','pipe'] });
-            return (Date.now() - t) / 1000;
-          };
-          const baseNames = new Set(Object.keys(base).map((k) => k.toLowerCase()));
-          let extras = Object.keys(process.env).filter((k) => !baseNames.has(k.toLowerCase()) && k.toLowerCase() !== 'path');
-          const withExtras = (names) => ({ ...base, ...Object.fromEntries(names.map((k) => [k, process.env[k]])) });
-          console.log('extras', extras.length, 'all:', time(withExtras(extras)).toFixed(1));
-          while (extras.length > 1) {
-            const a = extras.slice(0, Math.ceil(extras.length / 2));
-            const b = extras.slice(a.length);
-            const ta = time(withExtras(a));
-            console.log('half A', a.length, ta.toFixed(1));
-            if (ta < 5) { extras = a; continue; }
-            const tb = time(withExtras(b));
-            console.log('half B', b.length, tb.toFixed(1));
-            if (tb < 5) { extras = b; continue; }
-            console.log('needs both; remaining', extras.join(','));
-            break;
-          }
-          if (extras.length === 1) console.log('culprit name:', extras[0]);
-          PROBE_EOF
-          node "$RUNNER_TEMP/probe.mjs"
-
       - name: Windows custody tests
-        if: github.event_name == 'never'
         working-directory: packages/app-runtime
         env:
           NODE_ENV: test
