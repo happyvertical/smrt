@@ -2,6 +2,7 @@
 
 Background job execution with persistent queue, scheduling, and fluent builder API.
 Retry SDK import boundary: [provider loading](agents/provider-loading.md).
+A job targets a model method or a registered named handler; runners claim only handlers they registered: [job handlers](agents/job-handlers.md).
 
 ## Architecture
 
@@ -32,7 +33,7 @@ lease advertising remains queue-level; it does not prove per-tenant availability
 1. `start()` checks the build migrate fingerprint, then calls `assertReady()` (fail fast if `_smrt_workers` unmigrated), registers a seeded `SmrtWorker` lease, and adds its worker key to the process-global live set — all **before** polling
 2. Polls `claimReady()` to atomically claim at most the free slots (`concurrency - active`) of pending jobs (`runAt <= NOW`, ordered by `priority DESC, runAt ASC, created_at ASC, id ASC`). On PostgreSQL the candidates come from a `MATERIALIZED` CTE joined to the UPDATE; never claim with `WHERE id IN (SELECT … LIMIT n FOR UPDATE SKIP LOCKED)` — a nested-loop semi join rescans it per outer row and takes the whole backlog (#3145). The runner also never starts more than the free slots and returns any surplus claim to `pending` with its attempt restored
 3. Claim sets `status='running'`, `workerId=<incarnation key>`, heartbeat/start timestamps, and increments `attempts`
-4. Resolves class via `ObjectRegistry.getClass(objectType)`. Object-bound jobs
+4. Resolves class via `ObjectRegistry.getClass(objectType)` (a `handler:` target uses the handler snapshot instead). Object-bound jobs
    pass `objectId` to the constructor and let `initialize()` perform the single
    canonical hydration. Runner-owned `db`, `id`, and hydration options cannot be
    overridden by agent config; missing persisted targets fail before method
@@ -105,34 +106,7 @@ await handle.wait({ timeout: 60000, pollInterval: 100 }); // polling-based
 
 ## Durable forge projections
 
-`ForgeDeliveryCollection` owns the provider-neutral delivery inbox in
-`_smrt_forge_deliveries`; `ForgeProjectionRuntime` owns lease/retry/dead-letter
-transitions and monotonic checkpoints in
-`_smrt_forge_projection_checkpoints`.
-
-- Inbox identity is `(tenant_id, provider, delivery_id)`.
-- Runtimes sharing the inbox pass `providers` (to `ForgeProjectionRuntime` or
-  `claimReady`) so each claims and dead-letters only its own deliveries;
-  unfiltered claims take every provider (smrt-commerce billing uses
-  `<name>-billing:<sellerTenantId>`, #3060).
-- `claimReady` leases exactly one delivery; PostgreSQL uses the same
-  `MATERIALIZED` CTE claim as jobs (#3105).
-- Tenant-facing accept/replay requires ambient tenant context. Worker claim is
-  cross-tenant, then runtime restores the captured context before observation.
-  Reads in the accept path go through the tenant-scoped collection (`list()`),
-  so intake works under the interceptor's `rawQueryPolicy: 'throw'` production
-  default without a bypass (#3100); keep new tenant-facing reads that way.
-- Projection callbacks must write through `ForgeProjectionContext.db`; the
-  application projection, checkpoint, and inbox completion share one
-  transaction.
-- Observation identity is tracker-independent
-  `(projection, subjectKey, version)`. Equal or older versions are acknowledged
-  without reapplying.
-- Lease-token conditions guard every terminal/failure write. Expired final
-  attempts become replayable `dead_letter` rows, and persisted errors are
-  redacted.
-- Generated API, CLI, and MCP surfaces stay disabled; replay is an explicit
-  tenant-scoped operator action.
+Provider delivery inbox, leases and checkpoints: [forge projections](agents/forge-projections.md).
 
 `bg()` is shorthand: `await doc.bg('analyze', args)` → enqueues immediately, returns JobHandle.
 
@@ -234,3 +208,11 @@ the framework retention sweep in `@happyvertical/smrt-core`.
 - **wait() is polling**: JobHandle.wait() polls DB every 100ms (configurable)
 - **Migrate before start()**: Both runners call core's `assertDatabaseMigratedForBuild` before polling (policy: [schema paths](../core/agents/schema-paths.md)). A missing or different record refuses production start; development warns, test databases are exempt, and the emergency override is logged. `TaskRunner.start()` throws if `_smrt_workers` is missing — run `smrt db:migrate` after upgrading. Tables are never created at runtime.
 - **Recovery is liveness-based**: don't reintroduce heartbeat-threshold recovery; a blocked event loop must not look dead (see Worker liveness section, #1474)
+
+## Transaction-bound claims
+
+Use `getJobClaim`, `assertJobClaim`, `assertJobClaimForRelease`,
+`assertFailedJobDispatch` and `assertAbandonedJobClaim` for dispatch fencing,
+recovery and application lease release. Read [claim and recovery contracts](agents/job-claims.md)
+for opt-in fencing, transaction affinity, liveness, exact outcome lookup and
+PGlite validation. Never infer settlement from cancellation alone.

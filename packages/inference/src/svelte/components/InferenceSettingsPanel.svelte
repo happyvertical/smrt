@@ -15,6 +15,8 @@
 import type {
   InferenceAliasChange,
   InferenceAliasView,
+  InferenceAssistantSettingsChange,
+  InferenceAssistantSettingsView,
   InferenceCandidateView,
   InferenceConnectionRequest,
   InferenceDefaultsChange,
@@ -44,6 +46,7 @@ import {
   isRefAllowed,
 } from '../types.js';
 import InferenceAliasEditor from './InferenceAliasEditor.svelte';
+import InferenceAssistantSettings from './InferenceAssistantSettings.svelte';
 import InferenceDefaultView from './InferenceDefaultView.svelte';
 import InferenceFusionList from './InferenceFusionList.svelte';
 import InferenceTierRow from './InferenceTierRow.svelte';
@@ -80,7 +83,7 @@ export interface InferenceSettingsPanelProps {
   appEditable?: boolean;
   /**
    * The host's transcript route for a Usage-tab row (#4781). Rows with
-   * stored transcripts link their count and outcome labels there; the panel
+   * stored transcripts link their count and evaluation labels there; the panel
    * renders no transcript content.
    */
   transcriptHref?: (
@@ -121,6 +124,14 @@ export interface InferenceSettingsPanelProps {
   onUsageGroupBy?: (by: InferenceUsageDimension[]) => void;
   /** Writes the app row (never a tenant row). Used only with `appEditable`. */
   onSaveTranscripts?: (change: InferenceTranscriptSettingsChange) => void;
+  /**
+   * The assistant's ordinary settings (#5005): workflow handoff, preview,
+   * removal approval and local AI protection. Shown under the default view
+   * when given.
+   */
+  assistant?: InferenceAssistantSettingsView | null;
+  onSaveAssistant?: (change: InferenceAssistantSettingsChange) => void;
+  onResetAssistant?: () => void;
 }
 
 const {
@@ -152,6 +163,9 @@ const {
   onSaveFusion,
   onUsageGroupBy,
   onSaveTranscripts,
+  assistant = null,
+  onSaveAssistant,
+  onResetAssistant,
 }: InferenceSettingsPanelProps = $props();
 
 let tab = $state<'settings' | 'usage'>('settings');
@@ -233,6 +247,13 @@ function tierAllowed(tier: InferenceSettingsTier): boolean {
           {onDiscoverModels}
         />
       {/key}
+
+      {#if assistant}
+        <section class="smrt-inference-settings-panel__section" data-smrt-part="group">
+          <h3>Assistant</h3>
+          <InferenceAssistantSettings view={assistant} {busy} {onSaveAssistant} {onResetAssistant} />
+        </section>
+      {/if}
 
       <button
         type="button"

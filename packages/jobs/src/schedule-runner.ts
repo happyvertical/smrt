@@ -11,6 +11,7 @@ import {
   redactErrorForPersistence,
   redactErrorMessage,
 } from './error-redaction.js';
+import { isJobHandlerTarget } from './job-handlers.js';
 import {
   getScheduleAdmissionPayload,
   getScheduleAdmissionPolicy,
@@ -642,6 +643,25 @@ export class ScheduleRunner extends EventEmitter {
       typeof schedule.timezone === 'string' && schedule.timezone.trim()
         ? schedule.timezone.trim()
         : 'UTC';
+    // Schedules target model methods only; a named job handler (#5005) is
+    // not a schedule target. Deterministic, so the row ends in 'error'.
+    if (isJobHandlerTarget(rawAgentType)) {
+      const error = new TypeError(
+        `Schedules cannot target a job handler: ${rawAgentType}`,
+      );
+      await db.query(
+        `UPDATE _smrt_agent_schedules
+           SET status = 'error', last_error = ?
+           WHERE id = ?`,
+        redactErrorForPersistence(error),
+        schedule.id,
+      );
+      this.logger.error('Schedule targets a job handler', {
+        scheduleId: schedule.id,
+        error,
+      });
+      return { schedule: scheduleInfo, error };
+    }
     try {
       validateCronExpression(schedule.cron as string);
       validateCronTimezone(timezone);

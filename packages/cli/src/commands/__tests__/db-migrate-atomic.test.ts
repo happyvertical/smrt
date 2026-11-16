@@ -193,6 +193,7 @@ vi.mock('@happyvertical/smrt-core', () => ({
   })),
   readLastMigrateRecord: vi.fn(async () => ({ state: 'none' })),
   recordSuccessfulMigrate: vi.fn(async () => {}),
+  confirmedRetirementsOf: vi.fn(() => []),
   ObjectRegistry: {
     getAllSchemasAsDefinitions: getAllSchemasAsDefinitionsMock,
     getInitializationOrder: getInitializationOrderMock,
@@ -236,6 +237,8 @@ vi.mock('@happyvertical/smrt-core/migrations', async () => {
       actual.DEFAULT_MIGRATION_LOCK_WAIT_TIMEOUT_MS,
     MigrationTracker: MockMigrationTracker,
     parsePostgresTimeoutMs: actual.parsePostgresTimeoutMs,
+    unusedRetireConfirmations: actual.unusedRetireConfirmations,
+    // No retired tables in these fixtures (#5005).
     shortChecksum: vi.fn((checksum: string) => checksum),
   };
 });

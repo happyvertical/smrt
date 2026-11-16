@@ -128,9 +128,9 @@ sweep's `retention.aiTranscripts.maxAgeDays` and is shown read-only.
 In the Usage tab, build the report with
 `settings.usage({ by, tenantId, transcripts: true })` to show a transcript
 count per row, and pass `transcriptHref(filters)` to link each count and
-outcome label to your own transcript page. `filters` holds `promptKey`
+evaluation label to your own transcript page. `filters` holds `promptKey`
 and `templateHash` (when the report is grouped by prompt or template),
-`outcome`, `since` and `until`, which map onto `listAiTranscripts()`. The
+`label`, `since` and `until`, which map onto `listAiTranscripts()`. The
 panel never shows transcript text. When transcripts are off, the tab says
 so in one line.
 
@@ -165,6 +165,56 @@ what each entry replaces (`shadows`) and why the executor would refuse it
 (`issues`, seat prompt keys included). The whole picture (tiers, fallback,
 fusions, modes, hosted inference, usage) is in
 [Inference tiers, bindings and usage](./inference.md).
+
+## Which model answers on a local AI or ChatGPT plan
+
+An API key binds tiers through the rows above. Claude Code, Codex and a
+ChatGPT plan sign-in have no stored binding: each tier binds to the engine's
+own models, ranked strongest first (`engineTierModel` in
+`@happyvertical/smrt-inference`, #5005):
+
+| Tier | Claude Code | Codex | ChatGPT plan |
+| --- | --- | --- | --- |
+| `best`, `great` | `fable` | `gpt-6-astra` | the strongest ranked model the account offers |
+| `good` | `opus` | `gpt-6.1-sol` | the next strongest offered |
+| `cheap` | `sonnet` | `gpt-6-luna` | the lowest ranked offered |
+| `auto` | the app's default tier (else `good`), then as above | same | same |
+
+OpenAI ranks: `gpt-6-astra` > `gpt-6.1-sol` > `gpt-6.1-terra` > `gpt-6-luna`
+(reviewed 2026-11-12); an unranked model is never chosen. The assistant asks
+for `best`, so it answers with `fable`, `gpt-6-astra` or the account's
+strongest model. When a plan refuses that model before any output, the turn
+steps once down the same order (`fable` → `opus` → `sonnet`) and remembers the
+step for that connection.
+
+Reasoning effort follows the caller, then the prompt's `ai.effort`, then the
+tier binding's `params.reasoning.effort`, then the engine's default; nothing
+else defaults it. Claude Code takes `--effort`, Codex
+`model_reasoning_effort` (`max` is sent as `xhigh`), an API call
+`reasoning.effort`. A ChatGPT plan records the effort but does not send it:
+its provider rejects reasoning options.
+
+What changed (#5005): owner "work profiles" are gone. Which model answers is
+the tier binding's choice; limits are the budget of the assistant's turn or of
+the workflow definition; saved profile preferences are dropped. An owner who
+had picked a custom model or effort per profile now gets the binding's model
+and the engine's default effort.
+
+## Assistant settings
+
+The panel's Assistant section (`assistant` and `onSaveAssistant` props) holds
+the owner's ordinary assistant settings, stored by smrt-preferences' kind
+`assistant-settings`. Each is on unless turned off:
+
+| Setting | What it does |
+| --- | --- |
+| `escalateToWorkflow` | A chat request for a tool limited to workflow runs (structural changes) is handed to a workflow run; off, chat refuses it. |
+| `previewBeforeApply` | A workflow run shows its proposed changes before applying them. |
+| `requireRemovalApproval` | Chat asks the owner before deleting or removing. |
+| `protectLocalCli` | Claude Code and Codex run in the app's protected tool setup. Turning it off needs an explicit confirmation. |
+
+Only the owner, in a browser session, may change them; no assistant or MCP
+tool can.
 
 ## Sign in with ChatGPT (local apps)
 

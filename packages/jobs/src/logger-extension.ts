@@ -31,7 +31,11 @@ export interface JobProgressInput {
 }
 
 export interface JobExecutionContext {
-  job: JobContext & { tenantId?: string | null };
+  /**
+   * `handler` is set only for a job that targets a registered named handler
+   * (#5005); it is absent for a model-method job.
+   */
+  job: JobContext & { tenantId?: string | null; handler?: string };
   logger: Logger;
   /**
    * Cooperative cancellation signal. Aborts when the job row is observed as

@@ -99,6 +99,12 @@ import {
   type DuckDbRebuildPlan,
   planDuckDbTableChanges,
 } from './duckdb-rebuild.js';
+import { resolveRetirementContext } from './retire-context.js';
+import {
+  planTableRetirements,
+  type RetireTableConfirmations,
+  retireTypeEquivalence,
+} from './retire-plan.js';
 import {
   planSqliteTableRebuildsWithConstraints,
   sqliteBackfillPlaceholderSql,
@@ -331,6 +337,30 @@ export interface DiffOptions {
    * the original sequential behavior — on every other engine.
    */
   introspectionConcurrency?: number;
+  /**
+   * Plan declared table retirements (#5005): a whole-schema run sets it. The
+   * comparer resolves what is retired and what still declares each table
+   * itself (the build's or the registry's declarations, every registered
+   * model, the compared schemas, stored run-time models and smrt's own
+   * tables), so a caller cannot hand it a list or leave a declarer out.
+   * Without it nothing is retired: only a declared table is ever dropped.
+   */
+  retireDeclaredTables?: boolean;
+  /**
+   * @internal The retire step's own definition comparison (#5005) sets it,
+   * nothing else: types are normalized with {@link retireTypeEquivalence}
+   * as well, so a live SQLite column declared `INT4` matches a retired
+   * definition's INTEGER. The ordinary migrate never sets it.
+   */
+  retireComparison?: boolean;
+  /**
+   * Retire these declared tables although the live table is not the one any
+   * release their declaration lists describes (#5005): exact names, and how
+   * they were confirmed (`--confirm-retire-table` or `confirmRetireTables`).
+   * Lifts only the `table.retire-mismatch` stop; rows, dependents,
+   * declarations, owners and the JSON adapter still stop.
+   */
+  confirmRetireTables?: RetireTableConfirmations;
 }
 
 /**
@@ -925,6 +955,37 @@ export class SchemaComparer {
       if (this.options.includeDroppedTables && orphanTables.length > 0) {
         diff.dropped_tables.push(...orphanTables);
         diff.has_changes = true;
+      }
+
+      // Declared retirements (#5005). Planned last so a drop follows every
+      // other change of the run, and never read from the orphan list above.
+      const retirement = this.options.retireDeclaredTables
+        ? resolveRetirementContext(manifestSchemas)
+        : undefined;
+      if (retirement?.retired.length) {
+        const retirements = await planTableRetirements({
+          ...retirement,
+          db: this.db,
+          engine: this.engine,
+          liveTables: existingTables,
+          confirmRetireTables: this.options.confirmRetireTables,
+          // A fresh comparer: this run's per-table state stays its own. It
+          // compares with the run's opt-ins, so a column the ordinary
+          // migrate would convert counts as a match (#5005 M1, M2).
+          compareDefinition: (table, schema) =>
+            new SchemaComparer(this.db, {
+              engineHint: this.engine,
+              retireComparison: true,
+              postgresTimestampMigration:
+                this.options.postgresTimestampMigration,
+              emptyTextAsNull: this.options.emptyTextAsNull,
+              relaxColumns: this.options.relaxColumns,
+            }).compareTable(table, schema, { [table]: schema }),
+        });
+        if (retirements.length > 0) {
+          diff.changes.push(...retirements);
+          diff.has_changes = true;
+        }
       }
 
       return diff;
@@ -6604,6 +6665,12 @@ export class SchemaComparer {
       .toUpperCase()
       .trim()
       .replace(/\(\s*\d+\s*\)/g, '');
+
+    // The retire step's comparison only, never the ordinary migrate (#5005).
+    const retireEquivalent = this.options.retireComparison
+      ? retireTypeEquivalence(this.engine, upper)
+      : undefined;
+    if (retireEquivalent) return retireEquivalent;
 
     // Integer types
     if (/^(INTEGER|INT|BIGINT|SMALLINT|TINYINT)$/i.test(upper)) {

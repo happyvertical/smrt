@@ -1,4 +1,5 @@
 /** Registry fixture isolation, without a test-runner runtime dependency. */
+import { snapshotRegisteredRetiredTables } from '../migrations/retired-tables.js';
 import { snapshotGeneratedClassState } from '../registry/generated-state.js';
 import { getLegacyFieldDecorators } from '../registry/shared-state.js';
 import { ObjectRegistry } from '../registry.js';
@@ -60,6 +61,7 @@ function getRegistryForTests(): RegistryTestSurface {
  */
 export function snapshotObjectRegistryState(): () => void {
   const restoreGenerated = snapshotGeneratedClassState();
+  const restoreRetired = snapshotRegisteredRetiredTables();
   const legacyFields = new Map(
     Array.from(getLegacyFieldDecorators(), ([key, fields]) => [
       key,
@@ -119,5 +121,6 @@ export function snapshotObjectRegistryState(): () => void {
     registry.nextDbId = snapshot.nextDbId;
     ObjectRegistry.invalidateAllInheritanceCaches();
     restoreGenerated();
+    restoreRetired();
   };
 }

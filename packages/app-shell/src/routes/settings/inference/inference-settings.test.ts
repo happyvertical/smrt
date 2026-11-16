@@ -19,7 +19,10 @@ import {
   assistantStatus,
   resolveAssistantOptions,
 } from '$lib/server/assistant/config';
-import { createAiModelFactory } from '$lib/server/assistant/model';
+import {
+  createAiModelFactory,
+  isTrackedAssistantModel,
+} from '$lib/server/assistant/model';
 import { installShellInference, shellInference } from '$lib/server/inference';
 import {
   openShell,
@@ -116,15 +119,14 @@ describe('Inference settings for the shell owner', () => {
       configured: true,
     });
 
-    // The production factory builds its client from those options.
+    // The production factory builds a tracked model over those options (#5005):
+    // the client is built, by core's tracked client, when a call is made.
     const chat = vi.fn(async () => ({ content: 'hi there', toolCalls: [] }));
-    getAI.mockResolvedValue({ chat });
+    getAI.mockResolvedValue({ chat, embed: () => {} });
     const model = await createAiModelFactory({ env: {} })({
       principal: h.owner,
     });
-    expect(getAI).toHaveBeenCalledWith(
-      expect.objectContaining({ apiKey: API_KEY }),
-    );
+    expect(isTrackedAssistantModel(model)).toBe(true);
     const reply = await model.complete({
       messages: [],
       tools: [],
@@ -132,6 +134,9 @@ describe('Inference settings for the shell owner', () => {
       signal: new AbortController().signal,
       onText: () => {},
     });
+    expect(getAI).toHaveBeenCalledWith(
+      expect.objectContaining({ apiKey: API_KEY }),
+    );
     expect(reply.text).toBe('hi there');
   });
 

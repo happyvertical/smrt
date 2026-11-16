@@ -1,10 +1,10 @@
 /**
- * Prompt-run observability over `_smrt_ai_usage` (#4751): outcome labels and
+ * Prompt-run observability over `_smrt_ai_usage` (#4751): evaluations and
  * the grouped usage report behind `smrt ai:usage`.
  *
- * Outcome labels exist because a run cannot rate itself: whether an answer
- * was any good is known later, by a person or a downstream check, and is
- * recorded then against the usage row or run it judges.
+ * Evaluations exist because a run cannot rate itself: whether an answer
+ * was any good is known later, by a person, the app or a grader, and is
+ * recorded then against the call or run it judges.
  *
  * The report follows one accounting rule: a filter selects what is totalled,
  * never what is accounted for. Rows without a prompt key are reported as
@@ -63,7 +63,7 @@ function parseTags(value: unknown): Record<string, unknown> | undefined {
 function requireText(value: unknown, name: string): string {
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new TypeError(
-      `recordAiUsageOutcome: ${name} must be a non-empty string`,
+      `recordAiEvaluation: ${name} must be a non-empty string`,
     );
   }
   return value;
@@ -75,130 +75,133 @@ function optionalId(value: unknown, name: string): string | null {
 }
 
 // ============================================================================
-// Outcome labels
+// Evaluations
 // ============================================================================
 
-/** Input for {@link recordAiUsageOutcome}. */
-export interface AiUsageOutcomeInput {
-  /** The `_smrt_ai_usage.id` this label judges. */
-  usageId?: string | null;
-  /** The run (`_smrt_ai_usage.run_id`) this label judges as a whole. */
-  runId?: string | null;
-  /**
-   * The call (`_smrt_ai_usage.call_id`, the transcript's `call_id`; #4780)
-   * this label judges: every usage row and the transcript of that call.
-   */
+/** The types an evaluation's `value` can have. */
+export const AI_EVALUATION_VALUE_TYPES = ['number', 'boolean', 'text'] as const;
+
+export type AiEvaluationValueType = (typeof AI_EVALUATION_VALUE_TYPES)[number];
+
+/** A recorded evaluation's value, read back through its `value_type`. */
+export type AiEvaluationValue = number | boolean | string;
+
+/** The metric an evaluation has when none is named. */
+export const AI_EVALUATION_DEFAULT_METRIC = 'outcome';
+
+/**
+ * Who made an evaluation: `human`, `app`, or an automated grader written
+ * `grader:<name>@<version>`, for example `grader:faithfulness@2`.
+ */
+const EVALUATOR_PATTERN = /^(?:human|app|grader:[^@\s]+@\S+)$/;
+
+/** Input for {@link recordAiEvaluation}. */
+export interface AiEvaluationInput {
+  /** The call (`_smrt_ai_usage.id`, its call id) this evaluation judges. */
   callId?: string | null;
+  /** The run (`_smrt_ai_usage.run_id`) this evaluation judges as a whole. */
+  runId?: string | null;
+  /** What was measured. Defaults to `outcome`. */
+  metric?: string;
+  /**
+   * The measure. A number, boolean or string; `valueType` defaults to the
+   * type of the value (`number` when there is none).
+   */
+  value?: AiEvaluationValue | null;
+  valueType?: AiEvaluationValueType;
+  /** The scale a number is read on, for example `0..1`. */
+  scale?: string | null;
   /** The verdict, e.g. `accepted`, `rejected`, `edited`. Free text. */
-  label: string;
-  /** Optional numeric score; any finite number, the scale is the caller's. */
-  score?: number | null;
+  label?: string | null;
   /** Optional evidence; objects and arrays are stored as JSON text. */
   evidence?: string | Record<string, unknown> | unknown[] | null;
-  /** Who recorded the label: a user id, service or check name. */
-  actor: string;
+  /** `human`, `app` or `grader:<name>@<version>`. */
+  evaluator: string;
   /**
    * Tenant of the judged usage. Omit it to take the tenant of the usage row
-   * or run; when given it must match, or the label is refused.
+   * or run; when given it must match, or the evaluation is refused.
    */
   tenantId?: string | null;
   /** Defaults to now. */
   createdAt?: Date;
 }
 
-/** One persisted `_smrt_ai_usage_outcomes` row. */
-export interface AiUsageOutcomeRecord {
+/** One persisted `_smrt_ai_evaluations` row. */
+export interface AiEvaluationRecord {
   id: string;
-  usageId: string | null;
-  runId: string | null;
   callId: string | null;
-  label: string;
-  score: number | null;
+  runId: string | null;
+  metric: string;
+  value: AiEvaluationValue | null;
+  valueType: AiEvaluationValueType;
+  scale: string | null;
+  label: string | null;
   evidence: string | null;
-  actor: string;
+  evaluator: string;
   tenantId: string | null;
   createdAt: Date;
 }
 
-/** Thrown when an outcome label names usage that does not exist or belongs elsewhere. */
-export class AiUsageOutcomeTargetError extends Error {
+/** Thrown when an evaluation names usage that does not exist or belongs elsewhere. */
+export class AiEvaluationTargetError extends Error {
   readonly code:
-    | 'AI_USAGE_OUTCOME_UNKNOWN_TARGET'
-    | 'AI_USAGE_OUTCOME_TENANT_MISMATCH';
+    | 'AI_EVALUATION_UNKNOWN_TARGET'
+    | 'AI_EVALUATION_TENANT_MISMATCH';
 
-  constructor(code: AiUsageOutcomeTargetError['code'], message: string) {
+  constructor(code: AiEvaluationTargetError['code'], message: string) {
     super(message);
-    this.name = 'AiUsageOutcomeTargetError';
+    this.name = 'AiEvaluationTargetError';
     this.code = code;
   }
 }
 
 /**
- * Tenants owning the usage a label targets. `undefined` in the set stands for
- * nothing found.
+ * Tenants owning the usage an evaluation targets. Throws when nothing is
+ * found.
  */
 async function targetTenants(
   db: DatabaseInterface,
-  usageId: string | null,
-  runId: string | null,
   callId: string | null,
+  runId: string | null,
 ): Promise<Set<string | null>> {
   const tenants = new Set<string | null>();
-  if (usageId) {
+  if (callId) {
     const rows = getRows(
       await db.query(
         'SELECT tenant_id FROM _smrt_ai_usage WHERE id = $1',
-        usageId,
+        callId,
       ),
     );
     if (rows.length === 0) {
-      throw new AiUsageOutcomeTargetError(
-        'AI_USAGE_OUTCOME_UNKNOWN_TARGET',
-        `recordAiUsageOutcome: no _smrt_ai_usage row has id "${usageId}"`,
+      throw new AiEvaluationTargetError(
+        'AI_EVALUATION_UNKNOWN_TARGET',
+        `recordAiEvaluation: no _smrt_ai_usage row has id "${callId}"`,
       );
     }
     for (const row of rows) tenants.add(nullableString(row.tenant_id));
   }
   if (runId) {
-    const rows = getRows(
+    // The run row names its tenant; a run whose usage rows were pruned, or
+    // that made no call yet, is judged by it. Without a row, its usage rows.
+    const run = getRows(
       await db.query(
-        'SELECT DISTINCT tenant_id FROM _smrt_ai_usage WHERE run_id = $1',
+        'SELECT tenant_id FROM _smrt_ai_runs WHERE id = $1',
         runId,
       ),
     );
+    const rows =
+      run.length > 0
+        ? run
+        : getRows(
+            await db.query(
+              'SELECT DISTINCT tenant_id FROM _smrt_ai_usage WHERE run_id = $1',
+              runId,
+            ),
+          );
     if (rows.length === 0) {
-      throw new AiUsageOutcomeTargetError(
-        'AI_USAGE_OUTCOME_UNKNOWN_TARGET',
-        `recordAiUsageOutcome: no _smrt_ai_usage row has run_id "${runId}"`,
-      );
-    }
-    for (const row of rows) tenants.add(nullableString(row.tenant_id));
-  }
-  if (callId) {
-    let rows = getRows(
-      await db.query(
-        'SELECT DISTINCT tenant_id FROM _smrt_ai_usage WHERE call_id = $1',
-        callId,
-      ),
-    );
-    if (rows.length === 0) {
-      // Usage persistence may be off while transcripts are on (#4780): the
-      // transcript row then names the call's tenant.
-      try {
-        rows = getRows(
-          await db.query(
-            'SELECT DISTINCT tenant_id FROM _smrt_ai_transcripts WHERE call_id = $1',
-            callId,
-          ),
-        );
-      } catch {
-        rows = [];
-      }
-    }
-    if (rows.length === 0) {
-      throw new AiUsageOutcomeTargetError(
-        'AI_USAGE_OUTCOME_UNKNOWN_TARGET',
-        `recordAiUsageOutcome: no _smrt_ai_usage or _smrt_ai_transcripts row has call_id "${callId}"`,
+      throw new AiEvaluationTargetError(
+        'AI_EVALUATION_UNKNOWN_TARGET',
+        `recordAiEvaluation: no _smrt_ai_runs or _smrt_ai_usage row has run_id "${runId}"`,
       );
     }
     for (const row of rows) tenants.add(nullableString(row.tenant_id));
@@ -206,35 +209,87 @@ async function targetTenants(
   return tenants;
 }
 
+function valueTypeOf(value: AiEvaluationValue | null): AiEvaluationValueType {
+  if (typeof value === 'boolean') return 'boolean';
+  if (typeof value === 'string') return 'text';
+  return 'number';
+}
+
+function storedValue(
+  value: AiEvaluationValue | null,
+  valueType: AiEvaluationValueType,
+): string | null {
+  if (value === null) return null;
+  if (valueType === 'number') {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      throw new TypeError('recordAiEvaluation: a number value must be finite');
+    }
+  } else if (valueType === 'boolean') {
+    if (typeof value !== 'boolean') {
+      throw new TypeError(
+        'recordAiEvaluation: a boolean value must be boolean',
+      );
+    }
+  } else if (typeof value !== 'string') {
+    throw new TypeError('recordAiEvaluation: a text value must be a string');
+  }
+  return String(value);
+}
+
+function readValue(
+  stored: unknown,
+  valueType: AiEvaluationValueType,
+): AiEvaluationValue | null {
+  if (stored === null || stored === undefined) return null;
+  if (valueType === 'number') return nullableNumber(stored);
+  if (valueType === 'boolean') return String(stored) === 'true';
+  return String(stored);
+}
+
 /**
- * Record an outcome label against one usage row, one run, one call (#4780),
- * or a combination.
+ * Record an evaluation against exactly one call or exactly one run.
  *
- * The target must exist in `_smrt_ai_usage` and the label inherits (or must
- * match) its tenant, so a label can never attach one tenant's verdict to
- * another tenant's usage. A run whose rows span tenants needs an explicit
- * `tenantId` that every row shares, which in practice means it is refused.
+ * The target must exist in `_smrt_ai_usage` and the evaluation inherits (or
+ * must match) its tenant, so an evaluation can never attach one tenant's
+ * verdict to another tenant's usage. A run whose rows span tenants needs an
+ * explicit `tenantId` that every row shares, which in practice means it is
+ * refused.
  */
-export async function recordAiUsageOutcome(
+export async function recordAiEvaluation(
   db: DatabaseInterface,
-  input: AiUsageOutcomeInput,
-): Promise<AiUsageOutcomeRecord> {
-  const usageId = optionalId(input.usageId, 'usageId');
-  const runId = optionalId(input.runId, 'runId');
+  input: AiEvaluationInput,
+): Promise<AiEvaluationRecord> {
   const callId = optionalId(input.callId, 'callId');
-  if (!usageId && !runId && !callId) {
+  const runId = optionalId(input.runId, 'runId');
+  if ((callId === null) === (runId === null)) {
     throw new TypeError(
-      'recordAiUsageOutcome: usageId, runId or callId is required',
+      'recordAiEvaluation: exactly one of callId or runId is required',
     );
   }
-  const label = requireText(input.label, 'label').trim();
-  const actor = requireText(input.actor, 'actor');
-  const score = input.score ?? null;
-  if (
-    score !== null &&
-    (typeof score !== 'number' || !Number.isFinite(score))
-  ) {
-    throw new TypeError('recordAiUsageOutcome: score must be a finite number');
+  const metric = requireText(
+    input.metric ?? AI_EVALUATION_DEFAULT_METRIC,
+    'metric',
+  ).trim();
+  const label =
+    input.label === undefined || input.label === null
+      ? null
+      : requireText(input.label, 'label').trim();
+  const value = input.value ?? null;
+  if (label === null && value === null) {
+    throw new TypeError('recordAiEvaluation: a label or a value is required');
+  }
+  const valueType = input.valueType ?? valueTypeOf(value);
+  if (!AI_EVALUATION_VALUE_TYPES.includes(valueType)) {
+    throw new TypeError(
+      `recordAiEvaluation: valueType must be one of ${AI_EVALUATION_VALUE_TYPES.join(', ')}`,
+    );
+  }
+  const stored = storedValue(value, valueType);
+  const evaluator = requireText(input.evaluator, 'evaluator');
+  if (!EVALUATOR_PATTERN.test(evaluator)) {
+    throw new TypeError(
+      'recordAiEvaluation: evaluator must be human, app or grader:<name>@<version>',
+    );
   }
   const evidence =
     input.evidence === undefined || input.evidence === null
@@ -243,51 +298,56 @@ export async function recordAiUsageOutcome(
         ? input.evidence
         : JSON.stringify(input.evidence);
 
-  const tenants = await targetTenants(db, usageId, runId, callId);
+  const tenants = await targetTenants(db, callId, runId);
   let tenantId: string | null;
   if (input.tenantId !== undefined) {
     tenantId = input.tenantId;
     if (tenants.size !== 1 || !tenants.has(tenantId)) {
-      throw new AiUsageOutcomeTargetError(
-        'AI_USAGE_OUTCOME_TENANT_MISMATCH',
-        'recordAiUsageOutcome: the target usage does not belong to the given tenant',
+      throw new AiEvaluationTargetError(
+        'AI_EVALUATION_TENANT_MISMATCH',
+        'recordAiEvaluation: the target usage does not belong to the given tenant',
       );
     }
   } else {
     if (tenants.size !== 1) {
-      throw new AiUsageOutcomeTargetError(
-        'AI_USAGE_OUTCOME_TENANT_MISMATCH',
-        'recordAiUsageOutcome: the target usage spans tenants; pass tenantId',
+      throw new AiEvaluationTargetError(
+        'AI_EVALUATION_TENANT_MISMATCH',
+        'recordAiEvaluation: the target usage spans tenants; pass tenantId',
       );
     }
     tenantId = [...tenants][0] ?? null;
   }
 
-  const record: AiUsageOutcomeRecord = {
+  const record: AiEvaluationRecord = {
     id: crypto.randomUUID(),
-    usageId,
-    runId,
     callId,
+    runId,
+    metric,
+    value,
+    valueType,
+    scale: input.scale ?? null,
     label,
-    score,
     evidence,
-    actor,
+    evaluator,
     tenantId,
     createdAt: input.createdAt ?? new Date(),
   };
 
   await db.query(
-    `INSERT INTO _smrt_ai_usage_outcomes
-      (id, usage_id, run_id, call_id, label, score, evidence, actor, tenant_id, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    `INSERT INTO _smrt_ai_evaluations
+      (id, call_id, run_id, metric, value, value_type, scale, label, evidence,
+       evaluator, tenant_id, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
     record.id,
-    record.usageId,
-    record.runId,
     record.callId,
+    record.runId,
+    record.metric,
+    stored,
+    record.valueType,
+    record.scale,
     record.label,
-    record.score,
     record.evidence,
-    record.actor,
+    record.evaluator,
     record.tenantId,
     record.createdAt.toISOString(),
   );
@@ -295,13 +355,13 @@ export async function recordAiUsageOutcome(
   return record;
 }
 
-/** Filters for {@link listAiUsageOutcomes}. */
-export interface AiUsageOutcomeListOptions {
-  usageId?: string;
-  runId?: string;
+/** Filters for {@link listAiEvaluations}. */
+export interface AiEvaluationListOptions {
   callId?: string;
+  runId?: string;
+  metric?: string;
   label?: string;
-  /** `null` selects global (tenant-less) labels; omit for every tenant. */
+  /** `null` selects global (tenant-less) evaluations; omit for every tenant. */
   tenantId?: string | null;
   since?: Date;
   until?: Date;
@@ -309,8 +369,8 @@ export interface AiUsageOutcomeListOptions {
   limit?: number;
 }
 
-/** The usage columns an outcome read returns beside each label. */
-export interface AiUsageOutcomeUsageRow {
+/** The usage columns an evaluation read returns beside each evaluation. */
+export interface AiEvaluationUsageRow {
   id: string;
   provider: string;
   model: string;
@@ -321,38 +381,68 @@ export interface AiUsageOutcomeUsageRow {
   tierRequested: string | null;
   tierResolved: string | null;
   runId: string | null;
+  /** The call's id; equal to `id`. */
   callId: string | null;
+  /** The entry call the call belongs to (a transcript's `callId`). */
+  entryCallId: string | null;
   totalTokens: number | null;
   estimatedCost: number | null;
   duration: number;
   createdAt: Date;
 }
 
-/** An outcome label with the usage rows it judges. */
-export interface AiUsageOutcomeWithUsage extends AiUsageOutcomeRecord {
-  /**
-   * The judged rows: the `usage_id` row and/or every row of `run_id` or
-   * `call_id`, oldest first. Empty once retention has pruned them; the label itself survives.
-   */
-  usage: AiUsageOutcomeUsageRow[];
+/** The run an evaluation judges, as an evaluation read shows it. */
+export interface AiEvaluationRunTarget {
+  kind: 'run';
+  id: string;
+  type: string;
+  definitionKey: string | null;
+  status: string;
+  promptKey: string | null;
+  templateHash: string | null;
 }
 
-function hydrateOutcome(row: Record<string, unknown>): AiUsageOutcomeRecord {
+/** The call an evaluation judges: its usage row. */
+export interface AiEvaluationCallTarget {
+  kind: 'call';
+  usage: AiEvaluationUsageRow;
+}
+
+/** An evaluation with the usage rows it judges. */
+export interface AiEvaluationWithUsage extends AiEvaluationRecord {
+  /**
+   * The judged rows: the `call_id` row and/or every row of `run_id`, oldest
+   * first. Empty once retention has pruned them; the evaluation itself
+   * survives.
+   */
+  usage: AiEvaluationUsageRow[];
+  /**
+   * What it judges: the call's usage row or the run's row. NULL (never an
+   * error) once that row was pruned: evaluations are never swept and keep
+   * an id that no longer resolves (page section 8).
+   */
+  target: AiEvaluationCallTarget | AiEvaluationRunTarget | null;
+}
+
+function hydrateEvaluation(row: Record<string, unknown>): AiEvaluationRecord {
+  const valueType = String(row.value_type) as AiEvaluationValueType;
   return {
     id: String(row.id),
-    usageId: nullableString(row.usage_id),
-    runId: nullableString(row.run_id),
     callId: nullableString(row.call_id),
-    label: String(row.label),
-    score: nullableNumber(row.score),
+    runId: nullableString(row.run_id),
+    metric: String(row.metric),
+    value: readValue(row.value, valueType),
+    valueType,
+    scale: nullableString(row.scale),
+    label: nullableString(row.label),
     evidence: nullableString(row.evidence),
-    actor: String(row.actor),
+    evaluator: String(row.evaluator),
     tenantId: nullableString(row.tenant_id),
     createdAt: toDate(row.created_at),
   };
 }
 
-function hydrateUsageRow(row: Record<string, unknown>): AiUsageOutcomeUsageRow {
+function hydrateUsageRow(row: Record<string, unknown>): AiEvaluationUsageRow {
   return {
     id: String(row.id),
     provider: String(row.provider),
@@ -365,6 +455,7 @@ function hydrateUsageRow(row: Record<string, unknown>): AiUsageOutcomeUsageRow {
     tierResolved: nullableString(row.tier_resolved),
     runId: nullableString(row.run_id),
     callId: nullableString(row.call_id),
+    entryCallId: nullableString(row.entry_call_id),
     totalTokens:
       row.total_tokens === null || row.total_tokens === undefined
         ? null
@@ -376,24 +467,24 @@ function hydrateUsageRow(row: Record<string, unknown>): AiUsageOutcomeUsageRow {
 }
 
 /**
- * Read outcome labels, newest first, each joined to the usage rows it judges.
+ * Read evaluations, newest first, each joined to the usage rows it judges.
  */
-export async function listAiUsageOutcomes(
+export async function listAiEvaluations(
   db: DatabaseInterface,
-  options: AiUsageOutcomeListOptions = {},
-): Promise<AiUsageOutcomeWithUsage[]> {
+  options: AiEvaluationListOptions = {},
+): Promise<AiEvaluationWithUsage[]> {
   const conditions: string[] = [];
   const params: unknown[] = [];
   const add = (sql: string, value: unknown) => {
     params.push(value);
     conditions.push(sql.replace('?', `$${params.length}`));
   };
-  if (options.usageId) add('usage_id = ?', options.usageId);
-  if (options.runId) add('run_id = ?', options.runId);
   if (options.callId) add('call_id = ?', options.callId);
+  if (options.runId) add('run_id = ?', options.runId);
+  if (options.metric) add('metric = ?', options.metric);
   if (options.label) add('label = ?', options.label);
   // Every supplied string filters, '' included: a falsy check would drop the
-  // predicate and return every tenant's labels.
+  // predicate and return every tenant's evaluations.
   if (options.tenantId === null) conditions.push('tenant_id IS NULL');
   else if (options.tenantId !== undefined) {
     add('tenant_id = ?', options.tenantId);
@@ -402,27 +493,25 @@ export async function listAiUsageOutcomes(
   if (options.until) add('created_at <= ?', options.until.toISOString());
   params.push(options.limit ?? 100);
 
-  const outcomes = getRows(
+  const evaluations = getRows(
     await db.query(
-      `SELECT id, usage_id, run_id, call_id, label, score, evidence, actor, tenant_id, created_at
-         FROM _smrt_ai_usage_outcomes
+      `SELECT id, call_id, run_id, metric, value, value_type, scale, label,
+              evidence, evaluator, tenant_id, created_at
+         FROM _smrt_ai_evaluations
         ${conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''}
         ORDER BY created_at DESC, id DESC
         LIMIT $${params.length}`,
       ...params,
     ),
-  ).map(hydrateOutcome);
+  ).map(hydrateEvaluation);
 
-  if (outcomes.length === 0) return [];
+  if (evaluations.length === 0) return [];
 
-  const usageIds = [
-    ...new Set(outcomes.flatMap((o) => (o.usageId ? [o.usageId] : []))),
+  const callIds = [
+    ...new Set(evaluations.flatMap((o) => (o.callId ? [o.callId] : []))),
   ];
   const runIds = [
-    ...new Set(outcomes.flatMap((o) => (o.runId ? [o.runId] : []))),
-  ];
-  const callIds = [
-    ...new Set(outcomes.flatMap((o) => (o.callId ? [o.callId] : []))),
+    ...new Set(evaluations.flatMap((o) => (o.runId ? [o.runId] : []))),
   ];
   const usageParams: unknown[] = [];
   const placeholders = (values: string[]) =>
@@ -433,17 +522,14 @@ export async function listAiUsageOutcomes(
       })
       .join(', ');
   const predicates: string[] = [];
-  if (usageIds.length > 0) predicates.push(`id IN (${placeholders(usageIds)})`);
+  if (callIds.length > 0) predicates.push(`id IN (${placeholders(callIds)})`);
   if (runIds.length > 0) predicates.push(`run_id IN (${placeholders(runIds)})`);
-  if (callIds.length > 0) {
-    predicates.push(`call_id IN (${placeholders(callIds)})`);
-  }
 
   const usageRows = getRows(
     await db.query(
       `SELECT id, provider, model, operation, class_name, tenant_id, prompt_key,
-              tier_requested, tier_resolved, run_id, call_id, total_tokens,
-              estimated_cost, duration, created_at
+              tier_requested, tier_resolved, run_id, call_id, entry_call_id,
+              total_tokens, estimated_cost, duration, created_at
          FROM _smrt_ai_usage
         WHERE ${predicates.join(' OR ')}
         ORDER BY created_at ASC, id ASC`,
@@ -451,17 +537,54 @@ export async function listAiUsageOutcomes(
     ),
   ).map(hydrateUsageRow);
 
-  return outcomes.map((outcome) => ({
-    ...outcome,
-    usage: usageRows.filter(
+  const runTargets = new Map<
+    string,
+    AiEvaluationRunTarget & { tenantId: string | null }
+  >();
+  if (runIds.length > 0) {
+    const marks = runIds.map((_, i) => `$${i + 1}`).join(', ');
+    for (const row of getRows(
+      await db.query(
+        `SELECT id, type, definition_key, status, prompt_key, template_hash,
+                tenant_id
+           FROM _smrt_ai_runs WHERE id IN (${marks})`,
+        ...runIds,
+      ),
+    )) {
+      runTargets.set(String(row.id), {
+        kind: 'run',
+        id: String(row.id),
+        type: String(row.type),
+        definitionKey: nullableString(row.definition_key),
+        status: String(row.status),
+        promptKey: nullableString(row.prompt_key),
+        templateHash: nullableString(row.template_hash),
+        tenantId: nullableString(row.tenant_id),
+      });
+    }
+  }
+
+  return evaluations.map((evaluation) => {
+    const usage = usageRows.filter(
       (row) =>
-        // A label never joins usage of another tenant.
-        row.tenantId === outcome.tenantId &&
-        ((outcome.usageId !== null && row.id === outcome.usageId) ||
-          (outcome.runId !== null && row.runId === outcome.runId) ||
-          (outcome.callId !== null && row.callId === outcome.callId)),
-    ),
-  }));
+        // An evaluation never joins usage of another tenant.
+        row.tenantId === evaluation.tenantId &&
+        ((evaluation.callId !== null && row.id === evaluation.callId) ||
+          (evaluation.runId !== null && row.runId === evaluation.runId)),
+    );
+    let target: AiEvaluationWithUsage['target'] = null;
+    if (evaluation.callId !== null) {
+      const call = usage.find((row) => row.id === evaluation.callId);
+      if (call) target = { kind: 'call', usage: call };
+    } else if (evaluation.runId !== null) {
+      const run = runTargets.get(evaluation.runId);
+      if (run && run.tenantId === evaluation.tenantId) {
+        const { tenantId: _tenant, ...shown } = run;
+        target = shown;
+      }
+    }
+    return { ...evaluation, usage, target };
+  });
 }
 
 // ============================================================================
@@ -515,8 +638,8 @@ export interface AiUsageReportStats {
   p50DurationMs: number | null;
   /** Calls whose `substitutions` tag records at least one fallback (#4752). */
   substitutions: number;
-  /** Outcome labels per label name. */
-  outcomes: Record<string, number>;
+  /** Evaluation labels per label name. */
+  evaluations: Record<string, number>;
   /**
    * Calls the hosted gate refused (#4760): zero-usage rows with
    * `operation: 'blocked'`. Counted here, beside `calls`, never in it: a
@@ -588,7 +711,7 @@ function emptyAccumulator(transcripts = false): StatsAccumulator {
       substitutions: 0,
       // Null prototype: labels are free text, and `constructor` or
       // `__proto__` must count like any other label.
-      outcomes: Object.create(null) as Record<string, number>,
+      evaluations: Object.create(null) as Record<string, number>,
       blocked: 0,
       ...(transcripts ? { transcripts: 0 } : {}),
     },
@@ -598,9 +721,12 @@ function emptyAccumulator(transcripts = false): StatsAccumulator {
   };
 }
 
-function countOutcome(outcomes: Record<string, number>, label: string): void {
-  outcomes[label] =
-    (Object.hasOwn(outcomes, label) ? (outcomes[label] ?? 0) : 0) + 1;
+function countEvaluation(
+  evaluations: Record<string, number>,
+  label: string,
+): void {
+  evaluations[label] =
+    (Object.hasOwn(evaluations, label) ? (evaluations[label] ?? 0) : 0) + 1;
 }
 
 function lowerMedian(values: number[]): number | null {
@@ -666,9 +792,10 @@ const REPORT_PAGE_SIZE = 1000;
 
 /**
  * The `(tenant, call id)` keys of a page's calls that have a stored
- * transcript (#4781). Reads ids only, never content, and only rows of the
- * report's tenant filter; a transcript counts only for usage rows of its own
- * tenant (the caller compares the keys).
+ * transcript (#4781), found through the usage rows' entry call id. Reads ids
+ * only, never content, and only rows of the report's tenant filter; a
+ * transcript counts only for usage rows of its own tenant (the caller
+ * compares the keys).
  */
 async function transcribedCalls(
   db: DatabaseInterface,
@@ -679,7 +806,7 @@ async function transcribedCalls(
   const callIds = [
     ...new Set(
       page
-        .map((row) => nullableString(row.call_id))
+        .map((row) => nullableString(row.entry_call_id))
         .filter((id): id is string => id !== null),
     ),
   ];
@@ -745,17 +872,16 @@ export async function reportAiUsage(
   const tenantMatches = (tenant: string | null) =>
     !tenantFiltered || tenant === options.tenantId;
 
-  // Outcome labels in scope, indexed by (tenant, target) so a label only ever
-  // counts on rows of its own tenant, the rule listAiUsageOutcomes() applies:
-  // a run id is a free-form tag another tenant can reuse after the label was
-  // recorded. Labels are far fewer than usage rows.
+  // Evaluation labels in scope, indexed by (tenant, target) so a label only
+  // ever counts on rows of its own tenant, the rule listAiEvaluations()
+  // applies: a run id is a free-form tag another tenant can reuse after the
+  // evaluation was recorded. Evaluations are far fewer than usage rows.
   const targetKey = (tenant: string | null, id: string) =>
     JSON.stringify([tenant, id]);
-  const outcomesByUsage = new Map<string, string[]>();
-  const outcomesByRun = new Map<string, string[]>();
-  const outcomesByCall = new Map<string, string[]>();
+  const evaluationsByCall = new Map<string, string[]>();
+  const evaluationsByRun = new Map<string, string[]>();
   {
-    const conditions: string[] = [];
+    const conditions: string[] = ['label IS NOT NULL'];
     const params: unknown[] = [];
     if (options.tenantId === null) conditions.push('tenant_id IS NULL');
     else if (options.tenantId !== undefined) {
@@ -764,26 +890,22 @@ export async function reportAiUsage(
     }
     const rows = getRows(
       await db.query(
-        `SELECT usage_id, run_id, call_id, label, tenant_id FROM _smrt_ai_usage_outcomes
-          ${conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''}`,
+        `SELECT call_id, run_id, label, tenant_id FROM _smrt_ai_evaluations
+          WHERE ${conditions.join(' AND ')}`,
         ...params,
       ),
     );
     for (const row of rows) {
       const label = String(row.label);
       const tenant = nullableString(row.tenant_id);
-      const usageId = nullableString(row.usage_id);
-      const runId = nullableString(row.run_id);
       const callId = nullableString(row.call_id);
-      // A label naming several targets judges the narrowest: the usage row,
-      // else the run, else the call (#4780); the others are context.
-      const [map, key] = usageId
-        ? [outcomesByUsage, targetKey(tenant, usageId)]
+      const runId = nullableString(row.run_id);
+      // An evaluation judges one call or one run.
+      const [map, key] = callId
+        ? [evaluationsByCall, targetKey(tenant, callId)]
         : runId
-          ? [outcomesByRun, targetKey(tenant, runId)]
-          : callId
-            ? [outcomesByCall, targetKey(tenant, callId)]
-            : [null, ''];
+          ? [evaluationsByRun, targetKey(tenant, runId)]
+          : [null, ''];
       if (map) map.set(key, [...(map.get(key) ?? []), label]);
     }
   }
@@ -810,7 +932,7 @@ export async function reportAiUsage(
     const page = getRows(
       await db.query(
         `SELECT id, provider, model, operation, class_name, tenant_id, prompt_key,
-                tier_requested, tier_resolved, run_id, call_id, prompt_tokens,
+                tier_requested, tier_resolved, run_id, entry_call_id, prompt_tokens,
                 completion_tokens, total_tokens, estimated_cost, duration, tags
            FROM _smrt_ai_usage
           ${conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''}
@@ -861,13 +983,12 @@ export async function reportAiUsage(
       }
 
       const rowTenant = nullableString(row.tenant_id);
-      const usageLabels = outcomesByUsage.get(targetKey(rowTenant, id)) ?? [];
+      const callLabels = evaluationsByCall.get(targetKey(rowTenant, id)) ?? [];
       const runId = nullableString(row.run_id);
       const runKey = runId ? targetKey(rowTenant, runId) : null;
-      const runLabels = runKey ? (outcomesByRun.get(runKey) ?? []) : [];
-      const callId = nullableString(row.call_id);
-      const callKey = callId ? targetKey(rowTenant, callId) : null;
-      const callLabels = callKey ? (outcomesByCall.get(callKey) ?? []) : [];
+      const runLabels = runKey ? (evaluationsByRun.get(runKey) ?? []) : [];
+      const entryCallId = nullableString(row.entry_call_id);
+      const callKey = entryCallId ? targetKey(rowTenant, entryCallId) : null;
 
       for (const acc of [totals, bucket.acc]) {
         const stats = acc.stats;
@@ -892,24 +1013,16 @@ export async function reportAiUsage(
           acc.transcriptCalls.add(callKey);
           stats.transcripts = (stats.transcripts ?? 0) + 1;
         }
-        for (const label of usageLabels) countOutcome(stats.outcomes, label);
+        for (const label of callLabels)
+          countEvaluation(stats.evaluations, label);
         // A run label counts once per bucket containing the run, and once in
         // the totals, however many rows the run has.
         if (runKey && runLabels.length > 0) {
           const seenKey = `${acc === totals ? '*' : bucketId}\u0000${runKey}`;
           if (!runLabelsCounted.has(seenKey)) {
             runLabelsCounted.add(seenKey);
-            for (const label of runLabels) countOutcome(stats.outcomes, label);
-          }
-        }
-        // A call label (#4780) counts the same way: once per bucket holding
-        // the call, once in the totals.
-        if (callKey && callLabels.length > 0) {
-          const seenKey = `${acc === totals ? '*' : bucketId}\u0001${callKey}`;
-          if (!runLabelsCounted.has(seenKey)) {
-            runLabelsCounted.add(seenKey);
-            for (const label of callLabels) {
-              countOutcome(stats.outcomes, label);
+            for (const label of runLabels) {
+              countEvaluation(stats.evaluations, label);
             }
           }
         }

@@ -44,6 +44,7 @@
     "@happyvertical/smrt-chat": "workspace:*",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-prompts": "workspace:*",
     "@happyvertical/smrt-inference": "workspace:*",
     "@happyvertical/smrt-preferences": "workspace:*",
     "@happyvertical/smrt-profiles": "workspace:*",

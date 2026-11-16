@@ -26,6 +26,8 @@ export {
   INFERENCE_SETTINGS_TIERS,
   type InferenceAliasChange,
   type InferenceAliasView,
+  type InferenceAssistantSettingsChange,
+  type InferenceAssistantSettingsView,
   type InferenceCandidateView,
   type InferenceConnectionRequest,
   type InferenceDefaultsChange,

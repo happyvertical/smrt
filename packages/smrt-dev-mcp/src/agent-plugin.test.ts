@@ -85,6 +85,7 @@ describe('Agent Plugins 1.0.0 package layout', () => {
     expect(server.headers).toBeUndefined();
     expect(existsSync(join(packageRoot, '..', 'agent-skills'))).toBe(false);
     expect(skillDirectories).toEqual([
+      'smrt-ai-work',
       'smrt-catalog',
       'smrt-code-review',
       'smrt-contribute',

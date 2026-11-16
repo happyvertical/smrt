@@ -100,6 +100,7 @@ import {
   syncRevisionConflict,
   validateSyncRevision,
 } from './sync-tombstones';
+import type { AiRunContext } from './system/ai-run-calls';
 import {
   executeToolCall as executeToolCallInternal,
   type ToolCall,
@@ -620,6 +621,14 @@ export interface AiOperationOptions extends AITextCompletionOptions {
    * `ai.message()`.
    */
   transcript?: boolean;
+
+  /**
+   * The AI run this call belongs to (#5005), passed explicitly and never
+   * ambient: a call without it is not part of any run. The call reserves and
+   * settles under the run's budget. The tracked client strips it before the
+   * provider sees the call; it is never forwarded to `ai.message()`.
+   */
+  runContext?: AiRunContext;
 }
 
 /** See {@link AiOperationOptions.toolUse}. */

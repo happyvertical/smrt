@@ -79,6 +79,57 @@ export const SCHEMA_CHANGE_KINDS = {
     type: 'drop_table',
     engines: stop('loses-data', 'Dropping the table discards its stored rows.'),
   },
+  // Retiring a table (#5005). Only a table a package declares retired is ever
+  // dropped, and only in a whole-schema run: it relaxes and removes, so it is
+  // not additive. The three stops are named, never thrown.
+  'table.retire': {
+    type: 'retire_table',
+    engines: apply(
+      'Drop the table a package declares retired, with its rows, indexes and own triggers. It is declared in the owning package, no model declares it, it holds no rows (or the declaration says rows: discard) and nothing undeclared depends on it.',
+    ),
+  },
+  'table.retire-owner': {
+    type: 'retire_table',
+    engines: stop(
+      'loses-data',
+      'The retirement fails its own checks: its lastOwner is not a class of the declaring package, a package outside smrt retires a _smrt_ table, or it carries no definition generated from a published release. A package retires only a table its own models declared.',
+    ),
+  },
+  'table.retire-mismatch': {
+    type: 'retire_table',
+    engines: stop(
+      'loses-data',
+      "The live table is not the table the retirement describes: its columns or types differ from the definition the owning model last declared, beyond the drift the differ tolerates. It may be another table under the same name. Check what the table holds; fix the declaration's definition (regenerate it from the right release) or the table.",
+    ),
+  },
+  'table.retire-unsupported': {
+    type: 'retire_table',
+    engines: stop(
+      'loses-data',
+      'The JSON adapter has no catalog to check what depends on a table, so it never retires one. Remove the table by hand.',
+    ),
+  },
+  'table.retire-declared': {
+    type: 'retire_table',
+    engines: stop(
+      'loses-data',
+      'A table cannot be both declared by a model and retired. Dropping it would discard the rows of a model the build still declares. Remove the retirement, or remove the model.',
+    ),
+  },
+  'table.retire-rows': {
+    type: 'retire_table',
+    engines: stop(
+      'loses-data',
+      "The retired table holds rows and its declaration does not say rows: 'discard'. State it in the declaration once the rows may go, or move them first.",
+    ),
+  },
+  'table.retire-dependent': {
+    type: 'retire_table',
+    engines: stop(
+      'loses-data',
+      'Something undeclared depends on the retired table (a foreign key, a view or a trigger). Dropping it would break or silently remove that. Drop or move each named object first.',
+    ),
+  },
   'column.add': {
     type: 'add_column',
     additive: true,
@@ -604,6 +655,8 @@ export function classifySchemaChange(
       return 'table.add';
     case 'drop_table':
       return 'table.drop';
+    case 'retire_table':
+      return executable ? 'table.retire' : 'unlisted';
     case 'add_column':
       return executable ? 'column.add' : 'unlisted';
     case 'drop_column':

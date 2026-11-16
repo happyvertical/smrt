@@ -86,7 +86,8 @@
       "@happyvertical/smrt-voice",
       "@happyvertical/smrt-web",
       "@happyvertical/smrt-webhooks",
-      "@happyvertical/smrt-workbench"
+      "@happyvertical/smrt-workbench",
+      "@happyvertical/smrt-workflows"
     ]
   ],
   "linked": [],

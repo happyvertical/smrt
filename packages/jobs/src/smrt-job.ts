@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { RetryStrategyConfig } from '@happyvertical/jobs';
 import {
-  detectEngine,
+  type detectEngine,
   ensureJobsSystemTableCompatibility,
   field,
   ObjectRegistry,
@@ -24,8 +24,18 @@ import {
   clampRetries,
   DEFAULT_TENANT_JOB_CAP,
 } from './background-policy.js';
+import {
+  assertJobHandlerName,
+  isJobHandlerTarget,
+  JOB_HANDLER_METHOD,
+  JOB_HANDLER_TARGET_PREFIX,
+  jobHandlerName,
+  jobHandlerTarget,
+  MAX_JOB_HANDLERS,
+} from './job-handlers.js';
 import { SmrtJobDedupeSlotCollection } from './smrt-job-dedupe-slot.js';
 import { terminalSnapshot, transitionTerminalJob } from './terminal-outcome.js';
+import { resolveEngine } from './worker-liveness.js';
 
 /**
  * Job status type
@@ -191,7 +201,7 @@ export class SmrtJob extends SmrtObject {
   @field({ type: 'text', required: true, default: 'fail' })
   timeoutBehavior: TimeoutBehavior = 'fail';
 
-  /** When execution started */
+  /** When execution started. Public retry and surplus release clear this field. */
   @field({ type: 'datetime', nullable: true })
   startedAt: Date | null = null;
 
@@ -352,13 +362,19 @@ export class SmrtJob extends SmrtObject {
         if (active.rows.length)
           throw new Error('Another job already reserves this dedupeKey');
       }
+      const retriedAt = new Date().toISOString();
+      // A handler job's unclaimed deadline counts from run_at (#5005): a
+      // retry restarts it, or the next sweep would fail the job again.
       const retried = await tx.query(
         `UPDATE _smrt_jobs SET status = 'pending', attempts = 0, last_error = NULL,
            started_at = NULL, completed_at = NULL, worker_id = NULL, worker_heartbeat = NULL,
+           run_at = CASE WHEN ${HANDLER_TARGET_SQL} AND run_at < ? THEN ? ELSE run_at END,
            updated_at = ? WHERE id = ? AND ${tenantPredicate}
            AND status IN ('pending', 'failed', 'cancelled')
            RETURNING ${SMRT_JOB_PORTABLE_SELECT_COLUMNS}`,
-        new Date().toISOString(),
+        retriedAt,
+        retriedAt,
+        retriedAt,
         current.id,
         ...tenantValues,
       );
@@ -472,6 +488,68 @@ export interface SmrtJobData {
 }
 
 /**
+ * A job that targets a registered named handler (#5005) instead of a model
+ * method. Stored as `object_type = 'handler:<handler>'`, `method = 'handle'`,
+ * `object_id = NULL`, `args = payload`.
+ */
+export interface HandlerJobData
+  extends Omit<
+    SmrtJobData,
+    | 'objectType'
+    | 'objectId'
+    | 'method'
+    | 'args'
+    | 'taskId'
+    | 'taskOwnerId'
+    | 'taskResult'
+    | 'taskInputRequests'
+    | 'taskInputResponses'
+  > {
+  /** Namespaced handler name, e.g. `@happyvertical/smrt-workflows:workflow-run`. */
+  handler: string;
+  /** JSON payload passed to the handler. Reserved `_`-prefixed runner keys are refused. */
+  payload?: Record<string, unknown>;
+}
+
+/** Runner-owned argument keys a handler payload may not carry. */
+const HANDLER_RESERVED_ARG_KEYS = [
+  '_mcpTask',
+  '_agentConfig',
+  '_scheduleId',
+  '_scheduledFor',
+  '_scheduleAdmission',
+] as const;
+
+/**
+ * A handler-form row must be canonical: valid name, fixed method, no object
+ * id, no MCP task fields, a plain JSON object payload without runner keys.
+ */
+function assertHandlerJobData(data: SmrtJobData): void {
+  assertJobHandlerName(jobHandlerName(data.objectType));
+  if (data.method !== JOB_HANDLER_METHOD)
+    throw new TypeError(
+      `A handler job's method must be '${JOB_HANDLER_METHOD}'`,
+    );
+  if (data.objectId != null)
+    throw new TypeError('A handler job cannot have an objectId');
+  if (
+    data.taskId != null ||
+    data.taskOwnerId != null ||
+    data.taskResult != null ||
+    data.taskInputRequests != null ||
+    data.taskInputResponses != null
+  )
+    throw new TypeError('A handler job cannot be an MCP task');
+  const args = data.args ?? {};
+  if (!args || typeof args !== 'object' || Array.isArray(args))
+    throw new TypeError('A handler job payload must be a JSON object');
+  for (const key of HANDLER_RESERVED_ARG_KEYS) {
+    if (Object.hasOwn(args, key))
+      throw new TypeError(`A handler job payload cannot set reserved ${key}`);
+  }
+}
+
+/**
  * Options controlling a centralized {@link SmrtJobCollection.enqueueJob} call.
  */
 export interface EnqueueJobOptions {
@@ -499,12 +577,48 @@ export interface ListReadyOptions {
   tenantIds?: readonly (string | null)[];
 }
 
-/**
- * Options for atomically claiming ready jobs.
- */
+// The DB and worker incarnation own this clock, not the job row. Legacy retry
+// and surplus-release paths may clear started_at without reusing this identity.
+const fencedClaimTimes = new WeakMap<object, Map<string, number>>();
+
+/** Options for atomically claiming ready jobs. */
 export interface ClaimReadyOptions extends ListReadyOptions {
+  /** Opt into dispatch fencing; one unique worker incarnation per DB/process. */
+  claimFencing?: boolean;
   workerId: string;
   now?: Date;
+  /**
+   * Handler names this claimant serves (#5005). When set, the claim takes
+   * model jobs and only the handler jobs named here; `[]` takes no handler
+   * job. Omitted, the claim does not filter by target. At most
+   * {@link MAX_JOB_HANDLERS} names (one bound parameter each).
+   */
+  handlerNames?: readonly string[];
+}
+
+/**
+ * SQL that is true for a stored handler target. A case-exact, wildcard-free
+ * prefix test (SQLite `LIKE` is case-insensitive), the same on SQLite,
+ * PostgreSQL and PGlite, and matching `isJobHandlerTarget`.
+ */
+export const HANDLER_TARGET_SQL = `substr(object_type, 1, ${JOB_HANDLER_TARGET_PREFIX.length}) = '${JOB_HANDLER_TARGET_PREFIX}'`;
+
+/** The claim filter for a claimant serving `handlerNames` (#5005). */
+function handlerClaimFilter(handlerNames: readonly string[]): {
+  sql: string;
+  params: string[];
+} {
+  if (handlerNames.length > MAX_JOB_HANDLERS) {
+    throw new RangeError(
+      `claimReady accepts at most ${MAX_JOB_HANDLERS} handler names`,
+    );
+  }
+  const notHandler = `NOT (${HANDLER_TARGET_SQL})`;
+  if (handlerNames.length === 0) return { sql: notHandler, params: [] };
+  return {
+    sql: `(${notHandler} OR object_type IN (${handlerNames.map(() => '?').join(', ')}))`,
+    params: handlerNames.map((name) => jobHandlerTarget(name).objectType),
+  };
 }
 
 type DatabaseWithConfig = DatabaseInterface & {
@@ -603,6 +717,23 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
 
     const now = options.now ?? new Date();
     const nowIso = now.toISOString();
+    let startedAt = nowIso;
+    if (options.claimFencing) {
+      let clock = fencedClaimTimes.get(this.db);
+      if (!clock) {
+        clock = new Map();
+        fencedClaimTimes.set(this.db, clock);
+      }
+      // Reserve before awaiting SQL: concurrent claims on this incarnation also
+      // get distinct generations. Clock steps never defer ready work. A restart
+      // must use a new worker incarnation (TaskRunner already guarantees this).
+      const stamp = Math.max(
+        now.getTime(),
+        (clock.get(options.workerId) ?? -Infinity) + 1,
+      );
+      startedAt = new Date(stamp).toISOString();
+      clock.set(options.workerId, stamp);
+    }
     const whereConditions: string[] = [
       "status = 'pending'",
       'run_at <= ?',
@@ -614,6 +745,14 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
       const placeholders = options.queues.map(() => '?').join(', ');
       whereConditions.push(`queue IN (${placeholders})`);
       whereParams.push(...options.queues);
+    }
+
+    // Inside the candidate select, before its LIMIT: handler rows this
+    // claimant cannot run must not fill the window and starve its work.
+    if (options.handlerNames !== undefined) {
+      const filter = handlerClaimFilter(options.handlerNames);
+      whereConditions.push(filter.sql);
+      whereParams.push(...filter.params);
     }
 
     const scope = jobTenantScope(options.tenantIds);
@@ -633,7 +772,7 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
               started_at = ?,
               attempts = attempts + 1,
               updated_at = ?`;
-    const setParams = [options.workerId, nowIso, nowIso, nowIso];
+    const setParams = [options.workerId, nowIso, startedAt, nowIso];
 
     // Worker-internal cross-tenant claim; tenant context is restored
     // per-job at execution (SmrtJob is now @TenantScoped, S5 #1402).
@@ -727,6 +866,7 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
     options: EnqueueJobOptions = {},
   ): Promise<SmrtJob> {
     const cap = options.tenantJobCap ?? DEFAULT_TENANT_JOB_CAP;
+    if (isJobHandlerTarget(data.objectType)) assertHandlerJobData(data);
 
     // Effective tenant: an explicitly provided tenantId wins (ScheduleRunner
     // passes the schedule's tenant even when no ambient context exists);
@@ -839,6 +979,30 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
       return jobs.createQueuedJob({ ...data, tenantId: effectiveTenant }, cap);
     }
     return this.createQueuedJob({ ...data, tenantId: effectiveTenant }, cap);
+  }
+
+  /**
+   * Enqueue a job for a registered named handler (#5005). The handler need
+   * not be registered in this process: producers and runners are usually
+   * different processes. Only runners that registered the handler claim the
+   * job; one still `pending` past the runners' `handlerUnclaimedDeadlineMs`
+   * is failed `handler-unclaimed`. Guards, dedupe and tenancy are those of
+   * {@link enqueueJob}.
+   */
+  async enqueueHandlerJob(
+    data: HandlerJobData,
+    options: EnqueueJobOptions = {},
+  ): Promise<SmrtJob> {
+    const { handler, payload, ...rest } = data;
+    return this.enqueueJob(
+      {
+        ...rest,
+        ...jobHandlerTarget(handler),
+        objectId: null,
+        args: payload ?? {},
+      },
+      options,
+    );
   }
 
   /** Persist once, without a second save racing a consumer's first claim. */
@@ -965,11 +1129,7 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
 function getDatabaseEngine(
   db: DatabaseInterface,
 ): ReturnType<typeof detectEngine> {
-  const dbWithConfig = db as DatabaseWithConfig;
-  return detectEngine(
-    db.url || dbWithConfig.config?.url || '',
-    dbWithConfig.type || dbWithConfig.config?.type,
-  );
+  return resolveEngine(db);
 }
 
 function compareClaimOrder(left: SmrtJob, right: SmrtJob): number {

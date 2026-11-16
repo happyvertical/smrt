@@ -59,10 +59,10 @@ a model response; the production exec uses the equivalent workspace overrides.
 Reuse: configured MCP reviewed inference/Svelte/template/app-shell and architecture
 context queried disposable sandboxes, rank/fallback and connection composition.
 Name + purpose `rg` in UI/Svelte/chat/core/inference found `buildAgentRun`,
-`runProcess`, `codexParser`, `reportAgentFailure`, `strongestWorkModel`,
-`runWorkModelWithFallback` and the existing connection catalog. Extend these
-owning modules. New `rankOpenAIWorkModels`/`nextWorkModel` live in the existing
-work-profiles module; no parallel engine, approval service or credential reader.
+`runProcess`, `codexParser`, `reportAgentFailure`, `strongestModel`,
+`runWithModelFallback` and the existing connection catalog. Extend these
+owning modules. `rankOpenAIModels`/`nextModel` live in `engine-tiers.ts`; no
+parallel engine, approval service or credential reader.
 
 ## Historical 2026-11-11 incompatibility evidence (superseded by containment above)
 
@@ -321,95 +321,92 @@ reference/error IDs, environment helpers and retry presentation in owning
 packages, core, smrt-ui and smrt-svelte. Extend existing detection, turn error
 boundary and dock instead of adding a second engine or error presentation.
 
-## Owner work profiles
+## Default tier binding of an engine (#5005)
 
-`work-profiles.ts` exports browser-safe `recommendedWorkProfile` and
-`resolveWorkProfile`: `assist` defaults to high effort, `design` to maximum,
-`background` to low. Design/assist API calls resolve to `best`; the host must
-apply the selected tier to its existing inference client. Owner settings may
-select engine/model/effort and each numeric budget, pass/repair counts,
-automatic escalation and preview. These settings carry no tool authority.
-The preferences package stores owner overrides; inference contains no storage.
+`engine-tiers.ts` (browser-safe) binds tiers for an engine that has no stored
+binding: Claude Code, Codex and a ChatGPT plan. An API key binds tiers through
+core's resolver as before. The tier a prompt asks for picks the model from the
+engine's ranked models, strongest first:
 
-Claude recommendations select the strongest installed alias, `fable`, then
-`opus`, then `sonnet`; hosts can supply the installed alias inventory. Codex recommendations use the reviewed OpenAI model table. ChatGPT automatic
-recommendations intersect that table with the signed-in account's live catalog.
-`rankOpenAIWorkModels` annotates exact IDs only, preserving a future SDK's explicit
-finite `intelligenceRank`; `strongestWorkModel` never infers strength from response
-order or spelling. Reviewed 2026-11-12 against
-[OpenAI's recommended models](https://learn.chatgpt.com/docs/models#recommended-models):
-Astra, 6.1 Sol, 6.1 Terra, Luna. This is versioned app recommendation data grounded
-in official descriptions, not an undocumented server quality field. Unknown IDs
-remain selectable explicitly but never become automatic recommendations. Refresh
-this table when the catalog adds a new model; an unknown-only catalog truthfully
-has no automatic strongest choice. Both design and assist pick the strongest
-ranked offered model. Background keeps its low-effort profile.
+| Tier | Claude Code | Codex | ChatGPT plan |
+| --- | --- | --- | --- |
+| `best`, `great` | `fable` | `gpt-6-astra` | strongest ranked model the account offers |
+| `good` | `opus` | `gpt-6.1-sol` | next strongest offered (else the strongest) |
+| `cheap` | `sonnet` | `gpt-6-luna` | lowest ranked offered |
+| `auto` | the app's `inference.defaultTier` (else `good`), then as above | same | same |
 
-`ChatGPTPlanConnection.models()` retains ranks and its ten-minute account cache;
-`defaultModel()` uses ranks. `createChatGPTModel` discovers the catalog when needed
-and derives a single next-lower fallback from it. Host memos include account
-connection generation, catalog and owner preference revision. Fixed fallback
-wording is sent through existing text progress. The installed SDK still rejects
-reasoning/format controls on plan requests; omit them, retain requested effort in
-metadata, and never claim vendor enforcement. Live sign-in/entitlement/inference
-requires the owner and is not proven by fake catalog tests.
+`engineTierModel({ engine, tier, catalog?, defaultTier? })` returns the model;
+`engineModels()` the ranked list; `nextEngineModel()` one rank down the same
+order (the plan-refusal step); `strongestModel`/`weakestModel`/`nextModel`
+work on any ranked catalog. Only explicit `intelligenceRank` orders strength:
+`rankOpenAIModels` annotates exact IDs from `OPENAI_MODEL_RANKS`, reviewed
+2026-11-12 against
+[OpenAI's recommended models](https://learn.chatgpt.com/docs/models#recommended-models)
+(Astra, 6.1 Sol, 6.1 Terra, Luna); `CLAUDE_MODEL_RANKS` ranks the Claude
+aliases. Unknown IDs stay unranked and never become a binding. Refresh the
+table when the catalog adds a model. `validateModelId` keeps a model a single
+safe CLI value.
 
-The browser-safe root exports the same `engineLabel` used by server status;
-product names come from the existing pure CLI metadata. No server-status graph
-is imported by settings. `ResolvedWorkProfile.modelSelection` is derived display
-evidence: `strongest` requires the recommended Claude `fable` alias or the
-selected top-ranked catalog entry; an explicit model is `custom`, and an
-unverified/provider selection is `configured`. Tier names alone do not establish
-model strength. The metadata includes requested and resolved selection ids when
-known; these are selection aliases, not a claimed provider-reported model.
+The assistant asks for `best` (the tier chat's `chat.assistant.system` prompt declares), so on these
+engines it answers with the strongest ranked model, as before; a workflow run
+pins the selection it started with.
 
-`runAgentTurn({ profile, outputSchema })` supplies explicit model and effort,
-Claude `--json-schema`, or Codex `--output-schema` through a private per-pass
-file. Codex maximum maps to `model_reasoning_effort="xhigh"`. Existing machine
-feature prohibitions and parser guards remain in force, including unknown
-structured-output tool kinds: they are refused, never allowed as built-in tools.
-Claude's final `structured_output` object is serialized for the host's schema
-validator. A host still validates and bounds repair attempts through the design
-run driver. ChatGPT's SDK rejects reasoning and JSON format controls, so its
-adapter omits those unsupported controls; schema validation/repair stays host
-side. Recorded effort is the requested policy where the provider cannot honor
-an effort option; it is not a claim of vendor enforcement.
+## Reasoning effort on an engine (#5005)
+
+Precedence, high to low: the caller's option, the prompt's `ai.effort`
+(smrt-prompts, validated), the tier binding's `params.reasoning.effort` (the
+app's `inference.tiers` config; an invalid value is ignored), then none: the
+engine's own default. `resolveEngineEffort({ caller, prompt, tier })` applies
+it; nothing defaults the effort. `engineReasoningEffort(engine, effort)` maps
+it: Claude Code `--effort <value>`; Codex `model_reasoning_effort` with `max`
+sent as `xhigh`; an API call `reasoning: { effort }`. A ChatGPT plan records
+the effort on its execution but does not send it: the installed SDK rejects
+reasoning and format controls on plan requests, so the recorded effort is the
+requested one, never a claim of vendor enforcement. Without an effort neither
+CLI receives an effort flag.
+
+`buildAgentRun({ model, effort, outputSchema })` and `runAgentTurn({ model,
+effort, limits, fallback })` take these from the call options; `limits`
+(`turnTimeoutMs`, `toolResultChars`) come from the turn's budget and
+`deps.limits` still wins. Claude Code without a model takes its `best`
+binding. Claude `--json-schema` or Codex `--output-schema` (a private per-pass
+file) carry a workflow step's schema. Existing machine feature prohibitions and
+parser guards remain in force, including unknown structured-output tool kinds:
+they are refused, never allowed as built-in tools. Claude's final
+`structured_output` object is serialized for the host's schema validator.
+ChatGPT's SDK rejects JSON format controls, so schema validation and repair
+stay host side.
+
+`ChatGPTPlanConnection.models()` retains ranks and its ten-minute account
+cache; `defaultModel()` is the strongest ranked model. `createChatGPTModel({
+tier, model?, effort?, catalog?, fallback?, recordExecution? })` discovers the
+catalog when a tier must be bound and derives the single next-lower fallback
+from it. Live sign-in, entitlement and inference need the owner and are not
+proven by fake catalog tests.
+
+## Executions and the plan-refusal step
 
 Token mint receives the pass timeout; `tokenCredentials` requests a lifetime
 of at least that timeout plus one minute, retaining owner holder/scopes and
 revocation at exit. CLI usage is recorded only when input/output token counts
-are reported, otherwise unknown. `host.recordExecution` and stored assistant
-`meta.workRun` (when a CLI session exists) carry profile, runtime-reported model (unknown when omitted),
-requested alias/model, duration, tool count and
-fallback. `createChatGPTModel` accepts the same profile and execution callback.
+are reported, otherwise unknown. `host.recordExecution(execution)` receives an
+`EngineExecution` (engine, runtime-reported model when known, requested model,
+effort, duration, tool count, tokens when known with their `inputTokens` /
+`outputTokens` split when every report carried it, fallback). It is the host's
+record; it is never stored on a message (a CLI session message carries only
+`cliSession`). `createChatGPTModel` reports the same shape (total only). Chat
+records a CLI turn as one tracked call of its turn run from this record
+([assistant turn runs](../../chat/agents/assistant-turn-runs.md)).
 
-Both real invocation adapters wire `runWorkModelWithFallback` when a host
-supplies a scoped fallback store and the next verified model. Only explicit
-plan-model refusal codes qualify; arbitrary failures, policy refusals, quota,
-network errors, published text or any tool activity never retry another model.
-One fallback step is allowed, with shared fixed wording. The host persists the
-memo under owner, engine, refused requested model and a connection/catalog key;
-change the key after account/catalog or selection changes. No engine or billing
-path fallback is performed. No live CLI/provider call is needed for tests.
-
-For Settings, pass a freshly resolved profile through
-`projectWorkModelSelection` with that same tenant-scoped store, owner, engine,
-requested model and connection key. A remembered different model changes only
-display metadata to `fallback`; `profile.model` remains the original request so
-execution reads the same memo and cannot begin a fallback-of-fallback chain.
-The projector only reads the existing memo: it performs no provider probe,
-notification or write and exposes no connection key in the result. Hosts must
-share their key derivation between display and execution, invalidating it after
-connection/selection changes. The existing profile and browser-safety tests cover
-selection evidence, scope, model immutability and the public label import.
-
-Reuse audit: smrt-dev-mcp `review_smrt_project` on inference and
-`build_context(task: architecture)` inventoried package exports/models. The
-intent index and name/purpose searches across smrt-ui, smrt-svelte, chat, core
-and inference found no existing work-intelligence resolver or owner-engine
-fallback memo. `work-profiles.ts` owns that pure inference policy and reuses
-`InferenceEngineId` moved unchanged to browser-safe `engine-id.ts`; existing session/turn/credentials/model adapters own all
-execution. No UI helper, credential store, queue or approval system was added.
+Both invocation adapters wire `runWithModelFallback` (`model-fallback.ts`)
+when a host supplies a scoped fallback store and the next model in the tier
+binding order. Only explicit plan-model refusal codes qualify; arbitrary
+failures, policy refusals, quota, network errors, published text or any tool
+activity never retry another model. One step is allowed, with the fixed
+`MODEL_FALLBACK_MESSAGE`. The host persists the memo under owner, engine,
+refused requested model and a connection/catalog key; change the key after an
+account, catalog or engine change. No engine or billing path fallback is
+performed. No live CLI/provider call is needed for tests.
 
 Native CLI budget enforcement is limited to the subprocess wall deadline and
 observed tool-result truncation for display/history. The vendor has already
@@ -449,7 +446,7 @@ The cookbook host mints only the offered tool slugs intersected with the turn's 
 
 Codex 0.162.1 off uses `sandbox_mode="danger-full-access"`, `approval_policy="never"`, `web_search="live"`; it omits the optional-feature disable list, `--ignore-user-config`, `--ignore-rules` and protected workspace overrides. This explicitly permits commands, files and network under the person's OS authority and own CLI config/plugins. Modern MCP and `code_mode_host` remain enabled for app tools. `shell_environment_policy.inherit="none"` remains forced in BOTH states: model shell commands do not inherit the app credential. Protection on retains the fresh 0700 per-attempt folder and cleanup. These flags were checked against installed `claude --help` and `codex exec --help`, not inferred.
 
-Always: strip API-key environment variables, loopback-only MCP, short-lived owner-bound token in child environment (never argv/config/logs), app tool allow-list, owner deletion policy, Stop/timeout process-group kill and credential revocation. Off-mode native events record only sanitized tool names (`agent_tool_native`), not input/output; they do not fail an otherwise valid app request. Other app MCP tools remain fail-closed. Off-mode answers buffer to a message/tool boundary and reuse `redactInferenceSecret` to prevent split credential echoes reaching UI/history. Work-profile model/effort and classified one-step fallback are unchanged. Status/preflight caches are separated by protection mode.
+Always: strip API-key environment variables, loopback-only MCP, short-lived owner-bound token in child environment (never argv/config/logs), app tool allow-list, owner deletion policy, Stop/timeout process-group kill and credential revocation. Off-mode native events record only sanitized tool names (`agent_tool_native`), not input/output; they do not fail an otherwise valid app request. Other app MCP tools remain fail-closed. Off-mode answers buffer to a message/tool boundary and reuse `redactInferenceSecret` to prevent split credential echoes reaching UI/history. Tier-binding model/effort and classified one-step fallback are unchanged. Status/preflight caches are separated by protection mode.
 
 Stub command specs, stream turns and credential-echo tests cover both modes. The shared ChatGPT connection accepts an optional SDK `begin().cancel` handle; without it, cancellation is explicitly unavailable and pending status remains truthful. Late/expired successful callbacks are signed out instead of silently reconnecting. SDK listener/state/timeout fixes belong upstream.
 

@@ -125,6 +125,63 @@ must be finite positive milliseconds within the Node timer range. The default
 20× idle cap reduces combined claim and recovery traffic; latency-sensitive
 workers can set a smaller cap.
 
+### Target a named handler instead of a model method
+
+A job targets either a model method (above) or a handler registered under a
+namespaced `<package>:<name>`. Register every handler before
+`runner.start()`: a running runner dispatches from the snapshot it took at
+start, and registering while any runner in the process is running throws
+`JobHandlerRegistrationClosedError`.
+
+```typescript
+import {
+  getJobClaim,
+  registerJobHandler,
+  SmrtJobCollection,
+  TaskRunner,
+} from '@happyvertical/smrt-jobs';
+
+registerJobHandler(
+  '@happyvertical/smrt-workflows:workflow-run',
+  async (payload, context) => {
+    const claim = getJobClaim(context); // with claimFencing: true
+    context.logger.info('running', { runId: payload.runId });
+    return { runId: payload.runId };
+  },
+);
+
+const runner = new TaskRunner({ claimFencing: true, queues: ['workflows'] });
+await runner.initialize(db);
+await runner.start();
+
+const jobs = await SmrtJobCollection.create({ db });
+await jobs.enqueueHandlerJob({
+  handler: '@happyvertical/smrt-workflows:workflow-run',
+  payload: { runId },
+  queue: 'workflows',
+  dedupeKey: runId,
+});
+```
+
+The row is stored as `object_type = 'handler:<name>'`, `method = 'handle'`,
+`object_id = NULL` (no schema change). Handler jobs share the model path for
+MCP authority, tenancy, timeouts, cancellation, claim fencing, retries and
+terminal outcomes. A runner claims model jobs and only the handler jobs it
+registered (at most 256 handlers per process). A handler job left `pending`
+longer than `handlerUnclaimedDeadlineMs` (runner option, default 24 h) past
+its `run_at` is failed by a runner sweeping its queue that does not register
+that handler (a runner never sweeps its own handlers; it claims them), failure
+kind `handler-unclaimed`, event `job:unclaimed`. A claim made without the filter that reaches an
+unregistered handler fails the job on that claim, never retried, failure
+kind `handler-unregistered`. Schedules and MCP tasks target model methods
+only.
+
+**Upgrade first.** A runner older than this contract does not filter: it
+retries a handler job as an unknown model up to `maxAttempts` and fails it,
+and older outcome readers drop the `handler-unregistered` and
+`handler-unclaimed` kinds. Enqueue handler jobs only after every runner is
+upgraded. Details: [job handlers](agents/job-handlers.md).
+
 ### Back MCP task operations with durable jobs
 
 `McpTaskStore` persists the MCP `io.modelcontextprotocol/tasks` lifecycle on
@@ -291,7 +348,7 @@ taskRunner.on('job:failed', (job, error) => {
 | Export | Description |
 |--------|------------|
 | `SmrtJob` | Persistent job record stored in `_smrt_jobs` |
-| `SmrtJobCollection` | Collection with `claimReady()`, `listReady()`, `listByStatus()`, `stats()`, `cleanup()` |
+| `SmrtJobCollection` | Collection with `enqueueJob()`, `enqueueHandlerJob()`, `claimReady()`, `listReady()`, `listByStatus()`, `stats()`, `cleanup()` |
 | `SmrtJobEventCollection` | Durable telemetry plus explicit-tenant `listTerminalOutcomes()` safe projection |
 | `JobBuilder` | Fluent API: `.delay()`, `.priority()`, `.retries()`, `.queue()`, `.timeout()`, `.enqueue()` |
 | `JobHandle` | Track, wait, cancel, or retry an enqueued job |
@@ -308,6 +365,8 @@ the same queue without duplicate-claiming a pending row.
 |--------|------------|
 | `createTaskRunner(config?)` | Factory for creating a configured TaskRunner |
 | `createScheduleRunner(config?)` | Factory for creating a configured ScheduleRunner |
+| `registerJobHandler(name, handler)` / `unregisterJobHandler(name)` / `listJobHandlers()` | Process registry of named job handlers; closed while a TaskRunner runs |
+| `jobHandlerTarget(name)` / `isJobHandlerTarget(objectType)` / `jobHandlerName(objectType)` | Stored `handler:<name>` target form |
 | `withBackgroundJobs(Class)` | Mixin that adds `.bg()` and `.background()` to any SmrtObject class |
 | `parseDelay(delay)` | Parse human-readable delay strings (`'5m'`, `'1h'`, `'30s'`) to milliseconds |
 | `priorityToNumber(priority)` | Convert priority label (`'critical'`/`'high'`/`'normal'`/`'low'`) to number |
@@ -315,7 +374,7 @@ the same queue without duplicate-claiming a pending row.
 
 ### Key Types
 
-`Priority`, `JobStatus`, `JobResult`, `WaitOptions`, `BgOptions`, `BackgroundCapable`, `TaskRunnerConfig`, `TaskRunnerEvents`, `ScheduleRunnerConfig`, `ScheduleRunnerEvents`, `ScheduleInfo`, `JobContext`, `TimeoutBehavior`, `SmrtJobData`, `ListReadyOptions`, `DurableJobPayloadSigner`, `DurableJobPayloadIntegrity`
+`JobHandler`, `JobHandlerPayload`, `HandlerJobData`, `Priority`, `JobStatus`, `JobResult`, `WaitOptions`, `BgOptions`, `BackgroundCapable`, `TaskRunnerConfig`, `TaskRunnerEvents`, `ScheduleRunnerConfig`, `ScheduleRunnerEvents`, `ScheduleInfo`, `JobContext`, `TimeoutBehavior`, `SmrtJobData`, `ListReadyOptions`, `DurableJobPayloadSigner`, `DurableJobPayloadIntegrity`
 
 ## Dependencies
 
@@ -449,3 +508,82 @@ untouched and emits `schedule:blocked`; require the
 `requiredOccurrenceIntegrity` capability before creating such schedules. See
 [durable required admission](agents/scheduling.md#durable-required-admission-3346)
 for the typed policy, authorized rotation and verification-key retention contract.
+
+## Atomic application checkpoints
+
+With `TaskRunner({ claimFencing: true })`, capture a handler's dispatch identity
+with `getJobClaim(context)`. Inside your
+application checkpoint transaction, call `await assertJobClaim(tx, claim)`
+before writing through that same `tx`. The assertion locks the job row and
+throws `JobClaimLostError` if its worker incarnation, attempt, tenant, target
+or running status changed. Propagate the error so the whole transaction rolls
+back. A fresh read of the job's current worker cannot identify an old handler.
+
+After the original operation promise truly settles, use
+`assertJobClaimForRelease(tx, claim)` in the transaction clearing an application
+lease. It accepts that same running/completed/cancelled/failed attempt, but
+rejects pending jobs, cleared recovery ownership and newer claims. It does not
+clear a job claim or expire a runner's process lease. Park approval/stopped work
+by returning from the handler; TaskRunner completes the job. Resume by admitting
+another job after the prior one settles. Claim assertions prove ownership, not
+application permission: hosts must still authorize the owner and tenant.
+
+Dispatch fencing is opt-in: start `TaskRunner` with `claimFencing: true` to
+use `getJobClaim`. Defaults retain their previous terminal/retry behavior and
+claim timing. Public `retry()` and surplus release clear `started_at` as before.
+The opted-in runner uses `max(now, previousWorkerDispatch + 1ms)` for each claim
+batch, reserved before SQL on its DB/worker incarnation. A frozen/backward clock
+never delays ready work. This logical start may be ahead of wall time; catch-up
+has no bounded wall duration after an arbitrary clock step and does not gate
+scheduling. `runAt` eligibility still uses the normal host clock.
+
+The generation clock belongs to the worker incarnation, not the job row, so
+legacy retry/release clearing `started_at` cannot reuse an opted-in worker's
+claim. A process restart uses a new worker key. Direct `claimReady` users that
+opt into `claimFencing` must use one DB handle and a unique worker incarnation
+per process, consistently enabling fencing for that incarnation. Never share
+worker keys across independent runners or alternate fenced/unfenced claims.
+No schema changes are required.
+
+During rolling deployments, old runners retain their existing semantics and
+cannot supply the new authentic claim proof. New fenced handlers reject an
+unfenced context before doing application work. Route handlers requiring proofs
+to a dedicated queue consumed only by opted-in upgraded runners, or upgrade all
+consumers of that queue before admitting such jobs. Existing ordinary jobs need
+no change. Timestamp clearing by old code is safe for new proofs: a replacement
+worker key differs, and an opted-in original incarnation's clock still advances.
+
+Use `assertFailedJobDispatch(tx, dispatch)` to lock an exact failed dispatch
+before checkpoint recovery and re-admission. It checks tenant, target, attempt
+and the original worker/start generation and rejects a concurrent retry/reclaim. Use
+the same caller transaction for the domain CAS and job admission.
+
+`SmrtJobEventCollection.getTerminalOutcome(jobId, { tenantId, attempts?,
+completedAt? })` reads the safe outcome for that exact job and completion,
+without depending on the tenant feed's 1,000 candidates. Event retention still
+applies, and callers must authorize the resource as well as supply its tenant.
+
+`assertAbandonedJobClaim(tx, claim)` permits an application lease release only
+for its persisted exact terminal dispatch when the original worker is neither
+in the process live set nor holding a fresh worker lease. It uses TaskRunner's
+liveness contract, not an application's timeout. A cancelled row alone never
+proves settlement. Keep the application lease CAS in that same transaction.
+
+
+PGlite support is opt-in: call `enablePgliteJobs(db)` before creating jobs
+collections or starting a runner. It enables PostgreSQL claim/event SQL and
+main-loop liveness renewal for that shared SDK client (including transactions).
+Merely exposing `dumpDataDir` does not change engine selection. Existing hosts
+that do not call this API retain their previous behavior. The isolated fixture
+regression is enabled with `SMRT_TEST_PGLITE_MODULE`; it is not a full PGlite
+backend certification of the jobs suite.
+
+
+With `claimFencing: true`, stale recovery retains the original terminal job's
+worker key instead of clearing it. `JobDispatch` includes that key so the
+failed-dispatch assertion cannot match another worker at the same timestamp.
+This does not retain/renew its process lease or make a failed job executable.
+Default recovery still clears worker ownership. An old/unfenced recovery that
+cleared the key cannot provide the new exact proof and fails closed. Settled
+original handlers may release only their own unchanged application lease;
+running-claim assertions always reject a terminal job.

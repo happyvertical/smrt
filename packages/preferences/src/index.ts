@@ -18,6 +18,11 @@ export {
   PreferenceAccessError,
   type PreferencePrincipal,
 } from './context.js';
+export {
+  ASSISTANT_SETTINGS_PREFERENCE_KIND,
+  assistantSettingsPreferenceKind,
+  createAssistantSettingsPreference,
+} from './kinds/assistant-settings.js';
 export { ensureBuiltinPreferenceKinds } from './kinds/builtin.js';
 export {
   OVERVIEW_PREFERENCE_KIND,
@@ -37,12 +42,6 @@ export {
   type ShellSettingsPreferenceWriteOptions,
   shellLayoutPreferenceKind,
 } from './kinds/shell-layout.js';
-export {
-  createWorkProfilesPreference,
-  WORK_PROFILES_PREFERENCE_KIND,
-  type WorkProfilePreferences,
-  workProfilesPreferenceKind,
-} from './kinds/work-profiles.js';
 export {
   getPreferenceKind,
   listPreferenceKinds,

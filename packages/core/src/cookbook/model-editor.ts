@@ -45,6 +45,7 @@ import {
   type AppModelHistoryStore,
   type AppModelOperation,
   createAppModelHistory,
+  isAppModelJournalStore,
 } from './model-history.js';
 import {
   CUSTOM_MODEL_REF,
@@ -247,6 +248,13 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
   if (engine !== 'sqlite' && engine !== 'postgres')
     throw new Error(
       'MODEL_ENGINE_UNSUPPORTED: live app model editor supports SQLite and PostgreSQL; DuckDB transactional DDL and revision fencing are not supported',
+    );
+  // Run-time lists are known to the retire step (#5005) only through the
+  // journal; a store that writes elsewhere would create tables a whole-schema
+  // migrate in another process sees as undeclared.
+  if (options.store && !isAppModelJournalStore(options.store))
+    throw new Error(
+      'MODEL_HISTORY_JOURNAL_REQUIRED: a custom history store must append through a store createAppModelHistory made, so the app model journal (_smrt_app_model_changes) records every list and smrt db:migrate never treats a list table as undeclared',
     );
   const store = options.store ?? (await createAppModelHistory(options));
   if (engine === 'postgres' && !store.transaction)

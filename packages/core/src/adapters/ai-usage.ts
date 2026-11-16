@@ -93,61 +93,133 @@ export class AiUsageCollector implements AiUsageHandler {
 }
 
 /**
- * Usage tags lifted into indexed `_smrt_ai_usage` columns (#4751; `callId`,
- * #4780), tag name to
- * column name. The full tag map is always stored in `tags` as well, so a
- * lifted tag is a copy, never a move.
+ * Usage tags lifted into `_smrt_ai_usage` columns (#4751; `callId`, #4780;
+ * `templateHash` and the workflow step tags, #5005), tag name to column
+ * name. The `callId` tag is the entry call's id, so it lands in
+ * `entry_call_id`; the row's own call id is `aiCallId` (below), its primary
+ * key. The full tag map is always stored in `tags` as well, so a lifted tag
+ * is a copy, never a move.
  */
 export const AI_USAGE_TAG_COLUMNS = Object.freeze({
   promptKey: 'prompt_key',
   tierRequested: 'tier_requested',
   tierResolved: 'tier_resolved',
   runId: 'run_id',
-  callId: 'call_id',
+  callId: 'entry_call_id',
+  templateHash: 'template_hash',
+  stepIndex: 'step_index',
+  stepName: 'step_name',
+  stepInstanceId: 'step_instance_id',
+  attempt: 'attempt',
 } as const);
+
+/**
+ * The usage tag carrying a call's own id, minted before the call is sent
+ * (#5005). The usage row is written with `id` (and `call_id`) equal to it,
+ * so a retried save never makes a second row.
+ */
+export const AI_OWN_CALL_ID_TAG = 'aiCallId';
 
 /** A lifted tag value: a non-empty string, else NULL. */
 function liftedTag(
   tags: Record<string, string> | undefined,
-  name: keyof typeof AI_USAGE_TAG_COLUMNS,
+  name: keyof typeof AI_USAGE_TAG_COLUMNS | typeof AI_OWN_CALL_ID_TAG,
 ): string | null {
   const value = tags?.[name];
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+/** A lifted integer tag (`stepIndex`, `attempt`): a safe integer, else NULL. */
+function liftedInteger(
+  tags: Record<string, string> | undefined,
+  name: 'stepIndex' | 'attempt',
+): number | null {
+  const value = liftedTag(tags, name);
+  if (value === null || !/^-?\d+$/.test(value)) return null;
+  const number = Number(value);
+  return Number.isSafeInteger(number) ? number : null;
+}
+
+/** Overrides of {@link insertAiUsageRow}. */
+export interface AiUsageRowOverrides {
+  /** The row id (= its call id); else the `aiCallId` tag, else minted. */
+  id?: string;
+  /** The run the call belongs to; else the `runId` tag. */
+  runId?: string | null;
+}
+
+/**
+ * Insert one usage row, `INSERT ... ON CONFLICT (id) DO NOTHING` (#5005):
+ * the row's `id` and `call_id` are the call id, so writing the same call
+ * twice (a retried save, the settle transaction and then the persistence
+ * handler) leaves one row. `entry_call_id` is the `callId` tag, else the
+ * row's own id. Returns whether this call inserted the row.
+ */
+export async function insertAiUsageRow(
+  db: DatabaseInterface,
+  event: SmrtAiUsageEvent,
+  overrides: AiUsageRowOverrides = {},
+): Promise<boolean> {
+  const id =
+    overrides.id ??
+    liftedTag(event.tags, AI_OWN_CALL_ID_TAG) ??
+    crypto.randomUUID();
+  const runId =
+    overrides.runId !== undefined
+      ? overrides.runId
+      : liftedTag(event.tags, 'runId');
+  const result = await db.query(
+    `INSERT INTO _smrt_ai_usage
+      (id, provider, model, operation, prompt_tokens, completion_tokens,
+       total_tokens, estimated_cost, duration, class_name, tenant_id, tags, created_at,
+       prompt_key, tier_requested, tier_resolved, run_id, call_id,
+       entry_call_id, template_hash, step_index, step_name, step_instance_id,
+       attempt)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+             $16, $17, $18, $19, $20, $21, $22, $23, $24)
+     ON CONFLICT (id) DO NOTHING
+     RETURNING id`,
+    id,
+    event.provider,
+    event.model,
+    event.operation,
+    event.usage?.promptTokens ?? null,
+    event.usage?.completionTokens ?? null,
+    event.usage?.totalTokens ?? null,
+    event.estimatedCost ?? null,
+    event.duration,
+    event.className ?? null,
+    event.tenantId ?? null,
+    event.tags ? JSON.stringify(event.tags) : null,
+    event.timestamp.toISOString(),
+    liftedTag(event.tags, 'promptKey'),
+    liftedTag(event.tags, 'tierRequested'),
+    liftedTag(event.tags, 'tierResolved'),
+    runId,
+    id,
+    liftedTag(event.tags, 'callId') ?? id,
+    liftedTag(event.tags, 'templateHash'),
+    liftedInteger(event.tags, 'stepIndex'),
+    liftedTag(event.tags, 'stepName'),
+    liftedTag(event.tags, 'stepInstanceId'),
+    liftedInteger(event.tags, 'attempt'),
+  );
+  const rows = Array.isArray(result)
+    ? result
+    : ((result as { rows?: unknown[] } | null)?.rows ?? []);
+  return rows.length > 0;
+}
+
 /**
  * Persists normalized AI usage events into the framework system table.
+ * Deduplicates on the call id (`aiCallId` tag) when the call carries one.
  */
 export class AiUsagePersistenceHandler implements AiUsageHandler {
   constructor(private readonly db: DatabaseInterface) {}
 
   async handle(event: SmrtAiUsageEvent): Promise<void> {
     try {
-      await this.db.query(
-        `INSERT INTO _smrt_ai_usage
-          (id, provider, model, operation, prompt_tokens, completion_tokens,
-           total_tokens, estimated_cost, duration, class_name, tenant_id, tags, created_at,
-           prompt_key, tier_requested, tier_resolved, run_id, call_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
-        crypto.randomUUID(),
-        event.provider,
-        event.model,
-        event.operation,
-        event.usage?.promptTokens ?? null,
-        event.usage?.completionTokens ?? null,
-        event.usage?.totalTokens ?? null,
-        event.estimatedCost ?? null,
-        event.duration,
-        event.className ?? null,
-        event.tenantId ?? null,
-        event.tags ? JSON.stringify(event.tags) : null,
-        event.timestamp.toISOString(),
-        liftedTag(event.tags, 'promptKey'),
-        liftedTag(event.tags, 'tierRequested'),
-        liftedTag(event.tags, 'tierResolved'),
-        liftedTag(event.tags, 'runId'),
-        liftedTag(event.tags, 'callId'),
-      );
+      await insertAiUsageRow(this.db, event);
     } catch (error) {
       throw new Error(
         `Failed to persist AI usage event for ${event.provider}:${event.model}: ${

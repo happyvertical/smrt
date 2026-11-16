@@ -28,6 +28,7 @@ Each layer can override any subset of fields (template, profile, model, params).
 - **Stored overrides use nullable fields** so inheritance stays field-by-field — null means "use the lower layer"
 - **Provider selection is indirect** in v1: prompts select named profiles, and profiles resolve to provider/model in `smrt-config`
 - **`editable` flags are enforced on `PromptOverride.save()`** — definitions can lock specific fields against tenant override
+- **Reasoning effort** (#5005): `ai.effort` (`low | medium | high | xhigh | max`, core's `REASONING_EFFORTS`) is a named field, validated at the code default, config and runtime layers (an invalid value throws). Stored app/tenant overrides carry none, and params never carry `effort` or `reasoning` (stripped at every layer), so a tenant cannot widen it. `promptMessageOptions()` sends it as `reasoning: { effort }` with or without `routeTier`. Precedence: the caller's own `reasoning` (spread after), the prompt, the tier binding's `params.reasoning` (core spreads target params under call options), the provider default.
 - **Tier names are reserved profile names** (#4750): `cheap`, `good`, `great`, `best` and `auto` need no `profiles` entry. `resolvePrompt()` only marks them (`ai.tier`, `ai.promptKey`, and the code default's `ai.latency`) and never copies a binding into `provider`/`model`/`params`: the tier binds once, at call time, through core's seam (`prepareAiOperation()` / `getAiClient(tier)`) with the prompt key, so prompt and call cannot disagree. `allowedProfileNames` applies to tier names chosen by config or an override, but not to the tier the code default itself declares when no config, stored or runtime layer sets a profile (#4755), so an allow-list never breaks framework prompts. An explicit prompt `model` stays validated by `allowedModels` and is sent per call on the tier client. **Footgun:** a same-named `profiles` entry wins and silently opts that name out of tiers. `definePrompt({ ai: { minimumTier } })` sets the ladder floor for a tier prompt (#4752); it is read from the code default only (stripped from params at every layer), so config and tenant overrides cannot lower it, and `promptMessageOptions()` forwards it with `tier`. `tier`, `latency` and `promptKey` never come from params. The canonical `promptMessageOptions()` forwards them; callers send the result through `prepareAiOperation()` (`SmrtClass`, so collections too), which strips them before the provider call. Sites holding their own client (content chat and thumbnails, facts' injected message-only client, the translation job, `Issue`'s explicit-provider path) pass `{ routeTier: false }` or drop the keys, so the prompt's tier does not route there and records no tier tags; the translation job and `Issue`'s path still apply a stored tenant or user binding through core's `resolveInferenceTarget({ appBindings: false })` (#4756), which adds tier and `source` tags only when a binding applied.
 
 ## Generated surfaces
@@ -69,6 +70,19 @@ validated profile. Every consumer
 call site must forward them (`promptMessageOptions()` or a spread of
 `resolved.ai`); core lifts `promptKey` into `_smrt_ai_usage.prompt_key`
 (`../core/agents/ai-usage.md`).
+
+## Tracked calls (#5005)
+
+`trackedPromptCall(resolved)` turns a `resolvePrompt()` result into the
+`prompt` argument of core's tracked client
+(`createTrackedAiClient(...).client(trackedPromptCall(resolved), { runContext })`):
+the key, the template hash, and the tier, latency and floor the prompt asks
+for. Every tracked call carries a prompt key and `resolvePrompt` is where it
+comes from; core never imports this package (the dependency stays core <-
+prompts). A prompt that makes calls from a package that is not a `SmrtObject`
+(chat, the app shell) registers with `definePrompt()` under its package
+namespace (`chat.assistant.system`, `app-shell.assistant.system`) like any
+other, so app and tenant overrides apply to it.
 
 ## Framework prompt tiers (#4755)
 

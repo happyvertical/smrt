@@ -37,7 +37,9 @@ function locals(permissions: string[]) {
 
 describe('Inference settings saveKey action', () => {
   it('preserves the load data shape for generated SvelteKit page types', () => {
-    expectTypeOf<Awaited<ReturnType<ReturnType<typeof createInferenceSettingsPage>['load']>>>()
+    // The assistant settings ride along beside the controller's data; the
+    // controller's own shape is unchanged.
+    expectTypeOf<Omit<Awaited<ReturnType<ReturnType<typeof createInferenceSettingsPage>['load']>>, 'assistant'>>()
       .toEqualTypeOf<InferenceSettingsPageData>();
   });
   it('refuses a member without the customize permission before reading the key', async () => {

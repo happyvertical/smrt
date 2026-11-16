@@ -7,7 +7,7 @@ const source = vi.hoisted(() => ({
   decideApproval: vi.fn(),
   sendMessage: vi.fn(),
   resumeTurn: vi.fn(),
-  designRun: vi.fn(),
+  workflowRun: vi.fn(),
 }));
 vi.mock('@happyvertical/smrt-chat/svelte', () => ({
   createAssistantHttpTransport: () => source,
@@ -139,7 +139,7 @@ describe('cookbook assistant canonical completion observation', () => {
     expect(source.resumeTurn).toHaveBeenCalledWith(resume);
     await transport.decideApproval!(pending.id, false);
     expect(onchange).toHaveBeenCalledTimes(3);
-    expect(transport.designRun).toBe(source.designRun);
+    expect(transport.workflowRun).toBe(source.workflowRun);
     expect(assistant.toolPresentation).toBe('generic');
     source.sendMessage.mockRejectedValue(new Error('Unavailable'));
     await expect(transport.sendMessage(send)).rejects.toThrow('Unavailable');

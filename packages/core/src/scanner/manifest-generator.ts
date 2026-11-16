@@ -23,6 +23,7 @@ import {
 } from '../manifest/manifest-loader.js';
 import { annotateModelReplacements } from '../manifest/model-replacements';
 import { selectObjectDeclarations } from '../manifest/object-declarations.js';
+import { readRetiredTablesFromPackageJson } from '../migrations/retired-tables.js';
 import { tryComputeManifestSchemaFingerprint } from '../migrations/schema-fingerprint.js';
 import { findField, type HelpModel, validateHelp } from '../recipe-help.js';
 import {
@@ -55,6 +56,7 @@ import {
   resolveForeignKeyUpdateAction,
 } from '../schema/foreign-key-policy.js';
 import { SchemaGenerator } from '../schema/generator.js';
+import { SYSTEM_TABLE_NAMES } from '../schema/system-table-shapes.js';
 import type {
   ColumnDefinition,
   SchemaDefinition,
@@ -639,6 +641,10 @@ export class ManifestGenerator {
     // This pre-computes validation rules from field definitions, eliminating
     // the need to compile validator closures at runtime (Issue #782)
     this.generateValidationRules(manifest);
+
+    // Tables this package retires (#5005), read before the schemas so the
+    // stamp that generateSchemas() writes covers them.
+    this.applyRetiredTables(manifest, options);
 
     // Fifth pass: Generate schemas for each object (build-time schema generation)
     // This pre-computes DDL, indexes, and columns for efficient external package consumption
@@ -1657,6 +1663,27 @@ export class ManifestGenerator {
       manifest,
       (error) => logger.warn(`No schema fingerprint written: ${error.message}`),
     );
+  }
+
+  /**
+   * Carry the package's declared table retirements (`smrt.retiredTables` in
+   * its `package.json`) into the manifest (#5005). A malformed declaration
+   * fails the build, naming the table.
+   */
+  applyRetiredTables(
+    manifest: SmartObjectManifest,
+    options?: { packageName?: string; packageJson?: PackageJsonLike },
+  ): void {
+    // No package.json given (a scan of loose sources): nothing to read, and a
+    // list the caller set on the manifest stays.
+    if (!options?.packageJson) return;
+    const retired = readRetiredTablesFromPackageJson(
+      options?.packageJson,
+      options?.packageName,
+      (table) => SYSTEM_TABLE_NAMES.includes(table),
+    );
+    if (retired.length > 0) manifest.retiredTables = retired;
+    else delete manifest.retiredTables;
   }
 
   /** A report model's generated surface defaults to `list`/`get`. */

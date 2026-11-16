@@ -3213,13 +3213,13 @@ describe('server approval policy', () => {
       restore();
     }
   });
-  it('never waives a design-class delete, a missing id or a model-supplied classification', () => {
+  it('never waives a workflow-only delete, a missing id or a model-supplied classification', () => {
     const policy = { allowRemovalsInChat: true };
     expect(
       requiresOwnerApproval(
         {
           ...tool,
-          annotations: { ...tool.annotations, workProfile: 'design' },
+          annotations: { ...tool.annotations, runTypes: ['workflow'] },
         },
         { id: 'one' },
         policy,

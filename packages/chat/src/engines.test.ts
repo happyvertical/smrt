@@ -1,7 +1,11 @@
-import { rmSync } from 'node:fs';
+import { rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
+import {
+  createTrackedAiClient,
+  getTestDatabase,
+} from '@happyvertical/smrt-core';
 import { setRuntimeExposureGate } from '@happyvertical/smrt-core/runtime-exposure';
 import type {
   AgentTool,
@@ -14,6 +18,10 @@ import {
 } from '@happyvertical/smrt-inference/test-support';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildSidecarEnv } from '../../smrt-desktop/src/sidecar-manifest.js';
+import {
+  type AssistantTurnResult,
+  runAssistantTurn,
+} from './assistant-turn.js';
 import type {
   AssistantTurnDriverCallbacks,
   AssistantTurnDriverContext,
@@ -26,6 +34,7 @@ import {
 } from './engines.js';
 import type { AssistantRequestContext } from './sveltekit.js';
 import { toolSummary } from './tool-summary.js';
+import { resolveChatAssistantPrompt } from './turn-tracking.js';
 
 const cleanups: Array<() => void | Promise<void>> = [];
 afterEach(async () => {
@@ -177,7 +186,10 @@ describe.each<AgentTool>([
     bind.mockResolvedValue(bound);
     const cb = callbacks();
     await driver.run(context('say Desktop ready'), cb);
-    expect(cb.done).toHaveBeenCalledExactlyOnceWith({ text: 'Desktop ready' });
+    expect(cb.done).toHaveBeenCalledExactlyOnceWith({
+      text: 'Desktop ready',
+      execution: expect.objectContaining({ engine: tool }),
+    });
     expect(cb.error).not.toHaveBeenCalled();
   });
 
@@ -191,7 +203,10 @@ describe.each<AgentTool>([
         .mock.calls.map(([text]) => text)
         .join(''),
     ).toBe('Hello owner');
-    expect(cb.done).toHaveBeenCalledExactlyOnceWith({ text: 'Hello owner' });
+    expect(cb.done).toHaveBeenCalledExactlyOnceWith({
+      text: 'Hello owner',
+      execution: expect.objectContaining({ engine: tool }),
+    });
     expect(mint).toHaveBeenCalledOnce();
     expect(revoke).toHaveBeenCalledOnce();
     expect(JSON.stringify(cb)).not.toContain('owner-bound-test-token');
@@ -222,7 +237,10 @@ describe.each<AgentTool>([
       ok: true,
       result: '{"summary":"Added customer Ada"}',
     });
-    expect(cb.done).toHaveBeenCalledWith({ text: 'All done.' });
+    expect(cb.done).toHaveBeenCalledWith({
+      text: 'All done.',
+      execution: expect.objectContaining({ engine: tool }),
+    });
     expect(revoke).toHaveBeenCalledOnce();
   });
 
@@ -314,6 +332,7 @@ describe.each<AgentTool>([
           outcome === 'approved'
             ? 'Approval recorded. Ask the assistant to continue.'
             : 'That action was not approved.',
+        execution: expect.objectContaining({ engine: tool }),
       });
     expect(listeners.size).toBe(0);
   });
@@ -429,6 +448,100 @@ describe.each<AgentTool>([
       driver.run(context('forbidden'), callbacks()),
     ).rejects.toMatchObject({ code: 'agent_tool_blocked' });
     expect(revoke).toHaveBeenCalledOnce();
+  });
+
+  it("records the CLI's turn in the chat turn's run, with the usage the CLI reported (#5005)", async () => {
+    const { driver, bind } = setup(tool);
+    const bound = await bind();
+    const location = await bound.deps.locate(tool);
+    if (!location) throw new Error('fixture missing');
+    writeFileSync(
+      location.path,
+      tool === 'codex'
+        ? `#!/usr/bin/env node
+console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'Done'}}));
+console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:30,output_tokens:12}}));
+`
+        : `#!/usr/bin/env node
+console.log(JSON.stringify({type:'system',subtype:'init',session_id:'s-1',model:'claude-reported'}));
+console.log(JSON.stringify({type:'result',subtype:'success',result:'Done',usage:{input_tokens:22,output_tokens:12,cache_read_input_tokens:8}}));
+`,
+    );
+    bind.mockResolvedValue(bound);
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      classes: ['PromptOverride'],
+    });
+    cleanups.push(async () => {
+      await (db as { close?: () => Promise<void> }).close?.();
+    });
+    const tracked = createTrackedAiClient({
+      db,
+      tenantId: 'tenant',
+      transcript: false,
+    });
+    const turn = runAssistantTurn({
+      turnDriver: driver,
+      tracking: {
+        tracked,
+        prompt: await resolveChatAssistantPrompt({ db, tenantId: 'tenant' }),
+      },
+      selection: { engine: tool, tier: 'best', model: 'bound-model' },
+      principal: {
+        runAsUserId: 'owner',
+        tenantId: 'tenant',
+        allowedTools: [],
+      },
+      userMessage: 'Plan it',
+    });
+    let result: AssistantTurnResult | undefined;
+    for (;;) {
+      const next = await turn.next();
+      if (next.done) {
+        result = next.value;
+        break;
+      }
+    }
+    expect(result).toMatchObject({ stoppedReason: 'stop', content: 'Done' });
+    const rows = (result: unknown) =>
+      (result as { rows: Array<Record<string, unknown>> }).rows;
+    const [run] = rows(
+      await db.query(
+        'SELECT id, status, calls, tokens, uncosted_calls FROM _smrt_ai_runs',
+      ),
+    );
+    expect(run).toMatchObject({
+      status: 'done',
+      calls: 1,
+      tokens: 42,
+      uncosted_calls: 1,
+    });
+    expect(
+      rows(
+        await db.query(
+          `SELECT run_id, provider, model, prompt_tokens, completion_tokens,
+                  total_tokens, estimated_cost FROM _smrt_ai_usage`,
+        ),
+      ),
+    ).toEqual([
+      {
+        run_id: run?.id,
+        provider: tool,
+        // Claude Code reports the model it ran; Codex does not.
+        model: tool === 'codex' ? 'bound-model' : 'claude-reported',
+        prompt_tokens: 30,
+        completion_tokens: 12,
+        total_tokens: 42,
+        estimated_cost: null,
+      },
+    ]);
+    expect(
+      rows(
+        await db.query(
+          "SELECT reservation, status FROM _smrt_ai_run_events WHERE type = 'call'",
+        ),
+      ),
+    ).toEqual([{ reservation: 'settled', status: 'ok' }]);
   });
 });
 

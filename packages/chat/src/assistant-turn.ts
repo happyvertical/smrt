@@ -4,15 +4,18 @@ import {
   requiresOwnerApproval,
 } from './assistant-approvals.js';
 import {
+  type AssistantRunTypeOptions,
+  assertToolRunType,
+  mayEscalateToWorkflow,
+  reportExecution,
+  ToolRunTypeRefusal,
+  TURN_ACCOUNTING,
+  turnExecution,
+} from './tool-run-types.js';
+import {
   type DescribeAssistantTool,
   describeAssistantTool,
 } from './tool-summary.js';
-import {
-  type AssistantWorkProfileOptions,
-  assertWorkProfileTool,
-  WORK_RUN_ACCOUNTING,
-  WorkProfileEscalation,
-} from './work-profile.js';
 /**
  * Streamed assistant turn over the bounded tool loop (#2908).
  *
@@ -53,14 +56,20 @@ import type {
   PrincipalBinding,
   PrincipalTool,
 } from '@happyvertical/smrt-agents';
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  type AiRunBudget,
+  AiRunStoppedError,
+  AiRunTrackingDisabledError,
+  type SmrtClassOptions,
+} from '@happyvertical/smrt-core';
+import type { EngineExecution } from '@happyvertical/smrt-inference';
 import type {
   AssistantApprovalWaiter,
   AssistantTurnDriver,
   AssistantTurnDriverContext,
 } from './assistant-turn-driver.js';
 import {
-  recordDesignHandoff,
+  recordWorkflowHandoff,
   runExternalAssistantTurn,
 } from './assistant-turn-driver.js';
 import type {
@@ -88,6 +97,11 @@ import {
   type ToolLoopUsage,
   toolFailureRecord,
 } from './tool-loop.js';
+import {
+  AssistantTurnRun,
+  type AssistantTurnTracking,
+  TURN_RUN,
+} from './turn-tracking.js';
 
 /** How long a suspended turn waits for the browser's results. */
 export const DEFAULT_CONTINUATION_TTL_MS = 15 * 60 * 1000;
@@ -378,9 +392,21 @@ function defaultFailedInvocationReply(
 
 /** Options for {@link runAssistantTurn}. */
 export interface AssistantTurnOptions<M = Record<string, unknown>>
-  extends AssistantWorkProfileOptions {
+  extends AssistantRunTypeOptions {
   /** Required for the default tool loop; unused by an external driver. */
   ai?: Pick<AIInterface, 'chat'>;
+  /**
+   * Track this turn as an AI run (#5005): it opens a `turn` run before the
+   * first model call, every call of the tool loop is a tracked call of it,
+   * and tool use and approvals are events of its trajectory. The loop then
+   * calls the tracked client instead of `ai`.
+   * Throws the turn's `ai_tracking_disabled` error while usage persistence
+   * is off. An external driver's turn (a Claude Code or Codex engine) opens
+   * the same run and records the engine's turn as one tracked call of it.
+   */
+  tracking?: AssistantTurnTracking;
+  /** Internal: the open run an external driver's turn records its call in. */
+  [TURN_RUN]?: AssistantTurnRun;
   /** Omitted: today's bounded tool loop, including browser continuations. */
   turnDriver?: AssistantTurnDriver;
   /** Host-owned durable approval bridge. Absent: approval requests fail closed. */
@@ -461,6 +487,18 @@ export interface AssistantTurnOptions<M = Record<string, unknown>>
    * `stoppedReason: 'timeout'` and the fallback reply.
    */
   requestTimeoutMs?: number;
+  /**
+   * The turn's budget (#5005; ai-runs section 6.1), stored on its `turn` run
+   * (core enforces it on every tracked call) and applied to the loop:
+   * `maxSteps` → `maxSteps`, `maxTokens` → `maxTurnTokens`, `maxDurationMs`
+   * → `maxTurnMs`, `callTimeoutMs` → `requestTimeoutMs`. A key it sets wins
+   * over the matching option. A call core refuses at a limit ends the turn
+   * `budget`. Core's `maxCallTokens` counts input too, so a per-call output
+   * cap stays the `maxTokens` option.
+   */
+  budget?: AiRunBudget;
+  /** Longest tool result kept in the conversation (characters). */
+  toolResultChars?: number;
   /**
    * Reply stored when the turn produced no answer (#4379; `stoppedReason`
    * `empty` or `timeout`, or blank content). Default
@@ -564,6 +602,36 @@ function providerErrorReplyText(
     return undefined;
   }
   return typeof text === 'string' && text.trim() ? text.trim() : undefined;
+}
+
+/** Record one turn event in the turn's run (#5005). */
+async function observeTurnRunEvent<M>(
+  run: AssistantTurnRun,
+  event: AssistantTurnEvent<M>,
+): Promise<void> {
+  if (event.type === 'step') {
+    const { step } = event;
+    if (step.kind === 'tool_call') {
+      await run.step({
+        type: 'tool_call',
+        slug: step.tool,
+        callId: step.callId,
+        location: step.location,
+      });
+    } else if (step.kind === 'tool_result') {
+      await run.step({
+        type: 'tool_result',
+        slug: step.tool,
+        callId: step.callId,
+        ok: step.ok,
+        ...(step.error ? { error: step.error } : {}),
+      });
+    }
+  } else if (event.type === 'approval_needed') {
+    await run.approvalRequested(event.approval, event.approval.callId);
+  } else if (event.type === 'done') {
+    await run.replied((event.message as { id?: unknown } | undefined)?.id);
+  }
 }
 
 /** What {@link runAssistantTurn} returns when its generator completes. */
@@ -675,9 +743,74 @@ export async function* runAssistantTurn<M = Record<string, unknown>>(
   const report = reporter(options, leg);
 
   const work = (async () => {
+    let turnRun: AssistantTurnRun | null = null;
+    let tracked = Promise.resolve();
     try {
-      result = await runTurn(options, emit, status, serialize, describe, leg);
+      let runOptions = options;
+      let runEmit = emit;
+      if (options.tracking && (options.ai || options.turnDriver)) {
+        try {
+          turnRun = await AssistantTurnRun.open(
+            options.budget
+              ? { ...options.tracking, budget: options.budget }
+              : options.tracking,
+            {
+              ...(leg.originMessageId
+                ? { originMessageId: leg.originMessageId }
+                : {}),
+            },
+          );
+        } catch (error) {
+          if (error instanceof AiRunTrackingDisabledError) {
+            throw new AssistantTurnUserError(
+              'The assistant is unavailable: AI usage tracking is turned off.',
+              'ai_tracking_disabled',
+            );
+          }
+          throw error;
+        }
+        const run = turnRun;
+        // The built-in loop calls the tracked client; an external engine's
+        // turn is recorded as one call of the run by the driver bridge.
+        runOptions = options.turnDriver
+          ? { ...options, [TURN_RUN]: run }
+          : {
+              ...options,
+              ai: (await run.client(options.selection)) as unknown as Pick<
+                AIInterface,
+                'chat'
+              >,
+            };
+        // The trajectory follows the turn's own events, in order, without
+        // slowing the stream.
+        runEmit = (event) => {
+          tracked = tracked.then(() => observeTurnRunEvent(run, event));
+          emit(event);
+        };
+      }
+      result = await runTurn(
+        runOptions,
+        runEmit,
+        status,
+        serialize,
+        describe,
+        leg,
+      );
+      if (turnRun) {
+        await tracked;
+        await turnRun.finish(
+          result.stoppedReason === 'cancelled'
+            ? 'cancelled'
+            : result.stoppedReason === 'error'
+              ? 'failed'
+              : 'done',
+        );
+      }
     } catch (error) {
+      if (turnRun) {
+        await tracked;
+        await turnRun.finish('failed');
+      }
       const wire = wireError(error, options.onError ?? defaultLogError);
       // A resume that never consumed its continuation changes nothing.
       if (leg.started) await report('failed');
@@ -759,28 +892,17 @@ async function runTurn<M>(
   describe: DescribeAssistantTool,
   leg: TurnLeg,
 ): Promise<AssistantTurnResult> {
-  if (options.workProfile) {
-    const profile = options.workProfile;
-    options = {
-      ...options,
-      model: profile.model,
-      maxSteps: profile.budgets.maxSteps,
-      maxTokens: profile.budgets.maxTokens,
-      maxTurnTokens: profile.budgets.maxTurnTokens,
-      maxTurnMs: profile.budgets.turnTimeoutMs,
-      requestTimeoutMs: profile.budgets.requestTimeoutMs,
-    };
-  }
+  options = applyTurnBudget(options);
   options = {
     ...options,
-    [WORK_RUN_ACCOUNTING]: options[WORK_RUN_ACCOUNTING] ?? {
+    [TURN_ACCOUNTING]: options[TURN_ACCOUNTING] ?? {
       startedAt: Date.now(),
       tokens: 0,
       usageKnown: true,
       toolCalls: 0,
     },
   };
-  const accounting = options[WORK_RUN_ACCOUNTING]!;
+  const accounting = options[TURN_ACCOUNTING]!;
   const { principal, author } = options;
   const report = reporter(options, leg);
   const now = options.now ?? (() => Date.now());
@@ -793,20 +915,19 @@ async function runTurn<M>(
   emit(status({ state: 'working', label: 'Thinking…', cancellable: true }));
 
   if (
-    options.deferDesignTurn &&
-    options.workProfile?.name === 'design' &&
-    options.onDesignEscalation &&
+    options.deferWorkflowTurn &&
+    options.onWorkflowEscalation &&
     !options.resume
   ) {
     await report('running');
-    const accepted = await options.onDesignEscalation({
+    const accepted = await options.onWorkflowEscalation({
       tool: '',
       history: options.history ?? [],
       userMessage: options.userMessage,
       thread: options.thread,
       originMessageId: options.originMessageId,
     });
-    const { content, message } = await recordDesignHandoff(
+    const { content, message } = await recordWorkflowHandoff(
       options,
       accepted,
       emit,
@@ -1046,15 +1167,15 @@ async function runTurn<M>(
   const runLoop = () =>
     runToolLoop({
       ai: options.ai!,
-      toolResultChars: options.workProfile?.budgets.toolResultChars,
-      ...(options.workProfile
-        ? { reasoning: { effort: options.workProfile.effort } }
+      toolResultChars: options.toolResultChars,
+      ...(turnEffort(options)
+        ? { reasoning: { effort: turnEffort(options)! } }
         : {}),
       messages,
       tools: options.tools ?? [],
       extraTools,
       clientTools,
-      beforeToolExecution: (tool) => assertWorkProfileTool(options, tool),
+      beforeToolExecution: (tool) => assertToolRunType(options, tool),
       holdTool: async ({ id, tool, args, permissions, authorize }) => {
         if (
           !requiresOwnerApproval(
@@ -1233,76 +1354,38 @@ async function runTurn<M>(
     try {
       loop = await runLoop();
     } catch (error) {
-      if (
-        !(error instanceof WorkProfileEscalation) ||
-        (!options.resolveWorkProfile && !options.onDesignEscalation)
-      )
-        throw error;
-      if (options.onDesignEscalation) {
-        const accepted = await options.onDesignEscalation({
-          tool: error.tool,
-          history: error.messages ?? options.history ?? [],
-          userMessage: options.userMessage,
-          thread: options.thread,
-          originMessageId: options.originMessageId,
-        });
-        const { content, message } = await recordDesignHandoff(
-          options,
-          accepted,
-          emit,
-          serialize,
-        );
-        emit({
-          type: 'status',
-          status: { state: 'working', label: content, cancellable: true },
-        });
-        await report('completed');
-        emit({
-          type: 'done',
-          stoppedReason: 'stop',
-          runId: accepted.runId,
-          ...(message ? { message } : {}),
-        });
-        return {
-          content,
-          stoppedReason: 'stop',
-          originMessageId: options.originMessageId,
-          runId: accepted.runId,
-        };
-      }
-      const profile = await options.resolveWorkProfile!('design');
-      if (profile.name !== 'design')
-        throw new Error('Design escalation requires the design profile.');
-      const runtime = await options.resolveWorkProfileRuntime?.(profile);
-      options = {
-        ...options,
-        ...runtime,
-        workProfile: profile,
-        model: profile.model,
-        maxSteps: profile.budgets.maxSteps,
-        maxTokens: profile.budgets.maxTokens,
-        maxTurnTokens: profile.budgets.maxTurnTokens,
-        maxTurnMs: profile.budgets.turnTimeoutMs,
-        requestTimeoutMs: profile.budgets.requestTimeoutMs,
-      };
-      messages = error.messages ?? messages;
-      initialTokens = accounting.tokens;
-      emit(
-        status({
-          state: 'working',
-          label: 'Thinking this through',
-          cancellable: true,
-        }),
+      if (!(error instanceof ToolRunTypeRefusal)) throw error;
+      if (!mayEscalateToWorkflow(options)) throw refusedInTurn(error);
+      const accepted = await options.onWorkflowEscalation!({
+        tool: error.tool,
+        history: error.messages ?? options.history ?? [],
+        userMessage: options.userMessage,
+        thread: options.thread,
+        originMessageId: options.originMessageId,
+      });
+      const { content, message } = await recordWorkflowHandoff(
+        options,
+        accepted,
+        emit,
+        serialize,
       );
-      if (options.turnDriver)
-        return runExternalAssistantTurn(
-          { ...options, history: messages },
-          emit,
-          serialize,
-          describe,
-          report,
-        );
-      loop = await runLoop();
+      emit({
+        type: 'status',
+        status: { state: 'working', label: content, cancellable: true },
+      });
+      await report('completed');
+      emit({
+        type: 'done',
+        stoppedReason: 'stop',
+        runId: accepted.runId,
+        ...(message ? { message } : {}),
+      });
+      return {
+        content,
+        stoppedReason: 'stop',
+        originMessageId: options.originMessageId,
+        runId: accepted.runId,
+      };
     }
     outcome = { loop };
   } catch (failure) {
@@ -1315,18 +1398,26 @@ async function runTurn<M>(
   }
 
   if ('failure' in outcome) {
-    const text = providerErrorReplyText(
-      outcome.failure,
-      options.providerErrorFallback,
-      options.signal,
-    );
+    // The turn's run stopped at a limit of its budget (#5005): the turn ends
+    // `budget` with a plain reply, as a loop budget end does.
+    const budgetStop = isRunBudgetStop(outcome.failure);
+    const stoppedReason = budgetStop ? 'budget' : 'provider_error';
+    const text = budgetStop
+      ? TURN_BUDGET_REPLY
+      : providerErrorReplyText(
+          outcome.failure,
+          options.providerErrorFallback,
+          options.signal,
+        );
     // No fallback configured (or none for this failure): the turn fails as it
     // always did, an error event with nothing stored.
     if (text === undefined) throw outcome.failure;
-    try {
-      (options.onError ?? defaultLogError)(outcome.failure);
-    } catch {
-      // Logging never breaks the turn.
+    if (!budgetStop) {
+      try {
+        (options.onError ?? defaultLogError)(outcome.failure);
+      } catch {
+        // Logging never breaks the turn.
+      }
     }
     let finalMessage: M | undefined;
     if (author && sendAgentReply) {
@@ -1338,10 +1429,12 @@ async function runTurn<M>(
         kind: 'assistant',
         content: text,
         metadata: {
-          ...replyMetadataFor(
-            { stoppedReason: 'provider_error' },
-            { content: text, fallback: 'provider_error' },
-          ),
+          ...(budgetStop
+            ? replyMetadataFor({ stoppedReason }, { content: text })
+            : replyMetadataFor(
+                { stoppedReason: 'provider_error' },
+                { content: text, fallback: 'provider_error' },
+              )),
           ...author.metadata,
         },
       });
@@ -1352,11 +1445,11 @@ async function runTurn<M>(
     emit({
       type: 'done',
       ...(finalMessage ? { message: finalMessage } : {}),
-      stoppedReason: 'provider_error',
+      stoppedReason,
     });
     emit(status({ state: 'done', label: 'Done' }));
     return {
-      stoppedReason: 'provider_error',
+      stoppedReason,
       content: text,
       ...(originMessageId ? { originMessageId } : {}),
     };
@@ -1438,41 +1531,18 @@ async function runTurn<M>(
     ...replyMetadataFor(loop, reply),
     ...formatted?.metadata,
   };
-  if (options.workProfile) {
-    const workRun = {
-      profile: options.workProfile.name,
-      engine: options.workProfile.engine,
-      ...(accounting.model ? { model: accounting.model } : {}),
-      effort: options.workProfile.effort,
-      durationMs: Date.now() - accounting.startedAt,
-      ...(accounting.usageKnown ? { tokens: accounting.tokens } : {}),
-      toolCalls: accounting.toolCalls,
-    };
-    const observed = (
-      options.ai as
-        | {
-            getWorkRunMetadata?():
-              | import('@happyvertical/smrt-inference').WorkRunMetadata
-              | undefined;
-          }
-        | undefined
-    )?.getWorkRunMetadata?.();
-    if (observed)
-      Object.assign(workRun, {
-        model: accounting.model ?? observed.model,
-        fallback: observed.fallback,
-      });
-    replyMetadata.workRun = workRun;
-    try {
+  reportExecution(
+    options,
+    turnExecution(
+      options,
+      accounting,
       (
-        options.onWorkRun ??
-        // biome-ignore lint/suspicious/noConsole: sanitized turn accounting defaults to the server log; hosts may supply onWorkRun
-        ((value) => console.info('assistant.workRun', value))
-      )(workRun);
-    } catch {
-      /* Telemetry never breaks a turn. */
-    }
-  }
+        options.ai as
+          | { getEngineExecution?(): EngineExecution | undefined }
+          | undefined
+      )?.getEngineExecution?.(),
+    ),
+  );
   let finalMessage: M | undefined;
   if (author && sendAgentReply) {
     const message = await sendAgentReply(author.chatService, {
@@ -1590,4 +1660,58 @@ export function createAssistantTurnResponse(
   headers.set('cache-control', 'no-cache, no-transform');
   headers.set('x-accel-buffering', 'no');
   return new Response(body, { status: 200, headers });
+}
+
+/** The turn's budget applied to the loop's own limits (#5005). */
+function applyTurnBudget<M>(
+  options: AssistantTurnOptions<M>,
+): AssistantTurnOptions<M> {
+  const budget = options.budget;
+  if (!budget) return options;
+  return {
+    ...options,
+    ...(budget.maxSteps !== undefined ? { maxSteps: budget.maxSteps } : {}),
+    ...(budget.maxTokens !== undefined
+      ? { maxTurnTokens: budget.maxTokens }
+      : {}),
+    ...(budget.maxDurationMs !== undefined
+      ? { maxTurnMs: budget.maxDurationMs }
+      : {}),
+    ...(budget.callTimeoutMs !== undefined
+      ? { requestTimeoutMs: budget.callTimeoutMs }
+      : {}),
+  };
+}
+
+/**
+ * The reasoning effort the turn's calls send: the assistant prompt's
+ * `effort`, else the selection's (the tier binding's); none: the provider's
+ * default.
+ */
+function turnEffort<M>(options: AssistantTurnOptions<M>) {
+  return options.tracking?.prompt.ai.effort ?? options.selection?.effort;
+}
+
+/** A refused workflow-only tool, as the turn's user-facing error. */
+export function refusedInTurn(
+  error: ToolRunTypeRefusal,
+): AssistantTurnUserError {
+  return new AssistantTurnUserError(
+    'This change needs a workflow run, and chat cannot start one here. Turn on handing changes to a workflow run in the assistant settings, then ask again.',
+    error.code,
+  );
+}
+
+/** The reply of a turn whose run stopped at a budget limit. */
+export const TURN_BUDGET_REPLY =
+  'I reached the limit for this turn before finishing. Ask again to continue.';
+
+/** A run stop at one of its budget limits (ai-runs section 6.4). */
+export function isRunBudgetStop(error: unknown): boolean {
+  return (
+    error instanceof AiRunStoppedError &&
+    error.status === 'stopped' &&
+    typeof error.stopReason === 'string' &&
+    error.stopReason.startsWith('max_')
+  );
 }

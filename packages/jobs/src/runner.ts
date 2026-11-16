@@ -20,6 +20,17 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { createId } from '@happyvertical/utils';
 import { isBackgroundEligibleMethod } from './background-policy.js';
 import { redactErrorForPersistence } from './error-redaction.js';
+import type { JobClaim } from './job-claim.js';
+import {
+  JOB_HANDLER_METHOD,
+  type JobHandler,
+  JobHandlerTargetError,
+  JobHandlerUnregisteredError,
+  jobHandlerName,
+  jobHandlerTarget,
+  releaseJobHandlerRegistry,
+  sealJobHandlerRegistry,
+} from './job-handlers.js';
 import {
   JobContextLogger,
   type JobEventInput,
@@ -40,6 +51,7 @@ import {
   startRetentionSweeper,
 } from './retention.js';
 import {
+  HANDLER_TARGET_SQL,
   jobTenantScope,
   SMRT_JOB_PORTABLE_SELECT_COLUMNS,
   type SmrtJob,
@@ -73,6 +85,7 @@ import {
 // module-private: a JSON task invocation cannot synthesize the runner-owned
 // execution context that security-sensitive task targets receive.
 const runnerExecutionContextIdentities = new WeakSet<object>();
+const runnerJobClaims = new WeakMap<object, Readonly<JobClaim>>();
 const runnerExecutionContexts = new AsyncLocalStorage<JobExecutionContext>();
 
 /** True only for an execution context constructed by this TaskRunner module. */
@@ -94,9 +107,28 @@ export function getActiveJobExecutionContext():
 }
 
 /**
+ * Read the immutable dispatch-time claim from an authentic runner context.
+ * Reading current job rows cannot recover this identity after ownership changes.
+ * @param context - Context supplied to a handler by TaskRunner.
+ * @returns The captured claim; use assertJobClaim for current ownership proof.
+ */
+export function getJobClaim(context: unknown): Readonly<JobClaim> {
+  const claim = isRunnerExecutionContext(context)
+    ? runnerJobClaims.get(context)
+    : undefined;
+  if (!claim)
+    throw new Error(
+      'Job claim requires TaskRunner context with claimFencing: true',
+    );
+  return claim;
+}
+
+/**
  * TaskRunner configuration
  */
 export interface TaskRunnerConfig {
+  /** Opt into immutable claim proofs and dispatch-fenced runner writes. Default false. */
+  claimFencing?: boolean;
   /** Worker ID (auto-generated if not provided) */
   id?: string;
   /** Resolve live authority for durable tasks at each execution/replay. */
@@ -149,6 +181,18 @@ export interface TaskRunnerConfig {
    * sweep runs one interval after `start()`, never at start.
    */
   retention?: RetentionSweeperOptions | false;
+  /**
+   * How long a named handler job (#5005) may stay `pending` past its `run_at`
+   * before this runner fails it with failure kind `handler-unclaimed`, in
+   * milliseconds. Default 24 h. A runner claims only the handler jobs it
+   * registered, so a job no runner serves would otherwise wait forever.
+   * Every runner sweeps the handler jobs in its own queues and tenant scope
+   * that it did not register itself (those it claims), from its poll, at
+   * most once per 1% of this deadline (between one lease tick and 15 min)
+   * and {@link HANDLER_UNCLAIMED_SWEEP_LIMIT} rows per sweep, emitting
+   * `job:unclaimed`; with different values across a fleet the shortest wins.
+   */
+  handlerUnclaimedDeadlineMs?: number;
 }
 
 /**
@@ -160,6 +204,12 @@ export interface TaskRunnerEvents {
   'job:progress': (job: SmrtJob, event: SmrtJobEvent) => void;
   'job:completed': (job: SmrtJob, result: unknown) => void;
   'job:failed': (job: SmrtJob, error: Error) => void;
+  /**
+   * A handler job this runner failed `handler-unclaimed` in its sweep: no
+   * runner serving the handler claimed it in time (#5005). Not `job:failed`,
+   * because this runner never claimed or ran it.
+   */
+  'job:unclaimed': (job: SmrtJob, error: Error) => void;
   'job:retrying': (job: SmrtJob, error: Error, delay: number) => void;
   'runner:started': () => void;
   'runner:stopped': () => void;
@@ -204,6 +254,14 @@ async function retireLivenessWorker(
 }
 
 const DEFAULT_IDLE_POLL_INTERVAL_MULTIPLIER = 20;
+/** Default {@link TaskRunnerConfig.handlerUnclaimedDeadlineMs}: 24 h. */
+export const DEFAULT_HANDLER_UNCLAIMED_DEADLINE_MS = 24 * 60 * 60 * 1000;
+/** Most unclaimed handler jobs one sweep fails (#5005). */
+export const HANDLER_UNCLAIMED_SWEEP_LIMIT = 100;
+/** Longest accepted unclaimed deadline: 10 years. */
+const MAX_HANDLER_UNCLAIMED_DEADLINE_MS = 10 * 365 * 24 * 60 * 60 * 1000;
+/** Longest wait between unclaimed-handler sweeps: 15 min. */
+const HANDLER_UNCLAIMED_SWEEP_MAX_INTERVAL_MS = 15 * 60 * 1000;
 /** Ids per surplus-release statement, well under driver bind-parameter caps. */
 const SURPLUS_RELEASE_CHUNK = 500;
 /** Upper bound on a handler error's `retryAfterMs` hint (#3308). */
@@ -268,6 +326,7 @@ type ResolvedTaskRunnerConfig = Required<Omit<TaskRunnerConfig, 'tenantIds'>> &
 
 const DEFAULT_CONFIG: ResolvedTaskRunnerConfig = {
   id: '',
+  claimFencing: false,
   authorizeMcpTask: async () => false,
   concurrency: 5,
   queues: ['default'],
@@ -280,6 +339,7 @@ const DEFAULT_CONFIG: ResolvedTaskRunnerConfig = {
   leaseTtlMs: DEFAULT_LEASE_TTL_MS,
   leaseTickMs: DEFAULT_LEASE_TICK_MS,
   retention: {},
+  handlerUnclaimedDeadlineMs: DEFAULT_HANDLER_UNCLAIMED_DEADLINE_MS,
 };
 
 /**
@@ -324,6 +384,7 @@ export class TaskRunner extends EventEmitter {
   private workerCollection: SmrtWorkerCollection | null = null;
   private workersTableVerified = false;
   private lastRecoverySweepAt = 0;
+  private lastUnclaimedSweepAt = 0;
   private running = false;
   private activeJobs = new Map<string, SmrtJob>();
   /**
@@ -352,6 +413,13 @@ export class TaskRunner extends EventEmitter {
   private livenessWorkerExited: Promise<void> | null = null;
   private shutdownPromise: Promise<void> | null = null;
   private db: DatabaseInterface | null = null;
+  /**
+   * Handlers this runner dispatches to, snapshotted when it starts (#5005).
+   * Registration is closed while it runs, so the snapshot is the registry.
+   */
+  private jobHandlers: ReadonlyMap<string, JobHandler> = new Map();
+  /** The snapshot's names: the only handler jobs this runner claims. */
+  private handlerNames: readonly string[] = [];
   private logger = createLogger(true);
 
   constructor(config: TaskRunnerConfig = {}) {
@@ -369,6 +437,17 @@ export class TaskRunner extends EventEmitter {
     }
     this.id = this.config.id;
     this.workerKey = createWorkerKey(this.id);
+    const deadline = this.config.handlerUnclaimedDeadlineMs;
+    // Bounded so the sweep's cutoff is always a valid date.
+    if (
+      !Number.isFinite(deadline) ||
+      deadline < 1 ||
+      deadline > MAX_HANDLER_UNCLAIMED_DEADLINE_MS
+    ) {
+      throw new RangeError(
+        `handlerUnclaimedDeadlineMs must be between 1 and ${MAX_HANDLER_UNCLAIMED_DEADLINE_MS} milliseconds`,
+      );
+    }
     for (const [name, value] of [
       ['pollInterval', this.config.pollInterval],
       ['idlePollInterval', config.idlePollInterval ?? this.config.pollInterval],
@@ -443,6 +522,11 @@ export class TaskRunner extends EventEmitter {
     });
     registerLiveWorker(this.workerKey);
 
+    // Close handler registration before the first claim and dispatch from a
+    // snapshot: a handler registered after start() would race the claims it
+    // should serve (#5005). Reopened when this runner has stopped.
+    this.jobHandlers = sealJobHandlerRegistry(this.workerKey);
+    this.handlerNames = [...this.jobHandlers.keys()];
     this.running = true;
 
     // Renew the worker lease. Prefer an off-loop worker thread so a CPU-bound
@@ -541,6 +625,7 @@ export class TaskRunner extends EventEmitter {
       // Release liveness only AFTER the drain: doing it earlier would make
       // still-draining jobs look orphaned to other recoverers.
       unregisterLiveWorker(this.workerKey);
+      releaseJobHandlerRegistry(this.workerKey);
       // Only delete the lease row if the drain finished cleanly. If jobs are
       // still executing past the shutdown timeout, leave the row to lapse
       // naturally (≤ TTL) so a nearly-finished handler keeps its chance to land
@@ -634,6 +719,8 @@ export class TaskRunner extends EventEmitter {
     if (generation !== this.pollGeneration) return false;
     await this.retryUnreleasedSurplus();
     if (generation !== this.pollGeneration) return false;
+    await this.sweepUnclaimedHandlerJobs();
+    if (generation !== this.pollGeneration) return false;
 
     // Calculate how many jobs we can take
     const available = this.config.concurrency - this.activeJobs.size;
@@ -642,9 +729,12 @@ export class TaskRunner extends EventEmitter {
     // Atomically claim ready jobs before processing so multiple workers cannot
     // receive the same pending row.
     const claimed = await this.collection.claimReady({
+      claimFencing: this.config.claimFencing,
       workerId: this.workerKey,
       queues: this.config.queues,
       tenantIds: this.config.tenantIds,
+      // Model jobs, and only the handler jobs this runner can run (#5005).
+      handlerNames: this.handlerNames,
       limit: available,
     });
 
@@ -798,7 +888,7 @@ export class TaskRunner extends EventEmitter {
       // recovered/reclaimed row (worker died, recovery ran, the work finished
       // anyway) is never stomped back to 'completed'.
       const completedAt = new Date();
-      const snapshot = terminalSnapshot(job);
+      const snapshot = terminalSnapshot(job, this.config.claimFencing);
       let event: SmrtJobEvent | null = null;
       try {
         event = snapshot
@@ -1039,6 +1129,7 @@ export class TaskRunner extends EventEmitter {
   private async writeOwnedJob(
     jobId: string,
     assignments: Record<string, unknown>,
+    dispatch?: SmrtJob,
   ): Promise<boolean> {
     if (!this.db) return false;
     const columns = Object.keys(assignments);
@@ -1047,14 +1138,18 @@ export class TaskRunner extends EventEmitter {
     // RETURNING id (not rowCount): the DuckDB/JSON adapters report rowCount as
     // the number of result rows, so an UPDATE that matched nothing still
     // reports 1 — only the returned-row set is a reliable "did it apply".
+    const fenced = this.config.claimFencing && dispatch;
     const result = await this.db.query(
       `UPDATE _smrt_jobs
           SET ${setSql}
-        WHERE id = ? AND worker_id = ? AND status = 'running'
+        WHERE id = ? AND worker_id = ? AND status = 'running'${fenced ? ' AND attempts = ? AND started_at = ?' : ''}
         RETURNING id`,
       ...values,
       jobId,
       this.workerKey,
+      ...(fenced
+        ? [dispatch.attempts, dispatch.startedAt?.toISOString() ?? null]
+        : []),
     );
     return (result.rows?.length ?? 0) > 0;
   }
@@ -1073,6 +1168,9 @@ export class TaskRunner extends EventEmitter {
       taskResult?: Record<string, unknown>;
     }> => {
       await this.assertMcpTaskAuthority(job);
+      // A reserved `handler:` target never reaches the model registry (#5005).
+      const handlerName = jobHandlerName(job.objectType);
+      if (handlerName !== null) return this.executeHandlerJob(job, handlerName);
       // Get the object class from registry
       const registeredClass = ObjectRegistry.getClass(job.objectType);
       if (!registeredClass) {
@@ -1249,6 +1347,55 @@ export class TaskRunner extends EventEmitter {
   }
 
   /**
+   * Run a job that targets a registered named handler (#5005). Called inside
+   * `executeJob`'s tenant context, after the same MCP authority check as a
+   * model job; timeout, cancellation, claim fencing and terminal writes are
+   * the shared model-job paths.
+   */
+  private async executeHandlerJob(
+    job: SmrtJob,
+    name: string,
+  ): Promise<{ result?: unknown }> {
+    if (job.method !== JOB_HANDLER_METHOD || job.objectId != null)
+      throw new JobHandlerTargetError(
+        `Handler job ${job.objectType} must have method '${JOB_HANDLER_METHOD}' and no objectId`,
+      );
+    if (getMcpTaskMarker(job) || job.taskId != null || job.taskOwnerId != null)
+      throw new JobHandlerTargetError(
+        `Handler job ${job.objectType} cannot be an MCP task`,
+      );
+    const handler = this.jobHandlers.get(name);
+    if (!handler) throw new JobHandlerUnregisteredError(name);
+
+    const jobId = job.id;
+    if (!jobId) throw new Error('Job has no ID');
+    const {
+      _agentConfig: _,
+      _scheduleId: __,
+      _mcpTask: ___,
+      ...payload
+    } = (job.args ?? {}) as Record<string, unknown>;
+    const contextLogger = new JobContextLogger(createLogger(true), {
+      jobId,
+      attempt: job.attempts,
+      queue: job.queue,
+      objectType: job.objectType,
+      method: job.method,
+    });
+    contextLogger.info(`Starting job: ${job.getDescription()}`);
+    const executionContext = this.createExecutionContext(
+      job,
+      contextLogger,
+      name,
+    );
+    const result = await runnerExecutionContexts.run(
+      executionContext,
+      async () => await handler(payload, executionContext),
+    );
+    return { result };
+  }
+
+  /**
    * Handle job execution error
    */
   private async handleJobError(job: SmrtJob, error: Error): Promise<void> {
@@ -1294,14 +1441,18 @@ export class TaskRunner extends EventEmitter {
 
       // Conditional: don't resurrect a row that recovery already failed.
       const applied = await this.persistJobWrite(() =>
-        this.writeOwnedJob(jobId, {
-          status: 'pending',
-          last_error: safeMessage,
-          run_at: nextRunAt.toISOString(),
-          worker_id: null,
-          worker_heartbeat: null,
-          updated_at: new Date().toISOString(),
-        }),
+        this.writeOwnedJob(
+          jobId,
+          {
+            status: 'pending',
+            last_error: safeMessage,
+            run_at: nextRunAt.toISOString(),
+            worker_id: null,
+            worker_heartbeat: null,
+            updated_at: new Date().toISOString(),
+          },
+          job,
+        ),
       );
       if (!applied) return;
 
@@ -1322,7 +1473,7 @@ export class TaskRunner extends EventEmitter {
     } else {
       // Job failed permanently
       const completedAt = new Date();
-      const snapshot = terminalSnapshot(job);
+      const snapshot = terminalSnapshot(job, this.config.claimFencing);
       const event = snapshot
         ? await this.persistJobWrite(() =>
             transitionTerminalJob(this.db as DatabaseInterface, {
@@ -1332,7 +1483,11 @@ export class TaskRunner extends EventEmitter {
               expectedStatuses: ['running'],
               expectedWorkerId: this.workerKey,
               lastError: safeMessage,
-              failureKind: isTimeout ? 'timeout' : 'execution',
+              failureKind: isTimeout
+                ? 'timeout'
+                : error instanceof JobHandlerUnregisteredError
+                  ? 'handler-unregistered'
+                  : 'execution',
             }),
           )
         : null;
@@ -1385,6 +1540,7 @@ export class TaskRunner extends EventEmitter {
   private createExecutionContext(
     job: SmrtJob,
     contextLogger: JobContextLogger,
+    handler?: string,
   ): JobExecutionContext {
     const jobContext = {
       jobId: job.id ?? '',
@@ -1393,6 +1549,7 @@ export class TaskRunner extends EventEmitter {
       queue: job.queue,
       objectType: job.objectType,
       method: job.method,
+      ...(handler === undefined ? {} : { handler }),
     };
 
     const context: JobExecutionContext = {
@@ -1461,6 +1618,20 @@ export class TaskRunner extends EventEmitter {
         : {}),
     };
     runnerExecutionContextIdentities.add(context);
+    if (this.config.claimFencing)
+      runnerJobClaims.set(
+        context,
+        Object.freeze({
+          jobId: job.id ?? '',
+          workerId: this.workerKey,
+          attempt: job.attempts,
+          startedAt: job.startedAt?.toISOString() ?? '',
+          tenantId: job.tenantId ?? null,
+          objectType: job.objectType,
+          objectId: job.objectId ?? null,
+          method: job.method,
+        }),
+      );
     return context;
   }
 
@@ -1628,7 +1799,7 @@ export class TaskRunner extends EventEmitter {
       '(no fresh liveness lease in _smrt_workers and not running in this process).';
 
     for (const job of orphans) {
-      const snapshot = terminalSnapshot(job);
+      const snapshot = terminalSnapshot(job, this.config.claimFencing);
       if (!snapshot) continue;
       const lastError =
         (job.id ? this.unsettledJobs.get(job.id) : undefined) ?? errorMessage;
@@ -1640,7 +1811,7 @@ export class TaskRunner extends EventEmitter {
           completedAt: recoveredAt,
           expectedStatuses: ['running'],
           expectedWorkerId: job.workerId ?? null,
-          clearWorker: true,
+          clearWorker: !this.config.claimFencing,
           lastError,
           failureKind: 'stale-recovery',
         });
@@ -1663,6 +1834,107 @@ export class TaskRunner extends EventEmitter {
       const error = new Error(lastError);
       this.emitPersistedJobEvent(job, event);
       this.emit('job:failed', job, error);
+    }
+  }
+
+  /**
+   * Fail named handler jobs left `pending` past their `run_at` by more than
+   * `handlerUnclaimedDeadlineMs` (#5005), failure kind `handler-unclaimed`.
+   *
+   * Claims skip handler jobs a runner has not registered, so a job no runner
+   * serves would wait forever. Every runner runs this sweep from its poll over
+   * its own queues and tenant scope, at most once per 1% of the deadline
+   * (between one lease tick and 15 min) and
+   * {@link HANDLER_UNCLAIMED_SWEEP_LIMIT} rows at a time. It leaves out the
+   * handlers this runner registered: it can claim those itself, so an
+   * overdue backlog it serves (a saturated queue, a fleet back after a long
+   * outage) is run, not failed. The deadline is measured from `run_at`.
+   * Residual: while every runner serving a handler is down past the deadline,
+   * a runner without it in the same queue still fails its jobs. Races are harmless:
+   * each row is failed by one conditional transition (`pending` and still
+   * past the deadline), so a concurrent sweeper, a claim or a requeue wins
+   * and this one writes nothing. Model jobs are never swept. A failed sweep is
+   * a `runner:error` and never stops the poll from claiming.
+   */
+  private async sweepUnclaimedHandlerJobs(): Promise<void> {
+    if (!this.db || !this.collection) return;
+    const now = Date.now();
+    const deadlineMs = this.config.handlerUnclaimedDeadlineMs;
+    // 1% of the deadline, between one lease tick and 15 min: the sweep adds
+    // no measurable idle SQL (one SELECT per ~14 min at the 24 h default).
+    const interval = Math.max(
+      this.config.leaseTickMs,
+      Math.min(HANDLER_UNCLAIMED_SWEEP_MAX_INTERVAL_MS, deadlineMs / 100),
+    );
+    if (now - this.lastUnclaimedSweepAt < interval) return;
+    this.lastUnclaimedSweepAt = now;
+
+    const cutoff = new Date(now - deadlineMs).toISOString();
+    const scope = jobTenantScope(this.config.tenantIds);
+    const queuePredicate = this.config.queues.length
+      ? ` AND queue IN (${this.config.queues.map(() => '?').join(', ')})`
+      : '';
+    // Its own handlers are claimed, not swept (at most MAX_JOB_HANDLERS).
+    const served = this.handlerNames.map(
+      (name) => jobHandlerTarget(name).objectType,
+    );
+    const servedPredicate = served.length
+      ? ` AND object_type NOT IN (${served.map(() => '?').join(', ')})`
+      : '';
+    let unclaimed: SmrtJob[];
+    try {
+      // Worker-internal cross-tenant scan, scoped like stale recovery.
+      unclaimed = await this.collection.query(
+        `SELECT ${SMRT_JOB_PORTABLE_SELECT_COLUMNS}
+           FROM _smrt_jobs
+          WHERE status = 'pending' AND run_at <= ? AND ${HANDLER_TARGET_SQL}${scope.sql}${queuePredicate}${servedPredicate}
+          ORDER BY run_at ASC, id ASC
+          LIMIT ?`,
+        [
+          cutoff,
+          ...scope.params,
+          ...this.config.queues,
+          ...served,
+          HANDLER_UNCLAIMED_SWEEP_LIMIT,
+        ],
+        { allowRawOnTenantScoped: true },
+      );
+    } catch (error) {
+      this.emit('runner:error', error as Error);
+      return;
+    }
+
+    // A full batch may leave more overdue rows: sweep again next poll.
+    if (unclaimed.length >= HANDLER_UNCLAIMED_SWEEP_LIMIT) {
+      this.lastUnclaimedSweepAt = 0;
+    }
+    const sweptAt = new Date();
+    for (const job of unclaimed) {
+      const snapshot = terminalSnapshot(job);
+      if (!snapshot) continue;
+      const lastError = `Job handler not claimed: no runner registered for ${jobHandlerName(job.objectType)} claimed this job within ${deadlineMs} ms of its run_at.`;
+      let event: SmrtJobEvent | null;
+      try {
+        event = await transitionTerminalJob(this.db, {
+          job: snapshot,
+          status: 'failed',
+          completedAt: sweptAt,
+          expectedStatuses: ['pending'],
+          expectedRunAtAtOrBefore: cutoff,
+          clearWorker: true,
+          lastError,
+          failureKind: 'handler-unclaimed',
+        });
+      } catch (error) {
+        this.emit('runner:error', error as Error);
+        continue;
+      }
+      if (!event) continue;
+      job.status = 'failed';
+      job.completedAt = sweptAt;
+      job.lastError = lastError;
+      this.emitPersistedJobEvent(job, event);
+      this.emit('job:unclaimed', job, new Error(lastError));
     }
   }
 
