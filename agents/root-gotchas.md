@@ -34,4 +34,6 @@ use named `$props()` interfaces to avoid recursive inline intersections.
   `scripts/hand-written-ddl-baseline.json`, which only shrinks (`--prune`).
   Declare the shape on a model instead.
 - `pnpm lint` also runs `scripts/check-runtime-managed-databases.mjs` (#4927):
-  only its allow-list may call `declareRuntimeManagedDatabase`.
+  only its allow-list may call `declareRuntimeManagedDatabase` (exported from
+  `@happyvertical/smrt-core/migrations` only). The check sees only this
+  repository; elsewhere the declaration is the app author's logged choice.

@@ -15,6 +15,9 @@ export default defineConfig({
     },
   },
   test: {
+    // ~125 test files: a one-worker pin makes this suite unreasonably slow, so cap
+    // at 4 workers instead of fileParallelism: false (that pin ignores maxWorkers).
+    maxWorkers: 4,
     globalSetup: ['../vitest/src/test-home.global-setup.ts'],
     globals: true,
     environment: 'node',

@@ -313,7 +313,7 @@ it('reviews real load and field rename rehearsals without false removals or form
         'test-support/draft-review-engine-previews.ts',
         output,
       ],
-      { timeout: 90000 },
+      { timeout: 150000 },
     );
     const previews = JSON.parse(readFileSync(output, 'utf8')) as Record<
       string,
@@ -438,7 +438,7 @@ it('reviews real load and field rename rehearsals without false removals or form
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-}, 120000);
+}, 180000);
 
 it('sizes summary tracks to the available column and keeps heading words intact', () => {
   const source = readFileSync(

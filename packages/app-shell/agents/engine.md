@@ -29,7 +29,10 @@ adds) and swaps it in once it is ready. The engine must not import SvelteKit,
   Tables are still checked. Every app.db the engine touches is opened there:
   live, draft copies, publish rehearsal and the read-only report worker. Open
   app.db nowhere else; `scripts/check-runtime-managed-databases.mjs` allows the
-  call only in `app-runtime.ts`. `production-start.test.ts` boots the engine
+  call only in `app-runtime.ts`; that check runs only inside this repository, so
+  outside it the declaration is the app author's explicit, logged choice (core
+  logs each handle's declaration once at `info`, and exports the function from
+  `@happyvertical/smrt-core/migrations` only). `production-start.test.ts` boots the engine
   with `NODE_ENV=production`.
 - **Column storage.** No column-type history: re-adding a field checks the real
   column's storage family. Text defaults can be `''`, so counts and archives use

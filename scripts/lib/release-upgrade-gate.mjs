@@ -1032,6 +1032,26 @@ export function moveOldest({
   return next;
 }
 
+/** A snapshot must not hold fewer than this share of the previous one's model tables. */
+export const MIN_MODEL_TABLE_SHARE = 0.9;
+/**
+ * Refuse a snapshot that cannot prove an upgrade: one with no tables, no model
+ * tables, or markedly fewer model tables than the previous snapshot (#4933).
+ * An empty snapshot restores nothing, so the rehearsal would pass vacuously.
+ */
+export function assertSnapshotPlausible(snapshot, previous) {
+  const label = `release snapshot ${snapshot.release}`;
+  const count = snapshot.modelTables?.length ?? 0;
+  if (!Object.keys(snapshot.tables ?? {}).length || count === 0)
+    throw new Error(
+      `Refusing ${label}: it holds ${count} model table(s) and ${Object.keys(snapshot.tables ?? {}).length} table(s). Rebuild with a clean build (pnpm build --force) and capture again.`,
+    );
+  const before = previous?.modelTables?.length ?? 0;
+  if (before && count < before * MIN_MODEL_TABLE_SHARE)
+    throw new Error(
+      `Refusing ${label}: ${count} model table(s) is fewer than ${MIN_MODEL_TABLE_SHARE * 100}% of the ${before} in ${previous.release}. Rebuild with a clean build and capture again.`,
+    );
+}
 /** The repository this script runs from: its core projects manifests. */
 const harnessRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -1067,6 +1087,15 @@ export async function check({
     readJSON(path.join(directory, 'leftover-columns.json')),
   );
   validateSeedFiles(directory, versions);
+  const ordered = [...versions].sort(build.compareReleases);
+  ordered.forEach((release, index) =>
+    assertSnapshotPlausible(
+      readJSON(path.join(directory, `snapshots/${release}.json`)),
+      index
+        ? readJSON(path.join(directory, `snapshots/${ordered[index - 1]}.json`))
+        : undefined,
+    ),
+  );
   // Owners files are checked with their snapshots (#5005).
   const snapshots = new Map(
     versions.map((version) => [
@@ -1186,6 +1215,16 @@ export async function save({
   const build = await loadBuild(root, { manifests: false });
   const compare = build.compareReleases ?? compareReleases;
   const oldest = validateOldest(directory, compare);
+  const older = snapshotVersions(directory)
+    .filter((version) => compare(version, snapshot.release) < 0)
+    .sort(compare)
+    .at(-1);
+  assertSnapshotPlausible(
+    snapshot,
+    older
+      ? readJSON(path.join(directory, `snapshots/${older}.json`))
+      : undefined,
+  );
   writeFileSync(
     path.join(directory, `snapshots/${snapshot.release}.json`),
     stableJSON(snapshot),

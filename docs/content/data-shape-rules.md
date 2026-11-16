@@ -80,7 +80,11 @@ Read this before you upgrade a deployed app.
   migrate never builds, because the code that opens it builds its own schema
   (today only each app's `app.db` in the app shell), is declared so where it
   is opened, with its owner and a reason, and is not compared; its tables are
-  still checked.
+  still checked. The list of allowed callers is enforced only inside the smrt
+  repository. In your own app the declaration
+  (`declareRuntimeManagedDatabase`, from `@happyvertical/smrt-core/migrations`)
+  is your explicit choice, and smrt logs it once per database handle at `info`
+  level, with the owner, the reason and the database.
 - **A redeclared field keeps its parent's options.** If your subclass declares a
   field again, it now inherits every option the parent set and changes only
   what you write. A subclass that wrote the field bare, hoping to reset it, now

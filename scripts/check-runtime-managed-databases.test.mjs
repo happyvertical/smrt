@@ -37,7 +37,7 @@ declareRuntimeManagedDatabase(db, d);`),
 test('the allowed engine call passes; tests and core exports are not flagged', () => {
   const root = repo({
     [ENGINE]: CALL,
-    'packages/core/src/index.ts': 'export { declareRuntimeManagedDatabase } from "./x.js";\n',
+    'packages/core/src/migrations/index.ts': 'export { declareRuntimeManagedDatabase } from "./x.js";\n',
     'packages/core/src/migrations/runtime-managed-database.ts':
       'export function declareRuntimeManagedDatabase() {}\n',
     'packages/p/src/store.test.ts': CALL,

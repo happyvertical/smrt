@@ -1824,7 +1824,11 @@ has no environment switch. Today the only caller is the app-shell engine,
 which opens each app's `app.db` and builds its schema from the app definition.
 `scripts/check-runtime-managed-databases.mjs` (in `pnpm lint`) fails when any
 other file uses it; a new caller is added to its allow-list on purpose, with
-its reason.
+its reason. That allow-list is enforced only inside this repository. Outside
+it, the declaration is the app author's explicit choice: the function is
+exported from `@happyvertical/smrt-core/migrations` only (not the root or
+browser entry), and each handle's first declaration is logged once at `info`
+with the owner, reason and database (credentials and query string removed).
 
 For an emergency, `SMRT_ALLOW_UNMIGRATED_START=1` starts anyway. It logs once
 per database per process, including when fingerprints match. The warning names

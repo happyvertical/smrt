@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.61.3
+
+### Patch Changes
+
+- ### Other Changes
+  
+  - build: shared turbo cache, cache limits, local concurrency, vitest worker caps (#5012)
+- @happyvertical/smrt-config@0.61.3
+  - @happyvertical/smrt-scanner@0.61.3
+  - @happyvertical/smrt-types@0.61.3
+
 ## 0.61.2
 
 ### Patch Changes
