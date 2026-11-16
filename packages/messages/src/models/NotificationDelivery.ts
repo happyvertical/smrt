@@ -184,20 +184,25 @@ export class NotificationDelivery extends SmrtObject {
   @crossPackageRef('@happyvertical/smrt-profiles:Profile', { nullable: true })
   recipientProfileId: string | null = null;
 
-  /** Exactly one corresponding reference is required; legacy rows remain users. */
-  @field({ required: true })
+  /**
+   * Exactly one of `recipientUserId` and `recipientProfileId` is set, and this
+   * says which. Neither column is required alone: the either/or rule is a
+   * cross-field check (`assertNotificationRecipientIdentity`, run on every
+   * save). Legacy rows remain users.
+   */
+  @field({ required: true, requiredFor: 'identity' })
   recipientKind: 'user' | 'profile' = 'user';
 
   /** Delivery channel; only `email` today. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   channel: NotificationDeliveryChannel = 'email';
 
   /** Idempotency key for the underlying event (see class docs). */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'idempotency' })
   sourceRef = '';
 
   /** Host-defined type, e.g. `project-question.asked`. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   kind = '';
 
   /** Trusted host policy required at every provider handoff; empty is legacy ordinary mail. */
@@ -208,19 +213,19 @@ export class NotificationDelivery extends SmrtObject {
   dispatchPolicyBinding = '{}';
 
   /** Email subject line. */
-  @field({ required: true })
+  @field()
   subject = '';
 
   /** Plain-text body; the deep link is appended on its own line. */
-  @field({ required: true })
+  @field()
   textBody = '';
 
   /** Absolute deep link on the host's configured origin (no credentials). */
-  @field({ required: true })
+  @field()
   href = '';
 
   /** Address snapshot from the host recipient resolver. */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   recipientAddress = '';
 
   /** Display name snapshot from the host recipient resolver. */

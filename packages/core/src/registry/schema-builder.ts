@@ -26,6 +26,7 @@ import {
   resolveForeignKeyDeleteAction,
   resolveForeignKeyUpdateAction,
 } from '../schema/foreign-key-policy.js';
+import { SchemaGenerator } from '../schema/generator.js';
 import { shortenIdentifier } from '../schema/index-utils.js';
 import {
   formatDefaultValue as formatDefaultValueShared,
@@ -36,6 +37,7 @@ import type {
   IndexDefinition,
   SchemaDefinition,
   SQLDataType,
+  TableCheckDefinition,
 } from '../schema/types.js';
 import { classnameToTablename, toSnakeCase } from '../utils';
 import { sha256Hex } from '../utils/sha256.js';
@@ -432,6 +434,8 @@ interface MergedTableSchema {
   tableName: string;
   columns: Record<string, ColumnDefinition>;
   indexes: IndexDefinition[];
+  /** Shared-table class rules from the contributors' manifests (#4932). */
+  checks: TableCheckDefinition[];
   ddl: string;
   isSTI: boolean;
   conflictColumns: string[];
@@ -748,6 +752,8 @@ function buildMergedTableSchemas(
     const contributors = contributorsByTable.get(tableName) ?? [];
     assertSingleTableFamily(tableName, contributors);
     const orderedContributors = sortTableContributors(contributors);
+    const completionFields = new Map<string, FieldDefinition>();
+    let needsIndexCompletion = false;
     for (const contributor of orderedContributors) {
       const { registered, simpleName, isSTI } = contributor;
       const conflictColumns = ObjectRegistry.getConflictColumns(
@@ -770,6 +776,21 @@ function buildMergedTableSchemas(
         { stiUnionColumns: isSTI, conflictColumns },
       );
 
+      // Complete only the runtime fallback, after every contributor's indexes
+      // has been collected. A current manifest already owns its full index set.
+      if (!registered.schema) needsIndexCompletion = true;
+      for (const [fieldName, field] of contributorFields) {
+        const columnName = toSnakeCase(fieldName);
+        if (
+          (!registered.schema?.columns?.[columnName] &&
+            columnsToUse[columnName]) ||
+          (!registered.schema && field.type === 'meta')
+        ) {
+          needsIndexCompletion = true;
+          completionFields.set(fieldName, field);
+        }
+      }
+
       let tableSchema = tableSchemas[tableName];
       if (!tableSchema) {
         tableSchema = {
@@ -779,6 +800,7 @@ function buildMergedTableSchemas(
             ...columnsToUse,
           },
           indexes: [],
+          checks: [],
           ddl: registered.schema?.ddl || '',
           isSTI,
           conflictColumns,
@@ -795,6 +817,15 @@ function buildMergedTableSchemas(
       }
 
       applyContributorForeignKeys(tableSchema, contributor, contributorFields);
+
+      // Merge class rules (#4932), keeping the first of each name. The
+      // manifest of the shared table's base carries them; without this the
+      // migration plan, built from this merge, never created the constraint.
+      for (const check of registered.schema?.checks ?? []) {
+        if (!tableSchema.checks.some((known) => known.name === check.name)) {
+          tableSchema.checks.push({ ...check });
+        }
+      }
 
       // Merge indexes, keeping the first definition of each name.
       const schemaIndexes = registered.schema?.indexes;
@@ -861,6 +892,26 @@ function buildMergedTableSchemas(
         if (existing >= 0) tableSchema.indexes[existing] = childIndex;
         else tableSchema.indexes.push(childIndex);
       }
+    }
+    if (needsIndexCompletion) {
+      const owner = orderedContributors[0];
+      new SchemaGenerator().completeIndexes(
+        tableSchema.indexes,
+        tableSchema.columns,
+        tableName,
+        {
+          fields: completionFields,
+          sti: tableSchema.isSTI,
+          declaredIndexes: owner.registered.config.indexes,
+          subclassDeclarations: tableSchema.isSTI
+            ? orderedContributors.slice(1).map((contributor) => ({
+                className: contributor.qualifiedName,
+                indexes: contributor.registered.config.indexes,
+              }))
+            : [],
+          subtreeOf: (className) => ObjectRegistry.getDescendants(className),
+        },
+      );
     }
     if (scope) {
       for (const foreignKey of schemaForeignKeys({
@@ -1041,6 +1092,7 @@ export function getAllSchemasAsDefinitions(options?: {
         tableSchema.conflictColumns,
       ),
       triggers: [],
+      ...(tableSchema.checks.length > 0 ? { checks: tableSchema.checks } : {}),
       foreignKeys,
       version: '',
       dependencies: foreignKeys

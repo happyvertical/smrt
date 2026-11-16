@@ -362,7 +362,7 @@ export type CourseReleaseView = Readonly<{
     lessonKey: string;
     lessonRevisionId: string;
     lessonId: string;
-    sectionId: string;
+    sectionId: string | null;
   }>;
 }>;
 export type CourseLifecycleState =

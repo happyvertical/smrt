@@ -69,12 +69,12 @@ export class Referral extends SmrtObject {
 
   /** The Referrer credited with the introduction. Required. */
   @field({ description: 'The affiliate who sent this person.' })
-  @foreignKey('Referrer', { required: true })
+  @foreignKey('Referrer', { required: true, requiredFor: 'identity' })
   referrerId: string = '';
 
   /** The ReferralProgram the referral belongs to. Required. */
   @field({ description: 'The program this referral counts towards.' })
-  @foreignKey('ReferralProgram', { required: true })
+  @foreignKey('ReferralProgram', { required: true, requiredFor: 'identity' })
   programId: string = '';
 
   /** AttributionPolicy key resolved at attribution ('' until attributed). */

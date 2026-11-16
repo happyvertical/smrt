@@ -64,7 +64,6 @@ export class SocialPostAnalyticsSnapshot extends SmrtObject {
   socialPostId: string | null = null;
 
   @field({
-    required: true,
     description: 'The platform that reported the numbers.',
   })
   platform: SocialPlatformType | null = null;

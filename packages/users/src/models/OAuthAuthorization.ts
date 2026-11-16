@@ -45,7 +45,13 @@ function tokenClaims(value: unknown): OAuthTokenClaims {
   cli: false,
 })
 export class UsersOAuthClient extends SmrtObject {
-  @field({ type: 'text', required: true, unique: true }) clientId = '';
+  @field({
+    type: 'text',
+    required: true,
+    requiredFor: 'identity',
+    unique: true,
+  })
+  clientId = '';
   redirectUris = '[]';
   allowedScopes = '[]';
   tokenEndpointAuthMethod: 'none' | 'client_secret_post' = 'none';
@@ -75,7 +81,13 @@ export class UsersOAuthClient extends SmrtObject {
 export class UsersOAuthAuthorizationCode extends SmrtObject {
   @field({ nullable: true, indexed: true }) authorizationId: string | null =
     null;
-  @field({ type: 'text', required: true, unique: true, sensitive: true })
+  @field({
+    type: 'text',
+    required: true,
+    requiredFor: 'identity',
+    unique: true,
+    sensitive: true,
+  })
   codeHash = '';
   @field({ type: 'text', indexed: true }) clientId = '';
   @field({ type: 'text', indexed: true }) subject = '';
@@ -105,7 +117,13 @@ export class UsersOAuthAuthorizationCode extends SmrtObject {
 export class UsersOAuthRefreshGrant extends SmrtObject {
   @field({ nullable: true, indexed: true }) authorizationId: string | null =
     null;
-  @field({ type: 'text', required: true, unique: true, sensitive: true })
+  @field({
+    type: 'text',
+    required: true,
+    requiredFor: 'identity',
+    unique: true,
+    sensitive: true,
+  })
   tokenHash = '';
   @field({ type: 'text', indexed: true }) familyId = '';
   @field({ type: 'text', indexed: true }) clientId = '';

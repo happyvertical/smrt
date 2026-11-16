@@ -1,4 +1,7 @@
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  ObjectRegistry,
+  type SmrtClassOptions,
+} from '@happyvertical/smrt-core';
 import { AccountCollection } from '../collections/AccountCollection.js';
 import { MessagingEndpointCollection } from '../collections/MessagingEndpointCollection.js';
 import { PersonaMessageRouteCollection } from '../collections/PersonaMessageRouteCollection.js';
@@ -101,7 +104,7 @@ export class PersonaMessagingService {
         }
         const address = endpoint.getAddress<{ email?: string }>();
         if (!address.email) throw new Error('Email endpoint has no address.');
-        const email = new Email({
+        const email = new (ObjectRegistry.resolveEffectiveConstructor(Email))({
           ...base,
           textBody: base.body,
           hasAttachments: Boolean(input.attachments?.length),
@@ -109,7 +112,9 @@ export class PersonaMessagingService {
         email.setToAddresses([{ address: address.email }]);
         message = email;
       } else {
-        message = new Message(base);
+        message = new (ObjectRegistry.resolveEffectiveConstructor(Message))(
+          base,
+        );
       }
       await message.initialize();
       await message.save();

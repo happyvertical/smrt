@@ -24,6 +24,32 @@ import { createRailWorld } from './helpers/crypto-rail.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
+/**
+ * Drops the scratch database after the suite has closed every connection it
+ * opened. `WITH (FORCE)` needs permission to terminate other roles' sessions
+ * (42501 on shared CI servers), so drop plainly and retry while closed pools
+ * drain. The admin connection is always closed.
+ */
+async function dropScratchDatabase(
+  admin: DatabaseInterface | undefined,
+  databaseName: string,
+): Promise<void> {
+  if (!admin) return;
+  try {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await admin.query(`DROP DATABASE IF EXISTS ${databaseName}`);
+        break;
+      } catch (error) {
+        if (attempt >= 4) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+    }
+  } finally {
+    await (admin as { close?: () => Promise<void> }).close?.();
+  }
+}
+
 const OBJECTS = [
   'BillingRelationship',
   'TenantUsageMetric',
@@ -84,8 +110,7 @@ describePostgres('smrt#3138 crypto payment rail on PostgreSQL', () => {
       await (db as { close?: () => Promise<void> }).close?.();
     }
     process.env.DATABASE_URL = baseUrl;
-    await admin?.query(`DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`);
-    await (admin as { close?: () => Promise<void> } | undefined)?.close?.();
+    await dropScratchDatabase(admin, databaseName);
   });
 
   it('settles credit and an invoice exactly once across two connections', async () => {

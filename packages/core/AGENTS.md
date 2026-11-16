@@ -1,6 +1,6 @@
 # @happyvertical/smrt-core
 
-Foundation ORM, registry, schema/code generation, AI integration, and DispatchBus.
+ORM, registry, schema/code generation, AI, and DispatchBus.
 Read the module for the subsystem being edited; root AGENTS covers shared model
 and repository rules.
 
@@ -14,6 +14,7 @@ and repository rules.
 | `src/collection.ts` | Limits, sort whitelist, generated list order | [agents/query-bounds.md](agents/query-bounds.md) |
 | `src/data-query.ts` | Transport-neutral bounded query normalization | [agents/data-query.md](agents/data-query.md) |
 | `src/schema/`, `src/migrations/`, `src/cascade.ts`, `src/system/` | DDL parity, indexes, migrations, delete integrity, retention | [agents/schema-paths.md](agents/schema-paths.md) |
+| `src/schema/`, `src/migrations/`, `src/scanner/` | Data shape rules: required only with a reason, harden by subclass, migrate all or nothing (#4920) | [agents/data-shape-rules.md](agents/data-shape-rules.md) |
 | `src/postgres-permissions.ts` | Explicit PostgreSQL ACL plans and atomic reconciliation | [deployment permission contract](../../docs/content/postgres-permissions.md) |
 | `src/migrations/deployment-phase-tracker.ts` | Permanent checksummed PostgreSQL deployment steps, atomic markers and explicit external-effect reconciliation | [agents/deployment-phases.md](agents/deployment-phases.md) |
 | `src/change-feed.ts` | Durable changes, cursors, table versions, retention | [agents/change-feed.md](agents/change-feed.md) |
@@ -110,7 +111,7 @@ and repository rules.
   Bootstrap uses a transaction-scoped advisory lock, taken only when the
   PostgreSQL schema version is not yet stamped: inside a caller's transaction it
   is held until that transaction ends (#2868). Application tables still require migrations;
-  runtime table verification checks existence only.
+  runtime verification checks table existence and the last migrate fingerprint.
 - Manifest generation fails closed on scanner errors, including unresolved
   decorator spreads. Never emit partial, default-open registration.
 - Generated registration repairs bundled class identity using the exact imported

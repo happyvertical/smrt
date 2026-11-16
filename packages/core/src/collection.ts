@@ -2980,6 +2980,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       this.db,
       this.tableName,
       this.getResolvedItemClassName(),
+      this.getDatabaseEngineHint(),
     );
   }
 

@@ -82,6 +82,7 @@ export class ApprovalEvent extends SmrtObject {
   @field({ description: 'The request this entry belongs to.' })
   @foreignKey(ApprovalRequest, {
     required: true,
+    requiredFor: 'identity',
     readonly: true,
     onDelete: 'RESTRICT',
     onUpdate: 'RESTRICT',
@@ -103,6 +104,7 @@ export class ApprovalEvent extends SmrtObject {
   @field({
     type: 'text',
     required: true,
+    requiredFor: 'identity',
     readonly: true,
     description: 'Who did it.',
   })

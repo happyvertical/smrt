@@ -31,13 +31,20 @@ export class CommentReport extends SmrtObject {
   tenantId = '';
 
   // Reports outlive comment-state changes and must work on DuckDB.
-  @foreignKey('Comment', { required: true, constraint: false })
+  @foreignKey('Comment', {
+    required: true,
+    requiredFor: 'identity',
+    constraint: false,
+  })
   commentId = '';
 
-  @crossPackageRef('@happyvertical/smrt-users:User', { required: true })
+  @crossPackageRef('@happyvertical/smrt-users:User', {
+    required: true,
+    requiredFor: 'identity',
+  })
   reporterUserId = '';
 
-  @field({ required: true })
+  @field()
   reason = '';
 
   @field({ required: true })

@@ -161,12 +161,13 @@ function inferAssetTypeSlug(mimeType: string): string {
   cli: { skipApiCheck: true },
 })
 export class ContentContribution extends SmrtObject {
-  @foreignKey('ContentContributor', { required: true })
+  @foreignKey('ContentContributor', { nullable: true })
   @field({ description: 'The person who sent this in.' })
-  contributorId = '';
+  contributorId: string | null = null;
 
   @field({
     required: true,
+    requiredFor: 'identity',
     description:
       'What kind of submission it is, such as an article or a letter.',
   })

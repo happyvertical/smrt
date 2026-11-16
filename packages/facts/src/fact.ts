@@ -50,7 +50,7 @@ function isKnownPersistedText(value: unknown): value is string | null {
   cli: { skipApiCheck: true },
 })
 export class Fact extends SmrtObject {
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'idempotency' })
   textRefined: string = '';
 
   @field()

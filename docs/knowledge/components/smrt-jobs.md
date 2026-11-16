@@ -5,10 +5,10 @@ description: "Background job processing for SMRT objects with persistence and sc
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-12T23:43:19Z"
+  at: "2026-11-13T21:00:09Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:e544be6e720e274b3e631842264fb8bf4f62db5d816513185c5570ee418a49ae"
+source_revision: "sha256:d9ceed3baa7334395e3d098e123c201151945c35073020ba2836f3ba7fb17087"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/jobs/package.json"

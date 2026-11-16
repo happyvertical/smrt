@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   isPostgresDatabase,
+  ObjectRegistry,
   type SmrtClassOptions,
 } from '@happyvertical/smrt-core';
 import {
@@ -78,7 +79,7 @@ export async function provisionCanonicalMailboxIdentity(
       name: 'Person',
       description: 'Individual person profile',
     });
-    const person = new Person({
+    const person = new (ObjectRegistry.resolveEffectiveConstructor(Person))({
       ...options,
       tenantId: null,
       typeId: requiredId(personType.id),

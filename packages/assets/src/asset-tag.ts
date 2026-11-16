@@ -40,12 +40,17 @@ export class AssetTag extends SmrtObject {
   tenantId: string | null = null;
 
   /** FK to Asset.id — the link goes with the asset. */
-  @foreignKey('Asset', { required: true, onDelete: 'CASCADE' })
+  @foreignKey('Asset', {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'CASCADE',
+  })
   assetId = '';
 
   /** FK to smrt-tags Tag.id — the link goes with the tag. */
   @crossPackageRef('@happyvertical/smrt-tags:Tag', {
     required: true,
+    requiredFor: 'identity',
     onDelete: 'CASCADE',
   })
   tagId = '';

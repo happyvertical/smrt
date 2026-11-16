@@ -13,6 +13,9 @@ it.skipIf(!isPostgresAvailable())(
     const isolated = await createIsolatedTestDbFromManifest({
       includeObjects: [
         'Customer',
+        // Customer's profile write-through creates the Profile and its type.
+        'Profile',
+        'ProfileType',
         'Contract',
         'Invoice',
         'InvoiceLineItem',

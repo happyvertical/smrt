@@ -32,10 +32,8 @@ Application infrastructure composition for the validated runtime profiles in
   (injected `vaultKeyStore`, else the keychain-wrapped store when the desktop
   wrapper sets `SMRT_DESKTOP_KEYCHAIN=1`, else the file store in a
   `.smrt-keys-<root name>` sibling of the data root), under the initialization
-  lock. `src/keychain-vault-key-store.ts` seals items under a key in the OS
-  keychain and fails closed (never falls back, never re-keys) when sealed items
-  exist without a readable key; keychain tests use fakes only, never the real
-  keychain. Hex for
+  lock; the keychain store fails closed:
+  [agents/keychain-vault-key-store.md](agents/keychain-vault-key-store.md). Hex for
   `SecretService.create({ masterKeyProvider })` only; errors carry no key,
   path or cause. Deployed profiles return `null` (env var only); never add a
   generated or default key outside the local profile.
@@ -62,8 +60,9 @@ Application infrastructure composition for the validated runtime profiles in
   keep name and shape. It runs on EVERY start after the framework step
   (idempotent). `context`: `db`, `profile`, `paths` (null deployed), `firstRun`,
   `migrateSchemas()`; `(db)` callers still work. Its rejection is
-  `migration_failed`; a framework-step failure is `schema_creation_failed`.
-  Both are fixed text, cause only as non-enumerable `cause`, root retryable.
+  `migration_failed`; a framework-step failure is `schema_creation_failed`
+  (fixed text, cause only as non-enumerable `cause`, root retryable). A refused
+  migrate is `schema_migration_refused`, nothing applied: [agents/local-schema.md](agents/local-schema.md). Call `assertMigrationAccepted(result)` before `applied`.
   Tests of creation set `SMRT_VITEST_AUTO_SCHEMA=0` (the shared setup
   otherwise pre-creates every registered table).
 - Standalone migration commands must call `prepareLocalDatabaseStorage()`

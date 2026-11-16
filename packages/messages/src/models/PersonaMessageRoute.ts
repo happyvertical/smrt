@@ -31,13 +31,14 @@ export class PersonaMessageRoute extends SmrtObject {
 
   @crossPackageRef('@happyvertical/smrt-personas:AgentPersona', {
     required: true,
+    requiredFor: 'identity',
   })
   personaId = '';
 
-  @foreignKey('Account', { required: true })
+  @foreignKey('Account', { required: true, requiredFor: 'identity' })
   accountId = '';
 
-  @foreignKey('MessagingEndpoint', { required: true })
+  @foreignKey('MessagingEndpoint', { required: true, requiredFor: 'identity' })
   endpointId = '';
 
   @field({ required: true })

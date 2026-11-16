@@ -37,13 +37,18 @@ export class PollVote extends SmrtObject {
   @tenantId() tenantId = '';
   @foreignKey(Poll, {
     required: true,
+    requiredFor: 'identity',
     onUpdate: 'NO ACTION',
     onDelete: 'NO ACTION',
   })
   pollId = '';
-  @crossPackageRef('@happyvertical/smrt-profiles:Profile', { required: true })
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile', {
+    required: true,
+    requiredFor: 'identity',
+  })
   actorProfileId = '';
-  @field({ required: true, readonly: true }) optionId = '';
+  @field({ required: true, requiredFor: 'identity', readonly: true })
+  optionId = '';
   @field({ type: 'text', required: true, readonly: true })
   participationSnapshot = '{}';
   constructor(options: PollVoteOptions = {}) {

@@ -16,3 +16,24 @@ classes. Rebuild core after scanner/schema-generator edits: the Vite plugin
 consumes deterministic `dist/` artifacts. Vite 8 requires Oxc legacy decorators
 (see core guidance). Svelte subpaths require `svelte-check`, not just `tsc`;
 use named `$props()` interfaces to avoid recursive inline intersections.
+
+## Build-time gates beyond Biome
+
+- `pnpm build` runs `check:manifest-paths` after Turbo: a built manifest must
+  not hold an absolute `filePath` (#4948). Rebuild the named package.
+- `pnpm lint` runs `scripts/check-required-reasons.mjs` (#4923): a
+  `required: true` field in `packages/*/src` states `requiredFor` or sits in
+  `scripts/required-reasons-baseline.json`, which only shrinks
+  (`--prune` drops fixed entries).
+- `pnpm lint` also runs `scripts/check-hand-written-ddl.mjs` (#4930): a new
+  hand-written `CREATE`/`ALTER`/`DROP TABLE` in `packages/*/src` outside the
+  migrator, the schema code, core's `system/` tables and the code that builds
+  a database it declares runtime-managed (the allow-list of
+  `scripts/check-runtime-managed-databases.mjs`, today the app-shell engine)
+  fails, naming file and line. Existing ones sit in
+  `scripts/hand-written-ddl-baseline.json`, which only shrinks (`--prune`).
+  Declare the shape on a model instead.
+- `pnpm lint` also runs `scripts/check-runtime-managed-databases.mjs` (#4927):
+  only its allow-list may call `declareRuntimeManagedDatabase` (exported from
+  `@happyvertical/smrt-core/migrations` only). The check sees only this
+  repository; elsewhere the declaration is the app author's logged choice.

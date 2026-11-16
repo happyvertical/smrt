@@ -68,7 +68,7 @@ function getPromptConfig(): PromptPackageConfig {
   mcp: false,
 })
 export class PromptOverride extends SmrtObject {
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   key: string = '';
 
   // Not tenant-scoped (any scope is writable), but the value is a tenant id:

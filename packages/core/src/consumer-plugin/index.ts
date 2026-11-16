@@ -23,6 +23,11 @@ import { annotateModelReplacements } from '../manifest/model-replacements';
 import { selectObjectDeclarations } from '../manifest/object-declarations.js';
 import { manifestExportCandidates } from '../manifest/package-manifest-exports.js';
 import { isTestArtifactManifest } from '../manifest/test-artifacts.js';
+import {
+  BUILD_SCHEMA_MODULE,
+  generateBuildSchemaModule,
+} from '../migrations/build-schema.js';
+import { tryComputeManifestSchemaFingerprint } from '../migrations/schema-fingerprint.js';
 import { generateDeclarations } from '../prebuild/index.js';
 import type {
   SmartObjectDefinition,
@@ -111,6 +116,7 @@ class AmbiguousProviderGraphError extends Error {}
  * JSON read at the package boundary.
  */
 interface ConsumerManifest {
+  schemaFingerprint?: string;
   recipes?: RecipeDefinition[];
   version: string;
   timestamp: number;
@@ -1874,6 +1880,14 @@ async function saveAggregatedManifest(
 
     merged = annotateModelReplacements(merged);
 
+    // Stamp after the replacement annotation so the stamp describes the
+    // manifest that is written (#4929).
+    merged.schemaFingerprint = tryComputeManifestSchemaFingerprint(
+      merged as unknown as SmartObjectManifest,
+      (error) =>
+        console.warn(`[smrt] No schema fingerprint written: ${error.message}`),
+    );
+
     // smrtPlugin writes the local knowledge artifact before this consumer
     // plugin merges external package entries into the same manifest. Refresh
     // the artifact from the merged manifest so its source hash always names
@@ -1894,8 +1908,17 @@ async function saveAggregatedManifest(
           projectRoot,
           merged.packageName ?? packageJson?.name,
         );
+    // The app's build module, from the same merged manifest in the same
+    // publish, so its description is the one migrate reads (#4929).
+    const buildSchemaModule = {
+      path: path.join(smrtDir, BUILD_SCHEMA_MODULE),
+      content: generateBuildSchemaModule(
+        merged as unknown as SmartObjectManifest,
+      ),
+    };
     if (knowledgeConfig.enabled === false) {
       publishArtifactFiles([
+        buildSchemaModule,
         { path: manifestPath, content: JSON.stringify(merged, null, 2) },
       ]);
       return;
@@ -1914,6 +1937,7 @@ async function saveAggregatedManifest(
     // with ordinary filesystem operations, so the next generation remains the
     // freshness repair path for that distinct failure mode.
     publishArtifactFiles([
+      buildSchemaModule,
       { path: knowledgePath, content: JSON.stringify(knowledge, null, 2) },
       { path: manifestPath, content: JSON.stringify(merged, null, 2) },
     ]);
@@ -1963,7 +1987,11 @@ async function generateRegistrationFile(
         path: path.join(smrtDir, file),
         content,
       })),
-      { path: registerPath, content: generated.source },
+      {
+        path: registerPath,
+        // This app build's schema first, as in the eager register (#4929).
+        content: `import './${BUILD_SCHEMA_MODULE}';\n${generated.source}`,
+      },
       {
         path: path.join(smrtDir, 'activation-manifest.json'),
         content: JSON.stringify(generated.manifest, null, 2),
@@ -2271,8 +2299,10 @@ async function generateRegistrationFile(
     }
 
     const logicalName = def.className || exportName;
+    // The build's stamp stays in .smrt/manifest.json only (#4929).
+    const { schemaFingerprint: _buildStamp, ...registrationBase } = manifest;
     registrationManifests[objectName] = {
-      ...manifest,
+      ...registrationBase,
       packageName: def.packageName,
       packageVersion: def.packageVersion || manifest.packageVersion,
       objects: { [objectName]: def },
@@ -2412,6 +2442,8 @@ if (${viteOnlyNamespaceBindings.has(namespaceBinding) ? 'SMRT_VITE_RUNTIME && ' 
  * Generated at: ${new Date().toISOString()}
  */
 
+// This app build's schema first: startup compares its stamp (#4929).
+import './${BUILD_SCHEMA_MODULE}';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 ${transitiveNamespaces.size > 0 ? "import { registerHooks } from 'node:module';" : ''}
 

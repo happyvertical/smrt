@@ -60,6 +60,7 @@ export class ContentContributor extends SmrtObject {
 
   @field({
     required: true,
+    requiredFor: 'identity',
     description: 'The email address the contributor writes in from.',
   })
   email = '';

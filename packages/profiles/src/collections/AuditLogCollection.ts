@@ -76,7 +76,7 @@ export class AuditLogCollection extends SmrtCollection<AuditLog> {
     reason?: string;
     changes?: Record<string, AuditChange>;
   }): Promise<AuditLog> {
-    const log = new AuditLog({
+    const log = await this.create({
       ...this.options,
       profileId: options.profile.id as string,
       action: options.action,
@@ -88,8 +88,6 @@ export class AuditLogCollection extends SmrtCollection<AuditLog> {
       metadata: options.metadata || {},
       onBehalfOfId: options.onBehalfOf?.id as string | undefined,
     });
-    await log.initialize();
-    await log.save();
     return log;
   }
 

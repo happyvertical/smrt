@@ -62,7 +62,6 @@ export class Ledger extends SmrtObject {
           'Ledger currency, balance mode and owner are immutable',
         );
     }
-    if (!this.name.trim()) throw new Error('Ledger name is required');
     if (!/^[A-Z]{3}$/.test(this.currency))
       throw new Error('Ledger currency must be an uppercase ISO 4217 code');
   }

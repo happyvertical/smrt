@@ -32,6 +32,11 @@
       "import": "./dist/svelte.js",
       "default": "./dist/svelte.js"
     },
+    "./minimal-row": {
+      "types": "./dist/minimal-row.d.ts",
+      "import": "./dist/minimal-row.js",
+      "default": "./dist/minimal-row.js"
+    },
     "./a11y": {
       "types": "./dist/a11y.d.ts",
       "import": "./dist/a11y.js",

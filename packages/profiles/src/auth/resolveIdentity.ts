@@ -12,6 +12,7 @@
  */
 
 import {
+  ObjectRegistry,
   resolveDatabase,
   type SmrtObjectOptions,
 } from '@happyvertical/smrt-core';
@@ -649,7 +650,7 @@ export async function createProfileFromNostr(
 
   if (!personType) {
     const { ProfileType } = await import('../models/ProfileType');
-    personType = new ProfileType({
+    personType = new (ObjectRegistry.resolveEffectiveConstructor(ProfileType))({
       ...options,
       slug: 'person',
       name: 'Person',
@@ -659,7 +660,7 @@ export async function createProfileFromNostr(
     await personType.save();
   }
 
-  const profile = new Person({
+  const profile = new (ObjectRegistry.resolveEffectiveConstructor(Person))({
     ...options,
     typeId: personType.id as string,
     email: normalizedEmail,
@@ -669,7 +670,9 @@ export async function createProfileFromNostr(
   await profile.save();
 
   // Create Nostr identity
-  const nostrIdentity = new NostrIdentity({
+  const nostrIdentity = new (ObjectRegistry.resolveEffectiveConstructor(
+    NostrIdentity,
+  ))({
     ...options,
     profileId: profile.id as string,
     pubkey: nostrData.pubkey,

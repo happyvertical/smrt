@@ -56,6 +56,7 @@ export class InventoryLocation extends SmrtObject {
    */
   @field({
     required: true,
+    requiredFor: 'identity',
     description: 'A short code for the place stock is kept, for example MAIN.',
   })
   code: string = '';

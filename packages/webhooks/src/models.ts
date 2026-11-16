@@ -23,10 +23,17 @@ import { assertHmacSecret, assertWebhookUrl } from './security.js';
 @TenantScoped({ mode: 'required' })
 export class WebhookSubscription extends SmrtObject {
   @tenantId() tenantId: string = '';
-  @field({ type: 'text', required: true }) url: string = '';
+  @field({ type: 'text', required: true, requiredFor: 'system-table' })
+  url: string = '';
   @field({ type: 'json' }) events: string[] = [];
   @field({ type: 'json' }) models: string[] = [];
-  @field({ type: 'text', sensitive: true, required: true }) secret: string = '';
+  @field({
+    type: 'text',
+    sensitive: true,
+    required: true,
+    requiredFor: 'system-table',
+  })
+  secret: string = '';
   @field({ type: 'boolean', default: true }) enabled: boolean = true;
 
   override async save(options?: SmrtSaveOptions): Promise<this> {
@@ -70,7 +77,8 @@ export class WebhookDelivery extends SmrtObject {
     onDelete: 'RESTRICT',
   })
   subscriptionId: string = '';
-  @field({ type: 'text', required: true }) eventId: string = '';
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
+  eventId: string = '';
   @field({ type: 'text', required: true, sensitive: true }) payload: string =
     '';
   @field({ type: 'text', default: 'pending' }) status: string = 'pending';
@@ -123,6 +131,7 @@ export class WebhookDeliveryTask extends SmrtObject {
 @TenantScoped({ mode: 'required' })
 export class WebhookCursor extends SmrtObject {
   @tenantId() tenantId: string = '';
-  @field({ type: 'text', required: true }) runtime: string = '';
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
+  runtime: string = '';
   @field({ type: 'integer', default: 0 }) position: number = 0;
 }

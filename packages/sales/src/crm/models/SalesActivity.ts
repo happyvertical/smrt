@@ -85,6 +85,7 @@ export class SalesActivity extends SmrtObject {
   /** Id of the subject row. Required. */
   @field({
     required: true,
+    requiredFor: 'identity',
     description: 'The lead or opportunity it is about.',
   })
   subjectId: string = '';

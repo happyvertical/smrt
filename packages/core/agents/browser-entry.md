@@ -29,6 +29,16 @@ ESM and WASM through an import map, so its Node-only runtime branches are never
 executed in Chromium. The regular browser entry bundle check still runs
 separately.
 
+`@electric-sql/pglite` is the application's optional peer of
+`@happyvertical/sql/pglite`, not core's code. Its Emscripten loader imports
+`node:module`, `node:fs`, `zlib` and similar only behind runtime
+`ENVIRONMENT_IS_NODE` checks, so the guards treat that one package (and its
+subpaths) as an external boundary: `BROWSER_PEER_EXTERNALS` in the bundle-gate
+build and `external` in `browser-entry-evaluation.mjs`. Both results therefore
+do not depend on whether the workspace installs PGlite; the real package is
+evaluated in Chromium by the `--pglite-cascade` run. Do not widen this to other
+modules.
+
 CommonJS runtime dependencies are bundled, not external (#4054). Consumers
 that exclude smrt-core from Vite dependency pre-bundling (#3843) receive
 `dist/*.js` as native browser ESM, where a bare import of a CommonJS package

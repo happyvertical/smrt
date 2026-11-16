@@ -72,6 +72,7 @@ export class LotUsage extends SmrtObject {
   /** The lot that was used. */
   @foreignKey(Lot, {
     required: true,
+    requiredFor: 'identity',
     onDelete: 'RESTRICT',
     onUpdate: 'RESTRICT',
     // DuckDB cannot enforce the constraint; the id is never rewritten.
@@ -80,11 +81,19 @@ export class LotUsage extends SmrtObject {
   lotId: string = '';
 
   /** Kind of consumer, for example `'ProductionOrder'`; `'Lot'` for an assembly. */
-  @field({ required: true, description: 'What kind of record used the lot.' })
+  @field({
+    required: true,
+    requiredFor: 'identity',
+    description: 'What kind of record used the lot.',
+  })
   consumerType: string = '';
 
   /** Id of the consumer. */
-  @field({ required: true, description: 'The record that used the lot.' })
+  @field({
+    required: true,
+    requiredFor: 'identity',
+    description: 'The record that used the lot.',
+  })
   consumerId: string = '';
 
   /** Quantity used; null means unspecified (the whole lot, or not tracked). */

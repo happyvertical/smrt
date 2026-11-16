@@ -32,10 +32,13 @@ export class ChatParticipant extends SmrtObject {
   @tenantId()
   tenantId: string = '';
 
-  @foreignKey('ChatRoom', { required: true })
+  @foreignKey('ChatRoom', { required: true, requiredFor: 'identity' })
   @field({ description: 'The room to which this membership belongs.' })
   roomId: string = '';
-  @crossPackageRef('@happyvertical/smrt-profiles:Profile', { required: true })
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile', {
+    required: true,
+    requiredFor: 'identity',
+  })
   @field({ description: 'The person or assistant participating in the room.' })
   profileId: string = '';
   @field({

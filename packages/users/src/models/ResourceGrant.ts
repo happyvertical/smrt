@@ -41,11 +41,12 @@ export interface ResourceGrantOptions extends SmrtObjectOptions {
   ],
 })
 export class ResourceGrant extends SmrtObject {
-  @foreignKey('Tenant', { required: true }) tenantId?: string;
+  @foreignKey('Tenant', { required: true, requiredFor: 'tenant-scope' })
+  tenantId?: string;
   @field({
     description: 'The person receiving this record-specific access rule.',
   })
-  @foreignKey('User', { required: true })
+  @foreignKey('User', { required: true, requiredFor: 'identity' })
   userId?: string;
   @field({
     description: 'The kind of record this access rule applies to.',

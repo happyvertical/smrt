@@ -34,10 +34,10 @@ function normalizeFactEvidenceStatus(
   cli: { skipApiCheck: true },
 })
 export class FactEvidence extends SmrtObject {
-  @foreignKey('Fact', { required: true })
+  @foreignKey('Fact', { required: true, requiredFor: 'identity' })
   factId: string = '';
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   evidenceKey: string = '';
 
   @field({ type: 'text', required: true, default: 'supports' })

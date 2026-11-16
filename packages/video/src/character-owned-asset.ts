@@ -31,10 +31,16 @@ export class CharacterOwnedAsset extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @foreignKey(() => Character, { required: true })
+  @foreignKey(() => Character, {
+    required: true,
+    requiredFor: 'identity',
+  })
   characterId = '';
 
-  @crossPackageRef('@happyvertical/smrt-assets:Asset', { required: true })
+  @crossPackageRef('@happyvertical/smrt-assets:Asset', {
+    required: true,
+    requiredFor: 'identity',
+  })
   assetId = '';
 
   @field({ required: true })

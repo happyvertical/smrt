@@ -65,15 +65,18 @@ export class UserNotification extends SmrtObject {
   tenantId = '';
 
   /** The person this notification is for (`smrt-users:User`, uuid). */
-  @crossPackageRef('@happyvertical/smrt-users:User', { required: true })
+  @crossPackageRef('@happyvertical/smrt-users:User', {
+    required: true,
+    requiredFor: 'identity',
+  })
   recipientUserId = '';
 
   /** Host-defined type, e.g. `social-post.failed` (used for icons/filters). */
-  @field({ required: true })
+  @field()
   kind = '';
 
   /** One short plain sentence. */
-  @field({ required: true })
+  @field()
   title = '';
 
   /** Optional detail line. */
@@ -85,7 +88,7 @@ export class UserNotification extends SmrtObject {
   severity: UserNotificationSeverity = 'info';
 
   /** Dedupe key, unique per tenant and recipient (see class docs). */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'idempotency' })
   sourceRef = '';
 
   /** When the underlying event happened (sort key). */

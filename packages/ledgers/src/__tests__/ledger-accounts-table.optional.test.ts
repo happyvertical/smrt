@@ -4,12 +4,13 @@
  * Before #3098 the ledger `Account` lived in `accounts`. This lane builds that
  * exact legacy state — the current schema with `ledger_accounts` renamed back
  * to `accounts`, journal entries referencing it — then runs the documented
- * operator sequence: `db:migrate`, the table move, `db:migrate`. Named
+ * operator sequence: the table move, then `db:migrate`. Named
  * `*.optional.test.ts` so the package's `test:postgres` script runs it; it
  * skips itself without PostgreSQL.
  */
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import {
+  createRegisteredTables,
   type DatabaseInterface,
   migrateSmrtSchemas,
 } from '@happyvertical/smrt-core/migrations';
@@ -82,15 +83,16 @@ describePostgres('ledger accounts table move on PostgreSQL (#3098)', () => {
       messagingRows: 0,
     });
 
-    // 1. db:migrate creates ledger_accounts; the retargeted journal FK is
-    // reported, not applied, while the old constraint still points at
-    // accounts.
-    await dbMigrate(db);
+    // db:migrate is all or nothing: the retargeted journal FK stops it while
+    // the old constraint still points at accounts, so it changes nothing.
+    const refused = await dbMigrate(db);
+    expect(refused.refused).toBe(true);
+    expect(await db.getTableSchema?.('ledger_accounts')).toBeFalsy();
     expect(
       await foreignKeyTargets(db, 'journal_entries', 'account_id'),
     ).toEqual(['accounts']);
 
-    // 2. The move.
+    // 1. The move creates ledger_accounts and moves the rows.
     const moved = await migrateLedgerAccountsTable(db);
     expect(moved).toEqual({
       ran: true,
@@ -101,7 +103,7 @@ describePostgres('ledger accounts table move on PostgreSQL (#3098)', () => {
     const legacyRows = await db.query('SELECT COUNT(*) AS n FROM accounts');
     expect(Number((legacyRows.rows[0] as { n: string }).n)).toBe(0);
 
-    // 3. db:migrate adds the journal FK onto ledger_accounts.
+    // 2. db:migrate adds the journal FK onto ledger_accounts.
     await dbMigrate(db);
     expect(
       await foreignKeyTargets(db, 'journal_entries', 'account_id'),
@@ -147,21 +149,17 @@ describePostgres('ledger accounts table move on PostgreSQL (#3098)', () => {
     });
   });
 
-  it('refuses before db:migrate has created ledger_accounts', async () => {
+  it('creates ledger_accounts itself, because db:migrate cannot run first', async () => {
     const db = await scratch.database();
     await legacyLedger(db);
-    await expect(migrateLedgerAccountsTable(db)).rejects.toThrow(
-      LedgerAccountsTableMoveError,
-    );
-    await expect(migrateLedgerAccountsTable(db)).rejects.toThrow(
-      /run db:migrate before moving ledger accounts/,
-    );
+    expect(await db.getTableSchema?.('ledger_accounts')).toBeFalsy();
+    await migrateLedgerAccountsTable(db);
+    expect(await db.getTableSchema?.('ledger_accounts')).toBeTruthy();
   });
 
   it('refuses, changing nothing, while an undeclared foreign key references a ledger row', async () => {
     const db = await scratch.database();
     const { cash } = await legacyLedger(db);
-    await dbMigrate(db);
     // An application table no registered model describes.
     await db.query(
       'CREATE TABLE app_account_refs (account_id UUID REFERENCES accounts (id))',
@@ -187,7 +185,6 @@ describePostgres('ledger accounts table move on PostgreSQL (#3098)', () => {
   it('refuses an undeclared ON DELETE CASCADE reference instead of deleting its rows', async () => {
     const db = await scratch.database();
     const { cash } = await legacyLedger(db);
-    await dbMigrate(db);
     await db.query(
       'CREATE TABLE app_cascading_refs (account_id UUID REFERENCES accounts (id) ON DELETE CASCADE)',
     );
@@ -207,7 +204,6 @@ describePostgres('ledger accounts table move on PostgreSQL (#3098)', () => {
   it('refuses a composite cascading reference instead of deleting its rows', async () => {
     const db = await scratch.database();
     const { cash } = await legacyLedger(db);
-    await dbMigrate(db);
     await db.query(
       'ALTER TABLE accounts ADD CONSTRAINT accounts_slug_id_key UNIQUE (slug, id)',
     );
@@ -231,7 +227,6 @@ describePostgres('ledger accounts table move on PostgreSQL (#3098)', () => {
     // reject every later write of a ledger account id.
     const db = await scratch.database();
     await legacyLedger(db);
-    await dbMigrate(db);
     await db.query(
       'CREATE TABLE app_unused_refs (account_id UUID REFERENCES accounts (id))',
     );
@@ -247,7 +242,6 @@ describePostgres('ledger accounts table move on PostgreSQL (#3098)', () => {
   it('moves a legacy table whose ids are still TEXT', async () => {
     const db = await scratch.database();
     const { assets, cash } = await legacyLedger(db);
-    await dbMigrate(db);
     // A pre-UUID deployment: text ids on the legacy side only.
     for (const { table, column } of [
       { table: 'journal_entries', column: 'account_id' },
@@ -293,7 +287,7 @@ describePostgres('ledger accounts table move on PostgreSQL (#3098)', () => {
     );
     expect(moved.rows).toEqual([{ id: cash.id, parent_id: assets.id }]);
 
-    // Step 3 converges the detached text reference to UUID and restores it.
+    // The next db:migrate converges the detached text reference to UUID and restores it.
     await dbMigrate(db);
     expect(
       await foreignKeyTargets(db, 'journal_entries', 'account_id'),
@@ -306,7 +300,7 @@ describePostgres('ledger accounts table move on PostgreSQL (#3098)', () => {
   it('refuses to overwrite ids already present in ledger_accounts, changing nothing', async () => {
     const db = await scratch.database();
     const { cash } = await legacyLedger(db);
-    await dbMigrate(db);
+    await createRegisteredTables(db, ['ledger_accounts']);
     await db.query(
       `INSERT INTO ledger_accounts (id, slug, context, number, name, type)
        SELECT id, slug, context, number, name, type FROM accounts WHERE id = ?`,

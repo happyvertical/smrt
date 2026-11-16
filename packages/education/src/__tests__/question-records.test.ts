@@ -25,6 +25,7 @@ import {
   GradeCollection,
   ScannedSubmissionCollection,
 } from '../collections.js';
+import { ReleasedLessonCollection } from '../course-authoring-models.js';
 import {
   buildLearnerWorksheet,
   COURSE_AUTHORING_ACTIONS,
@@ -236,6 +237,44 @@ async function setup() {
 }
 
 describe('question and learning-objective records', () => {
+  it('saves a released lesson without section metadata and preserves null in both authoring views', async () => {
+    const s = await setup();
+    const { head, saved, release } = await s.releasedWorksheet([]);
+    const [lesson] = release.lessons;
+    // Replace the fixture mapping to exercise an insert with sectionId omitted.
+    await s.db.query('DELETE FROM released_lessons WHERE release_id = ?', [
+      release.id,
+    ]);
+    await s.as(s.guardian, async () => {
+      const rows = await ReleasedLessonCollection.create({ db: s.db });
+      const created = await rows.create({
+        tenantId: s.guardian.tenantId,
+        courseId: head.courseId,
+        releaseId: release.id,
+        lessonKey: lesson.lessonKey,
+        lessonRevisionId: lesson.lessonRevisionId,
+        lessonId: lesson.lessonId,
+      });
+      const stored = await rows.get(String(created.id), { cache: false });
+      expect(stored?.sectionId).toBeNull();
+      const releaseRow = await s.db.get('course_releases', { id: release.id });
+      const replay = await s.service.release({
+        ...s.guardian,
+        courseId: head.courseId,
+        revisionId: saved.revisionId,
+        requestKey: String(releaseRow?.request_key),
+      });
+      expect(replay.lessons[0].sectionId).toBeNull();
+      const worksheet = await s.service.readReleasedLesson({
+        ...s.guardian,
+        releaseId: release.id,
+        lessonKey: lesson.lessonKey,
+      });
+      expect(worksheet.sectionId).toBeNull();
+      expect(worksheet.lessonId).toBe(lesson.lessonId);
+    });
+  });
+
   /*
    * resolveQuestionRevisions matrix (#4515 G2):
    *  returns id/question/sequence/type/summary/objective keys, in request order ... 'resolves'

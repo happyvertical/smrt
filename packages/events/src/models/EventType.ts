@@ -20,7 +20,6 @@ export class EventType extends SmrtObject {
   tenantId: string | null = null;
 
   @field({
-    required: true,
     description: 'What this kind of event is called, for example workshop.',
   })
   name: string = '';

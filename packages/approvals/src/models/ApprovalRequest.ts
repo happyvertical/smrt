@@ -85,6 +85,7 @@ export class ApprovalRequest extends SmrtObject {
   @field({
     type: 'text',
     required: true,
+    requiredFor: 'identity',
     readonly: true,
     description: 'What sort of approval this is, such as publishing a post.',
   })
@@ -94,6 +95,7 @@ export class ApprovalRequest extends SmrtObject {
   @field({
     type: 'text',
     required: true,
+    requiredFor: 'identity',
     readonly: true,
     description: 'What kind of thing the request is about.',
   })
@@ -103,6 +105,7 @@ export class ApprovalRequest extends SmrtObject {
   @field({
     type: 'text',
     required: true,
+    requiredFor: 'identity',
     readonly: true,
     description: 'Which thing the request is about.',
   })
@@ -115,6 +118,7 @@ export class ApprovalRequest extends SmrtObject {
   @field({
     type: 'text',
     required: true,
+    requiredFor: 'identity',
     readonly: true,
     description:
       'A fingerprint of the exact version that was put up for approval. If the thing changes, the approval no longer applies.',
@@ -125,6 +129,7 @@ export class ApprovalRequest extends SmrtObject {
   @field({
     type: 'text',
     required: true,
+    requiredFor: 'idempotency',
     readonly: true,
     description:
       'The reference the request is filed under, so asking twice does not open it twice.',
@@ -135,6 +140,7 @@ export class ApprovalRequest extends SmrtObject {
   @field({
     type: 'text',
     required: true,
+    requiredFor: 'identity',
     readonly: true,
     description: 'Who asked for the approval.',
   })

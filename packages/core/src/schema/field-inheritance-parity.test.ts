@@ -63,12 +63,21 @@ type Position = 'leaf' | 'middle';
 interface FieldSpec {
   kind: 'text' | 'integer' | 'foreignKey';
   required?: boolean;
-  sqlType?: string;
-  description?: string;
-  default?: string | number;
+  sqlType?: string | null;
+  description?: string | null;
+  default?: string | number | null;
   unique?: boolean;
-  min?: number;
-  max?: number;
+  min?: number | null;
+  max?: number | null;
+  backfill?: string | null;
+  minLength?: number | null;
+  maxLength?: number | null;
+  pattern?: string | null;
+  indexed?: boolean;
+  sensitive?: boolean;
+  readonly?: boolean;
+  readPermission?: string | null;
+  bare?: boolean;
   /** A closed literal set; reaches the scanner only (no `@field` option). */
   enumValues?: string[];
 }
@@ -77,7 +86,7 @@ type Fields = Record<string, FieldSpec>;
 
 /** What the root declares. Every variant below acts on one of these. */
 const ROOT_FIELDS: Fields = {
-  name: { kind: 'text', required: true, description: 'The name' },
+  name: { kind: 'text', required: true, unique: true, description: 'The name' },
   note: { kind: 'text', required: false, description: 'A note' },
   kind: {
     kind: 'text',
@@ -85,25 +94,208 @@ const ROOT_FIELDS: Fields = {
     description: 'Kind of thing',
     enumValues: ['a', 'b'],
   },
-  amount: { kind: 'integer', required: false, sqlType: 'REAL' },
-  score: { kind: 'integer', required: false, min: 0, max: 100 },
+  amount: {
+    kind: 'integer',
+    required: true,
+    unique: true,
+    sqlType: 'REAL',
+    min: 1,
+    max: 99,
+    default: 5,
+    backfill: '5',
+  },
+  score: { kind: 'integer', required: false, min: 10, max: 100 },
   status: { kind: 'text', required: false, default: 'open' },
   handle: { kind: 'text', required: false, unique: true },
-  owner: { kind: 'foreignKey', required: false },
+  owner: { kind: 'foreignKey', required: true },
+  guarded: {
+    kind: 'text',
+    required: true,
+    minLength: 2,
+    maxLength: 40,
+    pattern: '^[a-z]+$',
+    indexed: true,
+    sensitive: true,
+    readonly: true,
+    readPermission: 'secret:read',
+  },
 };
 
 interface Variant {
   id: string;
   /** What the nearer class declares. */
   fields: Fields;
+  leafFields?: Fields;
+  expected?: Record<string, Partial<FieldView>>;
 }
 
 const VARIANTS: Variant[] = [
   { id: 'nothing', fields: {} },
   { id: 'tightens', fields: { note: { kind: 'text', required: true } } },
   { id: 'relaxes', fields: { name: { kind: 'text', required: false } } },
-  { id: 'redeclares-bare', fields: { name: { kind: 'text' } } },
-  { id: 'changes-type-over-sqlType', fields: { amount: { kind: 'text' } } },
+  {
+    id: 'redeclares-bare',
+    fields: {
+      name: { kind: 'text', bare: true },
+      amount: { kind: 'integer', bare: true },
+    },
+    expected: {
+      name: { required: true, unique: true, description: 'The name' },
+      amount: {
+        required: true,
+        unique: true,
+        sqlType: 'REAL',
+        default: 5,
+        backfill: '5',
+        min: 1,
+        max: 99,
+      },
+    },
+  },
+  {
+    id: 'one-option',
+    fields: { name: { kind: 'text', maxLength: 20 } },
+    expected: {
+      name: {
+        required: true,
+        unique: true,
+        maxLength: 20,
+        description: 'The name',
+      },
+    },
+  },
+  {
+    id: 'loosens',
+    fields: {
+      name: { kind: 'text', required: false, unique: false },
+      score: { kind: 'integer', min: 0, max: 200 },
+    },
+    expected: {
+      name: { required: false, unique: false },
+      score: { min: 0, max: 200, required: false },
+    },
+  },
+  {
+    id: 'inferred-required-is-not-stated',
+    fields: { score: { kind: 'integer', bare: true } },
+    expected: { score: { required: false, min: 10, max: 100 } },
+  },
+  {
+    id: 'foreignKey-required',
+    fields: { owner: { kind: 'foreignKey' } },
+    expected: { owner: { required: true } },
+  },
+  {
+    id: 'null-clears',
+    fields: {
+      amount: { kind: 'integer', sqlType: null, default: null, backfill: null },
+    },
+    expected: {
+      amount: {
+        sqlType: undefined,
+        default: undefined,
+        backfill: undefined,
+        required: true,
+        unique: true,
+        min: 1,
+        max: 99,
+      },
+    },
+  },
+  {
+    id: 'null-clears-bounds-and-docs',
+    fields: {
+      guarded: {
+        kind: 'text',
+        minLength: null,
+        maxLength: null,
+        pattern: null,
+        readPermission: null,
+        description: null,
+      },
+      score: { kind: 'integer', min: null, max: null },
+    },
+    expected: {
+      guarded: {
+        minLength: undefined,
+        maxLength: undefined,
+        pattern: undefined,
+        readPermission: undefined,
+        description: undefined,
+        sensitive: true,
+        readonly: true,
+        indexed: true,
+      },
+      score: { min: undefined, max: undefined },
+    },
+  },
+  {
+    id: 'partial-chain',
+    fields: { amount: { kind: 'integer', max: 200 } },
+    leafFields: { amount: { kind: 'integer', min: 0 } },
+    expected: {
+      amount: {
+        required: true,
+        unique: true,
+        sqlType: 'REAL',
+        default: 5,
+        backfill: '5',
+        min: 0,
+        max: 200,
+      },
+    },
+  },
+  {
+    id: 'clear-chain',
+    fields: {
+      amount: { kind: 'integer', sqlType: null, default: null, backfill: null },
+    },
+    leafFields: { amount: { kind: 'integer', min: 0 } },
+    expected: {
+      amount: {
+        sqlType: undefined,
+        default: undefined,
+        backfill: undefined,
+        min: 0,
+        required: true,
+      },
+    },
+  },
+  {
+    id: 'text-type-change',
+    fields: { guarded: { kind: 'integer' }, kind: { kind: 'integer' } },
+    expected: {
+      guarded: {
+        type: 'integer',
+        required: true,
+        minLength: undefined,
+        maxLength: undefined,
+        pattern: undefined,
+        sensitive: true,
+        readonly: true,
+        indexed: true,
+        readPermission: 'secret:read',
+      },
+      kind: { type: 'integer', enum: undefined },
+    },
+  },
+  {
+    id: 'changes-type-over-sqlType',
+    fields: { amount: { kind: 'text' } },
+    expected: {
+      amount: {
+        type: 'text',
+        required: true,
+        unique: true,
+        sqlType: undefined,
+        min: undefined,
+        max: undefined,
+        enum: undefined,
+        default: undefined,
+        backfill: undefined,
+      },
+    },
+  },
   { id: 'redeclares-enum-field-bare', fields: { kind: { kind: 'text' } } },
   { id: 'redeclares-described-field-bare', fields: { note: { kind: 'text' } } },
   {
@@ -143,6 +335,8 @@ function buildShapes(): Shape[] {
         [3, 'middle'],
       ] as const) {
         for (const variant of VARIANTS) {
+          if (variant.leafFields && (depth !== 3 || position !== 'middle'))
+            continue;
           n += 1;
           const tag = `S${String(n).padStart(3, '0')}`;
           const names = Array.from(
@@ -185,6 +379,8 @@ function levelFields(shape: Shape): Fields[] {
   const nearer =
     shape.depth === 3 && shape.position === 'middle' ? 1 : shape.depth - 1;
   levels[nearer] = { ...levels[nearer], ...shape.variant.fields };
+  if (shape.variant.leafFields)
+    levels[shape.depth - 1] = shape.variant.leafFields;
   return levels;
 }
 
@@ -206,10 +402,27 @@ function optionBag(spec: FieldSpec): Record<string, unknown> {
   if (spec.unique !== undefined) bag.unique = spec.unique;
   if (spec.min !== undefined) bag.min = spec.min;
   if (spec.max !== undefined) bag.max = spec.max;
+  for (const key of [
+    'backfill',
+    'minLength',
+    'maxLength',
+    'pattern',
+    'indexed',
+    'sensitive',
+    'readonly',
+    'readPermission',
+  ] as const) {
+    if (spec[key] !== undefined) bag[key] = spec[key];
+  }
   return bag;
 }
 
 function renderField(name: string, spec: FieldSpec): string {
+  // No initializer: an initializer is the class's own default and counts as a
+  // stated option on the build routes (#4942), which the decorator route
+  // cannot see. A bare redeclaration here states nothing.
+  if (spec.bare)
+    return `  ${name}?: ${spec.kind === 'integer' ? 'number' : 'string'};`;
   if (spec.kind === 'foreignKey') {
     return `  @foreignKey(${TARGET}${spec.required !== undefined ? `, { required: ${spec.required} }` : ''}) ${name}: string = '';`;
   }
@@ -273,6 +486,7 @@ function declareDecorated(shape: Shape, target: typeof SmrtObject): void {
     const ctor = class extends parent {};
     Object.defineProperty(ctor, 'name', { value: name });
     for (const [fieldName, spec] of Object.entries(levels[level])) {
+      if (spec.bare) continue; // No runtime decorator metadata for a bare field.
       if (spec.kind === 'foreignKey') {
         foreignKey(
           target,
@@ -308,6 +522,14 @@ interface FieldView {
   unique: unknown;
   min: unknown;
   max: unknown;
+  backfill: unknown;
+  minLength: unknown;
+  maxLength: unknown;
+  pattern: unknown;
+  indexed: unknown;
+  sensitive: unknown;
+  readonly: unknown;
+  readPermission: unknown;
 }
 
 interface ColumnView {
@@ -351,6 +573,14 @@ function fieldView(f: Bag): FieldView {
     unique: pick(f, 'unique'),
     min: pick(f, 'min'),
     max: pick(f, 'max'),
+    backfill: pick(f, 'backfill'),
+    minLength: pick(f, 'minLength'),
+    maxLength: pick(f, 'maxLength'),
+    pattern: pick(f, 'pattern'),
+    indexed: pick(f, 'indexed'),
+    sensitive: pick(f, 'sensitive'),
+    readonly: pick(f, 'readonly'),
+    readPermission: pick(f, 'readPermission'),
   };
 }
 
@@ -677,6 +907,33 @@ describe('#4940 field inheritance: manifest path vs registry path', () => {
       expect(observed.manifest.has(shape.id), shape.id).toBe(true);
       expect(observed.registryDecorated.has(shape.id), shape.id).toBe(true);
       expect(observed.registryUnmerged.has(shape.id), shape.id).toBe(true);
+    }
+  });
+
+  it('keeps inherited defaults and applies only stated overrides on every route', () => {
+    for (const shape of shapes) {
+      for (const route of [
+        'manifest',
+        'registryDecorated',
+        'registryUnmerged',
+      ] as const) {
+        for (const [name, expected] of Object.entries(
+          shape.variant.expected ?? {},
+        )) {
+          const actual = observed[route].get(shape.id)?.fields[name];
+          for (const [key, value] of Object.entries(expected)) {
+            if (
+              route === 'registryDecorated' &&
+              DECORATOR_CANNOT_EXPRESS.has(key)
+            )
+              continue;
+            expect(
+              actual?.[key as keyof FieldView],
+              `${shape.id} ${route} ${name}.${key}`,
+            ).toEqual(value);
+          }
+        }
+      }
     }
   });
 

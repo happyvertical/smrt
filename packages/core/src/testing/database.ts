@@ -42,6 +42,7 @@ import {
 } from '../system/compatibility.js';
 import { getSystemTableDDL } from '../system/schema.js';
 import { resolveDisplayLabelProjection } from '../ui-metadata.js';
+import { markPreparedTestDatabase } from './database-exemption.js';
 
 type TestDatabaseConnectionOptions = Parameters<typeof getDatabase>[0] & {
   __smrtSkipVitestSchemaPreparation?: boolean;
@@ -496,6 +497,7 @@ export async function getTestDatabase(
         emptyRegistryMessage,
       );
     }
+    markPreparedTestDatabase(db);
     return db;
   }
 
@@ -722,6 +724,7 @@ export async function getTestDatabase(
     }
   }
 
+  markPreparedTestDatabase(db);
   return db;
 }
 

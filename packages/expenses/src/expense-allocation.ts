@@ -460,7 +460,9 @@ export async function reviewExpenseAllocation(
       const sourceNonce =
         previous?.sourceFingerprintNonce || randomBytes(32).toString('hex');
       const revision = await insertAllocation(
-        new ExpenseAllocationRevision({
+        new (ObjectRegistry.resolveEffectiveConstructor(
+          ExpenseAllocationRevision,
+        ))({
           db: source.db,
           tenantId: principal.tenantId,
           sourceExpenseId: source.id!,
@@ -509,7 +511,9 @@ export async function reviewExpenseAllocation(
       for (const item of proposed)
         children.push(
           await insertAllocation(
-            new ExpenseAllocationPortion({
+            new (ObjectRegistry.resolveEffectiveConstructor(
+              ExpenseAllocationPortion,
+            ))({
               db: source.db,
               ...item,
               tenantId: principal.tenantId,
@@ -679,7 +683,9 @@ export async function withdrawExpenseAllocation(
         );
       await source.claimRevision(input.expectedSourceRevision);
       const revision = await insertAllocation(
-        new ExpenseAllocationRevision({
+        new (ObjectRegistry.resolveEffectiveConstructor(
+          ExpenseAllocationRevision,
+        ))({
           db: source.db,
           tenantId: principal.tenantId,
           sourceExpenseId: source.id!,
@@ -967,7 +973,9 @@ export async function reserveExpenseAllocationPortion(
       if (!source.updated_at) invalid('source revision required.');
       await source.claimRevision(source.updated_at);
       const reservation = await insertAllocation(
-        new ExpenseAllocationBilling({
+        new (ObjectRegistry.resolveEffectiveConstructor(
+          ExpenseAllocationBilling,
+        ))({
           db: source.db,
           tenantId: principal.tenantId,
           sourceExpenseId: source.id!,
@@ -1069,7 +1077,7 @@ async function bindReservation(
   await invoice.claimRevision(invoice.updated_at);
   await source.claimRevision(source.updated_at);
   const binding = await insertAllocation(
-    new ExpenseAllocationBilling({
+    new (ObjectRegistry.resolveEffectiveConstructor(ExpenseAllocationBilling))({
       db: source.db,
       tenantId: principal.tenantId,
       sourceExpenseId: source.id!,
@@ -1213,7 +1221,9 @@ export async function releaseExpenseAllocationPortion(
       if (!source.updated_at) invalid('source revision required.');
       await source.claimRevision(source.updated_at);
       const released = await insertAllocation(
-        new ExpenseAllocationBilling({
+        new (ObjectRegistry.resolveEffectiveConstructor(
+          ExpenseAllocationBilling,
+        ))({
           db: source.db,
           tenantId: principal.tenantId,
           sourceExpenseId: source.id!,

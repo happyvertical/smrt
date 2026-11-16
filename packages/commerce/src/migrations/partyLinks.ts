@@ -31,7 +31,17 @@ export interface CommerceInvalidContractReference {
 export interface CommercePartyLinksPreflight {
   purchaseRowsWithCustomer: CommercePartyLinkRow[];
   salesRowsWithVendor: CommercePartyLinkRow[];
+  /**
+   * Customer-side leaves (`Estimate`, `Order`, `WholesaleOrder`, `Lease`,
+   * `Agreement`) with no customer. smrt no longer requires the link (#4935), so
+   * these rows save; they are listed for an app that hardened `customerId`.
+   */
   missingRequiredCustomer: CommercePartyLinkRow[];
+  /**
+   * Supplier-side leaves (`SupplierQuote`, `PurchaseOrder`) with no vendor.
+   * smrt no longer requires the link (#4935); listed for an app that hardened
+   * `vendorId`.
+   */
   missingRequiredVendor: CommercePartyLinkRow[];
   baseTypedRows: CommercePartyLinkRow[];
   unqualifiedDiscriminatorRows: CommercePartyLinkRow[];

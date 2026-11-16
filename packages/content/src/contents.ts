@@ -5,6 +5,7 @@ import { createLogger } from '@happyvertical/logger';
 import type { SmrtCollectionOptions } from '@happyvertical/smrt-core';
 import {
   importOptionalDependency,
+  ObjectRegistry,
   SmrtCollection,
   smrt,
 } from '@happyvertical/smrt-core';
@@ -453,13 +454,15 @@ export class Contents extends SmrtCollection<Content> {
     // Extract text from all document parts
     const body = doc.parts.map((part) => part.content).join('\n\n');
     if (body) {
-      const content = new Content({
-        url: options.url,
-        type: 'mirror',
-        title,
-        context: options.context || '',
-        body,
-      });
+      const content = new (ObjectRegistry.resolveEffectiveConstructor(Content))(
+        {
+          url: options.url,
+          type: 'mirror',
+          title,
+          context: options.context || '',
+          body,
+        },
+      );
       await content.initialize();
       // The file name is not an identity (two sites' `index.html`), so the
       // slug is derived, not set: a taken one moves to `-2` on save instead

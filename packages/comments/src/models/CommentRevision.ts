@@ -15,12 +15,16 @@ export class CommentRevision extends SmrtObject {
   tenantId = '';
 
   // Retained history is service-owned; keep cross-dialect schema portable.
-  @foreignKey('Comment', { required: true, constraint: false })
+  @foreignKey('Comment', {
+    required: true,
+    requiredFor: 'identity',
+    constraint: false,
+  })
   commentId = '';
 
-  @crossPackageRef('@happyvertical/smrt-users:User', { required: true })
-  editorUserId = '';
+  @crossPackageRef('@happyvertical/smrt-users:User', { nullable: true })
+  editorUserId: string | null = null;
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'idempotency' })
   body = '';
 }

@@ -1,6 +1,9 @@
 import { EventEmitter } from 'node:events';
 import { createLogger } from '@happyvertical/logger';
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import {
+  assertDatabaseMigratedForBuild,
+  ObjectRegistry,
+} from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { createId } from '@happyvertical/utils';
 import type { DurableJobPayloadSigner } from './durable-payload-integrity.js';
@@ -256,6 +259,7 @@ export class ScheduleRunner extends EventEmitter {
     if (!this.db.transaction) {
       throw new Error('ScheduleRunner requires transaction support');
     }
+    await assertDatabaseMigratedForBuild(this.db);
     this.running = true;
 
     // Start polling loop

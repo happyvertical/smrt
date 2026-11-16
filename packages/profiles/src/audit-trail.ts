@@ -1,4 +1,8 @@
-import type { AuditEntry, AuditWriter } from '@happyvertical/smrt-core';
+import {
+  type AuditEntry,
+  type AuditWriter,
+  ObjectRegistry,
+} from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { AuditLogCollection } from './collections/AuditLogCollection.js';
 import { AuditLog } from './models/AuditLog.js';
@@ -6,7 +10,7 @@ import { AuditLog } from './models/AuditLog.js';
 /** Profiles owns audit persistence; core only owns the mutation contract. */
 export function createAuditWriter(): AuditWriter {
   return async (entry: AuditEntry, db: DatabaseInterface) => {
-    const log = new AuditLog({
+    const log = new (ObjectRegistry.resolveEffectiveConstructor(AuditLog))({
       db,
       profileId: entry.actorId,
       onBehalfOfId: entry.onBehalfOfId,

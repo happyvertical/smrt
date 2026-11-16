@@ -59,7 +59,7 @@ export class ProjectGovernanceEvent extends SmrtPolymorphicAssociation {
   @field({ required: true })
   actorType: ProjectGovernanceActorType = 'system';
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'idempotency' })
   actorId = '';
 
   fromStatus = '';

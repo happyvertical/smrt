@@ -128,7 +128,7 @@ describe('#4922 manifest: own-table subclass fields (row 1)', () => {
     ).toEqual(['name', 'phone']);
   });
 
-  it('a three-level chain: the nearest declaration wins, the subclass wins over all', () => {
+  it('a three-level chain: the nearest stated option wins, the subclass wins over all', () => {
     const manifest = generate(APP, [
       def(
         APP,
@@ -139,7 +139,10 @@ describe('#4922 manifest: own-table subclass fields (row 1)', () => {
       def(
         APP,
         'Middle',
-        { label: { type: 'text' }, middleOnly: { type: 'text' } },
+        {
+          label: { type: 'text', required: false },
+          middleOnly: { type: 'text' },
+        },
         { extends: 'Base' },
       ),
       def(
@@ -156,7 +159,7 @@ describe('#4922 manifest: own-table subclass fields (row 1)', () => {
       'leafOnly',
       'middleOnly',
     ]);
-    // Middle's `label` (not required) replaces Base's (required).
+    // Middle's `label` states `required: false`, which wins over Base's.
     expect(leaf.fields.label.required).toBeFalsy();
     // Leaf's own `code` wins over Base's.
     expect(leaf.fields.code.type).toBe('integer');
@@ -195,7 +198,7 @@ describe('#4922 manifest: own-table subclass fields (row 1)', () => {
     expect(columns.filter((c) => c === 'name')).toHaveLength(1);
   });
 
-  it('shared table: the nearest concrete declaration wins, between ancestors too (#4940)', () => {
+  it('shared table: the nearest stated option wins, between ancestors too (#4940)', () => {
     const manifest = generate(APP, [
       def(
         APP,
@@ -203,10 +206,15 @@ describe('#4922 manifest: own-table subclass fields (row 1)', () => {
         { title: { type: 'text', required: true } },
         { extends: 'SmrtObject', decoratorConfig: { tableStrategy: 'sti' } },
       ),
-      def(APP, 'Memo', { title: { type: 'text' } }, { extends: 'Doc' }),
+      def(
+        APP,
+        'Memo',
+        { title: { type: 'text', required: false } },
+        { extends: 'Doc' },
+      ),
       def(APP, 'Note', { body: { type: 'text' } }, { extends: 'Memo' }),
     ]);
-    // Memo's declaration is nearer than Doc's, and Note does not redeclare it.
+    // Memo states `required: false`, nearer than Doc's, and Note does not redeclare it.
     // (Before #4940 the oldest owner's `required: true` stayed for definitions
     // the scanner had not pre-merged; a scanned same-package chain was
     // already nearest-wins.)
@@ -618,7 +626,7 @@ describe('#4922 registry replaces concrete declarations like the manifest path (
     expect(registry.testDb.type).toBe('INTEGER');
   });
 
-  it('a middle class redeclaring a field without `required` relaxes it for the leaf on every path', async () => {
+  it('a middle class that does not state `required` keeps it for the leaf on every path (#4942)', async () => {
     const registry = await registryColumns(
       [{ label: { required: true } }, { label: {} }, {}],
       'label',
@@ -627,6 +635,24 @@ describe('#4922 registry replaces concrete declarations like the manifest path (
       [
         { label: { type: 'text', required: true } },
         { label: { type: 'text' } },
+        {},
+      ],
+      'label',
+    );
+    expect(manifest.notNull).toBe(true);
+    expect(registry.migrate.notNull).toBe(true);
+    expect(registry.testDb.notNull).toBe(true);
+  });
+
+  it('a middle class stating `required: false` relaxes it for the leaf on every path', async () => {
+    const registry = await registryColumns(
+      [{ label: { required: true } }, { label: { required: false } }, {}],
+      'label',
+    );
+    const manifest = manifestColumn(
+      [
+        { label: { type: 'text', required: true } },
+        { label: { type: 'text', required: false } },
         {},
       ],
       'label',

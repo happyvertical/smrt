@@ -14,9 +14,10 @@ import {
 } from './db-command-utils.js';
 import {
   classifyTypeUpgradeSql,
-  isAdvisoryOnlyChangeLike,
+  listAlteration,
   partitionSchemaChanges,
   printSchemaAdvisories,
+  resolveSchemaChangeEngine,
   type SchemaChangeLike,
 } from './db-migrate-actions.js';
 import { resolvePostgresTimestampMigration } from './postgres-timestamp-migration.js';
@@ -108,7 +109,7 @@ export const dbDiffCommand: CLICommand = {
     'relax-columns': {
       type: 'boolean',
       description:
-        'Include constraint relaxations in the diff (DROP NOT NULL / DROP DEFAULT on live columns stricter than the manifest, DROP NOT NULL on orphan NOT NULL columns). Off by default, except that PostgreSQL always includes DROP NOT NULL for a column the manifest declares nullable; relaxations are always reported.',
+        'Include constraint relaxations in the diff (DROP DEFAULT on live columns stricter than the manifest, DROP NOT NULL on orphan NOT NULL columns). Off by default, except that every engine always includes DROP NOT NULL for a column the manifest declares nullable; relaxations are always reported.',
       default: false,
     },
     'postgres-timestamp-legacy-timezone': {
@@ -232,6 +233,8 @@ export const dbDiffCommand: CLICommand = {
         relaxColumns: Boolean(options['relax-columns']),
         postgresTimestampMigration,
         emptyTextAsNull: Boolean(options['empty-text-as-null']),
+        // The engine the command decides changes with is the engine it reads.
+        engineHint: dbType,
       });
 
       const diff = await comparer.compare(schemaDefinitions);
@@ -257,9 +260,13 @@ export const dbDiffCommand: CLICommand = {
       // Report-only findings (#2369) are printed even when nothing is
       // executable so an orphan NOT NULL column is never hidden behind an
       // "up to date" line.
+      // The table of change kinds differs by engine for a few kinds (#4937),
+      // so name the engine the diff was read from.
+      const partitionEngine = resolveSchemaChangeEngine(String(dbType));
       const { advisories, manualInterventions } = partitionSchemaChanges(
         diff.changes as SchemaChangeLike[],
         (tableName) => tableName,
+        partitionEngine,
       );
       const manualForeignKeyChanges = manualInterventions.filter(
         (change) =>
@@ -314,14 +321,15 @@ export const dbDiffCommand: CLICommand = {
       const allTypeUpgrades = diff.changes.filter(
         (c) => c.type === 'type_upgrade',
       );
-      // Advisory-only upgrades (refusals, dirty probes, duplicate-key and
-      // preservation_unverified blocks) never reach db:migrate's statement
-      // stream, so they must not be listed as auto-applied (#3042).
+      // The table decides execution, including comment-only rebuild refusals
+      // and warning reports. Reports are printed through advisories below.
       const typeUpgrades = allTypeUpgrades.filter(
-        (c) => !isAdvisoryOnlyChangeLike(c),
+        (change) =>
+          classifyTypeUpgradeSql(change, partitionEngine) === 'executable',
       );
-      const unappliedTypeUpgrades = allTypeUpgrades.filter((c) =>
-        isAdvisoryOnlyChangeLike(c),
+      const unappliedTypeUpgrades = allTypeUpgrades.filter(
+        (change) =>
+          classifyTypeUpgradeSql(change, partitionEngine) === 'manual',
       );
       const typeMismatches = diff.changes.filter(
         (c) => c.type === 'type_mismatch',
@@ -350,14 +358,17 @@ export const dbDiffCommand: CLICommand = {
       // by db:migrate; comment-only ones need a manual step (SQLite, or live
       // NULLs blocking SET NOT NULL). Report-only relaxations print with the
       // advisories below.
+      // The table of change kinds, read for this engine, puts each alteration
+      // in exactly one list: automatic here, manual here, or a report printed
+      // with the advisories (#4934).
       const columnAlterations = diff.changes.filter(
-        (c) => c.type === 'alter_column' && (c.sql || c.sqlStatements),
+        (c) => c.type === 'alter_column',
       );
       const autoAlterations = columnAlterations.filter(
-        (c) => classifyTypeUpgradeSql(c.sql) === 'executable',
+        (c) => listAlteration(c, partitionEngine) === 'automatic',
       );
       const manualAlterations = columnAlterations.filter(
-        (c) => classifyTypeUpgradeSql(c.sql) !== 'executable',
+        (c) => listAlteration(c, partitionEngine) === 'manual',
       );
       if (autoAlterations.length > 0) {
         console.log(

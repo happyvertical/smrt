@@ -50,6 +50,19 @@ bundles are byte-identical to before. `checkOkfBundleFreshness` takes
 `installRoots` (the dev-mcp knowledge check passes the same list) and compares
 the page against the highest installed version.
 
+## Data shape rules in the framework reference (#4938)
+
+`generateMarkdown` writes a `## Data shape rules` section after the intent
+section and before the package tables. Its text is the installed
+`@happyvertical/smrt-core`'s `agents/data-shape-rules.md`, read from disk on
+every run, so it matches the installed version: the H1 is dropped, headings go
+down one level, and a relative module link becomes the package and file name.
+When smrt-core is installed but predates the file, the section is a short
+pointer to the rules on GitHub; with no smrt-core there is no section
+(`renderDataShapeSection`). The managed block points to this section, so the
+rules are reachable from `AGENTS.md` with no command to remember. Tests:
+`docs-claude.test.ts` (section), `scaffold-agent-docs.test.ts` (templates).
+
 ## Managed AGENTS.md block (#4878)
 
 After the bundle and skills, `docs:agents` maintains one section in the docs
@@ -74,7 +87,8 @@ user's file, so:
 - **Content** (at most 15 lines, harness-neutral): the installed
   `@happyvertical/smrt-cli` (else `smrt-core`) version, the relative paths of
   the framework reference and `<bundle>/intents/index.md` (omitted with a note
-  when no intents were exported), the framework-first rule, `smrt docs:agents`,
+  when no intents were exported), a pointer to the "Data shape rules" section of
+  the framework reference (#4938), the framework-first rule, `smrt docs:agents`,
   and `smrt-dev-mcp review --directory . --format summary`. Paths are relative
   to AGENTS.md's directory, forward slashes.
 - **Files.** A missing AGENTS.md is created (`# <root package name>` + block);

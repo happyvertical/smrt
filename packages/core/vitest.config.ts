@@ -111,6 +111,10 @@ export default defineConfig({
   // Resolve workspace packages for testing
   resolve: {
     alias: {
+      '@happyvertical/smrt-vitest/minimal-row': resolve(
+        __dirname,
+        '../vitest/src/minimal-row.ts',
+      ),
       '@happyvertical/smrt-types': resolve(__dirname, '../types/src'),
       '@happyvertical/smrt-config': resolve(__dirname, '../config/src'),
     },

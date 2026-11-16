@@ -216,6 +216,34 @@ jobs:
       - name: Run Biome lint and format checks
         run: npx --yes @biomejs/biome@2.5.3 ci --diagnostic-level=error .
 
+      # Rule 1 of the data-shape policy (#4923): a required field in a smrt
+      # package states its reason. Plain Node, no install needed.
+      - name: Check required-field reasons
+        run: node scripts/check-required-reasons.mjs
+
+      # The baseline of unexplained fields may only shrink: compare it with the
+      # pull request's base.
+      - name: Check required-field baseline did not grow
+        if: github.event.pull_request.base.sha != ''
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          node scripts/check-required-reasons.mjs --against "$BASE_SHA"
+
+      # Rule 2 of the data-shape policy (#4930): no new hand-written table
+      # statement in a package outside the migrator. Plain Node, no install.
+      - name: Check hand-written table statements
+        run: node scripts/check-hand-written-ddl.mjs
+
+      - name: Check hand-written table baseline did not grow
+        if: github.event.pull_request.base.sha != ''
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          node scripts/check-hand-written-ddl.mjs --against "$BASE_SHA"
+
   affected-typecheck:
     name: Affected Typecheck
     needs: affected-scope
@@ -678,6 +706,9 @@ jobs:
       # packages/core/agents/build-knowledge.md.
       - name: Check Node-loadable model package roots
         run: pnpm check:node-roots
+
+      - name: Check release upgrade gate
+        run: pnpm check:release-upgrade
 
   coverage-gate:
     name: Coverage Gate

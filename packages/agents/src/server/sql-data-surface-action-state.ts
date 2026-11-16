@@ -21,7 +21,12 @@ const INTERNAL_SURFACE = {
 
 @smrt({ tableName: '_smrt_data_surface_action_tokens', ...INTERNAL_SURFACE })
 export class DataSurfaceActionTokenState extends SmrtObject {
-  @field({ type: 'text', required: true, unique: true })
+  @field({
+    type: 'text',
+    required: true,
+    unique: true,
+    requiredFor: 'identity',
+  })
   tokenHash: string = '';
 
   @field({ type: 'json', required: true })
@@ -36,13 +41,18 @@ export class DataSurfaceActionTokenState extends SmrtObject {
   ...INTERNAL_SURFACE,
 })
 export class DataSurfaceActionIdempotencyState extends SmrtObject {
-  @field({ type: 'text', required: true, unique: true })
+  @field({
+    type: 'text',
+    required: true,
+    unique: true,
+    requiredFor: 'idempotency',
+  })
   keyHash: string = '';
 
   @field({ type: 'text', required: true })
   status: 'reserved' | 'completed' = 'reserved';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'idempotency' })
   requestFingerprint: string = '';
 
   @field({ type: 'text', nullable: true })

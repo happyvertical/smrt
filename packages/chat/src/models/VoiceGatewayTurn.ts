@@ -21,13 +21,13 @@ export class VoiceGatewayTurn extends SmrtObject {
   @tenantId()
   tenantId: string = '';
 
-  @foreignKey('VoiceSession', { required: true })
+  @foreignKey('VoiceSession', { required: true, requiredFor: 'idempotency' })
   voiceSessionId: string = '';
 
-  @field({ required: true })
+  @field()
   gatewaySessionId: string = '';
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'idempotency' })
   gatewayTurnId: string = '';
 
   @field({ required: true })

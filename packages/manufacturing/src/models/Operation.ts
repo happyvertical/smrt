@@ -54,12 +54,16 @@ export class Operation extends SmrtObject {
    * operation's identity by {@link OperationService}: it is set when the
    * operation is defined and is not changed afterwards; rename the `name`.
    */
-  @field({ required: true, description: 'A short code for this kind of work.' })
+  @field({
+    required: true,
+    requiredFor: 'identity',
+    description: 'A short code for this kind of work.',
+  })
   code: string = '';
 
   /** Human-readable name shown in lists and pickers. */
   @field({
-    required: true,
+    required: false,
     description: 'What this kind of work is called, such as cutting.',
   })
   name: string = '';

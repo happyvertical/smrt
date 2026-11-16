@@ -5,6 +5,7 @@ import { ObjectRegistry } from '../../registry.js';
 import type { SchemaDefinition } from '../../schema/types.js';
 import { computeChecksum } from '../checksum.js';
 import {
+  createRegisteredTables,
   getPendingSchemaStatements,
   migrateSmrtSchemas,
 } from '../orchestrate.js';
@@ -210,6 +211,91 @@ describe('schema orchestration', () => {
     expect(tables.rows).toHaveLength(1);
   });
 
+  it('refuses every change before tracker bootstrap and applies everything after the stop is fixed (#4927)', async () => {
+    await db.query('CREATE TABLE documents (id TEXT PRIMARY KEY, score BLOB)');
+    await db.query("INSERT INTO documents VALUES ('d1', 'kept')");
+    const schema = makeDocumentSchema();
+    const schemas = {
+      documents: schema,
+      tags: { ...makeDocumentSchema(), tableName: 'tags', indexes: [] },
+    };
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue(
+      schemas,
+    );
+    const before = (await db.query('SELECT * FROM sqlite_master ORDER BY name'))
+      .rows;
+    const pending = await getPendingSchemaStatements(db);
+    expect(pending.decision.proceed).toBe(false);
+    const initialize = vi.spyOn(MigrationTracker.prototype, 'initialize');
+    const result = await migrateSmrtSchemas({ db, packageName: '@test/app' });
+    expect(result).toMatchObject({
+      applied: false,
+      refused: true,
+      results: [],
+      hasManualDrift: true,
+    });
+    expect(result.stops).toEqual(pending.decision.stops);
+    expect(result.heldBack).toEqual(pending.decision.heldBack);
+    expect(result.heldBack.map((item) => item.description)).toEqual(
+      expect.arrayContaining([
+        'Create table tags',
+        'Add column documents.metadata',
+        'Add column documents.is_active',
+        'Add index documents.idx_documents_score_active',
+      ]),
+    );
+    expect(initialize).not.toHaveBeenCalled();
+    expect(
+      (await db.query('SELECT * FROM sqlite_master ORDER BY name')).rows,
+    ).toEqual(before);
+    expect((await db.query('SELECT * FROM documents')).rows).toEqual([
+      { id: 'd1', score: 'kept' },
+    ]);
+
+    // The operator aligns the incompatible declaration; the next run applies all.
+    schema.columns.score.type = 'BLOB';
+    const applied = await migrateSmrtSchemas({ db, packageName: '@test/app' });
+    expect(applied).toMatchObject({
+      applied: true,
+      refused: false,
+      stops: [],
+      heldBack: [],
+    });
+    expect((await db.getTableSchema?.('documents'))?.columns).toHaveProperty(
+      'metadata',
+    );
+    expect(
+      (await db.query("SELECT name FROM sqlite_master WHERE name = 'tags'"))
+        .rows,
+    ).toHaveLength(1);
+  });
+
+  it('rolls back the whole ordinary core batch if a later unique index fails (#4927)', async () => {
+    await db.query('CREATE TABLE documents (id TEXT PRIMARY KEY, score REAL)');
+    await db.query("INSERT INTO documents VALUES ('d1', 2), ('d2', 2)");
+    const schema = makeDocumentSchema();
+    schema.indexes = [
+      { name: 'documents_score_unique', columns: ['score'], unique: true },
+    ];
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+      documents: schema,
+    });
+    const before = (await db.query('SELECT * FROM sqlite_master ORDER BY name'))
+      .rows;
+    await expect(
+      migrateSmrtSchemas({ db, packageName: '@test/app', postgresSafe: false }),
+    ).rejects.toThrow();
+    expect(
+      (await db.query('SELECT * FROM sqlite_master ORDER BY name')).rows,
+    ).toEqual(before);
+    expect(
+      (await db.query('SELECT * FROM documents ORDER BY id')).rows,
+    ).toEqual([
+      { id: 'd1', score: 2 },
+      { id: 'd2', score: 2 },
+    ]);
+  });
+
   it('migrateSmrtSchemas reports applied false when tracker skips an idempotent migration', async () => {
     vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
       documents: makeDocumentSchema(),
@@ -369,17 +455,16 @@ describe('schema orchestration', () => {
     expect(columns.find((c) => c.name === 'weight')?.type).toBe('REAL');
   });
 
-  it('still surfaces an unplannable SQLite type upgrade as unactionable drift', async () => {
-    // A child table with ON DELETE CASCADE makes the rebuild unsafe (the
-    // DROP TABLE step would cascade its rows away), so the differ keeps the
-    // advisory comment. The orchestrator must strip that comment from the
-    // executable statements and report the drift as manual.
+  it('rebuilds a SQLite table that other tables reference, keeping their rows (#4937)', async () => {
+    await db.query('PRAGMA foreign_keys = ON');
     await db.query(
       'CREATE TABLE documents (id TEXT PRIMARY KEY, score INTEGER);',
     );
     await db.query(
       'CREATE TABLE document_notes (id TEXT PRIMARY KEY, document_id TEXT REFERENCES documents(id) ON DELETE CASCADE);',
     );
+    await db.query("INSERT INTO documents VALUES ('d1', 3)");
+    await db.query("INSERT INTO document_notes VALUES ('n1', 'd1')");
 
     vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
       documents: {
@@ -396,23 +481,60 @@ describe('schema orchestration', () => {
       },
     });
 
+    const result = await migrateSmrtSchemas({ db, packageName: 'test' });
+    expect(result.applied).toBe(true);
+    expect(result.hasManualDrift).toBe(false);
+    expect((await db.query('SELECT id FROM document_notes')).rows).toEqual([
+      { id: 'n1' },
+    ]);
+    expect((await db.query('SELECT score FROM documents')).rows).toEqual([
+      { score: 3 },
+    ]);
+  });
+
+  it('still surfaces an unplannable SQLite change as unactionable drift', async () => {
+    // AUTOINCREMENT keeps a sequence that a rebuild would not carry over, so
+    // the differ keeps the advisory comment. The orchestrator must strip that
+    // comment from the executable statements and report the drift as manual.
+    await db.query(
+      'CREATE TABLE documents (id INTEGER PRIMARY KEY AUTOINCREMENT, score INTEGER);',
+    );
+
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+      documents: {
+        tableName: 'documents',
+        columns: {
+          id: { type: 'INTEGER', primaryKey: true },
+          score: { type: 'INTEGER', defaultValue: 5 },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
     const pending = await getPendingSchemaStatements(db);
 
     expect(pending.statements).toEqual([]);
     expect(pending.unactionableChanges).toHaveLength(1);
     expect(pending.hasManualDrift).toBe(true);
-    expect(pending.unactionableChanges[0].type).toBe('type_upgrade');
+    expect(pending.unactionableChanges[0].type).toBe('alter_column');
     expect(pending.unactionableChanges[0].name).toBe('score');
   });
 
   it('requireComplete refuses manual drift before executing even the actionable part of a plan', async () => {
-    await db.query(
-      'CREATE TABLE documents (id TEXT PRIMARY KEY, legacy_code TEXT NOT NULL)',
-    );
+    // An incompatible type change is manual drift (a stop, #4925); an orphan
+    // NOT NULL column no longer is (see the next test).
+    await db.query('CREATE TABLE documents (id TEXT PRIMARY KEY, score BLOB)');
     vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
       documents: {
         ...makeDocumentSchema(),
-        columns: { id: { type: 'TEXT', primaryKey: true } },
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          score: { type: 'INTEGER' },
+        },
       },
       new_documents: { ...makeDocumentSchema(), tableName: 'new_documents' },
     });
@@ -432,7 +554,7 @@ describe('schema orchestration', () => {
     ).toEqual([]);
   });
 
-  it('surfaces a blocking orphan NOT NULL column as unactionable, keeps info notes out, executes nothing for advisories (#2369)', async () => {
+  it('reports an orphan NOT NULL column without manual drift or executable SQL (#4925)', async () => {
     await db.query(
       'CREATE TABLE documents (id TEXT PRIMARY KEY, legacy_code TEXT NOT NULL, legacy_note TEXT);',
     );
@@ -456,18 +578,15 @@ describe('schema orchestration', () => {
         .map((c) => `${c.name}:${c.advisory?.severity}`)
         .sort(),
     ).toEqual(['legacy_code:warning', 'legacy_note:info']);
-    // Only the blocking orphan is surfaced as needing an operator.
-    expect(pending.unactionableChanges.map((c) => c.name)).toEqual([
-      'legacy_code',
-    ]);
-    expect(pending.hasManualDrift).toBe(true);
+    // Retaining the column loses or invents no data, even when inserts fail.
+    expect(pending.unactionableChanges).toEqual([]);
+    expect(pending.hasManualDrift).toBe(false);
 
     const result = await migrateSmrtSchemas({ db, packageName: 'test' });
     expect(result.applied).toBe(false);
     expect(result.statements).toEqual([]);
-    expect(result.unactionableChanges.map((c) => c.name)).toEqual([
-      'legacy_code',
-    ]);
+    expect(result.unactionableChanges).toEqual([]);
+    expect(result.hasManualDrift).toBe(false);
   });
 
   it('surfaces incompatible type_mismatch changes as unactionableChanges', async () => {
@@ -505,6 +624,7 @@ describe('schema orchestration', () => {
     expect(result.hasManualDrift).toBe(true);
     expect(result.unactionableChanges[0].type).toBe('type_mismatch');
     expect(result.unactionableChanges[0].name).toBe('score');
+    expect(result.refused).toBe(true);
   });
 
   it('hasManualDrift is false when the schema is in sync', async () => {
@@ -564,15 +684,17 @@ describe('schema orchestration', () => {
       });
     }
 
-    // SQLite keeps relaxation opt-in: nothing is relaxed or reported by default.
+    // Dropping NOT NULL applies by default on every engine (#4937), so it is
+    // planned and reported without the opt-in.
     const pending = await getPendingSchemaStatements(db);
-    expect(pending.relaxedColumns).toEqual([]);
+    expect(pending.relaxedColumns).toEqual([
+      { table: 'notes', column: 'body', alteration: 'drop_not_null' },
+    ]);
 
     const result = await migrateSmrtSchemas({
       db,
       packageName: 'test',
       version: '1.0.0',
-      relaxColumns: true,
     });
     expect(result.applied).toBe(true);
     expect(result.relaxedColumns).toEqual([
@@ -582,5 +704,36 @@ describe('schema orchestration', () => {
       output.filter((line) => line.includes('Relaxed notes.body')),
     ).toHaveLength(1);
     await db.query("INSERT INTO notes (id, body) VALUES ('n1', NULL)");
+  });
+
+  it('createRegisteredTables creates only the named missing tables', async () => {
+    await db.query('CREATE TABLE present (id TEXT PRIMARY KEY);');
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockImplementation(
+      (options?: { tables?: Iterable<string> }) => {
+        const all = {
+          documents: makeDocumentSchema(),
+          present: { ...makeDocumentSchema(), tableName: 'present' },
+          other: { ...makeDocumentSchema(), tableName: 'other' },
+        };
+        const wanted = new Set(options?.tables ?? Object.keys(all));
+        return Object.fromEntries(
+          Object.entries(all).filter(([name]) => wanted.has(name)),
+        );
+      },
+    );
+
+    const ran = await createRegisteredTables(
+      db,
+      ['documents', 'present'],
+      'sqlite',
+    );
+
+    expect(ran.some((sql) => sql.includes('"documents"'))).toBe(true);
+    expect(ran.some((sql) => sql.includes('"present"'))).toBe(false);
+    expect(await db.getTableSchema?.('documents')).toBeTruthy();
+    expect(await db.getTableSchema?.('other')).toBeFalsy();
+    expect(await createRegisteredTables(db, ['documents'], 'sqlite')).toEqual(
+      [],
+    );
   });
 });

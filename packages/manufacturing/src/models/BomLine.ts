@@ -65,6 +65,7 @@ export class BomLine extends SmrtObject {
    */
   @field({
     required: true,
+    requiredFor: 'identity',
     description: 'The list of parts this line belongs to.',
   })
   bomId: string = '';
@@ -78,6 +79,7 @@ export class BomLine extends SmrtObject {
    */
   @field({
     required: true,
+    requiredFor: 'identity',
     description: 'The part that goes into the assembly.',
   })
   componentSkuId: string = '';

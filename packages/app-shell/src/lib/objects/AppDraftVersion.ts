@@ -20,7 +20,7 @@ import {
   conflictColumns: ['id'],
 })
 export class AppDraftVersion extends SmrtObject {
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
   draftId: string = '';
 
   @field({ type: 'integer', required: true })

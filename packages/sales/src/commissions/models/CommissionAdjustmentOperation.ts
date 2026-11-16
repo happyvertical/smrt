@@ -37,7 +37,13 @@ export class CommissionAdjustmentOperation extends SmrtObject {
   // Deliberately not a database foreign key: the fence is inserted first in
   // the transaction, then its adjustment. Atomic commit plus replay
   // verification preserve integrity without requiring deferred constraints.
-  @field({ sqlType: 'UUID', required: true, readonly: true, indexed: true })
+  @field({
+    sqlType: 'UUID',
+    required: true,
+    requiredFor: 'identity',
+    readonly: true,
+    indexed: true,
+  })
   adjustmentId!: string;
 
   constructor(options: CommissionAdjustmentOperationOptions = {}) {

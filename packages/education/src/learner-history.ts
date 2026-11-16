@@ -55,10 +55,14 @@ export type LessonProgressTransitionKind = 'put-back' | 'start' | 'complete';
 @smrt({ tableName: 'lesson_progress_transitions', ...closed })
 export class LessonProgressTransition extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('LessonProgress', { required: true }) progressId = '';
-  @foreignKey('Enrollment', { required: true }) enrollmentId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
-  @foreignKey('Lesson', { required: true }) lessonId = '';
+  @foreignKey('LessonProgress', { required: true, requiredFor: 'identity' })
+  progressId = '';
+  @foreignKey('Enrollment', { required: true, requiredFor: 'identity' })
+  enrollmentId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
+  @foreignKey('Lesson', { required: true, requiredFor: 'identity' }) lessonId =
+    '';
   fromStatus: LessonProgressStatus = 'not_started';
   toStatus: LessonProgressStatus = 'not_started';
   kind: LessonProgressTransitionKind = 'put-back';
@@ -116,8 +120,10 @@ const ENROLLMENT_STATUSES: readonly EnrollmentStatus[] = [
 @smrt({ tableName: 'enrollment_status_changes', ...closed })
 export class EnrollmentStatusChange extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Enrollment', { required: true }) enrollmentId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
+  @foreignKey('Enrollment', { required: true, requiredFor: 'identity' })
+  enrollmentId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
   fromStatus: EnrollmentStatus = 'planned';
   toStatus: EnrollmentStatus = 'planned';
   actorUserId = '';
@@ -173,10 +179,14 @@ export class EnrollmentStatusChangeCollection extends SmrtCollection<EnrollmentS
 })
 export class LessonCompletionRecord extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('LessonProgress', { required: true }) progressId = '';
-  @foreignKey('Enrollment', { required: true }) enrollmentId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
-  @foreignKey('Lesson', { required: true }) lessonId = '';
+  @foreignKey('LessonProgress', { required: true, requiredFor: 'idempotency' })
+  progressId = '';
+  @foreignKey('Enrollment', { required: true, requiredFor: 'identity' })
+  enrollmentId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
+  @foreignKey('Lesson', { required: true, requiredFor: 'identity' }) lessonId =
+    '';
   /** Progress status before completion. */
   fromStatus: LessonProgressStatus = 'not_started';
   actorUserId = '';
@@ -237,8 +247,10 @@ export class LessonCompletionRecordCollection extends SmrtCollection<LessonCompl
 @smrt({ tableName: 'enrollment_pace_changes', ...closed })
 export class EnrollmentPaceChange extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Enrollment', { required: true }) enrollmentId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
+  @foreignKey('Enrollment', { required: true, requiredFor: 'identity' })
+  enrollmentId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
   previousLessonsPerWeek = 0;
   newLessonsPerWeek = 0;
   actorUserId = '';
@@ -287,7 +299,8 @@ export class EnrollmentPaceChangeCollection extends SmrtCollection<EnrollmentPac
 @smrt({ tableName: 'learner_interest_theme_changes', ...closed })
 export class LearnerInterestThemeChange extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
   previousLabel = '';
   previousKey = '';
   newLabel = '';

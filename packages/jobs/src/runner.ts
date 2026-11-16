@@ -8,6 +8,7 @@ import { Worker } from 'node:worker_threads';
 import type { RetryDecision } from '@happyvertical/jobs';
 import { createLogger } from '@happyvertical/logger';
 import {
+  assertDatabaseMigratedForBuild,
   getClassConfigResolvers,
   normalizeCustomActionFailure,
   ObjectRegistry,
@@ -413,6 +414,7 @@ export class TaskRunner extends EventEmitter {
 
     // Fail fast if the job-system tables were never migrated, with an
     // actionable error rather than a confusing recovery failure later.
+    await assertDatabaseMigratedForBuild(this.collection.db);
     await this.workerCollection.assertReady();
 
     await this.prepareTerminalOutcomeStorage();

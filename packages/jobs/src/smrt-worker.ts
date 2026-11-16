@@ -38,7 +38,7 @@ import {
 })
 export class SmrtWorker extends SmrtObject {
   /** Per-incarnation-unique worker key (also stored on owned jobs' workerId). */
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
   workerId: string = '';
 
   /** OS process id of the owning runner (diagnostic). */

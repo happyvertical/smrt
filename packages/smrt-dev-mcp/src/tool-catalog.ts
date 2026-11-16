@@ -179,6 +179,71 @@ const TOOL_DEFINITIONS: Array<
       required: ['className', 'properties'],
     },
   },
+  {
+    name: 'harden-smrt-class',
+    description:
+      'Suggest a hardening for a smrt class the app uses: a same-named subclass that overrides fields (for example required: true). Returns the source; writes it into the app code only with write: true. Never touches a database: the build and `smrt db:migrate` apply the rule.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        className: {
+          type: 'string',
+          description: 'The smrt class the app uses (PascalCase)',
+        },
+        importFrom: {
+          type: 'string',
+          description:
+            'Package that exports the class, for example @happyvertical/smrt-crm',
+        },
+        overrides: {
+          type: 'array',
+          description: 'Fields to override',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              type: {
+                type: 'string',
+                enum: [
+                  'text',
+                  'integer',
+                  'decimal',
+                  'boolean',
+                  'datetime',
+                  'json',
+                ],
+                description:
+                  'Read from the installed package manifest when omitted',
+              },
+              required: {
+                type: 'boolean',
+                description: 'Default true. false loosens the field.',
+              },
+              maxLength: { type: 'number' },
+              description: { type: 'string' },
+            },
+            required: ['name'],
+          },
+        },
+        directory: {
+          type: 'string',
+          description: 'Project directory (default: cwd)',
+        },
+        outputPath: {
+          type: 'string',
+          description:
+            'File to write, relative to directory (default src/models/<ClassName>.ts)',
+        },
+        write: {
+          type: 'boolean',
+          default: false,
+          description:
+            'Write the file. Default false: return the suggestion only. Never overwrites a file.',
+        },
+      },
+      required: ['className', 'importFrom', 'overrides'],
+    },
+  },
   // Project Introspection Tools
   {
     name: 'introspect-project',

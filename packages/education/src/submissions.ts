@@ -88,9 +88,12 @@ export type SubmissionKind = 'blank_reference' | 'completed_work';
 @smrt({ tableStrategy: 'sti', ...closed })
 export class Submission extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
-  @foreignKey('Lesson', { required: true }) lessonId = '';
-  @foreignKey('LessonProgress', { required: true }) progressId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
+  @foreignKey('Lesson', { required: true, requiredFor: 'identity' })
+  lessonId = '';
+  @foreignKey('LessonProgress', { required: true, requiredFor: 'identity' })
+  progressId = '';
   submittedAt = new Date();
   status: SubmissionStatus = 'captured';
   notes = '';
@@ -170,8 +173,10 @@ export class Submission extends SmrtObject {
 })
 export class SubmissionIntakeBinding extends SmrtObject {
   @tenantId() tenantId = '';
-  @field({ required: true, type: 'text' }) intakeItemId = '';
-  @foreignKey('Submission', { required: true }) submissionId = '';
+  @field({ required: true, requiredFor: 'idempotency', type: 'text' })
+  intakeItemId = '';
+  @foreignKey('Submission', { required: true, requiredFor: 'identity' })
+  submissionId = '';
 
   constructor(options: Record<string, unknown> = {}) {
     super(options);
@@ -261,10 +266,14 @@ export class Attestation extends Submission {}
 })
 export class LessonSelfAttestation extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Submission', { required: true }) submissionId = '';
-  @foreignKey('LessonProgress', { required: true }) progressId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
-  @foreignKey('Lesson', { required: true }) lessonId = '';
+  @foreignKey('Submission', { required: true, requiredFor: 'identity' })
+  submissionId = '';
+  @foreignKey('LessonProgress', { required: true, requiredFor: 'identity' })
+  progressId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
+  @foreignKey('Lesson', { required: true, requiredFor: 'identity' })
+  lessonId = '';
   /** The learner's own user; a self-attestation has no other actor. */
   actorUserId = '';
   /** Host setting value that let this learner attest their own lesson. */
@@ -322,8 +331,12 @@ export class LessonSelfAttestation extends SmrtObject {
 })
 export class SubmissionAsset extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Submission', { required: true }) submissionId = '';
-  @crossPackageRef('@happyvertical/smrt-assets:Asset', { required: true })
+  @foreignKey('Submission', { required: true, requiredFor: 'identity' })
+  submissionId = '';
+  @crossPackageRef('@happyvertical/smrt-assets:Asset', {
+    required: true,
+    requiredFor: 'identity',
+  })
   assetId = '';
   @field({ required: true }) relationship: SubmissionAssetRelationship = 'page';
   sortOrder = 0;
@@ -372,7 +385,8 @@ export class SubmissionAsset extends SmrtObject {
 @smrt({ ...closed })
 export class Grade extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Submission', { required: true }) submissionId = '';
+  @foreignKey('Submission', { required: true, requiredFor: 'identity' })
+  submissionId = '';
   @field({ required: true }) graderKind: GraderKind = 'auto';
   @crossPackageRef('@happyvertical/smrt-profiles:Profile', { nullable: true })
   graderProfileId: string | null = null;

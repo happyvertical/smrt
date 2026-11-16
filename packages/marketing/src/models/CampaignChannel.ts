@@ -28,12 +28,13 @@ export class CampaignChannel extends SmrtObject {
   tenantId: string | null = null;
 
   @field({ description: 'The campaign this channel runs for.' })
-  @foreignKey(Campaign, { required: true })
+  @foreignKey(Campaign, { required: true, requiredFor: 'identity' })
   campaignId: string = '';
 
   /** Open kind vocabulary; recommended values live in CAMPAIGN_CHANNEL_KINDS. */
   @field({
     required: true,
+    requiredFor: 'identity',
     description:
       'What sort of channel this is, such as an ad group, a social post, a message, content or an event.',
   })
@@ -42,6 +43,7 @@ export class CampaignChannel extends SmrtObject {
   /** Opaque identifier in the namespace named by channelKind. */
   @field({
     required: true,
+    requiredFor: 'identity',
     description:
       'The name or reference the channel goes by, so its results can be matched to it.',
   })

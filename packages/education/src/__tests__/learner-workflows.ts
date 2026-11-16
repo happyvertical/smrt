@@ -574,6 +574,14 @@ export async function assertLearnerRollback(f: Fixture) {
 
 export async function assertLearnerModels(f: Fixture) {
   const { learners, own, as } = f;
+  const curricula = await CurriculumCollection.create({ db: f.db });
+  const untitled = await as(own, () =>
+    curricula.create({ tenantId: own.tenantId, learnerId: own.learnerId }),
+  );
+  expect(
+    (await as(own, () => curricula.get(String(untitled.id), { cache: false })))
+      ?.title,
+  ).toBe('');
   await expect(
     as(own, () =>
       learners.create({
