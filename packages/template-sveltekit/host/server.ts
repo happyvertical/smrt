@@ -137,11 +137,11 @@ import type { Handle, RequestEvent, ServerLoad } from '@sveltejs/kit';
 import { error, redirect } from '@sveltejs/kit';
 import {
   createCookbookDesignRuns,
-  DESIGN_WORKFLOW_BUDGET,
-  type DesignRunExecution,
-  type DesignWorkflowBudget,
   isCookbookDesignFinalCheck,
   presentCookbookDesignProgress,
+  WORKFLOW_RUN_BUDGET,
+  type WorkflowRunBudget,
+  type WorkflowRunExecution,
 } from './design-runs.js';
 import { createCookbookOnboarding } from './onboarding.js';
 import {
@@ -239,9 +239,9 @@ export interface CookbookHostOptions {
   chatgpt?: ChatGPTPlanConnection;
   /**
    * The app's setting for the design workflow definition's budget (#5005);
-   * unset keys keep {@link DESIGN_WORKFLOW_BUDGET}.
+   * unset keys keep {@link WORKFLOW_RUN_BUDGET}.
    */
-  designBudget?: Partial<DesignWorkflowBudget>;
+  workflowBudget?: Partial<WorkflowRunBudget>;
 }
 
 async function readHostApp(
@@ -383,11 +383,11 @@ export function createCookbookHost(options: CookbookHostOptions) {
   const designRequests = new WeakMap<
     Request,
     {
-      execution: DesignRunExecution;
+      execution: WorkflowRunExecution;
       /**
        * The pass turn's limits, within the design workflow's. Its run stores
        * steps and the call timeout; tokens and time stay loop limits, since
-       * the design run itself accounts a pass's usage after it ends.
+       * the workflow run itself accounts a pass's usage after it ends.
        */
       limits: {
         maxSteps: number;
@@ -402,9 +402,9 @@ export function createCookbookHost(options: CookbookHostOptions) {
       observed?: EngineExecution;
     }
   >();
-  const designBudget: DesignWorkflowBudget = {
-    ...DESIGN_WORKFLOW_BUDGET,
-    ...options.designBudget,
+  const workflowBudget: WorkflowRunBudget = {
+    ...WORKFLOW_RUN_BUDGET,
+    ...options.workflowBudget,
   };
   /** A design pass's run budget, else the assistant turn's. */
   const turnBudget = (context: AssistantRequestContext): AiRunBudget => {
@@ -422,7 +422,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
     ASSISTANT_TURN_LIMITS.budget.maxDurationMs;
   const toolResultChars = (context: AssistantRequestContext): number =>
     designRequests.has(context.event.request)
-      ? designBudget.toolResultChars
+      ? workflowBudget.toolResultChars
       : ASSISTANT_TURN_LIMITS.toolResultChars;
   let origin: string | undefined;
   let taskRunner: TaskRunner | undefined;
@@ -1045,14 +1045,14 @@ export function createCookbookHost(options: CookbookHostOptions) {
             const pass = {
               execution,
               limits: {
-                maxSteps: designBudget.maxSteps,
-                callTimeoutMs: designBudget.requestTimeoutMs,
+                maxSteps: workflowBudget.maxSteps,
+                callTimeoutMs: workflowBudget.requestTimeoutMs,
                 maxTurnTokens: Math.min(
-                  designBudget.maxTurnTokens,
+                  workflowBudget.maxTurnTokens,
                   request.maxTokens,
                 ),
                 maxTurnMs: Math.min(
-                  designBudget.turnTimeoutMs,
+                  workflowBudget.turnTimeoutMs,
                   request.timeoutMs,
                 ),
               },
@@ -1079,13 +1079,13 @@ export function createCookbookHost(options: CookbookHostOptions) {
                 throw new Error('The design pass could not start');
               const outcome = await readAssistantTurnStream<{
                 content?: string;
-                metadata?: { designOutput?: unknown };
+                metadata?: { workflowOutput?: unknown };
               }>(response, () => {});
               const reply = outcome.done?.message;
               if (!reply || !pass.observed)
                 throw new Error('Design execution metadata is unavailable');
               const output =
-                reply.metadata?.designOutput ?? reply.content ?? '';
+                reply.metadata?.workflowOutput ?? reply.content ?? '';
               return { output, metadata: pass.observed };
             } finally {
               designRequests.delete(detached);
@@ -1637,10 +1637,10 @@ export function createCookbookHost(options: CookbookHostOptions) {
     );
   }
 
-  /** A new design run's execution: the owner's engine at the assistant's tier. */
+  /** A new workflow run's execution: the owner's engine at the assistant's tier. */
   async function designExecution(
     context: AssistantRequestContext,
-  ): Promise<DesignRunExecution> {
+  ): Promise<WorkflowRunExecution> {
     const host = await ready();
     return {
       ...(await resolveSelection(context)),
@@ -1650,7 +1650,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
     };
   }
 
-  /** The onboarding flow's requests go straight to a design run. */
+  /** The onboarding flow's requests go straight to a workflow run. */
   async function onboardingActive(context: AssistantRequestContext) {
     const host = await ready();
     const onboarding = host.onboarding
@@ -1972,7 +1972,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
     toolResultChars: (context) => toolResultChars(context),
     maxTokens: (context) =>
       designRequests.has(context.event.request)
-        ? designBudget.maxTokens
+        ? workflowBudget.maxTokens
         : ASSISTANT_TURN_LIMITS.maxTokens,
     onExecution: (context, execution) => {
       const pass = designRequests.get(context.event.request);
@@ -1984,17 +1984,19 @@ export function createCookbookHost(options: CookbookHostOptions) {
     },
     // Onboarding asks for a design straight away: a workflow run, before any
     // model call. A design pass itself never defers.
-    deferDesignTurn: async (context) =>
+    deferWorkflowTurn: async (context) =>
       !designRequests.has(context.event.request) &&
       (await onboardingActive(context)),
-    onDesignEscalation: async (context, input) => {
+    onWorkflowEscalation: async (context, input) => {
       const original =
         input.userMessage ??
         [...(input.history ?? [])]
           .reverse()
           .find((message) => message.role === 'user')?.content;
       if (!input.thread?.id || typeof original !== 'string' || !original.trim())
-        throw new Error('Design runs require a saved thread and user request');
+        throw new Error(
+          'Workflow runs require a saved thread and user request',
+        );
       const host = await ready();
       const state = await host.designRuns
         .forOwner(context.principal.userId, context.principal.tenantId)
@@ -2002,13 +2004,13 @@ export function createCookbookHost(options: CookbookHostOptions) {
           threadId: String(input.thread.id),
           content: original,
           execution: await designExecution(context),
-          ...(options.designBudget ? { budget: options.designBudget } : {}),
-          fixedPasses: Object.hasOwn(options.designBudget ?? {}, 'passes'),
+          ...(options.workflowBudget ? { budget: options.workflowBudget } : {}),
+          fixedPasses: Object.hasOwn(options.workflowBudget ?? {}, 'passes'),
           permissions: [...(context.principal.permissions ?? [])],
         });
       return { runId: state.id, message: 'Thinking this through' };
     },
-    designTools: COOKBOOK_TOOL_NAMES.filter((name) =>
+    workflowTools: COOKBOOK_TOOL_NAMES.filter((name) =>
       /^(recipes\.(enable|disable|configure)|cookbook\.apply|app\.(add|remove|rename|hide))/.test(
         name,
       ),
@@ -2154,7 +2156,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
       }
       return {
         content: 'I’m checking the requested changes.',
-        metadata: { designOutput: output },
+        metadata: { workflowOutput: output },
       };
     },
   });
@@ -2189,7 +2191,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
     event: Parameters<typeof assistantRoutes.handle>[0],
   ) => {
     const path = event.params?.path ?? '';
-    if (!path.startsWith('design-runs')) {
+    if (!path.startsWith('runs')) {
       const response = await assistantRoutes.handle(event);
       const decision = /^approvals\/([^/]+)\/decide$/.exec(path);
       const actor = resolveAssistantPrincipalFromLocals(event.locals);
@@ -2222,7 +2224,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
       return json({ code: 'not_allowed' }, 403);
     const runs = (await ready()).designRuns.forOwner(p.userId, p.tenantId);
     try {
-      if (path === 'design-runs' && event.request.method === 'GET') {
+      if (path === 'runs' && event.request.method === 'GET') {
         const threadId = event.url.searchParams.get('threadId');
         let state = threadId ? await runs.latest(threadId) : null;
         const pending =
@@ -2251,7 +2253,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
           run: designProgress(state),
         });
       }
-      if (path === 'design-runs' && event.request.method === 'POST') {
+      if (path === 'runs' && event.request.method === 'POST') {
         if (event.request.headers.get('origin') !== event.url.origin)
           return json({ code: 'invalid_origin' }, 403);
         if (
@@ -2323,8 +2325,8 @@ export function createCookbookHost(options: CookbookHostOptions) {
             event,
             principal: p,
           } as AssistantRequestContext),
-          ...(options.designBudget ? { budget: options.designBudget } : {}),
-          fixedPasses: Object.hasOwn(options.designBudget ?? {}, 'passes'),
+          ...(options.workflowBudget ? { budget: options.workflowBudget } : {}),
+          fixedPasses: Object.hasOwn(options.workflowBudget ?? {}, 'passes'),
           permissions: [
             ...(p.permissions ??
               (event.locals as SmrtRuntimeLocals).permissions ??
@@ -2333,7 +2335,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
         });
         return json({ run: designProgress(state) }, 202);
       }
-      const match = /^design-runs\/([^/]+)\/(stop|resume)$/.exec(path);
+      const match = /^runs\/([^/]+)\/(stop|resume)$/.exec(path);
       if (!match || event.request.method !== 'POST')
         return json({ code: 'not_found' }, 404);
       if (event.request.headers.get('origin') !== event.url.origin)
@@ -2345,12 +2347,12 @@ export function createCookbookHost(options: CookbookHostOptions) {
         match[2] === 'stop'
           ? await runs.stop(match[1])
           : await runs.resume(match[1], {
-              maxTokens: designBudget.maxRunTokens,
-              maxDurationMs: designBudget.runTimeoutMs,
+              maxTokens: workflowBudget.maxRunTokens,
+              maxDurationMs: workflowBudget.runTimeoutMs,
             });
       return json({ run: designProgress(state) });
     } catch {
-      return json({ code: 'design_run_unavailable' }, 409);
+      return json({ code: 'workflow_run_unavailable' }, 409);
     }
   };
   const assistant = { ...assistantRoutes, handle: assistantHandler };

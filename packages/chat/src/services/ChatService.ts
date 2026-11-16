@@ -1458,7 +1458,7 @@ export class ChatService {
       typeof metadata === 'object' &&
       (metadata.assistantInternalTurn === true ||
         (message.role === 'assistant' &&
-          Object.hasOwn(metadata, 'designOutput')))
+          Object.hasOwn(metadata, 'workflowOutput')))
     );
   }
 

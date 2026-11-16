@@ -32,7 +32,7 @@ import Ajv from 'ajv/dist/2020.js';
  * asks for and the model the engine's tier binding chose for it, the effort,
  * and the owner's preview setting captured when the run started.
  */
-export interface DesignRunExecution {
+export interface WorkflowRunExecution {
   engine: InferenceEngineId;
   tier: InferenceTier;
   model?: string;
@@ -45,7 +45,7 @@ export interface DesignRunExecution {
  * time and repairs, and each pass turn's steps, per-call output, tokens,
  * reply time and kept tool result size.
  */
-export interface DesignWorkflowBudget {
+export interface WorkflowRunBudget {
   passes: number;
   maxRunTokens: number;
   runTimeoutMs: number;
@@ -57,19 +57,18 @@ export interface DesignWorkflowBudget {
   turnTimeoutMs: number;
   toolResultChars: number;
 }
-export const DESIGN_WORKFLOW_BUDGET: Readonly<DesignWorkflowBudget> =
-  Object.freeze({
-    passes: 4,
-    maxRunTokens: 2_000_000,
-    runTimeoutMs: 7_200_000,
-    repairRetries: 2,
-    maxSteps: 64,
-    maxTokens: 32_768,
-    maxTurnTokens: 400_000,
-    requestTimeoutMs: 600_000,
-    turnTimeoutMs: 1_800_000,
-    toolResultChars: 120_000,
-  });
+export const WORKFLOW_RUN_BUDGET: Readonly<WorkflowRunBudget> = Object.freeze({
+  passes: 4,
+  maxRunTokens: 2_000_000,
+  runTimeoutMs: 7_200_000,
+  repairRetries: 2,
+  maxSteps: 64,
+  maxTokens: 32_768,
+  maxTurnTokens: 400_000,
+  requestTimeoutMs: 600_000,
+  turnTimeoutMs: 1_800_000,
+  toolResultChars: 120_000,
+});
 
 /** Host callbacks retain the normal authenticated assistant dispatcher and approvals. */
 export interface CookbookDesignRunsOptions {
@@ -113,7 +112,7 @@ export interface CookbookDesignRunsOptions {
     content: string;
     stage: 'profile' | 'propose' | 'revise';
     request: DesignPassRequest;
-    execution: DesignRunExecution;
+    execution: WorkflowRunExecution;
     permissions: readonly string[];
   }): Promise<DesignPassResult>;
   readResource?(
@@ -740,9 +739,9 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
         async start(input: {
           threadId: string;
           content: string;
-          execution: DesignRunExecution;
-          /** The app's setting for the definition's budget; default {@link DESIGN_WORKFLOW_BUDGET}. */
-          budget?: Partial<DesignWorkflowBudget>;
+          execution: WorkflowRunExecution;
+          /** The app's setting for the definition's budget; default {@link WORKFLOW_RUN_BUDGET}. */
+          budget?: Partial<WorkflowRunBudget>;
           resourceIds?: string[];
           /** Captured authenticated permission ceiling; never model supplied. */
           permissions?: readonly string[];
@@ -751,7 +750,7 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
         }) {
           await options.authorize(ownerId, tenantId);
           readInput(input);
-          const budget = { ...DESIGN_WORKFLOW_BUDGET, ...input.budget };
+          const budget = { ...WORKFLOW_RUN_BUDGET, ...input.budget };
           const description =
             input.fixedPasses !== true
               ? await options.describeApp?.(ownerId, tenantId)
@@ -1141,7 +1140,7 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
  * A stored execution. A run started before #5005 stored the same fields
  * under `profile`; it is read the same way.
  */
-function readExecution(value: unknown): DesignRunExecution | undefined {
+function readExecution(value: unknown): WorkflowRunExecution | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const record = value as Record<string, unknown>;
   if (
@@ -1167,7 +1166,7 @@ function readExecution(value: unknown): DesignRunExecution | undefined {
 function readInput(input: unknown): {
   threadId: string;
   content: string;
-  execution: DesignRunExecution;
+  execution: WorkflowRunExecution;
   permissions: string[];
   fixedPasses?: boolean;
   listCatalog?: unknown;

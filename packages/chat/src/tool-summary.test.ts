@@ -111,7 +111,7 @@ it.each([
   ['app.describe', 'Checked the app structure'],
   ['recipes.search', 'Looked for useful lists'],
   ['recipes.describe', 'Checked how a list works'],
-])('names the design step %s in person words', (name, expected) => {
+])('names the workflow step %s in person words', (name, expected) => {
   expect(
     describeAssistantTool(
       name,

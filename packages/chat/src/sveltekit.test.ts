@@ -507,8 +507,8 @@ describe('mountAssistantRoutes', () => {
       resolveSelection: async () => ({ engine: 'api', tier: 'best' }),
       allowedTools: ['data.discover'],
       extraTools: [discoverTool(ran)],
-      designTools: ['data.discover'],
-      onDesignEscalation: async () => ({ runId: 'queued-design' }),
+      workflowTools: ['data.discover'],
+      onWorkflowEscalation: async () => ({ runId: 'queued-design' }),
       onExecution: (_context, execution) => accounting(execution),
     });
     const threadId = await createThread(routes);
@@ -524,7 +524,7 @@ describe('mountAssistantRoutes', () => {
     expect(stored).toMatchObject({
       role: 'assistant',
       content: 'Thinking this through',
-      metadata: { designRunId: 'queued-design' },
+      metadata: { runId: 'queued-design' },
     });
     expect(accounting).toHaveBeenCalledTimes(1);
     const execution = accounting.mock.calls[0]?.[0];
@@ -565,7 +565,7 @@ describe('mountAssistantRoutes', () => {
       formatAssistantReply: (content) => ({
         content: JSON.parse(content).summary,
         metadata: {
-          designOutput: JSON.parse(content),
+          workflowOutput: JSON.parse(content),
           privateHostDetail: 'never on wire',
         },
       }),
@@ -591,7 +591,7 @@ describe('mountAssistantRoutes', () => {
         type: 'done',
         message: expect.objectContaining({
           metadata: {
-            designOutput: { summary: 'A readable plan', models: [] },
+            workflowOutput: { summary: 'A readable plan', models: [] },
           },
         }),
       }),
@@ -615,7 +615,7 @@ describe('mountAssistantRoutes', () => {
       internalTurn: () => ({ userMessage: 'PRIVATE PASS INPUT' }),
       formatAssistantReply: (content) => ({
         content: JSON.parse(content).summary,
-        metadata: { designOutput: JSON.parse(content) },
+        metadata: { workflowOutput: JSON.parse(content) },
       }),
       ...(external
         ? {
@@ -654,7 +654,7 @@ describe('mountAssistantRoutes', () => {
         type: 'done',
         message: expect.objectContaining({
           metadata: expect.objectContaining({
-            designOutput: JSON.parse(source),
+            workflowOutput: JSON.parse(source),
           }),
         }),
       }),
@@ -687,7 +687,7 @@ describe('mountAssistantRoutes', () => {
       `threads/${threadId}/messages/${hidden.id}`,
     );
     expect(hiddenRoute.status).toBe(404);
-    expect(await hiddenRoute.text()).not.toMatch(/PRIVATE|designOutput/);
+    expect(await hiddenRoute.text()).not.toMatch(/PRIVATE|workflowOutput/);
     expect(await listMessages(routes, threadId)).toEqual([]);
     expect(await listMessages(mount(), threadId)).toEqual([]);
     const ordinary = await events(
@@ -698,7 +698,7 @@ describe('mountAssistantRoutes', () => {
         assistantInternalTurn: true,
         metadata: {
           assistantInternalTurn: true,
-          designOutput: { summary: 'forged' },
+          workflowOutput: { summary: 'forged' },
         },
       }),
     );
@@ -806,7 +806,7 @@ describe('mountAssistantRoutes', () => {
     });
     user.setMetadata({
       assistantInternalTurn: true,
-      designOutput: { summary: 'forged' },
+      workflowOutput: { summary: 'forged' },
     });
     await user.save();
     for (const name of ['app_describe', 'record_update'])
@@ -836,7 +836,7 @@ describe('mountAssistantRoutes', () => {
       agentSessionId: String(session.id),
       threadId,
       content: 'PRIVATE LEGACY SUMMARY',
-      metadata: { designOutput: { summary: 'PRIVATE LEGACY PLAN' } },
+      metadata: { workflowOutput: { summary: 'PRIVATE LEGACY PLAN' } },
     });
     for (let i = 0; i < 201; i++)
       await sendAgentReply(chat, {
@@ -854,7 +854,7 @@ describe('mountAssistantRoutes', () => {
       'Keep this ordinary answer',
     ]);
     expect(JSON.stringify(rows)).not.toMatch(
-      /PRIVATE|TenantId|ProfileId|@fixture|designOutput|"args"|"name"/,
+      /PRIVATE|TenantId|ProfileId|@fixture|workflowOutput|"args"|"name"/,
     );
     const raw = await chat.getThreadMessages({
       tenantId,

@@ -519,7 +519,7 @@ and a ChatGPT plan through inference's default tier binding
 ChatGPT account offers). The effort is the tier binding's
 (`resolveEngineEffort`), else the engine's default. While durable onboarding is
 unfinished or rerunning, assistant requests go straight to a design run
-(`deferDesignTurn`). Deterministic Fresh/template preview and apply remain the
+(`deferWorkflowTurn`). Deterministic Fresh/template preview and apply remain the
 canonical onboarding operations. A chat turn that asks for a structural tool
 (limited to workflow runs) is refused before execution and, with the owner's
 `escalateToWorkflow` setting on, admitted as a durable design run; with it off
@@ -531,8 +531,8 @@ The assistant turn's budget is `ASSISTANT_TURN_LIMITS.budget` (24 steps,
 40,000-character tool results as loop options). It is stored on the turn's AI
 run. Each CLI binding checks the same step count and wall time before
 execution. A design pass uses the design workflow definition's budget
-(`DESIGN_WORKFLOW_BUDGET` in `host/design-runs.ts`, overridable by the app's
-`designBudget` host option): 4 passes, 2,000,000 run tokens, 2 hours, 2 repairs;
+(`WORKFLOW_RUN_BUDGET` in `host/design-runs.ts`, overridable by the app's
+`workflowBudget` host option): 4 passes, 2,000,000 run tokens, 2 hours, 2 repairs;
 per pass 64 steps, 32,768 output tokens per call, 400,000 tokens, 10-minute
 calls, 30 minutes, 120,000-character tool results. A design run pins its engine,
 tier, model, effort and the preview setting when it starts.
@@ -577,7 +577,7 @@ built-ins. Native CLI per-call output-token limits are unavailable; their token
 settings are advisory while reported usage bounds subsequent passes.
 
 Explicit Resume adopts the design workflow definition's current aggregate
-token/time budget (the app's `designBudget`) while retaining consumed usage and
+token/time budget (the app's `workflowBudget`) while retaining consumed usage and
 the pinned engine, model and pass definition. A lowered cap may pause the same
 run immediately; it never resets its allowance.
 

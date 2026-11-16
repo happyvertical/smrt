@@ -6,10 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   type CookbookDesignRunsOptions,
   createCookbookDesignRuns,
-  type DesignRunExecution,
+  type WorkflowRunExecution,
 } from '../host/design-runs.js';
 
-const execution = (): DesignRunExecution => ({
+const execution = (): WorkflowRunExecution => ({
   engine: 'api',
   tier: 'best',
   previewBeforeApply: true,

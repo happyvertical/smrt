@@ -749,10 +749,10 @@ it.each([
     expect(rejected.isError).toBe(true);
   }
   expect(await call('app_describe')).toEqual(app);
-  for (const path of ['/api/assistant/design-runs', '/settings/inference']) {
+  for (const path of ['/api/assistant/runs', '/settings/inference']) {
     const delegated = event(
       path,
-      path.includes('design-runs')
+      path.includes('/runs')
         ? { threadId: thread.thread.id, content: 'Add a forged list' }
         : {
             settings: { previewBeforeApply: false },
@@ -763,7 +763,7 @@ it.each([
     delegated.request.headers.set('authorization', `Bearer ${config.token}`);
     const denied = await host.handle({
       event: delegated,
-      resolve: path.includes('design-runs')
+      resolve: path.includes('/runs')
         ? host.assistant.POST
         : async (e) => {
             try {

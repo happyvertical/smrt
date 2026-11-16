@@ -237,7 +237,7 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
   const customerModule = registration.manifest.models[`${APP}:Customer`].module;
   let toolCalls = 0;
   let creatingMember = false;
-  let designOutput: Record<string, unknown> | undefined;
+  let workflowOutput: Record<string, unknown> | undefined;
   let designCalls = 0;
   let memberCreateName = '';
   const errors: unknown[] = [];
@@ -246,7 +246,7 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
     title: 'Onboarding regression',
     packageName: APP,
     onboarding: true,
-    designBudget: { passes: 3 },
+    workflowBudget: { passes: 3 },
     app: {
       cookbook: {
         $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json',
@@ -288,10 +288,10 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
           _messages: unknown,
           options: { tools?: Array<{ function: { name: string } }> },
         ) => {
-          if (designOutput) {
+          if (workflowOutput) {
             designCalls++;
             expect(options.tools?.some((tool) => /app_add|recipes_enable/.test(tool.function.name))).toBe(false);
-            return { content: JSON.stringify(designOutput), finishReason: 'stop' };
+            return { content: JSON.stringify(workflowOutput), finishReason: 'stop' };
           }
           if (creatingMember && toolCalls++ === 0) {
             expect(
@@ -553,14 +553,14 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
         })).ok).toBe(true);
         return new Response();
       });
-      designOutput = { summary: 'Add Licence plate to Customers.', personSummary: 'I’m checking the requested changes.', checks: ['Customers exists.'], ready: true,
+      workflowOutput = { summary: 'Add Licence plate to Customers.', personSummary: 'I’m checking the requested changes.', checks: ['Customers exists.'], ready: true,
         operations: [{ tool: 'app.addField', args }] };
-      const admitted = await request('/api/assistant/design-runs', host.assistant.POST,
+      const admitted = await request('/api/assistant/runs', host.assistant.POST,
         { threadId: id, content: 'Add a licence plate field to Customers.' });
       expect(admitted.status, await admitted.clone().text()).toBe(202);
       const runId = (await admitted.json()).run.runId;
       await vi.waitFor(async () => {
-        const status = await request(`/api/assistant/design-runs?threadId=${id}`, host!.assistant.GET);
+        const status = await request(`/api/assistant/runs?threadId=${id}`, host!.assistant.GET);
         expect((await status.json()).run.status).toBe('waiting-approval');
       }, { timeout: 15000 });
       const pending = await (await request(`/api/assistant/threads/${id}/approvals`, host.assistant.GET)).json();
@@ -586,7 +586,7 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
       const decision = await request(`/api/assistant/approvals/${pending.approvals[0].id}/decide`, host.assistant.POST, { approve: true });
       expect(decision.status, await decision.clone().text()).toBe(200);
       await vi.waitFor(async () => {
-        const status = await request(`/api/assistant/design-runs?threadId=${id}`, host!.assistant.GET);
+        const status = await request(`/api/assistant/runs?threadId=${id}`, host!.assistant.GET);
         expect((await status.json()).run.status).toBe('done');
       }, { timeout: 15000 });
       const checkpoint = JSON.parse(String((await db!.query('SELECT payload FROM _smrt_inference_design_runs WHERE id = ?', runId)).rows[0].payload));

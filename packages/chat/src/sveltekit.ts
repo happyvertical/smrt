@@ -301,7 +301,7 @@ export interface AssistantRouteBoundPrincipal {
 
 /** Options for {@link mountAssistantRoutes}. */
 export interface MountAssistantRoutesOptions {
-  deferDesignTurn?: AssistantRouteValue<boolean>;
+  deferWorkflowTurn?: AssistantRouteValue<boolean>;
   /** Trusted detached pass binding, never a request body flag. Does not author a user message. */
   internalTurn?(
     context: AssistantRequestContext,
@@ -325,7 +325,7 @@ export interface MountAssistantRoutesOptions {
   /** Longest tool result kept in the conversation (characters). */
   toolResultChars?: AssistantRouteValue<number | undefined>;
   /** App tools limited to workflow runs, besides annotated ones. */
-  designTools?: readonly string[];
+  workflowTools?: readonly string[];
   /** What the turn ran with and used; never stored on a message. */
   onExecution?(
     context: AssistantRequestContext,
@@ -335,10 +335,10 @@ export interface MountAssistantRoutesOptions {
     content: string,
     context: AssistantRequestContext,
   ): { content: string; metadata?: Record<string, unknown> };
-  onDesignEscalation?(
+  onWorkflowEscalation?(
     context: AssistantRequestContext,
     input: Parameters<
-      NonNullable<AssistantRunTypeOptions['onDesignEscalation']>
+      NonNullable<AssistantRunTypeOptions['onWorkflowEscalation']>
     >[0],
   ): Promise<{ runId: string; message?: string }>;
   /** External loop; omitted uses the built-in model/tool loop. */
@@ -571,7 +571,7 @@ export interface AssistantThreadWire {
 export interface AssistantMessageWire {
   /** Explicit host design output only. */
   metadata?: {
-    designRunId?: string;
+    runId?: string;
   };
   id: string;
   threadId: string;
@@ -959,8 +959,8 @@ export function toAssistantMessageWire(
     createdAt: toIso(message.created_at) ?? new Date(0).toISOString(),
     ...(attachments.length > 0 ? { attachments } : {}),
     ...(toolCallData ? { toolCallData } : {}),
-    ...(metadata && typeof metadata.designRunId === 'string'
-      ? { metadata: { designRunId: metadata.designRunId } }
+    ...(metadata && typeof metadata.runId === 'string'
+      ? { metadata: { runId: metadata.runId } }
       : {}),
     ...(clientRequestId ? { clientRequestId } : {}),
   };
@@ -1612,8 +1612,11 @@ export function mountAssistantRoutes(
         ...(options.assistantSettings
           ? { assistantSettings: await options.assistantSettings(context) }
           : {}),
-        deferDesignTurn: await resolveValue(options.deferDesignTurn, context),
-        designTools: options.designTools,
+        deferWorkflowTurn: await resolveValue(
+          options.deferWorkflowTurn,
+          context,
+        ),
+        workflowTools: options.workflowTools,
         ...(await resolveValue(options.turnBudget, context).then((budget) =>
           budget ? { budget } : {},
         )),
@@ -1633,13 +1636,13 @@ export function mountAssistantRoutes(
                 options.formatAssistantReply!(content, context),
             }
           : {}),
-        ...(options.onDesignEscalation
+        ...(options.onWorkflowEscalation
           ? {
-              onDesignEscalation: (
+              onWorkflowEscalation: (
                 input: Parameters<
-                  NonNullable<AssistantRunTypeOptions['onDesignEscalation']>
+                  NonNullable<AssistantRunTypeOptions['onWorkflowEscalation']>
                 >[0],
-              ) => options.onDesignEscalation!(context, input),
+              ) => options.onWorkflowEscalation!(context, input),
             }
           : {}),
         waitForApproval: options.waitForApproval,
@@ -1726,11 +1729,11 @@ export function mountAssistantRoutes(
           const metadata = parseObject((message as ChatMessage).metadata);
           return {
             ...wire,
-            ...(metadata && 'designOutput' in metadata
+            ...(metadata && 'workflowOutput' in metadata
               ? {
                   metadata: {
                     ...wire.metadata,
-                    designOutput: metadata.designOutput,
+                    workflowOutput: metadata.workflowOutput,
                   },
                 }
               : {}),

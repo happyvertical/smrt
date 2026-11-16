@@ -29,7 +29,7 @@ export interface AssistantModelSelection {
 /**
  * A chat `turn` run asked for a tool limited to other run types. The tool
  * has NOT executed. With `escalateToWorkflow` on and a host that starts
- * workflow runs (`onDesignEscalation`), the request is handed to a workflow
+ * workflow runs (`onWorkflowEscalation`), the request is handed to a workflow
  * run; otherwise the turn ends with this refusal.
  */
 export class ToolRunTypeRefusal extends Error {
@@ -65,9 +65,9 @@ export interface AssistantRunTypeOptions {
   /** The owner's assistant settings; absent ones are on. */
   assistantSettings?: AssistantSettings;
   /** Known workflow request: hand it to the host before any model call. */
-  deferDesignTurn?: boolean;
+  deferWorkflowTurn?: boolean;
   /** App-owned tools limited to workflow runs, besides annotated ones. */
-  designTools?: readonly string[];
+  workflowTools?: readonly string[];
   /** What the turn ran with and used, once it ends or hands off. */
   onExecution?(execution: EngineExecution): void;
   /** Trusted host presentation of structured pass output, before storing the reply. */
@@ -76,7 +76,7 @@ export interface AssistantRunTypeOptions {
     metadata?: Record<string, unknown>;
   };
   /** Host may start a workflow run for the request. The refused call never runs. */
-  onDesignEscalation?(input: {
+  onWorkflowEscalation?(input: {
     tool: string;
     history: readonly AIMessage[];
     userMessage?: string;
@@ -87,18 +87,18 @@ export interface AssistantRunTypeOptions {
 
 /** The run types a tool may be called from; `undefined` is any. */
 export function toolRunTypes(
-  options: Pick<AssistantRunTypeOptions, 'designTools'>,
+  options: Pick<AssistantRunTypeOptions, 'workflowTools'>,
   tool: { slug: string; annotations?: { runTypes?: readonly string[] } },
 ): readonly string[] | undefined {
   return (
     tool.annotations?.runTypes ??
-    (options.designTools?.includes(tool.slug) ? ['workflow'] : undefined)
+    (options.workflowTools?.includes(tool.slug) ? ['workflow'] : undefined)
   );
 }
 
 /** Check before execution and before approval creation, using only trusted tool metadata. */
 export function assertToolRunType(
-  options: Pick<AssistantRunTypeOptions, 'designTools'>,
+  options: Pick<AssistantRunTypeOptions, 'workflowTools'>,
   tool: { slug: string; annotations?: { runTypes?: readonly string[] } },
 ): void {
   const runTypes = toolRunTypes(options, tool);
@@ -110,12 +110,12 @@ export function assertToolRunType(
 export function mayEscalateToWorkflow(
   options: Pick<
     AssistantRunTypeOptions,
-    'assistantSettings' | 'onDesignEscalation'
+    'assistantSettings' | 'onWorkflowEscalation'
   >,
 ): boolean {
   return (
     options.assistantSettings?.escalateToWorkflow !== false &&
-    typeof options.onDesignEscalation === 'function'
+    typeof options.onWorkflowEscalation === 'function'
   );
 }
 

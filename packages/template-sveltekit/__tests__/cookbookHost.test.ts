@@ -699,7 +699,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       packageName: '@fixture/host-app',
       app: { cookbook, catalog },
       assistant: { ai: { chat: calls } as never },
-      ...(passes === null ? {} : { designBudget: { passes } }),
+      ...(passes === null ? {} : { workflowBudget: { passes } }),
     });
     await host.init();
     await request(event('/'), async (e) => json(await host.load(e)));
@@ -926,11 +926,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     );
     await vi.waitFor(
       async () => {
-        const response = await chat(
-          `design-runs?threadId=${id}`,
-          undefined,
-          'GET',
-        );
+        const response = await chat(`runs?threadId=${id}`, undefined, 'GET');
         expect(response.status).toBe(200);
         const body = await response.json();
         expect(body.run.runId).toBe(done?.runId);
@@ -979,7 +975,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       runtime,
       packageName: '@fixture/host-app',
       app: { cookbook, catalog },
-      designBudget: { passes: 3 },
+      workflowBudget: { passes: 3 },
       assistant: {
         ai: {
           chat: async (messages: never, options: never) => {
@@ -1018,7 +1014,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       ).permissions,
     ];
     const id = await thread();
-    const admitted = await chat('design-runs', {
+    const admitted = await chat('runs', {
       threadId: id,
       content: 'Add a birthday field to Customers.',
     });
@@ -1120,7 +1116,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     ]) {
       expect(
         (
-          await chat('design-runs', {
+          await chat('runs', {
             threadId: id,
             content: 'Review Customers.',
             [key]: 'forged',
@@ -1130,7 +1126,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     }
     expect(
       (
-        await chat('design-runs', {
+        await chat('runs', {
           threadId: randomUUID(),
           content: 'Review Customers.',
         })
@@ -1138,13 +1134,13 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     ).toBe(404);
     expect(
       (
-        await chat('design-runs', {
+        await chat('runs', {
           threadId: id,
           content: 'x'.repeat(140_000),
         })
       ).status,
     ).toBe(413);
-    const crossOrigin = event('/api/assistant/design-runs', 'POST', {
+    const crossOrigin = event('/api/assistant/runs', 'POST', {
       threadId: id,
       content: 'Review Customers.',
     });
@@ -1156,7 +1152,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       (
         await request(
           event(
-            '/api/assistant/design-runs',
+            '/api/assistant/runs',
             'POST',
             { threadId: id, content: 'Review Customers.' },
             false,
@@ -1194,7 +1190,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       }),
       finishReason: 'stop',
     });
-    const refused = await chat('design-runs', {
+    const refused = await chat('runs', {
       threadId: id,
       content: 'Add a Tenant Id field',
     });
@@ -1213,7 +1209,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
         .approvals,
     ).toEqual([]);
     label = 'Birthday';
-    const admitted = await chat('design-runs', {
+    const admitted = await chat('runs', {
       threadId: id,
       content: 'Add a birthday field',
     });
@@ -1489,7 +1485,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       finishReason: 'stop',
     });
     const id = await thread();
-    const admitted = await chat('design-runs', {
+    const admitted = await chat('runs', {
       threadId: id,
       content: 'Update Customers.',
     });
@@ -1544,7 +1540,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       finishReason: 'stop',
     });
     const id = await thread();
-    const admitted = await chat('design-runs', {
+    const admitted = await chat('runs', {
       threadId: id,
       content: 'Review the next design.',
     });
@@ -1559,7 +1555,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       'No changes were applied. The design needs more information before it can propose a supported change.',
     );
     expect(state.note).not.toContain('Click Apply');
-    const progress = await chat(`design-runs?threadId=${id}`, undefined, 'GET');
+    const progress = await chat(`runs?threadId=${id}`, undefined, 'GET');
     expect((await progress.json()).run.note).toBe(
       'No changes were made. I need a little more information.',
     );
@@ -1602,7 +1598,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       finishReason: 'stop',
     });
     const id = await thread();
-    const admission = await chat('design-runs', {
+    const admission = await chat('runs', {
       threadId: id,
       content: 'Add a note to Customers',
     });
@@ -1621,7 +1617,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(state.passIndex).toBe(actual - 1);
     expect(calls).toHaveBeenCalledTimes(actual);
     const progress = await (
-      await chat(`design-runs?threadId=${id}`, undefined, 'GET')
+      await chat(`runs?threadId=${id}`, undefined, 'GET')
     ).json();
     expect(progress.run.pass).toMatchObject({ index: actual, count: actual });
     const { approvals } = await (
@@ -1676,7 +1672,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       finishReason: 'stop',
     });
     const id = await thread();
-    const admission = await chat('design-runs', {
+    const admission = await chat('runs', {
       threadId: id,
       content: 'Add, label and hide a field, then label the list Members.',
     });
@@ -1763,7 +1759,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       finishReason: 'stop',
     });
     const id = await thread();
-    const admitted = await chat('design-runs', {
+    const admitted = await chat('runs', {
       threadId: id,
       content: 'Add Paused note.',
     });
@@ -1784,7 +1780,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       passIndex: 0,
       outputs: [expect.any(Object)],
     });
-    expect((await chat(`design-runs/${runId}/stop`, {})).status).toBe(200);
+    expect((await chat(`runs/${runId}/stop`, {})).status).toBe(200);
     const decision = await chat(`approvals/${holds[0].id}/decide`, {
       approve: true,
     });
@@ -1817,7 +1813,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
         return originalApply(...args);
       });
     try {
-      expect((await chat(`design-runs/${runId}/resume`, {})).status).toBe(200);
+      expect((await chat(`runs/${runId}/resume`, {})).status).toBe(200);
       await vi.waitFor(() => expect(executing).toBe(true), { timeout: 15000 });
       const records = (
         await (await chat(`threads/${id}/approvals`, undefined, 'GET')).json()
@@ -1954,7 +1950,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     let stopping: Promise<void> | undefined;
     try {
       const id = await thread();
-      const admission = await chat('design-runs', {
+      const admission = await chat('runs', {
         threadId: id,
         content: 'Add Visit note.',
       });
@@ -1980,7 +1976,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       });
       expect(before.leaseRevision).toBeTypeOf('number');
       expect(before.leaseUntil).toBeTypeOf('number');
-      expect((await chat(`design-runs/${runId}/resume`, {})).status).toBe(409);
+      expect((await chat(`runs/${runId}/resume`, {})).status).toBe(409);
       const prior = (
         await oldDb.query(
           "SELECT id, worker_id, attempts FROM _smrt_jobs WHERE object_id = ? AND status = 'running'",
@@ -2020,7 +2016,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       expect((await designState(runId)).leaseRevision).toBe(
         before.leaseRevision,
       );
-      const resumed = await chat(`design-runs/${runId}/resume`, {});
+      const resumed = await chat(`runs/${runId}/resume`, {});
       expect(resumed.status).toBe(200);
       await vi.waitFor(
         async () => expect((await designState(runId)).status).toBe('done'),
@@ -2080,7 +2076,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
             errors.push(String(e));
           },
         },
-        designBudget: { maxRunTokens: value },
+        workflowBudget: { maxRunTokens: value },
       });
       await host.init();
     }
@@ -2130,7 +2126,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(before.phase).toBe('check');
     expect(before.tokens).toBe(2);
     await setCap(cap);
-    const resumed = await chat(`design-runs/${runId}/resume`, {});
+    const resumed = await chat(`runs/${runId}/resume`, {});
     expect(resumed.status).toBe(200);
     await vi.waitFor(
       async () => {

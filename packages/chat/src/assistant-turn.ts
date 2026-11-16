@@ -69,7 +69,7 @@ import type {
   AssistantTurnDriverContext,
 } from './assistant-turn-driver.js';
 import {
-  recordDesignHandoff,
+  recordWorkflowHandoff,
   runExternalAssistantTurn,
 } from './assistant-turn-driver.js';
 import type {
@@ -904,19 +904,19 @@ async function runTurn<M>(
   emit(status({ state: 'working', label: 'Thinking…', cancellable: true }));
 
   if (
-    options.deferDesignTurn &&
-    options.onDesignEscalation &&
+    options.deferWorkflowTurn &&
+    options.onWorkflowEscalation &&
     !options.resume
   ) {
     await report('running');
-    const accepted = await options.onDesignEscalation({
+    const accepted = await options.onWorkflowEscalation({
       tool: '',
       history: options.history ?? [],
       userMessage: options.userMessage,
       thread: options.thread,
       originMessageId: options.originMessageId,
     });
-    const { content, message } = await recordDesignHandoff(
+    const { content, message } = await recordWorkflowHandoff(
       options,
       accepted,
       emit,
@@ -1345,14 +1345,14 @@ async function runTurn<M>(
     } catch (error) {
       if (!(error instanceof ToolRunTypeRefusal)) throw error;
       if (!mayEscalateToWorkflow(options)) throw refusedInTurn(error);
-      const accepted = await options.onDesignEscalation!({
+      const accepted = await options.onWorkflowEscalation!({
         tool: error.tool,
         history: error.messages ?? options.history ?? [],
         userMessage: options.userMessage,
         thread: options.thread,
         originMessageId: options.originMessageId,
       });
-      const { content, message } = await recordDesignHandoff(
+      const { content, message } = await recordWorkflowHandoff(
         options,
         accepted,
         emit,

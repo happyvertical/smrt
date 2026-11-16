@@ -547,7 +547,7 @@ async function runExternalAssistantAttempt<M>(
 }
 
 /** Persist the human handoff and report the turn's work before the workflow run takes over. */
-export async function recordDesignHandoff<M>(
+export async function recordWorkflowHandoff<M>(
   options: AssistantTurnOptions<M>,
   accepted: { runId: string; message?: string },
   emit: (event: AssistantTurnEvent<M>) => void,
@@ -572,7 +572,7 @@ export async function recordDesignHandoff<M>(
         content,
         metadata: {
           ...author.metadata,
-          designRunId: accepted.runId,
+          runId: accepted.runId,
         },
       }),
     );
@@ -609,14 +609,14 @@ export async function runExternalAssistantTurn<M>(
   } catch (error) {
     if (!(error instanceof ToolRunTypeRefusal)) throw error;
     if (!mayEscalateToWorkflow(options)) throw refusedInTurn(error);
-    const accepted = await options.onDesignEscalation!({
+    const accepted = await options.onWorkflowEscalation!({
       tool: error.tool,
       history: error.messages ?? options.history ?? [],
       userMessage: options.userMessage,
       thread: options.thread,
       originMessageId: options.originMessageId,
     });
-    const { content, message } = await recordDesignHandoff(
+    const { content, message } = await recordWorkflowHandoff(
       options,
       accepted,
       emit,

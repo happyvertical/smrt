@@ -46,7 +46,7 @@ const base: AssistantTurnOptions = {
     model: 'gpt-6-astra',
     effort: 'high',
   },
-  designTools: [tool.slug],
+  workflowTools: [tool.slug],
 };
 
 describe('tools limited to workflow runs', () => {
@@ -58,7 +58,7 @@ describe('tools limited to workflow runs', () => {
       ),
     ).toThrow(ToolRunTypeRefusal);
     expect(() =>
-      assertToolRunType({ designTools: ['custom'] }, { slug: 'custom' }),
+      assertToolRunType({ workflowTools: ['custom'] }, { slug: 'custom' }),
     ).toThrow(ToolRunTypeRefusal);
     expect(() =>
       assertToolRunType(
@@ -70,11 +70,11 @@ describe('tools limited to workflow runs', () => {
   });
 
   it('escalates only with the setting on and a host that starts workflow runs', () => {
-    const onDesignEscalation = async () => ({ runId: 'r' });
-    expect(mayEscalateToWorkflow({ onDesignEscalation })).toBe(true);
+    const onWorkflowEscalation = async () => ({ runId: 'r' });
+    expect(mayEscalateToWorkflow({ onWorkflowEscalation })).toBe(true);
     expect(
       mayEscalateToWorkflow({
-        onDesignEscalation,
+        onWorkflowEscalation,
         assistantSettings: { escalateToWorkflow: false },
       }),
     ).toBe(false);
@@ -87,7 +87,7 @@ describe('tools limited to workflow runs', () => {
     const enqueue = vi.fn(async () => ({ runId: 'workflow-run' }));
     const { result, events } = await collect({
       ...base,
-      onDesignEscalation: enqueue,
+      onWorkflowEscalation: enqueue,
       onExecution: executions,
       turnDriver: {
         async run(context, callbacks) {
@@ -145,8 +145,8 @@ describe('tools limited to workflow runs', () => {
     const enqueue = vi.fn(async () => ({ runId: 'known-workflow' }));
     const { result } = await collect({
       ...base,
-      deferDesignTurn: true,
-      onDesignEscalation: enqueue,
+      deferWorkflowTurn: true,
+      onWorkflowEscalation: enqueue,
       turnDriver: { run },
     });
     expect(run).not.toHaveBeenCalled();

@@ -19,7 +19,7 @@ export function createCookbookAssistant(
 ): NonNullable<CookbookAppProps['assistant']> {
   const transport = createAssistantHttpTransport({
     endpoint: options.endpoint ?? '/api/assistant',
-    designRuns: true,
+    workflowRuns: true,
   });
   // Observe the existing authorized card polls; historical terminal rows are inert.
   // Retain terminal observations so overlapping/stale requests cannot re-arm them.
