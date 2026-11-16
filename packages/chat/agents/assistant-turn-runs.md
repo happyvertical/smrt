@@ -30,3 +30,19 @@ as before. The prompt declares the tier the assistant asks for, `ai.profile: 'be
 `resolveChatAssistantTier({ db, tenantId })` reads it back through
 `resolvePrompt` (so config and stored layers apply) and a host binds the
 turn's model at that tier.
+
+## A workflow step's turn (child run)
+
+A host's trusted `internalTurn` may return `step: { parent, prompt,
+stepIndex, name }` (the template-sveltekit host does, for each workflow step
+it runs through the assistant route). The turn's run is then a CHILD of the
+workflow run (`parent_run_id`, opened with a `handoff` event in the parent
+named after the step, in the same transaction); its calls carry the parent's
+claim fence and are tracked under the step's registered `prompt` (whose text
+follows the host's system prompt), so they roll into the parent's inclusive
+totals and budget. A parent stop or limit stops the child's next call, and
+when the turn ends a stopped or cancelled child stops the parent the same way
+(`stopAiRunForChild`); cancelling the parent cancels the child. The turn
+closes the `handoff` with how the child ended. An external `turnDriver` opens
+no run here, so an external-engine step records no calls. Tests:
+`turn-tracking-child.test.ts`.

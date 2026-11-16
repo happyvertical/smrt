@@ -18,15 +18,20 @@
  * of the key replaces both.
  */
 
+import { randomUUID } from 'node:crypto';
 import type { AIClient } from '@happyvertical/ai';
 import {
   type AiRunBudget,
   type AiRunContext,
+  aiRunStoppedError,
   appendAiRunEvent,
+  closeAiRunHandoff,
   DEFAULT_INFERENCE_TIER,
   finishAiRun,
+  getAiRun,
   type InferenceTier,
   stopAiRun,
+  stopAiRunForChild,
   type TrackedAiClient,
   type TrackedAiClientOptions,
   type TrackedPromptCall,
@@ -79,6 +84,20 @@ export interface AssistantTurnTracking {
   messageRefPrefix?: string;
   /** The turn's budget (#5005), stored on its `turn` run. */
   budget?: AiRunBudget;
+  /**
+   * A host's workflow step that runs as this turn (internal turns only, set
+   * by the route from the host's `internalTurn`): the turn's run is a CHILD
+   * of the workflow run, recorded there as a `handoff` event, its calls
+   * carry the parent's claim fence and the step's registered prompt
+   * (`prompt`), and they roll up into the parent's totals and budget. A stop
+   * or a budget limit on the parent stops the child's next call; a cancel of
+   * the parent cancels it.
+   */
+  parent?: {
+    context: AiRunContext;
+    stepIndex?: number | null;
+    name?: string | null;
+  };
   /** Recorded as the run's tags, for finding a thread's turns. */
   threadId?: string;
   agentSessionId?: string;
@@ -189,6 +208,8 @@ export class AssistantTurnRun {
     private readonly tracking: AssistantTurnTracking,
     readonly context: AiRunContext,
     readonly runId: string,
+    /** The `handoff` event in the parent run, for a workflow step's turn. */
+    readonly handoffEventId: string | null = null,
   ) {}
 
   /**
@@ -200,7 +221,19 @@ export class AssistantTurnRun {
     tracking: AssistantTurnTracking,
     input: { originMessageId?: string } = {},
   ): Promise<AssistantTurnRun> {
+    const parent = tracking.parent;
+    const handoffEventId = parent ? randomUUID() : null;
     const { run, context } = await tracking.tracked.openRun({
+      ...(parent
+        ? {
+            parentRunId: parent.context.runId,
+            handoff: {
+              eventId: handoffEventId as string,
+              name: parent.name ?? null,
+              stepIndex: parent.stepIndex ?? parent.context.stepIndex ?? null,
+            },
+          }
+        : {}),
       type: 'turn',
       definitionKey: tracking.definitionKey ?? CHAT_TURN_DEFINITION_KEY,
       promptKey: tracking.prompt.key,
@@ -213,7 +246,14 @@ export class AssistantTurnRun {
       },
       ...(tracking.budget ? { budget: tracking.budget } : {}),
     });
-    const turn = new AssistantTurnRun(tracking, context, run.id);
+    const turn = new AssistantTurnRun(
+      tracking,
+      parent?.context.fence
+        ? { ...context, fence: parent.context.fence }
+        : context,
+      run.id,
+      handoffEventId,
+    );
     const ref = messageRef(turn.refPrefix, input.originMessageId);
     if (ref) {
       await turn.append({
@@ -421,6 +461,42 @@ export class AssistantTurnRun {
       }
     } catch {
       // A run that a limit or a cancel already ended stays as it ended.
+    }
+    await this.closeHandoff();
+  }
+
+  /** End the parent's `handoff` with how this child run actually ended. */
+  private async closeHandoff(): Promise<void> {
+    const parent = this.tracking.parent;
+    if (!parent || !this.handoffEventId) return;
+    try {
+      const run = await getAiRun(this.tracking.tracked.db, this.runId);
+      const status =
+        run?.status === 'done'
+          ? 'done'
+          : run?.status === 'cancelled'
+            ? 'cancelled'
+            : run?.status === 'failed'
+              ? 'failed'
+              : 'stopped';
+      await closeAiRunHandoff(
+        parent.context.db,
+        parent.context.runId,
+        this.handoffEventId,
+        status,
+      );
+      // A child's stop reaches its parent as a stop (page section 6.2): a
+      // limit of the workflow run, or its stop, leaves it stopped and
+      // resumable, never a failed step.
+      if (run && (run.status === 'stopped' || run.status === 'cancelled')) {
+        await stopAiRunForChild(
+          parent.context.db,
+          parent.context.runId,
+          aiRunStoppedError(run),
+        );
+      }
+    } catch {
+      // The parent's own record of the step is its check; never fail on it.
     }
   }
 }

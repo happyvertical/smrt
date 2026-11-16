@@ -1,8 +1,9 @@
-import type { AiRunBudget } from '@happyvertical/smrt-core';
+import type { AiRunBudget, AiRunContext } from '@happyvertical/smrt-core';
 import type {
   AssistantSettings,
   EngineExecution,
 } from '@happyvertical/smrt-inference';
+import type { ResolvedPrompt } from '@happyvertical/smrt-prompts';
 import type {
   AssistantModelSelection,
   AssistantRunTypeOptions,
@@ -299,16 +300,37 @@ export interface AssistantRouteBoundPrincipal {
   readonly scopes: readonly string[];
 }
 
+/** A host's trusted internal turn: see `internalTurn`. */
+interface AssistantInternalTurn {
+  userMessage: string;
+  originMessageId?: string;
+  step?: {
+    /** The workflow run's context for this step (its run, db and fence). */
+    parent: AiRunContext;
+    /** The step's registered prompt, resolved by the host. */
+    prompt: ResolvedPrompt;
+    stepIndex?: number | null;
+    name?: string | null;
+  };
+}
+
 /** Options for {@link mountAssistantRoutes}. */
 export interface MountAssistantRoutesOptions {
   deferWorkflowTurn?: AssistantRouteValue<boolean>;
-  /** Trusted detached pass binding, never a request body flag. Does not author a user message. */
+  /**
+   * Trusted detached turn binding (a host's workflow step), never a request
+   * body flag. Does not author a user message. With `step`, the turn runs as
+   * that workflow step: its `turn` run is a child of the workflow run (a
+   * `handoff` event there, the parent's claim fence), and its calls are
+   * tracked under the step's registered prompt, whose text follows the
+   * host's system prompt.
+   */
   internalTurn?(
     context: AssistantRequestContext,
   ):
-    | { userMessage: string; originMessageId?: string }
+    | AssistantInternalTurn
     | undefined
-    | Promise<{ userMessage: string; originMessageId?: string } | undefined>;
+    | Promise<AssistantInternalTurn | undefined>;
   /**
    * Authenticated host selection of the turn's engine, tier, model and
    * effort (#5005); a request body model is never accepted with one.
@@ -1076,7 +1098,10 @@ export function mountAssistantRoutes(
   const maxBody = options.maxBodyBytes ?? DEFAULT_ASSISTANT_MAX_BODY_BYTES;
   const maxContent = options.maxContentLength ?? MAX_CHAT_STREAM_CONTENT_LENGTH;
   const historyLimit = Math.max(0, options.historyLimit ?? 20);
-  const internalRequests = new WeakSet<Request>();
+  const internalRequests = new WeakMap<
+    Request,
+    AssistantInternalTurn['step'] | null
+  >();
   const publicMessage = (message: ChatMessage): AssistantMessageWire => {
     const wire = toAssistantMessageWire(message);
     if (options.toolPresentation !== 'generic' || wire.role !== 'tool')
@@ -1454,6 +1479,7 @@ export function mountAssistantRoutes(
   ): Promise<AssistantTurnTracking> => {
     const { principal } = context;
     const database = await resolveDatabase(db);
+    const step = internalRequests.get(context.event.request) ?? undefined;
     const tracked = createTrackedAiClient({
       db: database,
       tenantId: principal.tenantId,
@@ -1464,11 +1490,22 @@ export function mountAssistantRoutes(
     const threadId = String(thread.id);
     return {
       tracked,
-      prompt: await resolveChatAssistantPrompt({
-        db: database,
-        tenantId: principal.tenantId,
-        ...(systemPrompt ? { systemPrompt } : {}),
-      }),
+      prompt: step
+        ? step.prompt
+        : await resolveChatAssistantPrompt({
+            db: database,
+            tenantId: principal.tenantId,
+            ...(systemPrompt ? { systemPrompt } : {}),
+          }),
+      ...(step
+        ? {
+            parent: {
+              context: step.parent,
+              stepIndex: step.stepIndex ?? null,
+              name: step.name ?? null,
+            },
+          }
+        : {}),
       threadId,
       agentSessionId: String(session.id),
       decisions: async () => {
@@ -1579,9 +1616,13 @@ export function mountAssistantRoutes(
       ai && db && !prepared.turnDriver
         ? await trackingFor(context, ai, db, systemPrompt, thread, session)
         : undefined;
-    const systemText = tracking
-      ? chatAssistantSystemText(tracking.prompt)
-      : systemPrompt;
+    // A workflow step's turn sends the host's system prompt, then the step's
+    // registered prompt.
+    const systemText = tracking?.parent
+      ? [systemPrompt, tracking.prompt.text].filter(Boolean).join('\n\n')
+      : tracking
+        ? chatAssistantSystemText(tracking.prompt)
+        : systemPrompt;
     // The turn's effort (#5005): the assistant prompt's `ai.effort`, else the
     // tier binding's the host selected. An external driver has no tracked
     // prompt, so the prompt is resolved here for its effort.
@@ -2340,7 +2381,7 @@ export function mountAssistantRoutes(
         )
           throw notFound();
       }
-      internalRequests.add(context.event.request);
+      internalRequests.set(context.event.request, internal.step ?? null);
       const prepared = await prepareTurn(context, body);
       const setup = await turnSetup(context, chat, session, thread, prepared);
       const earlier =
