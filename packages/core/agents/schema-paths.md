@@ -1936,3 +1936,20 @@ Fallback registry aggregation includes `_sync_origin_device_id` and
 source-only models must support the same tracked delete path as compiled models.
 The fallback id-type regression also asserts these columns; the plugin fixture
 exercises delete after owner approval against a fresh runtime database.
+
+
+## Release snapshot owners overlay (#5005)
+
+`release:snapshot` (`release-upgrade-gate.mjs save`) writes the new
+  snapshot's `owners/<release>.json` from the same built checkout's manifests
+  (no registry needed) and, when npm answers, checks it and that release's
+  definitions against the published manifests (skipped with a message
+  offline); `prune` removes an overlay with its snapshot. After a base merge or
+  a rebase that adds or changes a snapshot, run
+  `pnpm release-upgrade:refresh-owners` (needs npm), the backfill and repair
+  tool: it writes an `owners/<release>.json` for every snapshot, deletes one
+  whose snapshot is gone, and regenerates every retired-table declaration's
+  `definitions` for the snapshot set (#5005). The gate fails on a missing or
+  stale overlay; `pnpm check:release-upgrade:owners` (`check --verify-owners`)
+  adds the npm comparison (opt-in, not in PR CI). Details:
+  [agents/schema-paths.md](agents/schema-paths.md).

@@ -24,7 +24,7 @@ and repository rules.
 | `src/vite-plugin/`, `src/consumer-plugin/`, `src/knowledge.ts` | Decorator UI hints, knowledge projection, generation snapshots | [agents/build-knowledge.md](agents/build-knowledge.md) |
 | `src/knowledge-graph.ts` | Cross-package knowledge graph merge and freshness check (#2863) — see [standards](../../docs/content/standards.md) | — |
 | `src/object.ts`, `src/collection.ts`, `src/learning/memory.ts` | Context memory and semantic search | [agents/memory.md](agents/memory.md) |
-| `src/adapters/ai-usage.ts`, `src/adapters/ai-usage-recorder.ts`, `src/system/ai-usage-observability.ts`, `src/system/ai-runs.ts`, `src/system/ai-run-*.ts`, `src/ai-run-client.ts`, `src/tracked-ai-client.ts`, `src/ai-transcripts.ts`, `src/system/ai-transcripts.ts`, `src/system/ai-prompt-compare.ts` | Public usage recorder, `withAiUsage()`, ambient-tenant and ambient-user (#4760) slots, gateway cost ids (#3077); usage tags lifted to `prompt_key`/tier/`run_id` columns, evaluations, `ai:usage` report (#4751); AI runs of every type, events, trajectories, budget accounting, the tracked client (`createTrackedAiClient`, one per tenant and database, a prompt key on every call; `scripts/check-tracked-ai-calls.mjs` keeps code on it), fusion runs opened at start, the `ai-runs` sweep and run retention (#4753, #5005; [docs/content/ai-runs.md](../../docs/content/ai-runs.md)); opt-in `_smrt_ai_transcripts` with `call_id`, redaction, audited tenant-scoped reads (#4780); tenant-scoped prompt/model comparison and template history (#4782) | [agents/ai-usage.md](agents/ai-usage.md) |
+| `src/adapters/ai-usage*.ts`, `src/system/ai-usage-observability.ts`, `src/system/ai-run*.ts`, `src/ai-run-client.ts`, `src/tracked-ai-client.ts`, `src/*ai-transcripts.ts`, `src/system/ai-prompt-compare.ts` | Usage recorder, ambient slots, `ai:usage` (#3077, #4751, #4760); AI runs, events, accounting, tracked client, `ai-runs` sweep (#4753, #5005; [ai-runs](../../docs/content/ai-runs.md)); transcripts (#4780); prompt comparison (#4782) | [agents/ai-usage.md](agents/ai-usage.md) |
 | `src/system/diagnostics.ts` | SELECT-only `_smrt_*` diagnostics reader behind smrt-dev-mcp runtime tools (#1824) | [agents/system-diagnostics.md](agents/system-diagnostics.md) |
 | `src/system/registry-snapshot.ts` | Sanitized plain-JSON projection of the booted `ObjectRegistry` for the smrt-dev-mcp runtime dev-plane (#1831); never constructors, validators, values, or absolute paths | [agents/registry-snapshot.md](agents/registry-snapshot.md) |
 | `src/registry/qualified-name-aliases.ts`, `src/migrations/qualified-name-aliases.ts` | Model moves: `previousQualifiedNames` aliases, deprecation, doctor counts, opt-in backfill (#3338) | [agents/model-moves.md](agents/model-moves.md) |
@@ -112,19 +112,7 @@ and repository rules.
   PostgreSQL schema version is not yet stamped: inside a caller's transaction it
   is held until that transaction ends (#2868). Application tables still require migrations;
   runtime verification checks table existence and the last migrate fingerprint.
-- `release:snapshot` (`release-upgrade-gate.mjs save`) writes the new
-  snapshot's `owners/<release>.json` from the same built checkout's manifests
-  (no registry needed) and, when npm answers, checks it and that release's
-  definitions against the published manifests (skipped with a message
-  offline); `prune` removes an overlay with its snapshot. After a base merge or
-  a rebase that adds or changes a snapshot, run
-  `pnpm release-upgrade:refresh-owners` (needs npm), the backfill and repair
-  tool: it writes an `owners/<release>.json` for every snapshot, deletes one
-  whose snapshot is gone, and regenerates every retired-table declaration's
-  `definitions` for the snapshot set (#5005). The gate fails on a missing or
-  stale overlay; `pnpm check:release-upgrade:owners` (`check --verify-owners`)
-  adds the npm comparison (opt-in, not in PR CI). Details:
-  [agents/schema-paths.md](agents/schema-paths.md).
+- `release:snapshot` writes the snapshot's owners overlay; after a base merge or rebase that changes a snapshot run `pnpm release-upgrade:refresh-owners` (needs npm). The gate fails on a missing or stale overlay. Details: [agents/schema-paths.md](agents/schema-paths.md).
 - Manifest generation fails closed on scanner errors, including unresolved
   decorator spreads. Never emit partial, default-open registration.
 - Generated registration repairs bundled class identity using the exact imported

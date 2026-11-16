@@ -66,9 +66,7 @@ Use Node/pnpm versions from `package.json`. Install with `pnpm install`, then
 `pnpm knowledge:check --strict --format markdown`, `pnpm audit:policy`, and
 `pnpm check:node-roots` (built model roots load under plain Node, #4219;
 allow-list in its root `package.json` script).
-`pnpm lint`/`pnpm format-check` run Biome directly (`biome ci`, CI-pinned,
-#2710) plus the `--smrt-*` gate (#3822) and `scripts/check-tracked-ai-calls.mjs` (#5005: package code makes no model call outside the tracked client, every tracked call carries a prompt key, a short `ALLOWED` list holds each exception with its reason), not through Turbo; no package defines
-its own `lint`/`format-check` script.
+`pnpm lint`/`pnpm format-check`: [agents/root-gotchas.md](agents/root-gotchas.md#lint-and-format).
 [TESTING_STANDARD.md](TESTING_STANDARD.md) defines package release gates.
 
 Test and build gotchas (Vitest plugin, Oxc decorators, `svelte-check`):

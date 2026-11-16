@@ -498,3 +498,10 @@ rows of one prompt key; no model judges anything (labels come from
   their indexed columns. No new table or index. Tests:
   `issue-4782-ai-prompt-compare.test.ts`, PostgreSQL lane
   `issue-4782-ai-prompt-compare-postgres.optional.test.ts`.
+
+
+## Scope of the usage and run row (moved from AGENTS.md)
+
+Public usage recorder, `withAiUsage()`, ambient-tenant and ambient-user (#4760) slots, gateway cost ids (#3077); usage tags lifted to `prompt_key`/tier/`run_id` columns, evaluations, `ai:usage` report (#4751); AI runs of every type, events, trajectories, budget accounting, the tracked client (`createTrackedAiClient`, one per tenant and database, a prompt key on every call; `scripts/check-tracked-ai-calls.mjs` keeps code on it), fusion runs opened at start, the `ai-runs` sweep and run retention (#4753, #5005; [docs/content/ai-runs.md](../../docs/content/ai-runs.md)); opt-in `_smrt_ai_transcripts` with `call_id`, redaction, audited tenant-scoped reads (#4780); tenant-scoped prompt/model comparison and template history (#4782)
+
+`pnpm lint` also runs `scripts/check-tracked-ai-calls.mjs` (#5005): package code makes no model call outside the tracked client, every tracked call carries a prompt key, and a short `ALLOWED` list holds each exception with its reason.
