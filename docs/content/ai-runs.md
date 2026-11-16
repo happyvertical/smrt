@@ -137,6 +137,14 @@ second unique constraint would add nothing, and DuckDB checks unique indexes
 eagerly, so updating an indexed column (as the upgrade in section 9 does) can
 report a violation that is not there.
 
+A caller may supply its own call id when it reserves. The reservation refuses
+an id that a `call` event already uses, but the check holds only the
+reserving run's chain: two reservations in runs of different chains that
+supply the same id at the same moment can both pass. No unique index backs
+it, because the index would have to be partial (`WHERE type = 'call'`, since
+other events carry a `call_id` too) and DuckDB has no partial indexes. Minted
+ids never collide.
+
 Today `call_id` holds something else: the id of the entry call, shared by
 every seat row of a fusion, and minted only while transcripts are on. That
 meaning moves to `entry_call_id`. `_smrt_ai_transcripts` is unchanged; its
@@ -949,11 +957,18 @@ and logs and swallows their failures. For a call inside a run:
   pending list in the process, oldest first, and its handlers are not called
   yet. The list is written before that database's next reservation; a run's
   next reservation does not go ahead until its own pending settlements are
-  written. The list is written oldest first and stops at the first that
-  still fails. Each pending settlement is written once, even by concurrent
-  writers of the list, and its handlers are called once, when it commits. A
-  settlement whose run (or an ancestor) no longer exists is dropped with a
-  warning and its handlers are never called, so it cannot hold the list.
+  written. The list is written oldest first; one that still fails holds
+  back the later settlements of its own run, never those of other runs.
+  Each pending settlement is written once, even by concurrent writers of the
+  list, and its handlers are called once, when it commits. A settlement
+  whose run no longer exists is taken off the list with a warning, and its
+  usage row is written on its own, without a run, so the spend stays in the
+  billing ledger and its handlers are called. A settlement that can never
+  settle (a typed error or a `TypeError`, such as a parent cycle) or that
+  has failed 10 writes of the list is taken off the same way, its usage row
+  keeping its run, so it cannot hold its run's calls forever; reconciliation
+  then settles a reservation it still holds from that row (section 6.7). A
+  usage row that cannot be written either is lost, with a warning.
 
 While a settlement waits on the pending list, its reservation is still held,
 so other processes see the reserved `R`, but not any spend beyond it; once

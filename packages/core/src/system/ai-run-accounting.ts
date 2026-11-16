@@ -40,6 +40,7 @@ import {
   getAiRun,
   getRows,
   isAiRunFinal,
+  isAiRunRetryable,
   lockAiRun,
   lockAiRunChain,
   lockAiRunChainFenced,
@@ -243,7 +244,10 @@ function lackOfRoom(
  * input alone exceeds `maxCallTokens` throws {@link AiCallLimitError} and
  * reserves nothing. A caller-supplied `callId` already used by a call, or
  * used twice in `requests`, throws a `TypeError` and reserves nothing. The
- * model is called only after this returns.
+ * check holds the reserving run's chain only: two reservations in runs of
+ * different chains that supply the same id at the same moment can both
+ * pass (no unique index backs it, since DuckDB has no partial index); a
+ * minted id never collides. The model is called only after this returns.
  */
 export async function reserveAiCalls(
   db: DatabaseInterface,
@@ -1099,10 +1103,23 @@ interface PendingSettlement {
   afterCommit?: () => Promise<void>;
   /** The write in flight for this entry, followed by every flush. */
   settling?: Promise<PendingOutcome>;
+  /** Flushes that failed to write it. */
+  failures: number;
 }
 
-/** `pending`: still failing, kept; `dropped`: its run is gone. */
-type PendingOutcome = 'written' | 'dropped' | 'pending';
+/**
+ * `written`: settled; `ledger`: taken off the list with its usage row
+ * written on its own (its run is gone, or it can never settle); `dropped`:
+ * taken off the list and not even its usage row could be written;
+ * `pending`: still failing, kept.
+ */
+type PendingOutcome = 'written' | 'ledger' | 'dropped' | 'pending';
+
+/**
+ * Flushes a settlement may fail with an error that could pass on another
+ * try before it is taken off the list like one that never can.
+ */
+export const AI_RUN_PENDING_MAX_FAILURES = 10;
 
 const pendingByUrl = new Map<string, PendingSettlement[]>();
 const pendingByHandle = new WeakMap<object, PendingSettlement[]>();
@@ -1139,6 +1156,7 @@ export function deferAiRunSettlement(
 ): void {
   pendingList(db, true)?.push({
     input,
+    failures: 0,
     ...(afterCommit ? { afterCommit } : {}),
   });
 }
@@ -1153,6 +1171,29 @@ function removePending(list: PendingSettlement[], entry: PendingSettlement) {
   if (index >= 0) list.splice(index, 1);
 }
 
+/**
+ * Write a settlement's usage row on its own (`ON CONFLICT DO NOTHING`), so
+ * the spend stays in the billing ledger when the run can never take it.
+ * `runId` is null when the run is gone.
+ */
+async function writeUsageAlone(
+  db: DatabaseInterface,
+  input: SettleAiCallInput,
+  runId: string | null,
+): Promise<boolean> {
+  try {
+    await insertAiUsageRow(db, input.usage, { id: input.callId, runId });
+    return true;
+  } catch (error) {
+    logger.warn(
+      `[smrt] AI usage row for call ${input.callId} could not be written: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    return false;
+  }
+}
+
 async function writePending(
   db: DatabaseInterface,
   list: PendingSettlement[],
@@ -1164,17 +1205,38 @@ async function writePending(
     removePending(list, entry);
     return 'written';
   } catch (error) {
+    entry.failures += 1;
     const message = error instanceof Error ? error.message : String(error);
+    const callId = entry.input.callId;
     if (error instanceof AiRunNotFoundError) {
-      // Its run (or an ancestor) was pruned: nothing can ever take it.
+      // Its run was pruned: no run can ever take it, the ledger still does.
       removePending(list, entry);
+      const kept = await writeUsageAlone(db, entry.input, null);
       logger.warn(
-        `[smrt] AI run settlement for call ${entry.input.callId} dropped: ${message}`,
+        `[smrt] AI run settlement for call ${callId} dropped, its run no longer exists${
+          kept ? '; usage row kept without a run' : ''
+        }: ${message}`,
       );
-      return 'dropped';
+      return kept ? 'ledger' : 'dropped';
+    }
+    if (
+      !isAiRunRetryable(error) ||
+      entry.failures >= AI_RUN_PENDING_MAX_FAILURES
+    ) {
+      // It can never settle (or has failed every flush so far): park it so
+      // the run's later calls go ahead. The usage row keeps its run, so
+      // reconciliation settles the reservation from it if one is held.
+      removePending(list, entry);
+      const kept = await writeUsageAlone(db, entry.input, entry.input.runId);
+      logger.warn(
+        `[smrt] AI run settlement for call ${callId} of run ${entry.input.runId} parked after ${entry.failures} failed flush(es)${
+          kept ? '; usage row written on its own' : ''
+        }: ${message}`,
+      );
+      return kept ? 'ledger' : 'dropped';
     }
     logger.warn(
-      `[smrt] AI run settlement for call ${entry.input.callId} is still pending: ${message}`,
+      `[smrt] AI run settlement for call ${callId} is still pending: ${message}`,
     );
     return 'pending';
   } finally {
@@ -1183,14 +1245,18 @@ async function writePending(
 }
 
 /**
- * Write the pending settlements of this database, oldest first; stops at
- * the first that still fails. A settlement whose run (or an ancestor) is
- * gone is dropped with a warning, its handlers never called. Concurrent
- * flushes share each entry's write, so a settlement is written once and
- * its handlers run once, by the flush that wrote it, after the commit; a
- * handler may itself make a tracked call. With `runId`, throws when a
- * settlement of that run is still pending, so the run's next reservation
- * does not go ahead.
+ * Write the pending settlements of this database, oldest first. One that
+ * still fails holds back the later settlements of its own run, never those
+ * of other runs. A settlement whose run no longer exists is taken off the
+ * list with its usage row written on its own (without a run); one that can
+ * never settle (a typed error, a `TypeError`) or has failed
+ * {@link AI_RUN_PENDING_MAX_FAILURES} flushes is taken off with its usage
+ * row written on its own (with its run), each with a warning. The handlers
+ * run once the usage row is written either way. Concurrent flushes share
+ * each entry's write, so a settlement is written once and its handlers run
+ * once, by the flush that wrote it, after the commit; a handler may itself
+ * make a tracked call. With `runId`, throws when a settlement of that run
+ * is still pending, so the run's next reservation does not go ahead.
  */
 export async function flushAiRunSettlements(
   db: DatabaseInterface,
@@ -1198,19 +1264,24 @@ export async function flushAiRunSettlements(
 ): Promise<void> {
   const list = pendingList(db, false);
   if (!list || list.length === 0) return;
-  for (;;) {
-    const next = list[0];
-    if (!next) break;
+  const held = new Set<string>();
+  for (const next of [...list]) {
+    if (!list.includes(next)) continue;
+    const runId = next.input.runId;
+    if (held.has(runId)) continue;
     if (next.settling) {
       // Another flush is writing it; follow, and leave its handlers to it.
-      if ((await next.settling) === 'pending') break;
+      if ((await next.settling) === 'pending') held.add(runId);
       continue;
     }
     const settling = writePending(db, list, next, options);
     next.settling = settling;
     const outcome = await settling;
-    if (outcome === 'pending') break;
-    if (outcome === 'written' && next.afterCommit) {
+    if (outcome === 'pending') {
+      held.add(runId);
+      continue;
+    }
+    if ((outcome === 'written' || outcome === 'ledger') && next.afterCommit) {
       try {
         await next.afterCommit();
       } catch (error) {

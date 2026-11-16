@@ -640,16 +640,19 @@ export async function withAiRunTransaction<T>(
         },
       );
     } catch (error) {
-      if (
-        error instanceof AiRunError ||
-        error instanceof TypeError ||
-        attempt >= attempts
-      ) {
-        throw error;
-      }
+      if (!isAiRunRetryable(error) || attempt >= attempts) throw error;
       await new Promise((resolve) => setTimeout(resolve, retryDelay(attempt)));
     }
   }
+}
+
+/**
+ * Whether {@link withAiRunTransaction} retries a failure: a typed
+ * {@link AiRunError} or a `TypeError` is the answer, anything else (a
+ * conflict, a lock timeout, a lost connection) may pass on another try.
+ */
+export function isAiRunRetryable(error: unknown): boolean {
+  return !(error instanceof AiRunError || error instanceof TypeError);
 }
 
 /** `FOR UPDATE` on PostgreSQL; the write transaction is exclusive elsewhere. */
@@ -833,9 +836,9 @@ export async function writeAiRunTotals(
 export type AiRunClaimFence = (
   tx: DatabaseInterface,
   durableRunId: string,
-) => Promise<void | boolean>;
+) => Promise<unknown>;
 
-/** Whether a fence's error says the claim is gone (not that the write failed). */
+/** Whether a fence's error says the claim is gone, not that the write failed. */
 function isClaimLoss(error: unknown): boolean {
   return (
     error instanceof AiRunClaimLostError ||
@@ -891,7 +894,7 @@ export async function assertAiRunFence(
   const ids = await readAiRunChainIds(tx.db, runId);
   const durable = await nearestDurable(tx.db, ids);
   if (!durable) return;
-  let held: void | boolean;
+  let held: unknown;
   try {
     held = await fence(tx.db, durable);
   } catch (error) {
