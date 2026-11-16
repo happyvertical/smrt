@@ -349,14 +349,20 @@ async function writeCheckpointTx(
     highestStepIndex?: number | null;
     lastSeq?: number;
     lease?: string | null;
+    definitionVersion?: string | null;
   },
 ): Promise<number> {
   const expected = next.expectedRevision ?? current.revision;
+  const version =
+    next.definitionVersion !== undefined
+      ? next.definitionVersion
+      : current.definitionVersion;
   const rows = getRows(
     await aiRunQuery(
       tx.db,
       `UPDATE _smrt_ai_run_checkpoints
-          SET revision = $3, state = $4, last_seq = $5, lease = $6
+          SET revision = $3, state = $4, last_seq = $5, lease = $6,
+              definition_version = $7
         WHERE run_id = $1 AND revision = $2
         RETURNING revision`,
       current.runId,
@@ -370,10 +376,20 @@ async function writeCheckpointTx(
       ),
       next.lastSeq ?? current.lastSeq,
       next.lease !== undefined ? next.lease : current.lease,
+      version,
     ),
   );
   if (rows.length === 0) {
     throw new AiRunCheckpointConflictError(current.runId, expected);
+  }
+  if (version !== current.definitionVersion) {
+    // The run row names the definition version its checkpoint now holds.
+    await aiRunQuery(
+      tx.db,
+      'UPDATE _smrt_ai_runs SET definition_version = $2 WHERE id = $1',
+      current.runId,
+      version,
+    );
   }
   return expected + 1;
 }
@@ -385,6 +401,13 @@ export interface SaveAiRunCheckpointInput {
   state: unknown;
   lastSeq?: number;
   lease?: string | null;
+  /**
+   * The definition version the saved state now belongs to: a newer version
+   * that accepted an older checkpoint and migrated its state (page section
+   * 7) records itself here, on the checkpoint and the run row, so the next
+   * resume compares against it. Unchanged when absent.
+   */
+  definitionVersion?: string | null;
   fence?: AiRunClaimFence;
 }
 
@@ -420,6 +443,9 @@ export async function saveAiRunCheckpoint(
         state: input.state,
         ...(input.lastSeq !== undefined ? { lastSeq: input.lastSeq } : {}),
         ...(input.lease !== undefined ? { lease: input.lease } : {}),
+        ...(input.definitionVersion !== undefined
+          ? { definitionVersion: input.definitionVersion }
+          : {}),
       });
     },
     options,
