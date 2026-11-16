@@ -4133,6 +4133,9 @@ importers:
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
       typescript:
         specifier: 6.0.3
         version: 6.0.3

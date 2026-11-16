@@ -47,6 +47,7 @@ export {
   type ImportPlan,
   loadOrder,
   PLAN_KEY_PATTERN,
+  PLAN_VALUE_LIMITS,
   type PlanField,
   type PlanLimits,
   type PlanReference,
@@ -54,6 +55,7 @@ export {
   type PlanTable,
   validatePlan,
 } from './plan.js';
+export { IMPORT_PLAN_SCHEMA } from './plan-schema.js';
 export {
   type RunImportOptions,
   type RunImportResult,

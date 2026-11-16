@@ -54,6 +54,13 @@ A row is blank only when every mapped column, reference column and calculated
 `cachedColumn` is blank. Calculated-only tables need at least one `cachedColumn`
 to establish their rows; otherwise `validatePlan` throws `no-row-source`.
 
+### Plan JSON Schema
+
+`IMPORT_PLAN_SCHEMA` from `./import` describes the closed JSON shape for model
+output or forms. Its limits and field types share the plan validator's constants.
+Always run `validatePlan` afterwards: lookup graphs, source pairing and SDK
+expression types are semantic checks that JSON Schema cannot express.
+
 ### Typing
 
 Every cell is typed by one rule (`coerceCell`) and refused when it does not fit:

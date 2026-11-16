@@ -119,9 +119,16 @@ const RESERVED_KEYS: ReadonlySet<string> = new Set([
   'prototype',
 ]);
 
-const MAX_LABEL = 200;
-const MAX_COLUMN = 16384;
-const MAX_ROW = 1_048_576;
+export const PLAN_VALUE_LIMITS = Object.freeze({
+  maxLabel: 200,
+  maxColumn: 16384,
+  maxRow: 1_048_576,
+});
+const {
+  maxLabel: MAX_LABEL,
+  maxColumn: MAX_COLUMN,
+  maxRow: MAX_ROW,
+} = PLAN_VALUE_LIMITS;
 
 function fail(code: ImportPlanErrorCode, path: string, message: string): never {
   throw new ImportPlanError(code, path, message);
