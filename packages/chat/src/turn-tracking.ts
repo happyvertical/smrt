@@ -354,12 +354,19 @@ export class AssistantTurnRun {
    * selection, its calls also carry the tier asked for and bound.
    */
   client(selection?: AssistantModelSelection): Promise<AIClient> {
-    return this.tracking.tracked.client(this.promptCall(selection), {
-      runContext: this.context,
-    });
+    return this.tracking.tracked.client(
+      trackedPromptCall(this.tracking.prompt, {
+        usageTags: this.tierTags(selection),
+      }),
+      { runContext: this.context },
+    );
   }
 
-  /** The tracked prompt of the turn's calls. */
+  /**
+   * The tracked prompt of the turn's calls, the one {@link client} carries.
+   * An engine call made outside the client (Claude Code, Codex) records
+   * under it.
+   */
   promptCall(selection?: AssistantModelSelection): TrackedPromptCall {
     return trackedPromptCall(this.tracking.prompt, {
       usageTags: this.tierTags(selection),
