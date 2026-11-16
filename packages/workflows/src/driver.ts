@@ -13,13 +13,14 @@ import {
   finishAiRun,
   getAiRun,
   getRunTrajectory,
+  isEmbeddedDatabase,
   reconcileAiRunOnClaim,
   resumeAiRun,
   startAiRunStep,
   stopAiRun,
   type TrackedAiClient,
   waitAiRunApproval,
-  withCallerOwnedDatabaseTransaction,
+  withEmbeddedWriteTransaction,
 } from '@happyvertical/smrt-core';
 import {
   promptMessageOptions,
@@ -892,12 +893,12 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
         await resumeWith(db, true);
         return current(store, runId);
       }
-      if (!db.transaction) {
-        throw new Error('Resuming with a job requires transactions');
-      }
       await reconcileAiRunOnClaim(db, runId);
-      const refused = await db.transaction((tx) =>
-        withCallerOwnedDatabaseTransaction(tx, async () => {
+      // The embedded write queue serializes it like any accounting write.
+      const refused = await withEmbeddedWriteTransaction(
+        db,
+        isEmbeddedDatabase(db),
+        async (tx) => {
           let resumed: Awaited<ReturnType<typeof resumeAiRun>>;
           try {
             resumed = await resumeWith(tx, false);
@@ -909,7 +910,7 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
           }
           await admit(tx, resumed.budget);
           return null;
-        }),
+        },
       );
       if (refused) throw refused;
       return current(store, runId);

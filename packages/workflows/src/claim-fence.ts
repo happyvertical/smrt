@@ -32,8 +32,8 @@ export function workflowClaimFence(claim: Readonly<JobClaim>): AiRunClaimFence {
 export function workflowStopFence(claim: Readonly<JobClaim>): AiRunClaimFence {
   return async (tx, durableRunId) => {
     await assertJobClaimForRelease(tx, claim);
-    // A no-op write takes the row lock on every engine (an UPDATE locks on
-    // PostgreSQL, serializes SQLite writers and conflicts on DuckDB).
+    // A no-op write takes the row lock: an UPDATE locks the row on
+    // PostgreSQL, and SQLite serializes its writers anyway.
     await tx.query(
       'UPDATE _smrt_ai_runs SET retain = retain WHERE id = ?',
       durableRunId,
