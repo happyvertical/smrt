@@ -455,7 +455,9 @@ CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_finished
  * release returns exactly what the reservation added. `run_id` and `call_id` are
  * not foreign keys, so usage retention never blocks on events.
  *
- * `idx_smrt_ai_run_events_sweep` serves the reservation reconciliation sweep.
+ * `idx_smrt_ai_run_events_sweep` serves the reservation reconciliation sweep;
+ * `idx_smrt_ai_run_events_payload_ref` finds the events that reference one
+ * host record (a chat turn's approval requests and their decisions).
  */
 export const CREATE_SMRT_AI_RUN_EVENTS_TABLE = `
 CREATE TABLE IF NOT EXISTS _smrt_ai_run_events (
@@ -488,6 +490,9 @@ CREATE INDEX IF NOT EXISTS idx_smrt_ai_run_events_child
 
 CREATE INDEX IF NOT EXISTS idx_smrt_ai_run_events_sweep
   ON _smrt_ai_run_events(type, reservation, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_run_events_payload_ref
+  ON _smrt_ai_run_events(payload_ref);
 `;
 
 /**

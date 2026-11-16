@@ -106,12 +106,19 @@ export interface AssistantTurnTracking {
   threadId?: string;
   agentSessionId?: string;
   /**
-   * Approvals of this thread that were decided since the last turn, read from
-   * the host's approval store. Each is recorded once, in this turn's run.
+   * The approval decisions made since the last turn, each recorded once, in
+   * this turn's run. `asked` names the approvals this thread requested, read
+   * from the thread's own messages (a recent window of them) and never from
+   * the approval store. `decided` reads the store, and is called only when
+   * one of those requests still waits in a recorded run: opening the store
+   * may create its table, which a tenant role under database-rls may not do.
    */
-  decisions?: () => Promise<
-    Array<{ approvalId: string; status: 'approved' | 'refused' }>
-  >;
+  decisions?: {
+    asked: () => Promise<string[]>;
+    decided: () => Promise<
+      Array<{ approvalId: string; status: 'approved' | 'refused' }>
+    >;
+  };
 }
 
 /**
@@ -266,7 +273,7 @@ function messageRef(prefix: string, id: unknown): string | null {
   return typeof id === 'string' && id !== '' ? `${prefix}:${id}` : null;
 }
 
-/** Decisions looked up per query, well under any engine's bound-parameter cap. */
+/** Approvals looked up per query, well under any engine's bound-parameter cap. */
 const DECISION_LOOKUP_CHUNK = 200;
 
 function approvalRef(id: string): string {
@@ -556,96 +563,91 @@ export class AssistantTurnRun {
 
   /**
    * Decisions made since the last turn, each recorded once with its request
-   * as `parent_event_id`. A request that was never recorded (a pruned or
-   * foreign approval) is left alone. One query per
-   * {@link DECISION_LOOKUP_CHUNK} decisions finds the approvals whose
-   * decision is not recorded yet, however many the thread ever asked for.
+   * as `parent_event_id`. Only the approvals this thread asked for are read:
+   * one query per {@link DECISION_LOOKUP_CHUNK} of them, through the
+   * `payload_ref` index, finds their recorded requests and decisions. The
+   * approval store is opened only when one of those requests still waits
+   * for its decision; a request that was never recorded (a pruned or foreign
+   * approval) is left alone. An approval of this thread that is never
+   * decided keeps opening the store on its thread's turns until it leaves
+   * the window of messages the host reads its ids from.
    */
   private async recordDecisions(): Promise<void> {
-    if (!this.tracking.decisions) return;
+    const source = this.tracking.decisions;
+    if (!source) return;
     const { db, tenantId } = this.tracking.tracked;
-    // Read the approval store only when some request still waits for its
-    // decision: opening the store may create its table, which a tenant role
-    // under database-rls may not do, and on PostgreSQL that failure would
-    // abort the request transaction the turn runs in.
+    let asked: string[];
     try {
-      const waiting = rowsOf(
-        await db.query(
-          `SELECT 1 AS waiting
-             FROM _smrt_ai_run_events e
-             JOIN _smrt_ai_runs r ON r.id = e.run_id
-            WHERE e.type = 'approval' AND e.status = 'requested'
-              AND r.tenant_id ${tenantId === null ? 'IS NULL' : '= $1'}
-              AND NOT EXISTS (
-                SELECT 1 FROM _smrt_ai_run_events d
-                 WHERE d.type = 'approval' AND d.status <> 'requested'
-                   AND d.payload_ref = e.payload_ref
-              )
-            LIMIT 1`,
-          ...(tenantId === null ? [] : [tenantId]),
-        ),
+      asked = [...new Set(await source.asked())].filter(
+        (id) => typeof id === 'string' && id !== '',
       );
-      if (waiting.length === 0) return;
     } catch {
       return;
     }
-    let decided: Awaited<
-      ReturnType<NonNullable<typeof this.tracking.decisions>>
-    >;
-    try {
-      decided = await this.tracking.decisions();
-    } catch {
-      return;
-    }
-    for (let at = 0; at < decided.length; at += DECISION_LOOKUP_CHUNK) {
-      const chunk = decided.slice(at, at + DECISION_LOOKUP_CHUNK);
-      const byRef = new Map(
-        chunk.map((decision) => [approvalRef(decision.approvalId), decision]),
-      );
-      const refs = [...byRef.keys()];
+    // The first still-waiting request of each approval, in request order.
+    const waiting = new Map<string, Record<string, unknown>>();
+    for (let at = 0; at < asked.length; at += DECISION_LOOKUP_CHUNK) {
+      const refs = asked.slice(at, at + DECISION_LOOKUP_CHUNK).map(approvalRef);
       const marks = refs.map((_, i) => `$${i + 1}`).join(', ');
       const tenant = tenantId === null ? 'IS NULL' : `= $${refs.length + 1}`;
-      let open: Array<Record<string, unknown>>;
+      let events: Array<Record<string, unknown>>;
       try {
-        open = rowsOf(
+        events = rowsOf(
           await db.query(
-            `SELECT e.id AS id, e.name AS name, e.payload_ref AS payload_ref
+            `SELECT e.id AS id, e.name AS name, e.status AS status,
+                    e.payload_ref AS payload_ref
                FROM _smrt_ai_run_events e
                JOIN _smrt_ai_runs r ON r.id = e.run_id
-              WHERE e.type = 'approval' AND e.status = 'requested'
-                AND e.payload_ref IN (${marks})
+              WHERE e.payload_ref IN (${marks})
+                AND e.type = 'approval'
                 AND r.tenant_id ${tenant}
-                AND NOT EXISTS (
-                  SELECT 1 FROM _smrt_ai_run_events d
-                   WHERE d.type = 'approval' AND d.status <> 'requested'
-                     AND d.payload_ref = e.payload_ref
-                )
               ORDER BY e.created_at, e.id`,
             ...refs,
             ...(tenantId === null ? [] : [tenantId]),
           ),
         );
       } catch {
-        // Leave them for the next turn.
+        // Leave them for the next turn. On PostgreSQL a failed SELECT has
+        // already aborted the request transaction the turn runs in, and this
+        // catch cannot undo that: the turn's next statement fails as well.
         continue;
       }
-      // Once per approval, in the order decided: its first request takes it.
-      const firstOpen = new Map<string, Record<string, unknown>>();
-      for (const request of open) {
-        const ref = String(request.payload_ref);
-        if (!firstOpen.has(ref)) firstOpen.set(ref, request);
+      const decidedRefs = new Set(
+        events
+          .filter((event) => event.status !== 'requested')
+          .map((event) => String(event.payload_ref)),
+      );
+      for (const event of events) {
+        const ref = String(event.payload_ref);
+        if (
+          event.status === 'requested' &&
+          !decidedRefs.has(ref) &&
+          !waiting.has(ref)
+        ) {
+          waiting.set(ref, event);
+        }
       }
-      for (const [ref, decision] of byRef) {
-        const request = firstOpen.get(ref);
-        if (!request) continue;
-        await this.append({
-          type: 'approval',
-          name: typeof request.name === 'string' ? request.name : null,
-          status: decision.status,
-          parentEventId: String(request.id),
-          payloadRef: approvalRef(decision.approvalId),
-        });
-      }
+    }
+    if (waiting.size === 0) return;
+    let decided: Awaited<ReturnType<typeof source.decided>>;
+    try {
+      decided = await source.decided();
+    } catch {
+      return;
+    }
+    // Once per approval, in the order decided: its first request takes it.
+    for (const decision of decided) {
+      const ref = approvalRef(decision.approvalId);
+      const request = waiting.get(ref);
+      if (!request) continue;
+      waiting.delete(ref);
+      await this.append({
+        type: 'approval',
+        name: typeof request.name === 'string' ? request.name : null,
+        status: decision.status,
+        parentEventId: String(request.id),
+        payloadRef: ref,
+      });
     }
   }
 

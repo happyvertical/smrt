@@ -640,6 +640,11 @@ export const DEFAULT_ASSISTANT_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const MAX_TITLE_LENGTH = 200;
 const MAX_ATTACHMENTS_PER_MESSAGE = 10;
 const MAX_ID_LENGTH = 128;
+/**
+ * The latest tool messages of a thread a turn reads approval ids from (#5005):
+ * an approval older than that is no longer looked up for its decision.
+ */
+const APPROVAL_LOOKUP_MESSAGES = 200;
 const CLIENT_REQUEST_ID = /^[A-Za-z0-9_.:-]{1,128}$/;
 /** Default age after which an unanswered, unsettled send counts as failed. */
 export const DEFAULT_ASSISTANT_ABANDONED_TURN_MS = 15 * 60 * 1000;
@@ -1521,24 +1526,47 @@ export function mountAssistantRoutes(
         : {}),
       threadId,
       agentSessionId: String(session.id),
-      decisions: async () => {
-        const decided: Array<{
-          approvalId: string;
-          status: 'approved' | 'refused';
-        }> = [];
-        for (const record of await ownedThreadApprovals(context, threadId)) {
-          if (
-            record.status === 'approved' ||
-            record.status === 'executing' ||
-            record.status === 'succeeded' ||
-            record.status === 'failed'
-          ) {
-            decided.push({ approvalId: record.id, status: 'approved' });
-          } else if (record.status === 'denied') {
-            decided.push({ approvalId: record.id, status: 'refused' });
+      decisions: {
+        // The approvals the thread's latest tool messages name: a request
+        // carries `approval.id`, a result `approvalId`. Read from the thread,
+        // never from the approval store.
+        asked: async () => {
+          const chat = await chatFor(context);
+          const messages = await chat.getThreadMessages({
+            threadId,
+            actorProfileId: principal.profileId,
+            tenantId: principal.tenantId,
+            roles: ['tool'],
+            limit: APPROVAL_LOOKUP_MESSAGES,
+          });
+          const ids = new Set<string>();
+          for (const message of messages) {
+            const data = parseObject(message.toolCallData);
+            const requested = parseObject(data?.approval)?.id;
+            if (typeof requested === 'string') ids.add(requested);
+            if (typeof data?.approvalId === 'string') ids.add(data.approvalId);
           }
-        }
-        return decided;
+          return [...ids];
+        },
+        decided: async () => {
+          const decided: Array<{
+            approvalId: string;
+            status: 'approved' | 'refused';
+          }> = [];
+          for (const record of await ownedThreadApprovals(context, threadId)) {
+            if (
+              record.status === 'approved' ||
+              record.status === 'executing' ||
+              record.status === 'succeeded' ||
+              record.status === 'failed'
+            ) {
+              decided.push({ approvalId: record.id, status: 'approved' });
+            } else if (record.status === 'denied') {
+              decided.push({ approvalId: record.id, status: 'refused' });
+            }
+          }
+          return decided;
+        },
       },
     };
   };

@@ -257,7 +257,12 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
           threadId: String(thread.id),
           // A hold that timed out ends its turn with the approval pending;
           // the decision made later is recorded in the next turn's run.
-          decisions: () => threadDecisions(String(thread.id)),
+          // The thread's own messages name its approvals; the approval
+          // store is read only while one of them still waits.
+          decisions: {
+            asked: () => threadApprovalIds(String(thread.id)),
+            decided: () => threadDecisions(String(thread.id)),
+          },
         },
         { originMessageId: String(userMessage.id) },
       );

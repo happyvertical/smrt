@@ -1825,8 +1825,11 @@ describe('mountAssistantRoutes', () => {
       ]);
       // The read is role-filtered in SQL and bounded by the limit (+ the
       // stored send), whatever the thread holds.
+      // (A turn's read of its thread's approval ids is the tool-only one.)
       const historyReads = read.mock.calls.flatMap(([params], index) =>
-        params.roles ? [{ params, result: read.mock.results[index] }] : [],
+        params.roles?.includes('user')
+          ? [{ params, result: read.mock.results[index] }]
+          : [],
       );
       expect(historyReads).toHaveLength(3);
       for (const { params, result } of historyReads) {

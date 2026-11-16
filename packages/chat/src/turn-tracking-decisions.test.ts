@@ -1,8 +1,9 @@
 /**
  * Approval decisions made after a turn ended are recorded in the next turn's
  * run (#5005): once per approval, with its request as the parent, in one
- * lookup however many approvals the thread asked for. Real SQLite; no
- * model call is made.
+ * lookup however many approvals the thread asked for. Only the thread's own
+ * approvals are looked up, and the approval store is read only while one of
+ * them waits. Real SQLite; no model call is made.
  */
 import {
   createTrackedAiClient,
@@ -33,7 +34,11 @@ afterEach(async () => {
 
 type Decision = { approvalId: string; status: 'approved' | 'refused' };
 
-async function turn(decisions: Decision[] | (() => Promise<Decision[]>)) {
+async function turn(
+  asked: string[],
+  decided: Decision[] | (() => Promise<Decision[]>),
+  threadId = 'thread-1',
+) {
   const tracked = createTrackedAiClient({
     db,
     tenantId: null,
@@ -48,9 +53,11 @@ async function turn(decisions: Decision[] | (() => Promise<Decision[]>)) {
   return AssistantTurnRun.open({
     tracked,
     prompt,
-    threadId: 'thread-1',
-    decisions:
-      typeof decisions === 'function' ? decisions : async () => decisions,
+    threadId,
+    decisions: {
+      asked: async () => asked,
+      decided: typeof decided === 'function' ? decided : async () => decided,
+    },
   });
 }
 
@@ -60,16 +67,18 @@ async function approvalEvents(runId: string) {
     .filter((event) => event?.type === 'approval');
 }
 
+async function ask(run: AssistantTurnRun, id: string) {
+  await run.approvalRequested(
+    { id, tool: 'chore_delete', callId: `call-${id}`, summary: id },
+    `call-${id}`,
+  );
+}
+
 describe('decisions recorded in the next turn', () => {
   it('records each decided approval once, in one lookup', async () => {
-    const asking = await turn([]);
+    const asking = await turn([], []);
     const ids = Array.from({ length: 5 }, (_, i) => `approval-${i}`);
-    for (const id of ids) {
-      await asking.approvalRequested(
-        { id, tool: 'chore_delete', callId: `call-${id}`, summary: id },
-        `call-${id}`,
-      );
-    }
+    for (const id of ids) await ask(asking, id);
     await asking.finish('done');
     const requests = await approvalEvents(asking.runId);
     expect(requests).toHaveLength(5);
@@ -82,9 +91,9 @@ describe('decisions recorded in the next turn', () => {
       // Never requested in a recorded run: left alone.
       { approvalId: 'foreign', status: 'approved' },
     ];
+    const asked = [...ids, 'foreign'];
     const query = vi.spyOn(db, 'query');
-    const next = await turn(decided);
-    // One lookup of the decided approvals (the waiting check aside).
+    const next = await turn(asked, decided);
     const lookups = query.mock.calls.filter(([sql]) =>
       String(sql).includes('e.payload_ref IN'),
     );
@@ -103,7 +112,7 @@ describe('decisions recorded in the next turn', () => {
     await next.finish('done');
 
     // A later turn adds nothing for decisions already recorded.
-    const later = await turn(decided);
+    const later = await turn(asked, decided);
     expect(await approvalEvents(later.runId)).toEqual([]);
     await later.finish('done');
   });
@@ -111,17 +120,55 @@ describe('decisions recorded in the next turn', () => {
   it('reads no decisions while no approval request waits for one', async () => {
     // Reading them opens the approval store, which may create its table:
     // a tenant role under database-rls may not (#5005).
-    const decisions = vi.fn(async (): Promise<Decision[]> => []);
-    const first = await turn(decisions);
-    expect(decisions).not.toHaveBeenCalled();
+    const decided = vi.fn(async (): Promise<Decision[]> => []);
+    const first = await turn([], decided);
+    expect(decided).not.toHaveBeenCalled();
 
-    await first.approvalRequested(
-      { id: 'late', tool: 'chore_delete', callId: 'call-late', summary: 'x' },
-      'call-late',
-    );
+    await ask(first, 'late');
     await first.finish('done');
-    const second = await turn(decisions);
+    const second = await turn(['late'], decided);
     await second.finish('done');
-    expect(decisions).toHaveBeenCalledTimes(1);
+    expect(decided).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves another thread unaffected by an approval that never gets decided', async () => {
+    const asking = await turn([], [], 'thread-a');
+    await ask(asking, 'abandoned');
+    await asking.finish('done');
+
+    const decided = vi.fn(async (): Promise<Decision[]> => []);
+    for (let i = 0; i < 2; i++) {
+      const other = await turn([], decided, 'thread-b');
+      await other.finish('done');
+    }
+    expect(decided).not.toHaveBeenCalled();
+
+    // Its own thread still looks while it waits.
+    const again = await turn(['abandoned'], decided, 'thread-a');
+    await again.finish('done');
+    expect(decided).toHaveBeenCalledTimes(1);
+  });
+
+  it('looks the thread approvals up in chunks, in no query at all when it asked for none', async () => {
+    const query = vi.spyOn(db, 'query');
+    const none = await turn([], []);
+    expect(
+      query.mock.calls.filter(([sql]) =>
+        String(sql).includes('e.payload_ref IN'),
+      ),
+    ).toHaveLength(0);
+    await none.finish('done');
+    query.mockClear();
+
+    const many = Array.from({ length: 450 }, (_, i) => `many-${i}`);
+    const decided = vi.fn(async (): Promise<Decision[]> => []);
+    const lots = await turn(many, decided);
+    expect(
+      query.mock.calls.filter(([sql]) =>
+        String(sql).includes('e.payload_ref IN'),
+      ),
+    ).toHaveLength(3);
+    expect(decided).not.toHaveBeenCalled();
+    await lots.finish('done');
   });
 });
