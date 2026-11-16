@@ -55,6 +55,49 @@ await state.save();
 // `await states.consume(state)` (false = already used) before exchanging the code
 ```
 
+## Connecting accounts (OAuth)
+
+`@happyvertical/smrt-social/connect` owns the connect flow so hosts mount two
+routes and write no platform code. X is the first provider (OAuth 2.0
+authorization code with PKCE, confidential client); register more with
+`registerSocialConnectProvider`.
+
+```typescript
+import {
+  completeSocialConnect,
+  startSocialConnect,
+} from '@happyvertical/smrt-social/connect';
+
+// GET /connect/x  (host has authorized the caller and set the tenant)
+const { authorizeUrl } = await startSocialConnect({
+  db,
+  platform: 'x',
+  tenantId,
+  redirectUri: 'https://app.example.com/social/callback/x',
+});
+// redirect to authorizeUrl
+
+// GET /callback/x
+const { account } = await completeSocialConnect({
+  db,
+  platform: 'x',
+  tenantId,
+  redirectUri: 'https://app.example.com/social/callback/x',
+  query: { code, state, error },
+});
+```
+
+Client credentials come from the provider's env names (X: `X_CLIENT_ID`,
+`X_CLIENT_SECRET`, falling back to `TWITTER_CLIENT_ID`/`TWITTER_CLIENT_SECRET`) or the `client` option. Tokens are stored through
+`SocialAccount.setCredentials` (smrt-secrets, per tenant) as a JSON payload
+including `expiresAt`; nothing is written to the plain token columns or logs.
+The state is single-use, tenant-bound, and checked against the registered
+redirect URI. New accounts start in the platform's default publish mode
+(`dry_run` for X); a reconnect updates the same account and never widens its
+mode. Failures throw `SocialConnectError` with a safe, user-showable message.
+Pass `userId` to both calls: the state is bound to the initiating user, so a forwarded authorization link is rejected for anyone else. No role checks live in the package. Register the same `redirectUri` with the
+platform. YouTube, Facebook Pages and Threads providers are not built yet.
+
 ## API
 
 ### Models

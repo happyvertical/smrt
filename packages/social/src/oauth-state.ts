@@ -110,6 +110,12 @@ export class OAuthState extends SmrtObject {
   tenantId: string | null = null;
 
   /**
+   * User who started the connect. When set, the callback must be made by the
+   * same user, so an authorization link cannot be forwarded to someone else.
+   */
+  initiatedByUserId: string | null = null;
+
+  /**
    * Platform being connected
    */
   platform: SocialPlatformType = 'youtube';
