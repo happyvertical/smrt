@@ -51,7 +51,7 @@ import {
   type ModeContext,
   STRUCTURAL_TOOLS,
 } from './scope.ts';
-import { appendMessage, historyFor } from './threads.ts';
+import { appendMessage, historyFor, threadApprovalIds } from './threads.ts';
 
 export interface TurnLimits {
   /** Model rounds per turn. */
@@ -193,6 +193,27 @@ interface CallOutcome {
   stop?: TurnStop;
 }
 
+/**
+ * The decided approvals of the thread's turns, for the turn run: an approval
+ * applied, or approved and failed to apply, was approved; a denied one was
+ * refused. Pending and expired ones are not decisions.
+ */
+async function threadDecisions(
+  threadId: string,
+): Promise<Array<{ approvalId: string; status: 'approved' | 'refused' }>> {
+  const decided: Array<{ approvalId: string; status: 'approved' | 'refused' }> =
+    [];
+  for (const approvalId of await threadApprovalIds(threadId)) {
+    const row = await getApprovalView(approvalId);
+    if (row?.status === 'approved' || row?.status === 'failed') {
+      decided.push({ approvalId, status: 'approved' });
+    } else if (row?.status === 'denied') {
+      decided.push({ approvalId, status: 'refused' });
+    }
+  }
+  return decided;
+}
+
 /** Run one turn to its end. Never throws for model, tool or abort failures. */
 export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
   const { principal, thread, emit, signal } = options;
@@ -230,6 +251,9 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
           definitionKey: ASSISTANT_TURN_DEFINITION_KEY,
           messageRefPrefix: 'assistant-message',
           threadId: String(thread.id),
+          // A hold that timed out ends its turn with the approval pending;
+          // the decision made later is recorded in the next turn's run.
+          decisions: () => threadDecisions(String(thread.id)),
         },
         { originMessageId: String(userMessage.id) },
       );

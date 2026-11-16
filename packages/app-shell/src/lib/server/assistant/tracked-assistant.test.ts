@@ -25,6 +25,8 @@ import {
   type TrackedAssistantModel,
 } from './model.ts';
 import { call, drive, say } from './test-helpers.ts';
+import { createThread } from './threads.ts';
+import { runTurn } from './turn.ts';
 
 let h: ShellHarness;
 beforeAll(async () => {
@@ -258,5 +260,83 @@ describe('an assistant turn as an AI run (#5005)', () => {
       'approved',
     ]);
     expect(approvals[1]?.parent_event_id).toBe(approvals[0]?.id);
+  });
+
+  it('records a decision made after the hold timed out in the next turn of the thread, once', async () => {
+    const host = await getHost();
+    await runAs(h.owner, () =>
+      callTool(h.owner, 'app_definemodel', {
+        name: 'Chore',
+        fields: { title: { type: 'text' } },
+      }),
+    );
+    await callTool(h.owner, 'chore_create', { title: 'late-mop' });
+    const chore = (await host.list('Chore')).find(
+      (row) => (row as { title?: string }).title === 'late-mop',
+    );
+    const thread = await createThread(h.owner.id, 'late decision');
+    const turn = (model: AssistantModel) =>
+      runTurn({
+        principal: h.owner,
+        thread,
+        text: 'go on',
+        model,
+        signal: new AbortController().signal,
+        emit: () => {},
+        // Nobody answers in time: the turn ends waiting.
+        hold: async () => ({ status: 'timeout' }),
+      });
+    const runIds = async () =>
+      (
+        await query(
+          `SELECT id FROM _smrt_ai_runs
+            WHERE definition_key = 'app-shell.assistant.turn'
+            ORDER BY started_at`,
+        )
+      ).map((row) => String(row.id));
+    const before = await runIds();
+    expect(
+      await turn(
+        await trackedModel([
+          { text: '', tool: call('chore_delete', { id: chore?.id }) },
+        ]),
+      ),
+    ).toBe('waiting');
+    const [first] = (await runIds()).filter((id) => !before.includes(id));
+    const [request] = await query(
+      `SELECT id, payload_ref FROM _smrt_ai_run_events
+        WHERE run_id = $1 AND type = 'approval' AND status = 'requested'`,
+      first,
+    );
+    expect(request).toBeDefined();
+    const approvalId = String(request?.payload_ref).replace(/^approval:/, '');
+
+    // The owner approves later; the change is applied outside any turn.
+    const row = await (
+      await ApprovalCollection.create({ db: await getShellDb() })
+    ).get(approvalId);
+    await runAs(h.owner, () => row!.decide(true));
+
+    const reply = async () => {
+      const seen = await runIds();
+      expect(await turn(await trackedModel([{ text: 'Noted.' }]))).toBe(
+        'complete',
+      );
+      const [id] = (await runIds()).filter((run) => !seen.includes(run));
+      return query(
+        `SELECT status, parent_event_id, payload_ref FROM _smrt_ai_run_events
+          WHERE run_id = $1 AND type = 'approval'`,
+        id,
+      );
+    };
+    expect(await reply()).toEqual([
+      {
+        status: 'approved',
+        parent_event_id: request?.id,
+        payload_ref: request?.payload_ref,
+      },
+    ]);
+    // Recorded once: a later turn adds nothing.
+    expect(await reply()).toEqual([]);
   });
 });
