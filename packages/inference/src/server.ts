@@ -143,7 +143,6 @@ export {
 } from './engine-status.js';
 export * from './engine-tiers.js';
 export * from './model-fallback.js';
-export * from './models/DesignRunRecord.js';
 export {
   APP_INFERENCE_SCOPE_ID,
   InferenceOverride,
