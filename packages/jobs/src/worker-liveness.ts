@@ -1,5 +1,13 @@
-import { detectEngine } from '@happyvertical/smrt-core';
-import type { DatabaseInterface } from '@happyvertical/sql';
+import {
+  detectEngine,
+  SQLITE_BUSY_TIMEOUT_MS,
+  setBusyTimeoutIfUnset,
+} from '@happyvertical/smrt-core';
+import type {
+  DatabaseInterface,
+  ReopenOptions,
+  DatabaseEngine as SqlEngine,
+} from '@happyvertical/sql';
 import { createId } from '@happyvertical/utils';
 
 type DatabaseEngine = ReturnType<typeof detectEngine>;
@@ -127,7 +135,9 @@ export async function tuneSqliteForConcurrency(
   db: DatabaseInterface,
 ): Promise<void> {
   try {
-    await db.query('PRAGMA busy_timeout = 5000');
+    // Only when unset: a shared collection connection keeps its shorter
+    // main-thread wait (#4978) and the runtime's own keeps its 5000.
+    await setBusyTimeoutIfUnset(db, SQLITE_BUSY_TIMEOUT_MS);
     await db.query('PRAGMA journal_mode = WAL');
   } catch {
     // Best-effort connection tuning.
@@ -160,16 +170,105 @@ export function isInMemory(db: DatabaseInterface): boolean {
 }
 
 /**
- * Whether the off-loop liveness thread can run against this connection.
+ * How the off-loop liveness thread gets its database connection, or why it
+ * must not run.
  *
- * Requires a second independent connection to the same data: true for Postgres
- * and file-backed SQLite. In-memory SQLite cannot be reached from another
- * connection, and DuckDB is single-writer per file — both fall back to
- * main-loop lease renewal + the in-process live set.
+ * - `reopen`: file-backed SQLite whose connection can be reopened on the same
+ *   engine (`db.engine` plus `db.reopenOptions()`). The thread opens exactly
+ *   those options and checks that the engine it got is `engine`.
+ * - `url`: PostgreSQL, which has no second-engine hazard. The thread builds its
+ *   own pooled connection from the URL, as it always has.
+ * - `none`: no safe second connection; the runner renews the lease on its own
+ *   connection from the main loop and logs `reason` once.
+ *
+ * Two SQLite engines (`node:sqlite`, `@libsql/client`) hold their own copy of
+ * SQLite whose file locks do not coordinate, so a second connection on the
+ * other engine can corrupt a WAL file (#4978). A connection that does not say
+ * which engine it uses is treated as unsafe to share.
  */
-export function offLoopEligible(db: DatabaseInterface): boolean {
+export type LivenessConnectionPlan =
+  | {
+      kind: 'reopen';
+      engine: SqlEngine;
+      reopen: ReopenOptions;
+    }
+  | { kind: 'url'; url: string; type: string }
+  | {
+      kind: 'none';
+      reason: string;
+      /**
+       * True where a liveness thread used to run and now cannot (file-backed
+       * SQLite without a same-engine connection, or secure SQLite on Windows).
+       * False for engines that never had a usable second connection
+       * (in-memory SQLite, DuckDB, JSON), where main-loop renewal is the
+       * long-standing design and not a degradation.
+       */
+      degraded: boolean;
+    };
+
+/** Decide how (and whether) the liveness thread may open its connection. */
+export function planLivenessConnection(
+  db: DatabaseInterface,
+  platform: NodeJS.Platform = process.platform,
+): LivenessConnectionPlan {
   const engine = resolveEngine(db);
-  if (engine === 'postgres') return true;
-  if (engine === 'sqlite') return !isInMemory(db);
-  return false;
+  if (engine === 'postgres') {
+    return { kind: 'url', url: resolveUrl(db), type: engine };
+  }
+  if (engine !== 'sqlite') {
+    return {
+      kind: 'none',
+      degraded: false,
+      reason: `the ${engine} engine has one owner per database`,
+    };
+  }
+  if (isInMemory(db)) {
+    return {
+      kind: 'none',
+      degraded: false,
+      reason:
+        'an in-memory SQLite database cannot be reached by a second connection',
+    };
+  }
+  const dbEngine = db.engine;
+  if (dbEngine !== 'node-sqlite' && dbEngine !== 'libsql') {
+    return {
+      kind: 'none',
+      degraded: true,
+      reason:
+        'the connection does not report which SQLite engine it uses, so a second connection may use a different engine on the same file',
+    };
+  }
+  if (typeof db.reopenOptions !== 'function') {
+    return {
+      kind: 'none',
+      degraded: true,
+      reason: 'the connection cannot give options to reopen the same database',
+    };
+  }
+  let reopen: ReopenOptions;
+  try {
+    reopen = db.reopenOptions();
+  } catch (error) {
+    return {
+      kind: 'none',
+      degraded: true,
+      reason: `the connection cannot be reopened on the same engine (${
+        error instanceof Error ? error.message : String(error)
+      })`,
+    };
+  }
+  if (
+    platform === 'win32' &&
+    dbEngine === 'node-sqlite' &&
+    (reopen as { secureFile?: unknown }).secureFile
+  ) {
+    return {
+      kind: 'none',
+      degraded: true,
+      reason:
+        'on Windows the secure SQLite custody verifier cannot be handed to a worker thread',
+    };
+  }
+  return { kind: 'reopen', engine: dbEngine, reopen };
 }

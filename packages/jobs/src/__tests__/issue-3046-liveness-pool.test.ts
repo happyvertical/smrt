@@ -57,9 +57,16 @@ describe('livenessConnectionOptions (#3046)', () => {
     expect((livenessConnectionOptions({ url: PG_URL }) as Options).max).toBe(1);
   });
 
-  it('passes SQLite options through unchanged', () => {
-    expect(
+  it('never builds SQLite options from a URL (#4978)', () => {
+    expect(() =>
       livenessConnectionOptions({ url: 'file:/tmp/x.db', type: 'sqlite' }),
-    ).toEqual({ url: 'file:/tmp/x.db', type: 'sqlite' });
+    ).toThrow(/reopen options/);
+  });
+
+  it('passes SQLite reopen options through exactly as given (#4978)', () => {
+    const reopen = { type: 'sqlite', url: 'file:/tmp/x.db' } as const;
+    expect(livenessConnectionOptions({ url: '', type: 'sqlite', reopen })).toBe(
+      reopen,
+    );
   });
 });

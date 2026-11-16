@@ -5,10 +5,10 @@ description: "Core SMRT framework for business objects, persistence, and generat
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-15T03:21:53Z"
+  at: "2026-11-16T03:35:11Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:af7436afd84d54c99e328cd780f04908c6edd75d7a69a60436e98b619edcfbc8"
+source_revision: "sha256:7b4cd07e45e7f2294bf5dae2b122d8675e49232364cd719041904a2a6fc3ec62"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/package.json"
@@ -107,12 +107,15 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/schema-paths.md"
     title: "@happyvertical/smrt-core packages/core/agents/schema-paths.md"
   - id: "agents-32"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/sqlite-lock-wait.md"
+    title: "@happyvertical/smrt-core packages/core/agents/sqlite-lock-wait.md"
+  - id: "agents-33"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/system-diagnostics.md"
     title: "@happyvertical/smrt-core packages/core/agents/system-diagnostics.md"
-  - id: "agents-33"
+  - id: "agents-34"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/test-types.md"
     title: "@happyvertical/smrt-core packages/core/agents/test-types.md"
-  - id: "agents-34"
+  - id: "agents-35"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/write-through.md"
     title: "@happyvertical/smrt-core packages/core/agents/write-through.md"
 ---
@@ -159,6 +162,7 @@ sources:
 - `packages/core/agents/runtime-exposure.md`
 - `packages/core/agents/runtime-model.md`
 - `packages/core/agents/schema-paths.md`
+- `packages/core/agents/sqlite-lock-wait.md`
 - `packages/core/agents/system-diagnostics.md`
 - `packages/core/agents/test-types.md`
 - `packages/core/agents/write-through.md`

@@ -19,6 +19,7 @@ import {
 } from '@happyvertical/smrt-config';
 import {
   ObjectRegistry,
+  SQLITE_BUSY_TIMEOUT_MS,
   setDatabaseSyncDeviceId,
 } from '@happyvertical/smrt-core';
 import { TaskRunner, type TaskRunnerConfig } from '@happyvertical/smrt-jobs';
@@ -1738,7 +1739,7 @@ async function tuneLocalSqlite(db: DatabaseInterface): Promise<void> {
   await db.query('PRAGMA foreign_keys = ON');
   await db.query('PRAGMA journal_mode = WAL');
   await db.query('PRAGMA synchronous = FULL');
-  await db.query('PRAGMA busy_timeout = 5000');
+  await db.query(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
 }
 
 function validateBootstrapTtl(value: number): number {
