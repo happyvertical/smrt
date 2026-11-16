@@ -27,13 +27,20 @@ These words mean one thing everywhere in the s-m-r-t docs.
 | **chain** | An ordered candidate list, walked until one answers. |
 | **alias** | A named chain (`frontier`), defined once and bound to any tier. |
 | **substitution** | A recorded step from one candidate (or tier) to the next, with its reason. |
+| **latency** | `interactive` or `background`: whether a caller waits for the answer. A hint a binding may honor, not a tier. |
+| **effort** | Reasoning effort (`low` to `max`), set on a prompt with `ai: { effort }` or by a tier binding. It travels beside the tier and never picks the model. |
+| **prompt key** | The registered name of a prompt (`definePrompt({ key })`). Every tracked call carries one; usage, comparison and evaluation are grouped by it. |
+| **tracked client** | The AI client that records a call: it mints the call id, reserves budget, and writes the usage row. `createTrackedAiClient()` builds one for code that is not a `SmrtObject`. |
 | **fusion** | A consumer-defined multi-call recipe over prompt keys, run as one call. |
 | **seat** | One prompt + target inside a fusion. |
 | **mode** | A principal's stored choice: `byo`, `local`, `hosted` or `off`. |
 | **source** | Where a binding came from: `byo`, `local`, `hosted` or `app`. Recorded on every usage row. |
 | **call** | One model request; one `_smrt_ai_usage` row. |
 | **run** | One piece of AI work with its own record (a fusion, a chat turn, a workflow): one `_smrt_ai_runs` row, its events, and one usage row per call. A call on its own is not a run. See [AI runs](./ai-runs.md). |
-| **evaluation** | A judgment recorded later about a call or a run (a label such as `good` or `wrong`, a score), by a person, the app or a grader. |
+| **run type** | The shape of a run: `fusion`, `turn` or `workflow`, or an app's own `@scope/pkg:type`. |
+| **trajectory** | The ordered events of one run, read with `getRunTrajectory(runId)`. |
+| **budget** | The limits a run must stay within (`maxTokens`, `maxCost`, `maxCalls`, `maxSteps`, `maxDurationMs`, `repairRetries` and more). A call reserves room before it is sent; a limit stops the run with a typed reason and a durable run can be resumed. |
+| **evaluation** | A judgment recorded later about a call or a run (a label such as `good` or `wrong`, a score), by a person, the app or a grader. It replaces the older "outcome". |
 | **transcript** | The stored, redacted text of a call, opt-in; one `_smrt_ai_transcripts` row. |
 
 ## 1. One provider
@@ -102,6 +109,20 @@ await article.do('Write a headline', { tier: 'good', latency: 'interactive' });
   stored binding: its tiers bind to the engine's own ranked models
   (`best`/`great` the strongest, `good` the next, `cheap` the lowest). See
   [inference settings](./inference-settings.md#which-model-answers-on-a-local-ai-or-chatgpt-plan).
+
+> **Behaviour change (#5005).** On a non-API engine the model that answers is
+> now chosen by the tier through `engineTierModel`
+> (`packages/inference/src/engine-tiers.ts`), not by the engine's own
+> default.
+> The assistant asks for `best`, so it answers on the engine's strongest
+> model (`fable` on Claude Code, `gpt-6-astra` on Codex); `good` and `cheap`
+> step down the ranking. An app that relied on the engine's default model
+> sees a different model answer until it binds tiers itself.
+
+Work that is more than one call (a fusion, a chat turn, a multi-step
+workflow) is a **run** with a budget and a trajectory; see [AI runs](./ai-runs.md).
+A new piece of AI work is a registered prompt, a tracked call carrying its
+prompt key, and for several steps a `smrt-workflows` definition.
 
 Contract: [core inference.md](https://github.com/happyvertical/smrt/blob/main/packages/core/agents/inference.md).
 

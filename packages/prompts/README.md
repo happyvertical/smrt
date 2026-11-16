@@ -42,6 +42,7 @@ const resolved = await resolvePrompt('projects.issue.incorporateFeedback', {
 - **`PromptOverride`** — model for app-level and tenant-level prompt settings, stored in `_smrt_prompt_overrides`
 - **`PromptOverrideService`** / **`PromptSettingsService`** — the authorized write path and the read/write helper for a management screen (see "Management UI" below)
 - **Named AI profiles** loaded from `packages.prompts` config — prompts select profile names, profiles resolve to provider/model in config
+- **Tracked calls and effort** — every model call carries a prompt key: `trackedPromptCall(resolved)` turns a resolution into the argument of core's tracked client, and `ai: { effort }` sets the prompt's reasoning effort (`low` to `max`). Concepts: [AI runs](../../docs/content/ai-runs.md)
 - **TTL cache** keyed by `(key, tenantId)`, invalidated on override save/delete
 
 Stored overrides support partial fields, so applications can override only the template, profile, model, or AI params without forking the rest of a prompt.
