@@ -4,6 +4,9 @@ import {
   type InferenceTierRequest,
   isInferenceTier,
   isInferenceTierRequest,
+  isReasoningEffort,
+  REASONING_EFFORTS,
+  type ReasoningEffort,
   type TrackedPromptCall,
 } from '@happyvertical/smrt-core';
 import type {
@@ -35,6 +38,7 @@ const TOP_LEVEL_RESERVED_KEYS = new Set([
   'profile',
   'provider',
   'model',
+  'effort',
   'params',
   'temperature',
   'maxTokens',
@@ -44,6 +48,7 @@ const AI_RESERVED_KEYS = new Set([
   'profile',
   'provider',
   'model',
+  'effort',
   'params',
   'temperature',
   'maxTokens',
@@ -65,6 +70,10 @@ const AI_ROUTING_PARAM_KEYS = new Set([
   'promptKey',
   // The ladder floor is read from the code default only (#4752).
   'minimumTier',
+  // Reasoning effort is the validated `effort` field (#5005), never an open
+  // param a tenant override could widen.
+  'effort',
+  'reasoning',
 ]);
 
 export function isPlainObject(
@@ -158,6 +167,22 @@ export function mergePromptParams(
   return merged;
 }
 
+/**
+ * A prompt's reasoning effort: absent, or one of core's `REASONING_EFFORTS`.
+ * Anything else throws, naming the allowed values.
+ */
+export function validatePromptEffort(
+  value: unknown,
+): ReasoningEffort | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!isReasoningEffort(value)) {
+    throw new Error(
+      `Prompt ai.effort must be one of ${REASONING_EFFORTS.join(', ')}; got "${String(value)}".`,
+    );
+  }
+  return value;
+}
+
 function normalizeAIInput(ai?: PromptAIInput | null): NormalizedPromptAI {
   if (!isPlainObject(ai)) {
     return { params: {} };
@@ -179,12 +204,14 @@ function normalizeAIInput(ai?: PromptAIInput | null): NormalizedPromptAI {
     ai.latency === 'interactive' || ai.latency === 'background'
       ? ai.latency
       : undefined;
+  const effort = validatePromptEffort(ai.effort);
 
   return {
     profile: profile ?? undefined,
     model: model ?? undefined,
     ...(latency ? { latency } : {}),
     ...(ai.minimumTier ? { minimumTier: ai.minimumTier } : {}),
+    ...(effort ? { effort } : {}),
     params: extractPromptParams(ai, AI_RESERVED_KEYS),
   };
 }
@@ -236,6 +263,12 @@ export function normalizePromptLayer(
         : input.model === null
           ? null
           : String(input.model),
+    effort:
+      input.effort === undefined
+        ? nestedAi.effort
+        : input.effort === null
+          ? null
+          : validatePromptEffort(input.effort),
     params: mergePromptParams(topLevelParams, nestedAi.params),
   };
 }
@@ -249,6 +282,7 @@ export function mergePromptLayers(
   let template = '';
   let profile: string | undefined;
   let model: string | undefined;
+  let effort: ReasoningEffort | undefined;
   let params: PromptParams = {};
 
   for (const layer of layers) {
@@ -268,6 +302,10 @@ export function mergePromptLayers(
       model = layer.model;
     }
 
+    if (layer.effort !== undefined && layer.effort !== null) {
+      effort = validatePromptEffort(layer.effort);
+    }
+
     if (layer.params !== undefined && layer.params !== null) {
       params = mergePromptParams(params, layer.params);
     }
@@ -278,6 +316,7 @@ export function mergePromptLayers(
     ai: {
       profile,
       model,
+      ...(effort ? { effort } : {}),
       params,
     },
   };
@@ -398,6 +437,7 @@ export function buildResolvedAI(
     provider,
     model,
     ...(tier ? { tier } : {}),
+    ...(ai.effort ? { effort: ai.effort } : {}),
     ...(config.allowedModels
       ? { allowedModels: [...config.allowedModels] }
       : {}),
@@ -455,6 +495,8 @@ export interface PromptMessageOptions extends PromptParams {
   maxTokens?: number;
   /** Degradation floor sent with `tier` (#4752). */
   minimumTier?: ResolvedPromptAI['minimumTier'];
+  /** The prompt's effort (#5005). A caller's own `reasoning` wins. */
+  reasoning?: { effort: ReasoningEffort };
   usageTags?: Record<string, string>;
 }
 
@@ -477,6 +519,11 @@ export interface PromptMessageOptionsExtra {
  * `usageTags` (`promptKey`, `promptLayer`, `templateHash`) and, for a tier
  * profile, `tier` + `promptKey` (#4750). Send them through
  * `SmrtObject.prepareAiOperation()` so the tier keys never reach a provider.
+ *
+ * The prompt's `effort` becomes `reasoning: { effort }` (#5005). Precedence,
+ * high to low: the caller's own `reasoning` option (spread after these), the
+ * prompt's effort, the tier binding's `params.reasoning` (core spreads a
+ * target's params under the call options), the provider's default.
  *
  * Tag precedence, low to high: a `usageTags` object carried in the prompt's
  * params (tenant-editable: reserved tags such as runId or tier tags are
@@ -516,6 +563,7 @@ export function promptMessageOptions(
       ? { temperature: ai.temperature }
       : {}),
     ...(typeof ai.maxTokens === 'number' ? { maxTokens: ai.maxTokens } : {}),
+    ...(ai.effort ? { reasoning: { effort: ai.effort } } : {}),
     ...(Object.keys(usageTags).length > 0 ? { usageTags } : {}),
   };
 }

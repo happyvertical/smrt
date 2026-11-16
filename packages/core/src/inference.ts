@@ -37,6 +37,30 @@ export type InferenceTier = (typeof INFERENCE_TIERS)[number];
 export type InferenceTierRequest = InferenceTier | 'auto';
 
 /**
+ * Reasoning effort a prompt or a tier binding may ask for, lowest first
+ * (#5005). It travels beside the tier as the call option
+ * `reasoning: { effort }`; an engine maps it to its own control.
+ */
+export const REASONING_EFFORTS = [
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+] as const;
+
+/** One of {@link REASONING_EFFORTS}. */
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
+/** Whether `value` is one of {@link REASONING_EFFORTS}. */
+export function isReasoningEffort(value: unknown): value is ReasoningEffort {
+  return (
+    typeof value === 'string' &&
+    (REASONING_EFFORTS as readonly string[]).includes(value)
+  );
+}
+
+/**
  * Latency hint, independent of quality. A binding may honor it; core only
  * forwards it.
  */
