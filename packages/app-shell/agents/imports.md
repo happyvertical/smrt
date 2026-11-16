@@ -117,3 +117,8 @@ engine definition. Record display/forms and report cells/CSV use these units;
 report figures and chart readouts use the same host formatter. Missing metadata
 on older definitions keeps the existing USD/scale-2 default. No stored amount
 or proof total is converted to another currency or scale.
+
+Stop/resume status is saved only after the workflow transition succeeds.
+A done run with successful proof reconciles to review even from a stale paused
+row and releases its draft hold after restart. A late Cancel preserves that
+completed draft; only Discard explicitly removes a completed import.

@@ -783,10 +783,13 @@ export function createShellImportService(options: ShellImportOptions) {
     if (details(row).retry && !(await getAiRun(db, row.runId))) return null;
     const run = await mine(owner).get(row.runId);
     if (['published', 'discarded'].includes(row.status)) return run;
-    if (run.status === 'done' && ['proven', 'loading'].includes(row.status)) {
-      await save(row, { status: 'review', stage: 'review' });
+    if (run.status === 'done' && details(row).proof?.ok) {
+      if (row.status !== 'review' || row.stage !== 'review')
+        await save(row, { status: 'review', stage: 'review' });
       const slot = await getDraftSlot();
       if (slot?.id === row.draftId) slot.hold = null;
+    } else if (run.status === 'running' && row.status === 'paused') {
+      await save(row, { status: 'running' });
     } else if (run.status === 'failed' || run.status === 'cancelled') {
       await discardOwned(row);
       const detail = details(row);
@@ -1092,14 +1095,15 @@ export function createShellImportService(options: ShellImportOptions) {
           );
           await admitRetry(row, owner);
         } else if (action === 'stop') {
-          await save(row, { status: 'paused' });
-          await mine(owner).stop(row.runId);
+          const state = await mine(owner).stop(row.runId);
+          if (state.status === 'stopped') await save(row, { status: 'paused' });
+          await reconcile(row, owner);
         } else if (action === 'resume') {
           try {
-            await save(row, { status: 'running' });
             await mine(owner).resume(row.runId);
+            await reconcile(row, owner);
           } catch (error) {
-            await save(row, { status: 'paused' });
+            await reconcile(row, owner);
             throw new HttpError(
               409,
               error instanceof RunConflictError
@@ -1109,6 +1113,10 @@ export function createShellImportService(options: ShellImportOptions) {
           }
         } else if (action === 'cancel' || action === 'discard') {
           const state = await mine(owner).get(row.runId);
+          if (action === 'cancel' && state.status === 'done') {
+            await reconcile(row, owner);
+            return { ok: true };
+          }
           if (!['done', 'failed', 'cancelled'].includes(state.status))
             await mine(owner).cancel(row.runId);
           await discardOwned(row);

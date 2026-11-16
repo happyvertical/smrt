@@ -881,3 +881,86 @@ it('imports unrepresentable formulas as cached values and lists them for review'
     await (await hostFor('draft')).countRows(importModelName('orders')),
   ).toBe(2);
 });
+
+it('keeps a late Stop on a completed proven import reviewable, including stale paused status after restart', async () => {
+  await service.start(h.owner, await request());
+  await worker();
+  expect((await end()).status).toBe('review');
+  await service.action(h.owner, 'stop');
+  expect(await service.current(h.owner)).toMatchObject({
+    state: 'done',
+    status: 'review',
+  });
+  const [row] = await (await AppImportCollection.create({ db: h.db })).list();
+  row.status = 'paused';
+  await row.save();
+  for (const runner of runners) await runner.stop();
+  service.dispose();
+  await closeHost();
+  configureShell({ db: async () => h.db, dataRoot: async () => h.dir });
+  service = install();
+  await service.recover();
+  expect(await service.current(h.owner)).toMatchObject({
+    state: 'done',
+    status: 'review',
+    step: 'review',
+  });
+  expect((await draftInfo())?.publishable).toBe(true);
+});
+it('keeps a late Cancel on a completed import ready for review until an explicit discard', async () => {
+  await service.start(h.owner, await request());
+  await worker();
+  await end();
+  await service.action(h.owner, 'cancel');
+  expect(await service.current(h.owner)).toMatchObject({
+    state: 'done',
+    status: 'review',
+  });
+  expect((await draftInfo())?.publishable).toBe(true);
+  await service.action(h.owner, 'discard');
+  expect((await service.current(h.owner))?.status).toBe('discarded');
+  expect(await getDraftSlot()).toBeNull();
+});
+it('uses the authoritative result when completion races a Stop request', async () => {
+  answer = async () => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return businessWorkbook().plan;
+  };
+  await service.start(h.owner, await request());
+  await worker();
+  await until(async () => !!release);
+  let finishStop: (() => void) | undefined;
+  const actual = service.kit.forOwner.bind(service.kit);
+  vi.spyOn(service.kit, 'forOwner').mockImplementation((...args) => {
+    const api = actual(...args);
+    return {
+      ...api,
+      stop: async (id: string) => {
+        await new Promise<void>((resolve) => {
+          finishStop = resolve;
+        });
+        return api.stop(id);
+      },
+    };
+  });
+  const stopping = service.action(h.owner, 'stop');
+  try {
+    await until(async () => !!finishStop);
+    const [waiting] = await (
+      await AppImportCollection.create({ db: h.db })
+    ).list();
+    expect(waiting.status).not.toBe('paused');
+    release?.();
+    expect((await end()).state).toBe('done');
+  } finally {
+    finishStop?.();
+  }
+  await stopping;
+  expect(await service.current(h.owner)).toMatchObject({
+    state: 'done',
+    status: 'review',
+  });
+  expect((await draftInfo())?.publishable).toBe(true);
+});
