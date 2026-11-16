@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import {
   config,
   createTrackedAiClient,
+  getAiRun,
   getRunTrajectory,
 } from '@happyvertical/smrt-core';
 import {
@@ -51,6 +52,8 @@ let runners: TaskRunner[];
 let answer: (index: number) => unknown | Promise<unknown>;
 let calls: number;
 let texts: string[];
+let testEngine: 'api' | 'codex';
+let offeredTools: unknown[][];
 let release: (() => void) | undefined;
 const request = async (bad = false, badCache = false) =>
   new Request('http://shell/api/shell/import', {
@@ -70,14 +73,36 @@ const install = () =>
     db: h.db,
     root: h.dir,
     ready: async () => {},
+    assistant: {
+      engine: async () => testEngine,
+      driver: {
+        async run(context, callbacks) {
+          offeredTools.push([...context.tools, ...context.extraTools]);
+          expect(context.principal.allowedTools).toEqual([]);
+          texts.push(context.systemPrompt);
+          const output = await answer(calls++);
+          callbacks.done({
+            text: JSON.stringify(output),
+            execution: {
+              engine: 'codex',
+              toolCalls: 0,
+              durationMs: 1,
+              tokens: 10,
+              inputTokens: 5,
+              outputTokens: 5,
+            },
+          });
+        },
+      },
+    },
     tracked: (owner) =>
       createTrackedAiClient({
         db: h.db,
         tenantId: owner.tenantId,
         ai: {
           embed: async () => [],
-          message: async (text: string) => {
-            texts.push(text);
+          chat: async (messages: { content: string }[]) => {
+            texts.push(messages.map((message) => message.content).join('\n'));
             const output = await answer(calls++);
             return {
               content: JSON.stringify(output),
@@ -114,6 +139,8 @@ beforeEach(async () => {
   h = await openShell();
   runners = [];
   calls = 0;
+  testEngine = 'api';
+  offeredTools = [];
   texts = [];
   release = undefined;
   answer = () => businessWorkbook().plan;
@@ -141,21 +168,51 @@ it('loads and proves a workbook as one tracked background workflow and leaves on
     await (await hostFor('draft')).countRows(importModelName('orders')),
   ).toBe(2);
   const events = await getRunTrajectory(h.db, run.id);
-  expect(events?.entries.some(({ event }) => event?.type === 'call')).toBe(
-    true,
-  );
+  const handoff = events!.entries.flatMap(({ event }) =>
+    event?.type === 'handoff' ? [event] : [],
+  )[0];
+  expect(handoff).toMatchObject({ status: 'done', name: 'Plan and load' });
+  expect(await getAiRun(h.db, handoff.childRunId!)).toMatchObject({
+    parentRunId: run.id,
+    calls: 1,
+    tokens: 10,
+  });
+  expect(await getAiRun(h.db, run.id)).toMatchObject({
+    inclusiveCalls: 1,
+    inclusiveTokens: 10,
+  });
+  expect(
+    (
+      await h.db.query(
+        'SELECT prompt_key, tier_requested, tier_resolved FROM _smrt_ai_usage WHERE run_id = ?',
+        handoff.childRunId!,
+      )
+    ).rows,
+  ).toEqual([
+    {
+      prompt_key: 'app-shell.import.plan',
+      tier_requested: 'best',
+      tier_resolved: 'best',
+    },
+  ]);
   expect(texts[0]).toContain('Workbook facts');
   expect(texts[0]).toContain('headerRowCandidates');
   const preview = await previewDraft();
   expect(preview.preview.digest).toBeTruthy();
   const rows = await (await AppImportCollection.create({ db: h.db })).list();
+  expect(JSON.parse(rows[0].detail).origin).toBe('http://shell');
+  expect(current).not.toHaveProperty('origin');
   const file = join(h.dir, 'imports', `${rows[0].id}.xlsx`);
   expect(existsSync(file)).toBe(true);
   await service.action(h.owner, 'discard');
   expect(await getDraftSlot()).toBeNull();
   expect(existsSync(file)).toBe(false);
 });
-it('repeats a checked plan with bounded findings then accepts a corrected plan', async () => {
+it.each([
+  'api',
+  'codex',
+] as const)('repeats a checked plan with bounded findings then accepts a corrected plan (%s)', async (engine) => {
+  testEngine = engine;
   answer = (index) => {
     const plan = businessWorkbook().plan;
     if (!index) plan.tables[0].source.sheet = 'Missing';
@@ -168,7 +225,11 @@ it('repeats a checked plan with bounded findings then accepts a corrected plan',
   expect(calls).toBe(2);
   expect(texts[1]).toContain('sheet-missing');
 });
-it('fails check_failed after three repeats and keeps workbook findings', async () => {
+it.each([
+  'api',
+  'codex',
+] as const)('fails check_failed after three repeats and keeps workbook findings (%s)', async (engine) => {
+  testEngine = engine;
   answer = () => {
     const plan = businessWorkbook().plan;
     plan.tables[0].source.sheet = 'Missing';
@@ -183,7 +244,11 @@ it('fails check_failed after three repeats and keeps workbook findings', async (
   expect(current.findings?.some((f) => f.code === 'sheet-missing')).toBe(true);
   expect(await getDraftSlot()).toBeNull();
 });
-it('discards a draft whose calculated result fails proof', async () => {
+it.each([
+  'api',
+  'codex',
+] as const)('discards a draft whose calculated result fails proof (%s)', async (engine) => {
+  testEngine = engine;
   await service.start(h.owner, await request(false, true));
   await worker();
   const current = await end();
@@ -234,7 +299,11 @@ it('holds edits and publishing during a partial load; a repeated check discards 
     await (await hostFor('draft')).countRows(importModelName('orders')),
   ).toBe(2);
 });
-it('recovers a dead worker with a second runner, repeats the in-flight step and fences its late return', async () => {
+it.each([
+  'api',
+  'codex',
+] as const)('recovers a dead %s worker with a second runner and fences its late return', async (engine) => {
+  testEngine = engine;
   let once = true;
   answer = async () => {
     if (once) {
@@ -267,6 +336,17 @@ it('recovers a dead worker with a second runner, repeats the in-flight step and 
   const current = await end();
   expect(current.state).toBe('done');
   expect(calls).toBe(2);
+  if (engine === 'codex') expect(offeredTools).toEqual([[], []]);
+  const handoffs = (await getRunTrajectory(h.db, started.id))!.entries.flatMap(
+    ({ event }) => (event?.type === 'handoff' ? [event] : []),
+  );
+  expect(handoffs).toHaveLength(2);
+  for (const handoff of handoffs) {
+    const child = await getRunTrajectory(h.db, handoff.childRunId!);
+    expect(child!.entries.some(({ event }) => event?.type === 'action')).toBe(
+      false,
+    );
+  }
   expect(
     await (await hostFor('draft')).countRows(importModelName('orders')),
   ).toBe(2);
@@ -277,7 +357,11 @@ it('recovers a dead worker with a second runner, repeats the in-flight step and 
     await (await hostFor('draft')).countRows(importModelName('orders')),
   ).toBe(2);
 });
-it('cancels finally and removes the owned file and draft', async () => {
+it.each([
+  'api',
+  'codex',
+] as const)('cancels a %s planning turn finally and removes the owned file and draft', async (engine) => {
+  testEngine = engine;
   answer = async () => {
     await new Promise<void>((resolve) => {
       release = resolve;
@@ -295,6 +379,29 @@ it('cancels finally and removes the owned file and draft', async () => {
     /cannot resume/,
   );
   expect(await getDraftSlot()).toBeNull();
+});
+it('stops and resumes CLI planning without opening a draft from the stopped child', async () => {
+  testEngine = 'codex';
+  answer = async (index) => {
+    if (!index)
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    return businessWorkbook().plan;
+  };
+  await service.start(h.owner, await request());
+  await worker();
+  await until(async () => !!release);
+  await service.action(h.owner, 'stop');
+  release?.();
+  expect((await end()).state).toBe('stopped');
+  expect(await getDraftSlot()).toBeNull();
+  await service.action(h.owner, 'resume');
+  expect((await end()).state).toBe('done');
+  expect(offeredTools).toEqual([[], []]);
+  expect(
+    await (await hostFor('draft')).countRows(importModelName('orders')),
+  ).toBe(2);
 });
 it('refuses nonowners, invalid uploads, occupied draft and simultaneous imports', async () => {
   await expect(service.start(h.member, await request())).rejects.toThrow(
@@ -334,7 +441,9 @@ it('refuses tracking-off and disconnected AI before consuming bytes, and validat
       throw new Error('unavailable');
     },
   });
-  await expect(service.start(h.owner, req)).rejects.toThrow(/Connect an AI/);
+  await expect(service.start(h.owner, req)).rejects.toThrow(
+    /Connect your assistant/,
+  );
   expect(req.bodyUsed).toBe(false);
   expect((await importSettings(h.owner)).maxCells).toBe(250000);
   await expect(importSettings(h.owner, 999)).rejects.toMatchObject({

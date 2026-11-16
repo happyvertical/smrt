@@ -39,6 +39,7 @@ export type ScopeResolver = (
 
 export function createShellMcpServer(
   resolveScope: ScopeResolver = () => LIVE_SCOPE,
+  options: { tools?: 'none' } = {},
 ): McpAppServer {
   return {
     get serverInfo() {
@@ -48,6 +49,7 @@ export function createShellMcpServer(
       return { ttlMs: 0, cacheScope: 'private' as const };
     },
     async listTools({ principal }) {
+      if (options.tools === 'none') return [];
       const who = asPrincipal(principal);
       // A request without a principal lists nothing; the scope is only
       // resolved for someone who can see tools.
@@ -63,6 +65,11 @@ export function createShellMcpServer(
       })) as never;
     },
     async callTool({ name, arguments: args, principal }) {
+      if (options.tools === 'none')
+        throw new McpAccessError(
+          403,
+          'Workbook planning cannot use app tools.',
+        );
       const who = asPrincipal(principal);
       let tool: Awaited<ReturnType<typeof authorizeCall>>;
       let scope: CallScope = LIVE_SCOPE;

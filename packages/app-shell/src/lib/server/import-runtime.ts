@@ -1,4 +1,6 @@
 /** Register workflow handlers before the embedded fenced runner starts. */
+
+import { readOriginFile } from '@happyvertical/smrt-app-runtime';
 import type { TaskRunner } from '@happyvertical/smrt-jobs';
 import { closeHost } from './host.ts';
 import { createShellImportService } from './import-workflow.ts';
@@ -14,6 +16,10 @@ export function shellImports() {
     const next = createShellImportService({
       db: local.db,
       root: local.paths.root,
+      assistant: {
+        origin: async () =>
+          (await readOriginFile(runtime.applicationStateRoot()))?.origin,
+      },
     });
     try {
       runner = await local.createEmbeddedJobRunner({

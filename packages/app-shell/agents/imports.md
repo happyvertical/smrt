@@ -12,7 +12,19 @@ spreadsheet package's 250,000; `/settings/import` saves an integer in
 
 - `src/lib/server/import-workflow.ts` defines `app-shell.import` and the
   registered `best` prompt `app-shell.import.plan`. The step is Plan and load;
-  the JSON schema belongs to spreadsheets, and `validatePlan` remains the
+  `import-assistant.ts` binds the owner's `assistant` preference (`api`,
+  `chatgpt`, `claude-code`, `codex`) at `best`, using chat's public
+  `runWorkflowStepTurn`. Each attempt opens a tool-free child turn, linked by
+  a handoff; calls/usage roll into the workflow budget and retain its fence.
+  CLI calls record reported tokens, otherwise uncosted reserved usage. ChatGPT
+  uses its sign-in client and is uncosted. No API-key fallback for these engines.
+  CLI planning uses `/mcp?scope=import-plan`: empty catalog, all calls rejected
+  before dispatch, protected invocation and a distinct expiring token holder
+  per attempt. A late worker cannot revoke the next worker's token or run tools.
+  The runtime state-root origin file supplies the current desktop address;
+  the upload origin is retained privately in the existing import JSON as the
+  development fallback across job recovery.
+  The JSON schema belongs to spreadsheets, and `validatePlan` remains the
   semantic authority. `checkPlan` errors repeat at most three times with bounded
   finding codes/locations, then fail `check_failed`. No approval hold.
 - Input is `import:<id>`; `readInput` reads the owner/tenant-scoped `AppImport`
@@ -49,8 +61,8 @@ spreadsheet package's 250,000; `/settings/import` saves an integer in
   closes hosts. No runtime-managed shell database or handwritten DDL.
 - The initial budget is 400,000 tokens, four steps, two schema repair retries,
   30 active minutes. Resume adds bounded token/time allowance, capped at
-  1.2 million tokens/90 minutes; cancel is final. Usage off and disconnected
-  API inference refuse before consuming the upload. Provider error text is
+  1.2 million tokens/90 minutes; cancel is final. Usage off and a disconnected
+  assistant engine refuse before consuming the upload. Provider error text is
   never displayed or logged by the import service.
 
 Tests: `src/engine/import-target.test.ts` runs the generated business workbook

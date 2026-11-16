@@ -613,6 +613,12 @@ API-key AI provider in Settings and keep AI usage persistence enabled first.
 The provisional 250,000-cell ceiling can be changed in **Settings → Import**
 (1,000 to 2,000,000 cells). Larger or complex workbooks should be split up.
 
+Planning uses the engine chosen in **Settings → Assistant**: API key, Sign in
+with ChatGPT, Claude Code or Codex. It runs as a private child turn with no app
+tools; reported usage counts toward the import budget, and calls without usage
+are recorded as uncosted. The model returns a plan; only the workflow's checked
+load can change the draft.
+
 The `app-shell.import` background workflow proposes a plan from bounded workbook
 facts, checks it, loads a fresh draft and proves row counts, source column sums
 and calculated fields against cached workbook values. Progress shows Reading,

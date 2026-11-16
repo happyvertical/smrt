@@ -18,7 +18,7 @@ import {
   getAiRun,
   type TrackedAiClient,
 } from '@happyvertical/smrt-core';
-import { definePrompt } from '@happyvertical/smrt-prompts';
+import { definePrompt, resolvePrompt } from '@happyvertical/smrt-prompts';
 import {
   admit,
   checkPlan,
@@ -50,11 +50,14 @@ import {
 } from '../../engine/index.ts';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
 import { type AppImport, AppImportCollection } from '../objects/AppImport.ts';
-import { resolveAssistantOptions } from './assistant/config.ts';
 import { discardNow, startDraft } from './drafts.ts';
 import { subscribe } from './events.ts';
 import { getDraftSlot } from './host.ts';
 import { HttpError } from './http.ts';
+import {
+  createImportAssistant,
+  type ImportAssistantOptions,
+} from './import-assistant.ts';
 import { IMPORT_MAX_BYTES, importSettings } from './import-settings.ts';
 import { shellInference } from './inference.ts';
 import { type Principal, requireOwner, runAs } from './owner.ts';
@@ -76,6 +79,8 @@ export const importPlanPrompt = definePrompt({
 });
 
 interface Detail {
+  /** Same-origin upload URL; fallback when development has no desktop origin file. */
+  origin?: string;
   findings?: Finding[];
   proof?: RunImportResult;
   note?: string;
@@ -103,6 +108,7 @@ export interface ShellImportOptions {
   /** Tests supply a real tracked client around a scripted model. */
   tracked?: (owner: Principal) => TrackedAiClient;
   ready?: (owner: Principal) => Promise<void>;
+  assistant?: ImportAssistantOptions;
 }
 
 export async function readWorkbook(
@@ -213,7 +219,11 @@ export function createShellImportService(options: ShellImportOptions) {
     const pending = writes.then(async () => {
       const fresh = (await (await collection()).get(row.id as string)) ?? row;
       Object.assign(fresh, patch);
-      if (detail) fresh.detail = JSON.stringify(detail);
+      if (detail)
+        fresh.detail = JSON.stringify({
+          origin: details(fresh).origin,
+          ...detail,
+        });
       await fresh.save();
       // The fetched instance owns its optimistic revision; never save a stale instance.
       Object.assign(row, {
@@ -280,6 +290,11 @@ export function createShellImportService(options: ShellImportOptions) {
     if (!row) throw new Error('Import no longer available');
     return row;
   };
+  const assistant = createImportAssistant({
+    db,
+    root: options.root,
+    ...options.assistant,
+  });
   const definition: WorkflowDefinition = {
     key: 'app-shell.import',
     version: '1',
@@ -290,6 +305,27 @@ export function createShellImportService(options: ShellImportOptions) {
         schema: IMPORT_PLAN_SCHEMA,
         maxRepeats: 3,
         expectedOutputTokens: 32_768,
+        execute: async (context) => {
+          const row = await fromInput(context.input);
+          const owner = { id: row.ownerId, tenantId: row.tenantId };
+          const step = definition.steps[0];
+          const prompt = await resolvePrompt(importPlanPrompt.key, {
+            db,
+            tenantId: row.tenantId,
+            variables: await step.variables!(context),
+          });
+          return assistant.plan(owner, {
+            prompt,
+            signal: context.signal,
+            origin: details(row).origin,
+            parent: {
+              context: context.runContext,
+              stepIndex: context.step.index - 1,
+              name: context.step.name,
+            },
+            ...(options.tracked ? { tracked: tracked(owner) } : {}),
+          });
+        },
         variables: async (context) => {
           const row = await fromInput(context.input);
           await save(row, { stage: 'planning' });
@@ -615,16 +651,12 @@ export function createShellImportService(options: ShellImportOptions) {
             'Workbook imports need AI usage tracking. Turn it on before importing.',
           );
         try {
-          await (
-            options.ready ??
-            (async (who) => {
-              await resolveAssistantOptions(who, { tier: 'best' });
-            })
-          )(owner);
-        } catch {
+          await (options.ready ?? assistant.ready)(owner);
+        } catch (error) {
+          if (error instanceof HttpError) throw error;
           throw new HttpError(
             409,
-            'Connect an AI provider with an API key in Settings before importing a workbook.',
+            'Connect your assistant in Settings → Assistant before importing a workbook.',
           );
         }
         const current = await latest(owner);
@@ -669,6 +701,7 @@ export function createShellImportService(options: ShellImportOptions) {
           ownerId: owner.id,
           tenantId: owner.tenantId,
           maxCells,
+          detail: JSON.stringify({ origin: new URL(request.url).origin }),
         });
         await row.save();
         try {
@@ -714,6 +747,7 @@ export function createShellImportService(options: ShellImportOptions) {
           await save(row, { status: draft.status, stage: draft.status });
         }
       }
+      const { origin: _origin, ...review } = details(row);
       return {
         id: row.runId,
         state: run?.status ?? row.status,
@@ -721,7 +755,7 @@ export function createShellImportService(options: ShellImportOptions) {
         step: row.stage,
         stopReason: run?.stopReason ?? null,
         draftId: row.draftId || null,
-        ...details(row),
+        ...review,
       };
     },
     async action(owner: Principal, action: string) {

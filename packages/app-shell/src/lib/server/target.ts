@@ -53,8 +53,8 @@ export function parseTarget(value: unknown): Target {
   throw new EngineError("target must be 'live' or 'draft'", 'invalid');
 }
 
-/** Which scope one /mcp URL asks for: `?target=live|draft`, `?scope=assistant`, or none (live). */
-export type McpScopeKey = Target | 'assistant';
+/** MCP URL scope: live/draft, assistant split, or tool-free import planning. */
+export type McpScopeKey = Target | 'assistant' | 'import-plan';
 
 export function mcpScopeKey(params: URLSearchParams): McpScopeKey {
   const scope = params.get('scope');
@@ -62,9 +62,12 @@ export function mcpScopeKey(params: URLSearchParams): McpScopeKey {
   if (scope !== null && target !== null)
     throw new EngineError('send either scope or target, not both', 'invalid');
   if (scope !== null) {
-    if (scope !== 'assistant')
-      throw new EngineError("scope must be 'assistant'", 'invalid');
-    return 'assistant';
+    if (scope !== 'assistant' && scope !== 'import-plan')
+      throw new EngineError(
+        "scope must be 'assistant' or 'import-plan'",
+        'invalid',
+      );
+    return scope;
   }
   return parseTarget(target);
 }
