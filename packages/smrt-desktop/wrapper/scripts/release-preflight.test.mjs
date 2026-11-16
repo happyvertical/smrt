@@ -155,10 +155,17 @@ describe('secrets', () => {
 });
 
 describe('updater public key', () => {
-  it('rejects the committed placeholder', () => {
+  it('accepts the committed updater public key', () => {
     const config = JSON.parse(
       readFileSync(join(here, '..', 'tauri.conf.json'), 'utf8'),
     );
+    assert.deepEqual(checkUpdaterPubkey(config), []);
+  });
+
+  it('rejects a placeholder', () => {
+    const config = {
+      plugins: { updater: { pubkey: 'PLACEHOLDER-NOT-A-KEY' } },
+    };
     assert.equal(checkUpdaterPubkey(config).length, 1);
   });
 
@@ -168,6 +175,15 @@ describe('updater public key', () => {
       assert.equal(checkUpdaterPubkey(config).length, 1, String(pubkey));
     }
     assert.equal(checkUpdaterPubkey({}).length, 1);
+  });
+
+  it('reads a product smrt-desktop.json updaterPublicKey too', () => {
+    const key = fakeMinisignPubkey();
+    assert.deepEqual(checkUpdaterPubkey({ updaterPublicKey: key }), []);
+    assert.equal(
+      checkUpdaterPubkey({ updaterPublicKey: 'PLACEHOLDER-NOT-A-KEY' }).length,
+      1,
+    );
   });
 
   it('accepts a structurally valid minisign key', () => {
@@ -776,11 +792,17 @@ describe('main', () => {
     assert.equal(run(['--bundle', 'x']).code, 2);
   });
 
-  it('fails closed on the committed placeholder config', () => {
-    const { code, text } = run([
-      '--config',
-      join(here, '..', 'tauri.conf.json'),
-    ]);
+  it('fails closed on a placeholder config', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'placeholder-config-'));
+    dirs.push(dir);
+    const config = join(dir, 'tauri.conf.json');
+    writeFileSync(
+      config,
+      JSON.stringify({
+        plugins: { updater: { pubkey: 'PLACEHOLDER-NOT-A-KEY' } },
+      }),
+    );
+    const { code, text } = run(['--config', config]);
     assert.equal(code, 1);
     assert.match(text, /FAILED/);
     assert.match(text, /Release pipeline/);
@@ -837,6 +859,46 @@ const NODE_PIN_PROVENANCE_DATA: NodePinProvenanceTable = {
     ]);
     assert.equal(code, 1);
     assert.match(text, /pin table is unreadable/);
+  });
+
+  it('verifies a bundle against a consumer-shaped smrt-desktop.json', () => {
+    const dir = writeBundle();
+    const app = mkdtempSync(join(tmpdir(), 'app-'));
+    dirs.push(app);
+    const product = join(app, 'smrt-desktop.json');
+    writeFileSync(
+      product,
+      JSON.stringify({ updaterPublicKey: fakeMinisignPubkey() }),
+    );
+    const overlay = join(app, 'overlay.json');
+    const args = (config) => [
+      '--secrets',
+      '--config',
+      config,
+      '--bundle',
+      dir,
+      '--target',
+      TARGET,
+      '--node-pins',
+      pinsFile(),
+      '--write-overlay',
+      overlay,
+    ];
+    assert.equal(run(args(product), secrets()).code, 0);
+    assert.ok(existsSync(overlay));
+    rmSync(overlay);
+    // a product without the key, or with the builder's placeholder, is refused
+    const missing = join(app, 'missing.json');
+    writeFileSync(missing, JSON.stringify({ name: 'x' }));
+    assert.equal(run(args(missing), secrets()).code, 1);
+    const placeholder = join(app, 'placeholder.json');
+    writeFileSync(
+      placeholder,
+      JSON.stringify({ updaterPublicKey: 'PLACEHOLDER-NO-UPDATER-KEY-CONFIGURED' }),
+    );
+    const refused = run(args(placeholder), secrets());
+    assert.equal(refused.code, 1);
+    assert.equal(existsSync(overlay), false);
   });
 
   it('passes, writes the overlay and stages only verified files', () => {

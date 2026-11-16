@@ -34,7 +34,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
+import { discoverSmrtPackageLocations } from '../manifest/discover-smrt-packages.js';
 import { loadExternalManifestSync } from '../manifest/manifest-loader.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import type { DatabaseEngine } from './ddl/types.js';
@@ -140,6 +140,13 @@ export interface AggregateOptions {
   packages?: string[];
 
   /**
+   * Project root used for auto-discovery (defaults to `process.cwd()`).
+   * Packages the project reaches only through another smrt package are
+   * included and read from the location discovery resolved for them (#5027).
+   */
+  baseDir?: string;
+
+  /**
    * Additional local filesystem paths to check for manifests,
    * keyed by package name. Useful for development when local
    * packages have newer schemas than node_modules.
@@ -209,7 +216,10 @@ export class SchemaAggregator {
     const verbose = options.verbose ?? false;
 
     // 1. Discover packages
-    const packages = options.packages || discoverSmrtPackages();
+    const discovered = options.packages
+      ? undefined
+      : discoverSmrtPackageLocations({ baseDir: options.baseDir });
+    const packages = options.packages ?? Object.keys(discovered ?? {});
 
     if (verbose) {
       console.log(`[SchemaAggregator] Scanning ${packages.length} packages...`);
@@ -220,7 +230,11 @@ export class SchemaAggregator {
     let packagesSkipped = 0;
 
     for (const pkg of packages) {
-      const manifest = this.loadManifest(pkg, options.localPaths);
+      const manifest = this.loadManifest(
+        pkg,
+        options.localPaths,
+        discovered?.[pkg]?.manifestPath,
+      );
       if (manifest) {
         manifests.set(pkg, manifest);
         if (verbose) {
@@ -279,6 +293,7 @@ export class SchemaAggregator {
   private loadManifest(
     packageName: string,
     localPaths?: Record<string, string>,
+    discoveredManifestPath?: string,
   ): SmartObjectManifest | null {
     // Try local development path first (may have newer schemas)
     if (localPaths?.[packageName]) {
@@ -299,6 +314,18 @@ export class SchemaAggregator {
         } catch {
           // Fall through to node_modules
         }
+      }
+    }
+
+    // The location discovery resolved from the directory that can see the
+    // package; the app root cannot see one reached only transitively (#5027).
+    if (discoveredManifestPath) {
+      try {
+        return JSON.parse(
+          readFileSync(discoveredManifestPath, 'utf-8'),
+        ) as SmartObjectManifest;
+      } catch {
+        // Fall through to name-based resolution.
       }
     }
 

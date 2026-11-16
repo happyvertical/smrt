@@ -4,10 +4,12 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  NODE_PINS_PACKAGE_PATH,
   WRAPPER_DIRS,
   WRAPPER_FILES,
   WRAPPER_PACKAGE_PATHS,
   WRAPPER_SCRIPTS,
+  WRAPPER_SIGNING_TOOLS,
   WRAPPER_TOOLS,
 } from './constants.js';
 
@@ -57,6 +59,7 @@ describe('the published package carries the wrapper', () => {
       ...WRAPPER_FILES,
       ...WRAPPER_SCRIPTS,
       ...WRAPPER_TOOLS,
+      ...WRAPPER_SIGNING_TOOLS,
     ]) {
       expect(paths, file).toContain(`wrapper/${file}`);
     }
@@ -70,14 +73,24 @@ describe('the published package carries the wrapper', () => {
     }
   });
 
-  it('never ships build output, tests, signing tools or secret-looking files', () => {
+  it('ships the Node pin table the release preflight parses', () => {
+    expect(manifest.files).toContain(NODE_PINS_PACKAGE_PATH);
+    expect(paths).toContain(NODE_PINS_PACKAGE_PATH);
+  });
+
+  it('never ships build output, tests, installed signing tools or secret-looking files', () => {
     const wrapperPaths = paths.filter((path) => path.startsWith('wrapper/'));
     expect(wrapperPaths.length).toBeGreaterThan(10);
     for (const path of wrapperPaths) {
       expect(path).not.toMatch(/(^|\/)target\//);
       expect(path).not.toMatch(/(^|\/)tests\//);
       expect(path).not.toMatch(/\.test\.mjs$/);
-      expect(path).not.toMatch(/signing-tools/);
+      if (/signing-tools/.test(path)) {
+        // only the two files `npm ci` needs, never an installed tree
+        expect(path.slice('wrapper/'.length)).toMatch(
+          /^signing-tools\/package(-lock)?\.json$/,
+        );
+      }
       expect(path).not.toMatch(/(^|\/)(binaries|resources|gen)\//);
       expect(path).not.toMatch(/tauri\.release\.json$/);
     }

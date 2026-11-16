@@ -1,5 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { TAURI_CLI_VERSION } from './constants.js';
+import {
+  MISSING_UPDATER_KEY_PLACEHOLDER,
+  TAURI_CLI_VERSION,
+} from './constants.js';
 import { BuildError } from './errors.js';
 import {
   buildToolchainEnv,
@@ -177,6 +183,38 @@ describe('runBuild', () => {
     const fixture = createFixture({ config: { updaterPublicKey: undefined } });
     const result = await runBuild(plan(), fixture.seams);
     expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).not.toMatch(/wrapper placeholder/);
+  });
+
+  it('never lets a product without a key inherit the wrapper key', async () => {
+    const fixture = createFixture({ config: { updaterPublicKey: undefined } });
+    let overlay = '';
+    const original = fixture.seams.run;
+    const seams = {
+      ...fixture.seams,
+      async run(request: Parameters<typeof original>[0]) {
+        if (request.command === 'tauri') {
+          overlay = new TextDecoder().decode(
+            fixture.fs.files.get(`${request.cwd}/tauri.build.json`),
+          );
+        }
+        return original(request);
+      },
+    };
+    await runBuild(plan(), seams);
+    const pubkey = JSON.parse(overlay).plugins.updater.pubkey;
+    expect(pubkey).toBe(MISSING_UPDATER_KEY_PLACEHOLDER);
+    const wrapper = JSON.parse(
+      readFileSync(
+        join(
+          dirname(fileURLToPath(import.meta.url)),
+          '../../wrapper/tauri.conf.json',
+        ),
+        'utf8',
+      ),
+    );
+    expect(pubkey).not.toBe(wrapper.plugins.updater.pubkey);
+    expect(pubkey).not.toMatch(/^[A-Za-z0-9+/]+={0,2}$/);
   });
 
   it('fails on version drift between the wrapper and the package', async () => {

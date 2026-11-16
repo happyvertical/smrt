@@ -465,6 +465,29 @@ describe('main', () => {
     assert.ok(existsSync(join(outDir, 'latest.json')));
   });
 
+  it('takes the committed key from a product smrt-desktop.json', () => {
+    const product = join(tmp('product-'), 'smrt-desktop.json');
+    writeFileSync(product, JSON.stringify({ updaterPublicKey: KEY.pubkey }));
+    const outDir = tmp('out-');
+    const ok = run([
+      'feed',
+      '--legs',
+      stagedLegs(),
+      '--targets',
+      ALL.join(','),
+      '--repo',
+      'acme/notes',
+      '--tag',
+      'desktop-latest',
+      '--pubkey-config',
+      product,
+      '--out',
+      outDir,
+    ]);
+    assert.equal(ok.code, 0);
+    assert.ok(existsSync(join(outDir, 'latest.json')));
+  });
+
   it('stages a leg through the CLI only with the committed key pair', () => {
     const overlay = join(tmp('overlay-'), 'overlay.json');
     writeFileSync(overlay, JSON.stringify(OVERLAY));

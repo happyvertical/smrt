@@ -113,6 +113,13 @@ const INHERITED_VARIABLES = [
   // absent (observed on Windows 11 26300: empty output, no error), which made
   // the inspector exit 1 for every path. It is a fixed list of extensions.
   'PATHEXT',
+  // GitHub's Windows runner image points PowerShell's module analysis cache at
+  // a prepared location. Without it Windows PowerShell rebuilds the analysis
+  // for `Get-CimInstance`'s module on EVERY start, which took 18 to 33 s and
+  // overran the 10 s limit (smrt#4955, bisected on a real runner: this was the
+  // only one of 139 variables that mattered). It is a cache file path, never a
+  // secret, and PowerShell ignores it when it is not set.
+  'PSModuleAnalysisCachePath',
 ] as const;
 
 /** Windows environment names are case-insensitive. */
