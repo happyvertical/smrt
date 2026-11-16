@@ -43,15 +43,53 @@ startup, before `runner.start()`. The registry is process-wide: re-evaluating
 a registering module while a runner runs (HMR, a duplicate package instance)
 throws.
 
+## Claim filter
+
+A runner claims model jobs and only the handler jobs it registered. The
+claim adds one predicate inside the candidate select (before its `LIMIT`, so
+rows a runner cannot run never fill its window):
+
+```sql
+NOT (substr(object_type, 1, 8) = 'handler:')
+  OR object_type IN ('handler:<name>', …)  -- the start() snapshot
+```
+
+The prefix test is case-exact and wildcard-free on SQLite, PostgreSQL and
+PGlite (SQLite `LIKE` is case-insensitive; `_` is a wildcard). With no
+handler registered only the `NOT (…)` half is emitted, so the runner claims
+no handler row. Model claims are unchanged and keep `_smrt_jobs_ready_idx`.
+`claimReady({ handlerNames })` is the option; omitted, a direct caller's
+claim does not filter by target. Each name is one bound parameter, so a
+process may register at most `MAX_JOB_HANDLERS` (256) handlers
+(`JobHandlerLimitError`); `claimReady` refuses more names (`RangeError`).
+
+## Unclaimed deadline
+
+A handler job still `pending` more than `handlerUnclaimedDeadlineMs`
+(runner option, default 24 h) after its `run_at` is failed with failure kind
+`handler-unclaimed` and its terminal event; it never ran (`attempts` as
+left). Every runner sweeps, from its poll, at most once per 1% of the
+deadline (between one lease tick and 15 min; about 14 min at the default)
+and `HANDLER_UNCLAIMED_SWEEP_LIMIT` (100) rows per sweep, over its own
+queues and tenant scope, including handlers it runs itself (a backlog older
+than the deadline is swept too). Each row is one conditional transition (`status = 'pending'`
+and `run_at` still past the cutoff), so concurrent sweepers, a claim or a
+requeue win harmlessly: one event per job. Model jobs are never swept. A
+queue no upgraded runner consumes is never swept. With different deadlines
+in a fleet the shortest wins. A sweep failure is a `runner:error`; the poll
+still claims.
+
 ## Outcomes
 
 Handler jobs share the model path for MCP authority (checked first, so a
 handler cannot bypass it), tenant context, timeout, cancellation, claim
 fencing, retries and every terminal write. Differences:
 
-- Unregistered on the claiming runner: `JobHandlerUnregisteredError`
-  (`retryable: false`) ends the job `failed` on that claim whatever its
-  `maxAttempts`, failure kind `handler-unregistered`, with its terminal event.
+- Unregistered on the claiming runner (a claim made without the filter; the
+  backstop): `JobHandlerUnregisteredError` (`retryable: false`) ends the job
+  `failed` on that claim whatever its `maxAttempts`, failure kind
+  `handler-unregistered`, with its terminal event.
+- Unclaimed past the deadline: failure kind `handler-unclaimed` (above).
 - A non-canonical `handler:` row (wrong method, an object id, an MCP task
   id, owner or marker), written past `enqueueJob`, fails
   terminally (`JobHandlerTargetError`, kind `execution`) after the authority
@@ -59,13 +97,11 @@ fencing, retries and every terminal write. Differences:
 - Schedules cannot target handlers: a schedule naming one is set to
   `status = 'error'`.
 
-## Mixed fleets (known limitation)
+## Upgrade order (older runners)
 
-Claims do not filter by target. A runner that never registered a handler
-fails its jobs as `handler-unregistered`; a runner older than #5005 treats
-`handler:<name>` as an unknown model (`Unknown object type`, kind
-`execution`) and retries it up to `maxAttempts` (clamped to 25) before
-failing it. A pre-#5005 outcome reader also drops events with kind
-`handler-unregistered`. Route handler jobs to a queue consumed only by
-runners that register those handlers, and upgrade every consumer of that
-queue first.
+A runner older than #5005 does not filter: it claims `handler:<name>` as an
+unknown model (`Unknown object type`, kind `execution`), retries it up to
+`maxAttempts` (clamped to 25), then fails it. An older outcome reader drops
+events with kind `handler-unregistered` or `handler-unclaimed`. Do not
+enqueue handler jobs until every runner and outcome reader on the database
+is upgraded.

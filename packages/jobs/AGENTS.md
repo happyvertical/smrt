@@ -2,7 +2,7 @@
 
 Background job execution with persistent queue, scheduling, and fluent builder API.
 Retry SDK import boundary: [provider loading](agents/provider-loading.md).
-A job targets a model method or a registered named handler: [job handlers](agents/job-handlers.md).
+A job targets a model method or a registered named handler; runners claim only handlers they registered: [job handlers](agents/job-handlers.md).
 
 ## Architecture
 

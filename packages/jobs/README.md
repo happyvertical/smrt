@@ -166,15 +166,20 @@ await jobs.enqueueHandlerJob({
 The row is stored as `object_type = 'handler:<name>'`, `method = 'handle'`,
 `object_id = NULL` (no schema change). Handler jobs share the model path for
 MCP authority, tenancy, timeouts, cancellation, claim fencing, retries and
-terminal outcomes. A runner with no handler under the job's name fails it on
-that claim, never retried, with failure kind `handler-unregistered`.
-Schedules and MCP tasks target model methods only.
+terminal outcomes. A runner claims model jobs and only the handler jobs it
+registered (at most 256 handlers per process). A handler job left `pending`
+longer than `handlerUnclaimedDeadlineMs` (runner option, default 24 h) past
+its `run_at` is failed by any runner sweeping its queue, failure kind
+`handler-unclaimed`. A claim made without the filter that reaches an
+unregistered handler fails the job on that claim, never retried, failure
+kind `handler-unregistered`. Schedules and MCP tasks target model methods
+only.
 
-**Mixed fleets.** Claims do not filter by target: a runner without the
-handler (or one older than this contract, which retries the job as an unknown
-model up to `maxAttempts`) fails it. Route handler jobs to a queue consumed
-only by runners that register those handlers. Details:
-[job handlers](agents/job-handlers.md).
+**Upgrade first.** A runner older than this contract does not filter: it
+retries a handler job as an unknown model up to `maxAttempts` and fails it,
+and older outcome readers drop the `handler-unregistered` and
+`handler-unclaimed` kinds. Enqueue handler jobs only after every runner is
+upgraded. Details: [job handlers](agents/job-handlers.md).
 
 ### Back MCP task operations with durable jobs
 

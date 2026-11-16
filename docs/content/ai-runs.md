@@ -1078,8 +1078,9 @@ resume, and from a periodic sweep. Proposed: the sweep is a task named
 expires the job is claimed by another worker, which reconciles the run and
 resumes from the checkpoint. Proposed: that job targets a named job handler
 (registered with `registerJobHandler` in `smrt-jobs`) rather than a model
-method; a worker that has not registered the handler fails the job once and
-never retries it. Reconciling on resume does **not** wait for the
+method; only workers that registered the handler claim the job, and a job no
+such worker claims within a deadline (default 24 h) fails `handler-unclaimed`
+and stops the run, resumable. Reconciling on resume does **not** wait for the
 threshold: the new worker reconciles at once every `call` event still
 `reserved` in the run and in its **descendants that are not durable**, with
 the usage-row check above.
