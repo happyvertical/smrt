@@ -10,7 +10,7 @@
  * everything else counts as DEFAULT_SECONDS. They only steer balance: a stale
  * or missing entry makes shards uneven, never drops a package. Refresh them
  * from the `Duration` line each package's Vitest run prints in a merge-group
- * `test-packages` job log.
+ * `test-packages` or PostgreSQL job log.
  */
 
 /** `test` task seconds at two Vitest workers, merge-group run 43955782588. */
@@ -43,6 +43,22 @@ export const TEST_SECONDS = {
   '@happyvertical/smrt-ui': 126,
   '@happyvertical/smrt-users': 268,
   '@happyvertical/smrt-vitest': 35,
+};
+
+/** `test:postgres` task seconds, PostgreSQL merge-group run of 2026-11-16. */
+export const POSTGRES_TEST_SECONDS = {
+  '@happyvertical/smrt-analytics': 40,
+  '@happyvertical/smrt-app-runtime': 41,
+  '@happyvertical/smrt-cli': 33,
+  '@happyvertical/smrt-commerce': 285,
+  '@happyvertical/smrt-core': 808,
+  '@happyvertical/smrt-education': 325,
+  '@happyvertical/smrt-expenses': 56,
+  '@happyvertical/smrt-jobs': 44,
+  '@happyvertical/smrt-ledgers': 41,
+  '@happyvertical/smrt-messages': 110,
+  '@happyvertical/smrt-sales': 53,
+  '@happyvertical/smrt-users': 606,
 };
 
 /** Packages under 30 s are not listed; the measured median was about 12 s. */
