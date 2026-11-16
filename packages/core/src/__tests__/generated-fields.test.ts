@@ -697,16 +697,33 @@ describe('database-generated fields #4915', () => {
       const changed = await new SchemaComparer(db, {
         engineHint: engine,
       }).compare(schemas);
-      // PostgreSQL plans the swap as a drop half and a re-add half (#5008).
+      // PostgreSQL plans the swap as a drop half, a re-add half, and the
+      // column's index re-created once every calculated column is back
+      // (#5008, #5018): the index is a change of its own.
       const replacement = changed.changes.filter(
         (change) => change.name === 'total',
       );
-      expect(replacement.map((change) => change.type)).toEqual(
-        replacement.map(() => 'alter_column'),
+      expect(
+        replacement
+          .filter((change) => change.sqlStatements)
+          .map((change) => change.type),
+      ).toEqual(
+        replacement
+          .filter((change) => change.sqlStatements)
+          .map(() => 'alter_column'),
       );
-      expect(replacement).toHaveLength(engine === 'postgres' ? 2 : 1);
+      expect(replacement).toHaveLength(engine === 'postgres' ? 3 : 1);
       for (const change of replacement)
-        for (const sql of change.sqlStatements!) await db.query(sql);
+        for (const sql of change.sqlStatements ?? [change.sql!])
+          await db.query(sql);
+      if (engine === 'postgres')
+        expect(
+          (
+            await db.query(
+              "SELECT 1 FROM pg_indexes WHERE indexname = 'generated_total_idx'",
+            )
+          ).rows,
+        ).toHaveLength(1);
       expect(
         Number(
           (await db.query('SELECT total FROM generated_migration')).rows[0]
