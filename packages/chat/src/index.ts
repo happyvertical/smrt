@@ -326,6 +326,14 @@ export {
   describeAssistantTool,
   toolSummary,
 } from './tool-summary.js';
+export {
+  AssistantTurnRun,
+  type AssistantTurnTracking,
+  CHAT_ASSISTANT_PROMPT_KEY,
+  CHAT_TURN_DEFINITION_KEY,
+  chatAssistantSystemPrompt,
+  resolveChatAssistantPrompt,
+} from './turn-tracking.js';
 // Types
 export type {
   AgentSessionOptions,

@@ -53,7 +53,10 @@ import type {
   PrincipalBinding,
   PrincipalTool,
 } from '@happyvertical/smrt-agents';
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  AiRunTrackingDisabledError,
+  type SmrtClassOptions,
+} from '@happyvertical/smrt-core';
 import type {
   AssistantApprovalWaiter,
   AssistantTurnDriver,
@@ -88,6 +91,10 @@ import {
   type ToolLoopUsage,
   toolFailureRecord,
 } from './tool-loop.js';
+import {
+  AssistantTurnRun,
+  type AssistantTurnTracking,
+} from './turn-tracking.js';
 
 /** How long a suspended turn waits for the browser's results. */
 export const DEFAULT_CONTINUATION_TTL_MS = 15 * 60 * 1000;
@@ -381,6 +388,15 @@ export interface AssistantTurnOptions<M = Record<string, unknown>>
   extends AssistantWorkProfileOptions {
   /** Required for the default tool loop; unused by an external driver. */
   ai?: Pick<AIInterface, 'chat'>;
+  /**
+   * Track this turn as an AI run (#5005): it opens a `turn` run before the
+   * first model call, every call of the tool loop is a tracked call of it,
+   * and tool use and approvals are events of its trajectory. The loop then
+   * calls the tracked client instead of `ai`. Ignored by an external driver.
+   * Throws the turn's `ai_tracking_disabled` error while usage persistence
+   * is off.
+   */
+  tracking?: AssistantTurnTracking;
   /** Omitted: today's bounded tool loop, including browser continuations. */
   turnDriver?: AssistantTurnDriver;
   /** Host-owned durable approval bridge. Absent: approval requests fail closed. */
@@ -566,6 +582,36 @@ function providerErrorReplyText(
   return typeof text === 'string' && text.trim() ? text.trim() : undefined;
 }
 
+/** Record one turn event in the turn's run (#5005). */
+async function observeTurnRunEvent<M>(
+  run: AssistantTurnRun,
+  event: AssistantTurnEvent<M>,
+): Promise<void> {
+  if (event.type === 'step') {
+    const { step } = event;
+    if (step.kind === 'tool_call') {
+      await run.step({
+        type: 'tool_call',
+        slug: step.tool,
+        callId: step.callId,
+        location: step.location,
+      });
+    } else if (step.kind === 'tool_result') {
+      await run.step({
+        type: 'tool_result',
+        slug: step.tool,
+        callId: step.callId,
+        ok: step.ok,
+        ...(step.error ? { error: step.error } : {}),
+      });
+    }
+  } else if (event.type === 'approval_needed') {
+    await run.approvalRequested(event.approval, event.approval.callId);
+  } else if (event.type === 'done') {
+    await run.replied((event.message as { id?: unknown } | undefined)?.id);
+  }
+}
+
 /** What {@link runAssistantTurn} returns when its generator completes. */
 export interface AssistantTurnResult {
   runId?: string;
@@ -675,9 +721,62 @@ export async function* runAssistantTurn<M = Record<string, unknown>>(
   const report = reporter(options, leg);
 
   const work = (async () => {
+    let turnRun: AssistantTurnRun | null = null;
+    let tracked = Promise.resolve();
     try {
-      result = await runTurn(options, emit, status, serialize, describe, leg);
+      let runOptions = options;
+      let runEmit = emit;
+      if (options.tracking && options.ai && !options.turnDriver) {
+        try {
+          turnRun = await AssistantTurnRun.open(options.tracking, {
+            ...(leg.originMessageId
+              ? { originMessageId: leg.originMessageId }
+              : {}),
+          });
+        } catch (error) {
+          if (error instanceof AiRunTrackingDisabledError) {
+            throw new AssistantTurnUserError(
+              'The assistant is unavailable: AI usage tracking is turned off.',
+              'ai_tracking_disabled',
+            );
+          }
+          throw error;
+        }
+        const run = turnRun;
+        runOptions = {
+          ...options,
+          ai: (await run.client()) as unknown as Pick<AIInterface, 'chat'>,
+        };
+        // The trajectory follows the turn's own events, in order, without
+        // slowing the stream.
+        runEmit = (event) => {
+          tracked = tracked.then(() => observeTurnRunEvent(run, event));
+          emit(event);
+        };
+      }
+      result = await runTurn(
+        runOptions,
+        runEmit,
+        status,
+        serialize,
+        describe,
+        leg,
+      );
+      if (turnRun) {
+        await tracked;
+        await turnRun.finish(
+          result.stoppedReason === 'cancelled'
+            ? 'cancelled'
+            : result.stoppedReason === 'error'
+              ? 'failed'
+              : 'done',
+        );
+      }
     } catch (error) {
+      if (turnRun) {
+        await tracked;
+        await turnRun.finish('failed');
+      }
       const wire = wireError(error, options.onError ?? defaultLogError);
       // A resume that never consumed its continuation changes nothing.
       if (leg.started) await report('failed');

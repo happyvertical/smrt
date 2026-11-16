@@ -30,6 +30,12 @@ import {
   type DescribeAssistantTool,
   describeAssistantTool,
 } from './tool-summary.js';
+import {
+  type AssistantTurnTracking,
+  chatAssistantSystemText,
+  chatClientForTracking,
+  resolveChatAssistantPrompt,
+} from './turn-tracking.js';
 /**
  * Mountable SvelteKit routes for the AssistantDock (#3368).
  *
@@ -91,6 +97,7 @@ import {
   toAIClientOptions,
 } from '@happyvertical/smrt-config';
 import {
+  createTrackedAiClient,
   ObjectRegistry,
   resolveDatabase,
   resolveInferenceTarget,
@@ -1415,6 +1422,62 @@ export function mountAssistantRoutes(
   type PreparedTurn = Awaited<ReturnType<typeof prepareTurn>>;
 
   /**
+   * What tracks a turn as an AI run (#5005): the tracked client of the
+   * principal's tenant and the request's database over the turn's client, the
+   * resolved system prompt, and the approval decisions made since the last
+   * turn (recorded once, in this turn's run). The conversation is stored by
+   * smrt-chat itself, so no transcript copy is made.
+   */
+  const trackingFor = async (
+    context: AssistantRequestContext,
+    ai: Pick<AIInterface, 'chat'>,
+    db: NonNullable<SmrtClassOptions['db']>,
+    systemPrompt: string | undefined,
+    thread: ChatThread,
+    session: AgentSession,
+  ): Promise<AssistantTurnTracking> => {
+    const { principal } = context;
+    const database = await resolveDatabase(db);
+    const tracked = createTrackedAiClient({
+      db: database,
+      tenantId: principal.tenantId,
+      className: 'AssistantRoute',
+      ai: chatClientForTracking(ai),
+      transcript: false,
+    });
+    const threadId = String(thread.id);
+    return {
+      tracked,
+      prompt: await resolveChatAssistantPrompt({
+        db: database,
+        tenantId: principal.tenantId,
+        ...(systemPrompt ? { systemPrompt } : {}),
+      }),
+      threadId,
+      agentSessionId: String(session.id),
+      decisions: async () => {
+        const decided: Array<{
+          approvalId: string;
+          status: 'approved' | 'refused';
+        }> = [];
+        for (const record of await ownedThreadApprovals(context, threadId)) {
+          if (
+            record.status === 'approved' ||
+            record.status === 'executing' ||
+            record.status === 'succeeded' ||
+            record.status === 'failed'
+          ) {
+            decided.push({ approvalId: record.id, status: 'approved' });
+          } else if (record.status === 'denied') {
+            decided.push({ approvalId: record.id, status: 'refused' });
+          }
+        }
+        return decided;
+      },
+    };
+  };
+
+  /**
    * Everything a turn needs that is bound to a database: built for the
    * request (where every refusal happens), and again inside a streamed
    * turn's own database lifetime (`mirror: false`: the request already
@@ -1493,6 +1556,16 @@ export function mountAssistantRoutes(
         (await bridgeFor()).complete!(request, ok, result),
     };
     const continuations = continuationStoreFor(context, chat, session);
+    // The turn is an AI run on this tenant's database (#5005): its calls go
+    // through core's tracked client, and its system prompt is the registered
+    // `chat.assistant.system` prompt with the host's text as its runtime layer.
+    const tracking =
+      ai && db && !prepared.turnDriver
+        ? await trackingFor(context, ai, db, systemPrompt, thread, session)
+        : undefined;
+    const systemText = tracking
+      ? chatAssistantSystemText(tracking.prompt)
+      : systemPrompt;
     return {
       abort,
       ai,
@@ -1563,7 +1636,8 @@ export function mountAssistantRoutes(
           allowedTools,
         },
         ...(db ? { db } : {}),
-        ...(systemPrompt ? { systemPrompt } : {}),
+        ...(systemText ? { systemPrompt: systemText } : {}),
+        ...(tracking ? { tracking } : {}),
         extraTools: [...(extraTools ?? [])],
         tools: [...tools],
         clientTools,

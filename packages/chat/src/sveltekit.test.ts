@@ -25,7 +25,11 @@ import {
   OwnerApprovalAuthority,
   OwnerApprovalContinuations,
 } from '@happyvertical/smrt-app-runtime';
-import { ObjectRegistry, resolveDatabase } from '@happyvertical/smrt-core';
+import {
+  config,
+  ObjectRegistry,
+  resolveDatabase,
+} from '@happyvertical/smrt-core';
 import { createCookbookEngine } from '@happyvertical/smrt-core/cookbook/engine';
 import { InferenceUnavailableError } from '@happyvertical/smrt-core/inference-availability';
 import {
@@ -1157,6 +1161,219 @@ describe('mountAssistantRoutes', () => {
         ['assistant', 'Here is the plan.'],
         ['user', 'And then?'],
       ]);
+    });
+
+    describe('as an AI run (#5005)', () => {
+      const usage = { promptTokens: 11, completionTokens: 4, totalTokens: 15 };
+      const withUsage =
+        (content: string): Round =>
+        (_messages, options) => {
+          options?.onProgress?.(content);
+          return { content, finishReason: 'stop', model: 'm-1', usage };
+        };
+      const rowsOf = (result: unknown): Array<Record<string, unknown>> =>
+        Array.isArray(result)
+          ? result
+          : (((result as { rows?: unknown[] })?.rows ?? []) as Array<
+              Record<string, unknown>
+            >);
+      const query = async (sql: string, ...params: unknown[]) =>
+        rowsOf(await (await resolveDatabase(db)).query(sql, ...params));
+
+      it('opens a turn run with a usage row and a call event per model call, and the registered prompt', async () => {
+        const toolRound: Round = (messages, options) => ({
+          ...calls(['page_read', {}])(messages, options),
+          model: 'm-1',
+          usage,
+        });
+        const routes = mount({
+          ai: scriptedAI([toolRound, withUsage('Here is the plan.')]),
+          systemPrompt: 'Be brief.',
+        });
+        const threadId = await createThread(routes);
+        const { thrown } = await events(
+          await send(routes, threadId, {
+            content: 'What next?',
+            clientRequestId: 'run-1',
+          }),
+        );
+        expect(thrown).toBeNull();
+        const runs = await query(
+          `SELECT id, type, status, tenant_id, prompt_key, calls, tokens
+             FROM _smrt_ai_runs`,
+        );
+        expect(runs).toHaveLength(1);
+        expect(runs[0]).toMatchObject({
+          type: 'turn',
+          status: 'done',
+          tenant_id: tenantId,
+          prompt_key: 'chat.assistant.system',
+        });
+        const runId = String(runs[0]?.id);
+        expect(runs[0]).toMatchObject({ calls: 2, tokens: 30 });
+        const usageRows = await query(
+          'SELECT run_id, prompt_key, total_tokens FROM _smrt_ai_usage',
+        );
+        expect(usageRows).toHaveLength(Number(runs[0]?.calls));
+        expect(usageRows.every((row) => row.run_id === runId)).toBe(true);
+        expect(
+          usageRows.every((row) => row.prompt_key === 'chat.assistant.system'),
+        ).toBe(true);
+        const callEvents = await query(
+          `SELECT reservation FROM _smrt_ai_run_events
+            WHERE run_id = $1 AND type = 'call'`,
+          runId,
+        );
+        expect(callEvents).toHaveLength(usageRows.length);
+        expect(callEvents.every((e) => e.reservation === 'settled')).toBe(true);
+      });
+
+      it('references chat messages instead of copying them, and records tool use as action and observation events', async () => {
+        const ran: PrincipalRun[] = [];
+        const tool = discoverTool(ran);
+        const routes = mount({
+          ai: scriptedAI([
+            calls([tool.aiTool.function.name, {}, 'call-1']),
+            withUsage('Done.'),
+          ]),
+          allowedTools: [tool.slug],
+          extraTools: [tool],
+        });
+        const threadId = await createThread(routes);
+        await events(
+          await send(routes, threadId, {
+            content: 'secret-user-text',
+            clientRequestId: 'run-2',
+          }),
+        );
+        const trail = await query(
+          `SELECT type, name, status, payload, payload_ref, parent_event_id, id
+             FROM _smrt_ai_run_events ORDER BY seq`,
+        );
+        const types = trail.map((event) => event.type);
+        expect(types).toContain('action');
+        expect(types).toContain('observation');
+        const action = trail.find((event) => event.type === 'action');
+        const result = trail.find(
+          (event) =>
+            event.type === 'observation' && event.name === action?.name,
+        );
+        expect(result?.parent_event_id).toBe(action?.id);
+        const refs = trail
+          .map((event) => event.payload_ref)
+          .filter((ref): ref is string => typeof ref === 'string');
+        expect(refs.some((ref) => ref.startsWith('chat-message:'))).toBe(true);
+        // Nothing of the conversation is stored in the trajectory.
+        expect(JSON.stringify(trail)).not.toContain('secret-user-text');
+        expect(JSON.stringify(trail)).not.toContain('Done.');
+      });
+
+      it('ends a turn that needs approval done with a requested approval event, and records the decision in the next turn', async () => {
+        const authority = await durableApprovals();
+        const ran: unknown[] = [];
+        const tool = deleteTool(ran);
+        const routes = mount({
+          ai: scriptedAI([
+            calls(['records-delete', { id: 'invoice-1' }, 'delete-1']),
+            withUsage('Waiting on you.'),
+          ]),
+          approvals: authority,
+          allowedTools: [tool.slug],
+          extraTools: [tool],
+        });
+        const threadId = await createThread(routes);
+        const first = await events(
+          await send(routes, threadId, {
+            content: 'Delete invoice 1',
+            clientRequestId: 'run-3',
+          }),
+        );
+        const needed = first.seen.find(
+          (event) => event.type === 'approval_needed',
+        );
+        if (needed?.type !== 'approval_needed')
+          throw new Error('expected hold');
+        const [turn] = await query(
+          `SELECT id, status FROM _smrt_ai_runs ORDER BY started_at`,
+        );
+        expect(turn?.status).toBe('done');
+        const [requested] = await query(
+          `SELECT id, status, payload_ref FROM _smrt_ai_run_events
+            WHERE type = 'approval'`,
+        );
+        expect(requested).toMatchObject({
+          status: 'requested',
+          payload_ref: `approval:${needed.approval.id}`,
+        });
+
+        const decision = await call(
+          routes,
+          'POST',
+          `approvals/${needed.approval.id}/decide`,
+          { body: { approve: true } },
+        );
+        expect(decision.status).toBe(200);
+        // The decision is not an event until the next turn carries on.
+        expect(
+          await query(
+            `SELECT id FROM _smrt_ai_run_events WHERE type = 'approval' AND status = 'approved'`,
+          ),
+        ).toHaveLength(0);
+
+        await events(
+          await send(routes, threadId, {
+            content: 'Thanks',
+            clientRequestId: 'run-3b',
+          }),
+        );
+        const runs = await query(
+          'SELECT id FROM _smrt_ai_runs ORDER BY started_at',
+        );
+        expect(runs).toHaveLength(2);
+        const decided = await query(
+          `SELECT run_id, parent_event_id FROM _smrt_ai_run_events
+            WHERE type = 'approval' AND status = 'approved'`,
+        );
+        expect(decided).toHaveLength(1);
+        expect(decided[0]?.parent_event_id).toBe(requested?.id);
+        expect(decided[0]?.run_id).toBe(runs[1]?.id);
+        // Recorded once: a third turn adds nothing.
+        await events(
+          await send(routes, threadId, {
+            content: 'And again',
+            clientRequestId: 'run-3c',
+          }),
+        );
+        expect(
+          await query(
+            `SELECT id FROM _smrt_ai_run_events WHERE type = 'approval' AND status = 'approved'`,
+          ),
+        ).toHaveLength(1);
+      });
+
+      it('opens no run and answers a user error while usage persistence is off', async () => {
+        const routes = mount({
+          ai: scriptedAI([withUsage('never sent')]),
+        });
+        const threadId = await createThread(routes);
+        config({ usage: { persist: false } });
+        try {
+          const { seen } = await events(
+            await send(routes, threadId, {
+              content: 'Hello',
+              clientRequestId: 'run-4',
+            }),
+          );
+          expect(seen).toContainEqual(
+            expect.objectContaining({
+              type: 'error',
+              code: 'ai_tracking_disabled',
+            }),
+          );
+        } finally {
+          config.reset();
+        }
+      });
     });
 
     it('never replays a stored fallback reply as history (#4379)', async () => {
