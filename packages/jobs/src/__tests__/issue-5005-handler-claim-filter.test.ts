@@ -57,7 +57,7 @@ registerJobHandler(HANDLER, async () => {
 });
 
 const HOUR = 60 * 60 * 1000;
-const ENGINES = ['sqlite', 'pglite'] as const;
+const ENGINES = ['sqlite', 'duckdb', 'pglite'] as const;
 type Engine = (typeof ENGINES)[number];
 const pgliteSkipped = (engine: Engine) =>
   engine === 'pglite' && !process.env.SMRT_TEST_PGLITE_MODULE;
@@ -75,8 +75,8 @@ afterEach(async () => {
 
 async function openDb(engine: Engine): Promise<DatabaseInterface> {
   db =
-    engine === 'sqlite'
-      ? await getTestDatabase({ type: 'sqlite', url: ':memory:' })
+    engine !== 'pglite'
+      ? await getTestDatabase({ type: engine, url: ':memory:' })
       : await getTestDatabase({
           type: 'pglite',
           classes: [
@@ -392,26 +392,34 @@ describe('unclaimed handler deadline (#5005)', () => {
         const jobs = await SmrtJobCollection.create({ db: database });
         const runner = runnerOf({ handlerUnclaimedDeadlineMs: HOUR });
         await runner.initialize(database);
+        // The handler snapshot start() takes; this runner is never started.
+        (runner as unknown as { handlerNames: string[] }).handlerNames = [
+          HANDLER,
+        ];
         const failed: SmrtJob[] = [];
-        runner.on('job:failed', (job) => failed.push(job));
+        runner.on('job:unclaimed', (job) => failed.push(job));
 
         // Claimed (running) before it went overdue: never swept.
         const claimedJob = await enqueueHandler(jobs, OTHER_HANDLER);
         await jobs.claimReady({ workerId: 'holder', limit: 1 });
         await backdate(database, claimedJob.id as string, 2 * HOUR);
-        const fresh = await enqueueHandler(jobs);
+        const fresh = await enqueueHandler(jobs, OTHER_HANDLER);
         await backdate(database, fresh.id as string, HOUR - 60_000);
-        const overdue = await enqueueHandler(jobs);
+        const overdue = await enqueueHandler(jobs, OTHER_HANDLER);
         await backdate(database, overdue.id as string, 2 * HOUR);
         const overdueModel = await enqueueModel(jobs);
         await backdate(database, overdueModel.id as string, 2 * HOUR);
-        const otherQueue = await enqueueHandler(jobs, HANDLER, {
+        const otherQueue = await enqueueHandler(jobs, OTHER_HANDLER, {
           queue: 'elsewhere',
         });
         await backdate(database, otherQueue.id as string, 2 * HOUR);
+        // A handler this runner registered: it claims these, never sweeps.
+        const own = await enqueueHandler(jobs, HANDLER);
+        await backdate(database, own.id as string, 2 * HOUR);
 
         await sweep(runner);
 
+        expect(await statusOf(jobs, own)).toBe('pending');
         expect(await statusOf(jobs, fresh)).toBe('pending');
         expect(await statusOf(jobs, overdueModel)).toBe('pending');
         expect(await statusOf(jobs, claimedJob)).toBe('running');
@@ -433,7 +441,7 @@ describe('unclaimed handler deadline (#5005)', () => {
           jobId: overdue.id,
           status: 'failed',
           failureKind: 'handler-unclaimed',
-          ...jobHandlerTarget(HANDLER),
+          ...jobHandlerTarget(OTHER_HANDLER),
           attempts: 0,
         });
 
@@ -458,11 +466,11 @@ describe('unclaimed handler deadline (#5005)', () => {
         let failures = 0;
         for (const sweeper of sweepers) {
           await sweeper.initialize(database);
-          sweeper.on('job:failed', () => failures++);
+          sweeper.on('job:unclaimed', () => failures++);
         }
         const overdue: SmrtJob[] = [];
         for (let i = 0; i < 4; i++) {
-          const job = await enqueueHandler(jobs);
+          const job = await enqueueHandler(jobs, OTHER_HANDLER);
           await backdate(database, job.id as string, 2 * HOUR);
           overdue.push(job);
         }
@@ -493,6 +501,30 @@ describe('unclaimed handler deadline (#5005)', () => {
         );
       },
     );
+
+    it.skipIf(pgliteSkipped(engine))(
+      `a runner back after the deadline runs its own overdue backlog (${engine})`,
+      async () => {
+        const database = await openDb(engine);
+        const jobs = await SmrtJobCollection.create({ db: database });
+        const backlog: SmrtJob[] = [];
+        for (let i = 0; i < 3; i++) {
+          const job = await enqueueHandler(jobs);
+          await backdate(database, job.id as string, 2 * HOUR);
+          backlog.push(job);
+        }
+        const runner = runnerOf({ handlerUnclaimedDeadlineMs: HOUR });
+        await runner.initialize(database);
+        let unclaimed = 0;
+        runner.on('job:unclaimed', () => unclaimed++);
+        await runner.start();
+        for (const job of backlog) {
+          await until(async () => (await statusOf(jobs, job)) === 'completed');
+        }
+        expect(handlerCalls).toBe(3);
+        expect(unclaimed).toBe(0);
+      },
+    );
   }
 
   it('keeps sweeping on the next poll after a full batch', async () => {
@@ -501,9 +533,9 @@ describe('unclaimed handler deadline (#5005)', () => {
     const runner = runnerOf({ handlerUnclaimedDeadlineMs: HOUR });
     await runner.initialize(database);
     let failures = 0;
-    runner.on('job:failed', () => failures++);
+    runner.on('job:unclaimed', () => failures++);
     for (let i = 0; i <= HANDLER_UNCLAIMED_SWEEP_LIMIT; i++) {
-      const job = await enqueueHandler(jobs);
+      const job = await enqueueHandler(jobs, OTHER_HANDLER);
       await backdate(database, job.id as string, 2 * HOUR);
     }
     await sweep(runner);
@@ -526,7 +558,7 @@ describe('unclaimed handler deadline (#5005)', () => {
         const model = await enqueueModel(jobs);
         await backdate(database, model.id as string, 2 * HOUR);
         const modelRunAt = (await jobs.get({ id: model.id as string }))?.runAt;
-        const job = await enqueueHandler(jobs);
+        const job = await enqueueHandler(jobs, OTHER_HANDLER);
         await backdate(database, job.id as string, 2 * HOUR);
         await sweep(runner);
         const swept = await jobs.get({ id: job.id as string });

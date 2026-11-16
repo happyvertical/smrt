@@ -169,8 +169,9 @@ MCP authority, tenancy, timeouts, cancellation, claim fencing, retries and
 terminal outcomes. A runner claims model jobs and only the handler jobs it
 registered (at most 256 handlers per process). A handler job left `pending`
 longer than `handlerUnclaimedDeadlineMs` (runner option, default 24 h) past
-its `run_at` is failed by any runner sweeping its queue, failure kind
-`handler-unclaimed`. A claim made without the filter that reaches an
+its `run_at` is failed by a runner sweeping its queue that does not register
+that handler (a runner never sweeps its own handlers; it claims them), failure
+kind `handler-unclaimed`, event `job:unclaimed`. A claim made without the filter that reaches an
 unregistered handler fails the job on that claim, never retried, failure
 kind `handler-unregistered`. Schedules and MCP tasks target model methods
 only.

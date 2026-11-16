@@ -72,9 +72,14 @@ failure kind `handler-unclaimed` and its terminal event; it never ran
 1% of the deadline (between one lease tick and 15 min; about 14 min at the
 default) and `HANDLER_UNCLAIMED_SWEEP_LIMIT` (100) rows per sweep (a full
 batch sweeps again on the next poll), over its own queues and tenant scope,
-including handlers it runs itself: the sweep runs before the claim, so a
-backlog older than the deadline (say, a fleet down for a day) is failed, not
-run. `SmrtJob.retry()` on a handler job restarts its deadline (`run_at`
+leaving out the handlers it registered (`object_type NOT IN`, at most
+`MAX_JOB_HANDLERS` bound parameters): it claims those, so an overdue backlog
+it serves (a saturated queue, a fleet back after a day down) is run, not
+failed. The runner emits `job:unclaimed` (not `job:failed`: it never
+claimed the job) besides the persisted terminal event. Residual: while every
+runner serving a handler is down past the deadline, a runner in the same
+queue without that handler still fails its jobs; keep such runners out of
+the queue, or raise the deadline, when that matters. `SmrtJob.retry()` on a handler job restarts its deadline (`run_at`
 moves to now when it was in the past). Each row is one conditional
 transition (`status = 'pending'` and `run_at` still past the cutoff), so
 concurrent sweepers, a claim or a requeue win harmlessly: one event per job.

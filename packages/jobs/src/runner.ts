@@ -27,6 +27,7 @@ import {
   JobHandlerTargetError,
   JobHandlerUnregisteredError,
   jobHandlerName,
+  jobHandlerTarget,
   releaseJobHandlerRegistry,
   sealJobHandlerRegistry,
 } from './job-handlers.js';
@@ -186,9 +187,10 @@ export interface TaskRunnerConfig {
    * milliseconds. Default 24 h. A runner claims only the handler jobs it
    * registered, so a job no runner serves would otherwise wait forever.
    * Every runner sweeps the handler jobs in its own queues and tenant scope
-   * from its poll, at most once per 1% of this deadline (between one lease
-   * tick and 15 min) and {@link HANDLER_UNCLAIMED_SWEEP_LIMIT} rows per
-   * sweep; with different values across a fleet the shortest wins.
+   * that it did not register itself (those it claims), from its poll, at
+   * most once per 1% of this deadline (between one lease tick and 15 min)
+   * and {@link HANDLER_UNCLAIMED_SWEEP_LIMIT} rows per sweep, emitting
+   * `job:unclaimed`; with different values across a fleet the shortest wins.
    */
   handlerUnclaimedDeadlineMs?: number;
 }
@@ -202,6 +204,12 @@ export interface TaskRunnerEvents {
   'job:progress': (job: SmrtJob, event: SmrtJobEvent) => void;
   'job:completed': (job: SmrtJob, result: unknown) => void;
   'job:failed': (job: SmrtJob, error: Error) => void;
+  /**
+   * A handler job this runner failed `handler-unclaimed` in its sweep: no
+   * runner serving the handler claimed it in time (#5005). Not `job:failed`,
+   * because this runner never claimed or ran it.
+   */
+  'job:unclaimed': (job: SmrtJob, error: Error) => void;
   'job:retrying': (job: SmrtJob, error: Error, delay: number) => void;
   'runner:started': () => void;
   'runner:stopped': () => void;
@@ -1837,7 +1845,12 @@ export class TaskRunner extends EventEmitter {
    * serves would wait forever. Every runner runs this sweep from its poll over
    * its own queues and tenant scope, at most once per 1% of the deadline
    * (between one lease tick and 15 min) and
-   * {@link HANDLER_UNCLAIMED_SWEEP_LIMIT} rows at a time. Races are harmless:
+   * {@link HANDLER_UNCLAIMED_SWEEP_LIMIT} rows at a time. It leaves out the
+   * handlers this runner registered: it can claim those itself, so an
+   * overdue backlog it serves (a saturated queue, a fleet back after a long
+   * outage) is run, not failed. The deadline is measured from `run_at`.
+   * Residual: while every runner serving a handler is down past the deadline,
+   * a runner without it in the same queue still fails its jobs. Races are harmless:
    * each row is failed by one conditional transition (`pending` and still
    * past the deadline), so a concurrent sweeper, a claim or a requeue wins
    * and this one writes nothing. Model jobs are never swept. A failed sweep is
@@ -1861,19 +1874,27 @@ export class TaskRunner extends EventEmitter {
     const queuePredicate = this.config.queues.length
       ? ` AND queue IN (${this.config.queues.map(() => '?').join(', ')})`
       : '';
+    // Its own handlers are claimed, not swept (at most MAX_JOB_HANDLERS).
+    const served = this.handlerNames.map(
+      (name) => jobHandlerTarget(name).objectType,
+    );
+    const servedPredicate = served.length
+      ? ` AND object_type NOT IN (${served.map(() => '?').join(', ')})`
+      : '';
     let unclaimed: SmrtJob[];
     try {
       // Worker-internal cross-tenant scan, scoped like stale recovery.
       unclaimed = await this.collection.query(
         `SELECT ${SMRT_JOB_PORTABLE_SELECT_COLUMNS}
            FROM _smrt_jobs
-          WHERE status = 'pending' AND run_at <= ? AND ${HANDLER_TARGET_SQL}${scope.sql}${queuePredicate}
+          WHERE status = 'pending' AND run_at <= ? AND ${HANDLER_TARGET_SQL}${scope.sql}${queuePredicate}${servedPredicate}
           ORDER BY run_at ASC, id ASC
           LIMIT ?`,
         [
           cutoff,
           ...scope.params,
           ...this.config.queues,
+          ...served,
           HANDLER_UNCLAIMED_SWEEP_LIMIT,
         ],
         { allowRawOnTenantScoped: true },
@@ -1913,7 +1934,7 @@ export class TaskRunner extends EventEmitter {
       job.completedAt = sweptAt;
       job.lastError = lastError;
       this.emitPersistedJobEvent(job, event);
-      this.emit('job:failed', job, new Error(lastError));
+      this.emit('job:unclaimed', job, new Error(lastError));
     }
   }
 
