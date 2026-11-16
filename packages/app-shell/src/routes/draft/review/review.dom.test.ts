@@ -1,10 +1,12 @@
-import { execFile } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { mount, tick, unmount } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  PREVIEW_TEST_TIMEOUT_MS,
+  runPreviewChild,
+} from '../../../../test-support/run-preview-child.ts';
 import type { PublishPreview } from '../../../lib/ui/types.ts';
 import {
   description,
@@ -13,6 +15,9 @@ import {
   publishApproval,
 } from '../../../test/draft-fixtures.ts';
 import Review from './+page.svelte';
+
+// One test runs a real-engine child; see test-support/run-preview-child.ts.
+vi.setConfig({ testTimeout: PREVIEW_TEST_TIMEOUT_MS });
 
 const navigation = vi.hoisted(() => ({
   goto: vi.fn(async () => {}),
@@ -305,15 +310,9 @@ it('reviews real load and field rename rehearsals without false removals or form
   const dir = mkdtempSync(join(tmpdir(), 'draft-review-'));
   try {
     const output = join(dir, 'previews.json');
-    await promisify(execFile)(
-      process.execPath,
-      [
-        '--import',
-        'tsx',
-        'test-support/draft-review-engine-previews.ts',
-        output,
-      ],
-      { timeout: 150000 },
+    await runPreviewChild(
+      'test-support/draft-review-engine-previews.ts',
+      output,
     );
     const previews = JSON.parse(readFileSync(output, 'utf8')) as Record<
       string,
@@ -438,7 +437,7 @@ it('reviews real load and field rename rehearsals without false removals or form
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-}, 180000);
+});
 
 it('sizes summary tracks to the available column and keeps heading words intact', () => {
   const source = readFileSync(
