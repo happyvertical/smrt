@@ -23,6 +23,12 @@
     "wrapper/scripts/launch-smoke.mjs",
     "wrapper/scripts/smoke-support.mjs",
     "wrapper/scripts/release-preflight.mjs",
+    "wrapper/scripts/release-environment.mjs",
+    "wrapper/scripts/release-feed.mjs",
+    "wrapper/scripts/minisign.mjs",
+    "wrapper/signing-tools/package.json",
+    "wrapper/signing-tools/package-lock.json",
+    "src/bundler/node-pins.ts",
     "wrapper/README.md"
   ],
   "exports": {

@@ -150,6 +150,7 @@ function inventoryViolations(overrides = {}) {
     // consuming repository; its runner comes from the plan job's closed table,
     // checked in the consumer-build test below.
     ['desktop-consumer-build.yml:build', (value) => value === DESKTOP_MATRIX_RUNS_ON],
+    ['desktop-consumer-build.yml:sign', (value) => value === DESKTOP_MATRIX_RUNS_ON],
   ]);
   const results = workflowFiles.map((file) => runnerDeclarations(file, overrides[file]));
   const declarations = results.flatMap((result) => result.declarations);
@@ -746,34 +747,43 @@ test('Windows custody installs every package scheduled by its build and manifest
   }
 });
 
-test('the reusable consumer build has exactly its jobs, hosted runners and one secret step', () => {
+test('the reusable consumer build has exactly its jobs, hosted runners and its named secret steps', () => {
   const text = readFileSync(path.join(workflowsDir, 'desktop-consumer-build.yml'), 'utf8');
   const doc = parseDocument(text, { uniqueKeys: true, merge: false });
   assert.deepEqual([...doc.errors, ...doc.warnings], []);
   const workflow = doc.toJS({ maxAliasCount: -1 });
-  assert.deepEqual(Object.keys(workflow.jobs), ['plan', 'release-preflight', 'build']);
-  assert.equal(workflow.jobs.plan['runs-on'], 'ubuntu-latest');
-  assert.equal(workflow.jobs['release-preflight']['runs-on'], 'ubuntu-latest');
+  assert.deepEqual(Object.keys(workflow.jobs), ['plan', 'tools', 'release-preflight', 'build', 'sign', 'publish']);
+  for (const id of ['plan', 'tools', 'release-preflight', 'publish']) {
+    assert.equal(workflow.jobs[id]['runs-on'], 'ubuntu-latest', id);
+  }
   assert.equal(workflow.jobs.build['runs-on'], DESKTOP_MATRIX_RUNS_ON);
-  assert.ok(!/self-hosted|DESKTOP_MACOS_SIGNING_RUNNER/i.test(text));
+  assert.equal(workflow.jobs.sign['runs-on'], DESKTOP_MATRIX_RUNS_ON);
+  assert.ok(!/self-hosted|DESKTOP_MACOS_SIGNING_RUNNER|\bvars\./i.test(text));
   // Every runner the plan table can emit is a hosted one from the shared list.
   const runners = [...text.matchAll(/runner: "([^"]+)"/g)].map((match) => match[1]);
-  assert.ok(runners.length >= 3);
+  assert.ok(runners.length >= 5);
   for (const runner of runners) assert.ok(DESKTOP_HOSTED_RUNNERS.includes(runner), runner);
   // workflow_call only, declared secrets are optional and valueless.
   assert.deepEqual(Object.keys(workflow.on), ['workflow_call']);
   for (const [name, secret] of Object.entries(workflow.on.workflow_call.secrets)) {
     assert.deepEqual(secret, { required: false }, name);
   }
-  // Secrets reach exactly one step, in the release preflight, and the build
-  // job (which runs the caller's code) never sees any, nor an environment.
+  // Secrets reach exactly the preflight presence step and the three named
+  // signing steps; build (which runs the caller's code), plan, tools and
+  // publish never see any.
   const withSecrets = Object.entries(workflow.jobs).flatMap(([id, job]) =>
     (job.steps ?? []).filter((step) => /\$\{\{\s*secrets\./.test(JSON.stringify(step))).map((step) => `${id}:${step.name}`),
   );
-  assert.deepEqual(withSecrets, ['release-preflight:Check secrets and product inputs']);
-  assert.equal(workflow.jobs.build.environment, undefined);
-  assert.equal(workflow.jobs.plan.environment, undefined);
-  assert.equal(workflow.jobs['release-preflight'].environment, 'desktop-release');
+  assert.deepEqual(withSecrets, [
+    'release-preflight:Check secrets and product inputs',
+    'sign:Import the signing certificate (macOS)',
+    'sign:Sign and notarize (macOS)',
+    'sign:Sign the updater payload',
+  ]);
+  for (const id of ['plan', 'tools', 'build']) assert.equal(workflow.jobs[id].environment, undefined, id);
+  for (const id of ['release-preflight', 'sign', 'publish']) {
+    assert.equal(workflow.jobs[id].environment, 'desktop-release', id);
+  }
   // Nothing refers to a path of this repository.
   const code = text.split('\n').filter((line) => !/^\s*#/.test(line)).join('\n');
   assert.ok(!code.includes('packages/smrt-desktop'));

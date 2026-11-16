@@ -45,16 +45,19 @@ thin. Every effect is a seam (`BuildSeams`), tests never run tauri or cargo,
 errors are `BuildError` with fixed text, and the result is always unsigned.
 The wrapper ships in the tarball: the file list is `WRAPPER_*` in
 `src/builder/constants.ts` and `package.json` `files`, kept equal by
-`package-contents.test.ts`; nothing from `target/`, tests or `signing-tools/`
-may be added. `launch-smoke.mjs` may import only `node:` modules and
+`package-contents.test.ts`; nothing from `target/` or tests may be added, and
+of `signing-tools/` only its package.json and lockfile. `launch-smoke.mjs` may import only `node:` modules and
 `smoke-support.mjs` (a copy of the CLI redactor, parity-tested). The wrapper
 crate version equals the package version (`scripts/sync-desktop-wrapper-version.mjs`
 at the repo root runs after `changeset version`; `version-sync.test.ts` and the
 build refuse drift). `smrt-desktop.json` `icons` and `updaterPublicKey` are
 owner inputs: no default, no generated value. The reusable consumer workflow is
 `.github/workflows/desktop-consumer-build.yml`: it must name no path of this
-repository, expose secrets only to the release preflight step, and keep its
-`TAURI_CLI_VERSION` equal to `src/builder/constants.ts`.
+repository (scripts resolve from the caller's installed package), expose
+secrets only to the preflight presence step and the three named signing steps
+of the `sign` job (which runs no cargo, `smrt` or app build), and keep its
+`TAURI_CLI_VERSION` equal to `src/builder/constants.ts`;
+`consumer-workflow.test.ts` enforces these. It has no unsigned-release switch.
 
 The release workflow `.github/workflows/desktop-release.yml` and
 `wrapper/scripts/release-preflight.mjs` fail closed: pull request builds are

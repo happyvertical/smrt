@@ -1004,6 +1004,21 @@ describe('inspector invocation (WT9: no injection through the path)', () => {
     expect(Object.keys(env).map((k) => k.toLowerCase())).not.toContain('path');
   });
 
+  it('inherits PSModuleAnalysisCachePath (without it a runner image takes 18 to 33 s per PowerShell start, smrt#4955)', () => {
+    const { calls, exec } = capture();
+    createPowerShellAclInspector({
+      exec,
+      env: {
+        SystemRoot: 'C:\\Windows',
+        psmoduleanalysiscachepath: 'C:\\cache\\ModuleAnalysisCache',
+      },
+    })(['C:\\x']);
+    const env = calls[0].options.env as Record<string, string>;
+    expect(env.PSModuleAnalysisCachePath).toBe(
+      'C:\\cache\\ModuleAnalysisCache',
+    );
+  });
+
   it('carries every path verbatim in one environment variable', () => {
     const { calls, exec } = capture();
     createPowerShellAclInspector({ exec, env: { SystemRoot: 'C:\\Windows' } })(
