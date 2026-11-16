@@ -61,13 +61,16 @@ export interface TransitionTerminalJobOptions {
   expectedStatuses: JobStatus[];
   expectedWorkerId?: string | null;
   expectedTaskId?: string;
+  /** Also require `run_at <= ?` (ISO): a requeued row is not this transition's. */
+  expectedRunAtAtOrBefore?: string;
   clearWorker?: boolean;
   lastError?: string | null;
   failureKind?:
     | 'execution'
     | 'timeout'
     | 'stale-recovery'
-    | 'handler-unregistered';
+    | 'handler-unregistered'
+    | 'handler-unclaimed';
   resultPointer?: string | null;
   taskResult?: Record<string, unknown> | null;
 }
@@ -146,6 +149,10 @@ export async function transitionTerminalJob(
     if (options.expectedTaskId !== undefined) {
       where.push('task_id = ?');
       whereValues.push(options.expectedTaskId);
+    }
+    if (options.expectedRunAtAtOrBefore !== undefined) {
+      where.push('run_at <= ?');
+      whereValues.push(options.expectedRunAtAtOrBefore);
     }
 
     const updated = await tx.query(

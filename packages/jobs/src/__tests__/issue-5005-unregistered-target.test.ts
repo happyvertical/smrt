@@ -11,9 +11,11 @@
  * runner as those hosts ran: it is claimed once, fails with a terminal
  * `execution` event, is never retried, and the runner keeps serving work.
  *
- * A job naming a handler the claiming runner has not registered fails the
- * same way on its first claim whatever its `maxAttempts`, with the distinct
- * failure kind `handler-unregistered`, fenced or not.
+ * A runner claims only the handler jobs it has registered, so a runner never
+ * reaches a handler job it cannot run. The backstop, for a claim made without
+ * that filter: a job naming a handler the claiming runner has not registered
+ * fails the same way on its first claim whatever its `maxAttempts`, with the
+ * distinct failure kind `handler-unregistered`, fenced or not.
  */
 import { randomUUID } from 'node:crypto';
 import {
@@ -155,7 +157,7 @@ describe('a queued job for a class that is no longer registered (#5005)', () => 
   it.each([
     true,
     false,
-  ])('ends a job for an unregistered handler failed on its first claim (claimFencing: %s)', async (claimFencing) => {
+  ])('ends a job for an unregistered handler claimed without the filter failed on its first claim (claimFencing: %s)', async (claimFencing) => {
     expect(listJobHandlers()).not.toContain(UNREGISTERED_HANDLER);
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     const jobs = await SmrtJobCollection.create({ db });
@@ -181,6 +183,11 @@ describe('a queued job for a class that is no longer registered (#5005)', () => 
     runner.on('job:retrying', (job) => retries.push(job.id));
     runner.on('runner:error', (error) => runnerErrors.push(error));
     await runner.initialize(db);
+    // Drop the claim filter, as a claim made outside it would.
+    const internal = runner as unknown as { collection: SmrtJobCollection };
+    const claimReady = internal.collection.claimReady.bind(internal.collection);
+    internal.collection.claimReady = ({ handlerNames: _names, ...options }) =>
+      claimReady(options);
     await runner.start();
 
     await until(

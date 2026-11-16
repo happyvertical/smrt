@@ -27,6 +27,13 @@ export const JOB_HANDLER_TARGET_PREFIX = 'handler:';
 /** The fixed `method` value of every handler job row. */
 export const JOB_HANDLER_METHOD = 'handle';
 
+/**
+ * Most handlers one process may register. A runner's claim names each of its
+ * handlers as one bound parameter (#5005 claim filter), so the registry is
+ * capped to keep that statement inside every engine's parameter limit.
+ */
+export const MAX_JOB_HANDLERS = 256;
+
 /** Longest accepted handler name. */
 const MAX_HANDLER_NAME_LENGTH = 200;
 
@@ -80,6 +87,16 @@ export class JobHandlerAlreadyRegisteredError extends Error {
   }
 }
 
+/** A registration past {@link MAX_JOB_HANDLERS}. */
+export class JobHandlerLimitError extends RangeError {
+  constructor(readonly handler: string) {
+    super(
+      `Cannot register job handler ${handler}: a process may register at most ${MAX_JOB_HANDLERS} job handlers`,
+    );
+    this.name = 'JobHandlerLimitError';
+  }
+}
+
 /**
  * Registration or removal while a TaskRunner in this process is running.
  * Register every handler before `runner.start()`.
@@ -96,7 +113,8 @@ export class JobHandlerRegistrationClosedError extends Error {
 /**
  * The runner that claimed a handler job has no handler under its name. The
  * job fails terminally on that claim (failure kind `handler-unregistered`),
- * whatever its `maxAttempts`.
+ * whatever its `maxAttempts`. A runner claims only the handler jobs it has
+ * registered, so this is the backstop for a claim made without that filter.
  */
 export class JobHandlerUnregisteredError extends Error {
   /** Read by the runner's retry hints: never retried. */
@@ -169,7 +187,7 @@ function assertRegistrationOpen(name: string): void {
  * @param name - Namespaced `<package>:<name>`, e.g. `@scope/pkg:workflow-run`.
  * @param handler - Called with the job payload and runner execution context.
  * @throws JobHandlerNameError, JobHandlerAlreadyRegisteredError,
- *   JobHandlerRegistrationClosedError
+ *   JobHandlerLimitError, JobHandlerRegistrationClosedError
  */
 export function registerJobHandler<
   TPayload extends JobHandlerPayload = JobHandlerPayload,
@@ -180,6 +198,7 @@ export function registerJobHandler<
   assertRegistrationOpen(name);
   const { handlers } = registry();
   if (handlers.has(name)) throw new JobHandlerAlreadyRegisteredError(name);
+  if (handlers.size >= MAX_JOB_HANDLERS) throw new JobHandlerLimitError(name);
   handlers.set(name, handler as JobHandler);
 }
 

@@ -62,12 +62,15 @@ export interface SmrtJobTerminalOutcome {
   /**
    * Why a `failed` job failed. `handler-unregistered` (#5005): the runner that
    * claimed a handler job had no handler registered under its name.
+   * `handler-unclaimed` (#5005): no runner registered for the handler claimed
+   * it before the unclaimed deadline; it never ran.
    */
   failureKind?:
     | 'execution'
     | 'timeout'
     | 'stale-recovery'
-    | 'handler-unregistered';
+    | 'handler-unregistered'
+    | 'handler-unclaimed';
   completedAt: string;
   cursor: string;
 }
@@ -649,7 +652,8 @@ function isFailureKind(
     value === 'execution' ||
     value === 'timeout' ||
     value === 'stale-recovery' ||
-    value === 'handler-unregistered'
+    value === 'handler-unregistered' ||
+    value === 'handler-unclaimed'
   );
 }
 

@@ -50,6 +50,7 @@ import {
   startRetentionSweeper,
 } from './retention.js';
 import {
+  HANDLER_TARGET_SQL,
   jobTenantScope,
   SMRT_JOB_PORTABLE_SELECT_COLUMNS,
   type SmrtJob,
@@ -179,6 +180,17 @@ export interface TaskRunnerConfig {
    * sweep runs one interval after `start()`, never at start.
    */
   retention?: RetentionSweeperOptions | false;
+  /**
+   * How long a named handler job (#5005) may stay `pending` past its `run_at`
+   * before this runner fails it with failure kind `handler-unclaimed`, in
+   * milliseconds. Default 24 h. A runner claims only the handler jobs it
+   * registered, so a job no runner serves would otherwise wait forever.
+   * Every runner sweeps the handler jobs in its own queues and tenant scope
+   * from its poll, at most once per 1% of this deadline (between one lease
+   * tick and 15 min) and {@link HANDLER_UNCLAIMED_SWEEP_LIMIT} rows per
+   * sweep; with different values across a fleet the shortest wins.
+   */
+  handlerUnclaimedDeadlineMs?: number;
 }
 
 /**
@@ -230,6 +242,12 @@ async function retireLivenessWorker(
 }
 
 const DEFAULT_IDLE_POLL_INTERVAL_MULTIPLIER = 20;
+/** Default {@link TaskRunnerConfig.handlerUnclaimedDeadlineMs}: 24 h. */
+export const DEFAULT_HANDLER_UNCLAIMED_DEADLINE_MS = 24 * 60 * 60 * 1000;
+/** Most unclaimed handler jobs one sweep fails (#5005). */
+export const HANDLER_UNCLAIMED_SWEEP_LIMIT = 100;
+/** Longest wait between unclaimed-handler sweeps: 15 min. */
+const HANDLER_UNCLAIMED_SWEEP_MAX_INTERVAL_MS = 15 * 60 * 1000;
 /** Ids per surplus-release statement, well under driver bind-parameter caps. */
 const SURPLUS_RELEASE_CHUNK = 500;
 /** Upper bound on a handler error's `retryAfterMs` hint (#3308). */
@@ -307,6 +325,7 @@ const DEFAULT_CONFIG: ResolvedTaskRunnerConfig = {
   leaseTtlMs: DEFAULT_LEASE_TTL_MS,
   leaseTickMs: DEFAULT_LEASE_TICK_MS,
   retention: {},
+  handlerUnclaimedDeadlineMs: DEFAULT_HANDLER_UNCLAIMED_DEADLINE_MS,
 };
 
 /**
@@ -351,6 +370,7 @@ export class TaskRunner extends EventEmitter {
   private workerCollection: SmrtWorkerCollection | null = null;
   private workersTableVerified = false;
   private lastRecoverySweepAt = 0;
+  private lastUnclaimedSweepAt = 0;
   private running = false;
   private activeJobs = new Map<string, SmrtJob>();
   /**
@@ -384,6 +404,8 @@ export class TaskRunner extends EventEmitter {
    * Registration is closed while it runs, so the snapshot is the registry.
    */
   private jobHandlers: ReadonlyMap<string, JobHandler> = new Map();
+  /** The snapshot's names: the only handler jobs this runner claims. */
+  private handlerNames: readonly string[] = [];
   private logger = createLogger(true);
 
   constructor(config: TaskRunnerConfig = {}) {
@@ -401,6 +423,12 @@ export class TaskRunner extends EventEmitter {
     }
     this.id = this.config.id;
     this.workerKey = createWorkerKey(this.id);
+    const deadline = this.config.handlerUnclaimedDeadlineMs;
+    if (!Number.isFinite(deadline) || deadline < 1) {
+      throw new RangeError(
+        'handlerUnclaimedDeadlineMs must be a positive number of milliseconds',
+      );
+    }
     for (const [name, value] of [
       ['pollInterval', this.config.pollInterval],
       ['idlePollInterval', config.idlePollInterval ?? this.config.pollInterval],
@@ -479,6 +507,7 @@ export class TaskRunner extends EventEmitter {
     // snapshot: a handler registered after start() would race the claims it
     // should serve (#5005). Reopened when this runner has stopped.
     this.jobHandlers = sealJobHandlerRegistry(this.workerKey);
+    this.handlerNames = [...this.jobHandlers.keys()];
     this.running = true;
 
     // Renew the worker lease. Prefer an off-loop worker thread so a CPU-bound
@@ -656,6 +685,8 @@ export class TaskRunner extends EventEmitter {
     if (generation !== this.pollGeneration) return false;
     await this.retryUnreleasedSurplus();
     if (generation !== this.pollGeneration) return false;
+    await this.sweepUnclaimedHandlerJobs();
+    if (generation !== this.pollGeneration) return false;
 
     // Calculate how many jobs we can take
     const available = this.config.concurrency - this.activeJobs.size;
@@ -668,6 +699,8 @@ export class TaskRunner extends EventEmitter {
       workerId: this.workerKey,
       queues: this.config.queues,
       tenantIds: this.config.tenantIds,
+      // Model jobs, and only the handler jobs this runner can run (#5005).
+      handlerNames: this.handlerNames,
       limit: available,
     });
 
@@ -1767,6 +1800,90 @@ export class TaskRunner extends EventEmitter {
       const error = new Error(lastError);
       this.emitPersistedJobEvent(job, event);
       this.emit('job:failed', job, error);
+    }
+  }
+
+  /**
+   * Fail named handler jobs left `pending` past their `run_at` by more than
+   * `handlerUnclaimedDeadlineMs` (#5005), failure kind `handler-unclaimed`.
+   *
+   * Claims skip handler jobs a runner has not registered, so a job no runner
+   * serves would wait forever. Every runner runs this sweep from its poll over
+   * its own queues and tenant scope, at most once per 1% of the deadline
+   * (between one lease tick and 15 min) and
+   * {@link HANDLER_UNCLAIMED_SWEEP_LIMIT} rows at a time. Races are harmless:
+   * each row is failed by one conditional transition (`pending` and still
+   * past the deadline), so a concurrent sweeper, a claim or a requeue wins
+   * and this one writes nothing. Model jobs are never swept. A failed sweep is
+   * a `runner:error` and never stops the poll from claiming.
+   */
+  private async sweepUnclaimedHandlerJobs(): Promise<void> {
+    if (!this.db || !this.collection) return;
+    const now = Date.now();
+    const deadlineMs = this.config.handlerUnclaimedDeadlineMs;
+    // 1% of the deadline, between one lease tick and 15 min: the sweep adds
+    // no measurable idle SQL (one SELECT per ~14 min at the 24 h default).
+    const interval = Math.max(
+      this.config.leaseTickMs,
+      Math.min(HANDLER_UNCLAIMED_SWEEP_MAX_INTERVAL_MS, deadlineMs / 100),
+    );
+    if (now - this.lastUnclaimedSweepAt < interval) return;
+    this.lastUnclaimedSweepAt = now;
+
+    const cutoff = new Date(now - deadlineMs).toISOString();
+    const scope = jobTenantScope(this.config.tenantIds);
+    const queuePredicate = this.config.queues.length
+      ? ` AND queue IN (${this.config.queues.map(() => '?').join(', ')})`
+      : '';
+    let unclaimed: SmrtJob[];
+    try {
+      // Worker-internal cross-tenant scan, scoped like stale recovery.
+      unclaimed = await this.collection.query(
+        `SELECT ${SMRT_JOB_PORTABLE_SELECT_COLUMNS}
+           FROM _smrt_jobs
+          WHERE status = 'pending' AND run_at <= ? AND ${HANDLER_TARGET_SQL}${scope.sql}${queuePredicate}
+          ORDER BY run_at ASC, id ASC
+          LIMIT ?`,
+        [
+          cutoff,
+          ...scope.params,
+          ...this.config.queues,
+          HANDLER_UNCLAIMED_SWEEP_LIMIT,
+        ],
+        { allowRawOnTenantScoped: true },
+      );
+    } catch (error) {
+      this.emit('runner:error', error as Error);
+      return;
+    }
+
+    const sweptAt = new Date();
+    for (const job of unclaimed) {
+      const snapshot = terminalSnapshot(job);
+      if (!snapshot) continue;
+      const lastError = `Job handler not claimed: no runner registered for ${jobHandlerName(job.objectType)} claimed this job within ${deadlineMs} ms of its run_at.`;
+      let event: SmrtJobEvent | null;
+      try {
+        event = await transitionTerminalJob(this.db, {
+          job: snapshot,
+          status: 'failed',
+          completedAt: sweptAt,
+          expectedStatuses: ['pending'],
+          expectedRunAtAtOrBefore: cutoff,
+          clearWorker: true,
+          lastError,
+          failureKind: 'handler-unclaimed',
+        });
+      } catch (error) {
+        this.emit('runner:error', error as Error);
+        continue;
+      }
+      if (!event) continue;
+      job.status = 'failed';
+      job.completedAt = sweptAt;
+      job.lastError = lastError;
+      this.emitPersistedJobEvent(job, event);
+      this.emit('job:failed', job, new Error(lastError));
     }
   }
 

@@ -117,6 +117,7 @@ export {
   JOB_HANDLER_TARGET_PREFIX,
   type JobHandler,
   JobHandlerAlreadyRegisteredError,
+  JobHandlerLimitError,
   JobHandlerNameError,
   type JobHandlerPayload,
   JobHandlerRegistrationClosedError,
@@ -126,6 +127,7 @@ export {
   jobHandlerName,
   jobHandlerTarget,
   listJobHandlers,
+  MAX_JOB_HANDLERS,
   registerJobHandler,
   unregisterJobHandler,
 } from './job-handlers.js';
@@ -178,8 +180,10 @@ export {
 // Task runner
 export {
   createTaskRunner,
+  DEFAULT_HANDLER_UNCLAIMED_DEADLINE_MS,
   getActiveJobExecutionContext,
   getJobClaim,
+  HANDLER_UNCLAIMED_SWEEP_LIMIT,
   isRunnerExecutionContext,
   JobCancelledError,
   JobTimeoutError,

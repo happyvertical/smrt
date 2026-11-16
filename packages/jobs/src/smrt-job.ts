@@ -28,8 +28,10 @@ import {
   assertJobHandlerName,
   isJobHandlerTarget,
   JOB_HANDLER_METHOD,
+  JOB_HANDLER_TARGET_PREFIX,
   jobHandlerName,
   jobHandlerTarget,
+  MAX_JOB_HANDLERS,
 } from './job-handlers.js';
 import { SmrtJobDedupeSlotCollection } from './smrt-job-dedupe-slot.js';
 import { terminalSnapshot, transitionTerminalJob } from './terminal-outcome.js';
@@ -579,6 +581,38 @@ export interface ClaimReadyOptions extends ListReadyOptions {
   claimFencing?: boolean;
   workerId: string;
   now?: Date;
+  /**
+   * Handler names this claimant serves (#5005). When set, the claim takes
+   * model jobs and only the handler jobs named here; `[]` takes no handler
+   * job. Omitted, the claim does not filter by target. At most
+   * {@link MAX_JOB_HANDLERS} names (one bound parameter each).
+   */
+  handlerNames?: readonly string[];
+}
+
+/**
+ * SQL that is true for a stored handler target. A case-exact, wildcard-free
+ * prefix test (SQLite `LIKE` is case-insensitive), the same on SQLite,
+ * PostgreSQL and PGlite, and matching `isJobHandlerTarget`.
+ */
+export const HANDLER_TARGET_SQL = `substr(object_type, 1, ${JOB_HANDLER_TARGET_PREFIX.length}) = '${JOB_HANDLER_TARGET_PREFIX}'`;
+
+/** The claim filter for a claimant serving `handlerNames` (#5005). */
+function handlerClaimFilter(handlerNames: readonly string[]): {
+  sql: string;
+  params: string[];
+} {
+  if (handlerNames.length > MAX_JOB_HANDLERS) {
+    throw new RangeError(
+      `claimReady accepts at most ${MAX_JOB_HANDLERS} handler names`,
+    );
+  }
+  const notHandler = `NOT (${HANDLER_TARGET_SQL})`;
+  if (handlerNames.length === 0) return { sql: notHandler, params: [] };
+  return {
+    sql: `(${notHandler} OR object_type IN (${handlerNames.map(() => '?').join(', ')}))`,
+    params: handlerNames.map((name) => jobHandlerTarget(name).objectType),
+  };
 }
 
 type DatabaseWithConfig = DatabaseInterface & {
@@ -705,6 +739,14 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
       const placeholders = options.queues.map(() => '?').join(', ');
       whereConditions.push(`queue IN (${placeholders})`);
       whereParams.push(...options.queues);
+    }
+
+    // Inside the candidate select, before its LIMIT: handler rows this
+    // claimant cannot run must not fill the window and starve its work.
+    if (options.handlerNames !== undefined) {
+      const filter = handlerClaimFilter(options.handlerNames);
+      whereConditions.push(filter.sql);
+      whereParams.push(...filter.params);
     }
 
     const scope = jobTenantScope(options.tenantIds);
