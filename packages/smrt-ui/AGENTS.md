@@ -89,6 +89,15 @@ Only a root `ThemeProvider` writes the document attributes (`<html>` `data-theme
 `scope="local"` by default and themes its own wrapper only; `scope="document"`
 opts back in (#4485).
 
+A nested provider whose colour scheme is `system` follows its nearest parent
+provider's resolved scheme live (the host application's choice), not the OS
+(#5025). An explicit `light`/`dark` on the nested provider wins, and a root
+provider follows the OS. While following, it never loads a stored `colorScheme`
+from its own key (preset, radius, density and contrast still load) and never
+touches the parent's `storageKey`. Until mount it stamps no `data-color-scheme`
+(nor inline scheme variables) so it inherits the host's through the cascade
+instead of rendering a guess the server cannot check.
+
 Adding or editing a preset touches four things that must stay in lockstep:
 `src/themes/<id>/index.ts` (the `Theme`), the `ThemePreset` union in
 `src/themes/types.ts`, the `registry.ts` entry, and the static
