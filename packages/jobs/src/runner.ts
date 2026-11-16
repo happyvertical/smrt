@@ -1293,7 +1293,7 @@ export class TaskRunner extends EventEmitter {
       throw new JobHandlerTargetError(
         `Handler job ${job.objectType} must have method '${JOB_HANDLER_METHOD}' and no objectId`,
       );
-    if (getMcpTaskMarker(job))
+    if (getMcpTaskMarker(job) || job.taskId != null || job.taskOwnerId != null)
       throw new JobHandlerTargetError(
         `Handler job ${job.objectType} cannot be an MCP task`,
       );

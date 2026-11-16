@@ -11,6 +11,7 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
+import { getTenantId } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -436,6 +437,41 @@ describe('model and handler targets behave alike (#5005 parity)', () => {
 
   it.each(
     TARGETS,
+  )('runs a tenant %s job in its tenant, claim and outcome', async (target) => {
+    const database = await openDb();
+    const jobs = await SmrtJobCollection.create({ db: database });
+    const tenantId = '22222222-2222-4222-8222-222222222222';
+    const seen: Record<string, unknown> = {};
+    behaviour = async (_payload, ctx) => {
+      seen.ambient = getTenantId();
+      seen.context = ctx.job.tenantId;
+      seen.claim = getJobClaim(ctx).tenantId;
+      return 'ok';
+    };
+    const job =
+      target === 'model'
+        ? await jobs.enqueueJob({ ...targetOf('model'), tenantId })
+        : await jobs.enqueueHandlerJob({ handler: HANDLER, tenantId });
+    await startRunner(database, { claimFencing: true });
+    await until(
+      async () => (await statusOf(jobs, job.id as string)) === 'completed',
+    );
+    expect(seen).toEqual({
+      ambient: tenantId,
+      context: tenantId,
+      claim: tenantId,
+    });
+    const events = await SmrtJobEventCollection.create({ db: database });
+    expect(
+      await events.getTerminalOutcome(job.id as string, { tenantId }),
+    ).toMatchObject({ status: 'completed', tenantId });
+    expect(
+      await events.getTerminalOutcome(job.id as string, { tenantId: null }),
+    ).toBeNull();
+  });
+
+  it.each(
+    TARGETS,
   )('refuses a claim proof to a %s job on an unfenced runner', async (target) => {
     const database = await openDb();
     const jobs = await SmrtJobCollection.create({ db: database });
@@ -716,6 +752,25 @@ describe('model and handler targets behave alike (#5005 parity)', () => {
     expect((await jobs.get({ id: job.id as string }))?.lastError).toBe(
       'MCP task authorization denied',
     );
+  });
+
+  it('fails a handler row carrying MCP task columns, without running it', async () => {
+    const database = await openDb();
+    const jobs = await SmrtJobCollection.create({ db: database });
+    const job = await jobs.create({
+      ...targetOf('handler'),
+      taskId: randomUUID(),
+      maxAttempts: 3,
+    });
+    await startRunner(database);
+    await until(
+      async () => (await statusOf(jobs, job.id as string)) === 'failed',
+    );
+    expect(invocations).toBe(0);
+    expect(await jobs.get({ id: job.id as string })).toMatchObject({
+      attempts: 1,
+      lastError: `Handler job handler:${HANDLER} cannot be an MCP task`,
+    });
   });
 
   it('fails an authorized MCP task row that names a handler, without running it', async () => {

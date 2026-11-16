@@ -39,7 +39,9 @@ claim; it reopens once every runner in the process has stopped. Registering
 or unregistering while any runner runs throws
 `JobHandlerRegistrationClosedError` naming the handler. A `start()` that
 fails before claiming leaves it open. Register every handler at process
-startup, before `runner.start()`.
+startup, before `runner.start()`. The registry is process-wide: re-evaluating
+a registering module while a runner runs (HMR, a duplicate package instance)
+throws.
 
 ## Outcomes
 
@@ -50,7 +52,8 @@ fencing, retries and every terminal write. Differences:
 - Unregistered on the claiming runner: `JobHandlerUnregisteredError`
   (`retryable: false`) ends the job `failed` on that claim whatever its
   `maxAttempts`, failure kind `handler-unregistered`, with its terminal event.
-- A non-canonical `handler:` row, or one carrying an MCP task marker, fails
+- A non-canonical `handler:` row (wrong method, an object id, an MCP task
+  id, owner or marker), written past `enqueueJob`, fails
   terminally (`JobHandlerTargetError`, kind `execution`) after the authority
   check, without running a handler. MCP tasks target model methods only.
 - Schedules cannot target handlers: a schedule naming one is set to
