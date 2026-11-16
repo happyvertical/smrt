@@ -847,7 +847,9 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
      * Record a person's decision on the approval the run waits for (an
      * `approval` event whose parent is the request). Approved: the run goes
      * back to `running` and its next `run` re-runs the check with the
-     * approval; refused: the run fails with `check_failed`.
+     * approval; refused: the run fails with `check_failed`. A run stopped
+     * while it waited keeps the decision and stays stopped: `resume` then
+     * continues with it.
      */
     async decide(
       runId: string,
@@ -857,10 +859,14 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
       const store = storeFor(ownerId);
       const loaded = await mustLoad(store, runId);
       const request = loaded.state.approval?.requestEventId;
-      if (loaded.run.status !== 'waiting-approval' || !request) {
+      const stopped = loaded.run.status === 'stopped';
+      if ((loaded.run.status !== 'waiting-approval' && !stopped) || !request) {
         throw new RunConflictError(
           'This workflow run is not waiting for approval',
         );
+      }
+      if (stopped && (await approvalDecision(runId, request))) {
+        throw new RunConflictError('This approval was already decided');
       }
       await appendAiRunEvent(db, runId, {
         type: 'approval',
@@ -870,7 +876,10 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
         name: stepInfo(loaded.state.stepIndex).name,
         ...(decision.note ? { payload: { note: decision.note } } : {}),
       });
-      if (decision.approved) {
+      if (stopped) {
+        // A stopped run keeps the decision; `resume` continues with it (an
+        // approval re-runs the check, a refusal fails the step).
+      } else if (decision.approved) {
         await resumeAiRun(db, runId, {
           definitionVersion: definition.version,
           acceptsVersion,

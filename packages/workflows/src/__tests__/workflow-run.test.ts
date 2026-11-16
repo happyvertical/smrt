@@ -336,6 +336,34 @@ describe.each(engines)('workflow runs on %s', (engine) => {
     ).toMatchObject({ status: 'failed', stopReason: 'check_failed' });
   });
 
+  it('keeps a decision made while the run is stopped until resume', async () => {
+    const db = await workflowDb(engine);
+    const { model } = byStep(0);
+    const step: WorkflowStep = {
+      ...(twoSteps[0] as WorkflowStep),
+      check: (_output, context) =>
+        context.approval === 'approved' ? {} : { waitingApproval: true },
+    };
+    const driver = driverFor(db, model, definitionOf([step]));
+    for (const approved of [true, false]) {
+      const run = await driver.start({ ownerId: 'owner' });
+      await driver.run(run.id, 'owner');
+      expect((await driver.stop(run.id, 'owner')).status).toBe('stopped');
+      expect((await driver.decide(run.id, 'owner', { approved })).status).toBe(
+        'stopped',
+      );
+      await expect(
+        driver.decide(run.id, 'owner', { approved }),
+      ).rejects.toBeInstanceOf(RunConflictError);
+      expect((await driver.resume(run.id, 'owner')).status).toBe('running');
+      expect(await driver.run(run.id, 'owner')).toMatchObject(
+        approved
+          ? { status: 'done', outputs: [{ value: expect.any(Number) }] }
+          : { status: 'failed', stopReason: 'check_failed' },
+      );
+    }
+  });
+
   it('stops at a budget limit, refuses an unchanged resume, and resumes with a raised one', async () => {
     const db = await workflowDb(engine);
     const { model, calls } = scriptedModel(() => ({
@@ -529,6 +557,8 @@ describe.each(engines)('workflow runs on %s', (engine) => {
       async (call) =>
         new Promise((resolve, reject) => {
           const signal = call.options.signal as AbortSignal;
+          // The job may abort between the reservation and the send.
+          if (signal.aborted) reject(signal.reason);
           signal.addEventListener('abort', () => reject(signal.reason), {
             once: true,
           });
