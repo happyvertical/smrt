@@ -1437,6 +1437,55 @@ first, so a deployed app knows its build with no file and no variable. Library
 `dist` output carries no build module; its stamp, when it has one, describes
 only its own objects and is read only when that file is the project manifest.
 
+**Hosting the build outside the Vite app (workers, scripts, a second image).**
+The guard only knows a build that was registered before the first query. The
+app's server bundle does that itself; any other entrypoint of the same
+deployment (a job worker, a migration script, a CLI) must do it too, or the
+guard fails with "no build schema found":
+
+- Import the app's `.smrt/build-schema.js` first. It is small and imports
+  nothing; ship it into the entrypoint's image next to its code. The worker is
+  checked against the schema its database was migrated for, so it takes the
+  web build's file, not one of its own.
+- Or set `SMRT_BUILD_MANIFEST` to the build's `.smrt/manifest.json`. Slower
+  (the manifest is large) but needs no code.
+- A migration script must import `.smrt/register.js` before it imports models.
+  Package-root imports alone register some models without their embedded field
+  metadata, so the plan it records differs from the build's stamp and the guard
+  never passes.
+
+**Every package that adds columns must be in the build, and be listed.** The
+stamp covers the packages the app consumes (`smrtConsumer({ packages })`, or
+the discovered set). A package reached only through another one (smrt-content
+loads smrt-images, which adds columns to the shared `assets` table) is loaded
+at runtime but absent from a build that does not list it, so the plan has
+columns the stamp lacks. Declare such packages explicitly, as direct
+dependencies of the app and in its package list: that stays the portable
+advice, and works with every tool that resolves names from the app root.
+
+What discovery does on its own (#5027): `discoverSmrtPackageLocations()`
+(`manifest/discover-smrt-packages.ts`) returns `name -> { packageDir,
+manifestPath, via? }`. It follows `dependencies` and `optionalDependencies`
+(never peers, which the host provides) of every smrt package it finds, resolving
+each from the declaring package's own directory, so pnpm's hidden transitive
+packages are found; `via` names the package that pulled one in. The generator's
+external base-class scan, `discoverBaseClasses[Sync]()` and
+`SchemaAggregator.aggregate({ baseDir })` read manifests from those stored
+paths instead of re-resolving names from the app root. Scope: **only** those
+schema-level readers see a package that is reached only transitively.
+`discoverSmrtPackages()` (names), `manifest.smrtDependencies`, generated routes,
+`register.js` and the consumer plugin's package list still hold just what the
+app itself reaches, so an app never gains routes or tables for a package it did
+not consume. The consumer plugin's own list still decides which packages enter
+the build stamp; list a transitive package there explicitly. The discovery
+cache stores the resolved manifest paths and hashes each manifest's and package
+`package.json`'s mtime, so a rebuilt hidden manifest invalidates it.
+
+A model built without the smrt vite plugin (plain `tsc`) has no embedded
+metadata: class-field initializer defaults (`kind = 'manual'`) reach the
+manifest by static analysis but not the runtime registry. Build model packages
+with `smrtPlugin` and register their manifest from `src/__smrt-register__.ts`.
+
 `collectMigrateRecordInput(build = resolveBuildSchema())` is the one input for
 both writers (CLI and `migrateSmrtSchemas`): `fingerprint` is
 `computeSchemaFingerprint` over the planned schema restricted to the build's

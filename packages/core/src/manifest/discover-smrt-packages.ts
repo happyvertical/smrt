@@ -41,7 +41,7 @@ const CACHE_FILE = 'discovery-cache.json';
  * and never re-probe a package whose manifest is only at, say,
  * `dist/lib/manifest.json`.
  */
-const CACHE_VERSION = 6;
+const CACHE_VERSION = 7;
 
 /** Timing data for --timing flag */
 interface TimingData {
@@ -93,29 +93,46 @@ function getPackageJsonHash(baseDir: string): string | null {
 }
 
 /**
- * Get a hash of all manifest timestamps for cache invalidation
- * This catches changes to SMRT packages even when lockfile hasn't changed
+ * A discovered SMRT package: where it lives and which manifest describes it.
+ *
+ * Consumers read the manifest from `manifestPath` instead of re-resolving the
+ * name from the app root: a package an app reaches only through another smrt
+ * package (smrt-content -> smrt-images) is invisible from the app root under
+ * pnpm (#5027).
  */
-function getManifestTimestampsHash(
-  baseDir: string,
-  packages: string[],
-): string {
-  const timestamps: string[] = [];
+export interface DiscoveredSmrtPackage {
+  /** Real path of the package directory. */
+  packageDir: string;
+  /** Manifest file `resolveManifestPath` accepted for the package. */
+  manifestPath: string;
+  /**
+   * The package that pulled this one in, when the app does not reach it
+   * itself (not in its own `node_modules` or declared dependencies).
+   */
+  via?: string;
+}
 
-  for (const pkgName of packages) {
-    try {
-      const manifestPath = resolveManifestPath(pkgName, baseDir);
+export type DiscoveredSmrtPackages = Record<string, DiscoveredSmrtPackage>;
 
-      if (manifestPath && existsSync(manifestPath)) {
-        const stats = statSync(manifestPath);
-        timestamps.push(`${pkgName}:${stats.mtimeMs}`);
+/**
+ * Hash the inputs a discovery answer derives from: every stored manifest's
+ * mtime (so a rebuilt manifest, including one only reachable transitively,
+ * invalidates) and every stored package's `package.json` (the transitive set
+ * derives from their dependency lists).
+ */
+function getLocationsHash(packages: DiscoveredSmrtPackages): string {
+  const parts: string[] = [];
+  for (const name of Object.keys(packages).sort()) {
+    const { manifestPath, packageDir } = packages[name];
+    for (const file of [manifestPath, join(packageDir, 'package.json')]) {
+      try {
+        parts.push(`${name}:${file}:${statSync(file).mtimeMs}`);
+      } catch {
+        parts.push(`${name}:${file}:missing`);
       }
-    } catch {
-      // Ignore errors, package may have been removed
     }
   }
-
-  return createHash('sha256').update(timestamps.join('|')).digest('hex');
+  return createHash('sha256').update(parts.join('|')).digest('hex');
 }
 
 interface DiscoveryCache {
@@ -124,7 +141,7 @@ interface DiscoveryCache {
   packageJsonHash: string | null;
   manifestsHash: string;
   timestamp: number;
-  packages: string[];
+  packages: DiscoveredSmrtPackages;
 }
 
 /**
@@ -156,9 +173,26 @@ function normalizePackagePath(pkgPath: string): string {
   }
 }
 
+/** Per-discovery memo of `resolvePackageDir` results, keyed by directory. */
+type ResolutionMemo = Map<string, string | null>;
+
 function resolvePackageDir(
   packageName: string,
   baseDir: string = process.cwd(),
+  memo?: ResolutionMemo,
+): string | null {
+  const key = `${baseDir}\0${packageName}`;
+  if (memo?.has(key)) {
+    return memo.get(key) ?? null;
+  }
+  const resolved = resolvePackageDirUncached(packageName, baseDir);
+  memo?.set(key, resolved);
+  return resolved;
+}
+
+function resolvePackageDirUncached(
+  packageName: string,
+  baseDir: string,
 ): string | null {
   try {
     const requireFromBase = createRequire(join(baseDir, 'package.json'));
@@ -205,8 +239,9 @@ function resolvePackageDir(
 export function resolveManifestPath(
   packageName: string,
   baseDir: string = process.cwd(),
+  memo?: ResolutionMemo,
 ): string | null {
-  const pkgPath = resolvePackageDir(packageName, baseDir);
+  const pkgPath = resolvePackageDir(packageName, baseDir, memo);
   if (!pkgPath) {
     return null;
   }
@@ -237,13 +272,14 @@ export function resolveManifestPath(
 /**
  * Load cached discovery results if valid
  * Cache is invalidated if:
- * - Lockfile hash changed (dependencies changed)
- * - Manifest timestamps hash changed (SMRT packages rebuilt)
+ * - Lockfile or package.json hash changed (dependencies changed)
+ * - Any stored manifest or package.json changed (SMRT packages rebuilt),
+ *   including packages reached only through another package (#5027)
  */
 function getCachedDiscovery(
   baseDir: string,
   verbose: boolean,
-): { packages: string[]; reason?: string } | null {
+): DiscoveredSmrtPackages | null {
   const cachePath = join(baseDir, CACHE_DIR, CACHE_FILE);
 
   if (!existsSync(cachePath)) {
@@ -259,39 +295,29 @@ function getCachedDiscovery(
       return null;
     }
 
-    const currentLockfileHash = getLockfileHash(baseDir);
-    const currentPackageJsonHash = getPackageJsonHash(baseDir);
-
-    // Check lockfile hash
-    if (cache.lockfileHash !== currentLockfileHash) {
+    if (cache.lockfileHash !== getLockfileHash(baseDir)) {
       if (verbose) {
         console.log('[discovery] Cache invalid: lockfile changed');
       }
       return null;
     }
 
-    if (cache.packageJsonHash !== currentPackageJsonHash) {
+    if (cache.packageJsonHash !== getPackageJsonHash(baseDir)) {
       if (verbose) {
         console.log('[discovery] Cache invalid: package.json changed');
       }
       return null;
     }
 
-    // Check manifest timestamps (only if we have cached packages)
-    if (cache.packages.length > 0) {
-      const currentManifestsHash = getManifestTimestampsHash(
-        baseDir,
-        cache.packages,
-      );
-      if (cache.manifestsHash !== currentManifestsHash) {
-        if (verbose) {
-          console.log('[discovery] Cache invalid: manifest(s) changed');
-        }
-        return null;
+    // Hash the stored locations even when empty, so the check never skips.
+    if (cache.manifestsHash !== getLocationsHash(cache.packages)) {
+      if (verbose) {
+        console.log('[discovery] Cache invalid: manifest(s) changed');
       }
+      return null;
     }
 
-    return { packages: cache.packages };
+    return cache.packages;
   } catch (error) {
     if (verbose) {
       console.warn(
@@ -308,16 +334,16 @@ function getCachedDiscovery(
  */
 function saveCachedDiscovery(
   baseDir: string,
-  packages: string[],
+  packages: DiscoveredSmrtPackages,
   verbose: boolean,
 ): void {
   const cache: DiscoveryCache = {
     version: CACHE_VERSION,
     lockfileHash: getLockfileHash(baseDir),
     packageJsonHash: getPackageJsonHash(baseDir),
-    manifestsHash: getManifestTimestampsHash(baseDir, packages),
+    manifestsHash: getLocationsHash(packages),
     timestamp: Date.now(),
-    packages: packages,
+    packages,
   };
 
   try {
@@ -327,7 +353,9 @@ function saveCachedDiscovery(
       JSON.stringify(cache, null, 2),
     );
     if (verbose) {
-      console.log(`[discovery] Saved cache with ${packages.length} package(s)`);
+      console.log(
+        `[discovery] Saved cache with ${Object.keys(packages).length} package(s)`,
+      );
     }
   } catch (error) {
     if (verbose) {
@@ -344,11 +372,19 @@ function saveCachedDiscovery(
  *
  * Supports both regular npm dependencies and workspace: symlinks
  */
-function hasManifestExport(packageName: string, baseDir: string): boolean {
-  return resolveManifestPath(packageName, baseDir) !== null;
+function hasManifestExport(
+  packageName: string,
+  baseDir: string,
+  memo?: ResolutionMemo,
+): boolean {
+  return resolveManifestPath(packageName, baseDir, memo) !== null;
 }
 
-function getDeclaredSmrtPackages(baseDir: string, verbose: boolean): string[] {
+function getDeclaredSmrtPackages(
+  baseDir: string,
+  verbose: boolean,
+  memo?: ResolutionMemo,
+): string[] {
   const packageJsonPath = join(baseDir, 'package.json');
   if (!existsSync(packageJsonPath)) {
     return [];
@@ -372,7 +408,7 @@ function getDeclaredSmrtPackages(baseDir: string, verbose: boolean): string[] {
         return false;
       }
 
-      const hasManifest = hasManifestExport(pkgName, baseDir);
+      const hasManifest = hasManifestExport(pkgName, baseDir, memo);
       if (verbose && hasManifest) {
         console.log(`[discovery] ✅ Found declared SMRT package: ${pkgName}`);
       }
@@ -433,44 +469,117 @@ function* scanNodeModules(baseDir: string): Generator<string> {
   }
 }
 
+function locate(
+  name: string,
+  from: string,
+  memo: ResolutionMemo,
+  via?: string,
+): DiscoveredSmrtPackage | null {
+  const packageDir = resolvePackageDir(name, from, memo);
+  const manifestPath = resolveManifestPath(name, from, memo);
+  if (!packageDir || !manifestPath) return null;
+  return { packageDir, manifestPath, ...(via ? { via } : {}) };
+}
+
+/**
+ * Follow smrt packages through the smrt packages they depend on (#5027).
+ *
+ * A package an app reaches only through another smrt package (smrt-content ->
+ * smrt-images) is loaded at runtime and can add columns to a shared STI table,
+ * but pnpm keeps it out of the app's `node_modules`. Resolve each dependency
+ * from the directory of the package that declares it and record where it
+ * lives. Only `dependencies` and `optionalDependencies` are followed: a peer
+ * is the host's to provide, so the host's own declaration already covers it.
+ */
+function addTransitiveSmrtPackages(
+  found: DiscoveredSmrtPackages,
+  memo: ResolutionMemo,
+  verbose: boolean,
+): void {
+  const queue = Object.keys(found);
+  const visited = new Set<string>();
+
+  while (queue.length > 0) {
+    const name = queue.shift() as string;
+    const current = found[name];
+    if (!current || visited.has(current.packageDir)) continue;
+    visited.add(current.packageDir);
+
+    let dependencies: string[];
+    try {
+      const packageJson = parse<{
+        dependencies?: Record<string, string>;
+        optionalDependencies?: Record<string, string>;
+      }>(readFileSync(join(current.packageDir, 'package.json'), 'utf-8'));
+      dependencies = Object.keys({
+        ...packageJson.dependencies,
+        ...packageJson.optionalDependencies,
+      }).filter((dependency) => dependency.startsWith('@happyvertical/smrt-'));
+    } catch {
+      continue;
+    }
+
+    for (const dependency of dependencies) {
+      if (found[dependency]) continue;
+      const location = locate(dependency, current.packageDir, memo, name);
+      if (!location) continue;
+      found[dependency] = location;
+      queue.push(dependency);
+      if (verbose) {
+        console.log(
+          `[discovery] ✅ Found transitive SMRT package: ${dependency} (via ${name})`,
+        );
+      }
+    }
+  }
+}
+
 /**
  * Perform fresh discovery of SMRT packages
  */
-function performDiscovery(baseDir: string, verbose: boolean): string[] {
+function performDiscovery(
+  baseDir: string,
+  verbose: boolean,
+): DiscoveredSmrtPackages {
   if (verbose) {
     console.log('[discovery] Scanning node_modules for SMRT packages...');
   }
 
   try {
-    const smrtPackages = new Set<string>();
+    const memo: ResolutionMemo = new Map();
+    const found: DiscoveredSmrtPackages = {};
 
     // Scan node_modules for all packages
     for (const pkgName of scanNodeModules(baseDir)) {
-      if (hasManifestExport(pkgName, baseDir)) {
-        smrtPackages.add(pkgName);
+      const location = locate(pkgName, baseDir, memo);
+      if (location) {
+        found[pkgName] = location;
         if (verbose) {
           console.log(`[discovery] ✅ Found SMRT package: ${pkgName}`);
         }
       }
     }
 
-    for (const pkgName of getDeclaredSmrtPackages(baseDir, verbose)) {
-      smrtPackages.add(pkgName);
+    for (const pkgName of getDeclaredSmrtPackages(baseDir, verbose, memo)) {
+      const location = found[pkgName] ?? locate(pkgName, baseDir, memo);
+      if (location) found[pkgName] = location;
     }
+
+    addTransitiveSmrtPackages(found, memo, verbose);
 
     if (verbose) {
       console.log(
-        `[discovery] Discovered ${smrtPackages.size} SMRT package(s)`,
+        `[discovery] Discovered ${Object.keys(found).length} SMRT package(s)`,
       );
     }
 
-    return Array.from(smrtPackages);
+    return found;
   } catch (error) {
     console.error(
       '[discovery] Failed to discover packages:',
       (error as Error).message,
     );
-    return [];
+    return {};
   }
 }
 
@@ -504,7 +613,9 @@ export interface DiscoveryOptions {
  * plugin. Different inputs, contexts, and lifecycles — not duplicated logic to
  * consolidate.
  */
-export function discoverSmrtPackages(options: DiscoveryOptions = {}): string[] {
+export function discoverSmrtPackageLocations(
+  options: DiscoveryOptions = {},
+): DiscoveredSmrtPackages {
   const startTime = options.timing ? performance.now() : 0;
   lastTimingData = {};
   const baseDir = options.baseDir || process.cwd();
@@ -543,7 +654,7 @@ export function discoverSmrtPackages(options: DiscoveryOptions = {}): string[] {
   if (cached) {
     if (verbose) {
       console.log(
-        `[discovery] ✅ Using cached SMRT packages (${cached.packages.length} package(s))`,
+        `[discovery] ✅ Using cached SMRT packages (${Object.keys(cached).length} package(s))`,
       );
     }
 
@@ -551,7 +662,7 @@ export function discoverSmrtPackages(options: DiscoveryOptions = {}): string[] {
       lastTimingData.total = performance.now() - startTime;
     }
 
-    return cached.packages;
+    return cached;
   }
 
   // No valid cache - perform fresh discovery
@@ -574,6 +685,19 @@ export function discoverSmrtPackages(options: DiscoveryOptions = {}): string[] {
   }
 
   return packages;
+}
+
+/**
+ * Names of the SMRT packages the app itself reaches (its own `node_modules`
+ * or declared dependencies). Packages found only through another smrt package
+ * are excluded: this list feeds generated surfaces (routes, `register.js`,
+ * `smrtDependencies`), and an app must not silently gain those for a package
+ * it never consumed (#5027). Schema-level consumers (stamp, base classes,
+ * aggregation) want {@link discoverSmrtPackageLocations} instead.
+ */
+export function discoverSmrtPackages(options: DiscoveryOptions = {}): string[] {
+  const locations = discoverSmrtPackageLocations(options);
+  return Object.keys(locations).filter((name) => !locations[name].via);
 }
 
 // Run if called directly

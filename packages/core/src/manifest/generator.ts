@@ -15,8 +15,9 @@ import { importProjectVite } from '../utils/import-project-vite.js';
 import { importWorkspaceModule } from '../utils/import-workspace-module.js';
 import type { ScannerModule } from '../utils/scanner-module.js';
 import {
+  type DiscoveredSmrtPackages,
+  discoverSmrtPackageLocations,
   discoverSmrtPackages,
-  resolveManifestPath,
 } from './discover-smrt-packages.js';
 import { ManifestManager } from './manager.js';
 
@@ -268,15 +269,19 @@ export class ManifestBuilder {
     let smrtDependencies: string[] = [];
     if (options.discoverExternalPackages) {
       logger.debug('[smrt] Discovering external SMRT packages...');
-      smrtDependencies = discoverSmrtPackages({ baseDir: this.root() });
+      const locations = discoverSmrtPackageLocations({ baseDir: this.root() });
+      // Surfaces follow what the app itself reaches; the schema-level base
+      // class scan below also takes packages reached only through those (#5027).
+      smrtDependencies = Object.keys(locations).filter(
+        (name) => !locations[name].via,
+      );
       logger.debug(
         `[smrt] Found ${smrtDependencies.length} SMRT package(s): ${smrtDependencies.join(', ')}`,
       );
 
       // Optionally add external base classes
       if (options.includeExternalBaseClasses) {
-        const externalClasses =
-          await this.loadExternalBaseClasses(smrtDependencies);
+        const externalClasses = await this.loadExternalBaseClasses(locations);
         if (externalClasses.length > 0) {
           baseClasses = [...baseClasses, ...externalClasses];
           logger.debug(
@@ -601,18 +606,16 @@ export default ${exportName};
   /**
    * Load base classes from external SMRT package manifests
    */
-  private async loadExternalBaseClasses(packages: string[]): Promise<string[]> {
+  private async loadExternalBaseClasses(
+    packages: DiscoveredSmrtPackages,
+  ): Promise<string[]> {
     const externalBaseClasses: string[] = [];
 
-    for (const pkgName of packages) {
-      // Resolve the manifest the same way discovery does (honors `.smrt/` and
-      // `src/manifest/`, not just `dist/`) so source-only workspace packages
-      // still contribute base classes (#1378).
-      const manifestPath = resolveManifestPath(pkgName, this.root());
-      if (!manifestPath) {
-        logger.debug(`[smrt]   ${pkgName}: no SMRT manifest resolved`);
-        continue;
-      }
+    for (const [pkgName, { manifestPath }] of Object.entries(packages)) {
+      // Discovery already resolved the manifest the way it does for every
+      // package (honors `.smrt/` and `src/manifest/`, not just `dist/`), from
+      // the directory that can see it, so a package reached only through
+      // another smrt package still contributes base classes (#1378, #5027).
 
       try {
         const manifestContent = readFileSync(manifestPath, 'utf-8');
