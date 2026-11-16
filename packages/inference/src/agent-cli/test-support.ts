@@ -67,7 +67,7 @@ case "$*" in *'model_provider="smrt_preflight"'*)
 case "$1 $2" in
   "--version "*) ${options.brokenVersion ? 'exit 3' : `echo "${tool === 'claude-code' ? `${version} (Claude Code)` : `codex-cli ${version}`}"`};;
   ${statusCase}) ${status};;
-  ${loginCase}) touch "$HOME/signed-in"; exit 0;;
+  ${loginCase}) : > "$HOME/signed-in"; exit 0;;
   *) exit 2;;
 esac
 `;
