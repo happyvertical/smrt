@@ -863,7 +863,10 @@ describe('workflow run jobs', () => {
       job?.id,
     );
     // A runner sweeps only handlers it did not register itself, so the
-    // sweep comes from a worker in a process with no workflow handler.
+    // sweep comes from a worker in a process with no workflow handler: take
+    // the handler out of the registry before that runner snapshots it.
+    kit.dispose();
+    expect(listJobHandlers()).not.toContain(WORKFLOW_RUN_HANDLER);
     const runner = new TaskRunner({
       claimFencing: true,
       concurrency: 1,
@@ -875,27 +878,24 @@ describe('workflow run jobs', () => {
     runners.push(runner);
     await runner.initialize(db);
     await runner.start();
-    // Handlers are snapshotted at start: model a process that has none.
-    const internal = runner as unknown as {
-      jobHandlers: ReadonlyMap<string, unknown>;
-      handlerNames: readonly string[];
-    };
-    internal.jobHandlers = new Map();
-    internal.handlerNames = [];
     await jobSettled(run.id);
+    // Stop it before the resume, so it can never sweep the resumed job.
+    await runner.stop();
+    runners.splice(runners.indexOf(runner), 1);
     expect((await jobsOf(run.id))[0]).toMatchObject({
       status: 'failed',
       attempts: 0,
     });
-    expect(await bound.get(run.id)).toMatchObject({
+    const served = install();
+    expect(await served.get(run.id)).toMatchObject({
       status: 'stopped',
       stopReason: 'interrupted',
     });
     expect(calls).toHaveLength(0);
-    await bound.resume(run.id);
+    await served.resume(run.id);
     // A worker that registered the handler now runs the resumed job.
     await worker();
-    await until(async () => (await bound.get(run.id)).status === 'done');
+    await until(async () => (await served.get(run.id)).status === 'done');
     expect(await jobsOf(run.id)).toHaveLength(2);
   });
 
