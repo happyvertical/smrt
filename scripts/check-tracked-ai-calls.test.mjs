@@ -180,6 +180,9 @@ test('reads regular expression literals as literals, not code', () => {
   assert.deepEqual(kinds('const re = /[/*]/;\nawait ai.chat(m);\n'), ['untracked-call']);
   assert.deepEqual(kinds('const re = /`/;\nawait ai.chat(m);\n'), ['untracked-call']);
   assert.deepEqual(kinds("if (/'/.test(s)) await ai.chat(m);\n"), ['untracked-call']);
+  assert.deepEqual(kinds('const f = xs.some((s) => /[`*]/.test(s));\nawait ai.chat(m);\n'), [
+    'untracked-call',
+  ]);
   assert.deepEqual(kinds('const ok = x && /a\\/b/i.test(s); await ai.chat(m);\n'), [
     'untracked-call',
   ]);

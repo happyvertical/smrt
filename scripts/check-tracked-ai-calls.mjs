@@ -40,8 +40,9 @@
  *     any other receiver whose origin the file does not show, it is taken
  *     as tracked.
  *   - A `/` is taken for a regular expression literal by the character or
- *     keyword before it, and only when the literal closes on its own line;
- *     a literal after `)` or `]` (`if (x) /re/.test(s)`) is read as code.
+ *     keyword before it (not after `)`, `]`, `}`, `<` or a lone `>`), and
+ *     only when the literal closes on its own line; a literal after one of
+ *     those (`if (x) /re/.test(s)`) is read as code.
  *
  * Usage: node scripts/check-tracked-ai-calls.mjs [--root <dir>]
  */
@@ -162,8 +163,9 @@ function walk(dir, out) {
 
 /**
  * Characters after which a `/` starts a regular expression literal rather
- * than a division. `)`, `]` and `}` are left out (a division, or the end of
- * a block, or a Svelte tag's `/>`), and so are `<` and `>` (Svelte markup).
+ * than a division (and an arrow's `=>`). `)`, `]` and `}` are left out (a
+ * division, or the end of a block, or a Svelte tag's `/>`), and so are `<`
+ * and a lone `>` (Svelte markup).
  */
 const REGEX_AFTER_CHAR = new Set('(,=:[!&|?{;+-*%~^'.split(''));
 /** Keywords after which a `/` starts a regular expression literal. */
@@ -184,6 +186,7 @@ function regexEnd(source, start, before) {
   if (
     last !== undefined &&
     !REGEX_AFTER_CHAR.has(last) &&
+    !(last === '>' && before[k - 1] === '=') &&
     !REGEX_AFTER_WORD.test(before.slice(Math.max(0, k - 11), k + 1))
   ) {
     return -1;
