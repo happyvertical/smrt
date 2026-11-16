@@ -351,6 +351,9 @@ class ChainCall {
     // front, or #4751 would lift a failed tier into tier_resolved.
     const { tierResolved: _unanswered, ...callerTags } =
       this.callerOptions.usageTags ?? {};
+    // A call of a run (#5005): the row is charged to the run (its own call
+    // id, no reservation) instead of written outside it.
+    const { runContext } = this.callerOptions as { runContext?: unknown };
     try {
       await this.context.recordUsage({
         ...(typeof step?.target.provider === 'string'
@@ -368,6 +371,7 @@ class ChainCall {
           reason,
           substitutions: JSON.stringify(this.substitutions),
         },
+        ...(runContext ? { runContext } : {}),
       });
     } catch {
       // Recording must never mask the call's own failure.

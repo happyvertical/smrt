@@ -414,6 +414,10 @@ function describeSeat(seat: FusionSeatResult, role: string): string {
 
 /** The default output allowance when a seat declares none (core's `D`). */
 const DEFAULT_SEAT_OUTPUT_TOKENS = 4096;
+/** The text a judge or gate adds around the panel's outputs, in characters. */
+const JUDGE_FRAMING_CHARS = 240;
+/** A gate's verdict is one short answer. */
+const GATE_OUTPUT_TOKENS = 512;
 
 class FusionRun {
   private runId = newRunId();
@@ -713,13 +717,13 @@ class FusionRun {
         {
           usageTags: {
             ...this.callerTags,
-            // The decision call is not a call of the run (#5005): it does
-            // not reserve, so its row must not count against the run's
-            // totals. Older cores still group it under the run.
+            // Older cores group the decision under the run by tag; a core
+            // that opens the run reserves it as the `gate` seat (below).
             ...(this.handle ? {} : { runId: this.runId }),
             fusionKey: this.key,
             seat: FUSION_GATE_SEAT,
           },
+          ...(this.handle ? this.handle.seatOptions(FUSION_GATE_SEAT) : {}),
           ...(this.signal ? { signal: this.signal } : {}),
         },
       );
@@ -741,7 +745,8 @@ class FusionRun {
         model: `${result.provenance.provider}/${result.provenance.model}`,
       };
     } catch (error) {
-      if (isInferenceAbort(error)) throw error;
+      // A stop of the run is a stop, never a gate that errored (#5005).
+      if (isInferenceAbort(error) || isAiRunInterruption(error)) throw error;
       return { status: 'error', message: shortMessage(error) };
     }
   }
@@ -854,32 +859,62 @@ class FusionRun {
       typeof this.finalOptions.maxTokens === 'number'
         ? this.finalOptions.maxTokens
         : undefined;
-    const inputTokens = Math.ceil(input.length / 4);
     const out: InferenceRunCallShare[] = [];
     let panelAllowance = 0;
     for (const [index, seat] of definition.seats.entries()) {
       const final = index === finalIndex;
       const target = await this.priceTarget(seat);
       const outputLimit = final ? finalLimit : undefined;
+      // What the seat sends: the request, its prompt's instructions and,
+      // for a seat that reads the others (the judge), the framing text.
+      const sent = input.length + (await this.instructionChars(seat));
       if (definition.mode === 'single' || panel.includes(index)) {
         panelAllowance += outputLimit ?? DEFAULT_SEAT_OUTPUT_TOKENS;
         out.push({
           name: seatName(seat),
           ...(target ? { target } : {}),
-          inputTokens,
+          inputTokens: Math.ceil(sent / 4),
           ...(outputLimit !== undefined ? { outputLimit } : {}),
         });
       } else {
         out.push({
           name: seatName(seat),
           ...(target ? { target } : {}),
-          inputTokens: inputTokens + panelAllowance,
+          inputTokens:
+            Math.ceil((sent + JUDGE_FRAMING_CHARS) / 4) + panelAllowance,
           ...(outputLimit !== undefined ? { outputLimit } : {}),
           later: true,
         });
       }
     }
+    if (definition.gate) {
+      // The gate is a call of the run too (#5005): the request plus what the
+      // panel answered, a short verdict back. It is sent between the stages,
+      // so it is checked `running` first.
+      out.push({
+        name: FUSION_GATE_SEAT,
+        inputTokens:
+          Math.ceil((input.length + JUDGE_FRAMING_CHARS) / 4) + panelAllowance,
+        expectedOutputTokens: GATE_OUTPUT_TOKENS,
+        later: true,
+      });
+    }
     return out;
+  }
+
+  /** Characters of a seat's resolved prompt instructions; 0 when unreadable. */
+  private async instructionChars(seat: InferenceFusionSeat): Promise<number> {
+    try {
+      const prompt = await promptResolver()(seat.prompt, {
+        ...(this.context.request.tenantId !== undefined
+          ? { tenantId: this.context.request.tenantId }
+          : {}),
+        ...(this.context.db ? { db: this.context.db } : {}),
+      });
+      return String(prompt.instructions ?? '').length;
+    } catch {
+      return 0;
+    }
   }
 
   /** A seat's first concrete target, for pricing its share; best effort. */
@@ -899,20 +934,35 @@ class FusionRun {
       } else {
         target = seat.target;
       }
-      if (inferenceTargetKind(target) === 'single') return target;
-      if (inferenceTargetKind(target) === 'alias') {
-        const alias = this.context.config?.aliases?.[String(target.alias)];
-        const first = Array.isArray(alias) ? alias[0] : undefined;
-        return first && typeof first === 'object' ? first : undefined;
-      }
-      const list = (target as { candidates?: unknown }).candidates;
-      const first = Array.isArray(list) ? list[0] : undefined;
-      return first && typeof first === 'object'
-        ? (first as InferenceTarget)
-        : undefined;
+      return this.firstConcrete(target, 0);
     } catch {
       return undefined;
     }
+  }
+
+  /**
+   * The first single target a chain would try (an alias entry, an inline
+   * candidate, or an alias a candidate names), for its price.
+   */
+  private firstConcrete(
+    target: InferenceTarget,
+    depth: number,
+  ): InferenceTarget | undefined {
+    if (depth > 8) return undefined;
+    const kind = inferenceTargetKind(target);
+    if (kind === 'single') return target;
+    let list: unknown;
+    if (kind === 'alias') {
+      list = this.context.config?.aliases?.[String(target.alias)]?.candidates;
+    } else if (kind === 'candidates') {
+      list = target.candidates;
+    }
+    const first = Array.isArray(list) ? list[0] : undefined;
+    if (!first || typeof first !== 'object') return undefined;
+    const candidate = first as InferenceTarget;
+    return candidate.alias
+      ? this.firstConcrete({ alias: candidate.alias }, depth + 1)
+      : candidate;
   }
 
   private async record(result: FusionRunResult): Promise<void> {

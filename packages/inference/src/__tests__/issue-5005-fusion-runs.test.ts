@@ -269,12 +269,19 @@ describe('fusion runs opened at the start (#5005)', () => {
       calls: 0,
     });
     expect(fusion?.finishedAt).toBeInstanceOf(Date);
-    // The panel (2 x E + 4096) and the judge (E + both allowances + 4096).
-    const e = Math.ceil('Review'.length / 4);
+    // Each seat sends the request and its prompt's instructions: the panel
+    // (E + 4096 each) and the judge (E, 240 characters of framing, both
+    // allowances and its own 4096).
+    const request = 'Review'.length;
+    const tokens = (chars: number) => Math.ceil(chars / 4);
     expect(fusion?.stopDetail).toMatchObject({
       limit: 'maxTokens',
       runId: parent.id,
-      requested: 2 * (e + 4096) + (e + 2 * 4096 + 4096),
+      requested:
+        tokens(request + 'Find the weak points.'.length) +
+        4096 +
+        (tokens(request + 'Find the strengths.'.length) + 4096) +
+        (tokens(request + 'Merge the reviews.'.length + 240) + 2 * 4096 + 4096),
     });
     expect(await getAiRun(db, parent.id)).toMatchObject({
       status: 'stopped',

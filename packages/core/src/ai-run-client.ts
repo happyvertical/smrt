@@ -18,6 +18,7 @@ import type { AiCallRate } from './system/ai-run-accounting.js';
 import {
   type AiRunCallRequest,
   type AiRunContext,
+  type AiRunObservedUsage,
   beginAiRunCall,
   isAiRunContext,
 } from './system/ai-run-calls.js';
@@ -66,6 +67,46 @@ function splitOptions(raw: unknown): {
         ? expectedOutputTokens
         : undefined,
     options,
+  };
+}
+
+/**
+ * The usage a response reports (`chat()` answers carry `usage` and `model`),
+ * for a client whose usage never reaches the pipeline: the call is then
+ * settled with it instead of a zero-token row.
+ */
+function observedUsage(
+  result: unknown,
+  duration: number,
+): AiRunObservedUsage | undefined {
+  if (!result || typeof result !== 'object') return undefined;
+  const { usage, model } = result as {
+    usage?: Record<string, unknown>;
+    model?: unknown;
+  };
+  const count = (value: unknown) =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0
+      ? value
+      : undefined;
+  const promptTokens = count(usage?.promptTokens);
+  const completionTokens = count(usage?.completionTokens);
+  const totalTokens =
+    count(usage?.totalTokens) ??
+    (promptTokens !== undefined && completionTokens !== undefined
+      ? promptTokens + completionTokens
+      : undefined);
+  return {
+    duration,
+    ...(typeof model === 'string' && model ? { model } : {}),
+    ...(totalTokens !== undefined
+      ? {
+          usage: {
+            promptTokens: promptTokens ?? 0,
+            completionTokens: completionTokens ?? 0,
+            totalTokens,
+          },
+        }
+      : {}),
   };
 }
 
@@ -173,6 +214,7 @@ export function withAiRunTracking<T>(client: T, hooks: AiRunClientHooks): T {
             handle.invocation.callId,
             (event) => handle.invocation.capture(event),
           );
+          const started = Date.now();
           let result: unknown;
           try {
             result = await value.call(
@@ -186,7 +228,19 @@ export function withAiRunTracking<T>(client: T, hooks: AiRunClientHooks): T {
             throw await handle.fail(error);
           }
           release();
-          await handle.succeed();
+          const observed = observedUsage(result, Date.now() - started);
+          const sentTo = hooks.target();
+          const rate = hooks.rateFor(
+            sentTo.provider,
+            observed?.model ?? sentTo.model,
+          );
+          if (observed?.usage && rate) {
+            observed.estimatedCost =
+              ((observed.usage.promptTokens ?? 0) * rate.input +
+                (observed.usage.completionTokens ?? 0) * rate.output) /
+              1000;
+          }
+          await handle.succeed(observed);
           return result;
         };
       }

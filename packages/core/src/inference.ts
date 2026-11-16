@@ -1021,6 +1021,12 @@ export interface InferenceUsageRecord {
   /** Wall time spent on the attempts, in ms. */
   duration?: number;
   tags: Record<string, string>;
+  /**
+   * The run the failed call belonged to (#5005): the row is then charged to
+   * that run as an unreserved call with its own call id (page section 6.4),
+   * instead of being written outside it.
+   */
+  runContext?: unknown;
 }
 
 /**
@@ -1185,7 +1191,16 @@ export interface InferenceExecutionContext {
    */
   decide?(
     request: DecisionRequest,
-    options?: { usageTags?: Record<string, string>; signal?: AbortSignal },
+    options?: {
+      usageTags?: Record<string, string>;
+      signal?: AbortSignal;
+      /**
+       * The run the decision is a call of (#5005; a fusion's `gate` seat):
+       * it takes the seat's held reservation and settles with its usage
+       * row, tagged with the run id.
+       */
+      runContext?: unknown;
+    },
   ): Promise<DecisionResult | undefined>;
   /**
    * Open the run of this entry call at its start (#5005): a `fusion` run,

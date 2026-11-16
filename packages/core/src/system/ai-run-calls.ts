@@ -228,12 +228,93 @@ function isAbort(error: unknown): boolean {
   );
 }
 
+/**
+ * Write one call's usage row with its settlement; the handlers run only
+ * after it commits. A settlement that fails every retry waits on the
+ * database's pending list.
+ */
+async function settleTaggedCall(
+  context: AiRunContext,
+  callId: string,
+  usageTags: Record<string, string>,
+  afterSettle: ((event: SmrtAiUsageEvent) => Promise<void>) | undefined,
+  event: SmrtAiUsageEvent,
+  status: string,
+): Promise<void> {
+  const tagged: SmrtAiUsageEvent = {
+    ...event,
+    tags: { ...(event.tags ?? {}), ...usageTags },
+  };
+  const input = { runId: context.runId, callId, usage: tagged, status };
+  const after = afterSettle ? () => afterSettle(tagged) : undefined;
+  try {
+    await settleAiCall(context.db, input);
+  } catch (error) {
+    logger.warn(
+      `[smrt] AI run ${context.runId} settlement of call ${callId} failed; kept pending: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    deferAiRunSettlement(context.db, input, after);
+    return;
+  }
+  if (!after) return;
+  try {
+    await after();
+  } catch (error) {
+    logger.warn(
+      `[smrt] AI usage handlers failed for call ${callId}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+}
+
+/**
+ * Charge a call that ran without a reservation to its run (page section
+ * 6.4, `unreserved`): a chain that never answered still wrote its
+ * zero-token row, and the run counts it. The call gets its own id and, like
+ * any call, one usage row; nothing is reserved or released.
+ */
+export async function chargeAiRunCallUnreserved(
+  context: AiRunContext,
+  request: {
+    event: SmrtAiUsageEvent;
+    status?: string;
+    entryCallId?: string;
+    afterSettle?: (event: SmrtAiUsageEvent) => Promise<void>;
+  },
+): Promise<string> {
+  const callId = newAiRunId();
+  await settleTaggedCall(
+    context,
+    callId,
+    aiRunCallTags(context, callId, request.entryCallId ?? callId),
+    request.afterSettle,
+    request.event,
+    request.status ?? 'failed',
+  );
+  return callId;
+}
+
+/** The usage a response reported, for a client that sends no usage event. */
+export interface AiRunObservedUsage {
+  model?: string;
+  usage?: SmrtAiUsageEvent['usage'];
+  estimatedCost?: number;
+  duration?: number;
+}
+
 /** A tracked call between its reservation and its end. */
 export interface AiRunCallHandle {
   invocation: AiRunCallInvocation;
   reservation: AiCallReservation;
-  /** The call answered: settle it (with its captured usage, or the fallback). */
-  succeed(): Promise<void>;
+  /**
+   * The call answered: settle it with its captured usage event, else with
+   * what the response itself reported (`observed`), else the zero-token
+   * fallback row.
+   */
+  succeed(observed?: AiRunObservedUsage): Promise<void>;
   /**
    * The call failed: settle it when usage was captured, else release it;
    * returns the error to throw (a timeout becomes {@link AiCallLimitError};
@@ -303,36 +384,15 @@ export async function beginAiRunCall(
       : (timeout ?? request.signal);
   const usageTags = aiRunCallTags(context, callId, entryCallId);
 
-  const settle = async (event: SmrtAiUsageEvent, status: string) => {
-    const tagged: SmrtAiUsageEvent = {
-      ...event,
-      tags: { ...(event.tags ?? {}), ...usageTags },
-    };
-    const input = { runId: context.runId, callId, usage: tagged, status };
-    const afterSettle = request.afterSettle;
-    const after = afterSettle ? () => afterSettle(tagged) : undefined;
-    try {
-      await settleAiCall(context.db, input);
-    } catch (error) {
-      logger.warn(
-        `[smrt] AI run ${context.runId} settlement of call ${callId} failed; kept pending: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      deferAiRunSettlement(context.db, input, after);
-      return;
-    }
-    if (!after) return;
-    try {
-      await after();
-    } catch (error) {
-      logger.warn(
-        `[smrt] AI usage handlers failed for call ${callId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  };
+  const settle = (event: SmrtAiUsageEvent, status: string) =>
+    settleTaggedCall(
+      context,
+      callId,
+      usageTags,
+      request.afterSettle,
+      event,
+      status,
+    );
 
   return {
     reservation,
@@ -346,13 +406,18 @@ export async function beginAiRunCall(
         slot.event = event;
       },
     },
-    async succeed() {
+    async succeed(observed) {
       if (slot.ended) return;
       slot.ended = true;
       await settle(
         slot.event ?? {
           ...request.fallbackUsage,
-          duration: 0,
+          ...(observed?.model ? { model: observed.model } : {}),
+          ...(observed?.usage ? { usage: observed.usage } : {}),
+          ...(observed?.estimatedCost !== undefined
+            ? { estimatedCost: observed.estimatedCost }
+            : {}),
+          duration: observed?.duration ?? 0,
           timestamp: new Date(),
         },
         'ok',
