@@ -83,7 +83,7 @@ describe('SchemaManager', () => {
 
     expect(query).toHaveBeenNthCalledWith(
       1,
-      'PRAGMA table_info("user""prefs")',
+      'PRAGMA table_xinfo("user""prefs")',
     );
     expect(query).toHaveBeenNthCalledWith(
       2,

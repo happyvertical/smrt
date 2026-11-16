@@ -3,7 +3,7 @@ import corePackage from '../../package.json' with { type: 'json' };
 import { withEmbeddedWriteQueue } from '../embedded-write-queue.js';
 import { ObjectRegistry } from '../registry.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
-import type { SchemaDefinition } from '../schema/types.js';
+import type { SchemaChange, SchemaDefinition } from '../schema/types.js';
 import {
   ensureSystemTables,
   runSerializedAgainstSystemTableBootstrap,
@@ -35,6 +35,35 @@ export interface MigrateRecordInput {
 export interface UnloadedBuildPackage {
   packageName: string;
   tables: string[];
+}
+
+/**
+ * An ordinary column a migrate made calculated on request
+ * (`--confirm-recompute`, #5018), recorded with the run that did it.
+ * `rows` is how many stored values differed from the expression when the run
+ * was planned (null when they could not be compared).
+ */
+export interface ConfirmedRecompute {
+  table: string;
+  column: string;
+  rows: number | null;
+}
+
+/** The confirmed recomputes in a plan's changes, one per column. */
+export function collectConfirmedRecomputes(
+  changes: readonly Pick<SchemaChange, 'table' | 'name' | 'recompute'>[],
+): ConfirmedRecompute[] {
+  return changes.flatMap((change) =>
+    change.recompute?.confirmed && change.name
+      ? [
+          {
+            table: change.table,
+            column: change.name,
+            rows: change.recompute.count,
+          },
+        ]
+      : [],
+  );
 }
 
 export interface MigrateRecord {
@@ -172,10 +201,15 @@ export async function readLastMigrateRecord(
  */
 export async function recordSuccessfulMigrate(
   db: DatabaseInterface,
-  options: MigrateRecordOptions & { input?: MigrateRecordInput } = {},
+  options: MigrateRecordOptions & {
+    input?: MigrateRecordInput;
+    /** Ordinary columns this run made calculated on request; always written. */
+    recomputes?: readonly ConfirmedRecompute[];
+  } = {},
 ): Promise<{ written: boolean; record: MigrateRecord }> {
   const input = options.input ?? collectMigrateRecordInput();
   const packages = [...new Set(input.packages)].sort();
+  const recomputes = options.recomputes ?? [];
   return withEmbeddedWriteQueue(
     db,
     getDatabaseEngine(db, options.engineHint) !== 'postgres',
@@ -187,6 +221,7 @@ export async function recordSuccessfulMigrate(
         async (scopedDb) => {
           const previous = await readLastMigrateRecord(scopedDb, options);
           if (
+            !recomputes.length &&
             previous.state === 'recorded' &&
             previous.record.release === input.release &&
             previous.record.fingerprint === input.fingerprint &&
@@ -212,9 +247,12 @@ export async function recordSuccessfulMigrate(
           };
           const id = crypto.randomUUID();
           const serializedPackages = JSON.stringify(packages);
+          const serializedRecomputes = recomputes.length
+            ? JSON.stringify(recomputes)
+            : null;
           await scopedDb.execute`
-      INSERT INTO _smrt_migrate_runs (id, release, packages, fingerprint, created_at)
-      VALUES (${id}, ${input.release}, ${serializedPackages}, ${input.fingerprint}, ${createdAt})
+      INSERT INTO _smrt_migrate_runs (id, release, packages, fingerprint, recomputes, created_at)
+      VALUES (${id}, ${input.release}, ${serializedPackages}, ${input.fingerprint}, ${serializedRecomputes}, ${createdAt})
     `;
           return { written: true, record };
         },

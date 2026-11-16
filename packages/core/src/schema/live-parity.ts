@@ -268,6 +268,13 @@ export async function checkLiveSchemaParity(
 
     tablesChecked++;
     const liveColumns = await readLiveColumns(db, table.name);
+    if (engine === 'sqlite')
+      await addLiveGeneratedColumns(
+        db,
+        table.name,
+        liveColumns,
+        new Set(table.columns.map((column) => column.name)),
+      );
     let generated = generatedCatalog?.get(table.name) ?? NO_GENERATED_COLUMNS;
     let columnFindings: ColumnComparison | undefined;
     const previous = options.previousSchemas?.[table.name];
@@ -1428,6 +1435,43 @@ async function readLiveColumns(
     });
   }
   return columns;
+}
+
+/**
+ * `getTableSchema()` omits SQLite generated columns (`table_info` hides them),
+ * so a calculated column the model dropped would never be reported as
+ * `extra_column` (#5013). `table_xinfo` `hidden` 2/3 are VIRTUAL/STORED
+ * generated columns; `hidden` 1 (virtual-table module columns) stays excluded.
+ * They are added as non-blocking (a generated column is never supplied on
+ * insert). Best-effort: an unreadable catalog leaves the ordinary list.
+ */
+async function addLiveGeneratedColumns(
+  db: DatabaseInterface,
+  tableName: string,
+  liveColumns: Map<string, LiveColumn>,
+  declared: ReadonlySet<string>,
+): Promise<void> {
+  try {
+    const { rows } = await db.query(
+      'SELECT name, type FROM pragma_table_xinfo($1) WHERE hidden IN (2, 3)',
+      [tableName],
+    );
+    for (const row of rows) {
+      const name = String(row.name);
+      // Declared names keep the feature-scoped probe (a declared ordinary
+      // column that is live-generated must still look missing to trigger it).
+      if (declared.has(name) || liveColumns.has(name)) continue;
+      liveColumns.set(name, {
+        name,
+        type: String(row.type),
+        notNull: false,
+        primaryKey: false,
+        hasDefault: true,
+      });
+    }
+  } catch {
+    // Keep the ordinary column list.
+  }
 }
 
 interface IndexCatalog {

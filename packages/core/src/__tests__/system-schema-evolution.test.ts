@@ -28,6 +28,7 @@ import {
   getSystemTableShapes,
   SYSTEM_TABLE_NAMES,
 } from '../schema/system-table-shapes';
+import { ensureSystemTables } from '../system/bootstrap';
 import {
   ALL_SYSTEM_TABLES,
   DEFERRED_COMPATIBILITY_TABLES,
@@ -227,6 +228,48 @@ describe('system schema evolution (issue #2376)', () => {
 
       await fresh.close?.();
       await upgraded.close?.();
+    });
+
+    it('upgrades a database stamped 1.16.0 under the base DDL and records a recompute (#5018)', async () => {
+      const db = await freshDatabase();
+      await bootstrap(db);
+      // The 1.16.0 ledger as released: no `recomputes` column, stamped 1.16.0.
+      await db.query('DROP TABLE _smrt_migrate_runs');
+      await db.query(`CREATE TABLE _smrt_migrate_runs (
+        id TEXT PRIMARY KEY,
+        release TEXT NOT NULL,
+        packages TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`);
+      await db.query(
+        `DELETE FROM _smrt_migrations WHERE version = '${SMRT_SCHEMA_VERSION}'`,
+      );
+      await db.query(
+        `INSERT INTO _smrt_migrations (id, version, description)
+         VALUES ('old-1160', '1.16.0', 'Initial SMRT system tables')`,
+      );
+
+      await ensureSystemTables(db, 'sqlite');
+
+      const columns = (await db.query('PRAGMA table_info(_smrt_migrate_runs)'))
+        .rows as { name: string }[];
+      expect(columns.map((column) => column.name)).toContain('recomputes');
+      const { recordSuccessfulMigrate } = await import(
+        '../migrations/migrate-record'
+      );
+      const result = await recordSuccessfulMigrate(db, {
+        input: { release: '9.9.9', packages: ['x'], fingerprint: 'fp' },
+        recomputes: [{ table: 't', column: 'c', rows: 2 }],
+      });
+      expect(result.written).toBe(true);
+      const stored = (
+        await db.query('SELECT recomputes FROM _smrt_migrate_runs')
+      ).rows as { recomputes: string }[];
+      expect(JSON.parse(stored[0].recomputes)).toEqual([
+        { table: 't', column: 'c', rows: 2 },
+      ]);
+      await db.close?.();
     });
 
     it('satisfies the declared system-table shape on both installs', async () => {

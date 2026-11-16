@@ -152,9 +152,20 @@ unenforced rules, planned constraint removals, release age and fingerprint
 mismatch are warnings. One stop holds every apply change, including unrelated
 tables. STI CHECK additions and removals are ordinary apply changes
 (`check.add`, `check.drop`); rows that break a rule once the run's own
-statements have run stop it (`check.violated`), and a run that also writes rows
-in a way the planner cannot replay stops instead of guessing
-(`check.unprojectable`).
+statements have run stop it (`check.violated`; `check.deferred-fill` when the
+fill is deferred by a type change in the same run), and a run that also writes
+rows in a way the planner cannot replay stops instead of guessing
+(`check.unprojectable`). A required calculated column whose new expression is
+NULL for a stored row stops as `column.generated-required-null` (or
+`column.generated-required-unprojectable` when the run's other changes cannot be
+replayed); an ordinary column made calculated stops as
+`column.generated-from-ordinary-differs` (count and example rows; pass
+`--confirm-recompute <table>.<column>` to replace the stored values, recorded in
+the run's `_smrt_migrate_runs.recomputes`) or `column.generated-from-ordinary-unprojectable`
+when the stored values cannot be compared, and otherwise converts after a re-count
+inside the atomic run (#5018); SQLite refusing to drop a calculated column stops as
+`column.generated-replace-dependents`. User triggers firing on a fill's
+`UPDATE` are not replayed by the CHECK probe (the `check.add` note says so).
 
 `db:diff`, `db:status` and `db:history` decide every change with the engine the
 database runs on (`resolveSchemaChangeEngine`, PGlite reads as PostgreSQL), the
