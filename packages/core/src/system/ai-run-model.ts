@@ -564,6 +564,7 @@ export interface AiRunTx {
   now: Date;
 }
 
+/** The SQL dialect of a database handle, for building an {@link AiRunTx}. */
 export function aiRunEngine(db: DatabaseInterface): AiRunEngine {
   const engine = getDatabaseEngine(db);
   return engine === 'postgres'
