@@ -88,6 +88,7 @@ export {
   runAgentTurn,
   tokenFailureMessage,
 } from './agent-cli/turn.js';
+export * from './assistant-settings.js';
 export {
   CHATGPT_AUTH_HOST,
   CHATGPT_PLAN_PROVIDER,
@@ -142,6 +143,8 @@ export {
   type InferenceEngineStatusHost,
   inferenceEngineStatus,
 } from './engine-status.js';
+export * from './engine-tiers.js';
+export * from './model-fallback.js';
 export * from './models/DesignRunRecord.js';
 export {
   APP_INFERENCE_SCOPE_ID,
