@@ -589,6 +589,17 @@ export interface AiRunTxOptions {
   now?: () => Date;
   /** Attempts in all; default {@link AI_RUN_TX_ATTEMPTS}. */
   attempts?: number;
+  /**
+   * The claim fence of the job working the run's nearest durable run (page
+   * section 6.4). The status changes (`transitionAiRun` and the stop, finish,
+   * wait, cancel and close calls built on it, and a child's stop reaching its
+   * parent) and `appendAiRunEvent` assert it inside their transaction, before
+   * the run row is locked or its status read: a worker whose claim was taken
+   * over gets {@link AiRunClaimLostError} and changes nothing. Reservations,
+   * step starts and checkpoint saves take it as their own `fence`; the other
+   * calls taking these options (patches, retention) ignore it.
+   */
+  fence?: AiRunClaimFence;
 }
 
 /**
@@ -849,21 +860,33 @@ export async function lockAiRunChainFenced(
   runId: string,
   fence: AiRunClaimFence | undefined,
 ): Promise<AiRunRow[]> {
-  if (fence) {
-    const ids = await readAiRunChainIds(tx.db, runId);
-    const durable = await nearestDurable(tx.db, ids);
-    if (durable) {
-      try {
-        await fence(tx.db, durable);
-      } catch (error) {
-        throw new AiRunClaimLostError(
-          durable,
-          error instanceof Error ? error : undefined,
-        );
-      }
-    }
-  }
+  await assertAiRunFence(tx, runId, fence);
   return lockAiRunChain(tx, runId);
+}
+
+/**
+ * Assert the claim fence of the run's nearest durable run inside an
+ * accounting transaction, before any run row is locked (the job row comes
+ * first in the page's lock order). Nothing to assert without a fence or a
+ * durable run in the chain. Throws {@link AiRunClaimLostError}.
+ */
+export async function assertAiRunFence(
+  tx: AiRunTx,
+  runId: string,
+  fence: AiRunClaimFence | undefined,
+): Promise<void> {
+  if (!fence) return;
+  const ids = await readAiRunChainIds(tx.db, runId);
+  const durable = await nearestDurable(tx.db, ids);
+  if (!durable) return;
+  try {
+    await fence(tx.db, durable);
+  } catch (error) {
+    throw new AiRunClaimLostError(
+      durable,
+      error instanceof Error ? error : undefined,
+    );
+  }
 }
 
 export function newAiRunId(): string {

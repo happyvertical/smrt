@@ -14,13 +14,15 @@ import {
 import { type JobClaim, SmrtJobCollection } from '@happyvertical/smrt-jobs';
 import { clearPromptCache, PromptRegistry } from '@happyvertical/smrt-prompts';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { workflowClaimFence } from '../index.js';
+import { workflowClaimFence, workflowStopFence } from '../index.js';
 import {
   closeWorkflowDbs,
   deferred,
   definePrompts,
+  definitionOf,
   driverFor,
   scriptedModel,
+  twoSteps,
   until,
   workflowDb,
 } from './harness.js';
@@ -116,5 +118,82 @@ describe('workflow runs with claim fencing', () => {
       tokens: 20,
       reservedCalls: 0,
     });
+  });
+});
+
+async function takeOver(jobs: SmrtJobCollection, claim: JobClaim) {
+  const [job] = await jobs.list({ where: { id: claim.jobId } });
+  if (!job) throw new Error('missing job');
+  job.workerId = 'replacement-worker';
+  await job.save();
+}
+
+describe.each([
+  'sqlite',
+  'pglite',
+] as const)('a stale worker after takeover on %s', (engine) => {
+  /**
+   * Start a fenced run whose first call waits on `gate`, take the claim over
+   * while it waits, then let the call end with `answer`.
+   */
+  async function staleRun(
+    answer: (signal: AbortSignal | undefined) => Promise<unknown>,
+    options: { stopFence?: boolean; abort?: boolean } = {},
+  ) {
+    const db = await workflowDb(engine, JOB_CLASSES);
+    const jobs = await SmrtJobCollection.create({ db });
+    const gate = deferred();
+    const { model } = scriptedModel(async (call) => {
+      await gate.promise;
+      return {
+        output: await answer(call.options.signal as AbortSignal | undefined),
+      };
+    });
+    const driver = driverFor(db, model, definitionOf(twoSteps));
+    const run = await driver.start({
+      ownerId: 'owner',
+      budget: { repairRetries: 0 },
+    });
+    const claim = await claimFor(jobs, run.id, `worker-${randomUUID()}`);
+    const controller = new AbortController();
+    const working = driver.run(run.id, 'owner', {
+      signal: controller.signal,
+      fence: workflowClaimFence(claim),
+      ...(options.stopFence ? { stopFence: workflowStopFence(claim) } : {}),
+    });
+    await until(async () => (await getAiRun(db, run.id))?.reservedCalls === 1);
+    await takeOver(jobs, claim);
+    if (options.abort) controller.abort(new Error('job timed out'));
+    gate.resolve();
+    await expect(working).rejects.toBeInstanceOf(AiRunClaimLostError);
+    return getAiRun(db, run.id);
+  }
+
+  it('cannot fail the run when its output stays invalid', async () => {
+    expect(await staleRun(async () => ({ wrong: true }))).toMatchObject({
+      status: 'running',
+      stopReason: null,
+    });
+  });
+
+  it('cannot fail the run when its call throws', async () => {
+    expect(
+      await staleRun(async () => {
+        throw new Error('provider down');
+      }),
+    ).toMatchObject({ status: 'running', stopReason: null });
+  });
+
+  it('cannot stop the run when its signal aborts', async () => {
+    const aborted = async (signal: AbortSignal | undefined) => {
+      throw signal?.reason ?? new Error('aborted');
+    };
+    expect(await staleRun(aborted, { abort: true })).toMatchObject({
+      status: 'running',
+      stopReason: null,
+    });
+    expect(
+      await staleRun(aborted, { abort: true, stopFence: true }),
+    ).toMatchObject({ status: 'running', stopReason: null });
   });
 });

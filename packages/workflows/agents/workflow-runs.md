@@ -46,9 +46,14 @@ save path as the driver's own saves, on the driver's database handle (never a
 second connection). A run refuses a second `run` or `resume` of the same run
 in its process. Across processes, safety is claim fencing: pass
 `workflowClaimFence(getJobClaim(context))` from a runner started with
-`claimFencing: true`; every save, step start and reservation asserts it, and a
-taken-over worker gets `AiRunClaimLostError` before it writes. Settlements do
-not assert it: spending that happened is counted.
+`claimFencing: true`; every save, step start, reservation, event and status
+change (done, failed, waiting for approval) asserts it, and a taken-over
+worker gets `AiRunClaimLostError` before it writes: it never fails, finishes or
+stops the run the new worker holds. The stop written when the signal aborts
+uses `stopFence` (default `fence`): `workflowStopFence(claim)` accepts the
+worker's own attempt after its job settled (cancelled, timed out) and refuses
+a claim another worker took over. Settlements do not assert it: spending that
+happened is counted.
 
 ## Job running (`src/jobs.ts`)
 
@@ -78,7 +83,8 @@ driver wiring on every job (after a restart nothing lives in a closure); its
 - **The handler** requires an authentic runner context and a claim
   (`claimFencing: true`), reads owner and tenant from the run row (never the
   payload), checks the claim's target, `authorize`s, then `driver.run` with
-  `fence: workflowClaimFence(claim)`, the job's signal and
+  `fence: workflowClaimFence(claim)`, `stopFence: workflowStopFence(claim)`,
+  the job's signal and
   `holder: workerId:jobId`; the driver renews the checkpoint lease every third
   of `leaseTtlMs`. A failure before the driver began (authorization,
   configuration, missing definition) stops the run (`interrupted`, resumable)

@@ -29,7 +29,7 @@ import {
   RunConflictError,
   WorkflowRunNotFoundError,
 } from './checkpoint-store.js';
-import { workflowClaimFence } from './claim-fence.js';
+import { workflowClaimFence, workflowStopFence } from './claim-fence.js';
 import {
   createWorkflowRunDriver,
   type WorkflowRunDriverOptions,
@@ -309,8 +309,10 @@ export function createWorkflowRunJobs<Input = unknown>(
   /** Stop a run that cannot run on this worker, only while the claim is live. */
   const park = async (runId: string, claim: Readonly<JobClaim>) => {
     try {
-      await transaction((tx) => assertJobClaim(tx, claim));
-      await stopAiRun(db, runId, { reason: 'interrupted' });
+      await stopAiRun(db, runId, {
+        reason: 'interrupted',
+        fence: workflowClaimFence(claim),
+      });
     } catch {
       /* The original failure is the one to surface. */
     }
@@ -392,6 +394,7 @@ export function createWorkflowRunJobs<Input = unknown>(
       const state = await driver.run(runId, owner.ownerId, {
         signal: controller.signal,
         fence: workflowClaimFence(claim),
+        stopFence: workflowStopFence(claim),
         holder: `${claim.workerId}:${claim.jobId}`,
       });
       return { runId, status: state.status };

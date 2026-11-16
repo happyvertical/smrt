@@ -3,7 +3,7 @@
 Durable `workflow` runs (#5005; spec: [AI runs](../../docs/content/ai-runs.md)).
 Replaces inference's design runs. `src/driver.ts` (`createWorkflowRunDriver`),
 `src/checkpoint-store.ts` (`createRunCheckpointStore`, `RunConflictError`),
-`src/claim-fence.ts` (`workflowClaimFence`), `src/types.ts` (`WorkflowStep`,
+`src/claim-fence.ts` (`workflowClaimFence`, `workflowStopFence`), `src/types.ts` (`WorkflowStep`,
 `WorkflowDefinition`, `WorkflowRunState`, `RunProgress`). Details:
 [workflow runs](agents/workflow-runs.md).
 

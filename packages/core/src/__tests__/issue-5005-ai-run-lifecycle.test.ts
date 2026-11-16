@@ -355,6 +355,87 @@ describe.each(aiRunTestEngines)('AI run lifecycle on %s (#5005)', (engine) => {
     expect((await getAiRun(database, child.id))?.reservedCalls).toBe(1);
   });
 
+  it('refuses every status change and event of a stale worker, and leaves the run to the live one', async () => {
+    const database = await db();
+    const root = await openAiRun(store(database), {
+      type: 'workflow',
+      durable: true,
+    });
+    const child = await openAiRun(store(database), {
+      type: 'fusion',
+      parentRunId: root.id,
+    });
+    const lost = async () => {
+      throw new Error('Job claim is no longer current');
+    };
+    const live = async () => {};
+    const refused = { code: 'AI_RUN_CLAIM_LOST' };
+    await expect(
+      finishAiRun(
+        database,
+        root.id,
+        { status: 'failed', stopReason: 'repairs_exhausted' },
+        { fence: lost },
+      ),
+    ).rejects.toMatchObject(refused);
+    await expect(
+      finishAiRun(database, root.id, { status: 'done' }, { fence: lost }),
+    ).rejects.toMatchObject(refused);
+    await expect(
+      stopAiRun(database, root.id, { reason: 'interrupted', fence: lost }),
+    ).rejects.toMatchObject(refused);
+    await expect(
+      waitAiRunApproval(database, root.id, { fence: lost }),
+    ).rejects.toMatchObject(refused);
+    await expect(
+      cancelAiRun(database, root.id, { fence: lost }),
+    ).rejects.toMatchObject(refused);
+    await expect(
+      transitionAiRun(
+        database,
+        root.id,
+        { from: 'running', to: 'failed', stopReason: 'error' },
+        { fence: lost },
+      ),
+    ).rejects.toMatchObject(refused);
+    // A child's status change asserts the fence of its durable ancestor.
+    await expect(
+      finishAiRun(database, child.id, { status: 'done' }, { fence: lost }),
+    ).rejects.toMatchObject(refused);
+    await expect(
+      appendAiRunEvent(
+        database,
+        root.id,
+        { type: 'check', status: 'failed' },
+        { fence: lost },
+      ),
+    ).rejects.toMatchObject(refused);
+    expect(await getAiRun(database, root.id)).toMatchObject({
+      status: 'running',
+    });
+    expect(await getAiRun(database, child.id)).toMatchObject({
+      status: 'running',
+    });
+    expect(
+      (await getRunTrajectory(database, root.id))?.entries.some(
+        (entry) => entry.event?.type === 'check',
+      ),
+    ).toBe(false);
+
+    // The worker that holds the claim changes the status as before.
+    expect(
+      await finishAiRun(
+        database,
+        child.id,
+        { status: 'done' },
+        { fence: live },
+      ),
+    ).toMatchObject({ status: 'done' });
+    expect(
+      await waitAiRunApproval(database, root.id, { fence: live }),
+    ).toMatchObject({ status: 'waiting-approval' });
+  });
+
   it('resumes a budget stop only with that limit changed, never lowered or above the ceiling', async () => {
     const database = await db();
     const run = await openAiRun(store(database), {

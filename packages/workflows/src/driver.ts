@@ -95,10 +95,21 @@ export interface WorkflowRunOptions {
   /** Cooperative stop: the job's signal. Aborting stops with `interrupted`. */
   signal?: AbortSignal;
   /**
-   * Claim fencing: asserts, in every checkpoint save, step start and
-   * reservation, that this worker still holds the run's job claim.
+   * Claim fencing: asserts, in every checkpoint save, step start,
+   * reservation, event and status change, that this worker still holds the
+   * run's job claim. A worker whose claim was taken over changes nothing: the
+   * run rejects with `AiRunClaimLostError` and leaves the run to the worker
+   * that holds it now.
    */
   fence?: AiRunClaimFence;
+  /**
+   * The fence of the stop this worker writes when its signal aborts (default
+   * `fence`). The job behind that signal may already be settled (cancelled,
+   * timed out), so this one accepts this worker's own attempt in any state
+   * and refuses only a claim another worker took over
+   * (`workflowStopFence(claim)`).
+   */
+  stopFence?: AiRunClaimFence;
   /** Who holds the run while it works; written to and renewed on the lease. */
   holder?: string;
 }
@@ -444,6 +455,8 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
       active.set(runId, controller);
       const queue = serial();
       const fence = runOptions.fence;
+      const fenced = fence ? { fence } : {};
+      const stopFence = runOptions.stopFence ?? fence;
       let revision = loaded.checkpoint.revision;
       let state = loaded.state;
       const lease = () =>
@@ -469,7 +482,14 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
       const stopIfRunning = async (
         reason: 'interrupted' | 'definition_changed',
       ) => {
-        await stopAiRun(db, runId, { reason }).catch(() => null);
+        await stopAiRun(db, runId, {
+          reason,
+          ...(stopFence ? { fence: stopFence } : {}),
+        }).catch((error) => {
+          // A worker whose claim was taken over leaves the run alone.
+          if (error instanceof AiRunClaimLostError) throw error;
+          return null;
+        });
       };
       const fail = async (
         stopReason: Extract<
@@ -477,7 +497,7 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
           'repairs_exhausted' | 'check_failed' | 'error'
         >,
       ) => {
-        await finishAiRun(db, runId, { status: 'failed', stopReason });
+        await finishAiRun(db, runId, { status: 'failed', stopReason }, fenced);
       };
       try {
         await reconcileAiRunOnClaim(db, runId);
@@ -535,7 +555,7 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
         let stepInstanceId: string | undefined;
         while (true) {
           if (state.stepIndex >= steps.length) {
-            await finishAiRun(db, runId, { status: 'done' });
+            await finishAiRun(db, runId, { status: 'done' }, fenced);
             break;
           }
           if (controller.signal.aborted) {
@@ -650,7 +670,7 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
               break;
             }
             if (decision !== 'approved') {
-              await waitAiRunApproval(db, runId);
+              await waitAiRunApproval(db, runId, fenced);
               break;
             }
             approval = 'approved';
@@ -677,21 +697,26 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
               ? { input: result.input, inputRef: null }
               : { input: state.input, inputRef: state.inputRef };
           const checkEvent = (status: 'passed' | 'failed') =>
-            appendAiRunEvent(db, runId, {
-              type: 'check',
-              status,
-              parentEventId: pending.judgedEventId,
-              stepIndex: state.stepIndex,
-              name: step.name,
-              ...(result.note || result.failure
-                ? {
-                    payload: {
-                      ...(result.note ? { note: result.note } : {}),
-                      ...(result.failure ? { failure: result.failure } : {}),
-                    },
-                  }
-                : {}),
-            });
+            appendAiRunEvent(
+              db,
+              runId,
+              {
+                type: 'check',
+                status,
+                parentEventId: pending.judgedEventId,
+                stepIndex: state.stepIndex,
+                name: step.name,
+                ...(result.note || result.failure
+                  ? {
+                      payload: {
+                        ...(result.note ? { note: result.note } : {}),
+                        ...(result.failure ? { failure: result.failure } : {}),
+                      },
+                    }
+                  : {}),
+              },
+              fenced,
+            );
           if (result.failure !== undefined) {
             await checkEvent('failed');
             await fail('check_failed');
@@ -700,21 +725,26 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
           if (result.waitingApproval) {
             // Every hold is its own request; one approved earlier never
             // passes a later one (a step may gate several actions).
-            const request = await appendAiRunEvent(db, runId, {
-              type: 'approval',
-              status: 'requested',
-              parentEventId: pending.judgedEventId,
-              stepIndex: state.stepIndex,
-              name: step.name,
-              ...(result.note ? { payload: { note: result.note } } : {}),
-              ...(result.holdRef ? { payloadRef: result.holdRef } : {}),
-            });
+            const request = await appendAiRunEvent(
+              db,
+              runId,
+              {
+                type: 'approval',
+                status: 'requested',
+                parentEventId: pending.judgedEventId,
+                stepIndex: state.stepIndex,
+                name: step.name,
+                ...(result.note ? { payload: { note: result.note } } : {}),
+                ...(result.holdRef ? { payloadRef: result.holdRef } : {}),
+              },
+              fenced,
+            );
             await persist({
               ...state,
               ...input,
               approval: { requestEventId: request.id },
             });
-            await waitAiRunApproval(db, runId);
+            await waitAiRunApproval(db, runId, fenced);
             break;
           }
           if (result.repeat) {
@@ -749,7 +779,7 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
               approval: null,
               approvals: 0,
             });
-            await finishAiRun(db, runId, { status: 'done' });
+            await finishAiRun(db, runId, { status: 'done' }, fenced);
             break;
           }
           await persist({

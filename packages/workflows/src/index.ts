@@ -13,7 +13,7 @@ export {
   type SaveRunCheckpointInput,
   WorkflowRunNotFoundError,
 } from './checkpoint-store.js';
-export { workflowClaimFence } from './claim-fence.js';
+export { workflowClaimFence, workflowStopFence } from './claim-fence.js';
 export {
   createWorkflowRunDriver,
   initialWorkflowState,

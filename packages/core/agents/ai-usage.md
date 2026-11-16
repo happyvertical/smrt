@@ -156,7 +156,11 @@ and every ancestor. The reservation state machine is `reserved` → `settled`
 guarded on the expected state. A refused reservation stops the calling run
 with a typed reason and `stop_detail` and throws `AiRunStoppedError`; a
 child's stop reaches its parent as a stop (`stopAiRunForChild`). Settlement
-never asserts the claim and never looks at status.
+never asserts the claim and never looks at status. Status changes
+(`transitionAiRun` and everything built on it, `cancelAiRun`,
+`stopAiRunForChild`) and `appendAiRunEvent` take the same fence as
+`options.fence`: a worker whose claim was taken over gets
+`AiRunClaimLostError` before the run is read, and nothing is written.
 
 **Call ids.** Every tracked call gets a call id before it is sent; its usage
 row is written with `id = call_id` (`ON CONFLICT (id) DO NOTHING`), so a

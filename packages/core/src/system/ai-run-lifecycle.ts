@@ -36,6 +36,7 @@ import {
   type AiRunTxOptions,
   aiRunActiveTime,
   aiRunQuery,
+  assertAiRunFence,
   foldActive,
   getAiRun,
   getRows,
@@ -747,7 +748,9 @@ export interface AiRunTransition extends AiRunStopFields {
 /**
  * One guarded status change. Returns the run after the change, or `null`
  * when the run was not in `from` (it moved on; nothing was written). An
- * illegal move throws {@link AiRunTransitionError}.
+ * illegal move throws {@link AiRunTransitionError}. With `options.fence`, a
+ * worker whose job claim was taken over gets `AiRunClaimLostError`
+ * before the run is read, and nothing is written.
  */
 export async function transitionAiRun(
   db: DatabaseInterface,
@@ -758,6 +761,7 @@ export async function transitionAiRun(
   return withAiRunTransaction(
     db,
     async (tx) => {
+      await assertAiRunFence(tx, runId, options.fence);
       const run = await lockAiRun(tx, runId);
       if (!run) throw new AiRunNotFoundError(runId);
       if (run.status !== change.from) return null;
@@ -814,6 +818,7 @@ export async function cancelAiRun(
   return withAiRunTransaction(
     db,
     async (tx) => {
+      await assertAiRunFence(tx, runId, options.fence);
       const run = await lockAiRun(tx, runId);
       if (!run) throw new AiRunNotFoundError(runId);
       if (!isAiRunTransitionAllowed(run.status, 'cancelled', run.durable)) {
@@ -983,6 +988,7 @@ export async function stopAiRunForChild(
   return withAiRunTransaction(
     db,
     async (tx) => {
+      await assertAiRunFence(tx, runId, options.fence);
       const run = await lockAiRun(tx, runId);
       if (!run) throw new AiRunNotFoundError(runId);
       if (run.status === 'running') {

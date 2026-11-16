@@ -24,6 +24,7 @@ import {
   type AiRunTx,
   type AiRunTxOptions,
   aiRunQuery,
+  assertAiRunFence,
   dateOrNull,
   forUpdate,
   getRows,
@@ -296,7 +297,9 @@ export async function insertAiRunEventTx(
 /**
  * Append one event to a run (not a `call` event's reservation: reserving
  * inserts those). The payload is redacted and capped before the
- * transaction opens. Appending does not write the run row.
+ * transaction opens. Appending does not write the run row. With
+ * `options.fence`, a worker whose job claim was taken over is refused
+ * (`AiRunClaimLostError`) before it appends.
  */
 export async function appendAiRunEvent(
   db: DatabaseInterface,
@@ -314,6 +317,7 @@ export async function appendAiRunEvent(
   const seq = await withAiRunTransaction(
     db,
     async (tx) => {
+      await assertAiRunFence(tx, runId, options.fence);
       const locked = getRows(
         await aiRunQuery(
           tx.db,
