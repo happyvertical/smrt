@@ -99,9 +99,9 @@ Measured on a 333-file, 3,259-test unit suite, 16 cores (follow-up to #2893):
   purpose (`aliasFilter` drops, or a config alias pointing at a `dist/`
   file). Explicit file-path imports of a dist (runtime loaders under test)
   are not specifier resolution and are left alone.
-- Typecheck is separate: packages typechecked with their composite
-  `tsconfig.json` read sibling `.d.ts` from `dist/`; run `pnpm typecheck`
-  (Turbo builds dependencies first); source-resolving typecheck is #4556.
+- Typecheck is separate: `pnpm typecheck` uses no-emit projects with
+  `tsconfig.workspace-source-paths.json` to read sibling source. Declaration
+  builds and packed-consumer checks use the published exports.
 
 ## Vite 8 (rolldown/oxc) normalization (#2017)
 

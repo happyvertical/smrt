@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.package-typecheck.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM"],
+    "types": ["node", "svelte"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["dist", "node_modules", "**/*.test.ts", "**/*.spec.ts"]
+}

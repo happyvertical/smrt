@@ -1,0 +1,1212 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "@happyvertical/smrt-ads": [
+        "./packages/ads/src/index.ts"
+      ],
+      "@happyvertical/smrt-affiliates": [
+        "./packages/affiliates/src/index.ts"
+      ],
+      "@happyvertical/smrt-agents": [
+        "./packages/agents/src/index.ts"
+      ],
+      "@happyvertical/smrt-agents/playground": [
+        "./packages/agents/src/playground.ts"
+      ],
+      "@happyvertical/smrt-agents/server": [
+        "./packages/agents/src/server/index.ts"
+      ],
+      "@happyvertical/smrt-agents/svelte": [
+        "./packages/agents/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-agents/svelte/admin": [
+        "./packages/agents/src/svelte/admin.ts"
+      ],
+      "@happyvertical/smrt-agents/ui": [
+        "./packages/agents/src/ui.ts"
+      ],
+      "@happyvertical/smrt-agents/vite": [
+        "./packages/agents/src/vite-plugin.ts"
+      ],
+      "@happyvertical/smrt-analytics": [
+        "./packages/analytics/src/index.ts"
+      ],
+      "@happyvertical/smrt-analytics/browser": [
+        "./packages/analytics/src/browser.ts"
+      ],
+      "@happyvertical/smrt-analytics/observability": [
+        "./packages/analytics/src/observability.ts"
+      ],
+      "@happyvertical/smrt-analytics/playground": [
+        "./packages/analytics/src/playground.ts"
+      ],
+      "@happyvertical/smrt-analytics/svelte": [
+        "./packages/analytics/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-analytics/ui": [
+        "./packages/analytics/src/ui.ts"
+      ],
+      "@happyvertical/smrt-app-cli": [
+        "./packages/app-cli/src/index.ts"
+      ],
+      "@happyvertical/smrt-app-mcp": [
+        "./packages/smrt-app-mcp/src/index.ts"
+      ],
+      "@happyvertical/smrt-app-mcp/audit-store": [
+        "./packages/smrt-app-mcp/src/audit-store.ts"
+      ],
+      "@happyvertical/smrt-app-mcp/auth": [
+        "./packages/smrt-app-mcp/src/auth.ts"
+      ],
+      "@happyvertical/smrt-app-mcp/host-operations": [
+        "./packages/smrt-app-mcp/src/host-operations.ts"
+      ],
+      "@happyvertical/smrt-app-mcp/sveltekit": [
+        "./packages/smrt-app-mcp/src/sveltekit.ts"
+      ],
+      "@happyvertical/smrt-app-runtime": [
+        "./packages/app-runtime/src/index.ts"
+      ],
+      "@happyvertical/smrt-app-runtime/device-entitlements": [
+        "./packages/app-runtime/src/device-entitlements.ts"
+      ],
+      "@happyvertical/smrt-app-runtime/sveltekit": [
+        "./packages/app-runtime/src/sveltekit.ts"
+      ],
+      "@happyvertical/smrt-app-runtime/sveltekit-runtime": [
+        "./packages/app-runtime/src/sveltekit-runtime.ts"
+      ],
+      "@happyvertical/smrt-app-runtime/vault-device-key": [
+        "./packages/app-runtime/src/vault-device-key.ts"
+      ],
+      "@happyvertical/smrt-app-runtime/vault-device-transfer": [
+        "./packages/app-runtime/src/vault-device-transfer.ts"
+      ],
+      "@happyvertical/smrt-app-runtime/vault-key-generation": [
+        "./packages/app-runtime/src/vault-key-generation.ts"
+      ],
+      "@happyvertical/smrt-app-runtime/vault-key-lifecycle": [
+        "./packages/app-runtime/src/vault-key-lifecycle.ts"
+      ],
+      "@happyvertical/smrt-app-runtime/vault-key-store": [
+        "./packages/app-runtime/src/vault-key-store.ts"
+      ],
+      "@happyvertical/smrt-app-runtime/vault-recovery": [
+        "./packages/app-runtime/src/vault-recovery.ts"
+      ],
+      "@happyvertical/smrt-app-shell": [
+        "./packages/app-shell/src/lib/objects/index.ts"
+      ],
+      "@happyvertical/smrt-app-shell/engine": [
+        "./packages/app-shell/src/engine/index.ts"
+      ],
+      "@happyvertical/smrt-app-shell/engine/worker": [
+        "./packages/app-shell/src/engine/app-worker.ts"
+      ],
+      "@happyvertical/smrt-approvals": [
+        "./packages/approvals/src/index.ts"
+      ],
+      "@happyvertical/smrt-assets": [
+        "./packages/assets/src/index.ts"
+      ],
+      "@happyvertical/smrt-assets-ergot": [
+        "./packages/assets-ergot/src/index.ts"
+      ],
+      "@happyvertical/smrt-assets-local": [
+        "./packages/assets-local/src/index.ts"
+      ],
+      "@happyvertical/smrt-assets/filesystem": [
+        "./packages/assets/src/filesystem.ts"
+      ],
+      "@happyvertical/smrt-assets/locator": [
+        "./packages/assets/src/locator.ts"
+      ],
+      "@happyvertical/smrt-assets/playground": [
+        "./packages/assets/src/playground.ts"
+      ],
+      "@happyvertical/smrt-assets/svelte": [
+        "./packages/assets/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-assets/ui": [
+        "./packages/assets/src/ui.ts"
+      ],
+      "@happyvertical/smrt-assets/workbench": [
+        "./packages/assets/src/workbench.ts"
+      ],
+      "@happyvertical/smrt-bookings": [
+        "./packages/bookings/src/index.ts"
+      ],
+      "@happyvertical/smrt-chat": [
+        "./packages/chat/src/index.ts"
+      ],
+      "@happyvertical/smrt-chat/assistant-approvals": [
+        "./packages/chat/src/assistant-approvals.ts"
+      ],
+      "@happyvertical/smrt-chat/assistant-turn": [
+        "./packages/chat/src/assistant-turn-events.ts"
+      ],
+      "@happyvertical/smrt-chat/client": [
+        "./packages/chat/src/client.ts"
+      ],
+      "@happyvertical/smrt-chat/data-surface": [
+        "./packages/chat/src/data-surface-bridge.ts"
+      ],
+      "@happyvertical/smrt-chat/data-surface-bridge": [
+        "./packages/chat/src/data-surface-bridge.ts"
+      ],
+      "@happyvertical/smrt-chat/engines": [
+        "./packages/chat/src/engines.ts"
+      ],
+      "@happyvertical/smrt-chat/helper-preferences": [
+        "./packages/chat/src/helper-preferences.ts"
+      ],
+      "@happyvertical/smrt-chat/internal/agent-runtime": [
+        "./packages/chat/src/internal/agent-runtime.ts"
+      ],
+      "@happyvertical/smrt-chat/playground": [
+        "./packages/chat/src/playground.ts"
+      ],
+      "@happyvertical/smrt-chat/svelte": [
+        "./packages/chat/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-chat/sveltekit": [
+        "./packages/chat/src/sveltekit.ts"
+      ],
+      "@happyvertical/smrt-chat/tool-summary": [
+        "./packages/chat/src/tool-summary.ts"
+      ],
+      "@happyvertical/smrt-chat/ui": [
+        "./packages/chat/src/ui.ts"
+      ],
+      "@happyvertical/smrt-cli": [
+        "./packages/cli/src/index.ts"
+      ],
+      "@happyvertical/smrt-cli/app": [
+        "./packages/cli/src/app/index.ts"
+      ],
+      "@happyvertical/smrt-comments": [
+        "./packages/comments/src/index.ts"
+      ],
+      "@happyvertical/smrt-comments/participation": [
+        "./packages/comments/src/participation.ts"
+      ],
+      "@happyvertical/smrt-comments/svelte": [
+        "./packages/comments/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-commerce": [
+        "./packages/commerce/src/index.ts"
+      ],
+      "@happyvertical/smrt-commerce/cost-billing": [
+        "./packages/commerce/src/cost-billing.ts"
+      ],
+      "@happyvertical/smrt-commerce/invoices": [
+        "./packages/commerce/src/invoices.ts"
+      ],
+      "@happyvertical/smrt-commerce/money": [
+        "./packages/commerce/src/money.ts"
+      ],
+      "@happyvertical/smrt-commerce/playground": [
+        "./packages/commerce/src/playground.ts"
+      ],
+      "@happyvertical/smrt-commerce/svelte": [
+        "./packages/commerce/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-config": [
+        "./packages/config/src/index.ts"
+      ],
+      "@happyvertical/smrt-config/deployment": [
+        "./packages/config/src/deployment.ts"
+      ],
+      "@happyvertical/smrt-config/deployment/hosting": [
+        "./packages/config/src/deployment-hosting.ts"
+      ],
+      "@happyvertical/smrt-content": [
+        "./packages/content/src/index.ts"
+      ],
+      "@happyvertical/smrt-content/mock-smrt-client": [
+        "./packages/content/src/mock-smrt-client.ts"
+      ],
+      "@happyvertical/smrt-content/playground": [
+        "./packages/content/src/playground.ts"
+      ],
+      "@happyvertical/smrt-content/server": [
+        "./packages/content/src/server.ts"
+      ],
+      "@happyvertical/smrt-content/svelte": [
+        "./packages/content/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-content/ui": [
+        "./packages/content/src/ui.ts"
+      ],
+      "@happyvertical/smrt-content/workbench": [
+        "./packages/content/src/workbench.ts"
+      ],
+      "@happyvertical/smrt-core": [
+        "./packages/core/src/index.ts"
+      ],
+      "@happyvertical/smrt-core/activation": [
+        "./packages/core/src/activation.ts"
+      ],
+      "@happyvertical/smrt-core/activation/generate": [
+        "./packages/core/src/activation/generate.ts"
+      ],
+      "@happyvertical/smrt-core/api-actions": [
+        "./packages/core/src/api-actions.ts"
+      ],
+      "@happyvertical/smrt-core/app-models": [
+        "./packages/core/src/app-models.ts"
+      ],
+      "@happyvertical/smrt-core/byo-inference": [
+        "./packages/core/src/byo-inference.ts"
+      ],
+      "@happyvertical/smrt-core/consumer-plugin": [
+        "./packages/core/src/consumer-plugin.ts"
+      ],
+      "@happyvertical/smrt-core/cookbook": [
+        "./packages/core/src/cookbook.ts"
+      ],
+      "@happyvertical/smrt-core/cookbook/engine": [
+        "./packages/core/src/cookbook/engine.ts"
+      ],
+      "@happyvertical/smrt-core/cookbook/tools": [
+        "./packages/core/src/cookbook/tools.ts"
+      ],
+      "@happyvertical/smrt-core/filesystem": [
+        "./packages/core/src/filesystem.ts"
+      ],
+      "@happyvertical/smrt-core/generators": [
+        "./packages/core/src/generators.ts"
+      ],
+      "@happyvertical/smrt-core/generators/custom-action": [
+        "./packages/core/src/generators/custom-action.ts"
+      ],
+      "@happyvertical/smrt-core/generators/mcp": [
+        "./packages/core/src/generators/mcp.ts"
+      ],
+      "@happyvertical/smrt-core/generators/rest": [
+        "./packages/core/src/generators/rest.ts"
+      ],
+      "@happyvertical/smrt-core/generators/swagger": [
+        "./packages/core/src/generators/swagger.ts"
+      ],
+      "@happyvertical/smrt-core/inference-availability": [
+        "./packages/core/src/inference-availability.ts"
+      ],
+      "@happyvertical/smrt-core/knowledge": [
+        "./packages/core/src/knowledge.ts"
+      ],
+      "@happyvertical/smrt-core/manifest": [
+        "./packages/core/src/manifest.ts"
+      ],
+      "@happyvertical/smrt-core/manifest/discover-base-classes": [
+        "./packages/core/src/manifest/discover-base-classes.ts"
+      ],
+      "@happyvertical/smrt-core/manifest/discover-smrt-packages": [
+        "./packages/core/src/manifest/discover-smrt-packages.ts"
+      ],
+      "@happyvertical/smrt-core/mcp-serializer": [
+        "./packages/core/src/mcp-serializer.ts"
+      ],
+      "@happyvertical/smrt-core/migrations": [
+        "./packages/core/src/migrations.ts"
+      ],
+      "@happyvertical/smrt-core/prebuild": [
+        "./packages/core/src/prebuild.ts"
+      ],
+      "@happyvertical/smrt-core/prebuild/cli": [
+        "./packages/core/src/prebuild/cli.ts"
+      ],
+      "@happyvertical/smrt-core/recipe-demo": [
+        "./packages/core/src/recipe-demo.ts"
+      ],
+      "@happyvertical/smrt-core/runtime": [
+        "./packages/core/src/runtime.ts"
+      ],
+      "@happyvertical/smrt-core/runtime-exposure": [
+        "./packages/core/src/runtime-exposure.ts"
+      ],
+      "@happyvertical/smrt-core/scanner": [
+        "./packages/core/src/scanner.ts"
+      ],
+      "@happyvertical/smrt-core/scanner/types": [
+        "./packages/core/src/scanner/types.ts"
+      ],
+      "@happyvertical/smrt-core/schema": [
+        "./packages/core/src/schema.ts"
+      ],
+      "@happyvertical/smrt-core/schema/utils": [
+        "./packages/core/src/schema/utils.ts"
+      ],
+      "@happyvertical/smrt-core/smrt-error": [
+        "./packages/core/src/smrt-error.ts"
+      ],
+      "@happyvertical/smrt-core/table-cache": [
+        "./packages/core/src/table-cache.ts"
+      ],
+      "@happyvertical/smrt-core/testing": [
+        "./packages/core/src/testing.ts"
+      ],
+      "@happyvertical/smrt-core/ui-metadata": [
+        "./packages/core/src/ui-metadata.ts"
+      ],
+      "@happyvertical/smrt-core/utils": [
+        "./packages/core/src/utils.ts"
+      ],
+      "@happyvertical/smrt-core/utils/database-url": [
+        "./packages/core/src/utils/database-url.ts"
+      ],
+      "@happyvertical/smrt-core/utils/import-workspace-module": [
+        "./packages/core/src/utils/import-workspace-module.ts"
+      ],
+      "@happyvertical/smrt-core/vite": [
+        "./packages/core/src/vite.ts"
+      ],
+      "@happyvertical/smrt-core/vite-plugin": [
+        "./packages/core/src/vite-plugin.ts"
+      ],
+      "@happyvertical/smrt-desktop": [
+        "./packages/smrt-desktop/src/index.ts"
+      ],
+      "@happyvertical/smrt-desktop/builder": [
+        "./packages/smrt-desktop/src/builder/index.ts"
+      ],
+      "@happyvertical/smrt-desktop/bundler": [
+        "./packages/smrt-desktop/src/bundler/index.ts"
+      ],
+      "@happyvertical/smrt-desktop/launcher": [
+        "./packages/smrt-desktop/src/launcher/index.ts"
+      ],
+      "@happyvertical/smrt-dev-mcp": [
+        "./packages/smrt-dev-mcp/src/index.ts"
+      ],
+      "@happyvertical/smrt-dev-mcp/agent-skills": [
+        "./packages/smrt-dev-mcp/src/agent-skills.ts"
+      ],
+      "@happyvertical/smrt-dev-mcp/dev-plane": [
+        "./packages/smrt-dev-mcp/src/dev-plane.ts"
+      ],
+      "@happyvertical/smrt-dev-mcp/knowledge": [
+        "./packages/smrt-dev-mcp/src/knowledge.ts"
+      ],
+      "@happyvertical/smrt-dev-mcp/runtime": [
+        "./packages/smrt-dev-mcp/src/runtime.ts"
+      ],
+      "@happyvertical/smrt-education": [
+        "./packages/education/src/index.ts"
+      ],
+      "@happyvertical/smrt-education/ingestion": [
+        "./packages/education/src/ingestion.ts"
+      ],
+      "@happyvertical/smrt-education/node": [
+        "./packages/education/src/node.ts"
+      ],
+      "@happyvertical/smrt-events": [
+        "./packages/events/src/index.ts"
+      ],
+      "@happyvertical/smrt-events/playground": [
+        "./packages/events/src/playground.ts"
+      ],
+      "@happyvertical/smrt-events/svelte": [
+        "./packages/events/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-events/ui": [
+        "./packages/events/src/ui.ts"
+      ],
+      "@happyvertical/smrt-events/utils": [
+        "./packages/events/src/utils.ts"
+      ],
+      "@happyvertical/smrt-expenses": [
+        "./packages/expenses/src/index.ts"
+      ],
+      "@happyvertical/smrt-expenses/playground": [
+        "./packages/expenses/src/playground.ts"
+      ],
+      "@happyvertical/smrt-expenses/svelte": [
+        "./packages/expenses/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-expenses/ui": [
+        "./packages/expenses/src/ui.ts"
+      ],
+      "@happyvertical/smrt-facts": [
+        "./packages/facts/src/index.ts"
+      ],
+      "@happyvertical/smrt-features": [
+        "./packages/features/src/index.ts"
+      ],
+      "@happyvertical/smrt-features/svelte": [
+        "./packages/features/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-fields": [
+        "./packages/fields/src/index.ts"
+      ],
+      "@happyvertical/smrt-fields/playground": [
+        "./packages/fields/src/playground.ts"
+      ],
+      "@happyvertical/smrt-fields/policy": [
+        "./packages/fields/src/policy.ts"
+      ],
+      "@happyvertical/smrt-fields/svelte": [
+        "./packages/fields/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-gnode": [
+        "./packages/gnode/src/index.ts"
+      ],
+      "@happyvertical/smrt-human-resources": [
+        "./packages/human-resources/src/index.ts"
+      ],
+      "@happyvertical/smrt-human-resources/svelte": [
+        "./packages/human-resources/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-human-resources/ui": [
+        "./packages/human-resources/src/ui.ts"
+      ],
+      "@happyvertical/smrt-images": [
+        "./packages/images/src/index.ts"
+      ],
+      "@happyvertical/smrt-images/playground": [
+        "./packages/images/src/playground.ts"
+      ],
+      "@happyvertical/smrt-images/svelte": [
+        "./packages/images/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-images/ui": [
+        "./packages/images/src/ui.ts"
+      ],
+      "@happyvertical/smrt-images/workbench": [
+        "./packages/images/src/workbench.ts"
+      ],
+      "@happyvertical/smrt-inference": [
+        "./packages/inference/src/index.ts"
+      ],
+      "@happyvertical/smrt-inference/gate": [
+        "./packages/inference/src/gate.ts"
+      ],
+      "@happyvertical/smrt-inference/models": [
+        "./packages/inference/src/models.ts"
+      ],
+      "@happyvertical/smrt-inference/node": [
+        "./packages/inference/src/node.ts"
+      ],
+      "@happyvertical/smrt-inference/resolver": [
+        "./packages/inference/src/resolver.ts"
+      ],
+      "@happyvertical/smrt-inference/server": [
+        "./packages/inference/src/server.ts"
+      ],
+      "@happyvertical/smrt-inference/svelte": [
+        "./packages/inference/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-inference/test-support": [
+        "./packages/inference/src/agent-cli/test-support.ts"
+      ],
+      "@happyvertical/smrt-ingestion": [
+        "./packages/ingestion/src/index.ts"
+      ],
+      "@happyvertical/smrt-ingestion/dto": [
+        "./packages/ingestion/src/dto.ts"
+      ],
+      "@happyvertical/smrt-ingestion/execution": [
+        "./packages/ingestion/src/execution.ts"
+      ],
+      "@happyvertical/smrt-ingestion/models": [
+        "./packages/ingestion/src/models.ts"
+      ],
+      "@happyvertical/smrt-ingestion/proposals": [
+        "./packages/ingestion/src/proposals.ts"
+      ],
+      "@happyvertical/smrt-ingestion/server": [
+        "./packages/ingestion/src/server.ts"
+      ],
+      "@happyvertical/smrt-ingestion/svelte": [
+        "./packages/ingestion/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-inventory": [
+        "./packages/inventory/src/index.ts"
+      ],
+      "@happyvertical/smrt-inventory/svelte": [
+        "./packages/inventory/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-jobs": [
+        "./packages/jobs/src/index.ts"
+      ],
+      "@happyvertical/smrt-jobs/playground": [
+        "./packages/jobs/src/playground.ts"
+      ],
+      "@happyvertical/smrt-jobs/runner": [
+        "./packages/jobs/src/runner.ts"
+      ],
+      "@happyvertical/smrt-jobs/svelte": [
+        "./packages/jobs/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-jobs/ui": [
+        "./packages/jobs/src/ui.ts"
+      ],
+      "@happyvertical/smrt-jobs/worker-liveness-thread": [
+        "./packages/jobs/src/worker-liveness-thread.ts"
+      ],
+      "@happyvertical/smrt-languages": [
+        "./packages/languages/src/index.ts"
+      ],
+      "@happyvertical/smrt-languages/cli": [
+        "./packages/languages/src/cli.ts"
+      ],
+      "@happyvertical/smrt-languages/jobs": [
+        "./packages/languages/src/jobs.ts"
+      ],
+      "@happyvertical/smrt-ledgers": [
+        "./packages/ledgers/src/index.ts"
+      ],
+      "@happyvertical/smrt-manufacturing": [
+        "./packages/manufacturing/src/index.ts"
+      ],
+      "@happyvertical/smrt-manufacturing/svelte": [
+        "./packages/manufacturing/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-manufacturing/ui": [
+        "./packages/manufacturing/src/ui.ts"
+      ],
+      "@happyvertical/smrt-manufacturing/views": [
+        "./packages/manufacturing/src/views.ts"
+      ],
+      "@happyvertical/smrt-marketing": [
+        "./packages/marketing/src/index.ts"
+      ],
+      "@happyvertical/smrt-marketing/svelte": [
+        "./packages/marketing/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-mcp-apps": [
+        "./packages/mcp-apps/src/index.ts"
+      ],
+      "@happyvertical/smrt-mcp-openai": [
+        "./packages/mcp-openai/src/index.ts"
+      ],
+      "@happyvertical/smrt-mcp-openai/client": [
+        "./packages/mcp-openai/src/client.ts"
+      ],
+      "@happyvertical/smrt-mcp-openai/context": [
+        "./packages/mcp-openai/src/context.ts"
+      ],
+      "@happyvertical/smrt-mcp-openai/files": [
+        "./packages/mcp-openai/src/files.ts"
+      ],
+      "@happyvertical/smrt-mcp-openai/files/server": [
+        "./packages/mcp-openai/src/files-server.ts"
+      ],
+      "@happyvertical/smrt-mcp-openai/forms": [
+        "./packages/mcp-openai/src/forms.ts"
+      ],
+      "@happyvertical/smrt-mcp-openai/forms/server": [
+        "./packages/mcp-openai/src/forms-server.ts"
+      ],
+      "@happyvertical/smrt-mcp-openai/forms/view": [
+        "./packages/mcp-openai/src/forms-view.ts"
+      ],
+      "@happyvertical/smrt-mcp-openai/mentions": [
+        "./packages/mcp-openai/src/mentions.ts"
+      ],
+      "@happyvertical/smrt-mcp-openai/messages": [
+        "./packages/mcp-openai/src/messages.ts"
+      ],
+      "@happyvertical/smrt-messages": [
+        "./packages/messages/src/index.ts"
+      ],
+      "@happyvertical/smrt-messages/playground": [
+        "./packages/messages/src/playground.ts"
+      ],
+      "@happyvertical/smrt-messages/providers/all": [
+        "./packages/messages/src/providers/all.ts"
+      ],
+      "@happyvertical/smrt-messages/providers/email": [
+        "./packages/messages/src/providers/email.ts"
+      ],
+      "@happyvertical/smrt-messages/providers/slack": [
+        "./packages/messages/src/providers/slack.ts"
+      ],
+      "@happyvertical/smrt-messages/providers/twitter": [
+        "./packages/messages/src/providers/twitter.ts"
+      ],
+      "@happyvertical/smrt-messages/svelte": [
+        "./packages/messages/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-messages/ui": [
+        "./packages/messages/src/ui.ts"
+      ],
+      "@happyvertical/smrt-mobile-contract": [
+        "./packages/smrt-mobile-contract/src/index.ts"
+      ],
+      "@happyvertical/smrt-personas": [
+        "./packages/personas/src/index.ts"
+      ],
+      "@happyvertical/smrt-personas/svelte": [
+        "./packages/personas/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-places": [
+        "./packages/places/src/index.ts"
+      ],
+      "@happyvertical/smrt-places/utils": [
+        "./packages/places/src/utils.ts"
+      ],
+      "@happyvertical/smrt-planner": [
+        "./packages/planner/src/lib/index.ts"
+      ],
+      "@happyvertical/smrt-planner/app": [
+        "./packages/planner/src/lib/core/app.ts"
+      ],
+      "@happyvertical/smrt-planner/commands": [
+        "./packages/planner/src/lib/planner/commands/index.ts"
+      ],
+      "@happyvertical/smrt-planner/core": [
+        "./packages/planner/src/lib/core/index.ts"
+      ],
+      "@happyvertical/smrt-playbooks": [
+        "./packages/playbooks/src/index.ts"
+      ],
+      "@happyvertical/smrt-playground": [
+        "./packages/smrt-playground/src/index.ts"
+      ],
+      "@happyvertical/smrt-playground/svelte": [
+        "./packages/smrt-playground/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-playground/vite": [
+        "./packages/smrt-playground/src/vite.ts"
+      ],
+      "@happyvertical/smrt-preferences": [
+        "./packages/preferences/src/index.ts"
+      ],
+      "@happyvertical/smrt-products": [
+        "./packages/products/src/lib/index.ts"
+      ],
+      "@happyvertical/smrt-products/collections": [
+        "./packages/products/src/lib/collections/index.ts"
+      ],
+      "@happyvertical/smrt-products/components": [
+        "./packages/products/src/lib/components/index.ts"
+      ],
+      "@happyvertical/smrt-products/generated": [
+        "./packages/products/src/lib/generated/index.ts"
+      ],
+      "@happyvertical/smrt-products/models": [
+        "./packages/products/src/lib/models/index.ts"
+      ],
+      "@happyvertical/smrt-products/stores": [
+        "./packages/products/src/lib/stores/index.ts"
+      ],
+      "@happyvertical/smrt-products/stores/product-collection": [
+        "./packages/products/src/lib/stores/product-collection.ts"
+      ],
+      "@happyvertical/smrt-products/utils": [
+        "./packages/products/src/lib/utils/index.ts"
+      ],
+      "@happyvertical/smrt-profiles": [
+        "./packages/profiles/src/index.ts"
+      ],
+      "@happyvertical/smrt-profiles/internal/oidc-provisioning": [
+        "./packages/profiles/src/internal/oidc-provisioning.ts"
+      ],
+      "@happyvertical/smrt-profiles/utils": [
+        "./packages/profiles/src/utils.ts"
+      ],
+      "@happyvertical/smrt-projects": [
+        "./packages/projects/src/index.ts"
+      ],
+      "@happyvertical/smrt-projects/playground": [
+        "./packages/projects/src/playground.ts"
+      ],
+      "@happyvertical/smrt-projects/svelte": [
+        "./packages/projects/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-projects/ui": [
+        "./packages/projects/src/ui.ts"
+      ],
+      "@happyvertical/smrt-prompts": [
+        "./packages/prompts/src/index.ts"
+      ],
+      "@happyvertical/smrt-prompts/svelte": [
+        "./packages/prompts/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-properties": [
+        "./packages/properties/src/index.ts"
+      ],
+      "@happyvertical/smrt-reactions": [
+        "./packages/reactions/src/index.ts"
+      ],
+      "@happyvertical/smrt-reactions/server": [
+        "./packages/reactions/src/server.ts"
+      ],
+      "@happyvertical/smrt-reactions/svelte": [
+        "./packages/reactions/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-reports": [
+        "./packages/reports/src/index.ts"
+      ],
+      "@happyvertical/smrt-reports/aggregate": [
+        "./packages/reports/src/aggregate.ts"
+      ],
+      "@happyvertical/smrt-reports/compiler": [
+        "./packages/reports/src/compiler.ts"
+      ],
+      "@happyvertical/smrt-reports/decorators": [
+        "./packages/reports/src/decorators.ts"
+      ],
+      "@happyvertical/smrt-reports/display": [
+        "./packages/reports/src/display.ts"
+      ],
+      "@happyvertical/smrt-reports/playground": [
+        "./packages/reports/src/playground.ts"
+      ],
+      "@happyvertical/smrt-reports/refresh": [
+        "./packages/reports/src/refresh.ts"
+      ],
+      "@happyvertical/smrt-reports/scheduler": [
+        "./packages/reports/src/scheduler.ts"
+      ],
+      "@happyvertical/smrt-reports/spec": [
+        "./packages/reports/src/spec.ts"
+      ],
+      "@happyvertical/smrt-reports/state": [
+        "./packages/reports/src/state.ts"
+      ],
+      "@happyvertical/smrt-reports/svelte": [
+        "./packages/reports/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-sales": [
+        "./packages/sales/src/index.ts"
+      ],
+      "@happyvertical/smrt-sales/agreements": [
+        "./packages/sales/src/agreements.ts"
+      ],
+      "@happyvertical/smrt-sales/commissions": [
+        "./packages/sales/src/commissions.ts"
+      ],
+      "@happyvertical/smrt-sales/crm": [
+        "./packages/sales/src/crm.ts"
+      ],
+      "@happyvertical/smrt-sales/referrals": [
+        "./packages/sales/src/referrals.ts"
+      ],
+      "@happyvertical/smrt-sales/svelte": [
+        "./packages/sales/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-scanner": [
+        "./packages/scanner/src/index.ts"
+      ],
+      "@happyvertical/smrt-scanner/cli": [
+        "./packages/scanner/src/cli.ts"
+      ],
+      "@happyvertical/smrt-scanner/knowledge": [
+        "./packages/scanner/src/knowledge.ts"
+      ],
+      "@happyvertical/smrt-scanner/types": [
+        "./packages/scanner/src/types.ts"
+      ],
+      "@happyvertical/smrt-secrets": [
+        "./packages/secrets/src/index.ts"
+      ],
+      "@happyvertical/smrt-secrets/models": [
+        "./packages/secrets/src/models/index.ts"
+      ],
+      "@happyvertical/smrt-secrets/service": [
+        "./packages/secrets/src/services/SecretService.ts"
+      ],
+      "@happyvertical/smrt-sites": [
+        "./packages/sites/src/index.ts"
+      ],
+      "@happyvertical/smrt-sites/hostname": [
+        "./packages/sites/src/hostname.ts"
+      ],
+      "@happyvertical/smrt-social": [
+        "./packages/social/src/index.ts"
+      ],
+      "@happyvertical/smrt-social/connect": [
+        "./packages/social/src/connect.ts"
+      ],
+      "@happyvertical/smrt-social/server": [
+        "./packages/social/src/server.ts"
+      ],
+      "@happyvertical/smrt-social/svelte": [
+        "./packages/social/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-spreadsheets": [
+        "./packages/spreadsheets/src/index.ts"
+      ],
+      "@happyvertical/smrt-spreadsheets/import": [
+        "./packages/spreadsheets/src/import/index.ts"
+      ],
+      "@happyvertical/smrt-spreadsheets/testing": [
+        "./packages/spreadsheets/src/testing.ts"
+      ],
+      "@happyvertical/smrt-subscriptions": [
+        "./packages/subscriptions/src/index.ts"
+      ],
+      "@happyvertical/smrt-subscriptions/svelte": [
+        "./packages/subscriptions/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-support": [
+        "./packages/support/src/index.ts"
+      ],
+      "@happyvertical/smrt-support/svelte": [
+        "./packages/support/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-svelte": [
+        "./packages/smrt-svelte/src/index.ts"
+      ],
+      "@happyvertical/smrt-svelte/app": [
+        "./packages/smrt-svelte/src/components/app/index.ts"
+      ],
+      "@happyvertical/smrt-svelte/app/runtime-diagnostics": [
+        "./packages/smrt-svelte/src/components/app/runtime-diagnostics-webmcp.ts"
+      ],
+      "@happyvertical/smrt-svelte/board": [
+        "./packages/smrt-svelte/src/components/board/index.ts"
+      ],
+      "@happyvertical/smrt-svelte/browser-ai": [
+        "./packages/smrt-svelte/src/browser-ai/index.ts"
+      ],
+      "@happyvertical/smrt-svelte/browser-ai/speech-worker": [
+        "./packages/smrt-svelte/src/browser-ai/adapters/stt/local-speech.worker.ts"
+      ],
+      "@happyvertical/smrt-svelte/browser-ai/svelte": [
+        "./packages/smrt-svelte/src/browser-ai/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-svelte/browser-ai/whisper-worker": [
+        "./packages/smrt-svelte/src/browser-ai/adapters/stt/local-speech.worker.ts"
+      ],
+      "@happyvertical/smrt-svelte/command-palette": [
+        "./packages/smrt-svelte/src/components/command-palette/index.ts"
+      ],
+      "@happyvertical/smrt-svelte/connect-ai": [
+        "./packages/smrt-svelte/src/components/connect-ai/index.ts"
+      ],
+      "@happyvertical/smrt-svelte/connect-ai/client": [
+        "./packages/smrt-svelte/src/components/connect-ai/client.ts"
+      ],
+      "@happyvertical/smrt-svelte/connect-ai/server": [
+        "./packages/smrt-svelte/src/components/connect-ai/server.ts"
+      ],
+      "@happyvertical/smrt-svelte/cookbook": [
+        "./packages/smrt-svelte/src/components/cookbook/index.ts"
+      ],
+      "@happyvertical/smrt-svelte/cookbook/server": [
+        "./packages/smrt-svelte/src/components/cookbook/server.ts"
+      ],
+      "@happyvertical/smrt-svelte/cookbook/surfaces": [
+        "./packages/smrt-svelte/src/components/cookbook/surfaces.ts"
+      ],
+      "@happyvertical/smrt-svelte/data": [
+        "./packages/smrt-svelte/src/data-surface.ts"
+      ],
+      "@happyvertical/smrt-svelte/data-surface": [
+        "./packages/smrt-svelte/src/data-surface.ts"
+      ],
+      "@happyvertical/smrt-svelte/forms": [
+        "./packages/smrt-svelte/src/components/forms/index.ts"
+      ],
+      "@happyvertical/smrt-svelte/i18n/server": [
+        "./packages/smrt-svelte/src/i18n/server.ts"
+      ],
+      "@happyvertical/smrt-svelte/import-export": [
+        "./packages/smrt-svelte/src/components/import-export/index.ts"
+      ],
+      "@happyvertical/smrt-svelte/import-export/csv": [
+        "./packages/smrt-svelte/src/components/import-export/csv.ts"
+      ],
+      "@happyvertical/smrt-svelte/mcp-apps": [
+        "./packages/smrt-svelte/src/mcp-apps/index.ts"
+      ],
+      "@happyvertical/smrt-svelte/notifications": [
+        "./packages/smrt-svelte/src/components/notifications/index.ts"
+      ],
+      "@happyvertical/smrt-svelte/onboarding": [
+        "./packages/smrt-svelte/src/components/onboarding/index.ts"
+      ],
+      "@happyvertical/smrt-svelte/overview": [
+        "./packages/smrt-svelte/src/components/overview/index.ts"
+      ],
+      "@happyvertical/smrt-svelte/overview/server": [
+        "./packages/smrt-svelte/src/components/overview/server.ts"
+      ],
+      "@happyvertical/smrt-svelte/playground": [
+        "./packages/smrt-svelte/src/svelte/playground.ts"
+      ],
+      "@happyvertical/smrt-svelte/screens": [
+        "./packages/smrt-svelte/src/components/screens/index.ts"
+      ],
+      "@happyvertical/smrt-svelte/settings": [
+        "./packages/smrt-svelte/src/components/settings/index.ts"
+      ],
+      "@happyvertical/smrt-svelte/sortable": [
+        "./packages/smrt-svelte/src/components/sortable/index.ts"
+      ],
+      "@happyvertical/smrt-svelte/web": [
+        "./packages/smrt-svelte/src/web/index.ts"
+      ],
+      "@happyvertical/smrt-svelte/workspace": [
+        "./packages/smrt-svelte/src/components/workspace/index.ts"
+      ],
+      "@happyvertical/smrt-svelte/workspace/layout": [
+        "./packages/smrt-svelte/src/components/workspace/admin-shell/layout.ts"
+      ],
+      "@happyvertical/smrt-svelte/workspace/legacy": [
+        "./packages/smrt-svelte/src/components/workspace/legacy.ts"
+      ],
+      "@happyvertical/smrt-svelte/workspace/live": [
+        "./packages/smrt-svelte/src/components/workspace/live/index.ts"
+      ],
+      "@happyvertical/smrt-svelte/workspace/server": [
+        "./packages/smrt-svelte/src/components/workspace/server/index.ts"
+      ],
+      "@happyvertical/smrt-tags": [
+        "./packages/tags/src/index.ts"
+      ],
+      "@happyvertical/smrt-tags/utils": [
+        "./packages/tags/src/utils.ts"
+      ],
+      "@happyvertical/smrt-template-sveltekit/host/client": [
+        "./packages/template-sveltekit/host/client.ts"
+      ],
+      "@happyvertical/smrt-template-sveltekit/host/generate": [
+        "./packages/template-sveltekit/host/generate.ts"
+      ],
+      "@happyvertical/smrt-template-sveltekit/host/plugin-mode": [
+        "./packages/template-sveltekit/host/plugin-mode.ts"
+      ],
+      "@happyvertical/smrt-template-sveltekit/host/preferences": [
+        "./packages/template-sveltekit/host/preferences.ts"
+      ],
+      "@happyvertical/smrt-template-sveltekit/host/server": [
+        "./packages/template-sveltekit/host/server.ts"
+      ],
+      "@happyvertical/smrt-template-sveltekit/host/settings": [
+        "./packages/template-sveltekit/host/settings.ts"
+      ],
+      "@happyvertical/smrt-template-sveltekit/host/sveltekit-client": [
+        "./packages/template-sveltekit/host/sveltekit-client.ts"
+      ],
+      "@happyvertical/smrt-tenancy": [
+        "./packages/tenancy/src/index.ts"
+      ],
+      "@happyvertical/smrt-tenancy/adapters": [
+        "./packages/tenancy/src/adapters/index.ts"
+      ],
+      "@happyvertical/smrt-tenancy/decorators": [
+        "./packages/tenancy/src/decorators.ts"
+      ],
+      "@happyvertical/smrt-tenancy/playground": [
+        "./packages/tenancy/src/playground.ts"
+      ],
+      "@happyvertical/smrt-tenancy/svelte": [
+        "./packages/tenancy/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-tenancy/testing": [
+        "./packages/tenancy/src/testing.ts"
+      ],
+      "@happyvertical/smrt-tenancy/ui": [
+        "./packages/tenancy/src/ui.ts"
+      ],
+      "@happyvertical/smrt-timesheets": [
+        "./packages/timesheets/src/index.ts"
+      ],
+      "@happyvertical/smrt-timesheets/attendance": [
+        "./packages/timesheets/src/attendance.ts"
+      ],
+      "@happyvertical/smrt-timesheets/rollup": [
+        "./packages/timesheets/src/rollup.ts"
+      ],
+      "@happyvertical/smrt-timesheets/svelte": [
+        "./packages/timesheets/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-timesheets/ui": [
+        "./packages/timesheets/src/ui.ts"
+      ],
+      "@happyvertical/smrt-types": [
+        "./packages/types/src/index.ts"
+      ],
+      "@happyvertical/smrt-ui": [
+        "./packages/smrt-ui/src/index.ts"
+      ],
+      "@happyvertical/smrt-ui/analytics": [
+        "./packages/smrt-ui/src/analytics/index.ts"
+      ],
+      "@happyvertical/smrt-ui/calendar": [
+        "./packages/smrt-ui/src/components/calendar/index.ts"
+      ],
+      "@happyvertical/smrt-ui/charts": [
+        "./packages/smrt-ui/src/charts/index.ts"
+      ],
+      "@happyvertical/smrt-ui/charts/format": [
+        "./packages/smrt-ui/src/charts/format.ts"
+      ],
+      "@happyvertical/smrt-ui/chat": [
+        "./packages/smrt-ui/src/components/chat/index.ts"
+      ],
+      "@happyvertical/smrt-ui/currency": [
+        "./packages/smrt-ui/src/currency.ts"
+      ],
+      "@happyvertical/smrt-ui/data": [
+        "./packages/smrt-ui/src/components/data/index.ts"
+      ],
+      "@happyvertical/smrt-ui/data-surface": [
+        "./packages/smrt-ui/src/components/data/data-surface.ts"
+      ],
+      "@happyvertical/smrt-ui/display": [
+        "./packages/smrt-ui/src/components/display/index.ts"
+      ],
+      "@happyvertical/smrt-ui/feedback": [
+        "./packages/smrt-ui/src/components/feedback/index.ts"
+      ],
+      "@happyvertical/smrt-ui/form-retry": [
+        "./packages/smrt-ui/src/components/forms/form-retry/index.ts"
+      ],
+      "@happyvertical/smrt-ui/forms": [
+        "./packages/smrt-ui/src/components/forms/index.ts"
+      ],
+      "@happyvertical/smrt-ui/forms/hands-free": [
+        "./packages/smrt-ui/src/components/forms/hands-free-vad.ts"
+      ],
+      "@happyvertical/smrt-ui/i18n": [
+        "./packages/smrt-ui/src/i18n/index.ts"
+      ],
+      "@happyvertical/smrt-ui/layout": [
+        "./packages/smrt-ui/src/components/layout/index.ts"
+      ],
+      "@happyvertical/smrt-ui/playground": [
+        "./packages/smrt-ui/src/playground.ts"
+      ],
+      "@happyvertical/smrt-ui/registry": [
+        "./packages/smrt-ui/src/registry/index.ts"
+      ],
+      "@happyvertical/smrt-ui/test-support/a11y": [
+        "./packages/smrt-ui/src/test-support/a11y.ts"
+      ],
+      "@happyvertical/smrt-ui/test-support/setup": [
+        "./packages/smrt-ui/src/test-support/setup.ts"
+      ],
+      "@happyvertical/smrt-ui/theme": [
+        "./packages/smrt-ui/src/theme/index.ts"
+      ],
+      "@happyvertical/smrt-ui/themes": [
+        "./packages/smrt-ui/src/themes/index.ts"
+      ],
+      "@happyvertical/smrt-ui/themes/presets": [
+        "./packages/smrt-ui/src/themes/presets.ts"
+      ],
+      "@happyvertical/smrt-ui/themes/styles/index.js": [
+        "./packages/smrt-ui/src/themes/styles/index.ts"
+      ],
+      "@happyvertical/smrt-ui/ui": [
+        "./packages/smrt-ui/src/components/ui/index.ts"
+      ],
+      "@happyvertical/smrt-ui/utils/forms/formatters.js": [
+        "./packages/smrt-ui/src/utils/forms/formatters.ts"
+      ],
+      "@happyvertical/smrt-ui/utils/import-optional.js": [
+        "./packages/smrt-ui/src/utils/import-optional.ts"
+      ],
+      "@happyvertical/smrt-ui/utils/theme/color.js": [
+        "./packages/smrt-ui/src/utils/theme/color.ts"
+      ],
+      "@happyvertical/smrt-ui/utils/theme/typography.js": [
+        "./packages/smrt-ui/src/utils/theme/typography.ts"
+      ],
+      "@happyvertical/smrt-users": [
+        "./packages/users/src/index.ts"
+      ],
+      "@happyvertical/smrt-users/app-contract": [
+        "./packages/users/src/app-contract.ts"
+      ],
+      "@happyvertical/smrt-users/operator": [
+        "./packages/users/src/operator.ts"
+      ],
+      "@happyvertical/smrt-users/permission-registry": [
+        "./packages/users/src/permission-registry.ts"
+      ],
+      "@happyvertical/smrt-users/playground": [
+        "./packages/users/src/playground.ts"
+      ],
+      "@happyvertical/smrt-users/step-up": [
+        "./packages/users/src/step-up.ts"
+      ],
+      "@happyvertical/smrt-users/svelte": [
+        "./packages/users/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-users/sveltekit": [
+        "./packages/users/src/sveltekit.ts"
+      ],
+      "@happyvertical/smrt-vault-relay": [
+        "./packages/vault-relay/src/index.ts"
+      ],
+      "@happyvertical/smrt-video": [
+        "./packages/video/src/index.ts"
+      ],
+      "@happyvertical/smrt-vitest": [
+        "./packages/vitest/src/index.ts"
+      ],
+      "@happyvertical/smrt-vitest/a11y": [
+        "./packages/vitest/src/a11y.ts"
+      ],
+      "@happyvertical/smrt-vitest/minimal-row": [
+        "./packages/vitest/src/minimal-row.ts"
+      ],
+      "@happyvertical/smrt-vitest/setup": [
+        "./packages/vitest/src/setup.ts"
+      ],
+      "@happyvertical/smrt-vitest/svelte": [
+        "./packages/vitest/src/svelte.ts"
+      ],
+      "@happyvertical/smrt-vitest/svelte-setup": [
+        "./packages/vitest/src/svelte-setup.ts"
+      ],
+      "@happyvertical/smrt-vitest/test-home": [
+        "./packages/vitest/src/test-home.ts"
+      ],
+      "@happyvertical/smrt-vitest/test-home/global-setup": [
+        "./packages/vitest/src/test-home.global-setup.ts"
+      ],
+      "@happyvertical/smrt-voice": [
+        "./packages/voice/src/index.ts"
+      ],
+      "@happyvertical/smrt-web": [
+        "./packages/smrt-web/src/index.ts"
+      ],
+      "@happyvertical/smrt-web/ai": [
+        "./packages/smrt-web/src/ai.ts"
+      ],
+      "@happyvertical/smrt-web/intents": [
+        "./packages/smrt-web/src/intents.ts"
+      ],
+      "@happyvertical/smrt-web/webmcp": [
+        "./packages/smrt-web/src/webmcp.ts"
+      ],
+      "@happyvertical/smrt-web/webmcp-page-tools": [
+        "./packages/smrt-web/src/webmcp-page-tools.ts"
+      ],
+      "@happyvertical/smrt-web/webmcp-tool-names": [
+        "./packages/smrt-web/src/webmcp-tool-names.ts"
+      ],
+      "@happyvertical/smrt-webhooks": [
+        "./packages/webhooks/src/index.ts"
+      ],
+      "@happyvertical/smrt-webhooks/admin": [
+        "./packages/webhooks/src/admin.ts"
+      ],
+      "@happyvertical/smrt-webhooks/svelte": [
+        "./packages/webhooks/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-workbench": [
+        "./packages/smrt-workbench/src/index.ts"
+      ],
+      "@happyvertical/smrt-workbench/runtime": [
+        "./packages/smrt-workbench/src/runtime.ts"
+      ],
+      "@happyvertical/smrt-workbench/svelte": [
+        "./packages/smrt-workbench/src/svelte/index.ts"
+      ],
+      "@happyvertical/smrt-workbench/vite": [
+        "./packages/smrt-workbench/src/vite.ts"
+      ],
+      "@happyvertical/smrt-workflows": [
+        "./packages/workflows/src/index.ts"
+      ]
+    }
+  }
+}

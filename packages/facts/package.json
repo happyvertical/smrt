@@ -28,7 +28,7 @@
     "test": "vitest run",
     "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/__tests__/confidence-fields.postgres.test.ts src/__tests__/reconcile-exact.postgres.test.ts src/__tests__/reconcile-scope.test.ts",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.typecheck.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {

@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.package-typecheck.json",
+  // Workspace sources use Bundler resolution. The declaration build uses NodeNext.
+  "compilerOptions": {
+    "types": ["node", "vitest/globals"],
+    "customConditions": ["node"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+}

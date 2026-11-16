@@ -11,10 +11,5 @@
     "**/*.spec.ts",
     "src/vite-plugin/templates/**",
     "**/__test-consumer-*/**"
-  ],
-  "references": [
-    { "path": "../config" },
-    { "path": "../scanner" },
-    { "path": "../types" }
   ]
 }

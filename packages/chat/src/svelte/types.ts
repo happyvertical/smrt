@@ -1,3 +1,22 @@
+import type { AssistantStatus } from '../assistant-turn-events.js';
+import type { ChatUnavailableStatus } from '../client.js';
+import type { AssistantRun } from './components/assistant/create-assistant-dock-controller.svelte.js';
+
+export interface FloatingAssistantPresentationState {
+  expanded: boolean;
+  status: AssistantStatus;
+  run: AssistantRun | null;
+}
+
+export interface AiUnavailableNoticeProps {
+  /** Why AI is unavailable, from the server's `ai_unavailable` answer. */
+  status: Pick<ChatUnavailableStatus, 'reason'>;
+  /** Host route of its AI settings page (e.g. the #4754 "My AI" panel). */
+  settingsHref?: string;
+  /** Link text; defaults to "Open AI settings". */
+  settingsLabel?: string;
+}
+
 /** Room data for UI consumption (decoupled from ORM model) */
 export interface ChatRoomData {
   id: string;

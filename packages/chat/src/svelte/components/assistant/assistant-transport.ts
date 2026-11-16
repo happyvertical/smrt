@@ -81,7 +81,7 @@ export interface AssistantAttachmentRef {
   url?: string;
 }
 
-/** A selectable model, matching `shared/ModelPicker.svelte`'s `ModelOption`. */
+/** A selectable model for the assistant and model picker. */
 export interface ModelOption {
   id: string;
   label: string;

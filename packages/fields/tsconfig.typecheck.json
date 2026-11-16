@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.package-typecheck.json",
+  "include": ["src/**/*"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "src/svelte/**",
+    "src/playground.ts"
+  ]
+}

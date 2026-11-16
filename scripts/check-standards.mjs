@@ -362,7 +362,7 @@ function checkPackage(name) {
   if (!EXEMPTIONS.noTypecheckScript.has(name) && !NON_TYPESCRIPT_PACKAGES.has(name)) {
     if (!json.scripts || typeof json.scripts.typecheck !== 'string') {
       violations.push(
-        'scripts.typecheck is missing — add "tsc --noEmit -p tsconfig.json" ' +
+        'scripts.typecheck is missing — add "tsc --noEmit -p tsconfig.typecheck.json" ' +
           '(packages with a ./svelte export must also run svelte-check)',
       );
     }

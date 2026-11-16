@@ -117,7 +117,7 @@ export type ContentBodyEditorProps = ComponentProps<typeof ContentBodyEditor>;
 export type {
   ContentBodyEditorChange,
   ContentBodyImageChangeRequest,
-} from './components/ContentBodyEditor.svelte';
+} from './types.js';
 export type ContentBodyRendererProps = ComponentProps<
   typeof ContentBodyRenderer
 >;
@@ -130,7 +130,7 @@ export {
   type ContentPicture,
   filterPictures,
   pictureDragPayload,
-} from './components/ContentPictureDrawer.svelte';
+} from './content-editor-media.js';
 export type ContentImageChooserProps = ComponentProps<
   typeof ContentImageChooser
 >;
@@ -162,7 +162,7 @@ export type {
   ContentReviewStatusIcon,
   ContentReviewStatusTone,
   ContentReviewStatusTrayItem,
-} from './components/ContentReviewStatusTray.svelte';
+} from './types.js';
 export type ContentStatusFieldsProps = ComponentProps<
   typeof ContentStatusFields
 >;
@@ -173,7 +173,6 @@ export type {
   ContentStatusFieldName,
 } from './components/content-field-mode.js';
 export type ContentListProps = ComponentProps<typeof ContentList>;
-export type { ContentListUrlStateBinding } from './components/ContentList.svelte';
 // Shared content-list adapter: columns, rows, filters, and the data surface
 // descriptor every ContentList presentation is built from.
 export {
@@ -329,6 +328,7 @@ export {
   restoreContentListSavedView,
   toContentListSavedViewInput,
 } from './content-list-saved-views.js';
+export type { ContentListUrlStateBinding } from './content-list-url-state.js';
 // Shareable URL state (#2452): the validator both restore paths share.
 export {
   applyContentListViewState,

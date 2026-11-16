@@ -212,7 +212,9 @@ pnpm --filter @happyvertical/smrt-users test:postgres
 Start with the relevant test file via `test -- src/__tests__/<file>.test.ts`.
 Run `test:postgres` for RLS, principal context, OIDC, or terminal-auth database
 changes. `typecheck` includes Svelte accessibility checks; plain `tsc` is
-insufficient. Follow root knowledge freshness checks before shipping.
+insufficient. The typecheck configs read workspace package sources, while
+`tsconfig.svelte.json` is used to package Svelte declarations. Follow root
+knowledge freshness checks before shipping.
 
 ## Pending invitations
 

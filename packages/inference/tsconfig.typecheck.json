@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.package-typecheck.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node", "svelte"]
+  },
+  "include": ["ambient.d.ts", "src/**/*"],
+  "exclude": [
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "src/__tests__/**",
+    "node_modules",
+    "dist"
+  ]
+}

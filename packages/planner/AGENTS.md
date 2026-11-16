@@ -55,6 +55,8 @@ from the planner's own repository (issue links there point at it).
 
 ## Validation
 
+Planner typechecking uses the generated catalog and version files from its build.
+
 From the monorepo root:
 
 ```bash
