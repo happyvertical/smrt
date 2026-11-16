@@ -1370,6 +1370,26 @@ describe('mountAssistantRoutes', () => {
         expect(JSON.stringify(trail)).not.toContain('Done.');
       });
 
+      it('leaves the approval store unopened by a turn with no approval waiting', async () => {
+        // Opening the store creates its table: a tenant role under
+        // database-rls may not, and on PostgreSQL that failure aborts the
+        // request transaction the turn runs in.
+        const routes = mount({ ai: scriptedAI([withUsage('Hello.')]) });
+        const threadId = await createThread(routes);
+        for (const clientRequestId of ['plain-1', 'plain-2']) {
+          await events(
+            await send(routes, threadId, { content: 'Hi', clientRequestId }),
+          );
+        }
+        expect(await query('SELECT id FROM _smrt_ai_runs')).toHaveLength(2);
+        expect(
+          await query(
+            `SELECT name FROM sqlite_master
+              WHERE type = 'table' AND name = '_smrt_owner_tool_holds'`,
+          ),
+        ).toEqual([]);
+      });
+
       it('ends a turn that needs approval done with a requested approval event, and records the decision in the next turn', async () => {
         const authority = await durableApprovals();
         const ran: unknown[] = [];

@@ -563,6 +563,32 @@ export class AssistantTurnRun {
    */
   private async recordDecisions(): Promise<void> {
     if (!this.tracking.decisions) return;
+    const { db, tenantId } = this.tracking.tracked;
+    // Read the approval store only when some request still waits for its
+    // decision: opening the store may create its table, which a tenant role
+    // under database-rls may not do, and on PostgreSQL that failure would
+    // abort the request transaction the turn runs in.
+    try {
+      const waiting = rowsOf(
+        await db.query(
+          `SELECT 1 AS waiting
+             FROM _smrt_ai_run_events e
+             JOIN _smrt_ai_runs r ON r.id = e.run_id
+            WHERE e.type = 'approval' AND e.status = 'requested'
+              AND r.tenant_id ${tenantId === null ? 'IS NULL' : '= $1'}
+              AND NOT EXISTS (
+                SELECT 1 FROM _smrt_ai_run_events d
+                 WHERE d.type = 'approval' AND d.status <> 'requested'
+                   AND d.payload_ref = e.payload_ref
+              )
+            LIMIT 1`,
+          ...(tenantId === null ? [] : [tenantId]),
+        ),
+      );
+      if (waiting.length === 0) return;
+    } catch {
+      return;
+    }
     let decided: Awaited<
       ReturnType<NonNullable<typeof this.tracking.decisions>>
     >;
@@ -571,7 +597,6 @@ export class AssistantTurnRun {
     } catch {
       return;
     }
-    const { db, tenantId } = this.tracking.tracked;
     for (let at = 0; at < decided.length; at += DECISION_LOOKUP_CHUNK) {
       const chunk = decided.slice(at, at + DECISION_LOOKUP_CHUNK);
       const byRef = new Map(
