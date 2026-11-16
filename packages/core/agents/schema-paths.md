@@ -444,8 +444,9 @@ list:
 
 Calculated columns otherwise: a changed expression is applied (recalculated,
 not additive, so never by a table-limited run on a build table); making an
-ordinary column calculated stops on every engine
-(`column.generated-from-ordinary`, it would discard stored values); a rebuild
+ordinary column calculated applies while no stored value would change
+(`column.generated-from-ordinary`) and stops when one would
+(`column.generated-from-ordinary-differs`, below); a rebuild
 for another column copies only ordinary columns and keeps the calculated one
 calculated. PostgreSQL compares expression renderings with EXPLAIN on the live
 table and sends no probe for an expression that reads a column the same run
@@ -479,6 +480,28 @@ a raw database error in the run:
   the other changes); DuckDB refuses the swap before planning. UUID convergence
   conversions (run before all column changes) are not reordered: a calculated
   column cannot read a key or id column, so none is expected to depend on one.
+- **Ordinary column made calculated (#5018; `column.generated-from-ordinary`,
+  `column.generated-from-ordinary-differs`,
+  `column.generated-from-ordinary-unprojectable`).** The conversion changes no
+  stored value exactly when every row already holds the expression's value, so
+  the planner counts the rows that differ (`judgeOrdinaryConversions`):
+  PostgreSQL on the `checkProbeSource` rows (as the run leaves them), both sides
+  cast to the declared type with `IS DISTINCT FROM`; SQLite on the live rows
+  with `IS NOT`, numbers by value, timestamps as instants, other types as text,
+  and an unprojectable stop when the run also changes a column the comparison
+  reads. None differ: apply, with a guard statement first in the change that
+  counts again inside the atomic run and aborts it if a row now differs. Some
+  differ: a stop with the count and three example rows in its message and in
+  `change.recompute`; `smrt doctor --db` prints the same. `confirmRecompute:
+  ['table.column']` (CLI `--confirm-recompute`) replaces the values on purpose:
+  no guard, `change.recompute.confirmed`, and the run's record
+  (`_smrt_migrate_runs.recomputes`, `ConfirmedRecompute`) names it. On
+  PostgreSQL the conversion is planned after every other column change of the
+  table, where the probe reads, and `postgresColumnDependents` / SQLite's drop
+  dry run stop on anything the column drop would take with it. Table-limited
+  runs refuse it (not additive); DuckDB refuses at planning. Tests:
+  `calculated-column-recompute.test.ts` and, on a real server,
+  `calculated-column-swap-postgres.optional.test.ts`.
 - **Required column, NULL result (`column.generated-required-null`,
   `column.generated-required-unprojectable`).** A required (NOT NULL)
   calculated column that the run adds or replaces is checked at planning for a

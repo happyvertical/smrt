@@ -318,6 +318,30 @@ const postgresShapes: Array<[SchemaChangeKindId, SchemaChange]> = [
     },
   ],
   [
+    'column.generated-from-ordinary-differs',
+    {
+      type: 'alter_column',
+      table: 'items',
+      name: 'total',
+      kindHint: 'column.generated-from-ordinary-differs',
+      mismatch: { expected: '{}', actual: 'ordinary column' },
+      sql: '-- items.total: 1 stored row(s) differ from the expression',
+      advisory: { severity: 'warning', message: 'Would replace values.' },
+    },
+  ],
+  [
+    'column.generated-from-ordinary-unprojectable',
+    {
+      type: 'alter_column',
+      table: 'items',
+      name: 'total',
+      kindHint: 'column.generated-from-ordinary-unprojectable',
+      mismatch: { expected: '{}', actual: 'ordinary column' },
+      sql: '-- items.total: cannot compare the stored values',
+      advisory: { severity: 'warning', message: 'Cannot compare.' },
+    },
+  ],
+  [
     'check.unprojectable',
     {
       type: 'alter_column',
@@ -407,6 +431,7 @@ describe('schema change policy coverage (#4925)', () => {
       'check.drop',
       'check.unprojectable',
       'check.violated',
+      'column.generated-from-ordinary',
       'column.generated-readd',
       'column.generated-replace',
       'column.generated-to-ordinary',

@@ -111,6 +111,8 @@ export {
   widenIntegerColumnsToBigInt,
 } from './integer-width.js';
 export {
+  type ConfirmedRecompute,
+  collectConfirmedRecomputes,
   collectMigrateRecordInput,
   type LastMigrateRecord,
   type MigrateRecord,

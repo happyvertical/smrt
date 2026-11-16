@@ -18,6 +18,7 @@ smrt db:migrate --postgres-safe # PostgreSQL concurrent-index mode (see below)
 smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...] # Force exact generated migrations in one atomic batch
 smrt db:migrate --null-orphans # agents/db-migrate-all-or-nothing.md; stops hold the whole run
 smrt db:migrate --confirm-removed-package <name> # Repeat for each missing package; see same guide
+smrt db:migrate --confirm-recompute <table>.<column> # Recalculate an ordinary column made calculated whose values differ; see same guide
 smrt db:migrate-uuid         # Convert schema-declared UUID text columns after data remap (incl. PG system tenant ids, #3297)
 smrt db:migrate-int8
 smrt db:migrate-null-equal-indexes # ../core/agents/null-equal-indexes.md

@@ -15,6 +15,10 @@
  * so the migration tracker tables never meet another suite's. Needs
  * `SMRT_TEST_POSTGRES_URL` (`pnpm test:postgres`); not run in the default
  * suite.
+ *
+ * It also holds the real-server cases of making an ordinary column calculated
+ * only when no stored value changes (#5018); `calculated-column-recompute.test.ts`
+ * runs the same cases on PGlite.
  */
 import { randomUUID } from 'node:crypto';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
@@ -32,6 +36,7 @@ import { ObjectRegistry } from '../../registry.js';
 import { stiHardeningChecks } from '../../schema/sti-hardening.js';
 import type { SchemaDefinition } from '../../schema/types.js';
 import { registerBuildSchema } from '../build-schema.js';
+import { SchemaComparer } from '../differ.js';
 import { migrateSmrtSchemas } from '../orchestrate.js';
 
 const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
@@ -599,6 +604,210 @@ describe.skipIf(!pgUrl)(
       const result = await migrate();
       expect(result).toMatchObject({ applied: false, refused: true });
       expect(kinds(result)).toEqual(['invents-data:check.deferred-fill']);
+    });
+    describe('an ordinary column made calculated when no value changes (#5018)', () => {
+      const convertMigrate = (
+        options: { tables?: string[]; confirm?: string[] } = {},
+      ) =>
+        migrateSmrtSchemas({
+          db,
+          packageName: '@app/a',
+          engineHint: 'postgres',
+          name: `calc_recompute_${++run}`,
+          ...(options.tables ? { tables: options.tables } : {}),
+          ...(options.confirm ? { confirmRecompute: options.confirm } : {}),
+          relaxColumns: true,
+          atomic: true,
+          postgresSafe: false,
+          useConcurrentIndexes: false,
+        });
+      const ordinary = (live: string) =>
+        db.query(
+          `CREATE TABLE items (id TEXT PRIMARY KEY NOT NULL, _meta_type TEXT, qty BIGINT, total ${live})`,
+        );
+      const put = (id: string, qty: number | null, value: unknown) =>
+        db.query(
+          'INSERT INTO items (id, _meta_type, qty, total) VALUES ($1, $2, $3, $4)',
+          [id, STRICT, qty, value],
+        );
+      const inputs = { qty: 'number' } as const;
+      const doubled = () => ({
+        ...total(times(2)),
+        generatedInputTypes: inputs,
+      });
+      const isCalculated = async () =>
+        (
+          await db.query(
+            "SELECT attgenerated FROM pg_attribute WHERE attrelid = 'items'::regclass AND attname = 'total'",
+          )
+        ).rows[0]?.attgenerated === 's';
+      const recorded = async () =>
+        JSON.parse(
+          String(
+            (
+              await db.query(
+                'SELECT recomputes FROM _smrt_migrate_runs ORDER BY created_at DESC, id DESC LIMIT 1',
+              )
+            ).rows[0]?.recomputes ?? 'null',
+          ),
+        );
+
+      it('applies when every stored value equals the expression, NULLs on both sides included', async () => {
+        await ordinary('BIGINT');
+        await put('a', 3, 6);
+        await put('b', 0, 0);
+        await put('c', null, null);
+        declare(items({ qty: { type: 'INTEGER' }, total: doubled() }));
+        expect(await convertMigrate()).toMatchObject({
+          applied: true,
+          refused: false,
+        });
+        expect(await isCalculated()).toBe(true);
+        expect(await rows()).toEqual([
+          ['a', 3, 6],
+          ['b', 0, 0],
+          ['c', null, null],
+        ]);
+        await unchanged();
+      });
+
+      it('stops on one differing row, names it, and changes nothing', async () => {
+        await ordinary('BIGINT');
+        await put('a', 3, 6);
+        await put('b', 4, 99);
+        declare(items({ qty: { type: 'INTEGER' }, total: doubled() }));
+        const result = await convertMigrate();
+        expect(result).toMatchObject({ applied: false, refused: true });
+        expect(kinds(result)).toEqual([
+          'loses-data:column.generated-from-ordinary-differs',
+        ]);
+        expect(result.stops[0].message).toContain('1 stored row(s)');
+        expect(result.stops[0].message).toContain(
+          'id=b: stored 99, computed 8',
+        );
+        expect(await isCalculated()).toBe(false);
+        expect(await rows()).toEqual([
+          ['a', 3, 6],
+          ['b', 4, 99],
+        ]);
+      });
+
+      it('compares text 1.50 with a computed 1.5 by value, and stops on text that is no number', async () => {
+        await ordinary('TEXT');
+        await put('a', 3, '1.50');
+        await put('b', 4, '2');
+        const half = {
+          type: 'REAL' as const,
+          generated: times(0.5),
+          generatedInputTypes: inputs,
+        };
+        declare(items({ qty: { type: 'INTEGER' }, total: half }));
+        expect(await convertMigrate()).toMatchObject({ applied: true });
+        expect(await isCalculated()).toBe(true);
+
+        await db.query('DROP TABLE items');
+        await ordinary('TEXT');
+        await put('a', 3, 'two');
+        const result = await convertMigrate();
+        expect(result).toMatchObject({ applied: false, refused: true });
+        expect(kinds(result)).toEqual([
+          'unresolved-non-data-stop:column.generated-from-ordinary-unprojectable',
+        ]);
+        expect(await isCalculated()).toBe(false);
+      });
+
+      it('compares floating point exactly and booleans as booleans', async () => {
+        await ordinary('DOUBLE PRECISION');
+        // bigint * numeric 0.1 is exactly 0.3 in PostgreSQL.
+        await put('a', 3, 0.3);
+        const tenth = {
+          type: 'REAL' as const,
+          generated: times(0.1),
+          generatedInputTypes: inputs,
+        };
+        declare(items({ qty: { type: 'INTEGER' }, total: tenth }));
+        expect(await convertMigrate()).toMatchObject({ applied: true });
+
+        await db.query('DROP TABLE items');
+        await ordinary('DOUBLE PRECISION');
+        await put('a', 3, 3 * 0.1);
+        expect(kinds(await convertMigrate())).toEqual([
+          'loses-data:column.generated-from-ordinary-differs',
+        ]);
+
+        await db.query('DROP TABLE items');
+        await ordinary('BOOLEAN');
+        await put('a', 3, true);
+        await put('b', 1, false);
+        await put('c', null, null);
+        const big = {
+          type: 'BOOLEAN' as const,
+          generated: {
+            op: 'gt',
+            left: { col: 'qty' },
+            right: { value: 2 },
+          } as unknown as Generated,
+          generatedInputTypes: inputs,
+        };
+        declare(items({ qty: { type: 'INTEGER' }, total: big }));
+        expect(await convertMigrate()).toMatchObject({ applied: true });
+      });
+
+      it('aborts the run when a row written between plan and apply differs', async () => {
+        await ordinary('BIGINT');
+        await put('a', 3, 6);
+        declare(items({ qty: { type: 'INTEGER' }, total: doubled() }));
+        const compare = SchemaComparer.prototype.compare;
+        vi.spyOn(SchemaComparer.prototype, 'compare').mockImplementation(
+          async function (this: SchemaComparer, ...args) {
+            const diff = await compare.apply(this, args);
+            // The plan counted zero; now a row arrives that the expression cannot match.
+            await put('z', 1, 500);
+            return diff;
+          },
+        );
+        await expect(convertMigrate()).rejects.toThrow(
+          /stored value now differs|P0001/,
+        );
+        vi.restoreAllMocks();
+        declare(items({ qty: { type: 'INTEGER' }, total: doubled() }));
+        expect(await isCalculated()).toBe(false);
+        expect(await rows()).toEqual([
+          ['a', 3, 6],
+          ['z', 1, 500],
+        ]);
+      });
+
+      it('refuses the conversion in a table-limited run', async () => {
+        await ordinary('BIGINT');
+        await put('a', 3, 6);
+        declare(items({ qty: { type: 'INTEGER' }, total: doubled() }));
+        const limited = await convertMigrate({ tables: ['items'] });
+        expect(limited).toMatchObject({ applied: false, refused: true });
+        expect(limited.stops.map((stop) => stop.reason)).toEqual([
+          'build-table',
+        ]);
+        expect(await isCalculated()).toBe(false);
+      });
+
+      it('recalculates on request and records it in the run', async () => {
+        await ordinary('BIGINT');
+        await put('a', 3, 6);
+        await put('b', 4, 99);
+        declare(items({ qty: { type: 'INTEGER' }, total: doubled() }));
+        const result = await convertMigrate({ confirm: ['items.total'] });
+        expect(result).toMatchObject({ applied: true, refused: false });
+        expect(result.recomputed).toEqual([
+          { table: 'items', column: 'total', rows: 1 },
+        ]);
+        expect(await rows()).toEqual([
+          ['a', 3, 6],
+          ['b', 4, 8],
+        ]);
+        expect(await recorded()).toEqual([
+          { table: 'items', column: 'total', rows: 1 },
+        ]);
+      });
     });
   },
 );

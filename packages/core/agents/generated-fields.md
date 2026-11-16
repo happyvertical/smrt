@@ -99,8 +99,8 @@ expression metadata. SQLite generated columns need `table_xinfo` because
 `table_info` omits them. PostgreSQL deparses implicit casts; parity uses
 read-only EXPLAIN (without ANALYZE) to normalize differing renderings. Changed
 expressions on SQLite/PostgreSQL drop and re-add the column and recreate
-declared column indexes. Ordinary-to-generated replacement carries the existing
-warning advisory mechanism because it discards ordinary stored values. SQLite
+declared column indexes. Ordinary-to-generated conversion applies only when no
+stored value changes, and otherwise stops naming the rows (#5018, below). SQLite
 adds UNIQUE generated columns with a separate unique index: ALTER ADD COLUMN
 cannot carry inline UNIQUE. PostgreSQL columns are STORED; SQLite and DuckDB
 columns are VIRTUAL.
@@ -173,10 +173,33 @@ Generated-to-ordinary migrations have explicit value semantics:
   statement order, required-column NULL check, the SQLite drop dry run and the
   trigger limit are in [schema-paths](schema-paths.md) ("Planning rules for the
   swap").
-- Ordinary-to-generated and changed-expression migrations replace the derived
-  column, discard its old values and recalculate from the expression. Source
-  columns and rows remain intact. Execute multi-statement plans through the
-  migration tracker's transaction so a failed replacement rolls back.
+- A changed-expression migration replaces the derived column, discards its old
+  values and recalculates from the expression. Source columns and rows remain
+  intact. Execute multi-statement plans through the migration tracker's
+  transaction so a failed replacement rolls back.
+- **Ordinary to calculated (#5018).** The usual reason is that the field was
+  always meant to equal the expression, so the conversion applies unattended
+  when no stored value would change and stops when one would. The planner
+  counts the stored rows that differ from the expression (`IS DISTINCT FROM`,
+  so NULL equals NULL), comparing as the column's declared type: on PostgreSQL
+  both sides cast to it (text `'1.50'` equals a computed `1.5` in a numeric
+  column; floating point is exact; a stored value that cannot be cast makes the
+  comparison fail and the run stops as `column.generated-from-ordinary-unprojectable`);
+  on SQLite numbers compare by value, timestamps as instants (UTC offset
+  ignored) and the rest as text (`IS NOT`). Zero differing rows keeps
+  `column.generated-from-ordinary` (apply); the run counts again inside its
+  atomic batch immediately before the `DROP COLUMN` and aborts if a row written
+  since planning now differs (a `DO` block raising on PostgreSQL, a temp-table
+  `CHECK` on SQLite). Any differing row is `column.generated-from-ordinary-differs`
+  (loses data), which reports the count and a few rows (key, stored, computed);
+  `smrt doctor --db` lists the same. An operator who has looked passes
+  `smrt db:migrate --confirm-recompute <table>.<column>` (`confirmRecompute` in
+  `migrateSmrtSchemas` and `SchemaComparer`; the local runtime has no such
+  option): the conversion runs without the guard and the migrate record
+  (`_smrt_migrate_runs.recomputes`) keeps the table, column and planned row
+  count. A run limited to tables still refuses the conversion (it is not
+  additive); DuckDB keeps refusing at planning. PostgreSQL cannot generate a
+  datetime, so the time-zone comparison exists on SQLite only.
 
 Application tables are still created only by explicit schema planning.
 

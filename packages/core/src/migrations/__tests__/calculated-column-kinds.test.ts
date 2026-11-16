@@ -7,8 +7,9 @@
  *   planning (VALIDATION_GENERATED_DIALECT).
  * - changed expression: `column.generated-replace`, applied (recalculated),
  *   never by a table-limited run on a build table.
- * - ordinary to calculated: `column.generated-from-ordinary`, stops (the
- *   stored values would be discarded).
+ * - ordinary to calculated: applied while no stored value differs from the
+ *   expression, otherwise `column.generated-from-ordinary-differs`, a stop (the
+ *   stored values would be discarded); see `calculated-column-recompute.test.ts`.
  * - calculated to ordinary: `column.generated-to-ordinary`, applied on
  *   PostgreSQL (DROP EXPRESSION keeps values), stops on SQLite and DuckDB
  *   (the VIRTUAL values would become the default or NULL).
@@ -187,7 +188,7 @@ describe.each(ENGINES)('calculated columns on %s', (engine) => {
     expect(await rows()).toEqual([{ id: 'a', qty: 3, price: 4, total: 12 }]);
   });
 
-  it('stops making an ordinary column calculated: it would discard stored values', async () => {
+  it('stops making an ordinary column calculated when it would discard stored values', async () => {
     await created({ qty: { type: 'INTEGER' }, total: { type: 'INTEGER' } });
     await db.query('UPDATE items SET total = 99');
     declare(table({ qty: { type: 'INTEGER' }, total: doubled }));
@@ -200,7 +201,7 @@ describe.each(ENGINES)('calculated columns on %s', (engine) => {
     const result = await migrate();
     expect(result).toMatchObject({ applied: false, refused: true });
     expect(stopKinds(result)).toEqual([
-      'loses-data:column.generated-from-ordinary',
+      'loses-data:column.generated-from-ordinary-differs',
     ]);
     expect(await rows()).toEqual([{ id: 'a', qty: 3, total: 99 }]);
   });

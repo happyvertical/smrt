@@ -515,6 +515,8 @@ export {
   SchemaComparer,
 } from './migrations/differ';
 export {
+  type ConfirmedRecompute,
+  collectConfirmedRecomputes,
   collectMigrateRecordInput,
   type LastMigrateRecord,
   type MigrateRecord,

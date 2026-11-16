@@ -158,7 +158,12 @@ rows in a way the planner cannot replay stops instead of guessing
 (`check.unprojectable`). A required calculated column whose new expression is
 NULL for a stored row stops as `column.generated-required-null` (or
 `column.generated-required-unprojectable` when the run's other changes cannot be
-replayed); SQLite refusing to drop a calculated column stops as
+replayed); an ordinary column made calculated stops as
+`column.generated-from-ordinary-differs` (count and example rows; pass
+`--confirm-recompute <table>.<column>` to replace the stored values, recorded in
+the run's `_smrt_migrate_runs.recomputes`) or `column.generated-from-ordinary-unprojectable`
+when the stored values cannot be compared, and otherwise converts after a re-count
+inside the atomic run (#5018); SQLite refusing to drop a calculated column stops as
 `column.generated-replace-dependents`. User triggers firing on a fill's
 `UPDATE` are not replayed by the CHECK probe (the `check.add` note says so).
 

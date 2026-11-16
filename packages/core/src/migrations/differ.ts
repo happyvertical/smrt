@@ -69,6 +69,7 @@ import type {
   ColumnDefinition,
   ForeignKeyDefinition,
   IndexDefinition,
+  RecomputeExample,
   SchemaChange,
   SchemaDefinition,
   SchemaDiff,
@@ -271,6 +272,14 @@ export interface DiffOptions {
   includeDroppedIndexes?: boolean;
   /** Ignore type mismatches (just log warnings) */
   ignoreTypeMismatches?: boolean;
+  /**
+   * `table.column` of each ordinary column the caller has looked at and wants
+   * made calculated even though stored values differ from what the expression
+   * gives (#5018). Each confirmed conversion replaces those values, runs
+   * without the re-count guard, and is reported on the change's `recompute`.
+   * Without it a conversion applies only while no stored value would change.
+   */
+  confirmRecompute?: readonly string[];
   /**
    * Explicit engine hint forwarded to `detectEngine` when picking the DDL
    * strategy used for *existing-table* SQL (ALTER/CREATE INDEX/etc.). Use
@@ -1031,10 +1040,11 @@ export class SchemaComparer {
     }
 
     // Compare columns
-    const columnChanges = await this.compareColumns(
+    const columnChanges = await this.judgeOrdinaryConversions(
       tableName,
       manifest,
       dbSchema,
+      await this.compareColumns(tableName, manifest, dbSchema),
     );
     // The constraint changes join the column changes in one table rebuild on
     // SQLite (#4937), so they are read before the rebuild is planned.
@@ -2221,7 +2231,8 @@ export class SchemaComparer {
         !(
           change.type === 'add_column' ||
           change.kindHint === 'column.generated-replace' ||
-          change.kindHint === 'column.generated-readd'
+          change.kindHint === 'column.generated-readd' ||
+          change.kindHint === 'column.generated-from-ordinary'
         ) ||
         !hasExecutableSchemaSql(change)
       )
@@ -2397,6 +2408,340 @@ export class SchemaComparer {
       types,
       generated: new Map(catalog?.get(tableName) ?? []),
     };
+  }
+
+  /**
+   * Judge each ordinary column the manifest now declares calculated (#5018).
+   * The conversion changes no stored value exactly when every row already
+   * holds what the expression gives, so the planner counts the rows that
+   * differ, comparing as the column's declared type (a NULL equals a NULL):
+   *
+   * - none: the change stays `column.generated-from-ordinary` (apply) and is
+   *   preceded, inside the same atomic run, by a guard that counts again and
+   *   aborts the run if a row written since planning now differs;
+   * - some: `column.generated-from-ordinary-differs` (stop), carrying the
+   *   count and a few rows (key, stored value, computed value);
+   * - the rows cannot be compared (a change of the same run the planner cannot
+   *   replay, or the comparison failed):
+   *   `column.generated-from-ordinary-unprojectable` (stop);
+   * - the column is in `confirmRecompute`: applied without the guard, with
+   *   `recompute.confirmed` set for the migrate record.
+   *
+   * PostgreSQL compares on the CHECK probe's rows (`checkProbeSource`: the rows
+   * as the run leaves them), and the conversion runs after every other column
+   * change of the table, which is where the probe reads. SQLite compares on the
+   * live rows and stops as unprojectable when another change of the run
+   * touches a column the expression reads. Equality, per engine:
+   *
+   * - PostgreSQL casts both sides to the declared type and uses IS DISTINCT
+   *   FROM, so text `'1.50'` equals a computed `1.5` in a NUMERIC column and
+   *   jsonb compares by value. A stored value that cannot be cast is a
+   *   comparison failure, never a silent match. Floating point is exact.
+   * - SQLite compares numbers by value (text that reads as a number counts as
+   *   that number), timestamps as instants (a UTC offset does not matter),
+   *   and every other type as text, with IS NOT (a NULL equals a NULL).
+   */
+  private async judgeOrdinaryConversions(
+    tableName: string,
+    manifest: SchemaDefinition,
+    dbSchema: SqlTableSchemaInfo,
+    columnChanges: SchemaChange[],
+  ): Promise<SchemaChange[]> {
+    if (this.engine !== 'postgres' && this.engine !== 'sqlite')
+      return columnChanges;
+    const pending = columnChanges.filter(
+      (change) =>
+        change.table === tableName &&
+        change.name &&
+        change.kindHint === 'column.generated-from-ordinary' &&
+        change.column?.generated !== undefined &&
+        hasExecutableSchemaSql(change),
+    );
+    if (pending.length === 0) return columnChanges;
+    const confirmed = new Set(this.options.confirmRecompute ?? []);
+    const judged = new Map<SchemaChange, SchemaChange>();
+    for (const change of pending)
+      judged.set(
+        change,
+        await this.judgeOrdinaryConversion(
+          change,
+          manifest,
+          dbSchema,
+          columnChanges.filter((other) => other !== change),
+          confirmed.has(`${tableName}.${change.name}`),
+        ),
+      );
+    return columnChanges.map((change) => judged.get(change) ?? change);
+  }
+
+  private async judgeOrdinaryConversion(
+    change: SchemaChange,
+    manifest: SchemaDefinition,
+    dbSchema: SqlTableSchemaInfo,
+    others: readonly SchemaChange[],
+    confirmed: boolean,
+  ): Promise<SchemaChange> {
+    const tableName = change.table;
+    const name = change.name as string;
+    const column = change.column as ColumnDefinition;
+    const label = `${tableName}.${name}`;
+    const table = this.quoteIdentifier(tableName);
+    const quoted = this.quoteIdentifier(name);
+    const statements = change.sqlStatements ?? [change.sql as string];
+    const stop = (
+      kindHint:
+        | 'column.generated-from-ordinary-differs'
+        | 'column.generated-from-ordinary-unprojectable',
+      message: string,
+      recompute?: SchemaChange['recompute'],
+    ): SchemaChange => {
+      const { sqlStatements: _statements, ...rest } = change;
+      return {
+        ...rest,
+        kindHint,
+        sql: `-- ${label}: ${message}`,
+        advisory: { severity: 'warning', message },
+        ...(recompute ? { recompute } : {}),
+      };
+    };
+    const unprojectable = (why: string) =>
+      stop(
+        'column.generated-from-ordinary-unprojectable',
+        `${label} would become calculated, but the planner cannot compare its stored values with the expression: ${why}. Run that change on its own first, then rerun the migration.`,
+      );
+
+    const declaredType = this.ddlStrategy.mapType(
+      isValidSQLDataType(column.type) ? column.type : 'TEXT',
+    );
+    let compiled: string;
+    try {
+      compiled = compileGeneratedExpression(
+        column.generated as NonNullable<ColumnDefinition['generated']>,
+        this.engine,
+        column.generatedInputTypes,
+      );
+    } catch (error) {
+      return unprojectable(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+
+    // The rows to compare, and the guard the run repeats before converting.
+    let source: string;
+    if (this.engine === 'postgres') {
+      const projected = await this.checkProbeSource(
+        tableName,
+        manifest,
+        dbSchema,
+        others,
+      );
+      if ('unprojectable' in projected)
+        return unprojectable(
+          `this run also runs a statement whose effect on the stored rows it cannot predict (${projected.unprojectable})`,
+        );
+      source = projected.source;
+    } else {
+      const rewritten = new Set(
+        others
+          .filter(
+            (other) =>
+              other.table === tableName &&
+              other.name &&
+              (other.type === 'add_column' ||
+                other.type === 'type_upgrade' ||
+                other.type === 'type_mismatch' ||
+                (other.type === 'alter_column' &&
+                  other.alteration === 'set_not_null')),
+          )
+          .map((other) => other.name as string),
+      );
+      const touched = [...expressionColumns(column.generated), name].filter(
+        (input) => rewritten.has(input) || !dbSchema.columns[input],
+      );
+      if (touched.length > 0)
+        return unprojectable(
+          `this run also changes ${touched.join(', ')}, which the comparison reads`,
+        );
+      source = table;
+    }
+
+    const normalize = (value: string): string => {
+      if (this.engine === 'postgres')
+        return `CAST(${value} AS ${declaredType})`;
+      switch (column.type) {
+        case 'INTEGER':
+        case 'REAL':
+        case 'BOOLEAN':
+          // Text that reads as a number is that number; anything else stays
+          // as it is and so never equals a number.
+          return `(CASE WHEN ${value} IS NULL THEN NULL WHEN ${value} = CAST(${value} AS NUMERIC) THEN CAST(${value} AS NUMERIC) ELSE ${value} END)`;
+        case 'TIMESTAMP':
+          return `COALESCE(strftime('%Y-%m-%dT%H:%M:%f', ${value}), ${value})`;
+        case 'BLOB':
+          return `(${value})`;
+        default:
+          return `CAST(${value} AS TEXT)`;
+      }
+    };
+    const storedSql = normalize(quoted);
+    const computedSql = normalize(`(${compiled})`);
+    const differs =
+      this.engine === 'postgres'
+        ? `${storedSql} IS DISTINCT FROM ${computedSql}`
+        : `${storedSql} IS NOT ${computedSql}`;
+
+    let count: number | null;
+    let examples: RecomputeExample[] = [];
+    try {
+      const found = await this.countOrdinaryDifferences(
+        source,
+        differs,
+        manifest,
+        dbSchema,
+        quoted,
+        this.engine === 'postgres' ? computedSql : `(${compiled})`,
+      );
+      count = found.count;
+      examples = found.examples;
+    } catch (error) {
+      if (!confirmed)
+        return unprojectable(
+          `the comparison failed (${error instanceof Error ? error.message : String(error)})`,
+        );
+      count = null;
+    }
+
+    if (confirmed) {
+      return {
+        ...change,
+        recompute: { count, examples, confirmed: true },
+        advisory: {
+          severity: 'warning',
+          message:
+            count === null
+              ? `${label} is made calculated on request (--confirm-recompute); its stored values could not be compared and are replaced by the expression.`
+              : `${label} is made calculated on request (--confirm-recompute): ${count} stored value(s) differ from the expression and are replaced by it.`,
+        },
+      };
+    }
+    if (count !== 0) {
+      const sample = examples
+        .map((example) => {
+          const key = Object.entries(example.key)
+            .map(([keyColumn, value]) => `${keyColumn}=${value}`)
+            .join(', ');
+          return `${key ? `${key}: ` : ''}stored ${example.stored}, computed ${example.computed}`;
+        })
+        .join('; ');
+      return stop(
+        'column.generated-from-ordinary-differs',
+        `${label} would become calculated, and ${count} stored row(s) hold a value that differs from what the expression gives (compared as ${declaredType})${sample ? `, for example ${sample}` : ''}. Converting would replace them. Copy the values to another field first, or declare the calculated field under a new name; if you have looked at them and want them recalculated, pass --confirm-recompute ${label}.`,
+        { count, examples, confirmed: false },
+      );
+    }
+
+    // Zero differing rows at planning. The run counts again right before it
+    // drops the column, so a row written since planning aborts the run.
+    const message = `${label} cannot become calculated: a stored value now differs from the expression (a row was written after planning). Nothing was applied; migrate again.`;
+    const guard =
+      this.engine === 'postgres'
+        ? [
+            `DO $$ BEGIN IF EXISTS (SELECT 1 FROM ${table} WHERE ${differs}) THEN RAISE EXCEPTION ${this.quoteLiteral(message)}; END IF; END $$`,
+          ]
+        : [
+            `DROP TABLE IF EXISTS temp.${this.quoteIdentifier('_smrt_recompute_guard')}`,
+            `CREATE TEMP TABLE ${this.quoteIdentifier('_smrt_recompute_guard')} ("differing" INTEGER CONSTRAINT ${this.quoteIdentifier(message)} CHECK ("differing" = 0))`,
+            `INSERT INTO temp.${this.quoteIdentifier('_smrt_recompute_guard')} ("differing") SELECT count(*) FROM ${table} WHERE ${differs}`,
+            `DROP TABLE temp.${this.quoteIdentifier('_smrt_recompute_guard')}`,
+          ];
+    if (guard.some((sql) => sql.includes('$$') && !sql.startsWith('DO $$')))
+      return unprojectable('the expression contains a dollar-quote marker');
+    if (this.engine === 'postgres' && compiled.includes('$$'))
+      return unprojectable('the expression contains a dollar-quote marker');
+    const all = [...guard, ...statements];
+    return { ...change, sql: all[0], sqlStatements: all };
+  }
+
+  /**
+   * How many rows of `source` match `differs`, and a few of them. On
+   * PostgreSQL the query runs in a savepoint when a transaction is open, so a
+   * cast that fails cannot abort a transaction the caller owns.
+   */
+  private async countOrdinaryDifferences(
+    source: string,
+    differs: string,
+    manifest: SchemaDefinition,
+    dbSchema: SqlTableSchemaInfo,
+    storedColumn: string,
+    computed: string,
+  ): Promise<{ count: number; examples: RecomputeExample[] }> {
+    const keys = Object.entries(manifest.columns)
+      .filter(([key, column]) => column.primaryKey && dbSchema.columns[key])
+      .map(([key]) => key);
+    const rowsOf = (result: unknown): Array<Record<string, unknown>> =>
+      (Array.isArray(result)
+        ? result
+        : ((result as { rows?: unknown[] }).rows ?? [])) as Array<
+        Record<string, unknown>
+      >;
+    const show = (value: unknown): string => {
+      if (value === null || value === undefined) return 'NULL';
+      const text =
+        value instanceof Date
+          ? value.toISOString()
+          : typeof value === 'object'
+            ? JSON.stringify(value, (_key, item) =>
+                typeof item === 'bigint' ? item.toString() : item,
+              )
+            : String(value);
+      return text.length > 60 ? `${text.slice(0, 57)}...` : text;
+    };
+    const savepoint = 'smrt_recompute_probe';
+    let open = false;
+    if (this.engine === 'postgres') {
+      try {
+        await this.db.query(`SAVEPOINT ${savepoint}`);
+        open = true;
+      } catch {
+        // No transaction is open: a failed query aborts nothing.
+      }
+    }
+    try {
+      const counted = rowsOf(
+        await this.db.query(
+          `SELECT count(*) AS differing FROM ${source} WHERE ${differs}`,
+        ),
+      )[0];
+      const count = Number(counted?.differing ?? 0);
+      let examples: RecomputeExample[] = [];
+      if (count > 0) {
+        const keyList = keys.map((key) => this.quoteIdentifier(key));
+        const sample = rowsOf(
+          await this.db.query(
+            `SELECT ${[...keyList, `${storedColumn} AS "_smrt_stored"`, `${computed} AS "_smrt_computed"`].join(', ')} ` +
+              `FROM ${source} WHERE ${differs}` +
+              `${keyList.length ? ` ORDER BY ${keyList.join(', ')}` : ''} LIMIT 3`,
+          ),
+        );
+        examples = sample.map((row) => ({
+          key: Object.fromEntries(keys.map((key) => [key, show(row[key])])),
+          stored: show(row._smrt_stored),
+          computed: show(row._smrt_computed),
+        }));
+      }
+      return { count, examples };
+    } catch (error) {
+      if (open) await this.db.query(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+      throw error;
+    } finally {
+      if (open) {
+        try {
+          await this.db.query(`RELEASE SAVEPOINT ${savepoint}`);
+        } catch {
+          // The transaction is already gone.
+        }
+      }
+    }
   }
 
   /**
@@ -3463,7 +3808,11 @@ export class SchemaComparer {
               ...this.ddlStrategy.generateIndexes({ ...manifest, indexes }),
             ];
             const statements = [...dropStatements, ...readdStatements];
-            if (actual !== undefined && this.engine === 'sqlite') {
+            const converting =
+              actual === undefined
+                ? `Making ordinary ${tableName}.${colName} calculated`
+                : `Replacing calculated ${tableName}.${colName}`;
+            if (this.engine === 'sqlite') {
               // Only SQLite's own schema re-parse knows every dependent of the
               // column (a constraint, or an index, view or trigger smrt did not
               // declare), so ask it: run the drop in a savepoint, roll it back.
@@ -3477,15 +3826,15 @@ export class SchemaComparer {
                   table: tableName,
                   name: colName,
                   column: colDef,
-                  sql: `-- replacing calculated ${tableName}.${colName}: SQLite refuses to drop it (${refusal})`,
+                  sql: `-- ${converting.toLowerCase()}: SQLite refuses to drop it (${refusal})`,
                   kindHint: 'column.generated-replace-dependents',
                   advisory: {
                     severity: 'warning',
-                    message: `Replacing calculated ${tableName}.${colName} needs DROP COLUMN, and SQLite refuses it: ${refusal}. Something SQLite tracks (a constraint, or an index, view or trigger smrt did not declare) depends on the column and would be lost. Drop or move it first, then migrate again.`,
+                    message: `${converting} needs DROP COLUMN, and SQLite refuses it: ${refusal}. Something SQLite tracks (a constraint, or an index, view or trigger smrt did not declare) depends on the column and would be lost. Drop or move it first, then migrate again.`,
                   },
                   mismatch: {
                     expected: JSON.stringify(colDef.generated),
-                    actual,
+                    actual: actual ?? 'ordinary column',
                   },
                 });
                 continue;
@@ -3495,7 +3844,7 @@ export class SchemaComparer {
             // Declared shared-table CHECKs go back in this run
             // (`compareTableChecks`); anything else smrt cannot put back
             // stops the plan by name instead of being lost (review r7).
-            if (actual !== undefined && this.engine === 'postgres') {
+            if (this.engine === 'postgres') {
               const dependents = await this.postgresColumnDependents(
                 tableName,
                 colName,
@@ -3510,15 +3859,15 @@ export class SchemaComparer {
                   table: tableName,
                   name: colName,
                   column: colDef,
-                  sql: `-- replacing calculated ${tableName}.${colName} would drop: ${lost}`,
+                  sql: `-- ${converting.toLowerCase()} would drop: ${lost}`,
                   kindHint: 'column.generated-replace-dependents',
                   advisory: {
                     severity: 'warning',
-                    message: `Replacing calculated ${tableName}.${colName} would drop, and smrt would not put back: ${lost}.`,
+                    message: `${converting} would drop, and smrt would not put back: ${lost}.`,
                   },
                   mismatch: {
                     expected: JSON.stringify(colDef.generated),
-                    actual,
+                    actual: actual ?? 'ordinary column',
                   },
                 });
                 continue;
@@ -3533,7 +3882,7 @@ export class SchemaComparer {
               // The re-added column is nullable when the code no longer
               // requires it. That is a change of its own, planned as for an
               // ordinary column (`column.drop-not-null`), never a silent one.
-              if (dependents.notNull && !colDef.notNull)
+              if (actual !== undefined && dependents.notNull && !colDef.notNull)
                 changes.push(
                   this.buildAlterColumnChange({
                     tableName,
@@ -3583,7 +3932,7 @@ export class SchemaComparer {
               });
               continue;
             }
-            changes.push({
+            const conversion: SchemaChange = {
               type: 'alter_column',
               table: tableName,
               name: colName,
@@ -3594,19 +3943,20 @@ export class SchemaComparer {
                 actual === undefined
                   ? 'column.generated-from-ordinary'
                   : 'column.generated-replace',
-              ...(actual === undefined
-                ? {
-                    advisory: {
-                      severity: 'warning' as const,
-                      message: `Converting ${tableName}.${colName} to a generated column will discard existing values and recalculate them from the expression.`,
-                    },
-                  }
-                : {}),
               mismatch: {
                 expected: JSON.stringify(colDef.generated),
                 actual: actual ?? 'ordinary column',
               },
-            });
+            };
+            // An ordinary column made calculated (#5018) is judged after all
+            // of the table's column changes are known (`judgeOrdinaryConversions`).
+            // On PostgreSQL it goes last, with the re-add halves: the
+            // comparison and the run's re-count then see the rows after every
+            // fill and conversion, and no later conversion meets a calculated
+            // column that reads it (0A000).
+            if (actual === undefined && this.engine === 'postgres')
+              deferredReadds.push(conversion);
+            else changes.push(conversion);
             continue;
           }
         }

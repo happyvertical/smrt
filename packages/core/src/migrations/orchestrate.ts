@@ -32,6 +32,8 @@ import {
   generateMigrationTimestamp,
 } from './generator.js';
 import {
+  type ConfirmedRecompute,
+  collectConfirmedRecomputes,
   collectMigrateRecordInput,
   packagesSeenInput,
   readLastMigrateRecord,
@@ -153,6 +155,14 @@ export interface MigrateSmrtSchemasOptions {
   relaxColumns?: boolean;
   /** Exact package removals explicitly confirmed by the caller. */
   confirmRemovedPackages?: string[];
+  /**
+   * `table.column` of each ordinary column the caller has looked at and wants
+   * made calculated although stored values differ from the expression
+   * (`smrt db:migrate --confirm-recompute`, #5018). Each is applied without the
+   * re-count guard and recorded in the migrate run's record. Without it an
+   * ordinary column becomes calculated only while no stored value would change.
+   */
+  confirmRecompute?: string[];
   /** Opt-in physical-table subset, including its FK closure. Omitted keeps eager behavior. */
   tables?: Iterable<string>;
   /** Refuse the entire plan before executing DDL when manual drift remains. */
@@ -185,6 +195,8 @@ export interface MigrateSmrtSchemasResult
    * manifest-nullable columns by default on PostgreSQL, #4897).
    */
   relaxedColumns: RelaxedColumn[];
+  /** Ordinary columns this run made calculated on request (`confirmRecompute`). */
+  recomputed: ConfirmedRecompute[];
 }
 
 /**
@@ -262,6 +274,8 @@ export async function getPendingSchemaStatements(
     emptyTextAsNull?: boolean;
     /** Explicitly allow relaxing live column constraints. */
     relaxColumns?: boolean;
+    /** See {@link MigrateSmrtSchemasOptions.confirmRecompute}. */
+    confirmRecompute?: readonly string[];
     tables?: Iterable<string>;
   } = {},
 ): Promise<PendingSchemaStatementsResult> {
@@ -278,6 +292,7 @@ export async function getPendingSchemaStatements(
     postgresTimestampMigration: options.postgresTimestampMigration,
     emptyTextAsNull: options.emptyTextAsNull,
     relaxColumns: options.relaxColumns,
+    confirmRecompute: options.confirmRecompute,
   });
   const statements = collectStatementsFromDiff(diff, db, options.engineHint);
   const unactionableChanges = collectUnactionableChanges(
@@ -373,6 +388,7 @@ export async function migrateSmrtSchemas(
     postgresTimestampMigration: options.postgresTimestampMigration,
     emptyTextAsNull: options.emptyTextAsNull,
     relaxColumns: options.relaxColumns,
+    confirmRecompute: options.confirmRecompute,
     tables: options.tables,
   });
   if (options.requireComplete && pending.hasManualDrift) {
@@ -404,8 +420,20 @@ export async function migrateSmrtSchemas(
       : undefined,
     ...(partial ? { onlyAddTo: buildOwnedTables(pending.diff.changes) } : {}),
   });
-  const { stops, heldBack, proceed, packageStops, releaseStop, notices } =
-    decision;
+  const { stops, heldBack, proceed, packageStops, releaseStop } = decision;
+  const recomputed = collectConfirmedRecomputes(pending.diff.changes);
+  const notices = [
+    ...decision.notices,
+    ...(options.confirmRecompute ?? [])
+      .filter(
+        (id) =>
+          !recomputed.some((item) => `${item.table}.${item.column}` === id),
+      )
+      .map(
+        (id) =>
+          `Ignoring --confirm-recompute ${id}: no ordinary column of that name is being made calculated.`,
+      ),
+  ];
   for (const notice of notices) logger.info(notice);
   if (!proceed) {
     return {
@@ -422,6 +450,7 @@ export async function migrateSmrtSchemas(
       unactionableChanges: pending.unactionableChanges,
       hasManualDrift: pending.hasManualDrift,
       relaxedColumns: [],
+      recomputed: [],
     };
   }
   if (!pending.hasChanges || pending.statements.length === 0) {
@@ -445,6 +474,7 @@ export async function migrateSmrtSchemas(
       unactionableChanges: pending.unactionableChanges,
       hasManualDrift: pending.hasManualDrift,
       relaxedColumns: [],
+      recomputed: [],
     };
   }
 
@@ -485,6 +515,7 @@ export async function migrateSmrtSchemas(
     await recordSuccessfulMigrate(options.db, {
       input: recordInput,
       engineHint: options.engineHint,
+      recomputes: recomputed,
     });
   }
 
@@ -513,6 +544,7 @@ export async function migrateSmrtSchemas(
     unactionableChanges: pending.unactionableChanges,
     hasManualDrift: pending.hasManualDrift,
     relaxedColumns,
+    recomputed: applied ? recomputed : [],
   };
 }
 

@@ -788,6 +788,8 @@ export {
 } from './migrations/build-schema.js';
 export * from './migrations/change-kinds.js';
 export {
+  type ConfirmedRecompute,
+  collectConfirmedRecomputes,
   collectMigrateRecordInput,
   type LastMigrateRecord,
   type MigrateRecord,
