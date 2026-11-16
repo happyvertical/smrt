@@ -146,27 +146,48 @@ jobs:
       - name: Restore the core test manifest
         run: pnpm turbo run generate:test --filter='@happyvertical/smrt-core'
 
-      - name: DIAG powershell timing
-        shell: pwsh
+      - name: DIAG powershell stages with the allow-listed environment
         run: |
-          $ps = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-          function T($name, $cmd) {
-            $sw = [Diagnostics.Stopwatch]::StartNew()
-            & $ps -NoLogo -NoProfile -NonInteractive -InputFormat None -Command $cmd | Out-Null
-            "{0,-28} {1:n1}s exit={2}" -f $name, $sw.Elapsed.TotalSeconds, $LASTEXITCODE
+          cat > "$RUNNER_TEMP/probe.mjs" <<'PROBE_EOF'
+          import { spawnSync } from 'node:child_process';
+          const root = process.env.SystemRoot;
+          const ps = `${root}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
+          const names = ['SystemRoot','windir','SystemDrive','TEMP','TMP','USERPROFILE','LOCALAPPDATA','APPDATA','ProgramData','ProgramFiles','COMPUTERNAME','USERNAME','USERDOMAIN','PATHEXT'];
+          const lookup = (n) => Object.keys(process.env).find((k) => k.toLowerCase() === n.toLowerCase());
+          const base = {};
+          for (const n of names) { const k = lookup(n); if (k) base[n] = process.env[k]; }
+          base.SMRT_CUSTODY_PATHS = 'C:\\\\';
+          const script = String.raw`
+          $sw=[Diagnostics.Stopwatch]::StartNew()
+          function L($m){ [Console]::Error.WriteLine(('{0,6:n1}s {1}' -f $sw.Elapsed.TotalSeconds,$m)) }
+          L 'start'
+          $who = & ($env:SystemRoot + '\System32\whoami.exe') /user /fo csv /nh
+          L 'whoami'
+          $d = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID='C:'"
+          L 'cim'
+          $i = Get-Item -LiteralPath 'C:\' -Force
+          L 'get-item'
+          $a = Get-Acl -LiteralPath 'C:\'
+          L 'get-acl'
+          $j = [pscustomobject]@{u=1} | ConvertTo-Json -Compress -Depth 4
+          L 'json'
+          `;
+          const enc = Buffer.from(script, 'utf16le').toString('base64');
+          const variants = {
+            allowlist: { env: base, args: ['-NoLogo','-NoProfile','-NonInteractive','-InputFormat','None','-EncodedCommand',enc] },
+            allowlist_again: { env: base, args: ['-NoLogo','-NoProfile','-NonInteractive','-InputFormat','None','-EncodedCommand',enc] },
+            fullenv: { env: process.env, args: ['-NoLogo','-NoProfile','-NonInteractive','-InputFormat','None','-EncodedCommand',enc] },
+            allow_psmodulepath: { env: { ...base, PSModulePath: process.env.PSModulePath }, args: ['-NoLogo','-NoProfile','-NonInteractive','-InputFormat','None','-EncodedCommand',enc] },
+          };
+          for (const [name, v] of Object.entries(variants)) {
+            const t = Date.now();
+            const r = spawnSync(ps, v.args, { env: v.env, encoding: 'utf8', timeout: 120000, windowsHide: true, shell: false, stdio: ['ignore','pipe','pipe'] });
+            console.log(`== ${name}: ${((Date.now()-t)/1000).toFixed(1)}s status=${r.status} err=${r.error?.code ?? ''}`);
+            console.log(r.stderr.trim());
           }
-          T 'empty' '1'
-          T 'empty again' '1'
-          T 'whoami' '& ($env:SystemRoot + "\System32\whoami.exe") /user /fo csv /nh'
-          T 'Get-Item' 'Get-Item -LiteralPath C:\ -Force | Out-Null'
-          T 'Get-Acl' 'Get-Acl -LiteralPath C:\ | Out-Null'
-          T 'Get-Acl again' 'Get-Acl -LiteralPath C:\ | Out-Null'
-          T 'Get-CimInstance' 'Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID=''C:''" | Out-Null'
-          T 'Get-CimInstance again' 'Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID=''C:''" | Out-Null'
-          T 'DriveInfo' '[System.IO.DriveInfo]::new("C").DriveFormat | Out-Null'
-          T 'ConvertTo-Json' '[pscustomobject]@{a=1} | ConvertTo-Json -Compress | Out-Null'
-          $sw = [Diagnostics.Stopwatch]::StartNew()
-          Get-Process | Where-Object { $_.ProcessName -match 'defender|MsMpEng|antimalware' } | Select-Object -First 3 ProcessName | Out-String
+
+          PROBE_EOF
+          node "$RUNNER_TEMP/probe.mjs"
 
       - name: Windows custody tests
         working-directory: packages/app-runtime
