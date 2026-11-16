@@ -41,8 +41,21 @@ describe('nested ThemeProvider SSR (#5025)', () => {
         following.inner.classList.contains('smrt-theme-provider__dark'),
       ).toBe(false);
 
+      // Scheme-derived accent variables wait for mount too.
+      const accented = parse({ innerPrimary: '#cc3300' });
+      expect(accented.inner.getAttribute('style') ?? '').not.toContain(
+        '--smrt-color-primary',
+      );
+
       const explicit = parse({ innerScheme: 'dark' });
       expect(explicit.inner.getAttribute('data-color-scheme')).toBe('dark');
+      const explicitAccent = parse({
+        innerScheme: 'dark',
+        innerPrimary: '#cc3300',
+      });
+      expect(explicitAccent.inner.getAttribute('style') ?? '').toContain(
+        '--smrt-color-primary',
+      );
     } finally {
       await server.close();
     }

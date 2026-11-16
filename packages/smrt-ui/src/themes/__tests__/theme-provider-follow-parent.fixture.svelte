@@ -8,18 +8,20 @@ let {
   hostScheme = 'system',
   innerScheme = 'system',
   innerPreset = 'glass',
+  innerPrimary,
   onhost,
 }: {
   hostScheme?: ColorScheme;
   innerScheme?: ColorScheme;
   innerPreset?: 'glass' | 'material';
+  innerPrimary?: string;
   onhost?: (context: ReturnType<typeof getThemeContext>) => void;
 } = $props();
 </script>
 
 <ThemeProvider preset="smrt" colorScheme={hostScheme} storageKey="host-theme">
   <HostHandle {onhost} />
-  <ThemeProvider preset={innerPreset} colorScheme={innerScheme}>
+  <ThemeProvider preset={innerPreset} colorScheme={innerScheme} primaryColor={innerPrimary}>
     <span>inner</span>
   </ThemeProvider>
 </ThemeProvider>

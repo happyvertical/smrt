@@ -210,7 +210,7 @@ const styleString = $derived.by(() => {
 
   // Primary colour override: the whole derived set for the resolved scheme so
   // on-primary / container / focus / accent never stay mismatched.
-  if (config.primaryColor) {
+  if (config.primaryColor && !inheritingUntilMount) {
     try {
       for (const [key, value] of Object.entries(
         derivePrimaryOverrides(config.primaryColor, resolvedScheme),
