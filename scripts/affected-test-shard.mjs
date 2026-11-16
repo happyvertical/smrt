@@ -3,7 +3,9 @@
  * Select one deterministic shard of the Turbo test-task closure emitted by
  * `turbo run test --dry=json`. Unlike test-packages-shard.mjs, this starts
  * from the affected closure, so PR validation neither drops dependents nor
- * expands a narrow change to every workspace package.
+ * expands a narrow change to every workspace package. Both selectors share
+ * `selectShard`: a dedicated package gets a trailing shard to itself and the
+ * rest are balanced by measured duration.
  *
  * Usage: turbo ... --dry=json | node scripts/affected-test-shard.mjs <i>/<n>
  *
@@ -12,6 +14,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { selectShard, TEST_SECONDS } from './test-shard-balance.mjs';
 
 const CORE_PACKAGE = '@happyvertical/smrt-core';
 
@@ -49,7 +52,7 @@ export function selectAffectedTestPackages(dryRun, { index, count }) {
 
   return {
     packages,
-    shard: packages.filter((_, packageIndex) => packageIndex % count === index - 1),
+    shard: selectShard(packages, { index, count }, TEST_SECONDS),
   };
 }
 
