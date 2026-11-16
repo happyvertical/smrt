@@ -64,19 +64,23 @@ function hookAfter(
   db: DatabaseInterface,
   matches: (sql: string) => boolean,
   after: () => Promise<void>,
-): DatabaseInterface & { fired: () => boolean } {
-  const state = { fired: false };
+): DatabaseInterface & { fired: () => boolean; dropped: () => string[] } {
+  const state = { fired: false, dropped: [] as string[] };
   const wrap = (handle: DatabaseInterface): DatabaseInterface =>
     new Proxy(handle, {
       get(target, key, receiver) {
         if (key === 'fired') return () => state.fired;
+        if (key === 'dropped') return () => [...state.dropped];
         const value = Reflect.get(target, key, receiver);
         if (typeof value !== 'function') return value;
         if (key === 'transaction')
           return <T>(work: (tx: DatabaseInterface) => Promise<T>) =>
             value.call(target, (tx: DatabaseInterface) => work(wrap(tx)));
-        if (key !== 'query') return value.bind(target);
+        if (key !== 'query' && key !== 'execute') return value.bind(target);
         return async (sql: string, ...args: unknown[]) => {
+          if (/^\s*DROP TABLE/i.test(String(sql)))
+            state.dropped.push(String(sql).trim());
+          if (key === 'execute') return value.call(target, sql, ...args);
           const result = await value.call(target, sql, ...args);
           if (!state.fired && matches(sql)) {
             state.fired = true;
@@ -86,7 +90,20 @@ function hookAfter(
         };
       },
     });
-  return wrap(db) as DatabaseInterface & { fired: () => boolean };
+  return wrap(db) as DatabaseInterface & {
+    fired: () => boolean;
+    dropped: () => string[];
+  };
+}
+
+/** The SQLSTATE of a PostgreSQL error, through any adapter wrapping. */
+function pgErrorCode(error: unknown): string | undefined {
+  for (let at = error, depth = 0; at && depth < 5; depth++) {
+    const code = (at as { code?: unknown }).code;
+    if (typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code)) return code;
+    at = (at as { cause?: unknown }).cause;
+  }
+  return undefined;
 }
 
 describe.skipIf(!pgUrl)('retire step on real PostgreSQL (#5005)', () => {
@@ -195,8 +212,22 @@ describe.skipIf(!pgUrl)('retire step on real PostgreSQL (#5005)', () => {
         );
       },
     );
-    await expect(migrate(hooked)).rejects.toThrow(/depend/i);
+    // PostgreSQL's own refusal of the DROP (dependent_objects_still_exist,
+    // 2BP01), not the plan's: a refusing plan resolves with `refused` and
+    // never issues the DROP.
+    const failure = await migrate(hooked).then(
+      (result) => result,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(Error);
     expect(hooked.fired()).toBe(true);
+    expect(hooked.dropped()).toEqual([
+      'DROP TABLE IF EXISTS "public"."r5005_pg_dropfail"',
+    ]);
+    expect(pgErrorCode(failure)).toBe('2BP01');
+    expect(String((failure as Error).message)).toMatch(
+      /cannot drop table "?(public\.)?r5005_pg_dropfail"? because other objects depend on it/,
+    );
     expect(await exists('r5005_pg_dropfail')).toBe(true);
     expect(await exists('r5005_pg_fresh_a')).toBe(false);
     await db.query('DROP VIEW "r5005_pg_late_view"');
