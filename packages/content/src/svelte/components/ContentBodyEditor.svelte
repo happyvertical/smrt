@@ -1,3 +1,10 @@
+<script module lang="ts">
+export type {
+  ContentBodyEditorChange,
+  ContentBodyImageChangeRequest,
+} from '../types.js';
+</script>
+
 <script lang="ts">
 import type { ImageLike } from '@happyvertical/smrt-images/svelte';
 import {
@@ -26,33 +33,12 @@ import {
   resolveBodyFormat,
 } from '../../body-format';
 import { M } from '../i18n.editor.js';
+import type {
+  ContentBodyEditorChange,
+  ContentBodyImageChangeRequest,
+} from '../types.js';
 
 const { t } = useI18n();
-
-export interface ContentBodyEditorChange {
-  body: string;
-  bodyFormat: ContentBodyFormat;
-  images: ContentBodyImage[];
-}
-
-/** The person asked to change a picture in the story (see `onRequestImageChange`). */
-export interface ContentBodyImageChangeRequest {
-  /** The picture's index among the body's images. */
-  index: number;
-  /** Its stored asset id, when it has one. */
-  assetId: string | null;
-  /** Its alt text. */
-  alt: string;
-  /** Its source URL as shown in the editor. */
-  src: string;
-  /**
-   * True when it came from pressing and holding the picture: the host opens
-   * its request box already listening for speech.
-   */
-  listen: boolean;
-  /** Where the picture is on screen (viewport pixels), to anchor a popover. */
-  rect: { top: number; left: number; width: number; height: number };
-}
 
 export interface Props {
   /** The body content string being edited, in HTML or the configured format. */

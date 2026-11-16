@@ -18,6 +18,11 @@ export interface SavedRuntimeReport {
   canArchive: boolean;
 }
 
+/** How a confirmation was answered; it then renders as a read-only line. */
+export type ReportConfirmationOutcome =
+  | { status: 'saved'; report: Pick<SavedRuntimeReport, 'id' | 'title'> }
+  | { status: 'declined' };
+
 /** A principal-scoped transport. Replace it when the tenant or viewer changes. */
 export interface RuntimeReportsClient {
   list(options: {

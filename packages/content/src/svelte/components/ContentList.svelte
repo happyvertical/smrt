@@ -1,33 +1,5 @@
 <script module lang="ts">
-import type { DataTableViewState as ContentListDataTableViewState } from '@happyvertical/smrt-ui/data';
-import type { ContentListUrlStateOptions } from '../content-list-url-state.js';
-
-/**
- * Optional, router-agnostic URL state (#2452).
- *
- * `ContentList` never imports a router: it reads `params` once during
- * initialization and hands the merged parameters back through `onChange`, so a
- * SvelteKit host calls `replaceState`, a hash router rewrites the fragment, and
- * a test passes a plain `URLSearchParams`.
- */
-export interface ContentListUrlStateBinding {
-  /**
-   * Query parameters to restore the view from. Read once, at initialization —
-   * later navigation is the host's to drive (re-key the component to re-read).
-   */
-  params?: URLSearchParams | string | null;
-  /**
-   * Receives the full merged parameter set — every foreign parameter
-   * preserved — whenever the query-affecting state changes. Never called for
-   * the initial restore.
-   */
-  onChange?: (
-    params: URLSearchParams,
-    state: ContentListDataTableViewState,
-  ) => void;
-  /** Prefix and default page size, forwarded to the URL-state module. */
-  options?: ContentListUrlStateOptions;
-}
+export type { ContentListUrlStateBinding } from '../content-list-url-state.js';
 </script>
 
 <script lang="ts">
@@ -46,6 +18,10 @@ import type { Snippet } from 'svelte';
 import { untrack } from 'svelte';
 import type { ContentData } from '../../mock-smrt-client.js';
 import type { ContentListLifecycleBinding } from '../content-list-lifecycle.js';
+import type {
+  ContentListUrlStateBinding,
+  ContentListUrlStateOptions,
+} from '../content-list-url-state.js';
 import {
   readContentListLifecycleSummary,
   reconcileContentListLifecycleSelection,

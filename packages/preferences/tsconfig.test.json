@@ -1,9 +1,6 @@
 {
-  "extends": "./tsconfig.json",
+  "extends": "./tsconfig.typecheck.json",
   "compilerOptions": {
-    "composite": false,
-    "rootDir": ".",
-    "noEmit": true,
     "types": ["node", "vitest/globals"]
   },
   "include": ["src/**/*.ts"],

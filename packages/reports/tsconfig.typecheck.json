@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.package-typecheck.json",
+  "include": ["src/**/*"],
+  "exclude": [
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "src/svelte/**",
+    "src/playground.ts"
+  ]
+}

@@ -60,7 +60,7 @@
     "dev": "npm run build:watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.type-tests.json",
+    "typecheck": "tsc -p tsconfig.typecheck.json && tsc -p tsconfig.type-tests.json",
     "prepack": "node ../../scripts/prepack-package.js",
     "test:pglite": "node ../core/scripts/test-pglite.mjs src/owner-approvals.test.ts",
     "test:postgres": "pnpm run test:pglite"
@@ -88,6 +88,7 @@
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/kit": "2.70.3",
     "@types/node": "24.13.6",
+    "svelte": "^5.57.1",
     "tsx": "^4.23.13",
     "typescript": "6.0.3",
     "vite": "8.1.6",

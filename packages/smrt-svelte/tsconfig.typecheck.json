@@ -1,0 +1,6 @@
+{
+  "extends": ["./tsconfig.svelte.json", "../../tsconfig.workspace-source-paths.json"],
+  "compilerOptions": {
+    "noEmit": true
+  }
+}

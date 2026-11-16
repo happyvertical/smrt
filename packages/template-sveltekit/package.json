@@ -113,7 +113,7 @@
     "test:m5": "node ../../scripts/run-with-ci-postgres.mjs -- node e2e/support/gate.mjs",
     "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run --no-file-parallelism __tests__/*.postgres.optional.test.ts",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit -p tsconfig.fixture.json && tsc --noEmit -p tsconfig.host.json"
+    "typecheck": "node ../../scripts/write-source-typecheck-config.mjs tsconfig.fixture.json .smrt/tsconfig.fixture-typecheck.json && tsc -p .smrt/tsconfig.fixture-typecheck.json && tsc -p tsconfig.host-typecheck.json"
   },
   "devDependencies": {
     "@happyvertical/smrt-app-cli": "workspace:*",

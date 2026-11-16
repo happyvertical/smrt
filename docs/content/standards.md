@@ -57,7 +57,8 @@ packages/<name>/
 | `src/svelte/` and `ambient.d.ts` and `tsconfig.svelte.json` | Package ships Svelte UI components |
 | `src/manifest/` | Package participates in build-time manifest generation |
 | `tsconfig.build.json` | declaration emission needs different inclusions than `tsc --noEmit` |
-| `tsconfig.typecheck.json` | `tsc --noEmit` needs different inclusions than build |
+| `tsconfig.typecheck.json` | Workspace TypeScript checks need a source-based program |
+| `tsconfig.svelte-typecheck.json` | Svelte checks need their own source-based program alongside the packaging config |
 | `bin/` | Package exposes a CLI binary |
 | `e2e/` and `playwright.config.ts` | Package has Playwright end-to-end tests |
 
@@ -115,7 +116,7 @@ See [§11](#11-forbidden-artifacts) for the full list.
     "clean": "rm -rf dist .turbo",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "prepack": "node ../../scripts/prepack-package.js",
     "verify:pack": "node ../../scripts/verify-pack.js"
   },
@@ -241,18 +242,19 @@ export default createPackageConfig('<package-name>', {
 | Base | Purpose |
 |---|---|
 | `tsconfig.json` | Default for libraries — strict, ES2022, ESNext modules, bundler resolution |
-| `tsconfig.package-build.json` | Shared declaration/source-check settings |
+| `tsconfig.package-build.json` | Shared declaration build settings |
 | `tsconfig.package-svelte.json` | Settings for packages with `.svelte` source |
-| `tsconfig.package-typecheck.json` | Settings for `tsc --noEmit` |
-| `tsconfig.package-ui.json` | Settings for packages shipping UI (extends svelte + adds DOM lib) |
+| `tsconfig.package-typecheck.json` | No-emit, non-composite workspace source typechecks |
+| `tsconfig.workspace-source-paths.json` | Source paths for public workspace package exports |
+| `tsconfig.ui-package.json` | Shared UI compiler settings with DOM libraries and Svelte types |
 
 ### Per-package rules
 
 - Always have `tsconfig.json` extending the appropriate base
 - Add `tsconfig.svelte.json` only if `.svelte` source is present
-- Add `tsconfig.typecheck.json` only if typecheck inclusions differ from build
-- Add `tsconfig.build.json` only if declaration emission needs different inclusions
-- Maximum: 4 tsconfig files per package. If you need more, talk to maintainers first.
+- Run `tsc --noEmit -p tsconfig.typecheck.json` for workspace typechecks. Extend `tsconfig.package-typecheck.json` and preserve the package’s intended source and declaration inputs.
+- Use a separate check config when a Svelte or test pass needs different files or compiler options.
+- Keep declaration emission, project references, and packaging options in the build configs. Add `tsconfig.build.json` when declaration emission needs different inclusions.
 - Do not extend `tsconfig.kit.json` unless the package ships a SvelteKit app (templates only)
 
 ---
@@ -527,7 +529,7 @@ never disable the scan.
 - **`./workbench` subpath**: exports package-owned routes and workbench metadata for use by `smrt-workbench`
 - **Svelte peer**: one uniform floor (currently `svelte: ^5.57.0`), not bumped with the devDependency. Drop the `^4.0.0 || ^5.0.0` range.
 - **Build script**: `vite build && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist`
-- **Typecheck script**: packages with `./svelte` exports must run both TypeScript and Svelte checks via the a11y wrapper, e.g. `tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json` (see Accessibility enforcement below). SvelteKit-backed packages should run `svelte-kit sync` before both the TypeScript pass and the `svelte-check-a11y` wrapper pass.
+- **Typecheck script** uses a workspace source config for both TypeScript and the Svelte a11y wrapper. For example, `tsc --noEmit -p tsconfig.typecheck.json && node ../../scripts/svelte-check-a11y.mjs --config ../../scripts/svelte.config.typecheck.mjs --tsconfig tsconfig.svelte-typecheck.json`. Packages using Vite for CSS preprocessing provide a check config that preserves the transform with runtime config discovery disabled. SvelteKit-backed packages sync Kit’s generated types and preserve Kit-specific aliases alongside workspace source paths.
 - **`tsconfig.svelte.json`**: extends `tsconfig.package-svelte.json`, includes `ambient.d.ts` and `*.svelte`
 
 ### Accessibility enforcement (S12, #1417)
@@ -541,7 +543,7 @@ required status check.
   list of every `a11y_*` code mapped to `:error` (svelte-check's native
   warning-promotion flag — there is no wildcard syntax, so each code is listed).
   Every UI package's `typecheck` calls the wrapper instead of bare
-  `svelte-check`, reusing each package's own tsconfig/codegen flow unchanged.
+  `svelte-check`, using each package’s source typecheck config and any required code generation.
 - **Single source of truth**: the canonical `a11y_*` code list lives in the
   wrapper. A Svelte upgrade that adds a NEW a11y code surfaces it as a plain
   (non-gating) warning until it is added to that list.
@@ -602,7 +604,7 @@ Templates ship a `template/` directory that is copied wholesale by the scaffold 
 - All files referenced in `template/package.json` scripts must actually exist in `template/`
 - `template/README.md` ≥100 lines, explaining the scaffolding flow and runtime parameters
 - CI verifies that `pnpm install && pnpm build` succeeds in each scaffolded template (would have caught the `template-site-static-json` missing-`caelus.ts` bug)
-- Scaffolded SvelteKit templates must ship `typecheck` as a TypeScript pass plus `svelte-check`; otherwise generated projects inherit the `.svelte` ambient typing gap.
+- Scaffolded SvelteKit templates must ship `typecheck` as a TypeScript pass plus `svelte-check`; otherwise generated projects inherit the `.svelte` ambient typing gap. The repository fixture and host use workspace source configs. The copied template resolves its installed packages through their public exports.
 
 ---
 
