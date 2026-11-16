@@ -70,6 +70,19 @@ call site must forward them (`promptMessageOptions()` or a spread of
 `resolved.ai`); core lifts `promptKey` into `_smrt_ai_usage.prompt_key`
 (`../core/agents/ai-usage.md`).
 
+## Tracked calls (#5005)
+
+`trackedPromptCall(resolved)` turns a `resolvePrompt()` result into the
+`prompt` argument of core's tracked client
+(`createTrackedAiClient(...).client(trackedPromptCall(resolved), { runContext })`):
+the key, the template hash, and the tier, latency and floor the prompt asks
+for. Every tracked call carries a prompt key and `resolvePrompt` is where it
+comes from; core never imports this package (the dependency stays core <-
+prompts). A prompt that makes calls from a package that is not a `SmrtObject`
+(chat, the app shell) registers with `definePrompt()` under its package
+namespace (`chat.assistant.system`, `app-shell.assistant.system`) like any
+other, so app and tenant overrides apply to it.
+
 ## Framework prompt tiers (#4755)
 
 Every framework `definePrompt()` declares `ai.profile` as a tier: closed-
