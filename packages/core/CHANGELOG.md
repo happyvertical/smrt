@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.61.5
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - calculated-column follow-ups for the #4920 data-shape train (#5021) (core)
+- @happyvertical/smrt-config@0.61.5
+  - @happyvertical/smrt-scanner@0.61.5
+  - @happyvertical/smrt-types@0.61.5
+
 ## 0.61.4
 
 ### Patch Changes
