@@ -13,7 +13,8 @@ check. The driver runs them as one `workflow` run on smrt-core's run records
   budget's `repairRetries`, then the run fails with `repairs_exhausted`;
 - accepted output goes to the host check, recorded as a `check` event; a check
   may reject it (`check_failed`), ask for the step again, finish the run early
-  or pause it for a person's approval (`approval` events);
+  or pause it for a person's approval (`approval` events, one hold per
+  gated action; a step passes only with no hold outstanding);
 - a budget limit, a stop or a child run's stop leaves the run `stopped` with a
   typed reason and resumable; a cancel ends it for good; a failed run can be
   retried from its last accepted step as a new run.

@@ -73,7 +73,8 @@ export function workflowScenarios(database: () => Promise<DatabaseInterface>) {
     const { model } = scriptedModel(() => ({ output: { value: 1 } }));
     const step: WorkflowStep = {
       ...(twoSteps[0] as WorkflowStep),
-      check: () => ({ waitingApproval: true }),
+      check: (_output, context) =>
+        context.approval === 'approved' ? {} : { waitingApproval: true },
     };
     const driver = driverFor(db, model, definitionOf([step]));
     const run = await driver.start({ ownerId: 'owner' });

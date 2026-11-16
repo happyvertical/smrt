@@ -20,12 +20,17 @@
 4. Schema errors, unreadable JSON and `AiCallLimitError` are repairable
    attempts; past `budget.repairRetries` the run fails `repairs_exhausted`.
 5. The check: `failure` → `check` failed, run `failed`/`check_failed`;
-   `waitingApproval` → `approval` requested, run `waiting-approval`;
+   `waitingApproval` → a new `approval` requested (`payload_ref` from
+   `holdRef`), run `waiting-approval`. Every `waitingApproval` is a new hold,
+   also after an approval: a step gating several actions holds once per
+   action, `approvals` (in the checkpoint and the check context) counts the
+   ones approved, and the step passes only when its check returns without a
+   hold, so a run never ends `done` with a hold outstanding;
    `repeat` → `check` failed, step again up to `maxRepeats`; `complete` →
    `check` passed, run `done`; otherwise `check` passed, next step.
 
 `decide` appends the decision event (parent: the request) and resumes the run
-(approved: the next `run` re-runs the check with `approval: 'approved'`) or
+(approved: the next `run` counts it, clears the outstanding hold and re-runs the check with `approval: 'approved'`) or
 fails it (`check_failed`). `stop` is `interrupted` (resumable); `cancel` is
 final. `resume` passes the definition version, the app ceiling and the
 reconciler to `resumeAiRun`; a budget stop needs the stopping limit raised.

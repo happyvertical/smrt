@@ -219,7 +219,9 @@ describe.each(engines)('workflow runs on %s', (engine) => {
       ...(twoSteps[0] as WorkflowStep),
       check: (_output, context) => {
         approvals.push(context.approval);
-        return { waitingApproval: true, note: 'Apply to the kitchen?' };
+        return context.approval === 'approved'
+          ? {}
+          : { waitingApproval: true, note: 'Apply to the kitchen?' };
       },
     };
     const driver = driverFor(db, model, definitionOf([step]));
@@ -271,6 +273,67 @@ describe.each(engines)('workflow runs on %s', (engine) => {
         approved: true,
       }),
     ).rejects.toBeInstanceOf(RunConflictError);
+  });
+
+  it('holds a step once per gated action and never ends done with a hold outstanding', async () => {
+    const db = await workflowDb(engine);
+    const { model, calls } = byStep(0);
+    const seen: Array<[string | null, number]> = [];
+    const step: WorkflowStep = {
+      ...(twoSteps[0] as WorkflowStep),
+      // Two gated actions: the check holds for each in turn.
+      check: (_output, context) => {
+        seen.push([context.approval, context.approvals]);
+        return context.approvals < 2
+          ? {
+              waitingApproval: true,
+              holdRef: `approval:hold-${context.approvals + 1}`,
+            }
+          : { note: 'both applied' };
+      },
+    };
+    const driver = driverFor(db, model, definitionOf([step]));
+    const run = await driver.start({ ownerId: 'owner' });
+    expect((await driver.run(run.id, 'owner')).status).toBe('waiting-approval');
+    expect(
+      (await driver.decide(run.id, 'owner', { approved: true })).status,
+    ).toBe('running');
+    // The first approval does not pass the second hold.
+    expect(await driver.run(run.id, 'owner')).toMatchObject({
+      status: 'waiting-approval',
+      outputs: [],
+    });
+    expect((await getAiRun(db, run.id))?.status).toBe('waiting-approval');
+    await driver.decide(run.id, 'owner', { approved: true });
+    expect(await driver.run(run.id, 'owner')).toMatchObject({
+      status: 'done',
+      outputs: [{ value: expect.any(Number) }],
+    });
+    expect(seen).toEqual([
+      [null, 0],
+      ['approved', 1],
+      ['approved', 2],
+    ]);
+    expect(calls).toHaveLength(1);
+    const approvalEvents = ((await getRunTrajectory(db, run.id))?.entries ?? [])
+      .map((entry) => entry.event)
+      .filter((event) => event?.type === 'approval');
+    expect(
+      approvalEvents.map((event) => [event?.status, event?.payloadRef]),
+    ).toEqual([
+      ['requested', 'approval:hold-1'],
+      ['approved', null],
+      ['requested', 'approval:hold-2'],
+      ['approved', null],
+    ]);
+    // A refused second hold fails the step: nothing after it runs.
+    const refused = await driver.start({ ownerId: 'owner' });
+    await driver.run(refused.id, 'owner');
+    await driver.decide(refused.id, 'owner', { approved: true });
+    await driver.run(refused.id, 'owner');
+    expect(
+      await driver.decide(refused.id, 'owner', { approved: false }),
+    ).toMatchObject({ status: 'failed', stopReason: 'check_failed' });
   });
 
   it('stops at a budget limit, refuses an unchanged resume, and resumes with a raised one', async () => {

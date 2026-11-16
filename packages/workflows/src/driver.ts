@@ -654,9 +654,19 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
               break;
             }
             approval = 'approved';
+            // The decided hold is no longer outstanding; count it once.
+            await persist({
+              ...state,
+              approval: null,
+              approvals: (state.approvals ?? 0) + 1,
+            });
           }
           const result: WorkflowStepCheck = step.check
-            ? await step.check(pending.output, { ...base, approval })
+            ? await step.check(pending.output, {
+                ...base,
+                approval,
+                approvals: state.approvals ?? 0,
+              })
             : {};
           if (controller.signal.aborted) {
             await stopIfRunning('interrupted');
@@ -687,7 +697,9 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
             await fail('check_failed');
             break;
           }
-          if (result.waitingApproval && approval !== 'approved') {
+          if (result.waitingApproval) {
+            // Every hold is its own request; one approved earlier never
+            // passes a later one (a step may gate several actions).
             const request = await appendAiRunEvent(db, runId, {
               type: 'approval',
               status: 'requested',
@@ -695,6 +707,7 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
               stepIndex: state.stepIndex,
               name: step.name,
               ...(result.note ? { payload: { note: result.note } } : {}),
+              ...(result.holdRef ? { payloadRef: result.holdRef } : {}),
             });
             await persist({
               ...state,
@@ -719,6 +732,7 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
               pending: null,
               invalid: null,
               approval: null,
+              approvals: 0,
             });
             entered = false;
             continue;
@@ -733,6 +747,7 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
               outputs,
               pending: null,
               approval: null,
+              approvals: 0,
             });
             await finishAiRun(db, runId, { status: 'done' });
             break;
@@ -748,6 +763,7 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
             pending: null,
             invalid: null,
             approval: null,
+            approvals: 0,
           });
           entered = false;
         }

@@ -39,8 +39,14 @@ export interface WorkflowCheckpointState {
   pending: { output: unknown; judgedEventId: string | null } | null;
   /** The current step's last invalid output, for the repair attempt. */
   invalid: { output: unknown; errors: string[] } | null;
-  /** An approval requested for the pending output. */
+  /** The approval (hold) requested for the pending output and not yet decided. */
   approval: { requestEventId: string } | null;
+  /**
+   * Holds of the current step a person approved so far. A step may hold
+   * more than once (one hold per gated action); it passes only when its
+   * check passes with no hold outstanding. Absent in older checkpoints: 0.
+   */
+  approvals?: number;
 }
 
 /** Host-facing progress; names are the host's plain text. */
@@ -69,8 +75,18 @@ export interface WorkflowStepCheck {
   failure?: string;
   /** Run this step again (a new step instance), up to `maxRepeats`. */
   repeat?: boolean;
-  /** Pause for a person's decision (durable runs only). */
+  /**
+   * Pause for a person's decision (durable runs only). Every time a check
+   * returns it, a new hold is requested (an `approval` event): a check that
+   * holds again after an approval waits again, and the step passes only once
+   * its check returns without it.
+   */
   waitingApproval?: boolean;
+  /**
+   * What the hold points at in the host (`payload_ref` of the `approval`
+   * request, e.g. `approval:<id>`), for mapping a host decision to the run.
+   */
+  holdRef?: string;
   /** A short host note recorded on the check or approval event. */
   note?: string;
 }
@@ -93,10 +109,13 @@ export interface WorkflowStepContext {
 /** What a step's check sees. */
 export interface WorkflowCheckContext extends WorkflowStepContext {
   /**
-   * `approved` once a person approved this output; a check that asks for
-   * approval again is then taken as passed.
+   * `approved` when the check runs again after a person approved the step's
+   * latest hold; null otherwise. Asking for approval again requests a new
+   * hold: it is never taken as passed.
    */
   approval: 'approved' | null;
+  /** Holds of this step a person approved so far. */
+  approvals: number;
 }
 
 /**
