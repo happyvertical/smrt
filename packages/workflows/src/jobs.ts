@@ -513,18 +513,14 @@ export function createWorkflowRunJobs<Input = unknown>(
               Object.freeze({ ...state.budget, ...budget }),
             )
           : budget;
-        const resumed = await driverFor(owner, state.input as Input).resume(
-          id,
-          ownerId,
-          approved ? { budget: approved } : {},
-        );
-        try {
-          await enqueue(owner, id, resumed.budget);
-        } catch (error) {
-          await stopAiRun(db, id, { reason: 'interrupted' }).catch(() => null);
-          throw error;
-        }
-        return resumed;
+        // The run goes back to `running` and its new job is admitted in one
+        // transaction: a stale worker's stop either lands before (and the
+        // resume sees a stopped run) or after (and its fence sees the new
+        // job), never between.
+        return driverFor(owner, state.input as Input).resume(id, ownerId, {
+          ...(approved ? { budget: approved } : {}),
+          admit: (tx, resumedBudget) => enqueue(owner, id, resumedBudget, tx),
+        });
       };
       const continueAfterApproval = async (id: string) => {
         await options.authorize?.(owner);

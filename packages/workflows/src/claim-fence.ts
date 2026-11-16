@@ -24,11 +24,20 @@ export function workflowClaimFence(claim: Readonly<JobClaim>): AiRunClaimFence {
  * worker's own attempt in any state, and refuses a claim another worker took
  * over and a job that a newer job of the same run (same dedupe key; stale
  * recovery keeps the worker on the failed row) replaced
- * (`WorkflowRunOptions.stopFence`).
+ * (`WorkflowRunOptions.stopFence`). It locks the run row before it looks for
+ * a newer job: a resume commits the run's status and its new job together
+ * while holding that row, so the look sees the new job once the resume has
+ * committed (on PostgreSQL each statement reads what committed before it).
  */
 export function workflowStopFence(claim: Readonly<JobClaim>): AiRunClaimFence {
-  return async (tx) => {
+  return async (tx, durableRunId) => {
     await assertJobClaimForRelease(tx, claim);
+    // A no-op write takes the row lock on every engine (an UPDATE locks on
+    // PostgreSQL, serializes SQLite writers and conflicts on DuckDB).
+    await tx.query(
+      'UPDATE _smrt_ai_runs SET retain = retain WHERE id = ?',
+      durableRunId,
+    );
     const jobs = await SmrtJobCollection.create({ db: tx });
     const own = await jobs.get({ id: claim.jobId });
     if (!own?.dedupeKey) return;

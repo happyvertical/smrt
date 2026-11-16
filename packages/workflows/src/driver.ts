@@ -5,6 +5,7 @@ import {
   type AiRunClaimFence,
   AiRunClaimLostError,
   type AiRunContext,
+  AiRunResumeRefusedError,
   AiRunStoppedError,
   type AiRunStopReason,
   appendAiRunEvent,
@@ -18,12 +19,14 @@ import {
   stopAiRun,
   type TrackedAiClient,
   waitAiRunApproval,
+  withCallerOwnedDatabaseTransaction,
 } from '@happyvertical/smrt-core';
 import {
   promptMessageOptions,
   resolvePrompt,
   trackedPromptCall,
 } from '@happyvertical/smrt-prompts';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   createRunCheckpointStore,
   isWorkflowCheckpointState,
@@ -849,12 +852,18 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
      * (or one that accepts the checkpoint), with limits only raised and at
      * most to the app's ceiling; a budget stop needs the limit that stopped
      * it raised. Reconciles the run's stale reservations first. Then admit
-     * its job again.
+     * its job again: with `admit`, the status change and `admit`'s writes
+     * (the new job) commit in one transaction, so no stale worker's stop
+     * can land between them.
      */
     async resume(
       runId: string,
       ownerId: string,
-      resumeOptions: { budget?: AiRunBudget; fence?: AiRunClaimFence } = {},
+      resumeOptions: {
+        budget?: AiRunBudget;
+        fence?: AiRunClaimFence;
+        admit?: (tx: DatabaseInterface, budget: AiRunBudget) => Promise<void>;
+      } = {},
     ): Promise<WorkflowRunState> {
       const store = storeFor(ownerId);
       await mustLoad(store, runId);
@@ -863,16 +872,46 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
           'The previous run is still stopping. Try again when it has stopped.',
         );
       }
-      await resumeAiRun(db, runId, {
-        ...(resumeOptions.budget ? { budget: resumeOptions.budget } : {}),
-        ...(options.ceiling ? { ceiling: options.ceiling } : {}),
-        definitionVersion: definition.version,
-        acceptsVersion,
-        ...(resumeOptions.fence ? { fence: resumeOptions.fence } : {}),
-        reconcile: async (database, id) => {
-          await reconcileAiRunOnClaim(database, id);
-        },
-      });
+      const resumeWith = (database: DatabaseInterface, reconcile: boolean) =>
+        resumeAiRun(database, runId, {
+          ...(resumeOptions.budget ? { budget: resumeOptions.budget } : {}),
+          ...(options.ceiling ? { ceiling: options.ceiling } : {}),
+          definitionVersion: definition.version,
+          acceptsVersion,
+          ...(resumeOptions.fence ? { fence: resumeOptions.fence } : {}),
+          ...(reconcile
+            ? {
+                reconcile: async (target: DatabaseInterface, id: string) => {
+                  await reconcileAiRunOnClaim(target, id);
+                },
+              }
+            : {}),
+        });
+      const admit = resumeOptions.admit;
+      if (!admit) {
+        await resumeWith(db, true);
+        return current(store, runId);
+      }
+      if (!db.transaction) {
+        throw new Error('Resuming with a job requires transactions');
+      }
+      await reconcileAiRunOnClaim(db, runId);
+      const refused = await db.transaction((tx) =>
+        withCallerOwnedDatabaseTransaction(tx, async () => {
+          let resumed: Awaited<ReturnType<typeof resumeAiRun>>;
+          try {
+            resumed = await resumeWith(tx, false);
+          } catch (error) {
+            // A refusal may have written its reason (`definition_changed`):
+            // commit it, admit nothing, and throw after the commit.
+            if (error instanceof AiRunResumeRefusedError) return error;
+            throw error;
+          }
+          await admit(tx, resumed.budget);
+          return null;
+        }),
+      );
+      if (refused) throw refused;
       return current(store, runId);
     },
 

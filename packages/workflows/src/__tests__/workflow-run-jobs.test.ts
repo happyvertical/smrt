@@ -7,10 +7,12 @@
  */
 import { randomUUID } from 'node:crypto';
 import {
+  AiRunClaimLostError,
   cancelAiRun,
   createTrackedAiClient,
   getAiRun,
   readAiRunCheckpoint,
+  stopAiRun,
 } from '@happyvertical/smrt-core';
 import {
   JobHandlerRegistrationClosedError,
@@ -33,6 +35,7 @@ import {
   type WorkflowRunJobsOptions,
   WorkflowRunKeyConflictError,
   type WorkflowStep,
+  workflowStopFence,
 } from '../index.js';
 import {
   closeWorkflowDbs,
@@ -787,6 +790,67 @@ describe('workflow run jobs', () => {
     configureHook = undefined;
     await bound.resume(run.id);
     expect((await end(run.id)).status).toBe('done');
+  });
+
+  it('a stale worker whose stop lands while the owner resumes never stops the resumed run', async () => {
+    const bound = install();
+    const run = await bound.start(startInput());
+    // The old worker holds the run's first job.
+    const workerId = `stale-${randomUUID()}`;
+    const [claimed] = await jobs.claimReady({
+      workerId,
+      limit: 1,
+      claimFencing: true,
+    });
+    if (!claimed) throw new Error('no job claimed');
+    const claim = {
+      jobId: String(claimed.id),
+      workerId,
+      attempt: claimed.attempts,
+      startedAt: claimed.startedAt?.toISOString() as string,
+      tenantId: null,
+      objectType: claimed.objectType,
+      objectId: claimed.objectId,
+      method: claimed.method,
+    };
+    // The owner stops the run: its job is cancelled, and the old worker has
+    // not seen the abort yet.
+    expect((await bound.stop(run.id)).status).toBe('stopped');
+    // The owner resumes. The old worker's stop (its own job is `cancelled`,
+    // which its stop fence accepts) is fired the moment the new job is
+    // being admitted: before the fix the run was already `running` with no
+    // other job, and the stop won.
+    const enqueue = jobs.enqueueHandlerJob.bind(jobs);
+    let stale: Promise<unknown> | undefined;
+    const spy = vi
+      .spyOn(jobs, 'enqueueHandlerJob')
+      .mockImplementation(async (...args) => {
+        stale ??= stopAiRun(db, run.id, {
+          reason: 'interrupted',
+          fence: workflowStopFence(claim),
+        }).then(
+          () => 'stopped',
+          (error: unknown) => error,
+        );
+        // Give a stop that can run now the time to land; one that waits on
+        // the resume's transaction does not hold the resume.
+        await Promise.race([stale, delay(200)]);
+        return enqueue(...args);
+      });
+    try {
+      await bound.resume(run.id);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await stale).toBeInstanceOf(AiRunClaimLostError);
+    expect(await getAiRun(db, run.id)).toMatchObject({
+      status: 'running',
+      stopReason: null,
+    });
+    const active = (await jobsOf(run.id)).filter(
+      (job) => job.status === 'pending',
+    );
+    expect(active).toHaveLength(1);
   });
 
   it('stops a run whose job no worker claimed before the deadline and resumes it', async () => {
