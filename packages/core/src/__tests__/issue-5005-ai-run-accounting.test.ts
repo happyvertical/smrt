@@ -1220,10 +1220,10 @@ describe.each(aiRunTestEngines)('AI run accounting on %s (#5005)', (engine) => {
         handled++;
       },
     );
-    // (a) The stuck run's own flush is writing it, with every retry: the
-    // other run's reservation does not wait for that write.
+    // (a) The stuck run's own flush is writing it, with eight tries and
+    // their backoff: the other run's reservation does not wait for that.
     let ownDone = false;
-    const own = flushAiRunSettlements(handle, { runId: stuck.id })
+    const own = flushAiRunSettlements(handle, { runId: stuck.id, attempts: 8 })
       .then(
         () => 'written',
         (error: Error) => error.message,
@@ -1233,15 +1233,15 @@ describe.each(aiRunTestEngines)('AI run accounting on %s (#5005)', (engine) => {
       });
     await reserveAiCall(handle, other.id, { inputTokens: 1 });
     expect(ownDone).toBe(false);
-    expect(attempts).toBeLessThan(5);
+    expect(attempts).toBeLessThan(8);
     expect(await own).toMatch(/could not be written yet/);
-    // Its five tries, and none added by the other run.
-    expect(attempts).toBe(5);
+    // Its eight tries, and none added by the other run.
+    expect(attempts).toBe(8);
     // (b) With no write in flight, each reservation of the other run tries
     // it at most once, in the background, and never waits for it.
     for (let i = 1; i <= 3; i++) {
       await reserveAiCall(handle, other.id, { inputTokens: 1 });
-      await vi.waitFor(() => expect(attempts).toBe(5 + i));
+      await vi.waitFor(() => expect(attempts).toBe(8 + i));
       // Let the background write finish before the next reservation.
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
