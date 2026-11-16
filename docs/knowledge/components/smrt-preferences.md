@@ -5,7 +5,7 @@ description: "Tenant defaults and per-user overrides for user-interface preferen
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-16T03:44:31Z"
+  at: "2026-11-16T12:40:26Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:44e4a312a6662d0ad1cf117de70e11f8e7e6479f73feb8fd8623d259c02b6af3"

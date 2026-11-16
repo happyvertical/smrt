@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.61.6
+
+### Patch Changes
+
+- ### Features
+  
+  - shared social account connect flow with X provider (#5024) (social)
+- @happyvertical/smrt-config@0.61.6
+  - @happyvertical/smrt-scanner@0.61.6
+  - @happyvertical/smrt-types@0.61.6
+
 ## 0.61.5
 
 ### Patch Changes
