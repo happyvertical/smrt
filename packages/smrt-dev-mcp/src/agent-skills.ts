@@ -46,6 +46,14 @@ const AGENT_SKILLS: AgentSkillDefinition[] = [
     skillFile: 'skills/smrt-contribute/SKILL.md',
     references: [],
   },
+  {
+    name: 'smrt-ai-work',
+    description:
+      'AI work skill: add AI work as a registered prompt, a tracked call and, for multi-step work, a smrt-workflows definition; explain runs, events, evaluations, tiers, latency, effort, budgets and fusions.',
+    path: 'skills/smrt-ai-work/SKILL.md',
+    skillFile: 'skills/smrt-ai-work/SKILL.md',
+    references: [],
+  },
 ];
 
 /** Version of the smrt-dev-mcp package that ships these skills. */

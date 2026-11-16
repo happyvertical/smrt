@@ -284,6 +284,17 @@ for deterministic context, inspect the actual diff, and produce a findings-first
 review. Native MCP prompt/resource clients can also load the `smrt-code-review`
 prompt or `smrt-dev-mcp://agent-skills/smrt-code-review` resource.
 
+### AI work (`smrt-ai-work`)
+
+Ask for `get-agent-skill` `name: 'smrt-ai-work'` before adding or explaining AI
+work. It tells an agent to produce a registered prompt (`definePrompt`), a
+tracked call carrying its prompt key (`createTrackedAiClient` with
+`trackedPromptCall`), and for multi-step work a `smrt-workflows` definition
+with a budget; it states the background handler job contract and explains
+runs, events, trajectories, evaluations, tiers, latency, effort, budgets and
+fusions, pointing at the [AI runs](../../docs/content/ai-runs.md) page and the
+package notes.
+
 ## Available Tools
 
 The server exposes these MCP tools:
@@ -486,7 +497,7 @@ Return a bundled agent skill as Markdown, with optional referenced files.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `name` | `'smrt-code-review'` | Yes | Skill name |
+| `name` | `'smrt-code-review' \| 'smrt-catalog' \| 'smrt-contribute' \| 'smrt-ai-work'` | Yes | Skill name |
 | `includeReferences` | `boolean` | No | Include referenced files (default: true) |
 
 ### `migration-status`

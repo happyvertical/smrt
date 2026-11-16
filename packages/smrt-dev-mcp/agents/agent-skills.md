@@ -14,3 +14,10 @@
   The repository root checks in an identical copy at `.agents/skills/smrt-contribute/SKILL.md` so a harness
   opening a checkout finds it without the MCP server; `src/agent-skills.test.ts` fails when they drift, so edit
   both together. Trigger evals: `skills/smrt-contribute/evals.json`.
+- `skills/smrt-ai-work/SKILL.md` — AI work skill (#5005). Asked to add AI work it produces a registered prompt
+  (`definePrompt`), a tracked call carrying its prompt key (`createTrackedAiClient` + `trackedPromptCall`) and, for
+  multi-step work, a `smrt-workflows` definition; it states the handler job contract and explains runs, events,
+  trajectories, evaluations, tiers, latency, effort, budgets and fusions from `docs/content/ai-runs.md` and the package
+  notes. `smrt-catalog` routes AI requests to it. It is served by `get-agent-skill` and shipped in the plugin; `docs:agents`
+  does not install it (only catalog and contribute). When the vocabulary in `ai-runs.md` changes, edit the skill; the test
+  checks that the files it cites exist. Trigger evals: `skills/smrt-ai-work/evals.json`.

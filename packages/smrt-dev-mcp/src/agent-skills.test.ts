@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -7,6 +7,7 @@ import {
   getAgentSkillsPackageVersion,
   listAgentSkills,
 } from './agent-skills.js';
+import { TOOLS } from './tool-catalog.js';
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -167,5 +168,95 @@ describe('smrt-contribute (#4709)', () => {
       'SKILL.md',
     );
     expect(readFileSync(repoCopy, 'utf8')).toBe(skill.skillMarkdown);
+  });
+});
+
+describe('smrt-ai-work (#5005)', () => {
+  const skill = getAgentSkill({ name: 'smrt-ai-work' });
+  const body = skill.skillMarkdown;
+  const evals = readEvals('smrt-ai-work');
+  const description = (
+    body.match(/^description: (.+)$/m)?.[1] ?? ''
+  ).toLowerCase();
+
+  it('is registered and served', () => {
+    expect(listAgentSkills().map((item) => item.name)).toContain(
+      'smrt-ai-work',
+    );
+    expect(body).toContain('name: smrt-ai-work');
+  });
+
+  it('produces a prompt, a tracked call and a workflow definition', () => {
+    for (const term of [
+      'definePrompt',
+      'resolvePrompt',
+      'trackedPromptCall',
+      'createTrackedAiClient',
+      'AiPromptKeyRequiredError',
+      '@happyvertical/smrt-workflows',
+      'createWorkflowRunDriver',
+    ]) {
+      expect(body, term).toContain(term);
+    }
+  });
+
+  it('states the handler job contract', () => {
+    for (const term of [
+      'registerJobHandler',
+      'enqueueHandlerJob',
+      'JobHandlerRegistrationClosedError',
+      'handlerUnclaimedDeadlineMs',
+      'serializeAiRunContext',
+    ]) {
+      expect(body, term).toContain(term);
+    }
+  });
+
+  it('explains runs, events, evaluations, tiers, latency, effort, budgets and fusions', () => {
+    for (const term of [
+      'Run',
+      'getRunTrajectory',
+      'recordAiEvaluation',
+      'Tier, latency, effort',
+      'maxTokens',
+      'Fusion, seat',
+      'docs/content/ai-runs.md',
+    ]) {
+      expect(body, term).toContain(term);
+    }
+  });
+
+  it('only cites exports, files and budget keys that exist', () => {
+    const root = join(packageRoot, '..', '..');
+    for (const path of body.match(/(?:docs|packages)\/[\w./-]+\.md/g) ?? []) {
+      expect(existsSync(join(root, path)), path).toBe(true);
+    }
+  });
+
+  it('has trigger evals the description covers', () => {
+    expect(evals.positive.length).toBeGreaterThanOrEqual(5);
+    expect(evals.negative.length).toBeGreaterThanOrEqual(3);
+    for (const term of ['workflow', 'budgets', 'prompt', 'tracked call']) {
+      expect(description, term).toContain(term);
+    }
+  });
+
+  it('is served by the get-agent-skill tool schema', () => {
+    const tool = TOOLS.find((item) => item.name === 'get-agent-skill');
+    const properties = tool?.inputSchema.properties as
+      | { name: { enum: string[] } }
+      | undefined;
+    const names = properties?.name.enum ?? [];
+    expect([...names].sort()).toEqual(
+      listAgentSkills()
+        .map((item) => item.name)
+        .sort(),
+    );
+  });
+
+  it('routes from the catalog skill', () => {
+    expect(getAgentSkill({ name: 'smrt-catalog' }).skillMarkdown).toContain(
+      'smrt-ai-work',
+    );
   });
 });
