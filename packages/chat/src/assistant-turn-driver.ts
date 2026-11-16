@@ -11,7 +11,9 @@ import {
   type AssistantTurnResult,
   type AssistantTurnState,
   AssistantTurnUserError,
+  isRunBudgetStop,
   refusedInTurn,
+  TURN_BUDGET_REPLY,
 } from './assistant-turn.js';
 import type {
   AssistantApprovalRequest,
@@ -37,6 +39,30 @@ import {
   turnExecution,
 } from './tool-run-types.js';
 import type { DescribeAssistantTool } from './tool-summary.js';
+import { type AssistantEngineCall, TURN_RUN } from './turn-tracking.js';
+
+/** The characters an engine's turn is sent, for its reservation. */
+function engineInputChars(
+  systemPrompt: string | undefined,
+  history: readonly AIMessage[],
+  userMessage: string,
+): number {
+  let chars = (systemPrompt ?? '').length + userMessage.length;
+  for (const message of history) {
+    chars +=
+      typeof message.content === 'string'
+        ? message.content.length
+        : JSON.stringify(message.content ?? '').length;
+  }
+  return chars;
+}
+
+/** A cancelled engine turn, as the error its call ends with. */
+function cancelled(): Error {
+  return Object.assign(new Error('The turn was cancelled.'), {
+    name: 'AbortError',
+  });
+}
 
 /** A decision from the host's owner-approval authority, never from model output. */
 export interface AssistantApprovalDecision {
@@ -134,9 +160,13 @@ async function runExternalAssistantAttempt<M>(
       'A host-owned approval observer cannot be combined with another approval authority.',
     );
   const attempt = new AbortController();
-  const signal = options.signal
-    ? AbortSignal.any([options.signal, attempt.signal])
-    : attempt.signal;
+  // Aborted at the engine call's `callTimeoutMs` (#5005).
+  const callTimeout = new AbortController();
+  const signal = AbortSignal.any(
+    [options.signal, attempt.signal, callTimeout.signal].filter(
+      (value): value is AbortSignal => value !== undefined,
+    ),
+  );
   let escalation: ToolRunTypeRefusal | undefined;
   const completedHistory: AIMessage[] = [];
   const accounting = options[TURN_ACCOUNTING] ?? {
@@ -443,6 +473,33 @@ async function runExternalAssistantAttempt<M>(
       terminal = true;
     },
   };
+  // The engine's turn is one tracked call of the turn's run (#5005),
+  // reserved just before the engine starts: a refused reservation at a
+  // budget limit ends the turn `budget` before anything is sent.
+  let call: AssistantEngineCall | undefined;
+  const turnRun = options[TURN_RUN];
+  if (turnRun) {
+    try {
+      call = await turnRun.beginEngineCall({
+        ...(options.selection ? { selection: options.selection } : {}),
+        inputChars: engineInputChars(
+          options.systemPrompt,
+          options.history ?? [],
+          userMessage,
+        ),
+        ...(options.signal ? { signal: options.signal } : {}),
+      });
+    } catch (error) {
+      if (!isRunBudgetStop(error)) throw error;
+      return endAtBudget(options, emit, serialize, report);
+    }
+    const limit = call.signal;
+    if (limit?.aborted) callTimeout.abort();
+    else
+      limit?.addEventListener('abort', () => callTimeout.abort(), {
+        once: true,
+      });
+  }
   let onAbort: () => void = () => {};
   const aborted = new Promise<void>((resolve) => {
     onAbort = resolve;
@@ -467,6 +524,50 @@ async function runExternalAssistantAttempt<M>(
     } catch (error) {
       failure = error;
       failed = true;
+    }
+  }
+  // End the engine's call once, with what the engine reported: answered, or
+  // ended without an answer (charged its tokens when it reported them).
+  if (call) {
+    const seen = observed ?? final?.execution;
+    const usage = final?.usage;
+    // A driver's aggregate usage gives the split only when it adds up.
+    const split =
+      usage && usage.promptTokens + usage.completionTokens === usage.totalTokens
+        ? {
+            inputTokens: usage.promptTokens,
+            outputTokens: usage.completionTokens,
+          }
+        : {};
+    const engineReport = {
+      ...(seen?.model ? { model: seen.model } : {}),
+      ...(seen?.requestedModel ? { requestedModel: seen.requestedModel } : {}),
+      ...(seen?.tokens !== undefined
+        ? {
+            tokens: seen.tokens,
+            ...(seen.inputTokens !== undefined &&
+            seen.outputTokens !== undefined
+              ? {
+                  inputTokens: seen.inputTokens,
+                  outputTokens: seen.outputTokens,
+                }
+              : {}),
+          }
+        : usage
+          ? { tokens: usage.totalTokens, ...split }
+          : {}),
+      ...(seen ? { durationMs: seen.durationMs } : {}),
+    };
+    if (final && !failed && !signal.aborted && !escalation) {
+      await call.answered(engineReport);
+    } else {
+      const timedOut = call.timedOut;
+      const ended = await call.ended(
+        failed && !signal.aborted ? failure : cancelled(),
+        engineReport,
+      );
+      // `callTimeoutMs` fails the call, and with it the turn.
+      if (timedOut) throw ended;
     }
   }
   const tokens =
@@ -542,6 +643,53 @@ async function runExternalAssistantAttempt<M>(
   return {
     stoppedReason,
     content,
+    originMessageId: options.originMessageId,
+  };
+}
+
+/**
+ * The turn's run had no room for the engine's turn (ai-runs section 6.4):
+ * nothing was sent, and the turn ends `budget` with a plain reply, as the
+ * built-in loop does.
+ */
+async function endAtBudget<M>(
+  options: AssistantTurnOptions<M>,
+  emit: (event: AssistantTurnEvent<M>) => void,
+  serialize: (message: unknown) => M,
+  report: (state: AssistantTurnState['state']) => Promise<boolean>,
+): Promise<AssistantTurnResult> {
+  let message: M | undefined;
+  const author = options.author;
+  if (author) {
+    message = serialize(
+      await sendAgentReply(author.chatService, {
+        tenantId: author.tenantId,
+        agentSessionId: author.agentSessionId,
+        threadId: author.threadId ?? null,
+        replyToMessageId: options.originMessageId ?? null,
+        kind: 'assistant',
+        content: TURN_BUDGET_REPLY,
+        metadata: {
+          ...replyMetadataFor(
+            { stoppedReason: 'budget' },
+            { content: TURN_BUDGET_REPLY },
+          ),
+          ...author.metadata,
+        },
+      }),
+    );
+    emit({ type: 'message', message });
+  }
+  await report('completed');
+  emit({
+    type: 'done',
+    ...(message ? { message } : {}),
+    stoppedReason: 'budget',
+  });
+  emit({ type: 'status', status: { state: 'done', label: 'Done' } });
+  return {
+    stoppedReason: 'budget',
+    content: TURN_BUDGET_REPLY,
     originMessageId: options.originMessageId,
   };
 }

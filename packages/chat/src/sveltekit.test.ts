@@ -53,6 +53,7 @@ import {
   createMemoryContinuationStore,
 } from './assistant-turn.js';
 import type {
+  AssistantTurnDriver,
   AssistantTurnDriverCallbacks,
   AssistantTurnDriverContext,
 } from './assistant-turn-driver.js';
@@ -1481,6 +1482,227 @@ describe('mountAssistantRoutes', () => {
         expect(runs[0]).toMatchObject({ status: 'stopped' });
         expect(String(runs[0]?.stop_reason)).toMatch(/^max_/);
         expect(JSON.parse(String(runs[0]?.budget))).toEqual({ maxTokens: 20 });
+      });
+
+      it("records a ChatGPT plan turn's calls under the engine and the tiers, uncosted", async () => {
+        const routes = mount({
+          ai: scriptedAI([withUsage('Planned.')]),
+          resolveSelection: async () => ({
+            engine: 'chatgpt',
+            tier: 'best',
+            model: 'gpt-plan',
+          }),
+        });
+        const threadId = await createThread(routes);
+        await events(
+          await send(routes, threadId, {
+            content: 'Plan it',
+            clientRequestId: 'plan-1',
+          }),
+        );
+        expect(
+          await query(
+            `SELECT provider, model, tier_requested, tier_resolved, total_tokens,
+                    estimated_cost FROM _smrt_ai_usage`,
+          ),
+        ).toEqual([
+          {
+            provider: 'chatgpt',
+            // The model the response reported wins over the binding's.
+            model: 'm-1',
+            tier_requested: 'best',
+            tier_resolved: 'best',
+            total_tokens: 15,
+            estimated_cost: null,
+          },
+        ]);
+        expect(
+          await query('SELECT calls, uncosted_calls FROM _smrt_ai_runs'),
+        ).toEqual([{ calls: 1, uncosted_calls: 1 }]);
+      });
+
+      describe('on an external engine (Claude Code, Codex)', () => {
+        const selection = {
+          engine: 'claude-code' as const,
+          tier: 'best' as const,
+          model: 'opus',
+        };
+        const engineTurn = (
+          run: AssistantTurnDriver['run'],
+          overrides: Partial<MountAssistantRoutesOptions> = {},
+        ) =>
+          mount({
+            turnDriver: { run },
+            resolveSelection: async () => selection,
+            ...overrides,
+          });
+        const sendOnce = async (
+          routes: AssistantRoutes,
+          clientRequestId: string,
+        ) => {
+          const threadId = await createThread(routes);
+          return events(
+            await send(routes, threadId, {
+              content: 'Plan it',
+              clientRequestId,
+            }),
+          );
+        };
+
+        it('records the engine turn as one call: a call event and a usage row with the tokens it reported, uncosted', async () => {
+          const routes = engineTurn(async (_ctx, cb) => {
+            cb.execution?.({
+              engine: 'claude-code',
+              model: 'claude-opus-reported',
+              requestedModel: 'opus',
+              durationMs: 7,
+              tokens: 42,
+              inputTokens: 30,
+              outputTokens: 12,
+              toolCalls: 0,
+            });
+            cb.done({ text: 'Planned.' });
+          });
+          const { thrown, seen } = await sendOnce(routes, 'cli-1');
+          expect(thrown).toBeNull();
+          expect(seen).toContainEqual(
+            expect.objectContaining({ type: 'done', stoppedReason: 'stop' }),
+          );
+          const runs = await query(
+            `SELECT id, type, status, calls, tokens, uncosted_calls, reserved_calls,
+                    reserved_tokens FROM _smrt_ai_runs`,
+          );
+          expect(runs).toHaveLength(1);
+          expect(runs[0]).toMatchObject({
+            type: 'turn',
+            status: 'done',
+            calls: 1,
+            tokens: 42,
+            uncosted_calls: 1,
+            reserved_calls: 0,
+            reserved_tokens: 0,
+          });
+          const usageRows = await query(
+            `SELECT id, run_id, provider, model, prompt_key, tier_requested,
+                    tier_resolved, prompt_tokens, completion_tokens,
+                    total_tokens, estimated_cost FROM _smrt_ai_usage`,
+          );
+          expect(usageRows).toEqual([
+            expect.objectContaining({
+              run_id: runs[0]?.id,
+              provider: 'claude-code',
+              model: 'claude-opus-reported',
+              prompt_key: 'chat.assistant.system',
+              tier_requested: 'best',
+              tier_resolved: 'best',
+              prompt_tokens: 30,
+              completion_tokens: 12,
+              total_tokens: 42,
+              estimated_cost: null,
+            }),
+          ]);
+          const callEvents = await query(
+            `SELECT call_id, reservation, status FROM _smrt_ai_run_events
+              WHERE type = 'call'`,
+          );
+          expect(callEvents).toEqual([
+            { call_id: usageRows[0]?.id, reservation: 'settled', status: 'ok' },
+          ]);
+        });
+
+        it('charges an answered turn that reported no tokens what it reserved, with no token counts on its row', async () => {
+          const routes = engineTurn(async (_ctx, cb) => {
+            cb.done({ text: 'Planned.' });
+          });
+          await sendOnce(routes, 'cli-2');
+          const [run] = await query(
+            'SELECT calls, tokens, uncosted_calls FROM _smrt_ai_runs',
+          );
+          expect(run).toMatchObject({ calls: 1, uncosted_calls: 1 });
+          expect(Number(run?.tokens)).toBeGreaterThan(0);
+          expect(
+            await query(
+              'SELECT provider, model, total_tokens FROM _smrt_ai_usage',
+            ),
+          ).toEqual([
+            // No model reported: the tier binding's.
+            { provider: 'claude-code', model: 'opus', total_tokens: null },
+          ]);
+        });
+
+        it.each([
+          ['maxCalls', { maxCalls: 0 }, 'max_calls'],
+          ['maxTokens', { maxTokens: 10 }, 'max_tokens'],
+        ] as const)('ends the turn budget at %s before the engine starts', async (_name, turnBudget, reason) => {
+          const run = vi.fn(async (_ctx, cb: AssistantTurnDriverCallbacks) => {
+            cb.done({ text: 'never' });
+          });
+          const routes = engineTurn(run, { turnBudget });
+          const { thrown, seen } = await sendOnce(routes, `cli-${reason}`);
+          expect(thrown).toBeNull();
+          expect(run).not.toHaveBeenCalled();
+          expect(seen.some((event) => event.type === 'error')).toBe(false);
+          expect(seen).toContainEqual(
+            expect.objectContaining({ type: 'done', stoppedReason: 'budget' }),
+          );
+          expect(
+            await query('SELECT status, stop_reason, calls FROM _smrt_ai_runs'),
+          ).toEqual([{ status: 'stopped', stop_reason: reason, calls: 0 }]);
+          expect(await query('SELECT id FROM _smrt_ai_usage')).toEqual([]);
+        });
+
+        it('releases the reservation of an engine turn that failed without reporting usage', async () => {
+          const routes = engineTurn(async () => {
+            throw new Error('engine crashed');
+          });
+          const { seen } = await sendOnce(routes, 'cli-fail');
+          expect(seen).toContainEqual(
+            expect.objectContaining({ type: 'error', code: 'internal_error' }),
+          );
+          expect(
+            await query(
+              `SELECT status, calls, tokens, reserved_calls, reserved_tokens
+                 FROM _smrt_ai_runs`,
+            ),
+          ).toEqual([
+            {
+              status: 'failed',
+              calls: 0,
+              tokens: 0,
+              reserved_calls: 0,
+              reserved_tokens: 0,
+            },
+          ]);
+          expect(
+            await query(
+              `SELECT reservation, status FROM _smrt_ai_run_events WHERE type = 'call'`,
+            ),
+          ).toEqual([{ reservation: 'released', status: 'failed' }]);
+          expect(await query('SELECT id FROM _smrt_ai_usage')).toEqual([]);
+        });
+
+        it('charges a failed engine turn the tokens it reported', async () => {
+          const routes = engineTurn(async (_ctx, cb) => {
+            cb.execution?.({
+              engine: 'claude-code',
+              durationMs: 3,
+              tokens: 25,
+              toolCalls: 0,
+            });
+            cb.error(new Error('engine gave up'));
+          });
+          await sendOnce(routes, 'cli-fail-usage');
+          expect(
+            await query(
+              `SELECT reservation, status FROM _smrt_ai_run_events WHERE type = 'call'`,
+            ),
+          ).toEqual([{ reservation: 'settled', status: 'failed' }]);
+          expect(
+            await query(
+              'SELECT calls, tokens, reserved_tokens FROM _smrt_ai_runs',
+            ),
+          ).toEqual([{ calls: 1, tokens: 25, reserved_tokens: 0 }]);
+        });
       });
 
       it('opens no run and answers a user error while usage persistence is off', async () => {

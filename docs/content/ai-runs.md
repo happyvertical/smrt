@@ -420,6 +420,7 @@ See [section 7](#7-resuming).
 | `do()`, `is()`, `describe()` whose tier is bound to a fusion | A `fusion` run, as below. |
 | A fusion | One `fusion` run, one usage row and one `call` event per seat. The run row is written when the fusion starts, not when it ends. |
 | A chat turn | One `turn` run, one usage row and one `call` event per model call in the tool loop, `action` and `observation` events for tool use. |
+| A chat turn on a Claude Code or Codex engine | One `turn` run and one usage row and one `call` event for the engine's turn, which runs its own loop and reports one result: the engine as provider, its reported tokens (else charged the reservation), uncosted. `action` and `observation` events for tool use. |
 | A chat turn that needs approval | The turn records a requested `approval` event and ends `done`, with the approval pending; it does not wait. The next turn carries on, and the person's decision is recorded as an `approval` event in that turn's run, as approval cards behave today. The decision's `parent_event_id` points back at the request in the earlier turn (section 2, approval events). |
 | A workflow run | One `workflow` run, a checkpoint, usage rows that carry the step and attempt, one `call` event per call, `check` and `approval` events. |
 | A retried workflow run | A new `workflow` run with `retry_of_run_id` naming the failed run, a checkpoint that starts with the failed run's accepted step outputs, and its own usage rows and events from the step it starts at. |

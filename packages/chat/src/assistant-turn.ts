@@ -100,6 +100,7 @@ import {
 import {
   AssistantTurnRun,
   type AssistantTurnTracking,
+  TURN_RUN,
 } from './turn-tracking.js';
 
 /** How long a suspended turn waits for the browser's results. */
@@ -398,11 +399,14 @@ export interface AssistantTurnOptions<M = Record<string, unknown>>
    * Track this turn as an AI run (#5005): it opens a `turn` run before the
    * first model call, every call of the tool loop is a tracked call of it,
    * and tool use and approvals are events of its trajectory. The loop then
-   * calls the tracked client instead of `ai`. Ignored by an external driver.
+   * calls the tracked client instead of `ai`.
    * Throws the turn's `ai_tracking_disabled` error while usage persistence
-   * is off.
+   * is off. An external driver's turn (a Claude Code or Codex engine) opens
+   * the same run and records the engine's turn as one tracked call of it.
    */
   tracking?: AssistantTurnTracking;
+  /** Internal: the open run an external driver's turn records its call in. */
+  [TURN_RUN]?: AssistantTurnRun;
   /** Omitted: today's bounded tool loop, including browser continuations. */
   turnDriver?: AssistantTurnDriver;
   /** Host-owned durable approval bridge. Absent: approval requests fail closed. */
@@ -744,7 +748,7 @@ export async function* runAssistantTurn<M = Record<string, unknown>>(
     try {
       let runOptions = options;
       let runEmit = emit;
-      if (options.tracking && options.ai && !options.turnDriver) {
+      if (options.tracking && (options.ai || options.turnDriver)) {
         try {
           turnRun = await AssistantTurnRun.open(
             options.budget
@@ -766,10 +770,17 @@ export async function* runAssistantTurn<M = Record<string, unknown>>(
           throw error;
         }
         const run = turnRun;
-        runOptions = {
-          ...options,
-          ai: (await run.client()) as unknown as Pick<AIInterface, 'chat'>,
-        };
+        // The built-in loop calls the tracked client; an external engine's
+        // turn is recorded as one call of the run by the driver bridge.
+        runOptions = options.turnDriver
+          ? { ...options, [TURN_RUN]: run }
+          : {
+              ...options,
+              ai: (await run.client(options.selection)) as unknown as Pick<
+                AIInterface,
+                'chat'
+              >,
+            };
         // The trajectory follows the turn's own events, in order, without
         // slowing the stream.
         runEmit = (event) => {
@@ -1692,11 +1703,11 @@ export function refusedInTurn(
 }
 
 /** The reply of a turn whose run stopped at a budget limit. */
-const TURN_BUDGET_REPLY =
+export const TURN_BUDGET_REPLY =
   'I reached the limit for this turn before finishing. Ask again to continue.';
 
 /** A run stop at one of its budget limits (ai-runs section 6.4). */
-function isRunBudgetStop(error: unknown): boolean {
+export function isRunBudgetStop(error: unknown): boolean {
   return (
     error instanceof AiRunStoppedError &&
     error.status === 'stopped' &&

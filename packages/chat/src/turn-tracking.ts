@@ -22,9 +22,12 @@ import { randomUUID } from 'node:crypto';
 import type { AIClient } from '@happyvertical/ai';
 import {
   type AiRunBudget,
+  type AiRunCallHandle,
   type AiRunContext,
+  type AiRunObservedUsage,
   aiRunStoppedError,
   appendAiRunEvent,
+  beginAiRunCall,
   closeAiRunHandoff,
   DEFAULT_INFERENCE_TIER,
   finishAiRun,
@@ -44,6 +47,7 @@ import {
   trackedPromptCall,
 } from '@happyvertical/smrt-prompts';
 import type { AssistantApprovalRequest } from './assistant-turn-events.js';
+import type { AssistantModelSelection } from './tool-run-types.js';
 
 /** The registered key of the chat assistant's system prompt. */
 export const CHAT_ASSISTANT_PROMPT_KEY = 'chat.assistant.system';
@@ -184,6 +188,80 @@ export function chatClientForTracking(
   }) as NonNullable<TrackedAiClientOptions['ai']>;
 }
 
+/**
+ * The open turn run an external engine's turn is recorded in (internal: set
+ * by `runAssistantTurn`, read by the external-driver bridge).
+ */
+export const TURN_RUN = Symbol('turnRun');
+
+/**
+ * What an engine reported about its turn, as a tracked call's usage: the
+ * model it ran (else the one it was bound to) and its tokens when it reported
+ * them. Without a token count the call has no usage: settled as answered it
+ * is charged what it reserved (ai-runs section 6.4), released otherwise.
+ */
+export interface AssistantEngineReport {
+  model?: string;
+  requestedModel?: string;
+  tokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  durationMs?: number;
+}
+
+function engineUsage(
+  report: AssistantEngineReport | undefined,
+  fallbackModel: string | undefined,
+): AiRunObservedUsage {
+  const count = (value: unknown) =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0
+      ? value
+      : undefined;
+  const total = count(report?.tokens);
+  const input = count(report?.inputTokens);
+  const output = count(report?.outputTokens);
+  const model = report?.model ?? report?.requestedModel ?? fallbackModel;
+  return {
+    ...(model ? { model } : {}),
+    ...(total !== undefined
+      ? {
+          usage: {
+            // The split only where the engine reported it.
+            ...(input !== undefined && output !== undefined
+              ? { promptTokens: input, completionTokens: output }
+              : {}),
+            totalTokens: total,
+          } as AiRunObservedUsage['usage'],
+        }
+      : {}),
+    ...(count(report?.durationMs) !== undefined
+      ? { duration: report?.durationMs }
+      : {}),
+  };
+}
+
+/**
+ * One engine turn as one tracked call of the turn's run, between its
+ * reservation and its end. End it exactly once.
+ */
+export interface AssistantEngineCall {
+  /** Aborted at the chain's `callTimeoutMs`. */
+  readonly signal: AbortSignal | undefined;
+  /** Whether the call timed out at `callTimeoutMs`. */
+  readonly timedOut: boolean;
+  /**
+   * The engine turn answered: settle it with what it reported (its tokens,
+   * else charged its reservation).
+   */
+  answered(report?: AssistantEngineReport): Promise<void>;
+  /**
+   * The engine turn ended without an answer (failed, cancelled, timed out,
+   * handed off): settled with its tokens when it reported them, else
+   * released. Returns the error to raise.
+   */
+  ended(error: unknown, report?: AssistantEngineReport): Promise<unknown>;
+}
+
 function messageRef(prefix: string, id: unknown): string | null {
   return typeof id === 'string' && id !== '' ? `${prefix}:${id}` : null;
 }
@@ -271,17 +349,103 @@ export class AssistantTurnRun {
     return this.tracking.messageRefPrefix ?? 'chat-message';
   }
 
-  /** The prompt's tracked client for this turn's calls. */
-  client(): Promise<AIClient> {
-    return this.tracking.tracked.client(
-      trackedPromptCall(this.tracking.prompt),
-      { runContext: this.context },
-    );
+  /**
+   * The prompt's tracked client for this turn's calls. With the host's
+   * selection, its calls also carry the tier asked for and bound.
+   */
+  client(selection?: AssistantModelSelection): Promise<AIClient> {
+    return this.tracking.tracked.client(this.promptCall(selection), {
+      runContext: this.context,
+    });
   }
 
   /** The tracked prompt of the turn's calls. */
-  promptCall(): TrackedPromptCall {
-    return trackedPromptCall(this.tracking.prompt);
+  promptCall(selection?: AssistantModelSelection): TrackedPromptCall {
+    return trackedPromptCall(this.tracking.prompt, {
+      usageTags: this.tierTags(selection),
+    });
+  }
+
+  /** The tier the prompt asks for and the tier the host bound the turn at. */
+  private tierTags(
+    selection: AssistantModelSelection | undefined,
+  ): Record<string, string> {
+    const asked = this.tracking.prompt.ai.tier;
+    const requested = asked && asked !== 'auto' ? asked : selection?.tier;
+    return {
+      ...(requested ? { tierRequested: String(requested) } : {}),
+      ...(selection?.tier ? { tierResolved: String(selection.tier) } : {}),
+    };
+  }
+
+  /**
+   * Reserve one external engine turn (a Claude Code or Codex session) as one
+   * call of this run, before the engine starts (ai-runs section 6.4): the
+   * call id is minted first, the run's and its ancestors' limits apply, and a
+   * refused reservation stops the run and throws `AiRunStoppedError`. The
+   * engine reports one result per turn, so its internal model calls are
+   * recorded as this one call. The usage row names the engine as provider
+   * and the model it reported (else the tier binding's), carries the prompt
+   * key and the tiers, and is uncosted (an engine has no price).
+   */
+  async beginEngineCall(input: {
+    selection?: AssistantModelSelection;
+    /** The characters the engine is sent: system text, history, message. */
+    inputChars: number;
+    signal?: AbortSignal;
+  }): Promise<AssistantEngineCall> {
+    const { selection } = input;
+    const prompt = this.promptCall(selection);
+    const model = selection?.model;
+    const fallback = {
+      provider: selection?.engine ?? 'external',
+      model: model ?? 'unknown',
+      operation: 'chat',
+      className: 'AssistantTurn',
+      tenantId: this.tracking.tracked.tenantId,
+      tags: {
+        ...(prompt.usageTags ?? {}),
+        promptKey: prompt.promptKey,
+        ...(prompt.templateHash ? { templateHash: prompt.templateHash } : {}),
+      },
+    };
+    const handle: AiRunCallHandle = await beginAiRunCall(this.context, {
+      inputChars: input.inputChars,
+      rate: null,
+      fallbackUsage: fallback,
+      ...(input.signal ? { signal: input.signal } : {}),
+    });
+    const callTimeout = handle.invocation.signal;
+    let timedOut = false;
+    if (handle.reservation.callTimeoutMs !== null && callTimeout) {
+      callTimeout.addEventListener(
+        'abort',
+        () => {
+          if (!input.signal?.aborted) timedOut = true;
+        },
+        { once: true },
+      );
+    }
+    return {
+      signal: callTimeout,
+      get timedOut() {
+        return timedOut;
+      },
+      answered: (report) => handle.succeed(engineUsage(report, model)),
+      ended: (error, report) => {
+        const observed = engineUsage(report, model);
+        if (observed.usage) {
+          handle.invocation.capture({
+            ...fallback,
+            model: observed.model ?? fallback.model,
+            usage: observed.usage,
+            duration: observed.duration ?? 0,
+            timestamp: new Date(),
+          });
+        }
+        return handle.fail(error);
+      },
+    };
   }
 
   private async append(

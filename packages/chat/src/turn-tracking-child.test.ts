@@ -12,6 +12,7 @@ import {
   getAiRun,
   getRunTrajectory,
   getTestDatabase,
+  startAiRunStep,
   stopAiRun,
 } from '@happyvertical/smrt-core';
 import {
@@ -148,6 +149,107 @@ describe('a workflow step turn as a child run', () => {
     expect(model.calls).toBe(2);
     await stopped.turn.finish('failed');
     expect((await getAiRun(db, stopped.turn.runId))?.status).toBe('stopped');
+  });
+
+  describe('on an external engine (one call per engine turn)', () => {
+    const selection = {
+      engine: 'codex' as const,
+      tier: 'best' as const,
+      model: 'gpt-5-codex',
+    };
+
+    it("rolls the engine turn into the parent's inclusive totals, uncosted", async () => {
+      const { parent, turn } = await stepTurn();
+      const call = await turn.beginEngineCall({ selection, inputChars: 400 });
+      await call.answered({ model: 'gpt-5-codex', tokens: 40 });
+      await turn.finish('done');
+      expect(await getAiRun(db, turn.runId)).toMatchObject({
+        status: 'done',
+        calls: 1,
+        tokens: 40,
+        uncostedCalls: 1,
+      });
+      expect(await getAiRun(db, parent.id)).toMatchObject({
+        status: 'running',
+        inclusiveCalls: 1,
+        inclusiveTokens: 40,
+        inclusiveUncostedCalls: 1,
+      });
+      const usage = (
+        (await db.query(
+          'SELECT provider, model, prompt_key, step_index FROM _smrt_ai_usage WHERE run_id = ?',
+          turn.runId,
+        )) as { rows: Array<Record<string, unknown>> }
+      ).rows;
+      expect(usage).toEqual([
+        {
+          provider: 'codex',
+          model: 'gpt-5-codex',
+          prompt_key: STEP_PROMPT,
+          step_index: null,
+        },
+      ]);
+      expect(model.calls).toBe(0);
+    });
+
+    it("refuses the engine turn at the parent's budget and after a parent stop", async () => {
+      const limited = await stepTurn({ maxCalls: 1 });
+      await (
+        await limited.turn.beginEngineCall({ selection, inputChars: 40 })
+      ).answered({ tokens: 10 });
+      await expect(
+        limited.turn.beginEngineCall({ selection, inputChars: 40 }),
+      ).rejects.toMatchObject({ stopReason: 'max_calls' });
+      await limited.turn.finish('done');
+      expect(await getAiRun(db, limited.parent.id)).toMatchObject({
+        status: 'stopped',
+        stopReason: 'max_calls',
+      });
+
+      // A workflow stopped at its step limit refuses its step's engine turn.
+      const steps = await stepTurn({ maxSteps: 0 });
+      await expect(
+        startAiRunStep(db, steps.parent.id, {
+          stepIndex: 0,
+          fence: steps.fence,
+        }),
+      ).rejects.toBeInstanceOf(AiRunStoppedError);
+      await expect(
+        steps.turn.beginEngineCall({ selection, inputChars: 40 }),
+      ).rejects.toMatchObject({ stopReason: 'max_steps' });
+
+      const stopped = await stepTurn();
+      await stopAiRun(db, stopped.parent.id, { reason: 'interrupted' });
+      await expect(
+        stopped.turn.beginEngineCall({ selection, inputChars: 40 }),
+      ).rejects.toBeInstanceOf(AiRunStoppedError);
+      await stopped.turn.finish('failed');
+      expect((await getAiRun(db, stopped.turn.runId))?.status).toBe('stopped');
+    });
+
+    it('returns the room of a cancelled engine turn to the parent', async () => {
+      const { parent, turn } = await stepTurn();
+      const call = await turn.beginEngineCall({ selection, inputChars: 400 });
+      expect((await getAiRun(db, parent.id))?.reservedCalls).toBe(1);
+      await call.ended(
+        Object.assign(new Error('cancelled'), { name: 'AbortError' }),
+      );
+      await turn.finish('cancelled');
+      expect(await getAiRun(db, parent.id)).toMatchObject({
+        inclusiveCalls: 0,
+        reservedCalls: 0,
+        reservedTokens: 0,
+      });
+      const events = ((await getRunTrajectory(db, turn.runId))?.entries ?? [])
+        .map((entry) => entry.event)
+        .filter((event) => event?.type === 'call');
+      expect(events).toEqual([
+        expect.objectContaining({
+          reservation: 'released',
+          status: 'cancelled',
+        }),
+      ]);
+    });
   });
 
   it('is cancelled with the parent', async () => {

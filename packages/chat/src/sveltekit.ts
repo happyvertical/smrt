@@ -1471,11 +1471,12 @@ export function mountAssistantRoutes(
    */
   const trackingFor = async (
     context: AssistantRequestContext,
-    ai: Pick<AIInterface, 'chat'>,
+    ai: Pick<AIInterface, 'chat'> | undefined,
     db: NonNullable<SmrtClassOptions['db']>,
     systemPrompt: string | undefined,
     thread: ChatThread,
     session: AgentSession,
+    selection: AssistantModelSelection | undefined,
   ): Promise<AssistantTurnTracking> => {
     const { principal } = context;
     const database = await resolveDatabase(db);
@@ -1484,7 +1485,19 @@ export function mountAssistantRoutes(
       db: database,
       tenantId: principal.tenantId,
       className: 'AssistantRoute',
-      ai: chatClientForTracking(ai),
+      // An external driver's turn makes no call through a client: the
+      // engine's turn is recorded as one call of the run (#5005).
+      ...(ai ? { ai: chatClientForTracking(ai) } : {}),
+      // A host-built engine client (a ChatGPT plan) is recorded under its
+      // engine and the model its tier binding chose.
+      ...(selection && selection.engine !== 'api'
+        ? {
+            label: {
+              provider: selection.engine,
+              ...(selection.model ? { model: selection.model } : {}),
+            },
+          }
+        : {}),
       transcript: false,
     });
     const threadId = String(thread.id);
@@ -1610,14 +1623,23 @@ export function mountAssistantRoutes(
     };
     const continuations = continuationStoreFor(context, chat, session);
     // The turn is an AI run on this tenant's database (#5005): its calls go
-    // through core's tracked client, and its system prompt is the registered
-    // `chat.assistant.system` prompt with the host's text as its runtime layer.
+    // through core's tracked client (an external engine's turn is one call of
+    // it), and its system prompt is the registered `chat.assistant.system`
+    // prompt with the host's text as its runtime layer.
     const tracking =
-      ai && db && !prepared.turnDriver
-        ? await trackingFor(context, ai, db, systemPrompt, thread, session)
+      db && (ai || prepared.turnDriver)
+        ? await trackingFor(
+            context,
+            prepared.turnDriver ? undefined : ai,
+            db,
+            systemPrompt,
+            thread,
+            session,
+            prepared.selection,
+          )
         : undefined;
     // A workflow step's turn sends the host's system prompt, then the step's
-    // registered prompt (an external engine's step too, untracked here).
+    // registered prompt (an external engine's step too).
     const stepPrompt = internalRequests.get(context.event.request)?.prompt;
     const systemText = stepPrompt
       ? [systemPrompt, stepPrompt.text].filter(Boolean).join('\n\n')
@@ -1625,8 +1647,8 @@ export function mountAssistantRoutes(
         ? chatAssistantSystemText(tracking.prompt)
         : systemPrompt;
     // The turn's effort (#5005): the assistant prompt's `ai.effort`, else the
-    // tier binding's the host selected. An external driver has no tracked
-    // prompt, so the prompt is resolved here for its effort.
+    // tier binding's the host selected. A turn without a tracked prompt
+    // resolves the prompt here for its effort.
     const selection = prepared.selection
       ? withPromptEffort(
           prepared.selection,

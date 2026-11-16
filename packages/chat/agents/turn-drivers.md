@@ -223,7 +223,10 @@ and no second client: every call of the turn stays on its tracked client.
 fully known, duration, tool calls, fallback) once, when the turn ends or hands
 off. Nothing of it is stored on a message. CLI adapters report observed
 execution through `callbacks.execution`; this also keeps the work a handed-off
-turn spent.
+turn spent. With a database the driver's turn is also a `turn` run: the
+engine's turn is one reserved call of it, settled from that execution, so
+`turnBudget` applies before the engine starts
+([assistant turn runs](assistant-turn-runs.md)).
 
 Reuse audit: the developer intent index and MCP build-context architecture
 inventory, plus name/purpose searches in chat/core/inference/smrt-ui/smrt-svelte,
