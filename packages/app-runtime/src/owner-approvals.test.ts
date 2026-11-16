@@ -895,7 +895,11 @@ describe(`canonical owner approval and stable core design Apply (${databaseType}
         surface: 'mcp' as const,
         tenantId,
         userId,
-        designAction: { application, runId: randomUUID(), actionId: 'final/1' },
+        workflowAction: {
+          application,
+          runId: randomUUID(),
+          actionId: 'final/1',
+        },
       };
       const args = {
         list: 'Customers',

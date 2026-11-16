@@ -9,8 +9,8 @@ import {
   compareAiPromptRuns,
   ensureSystemTables,
   listAiPromptTemplateHistory,
+  recordAiEvaluation,
   recordAiTranscript,
-  recordAiUsageOutcome,
 } from '@happyvertical/smrt-core';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -34,6 +34,17 @@ import {
   promptsHistoryCommand,
   usageScope,
 } from '../ai-compare.js';
+
+async function usageIdOf(
+  db: DatabaseInterface,
+  entryCallId: string,
+): Promise<string> {
+  const result = await db.query(
+    'SELECT id FROM _smrt_ai_usage WHERE entry_call_id = $1',
+    entryCallId,
+  );
+  return String((result.rows as { id: string }[])[0]?.id);
+}
 
 describe('ai:compare parsing', () => {
   it('parses hash:, model: and tier: selectors on the first colon', () => {
@@ -143,23 +154,23 @@ describe('ai:compare over SQLite', () => {
         bytes: 100,
       });
     }
-    await recordAiUsageOutcome(db, {
-      callId: 'call-a2',
+    await recordAiEvaluation(db, {
+      callId: await usageIdOf(db, 'call-a2'),
       label: 'rejected',
-      score: 0.1,
-      actor: 'reviewer',
+      value: 0.1,
+      evaluator: 'human',
     });
-    await recordAiUsageOutcome(db, {
-      callId: 'call-b1',
+    await recordAiEvaluation(db, {
+      callId: await usageIdOf(db, 'call-b1'),
       label: 'accepted',
-      score: 0.9,
-      actor: 'reviewer',
+      value: 0.9,
+      evaluator: 'human',
     });
-    await recordAiUsageOutcome(db, {
-      callId: 'call-x',
+    await recordAiEvaluation(db, {
+      callId: await usageIdOf(db, 'call-x'),
       label: 'rejected',
-      score: 0,
-      actor: 'reviewer',
+      value: 0,
+      evaluator: 'human',
     });
   });
 
@@ -180,7 +191,11 @@ describe('ai:compare over SQLite', () => {
     expect(text).toMatch(/metric\s+A hash:h1\s+B hash:h2/);
     expect(text).toMatch(/calls\s+2\s+1/);
     expect(text).toMatch(/p50\s+100ms\s+50ms/);
-    expect(text).toMatch(/outcomes\s+rejected=1\s+accepted=1/);
+    // #5005: repair, check and approval rates, '-' with nothing to rate.
+    expect(text).toMatch(/repair rate\s+- \(0\/0 steps\)\s+- \(0\/0 steps\)/);
+    expect(text).toMatch(/check pass\s+- \(0\/0\)\s+- \(0\/0\)/);
+    expect(text).toMatch(/approval\s+- \(0\/0\)\s+- \(0\/0\)/);
+    expect(text).toMatch(/evaluations\s+rejected=1\s+accepted=1/);
     expect(text).toMatch(/mean score\s+0\.100 \(n=1\)\s+0\.900 \(n=1\)/);
     expect(text).toContain(
       'Rows of notes.review in scope: 3 (neither side: 0, both sides: 0)',

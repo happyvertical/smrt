@@ -4,7 +4,7 @@
  * - The persistence handler lifts `promptKey` / `tierRequested` /
  *   `tierResolved` / `runId` tags into indexed columns and keeps `tags` whole.
  * - `listAiUsage()` / `summarizeAiUsage()` filter and group on them.
- * - `recordAiUsageOutcome()` labels existing usage only, inside its tenant.
+ * - `recordAiEvaluation()` labels existing usage only, inside its tenant.
  * - `reportAiUsage()` follows "a filter selects what is totalled, never what
  *   is accounted for": unattributed and uncosted rows are counted, filtered
  *   rows are reported as excluded.
@@ -16,9 +16,9 @@ import { AiUsagePersistenceHandler } from '../adapters/ai-usage';
 import { SmrtClass } from '../class';
 import {
   AI_USAGE_COST_BASIS,
-  AiUsageOutcomeTargetError,
-  listAiUsageOutcomes,
-  recordAiUsageOutcome,
+  AiEvaluationTargetError,
+  listAiEvaluations,
+  recordAiEvaluation,
   reportAiUsage,
 } from '../system/ai-usage-observability';
 import { ensureSystemTables } from '../system/bootstrap';
@@ -224,12 +224,12 @@ describe('existing DuckDB install (#4751)', () => {
       });
       const report = await reportAiUsage(duck, { by: ['prompt'] });
       expect(report.buckets.map((b) => b.key.prompt)).toEqual(['duck.key']);
-      await recordAiUsageOutcome(duck, {
+      await recordAiEvaluation(duck, {
         runId: 'duck-run',
         label: 'ok',
-        actor: 'a',
+        evaluator: 'human',
       });
-      expect((await listAiUsageOutcomes(duck))[0]?.usage).toHaveLength(1);
+      expect((await listAiEvaluations(duck))[0]?.usage).toHaveLength(1);
     } finally {
       await duck.close?.();
     }
@@ -288,7 +288,7 @@ describe('listAiUsage / summarizeAiUsage on the new columns', () => {
   });
 });
 
-describe('recordAiUsageOutcome / listAiUsageOutcomes', () => {
+describe('recordAiEvaluation / listAiEvaluations', () => {
   beforeEach(async () => {
     await persist({
       id: 'seed-t1',
@@ -313,149 +313,163 @@ describe('recordAiUsageOutcome / listAiUsageOutcomes', () => {
   });
 
   it('records a usage label inheriting the row tenant, with JSON evidence', async () => {
-    const record = await recordAiUsageOutcome(db, {
-      usageId: 'seed-t1',
+    const record = await recordAiEvaluation(db, {
+      callId: 'seed-t1',
       label: ' accepted ',
-      score: 0.9,
+      value: 0.9,
       evidence: { editDistance: 0 },
-      actor: 'user-1',
+      evaluator: 'human',
     });
 
     expect(record).toMatchObject({
-      usageId: 'seed-t1',
+      callId: 'seed-t1',
       runId: null,
       label: 'accepted',
-      score: 0.9,
+      metric: 'outcome',
+      value: 0.9,
+      valueType: 'number',
       evidence: '{"editDistance":0}',
-      actor: 'user-1',
+      evaluator: 'human',
       tenantId: 'tenant-a',
     });
 
-    const [read] = await listAiUsageOutcomes(db, { usageId: 'seed-t1' });
+    const [read] = await listAiEvaluations(db, { callId: 'seed-t1' });
     expect(read).toMatchObject({
       id: record.id,
       label: 'accepted',
-      score: 0.9,
+      value: 0.9,
     });
     expect(read?.usage.map((u) => u.id)).toEqual(['seed-t1']);
     expect(read?.usage[0]).toMatchObject({ promptKey: 'k', runId: 'run-a' });
   });
 
   it('joins a run label to every row of the run', async () => {
-    await recordAiUsageOutcome(db, {
+    await recordAiEvaluation(db, {
       runId: 'run-a',
       label: 'rejected',
-      actor: 'check',
+      evaluator: 'human',
     });
-    const [read] = await listAiUsageOutcomes(db, { runId: 'run-a' });
+    const [read] = await listAiEvaluations(db, { runId: 'run-a' });
     expect(read?.tenantId).toBe('tenant-a');
     expect(read?.usage.map((u) => u.id).sort()).toEqual(['seed-t1', 'seed-t2']);
   });
 
   it('refuses unknown targets, tenant mismatches and runs spanning tenants', async () => {
     await expect(
-      recordAiUsageOutcome(db, { usageId: 'nope', label: 'x', actor: 'a' }),
-    ).rejects.toMatchObject({ code: 'AI_USAGE_OUTCOME_UNKNOWN_TARGET' });
+      recordAiEvaluation(db, {
+        callId: 'nope',
+        label: 'x',
+        evaluator: 'human',
+      }),
+    ).rejects.toMatchObject({ code: 'AI_EVALUATION_UNKNOWN_TARGET' });
     await expect(
-      recordAiUsageOutcome(db, { runId: 'nope', label: 'x', actor: 'a' }),
-    ).rejects.toBeInstanceOf(AiUsageOutcomeTargetError);
+      recordAiEvaluation(db, { runId: 'nope', label: 'x', evaluator: 'human' }),
+    ).rejects.toBeInstanceOf(AiEvaluationTargetError);
     await expect(
-      recordAiUsageOutcome(db, {
-        usageId: 'seed-t1',
+      recordAiEvaluation(db, {
+        callId: 'seed-t1',
         tenantId: 'tenant-b',
         label: 'x',
-        actor: 'a',
+        evaluator: 'human',
       }),
-    ).rejects.toMatchObject({ code: 'AI_USAGE_OUTCOME_TENANT_MISMATCH' });
+    ).rejects.toMatchObject({ code: 'AI_EVALUATION_TENANT_MISMATCH' });
     await expect(
-      recordAiUsageOutcome(db, { runId: 'run-mixed', label: 'x', actor: 'a' }),
-    ).rejects.toMatchObject({ code: 'AI_USAGE_OUTCOME_TENANT_MISMATCH' });
+      recordAiEvaluation(db, {
+        runId: 'run-mixed',
+        label: 'x',
+        evaluator: 'human',
+      }),
+    ).rejects.toMatchObject({ code: 'AI_EVALUATION_TENANT_MISMATCH' });
     await expect(
-      recordAiUsageOutcome(db, {
+      recordAiEvaluation(db, {
         runId: 'run-mixed',
         tenantId: 'tenant-a',
         label: 'x',
-        actor: 'a',
+        evaluator: 'human',
       }),
-    ).rejects.toMatchObject({ code: 'AI_USAGE_OUTCOME_TENANT_MISMATCH' });
+    ).rejects.toMatchObject({ code: 'AI_EVALUATION_TENANT_MISMATCH' });
   });
 
   it('validates its input', async () => {
     await expect(
-      recordAiUsageOutcome(db, { label: 'x', actor: 'a' }),
-    ).rejects.toThrow(/usageId, runId or callId/);
+      recordAiEvaluation(db, { label: 'x', evaluator: 'human' }),
+    ).rejects.toThrow(/exactly one of callId or runId/);
     await expect(
-      recordAiUsageOutcome(db, { usageId: 'seed-t1', label: '  ', actor: 'a' }),
+      recordAiEvaluation(db, {
+        callId: 'seed-t1',
+        label: '  ',
+        evaluator: 'human',
+      }),
     ).rejects.toThrow(/label/);
     await expect(
-      recordAiUsageOutcome(db, { usageId: 'seed-t1', label: 'x', actor: '' }),
-    ).rejects.toThrow(/actor/);
+      recordAiEvaluation(db, { callId: 'seed-t1', label: 'x', evaluator: '' }),
+    ).rejects.toThrow(/evaluator/);
     await expect(
-      recordAiUsageOutcome(db, {
-        usageId: 'seed-t1',
+      recordAiEvaluation(db, {
+        callId: 'seed-t1',
         label: 'x',
-        actor: 'a',
-        score: Number.NaN,
+        evaluator: 'human',
+        value: Number.NaN,
       }),
-    ).rejects.toThrow(/score/);
+    ).rejects.toThrow(/finite/);
   });
 
   it('treats an empty tenant filter as a tenant, never as no filter', async () => {
-    await recordAiUsageOutcome(db, {
-      usageId: 'seed-t1',
+    await recordAiEvaluation(db, {
+      callId: 'seed-t1',
       label: 'a',
-      actor: 'x',
+      evaluator: 'human',
     });
-    await recordAiUsageOutcome(db, {
-      usageId: 'seed-t3',
+    await recordAiEvaluation(db, {
+      callId: 'seed-t3',
       label: 'b',
-      actor: 'x',
+      evaluator: 'human',
     });
-    expect(await listAiUsageOutcomes(db, { tenantId: '' })).toEqual([]);
+    expect(await listAiEvaluations(db, { tenantId: '' })).toEqual([]);
     const report = await reportAiUsage(db, { tenantId: '' });
     expect(report.totals.calls).toBe(0);
-    expect(report.totals.outcomes).toEqual({});
+    expect(report.totals.evaluations).toEqual({});
   });
 
   it('keeps the label after retention prunes its usage row', async () => {
-    await recordAiUsageOutcome(db, {
-      usageId: 'seed-t2',
+    await recordAiEvaluation(db, {
+      callId: 'seed-t2',
       label: 'ok',
-      actor: 'a',
+      evaluator: 'human',
     });
     await db.query('DELETE FROM _smrt_ai_usage WHERE id = $1', 'seed-t2');
-    const [read] = await listAiUsageOutcomes(db, { usageId: 'seed-t2' });
+    const [read] = await listAiEvaluations(db, { callId: 'seed-t2' });
     expect(read?.label).toBe('ok');
     expect(read?.usage).toEqual([]);
   });
 
   it('filters by tenant, label and limit, newest first', async () => {
-    await recordAiUsageOutcome(db, {
-      usageId: 'seed-t1',
+    await recordAiEvaluation(db, {
+      callId: 'seed-t1',
       label: 'a',
-      actor: 'x',
+      evaluator: 'human',
       createdAt: new Date('2026-11-02T00:00:00Z'),
     });
-    await recordAiUsageOutcome(db, {
-      usageId: 'seed-t3',
+    await recordAiEvaluation(db, {
+      callId: 'seed-t3',
       label: 'b',
-      actor: 'x',
+      evaluator: 'human',
       createdAt: new Date('2026-11-03T00:00:00Z'),
     });
-    expect((await listAiUsageOutcomes(db)).map((o) => o.label)).toEqual([
+    expect((await listAiEvaluations(db)).map((o) => o.label)).toEqual([
       'b',
       'a',
     ]);
     expect(
-      (await listAiUsageOutcomes(db, { tenantId: 'tenant-a' })).map(
+      (await listAiEvaluations(db, { tenantId: 'tenant-a' })).map(
         (o) => o.label,
       ),
     ).toEqual(['a']);
     expect(
-      (await listAiUsageOutcomes(db, { label: 'b' })).map((o) => o.tenantId),
+      (await listAiEvaluations(db, { label: 'b' })).map((o) => o.tenantId),
     ).toEqual(['tenant-b']);
-    expect(await listAiUsageOutcomes(db, { limit: 1 })).toHaveLength(1);
-    expect(await listAiUsageOutcomes(db, { tenantId: null })).toEqual([]);
+    expect(await listAiEvaluations(db, { limit: 1 })).toHaveLength(1);
+    expect(await listAiEvaluations(db, { tenantId: null })).toEqual([]);
   });
 });
 
@@ -521,20 +535,20 @@ describe('reportAiUsage', () => {
       "UPDATE _smrt_ai_usage SET id = 'external-agent:abc' WHERE id = 'seed-ext'",
     );
 
-    await recordAiUsageOutcome(db, {
-      usageId: 'seed-1',
+    await recordAiEvaluation(db, {
+      callId: 'seed-1',
       label: 'accepted',
-      actor: 'u',
+      evaluator: 'human',
     });
-    await recordAiUsageOutcome(db, {
+    await recordAiEvaluation(db, {
       runId: 'run-1',
       label: 'edited',
-      actor: 'u',
+      evaluator: 'human',
     });
-    await recordAiUsageOutcome(db, {
-      usageId: 'seed-4',
+    await recordAiEvaluation(db, {
+      callId: 'seed-4',
       label: 'rejected',
-      actor: 'u',
+      evaluator: 'human',
     });
   });
 
@@ -550,7 +564,7 @@ describe('reportAiUsage', () => {
       costedCalls: 3,
       uncostedCalls: 1,
       substitutions: 1,
-      outcomes: { accepted: 1, edited: 1, rejected: 1 },
+      evaluations: { accepted: 1, edited: 1, rejected: 1 },
     });
     expect(report.totals.estimatedCost).toBeCloseTo(0.53);
     expect(report.unattributedCalls).toBe(1);
@@ -565,7 +579,7 @@ describe('reportAiUsage', () => {
       costedCalls: 2,
       uncostedCalls: 1,
       p50DurationMs: 100,
-      outcomes: { accepted: 1, edited: 1, rejected: 1 },
+      evaluations: { accepted: 1, edited: 1, rejected: 1 },
     });
     expect(byKey.null).toMatchObject({ calls: 1, p50DurationMs: 200 });
   });
@@ -581,7 +595,7 @@ describe('reportAiUsage', () => {
     expect(report.totals.calls).toBe(3);
     expect(report.excluded).toEqual({ otherTenants: 1, externalAgent: 1 });
     // A run label counts once in the totals even though the run has two rows.
-    expect(report.totals.outcomes).toEqual({ accepted: 1, edited: 1 });
+    expect(report.totals.evaluations).toEqual({ accepted: 1, edited: 1 });
 
     const keys = report.buckets
       .map((b) => `${b.key.model}|${b.key.tier}`)
@@ -626,11 +640,11 @@ describe('reportAiUsage', () => {
       since: new Date('2026-10-15T00:00:00Z'),
     });
     const byTenant = Object.fromEntries(
-      report.buckets.map((b) => [String(b.key.tenant), b.outcomes]),
+      report.buckets.map((b) => [String(b.key.tenant), b.evaluations]),
     );
     expect(byTenant['tenant-a']).toEqual({ accepted: 1, edited: 1 });
     expect(byTenant['tenant-b']).toEqual({ rejected: 1 });
-    expect(report.totals.outcomes).toEqual({
+    expect(report.totals.evaluations).toEqual({
       accepted: 1,
       edited: 1,
       rejected: 1,
@@ -639,16 +653,24 @@ describe('reportAiUsage', () => {
 
   it('counts labels named like Object.prototype members as plain labels', async () => {
     for (const label of ['constructor', 'toString', '__proto__']) {
-      await recordAiUsageOutcome(db, { usageId: 'seed-3', label, actor: 'u' });
-      await recordAiUsageOutcome(db, { usageId: 'seed-3', label, actor: 'u' });
+      await recordAiEvaluation(db, {
+        callId: 'seed-3',
+        label,
+        evaluator: 'human',
+      });
+      await recordAiEvaluation(db, {
+        callId: 'seed-3',
+        label,
+        evaluator: 'human',
+      });
     }
     const report = await reportAiUsage(db, {
       since: new Date('2026-10-15T00:00:00Z'),
     });
-    const parsed = JSON.parse(JSON.stringify(report.totals.outcomes));
+    const parsed = JSON.parse(JSON.stringify(report.totals.evaluations));
     expect(parsed).toMatchObject({ constructor: 2, toString: 2 });
     expect(
-      Object.getOwnPropertyDescriptor(report.totals.outcomes, '__proto__')
+      Object.getOwnPropertyDescriptor(report.totals.evaluations, '__proto__')
         ?.value,
     ).toBe(2);
   });

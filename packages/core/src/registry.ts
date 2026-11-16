@@ -79,6 +79,14 @@ import {
   getTestManifestCache,
   loadExternalManifestSyncWithNode,
 } from './manifest/store.js';
+import {
+  addCarriedRetiredTables,
+  clearRegisteredRetiredTables,
+  getRegisteredRetiredTables,
+  type RetiredTable,
+  readManifestRetiredTables,
+  registerRetiredTables,
+} from './migrations/retired-tables.js';
 import type { SmrtObject } from './object';
 // ── Extracted modules (Issue #1006) ──────────────────────────────────────
 import { resolveCollectionCacheConfig as _resolveCollectionCacheConfig } from './registry/cache-config';
@@ -2748,6 +2756,18 @@ export class ObjectRegistry {
       objectsRegistered++;
     }
 
+    // The package's declared table retirements (#5005), which migrate reads
+    // wherever the package is installed. A package built as an app
+    // (app-shell) writes a merged manifest that also carries the entries of
+    // the packages it depends on (`smrtDependencies`); each keeps its own
+    // package. An entry of any other package is refused.
+    if (packageName) {
+      ObjectRegistry.registerManifestRetiredTables(manifest, {
+        source: sourceLabel,
+        outside: 'refuse',
+      });
+    }
+
     verboseLog(
       `[ObjectRegistry] registerPackageManifest: loaded ${objectsRegistered} objects from ${packageName || sourceLabel}`,
     );
@@ -2795,9 +2815,65 @@ export class ObjectRegistry {
   }
 
   /**
+   * Tables a registered package declares retired (#5005), in stable order.
+   * Migrate drops one only when it is listed here (or in the app's build), no
+   * model declares it, and the run is a whole-schema migrate.
+   */
+  static getRetiredTables(): RetiredTable[] {
+    return getRegisteredRetiredTables();
+  }
+
+  /**
+   * Register the retirements a loaded manifest file carries (#5005), checked.
+   * A package's manifest carries its own; an app's merged manifest also those
+   * of the packages it depends on: `consumed`, or else the manifest's own
+   * `smrtDependencies`. An entry of any other package is left out (stale), or
+   * refused with `outside: 'refuse'`. Each entry keeps its own package. The
+   * manifest's own list replaces what its package registered before; a
+   * carried entry registers once per package and table and never replaces
+   * the package's own list. `registerPackageManifest` does this for a
+   * manifest it loads, refusing outside entries.
+   */
+  static registerManifestRetiredTables(
+    manifest: {
+      packageName?: string;
+      retiredTables?: unknown;
+      smrtDependencies?: readonly string[];
+    },
+    options: {
+      consumed?: Iterable<string>;
+      source?: string;
+      outside?: 'leave-out' | 'refuse';
+    } = {},
+  ): void {
+    const consumed =
+      options.consumed ??
+      (Array.isArray(manifest.smrtDependencies)
+        ? manifest.smrtDependencies
+        : undefined);
+    const entries = readManifestRetiredTables(
+      {
+        packageName: manifest.packageName,
+        retiredTables: manifest.retiredTables,
+      },
+      { ...options, ...(consumed ? { consumed } : {}) },
+    );
+    // The manifest's own package always replaces its list, empty or not.
+    if (manifest.packageName)
+      registerRetiredTables(
+        manifest.packageName,
+        entries.filter((entry) => entry.packageName === manifest.packageName),
+      );
+    addCarriedRetiredTables(
+      entries.filter((entry) => entry.packageName !== manifest.packageName),
+    );
+  }
+
+  /**
    * Clear all registered classes (mainly for testing)
    */
   static clear(): void {
+    clearRegisteredRetiredTables();
     clearGeneratedClassState();
     clearRuntimeOverrides();
     clearSubtypeLineage();

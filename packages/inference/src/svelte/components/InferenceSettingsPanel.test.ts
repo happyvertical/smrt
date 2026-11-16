@@ -552,7 +552,7 @@ describe('InferenceSettingsPanel usage tab', () => {
       'Calls',
       'Tokens',
       'Est. cost',
-      'Outcomes',
+      'Evaluations',
     ]);
     expect(target.textContent).toContain('openai:gpt-mini');
     expect(target.textContent).toContain('(unattributed)');
@@ -710,7 +710,7 @@ describe('InferenceSettingsPanel transcripts (#4781)', () => {
             calls: 4,
             totalTokens: 40,
             estimatedCost: 0,
-            outcomes: { bad: 2 },
+            evaluations: { bad: 2 },
             transcripts: 3,
           },
           {
@@ -718,7 +718,7 @@ describe('InferenceSettingsPanel transcripts (#4781)', () => {
             calls: 1,
             totalTokens: 10,
             estimatedCost: 0,
-            outcomes: { good: 1 },
+            evaluations: { good: 1 },
             transcripts: 0,
           },
         ],
@@ -741,11 +741,11 @@ describe('InferenceSettingsPanel transcripts (#4781)', () => {
     expect(links[0]?.getAttribute('href')).toBe(
       '/transcripts?promptKey=p.one&templateHash=h1&since=2026-11-01T00%3A00%3A00.000Z',
     );
-    const outcomes = target.querySelectorAll<HTMLAnchorElement>(
-      '[data-testid="inference-transcript-outcome-link"]',
+    const evaluations = target.querySelectorAll<HTMLAnchorElement>(
+      '[data-testid="inference-transcript-evaluation-link"]',
     );
-    expect(outcomes).toHaveLength(1);
-    expect(outcomes[0]?.getAttribute('href')).toContain('outcome=bad');
+    expect(evaluations).toHaveLength(1);
+    expect(evaluations[0]?.getAttribute('href')).toContain('label=bad');
     expect(transcriptHref).not.toHaveBeenCalledWith(
       expect.objectContaining({ promptKey: 'p.two' }),
     );
@@ -774,5 +774,80 @@ describe('InferenceSettingsPanel transcripts (#4781)', () => {
         ?.textContent,
     ).toContain('2');
     expect(target.textContent).toContain('duo');
+  });
+});
+
+describe('assistant settings (#5005)', () => {
+  const form = (target: HTMLElement) =>
+    target.querySelector<HTMLFormElement>(
+      '[data-testid="inference-assistant-form"]',
+    )!;
+  const box = (target: HTMLElement, name: string) =>
+    target.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
+
+  it('is absent without assistant settings', () => {
+    const target = render();
+    expect(
+      target.querySelector('[data-testid="inference-assistant"]'),
+    ).toBeNull();
+  });
+
+  it('shows every setting on by default and saves the owner choice', () => {
+    const onSaveAssistant = vi.fn();
+    const target = render({
+      assistant: { settings: {}, editable: true },
+      onSaveAssistant,
+    });
+    for (const name of [
+      'escalateToWorkflow',
+      'previewBeforeApply',
+      'requireRemovalApproval',
+      'protectLocalCli',
+    ])
+      expect(box(target, name).checked).toBe(true);
+    box(target, 'escalateToWorkflow').checked = false;
+    form(target).requestSubmit();
+    expect(onSaveAssistant).toHaveBeenCalledWith({
+      settings: {
+        escalateToWorkflow: false,
+        previewBeforeApply: true,
+        requireRemovalApproval: true,
+        protectLocalCli: true,
+      },
+    });
+  });
+
+  it('asks for an explicit confirmation to turn local AI protection off', async () => {
+    const onSaveAssistant = vi.fn();
+    const target = render({
+      assistant: { settings: {}, editable: true },
+      onSaveAssistant,
+    });
+    const protect = box(target, 'protectLocalCli');
+    protect.checked = false;
+    protect.dispatchEvent(new Event('change', { bubbles: true }));
+    await tick();
+    const confirm = target.querySelector<HTMLInputElement>(
+      '[data-testid="inference-assistant-confirm"]',
+    )!;
+    expect(confirm).not.toBeNull();
+    confirm.checked = true;
+    form(target).requestSubmit();
+    expect(onSaveAssistant).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settings: expect.objectContaining({ protectLocalCli: false }),
+        confirmUnprotectedCli: true,
+      }),
+    );
+  });
+
+  it('is read-only for someone who is not the owner', () => {
+    const target = render({
+      assistant: { settings: { previewBeforeApply: false }, editable: false },
+      onSaveAssistant: vi.fn(),
+    });
+    expect(box(target, 'previewBeforeApply').checked).toBe(false);
+    expect(box(target, 'previewBeforeApply').disabled).toBe(true);
+    expect(form(target).querySelector('button[type="submit"]')).toBeNull();
   });
 });

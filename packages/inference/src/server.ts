@@ -88,6 +88,7 @@ export {
   runAgentTurn,
   tokenFailureMessage,
 } from './agent-cli/turn.js';
+export * from './assistant-settings.js';
 export {
   CHATGPT_AUTH_HOST,
   CHATGPT_PLAN_PROVIDER,
@@ -121,8 +122,6 @@ export {
   openSystemBrowser,
   type SpawnLike,
 } from './chatgpt/support.js';
-export * from './design-run.js';
-export * from './design-run-store.js';
 export {
   type EngineModel,
   EngineModelFailure,
@@ -142,7 +141,8 @@ export {
   type InferenceEngineStatusHost,
   inferenceEngineStatus,
 } from './engine-status.js';
-export * from './models/DesignRunRecord.js';
+export * from './engine-tiers.js';
+export * from './model-fallback.js';
 export {
   APP_INFERENCE_SCOPE_ID,
   InferenceOverride,
@@ -261,4 +261,3 @@ export {
   loadInferenceTranscriptSettings,
   storedTranscriptSettings,
 } from './settings/transcripts.js';
-export * from './work-profiles.js';

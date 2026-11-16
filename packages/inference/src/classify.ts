@@ -197,9 +197,23 @@ export function isInferenceAbort(error: unknown): boolean {
  * failure (a caller abort, a programming error, invalid input the SDK did
  * not map). Unclassified errors end the walk and are rethrown.
  */
+/**
+ * Whether an error is a run's stop reaching a call (#5005): core's
+ * `AiRunStoppedError` (`AI_RUN_STOPPED`, the run stopped, was cancelled or
+ * failed: a reservation was refused or an ancestor stopped) or
+ * `AiRunClaimLostError` (`AI_RUN_CLAIM_LOST`). Never a routing failure:
+ * no fallback is tried and no failure row is recorded; it reaches the
+ * caller as a stop.
+ */
+export function isAiRunInterruption(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === 'AI_RUN_STOPPED' || code === 'AI_RUN_CLAIM_LOST';
+}
+
 export function classifyInferenceFailure(
   error: unknown,
 ): InferenceFailureClass | undefined {
+  if (isAiRunInterruption(error)) return undefined;
   // Core's typed capability refusal (#4758): the candidate cannot run the
   // request's shape (required tools, an oversized prompt). Advance.
   const unavailable = error as { code?: unknown; reason?: unknown } | null;

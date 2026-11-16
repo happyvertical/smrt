@@ -48,6 +48,25 @@ export interface AppModelHistoryStore {
   ): Promise<T>;
 }
 
+/**
+ * The `append` of every store {@link createAppModelHistory} made. A store
+ * writes the journal (`_smrt_app_model_changes`) when its `append` is one of
+ * these, so a wrapper that delegates to a journal store counts as one.
+ */
+const JOURNAL_APPENDS = new WeakSet<object>();
+
+/**
+ * Whether `store` appends to the app model journal. The retire step (#5005)
+ * reads that journal to learn which tables run-time lists use; a store that
+ * writes elsewhere would let a whole-schema migrate in another process drop
+ * a list's table.
+ */
+export function isAppModelJournalStore(store: AppModelHistoryStore): boolean {
+  return (
+    typeof store.append === 'function' && JOURNAL_APPENDS.has(store.append)
+  );
+}
+
 export async function createAppModelHistory(options: {
   db: DatabaseInterface;
   application: string;
@@ -77,7 +96,12 @@ export async function createAppModelHistory(options: {
         );
     }
   });
-  const bound = (db: DatabaseInterface): AppModelHistoryStore => ({
+  const bound = (db: DatabaseInterface): AppModelHistoryStore => {
+    const store = journalStore(db);
+    JOURNAL_APPENDS.add(store.append);
+    return store;
+  };
+  const journalStore = (db: DatabaseInterface): AppModelHistoryStore => ({
     supportsDurableOperations: true,
     async read() {
       const { rows } = await db.query(

@@ -15,10 +15,12 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { ReasoningEffort } from '@happyvertical/smrt-core';
 import {
-  type ResolvedWorkProfile,
-  validateWorkModel,
-} from '../work-profiles.js';
+  engineReasoningEffort,
+  engineTierModel,
+  validateModelId,
+} from '../engine-tiers.js';
 import type { AgentCliLocation } from './detect.js';
 import { cliEnv } from './detect.js';
 import {
@@ -49,7 +51,13 @@ export interface SpecInput {
   /** Owner-confirmed app setting; omitted keeps the protected invocation. */
   protection?: boolean;
   tool: AgentTool;
-  profile?: ResolvedWorkProfile;
+  /**
+   * The model the tier binding chose. Claude Code without one takes its
+   * `best` binding; Codex without one takes its own default.
+   */
+  model?: string;
+  /** Omitted: the CLI's own default effort. */
+  effort?: ReasoningEffort;
   outputSchema?: Record<string, unknown>;
   location: AgentCliLocation;
   /** Host-owned engine state under app data: holds `work/` and temporary `run/`. */
@@ -110,9 +118,12 @@ function claudeSpec(
       '--verbose',
       '--include-partial-messages',
       '--model',
-      input.profile?.model ?? 'fable',
-      '--effort',
-      input.profile?.effort ?? 'high',
+      input.model ??
+        engineTierModel({ engine: 'claude-code', tier: 'best' }) ??
+        'fable',
+      ...(input.effort
+        ? ['--effort', engineReasoningEffort('claude-code', input.effort)!]
+        : []),
       ...(input.outputSchema
         ? ['--json-schema', JSON.stringify(input.outputSchema)]
         : []),
@@ -194,15 +205,11 @@ function codexSpec(
     writeFileSync(schemaPath, JSON.stringify(input.outputSchema), {
       mode: 0o600,
     });
+  const effort = engineReasoningEffort('codex', input.effort);
   const overrides: [string, string][] = [
-    [
-      'model_reasoning_effort',
-      toml(
-        input.profile?.effort === 'max'
-          ? 'xhigh'
-          : (input.profile?.effort ?? 'high'),
-      ),
-    ],
+    ...(effort
+      ? ([['model_reasoning_effort', toml(effort)]] as [string, string][])
+      : []),
     [
       'sandbox_mode',
       toml(
@@ -240,7 +247,7 @@ function codexSpec(
       ...(input.resumeId ? ['resume'] : []),
       '--json',
       '--skip-git-repo-check',
-      ...(input.profile?.model ? ['-m', input.profile.model] : []),
+      ...(input.model ? ['-m', input.model] : []),
       ...(input.outputSchema ? ['--output-schema', schemaPath] : []),
       // None of the person's config.toml (MCP servers, hooks, profiles) or
       // execpolicy rules; the sign-in (CODEX_HOME) is kept.
@@ -274,8 +281,7 @@ function codexSpec(
 /** Build the run: an empty private cwd, a private temp dir, the command. */
 export function buildAgentRun(input: SpecInput): AgentRunSpec {
   assertLoopbackUrl(input.mcpUrl);
-  if (input.profile?.model !== undefined)
-    validateWorkModel(input.profile.model);
+  if (input.model !== undefined) validateModelId(input.model);
   const runRoot = join(input.stateDir, 'run');
   mkdirSync(runRoot, { recursive: true, mode: 0o700 });
   const runDir = mkdtempSync(join(runRoot, 'turn-'));

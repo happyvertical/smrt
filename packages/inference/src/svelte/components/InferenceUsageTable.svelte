@@ -4,7 +4,7 @@
  * key, fusion and/or template hash. Renders only the dimensions the report
  * was grouped by, so it works with the model dimension alone. With
  * transcript counts (#4781) each row shows how many calls have a stored
- * transcript and links them (and each outcome label) to the host's
+ * transcript and links them (and each evaluation label) to the host's
  * transcript route; transcript content is never rendered here.
  */
 import type {
@@ -48,13 +48,13 @@ const showTranscripts = $derived(
 
 function href(
   key: Record<string, string | null | undefined>,
-  outcome?: string,
+  label?: string,
 ): string | null {
   if (!usage || !transcriptHref) return null;
-  return transcriptHref(transcriptLinkFilters(usage, key, outcome)) || null;
+  return transcriptHref(transcriptLinkFilters(usage, key, label)) || null;
 }
 
-function outcomeEntries(
+function evaluationEntries(
   value: Record<string, number> | undefined,
 ): Array<[string, number]> {
   return Object.entries(value ?? {});
@@ -106,7 +106,7 @@ function regroup(event: Event): void {
           <th scope="col">Calls</th>
           <th scope="col">Tokens</th>
           <th scope="col">Est. cost</th>
-          <th scope="col">Outcomes</th>
+          <th scope="col">Evaluations</th>
           {#if showTranscripts}<th scope="col">Transcripts</th>{/if}
         </tr>
       </thead>
@@ -123,10 +123,10 @@ function regroup(event: Event): void {
               {#if bucket.uncostedCalls}<span class="smrt-inference-usage-table__label" data-smrt-part="label">({bucket.uncostedCalls} uncosted)</span>{/if}
             </td>
             <td>
-              {#each outcomeEntries(bucket.outcomes) as [label, count], position (label)}
+              {#each evaluationEntries(bucket.evaluations) as [label, count], position (label)}
                 {@const link = (bucket.transcripts ?? 0) > 0 ? href(bucket.key, label) : null}
                 {#if position > 0}, {/if}
-                {#if link}<a href={link} data-testid="inference-transcript-outcome-link">{label} {count}</a>{:else}{label} {count}{/if}
+                {#if link}<a href={link} data-testid="inference-transcript-evaluation-link">{label} {count}</a>{:else}{label} {count}{/if}
               {:else}
                 –
               {/each}

@@ -2,6 +2,14 @@ import type { Tool } from '@modelcontextprotocol/server';
 
 export const REVIEW_SKILL_NAME = 'smrt-code-review';
 
+/** Every bundled skill `get-agent-skill` can serve (matches `AGENT_SKILLS`). */
+export const AGENT_SKILL_NAMES = [
+  REVIEW_SKILL_NAME,
+  'smrt-catalog',
+  'smrt-contribute',
+  'smrt-ai-work',
+] as const;
+
 const JSON_SCHEMA_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
 
 function compareToolNames(left: string, right: string): number {
@@ -519,7 +527,7 @@ const TOOL_DEFINITIONS: Array<
       properties: {
         name: {
           type: 'string',
-          enum: [REVIEW_SKILL_NAME],
+          enum: [...AGENT_SKILL_NAMES],
           description: 'Bundled agent skill name',
         },
         includeReferences: {

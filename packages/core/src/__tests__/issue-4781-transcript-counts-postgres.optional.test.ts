@@ -45,7 +45,7 @@ describe.skipIf(!pgUrl)('transcript counts on PostgreSQL (#4781)', () => {
     await db.query(
       `INSERT INTO _smrt_ai_usage
          (id, provider, model, operation, duration, class_name, tenant_id,
-          prompt_key, call_id, tags, created_at)
+          prompt_key, entry_call_id, tags, created_at)
        VALUES ($1, 'openai', 'gpt-4o', 'chat', 1, 'Pg4781', $2, 'p.pg', $3, $4, $5)`,
       id,
       tenant,

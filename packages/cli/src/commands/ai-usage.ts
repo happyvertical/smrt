@@ -5,15 +5,17 @@
  * through core's `reportAiUsage()`: calls, tokens, estimated cost (with its
  * basis stated and uncosted calls counted beside the total), hosted-gate
  * blocks counted beside calls (#4760), p50 duration,
- * recorded substitutions and outcome labels per bucket.
+ * recorded substitutions and evaluation labels per bucket.
  *
  * A filter selects what is totalled, never what is accounted for: calls
  * without a prompt key print as unattributed, and rows a `--tenant` filter
  * leaves out are counted under "excluded" rather than vanishing.
  *
- * `--by fusion` also totals runs from `_smrt_ai_runs` (#4753) through
- * `reportAiRuns()`: runs per fusion with ok / degraded / failed, seats,
- * degraded seats and p50 run duration (JSON: a `runs` member).
+ * `--by fusion` also totals fusion runs from `_smrt_ai_runs` (#4753), and
+ * `--runs` totals runs of every type (#5005), through `reportAiRuns()`:
+ * runs per type and definition by status (done, degraded, open, stopped,
+ * cancelled, failed), fusion seats, own tokens, check pass and approval
+ * rates, and p50 active time (JSON: a `runs` member).
  *
  * `--with-transcripts` (#4780) also lists the worst-labelled calls that have
  * a stored transcript (optionally one `--prompt`), with their call ids for
@@ -54,6 +56,7 @@ interface AiUsageOptions {
   'all-tenants'?: boolean;
   prompt?: string;
   actor?: string;
+  runs?: boolean;
 }
 
 /** Kept in step with core's `AI_USAGE_REPORT_DIMENSIONS`. */
@@ -135,8 +138,8 @@ function formatCost(stats: AiUsageReportStats): string {
     : cost;
 }
 
-function formatOutcomes(outcomes: Record<string, number>): string {
-  const entries = Object.entries(outcomes).sort(([a], [b]) =>
+function formatEvaluations(evaluations: Record<string, number>): string {
+  const entries = Object.entries(evaluations).sort(([a], [b]) =>
     a.localeCompare(b),
   );
   return entries.length === 0
@@ -156,7 +159,7 @@ function row(
     formatCost(stats),
     stats.p50DurationMs === null ? '-' : `${formatInt(stats.p50DurationMs)}ms`,
     formatInt(stats.substitutions),
-    formatOutcomes(stats.outcomes),
+    formatEvaluations(stats.evaluations),
   ];
 }
 
@@ -170,7 +173,7 @@ export function formatAiUsageReport(report: AiUsageReport): string {
     'est. cost',
     'p50',
     'subst.',
-    'outcomes',
+    'evaluations',
   ];
   const rows = report.buckets.map((bucket) =>
     row(
@@ -223,32 +226,60 @@ export function formatAiUsageReport(report: AiUsageReport): string {
   return lines.join('\n');
 }
 
+function rate(value: number | null): string {
+  return value === null ? '-' : `${(value * 100).toFixed(1)}%`;
+}
+
 function runRow(label: string, stats: AiRunReportStats): string[] {
   return [
     label,
     formatInt(stats.runs),
-    formatInt(stats.ok),
+    formatInt(stats.done),
     formatInt(stats.degraded),
+    formatInt(stats.running + stats.waitingApproval),
+    formatInt(stats.stopped),
+    formatInt(stats.cancelled),
     formatInt(stats.failed),
     formatInt(stats.seats),
     formatInt(stats.degradedSeats),
+    formatInt(stats.tokens),
+    rate(stats.checkPassRate),
+    rate(stats.approvalRate),
     stats.p50DurationMs === null ? '-' : `${formatInt(stats.p50DurationMs)}ms`,
   ];
 }
 
-/** Render the `_smrt_ai_runs` totals behind `--by fusion` (#4753). */
+/**
+ * Render the `_smrt_ai_runs` totals behind `--runs` (every run type) and
+ * `--by fusion` (fusion runs only; #4753, #5005): per run type and
+ * definition, runs by status, fusion seats, own tokens, check pass and
+ * approval rates (saved counts for a pruned trajectory), p50 active time.
+ */
 export function formatAiRunReport(report: AiRunReport): string {
   const header = [
-    'fusion',
+    report.type ? `${report.type} definition` : 'type / definition',
     'runs',
-    'ok',
+    'done',
     'degraded',
+    'open',
+    'stopped',
+    'cancelled',
     'failed',
     'seats',
     'degr. seats',
+    'tokens',
+    'checks',
+    'approved',
     'p50',
   ];
-  const rows = report.buckets.map((bucket) => runRow(bucket.fusionKey, bucket));
+  const rows = report.buckets.map((bucket) =>
+    runRow(
+      report.type
+        ? (bucket.definitionKey ?? '(none)')
+        : `${bucket.type}${bucket.definitionKey ? ` ${bucket.definitionKey}` : ''}`,
+      bucket,
+    ),
+  );
   const totalRow = runRow('total', report.totals);
   const widths = header.map((title, index) =>
     Math.max(
@@ -269,7 +300,9 @@ export function formatAiRunReport(report: AiRunReport): string {
   const rule = `  ${widths.map((width) => '-'.repeat(width)).join('  ')}`;
   const lines = [render(header), rule, ...rows.map(render)];
   if (rows.length === 0)
-    lines.push('  (no fusion runs recorded in this window)');
+    lines.push(
+      `  (no ${report.type ? `${report.type} ` : ''}runs recorded in this window)`,
+    );
   lines.push(rule, render(totalRow));
   if (report.excluded.otherTenants > 0) {
     lines.push(
@@ -290,6 +323,12 @@ export const aiUsageCommand: CLICommand = {
       type: 'string',
       description:
         'Comma-separated grouping: prompt, model, tier, class, tenant, fusion, source, template (default: prompt); fusion also totals runs',
+    },
+    runs: {
+      type: 'boolean',
+      description:
+        'Also total AI runs of every type (fusion, turn, workflow, ...) by status, with check and approval rates',
+      default: false,
     },
     since: {
       type: 'string',
@@ -370,9 +409,11 @@ export const aiUsageCommand: CLICommand = {
         ...(options.tenant ? { tenantId: options.tenant } : {}),
       };
       const report = await reportAiUsage(db, { by, ...filters });
-      const runs = by.includes('fusion')
+      const runs = options.runs
         ? await reportAiRuns(db, filters)
-        : undefined;
+        : by.includes('fusion')
+          ? await reportAiRuns(db, { ...filters, type: 'fusion' })
+          : undefined;
       const transcripts = transcriptRead
         ? worstLabelledTranscripts(
             await listAiTranscripts(db, {
@@ -413,7 +454,9 @@ export const aiUsageCommand: CLICommand = {
       );
       console.log(formatAiUsageReport(report));
       if (runs) {
-        console.log('\nFusion runs (_smrt_ai_runs)\n');
+        console.log(
+          `\n${runs.type === 'fusion' ? 'Fusion runs' : 'AI runs'} (_smrt_ai_runs)\n`,
+        );
         console.log(formatAiRunReport(runs));
       }
       if (transcripts) {
@@ -427,7 +470,7 @@ export const aiUsageCommand: CLICommand = {
     } catch (error) {
       const raw = error instanceof Error ? error.message : String(error);
       const hint =
-        /prompt_key|_smrt_ai_usage_outcomes|_smrt_ai_runs|_smrt_ai_transcripts|call_id/.test(
+        /prompt_key|_smrt_ai_evaluations|_smrt_ai_runs|_smrt_ai_transcripts|call_id/.test(
           raw,
         )
           ? ' (system tables predate #4751/#4753/#4780: start the app once, or run `smrt db:migrate`, to upgrade them)'

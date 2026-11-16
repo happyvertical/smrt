@@ -27,6 +27,12 @@ import {
   BUILD_SCHEMA_MODULE,
   generateBuildSchemaModule,
 } from '../migrations/build-schema.js';
+import {
+  mergeRetiredTables,
+  type RetiredTable,
+  RetiredTableDeclarationError,
+  readManifestRetiredTables,
+} from '../migrations/retired-tables.js';
 import { tryComputeManifestSchemaFingerprint } from '../migrations/schema-fingerprint.js';
 import { generateDeclarations } from '../prebuild/index.js';
 import type {
@@ -118,6 +124,8 @@ class AmbiguousProviderGraphError extends Error {}
 interface ConsumerManifest {
   schemaFingerprint?: string;
   recipes?: RecipeDefinition[];
+  /** Retirements the consumed packages declare, merged (#5005). */
+  retiredTables?: RetiredTable[];
   version: string;
   timestamp: number;
   packageName?: string;
@@ -1605,6 +1613,7 @@ async function aggregateTypeManifests(
   const unresolvedPackages: string[] = [];
   const objectSources = new Map<string, string>();
   const recipes = new Map<string, RecipeDefinition>();
+  const retiredTables: RetiredTable[] = [];
 
   for (const packageName of packages) {
     let loadedManifest = false;
@@ -1672,6 +1681,23 @@ async function aggregateTypeManifests(
               `[smrt:consumer] Loaded manifest from ${packageName} (${Object.keys(manifest.objects).length} objects)`,
             );
 
+            // Checked (#5005): a package's manifest carries its own entries
+            // and, when it was built as an app (app-shell), those of the
+            // packages it depends on (its `smrtDependencies`), each labelled
+            // with its own package. An entry of any other package is refused.
+            retiredTables.push(
+              ...readManifestRetiredTables(
+                { packageName, retiredTables: manifest.retiredTables },
+                {
+                  source: `the manifest of ${packageName}`,
+                  consumed: Array.isArray(manifest.smrtDependencies)
+                    ? manifest.smrtDependencies
+                    : [],
+                  outside: 'refuse',
+                },
+              ),
+            );
+
             for (const recipe of manifest.recipes ?? []) {
               const prior = recipes.get(recipe.id);
               if (prior && !isDeepStrictEqual(prior, recipe)) {
@@ -1735,6 +1761,8 @@ async function aggregateTypeManifests(
       }
     } catch (error) {
       if (error instanceof AmbiguousProviderGraphError) throw error;
+      // A malformed or mislabelled retirement fails the build by name (#5005).
+      if (error instanceof RetiredTableDeclarationError) throw error;
       console.warn(
         `[smrt:consumer] Error loading manifest from ${packageName}:`,
         error,
@@ -1771,6 +1799,16 @@ async function aggregateTypeManifests(
   aggregatedManifest.recipes = [...recipes.values()].sort((a, b) =>
     a.id.localeCompare(b.id),
   );
+  // Only entries of the packages this build depends on: what the build
+  // description and stamp honour (`honouredRetiredTables`, by
+  // `smrtDependencies`), and so all that registration accepts. A carried
+  // entry of a package reached only through another package is left out.
+  const consumedPackages = new Set(packages);
+  const consumedRetired = mergeRetiredTables(
+    retiredTables.filter((entry) => consumedPackages.has(entry.packageName)),
+  );
+  if (consumedRetired.length > 0)
+    aggregatedManifest.retiredTables = consumedRetired;
   return aggregatedManifest;
 }
 
@@ -1872,6 +1910,26 @@ async function saveAggregatedManifest(
               : {}),
             objects: { ...existing.objects, ...manifest.objects },
           };
+          // Rebuilt from the current dependencies each time (#5005): only the
+          // local package's own entries (written by smrtPlugin) stay from the
+          // file, so a package the app no longer depends on drops out.
+          const local = existing.packageName;
+          const unioned = mergeRetiredTables(
+            local
+              ? readManifestRetiredTables(
+                  {
+                    packageName: local,
+                    retiredTables: (existing.retiredTables ?? []).filter(
+                      (entry) => entry?.packageName === local,
+                    ),
+                  },
+                  { source: manifestPath },
+                )
+              : [],
+            manifest.retiredTables,
+          );
+          if (unioned.length > 0) merged.retiredTables = unioned;
+          else delete merged.retiredTables;
         }
       } catch {
         // Unreadable/corrupt existing file — fall back to a plain write.
@@ -2435,6 +2493,8 @@ if (${viteOnlyNamespaceBindings.has(namespaceBinding) ? 'SMRT_VITE_RUNTIME && ' 
   // The build's stamp stays in .smrt/manifest.json only (#4929).
   const {
     schemaFingerprint: _buildStamp,
+    // Nor the retired list: the build's description carries it (#5005).
+    retiredTables: _retired,
     objects: _allObjects,
     packageName: _sharedPackageName,
     packageVersion: _sharedPackageVersion,

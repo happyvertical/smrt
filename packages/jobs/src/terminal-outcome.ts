@@ -51,6 +51,7 @@ export interface SmrtJobTerminalSnapshot {
   objectType: string;
   method: string;
   attempts: number;
+  startedAt?: string | null;
 }
 
 export interface TransitionTerminalJobOptions {
@@ -60,9 +61,16 @@ export interface TransitionTerminalJobOptions {
   expectedStatuses: JobStatus[];
   expectedWorkerId?: string | null;
   expectedTaskId?: string;
+  /** Also require `run_at <= ?` (ISO): a requeued row is not this transition's. */
+  expectedRunAtAtOrBefore?: string;
   clearWorker?: boolean;
   lastError?: string | null;
-  failureKind?: 'execution' | 'timeout' | 'stale-recovery';
+  failureKind?:
+    | 'execution'
+    | 'timeout'
+    | 'stale-recovery'
+    | 'handler-unregistered'
+    | 'handler-unclaimed';
   resultPointer?: string | null;
   taskResult?: Record<string, unknown> | null;
 }
@@ -126,9 +134,25 @@ export async function transitionTerminalJob(
       where.push('worker_id = ?');
       whereValues.push(options.expectedWorkerId);
     }
+    if (
+      options.expectedWorkerId !== undefined &&
+      options.job.startedAt !== undefined
+    ) {
+      where.push('attempts = ?');
+      whereValues.push(options.job.attempts);
+      if (options.job.startedAt === null) where.push('started_at IS NULL');
+      else if (options.job.startedAt !== undefined) {
+        where.push('started_at = ?');
+        whereValues.push(options.job.startedAt);
+      }
+    }
     if (options.expectedTaskId !== undefined) {
       where.push('task_id = ?');
       whereValues.push(options.expectedTaskId);
+    }
+    if (options.expectedRunAtAtOrBefore !== undefined) {
+      where.push('run_at <= ?');
+      whereValues.push(options.expectedRunAtAtOrBefore);
     }
 
     const updated = await tx.query(
@@ -230,7 +254,9 @@ export function terminalSnapshot(
   job: Pick<
     SmrtJob,
     'id' | 'tenantId' | 'queue' | 'objectType' | 'method' | 'attempts'
-  >,
+  > &
+    Partial<Pick<SmrtJob, 'startedAt'>>,
+  fenceDispatch = false,
 ): SmrtJobTerminalSnapshot | null {
   if (!job.id) return null;
   return {
@@ -240,5 +266,8 @@ export function terminalSnapshot(
     objectType: job.objectType,
     method: job.method,
     attempts: job.attempts,
+    ...(fenceDispatch && job.startedAt !== undefined
+      ? { startedAt: job.startedAt?.toISOString() ?? null }
+      : {}),
   };
 }

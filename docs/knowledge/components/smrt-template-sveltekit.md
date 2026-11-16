@@ -5,10 +5,10 @@ description: "Minimal SvelteKit project template with s-m-r-t framework integrat
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-13T21:20:20Z"
+  at: "2026-11-16T07:01:04Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:718f91ad0fbb7d47d0f98df0aa4899244b5a36532e4fa028a7a443f0b8c00d3a"
+source_revision: "sha256:1570c66c9340bcc8be717863bdc6c17b2d2b283d0a74a3c7d2378b042d212eab"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/template-sveltekit/package.json"
@@ -20,6 +20,9 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/template-sveltekit/agents/cookbook-host.md"
     title: "@happyvertical/smrt-template-sveltekit packages/template-sveltekit/agents/cookbook-host.md"
   - id: "agents-3"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/template-sveltekit/agents/cookbook-workflow-runs.md"
+    title: "@happyvertical/smrt-template-sveltekit packages/template-sveltekit/agents/cookbook-workflow-runs.md"
+  - id: "agents-4"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/template-sveltekit/agents/m5-browser-gate.md"
     title: "@happyvertical/smrt-template-sveltekit packages/template-sveltekit/agents/m5-browser-gate.md"
 ---
@@ -37,6 +40,7 @@ sources:
 
 - `packages/template-sveltekit/AGENTS.md`
 - `packages/template-sveltekit/agents/cookbook-host.md`
+- `packages/template-sveltekit/agents/cookbook-workflow-runs.md`
 - `packages/template-sveltekit/agents/m5-browser-gate.md`
 
 ## Framework dependencies
@@ -70,6 +74,7 @@ sources:
 - [smrt-ui](/components/smrt-ui.md)
 - [smrt-users](/components/smrt-users.md)
 - [smrt-web](/components/smrt-web.md)
+- [smrt-workflows](/components/smrt-workflows.md)
 
 ## SDK dependencies
 

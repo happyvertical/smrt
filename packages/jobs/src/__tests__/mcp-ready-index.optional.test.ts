@@ -87,6 +87,20 @@ it('production ready index excludes suspended backlog and follows wake/cancel/cl
       ...(claimParams ?? []),
     );
     expect(JSON.stringify(claimPlan.rows)).toContain('_smrt_jobs_ready_idx');
+    // A runner's claim adds the handler filter (#5005); it keeps the index.
+    queries.mockClear();
+    await jobs.claimReady({
+      workerId: 'index-probe-filtered',
+      limit: 10,
+      handlerNames: ['@happyvertical/smrt-jobs:index-probe'],
+    });
+    const [filteredSql, filteredParams] = queries.mock.calls[0];
+    expect(filteredSql).toContain('substr(object_type, 1, 8)');
+    const filteredPlan = await db.query(
+      explain + filteredSql,
+      ...(filteredParams ?? []),
+    );
+    expect(JSON.stringify(filteredPlan.rows)).toContain('_smrt_jobs_ready_idx');
     process.stdout.write(
       `${JSON.stringify({ postgres, list: listPlan.rows, claim: claimPlan.rows })}\n`,
     );

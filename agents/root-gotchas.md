@@ -37,3 +37,10 @@ use named `$props()` interfaces to avoid recursive inline intersections.
   only its allow-list may call `declareRuntimeManagedDatabase` (exported from
   `@happyvertical/smrt-core/migrations` only). The check sees only this
   repository; elsewhere the declaration is the app author's logged choice.
+
+
+## Lint and format
+
+`pnpm lint`/`pnpm format-check` run Biome directly (`biome ci`, CI-pinned,
+#2710) plus the `--smrt-*` gate (#3822) and `scripts/check-tracked-ai-calls.mjs` (#5005; [rules](../packages/core/agents/ai-usage.md)), not through Turbo; no package defines
+its own `lint`/`format-check` script.

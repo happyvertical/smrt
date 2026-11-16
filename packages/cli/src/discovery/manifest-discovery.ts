@@ -362,6 +362,25 @@ export async function loadManifest(manifestPath: string): Promise<void> {
     );
     ObjectRegistry.registerFromManifest(name, definition, packageName);
   }
+
+  // Tables a package declares retired travel in its manifest (#5005),
+  // checked on load. The app's merged manifest carries each consumed
+  // package's own entries; one of a package it no longer depends on is left
+  // out (stale). Without smrtDependencies an entry labelled with another
+  // package is refused. A carried entry never replaces a package's own list.
+  if (manifest.retiredTables !== undefined)
+    ObjectRegistry.registerManifestRetiredTables(
+      {
+        packageName: manifest.packageName,
+        retiredTables: manifest.retiredTables,
+      },
+      {
+        source: manifestPath,
+        ...(Array.isArray(manifest.smrtDependencies)
+          ? { consumed: manifest.smrtDependencies as string[] }
+          : {}),
+      },
+    );
 }
 
 /**

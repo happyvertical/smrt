@@ -750,11 +750,11 @@ describe(`installed recipe server tools (${databaseType}, in process)`, () => {
     const definitions = await service.list(context);
     expect(
       definitions.find((tool) => tool.name === 'recipes.enable')?.annotations
-        .workProfile,
-    ).toBe('design');
+        .runTypes,
+    ).toEqual(['workflow']);
     expect(
       definitions.find((tool) => tool.name === 'app.describe')?.annotations
-        .workProfile,
+        .runTypes,
     ).toBeUndefined();
     await expect(
       call('cookbook.apply', { id: 'small-shop' }),

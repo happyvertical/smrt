@@ -16,7 +16,7 @@ import { getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { listAiRuns, recordAiRun, reportAiRuns } from '../system/ai-runs';
 import { ensureSystemTables } from '../system/bootstrap';
-import { pruneAiRuns } from '../system/retention';
+import { pruneAiRuns, pruneAiRunTrajectories } from '../system/retention';
 import { SMRT_SCHEMA_VERSION } from '../system/schema';
 import { getTestDatabase } from '../testing/database';
 
@@ -72,19 +72,65 @@ describe.skipIf(!pgUrl)('fusion run records on PostgreSQL (#4753)', () => {
     await ensureSystemTables(db, 'postgres');
     await ensureSystemTables(db, 'postgres');
 
+    const text = [
+      'id',
+      'type',
+      'definition_key',
+      'definition_version',
+      'tenant_id',
+      'class_name',
+      'prompt_key',
+      'template_hash',
+      'owner_id',
+      'parent_run_id',
+      'experiment_id',
+      'dataset_item',
+      'tags',
+      'status',
+      'stop_reason',
+      'stop_detail',
+      'stopped_by_run_id',
+      'retry_of_run_id',
+      'budget',
+      'mode',
+      'details',
+    ];
+    const bigint = [
+      'degraded',
+      'tokens',
+      'calls',
+      'uncosted_calls',
+      'steps_used',
+      'duration',
+      'inclusive_tokens',
+      'inclusive_calls',
+      'inclusive_uncosted_calls',
+      'reserved_tokens',
+      'reserved_calls',
+      'checks_passed',
+      'checks_failed',
+      'approvals_given',
+      'approvals_refused',
+      'retain',
+      'trajectory_pruned',
+      'seats',
+      'degraded_seats',
+    ];
+    // Cost totals are DOUBLE PRECISION (#5005): REAL drifts on summed cents.
+    const double = ['cost_used', 'inclusive_cost', 'reserved_cost'];
+    const timestamps = [
+      'active_since',
+      'started_at',
+      'finished_at',
+      'created_at',
+    ];
     expect(await liveColumns()).toEqual({
-      id: 'text',
-      fusion_key: 'text',
-      mode: 'text',
-      tenant_id: 'text',
-      class_name: 'text',
-      prompt_key: 'text',
-      seats: 'bigint',
-      degraded_seats: 'bigint',
-      status: 'text',
-      duration: 'bigint',
-      details: 'text',
-      created_at: 'timestamp with time zone',
+      ...Object.fromEntries(text.map((name) => [name, 'text'])),
+      ...Object.fromEntries(bigint.map((name) => [name, 'bigint'])),
+      ...Object.fromEntries(double.map((name) => [name, 'double precision'])),
+      ...Object.fromEntries(
+        timestamps.map((name) => [name, 'timestamp with time zone']),
+      ),
     });
     const indexes = rowsOf(
       await db.query(
@@ -95,7 +141,8 @@ describe.skipIf(!pgUrl)('fusion run records on PostgreSQL (#4753)', () => {
     expect(indexes).toEqual(
       expect.arrayContaining([
         'idx_smrt_ai_runs_created',
-        'idx_smrt_ai_runs_fusion_created',
+        'idx_smrt_ai_runs_definition_created',
+        'idx_smrt_ai_runs_parent',
         'idx_smrt_ai_runs_tenant_created',
       ]),
     );
@@ -153,6 +200,19 @@ describe.skipIf(!pgUrl)('fusion run records on PostgreSQL (#4753)', () => {
       }),
     ]);
 
+    // A run row outlives its trajectory (#5005): none goes while kept.
+    expect(await pruneAiRuns(db, { maxAgeMs: 86_400_000 })).toEqual({
+      pruned: 0,
+    });
+    expect(
+      await pruneAiRunTrajectories(db, {
+        maxAgeMs: 0,
+        now: new Date(Date.now() + 60_000),
+      }),
+    ).toEqual({
+      pruned: 2,
+    });
+    // Then only the unprotected run finished before the usage age limit.
     expect(await pruneAiRuns(db, { maxAgeMs: 86_400_000 })).toEqual({
       pruned: 1,
     });

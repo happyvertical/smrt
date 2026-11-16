@@ -25,14 +25,19 @@ import {
   OwnerApprovalAuthority,
   OwnerApprovalContinuations,
 } from '@happyvertical/smrt-app-runtime';
-import { ObjectRegistry, resolveDatabase } from '@happyvertical/smrt-core';
+import { clearCache, setConfig } from '@happyvertical/smrt-config';
+import {
+  config,
+  ObjectRegistry,
+  resolveDatabase,
+} from '@happyvertical/smrt-core';
 import { createCookbookEngine } from '@happyvertical/smrt-core/cookbook/engine';
 import { InferenceUnavailableError } from '@happyvertical/smrt-core/inference-availability';
 import {
   createCookbookRuntimeExposure,
   setRuntimeExposureGate,
 } from '@happyvertical/smrt-core/runtime-exposure';
-import { resolveWorkProfile } from '@happyvertical/smrt-inference';
+import { clearPromptCache } from '@happyvertical/smrt-prompts';
 import {
   MembershipCollection,
   PermissionCollection,
@@ -48,6 +53,7 @@ import {
   createMemoryContinuationStore,
 } from './assistant-turn.js';
 import type {
+  AssistantTurnDriver,
   AssistantTurnDriverCallbacks,
   AssistantTurnDriverContext,
 } from './assistant-turn-driver.js';
@@ -334,11 +340,105 @@ describe('mountAssistantRoutes', () => {
     actor: Actor = ownerA,
   ) => call(routes, 'POST', `threads/${threadId}/messages`, { actor, body });
 
+  describe("the turn's reasoning effort (#5005)", () => {
+    afterEach(() => {
+      clearPromptCache();
+      clearCache();
+      setConfig({});
+    });
+    function promptEffort(effort: 'low' | undefined) {
+      clearPromptCache();
+      clearCache();
+      setConfig({
+        packages: {
+          prompts: effort
+            ? { prompts: { 'chat.assistant.system': { effort } } }
+            : {},
+        },
+      });
+    }
+
+    it('sends the prompt effort over the tier binding effort on an API turn', async () => {
+      promptEffort('low');
+      const sent: unknown[] = [];
+      const ai = scriptedAI([
+        (_messages, options) => {
+          sent.push(options?.reasoning);
+          return text('Done')([], undefined);
+        },
+      ]);
+      const routes = mount({
+        ai,
+        resolveSelection: async () => ({
+          engine: 'api',
+          tier: 'best',
+          effort: 'high',
+        }),
+      });
+      const threadId = await createThread(routes);
+      await events(
+        await send(routes, threadId, {
+          content: 'Help',
+          clientRequestId: 'effort-api',
+        }),
+      );
+      expect(sent).toEqual([{ effort: 'low' }]);
+    });
+
+    it("hands an external driver the prompt effort, else the binding's", async () => {
+      const seen: unknown[] = [];
+      for (const effort of ['low', undefined] as const) {
+        promptEffort(effort);
+        const routes = mount({
+          resolveSelection: async () => ({
+            engine: 'claude-code',
+            tier: 'best',
+            model: 'fable',
+            effort: 'high',
+          }),
+          turnDriver: {
+            async run(context, callbacks) {
+              seen.push(context.selection?.effort);
+              callbacks.done({ text: 'Done' });
+            },
+          },
+        });
+        const threadId = await createThread(routes);
+        await events(
+          await send(routes, threadId, {
+            content: 'Help',
+            clientRequestId: `effort-cli-${effort ?? 'none'}`,
+          }),
+        );
+      }
+      expect(seen).toEqual(['low', 'high']);
+    });
+
+    it('honours a body model only where the selection names none', async () => {
+      promptEffort(undefined);
+      const ai = scriptedAI([text('Done')]);
+      const routes = mount({
+        ai,
+        resolveSelection: async () => ({ engine: 'api', tier: 'best' }),
+        models: [{ id: 'body-model', label: 'Body' }],
+      } as Partial<MountAssistantRoutesOptions>);
+      const threadId = await createThread(routes);
+      await events(
+        await send(routes, threadId, {
+          content: 'Help',
+          model: 'body-model',
+          clientRequestId: 'body-model',
+        }),
+      );
+      expect(ai.models).toContain('body-model');
+    });
+  });
+
   it.each([
     'unknown',
     'zero',
     'partial',
-  ] as const)('preserves %s provider usage in stored turn metadata', async (mode) => {
+  ] as const)('reports %s provider usage to the host and never stores it on the reply', async (mode) => {
     const answer: Round = () => ({
       content: 'Done',
       model: 'reported-model',
@@ -352,12 +452,13 @@ describe('mountAssistantRoutes', () => {
       usage: { promptTokens: 10, completionTokens: 2, totalTokens: 12 },
     });
     const ai = scriptedAI(mode === 'partial' ? [knownCall, answer] : [answer]);
+    const executions: unknown[] = [];
     const routes = mount({
       ai,
-      resolveWorkProfile: async () => resolveWorkProfile({ engine: 'api' }),
+      resolveSelection: async () => ({ engine: 'api', tier: 'best' }),
       allowedTools: mode === 'partial' ? ['data.discover'] : [],
       extraTools: mode === 'partial' ? [discoverTool([])] : [],
-      onWorkRun: () => {},
+      onExecution: (_context, execution) => executions.push(execution),
     });
     const threadId = await createThread(routes);
     expect(
@@ -371,9 +472,11 @@ describe('mountAssistantRoutes', () => {
       ).thrown,
     ).toBeNull();
     const stored = await listMessages(routes, threadId);
-    const metadata = stored.at(-1)?.metadata?.workRun;
+    expect(stored.at(-1)?.metadata ?? {}).not.toHaveProperty('workRun');
+    expect(executions).toHaveLength(1);
+    const metadata = executions[0];
     expect(metadata).toMatchObject({
-      profile: 'assist',
+      engine: 'api',
       toolCalls: mode === 'partial' ? 1 : 0,
     });
     if (mode === 'zero') expect(metadata).toHaveProperty('tokens', 0);
@@ -386,7 +489,7 @@ describe('mountAssistantRoutes', () => {
   it.each([
     true,
     false,
-  ])('stores assist handoff accounting before durable design (usage known: %s)', async (known) => {
+  ])('reports the turn before handing a workflow-only tool to a workflow run (usage known: %s)', async (known) => {
     const ran: PrincipalRun[] = [];
     const ai = scriptedAI([
       () => ({
@@ -402,12 +505,12 @@ describe('mountAssistantRoutes', () => {
     const accounting = vi.fn();
     const routes = mount({
       ai,
-      resolveWorkProfile: async () => resolveWorkProfile({ engine: 'api' }),
+      resolveSelection: async () => ({ engine: 'api', tier: 'best' }),
       allowedTools: ['data.discover'],
       extraTools: [discoverTool(ran)],
-      designTools: ['data.discover'],
-      onDesignEscalation: async () => ({ runId: 'queued-design' }),
-      onWorkRun: accounting,
+      workflowTools: ['data.discover'],
+      onWorkflowEscalation: async () => ({ runId: 'queued-design' }),
+      onExecution: (_context, execution) => accounting(execution),
     });
     const threadId = await createThread(routes);
     const response = await events(
@@ -422,14 +525,17 @@ describe('mountAssistantRoutes', () => {
     expect(stored).toMatchObject({
       role: 'assistant',
       content: 'Thinking this through',
-      metadata: {
-        designRunId: 'queued-design',
-        workRun: { profile: 'assist', model: 'reported-assist', toolCalls: 0 },
-      },
+      metadata: { runId: 'queued-design' },
     });
-    if (known) expect(stored?.metadata?.workRun).toHaveProperty('tokens', 12);
-    else expect(stored?.metadata?.workRun).not.toHaveProperty('tokens');
     expect(accounting).toHaveBeenCalledTimes(1);
+    const execution = accounting.mock.calls[0]?.[0];
+    expect(execution).toMatchObject({
+      engine: 'api',
+      model: 'reported-assist',
+      toolCalls: 0,
+    });
+    if (known) expect(execution).toHaveProperty('tokens', 12);
+    else expect(execution).not.toHaveProperty('tokens');
     const messageIndex = response.seen.findIndex(
       (event) => event.type === 'message' && event.message.role === 'assistant',
     );
@@ -460,7 +566,7 @@ describe('mountAssistantRoutes', () => {
       formatAssistantReply: (content) => ({
         content: JSON.parse(content).summary,
         metadata: {
-          designOutput: JSON.parse(content),
+          workflowOutput: JSON.parse(content),
           privateHostDetail: 'never on wire',
         },
       }),
@@ -486,7 +592,7 @@ describe('mountAssistantRoutes', () => {
         type: 'done',
         message: expect.objectContaining({
           metadata: {
-            designOutput: { summary: 'A readable plan', models: [] },
+            workflowOutput: { summary: 'A readable plan', models: [] },
           },
         }),
       }),
@@ -510,7 +616,7 @@ describe('mountAssistantRoutes', () => {
       internalTurn: () => ({ userMessage: 'PRIVATE PASS INPUT' }),
       formatAssistantReply: (content) => ({
         content: JSON.parse(content).summary,
-        metadata: { designOutput: JSON.parse(content) },
+        metadata: { workflowOutput: JSON.parse(content) },
       }),
       ...(external
         ? {
@@ -549,7 +655,7 @@ describe('mountAssistantRoutes', () => {
         type: 'done',
         message: expect.objectContaining({
           metadata: expect.objectContaining({
-            designOutput: JSON.parse(source),
+            workflowOutput: JSON.parse(source),
           }),
         }),
       }),
@@ -582,7 +688,7 @@ describe('mountAssistantRoutes', () => {
       `threads/${threadId}/messages/${hidden.id}`,
     );
     expect(hiddenRoute.status).toBe(404);
-    expect(await hiddenRoute.text()).not.toMatch(/PRIVATE|designOutput/);
+    expect(await hiddenRoute.text()).not.toMatch(/PRIVATE|workflowOutput/);
     expect(await listMessages(routes, threadId)).toEqual([]);
     expect(await listMessages(mount(), threadId)).toEqual([]);
     const ordinary = await events(
@@ -593,7 +699,7 @@ describe('mountAssistantRoutes', () => {
         assistantInternalTurn: true,
         metadata: {
           assistantInternalTurn: true,
-          designOutput: { summary: 'forged' },
+          workflowOutput: { summary: 'forged' },
         },
       }),
     );
@@ -701,7 +807,7 @@ describe('mountAssistantRoutes', () => {
     });
     user.setMetadata({
       assistantInternalTurn: true,
-      designOutput: { summary: 'forged' },
+      workflowOutput: { summary: 'forged' },
     });
     await user.save();
     for (const name of ['app_describe', 'record_update'])
@@ -731,7 +837,7 @@ describe('mountAssistantRoutes', () => {
       agentSessionId: String(session.id),
       threadId,
       content: 'PRIVATE LEGACY SUMMARY',
-      metadata: { designOutput: { summary: 'PRIVATE LEGACY PLAN' } },
+      metadata: { workflowOutput: { summary: 'PRIVATE LEGACY PLAN' } },
     });
     for (let i = 0; i < 201; i++)
       await sendAgentReply(chat, {
@@ -749,7 +855,7 @@ describe('mountAssistantRoutes', () => {
       'Keep this ordinary answer',
     ]);
     expect(JSON.stringify(rows)).not.toMatch(
-      /PRIVATE|TenantId|ProfileId|@fixture|designOutput|"args"|"name"/,
+      /PRIVATE|TenantId|ProfileId|@fixture|workflowOutput|"args"|"name"/,
     );
     const raw = await chat.getThreadMessages({
       tenantId,
@@ -1159,6 +1265,491 @@ describe('mountAssistantRoutes', () => {
       ]);
     });
 
+    describe('as an AI run (#5005)', () => {
+      const usage = { promptTokens: 11, completionTokens: 4, totalTokens: 15 };
+      const withUsage =
+        (content: string): Round =>
+        (_messages, options) => {
+          options?.onProgress?.(content);
+          return { content, finishReason: 'stop', model: 'm-1', usage };
+        };
+      const rowsOf = (result: unknown): Array<Record<string, unknown>> =>
+        Array.isArray(result)
+          ? result
+          : (((result as { rows?: unknown[] })?.rows ?? []) as Array<
+              Record<string, unknown>
+            >);
+      const query = async (sql: string, ...params: unknown[]) =>
+        rowsOf(await (await resolveDatabase(db)).query(sql, ...params));
+
+      it('opens a turn run with a usage row and a call event per model call, and the registered prompt', async () => {
+        const toolRound: Round = (messages, options) => ({
+          ...calls(['page_read', {}])(messages, options),
+          model: 'm-1',
+          usage,
+        });
+        const routes = mount({
+          ai: scriptedAI([toolRound, withUsage('Here is the plan.')]),
+          systemPrompt: 'Be brief.',
+        });
+        const threadId = await createThread(routes);
+        const { thrown } = await events(
+          await send(routes, threadId, {
+            content: 'What next?',
+            clientRequestId: 'run-1',
+          }),
+        );
+        expect(thrown).toBeNull();
+        const runs = await query(
+          `SELECT id, type, status, tenant_id, prompt_key, calls, tokens
+             FROM _smrt_ai_runs`,
+        );
+        expect(runs).toHaveLength(1);
+        expect(runs[0]).toMatchObject({
+          type: 'turn',
+          status: 'done',
+          tenant_id: tenantId,
+          prompt_key: 'chat.assistant.system',
+        });
+        const runId = String(runs[0]?.id);
+        expect(runs[0]).toMatchObject({ calls: 2, tokens: 30 });
+        const usageRows = await query(
+          'SELECT run_id, prompt_key, total_tokens FROM _smrt_ai_usage',
+        );
+        expect(usageRows).toHaveLength(Number(runs[0]?.calls));
+        expect(usageRows.every((row) => row.run_id === runId)).toBe(true);
+        expect(
+          usageRows.every((row) => row.prompt_key === 'chat.assistant.system'),
+        ).toBe(true);
+        const callEvents = await query(
+          `SELECT reservation FROM _smrt_ai_run_events
+            WHERE run_id = $1 AND type = 'call'`,
+          runId,
+        );
+        expect(callEvents).toHaveLength(usageRows.length);
+        expect(callEvents.every((e) => e.reservation === 'settled')).toBe(true);
+      });
+
+      it('references chat messages instead of copying them, and records tool use as action and observation events', async () => {
+        const ran: PrincipalRun[] = [];
+        const tool = discoverTool(ran);
+        const routes = mount({
+          ai: scriptedAI([
+            calls([tool.aiTool.function.name, {}, 'call-1']),
+            withUsage('Done.'),
+          ]),
+          allowedTools: [tool.slug],
+          extraTools: [tool],
+        });
+        const threadId = await createThread(routes);
+        await events(
+          await send(routes, threadId, {
+            content: 'secret-user-text',
+            clientRequestId: 'run-2',
+          }),
+        );
+        const trail = await query(
+          `SELECT type, name, status, payload, payload_ref, parent_event_id, id
+             FROM _smrt_ai_run_events ORDER BY seq`,
+        );
+        const types = trail.map((event) => event.type);
+        expect(types).toContain('action');
+        expect(types).toContain('observation');
+        const action = trail.find((event) => event.type === 'action');
+        const result = trail.find(
+          (event) =>
+            event.type === 'observation' && event.name === action?.name,
+        );
+        expect(result?.parent_event_id).toBe(action?.id);
+        const refs = trail
+          .map((event) => event.payload_ref)
+          .filter((ref): ref is string => typeof ref === 'string');
+        expect(refs.some((ref) => ref.startsWith('chat-message:'))).toBe(true);
+        // Nothing of the conversation is stored in the trajectory.
+        expect(JSON.stringify(trail)).not.toContain('secret-user-text');
+        expect(JSON.stringify(trail)).not.toContain('Done.');
+      });
+
+      it('leaves the approval store unopened by a turn with no approval waiting', async () => {
+        // Opening the store creates its table: a tenant role under
+        // database-rls may not, and on PostgreSQL that failure aborts the
+        // request transaction the turn runs in.
+        const routes = mount({ ai: scriptedAI([withUsage('Hello.')]) });
+        const threadId = await createThread(routes);
+        for (const clientRequestId of ['plain-1', 'plain-2']) {
+          await events(
+            await send(routes, threadId, { content: 'Hi', clientRequestId }),
+          );
+        }
+        expect(await query('SELECT id FROM _smrt_ai_runs')).toHaveLength(2);
+        expect(
+          await query(
+            `SELECT name FROM sqlite_master
+              WHERE type = 'table' AND name = '_smrt_owner_tool_holds'`,
+          ),
+        ).toEqual([]);
+      });
+
+      it('ends a turn that needs approval done with a requested approval event, and records the decision in the next turn', async () => {
+        const authority = await durableApprovals();
+        const ran: unknown[] = [];
+        const tool = deleteTool(ran);
+        const routes = mount({
+          ai: scriptedAI([
+            calls(['records-delete', { id: 'invoice-1' }, 'delete-1']),
+            withUsage('Waiting on you.'),
+          ]),
+          approvals: authority,
+          allowedTools: [tool.slug],
+          extraTools: [tool],
+        });
+        const threadId = await createThread(routes);
+        const first = await events(
+          await send(routes, threadId, {
+            content: 'Delete invoice 1',
+            clientRequestId: 'run-3',
+          }),
+        );
+        const needed = first.seen.find(
+          (event) => event.type === 'approval_needed',
+        );
+        if (needed?.type !== 'approval_needed')
+          throw new Error('expected hold');
+        const [turn] = await query(
+          `SELECT id, status FROM _smrt_ai_runs ORDER BY started_at`,
+        );
+        expect(turn?.status).toBe('done');
+        const [requested] = await query(
+          `SELECT id, status, payload_ref FROM _smrt_ai_run_events
+            WHERE type = 'approval'`,
+        );
+        expect(requested).toMatchObject({
+          status: 'requested',
+          payload_ref: `approval:${needed.approval.id}`,
+        });
+
+        const decision = await call(
+          routes,
+          'POST',
+          `approvals/${needed.approval.id}/decide`,
+          { body: { approve: true } },
+        );
+        expect(decision.status).toBe(200);
+        // The decision is not an event until the next turn carries on.
+        expect(
+          await query(
+            `SELECT id FROM _smrt_ai_run_events WHERE type = 'approval' AND status = 'approved'`,
+          ),
+        ).toHaveLength(0);
+
+        await events(
+          await send(routes, threadId, {
+            content: 'Thanks',
+            clientRequestId: 'run-3b',
+          }),
+        );
+        const runs = await query(
+          'SELECT id FROM _smrt_ai_runs ORDER BY started_at',
+        );
+        expect(runs).toHaveLength(2);
+        const decided = await query(
+          `SELECT run_id, parent_event_id FROM _smrt_ai_run_events
+            WHERE type = 'approval' AND status = 'approved'`,
+        );
+        expect(decided).toHaveLength(1);
+        expect(decided[0]?.parent_event_id).toBe(requested?.id);
+        expect(decided[0]?.run_id).toBe(runs[1]?.id);
+        // Recorded once: a third turn adds nothing.
+        await events(
+          await send(routes, threadId, {
+            content: 'And again',
+            clientRequestId: 'run-3c',
+          }),
+        );
+        expect(
+          await query(
+            `SELECT id FROM _smrt_ai_run_events WHERE type = 'approval' AND status = 'approved'`,
+          ),
+        ).toHaveLength(1);
+      });
+
+      it("stores the turn budget on its run and ends the turn 'budget' when core refuses a call at a limit (#5005)", async () => {
+        const toolRound: Round = (messages, options) => ({
+          ...calls(['page_read', {}])(messages, options),
+          model: 'm-1',
+          usage,
+        });
+        const routes = mount({
+          ai: scriptedAI([toolRound, withUsage('never sent')]),
+          turnBudget: { maxTokens: 20 },
+        });
+        const threadId = await createThread(routes);
+        const { seen, thrown } = await events(
+          await send(routes, threadId, {
+            content: 'Keep going',
+            clientRequestId: 'run-budget',
+          }),
+        );
+        expect(thrown).toBeNull();
+        expect(seen.some((event) => event.type === 'error')).toBe(false);
+        expect(seen).toContainEqual(
+          expect.objectContaining({ type: 'done', stoppedReason: 'budget' }),
+        );
+        const runs = await query(
+          'SELECT status, stop_reason, budget FROM _smrt_ai_runs',
+        );
+        expect(runs).toHaveLength(1);
+        expect(runs[0]).toMatchObject({ status: 'stopped' });
+        expect(String(runs[0]?.stop_reason)).toMatch(/^max_/);
+        expect(JSON.parse(String(runs[0]?.budget))).toEqual({ maxTokens: 20 });
+      });
+
+      it("records a ChatGPT plan turn's calls under the engine and the tiers, uncosted", async () => {
+        const routes = mount({
+          ai: scriptedAI([withUsage('Planned.')]),
+          resolveSelection: async () => ({
+            engine: 'chatgpt',
+            tier: 'best',
+            model: 'gpt-plan',
+          }),
+        });
+        const threadId = await createThread(routes);
+        await events(
+          await send(routes, threadId, {
+            content: 'Plan it',
+            clientRequestId: 'plan-1',
+          }),
+        );
+        expect(
+          await query(
+            `SELECT provider, model, tier_requested, tier_resolved, total_tokens,
+                    estimated_cost FROM _smrt_ai_usage`,
+          ),
+        ).toEqual([
+          {
+            provider: 'chatgpt',
+            // The model the response reported wins over the binding's.
+            model: 'm-1',
+            tier_requested: 'best',
+            tier_resolved: 'best',
+            total_tokens: 15,
+            estimated_cost: null,
+          },
+        ]);
+        expect(
+          await query('SELECT calls, uncosted_calls FROM _smrt_ai_runs'),
+        ).toEqual([{ calls: 1, uncosted_calls: 1 }]);
+      });
+
+      describe('on an external engine (Claude Code, Codex)', () => {
+        const selection = {
+          engine: 'claude-code' as const,
+          tier: 'best' as const,
+          model: 'opus',
+        };
+        const engineTurn = (
+          run: AssistantTurnDriver['run'],
+          overrides: Partial<MountAssistantRoutesOptions> = {},
+        ) =>
+          mount({
+            turnDriver: { run },
+            resolveSelection: async () => selection,
+            ...overrides,
+          });
+        const sendOnce = async (
+          routes: AssistantRoutes,
+          clientRequestId: string,
+        ) => {
+          const threadId = await createThread(routes);
+          return events(
+            await send(routes, threadId, {
+              content: 'Plan it',
+              clientRequestId,
+            }),
+          );
+        };
+
+        it('records the engine turn as one call: a call event and a usage row with the tokens it reported, uncosted', async () => {
+          const routes = engineTurn(async (_ctx, cb) => {
+            cb.execution?.({
+              engine: 'claude-code',
+              model: 'claude-opus-reported',
+              requestedModel: 'opus',
+              durationMs: 7,
+              tokens: 42,
+              inputTokens: 30,
+              outputTokens: 12,
+              toolCalls: 0,
+            });
+            cb.done({ text: 'Planned.' });
+          });
+          const { thrown, seen } = await sendOnce(routes, 'cli-1');
+          expect(thrown).toBeNull();
+          expect(seen).toContainEqual(
+            expect.objectContaining({ type: 'done', stoppedReason: 'stop' }),
+          );
+          const runs = await query(
+            `SELECT id, type, status, calls, tokens, uncosted_calls, reserved_calls,
+                    reserved_tokens FROM _smrt_ai_runs`,
+          );
+          expect(runs).toHaveLength(1);
+          expect(runs[0]).toMatchObject({
+            type: 'turn',
+            status: 'done',
+            calls: 1,
+            tokens: 42,
+            uncosted_calls: 1,
+            reserved_calls: 0,
+            reserved_tokens: 0,
+          });
+          const usageRows = await query(
+            `SELECT id, run_id, provider, model, prompt_key, tier_requested,
+                    tier_resolved, prompt_tokens, completion_tokens,
+                    total_tokens, estimated_cost FROM _smrt_ai_usage`,
+          );
+          expect(usageRows).toEqual([
+            expect.objectContaining({
+              run_id: runs[0]?.id,
+              provider: 'claude-code',
+              model: 'claude-opus-reported',
+              prompt_key: 'chat.assistant.system',
+              tier_requested: 'best',
+              tier_resolved: 'best',
+              prompt_tokens: 30,
+              completion_tokens: 12,
+              total_tokens: 42,
+              estimated_cost: null,
+            }),
+          ]);
+          const callEvents = await query(
+            `SELECT call_id, reservation, status FROM _smrt_ai_run_events
+              WHERE type = 'call'`,
+          );
+          expect(callEvents).toEqual([
+            { call_id: usageRows[0]?.id, reservation: 'settled', status: 'ok' },
+          ]);
+        });
+
+        it('charges an answered turn that reported no tokens what it reserved, with no token counts on its row', async () => {
+          const routes = engineTurn(async (_ctx, cb) => {
+            cb.done({ text: 'Planned.' });
+          });
+          await sendOnce(routes, 'cli-2');
+          const [run] = await query(
+            'SELECT calls, tokens, uncosted_calls FROM _smrt_ai_runs',
+          );
+          expect(run).toMatchObject({ calls: 1, uncosted_calls: 1 });
+          expect(Number(run?.tokens)).toBeGreaterThan(0);
+          expect(
+            await query(
+              'SELECT provider, model, total_tokens FROM _smrt_ai_usage',
+            ),
+          ).toEqual([
+            // No model reported: the tier binding's.
+            { provider: 'claude-code', model: 'opus', total_tokens: null },
+          ]);
+        });
+
+        it.each([
+          ['maxCalls', { maxCalls: 0 }, 'max_calls'],
+          ['maxTokens', { maxTokens: 10 }, 'max_tokens'],
+        ] as const)('ends the turn budget at %s before the engine starts', async (_name, turnBudget, reason) => {
+          const run = vi.fn(async (_ctx, cb: AssistantTurnDriverCallbacks) => {
+            cb.done({ text: 'never' });
+          });
+          const routes = engineTurn(run, { turnBudget });
+          const { thrown, seen } = await sendOnce(routes, `cli-${reason}`);
+          expect(thrown).toBeNull();
+          expect(run).not.toHaveBeenCalled();
+          expect(seen.some((event) => event.type === 'error')).toBe(false);
+          expect(seen).toContainEqual(
+            expect.objectContaining({ type: 'done', stoppedReason: 'budget' }),
+          );
+          expect(
+            await query('SELECT status, stop_reason, calls FROM _smrt_ai_runs'),
+          ).toEqual([{ status: 'stopped', stop_reason: reason, calls: 0 }]);
+          expect(await query('SELECT id FROM _smrt_ai_usage')).toEqual([]);
+        });
+
+        it('releases the reservation of an engine turn that failed without reporting usage', async () => {
+          const routes = engineTurn(async () => {
+            throw new Error('engine crashed');
+          });
+          const { seen } = await sendOnce(routes, 'cli-fail');
+          expect(seen).toContainEqual(
+            expect.objectContaining({ type: 'error', code: 'internal_error' }),
+          );
+          expect(
+            await query(
+              `SELECT status, calls, tokens, reserved_calls, reserved_tokens
+                 FROM _smrt_ai_runs`,
+            ),
+          ).toEqual([
+            {
+              status: 'failed',
+              calls: 0,
+              tokens: 0,
+              reserved_calls: 0,
+              reserved_tokens: 0,
+            },
+          ]);
+          expect(
+            await query(
+              `SELECT reservation, status FROM _smrt_ai_run_events WHERE type = 'call'`,
+            ),
+          ).toEqual([{ reservation: 'released', status: 'failed' }]);
+          expect(await query('SELECT id FROM _smrt_ai_usage')).toEqual([]);
+        });
+
+        it('charges a failed engine turn the tokens it reported', async () => {
+          const routes = engineTurn(async (_ctx, cb) => {
+            cb.execution?.({
+              engine: 'claude-code',
+              durationMs: 3,
+              tokens: 25,
+              toolCalls: 0,
+            });
+            cb.error(new Error('engine gave up'));
+          });
+          await sendOnce(routes, 'cli-fail-usage');
+          expect(
+            await query(
+              `SELECT reservation, status FROM _smrt_ai_run_events WHERE type = 'call'`,
+            ),
+          ).toEqual([{ reservation: 'settled', status: 'failed' }]);
+          expect(
+            await query(
+              'SELECT calls, tokens, reserved_tokens FROM _smrt_ai_runs',
+            ),
+          ).toEqual([{ calls: 1, tokens: 25, reserved_tokens: 0 }]);
+        });
+      });
+
+      it('opens no run and answers a user error while usage persistence is off', async () => {
+        const routes = mount({
+          ai: scriptedAI([withUsage('never sent')]),
+        });
+        const threadId = await createThread(routes);
+        config({ usage: { persist: false } });
+        try {
+          const { seen } = await events(
+            await send(routes, threadId, {
+              content: 'Hello',
+              clientRequestId: 'run-4',
+            }),
+          );
+          expect(seen).toContainEqual(
+            expect.objectContaining({
+              type: 'error',
+              code: 'ai_tracking_disabled',
+            }),
+          );
+        } finally {
+          config.reset();
+        }
+      });
+    });
+
     it('never replays a stored fallback reply as history (#4379)', async () => {
       // Turn 1: blank, and its retry blank -> the fallback is stored.
       const ai = scriptedAI([text(''), text(''), text('Four.')]);
@@ -1234,8 +1825,11 @@ describe('mountAssistantRoutes', () => {
       ]);
       // The read is role-filtered in SQL and bounded by the limit (+ the
       // stored send), whatever the thread holds.
+      // (A turn's read of its thread's approval ids is the tool-only one.)
       const historyReads = read.mock.calls.flatMap(([params], index) =>
-        params.roles ? [{ params, result: read.mock.results[index] }] : [],
+        params.roles?.includes('user')
+          ? [{ params, result: read.mock.results[index] }]
+          : [],
       );
       expect(historyReads).toHaveLength(3);
       for (const { params, result } of historyReads) {
@@ -3957,7 +4551,11 @@ describe('mountAssistantRoutes', () => {
       requestKey: 'private-recovery-key',
       args: { internal: 'private-arguments' },
       summary: 'Add Licence plate to Members',
-      context: { threadId, principal, designAction: { runId: 'private-run' } },
+      context: {
+        threadId,
+        principal,
+        workflowAction: { runId: 'private-run' },
+      },
       continuation: {
         executor: 'fixture',
         principal: {
@@ -4014,7 +4612,7 @@ describe('mountAssistantRoutes', () => {
       },
     ]);
     expect(JSON.stringify(rows)).not.toMatch(
-      /private-|requestedBy|designAction|permission/,
+      /private-|requestedBy|workflowAction|permission/,
     );
     const status = await call(routes, 'GET', `threads/${threadId}/approvals`);
     expect((await status.json()).approvals).toHaveLength(1);

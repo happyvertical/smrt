@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -7,6 +7,7 @@ import {
   getAgentSkillsPackageVersion,
   listAgentSkills,
 } from './agent-skills.js';
+import { TOOLS } from './tool-catalog.js';
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -167,5 +168,134 @@ describe('smrt-contribute (#4709)', () => {
       'SKILL.md',
     );
     expect(readFileSync(repoCopy, 'utf8')).toBe(skill.skillMarkdown);
+  });
+});
+
+describe('smrt-ai-work (#5005)', () => {
+  const skill = getAgentSkill({ name: 'smrt-ai-work' });
+  const body = skill.skillMarkdown;
+  const evals = readEvals('smrt-ai-work');
+  const description = (
+    body.match(/^description: (.+)$/m)?.[1] ?? ''
+  ).toLowerCase();
+
+  it('is registered and served', () => {
+    expect(listAgentSkills().map((item) => item.name)).toContain(
+      'smrt-ai-work',
+    );
+    expect(body).toContain('name: smrt-ai-work');
+  });
+
+  it('produces a prompt, a tracked call and a workflow definition', () => {
+    for (const term of [
+      'definePrompt',
+      'resolvePrompt',
+      'trackedPromptCall',
+      'createTrackedAiClient',
+      'AiPromptKeyRequiredError',
+      '@happyvertical/smrt-workflows',
+      'createWorkflowRunDriver',
+    ]) {
+      expect(body, term).toContain(term);
+    }
+  });
+
+  it('states the handler job contract', () => {
+    for (const term of [
+      'registerJobHandler',
+      'enqueueHandlerJob',
+      'JobHandlerRegistrationClosedError',
+      'handlerUnclaimedDeadlineMs',
+      'serializeAiRunContext',
+    ]) {
+      expect(body, term).toContain(term);
+    }
+  });
+
+  it('explains runs, events, evaluations, tiers, latency, effort, budgets and fusions', () => {
+    for (const term of [
+      'Run',
+      'getRunTrajectory',
+      'recordAiEvaluation',
+      'Tier, latency, effort',
+      'maxTokens',
+      'Fusion, seat',
+      'https://happyvertical.github.io/smrt/ai-runs',
+    ]) {
+      expect(body, term).toContain(term);
+    }
+  });
+
+  it('cites only sources a consuming project can reach', () => {
+    const root = join(packageRoot, '..', '..');
+    // No monorepo path: a consumer has no docs/ or packages/ checkout.
+    expect(body).not.toMatch(/(?:^|[\s`(])(?:docs|packages)\//m);
+
+    // An installed package's file: it exists and the package ships it.
+    const packages = new Map<string, string>();
+    for (const dir of readdirSync(join(root, 'packages'))) {
+      const manifest = join(root, 'packages', dir, 'package.json');
+      if (!existsSync(manifest)) continue;
+      const { name } = JSON.parse(readFileSync(manifest, 'utf8'));
+      packages.set(name, join(root, 'packages', dir));
+    }
+    const installed = [
+      ...body.matchAll(/node_modules\/(@happyvertical\/[\w-]+)\/([\w./-]+)/g),
+    ];
+    expect(installed.length).toBeGreaterThan(0);
+    for (const [cited, name, path] of installed) {
+      const dir = packages.get(name as string);
+      expect(dir, cited).toBeDefined();
+      expect(existsSync(join(dir as string, path as string)), cited).toBe(true);
+      const { files } = JSON.parse(
+        readFileSync(join(dir as string, 'package.json'), 'utf8'),
+      ) as { files: string[] };
+      const top = (path as string).split('/')[0];
+      expect(files, cited).toContain(top);
+    }
+
+    // A docs site page: the site's own URL, and a page that exists.
+    const config = readFileSync(
+      join(root, 'docs', 'docusaurus.config.ts'),
+      'utf8',
+    );
+    expect(config).toContain("url: 'https://happyvertical.github.io'");
+    expect(config).toContain("baseUrl: '/smrt/'");
+    const pages = [
+      ...body.matchAll(/https:\/\/happyvertical\.github\.io\/smrt\/([\w-]+)/g),
+    ];
+    expect(pages.length).toBeGreaterThan(0);
+    for (const [url, slug] of pages) {
+      expect(existsSync(join(root, 'docs', 'content', `${slug}.md`)), url).toBe(
+        true,
+      );
+    }
+  });
+
+  it('has trigger evals the description covers', () => {
+    expect(evals.positive.length).toBeGreaterThanOrEqual(5);
+    expect(evals.negative.length).toBeGreaterThanOrEqual(3);
+    for (const term of ['workflow', 'budgets', 'prompt', 'tracked call']) {
+      expect(description, term).toContain(term);
+    }
+  });
+
+  it('is served by the get-agent-skill tool schema', () => {
+    const tool = TOOLS.find((item) => item.name === 'get-agent-skill');
+    const properties = tool?.inputSchema.properties as
+      | { name: { enum: string[] } }
+      | undefined;
+    const names = properties?.name.enum ?? [];
+    expect([...names].sort()).toEqual(
+      listAgentSkills()
+        .map((item) => item.name)
+        .sort(),
+    );
+  });
+
+  it('routes from the catalog skill', () => {
+    expect(getAgentSkill({ name: 'smrt-catalog' }).skillMarkdown).toContain(
+      'smrt-ai-work',
+    );
   });
 });

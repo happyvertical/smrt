@@ -34,6 +34,7 @@ import {
 } from '../system/schema.js';
 import { toSafeBooleanInteger, toSafeInteger } from '../utils/safe-integer.js';
 import { computeChecksum, verifyChecksum } from './checksum.js';
+import { runRetireAwareStatement } from './retire-guard.js';
 import { SQLITE_RELAX_REBUILD_MARKER } from './sqlite-rebuild.js';
 import type {
   ApplyMigrationsOptions,
@@ -992,8 +993,8 @@ export class MigrationTracker {
             await session.query(sql);
           }
 
-          // Floor at 1ms: callers (the CLI progress reporter, the applied vs
-          // skipped counters) read `execution_time_ms === 0` as "nothing ran".
+          // Floor at 1ms: older callers read `execution_time_ms === 0` as
+          // "nothing ran"; `applied: true` is the authoritative signal.
           const executionTime = Math.max(
             1,
             (result.execution_time_ms ?? 0) + (Date.now() - startedAt),
@@ -1375,7 +1376,11 @@ export class MigrationTracker {
         if (this.sqliteRebuildTransactionOwned)
           await this.assertSqliteForeignKeysSuspended(tx as DatabaseInterface);
         for (const sql of statements) {
-          await tx.query(sql);
+          await runRetireAwareStatement(
+            (statement) => tx.query(statement),
+            this.dbEngine,
+            sql,
+          );
         }
         if (this.sqliteRebuildTransactionOwned)
           await this.checkSqliteForeignKeys(tx as DatabaseInterface);
@@ -1383,7 +1388,11 @@ export class MigrationTracker {
     } else {
       // Fallback to sequential execution
       for (const sql of statements) {
-        await this.db.query(sql);
+        await runRetireAwareStatement(
+          (statement) => this.db.query(statement),
+          this.dbEngine,
+          sql,
+        );
       }
     }
   }
@@ -1421,12 +1430,20 @@ export class MigrationTracker {
         );
 
         for (const sql of finalRegular) {
-          await tx.query(sql);
+          await runRetireAwareStatement(
+            (statement) => tx.query(statement),
+            this.dbEngine,
+            sql,
+          );
         }
       });
     } else if (finalRegular.length > 0) {
       for (const sql of finalRegular) {
-        await this.db.query(sql);
+        await runRetireAwareStatement(
+          (statement) => this.db.query(statement),
+          this.dbEngine,
+          sql,
+        );
       }
     }
 

@@ -8,8 +8,8 @@ import {
   AiUsagePersistenceHandler,
   ensureSystemTables,
   listAiTranscripts,
+  recordAiEvaluation,
   recordAiTranscript,
-  recordAiUsageOutcome,
 } from '@happyvertical/smrt-core';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -21,6 +21,17 @@ import {
   transcriptScope,
   worstLabelledTranscripts,
 } from '../ai-transcript.js';
+
+async function usageIdOf(
+  db: DatabaseInterface,
+  entryCallId: string,
+): Promise<string> {
+  const result = await db.query(
+    'SELECT id FROM _smrt_ai_usage WHERE entry_call_id = $1',
+    entryCallId,
+  );
+  return String((result.rows as { id: string }[])[0]?.id);
+}
 
 describe('transcriptScope', () => {
   it('requires --tenant or --all-tenants, never both', () => {
@@ -86,17 +97,17 @@ describe('transcript rendering', () => {
         createdAt,
       });
     }
-    await recordAiUsageOutcome(db, {
-      callId: 'call-a',
+    await recordAiEvaluation(db, {
+      callId: await usageIdOf(db, 'call-a'),
       label: 'rejected',
-      score: 0.2,
-      actor: 'reviewer',
+      value: 0.2,
+      evaluator: 'human',
     });
-    await recordAiUsageOutcome(db, {
-      callId: 'call-b',
+    await recordAiEvaluation(db, {
+      callId: await usageIdOf(db, 'call-b'),
       label: 'rejected',
-      score: 0.05,
-      actor: 'reviewer',
+      value: 0.05,
+      evaluator: 'human',
     });
   });
 
@@ -115,7 +126,7 @@ describe('transcript rendering', () => {
     expect(text).toContain('Call:      call-a');
     expect(text).toContain('Prompt:    notes.review @ h1');
     expect(text).toContain('Usage:     1 row(s), 10 tokens');
-    expect(text).toContain('rejected (0.2) by reviewer');
+    expect(text).toContain('rejected (0.2) by human');
     expect(text).toContain('[user]\nquestion call-a');
     expect(text).toContain('[assistant]\nanswer call-a');
   });

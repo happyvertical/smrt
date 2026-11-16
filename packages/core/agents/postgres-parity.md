@@ -152,7 +152,7 @@ integration-base implementations: both failed with the old explicit refusals.
 The same cases pass with transaction inspection and revision fencing enabled.
 
 The core `test:pglite` script includes `cookbook/app-tools.test.ts`, including the
-host-owned `designAction` path rather than only programmatic editor edits. The
+host-owned `workflowAction` path rather than only programmatic editor edits. The
 scoped history store retains its durable-operation capability; PostgreSQL
 completion forwards the original receipt and tool result under the revision
 fence. Its immutable first completion and recovered pending publication obey

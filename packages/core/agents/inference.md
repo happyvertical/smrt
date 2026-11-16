@@ -84,8 +84,10 @@ prompt key (so prompt-scoped and per-user resolvers apply per seat); `db`
 (read-only, for stored prompt overrides); `decide(request, { usageTags,
 signal })`, the instance's typed-decision client exactly as `evaluate()`
 uses it (`undefined` without one), recording its usage row with the given
-tags; `recordRun(record)`, the `_smrt_ai_runs` writer
-([ai-usage.md](ai-usage.md#run-records-_smrt_ai_runs-4753)); and
+tags; `openRun(input)` (#5005), which opens the fusion run at its start
+and returns the handle its seats reserve and close through
+([ai-usage.md](ai-usage.md#ai-runs-_smrt_ai_runs-4753-5005); the deprecated
+`recordRun(record)` is no longer passed); and
 `observeUsage(runId, listener)`, which feeds the run's normalized usage
 events back for per-seat totals; and `lookupFusion(key)` (#4800):
 `lookupInferenceFusion(key, request, { resolver, config })` with the

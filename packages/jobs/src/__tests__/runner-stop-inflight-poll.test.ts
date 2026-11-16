@@ -114,5 +114,6 @@ describe('TaskRunner.stop() with a poll in flight (#3148)', () => {
     expect(row?.status).toBe('pending');
     expect(row?.attempts).toBe(0);
     expect(row?.workerId ?? null).toBeNull();
+    expect(row?.startedAt).toBeNull();
   });
 });

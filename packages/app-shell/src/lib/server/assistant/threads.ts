@@ -189,6 +189,20 @@ export async function historyFor(threadId: string): Promise<AIMessage[]> {
 }
 
 /**
+ * The approvals the thread's turns asked for, oldest first: each tool result
+ * that became an Approval carries its id in its chip.
+ */
+export async function threadApprovalIds(threadId: string): Promise<string[]> {
+  const ids: string[] = [];
+  for (const m of await rows(threadId)) {
+    if (m.role !== 'tool') continue;
+    const id = parse<{ approvalId?: unknown }>(m.meta)?.approvalId;
+    if (typeof id === 'string' && id && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+/**
  * The local agent CLI's own session id for this thread (stored on the last
  * assistant message of a turn that ran through `tool`), so the next turn can
  * resume it. `null` for a thread that never ran through that tool.

@@ -1,8 +1,10 @@
 export {
-  type AssistantWorkProfileOptions,
-  assertWorkProfileTool,
-  WorkProfileEscalation,
-} from './work-profile.js';
+  type AssistantModelSelection,
+  type AssistantRunTypeOptions,
+  assertToolRunType,
+  ToolRunTypeRefusal,
+  toolRunTypes,
+} from './tool-run-types.js';
 
 /**
  * @happyvertical/smrt-chat
@@ -326,6 +328,15 @@ export {
   describeAssistantTool,
   toolSummary,
 } from './tool-summary.js';
+export {
+  AssistantTurnRun,
+  type AssistantTurnTracking,
+  CHAT_ASSISTANT_PROMPT_KEY,
+  CHAT_TURN_DEFINITION_KEY,
+  chatAssistantSystemPrompt,
+  resolveChatAssistantPrompt,
+  resolveChatAssistantTier,
+} from './turn-tracking.js';
 // Types
 export type {
   AgentSessionOptions,

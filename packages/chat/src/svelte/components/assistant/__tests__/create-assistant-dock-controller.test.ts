@@ -2822,36 +2822,36 @@ describe('createAssistantDockController', () => {
   });
 });
 
-describe('durable design runs', () => {
+describe('durable workflow runs', () => {
   it('rehydrates progress and preserves a background run on disposal; explicit Stop and Resume reach host', async () => {
     const { transport } = scriptedTransport({ thread: [] });
     const running = {
-      runId: 'design-1',
-      pass: { index: 2, count: 3, name: 'Check the plan' },
+      runId: 'workflow-1',
+      step: { index: 2, count: 3, name: 'Check the plan' },
       status: 'running' as const,
     };
-    transport.designRun = vi.fn(async () => running);
-    transport.stopDesignRun = vi.fn(async () => ({
+    transport.workflowRun = vi.fn(async () => running);
+    transport.stopWorkflowRun = vi.fn(async () => ({
       ...running,
       status: 'stopped' as const,
     }));
-    transport.resumeDesignRun = vi.fn(async () => running);
+    transport.resumeWorkflowRun = vi.fn(async () => running);
     const controller = createAssistantDockController({
       transport,
       registry: createDataSurfaceRegistry(),
     });
     await controller.openThread('thread');
-    expect(controller.designRun?.runId).toBe('design-1');
+    expect(controller.workflowRun?.runId).toBe('workflow-1');
     expect(controller.status.label).toContain('Check the plan (2/3)');
     controller.cancel();
     await Promise.resolve();
     await Promise.resolve();
-    expect(transport.stopDesignRun).toHaveBeenCalledWith('design-1');
-    expect(controller.designRun?.status).toBe('stopped');
-    await controller.resumeDesignRun();
-    expect(transport.resumeDesignRun).toHaveBeenCalledWith('design-1');
-    expect(controller.designRun?.status).toBe('running');
+    expect(transport.stopWorkflowRun).toHaveBeenCalledWith('workflow-1');
+    expect(controller.workflowRun?.status).toBe('stopped');
+    await controller.resumeWorkflowRun();
+    expect(transport.resumeWorkflowRun).toHaveBeenCalledWith('workflow-1');
+    expect(controller.workflowRun?.status).toBe('running');
     controller.dispose();
-    expect(transport.stopDesignRun).toHaveBeenCalledTimes(1);
+    expect(transport.stopWorkflowRun).toHaveBeenCalledTimes(1);
   });
 });

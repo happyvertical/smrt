@@ -179,35 +179,54 @@ would introduce the prohibited `chat → smrt-svelte → smrt-content → chat`
 cycle. Production driver code introduces neither that import nor a new
 shell; no dependency change is appropriate for C1.
 
-## Work profiles and design interception
+## Model selection, budget and workflow-only tools (#5005)
 
-`resolveWorkProfile(context, name?)` selects intelligence from authenticated
-owner settings before authoring the user message. It receives a requested name
-only on escalation; known design flows select `design` in the initial callback.
-The resolved profile is forwarded to inference and its budgets govern the loop.
-Background work must request `background` explicitly. Profile selection never
+`resolveSelection(context)` returns the turn's `AssistantModelSelection`
+(`engine`, `tier`, `model?`, `effort?`) from authenticated host state before
+the user message is authored; a request body model is honoured only without
+one. The host binds the tier: core for an API key, inference's
+`engineTierModel` for Claude Code, Codex and a ChatGPT plan. The assistant asks
+for the tier its prompt declares (`chat.assistant.system`, `best`;
+`resolveChatAssistantTier`). The selection's effort is the tier
+binding's; the assistant prompt's `ai.effort` wins over it, and the route
+hands the result to the built-in loop (`reasoning: { effort }`) and to an
+external driver (`context.selection.effort`). A body model is honoured only
+where the selection names none (an API key). `turnBudget` (an `AiRunBudget`)
+is stored on the turn's `turn` run (core enforces it on tracked calls; it
+counts `maxSteps` only for calls with a step index, so the loop enforces a
+turn's steps) and applied to the loop
+(`maxSteps`, `maxTokens` → `maxTurnTokens`, `maxDurationMs` → `maxTurnMs`,
+`callTimeoutMs` → `requestTimeoutMs`); a call core refuses at a budget limit
+ends the turn `budget` with a plain reply. `maxTokens` (output per call) and
+`toolResultChars` stay route options and may be per request. A selection never
 changes principal, tenant, permission ceiling, allow-list or owner approvals.
 
-Hosts declare structural tools with `designTools`, or trusted tool metadata
-`annotations.workProfile: 'design'` (core cookbook tools provide this annotation).
-The built-in loop checks the whole proposed batch before executing any call.
-External drivers MUST call `context.beforeToolExecution(canonicalSlug)` at their
-**authenticated MCP execution boundary**, before effects or approval creation.
-A later CLI tool-call stream event is too late. Interception aborts and settles
-the old pass, then restarts once under design while retaining completed tool
-observations. The intercepted assist call never executes.
+Tools limited to workflow runs carry the trusted annotation
+`annotations.runTypes: ['workflow']` (core cookbook tools provide it); hosts may
+also list them in `workflowTools`. A chat `turn` run refuses such a call with a
+typed `ToolRunTypeRefusal` before it executes. The built-in loop checks the
+whole proposed batch before executing any call. External drivers MUST call
+`context.beforeToolExecution(canonicalSlug)` at their **authenticated MCP
+execution boundary**, before effects or approval creation. A later CLI
+tool-call stream event is too late. The refused call never executes.
 
-Production hosts use `onDesignEscalation(context, input)` to enqueue a durable
-design job. Returning `{runId, message?}` ends the request with `done.runId` and
-prevents inline restart. Without the hook, the shared bounded turn restarts
-inline once. `resolveWorkProfileRuntime` reselects an engine on that restart.
-`Thinking this through` identifies escalation using the existing status stream.
+The owner's assistant settings (`assistantSettings(context)`) decide what
+happens next. With `escalateToWorkflow` on (the default) and a host
+`onWorkflowEscalation(context, input)`, the request is handed to a workflow run:
+returning `{runId, message?}` ends the request with `done.runId`. Otherwise the
+turn ends with the user-facing `tool_run_type` error. There is no inline restart
+and no second client: every call of the turn stays on its tracked client.
+`Thinking this through` identifies the handoff using the existing status stream.
 
-Stored assistant rows contain `metadata.workRun`: profile, engine, actual model
-when reported by the engine, effort, cumulative tokens, duration, tool calls and
-fallback. `onWorkRun` receives the same sanitized accounting; the default logs
-one line. CLI adapters report observed execution through `callbacks.execution`;
-this also preserves spent assist work when escalation aborts its attempt.
+`onExecution(context, execution)` receives the turn's `EngineExecution`
+(engine, model when reported, requested model, effort, cumulative tokens when
+fully known, duration, tool calls, fallback) once, when the turn ends or hands
+off. Nothing of it is stored on a message. CLI adapters report observed
+execution through `callbacks.execution`; this also keeps the work a handed-off
+turn spent. With a database the driver's turn is also a `turn` run: the
+engine's turn is one reserved call of it, settled from that execution, so
+`turnBudget` applies before the engine starts
+([assistant turn runs](assistant-turn-runs.md)).
 
 Reuse audit: the developer intent index and MCP build-context architecture
 inventory, plus name/purpose searches in chat/core/inference/smrt-ui/smrt-svelte,
@@ -215,8 +234,8 @@ identified the existing turn driver, tool-loop and cookbook annotations as the
 owning seams. This extends those APIs; it adds no alternate approval ledger,
 model registry, UI component or tool executor.
 
-For durable jobs, the browser's `createAssistantHttpTransport({designRuns:true})`
-reads `GET /design-runs?threadId=…` and posts `/design-runs/{runId}/stop` or
+For durable jobs, the browser's `createAssistantHttpTransport({workflowRuns:true})`
+reads `GET /runs?threadId=…` and posts `/runs/{runId}/stop` or
 `/resume`. Hosts authenticate and owner-scope these routes. Each returns
 `{run?:{runId,pass:{index,count,name},status,note?}}` with a one-based pass index.
 The dock reloads progress when opening a thread, polls it, and reuses its status
@@ -226,11 +245,11 @@ leaves a durable job running. No browser id grants access to a run.
 `formatAssistantReply(content, context)` is a trusted host presentation hook for
 structured pass output. It returns human-facing `content` and optional metadata
 before persistence; hosts can keep the validated output under
-`metadata.designOutput` for their durable runner. That output is available only
+`metadata.workflowOutput` for their durable runner. That output is available only
 on the trusted internal pass SSE handoff, never ordinary message wire objects.
 Ordinary replies are unchanged.
 
-Known design flows set `deferDesignTurn` to queue through that same durable hook
+Known design flows set `deferWorkflowTurn` to queue through that same durable hook
 before any model call. Detached passes use the trusted `internalTurn(context)`
 callback to supply private pass input and the original owner-message id. The
 route still authenticates ownership and validates that original message against
@@ -245,13 +264,13 @@ select that provenance. Raw rows remain available to private provider history.
 
 The ordinary message route requests `ChatService`'s conversation visibility.
 It excludes marked assistant/tool rows and positively identified legacy assistant
-rows with `designOutput`; user rows are never hidden by metadata. Filtering runs
+rows with `workflowOutput`; user rows are never hidden by metadata. Filtering runs
 before the visible limit using ordinary tenant/member-scoped collection pages
 of 200, deterministic timestamp/id ordering, and the existing list-bound resolver.
 Reply lookup rejects a hidden root and filters linked replies in the same way.
 Raw service reads retain their previous default. Legacy unmarked tool rows have
 no reliable run/pass linkage and are not deleted or heuristically attributed.
-Public wire metadata includes only `workRun` and `designRunId`.
+Public wire metadata includes only `runId`.
 
 Hosts may opt into `toolPresentation: 'generic'` on the routes and AssistantDock.
 It uses `describeAssistantTool` without raw observations, summaries or arguments;
@@ -278,16 +297,15 @@ rows ahead of the public page. DOM tests render legacy messages, browser-tool
 confirmation and approval refresh with malicious raw captions and safe host previews.
 Both default contracts and opted presentation run in the affected regression suites.
 
-Token accounting is conservative: `workRun.tokens` is omitted if any completion
-omits valid usage, including across escalation and browser continuations. An
-explicit zero remains zero. `ToolLoopResult.totalTokens` remains the numeric
-known subtotal; `usageKnown` distinguishes it from complete usage. API model
-metadata uses a provider-reported model when available; effort describes the
-requested profile effort, subject to provider support and normalization.
+Token accounting is conservative: an execution's `tokens` is omitted if any
+completion omits valid usage, including across a handoff and browser
+continuations. An explicit zero remains zero. `ToolLoopResult.totalTokens`
+remains the numeric known subtotal; `usageKnown` distinguishes it from complete
+usage. The execution's model is a provider-reported one when available; effort
+is the requested effort, subject to provider support and normalization.
 
-On durable admission, the intercepted assist turn is recorded separately before
-`done`: a human handoff message carries `metadata.designRunId` and its original
-`workRun` (spent tokens when fully known, elapsed time and calls). The durable
-job's budget begins at its own admission; earlier assist work is not presented
-as part of that job's usage. Missing observed external models remain unknown;
-the requested profile alias is never substituted as an actual model.
+On a workflow handoff, the refused turn is reported through `onExecution`
+before `done`, and a human handoff message carries `metadata.runId`. The
+workflow run's budget begins at its own admission; the turn's work is not
+presented as part of its usage. Missing observed external models remain
+unknown; the requested model is never substituted as an actual model.

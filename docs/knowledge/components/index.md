@@ -85,3 +85,4 @@
 * [@happyvertical/smrt-web](/components/smrt-web.md) - SMRT browser client data runtime: typed collection factory wrapping the client-data engine over generated REST clients
 * [@happyvertical/smrt-webhooks](/components/smrt-webhooks.md) - Outbound webhook subscriptions, signed delivery, and durable retries
 * [@happyvertical/smrt-workbench](/components/smrt-workbench.md) - Shared SMRT package and project workbench
+* [@happyvertical/smrt-workflows](/components/smrt-workflows.md) - Durable workflow runs for SMRT: ordered host steps over registered prompts, tracked calls, checkpoints, repair, approval and budgets
