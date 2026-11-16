@@ -40,10 +40,12 @@ describePostgres('PostgreSQL legacy User/Profile backfill', () => {
     ).resolves.toEqual({
       created: 1,
       linked: 1,
+      skipped: 0,
     });
     await expect(backfillLegacyUserProfiles(db)).resolves.toEqual({
       created: 0,
       linked: 0,
+      skipped: 0,
     });
 
     const after = await readUser(db, userId);
@@ -96,6 +98,7 @@ describePostgres('PostgreSQL legacy User/Profile backfill', () => {
     await expect(backfillLegacyUserProfiles(db)).resolves.toEqual({
       created: 1,
       linked: 1,
+      skipped: 0,
     });
     await expect(countRows(db, 'profiles')).resolves.toBe(1);
     await expect(

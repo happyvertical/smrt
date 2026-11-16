@@ -19,6 +19,23 @@ export const LEGACY_USER_PROFILE_BACKFILL_NAME =
 export interface BackfillLegacyUserProfilesResult {
   created: number;
   linked: number;
+  /**
+   * Profileless Users without an email that were left untouched. Always `0`
+   * unless `withoutEmail: 'skip'` is passed.
+   */
+  skipped: number;
+}
+
+export interface BackfillLegacyUserProfilesOptions {
+  /**
+   * How to treat a User with no Profile and no nonblank email.
+   *
+   * - `'fail'` (default): throw `LegacyUserProfileBackfillError('missing_email')`.
+   * - `'skip'`: leave the User unchanged and count it in `skipped`. Use this
+   *   for non-person principals (service and agent identities) that have
+   *   neither a Profile nor an email.
+   */
+  withoutEmail?: 'fail' | 'skip';
 }
 
 export type LegacyUserProfileBackfillErrorCode =
@@ -59,11 +76,16 @@ interface LegacyUserCandidate {
  * same-email Profiles are rejected for explicit operator reconciliation; this
  * migration never infers ownership and never creates an OIDC identity.
  *
+ * A profileless User with no email fails closed by default. Pass
+ * `{ withoutEmail: 'skip' }` to leave such non-person identities untouched and
+ * report them in `skipped`; Users with an email are still backfilled.
+ *
  * The completion marker records a successful pass but does not skip later
  * calls. A newly imported legacy User is therefore processed on the next run.
  */
 export async function backfillLegacyUserProfiles(
   db: DatabaseInterface,
+  options: BackfillLegacyUserProfilesOptions = {},
 ): Promise<BackfillLegacyUserProfilesResult> {
   if (!db.transaction) {
     throw new LegacyUserProfileBackfillError(
@@ -72,6 +94,7 @@ export async function backfillLegacyUserProfiles(
     );
   }
   const transaction = db.transaction;
+  const skipWithoutEmail = options.withoutEmail === 'skip';
 
   return withSystemContext(() =>
     transaction<BackfillLegacyUserProfilesResult>(async (tx) => {
@@ -100,6 +123,7 @@ export async function backfillLegacyUserProfiles(
          ORDER BY id${lockClause}`,
       );
       const candidates: LegacyUserCandidate[] = [];
+      let skipped = 0;
       const userEmailOwners = new Map<string, string[]>();
 
       for (const row of userResult.rows) {
@@ -121,6 +145,10 @@ export async function backfillLegacyUserProfiles(
         const profileId = readString(row.profile_id);
         if (profileId?.trim()) continue;
         if (!emailKey) {
+          if (skipWithoutEmail) {
+            skipped += 1;
+            continue;
+          }
           throw new LegacyUserProfileBackfillError(
             'missing_email',
             `User ${id} cannot receive a canonical Profile without a nonblank email.`,
@@ -263,7 +291,7 @@ export async function backfillLegacyUserProfiles(
         description: 'Legacy Users have canonical global Person Profiles.',
         packageName: '@happyvertical/smrt-users',
       });
-      return { created, linked };
+      return { created, linked, skipped };
     }),
   );
 }

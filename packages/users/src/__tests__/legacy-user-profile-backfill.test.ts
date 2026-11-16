@@ -50,6 +50,7 @@ describe('backfillLegacyUserProfiles', () => {
     ).resolves.toEqual({
       created: 2,
       linked: 2,
+      skipped: 0,
     });
 
     const after = await readUser(db, firstId);
@@ -83,19 +84,54 @@ describe('backfillLegacyUserProfiles', () => {
     await expect(backfillLegacyUserProfiles(db)).resolves.toEqual({
       created: 1,
       linked: 1,
+      skipped: 0,
     });
     await expect(backfillLegacyUserProfiles(db)).resolves.toEqual({
       created: 0,
       linked: 0,
+      skipped: 0,
     });
 
     await seedUser(db, 'later@example.com');
     await expect(backfillLegacyUserProfiles(db)).resolves.toEqual({
       created: 1,
       linked: 1,
+      skipped: 0,
     });
     await expect(countRows(db, 'profiles')).resolves.toBe(2);
     await expect(countRows(db, 'oidc_identities')).resolves.toBe(0);
+  });
+
+  it('skips emailless profileless Users only when asked and stays idempotent', async () => {
+    const ownerId = await seedUser(db, 'owner@example.com');
+    const agentId = await seedUser(db, '', null);
+    await expect(backfillLegacyUserProfiles(db)).rejects.toMatchObject({
+      code: 'missing_email',
+    });
+    await expect(countRows(db, 'profiles')).resolves.toBe(0);
+
+    const agentBefore = await readUser(db, agentId);
+    await expect(
+      backfillLegacyUserProfiles(db, { withoutEmail: 'skip' }),
+    ).resolves.toEqual({ created: 1, linked: 1, skipped: 1 });
+    await expect(readUser(db, ownerId)).resolves.toMatchObject({
+      profile_id: expect.any(String),
+    });
+    await expect(readUser(db, agentId)).resolves.toEqual(agentBefore);
+    await expect(
+      backfillLegacyUserProfiles(db, { withoutEmail: 'skip' }),
+    ).resolves.toEqual({ created: 0, linked: 0, skipped: 1 });
+    await expect(countRows(db, 'profiles')).resolves.toBe(1);
+  });
+
+  it('keeps other fail-closed checks when skipping emailless Users', async () => {
+    await seedUser(db, '', null);
+    await db.query('DROP INDEX users_email_key_idx');
+    await seedUser(db, 'duplicate@example.com');
+    await seedUser(db, ' Duplicate@Example.com ');
+    await expect(
+      backfillLegacyUserProfiles(db, { withoutEmail: 'skip' }),
+    ).rejects.toMatchObject({ code: 'duplicate_user_email' });
   });
 
   it('repairs a whitespace-only legacy Profile link', async () => {
@@ -105,6 +141,7 @@ describe('backfillLegacyUserProfiles', () => {
     await expect(backfillLegacyUserProfiles(db)).resolves.toEqual({
       created: 1,
       linked: 1,
+      skipped: 0,
     });
     await expect(readUser(db, userId)).resolves.toMatchObject({
       profile_id: expect.any(String),
@@ -268,6 +305,7 @@ describe('backfillLegacyUserProfiles', () => {
     await expect(backfillLegacyUserProfiles(db)).resolves.toEqual({
       created: 1,
       linked: 1,
+      skipped: 0,
     });
     await expect(countRows(db, 'profiles')).resolves.toBe(1);
     await expect(

@@ -87,7 +87,9 @@ OIDC handlers, or identity migrations. The canonical scenario matrix is
   remain. The legacy Profile backfill transactionally creates canonical global
   Persons for null/blank User links without creating OIDC identities or
   inferring ownership; reconcile any same-email Profile or reservation before
-  retrying. Its marker records a completed pass but never skips newly imported
+  retrying. It returns `{ created, linked, skipped }`; a profileless User without
+  an email fails with `missing_email` unless `{ withoutEmail: 'skip' }` is passed
+  for non-person identities. Its marker records a completed pass but never skips newly imported
   legacy Users on a later run. Every OIDC path requires the Profile email-key
   readiness marker; creating a User or checking User email uniqueness
   additionally requires the User marker. A stable issuer/subject with an
