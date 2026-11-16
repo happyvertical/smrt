@@ -4,6 +4,7 @@ import {
   type InferenceTierRequest,
   isInferenceTier,
   isInferenceTierRequest,
+  type TrackedPromptCall,
 } from '@happyvertical/smrt-core';
 import type {
   NormalizedPromptAI,
@@ -15,6 +16,7 @@ import type {
   PromptPackageConfig,
   PromptParams,
   PromptProfileConfig,
+  ResolvedPrompt,
   ResolvedPromptAI,
 } from './types.js';
 
@@ -602,4 +604,32 @@ export function serializePromptParams(
   }
 
   return JSON.stringify(sanitizePromptParams(params));
+}
+
+/**
+ * What smrt-core's tracked client takes for a resolved prompt (#5005): the
+ * key, the template hash, and the tier, latency and floor the prompt asks
+ * for. `resolvePrompt()` is the only place a key comes from, so every tracked
+ * call is a call of a registered prompt; core never imports this package.
+ *
+ *   const resolved = await resolvePrompt('chat.assistant.system', { db });
+ *   const ai = await tracked.client(trackedPromptCall(resolved), { runContext });
+ */
+export function trackedPromptCall(
+  resolved: ResolvedPrompt,
+  extra: { usageTags?: Record<string, string> } = {},
+): TrackedPromptCall {
+  const { ai } = resolved;
+  const { promptKey: _key, templateHash, ...tags } = ai.usageTags ?? {};
+  return {
+    promptKey: resolved.key,
+    ...(templateHash ? { templateHash } : {}),
+    ...(ai.tier ? { tier: ai.tier } : {}),
+    ...(ai.tier && ai.latency ? { latency: ai.latency } : {}),
+    ...(ai.tier && ai.minimumTier ? { minimumTier: ai.minimumTier } : {}),
+    usageTags: { ...tags, ...(extra.usageTags ?? {}) } as Record<
+      string,
+      string
+    >,
+  };
 }

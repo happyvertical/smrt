@@ -61,6 +61,7 @@ export {
   type PromptMessageOptionsExtra,
   promptMessageOptions,
   promptTemplateHash,
+  trackedPromptCall,
 } from './utils.js';
 
 /** @internal */
