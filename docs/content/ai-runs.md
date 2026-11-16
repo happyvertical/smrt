@@ -961,15 +961,20 @@ and logs and swallows their failures. For a call inside a run:
   back the later settlements of its own run, never those of other runs.
   Each pending settlement is written once, even by concurrent writers of the
   list, and its handlers are called once, when it commits. A settlement
-  whose run no longer exists is taken off the list with a warning, and its
-  usage row is written on its own, without a run, so the spend stays in the
-  billing ledger and its handlers are called. A settlement that can never
-  settle (a typed error or a `TypeError`, such as a parent cycle) or that
-  has failed 10 writes of the list while the database itself answered (an
-  outage never counts) is taken off the same way, its usage row
-  keeping its run, so it cannot hold its run's calls forever; reconciliation
-  then settles a reservation it still holds from that row (section 6.7). A
-  usage row that cannot be written either is lost, with a warning.
+  leaves the list only when it is written, or, when its run no longer
+  exists, once its usage row is written on its own, without a run, so the
+  spend stays in the billing ledger (with a warning; its handlers are then
+  called). Nothing is dropped on a guess: a settlement that keeps failing,
+  whatever the error, stays on the list and holds back only its own run's
+  later calls, with a warning at most once every five minutes. Such a
+  settlement is a bug to fix, not a state to wait out. Its backstop is the
+  sweep (section 6.7): past the stale threshold the reservation is
+  abandoned and its room returned, and when the settlement is finally
+  written it takes the late-usage path (`settled_late`) and is charged
+  once. Until then `checkAiRunTotals` reports the run as matching, since
+  the call has neither a charge nor a usage row; the signs are the warning,
+  a reservation that is `abandoned` with no usage row, and
+  `pendingAiRunSettlements(db)`.
 
 While a settlement waits on the pending list, its reservation is still held,
 so other processes see the reserved `R`, but not any spend beyond it; once

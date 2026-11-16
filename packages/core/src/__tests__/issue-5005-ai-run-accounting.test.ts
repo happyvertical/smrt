@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { SmrtAiUsageEvent } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   AiUsagePersistenceHandler,
   insertAiUsageRow,
@@ -23,7 +23,7 @@ import {
 import { withAiRunTracking } from '../ai-run-client';
 import {
   AI_RUN_DEFAULT_OUTPUT_TOKENS,
-  AI_RUN_PENDING_MAX_FAILURES,
+  AI_RUN_PENDING_WARN_INTERVAL_MS,
   AiCallLimitError,
   AiRunStoppedError,
   AiRunTotalsUnverifiableError,
@@ -1012,8 +1012,8 @@ describe.each(aiRunTestEngines)('AI run accounting on %s (#5005)', (engine) => {
     ).rejects.toThrow(/could not be written yet/);
     expect(order).toEqual([]);
     expect(pendingAiRunSettlements(handle)).toBe(2);
-    // An outage never counts toward the cap: the list outlives it.
-    for (let i = 0; i < AI_RUN_PENDING_MAX_FAILURES + 1; i++) {
+    // However many writes of the list fail, nothing leaves it.
+    for (let i = 0; i < 12; i++) {
       await flushAiRunSettlements(handle, { attempts: 1 });
     }
     expect(pendingAiRunSettlements(handle)).toBe(2);
@@ -1065,13 +1065,62 @@ describe.each(aiRunTestEngines)('AI run accounting on %s (#5005)', (engine) => {
     expect(Number(row?.total_tokens)).toBe(1);
   });
 
-  it('parks a settlement that can never settle, keeping its usage row and its run; other runs go on', async () => {
+  it('keeps a settlement whose run is gone pending until its usage row is written', async () => {
+    const database = await db();
+    const failing = { on: true };
+    // Only the usage insert fails while `failing.on`.
+    const handle = new Proxy(database, {
+      get(target, prop) {
+        const value = Reflect.get(target, prop, target);
+        if (typeof value !== 'function') return value;
+        if (prop === 'query') {
+          return (sql: string, ...params: unknown[]) =>
+            failing.on && /INSERT INTO _smrt_ai_usage/.test(sql)
+              ? Promise.reject(new Error('usage table unavailable'))
+              : target.query(sql, ...params);
+        }
+        return value.bind(target);
+      },
+    });
+    const order: string[] = [];
+    deferAiRunSettlement(
+      handle,
+      {
+        runId: 'gone',
+        callId: 'kept',
+        usage: usageEvent(4, undefined, { runId: 'gone' }),
+      },
+      async () => {
+        order.push('kept');
+      },
+    );
+    await flushAiRunSettlements(handle, { attempts: 1 });
+    await flushAiRunSettlements(handle, { attempts: 1 });
+    // Not dropped on a failed write, and no handler saw it.
+    expect(pendingAiRunSettlements(handle)).toBe(1);
+    expect(order).toEqual([]);
+    failing.on = false;
+    await flushAiRunSettlements(handle);
+    expect(pendingAiRunSettlements(handle)).toBe(0);
+    expect(order).toEqual(['kept']);
+    const [row] = rowsOf(
+      await database.query(
+        'SELECT run_id, total_tokens FROM _smrt_ai_usage WHERE id = $1',
+        'kept',
+      ),
+    );
+    expect(row?.run_id ?? null).toBeNull();
+    expect(Number(row?.total_tokens)).toBe(4);
+  });
+
+  it('keeps a settlement that keeps failing pending, holding only its own run, and writes it once it can', async () => {
     const database = await db();
     const stuck = await openAiRun(store(database), { type: 'turn' });
     const other = await openAiRun(store(database), { type: 'turn' });
     const held = await reserveAiCall(database, stuck.id, { inputTokens: 5 });
     const fine = await reserveAiCall(database, other.id, { inputTokens: 5 });
-    // A parent cycle: reading the chain throws a TypeError, never retried.
+    // A parent cycle: reading the chain throws a TypeError, never retried
+    // within a write, and never a reason to drop the settlement.
     await database.query(
       'UPDATE _smrt_ai_runs SET parent_run_id = $1 WHERE id = $1',
       stuck.id,
@@ -1091,70 +1140,137 @@ describe.each(aiRunTestEngines)('AI run accounting on %s (#5005)', (engine) => {
         order.push('other');
       },
     );
-    await flushAiRunSettlements(database, { runId: stuck.id });
-    expect(order).toEqual(['stuck', 'other']);
-    expect(pendingAiRunSettlements(database)).toBe(0);
-    expect((await getAiRun(database, other.id))?.calls).toBe(1);
-    const [row] = rowsOf(
-      await database.query(
-        'SELECT run_id FROM _smrt_ai_usage WHERE id = $1',
-        held.callId,
-      ),
-    );
-    expect(row?.run_id).toBe(stuck.id);
-  });
-
-  it('holds only its own run behind a settlement that keeps failing, and parks it after the cap', async () => {
-    const database = await db();
-    const stuck = await openAiRun(store(database), { type: 'turn' });
-    const other = await openAiRun(store(database), { type: 'turn' });
-    const held = await reserveAiCall(database, stuck.id, { inputTokens: 5 });
-    const fine = await reserveAiCall(database, other.id, { inputTokens: 5 });
-    const order: string[] = [];
-    // An invalid timestamp fails the usage insert with a RangeError: an
-    // error the retry policy treats as one that may pass.
-    deferAiRunSettlement(
-      database,
-      {
-        runId: stuck.id,
-        callId: held.callId,
-        usage: { ...usageEvent(10), timestamp: new Date(Number.NaN) },
-      },
-      async () => {
-        order.push('stuck');
-      },
-    );
-    deferAiRunSettlement(
-      database,
-      { runId: other.id, callId: fine.callId, usage: usageEvent(10) },
-      async () => {
-        order.push('other');
-      },
-    );
     // The other run's settlement is written past the stuck one, and the
-    // other run reserves; the stuck run's next reservation waits.
-    await reserveAiCall(
-      database,
-      other.id,
-      { inputTokens: 1 },
-      {
-        attempts: 1,
-      },
-    );
+    // other run reserves; the stuck run's next reservation waits, however
+    // many times it is tried.
+    await reserveAiCall(database, other.id, { inputTokens: 1 });
     expect(order).toEqual(['other']);
-    expect(pendingAiRunSettlements(database)).toBe(1);
-    // That flush was its first failure.
-    for (let i = 2; i < AI_RUN_PENDING_MAX_FAILURES; i++) {
+    expect((await getAiRun(database, other.id))?.calls).toBe(1);
+    for (let i = 0; i < 12; i++) {
       await expect(
-        flushAiRunSettlements(database, { runId: stuck.id, attempts: 1 }),
+        reserveAiCall(database, stuck.id, { inputTokens: 1 }),
       ).rejects.toThrow(/could not be written yet/);
     }
-    // The last allowed failure parks it; its usage row cannot be written
-    // either, so it is dropped with a warning and no handler sees it.
-    await flushAiRunSettlements(database, { runId: stuck.id, attempts: 1 });
-    expect(pendingAiRunSettlements(database)).toBe(0);
-    expect(order).toEqual(['other']);
+    expect(pendingAiRunSettlements(database)).toBe(1);
+    // No usage row was written on its own: the spend waits for its run.
+    expect(
+      rowsOf(
+        await database.query(
+          'SELECT id FROM _smrt_ai_usage WHERE id = $1',
+          held.callId,
+        ),
+      ),
+    ).toHaveLength(0);
+    // Once the bug is fixed, the settlement is written and charged.
+    await database.query(
+      'UPDATE _smrt_ai_runs SET parent_run_id = NULL WHERE id = $1',
+      stuck.id,
+    );
     await reserveAiCall(database, stuck.id, { inputTokens: 1 });
+    expect(order).toEqual(['other', 'stuck']);
+    expect(pendingAiRunSettlements(database)).toBe(0);
+    expect((await reservation(database, held.callId))?.reservation).toBe(
+      'settled',
+    );
+    expect((await getAiRun(database, stuck.id))?.calls).toBe(1);
+  });
+
+  it('charges a pending settlement once when the sweep abandoned its reservation meanwhile (settled_late)', async () => {
+    const database = await db();
+    const { handle, failing } = failingHandle(database);
+    let now = new Date('2026-01-01T00:00:00.000Z');
+    const clock = { now: () => now };
+    const run = await openAiRun(store(database), { type: 'turn' }, clock);
+    const call = await reserveAiCall(
+      database,
+      run.id,
+      { inputTokens: 5 },
+      clock,
+    );
+    let handled = 0;
+    deferAiRunSettlement(
+      handle,
+      { runId: run.id, callId: call.callId, usage: usageEvent(40) },
+      async () => {
+        handled++;
+      },
+    );
+    failing.on = true;
+    await flushAiRunSettlements(handle, { attempts: 1, ...clock });
+    expect(pendingAiRunSettlements(handle)).toBe(1);
+    // The backstop: past the stale threshold the sweep abandons the
+    // reservation and returns its room; the run is not charged yet, and
+    // its totals check shows nothing wrong (the call has no usage row).
+    now = new Date(now.getTime() + 2 * 60 * 60_000);
+    expect((await sweepAiRuns(database, clock)).abandoned).toBe(1);
+    expect(await getAiRun(database, run.id)).toMatchObject({
+      calls: 0,
+      tokens: 0,
+      reservedCalls: 0,
+      reservedTokens: 0,
+    });
+    expect((await checkAiRunTotals(database, run.id)).matches).toBe(true);
+    // The flush then writes it: charged once, late.
+    failing.on = false;
+    await flushAiRunSettlements(handle, clock);
+    expect(pendingAiRunSettlements(handle)).toBe(0);
+    expect(handled).toBe(1);
+    expect((await reservation(database, call.callId))?.reservation).toBe(
+      'settled_late',
+    );
+    const charged = await getAiRun(database, run.id);
+    expect(charged).toMatchObject({
+      calls: 1,
+      tokens: 40,
+      reservedCalls: 0,
+      reservedTokens: 0,
+    });
+    // Nothing more to write or charge.
+    await flushAiRunSettlements(handle, clock);
+    await sweepAiRuns(database, clock);
+    expect(await getAiRun(database, run.id)).toMatchObject({
+      calls: 1,
+      tokens: 40,
+    });
+    expect(handled).toBe(1);
+    expect(await checkAiRunTotals(database, run.id)).toMatchObject({
+      verifiable: true,
+      matches: true,
+    });
+  });
+
+  it('warns about a settlement still pending at most once per interval', async () => {
+    const database = await db();
+    const { handle, failing } = failingHandle(database);
+    const run = await openAiRun(store(database), { type: 'turn' });
+    const call = await reserveAiCall(database, run.id, { inputTokens: 5 });
+    deferAiRunSettlement(handle, {
+      runId: run.id,
+      callId: call.callId,
+      usage: usageEvent(10),
+    });
+    let now = new Date('2026-01-01T00:00:00.000Z');
+    const clock = { now: () => now };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const pendingWarnings = () =>
+      warn.mock.calls.filter((args) =>
+        args.some((arg) => /is still pending/.test(String(arg))),
+      ).length;
+    try {
+      failing.on = true;
+      for (let i = 0; i < 5; i++) {
+        await flushAiRunSettlements(handle, { attempts: 1, ...clock });
+      }
+      expect(pendingWarnings()).toBe(1);
+      now = new Date(now.getTime() + AI_RUN_PENDING_WARN_INTERVAL_MS);
+      await flushAiRunSettlements(handle, { attempts: 1, ...clock });
+      expect(pendingWarnings()).toBe(2);
+    } finally {
+      warn.mockRestore();
+      failing.on = false;
+    }
+    await flushAiRunSettlements(handle);
+    expect(pendingAiRunSettlements(handle)).toBe(0);
   });
 
   it('writes each pending settlement once across concurrent flushes, handlers once each', async () => {
