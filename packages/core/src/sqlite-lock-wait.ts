@@ -46,8 +46,9 @@ function isFileSqlite(db: DatabaseInterface): boolean {
  * Set `busy_timeout` on a SQLite connection unless something already did.
  *
  * A timeout already set (the runtime's 5000 ms, or the 250 ms collection value)
- * is never overridden, so a shared connection keeps the shortest wait chosen
- * for it and a later caller cannot lengthen a main-thread wait.
+ * is never overridden by a collection open. The local runtime sets its 5000 ms
+ * deliberately, after core opened the shared handle, and so raises the one
+ * connection it shares with the collections (#5022).
  */
 export async function setBusyTimeoutIfUnset(
   db: DatabaseInterface,
