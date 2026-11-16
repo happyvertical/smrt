@@ -211,7 +211,11 @@ SDK, or call `chat/message/complete/stream` on a client that did not come
 from the tracked path (each receiver judged by its own origin in the file),
 and a tracked call or `.client()` needs a prompt key; the file's short
 `ALLOWED` list carries each exception with its reason, and a stale entry
-fails.
+fails. It is a text scan with known limits (listed in its header): origins
+match by name across the whole file, not by scope, so a tracked `ai` in one
+function covers a provider `ai` in another; `.client(` on a receiver whose
+origin the file does not show counts as tracked; a quote inside a regular
+expression literal blanks the rest of its line.
 
 **Fusions.** The executor opens the fusion run through the context's
 `openRun()` (`SmrtClass#openInferenceRun` → `openAiEntryRun`) before the

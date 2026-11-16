@@ -127,7 +127,9 @@ test('resolves each receiver from its own origin, not the file', () => {
     [],
   );
   assert.deepEqual(
-    kinds('const client = await ai.client(trackedPromptCall(r), { runContext });\nawait client.message(r.text, { ...opts });\n'),
+    kinds(
+      'interface Options { ai: TrackedAiClient }\nconst client = await ai.client(trackedPromptCall(r), { runContext });\nawait client.message(r.text, { ...opts });\n',
+    ),
     [],
   );
   // Not model clients: a job, a stream, an approval authority.
@@ -140,6 +142,26 @@ test('resolves each receiver from its own origin, not the file', () => {
 test('reads code inside template literal expressions', () => {
   assert.deepEqual(kinds('const s = `answer: ${await ai.chat(messages)}`;\n'), ['untracked-call']);
   assert.deepEqual(kinds('const s = `ai.chat(${name})`;\n'), []);
+  // Quotes in a template's text never pair up across its `${...}`.
+  assert.deepEqual(kinds("const s = `it's ${await ai.chat(m)} isn't`;\n"), ['untracked-call']);
+  assert.deepEqual(kinds('const q = "`";\nawait ai.chat(m);\n'), ['untracked-call']);
+});
+
+test('a client made by .client( on a provider client is not tracked', () => {
+  assert.deepEqual(
+    kinds("const raw = await getAI({});\nconst c = raw.client(p);\nawait c.message(x, { promptKey: 'k' });\n"),
+    ['raw-client', 'untracked-call'],
+  );
+});
+
+test('known limit: origins are matched by name across the file, not by scope', () => {
+  // A tracked `ai` in one function covers a provider `ai` in another.
+  assert.deepEqual(
+    kinds(
+      'async function a() { const ai = await this.getAiClient(); }\nfunction b(ai: AIClient) { return ai.chat(m, opts); }\n',
+    ),
+    [],
+  );
 });
 
 test('checks the prompt of every .client( call on a tracked client', () => {

@@ -30,6 +30,17 @@
  * shrinks. Comments and string bodies are ignored (a template literal's
  * `${...}` expressions are code); test files are not scanned.
  *
+ * Known limits (a text scan, not a type checker):
+ *   - Origins are matched by name across the whole file, not by scope: a
+ *     tracked `ai` in one function also covers an `ai: AIClient` parameter
+ *     of another (a false negative). Give a provider client its own name.
+ *   - `.client(` makes a tracked client unless its receiver is a provider
+ *     client (a model-client name with no tracked origin counts as one); on
+ *     any other receiver whose origin the file does not show, it is taken
+ *     as tracked.
+ *   - Regular expression literals are read as code: a quote inside one
+ *     blanks the rest of its line.
+ *
  * Usage: node scripts/check-tracked-ai-calls.mjs [--root <dir>]
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -120,10 +131,14 @@ const PROVIDER_SDKS = [
 
 /**
  * What makes a variable a client from the tracked path: its initializer or
- * declared type names one of these.
+ * declared type names one of these, or it is made by `.client(` on a
+ * receiver that is not a provider client (see `originKind`).
  */
 const TRACKED_ORIGIN =
-  /\b(?:prepareAiOperation|getAiClient|getOptionalAiClient|createTrackedAiClient|trackedAiClient|transcriptClient|TrackedAiClient)\b|\.\s*client\s*\(/;
+  /\b(?:prepareAiOperation|getAiClient|getOptionalAiClient|createTrackedAiClient|trackedAiClient|transcriptClient|TrackedAiClient)\b/;
+
+/** `.client(` in an origin, with its receiver. */
+const CLIENT_ORIGIN = /([A-Za-z_$][\w$]*)\s*\??\.\s*client\s*\(/;
 
 /** What makes a variable a provider client outside the tracked path. */
 const UNTRACKED_ORIGIN = /\bgetAI\b|\bAI(?:Client|Interface)\b/;
@@ -146,60 +161,76 @@ function walk(dir, out) {
 /**
  * Blank comments and string bodies so prose that names the API is not
  * counted. A template literal keeps its `${...}` expressions: code there is
- * code.
+ * code. One left-to-right pass, so a quote inside a template's text (or a
+ * backtick inside a string) never unbalances the other. Regular expression
+ * literals are not recognized: a quote in one blanks the rest of its line.
  */
 export function stripNoise(source) {
-  return blankTemplates(
-    source
-      .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
-      .replace(/(^|[^:\\])\/\/[^\n]*/g, (m, p) => p + ' '.repeat(m.length - p.length))
-      .replace(
-        /'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"/g,
-        (m) => m[0] + m.slice(1, -1).replace(/[^\n]/g, ' ') + m[m.length - 1],
-      ),
-  );
-}
-
-/** Blank the text of template literals, keeping their `${...}` expressions. */
-function blankTemplates(code) {
   let out = '';
   let i = 0;
   // Each open template: the brace depth of the `${` that holds the next one.
   const stack = [];
-  let inText = false;
   let depth = 0;
-  while (i < code.length) {
-    const ch = code[i];
-    if (inText) {
-      if (ch === '\\') {
-        out += code[i + 1] === '\n' ? ' \n' : '  ';
-        i += 2;
-        continue;
-      }
-      if (ch === '`') {
-        inText = false;
-        out += ch;
-      } else if (ch === '$' && code[i + 1] === '{') {
-        inText = false;
-        stack.push(depth);
-        depth = 0;
-        out += '${';
-        i += 2;
-        continue;
-      } else {
-        out += ch === '\n' ? '\n' : ' ';
-      }
-      i += 1;
+  const blank = (text) => text.replace(/[^\n]/g, ' ');
+  while (i < source.length) {
+    const ch = source[i];
+    const next = source[i + 1];
+    if (ch === '/' && next === '*') {
+      const end = source.indexOf('*/', i + 2);
+      const stop = end < 0 ? source.length : end + 2;
+      out += blank(source.slice(i, stop));
+      i = stop;
       continue;
     }
-    if (ch === '`') inText = true;
-    else if (ch === '{') depth += 1;
-    else if (ch === '}') {
-      if (depth === 0 && stack.length) {
-        depth = stack.pop();
-        inText = true;
-      } else depth -= 1;
+    if (ch === '/' && next === '/' && !/[:\\]/.test(source[i - 1] ?? '')) {
+      let stop = source.indexOf('\n', i);
+      if (stop < 0) stop = source.length;
+      out += blank(source.slice(i, stop));
+      i = stop;
+      continue;
     }
+    if (ch === "'" || ch === '"') {
+      // A string ends at its quote, or (unterminated) at the line end.
+      let j = i + 1;
+      while (j < source.length && source[j] !== ch && source[j] !== '\n') {
+        j += source[j] === '\\' && source[j + 1] !== '\n' ? 2 : 1;
+      }
+      const closed = source[j] === ch;
+      out += ch + blank(source.slice(i + 1, j)) + (closed ? ch : '');
+      i = closed ? j + 1 : j;
+      continue;
+    }
+    if (ch === '`' || (ch === '}' && depth === 0 && stack.length)) {
+      // Template text: from a backtick, or from the `}` closing a `${`.
+      if (ch === '}') depth = stack.pop();
+      out += ch;
+      i += 1;
+      while (i < source.length) {
+        const c = source[i];
+        if (c === '\\') {
+          out += source[i + 1] === '\n' ? ' \n' : '  ';
+          i += 2;
+          continue;
+        }
+        if (c === '`') {
+          out += c;
+          i += 1;
+          break;
+        }
+        if (c === '$' && source[i + 1] === '{') {
+          stack.push(depth);
+          depth = 0;
+          out += '${';
+          i += 2;
+          break;
+        }
+        out += c === '\n' ? '\n' : ' ';
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === '{') depth += 1;
+    else if (ch === '}') depth -= 1;
     out += ch;
     i += 1;
   }
@@ -306,13 +337,29 @@ function resolvedOrigins(code, name, seen = new Set()) {
  * model client from anywhere else) or `other` (not a model client: a job's
  * `complete`, a store's `stream`).
  */
-function receiverKind(code, name) {
-  const origins = resolvedOrigins(code, name);
-  if (origins.some((origin) => TRACKED_ORIGIN.test(origin))) return 'tracked';
-  if (AI_NAME.test(name) || origins.some((origin) => UNTRACKED_ORIGIN.test(origin))) {
-    return 'model';
-  }
+function receiverKind(code, name, seen = new Set()) {
+  if (seen.has(name)) return 'other';
+  seen.add(name);
+  const kinds = resolvedOrigins(code, name).map((origin) => originKind(code, origin, seen));
+  if (kinds.includes('tracked')) return 'tracked';
+  if (AI_NAME.test(name) || kinds.includes('model')) return 'model';
   return 'other';
+}
+
+/**
+ * What an origin makes: `tracked` (a tracked factory or type, or `.client(`
+ * on a receiver that is not a provider client), `model` (a provider factory
+ * or type, or `.client(` on a provider client) or null. `.client(` on a
+ * receiver whose origin the file does not show counts as tracked, so the
+ * client it makes is held to the prompt-key rule.
+ */
+function originKind(code, origin, seen) {
+  if (TRACKED_ORIGIN.test(origin)) return 'tracked';
+  if (UNTRACKED_ORIGIN.test(origin)) return 'model';
+  const receiver = CLIENT_ORIGIN.exec(origin)?.[1];
+  if (!receiver) return null;
+  if (/^tracked/i.test(receiver)) return 'tracked';
+  return receiverKind(code, receiver, seen) === 'model' ? 'model' : 'tracked';
 }
 
 /**
