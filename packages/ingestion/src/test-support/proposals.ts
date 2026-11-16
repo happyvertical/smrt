@@ -9,7 +9,14 @@ import type { DecisionRequest } from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import { definePlaybook, resolvePlaybook } from '@happyvertical/smrt-playbooks';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  vi,
+  it as vitestIt,
+} from 'vitest';
 import {
   ATTACH,
   assertReferenceTarget,
@@ -116,12 +123,49 @@ const classes = [
   'PlaybookOverride',
 ];
 
+/** One slice of the suite: `index` of `count`, 1-based. */
+export interface ProposalSuitePart {
+  index: number;
+  count: number;
+}
+
+/**
+ * `it` that registers every `count`th declaration, starting at `index`. Each
+ * `it(...)` and each `it.each(...)` table is one declaration, so the parts
+ * together register every test exactly once. One file runs on one worker, and
+ * the whole suite in one file took 12 minutes on SQLite (#5045).
+ */
+function slicedIt(part: ProposalSuitePart): typeof vitestIt {
+  if (
+    !Number.isInteger(part.index) ||
+    !Number.isInteger(part.count) ||
+    part.index < 1 ||
+    part.index > part.count
+  ) {
+    throw new Error(`Invalid proposal suite part ${part.index}/${part.count}`);
+  }
+  let declared = 0;
+  const mine = () => declared++ % part.count === part.index - 1;
+  const sliced = (...args: Parameters<typeof vitestIt>) => {
+    if (mine()) vitestIt(...args);
+  };
+  sliced.each = (...table: unknown[]) => {
+    const own = mine();
+    return (...args: unknown[]) => {
+      if (own) (vitestIt.each as CallableFunction)(...table)(...args);
+    };
+  };
+  return sliced as unknown as typeof vitestIt;
+}
+
 /** Real database and domain handlers; deterministic providers test boundary behavior, not model quality. */
 export function proposalSuite(
   dialect: 'sqlite' | 'postgres',
   workerType: string,
+  part: ProposalSuitePart = { index: 1, count: 1 },
 ) {
-  describe(`durable proposal generation on ${dialect}`, () => {
+  const it = slicedIt(part);
+  describe(`durable proposal generation on ${dialect} (part ${part.index}/${part.count})`, () => {
     let db: DatabaseInterface;
     let admin: DatabaseInterface | undefined;
     let database: string;
