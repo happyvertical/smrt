@@ -34,6 +34,7 @@ import {
   validateSeedFiles,
   validateSeedPlan,
   readSeedPlan,
+  registerBuiltManifest,
 } from '../lib/release-upgrade-gate.mjs';
 import {
   readOwnersOverlay,
@@ -1175,6 +1176,46 @@ const declareRetired = (extra = {}) =>
     ],
   });
 
+test('a built app manifest carrying a consumed package\'s retirement loads as CLI discovery loads it (#5005)', () => {
+  build.ObjectRegistry.clear();
+  const consumed = {
+    table: retiredTable,
+    lastOwner: retiredOwner,
+    since: '0.61.2',
+    reason: 'Folded into gate4933s.',
+    rows: 'discard',
+    definitions: retiredDefinitions,
+    packageName: '@test/gate4933',
+  };
+  // An app-mode package's dist/manifest.json (app-shell): its own objects,
+  // the packages it consumes, and their retirements.
+  const appManifest = {
+    packageName: '@test/gate-app',
+    objects: {},
+    smrtDependencies: ['@test/gate4933'],
+    retiredTables: [consumed],
+  };
+  registerBuiltManifest(build, appManifest, 'gate-app/dist/manifest.json');
+  assert.deepEqual(
+    build.ObjectRegistry.getRetiredTables().map((entry) => [
+      entry.table,
+      entry.packageName,
+    ]),
+    [[retiredTable, '@test/gate4933']],
+  );
+  // Without the dependency the entry is not the package's to carry.
+  build.ObjectRegistry.clear();
+  assert.throws(
+    () =>
+      registerBuiltManifest(
+        build,
+        { ...appManifest, smrtDependencies: undefined },
+        'gate-app/dist/manifest.json',
+      ),
+    /carries only its own retirements/,
+  );
+  build.ObjectRegistry.clear();
+});
 test('a declared retired table is seeded, dropped by the upgrade, and the schema converges', async () => {
   current();
   declareRetired();

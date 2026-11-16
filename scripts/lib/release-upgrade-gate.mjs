@@ -48,6 +48,32 @@ export function deterministicUuid(key) {
   return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
 }
 
+/**
+ * Register one built `dist/manifest.json` as CLI discovery does
+ * (`loadManifest` in packages/cli/src/discovery/manifest-discovery.ts): the
+ * objects, then the table retirements (#5005) through
+ * `registerManifestRetiredTables`. A package built as an app (app-shell)
+ * writes a merged manifest that also carries the retirements of the packages
+ * it consumes (`smrtDependencies`); those are accepted under their own
+ * package, and an entry labelled with any other package is still refused.
+ */
+export function registerBuiltManifest(core, manifest, source) {
+  const { retiredTables, ...objects } = manifest;
+  const result = core.ObjectRegistry.registerPackageManifest(objects);
+  if (!result.loaded) throw new Error(`Could not load manifest ${source}`);
+  if (retiredTables !== undefined)
+    core.ObjectRegistry.registerManifestRetiredTables(
+      { packageName: manifest.packageName, retiredTables },
+      {
+        source,
+        ...(Array.isArray(manifest.smrtDependencies)
+          ? { consumed: manifest.smrtDependencies }
+          : {}),
+      },
+    );
+  return result;
+}
+
 export async function loadBuild(root, { manifests = true } = {}) {
   const core = await import(
     pathToFileURL(path.join(root, 'packages/core/dist/index.js')).href
@@ -67,9 +93,7 @@ export async function loadBuild(root, { manifests = true } = {}) {
     for (const name of names) {
       const file = path.join(packages, name, 'dist/manifest.json');
       if (!existsSync(file)) continue;
-      const manifest = readJSON(file);
-      const result = core.ObjectRegistry.registerPackageManifest(manifest);
-      if (!result.loaded) throw new Error(`Could not load manifest ${file}`);
+      registerBuiltManifest(core, readJSON(file), file);
       count++;
     }
     if (!count)
