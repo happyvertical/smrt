@@ -12,7 +12,6 @@
     "dist",
     "host/package.json",
     "host/src",
-    "host/svelte.config.js",
     "host/tsconfig.json",
     "host/vite.config.ts",
     "src/discovery.ts",
