@@ -3,6 +3,8 @@ import {
   assertJobClaim,
   assertJobClaimForRelease,
   type JobClaim,
+  JobClaimLostError,
+  SmrtJobCollection,
 } from '@happyvertical/smrt-jobs';
 
 /**
@@ -19,9 +21,27 @@ export function workflowClaimFence(claim: Readonly<JobClaim>): AiRunClaimFence {
 /**
  * The fence of the stop a worker writes when its job's signal aborts: the
  * job may already be settled (cancelled, timed out), so this one accepts the
- * worker's own attempt in any state and refuses only a claim another worker
- * took over (`WorkflowRunOptions.stopFence`).
+ * worker's own attempt in any state, and refuses a claim another worker took
+ * over and a job that a newer job of the same run (same dedupe key; stale
+ * recovery keeps the worker on the failed row) replaced
+ * (`WorkflowRunOptions.stopFence`).
  */
 export function workflowStopFence(claim: Readonly<JobClaim>): AiRunClaimFence {
-  return (tx) => assertJobClaimForRelease(tx, claim);
+  return async (tx) => {
+    await assertJobClaimForRelease(tx, claim);
+    const jobs = await SmrtJobCollection.create({ db: tx });
+    const own = await jobs.get({ id: claim.jobId });
+    if (!own?.dedupeKey) return;
+    const active = await jobs.list({
+      where: {
+        objectType: claim.objectType,
+        dedupeKey: own.dedupeKey,
+        tenantId: claim.tenantId,
+        status: ['pending', 'running'],
+      },
+    });
+    if (active.some((job) => String(job.id) !== claim.jobId)) {
+      throw new JobClaimLostError();
+    }
+  };
 }

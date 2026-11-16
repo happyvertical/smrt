@@ -53,6 +53,7 @@ async function claimFor(
     objectId: runId,
     method: 'execute',
     maxAttempts: 1,
+    dedupeKey: runId,
   });
   const [job] = await jobs.claimReady({
     workerId,
@@ -128,6 +129,24 @@ async function takeOver(jobs: SmrtJobCollection, claim: JobClaim) {
   await job.save();
 }
 
+async function recover(
+  jobs: SmrtJobCollection,
+  claim: JobClaim,
+  runId: string,
+) {
+  const [job] = await jobs.list({ where: { id: claim.jobId } });
+  if (!job) throw new Error('missing job');
+  job.status = 'failed';
+  await job.save();
+  await jobs.enqueueJob({
+    objectType: 'WorkflowRunFencingProbe',
+    objectId: runId,
+    method: 'execute',
+    maxAttempts: 1,
+    dedupeKey: runId,
+  });
+}
+
 describe.each([
   'sqlite',
   'pglite',
@@ -138,7 +157,12 @@ describe.each([
    */
   async function staleRun(
     answer: (signal: AbortSignal | undefined) => Promise<unknown>,
-    options: { stopFence?: boolean; abort?: boolean } = {},
+    options: {
+      stopFence?: boolean;
+      abort?: boolean;
+      /** Take over as stale recovery does: fail the row, admit a new job. */
+      recovered?: boolean;
+    } = {},
   ) {
     const db = await workflowDb(engine, JOB_CLASSES);
     const jobs = await SmrtJobCollection.create({ db });
@@ -162,7 +186,8 @@ describe.each([
       ...(options.stopFence ? { stopFence: workflowStopFence(claim) } : {}),
     });
     await until(async () => (await getAiRun(db, run.id))?.reservedCalls === 1);
-    await takeOver(jobs, claim);
+    if (options.recovered) await recover(jobs, claim, run.id);
+    else await takeOver(jobs, claim);
     if (options.abort) controller.abort(new Error('job timed out'));
     gate.resolve();
     await expect(working).rejects.toBeInstanceOf(AiRunClaimLostError);
@@ -194,6 +219,15 @@ describe.each([
     });
     expect(
       await staleRun(aborted, { abort: true, stopFence: true }),
+    ).toMatchObject({ status: 'running', stopReason: null });
+    // Stale recovery keeps the worker on its failed row; the newer job of the
+    // run is what the stop fence refuses on.
+    expect(
+      await staleRun(aborted, {
+        abort: true,
+        stopFence: true,
+        recovered: true,
+      }),
     ).toMatchObject({ status: 'running', stopReason: null });
   });
 });

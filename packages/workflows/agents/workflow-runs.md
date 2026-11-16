@@ -54,7 +54,8 @@ worker gets `AiRunClaimLostError` before it writes: it never fails, finishes or
 stops the run the new worker holds. The stop written when the signal aborts
 uses `stopFence` (default `fence`): `workflowStopFence(claim)` accepts the
 worker's own attempt after its job settled (cancelled, timed out) and refuses
-a claim another worker took over. Settlements do not assert it: spending that
+a claim another worker took over, or a job a newer job of the run replaced
+(stale recovery keeps the worker on its failed row). Settlements do not assert it: spending that
 happened is counted.
 
 ## Job running (`src/jobs.ts`)
