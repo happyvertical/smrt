@@ -1,7 +1,11 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runImport } from '@happyvertical/smrt-spreadsheets/import';
+import { reportCsv } from '@happyvertical/smrt-reports/display';
+import {
+  type ImportPlan,
+  runImport,
+} from '@happyvertical/smrt-spreadsheets/import';
 import { createSqliteReferenceTarget } from '@happyvertical/smrt-spreadsheets/testing';
 import { createSheet, createWorkbook } from '@happyvertical/spreadsheets';
 import { afterEach, beforeEach, expect, it } from 'vitest';
@@ -11,8 +15,11 @@ import {
 } from '../../test-support/import-workbook.ts';
 import { subscribe } from '../lib/server/events.ts';
 import { wireHostEvents } from '../lib/server/host.ts';
+import { cellText } from '../lib/ui/columns.ts';
 import { versionSummary } from '../lib/ui/command-summary.ts';
 import { announcement } from '../lib/ui/events.ts';
+import { initialValues, serializeForm } from '../lib/ui/fields.ts';
+import { reportCell } from '../lib/ui/reports.ts';
 import {
   createEngineImportTarget,
   importFieldName,
@@ -432,4 +439,76 @@ it('preserves owner labels in announcements after fields and models are renamed 
   } finally {
     off();
   }
+});
+
+it.each([
+  ['JPY', 0, 1000, 1000, '1000'],
+  ['USD', 3, 1.234, 1234, '1.234'],
+  ['CAD', 2, 12.5, 1250, '12.50'],
+] as const)('preserves %s scale %i through import, record display/edit and reports/CSV', async (currency, scale, amount, minor, input) => {
+  const sheet = createSheet('Amounts');
+  sheet.cells.set(1, 1, { type: 'text', value: 'Amount' });
+  sheet.cells.set(2, 1, { type: 'number', value: amount });
+  const plan: ImportPlan = {
+    version: 1,
+    tables: [
+      {
+        key: 'amounts',
+        label: 'Amounts',
+        source: { sheet: 'Amounts', range: 'A1:A2', headerRow: 1 },
+        fields: [
+          {
+            key: 'amount',
+            label: 'Amount',
+            type: 'money',
+            column: 1,
+            money: { currency, scale },
+          },
+        ],
+      },
+    ],
+    reports: [
+      {
+        key: 'totals',
+        label: 'Totals',
+        spec: {
+          version: 1,
+          title: 'Totals',
+          source: 'amounts',
+          dimensions: [],
+          measures: [{ fn: 'sum', field: 'amount', as: 'total' }],
+        },
+      },
+    ],
+  };
+  const proof = await runImport({
+    workbook: createWorkbook([sheet]),
+    plan,
+    target: createEngineImportTarget(draft),
+  });
+  expect(proof.ok).toBe(true);
+  const fields = draft.describe().models.Amounts.fields;
+  expect(fields.amount).toMatchObject({ money: { currency, scale } });
+  const [row] = await draft.list('Amounts');
+  expect(row.amount).toBe(minor);
+  const display = new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: scale,
+    maximumFractionDigits: scale,
+  }).format(amount);
+  expect(cellText(fields.amount, row.amount)).toBe(display);
+  const values = initialValues(fields, { ...row, id: String(row.id) });
+  expect(values.amount).toBe(input);
+  const edit = serializeForm(fields, { ...values, amount: input }, ['amount']);
+  expect(edit).toEqual({ data: { amount: minor }, errors: {} });
+  await draft.update('Amounts', String(row.id), edit.data);
+  expect((await draft.list('Amounts'))[0].amount).toBe(minor);
+  const report = await draft.runReport('totals');
+  expect(
+    reportCell(report.rows[0].total, report.columns[0], report.rows[0]),
+  ).toBe(display);
+  expect(reportCsv(report, reportCell)).toContain(
+    display.includes(',') ? `"${display}"` : display,
+  );
 });

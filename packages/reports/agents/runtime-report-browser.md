@@ -82,3 +82,7 @@ The template reference application exercises the generic dock selector, a real
 trusted browser approval click, authenticated confirmation and generated reads,
 detail execution, and the recipe-registered overview loader/renderer without
 mocking an endpoint.
+
+`ReportResult.formatCell` also formats numeric chart values and headline figures,
+so a host's per-field money units/precision apply to the complete report.
+`reportFigures` accepts optional `formatValue(value)` for the same purpose.

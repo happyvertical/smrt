@@ -60,7 +60,12 @@ export function cellText(
     case 'boolean':
       return value === true || value === 1 || value === '1' ? 'Yes' : 'No';
     case 'money':
-      return formatMoney(value);
+      return formatMoney(
+        value,
+        def.money?.currency,
+        undefined,
+        def.money?.scale,
+      );
     case 'date':
       return formatDate(value);
     case 'reference': {

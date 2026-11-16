@@ -22,6 +22,7 @@ export interface FieldDef {
   label?: string;
   required?: boolean;
   choices?: string[];
+  money?: { currency: string; scale: number };
   ref?: string;
   hidden?: boolean;
   calculated?: GeneratedExpression;
@@ -131,6 +132,7 @@ export interface ReportDef {
 export type AppReportResult = Omit<RuntimeReportResult, 'columns'> & {
   columns: (RuntimeReportResult['columns'][number] & {
     choices?: string[];
+    money?: { currency: string; scale: number };
     reference?: string;
     labelColumn?: string;
   })[];

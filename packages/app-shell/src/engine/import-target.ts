@@ -138,6 +138,7 @@ export function createEngineImportTarget(
             type: f.type,
             label: f.label,
             required: f.required,
+            ...(f.money ? { money: { ...f.money } } : {}),
             ...(f.choices ? { choices: f.choices } : {}),
             ...(f.reference ? { ref: modelName(f.reference.table) } : {}),
             ...(f.calculated !== undefined

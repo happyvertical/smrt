@@ -133,3 +133,42 @@ it('names rename and remove actions by each report title', async () => {
     ).toBeTruthy();
   }
 });
+
+it.each([
+  ['JPY', 0, 1000],
+  ['USD', 3, 1234],
+  ['CAD', 2, 1250],
+] as const)('shows %s scale %i in report figures and chart values', async (currency, scale, minor) => {
+  const d = data();
+  d.result = {
+    ...result,
+    columns: [
+      {
+        id: 'amount',
+        label: 'Amount',
+        role: 'measure',
+        type: 'integer',
+        format: 'money',
+        money: { currency, scale },
+      },
+    ],
+    rows: [{ amount: minor }],
+    rowCount: 1,
+    chart: { type: 'stat', y: ['amount'] },
+  };
+  component = mount(ReportPage, {
+    target: container,
+    props: { data: d } as never,
+  });
+  await tick();
+  const text = new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: scale,
+    maximumFractionDigits: scale,
+  }).format(minor / 10 ** scale);
+  expect(container.querySelector('dd')?.textContent).toBe(text);
+  expect(
+    container.querySelector('[data-smrt-component="Chart"]')?.textContent,
+  ).toContain(text);
+});

@@ -31,6 +31,7 @@ export interface FieldDef {
   label?: string;
   required?: boolean;
   choices?: string[];
+  money?: { currency: string; scale: number };
   /** For `reference`: the name of another model of the app. */
   ref?: string;
   hidden?: boolean;
@@ -375,6 +376,19 @@ export function validate(def: unknown): string[] {
       if (!TYPES.includes(fd.type as FieldType))
         errs.push(
           `${at}: unknown type '${String(fd.type)}'; use one of ${TYPES.join(', ')}`,
+        );
+      if (
+        fd.money !== undefined &&
+        (fd.type !== 'money' ||
+          !isObj(fd.money) ||
+          typeof fd.money.currency !== 'string' ||
+          !/^[A-Z]{3}$/.test(fd.money.currency) ||
+          !Number.isInteger(fd.money.scale) ||
+          fd.money.scale < 0 ||
+          fd.money.scale > 6)
+      )
+        errs.push(
+          `${at}: money needs a three-letter currency and a scale from 0 to 6`,
         );
       if (fd.type === 'choice') {
         const c = fd.choices;

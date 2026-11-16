@@ -111,3 +111,9 @@ Report output aliases use lowercase_snake_case (or are omitted for defaults),
 while source fields keep engine camelCase. Typed alias refusals explain the rule
 without forwarding compiler paths or messages; the real Codex verification covers
 an owner-approved publish followed by an ad-hoc count/sum/filter query.
+
+Imported money retains `FieldDef.money { currency, scale }` in the versioned
+engine definition. Record display/forms and report cells/CSV use these units;
+report figures and chart readouts use the same host formatter. Missing metadata
+on older definitions keeps the existing USD/scale-2 default. No stored amount
+or proof total is converted to another currency or scale.
