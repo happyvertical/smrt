@@ -39,6 +39,7 @@ import {
   isWorkflowCheckpointState,
   RunConflictError,
   type WorkflowDefinition,
+  WorkflowRunNotFoundError,
   type WorkflowRunOwner,
   type WorkflowValidationIssue,
 } from '@happyvertical/smrt-workflows';
@@ -376,6 +377,8 @@ export function createShellImportService(options: ShellImportOptions) {
         expectedOutputTokens: 32_768,
         execute: async (context) => {
           const row = await fromInput(context.input);
+          if (row.runId && row.runId !== context.runId)
+            throw new AiRunClaimLostError(context.runId);
           const owner = { id: row.ownerId, tenantId: row.tenantId };
           const step = definition.steps[0];
           const prompt = await resolvePrompt(importPlanPrompt.key, {
@@ -430,6 +433,8 @@ export function createShellImportService(options: ShellImportOptions) {
         },
         variables: async (context) => {
           const row = await fromInput(context.input);
+          if (row.runId && row.runId !== context.runId)
+            throw new AiRunClaimLostError(context.runId);
           await save(row, { stage: 'planning' });
           const previous = details(row).findings ?? [];
           return {
@@ -479,8 +484,18 @@ export function createShellImportService(options: ShellImportOptions) {
         },
         check: async (output, context) => {
           const row = await fromInput(context.input);
+          if (row.runId && row.runId !== context.runId)
+            throw new AiRunClaimLostError(context.runId);
           const ensureActive = async () => {
             await context.assertActive();
+            const current = await get(row.id as string, {
+              id: row.ownerId,
+              tenantId: row.tenantId,
+            });
+            // The first admission may still be saving its run id; rollback always
+            // restores a nonempty prior id and excludes the abandoned attempt.
+            if (current.runId && current.runId !== context.runId)
+              throw new AiRunClaimLostError(context.runId);
             const run = await getAiRun(db, context.runId);
             if (run?.status !== 'running')
               throw new Error('Import was stopped');
@@ -755,39 +770,124 @@ export function createShellImportService(options: ShellImportOptions) {
     }),
   });
   const mine = (owner: Principal) => kit.forOwner(owner.id, owner.tenantId);
+  const readRun = async (row: AppImport, owner: Principal) => {
+    try {
+      return await mine(owner).get(row.runId);
+    } catch (error) {
+      if (error instanceof WorkflowRunNotFoundError) return null;
+      throw error;
+    }
+  };
+  const failRecovery = async (row: AppImport, owner: Principal) => {
+    const pending = details(row).retry;
+    if (pending) {
+      // An enqueue failure may leave an opened attempt. End it before rollback;
+      // the durable import identity also fences any worker already dispatched.
+      const attempt = await readRun(row, owner).catch(() => null);
+      if (attempt?.id === pending.id && attempt.retryOfRunId === pending.from)
+        await mine(owner)
+          .cancel(pending.id)
+          .catch(() => {});
+      const fresh = await get(row.id as string, owner);
+      await discardOwned(fresh).catch(() => {});
+    }
+    await save(
+      row,
+      {
+        ...(pending ? { runId: pending.from } : {}),
+        status: 'failed',
+        stage: 'failed',
+      },
+      {
+        retry: undefined,
+        proof: undefined,
+        reason: pending ? 'engine' : 'app',
+        note: pending
+          ? 'The import could not restart. Your workbook is saved. Make sure AI usage tracking is on and your assistant is connected, then try again or discard this import.'
+          : 'The saved import could not be recovered. Discard this import and choose the workbook again.',
+      },
+    );
+    if (!pending) await removeBytes(row);
+  };
   const admitRetry = async (row: AppImport, owner: Principal) => {
     const pending = details(row).retry;
     if (!pending) return;
-    const existing = await getAiRun(db, pending.id);
-    if (!existing) {
-      await mine(owner).retry(pending.from, {
-        id: pending.id,
-        budget: IMPORT_BUDGET,
-      });
-    } else {
-      // A crash may have happened after opening the retry but before its job.
-      const run = await mine(owner).get(pending.id);
-      if (run.retryOfRunId !== pending.from)
-        throw new Error('Import retry does not match');
-      if (run.status === 'running')
-        await mine(owner)
-          .resume(pending.id)
-          .catch((error) => {
-            if (!(error instanceof RunConflictError)) throw error;
-          });
+    try {
+      const existing = await getAiRun(db, pending.id);
+      if (!existing) {
+        await mine(owner).retry(pending.from, {
+          id: pending.id,
+          budget: IMPORT_BUDGET,
+        });
+      } else {
+        // A crash may have happened after opening the retry but before its job.
+        const run = await mine(owner).get(pending.id);
+        if (run.retryOfRunId !== pending.from)
+          throw new Error('Import retry does not match');
+        if (run.status === 'running')
+          await mine(owner)
+            .resume(pending.id)
+            .catch((error) => {
+              if (!(error instanceof RunConflictError)) throw error;
+            });
+      }
+      const admitted = await mine(owner).get(pending.id);
+      // Clear intent and advance status together: a crash cannot leave a failed
+      // row pointing at an admitted attempt whose retained bytes look disposable.
+      await save(
+        row,
+        {
+          status:
+            admitted.status === 'running'
+              ? 'running'
+              : admitted.status === 'stopped'
+                ? 'paused'
+                : row.status,
+        },
+        { retry: undefined },
+      );
+      await reconcile(row, owner);
+    } catch {
+      await failRecovery(row, owner);
+      throw new HttpError(
+        409,
+        details(row).note ??
+          'The import could not restart. Try again or discard it.',
+      );
     }
-    await save(row, {}, { retry: undefined });
   };
   const reconcile = async (row: AppImport, owner: Principal) => {
     if (!row.runId) return null;
-    if (details(row).retry && !(await getAiRun(db, row.runId))) return null;
-    const run = await mine(owner).get(row.runId);
-    if (['published', 'discarded'].includes(row.status)) return run;
+    if (
+      row.status === 'failed' &&
+      details(row).reason === 'app' &&
+      !details(row).proof?.ok
+    )
+      return null;
+    const run = await readRun(row, owner);
+    if (['published', 'discarded', 'cancelled'].includes(row.status))
+      return run;
+    if (!run) {
+      if (!details(row).retry) await failRecovery(row, owner);
+      return null;
+    }
     if (run.status === 'done' && details(row).proof?.ok) {
+      const draft = await (await AppDraftCollection.create({ db })).get(
+        row.draftId,
+      );
+      if (draft?.status === 'published' || draft?.status === 'discarded') {
+        await removeBytes(row);
+        await save(row, { status: draft.status, stage: draft.status });
+        return run;
+      }
+      const slot = await getDraftSlot();
+      if (slot?.id !== row.draftId || !slot.host || slot.problem) {
+        await failRecovery(row, owner);
+        return null;
+      }
       if (row.status !== 'review' || row.stage !== 'review')
         await save(row, { status: 'review', stage: 'review' });
-      const slot = await getDraftSlot();
-      if (slot?.id === row.draftId) slot.hold = null;
+      slot.hold = null;
     } else if (run.status === 'running' && row.status === 'paused') {
       await save(row, { status: 'running' });
     } else if (run.status === 'failed' || run.status === 'cancelled') {
@@ -864,47 +964,63 @@ export function createShellImportService(options: ShellImportOptions) {
   return {
     kit,
     async recover(resumeInterrupted = true) {
-      for (const row of await (await collection()).list({ limit: 1000 })) {
+      let rows: AppImport[];
+      try {
+        rows = await (await collection()).list({ limit: 1000 });
+      } catch {
+        process.stderr.write('Workbook import recovery is unavailable.\n');
+        return;
+      }
+      for (const row of rows) {
         const owner = { id: row.ownerId, tenantId: row.tenantId };
-        if (details(row).retry) await admitRetry(row, owner);
-        if (
-          ['published', 'discarded', 'cancelled'].includes(row.status) ||
-          (row.status === 'failed' &&
-            !['engine', 'plan'].includes(details(row).reason ?? ''))
-        )
-          await removeBytes(row);
-        if (row.runId && !['published', 'discarded'].includes(row.status)) {
-          const state = await reconcile(row, owner);
+        const wasPaused = row.status === 'paused';
+        try {
+          if (details(row).retry) await admitRetry(row, owner);
           if (
-            state?.status === 'running' ||
-            (resumeInterrupted &&
-              row.status !== 'paused' &&
-              state?.status === 'stopped' &&
-              state.stopReason === 'interrupted')
-          ) {
-            // resume proves stale dispatches through the framework; live claims are refused.
-            await mine(owner)
-              .resume(row.runId)
-              .catch(() => {});
-          }
-        } else if (!row.runId && row.status === 'reading') {
-          // start is idempotent: repair a crash between admission and saving its run id.
-          try {
-            await readFile(file(row.id as string));
-            const run = await mine(owner).start({
-              key: row.id as string,
-              inputRef: `import:${row.id}`,
-              budget: IMPORT_BUDGET,
-            });
-            await save(row, {
-              runId: run.id,
-              status: 'running',
-              stage: 'planning',
-            });
-          } catch {
-            await save(row, { status: 'failed', stage: 'failed' });
+            ['published', 'discarded', 'cancelled'].includes(row.status) ||
+            (row.status === 'failed' &&
+              !['engine', 'plan'].includes(details(row).reason ?? ''))
+          )
             await removeBytes(row);
+          if (row.runId && !['published', 'discarded'].includes(row.status)) {
+            const state = await reconcile(row, owner);
+            if (
+              state?.status === 'running' ||
+              (resumeInterrupted &&
+                !wasPaused &&
+                state?.status === 'stopped' &&
+                state.stopReason === 'interrupted')
+            ) {
+              // resume proves stale dispatches through the framework; live claims are refused.
+              await mine(owner)
+                .resume(row.runId)
+                .catch((error) => {
+                  if (!(error instanceof RunConflictError)) throw error;
+                });
+              await reconcile(row, owner);
+            }
+          } else if (!row.runId && row.status === 'reading') {
+            // start is idempotent: repair a crash between admission and saving its run id.
+            try {
+              await readFile(file(row.id as string));
+              const run = await mine(owner).start({
+                key: row.id as string,
+                inputRef: `import:${row.id}`,
+                budget: IMPORT_BUDGET,
+              });
+              await save(row, {
+                runId: run.id,
+                status: 'running',
+                stage: 'planning',
+              });
+            } catch {
+              await failRecovery(row, owner);
+            }
           }
+        } catch {
+          process.stderr.write('A workbook import could not be recovered.\n');
+          if (row.status !== 'failed' || details(row).retry)
+            await failRecovery(row, owner).catch(() => {});
         }
       }
     },
@@ -1007,7 +1123,10 @@ export function createShellImportService(options: ShellImportOptions) {
       await requireOwner(owner);
       const row = await latest(owner);
       if (!row) return null;
-      const run = await reconcile(row, owner);
+      const run = await reconcile(row, owner).catch(async () => {
+        await failRecovery(row, owner);
+        return null;
+      });
       // Reconcile external publish/discard even if its event was lost in a crash.
       if (row.status === 'review' && !(await getDraftSlot())) {
         const draft = await (await AppDraftCollection.create({ db })).get(
@@ -1021,7 +1140,7 @@ export function createShellImportService(options: ShellImportOptions) {
       const { origin: _origin, retry: _retry, ...review } = details(row);
       return {
         id: row.runId,
-        state: run?.status ?? row.status,
+        state: row.status === 'failed' ? 'failed' : (run?.status ?? row.status),
         status: row.status,
         step: row.stage,
         stopReason: run?.stopReason ?? null,
@@ -1032,7 +1151,7 @@ export function createShellImportService(options: ShellImportOptions) {
             ? run.stopReason?.startsWith('max_')
               ? 'budget'
               : 'paused'
-            : run?.status === 'failed'
+            : row.status === 'failed'
               ? review.reason
               : null,
       };
@@ -1077,7 +1196,6 @@ export function createShellImportService(options: ShellImportOptions) {
             {
               runId: attempt,
               draftId: '',
-              status: 'running',
               stage: 'planning',
             },
             {
@@ -1095,8 +1213,15 @@ export function createShellImportService(options: ShellImportOptions) {
           );
           await admitRetry(row, owner);
         } else if (action === 'stop') {
-          const state = await mine(owner).stop(row.runId);
-          if (state.status === 'stopped') await save(row, { status: 'paused' });
+          const state = await mine(owner)
+            .stop(row.runId)
+            .catch(async (error) => {
+              if (!(error instanceof WorkflowRunNotFoundError)) throw error;
+              await failRecovery(row, owner);
+              return null;
+            });
+          if (state?.status === 'stopped')
+            await save(row, { status: 'paused' });
           await reconcile(row, owner);
         } else if (action === 'resume') {
           try {
@@ -1112,12 +1237,12 @@ export function createShellImportService(options: ShellImportOptions) {
             );
           }
         } else if (action === 'cancel' || action === 'discard') {
-          const state = await mine(owner).get(row.runId);
-          if (action === 'cancel' && state.status === 'done') {
+          const state = await readRun(row, owner);
+          if (action === 'cancel' && state?.status === 'done') {
             await reconcile(row, owner);
             return { ok: true };
           }
-          if (!['done', 'failed', 'cancelled'].includes(state.status))
+          if (state && !['done', 'failed', 'cancelled'].includes(state.status))
             await mine(owner).cancel(row.runId);
           await discardOwned(row);
           await removeBytes(row);

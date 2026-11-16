@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -362,23 +363,18 @@ it.each([
   await worker();
   await end();
   for (const runner of runners) await runner.stop();
-  const actual = service.kit.forOwner.bind(service.kit);
-  const fault = vi
-    .spyOn(service.kit, 'forOwner')
-    .mockImplementation((...args) => {
-      const api = actual(...args);
-      return {
-        ...api,
-        retry: async (...retryArgs: Parameters<typeof api.retry>) => {
-          if (when === 'after') await api.retry(...retryArgs);
-          throw new Error('simulated process crash');
-        },
-      };
-    });
-  await expect(service.action(h.owner, 'retry')).rejects.toThrow(
-    'simulated process crash',
-  );
-  fault.mockRestore();
+  const [row] = await (await AppImportCollection.create({ db: h.db })).list();
+  const attempt = randomUUID();
+  row.runId = attempt;
+  row.detail = JSON.stringify({
+    ...JSON.parse(row.detail),
+    retry: { from: first.id, id: attempt },
+  });
+  await row.save();
+  if (when === 'after')
+    await service.kit
+      .forOwner(h.owner.id, h.owner.tenantId)
+      .retry(first.id, { id: attempt });
   service.dispose();
   service = install();
   answer = () => businessWorkbook().plan;
@@ -963,4 +959,134 @@ it('uses the authoritative result when completion races a Stop request', async (
     status: 'review',
   });
   expect((await draftInfo())?.publishable).toBe(true);
+});
+
+it.each([
+  'before admission',
+  'after admission',
+  'tracking disabled',
+] as const)('rolls back a retry that fails %s and keeps recovery controls usable', async (failure) => {
+  answer = () => {
+    throw new Error('test engine unavailable');
+  };
+  const first = await service.start(h.owner, await request());
+  await worker();
+  await end();
+  for (const runner of runners) await runner.stop();
+  const actual = service.kit.forOwner.bind(service.kit);
+  const fault = vi
+    .spyOn(service.kit, 'forOwner')
+    .mockImplementation((...args) => {
+      const api = actual(...args);
+      return {
+        ...api,
+        retry: async (...retryArgs: Parameters<typeof api.retry>) => {
+          if (failure === 'after admission') await api.retry(...retryArgs);
+          if (failure === 'tracking disabled') {
+            config({ usage: { enabled: true, persist: false } });
+            return api.retry(...retryArgs);
+          }
+          throw new Error('private admission failure');
+        },
+      };
+    });
+  await expect(service.action(h.owner, 'retry')).rejects.toMatchObject({
+    status: 409,
+  });
+  fault.mockRestore();
+  config({ usage: { enabled: true, persist: true } });
+  const [row] = await (await AppImportCollection.create({ db: h.db })).list();
+  expect(row).toMatchObject({
+    runId: first.id,
+    status: 'failed',
+    stage: 'failed',
+  });
+  expect(JSON.parse(row.detail).retry).toBeUndefined();
+  const abandoned = (
+    await h.db.query(
+      'SELECT status FROM _smrt_ai_runs WHERE retry_of_run_id = ?',
+      first.id,
+    )
+  ).rows;
+  expect(abandoned.every((run) => run.status === 'cancelled')).toBe(true);
+  expect(await service.current(h.owner)).toMatchObject({
+    state: 'failed',
+    reason: 'engine',
+  });
+  expect((await service.current(h.owner))?.note).not.toContain('private');
+  await expect(service.action(h.owner, 'stop')).resolves.toEqual({ ok: true });
+  answer = () => businessWorkbook().plan;
+  await service.action(h.owner, 'retry');
+  await worker();
+  expect((await end()).status).toBe('review');
+  expect(await (await hostFor('draft')).countRows('Orders')).toBe(2);
+  await service.action(h.owner, 'discard');
+});
+it.each([
+  'stop',
+  'cancel',
+  'discard',
+])('keeps %s usable when the import run is missing', async (action) => {
+  await service.start(h.owner, await request());
+  const [row] = await (await AppImportCollection.create({ db: h.db })).list();
+  row.runId = '00000000-0000-4000-8000-000000000000';
+  await row.save();
+  await expect(service.action(h.owner, action)).resolves.toEqual({ ok: true });
+  const current = await service.current(h.owner);
+  expect(current?.status).toBe(
+    action === 'stop'
+      ? 'failed'
+      : action === 'cancel'
+        ? 'cancelled'
+        : 'discarded',
+  );
+});
+
+it('recovers a completed proven draft even when an old recovery saved a failed status', async () => {
+  await service.start(h.owner, await request());
+  await worker();
+  await end();
+  const [row] = await (await AppImportCollection.create({ db: h.db })).list();
+  row.status = 'failed';
+  row.detail = JSON.stringify({ ...JSON.parse(row.detail), reason: 'app' });
+  await row.save();
+  await service.recover();
+  expect(await service.current(h.owner)).toMatchObject({
+    state: 'done',
+    status: 'review',
+  });
+  expect((await draftInfo())?.publishable).toBe(true);
+});
+
+it('isolates an ordinary workflow lookup error to its import without logging details', async () => {
+  await service.start(h.owner, await request());
+  const actual = service.kit.forOwner.bind(service.kit);
+  const fault = vi
+    .spyOn(service.kit, 'forOwner')
+    .mockImplementation((...args) => ({
+      ...actual(...args),
+      get: async () => {
+        throw new Error('private workflow lookup failure');
+      },
+    }));
+  const warning = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+  try {
+    await expect(service.recover()).resolves.toBeUndefined();
+    expect(warning).toHaveBeenCalledWith(
+      'A workbook import could not be recovered.\n',
+    );
+    expect(warning.mock.calls.flat().join(' ')).not.toContain(
+      'private workflow',
+    );
+  } finally {
+    fault.mockRestore();
+    warning.mockRestore();
+  }
+  expect(await service.current(h.owner)).toMatchObject({
+    status: 'failed',
+    reason: 'app',
+  });
+  await expect(service.action(h.owner, 'discard')).resolves.toEqual({
+    ok: true,
+  });
 });

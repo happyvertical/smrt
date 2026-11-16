@@ -12,6 +12,10 @@ import { runtime } from '$lib/server/smrt';
 
 export const init = async () => {
   await runtime.ready();
-  await shellImports();
+  await shellImports().catch(() => {
+    process.stderr.write(
+      'Workbook imports are unavailable. Opening Import will try again.\n',
+    );
+  });
 };
 export const handle = sequence(runtime.handle, appsRestHandle);

@@ -122,3 +122,12 @@ Stop/resume status is saved only after the workflow transition succeeds.
 A done run with successful proof reconciles to review even from a stale paused
 row and releases its draft hold after restart. A late Cancel preserves that
 completed draft; only Discard explicitly removes a completed import.
+
+Retry persists its identity before dispatch, but marks running only after admission.
+An ordinary admission failure cancels the abandoned attempt and rolls back to the
+failed source run with retained bytes and plain retry/discard wording. Each load
+command also checks the import's durable run identity. Crash tests seed a pending
+intent before/after admission rather than treating a rejected promise as a crash.
+Recovery isolates every row (including missing runs/drafts), marks failures locally,
+and logs only constant wording. Import initialization cannot fail shell startup;
+the runtime migration/readiness guard remains fail-closed and routes retry lazily.
