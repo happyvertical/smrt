@@ -151,7 +151,7 @@ and (when the provider reports usage) usage row. A candidate skipped before
 sending (unavailable, or missing a capability) is not a call. Each fusion seat
 is its own call. All of them share the entry call's `entry_call_id`.
 
-When no candidate of a chain answers, the executor's existing
+When no candidate of a chain answers, the executor's
 zero-token failure row gets its own call id. It has no reservation and is
 charged as a call with no reservation (section 6.4).
 
@@ -163,7 +163,7 @@ charged as a call with no reservation (section 6.4).
 |---|---|
 | `id`, `tenant_id`, `class_name` | The run's id, its tenant, and the class that ran it. |
 | `type`, `definition_key`, `definition_version` | What ran. `definition_key` is the former `fusion_key`, renamed. |
-| `prompt_key`, `template_hash` | The prompt key (kept) and prompt version (new) of the entry call that started the run, if any. A fusion's seats may use prompts of their own; these say which prompt the fusion answered. |
+| `prompt_key`, `template_hash` | The prompt key and prompt version of the entry call that started the run, if any. A fusion's seats may use prompts of their own; these say which prompt the fusion answered. |
 | `owner_id`, `parent_run_id` | Who started it; the run that started it. |
 | `retry_of_run_id` | For a retry, the failed run it retries (section 7); NULL otherwise. A plain reference: it may name a run whose row has since been pruned. |
 | `experiment_id`, `dataset_item`, `tags` | Grouping. `tags` records **what was varied** in the run (for example the model or the template version under test), so runs can be compared. |
@@ -273,7 +273,7 @@ The code is `interrupted` (rather than `host_stopped`) because the
 stop is the same whether a host, a person or a shutdown asked for it, and the
 status is `cancelled` (rather than `stopped` or `failed` with a `cancelled`
 reason) because `stopped` means resumable and `failed` means something went
-wrong. `abandoned` is a new code. There is no stop for a call to a model with
+wrong. There is no stop for a call to a model with
 no price: such a call is allowed (section 6.3).
 
 **A failed run is never resumed in place.** A host may **retry** a failed
@@ -1437,8 +1437,10 @@ table, and a migrate of a JSON database that still holds
   being `NOT NULL` for runs that are not fusions. The step runs only while the
   table still has `fusion_key`.
 - **Usage call ids.** For every usage row whose `entry_call_id` is NULL
-  (every existing row at the upgrade, and any row a not-yet-upgraded writer
-  adds later; current writers always set it), `entry_call_id = call_id`, or
+  (every existing row at the upgrade; current writers always set it, and a
+  row a not-yet-upgraded writer adds later is split the next time the
+  bootstrap pass runs, on a schema version change or a missing version
+  stamp), `entry_call_id = call_id`, or
   the row's own `id` when it had none, and then `call_id = id`. No unique index on
   `call_id` is created (section 2). Fusion seat rows that shared one `call_id`
   keep that link through `entry_call_id`, and their transcripts still join.
