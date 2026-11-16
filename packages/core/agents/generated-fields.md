@@ -184,11 +184,14 @@ Generated-to-ordinary migrations have explicit value semantics:
   so NULL equals NULL), comparing as the column's declared type: on PostgreSQL
   both sides cast to it (text `'1.50'` equals a computed `1.5` in a numeric
   column; floating point is exact; a stored value that cannot be cast makes the
-  comparison fail and the run stops as `column.generated-from-ordinary-unprojectable`);
+  comparison fail and the run stops as `column.generated-from-ordinary-unprojectable`;
+  a non-text live type must also survive the cast to the declared type and back,
+  so a double 6.4 against an integer 6 is a difference);
   on SQLite numbers compare by value, timestamps as instants (UTC offset
   ignored) and the rest as text (`IS NOT`). Zero differing rows keeps
   `column.generated-from-ordinary` (apply); the run counts again inside its
-  atomic batch immediately before the `DROP COLUMN` and aborts if a row written
+  atomic batch immediately before the `DROP COLUMN` (on PostgreSQL after a
+  `SHARE ROW EXCLUSIVE` table lock, so a concurrent writer is waited for) and aborts if a row written
   since planning now differs (a `DO` block raising on PostgreSQL, a temp-table
   `CHECK` on SQLite). Any differing row is `column.generated-from-ordinary-differs`
   (loses data), which reports the count and a few rows (key, stored, computed);

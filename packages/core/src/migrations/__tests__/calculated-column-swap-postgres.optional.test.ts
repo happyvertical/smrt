@@ -778,6 +778,96 @@ describe.skipIf(!pgUrl)(
         ]);
       });
 
+      it('waits for a writer that is still open, then aborts when its row differs', async () => {
+        await ordinary('BIGINT');
+        await put('a', 3, 6);
+        declare(items({ qty: { type: 'INTEGER' }, total: doubled() }));
+        // A writer whose transaction is open while the migrate plans and
+        // applies: its row is invisible to the plan's count (zero).
+        const writer = await (
+          db as unknown as {
+            beginTransaction(): Promise<{
+              query(sql: string, ...params: unknown[]): Promise<unknown>;
+              commit(): Promise<void>;
+              rollback(): Promise<void>;
+            }>;
+          }
+        ).beginTransaction();
+        let migrated: Promise<unknown> | undefined;
+        try {
+          await writer.query(
+            'INSERT INTO items (id, _meta_type, qty, total) VALUES ($1, $2, $3, $4)',
+            'z',
+            STRICT,
+            1,
+            500,
+          );
+          migrated = convertMigrate().then(
+            (value) => ({ value }),
+            (error: unknown) => ({ error }),
+          );
+          // The run must be held behind the writer (the table lock), not past it.
+          let waiting = false;
+          for (let attempt = 0; attempt < 100 && !waiting; attempt++) {
+            const { rows: blocked } = await db.query(
+              "SELECT 1 FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query ILIKE '%LOCK TABLE%'",
+            );
+            waiting = blocked.length > 0;
+            if (!waiting) await new Promise((r) => setTimeout(r, 100));
+          }
+          expect(waiting).toBe(true);
+          await writer.commit();
+        } catch (error) {
+          await writer.rollback().catch(() => undefined);
+          throw error;
+        }
+        const outcome = (await migrated) as { error?: unknown };
+        expect(String((outcome.error as Error)?.message)).toMatch(
+          /stored value now differs|P0001/,
+        );
+        expect(await isCalculated()).toBe(false);
+        expect(await rows()).toEqual([
+          ['a', 3, 6],
+          ['z', 1, 500],
+        ]);
+      });
+
+      it('stops on a value that only equals the expression after a lossy cast', async () => {
+        await ordinary('DOUBLE PRECISION');
+        await put('a', 3, 6.4);
+        declare(items({ qty: { type: 'INTEGER' }, total: doubled() }));
+        const stopped = await convertMigrate();
+        expect(stopped).toMatchObject({ applied: false, refused: true });
+        expect(kinds(stopped)).toEqual([
+          'loses-data:column.generated-from-ordinary-differs',
+        ]);
+        expect(await isCalculated()).toBe(false);
+
+        await db.query('DROP TABLE items');
+        await ordinary('NUMERIC');
+        await put('a', 1, '0.1234567890123456789');
+        declare(
+          items({
+            qty: { type: 'INTEGER' },
+            total: {
+              type: 'REAL',
+              generated: times(0.12345678901234568),
+              generatedInputTypes: inputs,
+            },
+          }),
+        );
+        expect(kinds(await convertMigrate())).toEqual([
+          'loses-data:column.generated-from-ordinary-differs',
+        ]);
+
+        // A whole double and a numeric a double holds exactly still convert.
+        await db.query('DROP TABLE items');
+        await ordinary('DOUBLE PRECISION');
+        await put('a', 3, 6);
+        declare(items({ qty: { type: 'INTEGER' }, total: doubled() }));
+        expect(await convertMigrate()).toMatchObject({ applied: true });
+      });
+
       it('refuses the conversion in a table-limited run', async () => {
         await ordinary('BIGINT');
         await put('a', 3, 6);

@@ -2585,10 +2585,38 @@ export class SchemaComparer {
     };
     const storedSql = normalize(quoted);
     const computedSql = normalize(`(${compiled})`);
-    const differs =
+    let differs =
       this.engine === 'postgres'
         ? `${storedSql} IS DISTINCT FROM ${computedSql}`
         : `${storedSql} IS NOT ${computedSql}`;
+    if (this.engine === 'postgres') {
+      // Casting the stored value to the declared type can hide a real
+      // difference when the live type is wider (a double 6.4 reads as the
+      // integer 6). A value that does not survive the round trip back to the
+      // live type counts as differing. A column another change of this run
+      // retypes is judged by that change's own lossy-type stop instead.
+      const retyped = others.some(
+        (other) =>
+          other.table === tableName &&
+          other.name === name &&
+          other.type !== 'type_mismatch' &&
+          (other.type === 'type_upgrade' ||
+            /\bTYPE\b/i.test(
+              (other.sqlStatements ?? [other.sql ?? '']).join(' '),
+            )),
+      );
+      const liveType = retyped
+        ? undefined
+        : (await this.liveColumnShapes(tableName, manifest)).types.get(name);
+      // Text is read by value ('1.50' is the number 1.5), so only a numeric,
+      // temporal or boolean live type is round-tripped.
+      if (
+        liveType &&
+        liveType.toLowerCase() !== declaredType.toLowerCase() &&
+        !/^(text|character|"char"|name|citext)/i.test(liveType)
+      )
+        differs = `(${differs} OR CAST(CAST(${quoted} AS ${declaredType}) AS ${liveType}) IS DISTINCT FROM ${quoted})`;
+    }
 
     let count: number | null;
     let examples: RecomputeExample[] = [];
@@ -2643,9 +2671,13 @@ export class SchemaComparer {
     // Zero differing rows at planning. The run counts again right before it
     // drops the column, so a row written since planning aborts the run.
     const message = `${label} cannot become calculated: a stored value now differs from the expression (a row was written after planning). Nothing was applied; migrate again.`;
+    // PostgreSQL: writers are held off from the guard through the drop and
+    // re-add (readers are not), so no row can be written between the count
+    // and the conversion.
     const guard =
       this.engine === 'postgres'
         ? [
+            `LOCK TABLE ${table} IN SHARE ROW EXCLUSIVE MODE`,
             `DO $$ BEGIN IF EXISTS (SELECT 1 FROM ${table} WHERE ${differs}) THEN RAISE EXCEPTION ${this.quoteLiteral(message)}; END IF; END $$`,
           ]
         : [

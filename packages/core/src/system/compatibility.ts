@@ -1111,6 +1111,27 @@ export async function ensureAiUsageSystemTableCompatibility(
 }
 
 /**
+ * `_smrt_migrate_runs` (1.16.0, #4926) gains `recomputes` with 1.16.1 (#5018);
+ * a 1.16.0 install has the table without it, and `CREATE TABLE IF NOT EXISTS`
+ * never adds it.
+ */
+export async function ensureMigrateRunsSystemTableCompatibility(
+  db: DatabaseInterface,
+  typeHint?: string,
+): Promise<void> {
+  if (!(await tableExists(db, '_smrt_migrate_runs', typeHint))) {
+    return;
+  }
+  await addColumnIfMissing(
+    db,
+    '_smrt_migrate_runs',
+    'recomputes',
+    'TEXT',
+    typeHint,
+  );
+}
+
+/**
  * The compatibility pass that must precede replaying system DDL.
  *
  * Only the tables `bootstrapSystemTables()` itself creates belong here: an
@@ -1132,6 +1153,7 @@ export async function ensureBootstrapSystemTableCompatibility(
   await ensureDispatchSystemTableCompatibility(db, typeHint);
   await ensureDispatchSubscriptionsSystemTableCompatibility(db, typeHint);
   await ensureAiUsageSystemTableCompatibility(db, typeHint);
+  await ensureMigrateRunsSystemTableCompatibility(db, typeHint);
 }
 
 /**

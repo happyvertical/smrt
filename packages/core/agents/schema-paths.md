@@ -486,11 +486,15 @@ a raw database error in the run:
   stored value exactly when every row already holds the expression's value, so
   the planner counts the rows that differ (`judgeOrdinaryConversions`):
   PostgreSQL on the `checkProbeSource` rows (as the run leaves them), both sides
-  cast to the declared type with `IS DISTINCT FROM`; SQLite on the live rows
+  cast to the declared type with `IS DISTINCT FROM` (a non-text live type must
+  also survive the round trip back to itself, so a double 6.4 is not "equal" to
+  the integer 6); SQLite on the live rows
   with `IS NOT`, numbers by value, timestamps as instants, other types as text,
   and an unprojectable stop when the run also changes a column the comparison
-  reads. None differ: apply, with a guard statement first in the change that
-  counts again inside the atomic run and aborts it if a row now differs. Some
+  reads. None differ: apply, with guard statements first in the change (on
+  PostgreSQL `LOCK TABLE ... IN SHARE ROW EXCLUSIVE MODE`, so writers wait and
+  readers do not) that count again inside the atomic run and abort it if a row
+  now differs. Some
   differ: a stop with the count and three example rows in its message and in
   `change.recompute`; `smrt doctor --db` prints the same. `confirmRecompute:
   ['table.column']` (CLI `--confirm-recompute`) replaces the values on purpose:
@@ -528,6 +532,9 @@ a raw database error in the run:
   block it, they read the re-added column again) is a
   `column.generated-replace-dependents` stop carrying SQLite's message. A
   read-only or busy database says nothing, so the run meets SQLite's own error.
+  The dry run rewrites the whole table inside the rolled-back savepoint, so on a
+  large table it costs write-lock time at planning, including `db:status`,
+  `db:diff` and `smrt doctor --db`, not only `db:migrate`.
 - **Triggers (known limit).** User triggers that fire on a fill's `UPDATE` are
   not replayed by the CHECK probe, which projects the run's statements without
   firing them, so on a table with such triggers the probe's view of the rows
@@ -1386,7 +1393,8 @@ Adding live trigger generation requires a migration rollout design.
 ## Successful migrate record (#4926)
 
 `migrations/migrate-record.ts` owns `_smrt_migrate_runs`, provisioned by
-`ensureSystemTables` (system schema 1.16.0). A successful whole-schema migrate,
+`ensureSystemTables` (system schema 1.16.0; 1.16.1 adds its `recomputes` column).
+A successful whole-schema migrate,
 including an already-current database, records the core release, the build's
 packages and fingerprint (below). Failed, stopped, and dry runs never stamp
 it. Identical release/packages/fingerprint skip the insert; changed values append

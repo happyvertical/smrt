@@ -444,8 +444,69 @@ describe.each(ENGINES)('ordinary to calculated on %s', (engine) => {
     expect(plain.changes.map((change) => change.kindHint)).toEqual([
       'column.generated-from-ordinary',
     ]);
-    expect(plain.changes[0].sqlStatements?.[0]).toMatch(
-      engine === 'postgres' ? /^DO \$\$/ : /^DROP TABLE IF EXISTS temp/,
-    );
+    // PostgreSQL holds writers off (share row exclusive) before it counts, so
+    // no row can land between the count and the conversion.
+    const statements = plain.changes[0].sqlStatements ?? [];
+    if (engine === 'postgres') {
+      expect(statements[0]).toBe(
+        'LOCK TABLE "items" IN SHARE ROW EXCLUSIVE MODE',
+      );
+      expect(statements[1]).toMatch(/^DO \$\$/);
+    } else expect(statements[0]).toMatch(/^DROP TABLE IF EXISTS temp/);
   });
+
+  describe.skipIf(engine !== 'postgres')(
+    'a live type the declared type cannot hold losslessly',
+    () => {
+      it('stops on a double that only equals the expression once cast to an integer', async () => {
+        await ordinary('DOUBLE PRECISION');
+        await db.query("INSERT INTO items (id, qty, v) VALUES ('a', 3, 6.4)");
+        convert(doubled);
+        const result = await migrate();
+        expect(result).toMatchObject({ applied: false, refused: true });
+        expect(stopKinds(result)).toEqual([
+          'loses-data:column.generated-from-ordinary-differs',
+        ]);
+        expect(await generatedNow('v')).toBe(false);
+        expect(await rows()).toEqual([{ id: 'a', qty: 3, v: 6.4 }]);
+      });
+
+      it('applies a double that holds a whole number', async () => {
+        await ordinary('DOUBLE PRECISION');
+        await db.query("INSERT INTO items (id, qty, v) VALUES ('a', 3, 6.0)");
+        convert(doubled);
+        expect(await migrate()).toMatchObject({ applied: true });
+        expect(await generatedNow('v')).toBe(true);
+      });
+
+      it('stops on a numeric with more digits than the declared floating type keeps', async () => {
+        await ordinary('NUMERIC');
+        await db.query(
+          "INSERT INTO items (id, qty, v) VALUES ('a', 1, 0.1234567890123456789)",
+        );
+        convert({
+          type: 'REAL',
+          generated: times(0.12345678901234568),
+          generatedInputTypes: inputs,
+        });
+        const result = await migrate();
+        expect(stopKinds(result)).toEqual([
+          'loses-data:column.generated-from-ordinary-differs',
+        ]);
+        expect(await generatedNow('v')).toBe(false);
+      });
+
+      it('applies a numeric that a floating type holds exactly', async () => {
+        await ordinary('NUMERIC');
+        await db.query("INSERT INTO items (id, qty, v) VALUES ('a', 3, 1.5)");
+        convert({
+          type: 'REAL',
+          generated: times(0.5),
+          generatedInputTypes: inputs,
+        });
+        expect(await migrate()).toMatchObject({ applied: true });
+        expect(await generatedNow('v')).toBe(true);
+      });
+    },
+  );
 });
