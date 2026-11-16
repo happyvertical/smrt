@@ -45,11 +45,56 @@ in its process. Across processes, safety is claim fencing: pass
 taken-over worker gets `AiRunClaimLostError` before it writes. Settlements do
 not assert it: spending that happened is counted.
 
-## Job target (open)
+## Job running (`src/jobs.ts`)
 
-The TaskRunner resolves a job's `objectType` through the registry and
-hydrates `objectId` by `id` from the class's table. A `SmrtObject` declared
-over `_smrt_ai_run_checkpoints` cannot be hydrated (the table has `run_id`,
-no `id`), and any registered model is a migrate-managed table. The job bridge
-needs a decision before it lands here: an owned model table for the job
-target, or a jobs dispatch that is not bound to a model.
+`createWorkflowRunJobs({ db, jobs?, definition, queue?, authorize?,
+resumeBudget?, configure })` registers the handler
+`@happyvertical/smrt-workflows:workflow-run` (a `smrt-jobs` named handler, no
+model, no table) and returns `{ handler, dispose, forOwner(ownerId, tenantId) }`.
+`forOwner` has `start`, `get`, `stop`, `cancel`, `resume`, `decide`,
+`continueAfterApproval` and `retry`. `configure(owner, input)` rebuilds the
+driver wiring on every job (after a restart nothing lives in a closure); its
+`ai` must be the owner's tenant on the same `db`.
+
+- **Registration before claim.** The jobs registry closes at
+  `TaskRunner.start()`. Creating a host calls `registerWorkflowRunHandler()`,
+  which unregisters and registers the handler (both throw
+  `JobHandlerRegistrationClosedError` while a runner runs, before changing
+  anything), so a late host of any definition fails loudly and leaves no route
+  behind. One handler serves every definition in the process: the payload's
+  `definition` key picks the host; a duplicate key throws. `dispose()` of the
+  last host unregisters the handler, so stop runners first.
+- **Admission.** `start` derives the run id from definition key, owner,
+  tenant and `key`, stores a digest of the request in the run's tags, opens the
+  run and enqueues `enqueueHandlerJob({ handler, payload: { runId, definition
+  }, dedupeKey: runId, maxAttempts: 1 })`. Run and job are not one
+  transaction: a repeated `start` with the same key admits the job a crash lost.
+  A pending job row with no worker stays pending until a worker runs.
+- **The handler** requires an authentic runner context and a claim
+  (`claimFencing: true`), reads owner and tenant from the run row (never the
+  payload), checks the claim's target, `authorize`s, then `driver.run` with
+  `fence: workflowClaimFence(claim)`, the job's signal and
+  `holder: workerId:jobId`; the driver renews the checkpoint lease every third
+  of `leaseTtlMs`. A failure before the driver began (authorization,
+  configuration, missing definition) stops the run (`interrupted`, resumable)
+  while the claim is live and fails the job; a failure inside the driver is the
+  driver's (`failed` / `error`). `AiRunClaimLostError` propagates and writes
+  nothing.
+- **Job ends, run follows** (read by `get` and `resume`): a cancelled job with
+  the run still `running` cancels the run; a job failed with any kind but
+  stale recovery fails it (`error`); `handler-unregistered` stops it
+  (resumable once a worker registers the handler). Stale recovery (the worker
+  died) leaves the run `running`: `resume(runId)` then proves the dead
+  dispatch (`assertFailedJobDispatch`) and admits a new job in one
+  transaction; the second worker's `reconcileAiRunOnClaim` returns what the
+  first reserved. Actions (`execute`, `check`, host effects) are therefore
+  at-least-once and must be safe to repeat.
+- **Resume, approval, retry.** A stopped run resumes with `resumeBudget` as
+  the host's cap, then a new job. A run at an approval holds no job: `decide`
+  waits for the parking job to settle, records the decision and, when
+  approved, admits a job that re-runs the check; `continueAfterApproval` does
+  the same for a decision recorded elsewhere, and is harmless to repeat.
+  `retry` opens the new run and admits its job.
+- **Mixed fleets.** A worker whose process did not create a host for a
+  definition fails that run's job (the run is then failed on the next read);
+  route a definition's jobs to a queue only capable workers consume.

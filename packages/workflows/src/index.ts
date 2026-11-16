@@ -26,6 +26,18 @@ export {
   type WorkflowRunOptions,
 } from './driver.js';
 export {
+  createWorkflowRunJobs,
+  registerWorkflowRunHandler,
+  type StartWorkflowRunJob,
+  WORKFLOW_RUN_HANDLER,
+  WorkflowRunJobError,
+  type WorkflowRunJobPayload,
+  type WorkflowRunJobs,
+  type WorkflowRunJobsOptions,
+  WorkflowRunKeyConflictError,
+  type WorkflowRunOwner,
+} from './jobs.js';
+export {
   type RunProgress,
   WORKFLOW_RUN_TYPE,
   WORKFLOW_STATE_VERSION,

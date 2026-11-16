@@ -19,9 +19,14 @@ Replaces inference's design runs. `src/driver.ts` (`createWorkflowRunDriver`),
   repair; `AiRunClaimLostError` and `RunConflictError` propagate.
 - Depends on core, prompts and jobs only; no smrt peer dependencies, no
   cycle. The root loads under plain Node.
-- Job-running glue (the design-run bridge of #4999 under new names) is not
-  here yet: a job target needs a registered `SmrtObject` with its own table,
-  which `_smrt_ai_run_checkpoints` cannot be (see the notes).
+- Job running (`src/jobs.ts`: `createWorkflowRunJobs`,
+  `registerWorkflowRunHandler`, `WORKFLOW_RUN_HANDLER`) is a named job
+  handler, not a model target: one handler job per run, run id in the payload,
+  claim fencing on. Handler registration must happen before any runner
+  claims: creating a host after `TaskRunner.start()` throws
+  `JobHandlerRegistrationClosedError`; create hosts at startup, dispose after
+  stopping runners. Steps and checks must be safe to repeat (crash recovery
+  repeats the step in flight). Details: [workflow runs](agents/workflow-runs.md).
 - A pending job row with no worker stays pending until a worker runs
   (unclaimed-row gap): admitting a run's job does not run it.
 

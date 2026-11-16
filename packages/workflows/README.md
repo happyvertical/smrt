@@ -1,6 +1,6 @@
 # @happyvertical/smrt-workflows
 
-Durable workflow runs for SMRT. A host defines an ordered list of steps; each
+Durable workflow runs for s-m-r-t. A host defines an ordered list of steps; each
 step names a registered prompt, a JSON Schema for its output and an optional
 check. The driver runs them as one `workflow` run on smrt-core's run records
 (see the [AI runs concepts page](../../docs/content/ai-runs.md)):
@@ -66,6 +66,51 @@ await driver.run(run.id, ownerId, { signal, fence: workflowClaimFence(claim) });
 `get`, `stop`, `cancel`, `resume` (raise a limit after a budget stop), `decide`
 (a person's approval decision) and `retry` complete the API. Large input is
 passed by reference: start with `inputRef` and supply `readInput`.
+
+## Running from background jobs
+
+`createWorkflowRunJobs` is the job bridge. It registers the named job handler
+`@happyvertical/smrt-workflows:workflow-run`, admits one handler job per run
+(`enqueueHandlerJob`, the run id in its payload) and works the run inside it
+with claim fencing and a lease renewed while it works:
+
+```ts
+import { createTrackedAiClient } from '@happyvertical/smrt-core';
+import { TaskRunner } from '@happyvertical/smrt-jobs';
+import { createWorkflowRunJobs } from '@happyvertical/smrt-workflows';
+
+// At startup, before any runner starts.
+const workflows = createWorkflowRunJobs<{ room: string }>({
+  db,
+  definition,
+  authorize: async (owner) => assertMayDesign(owner),
+  configure: (owner) => ({
+    ai: createTrackedAiClient({ db, tenantId: owner.tenantId }),
+    validate: (schema, output) => ajvErrors(schema, output),
+  }),
+});
+const runner = new TaskRunner({ claimFencing: true });
+await runner.initialize(db);
+await runner.start();
+
+const mine = workflows.forOwner(ownerId, tenantId);
+const run = await mine.start({ key: 'request-1', input: { room: 'kitchen' } });
+```
+
+- `start` is idempotent per key and request (the same key with another
+  request throws `WorkflowRunKeyConflictError`); `get`, `stop`, `cancel`,
+  `resume`, `decide`, `continueAfterApproval` and `retry` follow the driver's.
+  A stopped run resumes by admitting a new job; a run that waits for approval
+  holds no job, and `decide` admits one.
+- Register before claiming: creating a host (or calling
+  `registerWorkflowRunHandler()`) after a `TaskRunner` started throws
+  `JobHandlerRegistrationClosedError`. Create a host for every definition a
+  worker consumes; a worker without one fails the job and the run is stopped
+  or failed on the next read (see [workflow runs](agents/workflow-runs.md)).
+- Steps, checks and prompts must be safe to repeat: after a crash a second
+  worker repeats the step that was in flight. Recover with `resume(runId)`
+  once the job runner has recovered the dead worker's job.
+- A pending job with no worker stays pending until a worker runs it.
 
 ## Validation
 
