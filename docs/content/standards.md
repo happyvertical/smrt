@@ -246,7 +246,7 @@ export default createPackageConfig('<package-name>', {
 | `tsconfig.package-svelte.json` | Settings for packages with `.svelte` source |
 | `tsconfig.package-typecheck.json` | No-emit, non-composite workspace source typechecks |
 | `tsconfig.workspace-source-paths.json` | Source paths for public workspace package exports |
-| `tsconfig.package-ui.json` | Settings for packages shipping UI (extends svelte + adds DOM lib) |
+| `tsconfig.ui-package.json` | Shared UI compiler settings with DOM libraries and Svelte types |
 
 ### Per-package rules
 
