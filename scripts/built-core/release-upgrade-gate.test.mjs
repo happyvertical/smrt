@@ -1100,7 +1100,7 @@ test('check refuses to rehearse from a hand-placed empty snapshot', async () => 
 // The retire step (#5005): the gate seeds a snapshot that holds the table,
 // migrates, asserts the table is gone and the schema converges; a stale
 // declaration and a wrong owner fail. The retired table is a real one: the
-// table smrt 0.61.1 created for a model (its uuid id, timestamptz and bigint
+// table smrt 0.61.2 created for a model (its uuid id, timestamptz and bigint
 // columns, text defaults, NOT NULLs and indexes), restored from that
 // release's snapshot under another name, and its definition is what
 // scripts/retired-table-facts.mjs projects from that release's published
@@ -1112,7 +1112,7 @@ const realRetired = JSON.parse(
   JSON.stringify(
     JSON.parse(
       readFileSync(
-        path.join(root, 'packages/core/release-upgrade/snapshots/0.61.1.json'),
+        path.join(root, 'packages/core/release-upgrade/snapshots/0.61.2.json'),
         'utf8',
       ),
     ).tables._smrt_inference_design_runs,
@@ -1143,7 +1143,7 @@ const ownersOf = (snapshot, recorded = [retiredOwner]) =>
     ],
   ]);
 // node scripts/retired-table-facts.mjs projects _smrt_inference_design_runs
-// from the published 0.61.1 manifests to these columns.
+// from the published 0.61.2 manifests to these columns.
 const realColumns = {
   _sync_origin_device_id: { type: 'TEXT' },
   _sync_revision: { type: 'INTEGER' },
