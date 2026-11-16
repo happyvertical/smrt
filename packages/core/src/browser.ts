@@ -729,6 +729,14 @@ export type {
 export { resetVerifiedTables } from './table-cache';
 // AI function calling tools
 export * from './tools/index';
+export {
+  AiPromptKeyRequiredError,
+  createTrackedAiClient,
+  type TrackedAiClient,
+  type TrackedAiClientOptions,
+  type TrackedAiRun,
+  type TrackedPromptCall,
+} from './tracked-ai-client';
 // IN-list chunking contract for loaders that build IN lists from data-sized
 // arrays (#2367); exported so owning packages chunk at the same bound (#3047).
 export { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';
