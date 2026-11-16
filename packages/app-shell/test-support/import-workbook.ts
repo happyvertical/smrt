@@ -54,11 +54,14 @@ export function realisticBusinessWorkbook() {
   sales.fields[0].reference!.columns = [2];
   sales.fields[1].column = 3;
   sales.fields[1].label = 'Unit price';
+  sales.fields[1].key = 'unit_price';
+  sales.fields[2].key = 'qty';
+  sales.fields[3].calculated = { op: 'mul', left: { col: 'unit_price' }, right: { col: 'qty' } };
   sales.fields[2].column = 4;
   sales.fields[3].cachedColumn = 5;
   sales.fields[4].column = 6;
   sales.fields[4].choices = ['Open', 'Paid', 'Shipped'];
-  sales.fields.unshift({ key: 'order_number', label: 'Order number', type: 'text', column: 1, required: true });
+  sales.fields.unshift({ key: 'order_no', label: 'Order number', type: 'text', column: 1, required: true });
   sales.fields.push({ key: 'year', label: 'Year', type: 'integer', column: 7 });
   plan.tables[1].source.range = 'A1:B9';
   return { workbook: createWorkbook([customers, orders]), plan };

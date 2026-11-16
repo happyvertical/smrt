@@ -123,16 +123,16 @@ it('renders label headings from real engine versions, including rename, removal 
     );
     expect(headings).toContain('Load 2 records into Orders');
     expect(headings).toContain('Merge 1 record in Orders');
-    expect(headings).toContain('Change calculation: Total in Orders');
+    expect(headings).toContain(
+      'Change calculation: Total in Orders = Quantity',
+    );
     expect(headings).toContain('Add code to Orders');
     expect(headings).toContain('Change code in Orders');
     expect(payload.headings.some((h: string) => h.startsWith('Undo:'))).toBe(
       true,
     );
     expect(headings).toContain('Make linked records from Category in Orders');
-    expect(headings).toContain(
-      'Rename field Original value to renamedValue in Orders',
-    );
+    expect(headings).toContain('Change field link: Original value in Orders');
     expect(headings).toContain('Remove field: Original value in Orders');
     expect(headings.join(' ')).not.toMatch(
       /Order\.|oldValue|[a-f0-9]{8}-[a-f0-9]{4}-/,

@@ -23,6 +23,7 @@ import {
 } from '../../engine/index.ts';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
 import { AppImportCollection } from '../objects/AppImport.ts';
+import { versionSummary } from '../ui/command-summary.ts';
 import { publish } from './events.ts';
 import type { Target } from './target.ts';
 import { DraftVersionStore, ShellVersionStore } from './version-store.ts';
@@ -112,14 +113,17 @@ function workerUrl(): URL | string {
 
 /** Republish a host's events on the bus, tagged with the copy they came from. */
 export function wireHostEvents(host: AppHost, target: Target): void {
-  host.on('changed', (e: { version: number; summary: string }) =>
+  let previous = host.def;
+  host.on('changed', (e: { version: number; summary: string }) => {
+    const summary = versionSummary(e.summary, previous, host.def);
+    previous = host.def;
     publish({
       type: 'changed',
       target,
       version: e.version,
-      summary: e.summary,
-    }),
-  );
+      summary,
+    });
+  });
   host.on('records', (e: { model: string | null }) =>
     publish({ type: 'records', target, model: e.model }),
   );

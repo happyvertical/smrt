@@ -76,6 +76,7 @@ export {
   type ToolResult,
   type VersionSummary,
 } from './host.ts';
+export type { ImportNames, RetainedImportPlan } from './import-names.ts';
 export {
   createEngineImportTarget,
   EngineImportError,

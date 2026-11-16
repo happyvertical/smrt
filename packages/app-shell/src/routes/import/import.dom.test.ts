@@ -1,7 +1,10 @@
 import { checkPlan } from '@happyvertical/smrt-spreadsheets/import';
 import { mount, tick, unmount } from 'svelte';
 import { afterEach, expect, it, vi } from 'vitest';
-import { businessWorkbook } from '../../../test-support/import-workbook.ts';
+import {
+  businessWorkbook,
+  realisticBusinessWorkbook,
+} from '../../../test-support/import-workbook.ts';
 import ImportReview from '../../lib/components/ImportReview.svelte';
 import type { ImportState } from '../../lib/ui/import.ts';
 import Settings from '../settings/import/+page.svelte';
@@ -68,6 +71,7 @@ it('shows source columns, links, choice and money metadata, cached formula proof
     'Price: 17.50 CAD',
     'links to Customers',
     'matches the workbook',
+    'Price × Quantity',
     'Totals proof',
     '24 findings',
     'D4',
@@ -91,6 +95,9 @@ it('offers only existing draft review/publish and discard after proof', async ()
       ?.textContent,
   ).toContain('Review and publish');
   expect(document.body.textContent).toContain('Discard import');
+  expect(document.body.textContent).toContain(
+    'choose Draft in the Live/Draft switch',
+  );
   expect(document.body.textContent).toContain(
     'Publishing still needs your approval',
   );
@@ -385,4 +392,27 @@ it('lists untranslated formulas and explains their saved values will not recalcu
     'will not recalculate',
   ])
     expect(document.body.textContent).toContain(text);
+});
+
+it('keeps year checks in the proof without presenting years as a useful total', async () => {
+  const { workbook, plan } = realisticBusinessWorkbook();
+  const current = ready();
+  current.plan = plan;
+  current.proof!.plan = plan;
+  current.proof!.loaded = { customers: 8, orders: 42 };
+  current.proof!.facts = checkPlan(plan, workbook).facts;
+  const sums = structuredClone(current.proof!.facts.sums);
+  component = mount(ImportReview, {
+    target: document.body,
+    props: { current },
+  });
+  await tick();
+  const text = document.body.textContent ?? '';
+  expect(text).toContain('Unit price × Quantity');
+  expect(text).toContain('Quantity:');
+  expect(text).toContain('Unit price: 635.25 CAD');
+  expect(text).not.toContain('Year:');
+  expect(text).not.toContain('85,092');
+  expect(current.proof!.facts.sums).toEqual(sums);
+  expect(sums.orders.year).toBe(2026 * 42);
 });

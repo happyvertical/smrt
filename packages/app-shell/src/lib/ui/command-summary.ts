@@ -1,6 +1,8 @@
 // Presentation only: commands and persisted engine summaries keep their contracts.
+import type { GeneratedExpression } from '@happyvertical/smrt-core';
 import type { Command } from '../../engine/commands.ts';
 import { fieldLabel, humanize } from './fields.ts';
+import { formulaWords } from './formula.ts';
 import type { FieldDef } from './types.ts';
 
 export interface SummaryDefinition {
@@ -72,12 +74,21 @@ export function commandSummary(
     case 'renameField': {
       const from = field(command.from);
       const to = field(command.to, after);
-      return `Rename field ${from} to ${from === to ? String(command.to) : to} in ${modelName}`;
+      return from === to
+        ? `Change field link: ${from} in ${modelName}`
+        : `Rename field ${from} to ${to} in ${modelName}`;
     }
     case 'changeFieldType':
       return `Change field type: ${fieldName} in ${modelName}`;
-    case 'setCalculation':
-      return `${command.calculated === null ? 'Remove' : 'Change'} calculation: ${fieldName} in ${modelName}`;
+    case 'setCalculation': {
+      const formula = command.calculated
+        ? formulaWords(
+            command.calculated as GeneratedExpression,
+            model?.fields ?? {},
+          )
+        : '';
+      return `${command.calculated === null ? 'Remove' : 'Change'} calculation: ${fieldName} in ${modelName}${formula ? ` = ${formula}` : ''}`;
+    }
     case 'loadRecords':
       return `Load ${count(Array.isArray(command.rows) ? command.rows.length : Number(command.count ?? 0))} into ${modelName}`;
     case 'mergeRecords':

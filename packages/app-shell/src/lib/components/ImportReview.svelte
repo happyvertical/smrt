@@ -1,5 +1,7 @@
 <script lang="ts">
+import type { GeneratedExpression } from '@happyvertical/smrt-core';
 import { columnName } from '@happyvertical/spreadsheets';
+import { formulaWords } from '../../engine/formula.ts';
 import {
   fieldLabel,
   findingLabel,
@@ -23,7 +25,7 @@ let { current }: { current: ImportState } = $props();
             {#if field.money} · {field.money.currency}, {field.money.scale} decimal places{/if}
             {#if field.choices} · {field.choices.join(', ')}{/if}
             {#if field.reference} · links to {fieldLabel(current.plan, field.reference.table)}{/if}
-            {#if field.calculated} · calculated
+            {#if field.calculated} · calculated: {formulaWords(field.calculated as GeneratedExpression, Object.fromEntries(table.fields.map((f) => [f.key, f.label])))}
               {#if field.cachedColumn} · workbook result in column {columnName(field.cachedColumn)} · {current.proof?.ok ? 'matches the workbook' : 'not yet proven'}{/if}
             {/if}
           </li>
@@ -31,9 +33,12 @@ let { current }: { current: ImportState } = $props();
       </ul>
       {#if current.proof}
         <h3>Totals proof</h3>
-        <p>{current.proof.ok ? 'Row counts and source column sums match the workbook.' : 'The loaded data did not pass every check.'}</p>
+        <p>{current.proof.ok ? 'Row counts and source column checks match the workbook.' : 'The loaded data did not pass every check.'}</p>
         <ul>{#each Object.entries(current.proof.facts.sums[table.key] ?? {}) as [field, total] (field)}
-          <li>{fieldLabel(current.plan, table.key, field)}: {importTotal(total, table.fields.find((f) => f.key === field)?.money)}</li>
+          {@const definition = table.fields.find((f) => f.key === field)}
+          {#if definition && (definition.type !== 'integer' || /^(qty|quantity|units|count)$/.test(definition.key))}
+            <li>{fieldLabel(current.plan, table.key, field)}: {importTotal(total, definition.money)}</li>
+          {/if}
         {/each}</ul>
       {/if}
     </section>

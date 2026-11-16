@@ -95,7 +95,7 @@ interface Detail {
   note?: string;
   feedback?: WorkflowValidationIssue & { fragment: string; rule: string };
   untranslatedFormulas?: ImportState['untranslatedFormulas'];
-  plan?: ReturnType<typeof validatePlan>;
+  plan?: ImportState['plan'];
   reason?: ImportState['reason'];
   engine?: string;
   progress?: ImportState['progress'];
@@ -579,7 +579,14 @@ export function createShellImportService(options: ShellImportOptions) {
             const slot = await getDraftSlot();
             if (!slot?.host || slot.id !== row.draftId)
               throw new Error('Import draft is unavailable');
-            const target = createEngineImportTarget(slot.host, ensureActive);
+            const target = createEngineImportTarget(
+              slot.host,
+              ensureActive,
+              async (engineNames) => {
+                await ensureActive();
+                await save(row, {}, { plan: { ...plan, engineNames } });
+              },
+            );
             const proofTarget = {
               ...target,
               count: async (table: string) => {
@@ -596,14 +603,22 @@ export function createShellImportService(options: ShellImportOptions) {
               batchSize: 500,
             });
             await ensureActive();
-            await save(row, {}, { plan, findings: proof.findings, proof });
+            await save(
+              row,
+              {},
+              {
+                plan: { ...plan, engineNames: target.names },
+                findings: proof.findings,
+                proof,
+              },
+            );
             if (!proof.ok) {
               await discardOwned(row);
               await save(
                 row,
                 { status: 'failed', stage: 'proving' },
                 {
-                  plan,
+                  plan: { ...plan, engineNames: target.names },
                   findings: proof.findings,
                   proof,
                   reason: 'workbook',

@@ -638,6 +638,13 @@ examples and totals proof. **Formulas not translated** lists source formulas
 kept as saved values; those fields do not recalculate. **Review and publish** opens the existing draft
 review; only its normal publish approval can change live data. **Discard import**
 removes the draft and stored workbook. Failed proof also removes its draft.
+Use the Live/Draft switch and open a table to inspect its records before publishing.
+Models keep readable names such as `Customers` and `Orders`; plan fields become
+camelCase (`orderNo`, `unitPrice`, `qty`). Name collisions use numeric suffixes,
+with the resolved names retained in `plan.engineNames`. Hidden `workbookRow` and
+`workbookLookup` fields support proof and links. Calculations use field labels in
+review and History. Year and identifier checks remain in the proof without being
+presented as useful totals.
 Only one draft/import may be open. Importing into existing tables, saved mappings,
 re-import and export are not included.
 

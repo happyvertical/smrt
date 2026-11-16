@@ -4,6 +4,7 @@ import type {
   RunImportResult,
   UntranslatedFormula,
 } from '@happyvertical/smrt-spreadsheets/import';
+import type { RetainedImportPlan } from '../../engine/import-names.ts';
 export interface ImportState {
   id: string;
   state: string;
@@ -15,7 +16,7 @@ export interface ImportState {
   reason?: 'workbook' | 'plan' | 'engine' | 'budget' | 'paused' | 'app' | null;
   engine?: string;
   progress?: { stage: string; at: number }[];
-  plan?: ImportPlan;
+  plan?: RetainedImportPlan;
   untranslatedFormulas?: UntranslatedFormula[];
   findings?: Finding[];
   proof?: RunImportResult;

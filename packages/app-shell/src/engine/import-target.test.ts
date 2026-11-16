@@ -9,12 +9,17 @@ import {
   businessWorkbook,
   realisticBusinessWorkbook,
 } from '../../test-support/import-workbook.ts';
+import { subscribe } from '../lib/server/events.ts';
+import { wireHostEvents } from '../lib/server/host.ts';
+import { versionSummary } from '../lib/ui/command-summary.ts';
+import { announcement } from '../lib/ui/events.ts';
 import {
   createEngineImportTarget,
   importFieldName,
   importModelName,
 } from './import-target.ts';
 import { AppHost, MemoryVersionStore } from './index.ts';
+import { ENGINE_TOOLS } from './tool-definitions.ts';
 
 let dir: string;
 let live: AppHost;
@@ -50,7 +55,7 @@ it('passes the same related money/choice/cached-formula fixture as the SQLite re
     const report = await draft.runReport(importFieldName('sales'));
     expect(report.rows.map((r) => r.revenue).sort()).toEqual([1500, 2500]);
     expect(
-      draft.describe().models[importModelName('orders')].fields.importSourceRow,
+      draft.describe().models[importModelName('orders')].fields.workbookRow,
     ).toBeUndefined();
     const rows = [];
     for await (const row of target.values('orders', ['total'], [4]))
@@ -94,21 +99,76 @@ it('proves 42 orders and eight customers against the reference contract without 
       facts: expected.facts,
       findings: expected.findings,
     });
+    expect(Object.keys(draft.describe().models).sort()).toEqual([
+      'Customers',
+      'Orders',
+    ]);
+    expect(Object.keys(draft.describe().models.Orders.fields)).toContain(
+      'orderNo',
+    );
+    expect(Object.keys(draft.describe().models.Orders.fields)).toEqual([
+      'workbookRow',
+      'workbookLookup',
+      'orderNo',
+      'customer',
+      'unitPrice',
+      'qty',
+      'status',
+      'year',
+      'total',
+    ]);
+    expect(draft.def.models.Orders.fields.total.calculated).toEqual({
+      op: 'mul',
+      left: { col: 'unitPrice' },
+      right: { col: 'qty' },
+    });
+    const reportTool = ENGINE_TOOLS.find(
+      (tool) => tool.name === 'app_runreport',
+    );
+    if (!reportTool) throw new Error('Missing report tool');
+    const advertised = JSON.parse(
+      reportTool.properties.report.description.split('Example: ')[1],
+    );
+    expect((await draft.runReport(advertised)).rows).toEqual([
+      { order_count: 14, order_total: 63600 },
+    ]);
+    expect((await draft.appTools()).map((tool) => tool.name)).toEqual(
+      expect.arrayContaining([
+        'orders_list',
+        'orders_get',
+        'orders_create',
+        'orders_update',
+        'orders_delete',
+        'customers_list',
+      ]),
+    );
+    const response = await draft.rest({ method: 'GET', url: '/api/orders' });
+    expect(response.status).toBe(200);
+    expect(JSON.stringify(response.body)).toContain('orderNo');
+    expect(JSON.stringify(response.body)).toContain('SO-1042');
+    const calculation = (await draft.versions()).find(
+      (version) => version.summary === 'set calculation Orders.total',
+    );
+    expect(calculation).toBeDefined();
+    expect(versionSummary(calculation!.summary, draft.def, draft.def)).toBe(
+      'Change calculation: Total in Orders = Unit price × Quantity',
+    );
+
     const rows = [];
     for await (const row of target.values(
       'orders',
-      ['order_number', 'year', 'total'],
+      ['order_no', 'year', 'total'],
       [6, 47],
     ))
       rows.push(row);
     expect(rows).toEqual([
       {
         sourceRow: 6,
-        values: { order_number: 'SO-1001', year: 2026, total: 1000 },
+        values: { order_no: 'SO-1001', year: 2026, total: 1000 },
       },
       {
         sourceRow: 47,
-        values: { order_number: 'SO-1042', year: 2026, total: 4050 },
+        values: { order_no: 'SO-1042', year: 2026, total: 4050 },
       },
     ]);
     expect(Object.keys(live.describe().models)).toEqual([]);
@@ -259,4 +319,117 @@ it('resolves composite lookup keys without merging records that share one compon
     (r) => r[importFieldName('customer')],
   );
   expect(new Set(references).size).toBe(2);
+});
+
+it('retains the collision map before any command and uses it for loading, links and proof', async () => {
+  await draft.execute(
+    { type: 'defineModel', name: 'Orders', fields: { note: { type: 'text' } } },
+    { author: 'test' },
+  );
+  const { plan, workbook } = businessWorkbook();
+  plan.tables[1].fields[0].key = 'id';
+  plan.tables[1].lookupKey = ['id'];
+  plan.tables[1].titleField = 'id';
+  plan.tables[0].fields[0].reference!.by = ['id'];
+  plan.tables[0].fields[1].key = 'unit_price';
+  plan.tables[0].fields[2].key = 'unit__price';
+  plan.tables[0].fields[3].calculated = {
+    op: 'mul',
+    left: { col: 'unit_price' },
+    right: { col: 'unit__price' },
+  };
+  const retained: unknown[] = [];
+  const target = createEngineImportTarget(draft, undefined, async (names) => {
+    expect(Object.keys(draft.def.models)).toEqual(['Orders']);
+    retained.push(structuredClone(names));
+  });
+  const proof = await runImport({ plan, workbook, target });
+  expect(proof.ok).toBe(true);
+  expect(retained).toEqual([target.names]);
+  expect(target.names.tables.orders.model).toBe('Orders2');
+  expect(target.names.tables.customers.fields.id).toBe('id2');
+  expect(target.names.tables.orders.fields).toMatchObject({
+    unit_price: 'unitPrice',
+    unit__price: 'unitPrice2',
+  });
+  expect(draft.def.models.Customers.titleField).toBe('id2');
+  expect(
+    (await target.describe()).tables
+      .find((t) => t.key === 'orders')
+      ?.fields.map((f) => f.key),
+  ).toEqual(
+    expect.arrayContaining(['unit_price', 'unit__price', 'customer', 'total']),
+  );
+  expect(await target.count('orders')).toBe(2);
+  expect(await target.sum('orders', 'total')).toBe(4000);
+  expect(await draft.countRows('Orders')).toBe(0);
+  expect((await draft.list('Orders2')).every((row) => row.customer)).toBe(true);
+});
+
+it('announces imported commands with labels, including bookkeeping, and keeps History calculations readable', async () => {
+  wireHostEvents(draft, 'draft');
+  const lines: string[] = [];
+  const off = subscribe((event) => {
+    if (event.type === 'changed') lines.push(announcement(event)!);
+  });
+  try {
+    const fixture = realisticBusinessWorkbook();
+    const target = createEngineImportTarget(draft);
+    expect((await runImport({ ...fixture, target })).ok).toBe(true);
+    await target.seal();
+    expect(lines).toContain(
+      'App changed: Hide field: Workbook lookup in Orders',
+    );
+    expect(lines).toContain(
+      'App changed: Change calculation: Total in Orders = Unit price × Quantity',
+    );
+    expect(lines.join(' ')).not.toMatch(
+      /Orders\.|unitPrice|workbookLookup|workbookRow/,
+    );
+    expect(
+      draft.describe().models.Orders.fields.workbookLookup,
+    ).toBeUndefined();
+    expect(draft.describe().models.Orders.fields.workbookRow).toBeUndefined();
+  } finally {
+    off();
+  }
+});
+
+it('preserves owner labels in announcements after fields and models are renamed or removed', async () => {
+  wireHostEvents(draft, 'draft');
+  const lines: string[] = [];
+  const off = subscribe((event) => {
+    if (event.type === 'changed') lines.push(announcement(event) ?? '');
+  });
+  try {
+    const run = (command: Parameters<AppHost['execute']>[0]) =>
+      draft.execute(command, { author: 'test' });
+    await run({
+      type: 'defineModel',
+      name: 'InternalOrders',
+      label: 'Orders',
+      fields: { rawNote: { type: 'text', label: 'Owner note' } },
+    });
+    await run({
+      type: 'renameField',
+      model: 'InternalOrders',
+      from: 'rawNote',
+      to: 'renamedNote',
+    });
+    await run({
+      type: 'removeField',
+      model: 'InternalOrders',
+      field: 'renamedNote',
+    });
+    await run({ type: 'removeModel', model: 'InternalOrders' });
+    expect(lines).toEqual([
+      'App changed: Add model: Orders',
+      'App changed: Change field link: Owner note in Orders',
+      'App changed: Remove field: Owner note in Orders',
+      'App changed: Remove model: Orders',
+    ]);
+    expect(lines.join(' ')).not.toMatch(/InternalOrders|rawNote|renamedNote/);
+  } finally {
+    off();
+  }
 });

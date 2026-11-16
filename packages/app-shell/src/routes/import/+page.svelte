@@ -132,6 +132,7 @@ async function action(name: string) {
     {#if current?.state === 'stopped'}<p>{current.reason === 'budget' || current.stopReason?.startsWith('max_') ? 'This import reached its time or work limit. Resume to give it more time and continue, or discard it and try a smaller workbook.' : 'Your progress is saved. Resume to continue.'}</p>{/if}
     {#if review}
       <p>The workbook passed its proof. Publishing still needs your approval on the draft review screen.</p>
+      <p>To inspect the imported records first, choose Draft in the Live/Draft switch, then open a table from the menu.</p>
       <a class="smrt-app-shell__btn smrt-app-shell__btn-primary" href="/draft/review" data-smrt-part="trigger">Review and publish</a>
       <button class="smrt-app-shell__btn" disabled={busy} onclick={() => action('discard')}>Discard import</button>
     {:else}

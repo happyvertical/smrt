@@ -48,8 +48,16 @@ spreadsheet package's 250,000; `/settings/import` saves an integer in
   Proof failure discards it; successful proof seals hidden provenance, ends
   the workflow, then releases the hold. Publish uses the existing digest-pinned
   draft Approval. No live write path is added.
-- `src/engine/import-target.ts` implements `ImportTarget`. Stable hashed names
-  avoid truncation/camel-case collisions; the retained plan reverses the mapping.
+- `src/engine/import-target.ts` implements `ImportTarget`. Names are PascalCase table keys and camelCase field keys, capped at 40
+  characters. Plan order breaks ties with suffixes 2, 3, … (inside that cap),
+  including engine reserved names, recipe models, existing models and shared
+  singular/plural storage routes. App/Approval become App2/Approval2 so their
+  generated tools never enter shell prefixes. Digit-leading names get Table/field;
+  single-letter camel segments get “value” to satisfy the engine grammar.
+  `plan.engineNames` durably records all table/field/report mappings before the
+  first command; the canonical spreadsheet plan and proof remain unchanged.
+  `workbookRow`/`workbookLookup` are reserved for hidden provenance; source fields
+  with those names receive a numeric suffix. No hashes enter the app’s names.
   It preflights expressions and reports, creates structure in `loadOrder`, and
   uses atomic insert `loadRecords` commands (default 500 rows). Composite lookup
   keys use a JSON tuple in a temporary engine field. Source row and lookup
@@ -88,3 +96,18 @@ check events keep only code/path/message. A refused plan is distinct from an
 unavailable engine and retries the retained upload without a settings detour.
 Unrepresentable formulas map as plain cached-value columns; review lists them
 under “Formulas not translated”. A proposed translation still must pass proof.
+
+Shell host event wiring formats every changed summary through the same label-based
+formatter as History, with both the before and after definitions (including removed
+fields). Calculations show label-based expressions in import review and History.
+The totals view omits integer checksums except quantity/count/units/qty; the exact
+proof still checks every numeric column. Review points owners to the Live/Draft
+switch to inspect the imported data before publishing.
+
+The engine report tool advertises a count/sum/filter example validated by
+`parseRuntimeReportSpec`, and specifies exact model/field names for ad-hoc queries.
+The realistic target contract executes that advertised spec against imported data.
+Report output aliases use lowercase_snake_case (or are omitted for defaults),
+while source fields keep engine camelCase. Typed alias refusals explain the rule
+without forwarding compiler paths or messages; the real Codex verification covers
+an owner-approved publish followed by an ad-hoc count/sum/filter query.

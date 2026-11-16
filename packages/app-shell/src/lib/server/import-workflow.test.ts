@@ -179,6 +179,10 @@ it.each([
   expect(current.state).toBe('done');
   expect(current.status).toBe('review');
   expect(current.proof?.ok).toBe(true);
+  expect(current.plan?.engineNames?.tables.orders.model).toBe('Orders');
+  expect(current.plan?.engineNames?.tables.orders.fields.customer).toBe(
+    'customer',
+  );
   expect((await draftInfo())?.publishable).toBe(true);
   expect(Object.keys((await getHost()).describe().models)).toEqual([]);
   expect(
