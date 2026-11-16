@@ -5,7 +5,10 @@ import { runImport } from '@happyvertical/smrt-spreadsheets/import';
 import { createSqliteReferenceTarget } from '@happyvertical/smrt-spreadsheets/testing';
 import { createSheet, createWorkbook } from '@happyvertical/spreadsheets';
 import { afterEach, beforeEach, expect, it } from 'vitest';
-import { businessWorkbook } from '../../test-support/import-workbook.ts';
+import {
+  businessWorkbook,
+  realisticBusinessWorkbook,
+} from '../../test-support/import-workbook.ts';
 import {
   createEngineImportTarget,
   importFieldName,
@@ -76,6 +79,42 @@ it('refuses a formula the engine cannot represent before loading and preserves l
     runImport({ ...fixture, target: createEngineImportTarget(draft) }),
   ).rejects.toThrow();
   expect(Object.keys(draft.describe().models)).toEqual([]);
+});
+it('proves 42 orders and eight customers against the reference contract without coercing order numbers', async () => {
+  const fixture = realisticBusinessWorkbook();
+  const reference = await createSqliteReferenceTarget();
+  try {
+    const expected = await runImport({ ...fixture, target: reference });
+    const target = createEngineImportTarget(draft);
+    const actual = await runImport({ ...fixture, target, batchSize: 10 });
+    expect(expected.ok).toBe(true);
+    expect(actual).toMatchObject({
+      ok: true,
+      loaded: { customers: 8, orders: 42 },
+      facts: expected.facts,
+      findings: expected.findings,
+    });
+    const rows = [];
+    for await (const row of target.values(
+      'orders',
+      ['order_number', 'year', 'total'],
+      [6, 47],
+    ))
+      rows.push(row);
+    expect(rows).toEqual([
+      {
+        sourceRow: 6,
+        values: { order_number: 'SO-1001', year: 2026, total: 1000 },
+      },
+      {
+        sourceRow: 47,
+        values: { order_number: 'SO-1042', year: 2026, total: 4050 },
+      },
+    ]);
+    expect(Object.keys(live.describe().models)).toEqual([]);
+  } finally {
+    await reference.close();
+  }
 });
 it('refuses a whole batch with an unresolved lookup and leaves earlier batches intact', async () => {
   const { plan } = businessWorkbook();

@@ -608,8 +608,9 @@ ids. Draft publish recomputes against current live references. Catalog:
 ## Import a workbook
 
 Choose **Import workbook** in the user menu or **Import a workbook** on an empty
-Home. Drop an `.xlsx` file (up to 25 MiB), or use the file picker. Connect an
-API-key AI provider in Settings and keep AI usage persistence enabled first.
+Home, or **From a spreadsheet** on Welcome. Drop an `.xlsx` file (up to 25 MB),
+or use the file picker. Connect your chosen assistant engine in Settings and
+keep AI usage persistence enabled first.
 The provisional 250,000-cell ceiling can be changed in **Settings → Import**
 (1,000 to 2,000,000 cells). Larger or complex workbooks should be split up.
 
@@ -624,6 +625,10 @@ facts, checks it, loads a fresh draft and proves row counts, source column sums
 and calculated fields against cached workbook values. Progress shows Reading,
 Planning, Checking, Loading and Proving. Stop saves resumable work; Cancel ends
 it. Interrupted work resumes on startup. A budget stop offers a bounded Resume.
+Planning shows elapsed time; completed stages remain visible between polls.
+An engine failure names the engine and links to Assistant settings. **Try again**
+reuses the private upload with a new workflow run, including after a restart.
+Workbook problems show their findings instead. Cancel/discard removes the file.
 
 The same page shows each table's rows read/skipped/loaded, typed fields and
 source columns, links, choices, calculations, reports, findings with sheet/cell
@@ -635,7 +640,9 @@ re-import and export are not included.
 
 The API accepts a raw binary workbook at `POST /api/shell/import`, returning
 `202 { id: <workflow run id> }`. `GET` returns `{ import: <current state> | null }`;
-`POST /api/shell/import/stop|resume|cancel|discard` controls it. All are owner-only;
+The state includes a machine-readable `reason` (`engine`, `workbook`, `budget`,
+`paused`, `app`, or null) and timestamped `progress` stages.
+`POST /api/shell/import/stop|resume|retry|cancel|discard` controls it. All are owner-only;
 writes check the same origin. The adapter-node build's entry wrapper defaults
 `BODY_SIZE_LIMIT` to 25 MiB before loading its handler (also for desktop starts).
 Operators may supply a lower ceiling. No listening service is added.

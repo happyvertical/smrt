@@ -13,6 +13,7 @@ afterEach(async () => {
   component = undefined;
   document.body.innerHTML = '';
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 function ready(): ImportState {
   const { workbook, plan } = businessWorkbook();
@@ -64,6 +65,7 @@ it('shows source columns, links, choice and money metadata, cached formula proof
     '2 loaded',
     'column B',
     'CAD',
+    'Price: 17.50 CAD',
     'links to Customers',
     'matches the workbook',
     'Totals proof',
@@ -180,4 +182,151 @@ it('saves a number setting through the owner route and shows its outcome', async
     expect.objectContaining({ body: JSON.stringify({ maxCells: 1200 }) }),
   );
   expect(document.body.textContent).toContain('Import limit saved.');
+});
+it.each([
+  'Codex',
+  'Claude Code',
+  'ChatGPT',
+  'API-key inference',
+])('names %s after an engine failure and retries the saved upload', async (engine) => {
+  const current: ImportState = {
+    ...ready(),
+    state: 'failed',
+    status: 'failed',
+    step: 'failed',
+    reason: 'engine',
+    engine,
+    findings: [],
+    plan: undefined,
+    proof: undefined,
+  };
+  const send = vi.fn(
+    async () => new Response(JSON.stringify({ import: current })),
+  );
+  vi.stubGlobal('fetch', send);
+  component = mount(Page, {
+    target: document.body,
+    props: { data: { current } as never, params: {}, form: null },
+  });
+  await tick();
+  expect(document.body.textContent).toContain(
+    `${engine} could not plan this import`,
+  );
+  expect(document.body.textContent).not.toContain('findings below');
+  expect(document.querySelector('a[href="/settings/assistant"]')).toBeTruthy();
+  Array.from(document.querySelectorAll('button'))
+    .find((b) => b.textContent === 'Try again')
+    ?.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await tick();
+  expect(send).toHaveBeenCalledWith('/api/shell/import/retry', {
+    method: 'POST',
+  });
+  expect(send).not.toHaveBeenCalledWith(
+    '/api/shell/import',
+    expect.objectContaining({ method: 'POST' }),
+  );
+});
+it.each([
+  true,
+  false,
+])('only refers to findings when workbook findings exist (%s)', async (findings) => {
+  const current: ImportState = {
+    ...ready(),
+    state: 'failed',
+    status: 'failed',
+    reason: 'workbook',
+    findings: findings
+      ? [
+          {
+            code: 'required-blank',
+            severity: 'error',
+            sheet: 'Orders',
+            cell: 'A6',
+            count: 1,
+            message: 'internal_key',
+          },
+        ]
+      : [],
+    proof: undefined,
+  };
+  vi.stubGlobal('fetch', vi.fn());
+  component = mount(Page, {
+    target: document.body,
+    props: { data: { current } as never, params: {}, form: null },
+  });
+  await tick();
+  expect(document.body.textContent?.includes('findings below')).toBe(findings);
+  expect(document.body.textContent).not.toContain('internal_key');
+  expect(document.body.textContent).not.toContain('Try again');
+});
+it.each([
+  'max_tokens',
+  'max_duration',
+])('offers resume when the time or work budget stops the run (%s)', async (stopReason) => {
+  const current = {
+    ...ready(),
+    state: 'stopped',
+    status: 'paused',
+    reason: 'budget',
+    stopReason,
+  };
+  vi.stubGlobal('fetch', vi.fn());
+  component = mount(Page, {
+    target: document.body,
+    props: { data: { current } as never, params: {}, form: null },
+  });
+  await tick();
+  expect(document.body.textContent).toContain('time or work limit');
+  expect(document.body.textContent).toContain('Resume import');
+  expect(document.body.textContent).not.toContain('findings below');
+});
+it('polls each reported stage, retains completed stages and shows planning elapsed time', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-10-01T12:00:00Z'));
+  const began = Date.now();
+  const current: ImportState = {
+    ...ready(),
+    state: 'running',
+    status: 'running',
+    step: 'reading',
+    progress: [{ stage: 'reading', at: began }],
+    proof: undefined,
+    plan: undefined,
+  };
+  let next = current;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(JSON.stringify({ import: next }))),
+  );
+  component = mount(Page, {
+    target: document.body,
+    props: { data: { current } as never, params: {}, form: null },
+  });
+  await tick();
+  for (const [stage, label] of [
+    ['planning', 'Planning the import'],
+    ['checking', 'Checking the plan'],
+    ['loading', 'Loading the draft'],
+    ['proving', 'Proving the loaded data'],
+  ]) {
+    next = {
+      ...next,
+      step: stage,
+      progress: [...next.progress!, { stage, at: began }],
+    };
+    await vi.advanceTimersByTimeAsync(1000);
+    await tick();
+    expect(document.querySelector('[aria-current="step"]')?.textContent).toBe(
+      label,
+    );
+    if (stage === 'planning')
+      expect(document.body.textContent).toContain(
+        'Still working · 1 second elapsed',
+      );
+  }
+  expect(
+    document.querySelector('[aria-label="Import progress"]')?.textContent,
+  ).toContain('Reading the workbook');
+  expect(document.body.textContent).not.toContain('MiB');
 });

@@ -32,7 +32,7 @@ async function save(event: SubmitEvent) {
   <header class="smrt-app-shell__head" data-smrt-part="header"><h1>Import settings</h1></header>
   <form onsubmit={save} class="smrt-app-shell__card" data-smrt-part="panel">
     <label>Maximum cells in a workbook <input type="number" min="1000" max="2000000" step="1" required bind:value={maxCells} /></label>
-    <p>A cell is one box in the spreadsheet. The provisional default is 250,000. Choose a whole number from 1,000 to 2,000,000. The file size limit remains 25 MiB.</p>
+    <p>A cell is one box in the spreadsheet. The default is 250,000. Choose a whole number from 1,000 to 2,000,000. The file size limit is 25 MB.</p>
     <button class="smrt-app-shell__btn smrt-app-shell__btn-primary" disabled={busy}>Save import limit</button>
     {#if message}<p role="status">{message}</p>{/if}
   </form>

@@ -32,6 +32,7 @@ import {
 } from '@happyvertical/smrt-spreadsheets/import';
 import {
   createWorkflowRunJobs,
+  RunConflictError,
   type WorkflowDefinition,
   type WorkflowRunOwner,
 } from '@happyvertical/smrt-workflows';
@@ -50,6 +51,8 @@ import {
 } from '../../engine/index.ts';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
 import { type AppImport, AppImportCollection } from '../objects/AppImport.ts';
+import type { ImportState } from '../ui/import.ts';
+import { assistantEngine, engineLabel } from './assistant/engine.ts';
 import { discardNow, startDraft } from './drafts.ts';
 import { subscribe } from './events.ts';
 import { getDraftSlot } from './host.ts';
@@ -86,6 +89,11 @@ interface Detail {
   note?: string;
   feedback?: { code: string; path: string };
   plan?: ReturnType<typeof validatePlan>;
+  reason?: ImportState['reason'];
+  engine?: string;
+  progress?: ImportState['progress'];
+  /** Retry intent is durable before the workflow run/job is admitted. */
+  retry?: { from: string; id: string };
 }
 const details = (row: AppImport): Detail => {
   try {
@@ -118,7 +126,7 @@ export async function readWorkbook(
   if (bytes.byteLength > IMPORT_MAX_BYTES)
     throw new HttpError(
       413,
-      'This workbook is larger than 25 MiB. Save a smaller workbook and try again.',
+      'This workbook is larger than 25 MB. Save a smaller workbook and try again.',
     );
   if (bytes[0] !== 0x50 || bytes[1] !== 0x4b)
     throw new HttpError(415, 'Choose an Excel workbook saved as .xlsx.');
@@ -218,11 +226,16 @@ export function createShellImportService(options: ShellImportOptions) {
   ): Promise<void> => {
     const pending = writes.then(async () => {
       const fresh = (await (await collection()).get(row.id as string)) ?? row;
+      const previous = details(fresh);
+      const progress = [...(previous.progress ?? [])];
+      if (patch.stage && patch.stage !== fresh.stage)
+        progress.push({ stage: patch.stage, at: Date.now() });
       Object.assign(fresh, patch);
-      if (detail)
+      if (detail || patch.stage)
         fresh.detail = JSON.stringify({
-          origin: details(fresh).origin,
-          ...detail,
+          ...previous,
+          ...(detail ?? {}),
+          progress: (detail?.progress ?? progress).slice(-30),
         });
       await fresh.save();
       // The fetched instance owns its optimistic revision; never save a stale instance.
@@ -314,17 +327,50 @@ export function createShellImportService(options: ShellImportOptions) {
             tenantId: row.tenantId,
             variables: await step.variables!(context),
           });
-          return assistant.plan(owner, {
-            prompt,
-            signal: context.signal,
-            origin: details(row).origin,
-            parent: {
-              context: context.runContext,
-              stepIndex: context.step.index - 1,
-              name: context.step.name,
+          await save(
+            row,
+            {},
+            {
+              engine: engineLabel(
+                await (options.assistant?.engine ?? assistantEngine)(owner),
+              ),
+              reason: null,
             },
-            ...(options.tracked ? { tracked: tracked(owner) } : {}),
-          });
+          );
+          try {
+            return await assistant.plan(owner, {
+              prompt,
+              signal: context.signal,
+              origin: details(row).origin,
+              parent: {
+                context: context.runContext,
+                stepIndex: context.step.index - 1,
+                name: context.step.name,
+              },
+              ...(options.tracked ? { tracked: tracked(owner) } : {}),
+            });
+          } catch (error) {
+            // A fenced-out or stopped worker must never annotate the next attempt.
+            if (
+              error instanceof AiRunClaimLostError ||
+              error instanceof AiRunStoppedError
+            )
+              throw error;
+            if (
+              !context.signal.aborted &&
+              (await getAiRun(db, context.runId))?.status === 'running'
+            )
+              await save(
+                row,
+                {},
+                {
+                  reason: 'engine',
+                  findings: [],
+                  note: `${details(row).engine ?? 'Your AI engine'} could not plan this import. Check its connection in Assistant settings, then try again. Your workbook is saved.`,
+                },
+              );
+            throw error;
+          }
         },
         variables: async (context) => {
           const row = await fromInput(context.input);
@@ -370,7 +416,8 @@ export function createShellImportService(options: ShellImportOptions) {
               row,
               { stage: 'checking' },
               {
-                note: 'The proposed table structure could not be checked. Correct the workbook and try again.',
+                reason: 'engine',
+                note: `${details(row).engine ?? 'Your AI engine'} did not return a usable import plan. Check Assistant settings, then try again. Your workbook is saved.`,
                 feedback: { code: error.code, path: error.path },
               },
             );
@@ -380,11 +427,29 @@ export function createShellImportService(options: ShellImportOptions) {
             await readFile(file(row.id as string)),
             row.maxCells,
           );
-          await save(row, { stage: 'checking' }, { plan });
+          await save(
+            row,
+            { stage: 'checking' },
+            {
+              plan,
+              findings: [],
+              feedback: undefined,
+              reason: null,
+              note: undefined,
+            },
+          );
           const checked = checkPlan(plan, book, undefined, {
             maxCells: row.maxCells,
           });
-          await save(row, {}, { plan, findings: checked.findings });
+          await save(
+            row,
+            {},
+            {
+              plan,
+              findings: checked.findings,
+              reason: checked.ok ? null : 'workbook',
+            },
+          );
           if (!checked.ok)
             return {
               repeat: true,
@@ -436,6 +501,7 @@ export function createShellImportService(options: ShellImportOptions) {
                   plan,
                   findings: proof.findings,
                   proof,
+                  reason: 'workbook',
                   note: 'The loaded data did not match the workbook. The draft was discarded. Correct the workbook and try again.',
                 },
               );
@@ -475,7 +541,7 @@ export function createShellImportService(options: ShellImportOptions) {
                   : error instanceof ImportRunError &&
                       error.code === 'target-not-empty'
                     ? 'These tables already exist. Importing into existing tables is not supported.'
-                    : 'The workbook could not be loaded. The import draft was discarded. Check the workbook and try again.';
+                    : 'The app could not load this workbook. Its draft was discarded. Restart the app and try importing again.';
             const detail = details(row);
             if (error instanceof EngineImportError && error.field)
               detail.findings = [
@@ -491,7 +557,19 @@ export function createShellImportService(options: ShellImportOptions) {
                   message: 'This calculation cannot be represented by the app.',
                 },
               ];
-            await save(row, { status: 'failed' }, { ...detail, note });
+            await save(
+              row,
+              { status: 'failed' },
+              {
+                ...detail,
+                reason:
+                  error instanceof EngineImportError ||
+                  error instanceof ImportRunError
+                    ? 'workbook'
+                    : 'app',
+                note,
+              },
+            );
             await removeBytes(row);
             return { failure: note };
           }
@@ -548,8 +626,32 @@ export function createShellImportService(options: ShellImportOptions) {
     }),
   });
   const mine = (owner: Principal) => kit.forOwner(owner.id, owner.tenantId);
+  const admitRetry = async (row: AppImport, owner: Principal) => {
+    const pending = details(row).retry;
+    if (!pending) return;
+    const existing = await getAiRun(db, pending.id);
+    if (!existing) {
+      await mine(owner).retry(pending.from, {
+        id: pending.id,
+        budget: IMPORT_BUDGET,
+      });
+    } else {
+      // A crash may have happened after opening the retry but before its job.
+      const run = await mine(owner).get(pending.id);
+      if (run.retryOfRunId !== pending.from)
+        throw new Error('Import retry does not match');
+      if (run.status === 'running')
+        await mine(owner)
+          .resume(pending.id)
+          .catch((error) => {
+            if (!(error instanceof RunConflictError)) throw error;
+          });
+    }
+    await save(row, {}, { retry: undefined });
+  };
   const reconcile = async (row: AppImport, owner: Principal) => {
     if (!row.runId) return null;
+    if (details(row).retry && !(await getAiRun(db, row.runId))) return null;
     const run = await mine(owner).get(row.runId);
     if (['published', 'discarded'].includes(row.status)) return run;
     if (run.status === 'done' && ['proven', 'loading'].includes(row.status)) {
@@ -558,15 +660,29 @@ export function createShellImportService(options: ShellImportOptions) {
       if (slot?.id === row.draftId) slot.hold = null;
     } else if (run.status === 'failed' || run.status === 'cancelled') {
       await discardOwned(row);
-      await removeBytes(row);
+      const detail = details(row);
+      const reason =
+        detail.reason ??
+        (run.stopReason === 'repairs_exhausted'
+          ? 'engine'
+          : detail.findings?.length
+            ? 'workbook'
+            : 'app');
+      if (run.status === 'cancelled' || reason !== 'engine')
+        await removeBytes(row);
       await save(
         row,
         { status: run.status, stage: run.status },
         {
-          ...details(row),
+          ...detail,
+          reason,
           note:
-            details(row).note ??
-            'The import did not finish. Check the findings and try a corrected workbook.',
+            detail.note ??
+            (reason === 'engine'
+              ? `${detail.engine ?? 'Your AI engine'} did not return a usable import plan. Check Assistant settings, then try again. Your workbook is saved.`
+              : reason === 'workbook'
+                ? 'The workbook did not pass its checks. Correct the workbook using the findings, then choose the corrected file.'
+                : 'The app could not finish this import. Restart the app and try again.'),
         },
       );
     }
@@ -602,8 +718,10 @@ export function createShellImportService(options: ShellImportOptions) {
     async recover(resumeInterrupted = true) {
       for (const row of await (await collection()).list({ limit: 1000 })) {
         const owner = { id: row.ownerId, tenantId: row.tenantId };
+        if (details(row).retry) await admitRetry(row, owner);
         if (
-          ['published', 'discarded', 'failed', 'cancelled'].includes(row.status)
+          ['published', 'discarded', 'cancelled'].includes(row.status) ||
+          (row.status === 'failed' && details(row).reason !== 'engine')
         )
           await removeBytes(row);
         if (row.runId && !['published', 'discarded'].includes(row.status)) {
@@ -686,6 +804,7 @@ export function createShellImportService(options: ShellImportOptions) {
         const bytes = await readUpload(request);
         const book = await readWorkbook(bytes, maxCells);
         workbookFacts(book, maxCells);
+        if (current?.status === 'failed') await removeBytes(current);
         const id = randomUUID();
         const dir = join(root, 'imports');
         await mkdir(dir, { recursive: true, mode: 0o700 });
@@ -701,7 +820,10 @@ export function createShellImportService(options: ShellImportOptions) {
           ownerId: owner.id,
           tenantId: owner.tenantId,
           maxCells,
-          detail: JSON.stringify({ origin: new URL(request.url).origin }),
+          detail: JSON.stringify({
+            origin: new URL(request.url).origin,
+            progress: [{ stage: 'reading', at: Date.now() }],
+          }),
         });
         await row.save();
         try {
@@ -747,7 +869,7 @@ export function createShellImportService(options: ShellImportOptions) {
           await save(row, { status: draft.status, stage: draft.status });
         }
       }
-      const { origin: _origin, ...review } = details(row);
+      const { origin: _origin, retry: _retry, ...review } = details(row);
       return {
         id: row.runId,
         state: run?.status ?? row.status,
@@ -756,38 +878,102 @@ export function createShellImportService(options: ShellImportOptions) {
         stopReason: run?.stopReason ?? null,
         draftId: row.draftId || null,
         ...review,
+        reason:
+          run?.status === 'stopped'
+            ? run.stopReason?.startsWith('max_')
+              ? 'budget'
+              : 'paused'
+            : run?.status === 'failed'
+              ? review.reason
+              : null,
       };
     },
     async action(owner: Principal, action: string) {
-      await requireOwner(owner);
-      const row = await latest(owner);
-      if (!row?.runId)
-        throw new HttpError(404, 'There is no import to change.');
-      if (action === 'stop') {
-        await save(row, { status: 'paused' });
-        await mine(owner).stop(row.runId);
-      } else if (action === 'resume') {
-        try {
-          await save(row, { status: 'running' });
-          await mine(owner).resume(row.runId);
-        } catch {
-          throw new HttpError(
-            409,
-            'This import cannot resume within its remaining budget. Discard it and try a smaller workbook.',
+      return exclusive(async () => {
+        await requireOwner(owner);
+        const row = await latest(owner);
+        if (!row?.runId)
+          throw new HttpError(404, 'There is no import to change.');
+        if (action === 'retry') {
+          if (row.status !== 'failed' || details(row).reason !== 'engine')
+            throw new HttpError(
+              409,
+              'This import cannot be retried. Choose a workbook to start again.',
+            );
+          if (await getDraftSlot())
+            throw new HttpError(
+              409,
+              'A draft is already open. Publish or discard it before trying again.',
+            );
+          const usage = config.toJSON().usage;
+          if (usage?.enabled === false || usage?.persist === false)
+            throw new HttpError(
+              409,
+              'Workbook imports need AI usage tracking. Turn it on before importing.',
+            );
+          await (options.ready ?? assistant.ready)(owner);
+          await readWorkbook(
+            await readFile(file(row.id as string)),
+            row.maxCells,
           );
-        }
-      } else if (action === 'cancel' || action === 'discard') {
-        const state = await mine(owner).get(row.runId);
-        if (!['done', 'failed', 'cancelled'].includes(state.status))
-          await mine(owner).cancel(row.runId);
-        await discardOwned(row);
-        await removeBytes(row);
-        await save(row, {
-          status: action === 'discard' ? 'discarded' : 'cancelled',
-          stage: action === 'discard' ? 'discarded' : 'cancelled',
-        });
-      } else throw new HttpError(404, 'Unknown import action.');
-      return { ok: true };
+          const attempt = randomUUID();
+          const from = row.runId;
+          // Save the retry's identity before dispatch. Workflow retry owns the
+          // checkpoint carry and retry_of_run_id; recovery admits a missed job.
+          await save(
+            row,
+            {
+              runId: attempt,
+              draftId: '',
+              status: 'running',
+              stage: 'planning',
+            },
+            {
+              origin: details(row).origin,
+              retry: { from, id: attempt },
+              reason: null,
+              note: undefined,
+              findings: [],
+              feedback: undefined,
+              proof: undefined,
+              plan: undefined,
+              progress: [{ stage: 'planning', at: Date.now() }],
+            },
+          );
+          await admitRetry(row, owner);
+        } else if (action === 'stop') {
+          await save(row, { status: 'paused' });
+          await mine(owner).stop(row.runId);
+        } else if (action === 'resume') {
+          try {
+            await save(row, { status: 'running' });
+            await mine(owner).resume(row.runId);
+          } catch (error) {
+            await save(row, { status: 'paused' });
+            throw new HttpError(
+              409,
+              error instanceof RunConflictError
+                ? 'This import is still stopping. Try Resume again in a moment.'
+                : 'This import cannot resume within its remaining budget. Discard it and try a smaller workbook.',
+            );
+          }
+        } else if (action === 'cancel' || action === 'discard') {
+          const state = await mine(owner).get(row.runId);
+          if (!['done', 'failed', 'cancelled'].includes(state.status))
+            await mine(owner).cancel(row.runId);
+          await discardOwned(row);
+          await removeBytes(row);
+          await save(
+            row,
+            {
+              status: action === 'discard' ? 'discarded' : 'cancelled',
+              stage: action === 'discard' ? 'discarded' : 'cancelled',
+            },
+            { reason: null, note: undefined },
+          );
+        } else throw new HttpError(404, 'Unknown import action.');
+        return { ok: true };
+      });
     },
     dispose() {
       unsubscribe();
@@ -802,7 +988,7 @@ export async function readUpload(request: Request): Promise<Uint8Array> {
   const tooLarge = () =>
     new HttpError(
       413,
-      'This workbook is larger than 25 MiB. Save a smaller workbook and try again.',
+      'This workbook is larger than 25 MB. Save a smaller workbook and try again.',
     );
   if (length > IMPORT_MAX_BYTES) throw tooLarge();
   const reader = request.body?.getReader();

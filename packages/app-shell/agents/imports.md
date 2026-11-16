@@ -1,7 +1,7 @@
 # Workbook import (#5034)
 
 `/import` uploads raw `.xlsx` bytes to owner-only `POST /api/shell/import`.
-`GET` polls; `POST /api/shell/import/stop|resume|cancel|discard` controls the
+`GET` polls; `POST /api/shell/import/stop|resume|retry|cancel|discard` controls the
 current owner's import. All routes use `ownerOf` (same-origin for writes).
 The streamed byte ceiling is `IMPORT_MAX_BYTES` (25 MiB). The adapter-node
 startup wrapper sets its default `BODY_SIZE_LIMIT` before importing the server,
@@ -37,8 +37,11 @@ spreadsheet package's 250,000; `/settings/import` saves an integer in
 - `AppImport` is a new shell model with no generated API/MCP/CLI surface. Its
   JSON detail holds the plan (including currency/scale), findings and proof;
   bytes are private `imports/<id>.xlsx` (directory 0700, files 0600). Cleanup
-  runs on failure, cancellation, discard and publish, and reconciles missed
-  draft events after restart. A paused run retains input for resume.
+  runs on workbook/app failure, cancellation, discard and publish, and reconciles
+  missed draft events after restart. Engine failures retain input for explicit
+  retry (a new run; attempt key saved before admission). A paused run retains
+  input for resume. Polling exposes typed failure reasons and bounded timestamped
+  stage history; internal origins and admission keys never enter that projection.
 - The draft id is saved before `startDraft` forks. The workflow owns a durable
   hold, restored by `adoptDraft`: no draft reads/edits or publish while loading
   or proving. Recovery discards only its recorded draft, then repeats the step.
@@ -67,12 +70,14 @@ spreadsheet package's 250,000; `/settings/import` saves an integer in
   assistant engine refuse before consuming the upload. Provider error text is
   never displayed or logged by the import service.
 
-Tests: `src/engine/import-target.test.ts` runs the generated business workbook
+Tests: `src/engine/import-target.test.ts` runs tiny and realistic (42 orders,
+eight customers, title block, text order numbers/year) generated business workbooks
 against both the SQLite reference and engine targets, batch rollback, formula
 refusal, hidden provenance, and 10,000-row load/publish rehearsal.
 `src/lib/server/import-workflow.test.ts` covers scripted tracked calls, repeat,
 proof failure, held publishing, stop/resume, restart, cancellation, admission,
 owner/tenant/origin route checks and settings. `routes/import/import.dom.test.ts`
 covers picker/refusals, progress/controls, label-only proof review and settings.
+Welcome's DOM test covers completing onboarding directly into `/import`.
 All run under package `test` on Node 26/in-process SQLite or Svelte 5/jsdom.
 New capability: no bug-fix base comparison; browser visual QA belongs to integration.

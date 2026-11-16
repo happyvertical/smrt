@@ -5,6 +5,7 @@ import {
   createTrackedAiClient,
   getAiRun,
   getRunTrajectory,
+  transitionAiRun,
 } from '@happyvertical/smrt-core';
 import {
   SmrtJobCollection,
@@ -12,10 +13,12 @@ import {
   TaskRunner,
   unregisterLiveWorker,
 } from '@happyvertical/smrt-jobs';
+import { getSpreadsheets } from '@happyvertical/spreadsheets';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import {
   businessBytes,
   businessWorkbook,
+  realisticBusinessWorkbook,
 } from '../../../test-support/import-workbook.ts';
 import {
   importFieldName,
@@ -154,8 +157,22 @@ afterEach(async () => {
   await h.close();
   vi.restoreAllMocks();
 });
-it('loads and proves a workbook as one tracked background workflow and leaves only a reviewable draft', async () => {
-  const run = await service.start(h.owner, await request());
+it.each([
+  'tiny',
+  'realistic',
+] as const)('loads and proves a %s workbook as one tracked background workflow and leaves only a reviewable draft', async (size) => {
+  const fixture =
+    size === 'realistic' ? realisticBusinessWorkbook() : businessWorkbook();
+  answer = () => fixture.plan;
+  const run = await service.start(
+    h.owner,
+    new Request('http://shell/api/shell/import', {
+      method: 'POST',
+      body: (await (
+        await getSpreadsheets({ type: 'xlsx' })
+      ).write(fixture.workbook)) as BodyInit,
+    }),
+  );
   expect(calls).toBe(0);
   await worker();
   const current = await end();
@@ -166,7 +183,15 @@ it('loads and proves a workbook as one tracked background workflow and leaves on
   expect(Object.keys((await getHost()).describe().models)).toEqual([]);
   expect(
     await (await hostFor('draft')).countRows(importModelName('orders')),
-  ).toBe(2);
+  ).toBe(size === 'realistic' ? 42 : 2);
+  expect(current.progress?.map(({ stage }) => stage)).toEqual([
+    'reading',
+    'planning',
+    'checking',
+    'loading',
+    'proving',
+    'review',
+  ]);
   const events = await getRunTrajectory(h.db, run.id);
   const handoff = events!.entries.flatMap(({ event }) =>
     event?.type === 'handoff' ? [event] : [],
@@ -240,9 +265,146 @@ it.each([
   const current = await end();
   expect(current.state).toBe('failed');
   expect(current.stopReason).toBe('check_failed');
+  expect(current.reason).toBe('workbook');
   expect(calls).toBe(4);
   expect(current.findings?.some((f) => f.code === 'sheet-missing')).toBe(true);
   expect(await getDraftSlot()).toBeNull();
+});
+it.each([
+  'api',
+  'codex',
+] as const)('keeps the file after an %s engine failure and retries it once without uploading', async (engine) => {
+  testEngine = engine;
+  answer = () => {
+    throw new Error('private provider detail must not reach the owner');
+  };
+  const first = await service.start(h.owner, await request());
+  await worker();
+  const failure = await end();
+  expect(failure).toMatchObject({
+    state: 'failed',
+    reason: 'engine',
+    findings: [],
+  });
+  expect(failure.note).toContain(engine === 'codex' ? 'Codex' : 'API');
+  expect(failure.note).not.toContain('private provider');
+  const [row] = await (await AppImportCollection.create({ db: h.db })).list();
+  const file = join(h.dir, 'imports', `${row.id}.xlsx`);
+  expect(existsSync(file)).toBe(true);
+  for (const runner of runners) await runner.stop();
+  service.dispose();
+  service = install();
+  await service.recover();
+  await worker();
+  expect(existsSync(file)).toBe(true);
+  answer = () => businessWorkbook().plan;
+  await Promise.all([
+    service.action(h.owner, 'retry'),
+    service
+      .action(h.owner, 'retry')
+      .catch((error) => expect(error.status).toBe(409)),
+  ]);
+  const current = await end();
+  expect(current.state).toBe('done');
+  expect(current.id).not.toBe(first.id);
+  expect((await getAiRun(h.db, current.id!))?.retryOfRunId).toBe(first.id);
+  expect(
+    await (await hostFor('draft')).countRows(importModelName('orders')),
+  ).toBe(2);
+  await service.action(h.owner, 'discard');
+  expect(existsSync(file)).toBe(false);
+});
+it('keeps invalid model output separate from workbook findings and allows a fresh plan', async () => {
+  answer = () => ({ wrong: 'shape' });
+  await service.start(h.owner, await request());
+  await worker();
+  const current = await end();
+  expect(current).toMatchObject({
+    state: 'failed',
+    stopReason: 'repairs_exhausted',
+    reason: 'engine',
+  });
+  expect(current.note).not.toContain('findings');
+  answer = () => businessWorkbook().plan;
+  await service.action(h.owner, 'retry');
+  expect((await end()).state).toBe('done');
+});
+it.each([
+  'before',
+  'after',
+] as const)('recovers a crash %s retry admission without creating a second retry', async (when) => {
+  answer = () => {
+    throw new Error('test engine unavailable');
+  };
+  const first = await service.start(h.owner, await request());
+  await worker();
+  await end();
+  for (const runner of runners) await runner.stop();
+  const actual = service.kit.forOwner.bind(service.kit);
+  const fault = vi
+    .spyOn(service.kit, 'forOwner')
+    .mockImplementation((...args) => {
+      const api = actual(...args);
+      return {
+        ...api,
+        retry: async (...retryArgs: Parameters<typeof api.retry>) => {
+          if (when === 'after') await api.retry(...retryArgs);
+          throw new Error('simulated process crash');
+        },
+      };
+    });
+  await expect(service.action(h.owner, 'retry')).rejects.toThrow(
+    'simulated process crash',
+  );
+  fault.mockRestore();
+  service.dispose();
+  service = install();
+  answer = () => businessWorkbook().plan;
+  await service.recover();
+  await worker();
+  expect((await end()).state).toBe('done');
+  expect(
+    (
+      await h.db.query(
+        'SELECT id FROM _smrt_ai_runs WHERE retry_of_run_id = ?',
+        first.id,
+      )
+    ).rows,
+  ).toHaveLength(1);
+  expect(
+    await (await hostFor('draft')).countRows(importModelName('orders')),
+  ).toBe(2);
+});
+it.each([
+  'max_tokens',
+  'max_duration',
+] as const)('returns a machine-readable budget reason for %s and resumes the saved input', async (stopReason) => {
+  const run = await service.start(h.owner, await request());
+  await transitionAiRun(h.db, run.id, {
+    from: 'running',
+    to: 'stopped',
+    stopReason,
+    stopDetail: {
+      runId: run.id,
+      limit: stopReason === 'max_tokens' ? 'maxTokens' : 'maxDurationMs',
+      limitValue: stopReason === 'max_tokens' ? 400_000 : 1_800_000,
+      used: stopReason === 'max_tokens' ? 400_000 : 1_800_000,
+      room: 0,
+    },
+  });
+  expect(await service.current(h.owner)).toMatchObject({
+    state: 'stopped',
+    reason: 'budget',
+    stopReason,
+  });
+  await worker();
+  await until(async () =>
+    (await (await SmrtJobCollection.create({ db: h.db })).list()).every((job) =>
+      ['completed', 'failed', 'cancelled'].includes(job.status),
+    ),
+  );
+  await service.action(h.owner, 'resume');
+  expect((await end()).state).toBe('done');
 });
 it.each([
   'api',

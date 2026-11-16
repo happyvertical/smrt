@@ -11,6 +11,9 @@ export interface ImportState {
   stopReason: string | null;
   draftId: string | null;
   note?: string;
+  reason?: 'workbook' | 'engine' | 'budget' | 'paused' | 'app' | null;
+  engine?: string;
+  progress?: { stage: string; at: number }[];
   plan?: ImportPlan;
   findings?: Finding[];
   proof?: RunImportResult;
@@ -58,4 +61,19 @@ export function fieldLabel(
   return field
     ? (t?.fields.find((f) => f.key === field)?.label ?? 'Field')
     : (t?.label ?? 'Table');
+}
+
+/** Render exact checked money totals in the workbook's currency. */
+export function importTotal(
+  total: number,
+  money?: { currency: string; scale: number },
+): string {
+  if (!money) return total.toLocaleString();
+  const amount = BigInt(total),
+    negative = amount < 0n;
+  const digits = (negative ? -amount : amount)
+    .toString()
+    .padStart(money.scale + 1, '0');
+  const whole = money.scale ? digits.slice(0, -money.scale) : digits;
+  return `${negative ? '-' : ''}${BigInt(whole).toLocaleString()}${money.scale ? `.${digits.slice(-money.scale)}` : ''} ${money.currency}`;
 }
