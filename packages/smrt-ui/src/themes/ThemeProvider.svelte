@@ -68,7 +68,9 @@ interface Props {
    * `data-smrt-theme-changing` onto `<html>`. `local` themes only this
    * provider's own wrapper and never touches the document. A provider nested
    * inside another `ThemeProvider` is `local` by default, so an embedded
-   * widget cannot retheme its host page (#4485).
+   * widget cannot retheme its host page (#4485). A nested provider whose
+   * `colorScheme` is `system` also follows its parent's resolved scheme
+   * rather than the OS (#5025).
    */
   scope?: 'document' | 'local';
   /** Content */
@@ -112,6 +114,11 @@ let config = $state<ThemeConfig>(
   })),
 );
 
+// A parent provider means this one is nested. Resolved before this provider
+// registers its own context. Fixed at creation: a provider does not move
+// between root and nested.
+const parentContext: ThemeContext | null = tryGetThemeContext();
+
 let systemPrefersDark = $state(false);
 let systemContrastMore = $state(false);
 let systemForcedColors = $state(false);
@@ -143,12 +150,27 @@ const resolvedContrast = $derived<ResolvedContrast>(
 // Derived state
 const currentTheme = $derived<Theme>(getTheme(config.preset));
 
+// A nested provider that asks for `system` follows its nearest parent provider
+// (the host application's choice) instead of the OS, and tracks it live. An
+// explicit `light`/`dark` still wins, and a root provider follows the OS.
+const followsParent = $derived(
+  parentContext !== null && config.colorScheme === 'system',
+);
+
+// Before mount the parent's choice is unknown (the server cannot read the
+// host's stored preference, and the parent loads it only after this provider
+// mounts), so a follower renders no scheme-keyed values of its own and
+// inherits the host's through the cascade instead of painting a guess.
+const inheritingUntilMount = $derived(followsParent && !mounted);
+
 const resolvedScheme = $derived<'light' | 'dark'>(
-  config.colorScheme === 'system'
-    ? systemPrefersDark
-      ? 'dark'
-      : 'light'
-    : config.colorScheme,
+  config.colorScheme !== 'system'
+    ? config.colorScheme
+    : parentContext
+      ? parentContext.state.resolvedScheme
+      : systemPrefersDark
+        ? 'dark'
+        : 'light',
 );
 
 const isDark = $derived(resolvedScheme === 'dark');
@@ -168,7 +190,7 @@ const useInlineVariables = $derived(inlineVariables ?? !isBuiltInPreset);
 const styleString = $derived.by(() => {
   const declarations: string[] = [];
 
-  if (useInlineVariables) {
+  if (useInlineVariables && !inheritingUntilMount) {
     for (const [key, value] of Object.entries(
       generateThemeVariables(currentTheme, isDark),
     )) {
@@ -188,7 +210,7 @@ const styleString = $derived.by(() => {
 
   // Primary colour override: the whole derived set for the resolved scheme so
   // on-primary / container / focus / accent never stay mismatched.
-  if (config.primaryColor) {
+  if (config.primaryColor && !inheritingUntilMount) {
     try {
       for (const [key, value] of Object.entries(
         derivePrimaryOverrides(config.primaryColor, resolvedScheme),
@@ -291,10 +313,14 @@ function loadPersistedConfig(): void {
       ) {
         config.preset = persisted.preset;
       }
+      // A nested provider asked for `system` follows its parent, so a stored
+      // scheme (written by an earlier build, or by a person's explicit pick in
+      // a nested control) must not beat the host's choice.
       if (
-        persisted.colorScheme === 'light' ||
-        persisted.colorScheme === 'dark' ||
-        persisted.colorScheme === 'system'
+        !(parentContext && colorScheme === 'system') &&
+        (persisted.colorScheme === 'light' ||
+          persisted.colorScheme === 'dark' ||
+          persisted.colorScheme === 'system')
       ) {
         config.colorScheme = persisted.colorScheme;
       }
@@ -338,7 +364,7 @@ const context: ThemeContext = {
 // provider is nested, so it themes its own subtree only unless told otherwise.
 // Fixed at creation: a provider does not move between root and nested.
 const writesDocument = untrack(
-  () => (scope ?? (tryGetThemeContext() ? 'local' : 'document')) === 'document',
+  () => (scope ?? (parentContext ? 'local' : 'document')) === 'document',
 );
 
 setThemeContext(context);
@@ -584,12 +610,12 @@ $effect(() => {
 <div
   bind:this={rootEl}
   class="smrt-theme-provider__root"
-  class:smrt-theme-provider__dark={isDark}
+  class:smrt-theme-provider__dark={isDark && !inheritingUntilMount}
   class:smrt-theme-provider__no-paint={!paintSurface}
   class:smrt-theme-provider__glass={config.preset === 'glass'}
   style={styleString || undefined}
   data-theme={config.preset}
-  data-color-scheme={resolvedScheme}
+  data-color-scheme={inheritingUntilMount ? undefined : resolvedScheme}
   data-contrast={resolvedContrast}
   data-forced-colors={resolvedContrast === 'forced' ? '' : undefined}
   data-density={config.density}
