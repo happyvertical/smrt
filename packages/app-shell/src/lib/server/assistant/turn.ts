@@ -13,7 +13,11 @@
 //  - Bounded: max steps, max tokens, per-call and per-turn timeouts, a cap on
 //    calls per step and on result size. Client disconnect aborts everything.
 import type { AIMessage, AITool, AIToolCall } from '@happyvertical/ai';
-import { toProviderToolSchema } from '@happyvertical/smrt-core';
+import { AssistantTurnRun } from '@happyvertical/smrt-chat';
+import {
+  AiRunTrackingDisabledError,
+  toProviderToolSchema,
+} from '@happyvertical/smrt-core';
 import type { TurnEvent, TurnStop } from '../../assistant/events.ts';
 import {
   reportPresentation,
@@ -22,14 +26,22 @@ import {
 import type { AssistantThread } from '../../objects/AssistantThread.ts';
 import { getApprovalView } from '../approvals.ts';
 import type { CatalogResponse, CatalogTool } from '../catalog.ts';
+import { getShellDb } from '../host.ts';
 import { PolicyError, type Principal } from '../owner.ts';
 import { callTool, toolsFor } from '../policy.ts';
 import { type CallScope, LIVE_SCOPE, type Target } from '../target.ts';
 import { describeModelError } from './diagnostics.ts';
-import { systemPrompt, turnInput } from './guidance.ts';
+import {
+  ASSISTANT_TURN_DEFINITION_KEY,
+  composeSystemPrompt,
+  packagedGuidance,
+  resolveAssistantPrompt,
+  turnInput,
+} from './guidance.ts';
 import { type HoldOutcome, holdForUser } from './hold.ts';
 import {
   type AssistantModel,
+  isTrackedAssistantModel,
   ModelFailure,
   type ModelToolCall,
 } from './model.ts';
@@ -189,8 +201,53 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
   let activeMs = 0;
   let tokens = 0;
 
-  await appendMessage(thread, { role: 'user', content: options.text });
+  const userMessage = await appendMessage(thread, {
+    role: 'user',
+    content: options.text,
+  });
   const history: AIMessage[] = await historyFor(thread.id as string);
+
+  // The system guidance is the registered prompt, layers and overrides
+  // included; a database that cannot resolve it keeps the packaged text. A
+  // tracked model makes the turn an AI run on the shell database (#5005): its
+  // calls are calls of the run, tool use and approvals are events, and the
+  // messages are referenced, never copied.
+  let guidance: string | null = null;
+  let model: AssistantModel = options.model;
+  let run: AssistantTurnRun | null = null;
+  try {
+    const db = await getShellDb();
+    const prompt = await resolveAssistantPrompt({
+      db,
+      tenantId: principal.tenantId,
+    });
+    guidance = prompt.text;
+    if (isTrackedAssistantModel(options.model)) {
+      run = await AssistantTurnRun.open(
+        {
+          tracked: options.model.tracked,
+          prompt,
+          definitionKey: ASSISTANT_TURN_DEFINITION_KEY,
+          messageRefPrefix: 'assistant-message',
+          threadId: String(thread.id),
+        },
+        { originMessageId: String(userMessage.id) },
+      );
+      model = options.model.bind(prompt, run.context);
+    }
+  } catch (error) {
+    if (error instanceof AiRunTrackingDisabledError) {
+      emit({
+        type: 'error',
+        code: 'ai_tracking_disabled',
+        message:
+          'The assistant is unavailable: AI usage tracking is turned off.',
+      });
+      emit({ type: 'done', stop: 'error' });
+      return 'error';
+    }
+    if (isTrackedAssistantModel(options.model)) throw error;
+  }
 
   // The mode of the last structural change made while a draft was open: the
   // turn ends by telling the person which copy it was.
@@ -203,6 +260,9 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
       await appendMessage(thread, { role: 'assistant', content: note });
     }
     emit({ type: 'done', stop });
+    await run?.finish(
+      stop === 'aborted' ? 'cancelled' : stop === 'error' ? 'failed' : 'done',
+    );
     return stop;
   };
 
@@ -215,6 +275,12 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
       id: call.id,
       name: call.name,
       args: cut(call.arguments, 400),
+    });
+    await run?.step({
+      type: 'tool_call',
+      slug: call.name,
+      callId: call.id,
+      location: 'server',
     });
     let args: Record<string, unknown>;
     try {
@@ -296,10 +362,25 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
       summary: pending.summary,
       preview: pending.preview,
     });
+    await run?.approvalRequested(
+      {
+        id: pending.approvalId,
+        tool: call.name,
+        callId: call.id,
+        summary: pending.summary,
+      },
+      call.id,
+    );
     const outcome: HoldOutcome = await hold(pending.approvalId, {
       signal,
       timeoutMs: limits.holdTimeoutMs,
     });
+    if (outcome.status === 'approved' || outcome.status === 'denied') {
+      await run?.approvalDecided(
+        pending.approvalId,
+        outcome.status === 'approved' ? 'approved' : 'refused',
+      );
+    }
     return decided(call, pending, outcome);
   };
 
@@ -435,8 +516,16 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
     const started = Date.now();
     let reply: Awaited<ReturnType<AssistantModel['complete']>>;
     try {
-      reply = await options.model.complete({
-        messages: [{ role: 'system', content: systemPrompt(mode) }, ...input],
+      reply = await model.complete({
+        messages: [
+          {
+            role: 'system',
+            content: guidance
+              ? composeSystemPrompt(guidance, mode)
+              : composeSystemPrompt(packagedGuidance(), mode),
+          },
+          ...input,
+        ],
         tools: tools.map(toAiTool),
         maxTokens: limits.maxTokensPerCall,
         signal: callSignal,
@@ -520,6 +609,12 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
         outcome = await execute(call, offered);
         stop = outcome.stop;
       }
+      await run?.step({
+        type: 'tool_result',
+        slug: call.name,
+        callId: call.id,
+        ok: outcome.ok,
+      });
       emit({
         type: 'tool_result',
         id: call.id,
