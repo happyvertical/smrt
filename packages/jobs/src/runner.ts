@@ -22,6 +22,15 @@ import { isBackgroundEligibleMethod } from './background-policy.js';
 import { redactErrorForPersistence } from './error-redaction.js';
 import type { JobClaim } from './job-claim.js';
 import {
+  JOB_HANDLER_METHOD,
+  type JobHandler,
+  JobHandlerTargetError,
+  JobHandlerUnregisteredError,
+  jobHandlerName,
+  releaseJobHandlerRegistry,
+  sealJobHandlerRegistry,
+} from './job-handlers.js';
+import {
   JobContextLogger,
   type JobEventInput,
   type JobExecutionContext,
@@ -370,6 +379,11 @@ export class TaskRunner extends EventEmitter {
   private livenessWorkerExited: Promise<void> | null = null;
   private shutdownPromise: Promise<void> | null = null;
   private db: DatabaseInterface | null = null;
+  /**
+   * Handlers this runner dispatches to, snapshotted when it starts (#5005).
+   * Registration is closed while it runs, so the snapshot is the registry.
+   */
+  private jobHandlers: ReadonlyMap<string, JobHandler> = new Map();
   private logger = createLogger(true);
 
   constructor(config: TaskRunnerConfig = {}) {
@@ -461,6 +475,10 @@ export class TaskRunner extends EventEmitter {
     });
     registerLiveWorker(this.workerKey);
 
+    // Close handler registration before the first claim and dispatch from a
+    // snapshot: a handler registered after start() would race the claims it
+    // should serve (#5005). Reopened when this runner has stopped.
+    this.jobHandlers = sealJobHandlerRegistry(this.workerKey);
     this.running = true;
 
     // Renew the worker lease. Prefer an off-loop worker thread so a CPU-bound
@@ -544,6 +562,7 @@ export class TaskRunner extends EventEmitter {
       // Release liveness only AFTER the drain: doing it earlier would make
       // still-draining jobs look orphaned to other recoverers.
       unregisterLiveWorker(this.workerKey);
+      releaseJobHandlerRegistry(this.workerKey);
       // Only delete the lease row if the drain finished cleanly. If jobs are
       // still executing past the shutdown timeout, leave the row to lapse
       // naturally (≤ TTL) so a nearly-finished handler keeps its chance to land
@@ -1082,6 +1101,9 @@ export class TaskRunner extends EventEmitter {
       taskResult?: Record<string, unknown>;
     }> => {
       await this.assertMcpTaskAuthority(job);
+      // A reserved `handler:` target never reaches the model registry (#5005).
+      const handlerName = jobHandlerName(job.objectType);
+      if (handlerName !== null) return this.executeHandlerJob(job, handlerName);
       // Get the object class from registry
       const registeredClass = ObjectRegistry.getClass(job.objectType);
       if (!registeredClass) {
@@ -1258,6 +1280,55 @@ export class TaskRunner extends EventEmitter {
   }
 
   /**
+   * Run a job that targets a registered named handler (#5005). Called inside
+   * `executeJob`'s tenant context, after the same MCP authority check as a
+   * model job; timeout, cancellation, claim fencing and terminal writes are
+   * the shared model-job paths.
+   */
+  private async executeHandlerJob(
+    job: SmrtJob,
+    name: string,
+  ): Promise<{ result?: unknown }> {
+    if (job.method !== JOB_HANDLER_METHOD || job.objectId != null)
+      throw new JobHandlerTargetError(
+        `Handler job ${job.objectType} must have method '${JOB_HANDLER_METHOD}' and no objectId`,
+      );
+    if (getMcpTaskMarker(job))
+      throw new JobHandlerTargetError(
+        `Handler job ${job.objectType} cannot be an MCP task`,
+      );
+    const handler = this.jobHandlers.get(name);
+    if (!handler) throw new JobHandlerUnregisteredError(name);
+
+    const jobId = job.id;
+    if (!jobId) throw new Error('Job has no ID');
+    const {
+      _agentConfig: _,
+      _scheduleId: __,
+      _mcpTask: ___,
+      ...payload
+    } = (job.args ?? {}) as Record<string, unknown>;
+    const contextLogger = new JobContextLogger(createLogger(true), {
+      jobId,
+      attempt: job.attempts,
+      queue: job.queue,
+      objectType: job.objectType,
+      method: job.method,
+    });
+    contextLogger.info(`Starting job: ${job.getDescription()}`);
+    const executionContext = this.createExecutionContext(
+      job,
+      contextLogger,
+      name,
+    );
+    const result = await runnerExecutionContexts.run(
+      executionContext,
+      async () => await handler(payload, executionContext),
+    );
+    return { result };
+  }
+
+  /**
    * Handle job execution error
    */
   private async handleJobError(job: SmrtJob, error: Error): Promise<void> {
@@ -1345,7 +1416,11 @@ export class TaskRunner extends EventEmitter {
               expectedStatuses: ['running'],
               expectedWorkerId: this.workerKey,
               lastError: safeMessage,
-              failureKind: isTimeout ? 'timeout' : 'execution',
+              failureKind: isTimeout
+                ? 'timeout'
+                : error instanceof JobHandlerUnregisteredError
+                  ? 'handler-unregistered'
+                  : 'execution',
             }),
           )
         : null;
@@ -1398,6 +1473,7 @@ export class TaskRunner extends EventEmitter {
   private createExecutionContext(
     job: SmrtJob,
     contextLogger: JobContextLogger,
+    handler?: string,
   ): JobExecutionContext {
     const jobContext = {
       jobId: job.id ?? '',
@@ -1406,6 +1482,7 @@ export class TaskRunner extends EventEmitter {
       queue: job.queue,
       objectType: job.objectType,
       method: job.method,
+      ...(handler === undefined ? {} : { handler }),
     };
 
     const context: JobExecutionContext = {

@@ -59,7 +59,15 @@ export interface SmrtJobTerminalOutcome {
   objectType: string;
   method: string;
   attempts: number;
-  failureKind?: 'execution' | 'timeout' | 'stale-recovery';
+  /**
+   * Why a `failed` job failed. `handler-unregistered` (#5005): the runner that
+   * claimed a handler job had no handler registered under its name.
+   */
+  failureKind?:
+    | 'execution'
+    | 'timeout'
+    | 'stale-recovery'
+    | 'handler-unregistered';
   completedAt: string;
   cursor: string;
 }
@@ -636,9 +644,12 @@ function terminalOutcome(event: SmrtJobEvent): SmrtJobTerminalOutcome | null {
 
 function isFailureKind(
   value: unknown,
-): value is 'execution' | 'timeout' | 'stale-recovery' {
+): value is NonNullable<SmrtJobTerminalOutcome['failureKind']> {
   return (
-    value === 'execution' || value === 'timeout' || value === 'stale-recovery'
+    value === 'execution' ||
+    value === 'timeout' ||
+    value === 'stale-recovery' ||
+    value === 'handler-unregistered'
   );
 }
 

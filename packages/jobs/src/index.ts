@@ -108,6 +108,27 @@ export {
   type JobResult,
   type WaitOptions,
 } from './job-handle.js';
+// Named job handlers: a job targets a model method or a registered handler.
+export {
+  assertJobHandlerName,
+  isJobHandlerName,
+  isJobHandlerTarget,
+  JOB_HANDLER_METHOD,
+  JOB_HANDLER_TARGET_PREFIX,
+  type JobHandler,
+  JobHandlerAlreadyRegisteredError,
+  JobHandlerNameError,
+  type JobHandlerPayload,
+  JobHandlerRegistrationClosedError,
+  type JobHandlerTarget,
+  JobHandlerTargetError,
+  JobHandlerUnregisteredError,
+  jobHandlerName,
+  jobHandlerTarget,
+  listJobHandlers,
+  registerJobHandler,
+  unregisterJobHandler,
+} from './job-handlers.js';
 // Logger extension
 export {
   type JobContext,
@@ -188,6 +209,7 @@ export {
 // Core job model
 export {
   type ClaimReadyOptions,
+  type HandlerJobData,
   type JobStatus,
   type ListReadyOptions,
   SmrtJob,

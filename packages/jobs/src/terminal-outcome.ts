@@ -63,7 +63,11 @@ export interface TransitionTerminalJobOptions {
   expectedTaskId?: string;
   clearWorker?: boolean;
   lastError?: string | null;
-  failureKind?: 'execution' | 'timeout' | 'stale-recovery';
+  failureKind?:
+    | 'execution'
+    | 'timeout'
+    | 'stale-recovery'
+    | 'handler-unregistered';
   resultPointer?: string | null;
   taskResult?: Record<string, unknown> | null;
 }

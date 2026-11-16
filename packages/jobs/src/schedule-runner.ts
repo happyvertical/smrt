@@ -11,6 +11,7 @@ import {
   redactErrorForPersistence,
   redactErrorMessage,
 } from './error-redaction.js';
+import { isJobHandlerTarget } from './job-handlers.js';
 import {
   getScheduleAdmissionPayload,
   getScheduleAdmissionPolicy,
@@ -643,6 +644,12 @@ export class ScheduleRunner extends EventEmitter {
         ? schedule.timezone.trim()
         : 'UTC';
     try {
+      // Schedules target model methods only; a named job handler (#5005) is
+      // not a schedule target. Deterministic, so the row ends in 'error'.
+      if (isJobHandlerTarget(rawAgentType))
+        throw new TypeError(
+          `Schedules cannot target a job handler: ${rawAgentType}`,
+        );
       validateCronExpression(schedule.cron as string);
       validateCronTimezone(timezone);
     } catch (error) {
@@ -653,7 +660,7 @@ export class ScheduleRunner extends EventEmitter {
         redactErrorForPersistence(error),
         schedule.id,
       );
-      this.logger.error('Schedule has an invalid cron or time zone', {
+      this.logger.error('Schedule has an invalid target, cron or time zone', {
         scheduleId: schedule.id,
         error,
       });

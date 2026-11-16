@@ -24,6 +24,13 @@ import {
   clampRetries,
   DEFAULT_TENANT_JOB_CAP,
 } from './background-policy.js';
+import {
+  assertJobHandlerName,
+  isJobHandlerTarget,
+  JOB_HANDLER_METHOD,
+  jobHandlerName,
+  jobHandlerTarget,
+} from './job-handlers.js';
 import { SmrtJobDedupeSlotCollection } from './smrt-job-dedupe-slot.js';
 import { terminalSnapshot, transitionTerminalJob } from './terminal-outcome.js';
 import { resolveEngine } from './worker-liveness.js';
@@ -473,6 +480,68 @@ export interface SmrtJobData {
 }
 
 /**
+ * A job that targets a registered named handler (#5005) instead of a model
+ * method. Stored as `object_type = 'handler:<handler>'`, `method = 'handle'`,
+ * `object_id = NULL`, `args = payload`.
+ */
+export interface HandlerJobData
+  extends Omit<
+    SmrtJobData,
+    | 'objectType'
+    | 'objectId'
+    | 'method'
+    | 'args'
+    | 'taskId'
+    | 'taskOwnerId'
+    | 'taskResult'
+    | 'taskInputRequests'
+    | 'taskInputResponses'
+  > {
+  /** Namespaced handler name, e.g. `@happyvertical/smrt-workflows:workflow-run`. */
+  handler: string;
+  /** JSON payload passed to the handler. Reserved `_`-prefixed runner keys are refused. */
+  payload?: Record<string, unknown>;
+}
+
+/** Runner-owned argument keys a handler payload may not carry. */
+const HANDLER_RESERVED_ARG_KEYS = [
+  '_mcpTask',
+  '_agentConfig',
+  '_scheduleId',
+  '_scheduledFor',
+  '_scheduleAdmission',
+] as const;
+
+/**
+ * A handler-form row must be canonical: valid name, fixed method, no object
+ * id, no MCP task fields, a plain JSON object payload without runner keys.
+ */
+function assertHandlerJobData(data: SmrtJobData): void {
+  assertJobHandlerName(jobHandlerName(data.objectType));
+  if (data.method !== JOB_HANDLER_METHOD)
+    throw new TypeError(
+      `A handler job's method must be '${JOB_HANDLER_METHOD}'`,
+    );
+  if (data.objectId != null)
+    throw new TypeError('A handler job cannot have an objectId');
+  if (
+    data.taskId != null ||
+    data.taskOwnerId != null ||
+    data.taskResult != null ||
+    data.taskInputRequests != null ||
+    data.taskInputResponses != null
+  )
+    throw new TypeError('A handler job cannot be an MCP task');
+  const args = data.args ?? {};
+  if (!args || typeof args !== 'object' || Array.isArray(args))
+    throw new TypeError('A handler job payload must be a JSON object');
+  for (const key of HANDLER_RESERVED_ARG_KEYS) {
+    if (Object.hasOwn(args, key))
+      throw new TypeError(`A handler job payload cannot set reserved ${key}`);
+  }
+}
+
+/**
  * Options controlling a centralized {@link SmrtJobCollection.enqueueJob} call.
  */
 export interface EnqueueJobOptions {
@@ -749,6 +818,7 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
     options: EnqueueJobOptions = {},
   ): Promise<SmrtJob> {
     const cap = options.tenantJobCap ?? DEFAULT_TENANT_JOB_CAP;
+    if (isJobHandlerTarget(data.objectType)) assertHandlerJobData(data);
 
     // Effective tenant: an explicitly provided tenantId wins (ScheduleRunner
     // passes the schedule's tenant even when no ambient context exists);
@@ -861,6 +931,30 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
       return jobs.createQueuedJob({ ...data, tenantId: effectiveTenant }, cap);
     }
     return this.createQueuedJob({ ...data, tenantId: effectiveTenant }, cap);
+  }
+
+  /**
+   * Enqueue a job for a registered named handler (#5005). The handler need
+   * not be registered in this process: producers and runners are usually
+   * different processes. A runner that has no handler under the name fails
+   * the job terminally on its first claim (failure kind
+   * `handler-unregistered`). Guards, dedupe and tenancy are those of
+   * {@link enqueueJob}.
+   */
+  async enqueueHandlerJob(
+    data: HandlerJobData,
+    options: EnqueueJobOptions = {},
+  ): Promise<SmrtJob> {
+    const { handler, payload, ...rest } = data;
+    return this.enqueueJob(
+      {
+        ...rest,
+        ...jobHandlerTarget(handler),
+        objectId: null,
+        args: payload ?? {},
+      },
+      options,
+    );
   }
 
   /** Persist once, without a second save racing a consumer's first claim. */
