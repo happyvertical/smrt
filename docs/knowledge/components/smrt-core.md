@@ -5,10 +5,10 @@ description: "Core SMRT framework for business objects, persistence, and generat
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-16T09:02:10Z"
+  at: "2026-11-16T09:45:09Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:065ce7ce8d826dfda458edfb2accd824ef0e481bd106d26ee6db10b54db0b96a"
+source_revision: "sha256:b05054d6e0f57ad9998a0297f34c27b56b3154cd50d421f364ccb8c3552dd81b"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/package.json"
@@ -238,15 +238,3 @@ sources:
 - `SmrtJunctionBase` (collection `smrtjunctionbases`, extends `SmrtCollection`)
 - `SmrtObject` (collection `smrtobjects`, extends `SmrtClass`)
 - `SmrtPolymorphicAssociation` (collection `smrtpolymorphicassociations`, extends `SmrtObject`)
-- `TrackedAiHost` (collection `trackedaihosts`, extends `SmrtClass`)
-
-## MCP tools
-
-- `trackedaihost_create`: create on `@happyvertical/smrt-core:TrackedAiHost`
-- `trackedaihost_delete`: delete on `@happyvertical/smrt-core:TrackedAiHost`
-- `trackedaihost_get`: get on `@happyvertical/smrt-core:TrackedAiHost`
-- `trackedaihost_list`: list on `@happyvertical/smrt-core:TrackedAiHost`
-- `trackedaihost_ready`: ready on `@happyvertical/smrt-core:TrackedAiHost`
-- `trackedaihost_store`: store on `@happyvertical/smrt-core:TrackedAiHost`
-- `trackedaihost_tracked`: tracked on `@happyvertical/smrt-core:TrackedAiHost`
-- `trackedaihost_update`: update on `@happyvertical/smrt-core:TrackedAiHost`

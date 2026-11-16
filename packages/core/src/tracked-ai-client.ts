@@ -124,7 +124,12 @@ export interface TrackedAiClient {
   ): Promise<AIClient>;
 }
 
-class TrackedAiHost extends SmrtClass {
+/**
+ * The runtime that builds the tracked client. It is a helper, not a model: a
+ * class expression, because the manifest scanner registers every class
+ * declaration that extends `SmrtClass` as a persisted model (and so a table).
+ */
+const TrackedAiHost = class extends SmrtClass {
   readonly tenantId: string | null;
   private readonly transcript: boolean | undefined;
 
@@ -158,7 +163,8 @@ class TrackedAiHost extends SmrtClass {
       ? client
       : this.transcriptClient(client, this.transcript);
   }
-}
+};
+type TrackedAiHost = InstanceType<typeof TrackedAiHost>;
 
 const TRACKED_METHODS = new Set(['message', 'chat', 'complete', 'stream']);
 
