@@ -2,6 +2,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   utimesSync,
@@ -191,5 +192,22 @@ describe('transitive smrt packages (#5027)', () => {
     discoverSmrtPackageLocations({ baseDir: app });
     const after = JSON.parse(readFileSync(cacheFile, 'utf-8')).manifestsHash;
     expect(after).not.toBe(before);
+  });
+
+  it('revalidates which manifest is selected, not just the stored file', () => {
+    const imagesDist = join(imagesManifest, '..');
+    const dir = join(imagesDist, '..');
+    // Source-only package first: only `.smrt/manifest.json` exists.
+    rmSync(imagesManifest);
+    mkdirSync(join(dir, '.smrt'), { recursive: true });
+    writeFileSync(join(dir, '.smrt', 'manifest.json'), manifest('ImagesBase'));
+    const before = discoverSmrtPackageLocations({ baseDir: app })[IMAGES];
+    expect(before.manifestPath.endsWith(join('.smrt', 'manifest.json'))).toBe(
+      true,
+    );
+    // The first real build writes the preferred `dist/manifest.json`.
+    writeFileSync(imagesManifest, manifest('ImagesBase'));
+    const after = discoverSmrtPackageLocations({ baseDir: app })[IMAGES];
+    expect(after.manifestPath).toBe(realpathSync(imagesManifest));
   });
 });

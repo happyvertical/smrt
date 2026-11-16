@@ -256,6 +256,15 @@ export function resolveManifestPath(
     return null;
   }
 
+  return selectManifestPath(pkgPath);
+}
+
+/**
+ * The manifest `resolveManifestPath` would pick for a package directory.
+ * Also used to revalidate a cached choice: a build can create a preferred
+ * manifest (`dist/`) while the cached one (`.smrt/`) stays untouched.
+ */
+function selectManifestPath(pkgPath: string): string | null {
   // Take the first candidate that actually parses as a SMRT manifest. A
   // candidate that exists but is a JS module, stale, or malformed must not end
   // the search, or it would mask a valid conventional manifest behind it.
@@ -317,6 +326,16 @@ function getCachedDiscovery(
         console.log('[discovery] Cache invalid: package.json changed');
       }
       return null;
+    }
+
+    // The stored manifest must still be the one selection would pick now.
+    for (const location of Object.values(cache.packages)) {
+      if (selectManifestPath(location.packageDir) !== location.manifestPath) {
+        if (verbose) {
+          console.log('[discovery] Cache invalid: manifest selection changed');
+        }
+        return null;
+      }
     }
 
     // Hash the stored locations even when empty, so the check never skips.
