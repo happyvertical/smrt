@@ -412,6 +412,12 @@ export class TaskRunner extends EventEmitter {
   /** Resolves when {@link livenessWorker} has exited (set together with it). */
   private livenessWorkerExited: Promise<void> | null = null;
   private shutdownPromise: Promise<void> | null = null;
+  /** The in-flight {@link start}, shared by overlapping callers (#4944). */
+  private startPromise: Promise<void> | null = null;
+  /** The in-flight {@link stop}, shared by overlapping callers (#4944). */
+  private stopPromise: Promise<void> | null = null;
+  /** Set by a {@link stop} that lands while {@link start} is in flight. */
+  private startCancelled = false;
   private db: DatabaseInterface | null = null;
   /**
    * Handlers this runner dispatches to, snapshotted when it starts (#5005).
@@ -487,13 +493,37 @@ export class TaskRunner extends EventEmitter {
    * Start processing jobs
    */
   async start(): Promise<void> {
+    if (this.startPromise) return this.startPromise;
     if (this.running) return;
-    if (this.shutdownPromise || this.pollPromise || this.activeJobs.size > 0) {
+    if (
+      this.stopPromise ||
+      this.shutdownPromise ||
+      this.pollPromise ||
+      this.activeJobs.size > 0
+    ) {
       throw new Error('TaskRunner shutdown is still draining');
     }
     if (!this.collection || !this.workerCollection) {
       throw new Error('TaskRunner not initialized. Call initialize() first.');
     }
+
+    this.startCancelled = false;
+    const starting = this.startRunning();
+    this.startPromise = starting;
+    try {
+      await starting;
+    } finally {
+      if (this.startPromise === starting) this.startPromise = null;
+    }
+  }
+
+  /**
+   * The body of {@link start}. A {@link stop} that lands while it runs sets
+   * {@link startCancelled}; the checks below then skip whatever has not
+   * started yet, and that stop tears down what has, once this settles (#4944).
+   */
+  private async startRunning(): Promise<void> {
+    if (!this.collection || !this.workerCollection) return;
 
     // Fail fast if the job-system tables were never migrated, with an
     // actionable error rather than a confusing recovery failure later.
@@ -508,6 +538,9 @@ export class TaskRunner extends EventEmitter {
     if (this.db && resolveEngine(this.db) === 'sqlite') {
       await tuneSqliteForConcurrency(this.db);
     }
+
+    // Stopped before anything was registered: there is nothing to tear down.
+    if (this.startCancelled) return;
 
     // Register this worker incarnation with a seeded lease BEFORE polling, so
     // the first claimReady() cannot leave just-claimed jobs looking orphaned to
@@ -555,6 +588,11 @@ export class TaskRunner extends EventEmitter {
       }
     }
 
+    // Stopped during the liveness handshake: start nothing more. The waiting
+    // stop() releases the lease, the live set, the handler registry and the
+    // thread stored above, so none of them outlives it.
+    if (this.startCancelled) return;
+
     // Start polling loop
     this.resetIdlePollDelay();
     this.startPolling();
@@ -578,6 +616,35 @@ export class TaskRunner extends EventEmitter {
    * Stop processing jobs (graceful shutdown)
    */
   async stop(): Promise<void> {
+    if (this.stopPromise) return this.stopPromise;
+    const pendingStart = this.startPromise;
+    if (!this.running && !pendingStart) return;
+
+    // A stop that overlaps start() (a SIGTERM during startup) cancels what
+    // start() has not begun yet, waits for it to settle, then tears down what
+    // it did begin. Returning earlier would leave the liveness thread renewing
+    // a stopped runner's lease, and polling running after stop() (#4944).
+    if (pendingStart) this.startCancelled = true;
+    const stopping = (async () => {
+      if (pendingStart) {
+        try {
+          await pendingStart;
+        } catch {
+          // A failed start() is the caller's error; tear down what it left.
+        }
+      }
+      await this.shutdown();
+    })();
+    this.stopPromise = stopping;
+    try {
+      await stopping;
+    } finally {
+      if (this.stopPromise === stopping) this.stopPromise = null;
+    }
+  }
+
+  /** The body of {@link stop}: drain, then release lease renewal and liveness. */
+  private async shutdown(): Promise<void> {
     if (!this.running) return;
     if (this.shutdownPromise) return this.shutdownPromise;
 
