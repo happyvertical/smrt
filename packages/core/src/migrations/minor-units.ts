@@ -254,7 +254,7 @@ function isIntegerType(declaredType: string): boolean {
  * Read declared column types for one table.
  *
  * PostgreSQL and DuckDB both expose `information_schema.columns`; SQLite does
- * not, so it uses `PRAGMA table_info`. Returns an empty map when the table does
+ * not, so it uses `PRAGMA table_xinfo`. Returns an empty map when the table does
  * not exist, which the caller reports as `missing` rather than an error — a
  * package's migration lists its own tables, and a deployment may legitimately
  * not have created all of them yet.
@@ -279,10 +279,11 @@ async function readColumnTypes(
       }
       return types;
     }
-    // SQLite. `PRAGMA table_info` does not accept a bound parameter, and the
-    // identifier has already been validated by `quoteIdentifier`.
+    // SQLite. `PRAGMA table_xinfo` (not `table_info`, which omits generated
+    // columns) does not accept a bound parameter, and the identifier has
+    // already been validated by `quoteIdentifier`.
     const result = await db.query(
-      `PRAGMA table_info(${quoteIdentifier(table)})`,
+      `PRAGMA table_xinfo(${quoteIdentifier(table)})`,
     );
     for (const row of result.rows as { name?: string; type?: string }[]) {
       if (row.name) types.set(row.name, row.type ?? '');

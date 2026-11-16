@@ -1,23 +1,24 @@
-import { execFile } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { mount, tick, unmount } from 'svelte';
 import { expect, it, vi } from 'vitest';
+import {
+  PREVIEW_TEST_TIMEOUT_MS,
+  runPreviewChild,
+} from '../../../test-support/run-preview-child.ts';
 import ApprovalsPage from '../../routes/approvals/+page.svelte';
 import type { ApprovalView } from '../ui/types.ts';
 import ApprovalCard from './ApprovalCard.svelte';
+
+// The test runs a real-engine child; see test-support/run-preview-child.ts.
+vi.setConfig({ testTimeout: PREVIEW_TEST_TIMEOUT_MS });
 
 it('renders real Node engine previews in approval cards for all data and calculation operations', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'approval-card-'));
   try {
     const output = join(dir, 'previews.json');
-    await promisify(execFile)(
-      process.execPath,
-      ['--import', 'tsx', 'test-support/approval-engine-previews.ts', output],
-      { timeout: 150000 },
-    );
+    await runPreviewChild('test-support/approval-engine-previews.ts', output);
     const cards = JSON.parse(readFileSync(output, 'utf8')) as {
       name: string;
       command: Record<string, unknown>;
@@ -276,4 +277,4 @@ it('renders real Node engine previews in approval cards for all data and calcula
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-}, 180000);
+});

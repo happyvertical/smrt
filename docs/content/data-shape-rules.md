@@ -126,6 +126,18 @@ Read this before you upgrade a deployed app.
   `pnpm check:release-upgrade` rehearses both. The release workflow does not
   run that gate yet; the maintainer saves each release's schema with
   `pnpm release:snapshot` by hand.
+- **An ordinary column made calculated applies only when no value changes.**
+  Declaring a field `generated` that was stored before used to stop migrate
+  on every engine. Now migrate compares every stored value with what the
+  expression gives (as the column's declared type; a NULL equals a NULL). If
+  all are equal it converts, and re-counts inside its atomic run right before
+  the conversion, aborting if a row written since differs. If any differ it
+  stops, naming the count and a few rows (key, stored value, computed value),
+  and `smrt doctor --db` lists the same. After looking at them, run
+  `smrt db:migrate --confirm-recompute <table>.<column>` to replace the stored
+  values; the migrate record names each one. A run limited to some tables
+  (lazy activation, the model editor) never converts, and DuckDB still refuses
+  to change a calculated column on an existing table.
 - **`smrt doctor --db` shows the next migrate.** A "Next migrate" section lists
   the constraints made by hand that migrate will remove, rules in code the
   database does not enforce, what migrate applies and stops on, what it would

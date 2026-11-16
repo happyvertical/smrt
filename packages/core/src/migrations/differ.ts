@@ -69,6 +69,7 @@ import type {
   ColumnDefinition,
   ForeignKeyDefinition,
   IndexDefinition,
+  RecomputeExample,
   SchemaChange,
   SchemaDefinition,
   SchemaDiff,
@@ -271,6 +272,14 @@ export interface DiffOptions {
   includeDroppedIndexes?: boolean;
   /** Ignore type mismatches (just log warnings) */
   ignoreTypeMismatches?: boolean;
+  /**
+   * `table.column` of each ordinary column the caller has looked at and wants
+   * made calculated even though stored values differ from what the expression
+   * gives (#5018). Each confirmed conversion replaces those values, runs
+   * without the re-count guard, and is reported on the change's `recompute`.
+   * Without it a conversion applies only while no stored value would change.
+   */
+  confirmRecompute?: readonly string[];
   /**
    * Explicit engine hint forwarded to `detectEngine` when picking the DDL
    * strategy used for *existing-table* SQL (ALTER/CREATE INDEX/etc.). Use
@@ -1031,10 +1040,11 @@ export class SchemaComparer {
     }
 
     // Compare columns
-    const columnChanges = await this.compareColumns(
+    const columnChanges = await this.judgeOrdinaryConversions(
       tableName,
       manifest,
       dbSchema,
+      await this.compareColumns(tableName, manifest, dbSchema),
     );
     // The constraint changes join the column changes in one table rebuild on
     // SQLite (#4937), so they are read before the rebuild is planned.
@@ -1148,6 +1158,18 @@ export class SchemaComparer {
       }
       changes.push(change);
     }
+
+    // A required calculated column must be non-NULL for every stored row the
+    // run leaves (#5008); the run would otherwise fail at NOT NULL (PostgreSQL)
+    // or leave a row that breaks the declaration (SQLite).
+    changes.push(
+      ...(await this.requiredCalculatedColumnStops(
+        tableName,
+        manifest,
+        dbSchema,
+        columnChanges,
+      )),
+    );
 
     // Partial-index predicates are not surfaced by `getTableSchema()` (the
     // @happyvertical/sql introspection returns only name/columns/unique), so
@@ -1831,11 +1853,30 @@ export class SchemaComparer {
       );
       const rows = Array.isArray(result) ? result : result.rows || [];
       const violated = rows.length > 0;
+      // A column that changes type in this run gets its NOT NULL and fill only
+      // on the next run (constraint drift is judged once the type is settled),
+      // so a rule that rests on that fill cannot hold in this run (#5008).
+      const deferredFills = violated
+        ? columnChanges
+            .filter(
+              (change) =>
+                change.table === tableName &&
+                change.type === 'type_upgrade' &&
+                change.name &&
+                hasExecutableSchemaSql(change) &&
+                manifest.columns[change.name]?.notNull === true &&
+                dbSchema?.columns[change.name]?.notNull !== true,
+            )
+            .map((change) => change.name as string)
+        : [];
       changes.push({
         type: 'alter_column',
         table: tableName,
         name: column,
         alteration: 'set_check',
+        ...(deferredFills.length > 0
+          ? { kindHint: 'check.deferred-fill' as const }
+          : {}),
         mismatch: {
           expected: `CHECK (${check.expression})`,
           actual: dropped ? '(dropped with the replaced column)' : '(none)',
@@ -1846,8 +1887,13 @@ export class SchemaComparer {
               advisory: {
                 severity: 'warning' as const,
                 message:
-                  `${tableName}.${column} is required for some classes of this shared table, ` +
-                  'but live rows of those classes hold NULL. Fill them, then rerun the migration.',
+                  deferredFills.length > 0
+                    ? `${tableName}.${column} is required for some classes of this shared table, but live rows of those classes ` +
+                      `would still hold NULL after this run: ${deferredFills.join(', ')} changes type in the same run, so its ` +
+                      'NOT NULL and fill are planned only on the next run. Migrate the type change first (or fill the NULLs ' +
+                      'yourself), then rerun the migration to add the rule.'
+                    : `${tableName}.${column} is required for some classes of this shared table, ` +
+                      'but live rows of those classes hold NULL. Fill them, then rerun the migration.',
                 suggestedSql: [
                   `UPDATE ${quotedTable} SET ${this.quoteIdentifier(column)} = <value> WHERE NOT (${check.expression})`,
                   add,
@@ -2060,6 +2106,9 @@ export class SchemaComparer {
         }
       } else if (
         /^(CREATE (UNIQUE )?INDEX|DROP INDEX|COMMENT ON) /.test(statement) ||
+        // A table lock changes no row value (#5018): the conversion's own
+        // guard takes it, and it must not make the projection give up.
+        new RegExp(`^LOCK TABLE ${escaped} IN [A-Z ]+ MODE$`).test(statement) ||
         (preflight.test(statement) &&
           !/\b(UPDATE|INSERT|DELETE)\b/i.test(
             preflight.exec(statement)?.[1] ?? '',
@@ -2089,6 +2138,219 @@ export class SchemaComparer {
               )
               .join(', ')} FROM ${relation} AS ${table})`,
     };
+  }
+
+  /**
+   * Whether SQLite would refuse the drop half of a calculated-column swap
+   * (#5008), and why. Only SQLite's own schema re-parse knows every dependent
+   * of a column, so the drop statements run inside a savepoint that is rolled
+   * back whatever the outcome; DDL is transactional in SQLite. Returns
+   * undefined when the drop is accepted, or when the answer cannot be had (no
+   * savepoint, a read-only or busy database): the run then meets SQLite's own
+   * error, as before. The table definition is compared before and after, so a
+   * rollback that did not restore it is never silent.
+   */
+  private async sqliteDropColumnRefusal(
+    tableName: string,
+    dropStatements: readonly string[],
+  ): Promise<string | undefined> {
+    const savepoint = 'smrt_drop_probe';
+    const definition = async () =>
+      JSON.stringify(
+        (
+          await this.db.query(
+            'SELECT type, name, sql FROM sqlite_master WHERE tbl_name = $1 ORDER BY type, name',
+            [tableName],
+          )
+        ).rows,
+      );
+    let before: string;
+    try {
+      before = await definition();
+      await this.db.query(`SAVEPOINT ${savepoint}`);
+    } catch {
+      return undefined;
+    }
+    let refusal: string | undefined;
+    try {
+      for (const sql of dropStatements) await this.db.query(sql);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // A read-only or busy database says nothing about dependents.
+      if (!/readonly|read-only|locked|busy|interrupt/i.test(message))
+        refusal = message.replace(/^.*?SQLITE_[A-Z_]+:\s*/, '');
+    }
+    try {
+      await this.db.query(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+      await this.db.query(`RELEASE SAVEPOINT ${savepoint}`);
+    } catch (error) {
+      throw new Error(
+        `[SchemaComparer] Could not roll back the DROP COLUMN probe on ${tableName}: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
+    if ((await definition()) !== before)
+      throw new Error(
+        `[SchemaComparer] The DROP COLUMN probe on ${tableName} was not rolled back; refusing to continue.`,
+      );
+    return refusal;
+  }
+
+  /**
+   * Plan-time check for a required (NOT NULL) calculated column that this run
+   * adds or replaces (#5008): is its expression non-NULL for every stored row
+   * the run leaves? Without it PostgreSQL fails mid-run with a raw NOT NULL
+   * error, and SQLite (which checks nothing when a VIRTUAL column is added)
+   * leaves a row that breaks the declaration.
+   *
+   * - PostgreSQL asks the CHECK probe's projection ({@link checkProbeSource}),
+   *   which replays the run's own statements for the table, so a fill or type
+   *   conversion earlier in the run is judged as the run leaves it.
+   * - SQLite evaluates the compiled expression on the live rows, which is the
+   *   rows the run leaves as long as no other change of the run touches a
+   *   column the expression reads (an added column, a type change or a
+   *   NOT NULL fill). When one does, the answer cannot be proven here and the
+   *   plan stops, by name, until that change has run on its own.
+   * - DuckDB adds or replaces nothing on an existing table (it refuses first).
+   *
+   * Each violation is its own change next to the executable swap, as for
+   * `check.violated`; one stop refuses the whole run.
+   */
+  private async requiredCalculatedColumnStops(
+    tableName: string,
+    manifest: SchemaDefinition,
+    dbSchema: SqlTableSchemaInfo,
+    columnChanges: readonly SchemaChange[],
+  ): Promise<SchemaChange[]> {
+    if (this.engine !== 'postgres' && this.engine !== 'sqlite') return [];
+    const required = new Map<string, ColumnDefinition>();
+    for (const change of columnChanges) {
+      const column = change.column;
+      if (
+        change.table !== tableName ||
+        !change.name ||
+        column?.generated === undefined ||
+        !column.notNull ||
+        !(
+          change.type === 'add_column' ||
+          change.kindHint === 'column.generated-replace' ||
+          change.kindHint === 'column.generated-readd' ||
+          change.kindHint === 'column.generated-from-ordinary'
+        ) ||
+        !hasExecutableSchemaSql(change)
+      )
+        continue;
+      required.set(change.name, column);
+    }
+    if (required.size === 0) return [];
+
+    const table = this.quoteIdentifier(tableName);
+    const stops: SchemaChange[] = [];
+    const stop = (
+      name: string,
+      column: ColumnDefinition,
+      kindHint:
+        | 'column.generated-required-null'
+        | 'column.generated-required-unprojectable',
+      message: string,
+    ) =>
+      stops.push({
+        type: 'alter_column',
+        table: tableName,
+        name,
+        column,
+        kindHint,
+        mismatch: {
+          expected: `NOT NULL ${JSON.stringify(column.generated)}`,
+          actual: '(not checked against stored rows)',
+        },
+        sql: `-- ${tableName}.${name}: ${message}`,
+        advisory: { severity: 'warning', message },
+      });
+
+    let projected: { source: string } | { unprojectable: string } | undefined;
+    // What other changes of the run do to the values an expression reads.
+    const rewritten = new Set(
+      columnChanges
+        .filter(
+          (change) =>
+            change.table === tableName &&
+            change.name &&
+            !required.has(change.name) &&
+            (change.type === 'add_column' ||
+              change.type === 'type_upgrade' ||
+              change.type === 'type_mismatch' ||
+              (change.type === 'alter_column' &&
+                change.alteration === 'set_not_null')),
+        )
+        .map((change) => change.name as string),
+    );
+    for (const [name, column] of required) {
+      const quoted = this.quoteIdentifier(name);
+      const label = `${tableName}.${name}`;
+      try {
+        if (this.engine === 'postgres') {
+          projected ??= await this.checkProbeSource(
+            tableName,
+            manifest,
+            dbSchema,
+            columnChanges,
+          );
+          if ('unprojectable' in projected) {
+            stop(
+              name,
+              column,
+              'column.generated-required-unprojectable',
+              `${label} is required, but this run also runs a statement whose effect on the stored rows the planner cannot predict (${projected.unprojectable}), so it cannot prove the new expression is never NULL. Run that change on its own first, then rerun the migration.`,
+            );
+            continue;
+          }
+          const result = await this.db.query(
+            `SELECT 1 FROM ${projected.source} WHERE ${quoted} IS NULL LIMIT 1`,
+          );
+          if ((Array.isArray(result) ? result : result.rows || []).length === 0)
+            continue;
+        } else {
+          const touched = [...expressionColumns(column.generated)].filter(
+            (input) => rewritten.has(input) || !dbSchema.columns[input],
+          );
+          if (touched.length > 0) {
+            stop(
+              name,
+              column,
+              'column.generated-required-unprojectable',
+              `${label} is required, but this run also changes ${touched.join(', ')}, which its expression reads, so the planner cannot prove the new expression is never NULL. Run that change on its own first, then rerun the migration.`,
+            );
+            continue;
+          }
+          const compiled = compileGeneratedExpression(
+            column.generated as NonNullable<ColumnDefinition['generated']>,
+            this.engine,
+            column.generatedInputTypes,
+          );
+          const result = await this.db.query(
+            `SELECT 1 FROM ${table} WHERE (${compiled}) IS NULL LIMIT 1`,
+          );
+          if ((Array.isArray(result) ? result : result.rows || []).length === 0)
+            continue;
+        }
+      } catch (error) {
+        stop(
+          name,
+          column,
+          'column.generated-required-unprojectable',
+          `${label} is required, but the planner could not evaluate its new expression on the stored rows (${error instanceof Error ? error.message : String(error)}).`,
+        );
+        continue;
+      }
+      stop(
+        name,
+        column,
+        'column.generated-required-null',
+        `${label} is required (NOT NULL), but its new expression is NULL for at least one stored row, so the run would fail at NOT NULL. Make the expression non-NULL for every row (for example COALESCE its inputs), fill the inputs it reads, or declare the field optional, then rerun the migration.`,
+      );
+    }
+    return stops;
   }
 
   /**
@@ -2149,6 +2411,372 @@ export class SchemaComparer {
       types,
       generated: new Map(catalog?.get(tableName) ?? []),
     };
+  }
+
+  /**
+   * Judge each ordinary column the manifest now declares calculated (#5018).
+   * The conversion changes no stored value exactly when every row already
+   * holds what the expression gives, so the planner counts the rows that
+   * differ, comparing as the column's declared type (a NULL equals a NULL):
+   *
+   * - none: the change stays `column.generated-from-ordinary` (apply) and is
+   *   preceded, inside the same atomic run, by a guard that counts again and
+   *   aborts the run if a row written since planning now differs;
+   * - some: `column.generated-from-ordinary-differs` (stop), carrying the
+   *   count and a few rows (key, stored value, computed value);
+   * - the rows cannot be compared (a change of the same run the planner cannot
+   *   replay, or the comparison failed):
+   *   `column.generated-from-ordinary-unprojectable` (stop);
+   * - the column is in `confirmRecompute`: applied without the guard, with
+   *   `recompute.confirmed` set for the migrate record.
+   *
+   * PostgreSQL compares on the CHECK probe's rows (`checkProbeSource`: the rows
+   * as the run leaves them), and the conversion runs after every other column
+   * change of the table, which is where the probe reads. SQLite compares on the
+   * live rows and stops as unprojectable when another change of the run
+   * touches a column the expression reads. Equality, per engine:
+   *
+   * - PostgreSQL casts both sides to the declared type and uses IS DISTINCT
+   *   FROM, so text `'1.50'` equals a computed `1.5` in a NUMERIC column and
+   *   jsonb compares by value. A stored value that cannot be cast is a
+   *   comparison failure, never a silent match. Floating point is exact.
+   * - SQLite compares numbers by value (text that reads as a number counts as
+   *   that number), timestamps as instants (a UTC offset does not matter),
+   *   and every other type as text, with IS NOT (a NULL equals a NULL).
+   */
+  private async judgeOrdinaryConversions(
+    tableName: string,
+    manifest: SchemaDefinition,
+    dbSchema: SqlTableSchemaInfo,
+    columnChanges: SchemaChange[],
+  ): Promise<SchemaChange[]> {
+    if (this.engine !== 'postgres' && this.engine !== 'sqlite')
+      return columnChanges;
+    const pending = columnChanges.filter(
+      (change) =>
+        change.table === tableName &&
+        change.name &&
+        change.kindHint === 'column.generated-from-ordinary' &&
+        change.column?.generated !== undefined &&
+        hasExecutableSchemaSql(change),
+    );
+    if (pending.length === 0) return columnChanges;
+    const confirmed = new Set(this.options.confirmRecompute ?? []);
+    const judged = new Map<SchemaChange, SchemaChange>();
+    for (const change of pending)
+      judged.set(
+        change,
+        await this.judgeOrdinaryConversion(
+          change,
+          manifest,
+          dbSchema,
+          columnChanges.filter((other) => other !== change),
+          confirmed.has(`${tableName}.${change.name}`),
+        ),
+      );
+    return columnChanges.map((change) => judged.get(change) ?? change);
+  }
+
+  private async judgeOrdinaryConversion(
+    change: SchemaChange,
+    manifest: SchemaDefinition,
+    dbSchema: SqlTableSchemaInfo,
+    others: readonly SchemaChange[],
+    confirmed: boolean,
+  ): Promise<SchemaChange> {
+    const tableName = change.table;
+    const name = change.name as string;
+    const column = change.column as ColumnDefinition;
+    const label = `${tableName}.${name}`;
+    const table = this.quoteIdentifier(tableName);
+    const quoted = this.quoteIdentifier(name);
+    const statements = change.sqlStatements ?? [change.sql as string];
+    const stop = (
+      kindHint:
+        | 'column.generated-from-ordinary-differs'
+        | 'column.generated-from-ordinary-unprojectable',
+      message: string,
+      recompute?: SchemaChange['recompute'],
+    ): SchemaChange => {
+      const { sqlStatements: _statements, ...rest } = change;
+      return {
+        ...rest,
+        kindHint,
+        sql: `-- ${label}: ${message}`,
+        advisory: { severity: 'warning', message },
+        ...(recompute ? { recompute } : {}),
+      };
+    };
+    const unprojectable = (why: string) =>
+      stop(
+        'column.generated-from-ordinary-unprojectable',
+        `${label} would become calculated, but the planner cannot compare its stored values with the expression: ${why}. Run that change on its own first, then rerun the migration.`,
+      );
+
+    const declaredType = this.ddlStrategy.mapType(
+      isValidSQLDataType(column.type) ? column.type : 'TEXT',
+    );
+    let compiled: string;
+    try {
+      compiled = compileGeneratedExpression(
+        column.generated as NonNullable<ColumnDefinition['generated']>,
+        this.engine,
+        column.generatedInputTypes,
+      );
+    } catch (error) {
+      return unprojectable(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+
+    // The rows to compare, and the guard the run repeats before converting.
+    let source: string;
+    if (this.engine === 'postgres') {
+      const projected = await this.checkProbeSource(
+        tableName,
+        manifest,
+        dbSchema,
+        others,
+      );
+      if ('unprojectable' in projected)
+        return unprojectable(
+          `this run also runs a statement whose effect on the stored rows it cannot predict (${projected.unprojectable})`,
+        );
+      source = projected.source;
+    } else {
+      const rewritten = new Set(
+        others
+          .filter(
+            (other) =>
+              other.table === tableName &&
+              other.name &&
+              (other.type === 'add_column' ||
+                other.type === 'type_upgrade' ||
+                other.type === 'type_mismatch' ||
+                (other.type === 'alter_column' &&
+                  other.alteration === 'set_not_null')),
+          )
+          .map((other) => other.name as string),
+      );
+      const touched = [...expressionColumns(column.generated), name].filter(
+        (input) => rewritten.has(input) || !dbSchema.columns[input],
+      );
+      if (touched.length > 0)
+        return unprojectable(
+          `this run also changes ${touched.join(', ')}, which the comparison reads`,
+        );
+      source = table;
+    }
+
+    const normalize = (value: string): string => {
+      if (this.engine === 'postgres')
+        return `CAST(${value} AS ${declaredType})`;
+      switch (column.type) {
+        case 'INTEGER':
+        case 'REAL':
+        case 'BOOLEAN':
+          // Text that reads as a number is that number; anything else stays
+          // as it is and so never equals a number.
+          return `(CASE WHEN ${value} IS NULL THEN NULL WHEN ${value} = CAST(${value} AS NUMERIC) THEN CAST(${value} AS NUMERIC) ELSE ${value} END)`;
+        case 'TIMESTAMP':
+          return `COALESCE(strftime('%Y-%m-%dT%H:%M:%f', ${value}), ${value})`;
+        case 'BLOB':
+          return `(${value})`;
+        default:
+          return `CAST(${value} AS TEXT)`;
+      }
+    };
+    const storedSql = normalize(quoted);
+    const computedSql = normalize(`(${compiled})`);
+    let differs =
+      this.engine === 'postgres'
+        ? `${storedSql} IS DISTINCT FROM ${computedSql}`
+        : `${storedSql} IS NOT ${computedSql}`;
+    if (this.engine === 'postgres') {
+      // Casting the stored value to the declared type can hide a real
+      // difference when the live type is wider (a double 6.4 reads as the
+      // integer 6). A value that does not survive the round trip back to the
+      // live type counts as differing. A column another change of this run
+      // retypes is judged by that change's own lossy-type stop instead.
+      const retyped = others.some(
+        (other) =>
+          other.table === tableName &&
+          other.name === name &&
+          other.type !== 'type_mismatch' &&
+          (other.type === 'type_upgrade' ||
+            /\bTYPE\b/i.test(
+              (other.sqlStatements ?? [other.sql ?? '']).join(' '),
+            )),
+      );
+      const liveType = retyped
+        ? undefined
+        : (await this.liveColumnShapes(tableName, manifest)).types.get(name);
+      // Text is read by value ('1.50' is the number 1.5), so only a numeric,
+      // temporal or boolean live type is round-tripped.
+      if (
+        liveType &&
+        liveType.toLowerCase() !== declaredType.toLowerCase() &&
+        !/^(text|character|"char"|name|citext)/i.test(liveType)
+      )
+        differs = `(${differs} OR CAST(CAST(${quoted} AS ${declaredType}) AS ${liveType}) IS DISTINCT FROM ${quoted})`;
+    }
+
+    let count: number | null;
+    let examples: RecomputeExample[] = [];
+    try {
+      const found = await this.countOrdinaryDifferences(
+        source,
+        differs,
+        manifest,
+        dbSchema,
+        quoted,
+        this.engine === 'postgres' ? computedSql : `(${compiled})`,
+      );
+      count = found.count;
+      examples = found.examples;
+    } catch (error) {
+      if (!confirmed)
+        return unprojectable(
+          `the comparison failed (${error instanceof Error ? error.message : String(error)})`,
+        );
+      count = null;
+    }
+
+    if (confirmed) {
+      return {
+        ...change,
+        recompute: { count, examples, confirmed: true },
+        advisory: {
+          severity: 'warning',
+          message:
+            count === null
+              ? `${label} is made calculated on request (--confirm-recompute); its stored values could not be compared and are replaced by the expression.`
+              : `${label} is made calculated on request (--confirm-recompute): ${count} stored value(s) differ from the expression and are replaced by it.`,
+        },
+      };
+    }
+    if (count !== 0) {
+      const sample = examples
+        .map((example) => {
+          const key = Object.entries(example.key)
+            .map(([keyColumn, value]) => `${keyColumn}=${value}`)
+            .join(', ');
+          return `${key ? `${key}: ` : ''}stored ${example.stored}, computed ${example.computed}`;
+        })
+        .join('; ');
+      return stop(
+        'column.generated-from-ordinary-differs',
+        `${label} would become calculated, and ${count} stored row(s) hold a value that differs from what the expression gives (compared as ${declaredType})${sample ? `, for example ${sample}` : ''}. Converting would replace them. Copy the values to another field first, or declare the calculated field under a new name; if you have looked at them and want them recalculated, pass --confirm-recompute ${label}.`,
+        { count, examples, confirmed: false },
+      );
+    }
+
+    // Zero differing rows at planning. The run counts again right before it
+    // drops the column, so a row written since planning aborts the run.
+    const message = `${label} cannot become calculated: a stored value now differs from the expression (a row was written after planning). Nothing was applied; migrate again.`;
+    // PostgreSQL: writers are held off from the guard through the drop and
+    // re-add (readers are not), so no row can be written between the count
+    // and the conversion.
+    const guard =
+      this.engine === 'postgres'
+        ? [
+            `LOCK TABLE ${table} IN SHARE ROW EXCLUSIVE MODE`,
+            `DO $$ BEGIN IF EXISTS (SELECT 1 FROM ${table} WHERE ${differs}) THEN RAISE EXCEPTION ${this.quoteLiteral(message)}; END IF; END $$`,
+          ]
+        : [
+            `DROP TABLE IF EXISTS temp.${this.quoteIdentifier('_smrt_recompute_guard')}`,
+            `CREATE TEMP TABLE ${this.quoteIdentifier('_smrt_recompute_guard')} ("differing" INTEGER CONSTRAINT ${this.quoteIdentifier(message)} CHECK ("differing" = 0))`,
+            `INSERT INTO temp.${this.quoteIdentifier('_smrt_recompute_guard')} ("differing") SELECT count(*) FROM ${table} WHERE ${differs}`,
+            `DROP TABLE temp.${this.quoteIdentifier('_smrt_recompute_guard')}`,
+          ];
+    if (guard.some((sql) => sql.includes('$$') && !sql.startsWith('DO $$')))
+      return unprojectable('the expression contains a dollar-quote marker');
+    if (this.engine === 'postgres' && compiled.includes('$$'))
+      return unprojectable('the expression contains a dollar-quote marker');
+    const all = [...guard, ...statements];
+    return { ...change, sql: all[0], sqlStatements: all };
+  }
+
+  /**
+   * How many rows of `source` match `differs`, and a few of them. On
+   * PostgreSQL the query runs in a savepoint when a transaction is open, so a
+   * cast that fails cannot abort a transaction the caller owns.
+   */
+  private async countOrdinaryDifferences(
+    source: string,
+    differs: string,
+    manifest: SchemaDefinition,
+    dbSchema: SqlTableSchemaInfo,
+    storedColumn: string,
+    computed: string,
+  ): Promise<{ count: number; examples: RecomputeExample[] }> {
+    const keys = Object.entries(manifest.columns)
+      .filter(([key, column]) => column.primaryKey && dbSchema.columns[key])
+      .map(([key]) => key);
+    const rowsOf = (result: unknown): Array<Record<string, unknown>> =>
+      (Array.isArray(result)
+        ? result
+        : ((result as { rows?: unknown[] }).rows ?? [])) as Array<
+        Record<string, unknown>
+      >;
+    const show = (value: unknown): string => {
+      if (value === null || value === undefined) return 'NULL';
+      const text =
+        value instanceof Date
+          ? value.toISOString()
+          : typeof value === 'object'
+            ? JSON.stringify(value, (_key, item) =>
+                typeof item === 'bigint' ? item.toString() : item,
+              )
+            : String(value);
+      return text.length > 60 ? `${text.slice(0, 57)}...` : text;
+    };
+    const savepoint = 'smrt_recompute_probe';
+    let open = false;
+    if (this.engine === 'postgres') {
+      try {
+        await this.db.query(`SAVEPOINT ${savepoint}`);
+        open = true;
+      } catch {
+        // No transaction is open: a failed query aborts nothing.
+      }
+    }
+    try {
+      const counted = rowsOf(
+        await this.db.query(
+          `SELECT count(*) AS differing FROM ${source} WHERE ${differs}`,
+        ),
+      )[0];
+      const count = Number(counted?.differing ?? 0);
+      let examples: RecomputeExample[] = [];
+      if (count > 0) {
+        const keyList = keys.map((key) => this.quoteIdentifier(key));
+        const sample = rowsOf(
+          await this.db.query(
+            `SELECT ${[...keyList, `${storedColumn} AS "_smrt_stored"`, `${computed} AS "_smrt_computed"`].join(', ')} ` +
+              `FROM ${source} WHERE ${differs}` +
+              `${keyList.length ? ` ORDER BY ${keyList.join(', ')}` : ''} LIMIT 3`,
+          ),
+        );
+        examples = sample.map((row) => ({
+          key: Object.fromEntries(keys.map((key) => [key, show(row[key])])),
+          stored: show(row._smrt_stored),
+          computed: show(row._smrt_computed),
+        }));
+      }
+      return { count, examples };
+    } catch (error) {
+      if (open) await this.db.query(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+      throw error;
+    } finally {
+      if (open) {
+        try {
+          await this.db.query(`RELEASE SAVEPOINT ${savepoint}`);
+        } catch {
+          // The transaction is already gone.
+        }
+      }
+    }
   }
 
   /**
@@ -2956,12 +3584,57 @@ export class SchemaComparer {
     }
   }
 
+  /**
+   * `PRAGMA table_info` (and so `getTableSchema()`) omits SQLite generated
+   * columns, so a calculated column the model dropped would never reach the
+   * orphan loop (#5013). `table_xinfo` lists them with `hidden` 2 (VIRTUAL) or
+   * 3 (STORED); `hidden` 1 marks virtual-table module columns, which are not
+   * table columns a migration owns and stay excluded. Only names the manifest
+   * does not declare are added, so declared-column comparison keeps its own
+   * feature-scoped probe. Best-effort: an unreadable catalog leaves the
+   * ordinary column list as it was.
+   */
+  private async addLiveGeneratedColumns(
+    tableName: string,
+    dbSchema: SqlTableSchemaInfo,
+    dbColumnNames: Set<string>,
+    manifestColumnNames: ReadonlySet<string>,
+  ): Promise<void> {
+    try {
+      const { rows } = await this.db.query(
+        'SELECT * FROM pragma_table_xinfo($1) WHERE hidden IN (2, 3)',
+        [tableName],
+      );
+      for (const row of rows) {
+        const name = String(row.name);
+        if (manifestColumnNames.has(name) || dbSchema.columns[name]) continue;
+        // Never an insert blocker: a generated column cannot be supplied, so a
+        // NOT NULL here must not raise the NOT NULL-orphan warning.
+        dbSchema.columns[name] = {
+          type: String(row.type),
+          notNull: false,
+          primaryKey: false,
+          defaultValue: row.dflt_value,
+        };
+        dbColumnNames.add(name);
+      }
+    } catch {
+      // Keep the ordinary column list.
+    }
+  }
+
   private async compareColumns(
     tableName: string,
     manifest: SchemaDefinition,
     dbSchema: SqlTableSchemaInfo,
   ): Promise<SchemaChange[]> {
     const changes: SchemaChange[] = [];
+    /** Drop halves of calculated-column swaps, run before every other change. */
+    const deferredDrops: SchemaChange[] = [];
+    /** Re-add halves of calculated-column swaps, run after every other change. */
+    const deferredReadds: SchemaChange[] = [];
+    /** Index re-creations, once each, after every re-add half. */
+    const deferredIndexes = new Map<string, SchemaChange>();
     const dbColumnNames = new Set(Object.keys(dbSchema.columns));
     let generated =
       this.engine === 'postgres' || this.engine === 'duckdb'
@@ -3150,7 +3823,9 @@ export class SchemaComparer {
               colName,
               colDef,
             );
-            const statements = [
+            // The swap is a drop half and a re-add half (#5008). They stay one
+            // change on SQLite; on PostgreSQL they are planned apart (below).
+            const dropStatements = [
               ...(this.engine === 'sqlite'
                 ? [
                     `DROP INDEX IF EXISTS ${this.quoteIdentifier(uniqueColumnIndexName(tableName, colName))}`,
@@ -3161,17 +3836,76 @@ export class SchemaComparer {
                   `DROP INDEX IF EXISTS ${this.quoteIdentifier(index.name)}`,
               ),
               `ALTER TABLE ${table} DROP COLUMN ${column}`,
-              ...additions.flatMap(
-                (change) =>
-                  change.sqlStatements ?? (change.sql ? [change.sql] : []),
-              ),
-              ...this.ddlStrategy.generateIndexes({ ...manifest, indexes }),
             ];
+            const readdStatements = additions.flatMap(
+              (change) =>
+                change.sqlStatements ?? (change.sql ? [change.sql] : []),
+            );
+            // The indexes read the column back, and a declared index can name
+            // several calculated columns. On PostgreSQL they are created once
+            // every calculated column of the run is back (`deferredIndexes`).
+            const indexStatements = this.ddlStrategy.generateIndexes({
+              ...manifest,
+              indexes,
+            });
+            const statements = [
+              ...dropStatements,
+              ...readdStatements,
+              ...indexStatements,
+            ];
+            const deferIndexes = () => {
+              for (const statement of indexStatements)
+                if (!deferredIndexes.has(statement))
+                  deferredIndexes.set(statement, {
+                    type: 'alter_column',
+                    table: tableName,
+                    name: colName,
+                    column: colDef,
+                    sql: statement,
+                    kindHint: 'column.generated-readd',
+                    mismatch: {
+                      expected: JSON.stringify(colDef.generated),
+                      actual: '(dropped by this run)',
+                    },
+                  });
+            };
+            const converting =
+              actual === undefined
+                ? `Making ordinary ${tableName}.${colName} calculated`
+                : `Replacing calculated ${tableName}.${colName}`;
+            if (this.engine === 'sqlite') {
+              // Only SQLite's own schema re-parse knows every dependent of the
+              // column (a constraint, or an index, view or trigger smrt did not
+              // declare), so ask it: run the drop in a savepoint, roll it back.
+              const refusal = await this.sqliteDropColumnRefusal(
+                tableName,
+                dropStatements,
+              );
+              if (refusal !== undefined) {
+                changes.push({
+                  type: 'alter_column',
+                  table: tableName,
+                  name: colName,
+                  column: colDef,
+                  sql: `-- ${converting.toLowerCase()}: SQLite refuses to drop it (${refusal})`,
+                  kindHint: 'column.generated-replace-dependents',
+                  advisory: {
+                    severity: 'warning',
+                    message: `${converting} needs DROP COLUMN, and SQLite refuses it: ${refusal}. Something SQLite tracks (a constraint, or an index, view or trigger smrt did not declare) depends on the column and would be lost. Drop or move it first, then migrate again.`,
+                  },
+                  mismatch: {
+                    expected: JSON.stringify(colDef.generated),
+                    actual: actual ?? 'ordinary column',
+                  },
+                });
+                continue;
+              }
+            }
             // DROP COLUMN also drops what PostgreSQL ties to the column.
             // Declared shared-table CHECKs go back in this run
             // (`compareTableChecks`); anything else smrt cannot put back
             // stops the plan by name instead of being lost (review r7).
-            if (actual !== undefined && this.engine === 'postgres') {
+            if (this.engine === 'postgres') {
               const dependents = await this.postgresColumnDependents(
                 tableName,
                 colName,
@@ -3186,15 +3920,15 @@ export class SchemaComparer {
                   table: tableName,
                   name: colName,
                   column: colDef,
-                  sql: `-- replacing calculated ${tableName}.${colName} would drop: ${lost}`,
+                  sql: `-- ${converting.toLowerCase()} would drop: ${lost}`,
                   kindHint: 'column.generated-replace-dependents',
                   advisory: {
                     severity: 'warning',
-                    message: `Replacing calculated ${tableName}.${colName} would drop, and smrt would not put back: ${lost}.`,
+                    message: `${converting} would drop, and smrt would not put back: ${lost}.`,
                   },
                   mismatch: {
                     expected: JSON.stringify(colDef.generated),
-                    actual,
+                    actual: actual ?? 'ordinary column',
                   },
                 });
                 continue;
@@ -3209,8 +3943,11 @@ export class SchemaComparer {
               // The re-added column is nullable when the code no longer
               // requires it. That is a change of its own, planned as for an
               // ordinary column (`column.drop-not-null`), never a silent one.
-              if (dependents.notNull && !colDef.notNull)
-                changes.push(
+              // It runs ahead of the drop half, while the column still exists
+              // (`deferredDrops` is ordered), and the CHECK probe projects it
+              // on that live column.
+              if (actual !== undefined && dependents.notNull && !colDef.notNull)
+                deferredDrops.push(
                   this.buildAlterColumnChange({
                     tableName,
                     colName,
@@ -3224,30 +3961,72 @@ export class SchemaComparer {
                   }),
                 );
             }
-            changes.push({
+            if (actual !== undefined && this.engine === 'postgres') {
+              // PostgreSQL refuses to convert a column a calculated column
+              // reads (0A000), and an expression may read a column the same
+              // run adds. So the old column goes first, the column changes run
+              // against a table that has no calculated column on them, and the
+              // new one is added last (`deferredReadds`, appended after every
+              // other column change).
+              deferredDrops.push({
+                type: 'alter_column',
+                table: tableName,
+                name: colName,
+                column: colDef,
+                sql: dropStatements[0],
+                sqlStatements: dropStatements,
+                kindHint: 'column.generated-replace',
+                mismatch: {
+                  expected: JSON.stringify(colDef.generated),
+                  actual,
+                },
+              });
+              deferredReadds.push({
+                type: 'alter_column',
+                table: tableName,
+                name: colName,
+                column: colDef,
+                sql: readdStatements[0],
+                sqlStatements: readdStatements,
+                kindHint: 'column.generated-readd',
+                mismatch: {
+                  expected: JSON.stringify(colDef.generated),
+                  actual: '(dropped by this run)',
+                },
+              });
+              deferIndexes();
+              continue;
+            }
+            const conversionStatements =
+              this.engine === 'postgres'
+                ? [...dropStatements, ...readdStatements]
+                : statements;
+            if (this.engine === 'postgres') deferIndexes();
+            const conversion: SchemaChange = {
               type: 'alter_column',
               table: tableName,
               name: colName,
               column: colDef,
-              sql: statements[0],
-              sqlStatements: statements,
+              sql: conversionStatements[0],
+              sqlStatements: conversionStatements,
               kindHint:
                 actual === undefined
                   ? 'column.generated-from-ordinary'
                   : 'column.generated-replace',
-              ...(actual === undefined
-                ? {
-                    advisory: {
-                      severity: 'warning' as const,
-                      message: `Converting ${tableName}.${colName} to a generated column will discard existing values and recalculate them from the expression.`,
-                    },
-                  }
-                : {}),
               mismatch: {
                 expected: JSON.stringify(colDef.generated),
                 actual: actual ?? 'ordinary column',
               },
-            });
+            };
+            // An ordinary column made calculated (#5018) is judged after all
+            // of the table's column changes are known (`judgeOrdinaryConversions`).
+            // On PostgreSQL it goes last, with the re-add halves: the
+            // comparison and the run's re-count then see the rows after every
+            // fill and conversion, and no later conversion meets a calculated
+            // column that reads it (0A000).
+            if (actual === undefined && this.engine === 'postgres')
+              deferredReadds.push(conversion);
+            else changes.push(conversion);
             continue;
           }
         }
@@ -3795,6 +4574,14 @@ export class SchemaComparer {
 
     // Orphan columns: always reported, dropped only on request (#2369).
     const manifestColumnNames = new Set(Object.keys(manifest.columns));
+    if (this.engine === 'sqlite') {
+      await this.addLiveGeneratedColumns(
+        tableName,
+        dbSchema,
+        dbColumnNames,
+        manifestColumnNames,
+      );
+    }
     for (const colName of dbColumnNames) {
       if (manifestColumnNames.has(colName)) continue;
       const dbCol = dbSchema.columns[colName];
@@ -3818,7 +4605,15 @@ export class SchemaComparer {
       ...(await this.detectRenameDataPending(tableName, manifest, dbSchema)),
     );
 
-    return changes;
+    // Calculated columns replaced on PostgreSQL go first and come back last
+    // (#5008): the drop runs before any type conversion of a column they read,
+    // the re-add after any column their new expression reads exists.
+    return [
+      ...deferredDrops,
+      ...changes,
+      ...deferredReadds,
+      ...deferredIndexes.values(),
+    ];
   }
 
   /**

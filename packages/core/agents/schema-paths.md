@@ -438,14 +438,15 @@ list:
 | Two tables that would reference each other | DuckDB stops (the rebuild's kind, "overlap and cannot be combined") | DuckDB can create neither table first, and has no `ADD CONSTRAINT`. |
 | A new table that references a table the migration alters or rebuilds | DuckDB stops (the rebuild's kind, "new table") | The new table is created first, and DuckDB then refuses to alter or drop the table it references. Adding a plain column still works. |
 | Any rebuild | JSON adapter stops | It is DuckDB-backed but has no rebuild. |
-| Calculated column (#4915) added or changed on an existing table (`column.add`, `column.generated-replace`) | DuckDB refuses before planning (`VALIDATION_GENERATED_DIALECT`) | Its driver cannot add a generated column to an existing table. |
+| Calculated column (#4915) added or changed on an existing table (`column.add`, `column.generated-replace`, `column.generated-readd`) | DuckDB refuses before planning (`VALIDATION_GENERATED_DIALECT`) | Its driver cannot add a generated column to an existing table. |
 | Calculated column made ordinary (`column.generated-to-ordinary`) | SQLite and DuckDB stop (loses data) | PostgreSQL `DROP EXPRESSION` keeps the stored values; a VIRTUAL column stores none, so its values would become the default or NULL. |
 | `NOT NULL` dropped from a calculated column | SQLite stops (`column.rebuild-unavailable`) | The rebuild does not rewrite a generated column definition. |
 
 Calculated columns otherwise: a changed expression is applied (recalculated,
 not additive, so never by a table-limited run on a build table); making an
-ordinary column calculated stops on every engine
-(`column.generated-from-ordinary`, it would discard stored values); a rebuild
+ordinary column calculated applies while no stored value would change
+(`column.generated-from-ordinary`) and stops when one would
+(`column.generated-from-ordinary-differs`, below); a rebuild
 for another column copies only ordinary columns and keeps the calculated one
 calculated. PostgreSQL compares expression renderings with EXPLAIN on the live
 table and sends no probe for an expression that reads a column the same run
@@ -461,10 +462,85 @@ declares is planned as its own `column.drop-not-null`. Anything else (an
 index, constraint, view, trigger, extended statistics, policy or publication
 column list smrt did not declare, a column comment, column grants) stops the
 plan as `column.generated-replace-dependents`, naming each object. SQLite's
-`DROP COLUMN` refuses such a column itself, so nothing is lost silently there;
-the refusal is the engine's error, because only SQLite's own schema re-parse
-knows every dependent. Tests: `migrations/__tests__/calculated-column-kinds.test.ts`
+`DROP COLUMN` refuses such a column itself; the planner asks it first (below)
+so the refusal is a named stop. Tests: `migrations/__tests__/calculated-column-kinds.test.ts`
 and, on a real server, `calculated-column-swap-postgres.optional.test.ts`.
+
+Planning rules for the swap (#5008). Each fails by name at planning, never as
+a raw database error in the run:
+
+- **Statement order (PostgreSQL).** The swap is two changes. The drop half
+  (`column.generated-replace`, with its index drops) is hoisted before every
+  other column change of the table; the re-add half (`column.generated-readd`)
+  is appended after all of them, and the recreated indexes follow every re-add,
+  each once (a declared index may name several calculated columns). PostgreSQL refuses
+  to convert a column a calculated column reads (`0A000`), and a new expression
+  may read a column the same run adds, so the old column is gone before any
+  conversion and the new one arrives after every column exists, whatever the
+  declaration order. SQLite plans the swap as one change (its rebuild carries
+  the other changes); DuckDB refuses the swap before planning. UUID convergence
+  conversions (run before all column changes) are not reordered: a calculated
+  column cannot read a key or id column, so none is expected to depend on one.
+- **Ordinary column made calculated (#5018; `column.generated-from-ordinary`,
+  `column.generated-from-ordinary-differs`,
+  `column.generated-from-ordinary-unprojectable`).** The conversion changes no
+  stored value exactly when every row already holds the expression's value, so
+  the planner counts the rows that differ (`judgeOrdinaryConversions`):
+  PostgreSQL on the `checkProbeSource` rows (as the run leaves them), both sides
+  cast to the declared type with `IS DISTINCT FROM` (a non-text live type must
+  also survive the round trip back to itself, so a double 6.4 is not "equal" to
+  the integer 6); SQLite on the live rows
+  with `IS NOT`, numbers by value, timestamps as instants, other types as text,
+  and an unprojectable stop when the run also changes a column the comparison
+  reads. None differ: apply, with guard statements first in the change (on
+  PostgreSQL `LOCK TABLE ... IN SHARE ROW EXCLUSIVE MODE`, so writers wait and
+  readers do not) that count again inside the atomic run and abort it if a row
+  now differs. Some
+  differ: a stop with the count and three example rows in its message and in
+  `change.recompute`; `smrt doctor --db` prints the same. `confirmRecompute:
+  ['table.column']` (CLI `--confirm-recompute`) replaces the values on purpose:
+  no guard, `change.recompute.confirmed`, and the run's record
+  (`_smrt_migrate_runs.recomputes`, `ConfirmedRecompute`) names it. On
+  PostgreSQL the conversion is planned after every other column change of the
+  table, where the probe reads, and `postgresColumnDependents` / SQLite's drop
+  dry run stop on anything the column drop would take with it. Table-limited
+  runs refuse it (not additive); DuckDB refuses at planning. Tests:
+  `calculated-column-recompute.test.ts` and, on a real server,
+  `calculated-column-swap-postgres.optional.test.ts`.
+- **Required column, NULL result (`column.generated-required-null`,
+  `column.generated-required-unprojectable`).** A required (NOT NULL)
+  calculated column that the run adds or replaces is checked at planning for a
+  stored row whose new expression is NULL. PostgreSQL asks the `checkProbeSource`
+  projection (the rows as the run leaves them: fills, conversions, added
+  columns). SQLite evaluates the compiled expression on the live rows, and
+  stops as unprojectable when another change of the run adds, converts or fills
+  a column the expression reads. SQLite checks nothing itself when a VIRTUAL
+  column is added, so without this a row breaking the declaration was left in
+  place silently. Each is its own stop next to the executable swap.
+- **Fill deferred by a type change (`check.deferred-fill`).** Constraint drift
+  of a column (NOT NULL, its fill, its default) is judged only once its type is
+  settled, so a release that converts and requires a column needs two
+  migrations. This is deliberate, not folded into one run: NOT NULL, defaults
+  and the NULL count are planned against the live column, and the conversion
+  rewrites exactly those. What changes is the signal: a shared-table rule that
+  rests on the deferred fill stops as `check.deferred-fill`, naming the column,
+  instead of an unexplained `check.violated`. Migrate the type change first.
+- **SQLite `DROP COLUMN` refused by a dependent.** Only SQLite's schema
+  re-parse knows every dependent, so the planner runs the drop half in a
+  savepoint and rolls it back (`sqliteDropColumnRefusal`; the table definition
+  is compared before and after, and a rollback that did not restore it throws).
+  A refusal (an undeclared index over the column; views and triggers do not
+  block it, they read the re-added column again) is a
+  `column.generated-replace-dependents` stop carrying SQLite's message. A
+  read-only or busy database says nothing, so the run meets SQLite's own error.
+  The dry run rewrites the whole table inside the rolled-back savepoint, so on a
+  large table it costs write-lock time at planning, including `db:status`,
+  `db:diff` and `smrt doctor --db`, not only `db:migrate`.
+- **Triggers (known limit).** User triggers that fire on a fill's `UPDATE` are
+  not replayed by the CHECK probe, which projects the run's statements without
+  firing them, so on a table with such triggers the probe's view of the rows
+  can differ from the real ones. No trigger replay is built; the `check.add`
+  note in `smrt doctor --db` says so.
 
 The shared-table `CHECK` probe reads the rows as the run leaves them: it
 replays the run's own statements for the table, in run order, as projection
@@ -472,7 +548,8 @@ layers (fills of NULLs from a backfill or default, added columns, type
 conversions, `DROP EXPRESSION`, replaced calculated columns, each calculated
 column recomputed after every layer). A table that gains `_meta_type` in the
 same run is never probed for a missing column
-(`issue-4932-check-probe-pglite.test.ts`). A statement the projection does not
+(`issue-4932-check-probe-pglite.test.ts`). A table lock (the #5018 conversion guard's
+`LOCK TABLE`) changes no value and is skipped. A statement the projection does not
 recognize is never guessed at: the rule stops as `check.unprojectable`.
 
 How each engine gets there:
@@ -1318,7 +1395,8 @@ Adding live trigger generation requires a migration rollout design.
 ## Successful migrate record (#4926)
 
 `migrations/migrate-record.ts` owns `_smrt_migrate_runs`, provisioned by
-`ensureSystemTables` (system schema 1.16.0). A successful whole-schema migrate,
+`ensureSystemTables` (system schema 1.16.0; 1.16.1 adds its `recomputes` column).
+A successful whole-schema migrate,
 including an already-current database, records the core release, the build's
 packages and fingerprint (below). Failed, stopped, and dry runs never stamp
 it. Identical release/packages/fingerprint skip the insert; changed values append

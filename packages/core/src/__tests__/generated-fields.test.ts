@@ -697,11 +697,33 @@ describe('database-generated fields #4915', () => {
       const changed = await new SchemaComparer(db, {
         engineHint: engine,
       }).compare(schemas);
-      const replacement = changed.changes.find(
+      // PostgreSQL plans the swap as a drop half, a re-add half, and the
+      // column's index re-created once every calculated column is back
+      // (#5008, #5018): the index is a change of its own.
+      const replacement = changed.changes.filter(
         (change) => change.name === 'total',
-      )!;
-      expect(replacement.type).toBe('alter_column');
-      for (const sql of replacement.sqlStatements!) await db.query(sql);
+      );
+      expect(
+        replacement
+          .filter((change) => change.sqlStatements)
+          .map((change) => change.type),
+      ).toEqual(
+        replacement
+          .filter((change) => change.sqlStatements)
+          .map(() => 'alter_column'),
+      );
+      expect(replacement).toHaveLength(engine === 'postgres' ? 3 : 1);
+      for (const change of replacement)
+        for (const sql of change.sqlStatements ?? [change.sql!])
+          await db.query(sql);
+      if (engine === 'postgres')
+        expect(
+          (
+            await db.query(
+              "SELECT 1 FROM pg_indexes WHERE indexname = 'generated_total_idx'",
+            )
+          ).rows,
+        ).toHaveLength(1);
       expect(
         Number(
           (await db.query('SELECT total FROM generated_migration')).rows[0]
@@ -1439,9 +1461,19 @@ describe('database-generated fields #4915', () => {
       expect((await parity()).findings).toContainEqual(
         expect.objectContaining({ kind: 'generated_expression_drift' }),
       );
+      // The stored 99 differs from what the expression gives (6), so the
+      // conversion back stops until it is confirmed (#5018).
+      const refused = await new SchemaComparer(db, {
+        engineHint: engine,
+        previousSchemas,
+      }).compare(schemas);
+      expect(
+        refused.changes.find((change) => change.name === 'total')?.kindHint,
+      ).toBe('column.generated-from-ordinary-differs');
       const back = await new SchemaComparer(db, {
         engineHint: engine,
         previousSchemas,
+        confirmRecompute: ['generated_conversion.total'],
       }).compare(schemas);
       const replacement = back.changes.find(
         (change) => change.name === 'total',
@@ -1668,7 +1700,7 @@ describe('database-generated fields #4915', () => {
       ).toBe(2024);
     });
 
-    it(`#4972 round2 item3: ${engine} warns before discarding an ordinary column's values`, async () => {
+    it(`#4972 round2 item3: ${engine} stops before discarding an ordinary column's values`, async () => {
       const db = await getTestDatabase({
         type: engine === 'sqlite' ? 'sqlite' : 'pglite',
         classes: [],
@@ -1693,14 +1725,23 @@ describe('database-generated fields #4915', () => {
         dependencies: [],
         version: '1',
       };
-      const diff = await new SchemaComparer(db, { engineHint: engine }).compare(
-        { destructive_generated: schema },
-      );
-      const change = diff.changes.find((change) => change.name === 'total')!;
-      expect(change.advisory).toMatchObject({
+      const refused = await new SchemaComparer(db, {
+        engineHint: engine,
+      }).compare({ destructive_generated: schema });
+      const stop = refused.changes.find((change) => change.name === 'total')!;
+      expect(stop.kindHint).toBe('column.generated-from-ordinary-differs');
+      expect(stop.sqlStatements).toBeUndefined();
+      expect(stop.advisory).toMatchObject({
         severity: 'warning',
-        message: expect.stringMatching(/discard.*values/i),
+        message: expect.stringMatching(/1 stored row.*stored 77, computed 5/),
       });
+      // Confirmed, the stored values are replaced by the calculated ones.
+      const diff = await new SchemaComparer(db, {
+        engineHint: engine,
+        confirmRecompute: ['destructive_generated.total'],
+      }).compare({ destructive_generated: schema });
+      const change = diff.changes.find((change) => change.name === 'total')!;
+      expect(change.recompute).toMatchObject({ count: 1, confirmed: true });
       expect(
         Number(
           (await db.query('SELECT total FROM destructive_generated')).rows[0]

@@ -1320,6 +1320,7 @@ CREATE TABLE IF NOT EXISTS _smrt_migrate_runs (
   release TEXT NOT NULL,
   packages TEXT NOT NULL,
   fingerprint TEXT NOT NULL,
+  recomputes TEXT,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_smrt_migrate_runs_latest
@@ -1525,8 +1526,10 @@ function toPostgresTenantUuid(ddl: string): string {
  * 1.15.0 adds the `_smrt_ai_transcripts` table and the `call_id` columns
  * (with indexes) on `_smrt_ai_usage` and `_smrt_ai_usage_outcomes` (#4780).
  */
-// 1.16.0 adds the successful whole-schema migrate ledger (#4926).
-export const SMRT_SCHEMA_VERSION = '1.16.0';
+// 1.16.0 adds the successful whole-schema migrate ledger (#4926). 1.16.1 adds
+// its `recomputes` column (the ordinary columns a run made calculated on
+// request, #5018); 1.16.0 databases get it from `addColumnIfMissing()`.
+export const SMRT_SCHEMA_VERSION = '1.16.1';
 
 /**
  * Canonical form of the system DDL that {@link SMRT_SCHEMA_DDL_CHECKSUMS} covers.
@@ -1581,4 +1584,6 @@ export const SMRT_SCHEMA_DDL_CHECKSUMS: Readonly<Record<string, string>> =
       '6a1a58c1b2f137d8a1e3378f667587074dd6d1049c8d2f119427ff1232c0323b',
     '1.16.0':
       '8f7f6a9f5a7f3d28ac4858841a665328698a06467bcab4a8d2055cc651db263a',
+    '1.16.1':
+      '30014e192ed56e2645b70a2e08a2c704a8c16b033544cdb53560a64d6e8c7c15',
   });
