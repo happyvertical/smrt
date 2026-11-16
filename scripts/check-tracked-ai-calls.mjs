@@ -12,16 +12,23 @@
  *
  *   1. builds a provider client itself (`getAI(...)` of `@happyvertical/ai`),
  *   2. imports a provider SDK, or
- *   3. calls a model method (`ai.chat`, `ai.message`, `ai.complete`,
- *      `ai.stream`) on a client that did not come from the tracked path, or
+ *   3. calls a model method (`chat`, `message`, `complete`, `stream`) on a
+ *      client that did not come from the tracked path. Each receiver's origin
+ *      is read from the file: the initializers and declared types of the
+ *      variable (and of a variable it was copied or destructured from). A
+ *      tracked factory makes it tracked; `getAI`, an `AIClient` /
+ *      `AIInterface` type, or a model-client name (`ai`, `llm`, `*Ai`) with
+ *      no tracked origin makes it a provider client; anything else (a job's
+ *      `complete`, a store's `stream`) is not a model client. Or
  *   4. makes a tracked call that carries no prompt key: a model call with no
  *      options at all, or with a literal that names neither `promptKey` nor
- *      `usageTags` and spreads nothing; a `createTrackedAiClient(...).client()`
- *      call whose prompt names no `promptKey`.
+ *      `usageTags` and spreads nothing; a `.client()` call on a tracked
+ *      client whose prompt names no `promptKey`.
  *
  * The files below are the only exceptions, each with its reason. A stale entry
  * (a file that no longer needs the exception) fails too, so the list only
- * shrinks. Comments and string bodies are ignored; test files are not scanned.
+ * shrinks. Comments and string bodies are ignored (a template literal's
+ * `${...}` expressions are code); test files are not scanned.
  *
  * Usage: node scripts/check-tracked-ai-calls.mjs [--root <dir>]
  */
@@ -59,6 +66,10 @@ export const ALLOWED = {
     'Image generation, not a text call; the tracked client does not cover image generation yet.',
   'packages/images/src/editor.ts':
     'Image generation, not a text call; the tracked client does not cover image generation yet.',
+  'packages/ingestion/src/extraction-providers.ts':
+    'Calls the vision client of the extraction providers its host passes in; the extraction worker builds that client (below) with no database in scope.',
+  'packages/ingestion/src/proposal-sdk.ts':
+    "createSDKProposalGenerator is a public adapter over the SDK client its host passes in; the host builds that client, on the tracked path when it has a database.",
   'packages/ingestion/src/extraction-worker.ts':
     'The vision client of the extraction worker, built from the worker configuration with no database in scope.',
   'packages/inference/src/hosted.ts':
@@ -107,9 +118,18 @@ const PROVIDER_SDKS = [
   'ollama',
 ];
 
-/** What marks a file as holding a client from the tracked path. */
+/**
+ * What makes a variable a client from the tracked path: its initializer or
+ * declared type names one of these.
+ */
 const TRACKED_ORIGIN =
-  /\b(?:prepareAiOperation|getAiClient|getOptionalAiClient|createTrackedAiClient|trackedAiClient|transcriptClient|tracked\.client)\b/;
+  /\b(?:prepareAiOperation|getAiClient|getOptionalAiClient|createTrackedAiClient|trackedAiClient|transcriptClient|TrackedAiClient)\b|\.\s*client\s*\(/;
+
+/** What makes a variable a provider client outside the tracked path. */
+const UNTRACKED_ORIGIN = /\bgetAI\b|\bAI(?:Client|Interface)\b/;
+
+/** A receiver named like a model client, whatever its origin. */
+const AI_NAME = /^(?:ai|llm|aiClient)$|(?:Ai|AI|AiClient|Llm|LLM)$/;
 
 const MODEL_METHODS = '(?:chat|message|complete|stream)';
 
@@ -123,15 +143,67 @@ function walk(dir, out) {
   }
 }
 
-/** Blank comments and string bodies so prose that names the API is not counted. */
+/**
+ * Blank comments and string bodies so prose that names the API is not
+ * counted. A template literal keeps its `${...}` expressions: code there is
+ * code.
+ */
 export function stripNoise(source) {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
-    .replace(/(^|[^:\\])\/\/[^\n]*/g, (m, p) => p + ' '.repeat(m.length - p.length))
-    .replace(
-      /'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`/g,
-      (m) => m[0] + m.slice(1, -1).replace(/[^\n]/g, ' ') + m[m.length - 1],
-    );
+  return blankTemplates(
+    source
+      .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+      .replace(/(^|[^:\\])\/\/[^\n]*/g, (m, p) => p + ' '.repeat(m.length - p.length))
+      .replace(
+        /'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"/g,
+        (m) => m[0] + m.slice(1, -1).replace(/[^\n]/g, ' ') + m[m.length - 1],
+      ),
+  );
+}
+
+/** Blank the text of template literals, keeping their `${...}` expressions. */
+function blankTemplates(code) {
+  let out = '';
+  let i = 0;
+  // Each open template: the brace depth of the `${` that holds the next one.
+  const stack = [];
+  let inText = false;
+  let depth = 0;
+  while (i < code.length) {
+    const ch = code[i];
+    if (inText) {
+      if (ch === '\\') {
+        out += code[i + 1] === '\n' ? ' \n' : '  ';
+        i += 2;
+        continue;
+      }
+      if (ch === '`') {
+        inText = false;
+        out += ch;
+      } else if (ch === '$' && code[i + 1] === '{') {
+        inText = false;
+        stack.push(depth);
+        depth = 0;
+        out += '${';
+        i += 2;
+        continue;
+      } else {
+        out += ch === '\n' ? '\n' : ' ';
+      }
+      i += 1;
+      continue;
+    }
+    if (ch === '`') inText = true;
+    else if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      if (depth === 0 && stack.length) {
+        depth = stack.pop();
+        inText = true;
+      } else depth -= 1;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
 }
 
 function lineOf(text, index) {
@@ -169,6 +241,78 @@ function splitArguments(text) {
   const last = text.slice(start);
   if (last.trim() !== '') parts.push(last);
   return parts.map((part) => part.trim());
+}
+
+/** The text of an expression starting at `start`: to `;` or a line end at depth 0. */
+function expressionAt(code, start) {
+  let depth = 0;
+  for (let i = start; i < code.length; i += 1) {
+    const ch = code[i];
+    if (ch === '(' || ch === '[' || ch === '{') depth += 1;
+    else if (ch === ')' || ch === ']' || ch === '}') {
+      if (depth === 0) return code.slice(start, i);
+      depth -= 1;
+    } else if (depth === 0 && (ch === ';' || ch === ',' || ch === '\n')) {
+      if (ch !== '\n' || code.slice(start, i).trim() !== '') {
+        return code.slice(start, i);
+      }
+    }
+  }
+  return code.slice(start);
+}
+
+/**
+ * Where a variable's value comes from in this file: the initializers and
+ * declared types of every declaration, assignment, destructuring, parameter
+ * or field that names it.
+ */
+function originsOf(code, name) {
+  const id = name.replace(/\$/g, '\\$');
+  const origins = [];
+  const assigned = new RegExp(`(?<![\\w$])${id}\\s*(?::\\s*([^=;]+?))?\\s*=(?![=>])`, 'g');
+  for (const match of code.matchAll(assigned)) {
+    if (match[1]) origins.push(match[1]);
+    origins.push(expressionAt(code, match.index + match[0].length));
+  }
+  const destructured = new RegExp(`\\{[^{}]*(?<![\\w$.])${id}\\b[^{}]*\\}\\s*=(?![=>])`, 'g');
+  for (const match of code.matchAll(destructured)) {
+    origins.push(expressionAt(code, match.index + match[0].length));
+  }
+  const typed = new RegExp(`(?<![\\w$.])${id}\\??\\s*:\\s*`, 'g');
+  for (const match of code.matchAll(typed)) {
+    origins.push(expressionAt(code, match.index + match[0].length));
+  }
+  return origins;
+}
+
+/**
+ * A variable's origins, following a value copied or destructured from
+ * another variable (`const { ai } = prepared`) a few steps back.
+ */
+function resolvedOrigins(code, name, seen = new Set()) {
+  if (seen.has(name) || seen.size > 4) return [];
+  seen.add(name);
+  const origins = [];
+  for (const origin of originsOf(code, name)) {
+    origins.push(origin);
+    const from = /^\s*(?:await\s+)?([A-Za-z_$][\w$]*)\s*$/.exec(origin)?.[1];
+    if (from) origins.push(...resolvedOrigins(code, from, seen));
+  }
+  return origins;
+}
+
+/**
+ * A receiver's kind: `tracked` (a client from the tracked path), `model` (a
+ * model client from anywhere else) or `other` (not a model client: a job's
+ * `complete`, a store's `stream`).
+ */
+function receiverKind(code, name) {
+  const origins = resolvedOrigins(code, name);
+  if (origins.some((origin) => TRACKED_ORIGIN.test(origin))) return 'tracked';
+  if (AI_NAME.test(name) || origins.some((origin) => UNTRACKED_ORIGIN.test(origin))) {
+    return 'model';
+  }
+  return 'other';
 }
 
 /**
@@ -217,31 +361,48 @@ export function findViolations(source) {
     }
   }
 
-  const tracked = TRACKED_ORIGIN.test(code);
-  const callRe = new RegExp(`\\b(?:ai|aiClient)\\s*\\.\\s*${MODEL_METHODS}\\s*\\(`, 'g');
+  const callRe = new RegExp(
+    `([A-Za-z_$][\\w$]*)\\s*\\??\\.\\s*${MODEL_METHODS}\\s*\\(`,
+    'g',
+  );
+  const kinds = new Map();
   for (const match of code.matchAll(callRe)) {
-    const open = match.index + match[0].length - 1;
-    const args = splitArguments(argumentsAt(code, open));
-    if (!tracked) {
+    const receiver = match[1];
+    // `this.chat(` is a method of the class itself, not a client.
+    if (receiver === 'this' || receiver === 'super') continue;
+    if (!kinds.has(receiver)) kinds.set(receiver, receiverKind(code, receiver));
+    const kind = kinds.get(receiver);
+    if (kind === 'other') continue;
+    const call = match[0].replace(/\s+/g, '');
+    if (kind === 'model') {
       found.push({
         line: lineOf(code, match.index),
         kind: 'untracked-call',
-        detail: `${match[0].replace(/\s+/g, '')} on a client that did not come from the tracked path`,
+        detail: `${call} on a client that did not come from the tracked path`,
       });
       continue;
     }
+    const open = match.index + match[0].length - 1;
+    const args = splitArguments(argumentsAt(code, open));
     // Message-style calls take the input first, the options second.
     if (!optionsCarryKey(args[1])) {
       found.push({
         line: lineOf(code, match.index),
         kind: 'no-prompt-key',
-        detail: `${match[0].replace(/\s+/g, '')} carries no prompt key (pass the options of a resolved prompt, or usageTags with promptKey)`,
+        detail: `${call} carries no prompt key (pass the options of a resolved prompt, or usageTags with promptKey)`,
       });
     }
   }
 
-  const clientRe = /\b(?:tracked|trackedAi|trackedClient)\s*\.\s*client\s*\(/g;
+  // `.client(` of a tracked client makes a client for one prompt: the prompt
+  // must name its key.
+  const clientRe = /([A-Za-z_$][\w$]*)\s*\??\.\s*client\s*\(/g;
   for (const match of code.matchAll(clientRe)) {
+    const receiver = match[1];
+    if (!/^tracked/i.test(receiver)) {
+      if (!kinds.has(receiver)) kinds.set(receiver, receiverKind(code, receiver));
+      if (kinds.get(receiver) !== 'tracked') continue;
+    }
     const open = match.index + match[0].length - 1;
     const prompt = splitArguments(argumentsAt(code, open))[0];
     if (!prompt || !/\bpromptKey\b|\btrackedPromptCall\b/.test(prompt)) {

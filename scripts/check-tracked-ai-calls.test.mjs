@@ -100,6 +100,56 @@ test('fails a tracked client made without a prompt key', () => {
   );
 });
 
+test('resolves each receiver from its own origin, not the file', () => {
+  // Any receiver name: a provider client is untracked however it is called.
+  assert.deepEqual(
+    kinds("const client = await getAI({ type: 'openai' });\nawait client.message(p, { promptKey: 'k' });\n"),
+    ['raw-client', 'untracked-call'],
+  );
+  assert.deepEqual(kinds('const x = await llm.chat(messages, opts);\n'), ['untracked-call']);
+  assert.deepEqual(kinds('const reviewAi = deps.ai;\nawait reviewAi.message(p, opts);\n'), [
+    'untracked-call',
+  ]);
+  assert.deepEqual(
+    kinds('function f(model: AIClient) { return model.complete(p, opts); }\n'),
+    ['untracked-call'],
+  );
+  // A tracked origin elsewhere in the file does not cover another client.
+  assert.deepEqual(
+    kinds(
+      "const tracked = await this.getAiClient();\nawait tracked.message(p, opts);\nconst raw = await getAI({});\nawait raw.chat(m, opts);\n",
+    ),
+    ['raw-client', 'untracked-call'],
+  );
+  // A client destructured or copied from a tracked one is tracked.
+  assert.deepEqual(
+    kinds('const prepared = await this.prepareAiOperation(o);\nconst { ai } = prepared;\nawait ai.message(p, aiOptions);\n'),
+    [],
+  );
+  assert.deepEqual(
+    kinds('const client = await ai.client(trackedPromptCall(r), { runContext });\nawait client.message(r.text, { ...opts });\n'),
+    [],
+  );
+  // Not model clients: a job, a stream, an approval authority.
+  assert.deepEqual(
+    kinds('await job.complete(result);\nwriter.stream(chunk);\nawait approvals.complete(id);\n'),
+    [],
+  );
+});
+
+test('reads code inside template literal expressions', () => {
+  assert.deepEqual(kinds('const s = `answer: ${await ai.chat(messages)}`;\n'), ['untracked-call']);
+  assert.deepEqual(kinds('const s = `ai.chat(${name})`;\n'), []);
+});
+
+test('checks the prompt of every .client( call on a tracked client', () => {
+  const typed = 'interface Options { ai: TrackedAiClient }\n';
+  assert.deepEqual(kinds(`${typed}await ai.client({ tier: 'good' });\n`), ['no-prompt-key']);
+  assert.deepEqual(kinds(`${typed}await ai.client(trackedPromptCall(resolved));\n`), []);
+  // A method named client on something else is not a tracked client.
+  assert.deepEqual(kinds('const run = await openTurn();\nawait run.client(selection);\n'), []);
+});
+
 test('ignores comments, strings and test files', () => {
   const root = repo({
     'packages/p/src/doc.ts': `// getAI(options) is how the SDK builds a client; ai.chat(x) calls it

@@ -203,8 +203,9 @@ Codex CLI) makes no call through a client: its turn is one
 `fail()` after a captured usage event settles it with `cancelled`,
 `timed_out` or `failed`. `pnpm lint` runs `scripts/check-tracked-ai-calls.mjs`:
 package code may not build a provider client (`getAI`), import a provider
-SDK, or call `ai.chat/message/complete/stream` on a client that did not come
-from the tracked path, and a tracked call needs a prompt key; the file's short
+SDK, or call `chat/message/complete/stream` on a client that did not come
+from the tracked path (each receiver judged by its own origin in the file),
+and a tracked call or `.client()` needs a prompt key; the file's short
 `ALLOWED` list carries each exception with its reason, and a stale entry
 fails.
 
