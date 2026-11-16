@@ -45,6 +45,13 @@ import {
   usageEvent,
 } from './fixtures/ai-run-test-db';
 
+/** What `smrt-jobs`' `assertJobClaim` throws for a claim that is gone. */
+function claimLost(): Error {
+  const error = new Error('Job claim is no longer current');
+  error.name = 'JobClaimLostError';
+  return error;
+}
+
 afterEach(async () => {
   setTranscriptRedactor(undefined);
   await closeAiRunTestDatabases();
@@ -344,7 +351,7 @@ describe.each(aiRunTestEngines)('AI run lifecycle on %s (#5005)', (engine) => {
     await reserveAiCall(database, child.id, { inputChars: 4 }, { fence: live });
     expect(fenced).toEqual([root.id]);
     const lost = async () => {
-      throw new Error('Job claim is no longer current');
+      throw claimLost();
     };
     await expect(
       reserveAiCall(database, child.id, { inputChars: 4 }, { fence: lost }),
@@ -353,6 +360,50 @@ describe.each(aiRunTestEngines)('AI run lifecycle on %s (#5005)', (engine) => {
       startAiRunStep(database, root.id, { stepIndex: 0, fence: lost }),
     ).rejects.toMatchObject({ code: 'AI_RUN_CLAIM_LOST' });
     expect((await getAiRun(database, child.id))?.reservedCalls).toBe(1);
+  });
+
+  it('refuses on a fence that returns false, and retries any other fence error as a failed transaction', async () => {
+    const database = await db();
+    const root = await openAiRun(store(database), {
+      type: 'workflow',
+      durable: true,
+    });
+    let lostCalls = 0;
+    const lost = async () => {
+      lostCalls += 1;
+      throw claimLost();
+    };
+    await expect(
+      finishAiRun(database, root.id, { status: 'done' }, { fence: lost }),
+    ).rejects.toMatchObject({ code: 'AI_RUN_CLAIM_LOST' });
+    // A claim that is gone is the answer: never retried.
+    expect(lostCalls).toBe(1);
+    await expect(
+      finishAiRun(
+        database,
+        root.id,
+        { status: 'done' },
+        { fence: async () => false },
+      ),
+    ).rejects.toMatchObject({ code: 'AI_RUN_CLAIM_LOST' });
+    // A lock timeout on the job row is the transaction's failure: retried,
+    // and the run finishes rather than being refused as a lost claim.
+    let attempts = 0;
+    const flaky = async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new Error('canceling statement due to lock timeout');
+      }
+    };
+    expect(
+      await finishAiRun(
+        database,
+        root.id,
+        { status: 'done' },
+        { fence: flaky },
+      ),
+    ).toMatchObject({ status: 'done' });
+    expect(attempts).toBe(2);
   });
 
   it('refuses every status change and event of a stale worker, and leaves the run to the live one', async () => {
@@ -366,7 +417,7 @@ describe.each(aiRunTestEngines)('AI run lifecycle on %s (#5005)', (engine) => {
       parentRunId: root.id,
     });
     const lost = async () => {
-      throw new Error('Job claim is no longer current');
+      throw claimLost();
     };
     const live = async () => {};
     const refused = { code: 'AI_RUN_CLAIM_LOST' };

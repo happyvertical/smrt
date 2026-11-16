@@ -160,7 +160,11 @@ never asserts the claim and never looks at status. Status changes
 (`transitionAiRun` and everything built on it, `cancelAiRun`,
 `stopAiRunForChild`) and `appendAiRunEvent` take the same fence as
 `options.fence`: a worker whose claim was taken over gets
-`AiRunClaimLostError` before the run is read, and nothing is written.
+`AiRunClaimLostError` before the run is read, and nothing is written. Only a
+fence that returns `false` or throws `JobClaimLostError` (matched by name) or
+`AiRunClaimLostError` means the claim is gone; any other error it throws (a
+lock timeout, a write conflict on the job row) is rethrown as is, so
+`withAiRunTransaction` retries it.
 
 **Call ids.** Every tracked call gets a call id before it is sent; its usage
 row is written with `id = call_id` (`ON CONFLICT (id) DO NOTHING`), so a

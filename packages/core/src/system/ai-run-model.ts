@@ -824,13 +824,24 @@ export async function writeAiRunTotals(
  * Asserts, inside the caller's transaction, that this process still holds
  * the job claim of the durable run `durableRunId` (page section 6.4 step 1).
  * Core never imports `smrt-jobs`: the host passes a fence built from its
- * claim, such as `(tx) => assertJobClaim(tx, claim)`. It must throw when the
- * claim is gone.
+ * claim, such as `(tx) => assertJobClaim(tx, claim)`. It reports a claim
+ * that is gone by returning `false` or throwing `JobClaimLostError` (matched
+ * by its `name`) or {@link AiRunClaimLostError}: the write is refused with
+ * {@link AiRunClaimLostError}. Any other error it throws (a lock timeout, a
+ * write conflict) is the transaction's own failure and is retried like one.
  */
 export type AiRunClaimFence = (
   tx: DatabaseInterface,
   durableRunId: string,
-) => Promise<void>;
+) => Promise<void | boolean>;
+
+/** Whether a fence's error says the claim is gone (not that the write failed). */
+function isClaimLoss(error: unknown): boolean {
+  return (
+    error instanceof AiRunClaimLostError ||
+    (error instanceof Error && error.name === 'JobClaimLostError')
+  );
+}
 
 /** The durable run nearest the end of a chain of ids (lock-free read). */
 async function nearestDurable(
@@ -868,7 +879,8 @@ export async function lockAiRunChainFenced(
  * Assert the claim fence of the run's nearest durable run inside an
  * accounting transaction, before any run row is locked (the job row comes
  * first in the page's lock order). Nothing to assert without a fence or a
- * durable run in the chain. Throws {@link AiRunClaimLostError}.
+ * durable run in the chain. Throws {@link AiRunClaimLostError} when the fence
+ * reports the claim gone; rethrows any other error of the fence.
  */
 export async function assertAiRunFence(
   tx: AiRunTx,
@@ -879,14 +891,19 @@ export async function assertAiRunFence(
   const ids = await readAiRunChainIds(tx.db, runId);
   const durable = await nearestDurable(tx.db, ids);
   if (!durable) return;
+  let held: void | boolean;
   try {
-    await fence(tx.db, durable);
+    held = await fence(tx.db, durable);
   } catch (error) {
-    throw new AiRunClaimLostError(
-      durable,
-      error instanceof Error ? error : undefined,
-    );
+    if (error instanceof AiRunClaimLostError) throw error;
+    if (isClaimLoss(error)) {
+      throw new AiRunClaimLostError(durable, error as Error);
+    }
+    // A lock timeout or a write conflict on the job row: the transaction
+    // failed, not the claim, so the retry policy sees the error itself.
+    throw error;
   }
+  if (held === false) throw new AiRunClaimLostError(durable);
 }
 
 export function newAiRunId(): string {
