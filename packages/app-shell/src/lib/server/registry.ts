@@ -10,3 +10,4 @@
 // invisible to that seeding, which is how `assistant.use` went missing.
 import './inference-registry.ts';
 import './agent-cli/settings.ts';
+import './import-settings.ts';

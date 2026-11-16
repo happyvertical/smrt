@@ -76,6 +76,13 @@ export {
   type ToolResult,
   type VersionSummary,
 } from './host.ts';
+export {
+  createEngineImportTarget,
+  EngineImportError,
+  type EngineImportTarget,
+  importFieldName,
+  importModelName,
+} from './import-target.ts';
 export type { MergePreview, MergeRecordsCommand } from './merge-records.ts';
 export type {
   DefinitionDiff,

@@ -5,10 +5,10 @@ description: "A smrt app that builds and runs a person's own smrt app from defin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-16T12:40:26Z"
+  at: "2026-11-16T17:37:31Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:4b96a7804ab82b60b95bbaa3d698e05ee6c6408ffc4d37a229f918c749214f1a"
+source_revision: "sha256:c880223ee36ea5f72d9d17de30aead25250e658cc159068d5f05599adf5147ec"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/package.json"
@@ -23,6 +23,9 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/engine.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/engine.md"
   - id: "agents-4"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/imports.md"
+    title: "@happyvertical/smrt-app-shell packages/app-shell/agents/imports.md"
+  - id: "agents-5"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/shared-pieces.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/shared-pieces.md"
 ---
@@ -41,6 +44,7 @@ sources:
 - `packages/app-shell/AGENTS.md`
 - `packages/app-shell/agents/draft-ui.md`
 - `packages/app-shell/agents/engine.md`
+- `packages/app-shell/agents/imports.md`
 - `packages/app-shell/agents/shared-pieces.md`
 
 ## Framework dependencies
@@ -51,17 +55,20 @@ sources:
 - [smrt-config](/components/smrt-config.md)
 - [smrt-core](/components/smrt-core.md)
 - [smrt-inference](/components/smrt-inference.md)
+- [smrt-jobs](/components/smrt-jobs.md)
 - [smrt-preferences](/components/smrt-preferences.md)
 - [smrt-profiles](/components/smrt-profiles.md)
 - [smrt-prompts](/components/smrt-prompts.md)
 - [smrt-reports](/components/smrt-reports.md)
 - [smrt-secrets](/components/smrt-secrets.md)
+- [smrt-spreadsheets](/components/smrt-spreadsheets.md)
 - [smrt-svelte](/components/smrt-svelte.md)
 - [smrt-tenancy](/components/smrt-tenancy.md)
 - [smrt-ui](/components/smrt-ui.md)
 - [smrt-users](/components/smrt-users.md)
 - [smrt-vitest](/components/smrt-vitest.md)
 - [smrt-web](/components/smrt-web.md)
+- [smrt-workflows](/components/smrt-workflows.md)
 
 ## SDK dependencies
 
@@ -83,6 +90,8 @@ sources:
 - `AppDraftCollection` (collection `appdrafts`, extends `SmrtCollection`)
 - `AppDraftVersion` (collection `appdraftversions`, extends `SmrtObject`)
 - `AppDraftVersionCollection` (collection `appdraftversions`, extends `SmrtCollection`)
+- `AppImport` (collection `appimports`, extends `SmrtObject`)
+- `AppImportCollection` (collection `appimports`, extends `SmrtCollection`)
 - `AppVersion` (collection `appversions`, extends `SmrtObject`)
 - `AppVersionCollection` (collection `appversions`, extends `SmrtCollection`)
 - `Approval` (collection `approvals`, extends `SmrtObject`)

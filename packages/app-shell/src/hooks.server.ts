@@ -7,7 +7,11 @@
  */
 import { sequence } from '@sveltejs/kit/hooks';
 import { appsRestHandle } from '$lib/server/apps-rest';
+import { shellImports } from '$lib/server/import-runtime';
 import { runtime } from '$lib/server/smrt';
 
-export const { init } = runtime;
+export const init = async () => {
+  await runtime.ready();
+  await shellImports();
+};
 export const handle = sequence(runtime.handle, appsRestHandle);

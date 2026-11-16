@@ -4,6 +4,11 @@ import { ShellSettingsPage } from '@happyvertical/smrt-svelte/app';
 // Host sections, each its own route under /settings.
 const extraSections = [
   {
+    id: 'import',
+    label: 'Import',
+    description: 'Choose the maximum workbook size in cells.',
+  },
+  {
     id: 'assistant',
     label: 'Assistant',
     description: 'Connect Claude Code or Codex, or choose an API key.',

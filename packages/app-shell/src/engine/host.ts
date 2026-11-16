@@ -787,6 +787,7 @@ export class AppHost extends EventEmitter {
         const d = this.clone();
         d.models[cmd.name] = {
           ...(cmd.label ? { label: cmd.label } : {}),
+          ...(cmd.titleField ? { titleField: cmd.titleField } : {}),
           fields: Object.fromEntries(
             Object.entries(cmd.fields ?? {}).map(([k, v]) => [k, shown(v)]),
           ),
@@ -2250,6 +2251,34 @@ export class AppHost extends EventEmitter {
         await worker.terminate();
       }
     });
+  }
+
+  countRows(model: string) {
+    if (
+      !Object.hasOwn(this.def.models, model) ||
+      this.def.models[model].extends
+    )
+      throw new EngineError('Row counting requires an app-owned model.');
+    return this.onApp<number>(
+      'countRows',
+      tableFor(model, this.def.models[model]),
+    );
+  }
+
+  /** Bounded engine read-back, including hidden provenance; never exposed as a tool. */
+  readStoredRows(
+    model: string,
+    fields: string[],
+    order: string,
+    sourceRows?: number[],
+  ) {
+    return this.onApp<Row[]>(
+      'readStoredRows',
+      model,
+      fields,
+      order,
+      sourceRows,
+    );
   }
 
   list(model: string, limit = 200) {

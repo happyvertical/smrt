@@ -22,6 +22,7 @@ import {
   EngineError,
 } from '../../engine/index.ts';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
+import { AppImportCollection } from '../objects/AppImport.ts';
 import { publish } from './events.ts';
 import type { Target } from './target.ts';
 import { DraftVersionStore, ShellVersionStore } from './version-store.ts';
@@ -39,6 +40,8 @@ export interface DraftSlot {
   host: AppHost | null;
   /** Why `host` is null, or null. */
   problem: string | null;
+  /** A workflow owns this draft until its proof passes. */
+  hold?: string | null;
 }
 
 export interface ShellContext {
@@ -62,7 +65,6 @@ let hostPromise: Promise<AppHost> | null = null;
 let hostRef: AppHost | null = null;
 let storeRef: ShellVersionStore | null = null;
 let slotRef: DraftSlot | null = null;
-let shutdownHooked = false;
 
 export function configureShell(next: ShellContext): void {
   context = next;
@@ -190,6 +192,14 @@ async function adoptDraft(
     host: null,
     problem: null,
   };
+  const imports = await AppImportCollection.create({ db });
+  const pending = await imports.list({ where: { draftId: slot.id }, limit: 1 });
+  if (
+    pending[0] &&
+    !['review', 'published', 'discarded'].includes(pending[0].status)
+  )
+    slot.hold =
+      'The workbook import is still being checked. Return to Import to finish or discard it.';
   slotRef = slot;
   if (!existsSync(join(dir, 'app.db'))) {
     slot.problem = 'the draft copy is missing from the data folder';
@@ -227,13 +237,6 @@ export function getHost(): Promise<AppHost> {
     }
     storeRef = store;
     hostRef = host;
-    if (!shutdownHooked) {
-      shutdownHooked = true;
-      // adapter-node emits this on SIGTERM/SIGINT before exiting.
-      process.on('sveltekit:shutdown' as never, () => {
-        void closeHost();
-      });
-    }
     return host;
   })();
   hostPromise.catch(() => {
@@ -277,6 +280,7 @@ export async function hostFor(target: Target): Promise<AppHost> {
       'there is no draft open; start a draft first (or use the live app)',
       'not_found',
     );
+  if (slot.hold) throw new EngineError(slot.hold, 'refused');
   if (!slot.host)
     throw new EngineError(
       `the draft "${slot.name}" cannot be used: ${slot.problem ?? 'it is not open'}. Discard it to carry on.`,

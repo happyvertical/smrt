@@ -91,6 +91,19 @@ it('records the build stamp on the first start and starts again on a restart', a
   expect(record.state === 'recorded' ? record.record.fingerprint : null).toBe(
     build?.fingerprint,
   );
+  const tables = (
+    await db.query("SELECT name FROM sqlite_master WHERE type = 'table'")
+  ).rows.map((r) => r.name);
+  expect(tables).toEqual(
+    expect.arrayContaining([
+      'app_imports',
+      '_smrt_jobs',
+      '_smrt_ai_usage',
+      '_smrt_ai_runs',
+      '_smrt_ai_run_events',
+      '_smrt_ai_run_checkpoints',
+    ]),
+  );
   await db.close?.();
   open.splice(0);
   await start();
@@ -99,6 +112,8 @@ it('records the build stamp on the first start and starts again on a restart', a
 it('migrates an existing database left by an older build before it serves', async () => {
   const build = registeredBuildSchema();
   let db = (await open[0].localRuntime()).db;
+  // The previous release had no import record table. The normal migration adds it.
+  await db.query('DROP TABLE app_imports');
   // The database as the previous release left it: its last migrate recorded
   // another build's stamp. The desktop wrapper runs no migrate of its own.
   await db.query(
@@ -108,6 +123,13 @@ it('migrates an existing database left by an older build before it serves', asyn
   open.splice(0);
   const upgraded = await start();
   db = (await upgraded.localRuntime()).db;
+  expect(
+    (
+      await db.query(
+        "SELECT name FROM sqlite_master WHERE name = 'app_imports'",
+      )
+    ).rows,
+  ).toHaveLength(1);
   const record = await readLastMigrateRecord(db, { engineHint: 'sqlite' });
   expect(record.state === 'recorded' ? record.record.fingerprint : null).toBe(
     build?.fingerprint,

@@ -4,6 +4,7 @@ export {
   AppDraftVersion,
   AppDraftVersionCollection,
 } from './AppDraftVersion.ts';
+export { AppImport, AppImportCollection } from './AppImport.ts';
 export { Approval, ApprovalCollection } from './Approval.ts';
 export { AppVersion, AppVersionCollection } from './AppVersion.ts';
 export {
