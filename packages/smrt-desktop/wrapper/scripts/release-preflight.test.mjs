@@ -155,10 +155,17 @@ describe('secrets', () => {
 });
 
 describe('updater public key', () => {
-  it('rejects the committed placeholder', () => {
+  it('accepts the committed updater public key', () => {
     const config = JSON.parse(
       readFileSync(join(here, '..', 'tauri.conf.json'), 'utf8'),
     );
+    assert.deepEqual(checkUpdaterPubkey(config), []);
+  });
+
+  it('rejects a placeholder', () => {
+    const config = {
+      plugins: { updater: { pubkey: 'PLACEHOLDER-NOT-A-KEY' } },
+    };
     assert.equal(checkUpdaterPubkey(config).length, 1);
   });
 
@@ -776,11 +783,17 @@ describe('main', () => {
     assert.equal(run(['--bundle', 'x']).code, 2);
   });
 
-  it('fails closed on the committed placeholder config', () => {
-    const { code, text } = run([
-      '--config',
-      join(here, '..', 'tauri.conf.json'),
-    ]);
+  it('fails closed on a placeholder config', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'placeholder-config-'));
+    dirs.push(dir);
+    const config = join(dir, 'tauri.conf.json');
+    writeFileSync(
+      config,
+      JSON.stringify({
+        plugins: { updater: { pubkey: 'PLACEHOLDER-NOT-A-KEY' } },
+      }),
+    );
+    const { code, text } = run(['--config', config]);
     assert.equal(code, 1);
     assert.match(text, /FAILED/);
     assert.match(text, /Release pipeline/);
