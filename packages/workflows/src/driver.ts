@@ -8,6 +8,7 @@ import {
   AiRunResumeRefusedError,
   AiRunStoppedError,
   type AiRunStopReason,
+  aiRunActiveTime,
   appendAiRunEvent,
   cancelAiRun,
   finishAiRun,
@@ -18,6 +19,7 @@ import {
   startAiRunStep,
   stopAiRun,
   type TrackedAiClient,
+  transitionAiRun,
   waitAiRunApproval,
   withAiRunTransaction,
 } from '@happyvertical/smrt-core';
@@ -690,6 +692,65 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
           const result: WorkflowStepCheck = step.check
             ? await step.check(pending.output, {
                 ...base,
+                assertActive: async () => {
+                  controller.signal.throwIfAborted();
+                  const checked = await queue(() =>
+                    withAiRunTransaction(
+                      db,
+                      async (tx) => {
+                        if (fence) {
+                          try {
+                            if ((await fence(tx.db, runId)) === false)
+                              throw new AiRunClaimLostError(runId);
+                          } catch (error) {
+                            if (
+                              error instanceof Error &&
+                              error.name === 'JobClaimLostError'
+                            )
+                              throw new AiRunClaimLostError(runId, error);
+                            throw error;
+                          }
+                        }
+                        const current = await getAiRun(tx.db, runId);
+                        if (
+                          current?.status === 'running' &&
+                          current.budget.maxDurationMs !== undefined
+                        ) {
+                          const used = aiRunActiveTime(current, tx.now);
+                          if (used >= current.budget.maxDurationMs)
+                            return transitionAiRun(
+                              tx.db,
+                              runId,
+                              {
+                                from: 'running',
+                                to: 'stopped',
+                                stopReason: 'max_duration',
+                                stoppedByRunId: runId,
+                                stopDetail: {
+                                  limit: 'maxDurationMs',
+                                  runId,
+                                  limitValue: current.budget.maxDurationMs,
+                                  used,
+                                  room: current.budget.maxDurationMs - used,
+                                },
+                              },
+                              fenced,
+                            );
+                        }
+                        return current;
+                      },
+                      { now },
+                    ),
+                  );
+                  // Throw after the accounting transaction commits a duration stop.
+                  if (!checked || checked.status !== 'running')
+                    throw new AiRunStoppedError({
+                      runId,
+                      status: checked?.status ?? 'stopped',
+                      stopReason: checked?.stopReason ?? 'interrupted',
+                      stoppedByRunId: checked?.stoppedByRunId ?? null,
+                    });
+                },
                 approval,
                 approvals: state.approvals ?? 0,
               })

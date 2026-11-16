@@ -108,6 +108,8 @@ export interface WorkflowStepContext {
 
 /** What a step's check sees. */
 export interface WorkflowCheckContext extends WorkflowStepContext {
+  /** Assert the current claim and running status before a repeat-safe host effect. */
+  assertActive(): Promise<void>;
   /**
    * `approved` when the check runs again after a person approved the step's
    * latest hold; null otherwise. Asking for approval again requests a new

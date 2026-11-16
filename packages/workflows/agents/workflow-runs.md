@@ -123,3 +123,12 @@ driver wiring on every job (after a restart nothing lives in a closure); its
   job (the run is then failed on the next read), so create every
   definition's host in each process that registers the handler, or give
   definitions their own queues. Upgrade every runner before enqueueing.
+
+## Host effects during a check
+
+`WorkflowCheckContext.assertActive()` checks the abort signal, job claim and
+running status through the driver's serialized accounting transaction. Call it
+before each host effect in a long check. It throws `AiRunClaimLostError` for a
+taken-over worker and `AiRunStoppedError` after a stop/cancel or active-duration budget stop. The assertion is
+a boundary check, not a transaction spanning another database: effects must
+still be safe to repeat and isolated by their host's durable identity.
