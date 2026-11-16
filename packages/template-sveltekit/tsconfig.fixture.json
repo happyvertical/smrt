@@ -1,6 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "paths": {
       "@happyvertical/smrt-template-sveltekit/host/*": ["./host/*"],
       "$lib": ["./template/src/lib"],

@@ -4,6 +4,48 @@
  * Shared types for Article, Markdown, and other content components.
  */
 
+import type { ContentBodyFormat, ContentBodyImage } from '../body-format.js';
+
+export interface ContentBodyEditorChange {
+  body: string;
+  bodyFormat: ContentBodyFormat;
+  images: ContentBodyImage[];
+}
+
+/** The person asked to change a picture in the story (see `onRequestImageChange`). */
+export interface ContentBodyImageChangeRequest {
+  /** The picture's index among the body's images. */
+  index: number;
+  /** Its stored asset id, when it has one. */
+  assetId: string | null;
+  /** Its alt text. */
+  alt: string;
+  /** Its source URL as shown in the editor. */
+  src: string;
+  /**
+   * True when it came from pressing and holding the picture: the host opens
+   * its request box already listening for speech.
+   */
+  listen: boolean;
+  /** Where the picture is on screen (viewport pixels), to anchor a popover. */
+  rect: { top: number; left: number; width: number; height: number };
+}
+
+export type ContentReviewStatusTone =
+  | 'neutral'
+  | 'danger'
+  | 'warning'
+  | 'success';
+export type ContentReviewStatusIcon = 'content' | 'facts' | 'safety' | 'custom';
+
+export interface ContentReviewStatusTrayItem {
+  id: string;
+  icon: ContentReviewStatusIcon;
+  label: string;
+  tone: ContentReviewStatusTone;
+  status: string;
+}
+
 /**
  * Article data structure
  * Matches database schema with snake_case fields

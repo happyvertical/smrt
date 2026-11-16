@@ -45,6 +45,7 @@ import { isSupportedTarget, type TargetTriple } from '../bundler/targets.js';
 import { parseStrictJson } from '../internal/strict-json.js';
 import {
   INSTALLER_KINDS,
+  MISSING_UPDATER_KEY_PLACEHOLDER,
   PRODUCT_ICON_DIR,
   SCRATCH_OVERLAY,
   TAURI_CLI_VERSION,
@@ -392,7 +393,7 @@ export async function runBuild(
     }
     if (config.updaterPublicKey === undefined) {
       warnings.push(
-        'smrt-desktop.json has no updaterPublicKey: the installer carries the wrapper placeholder and cannot be released',
+        'smrt-desktop.json has no updaterPublicKey: the installer carries an invalid updater key placeholder and cannot be released or auto-updated',
       );
     }
 
@@ -675,9 +676,13 @@ export async function runBuild(
         externalBin: [sidecarName],
         resources: { 'resources/': './' },
       },
-      ...(config.updaterPublicKey === undefined
-        ? {}
-        : { plugins: { updater: { pubkey: config.updaterPublicKey } } }),
+      // Always written: the wrapper's own tauri.conf.json carries the
+      // maintainers' updater key, which a product must never inherit.
+      plugins: {
+        updater: {
+          pubkey: config.updaterPublicKey ?? MISSING_UPDATER_KEY_PLACEHOLDER,
+        },
+      },
     };
     try {
       await fs.writeFile(

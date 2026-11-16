@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.typecheck.json",
+  "compilerOptions": {
+    "verbatimModuleSyntax": true
+  },
+  "include": ["ambient.d.ts", "src/**/*.ts", "src/**/*.svelte"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+}

@@ -290,6 +290,40 @@ describe('makeGitHubApi', () => {
   });
 });
 
+describe('checkEnvironment with another default branch', () => {
+  it('requires exactly the named branch', async () => {
+    const api = fixtureApi(valid());
+    const check = (branch) =>
+      checkEnvironment({ repo: REPO, environment: NAME, api, branch });
+    assert.deepEqual(await check('main'), []);
+    const problems = await check('trunk');
+    assert.equal(problems.length, 1);
+    assert.match(problems[0], /exactly the branch trunk/);
+    assert.match((await check('bad name'))[0], /not a plain name/);
+  });
+
+  it('takes the branch from --branch', async () => {
+    let text = '';
+    const trunk = {
+      ...valid(),
+      [`${BASE}/deployment-branch-policies`]: {
+        status: 200,
+        body: {
+          total_count: 1,
+          branch_policies: [{ name: 'trunk', type: 'branch' }],
+        },
+      },
+    };
+    const go = (extra) =>
+      main(['--repo', REPO, '--environment', NAME, ...extra], {}, {
+        stderr: (t) => (text += t),
+        api: fixtureApi(trunk),
+      });
+    assert.equal(await go(['--branch', 'trunk']), 0);
+    assert.equal(await go([]), 1);
+  });
+});
+
 describe('main', () => {
   const go = async (argv, env, api) => {
     let text = '';

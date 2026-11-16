@@ -221,6 +221,8 @@ Application infrastructure composition for the validated runtime profiles in
   build composition; apps keep importing `./sveltekit`.
   Package-build externalization alone does not preserve class identity through adapter-node's final production bundle.
   The root entry must never import kit or Svelte.
+- Keep the development Svelte version aligned with the UI packages. Kit’s type
+  references otherwise introduce a second `Snippet` identity into source checks.
 - Without a `runtime` option the profile comes from smrt-config's
   `resolveEffectiveApplicationRuntime(await loadConfig())`, the same rule as
   `smrt app` (#3446): no block → `local`; `null`/`false`/`0`/`''` fail closed.

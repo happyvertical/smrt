@@ -104,7 +104,7 @@
     "dev:federation": "vite dev --mode federation --port 3002",
     "dev:library": "vite build --mode library --watch",
     "generate": "node scripts/generate-smrt-types.js",
-    "typecheck": "npm run generate && tsc --noEmit -p tsconfig.json",
+    "typecheck": "npm run generate && tsc -p tsconfig.typecheck.json",
     "build": "npm run generate && npm run build:lib",
     "build:all": "npm run clean && npm run generate && npm run build:lib && npm run build:app && npm run build:federation",
     "build:lib": "vite build --mode library && svelte-package -i src/lib/components -o dist/lib/lib/components --tsconfig tsconfig.svelte.json && svelte-package -i src/lib/features -o dist/lib/lib/features --tsconfig tsconfig.svelte.json && svelte-package -i src/lib/stores -o dist/lib/lib/stores --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist",

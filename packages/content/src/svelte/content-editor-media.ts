@@ -2,6 +2,52 @@ import type { ImageLike } from '@happyvertical/smrt-images/svelte';
 import { joinApiUrl, normalizeApiBaseUrl } from './api.js';
 import type { ContentEditorAsset } from './content-editor-form.js';
 
+/** One picture the drawer offers (from the host's picture library). */
+export interface ContentPicture {
+  /** Stable id; passed back to the host on insert/drag/main. */
+  id: string;
+  /** Plain name shown under the picture and used by search. */
+  title: string;
+  /**
+   * Same-origin preview URL for the `<img>`. Never a signed/tokened
+   * provider URL: the host serves previews through its own route.
+   */
+  previewUrl: string | null;
+  width?: number | null;
+  height?: number | null;
+  /** Extra words search matches (alt text, tags). */
+  keywords?: string;
+}
+
+/** The MIME type a dragged picture (or a JSON array of them) travels as. */
+export const CONTENT_PICTURE_DRAG_TYPE = 'application/x-smrt-image';
+
+/** The drag payload ContentBodyEditor turns into inserted pictures. */
+export function pictureDragPayload(pictures: ContentPicture[]): string {
+  return JSON.stringify(
+    pictures.map((picture) => ({
+      id: picture.id,
+      name: picture.title,
+      sourceUri: picture.previewUrl,
+      width: picture.width ?? null,
+      height: picture.height ?? null,
+    })),
+  );
+}
+
+/** Pictures whose title or keywords contain every word of `query`. */
+export function filterPictures(
+  pictures: ContentPicture[],
+  query: string,
+): ContentPicture[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return pictures;
+  return pictures.filter((picture) => {
+    const haystack = `${picture.title} ${picture.keywords ?? ''}`.toLowerCase();
+    return words.every((word) => haystack.includes(word));
+  });
+}
+
 export function getContentEditorAssetImageSource(
   asset: ContentEditorAsset | Record<string, unknown>,
 ): string {

@@ -1,6 +1,7 @@
 {
-  "extends": "./tsconfig.package-build.json",
+  "extends": ["./tsconfig.json", "./tsconfig.workspace-source-paths.json"],
   "compilerOptions": {
+    "types": ["node"],
     "noEmit": true,
     "composite": false,
     "declaration": false,
