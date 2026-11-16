@@ -266,6 +266,9 @@ function messageRef(prefix: string, id: unknown): string | null {
   return typeof id === 'string' && id !== '' ? `${prefix}:${id}` : null;
 }
 
+/** Decisions looked up per query, well under any engine's bound-parameter cap. */
+const DECISION_LOOKUP_CHUNK = 200;
+
 function approvalRef(id: string): string {
   return `approval:${id}`;
 }
@@ -554,7 +557,9 @@ export class AssistantTurnRun {
   /**
    * Decisions made since the last turn, each recorded once with its request
    * as `parent_event_id`. A request that was never recorded (a pruned or
-   * foreign approval) is left alone.
+   * foreign approval) is left alone. One query per
+   * {@link DECISION_LOOKUP_CHUNK} decisions finds the approvals whose
+   * decision is not recorded yet, however many the thread ever asked for.
    */
   private async recordDecisions(): Promise<void> {
     if (!this.tracking.decisions) return;
@@ -567,31 +572,47 @@ export class AssistantTurnRun {
       return;
     }
     const { db, tenantId } = this.tracking.tracked;
-    for (const decision of decided) {
+    for (let at = 0; at < decided.length; at += DECISION_LOOKUP_CHUNK) {
+      const chunk = decided.slice(at, at + DECISION_LOOKUP_CHUNK);
+      const byRef = new Map(
+        chunk.map((decision) => [approvalRef(decision.approvalId), decision]),
+      );
+      const refs = [...byRef.keys()];
+      const marks = refs.map((_, i) => `$${i + 1}`).join(', ');
+      const tenant = tenantId === null ? 'IS NULL' : `= $${refs.length + 1}`;
+      let open: Array<Record<string, unknown>>;
       try {
-        const [request] = rowsOf(
+        open = rowsOf(
           await db.query(
-            `SELECT e.id AS id, e.name AS name FROM _smrt_ai_run_events e
+            `SELECT e.id AS id, e.name AS name, e.payload_ref AS payload_ref
+               FROM _smrt_ai_run_events e
                JOIN _smrt_ai_runs r ON r.id = e.run_id
               WHERE e.type = 'approval' AND e.status = 'requested'
-                AND e.payload_ref = $1 AND r.tenant_id ${
-                  tenantId === null ? 'IS NULL' : '= $2'
-                }`,
-            ...[
-              approvalRef(decision.approvalId),
-              ...(tenantId === null ? [] : [tenantId]),
-            ],
+                AND e.payload_ref IN (${marks})
+                AND r.tenant_id ${tenant}
+                AND NOT EXISTS (
+                  SELECT 1 FROM _smrt_ai_run_events d
+                   WHERE d.type = 'approval' AND d.status <> 'requested'
+                     AND d.payload_ref = e.payload_ref
+                )
+              ORDER BY e.created_at, e.id`,
+            ...refs,
+            ...(tenantId === null ? [] : [tenantId]),
           ),
         );
+      } catch {
+        // Leave them for the next turn.
+        continue;
+      }
+      // Once per approval, in the order decided: its first request takes it.
+      const firstOpen = new Map<string, Record<string, unknown>>();
+      for (const request of open) {
+        const ref = String(request.payload_ref);
+        if (!firstOpen.has(ref)) firstOpen.set(ref, request);
+      }
+      for (const [ref, decision] of byRef) {
+        const request = firstOpen.get(ref);
         if (!request) continue;
-        const [done] = rowsOf(
-          await db.query(
-            `SELECT id FROM _smrt_ai_run_events
-              WHERE type = 'approval' AND parent_event_id = $1`,
-            String(request.id),
-          ),
-        );
-        if (done) continue;
         await this.append({
           type: 'approval',
           name: typeof request.name === 'string' ? request.name : null,
@@ -599,8 +620,6 @@ export class AssistantTurnRun {
           parentEventId: String(request.id),
           payloadRef: approvalRef(decision.approvalId),
         });
-      } catch {
-        // Leave it for the next turn.
       }
     }
   }

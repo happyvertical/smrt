@@ -24,7 +24,7 @@ import {
   toolSummary,
 } from '../../assistant/tool-summary.ts';
 import type { AssistantThread } from '../../objects/AssistantThread.ts';
-import { getApprovalView } from '../approvals.ts';
+import { approvalStatuses, getApprovalView } from '../approvals.ts';
 import type { CatalogResponse, CatalogTool } from '../catalog.ts';
 import { getShellDb } from '../host.ts';
 import { PolicyError, type Principal } from '../owner.ts';
@@ -196,18 +196,22 @@ interface CallOutcome {
 /**
  * The decided approvals of the thread's turns, for the turn run: an approval
  * applied, or approved and failed to apply, was approved; a denied one was
- * refused. Pending and expired ones are not decisions.
+ * refused. Pending and expired ones are not decisions. Their statuses are
+ * read in one batched lookup; the turn run records only the decisions it
+ * has not recorded yet.
  */
 async function threadDecisions(
   threadId: string,
 ): Promise<Array<{ approvalId: string; status: 'approved' | 'refused' }>> {
   const decided: Array<{ approvalId: string; status: 'approved' | 'refused' }> =
     [];
-  for (const approvalId of await threadApprovalIds(threadId)) {
-    const row = await getApprovalView(approvalId);
-    if (row?.status === 'approved' || row?.status === 'failed') {
+  const ids = await threadApprovalIds(threadId);
+  const statuses = await approvalStatuses(ids);
+  for (const approvalId of ids) {
+    const status = statuses.get(approvalId);
+    if (status === 'approved' || status === 'failed') {
       decided.push({ approvalId, status: 'approved' });
-    } else if (row?.status === 'denied') {
+    } else if (status === 'denied') {
       decided.push({ approvalId, status: 'refused' });
     }
   }
