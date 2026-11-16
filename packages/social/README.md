@@ -95,7 +95,7 @@ The state is single-use, tenant-bound, and checked against the registered
 redirect URI. New accounts start in the platform's default publish mode
 (`dry_run` for X); a reconnect updates the same account and never widens its
 mode. Failures throw `SocialConnectError` with a safe, user-showable message.
-No role checks live in the package. Register the same `redirectUri` with the
+Pass `userId` to both calls: the state is bound to the initiating user, so a forwarded authorization link is rejected for anyone else. No role checks live in the package. Register the same `redirectUri` with the
 platform. YouTube, Facebook Pages and Threads providers are not built yet.
 
 ## API

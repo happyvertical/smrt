@@ -292,6 +292,47 @@ describe('smrt-social connect flow (X)', () => {
     });
   });
 
+  it('binds the state to the initiating user and keeps tenants apart on upsert', async () => {
+    process.env.SMRT_SECRET_MASTER_KEY = TEST_AMK;
+    enableTenancy();
+    await withDb(async (db) => {
+      const common = { db, platform: 'x', redirectUri: REDIRECT, env };
+      const start = async (tenantId: string, userId?: string) =>
+        queryFrom(
+          (await startSocialConnect({ ...common, tenantId, userId }))
+            .authorizeUrl,
+        ).state;
+      const finish = (tenantId: string, state: string, userId?: string) =>
+        completeSocialConnect({
+          ...common,
+          tenantId,
+          userId,
+          fetch: xFetch() as unknown as typeof fetch,
+          query: { code: 'c', state },
+        });
+
+      const state = await start('tenant-a', 'user-1');
+      await expect(finish('tenant-a', state, 'user-2')).rejects.toMatchObject({
+        code: 'invalid_state',
+      });
+      await expect(finish('tenant-a', state)).rejects.toMatchObject({
+        code: 'invalid_state',
+      });
+      // The rightful user can still complete (rejection did not consume it).
+      const a = await finish('tenant-a', state, 'user-1');
+
+      // The same X profile connected by another tenant gets its own account.
+      const b = await finish(
+        'tenant-b',
+        await start('tenant-b', 'user-9'),
+        'user-9',
+      );
+      expect(b.created).toBe(true);
+      expect(b.account.id).not.toBe(a.account.id);
+      expect(b.account.tenantId).toBe('tenant-b');
+    });
+  });
+
   it('rejects an expired state', async () => {
     enableTenancy();
     await withDb(async (db) => {

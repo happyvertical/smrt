@@ -27,6 +27,12 @@ export interface SocialConnectContext {
   db: DatabaseInterface;
   /** Defaults to the current tenant context. */
   tenantId?: string;
+  /**
+   * The signed-in user making the request. When start supplies it, complete
+   * must supply the same user or the callback is rejected before the state is
+   * consumed. Hosts should always pass it.
+   */
+  userId?: string;
   /** Platform id from the route, e.g. `x`. */
   platform: string;
   /** The callback URL registered with the platform. */
@@ -146,6 +152,7 @@ export async function startSocialConnect(
       redirectUri: options.redirectUri,
       scopes,
       tenantId,
+      initiatedByUserId: options.userId ?? null,
       expiresAt: new Date(Date.now() + (options.ttlMs ?? 10 * 60 * 1000)),
     });
   });
@@ -181,7 +188,9 @@ export async function completeSocialConnect(
       !stored ||
       stored.platform !== provider.platform ||
       stored.tenantId !== tenantId ||
-      stored.redirectUri !== options.redirectUri
+      stored.redirectUri !== options.redirectUri ||
+      (stored.initiatedByUserId !== null &&
+        stored.initiatedByUserId !== (options.userId ?? null))
     ) {
       throw new SocialConnectError(
         'invalid_state',
@@ -227,7 +236,11 @@ export async function completeSocialConnect(
 
     const accounts = await SocialAccountCollection.create({ db: options.db });
     const [existing] = await accounts.list({
-      where: { platform: provider.platform, platformUserId: profile.id },
+      where: {
+        platform: provider.platform,
+        platformUserId: profile.id,
+        tenantId,
+      },
       limit: 1,
     });
 
