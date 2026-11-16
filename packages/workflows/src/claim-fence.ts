@@ -1,4 +1,8 @@
-import type { AiRunClaimFence } from '@happyvertical/smrt-core';
+import {
+  type AiRunClaimFence,
+  aiRunEngine,
+  lockAiRunChain,
+} from '@happyvertical/smrt-core';
 import {
   assertJobClaim,
   assertJobClaimForRelease,
@@ -24,16 +28,24 @@ export function workflowClaimFence(claim: Readonly<JobClaim>): AiRunClaimFence {
  * worker's own attempt in any state, and refuses a claim another worker took
  * over and a job that a newer job of the same run (same dedupe key; stale
  * recovery keeps the worker on the failed row) replaced
- * (`WorkflowRunOptions.stopFence`). It locks the run row before it looks for
- * a newer job: a resume commits the run's status and its new job together
- * while holding that row, so the look sees the new job once the resume has
- * committed (on PostgreSQL each statement reads what committed before it).
+ * (`WorkflowRunOptions.stopFence`). It locks the durable run's chain, root
+ * first (the page's lock order, so a settle on the same chain cannot
+ * deadlock with it), before it looks for a newer job: a resume commits the
+ * run's status and its new job together while holding that row, so the look
+ * sees the new job once the resume has committed (on PostgreSQL each
+ * statement reads what committed before it).
  */
 export function workflowStopFence(claim: Readonly<JobClaim>): AiRunClaimFence {
   return async (tx, durableRunId) => {
     await assertJobClaimForRelease(tx, claim);
-    // A no-op write takes the row lock: an UPDATE locks the row on
-    // PostgreSQL, and SQLite serializes its writers anyway.
+    // Root first down to the durable run: `FOR UPDATE` on PostgreSQL.
+    await lockAiRunChain(
+      { db: tx, engine: aiRunEngine(tx), now: new Date() },
+      durableRunId,
+    );
+    // A no-op write on the durable row, already locked: on DuckDB it makes
+    // a concurrent resume's write of that row conflict; SQLite serializes
+    // its writers anyway.
     await tx.query(
       'UPDATE _smrt_ai_runs SET retain = retain WHERE id = ?',
       durableRunId,

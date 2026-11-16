@@ -9,10 +9,13 @@ import { randomUUID } from 'node:crypto';
 import {
   AiRunClaimLostError,
   getAiRun,
+  openAiRun,
   readAiRunCheckpoint,
+  withAiRunTransaction,
 } from '@happyvertical/smrt-core';
 import { type JobClaim, SmrtJobCollection } from '@happyvertical/smrt-jobs';
 import { clearPromptCache, PromptRegistry } from '@happyvertical/smrt-prompts';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { workflowClaimFence, workflowStopFence } from '../index.js';
 import {
@@ -193,6 +196,44 @@ describe.each([
     await expect(working).rejects.toBeInstanceOf(AiRunClaimLostError);
     return getAiRun(db, run.id);
   }
+
+  it('locks a nested durable run root first in its stop fence', async () => {
+    const db = await workflowDb(engine, JOB_CLASSES);
+    const jobs = await SmrtJobCollection.create({ db });
+    const store = { db, usageTracking: true };
+    const root = await openAiRun(store, { type: 'turn' });
+    const durable = await openAiRun(store, {
+      type: 'workflow',
+      durable: true,
+      parentRunId: root.id,
+    });
+    const claim = await claimFor(jobs, durable.id, `worker-${randomUUID()}`);
+    // The run rows each statement touches, in order (the lock-free chain
+    // read excepted): a settle on the chain locks the root first, so the
+    // fence must too, or the two wait on each other on PostgreSQL.
+    const touched: string[] = [];
+    await withAiRunTransaction(db, async (tx) => {
+      const recording = new Proxy(tx.db, {
+        get(target, prop) {
+          const value = Reflect.get(target, prop, target);
+          if (prop === 'query') {
+            return (sql: string, ...params: unknown[]) => {
+              if (
+                /_smrt_ai_runs\b/.test(sql) &&
+                !/parent_run_id FROM/.test(sql)
+              ) {
+                touched.push(String(params[0]));
+              }
+              return target.query(sql, ...params);
+            };
+          }
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      }) as DatabaseInterface;
+      await workflowStopFence(claim)(recording, durable.id);
+    });
+    expect(touched).toEqual([root.id, durable.id, durable.id]);
+  });
 
   it('cannot fail the run when its output stays invalid', async () => {
     expect(await staleRun(async () => ({ wrong: true }))).toMatchObject({

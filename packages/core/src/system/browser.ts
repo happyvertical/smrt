@@ -49,9 +49,11 @@ export {
   type AiRunTx,
   type AiRunTxOptions,
   aiRunActiveTime,
+  aiRunEngine,
   getAiRun,
   isAiRunFinal,
   isValidAiRunType,
+  lockAiRunChain,
   withAiRunTransaction,
 } from './ai-run-model.js';
 export * from './ai-run-policy.js';
