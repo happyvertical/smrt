@@ -16,7 +16,11 @@ import {
   runAiRunCall,
   stopAiRunForChild,
 } from '@happyvertical/smrt-core';
-import { clearPromptCache, PromptRegistry } from '@happyvertical/smrt-prompts';
+import {
+  clearPromptCache,
+  definePrompt,
+  PromptRegistry,
+} from '@happyvertical/smrt-prompts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createRunCheckpointStore,
@@ -126,6 +130,37 @@ describe.each(engines)('workflow runs on %s', (engine) => {
       outputs: [{ value: 1 }, { value: 2 }],
     });
     expect(JSON.stringify(checkpoint?.state)).not.toMatch(/tokens|attempts/);
+  });
+
+  it("sends each step's prompt call options: its effort as reasoning, no tier keys", async () => {
+    const db = await workflowDb(engine);
+    definePrompt({
+      key: 'test.workflow.effort',
+      template: 'Think hard about {input}.',
+      ai: { effort: 'high', temperature: 0.2, maxTokens: 300 },
+    });
+    const { model, calls } = scriptedModel(() => ({ output: { value: 1 } }));
+    const driver = driverFor(
+      db,
+      model,
+      definitionOf([
+        {
+          name: 'Think',
+          promptKey: 'test.workflow.effort',
+          schema: valueSchema,
+          expectedOutputTokens: 50,
+        },
+      ]),
+    );
+    const run = await driver.start({ ownerId: 'owner' });
+    expect(await driver.run(run.id, 'owner')).toMatchObject({ status: 'done' });
+    expect(calls[0]?.options).toMatchObject({
+      reasoning: { effort: 'high' },
+      temperature: 0.2,
+      maxTokens: 300,
+    });
+    expect(calls[0]?.options).not.toHaveProperty('tier');
+    expect(calls[0]?.options.signal).toBeInstanceOf(AbortSignal);
   });
 
   it('repairs invalid output on the same step instance, then fails with repairs_exhausted', async () => {

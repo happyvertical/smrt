@@ -14,7 +14,9 @@
 3. Per step: `startAiRunStep` with the checkpoint (counted once per step
    index against `maxSteps`; a re-entry or repeat gets a new step instance),
    then the call with an `AiRunContext` carrying step index, name, instance
-   and attempt. The judged event of the attempt is the last `call` or
+   and attempt, and the prompt's call options (`promptMessageOptions`
+   without tier keys: params, model, temperature, maxTokens, effort as
+   `reasoning`). The judged event of the attempt is the last `call` or
    `handoff` event it added (a fusion answers through a child run and a
    `handoff`).
 4. Schema errors, unreadable JSON and `AiCallLimitError` are repairable

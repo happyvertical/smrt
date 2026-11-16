@@ -19,7 +19,11 @@ import {
   type TrackedAiClient,
   waitAiRunApproval,
 } from '@happyvertical/smrt-core';
-import { resolvePrompt, trackedPromptCall } from '@happyvertical/smrt-prompts';
+import {
+  promptMessageOptions,
+  resolvePrompt,
+  trackedPromptCall,
+} from '@happyvertical/smrt-prompts';
 import {
   createRunCheckpointStore,
   isWorkflowCheckpointState,
@@ -378,15 +382,14 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
       tenantId,
       variables,
     });
-    const asks = resolved.ai;
     const client = await ai.client(trackedPromptCall(resolved), { runContext });
+    // The prompt's call options (params, model, temperature, maxTokens, its
+    // effort as `reasoning`); its tier is already on the tracked client, so
+    // no tier keys ride on the call. The driver's own options win; core
+    // spreads the tier binding's params under all of them.
     const answer = await client.message(resolved.text, {
+      ...promptMessageOptions(resolved.ai, { routeTier: false }),
       signal: context.signal,
-      ...(asks.model ? { model: asks.model } : {}),
-      ...(asks.temperature !== undefined
-        ? { temperature: asks.temperature }
-        : {}),
-      ...(asks.maxTokens !== undefined ? { maxTokens: asks.maxTokens } : {}),
       ...(step.expectedOutputTokens !== undefined
         ? { expectedOutputTokens: step.expectedOutputTokens }
         : {}),
