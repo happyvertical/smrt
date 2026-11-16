@@ -116,6 +116,7 @@
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-prompts": "workspace:*",
     "@happyvertical/smrt-personas": "workspace:*",
     "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-reports": "workspace:*",

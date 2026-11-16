@@ -474,6 +474,9 @@ importers:
       '@happyvertical/smrt-profiles':
         specifier: workspace:*
         version: link:../profiles
+      '@happyvertical/smrt-prompts':
+        specifier: workspace:*
+        version: link:../prompts
       '@happyvertical/smrt-reports':
         specifier: workspace:*
         version: link:../reports
@@ -939,6 +942,9 @@ importers:
       '@happyvertical/smrt-profiles':
         specifier: workspace:*
         version: link:../profiles
+      '@happyvertical/smrt-prompts':
+        specifier: workspace:*
+        version: link:../prompts
       '@happyvertical/smrt-reports':
         specifier: workspace:*
         version: link:../reports
