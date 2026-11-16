@@ -142,9 +142,9 @@ async function action(name: string) {
     {#if current}
       <p role="status">{importStages[current.status] ?? 'The import could not finish'}</p>
       {#if current.note}<p>{current.note}</p>{/if}
-      {#if current.status === 'failed' && current.reason === 'engine'}
-        {#if !current.note}<p>{current.engine ?? 'Your AI engine'} could not plan this import. Your workbook is saved.</p>{/if}
-        <a href="/settings/assistant">Assistant settings</a>
+      {#if current.status === 'failed' && (current.reason === 'engine' || current.reason === 'plan')}
+        {#if !current.note}<p>{current.reason === 'plan' ? 'The assistant could not work out a plan for this workbook. Your workbook is saved.' : `${current.engine ?? 'Your AI engine'} could not plan this import. Your workbook is saved.`}</p>{/if}
+        {#if current.reason === 'engine'}<a href="/settings/assistant">Assistant settings</a>{/if}
         <button class="smrt-app-shell__btn smrt-app-shell__btn-primary" disabled={busy} onclick={() => action('retry')}>Try again</button>
         <button class="smrt-app-shell__btn" disabled={busy} onclick={() => action('discard')}>Discard import</button>
       {:else if current.status === 'failed' && current.findings?.length}<p>Correct the workbook using the findings below, then choose the corrected file.</p>{/if}

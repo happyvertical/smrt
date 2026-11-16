@@ -2,6 +2,7 @@ import type {
   Finding,
   ImportPlan,
   RunImportResult,
+  UntranslatedFormula,
 } from '@happyvertical/smrt-spreadsheets/import';
 export interface ImportState {
   id: string;
@@ -11,10 +12,11 @@ export interface ImportState {
   stopReason: string | null;
   draftId: string | null;
   note?: string;
-  reason?: 'workbook' | 'engine' | 'budget' | 'paused' | 'app' | null;
+  reason?: 'workbook' | 'plan' | 'engine' | 'budget' | 'paused' | 'app' | null;
   engine?: string;
   progress?: { stage: string; at: number }[];
   plan?: ImportPlan;
+  untranslatedFormulas?: UntranslatedFormula[];
   findings?: Finding[];
   proof?: RunImportResult;
 }

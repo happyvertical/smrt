@@ -41,6 +41,14 @@ let { current }: { current: ImportState } = $props();
   {#if current.plan?.reports?.length}
     <section class="smrt-app-shell__card" data-smrt-part="panel"><h2>Reports</h2><ul>{#each current.plan.reports as report (report.key)}<li>{report.label}</li>{/each}</ul></section>
   {/if}
+  {#if current.untranslatedFormulas?.length}
+    <section class="smrt-app-shell__card" data-smrt-part="panel"><h2>Formulas not translated</h2>
+      <p>These fields keep the workbook’s saved results. They will not recalculate when you change a record.</p>
+      <ul>{#each current.untranslatedFormulas as entry (`${entry.table}:${entry.field}`)}<li>{entry.sheet} · {fieldLabel(current.plan, entry.table, entry.field)}, column {columnName(entry.column)} · {entry.count} {entry.count === 1 ? 'formula' : 'formulas'}
+        <ul>{#each entry.examples as example (example.cell)}<li>{example.cell}: {example.formula}</li>{/each}</ul>
+      </li>{/each}</ul>
+    </section>
+  {/if}
   {#if current.findings?.length}
     <section class="smrt-app-shell__card" data-smrt-part="panel"><h2>Findings</h2>
       <p>Up to 20 examples are shown for each check, table and field. Each example includes the total count.</p>

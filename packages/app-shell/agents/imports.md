@@ -81,3 +81,10 @@ covers picker/refusals, progress/controls, label-only proof review and settings.
 Welcome's DOM test covers completing onboarding directly into `/import`.
 All run under package `test` on Node 26/in-process SQLite or Svelte 5/jsdom.
 New capability: no bug-fix base comparison; browser visual QA belongs to integration.
+
+Planning guidance and recursive expression schema come from smrt-spreadsheets.
+Repair prompts include bounded validator messages, paths, fragments and rules;
+check events keep only code/path/message. A refused plan is distinct from an
+unavailable engine and retries the retained upload without a settings detour.
+Unrepresentable formulas map as plain cached-value columns; review lists them
+under “Formulas not translated”. A proposed translation still must pass proof.

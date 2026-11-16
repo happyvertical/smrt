@@ -628,11 +628,14 @@ it. Interrupted work resumes on startup. A budget stop offers a bounded Resume.
 Planning shows elapsed time; completed stages remain visible between polls.
 An engine failure names the engine and links to Assistant settings. **Try again**
 reuses the private upload with a new workflow run, including after a restart.
-Workbook problems show their findings instead. Cancel/discard removes the file.
+A refused plan explains where the assistant stumbled and offers the same saved-file
+retry, without sending you to settings. Workbook problems show their findings
+instead. Cancel/discard removes the file.
 
 The same page shows each table's rows read/skipped/loaded, typed fields and
 source columns, links, choices, calculations, reports, findings with sheet/cell
-examples and totals proof. **Review and publish** opens the existing draft
+examples and totals proof. **Formulas not translated** lists source formulas
+kept as saved values; those fields do not recalculate. **Review and publish** opens the existing draft
 review; only its normal publish approval can change live data. **Discard import**
 removes the draft and stored workbook. Failed proof also removes its draft.
 Only one draft/import may be open. Importing into existing tables, saved mappings,
@@ -640,7 +643,7 @@ re-import and export are not included.
 
 The API accepts a raw binary workbook at `POST /api/shell/import`, returning
 `202 { id: <workflow run id> }`. `GET` returns `{ import: <current state> | null }`;
-The state includes a machine-readable `reason` (`engine`, `workbook`, `budget`,
+The state includes a machine-readable `reason` (`engine`, `plan`, `workbook`, `budget`,
 `paused`, `app`, or null) and timestamped `progress` stages.
 `POST /api/shell/import/stop|resume|retry|cancel|discard` controls it. All are owner-only;
 writes check the same origin. The adapter-node build's entry wrapper defaults

@@ -330,3 +330,59 @@ it('polls each reported stage, retains completed stages and shows planning elaps
   ).toContain('Reading the workbook');
   expect(document.body.textContent).not.toContain('MiB');
 });
+
+it('offers a saved-file retry for a refused plan without blaming settings or showing validator paths', async () => {
+  const current: ImportState = {
+    ...ready(),
+    state: 'failed',
+    status: 'failed',
+    reason: 'plan',
+    note: 'The assistant could not work out a plan for this workbook on “Orders”, column “Total”. It stumbled on translating a formula. Your workbook is saved. Try again to ask for a new plan.',
+    proof: undefined,
+  };
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(JSON.stringify({ import: current }))),
+  );
+  component = mount(Page, {
+    target: document.body,
+    props: { data: { current } as never, params: {}, form: null },
+  });
+  await tick();
+  expect(document.body.textContent).toContain('column “Total”');
+  expect(document.body.textContent).toContain('Try again');
+  expect(document.body.textContent).not.toContain('findings below');
+  expect(document.body.textContent).not.toContain('tables[0].fields');
+  expect(document.body.textContent).not.toContain('invalid-expression');
+  expect(document.querySelector('a[href="/settings/assistant"]')).toBeNull();
+});
+it('lists untranslated formulas and explains their saved values will not recalculate', async () => {
+  const current: ImportState = {
+    ...ready(),
+    untranslatedFormulas: [
+      {
+        table: 'orders',
+        field: 'total',
+        sheet: 'Orders',
+        column: 4,
+        count: 42,
+        examples: [{ cell: 'D4', formula: 'SUMIF(A4:A5,"Ada",B4:B5)' }],
+      },
+    ],
+  };
+  component = mount(ImportReview, {
+    target: document.body,
+    props: { current },
+  });
+  await tick();
+  for (const text of [
+    'Formulas not translated',
+    'Orders',
+    'Total',
+    'column D',
+    'SUMIF',
+    '42 formulas',
+    'will not recalculate',
+  ])
+    expect(document.body.textContent).toContain(text);
+});

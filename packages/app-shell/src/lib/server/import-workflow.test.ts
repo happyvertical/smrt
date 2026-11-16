@@ -265,7 +265,7 @@ it.each([
   const current = await end();
   expect(current.state).toBe('failed');
   expect(current.stopReason).toBe('check_failed');
-  expect(current.reason).toBe('workbook');
+  expect(current.reason).toBe('plan');
   expect(calls).toBe(4);
   expect(current.findings?.some((f) => f.code === 'sheet-missing')).toBe(true);
   expect(await getDraftSlot()).toBeNull();
@@ -314,17 +314,35 @@ it.each([
   await service.action(h.owner, 'discard');
   expect(existsSync(file)).toBe(false);
 });
-it('keeps invalid model output separate from workbook findings and allows a fresh plan', async () => {
-  answer = () => ({ wrong: 'shape' });
+it.each([
+  'shape',
+  'calculation',
+])('keeps invalid %s output separate from workbook findings and allows a fresh plan', async (variant) => {
+  answer = () => {
+    if (variant === 'shape') return { wrong: 'shape' };
+    const plan = businessWorkbook().plan;
+    plan.tables[0].fields[3].calculated = {
+      op: 'mul',
+      args: [{ col: 'price' }, { col: 'quantity' }],
+    } as never;
+    return plan;
+  };
   await service.start(h.owner, await request());
   await worker();
   const current = await end();
   expect(current).toMatchObject({
     state: 'failed',
     stopReason: 'repairs_exhausted',
-    reason: 'engine',
+    reason: 'plan',
   });
   expect(current.note).not.toContain('findings');
+  expect(current.note).not.toContain('settings');
+  if (variant === 'calculation') {
+    expect(current.note).toContain('“Orders”, column “Total”');
+    expect(current.note).toContain('translating a formula');
+    expect(current.note).not.toContain('tables[0]');
+    expect(current.note).not.toContain('invalid-expression');
+  }
   answer = () => businessWorkbook().plan;
   await service.action(h.owner, 'retry');
   expect((await end()).state).toBe('done');
@@ -788,4 +806,74 @@ it('reports workbook error cells without ever creating a load draft', async () =
     ),
   ).toBe(true);
   expect(await getDraftSlot()).toBeNull();
+});
+
+it('repairs malformed multiplication with the exact grammar and records its diagnostic without source fragments', async () => {
+  answer = (index) => {
+    const plan = businessWorkbook().plan;
+    if (!index)
+      plan.tables[0].fields[3].calculated = {
+        op: 'mul',
+        args: [{ col: 'price' }, { col: 'quantity' }],
+      } as never;
+    return plan;
+  };
+  const started = await service.start(h.owner, await request());
+  await worker();
+  expect((await end()).state).toBe('done');
+  expect(calls).toBe(2);
+  expect(texts[1]).toContain('invalid-expression');
+  expect(texts[1]).toContain('tables[0].fields[3].calculated');
+  expect(texts[1]).toContain('left');
+  expect(texts[1]).toContain('args');
+  expect(texts[1]).toContain('not args or symbols');
+  const checks = (await getRunTrajectory(h.db, started.id))!.entries
+    .map((e) => e.event)
+    .filter((e) => e?.type === 'check');
+  expect(checks[0]?.payload).toMatchObject({
+    diagnostics: [
+      { code: 'invalid-expression', path: 'tables[0].fields[3].calculated' },
+    ],
+  });
+  expect(JSON.stringify(checks[0]?.payload)).not.toContain('fragment');
+});
+
+it('imports unrepresentable formulas as cached values and lists them for review', async () => {
+  const { workbook, plan } = businessWorkbook();
+  const total = plan.tables[0].fields[3];
+  delete total.calculated;
+  delete total.cachedColumn;
+  total.column = 4;
+  workbook.sheets[1].cells.get(4, 4)!.formula!.text =
+    'SUMIF(A4:A5,"Ada",B4:B5)';
+  answer = () => plan;
+  const bytes = await (await getSpreadsheets({ type: 'xlsx' })).write(workbook);
+  await service.start(
+    h.owner,
+    new Request('http://shell/api/shell/import', {
+      method: 'POST',
+      body: bytes as BodyInit,
+    }),
+  );
+  await worker();
+  const current = await end();
+  expect(current).toMatchObject({
+    state: 'done',
+    proof: { ok: true },
+    untranslatedFormulas: [
+      {
+        sheet: 'Orders',
+        field: 'total',
+        column: 4,
+        count: 2,
+        examples: [
+          { cell: 'D4', formula: 'SUMIF(A4:A5,"Ada",B4:B5)' },
+          { cell: 'D5', formula: 'B5*C5' },
+        ],
+      },
+    ],
+  });
+  expect(
+    await (await hostFor('draft')).countRows(importModelName('orders')),
+  ).toBe(2);
 });
