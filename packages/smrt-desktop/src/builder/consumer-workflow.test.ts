@@ -356,4 +356,43 @@ describe('the consumer workflow keeps secret custody (smrt#4965)', () => {
     expect(description).toMatch(/REQUIRED when release is true/);
     expect(description).not.toMatch(/Empty omits it\./);
   });
+
+  it('verifies the downloaded release tools before any use of them', () => {
+    expect(job('tools').body).toContain(
+      'digest: ${{ steps.manifest.outputs.digest }}',
+    );
+    for (const id of ['release-preflight', 'sign', 'publish']) {
+      const j = job(id);
+      expect(j.body, id).toContain('needs: [');
+      expect(j.body, id).toMatch(/needs: \[[^\]]*\btools\b/);
+      const names = j.steps.map((step) => step.name);
+      const download = names.indexOf('Download the release tools');
+      // the verifier is the very next step: nothing runs between them
+      expect(names[download + 1], id).toBe('Verify the release tools');
+      const verify = j.steps[download + 1];
+      expect(verify?.body, id).toContain(
+        'EXPECTED_DIGEST: ${{ needs.tools.outputs.digest }}',
+      );
+      // inline, never a script out of the artifact; fails closed
+      expect(nonComment(verify?.body ?? ''), id).not.toContain('DESKTOP_PKG');
+      expect(verify?.body, id).toContain('process.exit(1)');
+      expect(verify?.body, id).toContain('lstatSync');
+      expect(verify?.body, id).toContain('.sort()');
+      // no earlier step touches the tools, and DESKTOP_PKG is set after it
+      for (const step of j.steps.slice(0, download + 2)) {
+        expect(nonComment(step.body), `${id}: ${step.name}`).not.toMatch(
+          /\$DESKTOP_PKG|\bDESKTOP_PKG=/,
+        );
+      }
+      expect(names.indexOf('Point at the release tools')).toBe(download + 2);
+    }
+    // the manifest computation is the same code on both sides
+    const digestCode = (body: string) =>
+      /const files = \[\];[\s\S]*?const digest = [^\n]*\n/.exec(body)?.[0];
+    const reference = digestCode(job('tools').body);
+    expect(reference).toBeTruthy();
+    for (const id of ['release-preflight', 'sign', 'publish']) {
+      expect(digestCode(job(id).body), id).toBe(reference);
+    }
+  });
 });

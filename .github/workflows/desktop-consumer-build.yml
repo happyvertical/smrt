@@ -218,6 +218,10 @@ jobs:
   # caller's. Nothing is copied or checked out from the smrt repository.
   tools:
     name: Packaged release tools
+    outputs:
+      digest: ${{ steps.manifest.outputs.digest }}
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
     if: inputs.release
     needs: plan
     runs-on: ubuntu-latest
@@ -272,7 +276,39 @@ jobs:
           test -f "$pkg/src/bundler/node-pins.ts" || { echo "The installed smrt-desktop does not ship the Node pin table." >&2; exit 1; }
           cp "$pkg/src/bundler/node-pins.ts" "$out/src/bundler/node-pins.ts"
 
+      # One digest over every file (sorted `sha256  path` lines, hashed once
+      # more). A job output cannot be changed by a later job, so the
+      # environment jobs compare what they download against it.
+      - name: Compute the release tools digest
+        id: manifest
+        run: |
+          node --input-type=module -e '
+            import { createHash } from "node:crypto";
+            import { lstatSync, readdirSync, readFileSync, appendFileSync } from "node:fs";
+            import { join } from "node:path";
+            const root = process.argv[1];
+            const files = [];
+            const walk = (dir, rel) => {
+              for (const name of readdirSync(dir)) {
+                const path = join(dir, name);
+                const relative = rel === "" ? name : rel + "/" + name;
+                const stat = lstatSync(path);
+                if (stat.isDirectory()) walk(path, relative);
+                else if (stat.isFile()) files.push(relative);
+                else { console.error("The release tools hold something that is not a regular file."); process.exit(1); }
+              }
+            };
+            walk(root, "");
+            if (files.length === 0) { console.error("The release tools are empty."); process.exit(1); }
+            files.sort();
+            const manifest = files.map((file) => createHash("sha256").update(readFileSync(join(root, file))).digest("hex") + "  " + file + "\n").join("");
+            const digest = createHash("sha256").update(manifest).digest("hex");
+            appendFileSync(process.env.GITHUB_OUTPUT, "digest=" + digest + "\n");
+            console.log("release tools digest " + digest);
+          ' "$RUNNER_TEMP/release-tools"
+
       - name: Upload the release tools
+        id: upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: desktop-tools
@@ -324,6 +360,41 @@ jobs:
         with:
           name: desktop-tools
           path: ${{ runner.temp }}/release-tools
+
+      # Fail closed BEFORE anything from the artifact runs: the files must be
+      # exactly the ones the `tools` job hashed (job outputs cannot be changed by
+      # a later job, an artifact can). An extra, missing, changed or non-regular
+      # file changes the digest. The verifier is inline, never from the artifact.
+      - name: Verify the release tools
+        env:
+          EXPECTED_DIGEST: ${{ needs.tools.outputs.digest }}
+        run: |
+          node --input-type=module -e '
+            import { createHash } from "node:crypto";
+            import { lstatSync, readdirSync, readFileSync, appendFileSync } from "node:fs";
+            import { join } from "node:path";
+            const root = process.argv[1];
+            const files = [];
+            const walk = (dir, rel) => {
+              for (const name of readdirSync(dir)) {
+                const path = join(dir, name);
+                const relative = rel === "" ? name : rel + "/" + name;
+                const stat = lstatSync(path);
+                if (stat.isDirectory()) walk(path, relative);
+                else if (stat.isFile()) files.push(relative);
+                else { console.error("The release tools hold something that is not a regular file."); process.exit(1); }
+              }
+            };
+            walk(root, "");
+            if (files.length === 0) { console.error("The release tools are empty."); process.exit(1); }
+            files.sort();
+            const manifest = files.map((file) => createHash("sha256").update(readFileSync(join(root, file))).digest("hex") + "  " + file + "\n").join("");
+            const digest = createHash("sha256").update(manifest).digest("hex");
+            if (!/^[0-9a-f]{64}$/.test(process.env.EXPECTED_DIGEST ?? "") || digest !== process.env.EXPECTED_DIGEST) {
+              console.error("The release tools do not match the digest of the tools job.");
+              process.exit(1);
+            }
+          ' "$RUNNER_TEMP/release-tools"
 
       - name: Point at the release tools
         run: echo "DESKTOP_PKG=$RUNNER_TEMP/release-tools" >> "$GITHUB_ENV"
@@ -565,6 +636,41 @@ jobs:
         with:
           name: desktop-tools
           path: ${{ runner.temp }}/release-tools
+
+      # Fail closed BEFORE anything from the artifact runs: the files must be
+      # exactly the ones the `tools` job hashed (job outputs cannot be changed by
+      # a later job, an artifact can). An extra, missing, changed or non-regular
+      # file changes the digest. The verifier is inline, never from the artifact.
+      - name: Verify the release tools
+        env:
+          EXPECTED_DIGEST: ${{ needs.tools.outputs.digest }}
+        run: |
+          node --input-type=module -e '
+            import { createHash } from "node:crypto";
+            import { lstatSync, readdirSync, readFileSync, appendFileSync } from "node:fs";
+            import { join } from "node:path";
+            const root = process.argv[1];
+            const files = [];
+            const walk = (dir, rel) => {
+              for (const name of readdirSync(dir)) {
+                const path = join(dir, name);
+                const relative = rel === "" ? name : rel + "/" + name;
+                const stat = lstatSync(path);
+                if (stat.isDirectory()) walk(path, relative);
+                else if (stat.isFile()) files.push(relative);
+                else { console.error("The release tools hold something that is not a regular file."); process.exit(1); }
+              }
+            };
+            walk(root, "");
+            if (files.length === 0) { console.error("The release tools are empty."); process.exit(1); }
+            files.sort();
+            const manifest = files.map((file) => createHash("sha256").update(readFileSync(join(root, file))).digest("hex") + "  " + file + "\n").join("");
+            const digest = createHash("sha256").update(manifest).digest("hex");
+            if (!/^[0-9a-f]{64}$/.test(process.env.EXPECTED_DIGEST ?? "") || digest !== process.env.EXPECTED_DIGEST) {
+              console.error("The release tools do not match the digest of the tools job.");
+              process.exit(1);
+            }
+          ' "$RUNNER_TEMP/release-tools"
 
       - name: Point at the release tools
         run: echo "DESKTOP_PKG=$RUNNER_TEMP/release-tools" >> "$GITHUB_ENV"
@@ -851,6 +957,41 @@ jobs:
         with:
           name: desktop-tools
           path: ${{ runner.temp }}/release-tools
+
+      # Fail closed BEFORE anything from the artifact runs: the files must be
+      # exactly the ones the `tools` job hashed (job outputs cannot be changed by
+      # a later job, an artifact can). An extra, missing, changed or non-regular
+      # file changes the digest. The verifier is inline, never from the artifact.
+      - name: Verify the release tools
+        env:
+          EXPECTED_DIGEST: ${{ needs.tools.outputs.digest }}
+        run: |
+          node --input-type=module -e '
+            import { createHash } from "node:crypto";
+            import { lstatSync, readdirSync, readFileSync, appendFileSync } from "node:fs";
+            import { join } from "node:path";
+            const root = process.argv[1];
+            const files = [];
+            const walk = (dir, rel) => {
+              for (const name of readdirSync(dir)) {
+                const path = join(dir, name);
+                const relative = rel === "" ? name : rel + "/" + name;
+                const stat = lstatSync(path);
+                if (stat.isDirectory()) walk(path, relative);
+                else if (stat.isFile()) files.push(relative);
+                else { console.error("The release tools hold something that is not a regular file."); process.exit(1); }
+              }
+            };
+            walk(root, "");
+            if (files.length === 0) { console.error("The release tools are empty."); process.exit(1); }
+            files.sort();
+            const manifest = files.map((file) => createHash("sha256").update(readFileSync(join(root, file))).digest("hex") + "  " + file + "\n").join("");
+            const digest = createHash("sha256").update(manifest).digest("hex");
+            if (!/^[0-9a-f]{64}$/.test(process.env.EXPECTED_DIGEST ?? "") || digest !== process.env.EXPECTED_DIGEST) {
+              console.error("The release tools do not match the digest of the tools job.");
+              process.exit(1);
+            }
+          ' "$RUNNER_TEMP/release-tools"
 
       - name: Point at the release tools
         run: echo "DESKTOP_PKG=$RUNNER_TEMP/release-tools" >> "$GITHUB_ENV"
