@@ -221,7 +221,6 @@ jobs:
     outputs:
       digest: ${{ steps.manifest.outputs.digest }}
       artifact_id: ${{ steps.upload.outputs.artifact-id }}
-      artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
     if: inputs.release
     needs: plan
     runs-on: ubuntu-latest
@@ -276,9 +275,11 @@ jobs:
           test -f "$pkg/src/bundler/node-pins.ts" || { echo "The installed smrt-desktop does not ship the Node pin table." >&2; exit 1; }
           cp "$pkg/src/bundler/node-pins.ts" "$out/src/bundler/node-pins.ts"
 
-      # One digest over every file (sorted `sha256  path` lines, hashed once
-      # more). A job output cannot be changed by a later job, so the
-      # environment jobs compare what they download against it.
+      # One digest over every file: sha256 of the JSON of the sorted
+      # [sha256, path] pairs. A job output cannot be changed by a later job, so
+      # the environment jobs compare what they download against it. This proves
+      # the artifact is what THIS job uploaded; it does not make the caller code
+      # that ran in this job (its pnpmfile, lockfile) trusted.
       - name: Compute the release tools digest
         id: manifest
         run: |
@@ -301,8 +302,8 @@ jobs:
             walk(root, "");
             if (files.length === 0) { console.error("The release tools are empty."); process.exit(1); }
             files.sort();
-            const manifest = files.map((file) => createHash("sha256").update(readFileSync(join(root, file))).digest("hex") + "  " + file + "\n").join("");
-            const digest = createHash("sha256").update(manifest).digest("hex");
+            const manifest = files.map((file) => [createHash("sha256").update(readFileSync(join(root, file))).digest("hex"), file]);
+            const digest = createHash("sha256").update(JSON.stringify(manifest)).digest("hex");
             appendFileSync(process.env.GITHUB_OUTPUT, "digest=" + digest + "\n");
             console.log("release tools digest " + digest);
           ' "$RUNNER_TEMP/release-tools"
@@ -358,20 +359,23 @@ jobs:
       - name: Download the release tools
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: desktop-tools
+          artifact-ids: ${{ needs.tools.outputs.artifact_id }}
+          merge-multiple: true
+          digest-mismatch: error
           path: ${{ runner.temp }}/release-tools
 
       # Fail closed BEFORE anything from the artifact runs: the files must be
       # exactly the ones the `tools` job hashed (job outputs cannot be changed by
       # a later job, an artifact can). An extra, missing, changed or non-regular
       # file changes the digest. The verifier is inline, never from the artifact.
+      # It proves the artifact is what the tools job uploaded, nothing more.
       - name: Verify the release tools
         env:
           EXPECTED_DIGEST: ${{ needs.tools.outputs.digest }}
         run: |
           node --input-type=module -e '
             import { createHash } from "node:crypto";
-            import { lstatSync, readdirSync, readFileSync, appendFileSync } from "node:fs";
+            import { lstatSync, readdirSync, readFileSync } from "node:fs";
             import { join } from "node:path";
             const root = process.argv[1];
             const files = [];
@@ -388,8 +392,8 @@ jobs:
             walk(root, "");
             if (files.length === 0) { console.error("The release tools are empty."); process.exit(1); }
             files.sort();
-            const manifest = files.map((file) => createHash("sha256").update(readFileSync(join(root, file))).digest("hex") + "  " + file + "\n").join("");
-            const digest = createHash("sha256").update(manifest).digest("hex");
+            const manifest = files.map((file) => [createHash("sha256").update(readFileSync(join(root, file))).digest("hex"), file]);
+            const digest = createHash("sha256").update(JSON.stringify(manifest)).digest("hex");
             if (!/^[0-9a-f]{64}$/.test(process.env.EXPECTED_DIGEST ?? "") || digest !== process.env.EXPECTED_DIGEST) {
               console.error("The release tools do not match the digest of the tools job.");
               process.exit(1);
@@ -634,20 +638,23 @@ jobs:
       - name: Download the release tools
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: desktop-tools
+          artifact-ids: ${{ needs.tools.outputs.artifact_id }}
+          merge-multiple: true
+          digest-mismatch: error
           path: ${{ runner.temp }}/release-tools
 
       # Fail closed BEFORE anything from the artifact runs: the files must be
       # exactly the ones the `tools` job hashed (job outputs cannot be changed by
       # a later job, an artifact can). An extra, missing, changed or non-regular
       # file changes the digest. The verifier is inline, never from the artifact.
+      # It proves the artifact is what the tools job uploaded, nothing more.
       - name: Verify the release tools
         env:
           EXPECTED_DIGEST: ${{ needs.tools.outputs.digest }}
         run: |
           node --input-type=module -e '
             import { createHash } from "node:crypto";
-            import { lstatSync, readdirSync, readFileSync, appendFileSync } from "node:fs";
+            import { lstatSync, readdirSync, readFileSync } from "node:fs";
             import { join } from "node:path";
             const root = process.argv[1];
             const files = [];
@@ -664,8 +671,8 @@ jobs:
             walk(root, "");
             if (files.length === 0) { console.error("The release tools are empty."); process.exit(1); }
             files.sort();
-            const manifest = files.map((file) => createHash("sha256").update(readFileSync(join(root, file))).digest("hex") + "  " + file + "\n").join("");
-            const digest = createHash("sha256").update(manifest).digest("hex");
+            const manifest = files.map((file) => [createHash("sha256").update(readFileSync(join(root, file))).digest("hex"), file]);
+            const digest = createHash("sha256").update(JSON.stringify(manifest)).digest("hex");
             if (!/^[0-9a-f]{64}$/.test(process.env.EXPECTED_DIGEST ?? "") || digest !== process.env.EXPECTED_DIGEST) {
               console.error("The release tools do not match the digest of the tools job.");
               process.exit(1);
@@ -955,20 +962,23 @@ jobs:
       - name: Download the release tools
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: desktop-tools
+          artifact-ids: ${{ needs.tools.outputs.artifact_id }}
+          merge-multiple: true
+          digest-mismatch: error
           path: ${{ runner.temp }}/release-tools
 
       # Fail closed BEFORE anything from the artifact runs: the files must be
       # exactly the ones the `tools` job hashed (job outputs cannot be changed by
       # a later job, an artifact can). An extra, missing, changed or non-regular
       # file changes the digest. The verifier is inline, never from the artifact.
+      # It proves the artifact is what the tools job uploaded, nothing more.
       - name: Verify the release tools
         env:
           EXPECTED_DIGEST: ${{ needs.tools.outputs.digest }}
         run: |
           node --input-type=module -e '
             import { createHash } from "node:crypto";
-            import { lstatSync, readdirSync, readFileSync, appendFileSync } from "node:fs";
+            import { lstatSync, readdirSync, readFileSync } from "node:fs";
             import { join } from "node:path";
             const root = process.argv[1];
             const files = [];
@@ -985,8 +995,8 @@ jobs:
             walk(root, "");
             if (files.length === 0) { console.error("The release tools are empty."); process.exit(1); }
             files.sort();
-            const manifest = files.map((file) => createHash("sha256").update(readFileSync(join(root, file))).digest("hex") + "  " + file + "\n").join("");
-            const digest = createHash("sha256").update(manifest).digest("hex");
+            const manifest = files.map((file) => [createHash("sha256").update(readFileSync(join(root, file))).digest("hex"), file]);
+            const digest = createHash("sha256").update(JSON.stringify(manifest)).digest("hex");
             if (!/^[0-9a-f]{64}$/.test(process.env.EXPECTED_DIGEST ?? "") || digest !== process.env.EXPECTED_DIGEST) {
               console.error("The release tools do not match the digest of the tools job.");
               process.exit(1);

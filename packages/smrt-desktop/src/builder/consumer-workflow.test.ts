@@ -1,4 +1,14 @@
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -218,7 +228,9 @@ describe('the consumer workflow keeps secret custody (smrt#4965)', () => {
     for (const id of ['release-preflight', 'sign', 'publish']) {
       const body = job(id).body;
       expect(body, id).toContain('Download the release tools');
-      expect(body, id).toContain('name: desktop-tools');
+      expect(body, id).toContain(
+        'artifact-ids: ${{ needs.tools.outputs.artifact_id }}',
+      );
       for (const script of body.matchAll(
         /node "\$[A-Z_]+\/wrapper\/scripts\/([a-z-]+\.mjs)"/g,
       )) {
@@ -394,5 +406,130 @@ describe('the consumer workflow keeps secret custody (smrt#4965)', () => {
     for (const id of ['release-preflight', 'sign', 'publish']) {
       expect(digestCode(job(id).body), id).toBe(reference);
     }
+  });
+
+  describe('the inline release tools verifier', () => {
+    const inlineScript = (step: Step | undefined) =>
+      /node --input-type=module -e '\n([\s\S]*?)\n {10}' "\$RUNNER_TEMP\/release-tools"/.exec(
+        step?.body ?? '',
+      )?.[1] ?? '';
+    const verifyStep = job('sign').steps.find(
+      (step) => step.name === 'Verify the release tools',
+    );
+    const verifier = inlineScript(verifyStep);
+    const producer = inlineScript(
+      job('tools').steps.find(
+        (step) => step.name === 'Compute the release tools digest',
+      ),
+    );
+    const expectedDigest = (files: Record<string, string>) =>
+      createHash('sha256')
+        .update(
+          JSON.stringify(
+            Object.keys(files)
+              .sort()
+              .map((file) => [
+                createHash('sha256')
+                  .update(files[file] as string)
+                  .digest('hex'),
+                file,
+              ]),
+          ),
+        )
+        .digest('hex');
+    const tree = (files: Record<string, string>) => {
+      const dir = mkdtempSync(join(tmpdir(), 'tools-'));
+      for (const [file, content] of Object.entries(files)) {
+        mkdirSync(dirname(join(dir, file)), { recursive: true });
+        writeFileSync(join(dir, file), content);
+      }
+      return dir;
+    };
+    const verify = (dir: string, digest: string | undefined) =>
+      spawnSync(
+        process.execPath,
+        ['--input-type=module', '-e', verifier, dir],
+        {
+          encoding: 'utf8',
+          env: { ...process.env, EXPECTED_DIGEST: digest ?? '' },
+        },
+      ).status;
+    const files = {
+      'wrapper/scripts/release-feed.mjs': 'a',
+      'wrapper/signing-tools/package.json': 'b',
+      'src/bundler/node-pins.ts': 'c',
+    };
+
+    it('extracts and has no skip or continue-on-error', () => {
+      expect(verifier).toContain('createHash');
+      expect(verifyStep?.body).not.toMatch(/^ {8}if:/m);
+      expect(verifyStep?.body).not.toContain('continue-on-error');
+      for (const id of ['release-preflight', 'sign', 'publish']) {
+        const j = job(id);
+        const download = j.steps.find(
+          (step) => step.name === 'Download the release tools',
+        );
+        const step = j.steps.find(
+          (candidate) => candidate.name === 'Verify the release tools',
+        );
+        expect(download?.body, id).toContain(
+          'path: ${{ runner.temp }}/release-tools',
+        );
+        expect(step?.body, id).toContain('"$RUNNER_TEMP/release-tools"');
+        expect(step?.body, id).not.toMatch(/^ {8}if:|continue-on-error/m);
+        expect(download?.body, id).toContain('digest-mismatch: error');
+      }
+    });
+
+    it('agrees with the digest the tools job computes', () => {
+      const dir = tree(files);
+      const out = join(dir, '..', `out-${Date.now()}`);
+      writeFileSync(out, '');
+      const run = spawnSync(
+        process.execPath,
+        ['--input-type=module', '-e', producer, dir],
+        { encoding: 'utf8', env: { ...process.env, GITHUB_OUTPUT: out } },
+      );
+      expect(run.status).toBe(0);
+      expect(readFileSync(out, 'utf8').trim()).toBe(
+        `digest=${expectedDigest(files)}`,
+      );
+      rmSync(out);
+    });
+
+    it('accepts the exact tree', () => {
+      expect(verify(tree(files), expectedDigest(files))).toBe(0);
+    });
+
+    it('refuses a changed byte, an extra file and a missing file', () => {
+      const digest = expectedDigest(files);
+      expect(
+        verify(tree({ ...files, 'src/bundler/node-pins.ts': 'x' }), digest),
+      ).toBe(1);
+      expect(verify(tree({ ...files, 'extra.mjs': 'a' }), digest)).toBe(1);
+      const { 'src/bundler/node-pins.ts': _gone, ...fewer } = files;
+      expect(verify(tree(fewer), digest)).toBe(1);
+    });
+
+    it('refuses a symlink and an empty directory', () => {
+      const digest = expectedDigest(files);
+      const linked = tree(files);
+      symlinkSync('/etc/hosts', join(linked, 'link'));
+      expect(verify(linked, digest)).toBe(1);
+      expect(verify(mkdtempSync(join(tmpdir(), 'empty-')), digest)).toBe(1);
+    });
+
+    it('refuses a malformed or missing expected digest', () => {
+      const dir = tree(files);
+      for (const digest of [
+        undefined,
+        '',
+        'abc',
+        expectedDigest(files).toUpperCase(),
+        `${expectedDigest(files)}\n`,
+      ]) {
+        expect(verify(dir, digest), String(digest)).toBe(1);
+      }
+    });
   });
 });
