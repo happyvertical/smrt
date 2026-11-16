@@ -221,13 +221,13 @@
   "scripts": {
     "build": "svelte-package -i src --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist",
     "dev": "svelte-package -i src --watch",
-    "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
+    "check": "node ../../scripts/svelte-check-workspace.mjs --config ./svelte.config.typecheck.js --tsconfig ./tsconfig.typecheck.json",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "pnpm run test:unit && pnpm run test:conformance",
     "test:unit": "vitest run --exclude src/web/__tests__/data-surface-conformance.integration.svelte.test.ts && node --test scripts/*.test.mjs",
     "test:conformance": "node scripts/ensure-conformance-build.mjs && SMRT_SVELTE_PUBLISHED_ENTRY=1 vitest run src/web/__tests__/data-surface-conformance.integration.svelte.test.ts",
     "typecheck:conformance": "tsc --noEmit -p ./tsconfig.conformance.json",
-    "typecheck": "tsc --noEmit && pnpm run typecheck:conformance && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
+    "typecheck": "tsc -p tsconfig.typecheck.json && pnpm run typecheck:conformance && node ../../scripts/svelte-check-a11y.mjs --config ./svelte.config.typecheck.js --tsconfig ./tsconfig.typecheck.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js .",
     "test:e2e": "playwright test -c e2e/playwright.config.ts"
   },

@@ -158,4 +158,6 @@ and a member; it opens the real driver because the vitest setup would
 pre-create tables). `pnpm build` (tsc models, `svelte-kit sync`, `vite build`;
 the smrt() plugin generates `src/routes/api/{apps,approvals,_changes,_events,
 _resources}`: git-ignored) and `pnpm typecheck` must pass. The `smrt()` plugin
-needs the models in `src/lib/objects`, set via `objectsDir`.
+needs the models in `src/lib/objects`, set via `objectsDir`. SvelteKit sync
+loads the runtime Vite config, whose code generation reads the built manifests
+of the packages listed in `smrt.config.ts`.

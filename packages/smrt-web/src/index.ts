@@ -679,7 +679,7 @@ export function buildListQuery(params?: Record<string, unknown>): string {
 export function createDefinitionFetchers(
   definition: Pick<SmrtWebCollectionDefinition<object>, 'name' | 'endpoint'>,
   basePath = '/api/v1',
-  fetchFn: typeof fetch = (...args) => globalThis.fetch(...args),
+  fetchFn: typeof fetch = (input, init) => globalThis.fetch(input, init),
 ): SmrtCrudFetchers {
   const collectionUrl = `${basePath}${definition.endpoint}`;
   const headers = { 'Content-Type': 'application/json' };

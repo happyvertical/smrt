@@ -72,14 +72,24 @@ export function checkSecrets(env) {
 }
 
 /**
+ * The committed updater public key of a config: `plugins.updater.pubkey` of
+ * the wrapper's Tauri config, or `updaterPublicKey` of a product's
+ * `smrt-desktop.json` (the consumer workflow reads that one). The Tauri form
+ * wins when both exist.
+ */
+export function updaterPubkeyOf(config) {
+  return config?.plugins?.updater?.pubkey ?? config?.updaterPublicKey;
+}
+
+/**
  * The committed config must carry a real updater public key. A Tauri updater
  * key is the base64 of a two-line minisign public key file:
  * `untrusted comment: ...` then 56 base64 characters starting `RW`.
  */
 export function checkUpdaterPubkey(config) {
-  const key = config?.plugins?.updater?.pubkey;
+  const key = updaterPubkeyOf(config);
   if (!isNonEmptyString(key)) {
-    return ['the Tauri config has no plugins.updater.pubkey'];
+    return ['the config has no updater public key (plugins.updater.pubkey or updaterPublicKey)'];
   }
   const bad = ['plugins.updater.pubkey is a placeholder or not a minisign key'];
   const compact = key.trim();

@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.package-typecheck.json",
+  "include": ["ambient.d.ts", "src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+}

@@ -5,12 +5,13 @@ import { describeReport, type ReportFieldInfo } from './describe.js';
 import { M } from './messages.js';
 import ReportResult from './ReportResult.svelte';
 import { reportError, validReportProposal } from './result.js';
-import type { RuntimeReportProposal, SavedRuntimeReport } from './types.js';
+import type {
+  ReportConfirmationOutcome,
+  RuntimeReportProposal,
+  SavedRuntimeReport,
+} from './types.js';
 
-/** How a confirmation was answered; it then renders as a read-only line. */
-export type ReportConfirmationOutcome =
-  | { status: 'saved'; report: Pick<SavedRuntimeReport, 'id' | 'title'> }
-  | { status: 'declined' };
+export type { ReportConfirmationOutcome } from './types.js';
 
 export interface Props {
   proposal: RuntimeReportProposal;

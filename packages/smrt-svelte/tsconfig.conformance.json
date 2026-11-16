@@ -1,5 +1,5 @@
 {
-  "extends": "./tsconfig.svelte.json",
+  "extends": "./tsconfig.typecheck.json",
   "include": [
     "ambient.d.ts",
     "src/web/__tests__/data-surface-conformance.integration.svelte.test.ts",

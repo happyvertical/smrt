@@ -143,6 +143,7 @@ export {
   createSmrtAssistantTransport,
   type FullAssistantTransport,
   type InMemoryAssistantTransportOptions,
+  type ModelOption,
   readAssistantTurnResult,
   type SmrtAssistantTransportOptions,
 } from './components/assistant/assistant-transport.js';
@@ -187,10 +188,7 @@ export {
   type AssistantUserHold,
   createAssistantDockController,
 } from './components/assistant/create-assistant-dock-controller.svelte.js';
-export {
-  default as FloatingAssistant,
-  type FloatingAssistantPresentationState,
-} from './components/assistant/FloatingAssistant.svelte';
+export { default as FloatingAssistant } from './components/assistant/FloatingAssistant.svelte';
 export { default as RoomCreateDialog } from './components/dialogs/RoomCreateDialog.svelte';
 export { default as SearchMessages } from './components/dialogs/SearchMessages.svelte';
 export { default as HelperControlPanel } from './components/helper/HelperControlPanel.svelte';
@@ -217,13 +215,11 @@ export { default as MessageInput } from './components/messages/MessageInput.svel
 export { default as MessageItem } from './components/messages/MessageItem.svelte';
 export { default as MessageList } from './components/messages/MessageList.svelte';
 export { default as ThreadPanel } from './components/messages/ThreadPanel.svelte';
-export type { AiUnavailableNoticeProps } from './components/shared/AiUnavailableNotice.svelte';
 export { default as AiUnavailableNotice } from './components/shared/AiUnavailableNotice.svelte';
 export { default as Avatar } from './components/shared/Avatar.svelte';
 export { default as FileUpload } from './components/shared/FileUpload.svelte';
 export { default as LinkPreview } from './components/shared/LinkPreview.svelte';
 export { default as MentionAutocomplete } from './components/shared/MentionAutocomplete.svelte';
-export type { ModelOption } from './components/shared/ModelPicker.svelte';
 export { default as ModelPicker } from './components/shared/ModelPicker.svelte';
 export { default as ReactionPicker } from './components/shared/ReactionPicker.svelte';
 export { default as ReadReceipts } from './components/shared/ReadReceipts.svelte';
@@ -237,12 +233,14 @@ export { default as MiniChat } from './components/tabs/MiniChat.svelte';
 export type {
   AgentDescriptor,
   AgentSessionData,
+  AiUnavailableNoticeProps,
   ChatAttachmentData,
   ChatMessageData,
   ChatParticipantData,
   ChatRoomData,
   ChatTabState,
   ChatThreadData,
+  FloatingAssistantPresentationState,
   ReactionSummary,
   ToolCallDisplayData,
 } from './types.js';

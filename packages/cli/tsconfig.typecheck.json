@@ -4,13 +4,5 @@
     "types": ["node", "vitest/globals"]
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"],
-  "references": [
-    { "path": "../agents" },
-    { "path": "../config" },
-    { "path": "../core" },
-    { "path": "../smrt-dev-mcp" },
-    { "path": "../smrt-playground" },
-    { "path": "../types" }
-  ]
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
 }

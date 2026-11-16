@@ -4,19 +4,14 @@
   up, ...). The settings link target is the host's: without `settingsHref`
   the notice shows the reason only.
 -->
+<script module lang="ts">
+export type { AiUnavailableNoticeProps } from '../../types.js';
+</script>
+
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import type { ChatUnavailableStatus } from '../../../client.js';
 import { M } from '../../i18n.js';
-
-export interface AiUnavailableNoticeProps {
-  /** Why AI is unavailable, from the server's `ai_unavailable` answer. */
-  status: Pick<ChatUnavailableStatus, 'reason'>;
-  /** Host route of its AI settings page (e.g. the #4754 "My AI" panel). */
-  settingsHref?: string;
-  /** Link text; defaults to "Open AI settings". */
-  settingsLabel?: string;
-}
+import type { AiUnavailableNoticeProps } from '../../types.js';
 
 const { status, settingsHref, settingsLabel }: AiUnavailableNoticeProps =
   $props();
