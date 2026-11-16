@@ -64,6 +64,14 @@ export interface TrackedAiClientOptions {
   className?: string;
   /** The provider client (options, or a client the host already built). */
   ai?: AIClientOptions | AIClient;
+  /**
+   * What a client the host already built is recorded as on its calls' usage
+   * rows when its configuration does not say: the provider (an inference
+   * engine such as `chatgpt`) and the model it was bound to. A model the
+   * response reports wins over `model`. Ignored for a provider the options
+   * name.
+   */
+  label?: { provider: string; model?: string };
   inference?: InferenceConfig | InferenceResolver;
   usage?: AiUsageConfig;
   /**
@@ -121,13 +129,14 @@ class TrackedAiHost extends SmrtClass {
   private readonly transcript: boolean | undefined;
 
   constructor(options: TrackedAiClientOptions) {
-    const { tenantId, className, transcript, ...rest } = options;
+    const { tenantId, className, transcript, label, ...rest } = options;
     super({
       ...(rest as SmrtClassOptions),
       _className: className ?? 'TrackedAiClient',
     } as SmrtClassOptions);
     this.tenantId = tenantId ?? null;
     this.transcript = transcript;
+    if (label) this._aiClientLabel = { ...label };
   }
 
   ready(): Promise<this> {

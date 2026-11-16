@@ -568,6 +568,11 @@ export class SmrtClass {
   >();
   /** Run-tracking hooks per provider-bound client (#5005). */
   private readonly _aiRunClientHooks = new WeakMap<object, AiRunClientHooks>();
+  /**
+   * What a client the host built itself is recorded as on its tracked
+   * calls (#5005): its configuration names no provider or model.
+   */
+  protected _aiClientLabel?: { provider?: string; model?: string };
 
   /**
    * Tracks whether optional runtime services (signals, AI, fs) are ready.
@@ -1212,9 +1217,13 @@ export class SmrtClass {
           const base = this._aiClientConfig ?? {};
           const field = (name: string) =>
             typeof base[name] === 'string' ? (base[name] as string) : '';
+          const label = this._aiClientLabel;
           return {
-            provider: target.provider ?? (field('provider') || 'unknown'),
-            model: target.model ?? (field('model') || 'unknown'),
+            provider:
+              target.provider ??
+              (field('provider') || label?.provider || 'unknown'),
+            model:
+              target.model ?? (field('model') || label?.model || 'unknown'),
           };
         },
         rateFor: (provider, model) => {

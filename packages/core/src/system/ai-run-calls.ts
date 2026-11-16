@@ -426,18 +426,20 @@ export async function beginAiRunCall(
     async fail(error) {
       if (slot.ended) return error;
       slot.ended = true;
+      const timedOut = Boolean(timeout?.aborted);
+      const status = timedOut
+        ? 'timed_out'
+        : isAbort(error)
+          ? 'cancelled'
+          : 'failed';
       if (slot.event) {
-        await settle(slot.event, 'failed');
+        // It reported usage before it ended: charged, with how it ended.
+        await settle(slot.event, status);
       } else {
-        const timedOut = Boolean(timeout?.aborted);
         await releaseAiCall(context.db, {
           runId: context.runId,
           callId,
-          status: timedOut
-            ? 'timed_out'
-            : isAbort(error)
-              ? 'cancelled'
-              : 'failed',
+          status,
         }).catch((releaseError) => {
           logger.warn(
             `[smrt] AI run ${context.runId} could not release call ${callId}: ${

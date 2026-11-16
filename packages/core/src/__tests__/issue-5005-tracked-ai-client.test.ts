@@ -195,4 +195,53 @@ describe('createTrackedAiClient (#5005)', () => {
       tokens: 5,
     });
   });
+
+  it("records a host-built client's calls under its label, uncosted", async () => {
+    const db = await memoryDb();
+    const built = {
+      async chat() {
+        return {
+          content: 'hi',
+          model: 'plan-model-reported',
+          usage: { totalTokens: 9 },
+        };
+      },
+      embed() {
+        throw new Error('no embeddings');
+      },
+    };
+    const tracked = createTrackedAiClient({
+      db,
+      tenantId: 't',
+      ai: built as never,
+      label: { provider: 'chatgpt', model: 'plan-model' },
+    });
+    const run = await tracked.openRun({ type: 'turn' });
+    const client = await tracked.client(
+      { promptKey: 'test.prompt' },
+      { runContext: run.context },
+    );
+    await (
+      client as unknown as { chat: (m: unknown[]) => Promise<unknown> }
+    ).chat([{ role: 'user', content: 'hello' }]);
+    expect(
+      rowsOf(
+        await db.query(
+          'SELECT provider, model, total_tokens, estimated_cost FROM _smrt_ai_usage',
+        ),
+      ),
+    ).toEqual([
+      {
+        provider: 'chatgpt',
+        model: 'plan-model-reported',
+        total_tokens: 9,
+        estimated_cost: null,
+      },
+    ]);
+    expect(await getAiRun(db, run.run.id)).toMatchObject({
+      calls: 1,
+      tokens: 9,
+      uncostedCalls: 1,
+    });
+  });
 });

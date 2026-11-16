@@ -179,7 +179,7 @@ from the response's own `usage` and `model`; a zero-token row is the last
 resort.
 
 `createTrackedAiClient({ db, tenantId, ai?, inference?, usage?, className?,
-transcript? })` (`src/tracked-ai-client.ts`) is the entry point for code that
+transcript?, label? })` (`src/tracked-ai-client.ts`) is the entry point for code that
 is not a `SmrtObject` (chat, the app shell, background workers). It is built
 for ONE tenant and database (an internal `SmrtClass` host: nothing is kept per
 process) and refuses a run context of another database or tenant.
@@ -191,7 +191,13 @@ without a key is refused (`AiPromptKeyRequiredError`). Core never imports
 `smrt-prompts`: the caller resolves the prompt (`resolvePrompt`) and
 `trackedPromptCall(resolved)` of smrt-prompts turns the resolution into the
 `prompt` argument. `transcript: false` is for a host that stores the
-conversation itself. `pnpm lint` runs `scripts/check-tracked-ai-calls.mjs`:
+conversation itself. `label: { provider, model? }` names what a client the
+host built itself is recorded as (an engine such as `chatgpt`); a model the
+response reports wins. An engine that runs its own loop (a Claude Code or
+Codex CLI) makes no call through a client: its turn is one
+`beginAiRunCall` of the run, ended `succeed()` (answered) or `fail()`; a
+`fail()` after a captured usage event settles it with `cancelled`,
+`timed_out` or `failed`. `pnpm lint` runs `scripts/check-tracked-ai-calls.mjs`:
 package code may not build a provider client (`getAI`), import a provider
 SDK, or call `ai.chat/message/complete/stream` on a client that did not come
 from the tracked path, and a tracked call needs a prompt key; the file's short
