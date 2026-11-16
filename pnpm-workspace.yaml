@@ -169,7 +169,7 @@ auditConfig:
   # The six protobufjs GHSAs previously baselined here (1 critical, 5 high) are
   # gone: they were all driven by protobufjs 6.11.4, now unified onto 7.6.5.
   #
-  # Currently empty: GHSA-ch52-4w7c-c8xp (http-cache-semantics) was withdrawn by
+  # Previously baselined: GHSA-ch52-4w7c-c8xp (http-cache-semantics) was withdrawn by
   # GitHub on 2026-10-28, so its suppression and record were removed (#4607).
   # GHSA-3r8g-jcqq-3p5j: SvelteKit remote-function `form` DoS; unreachable (no
   # remote functions in any package or template). Migration: #5038.
