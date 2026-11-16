@@ -2956,6 +2956,45 @@ export class SchemaComparer {
     }
   }
 
+  /**
+   * `PRAGMA table_info` (and so `getTableSchema()`) omits SQLite generated
+   * columns, so a calculated column the model dropped would never reach the
+   * orphan loop (#5013). `table_xinfo` lists them with `hidden` 2 (VIRTUAL) or
+   * 3 (STORED); `hidden` 1 marks virtual-table module columns, which are not
+   * table columns a migration owns and stay excluded. Only names the manifest
+   * does not declare are added, so declared-column comparison keeps its own
+   * feature-scoped probe. Best-effort: an unreadable catalog leaves the
+   * ordinary column list as it was.
+   */
+  private async addLiveGeneratedColumns(
+    tableName: string,
+    dbSchema: SqlTableSchemaInfo,
+    dbColumnNames: Set<string>,
+    manifestColumnNames: ReadonlySet<string>,
+  ): Promise<void> {
+    try {
+      const { rows } = await this.db.query(
+        'SELECT * FROM pragma_table_xinfo($1) WHERE hidden IN (2, 3)',
+        [tableName],
+      );
+      for (const row of rows) {
+        const name = String(row.name);
+        if (manifestColumnNames.has(name) || dbSchema.columns[name]) continue;
+        // Never an insert blocker: a generated column cannot be supplied, so a
+        // NOT NULL here must not raise the NOT NULL-orphan warning.
+        dbSchema.columns[name] = {
+          type: String(row.type),
+          notNull: false,
+          primaryKey: false,
+          defaultValue: row.dflt_value,
+        };
+        dbColumnNames.add(name);
+      }
+    } catch {
+      // Keep the ordinary column list.
+    }
+  }
+
   private async compareColumns(
     tableName: string,
     manifest: SchemaDefinition,
@@ -3795,6 +3834,14 @@ export class SchemaComparer {
 
     // Orphan columns: always reported, dropped only on request (#2369).
     const manifestColumnNames = new Set(Object.keys(manifest.columns));
+    if (this.engine === 'sqlite') {
+      await this.addLiveGeneratedColumns(
+        tableName,
+        dbSchema,
+        dbColumnNames,
+        manifestColumnNames,
+      );
+    }
     for (const colName of dbColumnNames) {
       if (manifestColumnNames.has(colName)) continue;
       const dbCol = dbSchema.columns[colName];

@@ -21,6 +21,7 @@
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ObjectRegistry } from '../../registry.js';
+import { checkLiveSchemaParity } from '../../schema/live-parity.js';
 import { stiHardeningChecks } from '../../schema/sti-hardening.js';
 import type { SchemaDefinition } from '../../schema/types.js';
 import { getTestDatabase } from '../../testing/database.js';
@@ -239,6 +240,38 @@ describe.each(ENGINES)('calculated columns on %s', (engine) => {
     await db.query('UPDATE items SET qty = 4');
     expect(await rows()).toEqual([{ id: 'a', qty: 4, note: 'n', total: 8 }]);
     expect(await migrate()).toMatchObject({ applied: false, refused: false });
+  });
+
+  it('reports a live calculated column the model dropped as column.orphan (#5013)', async () => {
+    // Created by hand, never recorded: no previous schema and no declaration
+    // names `total`, so nothing but the live column list can reveal it.
+    const generated = engine === 'postgres' ? ' STORED' : '';
+    await db.query(
+      `CREATE TABLE items (id TEXT PRIMARY KEY NOT NULL, qty INTEGER, total INTEGER GENERATED ALWAYS AS (qty * 2)${generated})`,
+    );
+    const changes = (
+      await new SchemaComparer(db, { engineHint: engine }).compare({
+        items: table({ qty: { type: 'INTEGER' } }),
+      })
+    ).changes;
+    const orphans = changes.filter((change) => change.type === 'orphan_column');
+    expect(orphans.map((change) => change.name)).toEqual(['total']);
+    expect(decideSchemaChange(orphans[0] as never, engine).kind).toBe(
+      'column.orphan',
+    );
+    // The same live column is an `extra_column` in live-schema parity.
+    const parity = await checkLiveSchemaParity({
+      db,
+      schemas: { items: table({ qty: { type: 'INTEGER' } }) },
+      engineHint: engine,
+      includeSystemTables: false,
+      reportExtraTables: false,
+    });
+    expect(
+      parity.findings
+        .filter((finding) => finding.kind === 'extra_column')
+        .map((finding) => finding.target),
+    ).toEqual(['total']);
   });
 
   it('reports no change on a second migrate', async () => {

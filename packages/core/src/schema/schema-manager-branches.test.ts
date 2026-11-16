@@ -348,7 +348,7 @@ describe('SchemaManager addMissingColumns edge cases', () => {
   it('skips column additions when introspection returns no columns', async () => {
     const query = vi
       .fn()
-      // PRAGMA table_info -> empty (introspection yields nothing)
+      // PRAGMA table_xinfo -> empty (introspection yields nothing)
       .mockResolvedValueOnce([]);
     const db = {
       url: 'sqlite::memory:',
@@ -361,7 +361,7 @@ describe('SchemaManager addMissingColumns edge cases', () => {
 
     // Only the introspection PRAGMA ran; no ALTER statements followed.
     expect(query).toHaveBeenCalledTimes(1);
-    expect(query.mock.calls[0][0]).toContain('PRAGMA table_info');
+    expect(query.mock.calls[0][0]).toContain('PRAGMA table_xinfo');
   });
 
   it('does not attempt to ALTER in primary-key columns', async () => {
@@ -395,7 +395,7 @@ describe('SchemaManager addMissingColumns edge cases', () => {
       if (sql.startsWith('ALTER TABLE') && sql.includes('"title"')) {
         throw new Error('duplicate column title');
       }
-      if (sql.includes('PRAGMA table_info')) {
+      if (sql.includes('PRAGMA table_xinfo')) {
         return [{ name: 'id' }, { name: 'slug' }];
       }
       return [];

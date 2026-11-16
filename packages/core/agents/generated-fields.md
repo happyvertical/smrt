@@ -138,6 +138,16 @@ new ordinary column can also pay this best-effort probe. The optional
 `previousSchemas` input can suppress that fallback for known ordinary tables;
 it is not needed for PostgreSQL/DuckDB removal detection.
 
+Orphan reporting is not feature-scoped (#5013): on SQLite the ordinary diff
+(`column.orphan`) and live parity (`extra_column`) always add undeclared
+generated columns from `pragma_table_xinfo` (`hidden` 2 = VIRTUAL, 3 = STORED),
+so a dropped calculated column is reported even with no recorded schema.
+`hidden` 1 (virtual-table module columns) stays excluded. These columns are
+never insert blockers. `SchemaManager`'s existing-column probe and the money-column check use
+`table_xinfo` on SQLite too (with a `table_info` fallback where the engine
+label is a URL guess). The SQLite table rebuild deliberately keeps
+`table_info`: its copy list must omit generated columns.
+
 A failed optional catalog read is treated as no generated columns known,
 preserving ordinary diff/parity behavior on catalog-incompatible adapters or
 test doubles. Failure propagates if **any** generated column is expected in
