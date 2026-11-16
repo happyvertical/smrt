@@ -120,9 +120,8 @@ describe('db:migrate (real SQLite, #2369)', () => {
     );
 
     // Run 1: adds `headline`, warns about `title`, does not fail.
-    // (Sub-millisecond SQLite migrations are logged as "already applied" by
-    // the tracker's execution_time_ms === 0 heuristic, so the applied
-    // column is asserted on the live schema rather than the log line.)
+    // (The applied column is asserted on the live schema rather than the
+    // log line.)
     await requireCommandHandler(utilityCommands['db:migrate'])([], {});
     let out = output();
     await withDb(async (db) => {

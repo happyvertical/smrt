@@ -176,6 +176,19 @@ function migrationResultFailure(
   );
 }
 
+/**
+ * Whether a successful tracker result actually ran its statements. The
+ * tracker's own `applied`/`skipped` flags decide; a sub-millisecond apply
+ * reports `execution_time_ms: 0` with `applied: true`, so the duration is
+ * only a fallback for a result that carries neither flag (#5005: a fast
+ * PGlite DROP TABLE was reported as "already applied").
+ */
+export function migrationResultRan(result: MigrationResult): boolean {
+  if (result.skipped === true || result.applied === false) return false;
+  if (result.applied === true) return true;
+  return result.execution_time_ms !== 0;
+}
+
 function migrationResultError(result: MigrationResult): Error {
   const cause = result.error instanceof Error ? result.error : undefined;
   return new Error(`${result.name}: ${migrationErrorMessage(result.error)}`, {
@@ -2874,7 +2887,7 @@ export default testManifest;
 
                 const logInfo = migrationLogs.get(result.name);
                 const checksum = shortChecksum(result.checksum);
-                if (result.execution_time_ms === 0 || result.skipped) {
+                if (!migrationResultRan(result)) {
                   if (options.verbose) {
                     console.log(
                       `  ⊙ ${logInfo?.skippedMessage ?? result.name} (${checksum})`,
@@ -2901,17 +2914,10 @@ export default testManifest;
             }
 
             successCount += results.filter(
-              (result) =>
-                result.success &&
-                result.applied !== false &&
-                result.execution_time_ms !== 0,
+              (result) => result.success && migrationResultRan(result),
             ).length;
             skippedCount += results.filter(
-              (result) =>
-                result.success &&
-                (result.skipped ||
-                  result.applied === false ||
-                  result.execution_time_ms === 0),
+              (result) => result.success && !migrationResultRan(result),
             ).length;
           } catch (error) {
             errorCount++;

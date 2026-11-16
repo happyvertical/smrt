@@ -177,6 +177,18 @@ describe('db:migrate retires declared tables (#5005)', () => {
     expect(again).not.toContain('Retired table');
   });
 
+  it('reports a retirement that took under a millisecond as applied, not already applied', async () => {
+    declare('discard');
+    // A fast DROP measures execution_time_ms 0; the tracker's applied flag,
+    // not the duration, decides whether it ran.
+    vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+    const out = await run();
+    expect(process.exitCode ?? 0, out).toBe(0);
+    expect(out).toContain('Retired table old_drafts');
+    expect(out).not.toContain('already applied');
+    expect(await exists('old_drafts')).toBe(false);
+  });
+
   it("stops on rows without rows: 'discard', naming the table and count", async () => {
     declare();
     schemas.fresh = { ...kept, tableName: 'fresh' };

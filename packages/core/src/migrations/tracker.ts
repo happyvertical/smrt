@@ -993,8 +993,8 @@ export class MigrationTracker {
             await session.query(sql);
           }
 
-          // Floor at 1ms: callers (the CLI progress reporter, the applied vs
-          // skipped counters) read `execution_time_ms === 0` as "nothing ran".
+          // Floor at 1ms: older callers read `execution_time_ms === 0` as
+          // "nothing ran"; `applied: true` is the authoritative signal.
           const executionTime = Math.max(
             1,
             (result.execution_time_ms ?? 0) + (Date.now() - startedAt),
