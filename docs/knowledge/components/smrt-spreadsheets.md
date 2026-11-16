@@ -5,10 +5,10 @@ description: "Spreadsheet capabilities for smrt, starting with validated import 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-13T20:49:38Z"
+  at: "2026-11-16T06:31:57Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:61a92004ee2d2045d0e31aaa82db787b560cd539c617617e11751bbef6051797"
+source_revision: "sha256:6b6734983ce476a3a522760bdbcba1e64cade40db78b6d1a63ec8167049d6f1c"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/spreadsheets/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/spreadsheets`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `none`
 - Evidence level: `manifest-described`
 
 ## Documentation

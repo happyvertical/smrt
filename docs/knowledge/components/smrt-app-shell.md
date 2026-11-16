@@ -5,10 +5,10 @@ description: "A smrt app that builds and runs a person's own smrt app from defin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-15T03:21:53Z"
+  at: "2026-11-16T06:31:57Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:6e6128212fa252301f1ea21b001f851e7827a3eaca81de46a17b2b2b60e2e57c"
+source_revision: "sha256:3e318259fc870e89a20fa9efe50b31fc6075feecc99f950d17afdcff31dc692b"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/package.json"
@@ -33,7 +33,7 @@ sources:
 
 - Directory: `packages/app-shell`
 - Private: no
-- Object source: `manifest`
+- Object source: `scanner`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -77,19 +77,12 @@ sources:
 ## Models
 
 - `App` (collection `apps`, extends `SmrtObject`)
-- `AppCollection` (collection `apps`, extends `SmrtCollection`)
 - `AppDraft` (collection `appdrafts`, extends `SmrtObject`)
-- `AppDraftCollection` (collection `appdrafts`, extends `SmrtCollection`)
 - `AppDraftVersion` (collection `appdraftversions`, extends `SmrtObject`)
-- `AppDraftVersionCollection` (collection `appdraftversions`, extends `SmrtCollection`)
 - `AppVersion` (collection `appversions`, extends `SmrtObject`)
-- `AppVersionCollection` (collection `appversions`, extends `SmrtCollection`)
 - `Approval` (collection `approvals`, extends `SmrtObject`)
-- `ApprovalCollection` (collection `approvals`, extends `SmrtCollection`)
 - `AssistantMessage` (collection `assistantmessages`, extends `SmrtObject`)
-- `AssistantMessageCollection` (collection `assistantmessages`, extends `SmrtCollection`)
 - `AssistantThread` (collection `assistantthreads`, extends `SmrtObject`)
-- `AssistantThreadCollection` (collection `assistantthreads`, extends `SmrtCollection`)
 
 ## MCP tools
 
