@@ -59,8 +59,19 @@ export interface RunProgress {
   phase: WorkflowCheckpointState['phase'];
 }
 
+/** Safe host-authored validation details; never include source data or credentials. */
+export interface WorkflowValidationIssue {
+  code: string;
+  path: string;
+  message: string;
+  /** Optional model repair hint, kept in the checkpoint, excluded from events (4000 chars). */
+  repair?: string;
+}
+
 /** What a host check decides about a step's accepted output. */
 export interface WorkflowStepCheck {
+  /** Bounded structured diagnostics recorded on the check event. */
+  diagnostics?: readonly WorkflowValidationIssue[];
   /** Facts for the next step: replaces the run input. */
   input?: unknown;
   /**
