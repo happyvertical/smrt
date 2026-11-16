@@ -41,7 +41,7 @@ const CACHE_FILE = 'discovery-cache.json';
  * and never re-probe a package whose manifest is only at, say,
  * `dist/lib/manifest.json`.
  */
-const CACHE_VERSION = 7;
+const CACHE_VERSION = 6;
 
 /** Timing data for --timing flag */
 interface TimingData {
@@ -434,64 +434,6 @@ function* scanNodeModules(baseDir: string): Generator<string> {
 }
 
 /**
- * Follow smrt packages through the smrt packages they depend on (#5027).
- *
- * A package an app reaches only through another smrt package (smrt-content ->
- * smrt-images) is loaded at runtime and can add columns to a shared
- * single-table-inheritance table, so the build's manifest, and the schema
- * stamp computed from it, must describe it. Package managers that keep
- * transitive dependencies out of the app's own `node_modules` (pnpm) hide it
- * from the scan above, so resolve each dependency from the directory of the
- * package that declares it.
- */
-function addTransitiveSmrtPackages(
-  baseDir: string,
-  found: Set<string>,
-  verbose: boolean,
-): void {
-  const queue: Array<{ name: string; from: string }> = [...found].map(
-    (name) => ({ name, from: baseDir }),
-  );
-  const visited = new Set<string>();
-
-  while (queue.length > 0) {
-    const { name, from } = queue.shift() as { name: string; from: string };
-    const packageDir = resolvePackageDir(name, from);
-    if (!packageDir || visited.has(packageDir)) continue;
-    visited.add(packageDir);
-
-    let dependencies: string[] = [];
-    try {
-      const packageJson = parse<{
-        dependencies?: Record<string, string>;
-        peerDependencies?: Record<string, string>;
-        optionalDependencies?: Record<string, string>;
-      }>(readFileSync(join(packageDir, 'package.json'), 'utf-8'));
-      dependencies = Object.keys({
-        ...packageJson.dependencies,
-        ...packageJson.peerDependencies,
-        ...packageJson.optionalDependencies,
-      }).filter((dependency) => dependency.startsWith('@happyvertical/smrt-'));
-    } catch {
-      continue;
-    }
-
-    for (const dependency of dependencies) {
-      if (!resolveManifestPath(dependency, packageDir)) continue;
-      if (!found.has(dependency)) {
-        found.add(dependency);
-        if (verbose) {
-          console.log(
-            `[discovery] ✅ Found transitive SMRT package: ${dependency} (via ${name})`,
-          );
-        }
-      }
-      queue.push({ name: dependency, from: packageDir });
-    }
-  }
-}
-
-/**
  * Perform fresh discovery of SMRT packages
  */
 function performDiscovery(baseDir: string, verbose: boolean): string[] {
@@ -515,8 +457,6 @@ function performDiscovery(baseDir: string, verbose: boolean): string[] {
     for (const pkgName of getDeclaredSmrtPackages(baseDir, verbose)) {
       smrtPackages.add(pkgName);
     }
-
-    addTransitiveSmrtPackages(baseDir, smrtPackages, verbose);
 
     if (verbose) {
       console.log(

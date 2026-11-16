@@ -1454,15 +1454,16 @@ guard fails with "no build schema found":
   metadata, so the plan it records differs from the build's stamp and the guard
   never passes.
 
-**Every package that adds columns must be in the build.** The stamp covers the
-packages the app consumes (`smrtConsumer({ packages })`, or the discovered
-set). A package reached only through another one (smrt-content loads
-smrt-images, which adds columns to the shared `assets` table) is loaded at
-runtime but absent from a build that does not list it, so the plan has columns
-the stamp lacks. List such packages explicitly. Manifest discovery
-(`discoverSmrtPackages`) follows `@happyvertical/smrt-*` dependencies of each
-discovered package, resolved from the declaring package's own directory, which
-is where pnpm keeps them.
+**Every package that adds columns must be in the build, and be listed.** The
+stamp covers the packages the app consumes (`smrtConsumer({ packages })`, or
+the discovered set). A package reached only through another one (smrt-content
+loads smrt-images, which adds columns to the shared `assets` table) is loaded
+at runtime but absent from a build that does not list it, so the plan has
+columns the stamp lacks. Declare such packages explicitly, as direct
+dependencies of the app and in its package list; discovery does not follow
+packages a dependency pulls in, because the generators resolve every name from
+the app root, where a package manager that hides transitive dependencies
+(pnpm) cannot find it.
 
 A model built without the smrt vite plugin (plain `tsc`) has no embedded
 metadata: class-field initializer defaults (`kind = 'manual'`) reach the
