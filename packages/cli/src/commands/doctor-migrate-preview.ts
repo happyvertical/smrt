@@ -62,6 +62,18 @@ async function stopCount(
 ): Promise<string> {
   try {
     const { change, kind } = stop;
+    // The plan already compared the stored values with the expression.
+    if (kind === 'column.generated-from-ordinary-differs')
+      return `${change.recompute?.count ?? 0} differing row(s), first: ${
+        (change.recompute?.examples ?? [])
+          .map(
+            (example) =>
+              `${Object.values(example.key).join(',')} stored ${example.stored}, computed ${example.computed}`,
+          )
+          .join('; ') || 'none'
+      }`;
+    if (kind === 'column.generated-from-ordinary-unprojectable')
+      return 'stored values not compared';
     let sql: string;
     if (kind === 'foreign-key.orphans') {
       const detector = change.advisory?.suggestedSql?.[0];

@@ -222,6 +222,22 @@ export const SCHEMA_CHANGE_KINDS = {
       ),
     },
   },
+  // The re-add half of a replacement on PostgreSQL (#5008): the old column is
+  // dropped first, the column changes run, then this adds the new one.
+  'column.generated-readd': {
+    type: 'alter_column',
+    engines: {
+      postgres: applyPolicy(
+        'Add the calculated column back with its new expression, after the other column changes of the table; every value is recalculated.',
+      ),
+      sqlite: applyPolicy(
+        'Add the calculated column back with its new expression; nothing was stored in it.',
+      ),
+      duckdb: unresolvedPolicy(
+        'DuckDB cannot add or change a calculated column on an existing table; the differ refuses before planning (VALIDATION_GENERATED_DIALECT).',
+      ),
+    },
+  },
   'column.generated-replace-dependents': {
     type: 'alter_column',
     engines: stop(
@@ -229,11 +245,50 @@ export const SCHEMA_CHANGE_KINDS = {
       'Replacing the calculated column drops what the database ties to it (indexes, constraints, comments, privileges, views, triggers). smrt puts back only what the manifest declares; the rest would be lost. Drop or move each named object first, or replace the column by hand and recreate it.',
     ),
   },
+  'column.generated-required-null': {
+    type: 'alter_column',
+    engines: stop(
+      'invents-data',
+      'A required (NOT NULL) calculated column would hold NULL for a stored row under its new expression; no value can be chosen for it, and the run would fail at NOT NULL.',
+    ),
+  },
+  'column.generated-required-unprojectable': {
+    type: 'alter_column',
+    engines: unresolved(
+      'The same run also changes what the required calculated column reads, in a way the planner cannot replay, so it cannot prove the new expression is never NULL. Run that change first, then migrate again.',
+    ),
+  },
+  // Ordinary to calculated (#5018). It applies only when no stored value
+  // changes: the planner compares every stored value with what the expression
+  // gives (the CHECK probe's rows on PostgreSQL), and the run re-counts inside
+  // its atomic batch immediately before the conversion and aborts if a row now
+  // differs. `--confirm-recompute <table>.<column>` replaces the stored values
+  // on purpose and records it.
   'column.generated-from-ordinary': {
+    type: 'alter_column',
+    engines: {
+      postgres: applyPolicy(
+        'Every stored value already equals what the expression gives, so converting the column changes no value. The run re-counts the differing rows immediately before the conversion and aborts if one appeared since planning.',
+      ),
+      sqlite: applyPolicy(
+        'Every stored value already equals what the expression gives, so converting the column changes no value. The run re-counts the differing rows immediately before the conversion and aborts if one appeared since planning.',
+      ),
+      duckdb: unresolvedPolicy(
+        'DuckDB cannot add or change a calculated column on an existing table; the differ refuses before planning (VALIDATION_GENERATED_DIALECT).',
+      ),
+    },
+  },
+  'column.generated-from-ordinary-differs': {
     type: 'alter_column',
     engines: stop(
       'loses-data',
-      'Making an existing column calculated discards the values callers stored in it. Copy them to another field first, or declare the calculated field under a new name.',
+      'Making an ordinary column calculated would replace stored values that differ from the expression (set by hand, wrong in older code, or not reproducible by it).',
+    ),
+  },
+  'column.generated-from-ordinary-unprojectable': {
+    type: 'alter_column',
+    engines: unresolved(
+      'The planner cannot compare the stored values with the new expression: the same run also changes a column the expression reads in a way it cannot replay, or the comparison itself failed. Run that change first, then migrate again.',
     ),
   },
   'column.generated-to-ordinary': {
@@ -266,7 +321,7 @@ export const SCHEMA_CHANGE_KINDS = {
     additive: true,
     engines: {
       postgres: applyPolicy(
-        'Add the missing shared-table CHECK after proving no stored row breaks it.',
+        "Add the missing shared-table CHECK after proving no stored row breaks it. The proof replays the run's own statements; user triggers that fire on a fill's UPDATE are not replayed, so on a table with such triggers the rows the proof saw can differ from the real ones.",
       ),
       sqlite: reportPolicy(
         'SQLite carries no shared-table CHECK: the rule stays in smrt save-time check.',
@@ -283,6 +338,22 @@ export const SCHEMA_CHANGE_KINDS = {
         decision: 'stop',
         reason: 'invents-data',
         why: 'Stored rows break the shared-table CHECK and need a value that smrt cannot choose.',
+      },
+      sqlite: reportPolicy(
+        'SQLite carries no shared-table CHECK: the rule stays in smrt save-time check.',
+      ),
+      duckdb: reportPolicy(
+        'DuckDB carries no shared-table CHECK: the rule stays in smrt save-time check.',
+      ),
+    },
+  },
+  'check.deferred-fill': {
+    type: 'alter_column',
+    engines: {
+      postgres: {
+        decision: 'stop',
+        reason: 'invents-data',
+        why: 'Stored rows would still break the shared-table CHECK after this run: a column that changes type in the same run gets its NOT NULL and fill only on the next run. Migrate the type change first, then add the rule.',
       },
       sqlite: reportPolicy(
         'SQLite carries no shared-table CHECK: the rule stays in smrt save-time check.',

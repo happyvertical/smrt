@@ -162,6 +162,7 @@ function migratableDb(overrides: Record<string, unknown> = {}) {
 }
 
 vi.mock('@happyvertical/smrt-core', () => ({
+  collectConfirmedRecomputes: vi.fn(() => []),
   collectMigrateRecordInput: vi.fn(() => ({
     release: 'test',
     packages: [],

@@ -10,6 +10,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  collectConfirmedRecomputes,
   collectMigrateRecordInput,
   confirmedRetirementsOf,
   ensureDeferredSystemTableCompatibility,
@@ -351,6 +352,7 @@ interface DbMigrateOptions {
   force?: boolean;
   'force-migration'?: string | readonly string[];
   'confirm-removed-package'?: string | readonly string[];
+  'confirm-recompute'?: string | readonly string[];
   'confirm-retire-table'?: string | readonly string[];
   'repair-data'?: boolean;
   'upgrade-sti'?: boolean;
@@ -1753,6 +1755,12 @@ export default testManifest;
           'Confirm one missing package was removed on purpose. Repeat for each package.',
         multiple: true,
       },
+      'confirm-recompute': {
+        type: 'string',
+        description:
+          'Make one ordinary column calculated although stored values differ from the expression, as <table>.<column>: the stored values are replaced by the calculated ones, and the run records it. Without it the conversion applies only when no stored value changes, and stops otherwise, naming the count and example rows. Repeat for each column.',
+        multiple: true,
+      },
       'confirm-retire-table': {
         type: 'string',
         description:
@@ -2100,6 +2108,13 @@ export default testManifest;
         // same-name shape drift detection is always on (unblocks issue
         // #1165 automatically); orphan-index drops are gated behind
         // --drop-indexes for safety.
+        const recomputeOption = options['confirm-recompute'];
+        const confirmRecompute =
+          typeof recomputeOption === 'string'
+            ? [recomputeOption]
+            : Array.isArray(recomputeOption)
+              ? [...recomputeOption]
+              : [];
         const retireOption = options['confirm-retire-table'];
         const confirmRetireTables =
           typeof retireOption === 'string'
@@ -2108,6 +2123,7 @@ export default testManifest;
               ? [...retireOption]
               : [];
         const comparer = new SchemaComparer(db, {
+          confirmRecompute,
           includeDroppedIndexes: Boolean(options['drop-indexes']),
           includeDroppedColumns: Boolean(options['drop-columns']),
           dropLegacyNaturalKey: Boolean(options['drop-legacy-natural-key']),
@@ -2312,6 +2328,7 @@ export default testManifest;
             confirmedRemoved,
           ),
         });
+        const recomputes = collectConfirmedRecomputes(diff.changes);
         for (const notice of runDecision.notices) console.log(notice);
         for (const notice of unusedRetireConfirmations(
           confirmRetireTables,
@@ -2319,6 +2336,16 @@ export default testManifest;
           '--confirm-retire-table',
         ))
           console.log(notice);
+        for (const id of confirmRecompute) {
+          if (!recomputes.some((item) => `${item.table}.${item.column}` === id))
+            console.log(
+              `Ignoring --confirm-recompute ${id}: no ordinary column of that name is being made calculated.`,
+            );
+        }
+        for (const item of recomputes)
+          console.log(
+            `Recompute (--confirm-recompute): ${item.table}.${item.column} becomes calculated; ${item.rows === null ? 'its stored values could not be compared and are' : `${item.rows} stored value(s) differ and are`} replaced by the expression.`,
+          );
         if (!runDecision.proceed) {
           // The same wording the local runtime shows when it migrates itself.
           const refusal = describeMigrationRefusal(runDecision, {
@@ -3207,6 +3234,7 @@ export default testManifest;
             await recordSuccessfulMigrate(db, {
               engineHint: dbType,
               input: recordInput,
+              recomputes,
               // Every drop over a confirmed definition mismatch (#5005).
               confirmedRetirements: applySchemaMigrations
                 ? confirmedRetirementsOf(diff.changes)

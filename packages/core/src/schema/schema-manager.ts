@@ -243,10 +243,16 @@ export class SchemaManager {
           columns.add(row.column_name);
         }
       } else {
-        // SQLite and DuckDB use PRAGMA
-        const result = await this.db.query(
-          `PRAGMA table_info(${this.quoteIdentifier(tableName)})`,
-        );
+        // SQLite and DuckDB use PRAGMA. `table_info` omits SQLite generated
+        // columns; `table_xinfo` lists them. The engine label can be a URL
+        // guess (DuckDB has no `table_xinfo`), so fall back to `table_info`.
+        const quoted = this.quoteIdentifier(tableName);
+        let result: unknown;
+        try {
+          result = await this.db.query(`PRAGMA table_xinfo(${quoted})`);
+        } catch {
+          result = await this.db.query(`PRAGMA table_info(${quoted})`);
+        }
         const rows = extractRows<{ name: string }>(result);
         for (const row of rows) {
           columns.add(row.name);

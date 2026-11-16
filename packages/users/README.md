@@ -706,7 +706,12 @@ and links a canonical global Person for each User whose Profile link is still
 null or blank. It preserves the User ID and data, creates no OIDC identity, and
 never infers ownership from email: any same-email Profile, duplicate User email,
 or conflicting reservation must be reconciled explicitly before retrying. Its
-marker records a successful pass but does not hide Users imported later. All
+marker records a successful pass but does not hide Users imported later. A
+profileless User with no email fails with `missing_email` by default; hosts
+holding non-person identities (service or agent Users) call
+`backfillLegacyUserProfiles(db, { withoutEmail: 'skip' })`, which leaves them
+untouched. The result is `{ created, linked, skipped }`, where `skipped` counts
+those Users (always `0` without the option). All
 OIDC paths require the Profile
 marker; paths that create a User or arbitrate User email uniqueness also require
 the User marker. Run all three before enabling OIDC provisioning. Pass the

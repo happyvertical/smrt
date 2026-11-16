@@ -282,6 +282,67 @@ const postgresShapes: Array<[SchemaChangeKindId, SchemaChange]> = [
     },
   ],
   [
+    'check.deferred-fill',
+    {
+      type: 'alter_column',
+      table: 'items',
+      name: 'title',
+      alteration: 'set_check',
+      kindHint: 'check.deferred-fill',
+      mismatch: { expected: 'CHECK (x)', actual: '(none)' },
+      sql: '-- items.title is required for some classes but live rows hold NULL',
+      advisory: { severity: 'warning', message: 'The fill is deferred.' },
+    },
+  ],
+  [
+    'column.generated-required-null',
+    {
+      type: 'alter_column',
+      table: 'items',
+      name: 'total',
+      kindHint: 'column.generated-required-null',
+      mismatch: { expected: 'NOT NULL {}', actual: '(not checked)' },
+      sql: '-- items.total: its new expression is NULL for a stored row',
+      advisory: { severity: 'warning', message: 'Would be NULL.' },
+    },
+  ],
+  [
+    'column.generated-required-unprojectable',
+    {
+      type: 'alter_column',
+      table: 'items',
+      name: 'total',
+      kindHint: 'column.generated-required-unprojectable',
+      mismatch: { expected: 'NOT NULL {}', actual: '(not checked)' },
+      sql: '-- items.total: cannot prove the new expression is never NULL',
+      advisory: { severity: 'warning', message: 'Cannot predict the rows.' },
+    },
+  ],
+  [
+    'column.generated-from-ordinary-differs',
+    {
+      type: 'alter_column',
+      table: 'items',
+      name: 'total',
+      kindHint: 'column.generated-from-ordinary-differs',
+      mismatch: { expected: '{}', actual: 'ordinary column' },
+      sql: '-- items.total: 1 stored row(s) differ from the expression',
+      advisory: { severity: 'warning', message: 'Would replace values.' },
+    },
+  ],
+  [
+    'column.generated-from-ordinary-unprojectable',
+    {
+      type: 'alter_column',
+      table: 'items',
+      name: 'total',
+      kindHint: 'column.generated-from-ordinary-unprojectable',
+      mismatch: { expected: '{}', actual: 'ordinary column' },
+      sql: '-- items.total: cannot compare the stored values',
+      advisory: { severity: 'warning', message: 'Cannot compare.' },
+    },
+  ],
+  [
     'check.unprojectable',
     {
       type: 'alter_column',
@@ -427,9 +488,12 @@ describe('schema change policy coverage (#4925)', () => {
       .sort();
     expect(differing).toEqual([
       'check.add',
+      'check.deferred-fill',
       'check.drop',
       'check.unprojectable',
       'check.violated',
+      'column.generated-from-ordinary',
+      'column.generated-readd',
       'column.generated-replace',
       'column.generated-to-ordinary',
     ]);
@@ -467,6 +531,23 @@ describe('schema change policy coverage (#4925)', () => {
       expect(verdict.message).toContain('would lose data');
     if (verdict.stop?.reason === 'invents-data')
       expect(verdict.message).toContain('would invent data');
+  });
+
+  it('plans the re-add half of a calculated-column swap as its own kind (#5008)', () => {
+    const readd: SchemaChange = {
+      type: 'alter_column',
+      table: 'items',
+      name: 'total',
+      kindHint: 'column.generated-readd',
+      mismatch: { expected: '{}', actual: '(dropped by this run)' },
+      sqlStatements: [
+        'ALTER TABLE "items" ADD COLUMN "total" BIGINT GENERATED ALWAYS AS (("qty" * 5)) STORED',
+      ],
+    };
+    expect(classifySchemaChange(readd)).toBe('column.generated-readd');
+    expect(decideSchemaChange(readd, 'postgres').decision).toBe('apply');
+    expect(decideSchemaChange(readd, 'sqlite').decision).toBe('apply');
+    expect(decideSchemaChange(readd, 'duckdb').decision).toBe('stop');
   });
 
   it('keeps UUID planner failures distinct from incompatible stored values', async () => {

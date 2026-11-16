@@ -394,6 +394,16 @@ export interface SchemaChangeAdvisory {
   suggestedSql?: string[];
 }
 
+/** One row an ordinary-to-calculated conversion would change (#5018). */
+export interface RecomputeExample {
+  /** The row's primary key, as text per column (empty when the table has none). */
+  key: Record<string, string>;
+  /** The stored value, as text (`NULL` for a NULL). */
+  stored: string;
+  /** What the expression gives for that row, as text. */
+  computed: string;
+}
+
 /**
  * Schema difference for a single change
  */
@@ -524,6 +534,19 @@ export interface SchemaChange {
    * (`db:diff`, `db:migrate`) uses it to say "rename" instead of "create".
    */
   renamedFrom?: string;
+  /**
+   * On an ordinary-to-calculated conversion (#5018): how many stored rows hold
+   * a value that differs from what the new expression gives (compared as the
+   * column's declared type), and a few of them. `confirmed` is true when the
+   * caller passed the column in `confirmRecompute`, so the stored values are
+   * replaced on purpose.
+   */
+  recompute?: {
+    /** Null when the rows could not be compared (only on a confirmed recompute). */
+    count: number | null;
+    examples: RecomputeExample[];
+    confirmed: boolean;
+  };
   /** Generated SQL statement */
   sql?: string;
   /**

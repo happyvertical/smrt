@@ -32,6 +32,8 @@ import {
   generateMigrationTimestamp,
 } from './generator.js';
 import {
+  type ConfirmedRecompute,
+  collectConfirmedRecomputes,
   collectMigrateRecordInput,
   confirmedRetirementsOf,
   packagesSeenInput,
@@ -156,6 +158,14 @@ export interface MigrateSmrtSchemasOptions {
   /** Exact package removals explicitly confirmed by the caller. */
   confirmRemovedPackages?: string[];
   /**
+   * `table.column` of each ordinary column the caller has looked at and wants
+   * made calculated although stored values differ from the expression
+   * (`smrt db:migrate --confirm-recompute`, #5018). Each is applied without the
+   * re-count guard and recorded in the migrate run's record. Without it an
+   * ordinary column becomes calculated only while no stored value would change.
+   */
+  confirmRecompute?: string[];
+  /**
    * Retire these declared tables although the live table is not the one any
    * release their declaration lists describes (#5005): exact table names, no
    * patterns (without case on SQLite and DuckDB, exactly on PostgreSQL). The
@@ -208,6 +218,8 @@ export interface MigrateSmrtSchemasResult
    * manifest-nullable columns by default on PostgreSQL, #4897).
    */
   relaxedColumns: RelaxedColumn[];
+  /** Ordinary columns this run made calculated on request (`confirmRecompute`). */
+  recomputed: ConfirmedRecompute[];
 }
 
 /**
@@ -285,6 +297,8 @@ export async function getPendingSchemaStatements(
     emptyTextAsNull?: boolean;
     /** Explicitly allow relaxing live column constraints. */
     relaxColumns?: boolean;
+    /** See {@link MigrateSmrtSchemasOptions.confirmRecompute}. */
+    confirmRecompute?: readonly string[];
     tables?: Iterable<string>;
     /**
      * See `MigrateSmrtSchemasOptions.confirmRetireTables`, and its hazard:
@@ -306,6 +320,7 @@ export async function getPendingSchemaStatements(
     postgresTimestampMigration: options.postgresTimestampMigration,
     emptyTextAsNull: options.emptyTextAsNull,
     relaxColumns: options.relaxColumns,
+    confirmRecompute: options.confirmRecompute,
     // Declared retirements (#5005), in a whole-schema run only. A run limited
     // to tables neither plans nor reports them: retiring waits for the next
     // whole-schema migrate, which the build stamp forces before production
@@ -464,6 +479,7 @@ export async function migrateSmrtSchemas(
     postgresTimestampMigration: options.postgresTimestampMigration,
     emptyTextAsNull: options.emptyTextAsNull,
     relaxColumns: options.relaxColumns,
+    confirmRecompute: options.confirmRecompute,
     tables: options.tables,
     confirmRetireTables: options.confirmRetireTables,
   });
@@ -503,6 +519,7 @@ export async function migrateSmrtSchemas(
   });
   const { stops, heldBack, proceed, packageStops, releaseStop } = decision;
   const confirmedRetirements = confirmedRetirementsOf(pending.diff.changes);
+  const recomputed = collectConfirmedRecomputes(pending.diff.changes);
   const notices = [
     ...decision.notices,
     ...unusedRetireConfirmations(
@@ -511,6 +528,15 @@ export async function migrateSmrtSchemas(
       'confirmRetireTables',
       partial,
     ),
+    ...(options.confirmRecompute ?? [])
+      .filter(
+        (id) =>
+          !recomputed.some((item) => `${item.table}.${item.column}` === id),
+      )
+      .map(
+        (id) =>
+          `Ignoring --confirm-recompute ${id}: no ordinary column of that name is being made calculated.`,
+      ),
   ];
   for (const notice of notices) logger.info(notice);
   if (!proceed) {
@@ -528,6 +554,7 @@ export async function migrateSmrtSchemas(
       unactionableChanges: pending.unactionableChanges,
       hasManualDrift: pending.hasManualDrift,
       relaxedColumns: [],
+      recomputed: [],
     };
   }
   if (!pending.hasChanges || pending.statements.length === 0) {
@@ -551,6 +578,7 @@ export async function migrateSmrtSchemas(
       unactionableChanges: pending.unactionableChanges,
       hasManualDrift: pending.hasManualDrift,
       relaxedColumns: [],
+      recomputed: [],
     };
   }
 
@@ -620,6 +648,7 @@ export async function migrateSmrtSchemas(
       unactionableChanges: pending.unactionableChanges,
       hasManualDrift: pending.hasManualDrift,
       relaxedColumns: [],
+      recomputed: [],
     };
   }
   if (failed) {
@@ -632,6 +661,7 @@ export async function migrateSmrtSchemas(
     await recordSuccessfulMigrate(options.db, {
       input: recordInput,
       engineHint: options.engineHint,
+      recomputes: recomputed,
       confirmedRetirements,
     });
   }
@@ -661,6 +691,7 @@ export async function migrateSmrtSchemas(
     unactionableChanges: pending.unactionableChanges,
     hasManualDrift: pending.hasManualDrift,
     relaxedColumns,
+    recomputed: applied ? recomputed : [],
   };
 }
 

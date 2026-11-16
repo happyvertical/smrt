@@ -1470,6 +1470,7 @@ CREATE TABLE IF NOT EXISTS _smrt_migrate_runs (
   release TEXT NOT NULL,
   packages TEXT NOT NULL,
   fingerprint TEXT NOT NULL,
+  recomputes TEXT,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   confirmed_retirements TEXT
 );
@@ -1678,7 +1679,9 @@ function toPostgresTenantUuid(ddl: string): string {
  * 1.15.0 adds the `_smrt_ai_transcripts` table and the `call_id` columns
  * (with indexes) on `_smrt_ai_usage` and `_smrt_ai_usage_outcomes` (#4780).
  */
-// 1.16.0 adds the successful whole-schema migrate ledger (#4926).
+// 1.16.0 adds the successful whole-schema migrate ledger (#4926). 1.16.1 adds
+// its `recomputes` column (the ordinary columns a run made calculated on
+// request, #5018); 1.16.0 databases get it from `addColumnIfMissing()`.
 // 1.17.0 widens the AI run model (#5005): step, attempt, template and entry-call
 // columns on `_smrt_ai_usage` (its `call_id` index becomes an `entry_call_id`
 // one), the widened and rebuilt `_smrt_ai_runs`, the new `_smrt_ai_run_events`
@@ -1745,10 +1748,12 @@ export const SMRT_SCHEMA_DDL_CHECKSUMS: Readonly<Record<string, string>> =
       '6a1a58c1b2f137d8a1e3378f667587074dd6d1049c8d2f119427ff1232c0323b',
     '1.16.0':
       '8f7f6a9f5a7f3d28ac4858841a665328698a06467bcab4a8d2055cc651db263a',
+    '1.16.1':
+      '30014e192ed56e2645b70a2e08a2c704a8c16b033544cdb53560a64d6e8c7c15',
     '1.17.0':
-      '45aff3bebeae72b046051a1461f375e67c42e4b6962de0ec33dc6d98fb23b6c2',
+      'ab3270908db5d9eabc820b5cca23856b2302f12aa891d7f703ecff3a8c10099f',
     '1.18.0':
-      'bf633cf10615ca092df662552a3cfe58c593c7219c99e8d63163487763f26ee9',
+      '05c3b3379a5e5157fa65337aa6f23d1e5bcf29b43006559546f372eaafc12659',
     '1.19.0':
-      '64d1652f27856d861024009d50d39f4fdd33742c69250fe37e394751afa3f96c',
+      '18b5c420051364b18e3f7c61a3d7b64e66b397e3e1275ada26e49165278acf6f',
   });

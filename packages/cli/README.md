@@ -51,6 +51,7 @@ The four snapshot options are atomic: supplying any one requires all four.
 |---------|------------|
 | `smrt db:status` | Show pending schema changes and classify failed migration history |
 | `smrt db:migrate` | Apply pending migrations and record the build schema fingerprint. All or nothing: if any change would lose or invent data, or a package seen last time is not loaded, it applies none and says what it held back ([guide](agents/db-migrate-all-or-nothing.md)) |
+| `smrt db:migrate --confirm-recompute <table>.<column>` | Make one ordinary column calculated although stored values differ from the expression; they are replaced and the run records it. Without it the conversion applies only when no stored value changes, and otherwise stops naming the count and example rows. Repeat for each column |
 | `smrt db:migrate --confirm-removed-package <name>` | Confirm that a package seen by the last migrate was removed on purpose. Repeat for each package. `--apply-unblocked` no longer exists |
 | `smrt db:migrate --confirm-retire-table <table>` | Retire a table its package declares retired although the live table matches none of the declaration's definitions (`table.retire-mismatch`). Exact table name, no patterns; repeat for each table. Rows, dependents and declarations still stop; the confirmed differences are recorded in the migrate record |
 | `smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...]` | Force one or more exact generated migrations in one atomic batch while preserving every other guard |

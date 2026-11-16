@@ -803,8 +803,10 @@ export {
 } from './migrations/build-schema.js';
 export * from './migrations/change-kinds.js';
 export {
+  type ConfirmedRecompute,
   type ConfirmedRetirement,
   type ConfirmedRetirementRecord,
+  collectConfirmedRecomputes,
   collectMigrateRecordInput,
   confirmedRetirementsOf,
   type LastMigrateRecord,

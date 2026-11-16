@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AppHost, type Command, MemoryVersionStore, EMPTY_APP } from '../src/engine/index.ts';
 
+import { PREVIEW_NESTED_LIMIT_MS } from './run-preview-child.ts';
 import { commandSummary } from '../src/lib/ui/command-summary.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'approval-engine-'));
@@ -152,7 +153,7 @@ try {
   const deleteOutput = join(dir,'route-deletes.json');
   const mergeOutput = join(dir,'merge-cards.json');
   const blockedOutput = join(dir,'blocked-card.json');
-  execFileSync(process.execPath,[fileURLToPath(new URL('../vitest.mjs',import.meta.resolve('vitest'))),'run','src/lib/server/approval-failure.test.ts','src/lib/server/approval-cards.test.ts'],{env:{...process.env,SMRT_ROUTE_BLOCKED_ARTIFACT:blockedOutput,SMRT_MERGE_APPROVAL_ARTIFACT:mergeOutput,SMRT_ROUTE_APPROVAL_ARTIFACT:routeOutput,SMRT_ROUTE_DELETE_ARTIFACT:deleteOutput},timeout:60000,stdio:'pipe'});
+  execFileSync(process.execPath,[fileURLToPath(new URL('../vitest.mjs',import.meta.resolve('vitest'))),'run','src/lib/server/approval-failure.test.ts','src/lib/server/approval-cards.test.ts'],{env:{...process.env,SMRT_ROUTE_BLOCKED_ARTIFACT:blockedOutput,SMRT_MERGE_APPROVAL_ARTIFACT:mergeOutput,SMRT_ROUTE_APPROVAL_ARTIFACT:routeOutput,SMRT_ROUTE_DELETE_ARTIFACT:deleteOutput},timeout:PREVIEW_NESTED_LIMIT_MS,maxBuffer:64<<20,stdio:'pipe'});
   for (const [name, view] of Object.entries(JSON.parse(readFileSync(mergeOutput, 'utf8')))) {
     const card = cards.find((card: any) => card.name === name) as any;
     card.view = view;

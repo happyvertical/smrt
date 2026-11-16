@@ -522,8 +522,10 @@ export {
   SchemaComparer,
 } from './migrations/differ';
 export {
+  type ConfirmedRecompute,
   type ConfirmedRetirement,
   type ConfirmedRetirementRecord,
+  collectConfirmedRecomputes,
   collectMigrateRecordInput,
   confirmedRetirementsOf,
   type LastMigrateRecord,

@@ -86,6 +86,35 @@ export interface UnloadedBuildPackage {
   tables: string[];
 }
 
+/**
+ * An ordinary column a migrate made calculated on request
+ * (`--confirm-recompute`, #5018), recorded with the run that did it.
+ * `rows` is how many stored values differed from the expression when the run
+ * was planned (null when they could not be compared).
+ */
+export interface ConfirmedRecompute {
+  table: string;
+  column: string;
+  rows: number | null;
+}
+
+/** The confirmed recomputes in a plan's changes, one per column. */
+export function collectConfirmedRecomputes(
+  changes: readonly Pick<SchemaChange, 'table' | 'name' | 'recompute'>[],
+): ConfirmedRecompute[] {
+  return changes.flatMap((change) =>
+    change.recompute?.confirmed && change.name
+      ? [
+          {
+            table: change.table,
+            column: change.name,
+            rows: change.recompute.count,
+          },
+        ]
+      : [],
+  );
+}
+
 export interface MigrateRecord {
   release: string;
   packages: string[];
@@ -237,6 +266,8 @@ export async function recordSuccessfulMigrate(
   db: DatabaseInterface,
   options: MigrateRecordOptions & {
     input?: MigrateRecordInput;
+    /** Ordinary columns this run made calculated on request; always written. */
+    recomputes?: readonly ConfirmedRecompute[];
     /**
      * Retirements this run dropped over a confirmed definition mismatch
      * (#5005). A run with any writes a record even when its declarations are
@@ -247,6 +278,7 @@ export async function recordSuccessfulMigrate(
 ): Promise<{ written: boolean; record: MigrateRecord }> {
   const input = options.input ?? collectMigrateRecordInput();
   const packages = [...new Set(input.packages)].sort();
+  const recomputes = options.recomputes ?? [];
   const confirmed = options.confirmedRetirements ?? [];
   return withEmbeddedWriteQueue(
     db,
@@ -259,6 +291,7 @@ export async function recordSuccessfulMigrate(
         async (scopedDb) => {
           const previous = await readLastMigrateRecord(scopedDb, options);
           if (
+            !recomputes.length &&
             confirmed.length === 0 &&
             previous.state === 'recorded' &&
             previous.record.release === input.release &&
@@ -285,12 +318,15 @@ export async function recordSuccessfulMigrate(
           };
           const id = crypto.randomUUID();
           const serializedPackages = JSON.stringify(packages);
+          const serializedRecomputes = recomputes.length
+            ? JSON.stringify(recomputes)
+            : null;
           const confirmedRetirements = confirmed.length
             ? JSON.stringify(confirmed)
             : null;
           await scopedDb.execute`
-      INSERT INTO _smrt_migrate_runs (id, release, packages, fingerprint, created_at, confirmed_retirements)
-      VALUES (${id}, ${input.release}, ${serializedPackages}, ${input.fingerprint}, ${createdAt}, ${confirmedRetirements})
+      INSERT INTO _smrt_migrate_runs (id, release, packages, fingerprint, recomputes, created_at, confirmed_retirements)
+      VALUES (${id}, ${input.release}, ${serializedPackages}, ${input.fingerprint}, ${serializedRecomputes}, ${createdAt}, ${confirmedRetirements})
     `;
           return { written: true, record };
         },

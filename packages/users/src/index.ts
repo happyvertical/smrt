@@ -135,6 +135,7 @@ export {
 } from './collections/index.js';
 // Deploy-time data migrations
 export {
+  type BackfillLegacyUserProfilesOptions,
   type BackfillLegacyUserProfilesResult,
   backfillLegacyUserProfiles,
   LEGACY_USER_PROFILE_BACKFILL_NAME,
