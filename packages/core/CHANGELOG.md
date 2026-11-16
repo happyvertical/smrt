@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.61.4
+
+### Patch Changes
+
+- ### Features
+  
+  - data-shape policy release train for #4920 (19 issues) (#4983)
+  
+  ### Bug Fixes
+  
+  - let legacy profile backfill skip emailless non-person Users (#5019) (users)
+  - keep the liveness thread only on the runtime's SQLite engine (#5017) (jobs)
+- @happyvertical/smrt-config@0.61.4
+  - @happyvertical/smrt-scanner@0.61.4
+  - @happyvertical/smrt-types@0.61.4
+
 ## 0.61.3
 
 ### Patch Changes

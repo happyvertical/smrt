@@ -1,5 +1,11 @@
 # @happyvertical/smrt-assets-local
 
+## 0.61.4
+
+### Patch Changes
+
+- @happyvertical/smrt-assets@0.61.4
+
 ## 0.61.3
 
 ### Patch Changes

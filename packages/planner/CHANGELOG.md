@@ -1,5 +1,18 @@
 # @happyvertical/smrt-planner
 
+## 0.61.4
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.61.4
+  - @happyvertical/smrt-assets@0.61.4
+  - @happyvertical/smrt-chat@0.61.4
+  - @happyvertical/smrt-commerce@0.61.4
+  - @happyvertical/smrt-reports@0.61.4
+  - @happyvertical/smrt-svelte@0.61.4
+  - @happyvertical/smrt-ui@0.61.4
+
 ## 0.61.3
 
 ### Patch Changes
