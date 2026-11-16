@@ -74,15 +74,18 @@ function resolveClient(
     return options.client;
   }
   const env = options.env ?? process.env;
-  const clientId = env[provider.clientEnv.clientId];
-  const clientSecret = env[provider.clientEnv.clientSecret];
-  if (!clientId || !clientSecret) {
-    throw new SocialConnectError(
-      'missing_client_credentials',
-      `${provider.label} is not configured: set ${provider.clientEnv.clientId} and ${provider.clientEnv.clientSecret}.`,
-    );
+  for (const names of [
+    provider.clientEnv,
+    ...(provider.clientEnvFallbacks ?? []),
+  ]) {
+    const clientId = env[names.clientId];
+    const clientSecret = env[names.clientSecret];
+    if (clientId && clientSecret) return { clientId, clientSecret };
   }
-  return { clientId, clientSecret };
+  throw new SocialConnectError(
+    'missing_client_credentials',
+    `${provider.label} is not configured: set ${provider.clientEnv.clientId} and ${provider.clientEnv.clientSecret}.`,
+  );
 }
 
 function resolveTenantId(options: SocialConnectContext): string {

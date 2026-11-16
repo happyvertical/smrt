@@ -88,7 +88,7 @@ const { account } = await completeSocialConnect({
 ```
 
 Client credentials come from the provider's env names (X: `X_CLIENT_ID`,
-`X_CLIENT_SECRET`) or the `client` option. Tokens are stored through
+`X_CLIENT_SECRET`, falling back to `TWITTER_CLIENT_ID`/`TWITTER_CLIENT_SECRET`) or the `client` option. Tokens are stored through
 `SocialAccount.setCredentials` (smrt-secrets, per tenant) as a JSON payload
 including `expiresAt`; nothing is written to the plain token columns or logs.
 The state is single-use, tenant-bound, and checked against the registered

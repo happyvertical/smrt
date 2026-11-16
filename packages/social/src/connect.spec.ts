@@ -357,6 +357,11 @@ describe('smrt-social connect flow (X)', () => {
     });
     expect(isSocialConnectConfigured('x', { env })).toBe(true);
     expect(isSocialConnectConfigured('x', { env: {} })).toBe(false);
+    expect(
+      isSocialConnectConfigured('x', {
+        env: { TWITTER_CLIENT_ID: 'a', TWITTER_CLIENT_SECRET: 'b' },
+      }),
+    ).toBe(true);
   });
 
   it('exposes hrefs for SocialAccountSettings', () => {

@@ -42,6 +42,9 @@ export const xConnectProvider: SocialConnectProvider = {
   platform: 'x',
   label: 'X',
   clientEnv: { clientId: 'X_CLIENT_ID', clientSecret: 'X_CLIENT_SECRET' },
+  clientEnvFallbacks: [
+    { clientId: 'TWITTER_CLIENT_ID', clientSecret: 'TWITTER_CLIENT_SECRET' },
+  ],
   defaultScopes: X_DEFAULT_SCOPES,
   usesPkce: true,
 

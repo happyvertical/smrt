@@ -55,6 +55,8 @@ export interface SocialConnectProvider {
   label: string;
   /** Environment variables a host sets to supply client credentials. */
   clientEnv: { clientId: string; clientSecret: string };
+  /** Legacy env names read when the primary pair is unset (compat with older hosts). */
+  clientEnvFallbacks?: Array<{ clientId: string; clientSecret: string }>;
   defaultScopes: string[];
   usesPkce: boolean;
   buildAuthorizeUrl(request: SocialAuthorizeRequest): string;
