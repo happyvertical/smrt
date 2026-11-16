@@ -755,6 +755,36 @@ jobs:
       - name: Build documentation site
         run: pnpm docs:site:build
 
+  merge-group-fail-fast:
+    name: Merge Group Fail Fast
+    # Required CI reports only when every job has finished, so a merge group
+    # that failed in its first minute held the one-entry queue for the rest of
+    # the run (#5045). This cancels the run on the first job that did not
+    # succeed; Required CI then runs under always() and fails, which removes
+    # the entry. Deliberately not one of Required CI's needs, and not run for
+    # pull requests, where every job's own result is worth more than the time.
+    if: github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    # Above the 90-minute heavy-suite ceiling; the script stops by itself when
+    # Required CI starts.
+    timeout-minutes: 180
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          persist-credentials: false
+          sparse-checkout: scripts/merge-group-fail-fast.mjs
+          sparse-checkout-cone-mode: false
+      - name: Cancel the run on the first failed job
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SELF_JOB: Merge Group Fail Fast
+          AGGREGATE_JOB: Required CI
+        run: node scripts/merge-group-fail-fast.mjs
+
   required-ci:
     name: Required CI
     if: always() && github.event_name != 'workflow_dispatch'
