@@ -429,7 +429,7 @@ describe('discoverSmrtPackages', () => {
 
     // Age that cache to the version in use before export resolution existed.
     const staleCache = JSON.parse(readFileSync(cachePath, 'utf-8'));
-    expect(staleCache.packages).toEqual([]);
+    expect(staleCache.packages).toEqual({});
     writeFileSync(
       cachePath,
       JSON.stringify({ ...staleCache, version: 4 }, null, 2),
