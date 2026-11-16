@@ -19,12 +19,13 @@ export const ASSISTANT_TURN_DEFINITION_KEY = 'app-shell.assistant.turn';
  * The assistant's system guidance, registered so an app or tenant can layer
  * an override over the packaged text. The mode line is not part of it: it
  * changes with the turn and is appended by {@link composeSystemPrompt}. The
- * tier is the owner's setting (`SMRT_APP_SHELL_ASSISTANT_TIER`, default
- * `good`), applied where the model is built, so the prompt names none.
+ * prompt declares the tier the assistant asks for (`good`); the owner's
+ * `SMRT_APP_SHELL_ASSISTANT_TIER` setting overrides it where the model is built.
  */
 export const assistantSystemPrompt = definePrompt({
   key: ASSISTANT_PROMPT_KEY,
   template: guidance.trim(),
+  ai: { profile: 'good' },
   editable: { template: true, profile: false, model: false, params: false },
 });
 

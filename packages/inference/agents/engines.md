@@ -347,7 +347,7 @@ aliases. Unknown IDs stay unranked and never become a binding. Refresh the
 table when the catalog adds a model. `validateModelId` keeps a model a single
 safe CLI value.
 
-The assistant asks for `best` (chat's `CHAT_ASSISTANT_TIER`), so on these
+The assistant asks for `best` (the tier chat's `chat.assistant.system` prompt declares), so on these
 engines it answers with the strongest ranked model, as before; a workflow run
 pins the selection it started with.
 

@@ -2,7 +2,6 @@ export {
   type AssistantModelSelection,
   type AssistantRunTypeOptions,
   assertToolRunType,
-  CHAT_ASSISTANT_TIER,
   ToolRunTypeRefusal,
   toolRunTypes,
 } from './tool-run-types.js';
@@ -336,6 +335,7 @@ export {
   CHAT_TURN_DEFINITION_KEY,
   chatAssistantSystemPrompt,
   resolveChatAssistantPrompt,
+  resolveChatAssistantTier,
 } from './turn-tracking.js';
 // Types
 export type {

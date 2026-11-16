@@ -28,6 +28,7 @@ import { ChatGPTSignedOutError } from '@happyvertical/smrt-inference/server';
 import type { AssistantStatus } from '../../assistant/events.ts';
 import { CHATGPT_ASSISTANT_CLASS, CHATGPT_SETTINGS_HREF } from '../chatgpt.ts';
 import { type Principal, runAs } from '../owner.ts';
+import { assistantSystemPrompt } from './guidance.ts';
 
 /**
  * Provider ids that sign in with a person's subscription. Refused on the API
@@ -89,7 +90,7 @@ export function assertApiKeyOptions(
 export interface AssistantConfigOptions {
   /** Environment to read. Default `process.env`. Tests inject their own. */
   env?: Readonly<Record<string, string | undefined>>;
-  /** Inference tier. Default `SMRT_APP_SHELL_ASSISTANT_TIER`, else `good`. */
+  /** Inference tier. Default `SMRT_APP_SHELL_ASSISTANT_TIER`, else the tier the assistant prompt declares. */
   tier?: InferenceTierRequest;
   /** Tests: the resolver the ChatGPT engine asks, instead of the registered one. */
   resolver?: InferenceResolver;
@@ -100,9 +101,10 @@ const TIERS = ['cheap', 'good', 'great', 'best', 'auto'] as const;
 function tierOf(options: AssistantConfigOptions): InferenceTierRequest {
   if (options.tier) return options.tier;
   const env = (options.env ?? process.env).SMRT_APP_SHELL_ASSISTANT_TIER;
-  return (TIERS as readonly string[]).includes(env ?? '')
-    ? (env as InferenceTierRequest)
-    : 'good';
+  if ((TIERS as readonly string[]).includes(env ?? ''))
+    return env as InferenceTierRequest;
+  // The owner sets none: the tier the prompt itself asks for.
+  return assistantSystemPrompt.ai.profile as InferenceTierRequest;
 }
 
 function baseOptions(

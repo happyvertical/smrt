@@ -209,8 +209,10 @@ The system prompt is the registered prompt `chat.assistant.system`
 layer and an app or tenant override of the key replaces it
 (`resolveChatAssistantPrompt`). The text is sent only when a layer above the
 default supplies it, so a host with no `systemPrompt` sends no system message,
-as before. The prompt declares no tier; the turn's model is the one the host's
-client resolves.
+as before. The prompt declares the tier the assistant asks for, `ai.profile: 'best'`;
+`resolveChatAssistantTier({ db, tenantId })` reads it back through
+`resolvePrompt` (so config and stored layers apply) and a host binds the
+turn's model at that tier.
 
 ## AssistantDock (#2904)
 

@@ -12,9 +12,9 @@ export {
   type AssistantModelSelection,
   type AssistantRunTypeOptions,
   assertToolRunType,
-  CHAT_ASSISTANT_TIER,
   ToolRunTypeRefusal,
 } from './tool-run-types.js';
+export { resolveChatAssistantTier } from './turn-tracking.js';
 
 import {
   executeAsPrincipal,

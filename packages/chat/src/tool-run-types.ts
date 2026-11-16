@@ -12,14 +12,6 @@ import type {
   InferenceEngineId,
 } from '@happyvertical/smrt-inference';
 
-/**
- * The tier the assistant asks for when it runs on an engine with no stored
- * binding (a local agent CLI, a ChatGPT plan). The assistant's prompt
- * declares no tier; a host that asks for another passes it in its
- * {@link AssistantModelSelection}.
- */
-export const CHAT_ASSISTANT_TIER: InferenceTier = 'best';
-
 /** The model of one assistant turn, chosen by the host's tier binding. */
 export interface AssistantModelSelection {
   engine: InferenceEngineId;

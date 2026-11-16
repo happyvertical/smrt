@@ -511,7 +511,8 @@ for CLI setup/config and bridge imports found `generateLocalMcpSetup`,
 
 ## Which model answers, limits and assistant settings (#5005)
 
-Every assistant turn asks for the `best` tier (`CHAT_ASSISTANT_TIER`). The host
+Every assistant turn asks for the tier the `chat.assistant.system` prompt
+declares (`best`, read with `resolveChatAssistantTier`). The host
 binds it per request: an API key through core's resolver, Claude Code, Codex
 and a ChatGPT plan through inference's default tier binding
 (`engineTierModel`: `fable`, `gpt-6-astra`, or the strongest ranked model the

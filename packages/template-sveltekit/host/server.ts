@@ -44,11 +44,11 @@ import {
 import {
   type AssistantModelSelection,
   type AssistantRequestContext,
-  CHAT_ASSISTANT_TIER,
   configuredAssistantAI,
   type MountAssistantRoutesOptions,
   mountAssistantRoutes,
   resolveAssistantPrincipalFromLocals,
+  resolveChatAssistantTier,
 } from '@happyvertical/smrt-chat/sveltekit';
 import {
   type AiRunBudget,
@@ -1628,7 +1628,13 @@ export function createCookbookHost(options: CookbookHostOptions) {
         await ready()
       ).state.engine(context.principal.tenantId, context.principal.userId)) ??
       'api';
-    return engineSelection(engine, CHAT_ASSISTANT_TIER);
+    return engineSelection(
+      engine,
+      await resolveChatAssistantTier({
+        db: await runtime.database(),
+        tenantId: context.principal.tenantId,
+      }),
+    );
   }
 
   /** A new design run's execution: the owner's engine at the assistant's tier. */

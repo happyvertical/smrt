@@ -4,7 +4,6 @@ export {
   type AssistantModelSelection,
   type AssistantRunTypeOptions,
   assertToolRunType,
-  CHAT_ASSISTANT_TIER,
   ToolRunTypeRefusal,
 } from './tool-run-types.js';
 

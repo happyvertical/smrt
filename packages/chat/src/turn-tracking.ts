@@ -23,7 +23,9 @@ import {
   type AiRunBudget,
   type AiRunContext,
   appendAiRunEvent,
+  DEFAULT_INFERENCE_TIER,
   finishAiRun,
+  type InferenceTier,
   stopAiRun,
   type TrackedAiClient,
   type TrackedAiClientOptions,
@@ -48,12 +50,14 @@ export const CHAT_TURN_DEFINITION_KEY = 'chat.assistant.turn';
  * The chat assistant's system prompt. The text is applied only when a layer
  * above the default supplies it (a host's `systemPrompt`, an app or tenant
  * override); a host with none sends no system message, as before. The prompt
- * declares no tier: the turn's model is the one the host's client resolves.
+ * declares the tier the assistant asks for (`best`); a host binds the turn's
+ * model with {@link resolveChatAssistantTier}.
  */
 export const chatAssistantSystemPrompt = definePrompt({
   key: CHAT_ASSISTANT_PROMPT_KEY,
   template:
     'You are the assistant of this app. Use only the tools you are offered, and say plainly when you cannot do something.',
+  ai: { profile: 'best' },
   editable: { template: true, profile: false, model: false, params: false },
 });
 
@@ -114,6 +118,19 @@ export async function resolveChatAssistantPrompt(options: {
       ...(override ? { override } : {}),
     });
   }
+}
+
+/**
+ * The tier the chat assistant prompt asks for, as this tenant resolves it
+ * (the code default, config and stored layers): what a host binds the turn's
+ * model at. A prompt that names no concrete tier asks for core's default.
+ */
+export async function resolveChatAssistantTier(options: {
+  db?: ResolvePromptOptions['db'];
+  tenantId: string | null;
+}): Promise<InferenceTier> {
+  const { ai } = await resolveChatAssistantPrompt(options);
+  return ai.tier && ai.tier !== 'auto' ? ai.tier : DEFAULT_INFERENCE_TIER;
 }
 
 /** The system text the turn sends, or undefined when no layer supplies one. */

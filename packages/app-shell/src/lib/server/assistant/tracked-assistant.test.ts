@@ -125,6 +125,11 @@ describe('the assistant prompt (#5005)', () => {
     expect(resolved.ai.usageTags.promptLayer).toBe('default');
   });
 
+  it('declares the tier the assistant asks for', async () => {
+    const resolved = await resolvePrompt(ASSISTANT_PROMPT_KEY, {});
+    expect(resolved.ai.tier).toBe('good');
+  });
+
   it('takes a layer above the default', async () => {
     const resolved = await resolvePrompt(ASSISTANT_PROMPT_KEY, {
       override: { template: 'Be terse.' },

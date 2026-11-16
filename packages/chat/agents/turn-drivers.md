@@ -186,7 +186,8 @@ shell; no dependency change is appropriate for C1.
 the user message is authored; a request body model is honoured only without
 one. The host binds the tier: core for an API key, inference's
 `engineTierModel` for Claude Code, Codex and a ChatGPT plan. The assistant asks
-for `CHAT_ASSISTANT_TIER` (`best`). The selection's effort is the tier
+for the tier its prompt declares (`chat.assistant.system`, `best`;
+`resolveChatAssistantTier`). The selection's effort is the tier
 binding's; the assistant prompt's `ai.effort` wins over it, and the route
 hands the result to the built-in loop (`reasoning: { effort }`) and to an
 external driver (`context.selection.effort`). A body model is honoured only
