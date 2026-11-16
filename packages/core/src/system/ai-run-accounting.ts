@@ -241,7 +241,9 @@ function lackOfRoom(
  * stops the calling run (guarded) with the limit's reason and `stop_detail`
  * and throws {@link AiRunStoppedError} after the commit. A request whose
  * input alone exceeds `maxCallTokens` throws {@link AiCallLimitError} and
- * reserves nothing. The model is called only after this returns.
+ * reserves nothing. A caller-supplied `callId` already used by a call, or
+ * used twice in `requests`, throws a `TypeError` and reserves nothing. The
+ * model is called only after this returns.
  */
 export async function reserveAiCalls(
   db: DatabaseInterface,
@@ -256,10 +258,34 @@ export async function reserveAiCalls(
     callId: request.callId ?? newAiRunId(),
     eventId: newAiRunId(),
   }));
+  if (new Set(prepared.map(({ callId }) => callId)).size !== prepared.length) {
+    throw new TypeError('Each reserved AI call needs its own call id');
+  }
+  const supplied = prepared
+    .filter(({ request }) => request.callId !== undefined)
+    .map(({ callId }) => callId);
   const result = await withAiRunTransaction(
     db,
     async (tx): Promise<AiCallReservation[] | AiRunStoppedError> => {
       const chain = await lockAiRunChainFenced(tx, runId, options.fence);
+      if (supplied.length > 0) {
+        // A call id names one call: its one event and its usage row's id.
+        const taken = getRows(
+          await aiRunQuery(
+            tx.db,
+            `SELECT call_id FROM _smrt_ai_run_events
+              WHERE type = 'call'
+                AND call_id IN (${supplied.map((_, i) => `$${i + 1}`).join(', ')})
+              LIMIT 1`,
+            ...supplied,
+          ),
+        );
+        if (taken[0]) {
+          throw new TypeError(
+            `AI call id ${String(taken[0].call_id)} is already reserved`,
+          );
+        }
+      }
       const stopped = await checkAiRunChainRunning(tx, chain);
       if (stopped) return stopped;
       const run = chain[chain.length - 1] as AiRunRow;
@@ -865,18 +891,13 @@ export async function sweepAiRuns(
     cancelledRuns: [],
   };
 
-  const candidates = getRows(
-    await aiRunQuery(
-      db,
-      `SELECT run_id, call_id, created_at FROM _smrt_ai_run_events
-        WHERE type = 'call' AND reservation = 'reserved' AND created_at < $1
-        ORDER BY created_at LIMIT $2`,
-      new Date(now.getTime() - graceMs).toISOString(),
-      batch,
-    ),
-  );
+  // Up to `batch` reconciliations, oldest first. A reservation not yet past
+  // its own threshold (or of a missing run) stays `reserved`; the next page
+  // starts past the rows left behind instead of reading them again.
   const timeouts = new Map<string, number | undefined>();
-  for (const row of candidates) {
+  const reconcileSwept = async (
+    row: Record<string, unknown>,
+  ): Promise<boolean> => {
     const runId = String(row.run_id);
     if (!timeouts.has(runId)) {
       let timeout: number | undefined;
@@ -898,7 +919,7 @@ export async function sweepAiRuns(
     const timeout = timeouts.get(runId);
     const threshold = timeout !== undefined ? timeout + graceMs : defaultMs;
     const createdAt = dateOrNull(row.created_at)?.getTime() ?? 0;
-    if (createdAt > now.getTime() - threshold) continue;
+    if (createdAt > now.getTime() - threshold) return false;
     try {
       const outcome = await reconcileAiCall(
         db,
@@ -908,8 +929,31 @@ export async function sweepAiRuns(
       );
       if (outcome === 'settled') out.settled++;
       else if (outcome === 'abandoned') out.abandoned++;
+      return true;
     } catch (error) {
       if (!(error instanceof AiRunNotFoundError)) throw error;
+      return false;
+    }
+  };
+  let reconciled = 0;
+  let leftBehind = 0;
+  for (let full = true; full && reconciled < batch; ) {
+    const page = getRows(
+      await aiRunQuery(
+        db,
+        `SELECT run_id, call_id, created_at FROM _smrt_ai_run_events
+          WHERE type = 'call' AND reservation = 'reserved' AND created_at < $1
+          ORDER BY created_at, id LIMIT $2 OFFSET $3`,
+        new Date(now.getTime() - graceMs).toISOString(),
+        batch,
+        leftBehind,
+      ),
+    );
+    full = page.length === batch;
+    for (const row of page) {
+      if (reconciled >= batch) break;
+      if (await reconcileSwept(row)) reconciled++;
+      else leftBehind++;
     }
   }
 
@@ -1053,7 +1097,12 @@ async function repairOrphanedAiRuns(
 interface PendingSettlement {
   input: SettleAiCallInput;
   afterCommit?: () => Promise<void>;
+  /** The write in flight for this entry, followed by every flush. */
+  settling?: Promise<PendingOutcome>;
 }
+
+/** `pending`: still failing, kept; `dropped`: its run is gone. */
+type PendingOutcome = 'written' | 'dropped' | 'pending';
 
 const pendingByUrl = new Map<string, PendingSettlement[]>();
 const pendingByHandle = new WeakMap<object, PendingSettlement[]>();
@@ -1099,11 +1148,49 @@ export function pendingAiRunSettlements(db: DatabaseInterface): number {
   return pendingList(db, false)?.length ?? 0;
 }
 
+function removePending(list: PendingSettlement[], entry: PendingSettlement) {
+  const index = list.indexOf(entry);
+  if (index >= 0) list.splice(index, 1);
+}
+
+async function writePending(
+  db: DatabaseInterface,
+  list: PendingSettlement[],
+  entry: PendingSettlement,
+  options: AiRunTxOptions,
+): Promise<PendingOutcome> {
+  try {
+    await settleAiCall(db, entry.input, options);
+    removePending(list, entry);
+    return 'written';
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (error instanceof AiRunNotFoundError) {
+      // Its run (or an ancestor) was pruned: nothing can ever take it.
+      removePending(list, entry);
+      logger.warn(
+        `[smrt] AI run settlement for call ${entry.input.callId} dropped: ${message}`,
+      );
+      return 'dropped';
+    }
+    logger.warn(
+      `[smrt] AI run settlement for call ${entry.input.callId} is still pending: ${message}`,
+    );
+    return 'pending';
+  } finally {
+    entry.settling = undefined;
+  }
+}
+
 /**
- * Write the pending settlements of this database, oldest first, calling
- * each one's handlers when it commits, in list order; stops at the first
- * that still fails. With `runId`, throws when a settlement of that run is
- * still pending, so the run's next reservation does not go ahead.
+ * Write the pending settlements of this database, oldest first; stops at
+ * the first that still fails. A settlement whose run (or an ancestor) is
+ * gone is dropped with a warning, its handlers never called. Concurrent
+ * flushes share each entry's write, so a settlement is written once and
+ * its handlers run once, by the flush that wrote it, after the commit; a
+ * handler may itself make a tracked call. With `runId`, throws when a
+ * settlement of that run is still pending, so the run's next reservation
+ * does not go ahead.
  */
 export async function flushAiRunSettlements(
   db: DatabaseInterface,
@@ -1111,20 +1198,19 @@ export async function flushAiRunSettlements(
 ): Promise<void> {
   const list = pendingList(db, false);
   if (!list || list.length === 0) return;
-  while (list.length > 0) {
-    const next = list[0] as PendingSettlement;
-    try {
-      await settleAiCall(db, next.input, options);
-    } catch (error) {
-      logger.warn(
-        `[smrt] AI run settlement for call ${next.input.callId} is still pending: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      break;
+  for (;;) {
+    const next = list[0];
+    if (!next) break;
+    if (next.settling) {
+      // Another flush is writing it; follow, and leave its handlers to it.
+      if ((await next.settling) === 'pending') break;
+      continue;
     }
-    list.shift();
-    if (next.afterCommit) {
+    const settling = writePending(db, list, next, options);
+    next.settling = settling;
+    const outcome = await settling;
+    if (outcome === 'pending') break;
+    if (outcome === 'written' && next.afterCommit) {
       try {
         await next.afterCommit();
       } catch (error) {

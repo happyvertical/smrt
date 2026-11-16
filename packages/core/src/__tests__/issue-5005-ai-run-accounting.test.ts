@@ -961,11 +961,69 @@ describe.each(aiRunTestEngines)('AI run accounting on %s (#5005)', (engine) => {
     );
   });
 
+  /** The same database, refusing every statement while `failing.on`. */
+  function failingHandle(database: DatabaseInterface) {
+    const failing = { on: false };
+    const handle = new Proxy(database, {
+      get(target, prop) {
+        const value = Reflect.get(target, prop, target);
+        if (typeof value !== 'function') return value;
+        if (
+          failing.on &&
+          (prop === 'query' || prop === 'execute' || prop === 'transaction')
+        ) {
+          return () => Promise.reject(new Error('database unavailable'));
+        }
+        return value.bind(target);
+      },
+    });
+    return { handle, failing };
+  }
+
   it('keeps failed settlements pending, oldest first, and holds the run until they are written', async () => {
+    const database = await db();
+    const { handle, failing } = failingHandle(database);
+    const run = await openAiRun(store(database), { type: 'turn' });
+    const other = await openAiRun(store(database), { type: 'turn' });
+    const first = await reserveAiCall(database, run.id, { inputTokens: 5 });
+    const second = await reserveAiCall(database, other.id, { inputTokens: 5 });
+    const order: string[] = [];
+    deferAiRunSettlement(
+      handle,
+      { runId: run.id, callId: first.callId, usage: usageEvent(10) },
+      async () => {
+        order.push('first');
+      },
+    );
+    deferAiRunSettlement(
+      handle,
+      { runId: other.id, callId: second.callId, usage: usageEvent(10) },
+      async () => {
+        order.push('second');
+      },
+    );
+    expect(pendingAiRunSettlements(handle)).toBe(2);
+    // The oldest cannot be written: nothing behind it goes, and the run's
+    // next reservation waits.
+    failing.on = true;
+    await expect(
+      flushAiRunSettlements(handle, { runId: run.id, attempts: 1 }),
+    ).rejects.toThrow(/could not be written yet/);
+    expect(order).toEqual([]);
+    expect(pendingAiRunSettlements(handle)).toBe(2);
+    // Once it can be written, the list drains in order.
+    failing.on = false;
+    await flushAiRunSettlements(handle);
+    expect(order).toEqual(['first', 'second']);
+    expect(pendingAiRunSettlements(handle)).toBe(0);
+    expect((await getAiRun(database, run.id))?.calls).toBe(1);
+    expect((await getAiRun(database, other.id))?.calls).toBe(1);
+  });
+
+  it('drops a pending settlement whose run is gone, without its handlers; the rest go on', async () => {
     const database = await db();
     const run = await openAiRun(store(database), { type: 'turn' });
     const first = await reserveAiCall(database, run.id, { inputTokens: 5 });
-    const second = await reserveAiCall(database, run.id, { inputTokens: 5 });
     const order: string[] = [];
     deferAiRunSettlement(
       database,
@@ -981,24 +1039,126 @@ describe.each(aiRunTestEngines)('AI run accounting on %s (#5005)', (engine) => {
         order.push('first');
       },
     );
-    expect(pendingAiRunSettlements(database)).toBe(2);
-    // The oldest cannot be written: nothing behind it goes, and the run's
-    // next reservation waits.
-    await expect(
-      reserveAiCall(database, run.id, { inputTokens: 1 }),
-    ).rejects.toThrow(/could not be written yet/);
-    expect(order).toEqual([]);
-    // Once the blocker can be written, the list drains in order.
-    await openAiRun(store(database), { id: 'gone', type: 'turn' });
-    await flushAiRunSettlements(database);
-    expect(order).toEqual(['gone', 'first']);
+    // The run's next reservation is not held by a settlement nothing can take.
+    await reserveAiCall(database, run.id, { inputTokens: 1 });
+    expect(order).toEqual(['first']);
     expect(pendingAiRunSettlements(database)).toBe(0);
-    await settleAiCall(database, {
+    expect((await getAiRun(database, run.id))?.calls).toBe(1);
+  });
+
+  it('writes each pending settlement once across concurrent flushes, handlers once each', async () => {
+    const database = await db();
+    const run = await openAiRun(store(database), { type: 'turn' });
+    const calls = [
+      await reserveAiCall(database, run.id, { inputTokens: 5 }),
+      await reserveAiCall(database, run.id, { inputTokens: 5 }),
+      await reserveAiCall(database, run.id, { inputTokens: 5 }),
+    ];
+    const order: string[] = [];
+    for (const [i, call] of calls.entries()) {
+      deferAiRunSettlement(
+        database,
+        { runId: run.id, callId: call.callId, usage: usageEvent(10) },
+        async () => {
+          order.push(`call-${i}`);
+        },
+      );
+    }
+    await Promise.all([
+      flushAiRunSettlements(database),
+      flushAiRunSettlements(database),
+      flushAiRunSettlements(database, { runId: run.id }),
+    ]);
+    expect(order.sort()).toEqual(['call-0', 'call-1', 'call-2']);
+    expect(pendingAiRunSettlements(database)).toBe(0);
+    for (const call of calls) {
+      expect((await reservation(database, call.callId))?.reservation).toBe(
+        'settled',
+      );
+    }
+    expect((await getAiRun(database, run.id))?.calls).toBe(3);
+  });
+
+  it('lets a usage handler make a tracked call while the list drains', async () => {
+    const database = await db();
+    const run = await openAiRun(store(database), { type: 'turn' });
+    const first = await reserveAiCall(database, run.id, { inputTokens: 5 });
+    const second = await reserveAiCall(database, run.id, { inputTokens: 5 });
+    let nested: string | undefined;
+    deferAiRunSettlement(
+      database,
+      { runId: run.id, callId: first.callId, usage: usageEvent(10) },
+      async () => {
+        // Reserving flushes this same list from inside its handler.
+        nested = (await reserveAiCall(database, run.id, { inputTokens: 1 }))
+          .callId;
+      },
+    );
+    deferAiRunSettlement(database, {
       runId: run.id,
       callId: second.callId,
       usage: usageEvent(10),
     });
+    await flushAiRunSettlements(database);
+    expect(nested).toBeDefined();
+    expect(pendingAiRunSettlements(database)).toBe(0);
     expect((await getAiRun(database, run.id))?.calls).toBe(2);
+  });
+
+  it('refuses a caller-supplied call id that is already reserved', async () => {
+    const database = await db();
+    const run = await openAiRun(store(database), { type: 'turn' });
+    const held = await reserveAiCall(database, run.id, {
+      callId: 'dup-call',
+      inputTokens: 5,
+    });
+    await expect(
+      reserveAiCall(database, run.id, { callId: 'dup-call', inputTokens: 5 }),
+    ).rejects.toThrow(TypeError);
+    await expect(
+      reserveAiCalls(database, run.id, [
+        { callId: 'twice', inputTokens: 5 },
+        { callId: 'twice', inputTokens: 5 },
+      ]),
+    ).rejects.toThrow(TypeError);
+    // Nothing more was reserved, and the held call settles its one event.
+    expect((await getAiRun(database, run.id))?.reservedCalls).toBe(1);
+    await settleAiCall(database, {
+      runId: run.id,
+      callId: held.callId,
+      usage: usageEvent(10),
+    });
+    expect(await getAiRun(database, run.id)).toMatchObject({
+      calls: 1,
+      reservedCalls: 0,
+      reservedTokens: 0,
+    });
+  });
+
+  it('pages the sweep past reservations not yet stale', async () => {
+    const database = await db();
+    let now = new Date('2026-11-14T10:00:00.000Z');
+    const clock = { now: () => now };
+    const untimed = await openAiRun(store(database), { type: 'turn' }, clock);
+    const timed = await openAiRun(
+      store(database),
+      { type: 'turn', budget: { callTimeoutMs: 60_000 } },
+      clock,
+    );
+    // The oldest reservations have the 1 h default; the newer ones 60 s.
+    for (let i = 0; i < 2; i++) {
+      await reserveAiCall(database, untimed.id, { inputTokens: 5 }, clock);
+    }
+    now = new Date(now.getTime() + 1_000);
+    for (let i = 0; i < 2; i++) {
+      await reserveAiCall(database, timed.id, { inputTokens: 5 }, clock);
+    }
+    now = new Date(now.getTime() + 3 * 60_000);
+    expect(await sweepAiRuns(database, { ...clock, batch: 2 })).toMatchObject({
+      abandoned: 2,
+    });
+    expect((await getAiRun(database, untimed.id))?.reservedCalls).toBe(2);
+    expect((await getAiRun(database, timed.id))?.reservedCalls).toBe(0);
   });
 
   it('retries a conflicting accounting transaction, never a typed answer', async () => {

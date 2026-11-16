@@ -1111,8 +1111,10 @@ function aiUsageAddedColumns(
  * split: a usage row's `id` is its call id, and the shared fusion or
  * transcript id that `call_id` used to hold moves to `entry_call_id` (a row
  * that had none is its own entry call). That is one UPDATE,
- * `entry_call_id = call_id` then `call_id = id`, guarded so a
- * second run finds nothing to change. The old `call_id` index goes first:
+ * `entry_call_id = call_id` then `call_id = id`, of the rows whose
+ * `entry_call_id` is NULL (every writer since sets it, so a second run finds
+ * nothing and writes nothing; a row an older process wrote after the upgrade
+ * is split on the next bootstrap pass). The old `call_id` index goes first:
  * the replay creates its replacement on `entry_call_id`, and an update of an
  * indexed column is not safe on every engine (DuckDB). Each ALTER is guarded
  * by a column-existence probe on every engine, and must run before the DDL
@@ -1136,11 +1138,22 @@ export async function ensureAiUsageSystemTableCompatibility(
     );
   }
   await dropIndexIfExists(db, 'idx_smrt_ai_usage_call', typeHint);
-  await db.query(
-    `UPDATE _smrt_ai_usage
-        SET entry_call_id = COALESCE(call_id, id), call_id = id
-      WHERE call_id IS NULL OR call_id <> id`,
+  // Every writer since #5005 sets `entry_call_id`, so a NULL marks exactly
+  // the rows still to split; the probe uses idx_smrt_ai_usage_entry_call
+  // once it exists, and the update runs only when it finds one. That index
+  // goes first (the replay recreates it) because the update writes the
+  // column it covers.
+  const unsplit = await db.query(
+    'SELECT id FROM _smrt_ai_usage WHERE entry_call_id IS NULL LIMIT 1',
   );
+  if (getQueryRows(unsplit).length > 0) {
+    await dropIndexIfExists(db, 'idx_smrt_ai_usage_entry_call', typeHint);
+    await db.query(
+      `UPDATE _smrt_ai_usage
+          SET entry_call_id = COALESCE(call_id, id), call_id = id
+        WHERE entry_call_id IS NULL`,
+    );
+  }
   // `_smrt_ai_usage_outcomes` (#4751) gains `call_id` with #4780; a 1.13.0 or
   // 1.14.0 install has the table without it. It is carried into
   // `_smrt_ai_evaluations` by ensureAiEvaluationsSystemTableCompatibility().
@@ -1452,21 +1465,6 @@ export async function ensureAiEvaluationsSystemTableCompatibility(
 }
 
 /**
- * The compatibility pass that must precede replaying system DDL.
- *
- * Only the tables `bootstrapSystemTables()` itself creates belong here: an
- * older install can be missing a column that the DDL's `CREATE INDEX` clauses
- * reference, so those tables have to be reshaped first, inside the same
- * transaction as the replay.
- *
- * The deferred tables are deliberately NOT part of this pass. They are owned by
- * the jobs manifest, not by the system DDL, so nothing in the replay depends on
- * them — and reshaping a table the framework does not own must not be able to
- * abort the bootstrap transaction and roll back system-table creation with it
- * (issue #2376). {@link ensureDeferredSystemTableCompatibility} runs outside
- * the lock instead.
- */
-/**
  * `_smrt_migrate_runs` (1.16.0, #4926) gains `recomputes` with 1.16.1 (#5018)
  * and `confirmed_retirements` (the retirements a run dropped over a confirmed
  * definition mismatch, #5005) with 1.18.0. An older install has the table
@@ -1494,6 +1492,21 @@ export async function ensureMigrateRunsSystemTableCompatibility(
   );
 }
 
+/**
+ * The compatibility pass that must precede replaying system DDL.
+ *
+ * Only the tables `bootstrapSystemTables()` itself creates belong here: an
+ * older install can be missing a column that the DDL's `CREATE INDEX` clauses
+ * reference, so those tables have to be reshaped first, inside the same
+ * transaction as the replay.
+ *
+ * The deferred tables are deliberately NOT part of this pass. They are owned by
+ * the jobs manifest, not by the system DDL, so nothing in the replay depends on
+ * them — and reshaping a table the framework does not own must not be able to
+ * abort the bootstrap transaction and roll back system-table creation with it
+ * (issue #2376). {@link ensureDeferredSystemTableCompatibility} runs outside
+ * the lock instead.
+ */
 export async function ensureBootstrapSystemTableCompatibility(
   db: DatabaseInterface,
   typeHint?: string,

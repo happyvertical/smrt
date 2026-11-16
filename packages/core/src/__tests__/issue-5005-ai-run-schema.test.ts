@@ -338,6 +338,27 @@ describe.each(engines)('AI run schema upgrade on %s (#5005)', (engine) => {
     await createLegacy(db, engine);
     await seedLegacyAiRunRows(db);
     await bootstrap(db, engine);
+    // A row an older writer added after the upgrade (the external-agent
+    // insert once left both ids NULL): the next pass splits it, once.
+    await db.query(
+      `INSERT INTO _smrt_ai_usage (id, provider, model, operation, duration)
+       VALUES ('external-agent:late', 'openai', 'gpt-4o', 'external-agent', 0)`,
+    );
+    await db.query(
+      'DELETE FROM _smrt_migrations WHERE version = $1',
+      SMRT_SCHEMA_VERSION,
+    );
+    await bootstrap(db, engine);
+    expect(
+      rowsOf(
+        await db.query(
+          "SELECT call_id, entry_call_id FROM _smrt_ai_usage WHERE id = 'external-agent:late'",
+        ),
+      )[0],
+    ).toEqual({
+      call_id: 'external-agent:late',
+      entry_call_id: 'external-agent:late',
+    });
 
     const snapshot = async () => ({
       shape: await readShape(db, engine),
