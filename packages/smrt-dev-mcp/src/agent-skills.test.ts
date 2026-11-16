@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -220,16 +220,55 @@ describe('smrt-ai-work (#5005)', () => {
       'Tier, latency, effort',
       'maxTokens',
       'Fusion, seat',
-      'docs/content/ai-runs.md',
+      'https://happyvertical.github.io/smrt/ai-runs',
     ]) {
       expect(body, term).toContain(term);
     }
   });
 
-  it('only cites exports, files and budget keys that exist', () => {
+  it('cites only sources a consuming project can reach', () => {
     const root = join(packageRoot, '..', '..');
-    for (const path of body.match(/(?:docs|packages)\/[\w./-]+\.md/g) ?? []) {
-      expect(existsSync(join(root, path)), path).toBe(true);
+    // No monorepo path: a consumer has no docs/ or packages/ checkout.
+    expect(body).not.toMatch(/(?:^|[\s`(])(?:docs|packages)\//m);
+
+    // An installed package's file: it exists and the package ships it.
+    const packages = new Map<string, string>();
+    for (const dir of readdirSync(join(root, 'packages'))) {
+      const manifest = join(root, 'packages', dir, 'package.json');
+      if (!existsSync(manifest)) continue;
+      const { name } = JSON.parse(readFileSync(manifest, 'utf8'));
+      packages.set(name, join(root, 'packages', dir));
+    }
+    const installed = [
+      ...body.matchAll(/node_modules\/(@happyvertical\/[\w-]+)\/([\w./-]+)/g),
+    ];
+    expect(installed.length).toBeGreaterThan(0);
+    for (const [cited, name, path] of installed) {
+      const dir = packages.get(name as string);
+      expect(dir, cited).toBeDefined();
+      expect(existsSync(join(dir as string, path as string)), cited).toBe(true);
+      const { files } = JSON.parse(
+        readFileSync(join(dir as string, 'package.json'), 'utf8'),
+      ) as { files: string[] };
+      const top = (path as string).split('/')[0];
+      expect(files, cited).toContain(top);
+    }
+
+    // A docs site page: the site's own URL, and a page that exists.
+    const config = readFileSync(
+      join(root, 'docs', 'docusaurus.config.ts'),
+      'utf8',
+    );
+    expect(config).toContain("url: 'https://happyvertical.github.io'");
+    expect(config).toContain("baseUrl: '/smrt/'");
+    const pages = [
+      ...body.matchAll(/https:\/\/happyvertical\.github\.io\/smrt\/([\w-]+)/g),
+    ];
+    expect(pages.length).toBeGreaterThan(0);
+    for (const [url, slug] of pages) {
+      expect(existsSync(join(root, 'docs', 'content', `${slug}.md`)), url).toBe(
+        true,
+      );
     }
   });
 

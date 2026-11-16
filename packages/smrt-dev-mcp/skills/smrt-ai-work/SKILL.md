@@ -46,8 +46,7 @@ run. Never import a provider SDK, call `getAI()`, or inline a prompt string.
 
 ## Explaining it
 
-Read `docs/content/ai-runs.md` and the package notes before answering; do not
-answer from memory.
+Read the sources at the end before answering; do not answer from memory.
 
 - **Call**: one model request, one `_smrt_ai_usage` row (the cost ledger).
 - **Run**: a piece of work with its own row, status and budget (`fusion`,
@@ -68,6 +67,16 @@ answer from memory.
 - **Reading results**: `smrt ai:usage --by prompt,model,tier`, `--runs`,
   `smrt ai:compare`, `smrt ai:transcript`.
 
-Sources: `docs/content/ai-runs.md`, `docs/content/inference.md`,
-`packages/core/agents/ai-usage.md`, `packages/prompts/AGENTS.md`,
-`packages/workflows/README.md`, `packages/jobs/agents/job-handlers.md`.
+Sources:
+
+- The AI runs page, https://happyvertical.github.io/smrt/ai-runs, and the
+  inference guide, https://happyvertical.github.io/smrt/inference.
+- The notes the installed packages ship:
+  `node_modules/@happyvertical/smrt-core/agents/ai-usage.md`,
+  `node_modules/@happyvertical/smrt-prompts/AGENTS.md`,
+  `node_modules/@happyvertical/smrt-workflows/AGENTS.md`,
+  `node_modules/@happyvertical/smrt-workflows/agents/workflow-runs.md` and
+  `node_modules/@happyvertical/smrt-jobs/AGENTS.md` (the handler job contract
+  is step 4 above).
+- The project's knowledge pages, `.agents/smrt-knowledge/components/*.md`
+  (written by `smrt docs:agents`).

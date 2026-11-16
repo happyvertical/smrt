@@ -292,8 +292,8 @@ tracked call carrying its prompt key (`createTrackedAiClient` with
 `trackedPromptCall`), and for multi-step work a `smrt-workflows` definition
 with a budget; it states the background handler job contract and explains
 runs, events, trajectories, evaluations, tiers, latency, effort, budgets and
-fusions, pointing at the [AI runs](../../docs/content/ai-runs.md) page and the
-package notes.
+fusions, pointing at the [AI runs](https://happyvertical.github.io/smrt/ai-runs)
+page and the notes the installed packages ship.
 
 ## Available Tools
 
