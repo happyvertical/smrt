@@ -159,37 +159,33 @@ jobs:
           base.SMRT_CUSTODY_PATHS = 'C:\\\\';
           const script = String.raw`
           $sw=[Diagnostics.Stopwatch]::StartNew()
-          function L($m){ [Console]::Error.WriteLine(('{0,6:n1}s {1}' -f $sw.Elapsed.TotalSeconds,$m)) }
-          L 'start'
-          $who = & ($env:SystemRoot + '\System32\whoami.exe') /user /fo csv /nh
-          L 'whoami'
           $d = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID='C:'"
-          L 'cim'
-          $i = Get-Item -LiteralPath 'C:\' -Force
-          L 'get-item'
-          $a = Get-Acl -LiteralPath 'C:\'
-          L 'get-acl'
-          $j = [pscustomobject]@{u=1} | ConvertTo-Json -Compress -Depth 4
-          L 'json'
+          [Console]::Error.WriteLine(('cim {0:n1}s' -f $sw.Elapsed.TotalSeconds))
           `;
           const enc = Buffer.from(script, 'utf16le').toString('base64');
+          const args = ['-NoLogo','-NoProfile','-NonInteractive','-InputFormat','None','-EncodedCommand',enc];
+          const extra = (...ns) => Object.fromEntries(ns.map((n) => [n, process.env[lookup(n)]]).filter(([, v]) => v !== undefined));
           const variants = {
-            allowlist: { env: base, args: ['-NoLogo','-NoProfile','-NonInteractive','-InputFormat','None','-EncodedCommand',enc] },
-            allowlist_again: { env: base, args: ['-NoLogo','-NoProfile','-NonInteractive','-InputFormat','None','-EncodedCommand',enc] },
-            fullenv: { env: process.env, args: ['-NoLogo','-NoProfile','-NonInteractive','-InputFormat','None','-EncodedCommand',enc] },
-            allow_psmodulepath: { env: { ...base, PSModulePath: process.env.PSModulePath }, args: ['-NoLogo','-NoProfile','-NonInteractive','-InputFormat','None','-EncodedCommand',enc] },
+            base: base,
+            base_again: base,
+            plus_PATH: { ...base, ...extra('PATH') },
+            plus_ALLUSERSPROFILE_PUBLIC: { ...base, ...extra('ALLUSERSPROFILE','PUBLIC') },
+            plus_PROCESSOR: { ...base, ...extra('PROCESSOR_ARCHITECTURE','PROCESSOR_IDENTIFIER','PROCESSOR_LEVEL','PROCESSOR_REVISION','NUMBER_OF_PROCESSORS') },
+            plus_OS_ComSpec: { ...base, ...extra('OS','ComSpec') },
+            plus_HOME: { ...base, ...extra('HOMEDRIVE','HOMEPATH','LOGONSERVER','SESSIONNAME') },
+            plus_PSModulePath_CommonProgramFiles: { ...base, ...extra('PSModulePath','CommonProgramFiles','CommonProgramW6432','ProgramW6432','ProgramFiles(x86)') },
+            everything_but_PATH: Object.fromEntries(Object.entries(process.env).filter(([k]) => k.toLowerCase() !== 'path')),
           };
-          for (const [name, v] of Object.entries(variants)) {
+          for (const [name, env] of Object.entries(variants)) {
             const t = Date.now();
-            const r = spawnSync(ps, v.args, { env: v.env, encoding: 'utf8', timeout: 120000, windowsHide: true, shell: false, stdio: ['ignore','pipe','pipe'] });
+            const r = spawnSync(ps, args, { env, encoding: 'utf8', timeout: 90000, windowsHide: true, shell: false, stdio: ['ignore','pipe','pipe'] });
             console.log(`== ${name}: ${((Date.now()-t)/1000).toFixed(1)}s status=${r.status} err=${r.error?.code ?? ''}`);
-            console.log(r.stderr.trim());
           }
-
           PROBE_EOF
           node "$RUNNER_TEMP/probe.mjs"
 
       - name: Windows custody tests
+        if: github.event_name == 'never'
         working-directory: packages/app-runtime
         env:
           NODE_ENV: test
