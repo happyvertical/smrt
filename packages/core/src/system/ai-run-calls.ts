@@ -211,7 +211,7 @@ export interface AiRunCallRequest {
   parentEventId?: string | null;
   /** The usage row written when the provider reports none. */
   fallbackUsage: Pick<SmrtAiUsageEvent, 'provider' | 'model' | 'operation'> &
-    Partial<Pick<SmrtAiUsageEvent, 'className' | 'tenantId'>>;
+    Partial<Pick<SmrtAiUsageEvent, 'className' | 'tenantId' | 'tags'>>;
   /**
    * Called once the call's settlement has committed, with its usage event:
    * the usage handlers (a settlement on the pending list calls it when it

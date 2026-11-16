@@ -167,6 +167,31 @@ usage row; the usage handlers run only after the settle commits. The run
 context is always passed explicitly, never read from a process-wide variable;
 `serializeAiRunContext` / `restoreAiRunContext` carry it through a job payload
 (tenant-checked). Without `runTracking` a client is exactly as before.
+`do()`, `is()` and `describe()` take `runContext` in their options and hand it
+to the executor's client, so an alias chain's answering call is a settled call
+of the run. A client that sends no usage event (a host's own client) settles
+from the response's own `usage` and `model`; a zero-token row is the last
+resort.
+
+`createTrackedAiClient({ db, tenantId, ai?, inference?, usage?, className?,
+transcript? })` (`src/tracked-ai-client.ts`) is the entry point for code that
+is not a `SmrtObject` (chat, the app shell, background workers). It is built
+for ONE tenant and database (an internal `SmrtClass` host: nothing is kept per
+process) and refuses a run context of another database or tenant.
+`openRun(input)` opens a run there (`AiRunTrackingDisabledError` while usage
+persistence is off); `client(prompt, { runContext? })` returns a client made
+for one prompt: every call on it is tagged with the prompt's `promptKey` and
+`templateHash`, belongs to `runContext` when one is given, and a prompt
+without a key is refused (`AiPromptKeyRequiredError`). Core never imports
+`smrt-prompts`: the caller resolves the prompt (`resolvePrompt`) and
+`trackedPromptCall(resolved)` of smrt-prompts turns the resolution into the
+`prompt` argument. `transcript: false` is for a host that stores the
+conversation itself. `pnpm lint` runs `scripts/check-tracked-ai-calls.mjs`:
+package code may not build a provider client (`getAI`), import a provider
+SDK, or call `ai.chat/message/complete/stream` on a client that did not come
+from the tracked path, and a tracked call needs a prompt key; the file's short
+`ALLOWED` list carries each exception with its reason, and a stale entry
+fails.
 
 **Fusions.** The executor opens the fusion run through the context's
 `openRun()` (`SmrtClass#openInferenceRun` → `openAiEntryRun`) before the
@@ -180,8 +205,16 @@ carries a `runContext`), the fusion is a child run and the parent gets a
 `handoff` event (`child_run_id`, `call_id` = the entry call, no reservation),
 written with the child's row and ended `done`, `stopped`, `cancelled` or
 `failed` with it. Seat usage rows carry `run_id` = the fusion run, `fusionKey`
-and `seat` tags; the gate's decision call is not a call of the run (no
-reservation, no `runId` tag). `details` hold identities and totals only
+and `seat` tags. A gate is a seat too: its `gate` share (`later`, so checked
+`running` first, with a short verdict back) is reserved with the others, and
+the decision call (`decide(request, { runContext })`) takes it and settles with
+a usage row tagged `runId` and `seat: gate`. A seat's share is priced from the
+rate card at its first concrete target (an alias's or inline chain's first
+candidate, through nested aliases) and counts its prompt's instructions as
+input; a judge adds 240 characters of framing and the panel's output
+allowances. A chain that never answered writes its zero-token row as an
+unreserved call of the run (its own call id, nothing reserved or released).
+`details` hold identities and totals only
 (seat persona, prompt key, target and model labels, usage, substitutions,
 failure class; gate verdict): never prompts, inputs, outputs or keys.
 

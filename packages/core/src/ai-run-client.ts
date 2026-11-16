@@ -145,6 +145,7 @@ function request(
       provider,
       model,
       operation,
+      ...(options.usageTags ? { tags: options.usageTags } : {}),
       ...(hooks.className ? { className: hooks.className } : {}),
       ...(tenantId !== undefined ? { tenantId } : {}),
     },

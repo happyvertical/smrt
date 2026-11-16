@@ -66,6 +66,12 @@ export interface TrackedAiClientOptions {
   ai?: AIClientOptions | AIClient;
   inference?: InferenceConfig | InferenceResolver;
   usage?: AiUsageConfig;
+  /**
+   * The transcript directive of every call (#4780, only while the app
+   * enables transcripts): `false` for a host that stores the conversation
+   * itself and wants no second copy. Omitted, successes are sampled.
+   */
+  transcript?: boolean;
 }
 
 /**
@@ -112,14 +118,16 @@ export interface TrackedAiClient {
 
 class TrackedAiHost extends SmrtClass {
   readonly tenantId: string | null;
+  private readonly transcript: boolean | undefined;
 
   constructor(options: TrackedAiClientOptions) {
-    const { tenantId, className, ...rest } = options;
+    const { tenantId, className, transcript, ...rest } = options;
     super({
       ...(rest as SmrtClassOptions),
       _className: className ?? 'TrackedAiClient',
     } as SmrtClassOptions);
     this.tenantId = tenantId ?? null;
+    this.transcript = transcript;
   }
 
   ready(): Promise<this> {
@@ -130,13 +138,16 @@ class TrackedAiHost extends SmrtClass {
     return this.aiRunStore();
   }
 
-  tracked(prompt: TrackedPromptCall): Promise<AIClient> {
-    return this.getAiClient(prompt.tier, {
+  async tracked(prompt: TrackedPromptCall): Promise<AIClient> {
+    const client = await this.getAiClient(prompt.tier, {
       runTracking: true,
       promptKey: prompt.promptKey,
       ...(prompt.latency ? { latency: prompt.latency } : {}),
       ...(prompt.minimumTier ? { minimumTier: prompt.minimumTier } : {}),
     });
+    return this.transcript === undefined
+      ? client
+      : this.transcriptClient(client, this.transcript);
   }
 }
 
