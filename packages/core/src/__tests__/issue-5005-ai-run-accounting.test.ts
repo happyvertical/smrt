@@ -1012,6 +1012,11 @@ describe.each(aiRunTestEngines)('AI run accounting on %s (#5005)', (engine) => {
     ).rejects.toThrow(/could not be written yet/);
     expect(order).toEqual([]);
     expect(pendingAiRunSettlements(handle)).toBe(2);
+    // An outage never counts toward the cap: the list outlives it.
+    for (let i = 0; i < AI_RUN_PENDING_MAX_FAILURES + 1; i++) {
+      await flushAiRunSettlements(handle, { attempts: 1 });
+    }
+    expect(pendingAiRunSettlements(handle)).toBe(2);
     // Once it can be written, the list drains in order.
     failing.on = false;
     await flushAiRunSettlements(handle);

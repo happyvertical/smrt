@@ -965,7 +965,8 @@ and logs and swallows their failures. For a call inside a run:
   usage row is written on its own, without a run, so the spend stays in the
   billing ledger and its handlers are called. A settlement that can never
   settle (a typed error or a `TypeError`, such as a parent cycle) or that
-  has failed 10 writes of the list is taken off the same way, its usage row
+  has failed 10 writes of the list while the database itself answered (an
+  outage never counts) is taken off the same way, its usage row
   keeping its run, so it cannot hold its run's calls forever; reconciliation
   then settles a reservation it still holds from that row (section 6.7). A
   usage row that cannot be written either is lost, with a warning.

@@ -1116,10 +1116,14 @@ interface PendingSettlement {
 type PendingOutcome = 'written' | 'ledger' | 'dropped' | 'pending';
 
 /**
- * Flushes a settlement may fail with an error that could pass on another
- * try before it is taken off the list like one that never can.
+ * Flushes a settlement may fail, while the database itself answers, with an
+ * error that could pass on another try before it is taken off the list like
+ * one that never can.
  */
 export const AI_RUN_PENDING_MAX_FAILURES = 10;
+
+/** Passes one flush makes over entries deferred while it runs. */
+const FLUSH_PASSES = 3;
 
 const pendingByUrl = new Map<string, PendingSettlement[]>();
 const pendingByHandle = new WeakMap<object, PendingSettlement[]>();
@@ -1194,6 +1198,16 @@ async function writeUsageAlone(
   }
 }
 
+/** Whether the database answers a trivial query. */
+async function databaseReachable(db: DatabaseInterface): Promise<boolean> {
+  try {
+    await db.query('SELECT 1');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function writePending(
   db: DatabaseInterface,
   list: PendingSettlement[],
@@ -1205,7 +1219,6 @@ async function writePending(
     removePending(list, entry);
     return 'written';
   } catch (error) {
-    entry.failures += 1;
     const message = error instanceof Error ? error.message : String(error);
     const callId = entry.input.callId;
     if (error instanceof AiRunNotFoundError) {
@@ -1218,6 +1231,12 @@ async function writePending(
         }: ${message}`,
       );
       return kept ? 'ledger' : 'dropped';
+    }
+    // A database that cannot be reached at all is not this entry's fault:
+    // such a flush does not count toward the cap, so an outage never drops
+    // the list.
+    if (isAiRunRetryable(error) && (await databaseReachable(db))) {
+      entry.failures += 1;
     }
     if (
       !isAiRunRetryable(error) ||
@@ -1250,8 +1269,9 @@ async function writePending(
  * of other runs. A settlement whose run no longer exists is taken off the
  * list with its usage row written on its own (without a run); one that can
  * never settle (a typed error, a `TypeError`) or has failed
- * {@link AI_RUN_PENDING_MAX_FAILURES} flushes is taken off with its usage
- * row written on its own (with its run), each with a warning. The handlers
+ * {@link AI_RUN_PENDING_MAX_FAILURES} flushes while the database answered
+ * is taken off with its usage row written on its own (with its run), each
+ * with a warning; a flush during an outage never counts. The handlers
  * run once the usage row is written either way. Concurrent flushes share
  * each entry's write, so a settlement is written once and its handlers run
  * once, by the flush that wrote it, after the commit; a handler may itself
@@ -1265,31 +1285,39 @@ export async function flushAiRunSettlements(
   const list = pendingList(db, false);
   if (!list || list.length === 0) return;
   const held = new Set<string>();
-  for (const next of [...list]) {
-    if (!list.includes(next)) continue;
-    const runId = next.input.runId;
-    if (held.has(runId)) continue;
-    if (next.settling) {
-      // Another flush is writing it; follow, and leave its handlers to it.
-      if ((await next.settling) === 'pending') held.add(runId);
-      continue;
-    }
-    const settling = writePending(db, list, next, options);
-    next.settling = settling;
-    const outcome = await settling;
-    if (outcome === 'pending') {
-      held.add(runId);
-      continue;
-    }
-    if ((outcome === 'written' || outcome === 'ledger') && next.afterCommit) {
-      try {
-        await next.afterCommit();
-      } catch (error) {
-        logger.warn(
-          `[smrt] AI usage handlers failed for call ${next.input.callId}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
+  const seen = new Set<PendingSettlement>();
+  // An entry deferred while this flush runs (a handler's own call) is
+  // written by a later pass of this same flush.
+  for (let pass = 0; pass < FLUSH_PASSES; pass++) {
+    const batch = list.filter((entry) => !seen.has(entry));
+    if (batch.length === 0) break;
+    for (const next of batch) {
+      seen.add(next);
+      if (!list.includes(next)) continue;
+      const runId = next.input.runId;
+      if (held.has(runId)) continue;
+      if (next.settling) {
+        // Another flush is writing it; follow, and leave its handlers to it.
+        if ((await next.settling) === 'pending') held.add(runId);
+        continue;
+      }
+      const settling = writePending(db, list, next, options);
+      next.settling = settling;
+      const outcome = await settling;
+      if (outcome === 'pending') {
+        held.add(runId);
+        continue;
+      }
+      if ((outcome === 'written' || outcome === 'ledger') && next.afterCommit) {
+        try {
+          await next.afterCommit();
+        } catch (error) {
+          logger.warn(
+            `[smrt] AI usage handlers failed for call ${next.input.callId}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
       }
     }
   }
