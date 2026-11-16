@@ -112,13 +112,7 @@ and repository rules.
   PostgreSQL schema version is not yet stamped: inside a caller's transaction it
   is held until that transaction ends (#2868). Application tables still require migrations;
   runtime verification checks table existence and the last migrate fingerprint.
-- Every connection `host.ts`'s `getDatabase` opens on a file-backed SQLite
-  database (either engine) waits for a lock instead of failing at once with
-  `database is locked` (`applyCollectionLockWait`, once per cached connection,
-  only when no timeout is set yet; #4978): `SQLITE_COLLECTION_BUSY_TIMEOUT_MS`
-  (250 ms, short because `node:sqlite` waits synchronously on the main thread).
-  `SQLITE_BUSY_TIMEOUT_MS` (5000) is for the runtime's own connection and the
-  jobs liveness thread's reopened connection, where waiting is harmless.
+- Collection connections wait for locks: [agents/sqlite-lock-wait.md](agents/sqlite-lock-wait.md).
 - Manifest generation fails closed on scanner errors, including unresolved
   decorator spreads. Never emit partial, default-open registration.
 - Generated registration repairs bundled class identity using the exact imported

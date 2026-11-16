@@ -5,10 +5,10 @@ description: "Background job processing for SMRT objects with persistence and sc
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-16T03:06:33Z"
+  at: "2026-11-16T03:35:11Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:ba3200855b6e076d4f88b3cfe81da215be7f15c9efbd4c422921fc45519843a6"
+source_revision: "sha256:2190ddc2936e5d16b1b438b5c1b41e024089f1d12974206f343605b7524b1ccc"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/jobs/package.json"
@@ -22,6 +22,9 @@ sources:
   - id: "agents-3"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/jobs/agents/scheduling.md"
     title: "@happyvertical/smrt-jobs packages/jobs/agents/scheduling.md"
+  - id: "agents-4"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/jobs/agents/worker-liveness.md"
+    title: "@happyvertical/smrt-jobs packages/jobs/agents/worker-liveness.md"
 ---
 
 # @happyvertical/smrt-jobs
@@ -38,6 +41,7 @@ sources:
 - `packages/jobs/AGENTS.md`
 - `packages/jobs/agents/provider-loading.md`
 - `packages/jobs/agents/scheduling.md`
+- `packages/jobs/agents/worker-liveness.md`
 
 ## Framework dependencies
 
