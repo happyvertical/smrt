@@ -125,6 +125,57 @@ must be finite positive milliseconds within the Node timer range. The default
 20× idle cap reduces combined claim and recovery traffic; latency-sensitive
 workers can set a smaller cap.
 
+### Target a named handler instead of a model method
+
+A job targets either a model method (above) or a handler registered under a
+namespaced `<package>:<name>`. Register every handler before
+`runner.start()`: a running runner dispatches from the snapshot it took at
+start, and registering while any runner in the process is running throws
+`JobHandlerRegistrationClosedError`.
+
+```typescript
+import {
+  getJobClaim,
+  registerJobHandler,
+  SmrtJobCollection,
+  TaskRunner,
+} from '@happyvertical/smrt-jobs';
+
+registerJobHandler(
+  '@happyvertical/smrt-workflows:workflow-run',
+  async (payload, context) => {
+    const claim = getJobClaim(context); // with claimFencing: true
+    context.logger.info('running', { runId: payload.runId });
+    return { runId: payload.runId };
+  },
+);
+
+const runner = new TaskRunner({ claimFencing: true, queues: ['workflows'] });
+await runner.initialize(db);
+await runner.start();
+
+const jobs = await SmrtJobCollection.create({ db });
+await jobs.enqueueHandlerJob({
+  handler: '@happyvertical/smrt-workflows:workflow-run',
+  payload: { runId },
+  queue: 'workflows',
+  dedupeKey: runId,
+});
+```
+
+The row is stored as `object_type = 'handler:<name>'`, `method = 'handle'`,
+`object_id = NULL` (no schema change). Handler jobs share the model path for
+MCP authority, tenancy, timeouts, cancellation, claim fencing, retries and
+terminal outcomes. A runner with no handler under the job's name fails it on
+that claim, never retried, with failure kind `handler-unregistered`.
+Schedules and MCP tasks target model methods only.
+
+**Mixed fleets.** Claims do not filter by target: a runner without the
+handler (or one older than this contract, which retries the job as an unknown
+model up to `maxAttempts`) fails it. Route handler jobs to a queue consumed
+only by runners that register those handlers. Details:
+[job handlers](agents/job-handlers.md).
+
 ### Back MCP task operations with durable jobs
 
 `McpTaskStore` persists the MCP `io.modelcontextprotocol/tasks` lifecycle on
@@ -291,7 +342,7 @@ taskRunner.on('job:failed', (job, error) => {
 | Export | Description |
 |--------|------------|
 | `SmrtJob` | Persistent job record stored in `_smrt_jobs` |
-| `SmrtJobCollection` | Collection with `claimReady()`, `listReady()`, `listByStatus()`, `stats()`, `cleanup()` |
+| `SmrtJobCollection` | Collection with `enqueueJob()`, `enqueueHandlerJob()`, `claimReady()`, `listReady()`, `listByStatus()`, `stats()`, `cleanup()` |
 | `SmrtJobEventCollection` | Durable telemetry plus explicit-tenant `listTerminalOutcomes()` safe projection |
 | `JobBuilder` | Fluent API: `.delay()`, `.priority()`, `.retries()`, `.queue()`, `.timeout()`, `.enqueue()` |
 | `JobHandle` | Track, wait, cancel, or retry an enqueued job |
@@ -308,6 +359,8 @@ the same queue without duplicate-claiming a pending row.
 |--------|------------|
 | `createTaskRunner(config?)` | Factory for creating a configured TaskRunner |
 | `createScheduleRunner(config?)` | Factory for creating a configured ScheduleRunner |
+| `registerJobHandler(name, handler)` / `unregisterJobHandler(name)` / `listJobHandlers()` | Process registry of named job handlers; closed while a TaskRunner runs |
+| `jobHandlerTarget(name)` / `isJobHandlerTarget(objectType)` / `jobHandlerName(objectType)` | Stored `handler:<name>` target form |
 | `withBackgroundJobs(Class)` | Mixin that adds `.bg()` and `.background()` to any SmrtObject class |
 | `parseDelay(delay)` | Parse human-readable delay strings (`'5m'`, `'1h'`, `'30s'`) to milliseconds |
 | `priorityToNumber(priority)` | Convert priority label (`'critical'`/`'high'`/`'normal'`/`'low'`) to number |
@@ -315,7 +368,7 @@ the same queue without duplicate-claiming a pending row.
 
 ### Key Types
 
-`Priority`, `JobStatus`, `JobResult`, `WaitOptions`, `BgOptions`, `BackgroundCapable`, `TaskRunnerConfig`, `TaskRunnerEvents`, `ScheduleRunnerConfig`, `ScheduleRunnerEvents`, `ScheduleInfo`, `JobContext`, `TimeoutBehavior`, `SmrtJobData`, `ListReadyOptions`, `DurableJobPayloadSigner`, `DurableJobPayloadIntegrity`
+`JobHandler`, `JobHandlerPayload`, `HandlerJobData`, `Priority`, `JobStatus`, `JobResult`, `WaitOptions`, `BgOptions`, `BackgroundCapable`, `TaskRunnerConfig`, `TaskRunnerEvents`, `ScheduleRunnerConfig`, `ScheduleRunnerEvents`, `ScheduleInfo`, `JobContext`, `TimeoutBehavior`, `SmrtJobData`, `ListReadyOptions`, `DurableJobPayloadSigner`, `DurableJobPayloadIntegrity`
 
 ## Dependencies
 

@@ -1076,7 +1076,10 @@ resume, and from a periodic sweep. Proposed: the sweep is a task named
 
 **Durable runs** are run by a background job with a lease. When the lease
 expires the job is claimed by another worker, which reconciles the run and
-resumes from the checkpoint. Reconciling on resume does **not** wait for the
+resumes from the checkpoint. Proposed: that job targets a named job handler
+(registered with `registerJobHandler` in `smrt-jobs`) rather than a model
+method; a worker that has not registered the handler fails the job once and
+never retries it. Reconciling on resume does **not** wait for the
 threshold: the new worker reconciles at once every `call` event still
 `reserved` in the run and in its **descendants that are not durable**, with
 the usage-row check above.
