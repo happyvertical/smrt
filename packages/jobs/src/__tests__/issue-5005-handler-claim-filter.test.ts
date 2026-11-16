@@ -26,6 +26,7 @@ import {
 } from '../job-handlers.js';
 import {
   DEFAULT_HANDLER_UNCLAIMED_DEADLINE_MS,
+  HANDLER_UNCLAIMED_SWEEP_LIMIT,
   TaskRunner,
   type TaskRunnerConfig,
 } from '../runner.js';
@@ -375,6 +376,12 @@ describe('unclaimed handler deadline (#5005)', () => {
     expect(
       () => new TaskRunner({ handlerUnclaimedDeadlineMs: Number.NaN }),
     ).toThrow(RangeError);
+    expect(
+      () =>
+        new TaskRunner({
+          handlerUnclaimedDeadlineMs: Number.MAX_SAFE_INTEGER,
+        }),
+    ).toThrow(RangeError);
   });
 
   for (const engine of ENGINES) {
@@ -484,6 +491,54 @@ describe('unclaimed handler deadline (#5005)', () => {
         expect((await jobs.get({ id: overdue.id as string }))?.attempts).toBe(
           0,
         );
+      },
+    );
+  }
+
+  it('keeps sweeping on the next poll after a full batch', async () => {
+    const database = await openDb('sqlite');
+    const jobs = await SmrtJobCollection.create({ db: database });
+    const runner = runnerOf({ handlerUnclaimedDeadlineMs: HOUR });
+    await runner.initialize(database);
+    let failures = 0;
+    runner.on('job:failed', () => failures++);
+    for (let i = 0; i <= HANDLER_UNCLAIMED_SWEEP_LIMIT; i++) {
+      const job = await enqueueHandler(jobs);
+      await backdate(database, job.id as string, 2 * HOUR);
+    }
+    await sweep(runner);
+    expect(failures).toBe(HANDLER_UNCLAIMED_SWEEP_LIMIT);
+    // Not throttled: the throttle stays open after a full batch.
+    await (
+      runner as unknown as { sweepUnclaimedHandlerJobs(): Promise<void> }
+    ).sweepUnclaimedHandlerJobs();
+    expect(failures).toBe(HANDLER_UNCLAIMED_SWEEP_LIMIT + 1);
+  });
+
+  for (const engine of ENGINES) {
+    it.skipIf(pgliteSkipped(engine))(
+      `a manual retry restarts a swept job's deadline (${engine})`,
+      async () => {
+        const database = await openDb(engine);
+        const jobs = await SmrtJobCollection.create({ db: database });
+        const runner = runnerOf({ handlerUnclaimedDeadlineMs: HOUR });
+        await runner.initialize(database);
+        const model = await enqueueModel(jobs);
+        await backdate(database, model.id as string, 2 * HOUR);
+        const modelRunAt = (await jobs.get({ id: model.id as string }))?.runAt;
+        const job = await enqueueHandler(jobs);
+        await backdate(database, job.id as string, 2 * HOUR);
+        await sweep(runner);
+        const swept = await jobs.get({ id: job.id as string });
+        expect(swept?.status).toBe('failed');
+        await swept?.retry();
+        await sweep(runner);
+        expect(await statusOf(jobs, job)).toBe('pending');
+        // A model job's run_at is left as it was.
+        await (await jobs.get({ id: model.id as string }))?.retry();
+        expect(
+          (await jobs.get({ id: model.id as string }))?.runAt?.toISOString(),
+        ).toBe(modelRunAt?.toISOString());
       },
     );
   }

@@ -362,13 +362,19 @@ export class SmrtJob extends SmrtObject {
         if (active.rows.length)
           throw new Error('Another job already reserves this dedupeKey');
       }
+      const retriedAt = new Date().toISOString();
+      // A handler job's unclaimed deadline counts from run_at (#5005): a
+      // retry restarts it, or the next sweep would fail the job again.
       const retried = await tx.query(
         `UPDATE _smrt_jobs SET status = 'pending', attempts = 0, last_error = NULL,
            started_at = NULL, completed_at = NULL, worker_id = NULL, worker_heartbeat = NULL,
+           run_at = CASE WHEN ${HANDLER_TARGET_SQL} AND run_at < ? THEN ? ELSE run_at END,
            updated_at = ? WHERE id = ? AND ${tenantPredicate}
            AND status IN ('pending', 'failed', 'cancelled')
            RETURNING ${SMRT_JOB_PORTABLE_SELECT_COLUMNS}`,
-        new Date().toISOString(),
+        retriedAt,
+        retriedAt,
+        retriedAt,
         current.id,
         ...tenantValues,
       );
@@ -978,9 +984,9 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
   /**
    * Enqueue a job for a registered named handler (#5005). The handler need
    * not be registered in this process: producers and runners are usually
-   * different processes. A runner that has no handler under the name fails
-   * the job terminally on its first claim (failure kind
-   * `handler-unregistered`). Guards, dedupe and tenancy are those of
+   * different processes. Only runners that registered the handler claim the
+   * job; one still `pending` past the runners' `handlerUnclaimedDeadlineMs`
+   * is failed `handler-unclaimed`. Guards, dedupe and tenancy are those of
    * {@link enqueueJob}.
    */
   async enqueueHandlerJob(

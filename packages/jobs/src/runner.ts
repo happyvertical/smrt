@@ -246,6 +246,8 @@ const DEFAULT_IDLE_POLL_INTERVAL_MULTIPLIER = 20;
 export const DEFAULT_HANDLER_UNCLAIMED_DEADLINE_MS = 24 * 60 * 60 * 1000;
 /** Most unclaimed handler jobs one sweep fails (#5005). */
 export const HANDLER_UNCLAIMED_SWEEP_LIMIT = 100;
+/** Longest accepted unclaimed deadline: 10 years. */
+const MAX_HANDLER_UNCLAIMED_DEADLINE_MS = 10 * 365 * 24 * 60 * 60 * 1000;
 /** Longest wait between unclaimed-handler sweeps: 15 min. */
 const HANDLER_UNCLAIMED_SWEEP_MAX_INTERVAL_MS = 15 * 60 * 1000;
 /** Ids per surplus-release statement, well under driver bind-parameter caps. */
@@ -424,9 +426,14 @@ export class TaskRunner extends EventEmitter {
     this.id = this.config.id;
     this.workerKey = createWorkerKey(this.id);
     const deadline = this.config.handlerUnclaimedDeadlineMs;
-    if (!Number.isFinite(deadline) || deadline < 1) {
+    // Bounded so the sweep's cutoff is always a valid date.
+    if (
+      !Number.isFinite(deadline) ||
+      deadline < 1 ||
+      deadline > MAX_HANDLER_UNCLAIMED_DEADLINE_MS
+    ) {
       throw new RangeError(
-        'handlerUnclaimedDeadlineMs must be a positive number of milliseconds',
+        `handlerUnclaimedDeadlineMs must be between 1 and ${MAX_HANDLER_UNCLAIMED_DEADLINE_MS} milliseconds`,
       );
     }
     for (const [name, value] of [
@@ -1857,6 +1864,10 @@ export class TaskRunner extends EventEmitter {
       return;
     }
 
+    // A full batch may leave more overdue rows: sweep again next poll.
+    if (unclaimed.length >= HANDLER_UNCLAIMED_SWEEP_LIMIT) {
+      this.lastUnclaimedSweepAt = 0;
+    }
     const sweptAt = new Date();
     for (const job of unclaimed) {
       const snapshot = terminalSnapshot(job);

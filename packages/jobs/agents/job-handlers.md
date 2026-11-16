@@ -65,19 +65,22 @@ process may register at most `MAX_JOB_HANDLERS` (256) handlers
 
 ## Unclaimed deadline
 
-A handler job still `pending` more than `handlerUnclaimedDeadlineMs`
-(runner option, default 24 h) after its `run_at` is failed with failure kind
-`handler-unclaimed` and its terminal event; it never ran (`attempts` as
-left). Every runner sweeps, from its poll, at most once per 1% of the
-deadline (between one lease tick and 15 min; about 14 min at the default)
-and `HANDLER_UNCLAIMED_SWEEP_LIMIT` (100) rows per sweep, over its own
-queues and tenant scope, including handlers it runs itself (a backlog older
-than the deadline is swept too). Each row is one conditional transition (`status = 'pending'`
-and `run_at` still past the cutoff), so concurrent sweepers, a claim or a
-requeue win harmlessly: one event per job. Model jobs are never swept. A
-queue no upgraded runner consumes is never swept. With different deadlines
-in a fleet the shortest wins. A sweep failure is a `runner:error`; the poll
-still claims.
+A handler job still `pending` more than `handlerUnclaimedDeadlineMs` (runner
+option, 1 ms to 10 years, default 24 h) after its `run_at` is failed with
+failure kind `handler-unclaimed` and its terminal event; it never ran
+(`attempts` as left). Every runner sweeps, from its poll, at most once per
+1% of the deadline (between one lease tick and 15 min; about 14 min at the
+default) and `HANDLER_UNCLAIMED_SWEEP_LIMIT` (100) rows per sweep (a full
+batch sweeps again on the next poll), over its own queues and tenant scope,
+including handlers it runs itself: the sweep runs before the claim, so a
+backlog older than the deadline (say, a fleet down for a day) is failed, not
+run. `SmrtJob.retry()` on a handler job restarts its deadline (`run_at`
+moves to now when it was in the past). Each row is one conditional
+transition (`status = 'pending'` and `run_at` still past the cutoff), so
+concurrent sweepers, a claim or a requeue win harmlessly: one event per job.
+Model jobs are never swept. A queue no upgraded runner consumes is never
+swept. With different deadlines in a fleet the shortest wins. A sweep
+failure is a `runner:error`; the poll still claims.
 
 ## Outcomes
 
