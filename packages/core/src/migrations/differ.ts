@@ -2106,6 +2106,9 @@ export class SchemaComparer {
         }
       } else if (
         /^(CREATE (UNIQUE )?INDEX|DROP INDEX|COMMENT ON) /.test(statement) ||
+        // A table lock changes no row value (#5018): the conversion's own
+        // guard takes it, and it must not make the projection give up.
+        new RegExp(`^LOCK TABLE ${escaped} IN [A-Z ]+ MODE$`).test(statement) ||
         (preflight.test(statement) &&
           !/\b(UPDATE|INSERT|DELETE)\b/i.test(
             preflight.exec(statement)?.[1] ?? '',
@@ -3630,6 +3633,8 @@ export class SchemaComparer {
     const deferredDrops: SchemaChange[] = [];
     /** Re-add halves of calculated-column swaps, run after every other change. */
     const deferredReadds: SchemaChange[] = [];
+    /** Index re-creations, once each, after every re-add half. */
+    const deferredIndexes = new Map<string, SchemaChange>();
     const dbColumnNames = new Set(Object.keys(dbSchema.columns));
     let generated =
       this.engine === 'postgres' || this.engine === 'duckdb'
@@ -3832,14 +3837,38 @@ export class SchemaComparer {
               ),
               `ALTER TABLE ${table} DROP COLUMN ${column}`,
             ];
-            const readdStatements = [
-              ...additions.flatMap(
-                (change) =>
-                  change.sqlStatements ?? (change.sql ? [change.sql] : []),
-              ),
-              ...this.ddlStrategy.generateIndexes({ ...manifest, indexes }),
+            const readdStatements = additions.flatMap(
+              (change) =>
+                change.sqlStatements ?? (change.sql ? [change.sql] : []),
+            );
+            // The indexes read the column back, and a declared index can name
+            // several calculated columns. On PostgreSQL they are created once
+            // every calculated column of the run is back (`deferredIndexes`).
+            const indexStatements = this.ddlStrategy.generateIndexes({
+              ...manifest,
+              indexes,
+            });
+            const statements = [
+              ...dropStatements,
+              ...readdStatements,
+              ...indexStatements,
             ];
-            const statements = [...dropStatements, ...readdStatements];
+            const deferIndexes = () => {
+              for (const statement of indexStatements)
+                if (!deferredIndexes.has(statement))
+                  deferredIndexes.set(statement, {
+                    type: 'alter_column',
+                    table: tableName,
+                    name: colName,
+                    column: colDef,
+                    sql: statement,
+                    kindHint: 'column.generated-readd',
+                    mismatch: {
+                      expected: JSON.stringify(colDef.generated),
+                      actual: '(dropped by this run)',
+                    },
+                  });
+            };
             const converting =
               actual === undefined
                 ? `Making ordinary ${tableName}.${colName} calculated`
@@ -3965,15 +3994,21 @@ export class SchemaComparer {
                   actual: '(dropped by this run)',
                 },
               });
+              deferIndexes();
               continue;
             }
+            const conversionStatements =
+              this.engine === 'postgres'
+                ? [...dropStatements, ...readdStatements]
+                : statements;
+            if (this.engine === 'postgres') deferIndexes();
             const conversion: SchemaChange = {
               type: 'alter_column',
               table: tableName,
               name: colName,
               column: colDef,
-              sql: statements[0],
-              sqlStatements: statements,
+              sql: conversionStatements[0],
+              sqlStatements: conversionStatements,
               kindHint:
                 actual === undefined
                   ? 'column.generated-from-ordinary'
@@ -4573,7 +4608,12 @@ export class SchemaComparer {
     // Calculated columns replaced on PostgreSQL go first and come back last
     // (#5008): the drop runs before any type conversion of a column they read,
     // the re-add after any column their new expression reads exists.
-    return [...deferredDrops, ...changes, ...deferredReadds];
+    return [
+      ...deferredDrops,
+      ...changes,
+      ...deferredReadds,
+      ...deferredIndexes.values(),
+    ];
   }
 
   /**

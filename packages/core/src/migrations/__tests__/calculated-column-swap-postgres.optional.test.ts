@@ -280,6 +280,37 @@ describe.skipIf(!pgUrl)(
       await unchanged();
     });
 
+    it('replaces two calculated columns that share a declared composite index in one run', async () => {
+      const pair = (factor: number) =>
+        items(
+          {
+            qty: { type: 'INTEGER' },
+            a: total(times(factor)),
+            b: total(times(factor + 1)),
+          },
+          { indexes: [{ name: 'items_ab_idx', columns: ['a', 'b'] }] },
+        );
+      declare(pair(2));
+      expect(await migrate()).toMatchObject({ applied: true });
+      await insert('x', 3);
+      declare(pair(5));
+      expect(await migrate()).toMatchObject({ applied: true, refused: false });
+      expect(
+        (await db.query('SELECT a, b FROM items')).rows.map((row) => [
+          Number(row.a),
+          Number(row.b),
+        ]),
+      ).toEqual([[15, 18]]);
+      expect(
+        (
+          await db.query(
+            "SELECT indexname FROM pg_indexes WHERE indexname = 'items_ab_idx'",
+          )
+        ).rows,
+      ).toHaveLength(1);
+      await unchanged();
+    });
+
     it('re-creates declared indexes over the column and its own UNIQUE', async () => {
       const indexed = (generated: Generated) =>
         items(
@@ -669,6 +700,27 @@ describe.skipIf(!pgUrl)(
           ['c', null, null],
         ]);
         await unchanged();
+      });
+
+      it('converts to a REQUIRED calculated column when every stored value matches and none is NULL', async () => {
+        await ordinary('BIGINT');
+        await db.query('ALTER TABLE items ALTER COLUMN total SET NOT NULL');
+        await put('a', 3, 6);
+        await put('b', 0, 0);
+        declare(
+          items({
+            qty: { type: 'INTEGER' },
+            total: { ...doubled(), notNull: true },
+          }),
+        );
+        const result = await convertMigrate();
+        expect(kinds(result)).toEqual([]);
+        expect(result).toMatchObject({ applied: true, refused: false });
+        expect(await isCalculated()).toBe(true);
+        expect(await rows()).toEqual([
+          ['a', 3, 6],
+          ['b', 0, 0],
+        ]);
       });
 
       it('stops on one differing row, names it, and changes nothing', async () => {

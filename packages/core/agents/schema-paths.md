@@ -471,8 +471,9 @@ a raw database error in the run:
 
 - **Statement order (PostgreSQL).** The swap is two changes. The drop half
   (`column.generated-replace`, with its index drops) is hoisted before every
-  other column change of the table; the re-add half (`column.generated-readd`,
-  with the recreated indexes) is appended after all of them. PostgreSQL refuses
+  other column change of the table; the re-add half (`column.generated-readd`)
+  is appended after all of them, and the recreated indexes follow every re-add,
+  each once (a declared index may name several calculated columns). PostgreSQL refuses
   to convert a column a calculated column reads (`0A000`), and a new expression
   may read a column the same run adds, so the old column is gone before any
   conversion and the new one arrives after every column exists, whatever the
@@ -547,7 +548,8 @@ layers (fills of NULLs from a backfill or default, added columns, type
 conversions, `DROP EXPRESSION`, replaced calculated columns, each calculated
 column recomputed after every layer). A table that gains `_meta_type` in the
 same run is never probed for a missing column
-(`issue-4932-check-probe-pglite.test.ts`). A statement the projection does not
+(`issue-4932-check-probe-pglite.test.ts`). A table lock (the #5018 conversion guard's
+`LOCK TABLE`) changes no value and is skipped. A statement the projection does not
 recognize is never guessed at: the rule stops as `check.unprojectable`.
 
 How each engine gets there:

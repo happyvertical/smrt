@@ -455,6 +455,23 @@ describe.each(ENGINES)('ordinary to calculated on %s', (engine) => {
     } else expect(statements[0]).toMatch(/^DROP TABLE IF EXISTS temp/);
   });
 
+  it('converts to a REQUIRED calculated column when every stored value matches and none is NULL', async () => {
+    if (engine !== 'postgres') return;
+    await ordinary('BIGINT', '');
+    await db.query('ALTER TABLE items ALTER COLUMN v SET NOT NULL');
+    await db.query("INSERT INTO items (id, qty, v) VALUES ('a', 3, 6)");
+    await db.query("INSERT INTO items (id, qty, v) VALUES ('b', 0, 0)");
+    convert({ ...doubled, notNull: true });
+    const result = await migrate();
+    expect(stopKinds(result)).toEqual([]);
+    expect(result).toMatchObject({ applied: true, refused: false });
+    expect(await generatedNow('v')).toBe(true);
+    expect(await rows()).toEqual([
+      { id: 'a', qty: 3, v: 6 },
+      { id: 'b', qty: 0, v: 0 },
+    ]);
+  });
+
   describe.skipIf(engine !== 'postgres')(
     'a live type the declared type cannot hold losslessly',
     () => {

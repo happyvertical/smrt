@@ -732,6 +732,37 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
       ).toContain(unknown);
     });
 
+    it('replaces two calculated columns that share a declared composite index in one run', async () => {
+      const pair = (factor: number): SchemaDefinition => {
+        const schema = table({
+          qty: { type: 'INTEGER' },
+          a: { type: 'INTEGER', generated: times('qty', { value: factor }) },
+          b: {
+            type: 'INTEGER',
+            generated: times('qty', { value: factor + 1 }),
+          },
+        });
+        schema.indexes = [{ name: 'items_ab_idx', columns: ['a', 'b'] }];
+        return schema;
+      };
+      declare(pair(2));
+      expect(await migrate()).toMatchObject({ applied: true });
+      await db.query("INSERT INTO items (id, qty) VALUES ('x', 3)");
+      declare(pair(5));
+      expect(await migrate()).toMatchObject({ applied: true, refused: false });
+      const live = (
+        await db.query('SELECT a, b FROM items ORDER BY id')
+      ).rows.map((row) => [Number(row.a), Number(row.b)]);
+      expect(live).toEqual([[15, 18]]);
+      const indexes = (
+        await db.query(
+          "SELECT indexname FROM pg_indexes WHERE tablename = 'items' AND indexname = 'items_ab_idx'",
+        )
+      ).rows;
+      expect(indexes).toHaveLength(1);
+      expect(await migrate()).toMatchObject({ applied: false, stops: [] });
+    });
+
     it('does not stop for what the replacement re-creates: UNIQUE, declared and partial indexes', async () => {
       const indexed = (
         generated: NonNullable<
