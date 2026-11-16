@@ -518,11 +518,11 @@ and a ChatGPT plan through inference's default tier binding
 (`engineTierModel`: `fable`, `gpt-6-astra`, or the strongest ranked model the
 ChatGPT account offers). The effort is the tier binding's
 (`resolveEngineEffort`), else the engine's default. While durable onboarding is
-unfinished or rerunning, assistant requests go straight to a design run
+unfinished or rerunning, assistant requests go straight to a workflow run
 (`deferWorkflowTurn`). Deterministic Fresh/template preview and apply remain the
 canonical onboarding operations. A chat turn that asks for a structural tool
 (limited to workflow runs) is refused before execution and, with the owner's
-`escalateToWorkflow` setting on, admitted as a durable design run; with it off
+`escalateToWorkflow` setting on, admitted as a durable workflow run; with it off
 the turn ends with a refusal. Authenticated CLI MCP calls run the same check
 before side effects.
 
@@ -530,12 +530,12 @@ The assistant turn's budget is `ASSISTANT_TURN_LIMITS.budget` (24 steps,
 160,000 tokens, 10 minutes, 3-minute calls; 16,384 output tokens per call and
 40,000-character tool results as loop options). It is stored on the turn's AI
 run. Each CLI binding checks the same step count and wall time before
-execution. A design pass uses the design workflow definition's budget
-(`WORKFLOW_RUN_BUDGET` in `host/design-runs.ts`, overridable by the app's
-`workflowBudget` host option): 4 passes, 2,000,000 run tokens, 2 hours, 2 repairs;
-per pass 64 steps, 32,768 output tokens per call, 400,000 tokens, 10-minute
-calls, 30 minutes, 120,000-character tool results. A design run pins its engine,
-tier, model, effort and the preview setting when it starts.
+execution. A workflow step uses the change workflow's budget
+(`WORKFLOW_RUN_BUDGET` in `host/workflow-runs.ts`, overridable by the app's
+`workflowBudget` host option): 4 steps, 2,000,000 run tokens, 2 hours, 2 repairs;
+per step turn 64 tool-loop steps, 32,768 output tokens per call, 400,000 tokens,
+10-minute calls, 30 minutes, 120,000-character tool results. A workflow run pins
+its engine, tier, model, effort and the preview setting when it starts.
 
 `createInferenceSettingsPage(host.inferenceSettings, host.assistantSettings)`
 adds the owner's assistant settings (workflow handoff, preview before applying,
@@ -547,39 +547,34 @@ model is one step down the engine's tier binding order. Selection changes
 invalidate old memos; an external CLI account change cannot currently be
 detected by its sanitized status API.
 
-[Durable design runs](cookbook-design-runs.md) use inference checkpoints and the
-existing TaskRunner. The host installs its executor before starting one default
-queue runner; `host.shutdown()` drains the runner and disposes its executor.
-Internal passes reuse authenticated assistant adapters with a private server
-profile binding, original permission ceiling intersected with live permissions,
-read-only tools, full schema validation, and a detached job cancellation signal.
-Technical prompts and raw reasoning stay server-side. V4 and newer proposals require
-separate `summary` and bounded `personSummary` fields; neither model field is
-trusted as public prose. The host explicitly projects progress to short fixed
-person-facing notes, including errors, repairs and reloaded state. Raw outputs
-remain unchanged in durable checkpoints. Pinned v3 schemas and deterministic
-Apply/recovery remain supported; the historical v2 adapter still upgrades only
-to its exact v3 schema. Ready durable proposals enter a deterministic final check using
-core's stable design-action identity and exact result recovery. Preview uses the
-existing native thread approval UI; preview-off applies additive changes directly
-with change history, while destructive changes retain approval. Completing an
-approval resumes that check without another model turn. Explicit owner Resume
-can safely migrate a validated ready v2 `app.addField` proposal against its
-frozen historical argument schema; v1 never applies. The owner-scoped
-`history(event)` read handler projects the normal `app.history` result into
-browser-safe, undated entries for the existing Change history component.
+[Workflow runs](cookbook-workflow-runs.md) run the cookbook change workflow on
+`@happyvertical/smrt-workflows` (#4994): runs, checkpoints and events in core's
+`_smrt_ai_*` system tables, one named handler job per run on the host's
+TaskRunner (`claimFencing: true`). The host registers the workflow before it
+starts the runner (creating it after throws `JobHandlerRegistrationClosedError`);
+`host.shutdown()` drains the runner, then releases the definition. Each step is
+an assistant turn over the registered prompt `cookbook-host.change.step`, run as
+a child run of the workflow run with read-only tools, the pinned execution, the
+original permission ceiling intersected with live permissions and the job's
+signal. Technical prompts and raw model output stay server-side; progress is
+projected to fixed person-facing notes. A ready proposal is applied by the
+step's host check through the core cookbook service with a stable workflow
+action identity (one native owner hold per gated action); preview-off applies
+additive changes directly with change history, destructive changes keep
+approval. Completing an approval re-runs that check without another model turn.
+The owner-scoped `history(event)` read handler projects the normal
+`app.history` result into browser-safe, undated entries for the existing Change
+history component.
 
-The existing assistant endpoint additionally handles owner-scoped design-run
+The existing assistant endpoint additionally handles owner-scoped `/runs`
 status by thread and same-origin Stop/Resume. `createCookbookAssistant` enables
 this transport so tab closure leaves the job alive and reopening restores its
-progress. No profile grants authority, disables owner approval, or enables CLI
-built-ins. Native CLI per-call output-token limits are unavailable; their token
-settings are advisory while reported usage bounds subsequent passes.
-
-Explicit Resume adopts the design workflow definition's current aggregate
-token/time budget (the app's `workflowBudget`) while retaining consumed usage and
-the pinned engine, model and pass definition. A lowered cap may pause the same
-run immediately; it never resets its allowance.
+progress. No setting grants authority, disables owner approval, or enables CLI
+built-ins. Explicit Resume raises the run's token/time limits to the app's
+current `workflowBudget` (never above it) while keeping consumed usage and the
+pinned engine, model and step definition; a budget stop resumes only once the
+stopping limit is raised (else 409), and a run whose worker died is recovered
+instead.
 
 The owner layout's `assistantToolCatalog` and plugin settings use one live,
 principal-filtered host projection. Native cookbook definitions supply their
@@ -587,21 +582,21 @@ annotations, including `runTypes: ['workflow']`; MCP preserves that
 presentation hint in `_meta.runTypes`. Provider function schemas remain
 unchanged. This metadata cannot select a model or grant authority: tool
 arguments retain their closed schemas, and delegated plugin tokens cannot write
-owner assistant settings or start host design runs. Native decisions use `OwnerApprovalContinuations` and
-its canonical adapters; the design runner only schedules its deterministic
-checkpoint after the recorded native outcome.
+owner assistant settings or start host workflow runs. Native decisions use `OwnerApprovalContinuations` and
+its canonical adapters; the host carries the recorded native outcome into the
+workflow run as its approval decision.
 
 Adapter-node emits `sveltekit:shutdown` after closing HTTP connections. The host
 registers one listener for that lifecycle event and drains its existing TaskRunner
 through the same idempotent `shutdown()` used by tests. Shutdown waits for any
 in-flight initialization, stops polling and liveness via TaskRunner's normal stop
-path, and disposes the design executor. `dispose()` removes the listener with its
+path, and releases the workflow definition. `dispose()` removes the listener with its
 other synchronous registrations; callers embedding the host must await
 `shutdown()` before closing their database. In-flight work can still read the
 initialized host while it drains; shutdown never starts a new runner, and the
 stopped host refuses subsequent startup.
 If initialization failed after creating resources, shutdown still stops the
-partially-started runner and removes the retained design executor. The original
+partially-started runner and releases the workflow definition. The original
 initialization caller owns its error; only cleanup failures reject shutdown.
 No signal handler, forced process exit, detached runner or timer unref workaround
 is added. Tests use the actual runner for idle and initialization-race shutdown,
@@ -625,7 +620,7 @@ or exposure behavior changes.
 
 `onboardingWriteThrough.test.ts` retains the generated contact route coverage for
 every bundled template. Mechanic additionally adds a field through the existing
-host MCP HTTP workflow and through a three-pass design run with the native owner
+host MCP HTTP workflow and through a three-step workflow run with the native owner
 approval POST. There is currently no structural field-editor UI in this product;
 the MCP case exercises its existing HTTP mutation seam rather than claiming a
 browser editor. Both cases start with the real generated REST fallback, then
@@ -641,8 +636,8 @@ and custom value. No template-host route workaround is added for a core registry
 or exposure defect.
 
 The host opts chat and its client into generic public tool presentation. Trusted
-internal pass SSE retains its structured handoff; public events and thread reads
-exclude internal pass rows and render legacy unmarked tool rows generically.
+internal step SSE retains its structured handoff; public events and thread reads
+exclude internal step rows and render legacy unmarked tool rows generically.
 Approval captions come separately from bounded core editor command summaries or
 the existing manifest's business noun and trusted local-client label; unsafe
 identity labels, tool/package syntax and implementation captions use the fixed
@@ -651,14 +646,12 @@ authority, and safe business previews persist after completion. Change history
 retains its count/order and stable technical DTO keys, but displays human command
 captions with a safe fallback and no revision labels, raw edits or invented dates.
 
-V5 design runs begin by proposing. Without an explicit raw owner pass-count
-override, checked scalar/choice/money field additions, field rename/hide and
-list-label rename on one existing list can complete after one real pass. Exact
-canonical descriptor identities/aliases come from normal `app.describe`; uncertain
-or complex work expands to the configured maximum. Explicit pass counts remain
-fixed. Private classification metadata grants no authority, and the actual proposal
-index survives native holds, Stop and replacement-worker recovery without padded
-outputs or reset usage. See [design runs](cookbook-design-runs.md) for boundaries.
+Workflow runs begin by proposing. Without an explicit app step count
+(`workflowBudget.steps`), checked scalar/choice/money field additions, field
+rename/hide and list-label rename on one existing list can complete after the
+first step. Exact canonical descriptor identities/aliases come from normal
+`app.describe`; uncertain or complex work expands to the configured maximum.
+See [workflow runs](cookbook-workflow-runs.md) for boundaries.
 
 Settings at `/settings/inference` is titled Assistant. Native execution keys
 its memo by CLI version and owner engine generation, scoped by tenant, owner,
@@ -683,7 +676,7 @@ response still has its existing immediate refresh; when that response is only
 approved, its later completion causes a separate refresh after the effect. An
 immediate succeeded decision is not refreshed again by subsequent card polls.
 First-seen historical success, including after transport recreation, is inert;
-terminal refusals never count as successful completion. No design-run/approval
+terminal refusals never count as successful completion. No workflow-run/approval
 correlation metadata, additional poller or authority is introduced. This covers
 approval completion, not arbitrary preview-off run completion.
 
@@ -717,7 +710,7 @@ the owning plugin fixture checks this without executing or approving that hold.
 
 ## S1 assistant safety composition
 
-The assistant-settings facade stores per-app owner safety choices. Reads report editability only for a verified owner session; writes/reset require that session, live owner membership and revision checks, and protection-off requires explicit confirmation. No tool exposes these settings. Both the built-in chat policy and native/model MCP dispatch read the same removal preference. Only a short-lived token bound to this host's actual thread may opt out; outside MCP/plugin/local tokens always hold. Purges stay held. Only canonical single-record deletes from placed app-data lists receive trusted `recordDeletion` metadata; chat refuses that waiver for security/control identities and sensitive models. Native cookbook services always hold structure removals, undo and recipe disable, independently of both owner settings; design preview remains independent for non-removal changes. There is no host-side structural waiver or duplicate downstream check. Existing CRUD/audit execution is retained. CLI protection reaches turn specs and the same mode-specific readiness preflight; it never alters credential or cancellation boundaries.
+The assistant-settings facade stores per-app owner safety choices. Reads report editability only for a verified owner session; writes/reset require that session, live owner membership and revision checks, and protection-off requires explicit confirmation. No tool exposes these settings. Both the built-in chat policy and native/model MCP dispatch read the same removal preference. Only a short-lived token bound to this host's actual thread may opt out; outside MCP/plugin/local tokens always hold. Purges stay held. Only canonical single-record deletes from placed app-data lists receive trusted `recordDeletion` metadata; chat refuses that waiver for security/control identities and sensitive models. Native cookbook services always hold structure removals, undo and recipe disable, independently of both owner settings; workflow preview remains independent for non-removal changes. There is no host-side structural waiver or duplicate downstream check. Existing CRUD/audit execution is retained. CLI protection reaches turn specs and the same mode-specific readiness preflight; it never alters credential or cancellation boundaries.
 
 Reuse check: smrt-dev-mcp reviews and purpose/name searches covered app-runtime, chat, core, inference, preferences, smrt-svelte, template-sveltekit and app-shell, plus `docs/knowledge/intents/index.md`. No new production files/components/helpers were introduced. Extended the existing settings types/facade, approval policy/authority, CLI specs/parsers/preflight, failure reporter/redactor, runtime cookie, ConnectAi route/client and UI primitives.
 

@@ -4395,6 +4395,9 @@ importers:
       '@happyvertical/smrt-web':
         specifier: workspace:*
         version: link:../smrt-web
+      '@happyvertical/smrt-workflows':
+        specifier: workspace:*
+        version: link:../workflows
       '@happyvertical/sql':
         specifier: ^0.113.0
         version: 0.113.0(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)

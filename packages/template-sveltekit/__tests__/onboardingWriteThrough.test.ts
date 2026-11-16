@@ -22,7 +22,11 @@ import { readAssistantTurnStream } from '@happyvertical/smrt-chat/assistant-turn
 import '@happyvertical/smrt-commerce';
 import '@happyvertical/smrt-profiles';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
-import { ObjectRegistry, toSnakeCase } from '@happyvertical/smrt-core';
+import {
+  ObjectRegistry,
+  readAiRunCheckpoint,
+  toSnakeCase,
+} from '@happyvertical/smrt-core';
 import { resolveManifestPath } from '@happyvertical/smrt-core/manifest/discover-smrt-packages';
 import { createActivationCoordinator } from '@happyvertical/smrt-core/activation';
 import { generateActivationRegistration } from '@happyvertical/smrt-core/activation/generate';
@@ -114,7 +118,7 @@ function request(
 
 it.each(
   BUNDLED_COOKBOOK_TEMPLATES.flatMap((template) =>
-    (template.id === 'mechanic' ? ['mcp', 'design'] : ['none']).map(
+    (template.id === 'mechanic' ? ['mcp', 'workflow'] : ['none']).map(
       (structuralPath) => ({ ...template, structuralPath }),
     ),
   ),
@@ -238,7 +242,7 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
   let toolCalls = 0;
   let creatingMember = false;
   let workflowOutput: Record<string, unknown> | undefined;
-  let designCalls = 0;
+  let workflowCalls = 0;
   let memberCreateName = '';
   const errors: unknown[] = [];
   const hostOptions: Parameters<typeof createCookbookApplication>[0] = {
@@ -246,7 +250,7 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
     title: 'Onboarding regression',
     packageName: APP,
     onboarding: true,
-    workflowBudget: { passes: 3 },
+    workflowBudget: { steps: 3 },
     app: {
       cookbook: {
         $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json',
@@ -289,7 +293,7 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
           options: { tools?: Array<{ function: { name: string } }> },
         ) => {
           if (workflowOutput) {
-            designCalls++;
+            workflowCalls++;
             expect(options.tools?.some((tool) => /app_add|recipes_enable/.test(tool.function.name))).toBe(false);
             return { content: JSON.stringify(workflowOutput), finishReason: 'stop' };
           }
@@ -589,8 +593,8 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
         const status = await request(`/api/assistant/runs?threadId=${id}`, host!.assistant.GET);
         expect((await status.json()).run.status).toBe('done');
       }, { timeout: 15000 });
-      const checkpoint = JSON.parse(String((await db!.query('SELECT payload FROM _smrt_inference_design_runs WHERE id = ?', runId)).rows[0].payload));
-      expect(checkpoint.outputs).toHaveLength(3);
+      const checkpoint = await readAiRunCheckpoint(db!, runId);
+      expect((checkpoint?.state as { outputs: unknown[] }).outputs).toHaveLength(3);
       const completedMessages = await request(`/api/assistant/threads/${id}/messages`, host.assistant.GET);
       expect(completedMessages.status).toBe(200);
       const completedCards = (await completedMessages.json()).items.filter((message: AssistantMessageWire) =>
@@ -607,7 +611,7 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
       expect(completedCards[0].toolCallData.approval.summary).toContain('Customers');
       expect(Object.keys(completedCards[0].toolCallData)).toEqual(['approval']);
       expect(/"(args|context|workflowAction|requestKey|result)"\s*:/.test(JSON.stringify(completedCards[0]))).toBe(false);
-      expect(designCalls).toBe(3);
+      expect(workflowCalls).toBe(3);
     }
     for (const phase of ['applied', 'reopened']) {
       if (phase === 'reopened') {
@@ -675,7 +679,7 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
       const saved = await itemRequest('GET');
       expect(saved.status, await saved.clone().text()).toBe(200);
       expect(await saved.json()).toMatchObject({ id: created.id, name: 'REST Ada', licencePlate: 'T1-123' });
-      expect(designCalls).toBe(template.structuralPath === 'design' ? 3 : 0);
+      expect(workflowCalls).toBe(template.structuralPath === 'workflow' ? 3 : 0);
     }
   }
 }, 120_000);

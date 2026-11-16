@@ -1591,7 +1591,7 @@ describe('host design action durable boundary', () => {
   });
   const host = (actionId = '1'): CookbookToolContext => ({
     ...context,
-    workflowAction: { application: 'c6', runId: 'design-run', actionId },
+    workflowAction: { application: 'c6', runId: 'workflow-run', actionId },
   });
   const reopenEditor = async (store?: AppModelHistoryStore) => {
     editor = await createAppModelEditor({

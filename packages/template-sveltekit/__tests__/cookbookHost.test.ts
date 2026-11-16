@@ -17,8 +17,11 @@ import {
 import { Customer } from '@happyvertical/smrt-commerce';
 import {
   field,
+  getAiRun,
   getChangesSince,
+  getRunTrajectory,
   ObjectRegistry,
+  readAiRunCheckpoint,
   SmrtCollection,
   SmrtObject,
   smrt,
@@ -71,61 +74,55 @@ import { createCookbookHostState } from '../host/state.js';
 
 const checkpointFault = vi.hoisted(() => ({
   errors: [] as string[],
-  beforeSave: undefined as
+  /** Runs after a step's check returned, before the driver saves it. */
+  afterCheck: undefined as
     | undefined
     | ((
-        state: import('@happyvertical/smrt-inference/server').DesignRunState,
+        result: import('@happyvertical/smrt-workflows').WorkflowStepCheck,
+        context: import('@happyvertical/smrt-workflows').WorkflowCheckContext,
       ) => Promise<void>),
 }));
-vi.mock('@happyvertical/smrt-inference/server', async (importOriginal) => {
+vi.mock('@happyvertical/smrt-workflows', async (importOriginal) => {
   const original =
-    await importOriginal<
-      typeof import('@happyvertical/smrt-inference/server')
-    >();
+    await importOriginal<typeof import('@happyvertical/smrt-workflows')>();
   return {
     ...original,
-    createDesignRunDriver: (
-      options: Parameters<typeof original.createDesignRunDriver>[0],
+    createWorkflowRunJobs: (
+      options: Parameters<typeof original.createWorkflowRunJobs>[0],
     ) =>
-      original.createDesignRunDriver({
+      original.createWorkflowRunJobs({
         ...options,
-        executePass: async (...args) => {
-          try {
-            return await options.executePass(...args);
-          } catch (error) {
-            checkpointFault.errors.push(String(error));
-            throw error;
-          }
-        },
-        passes: options.passes.map((pass) => ({
-          ...pass,
-          check: pass.check
-            ? async (...args: Parameters<NonNullable<typeof pass.check>>) => {
-                try {
-                  return await pass.check!(...args);
-                } catch (error) {
-                  checkpointFault.errors.push(String(error));
-                  throw error;
+        definition: {
+          ...options.definition,
+          steps: options.definition.steps.map((step) => ({
+            ...step,
+            execute: step.execute
+              ? async (
+                  ...args: Parameters<NonNullable<typeof step.execute>>
+                ) => {
+                  try {
+                    return await step.execute!(...args);
+                  } catch (error) {
+                    checkpointFault.errors.push(String(error));
+                    throw error;
+                  }
                 }
-              }
-            : undefined,
-        })),
-      }),
-    createDesignRunStore: (
-      ...args: Parameters<typeof original.createDesignRunStore>
-    ) => {
-      const store = original.createDesignRunStore(...args);
-      return {
-        ...store,
-        async save(
-          state: import('@happyvertical/smrt-inference/server').DesignRunState,
-          revision: number | null,
-        ) {
-          await checkpointFault.beforeSave?.(state);
-          return store.save(state, revision);
+              : undefined,
+            check: step.check
+              ? async (...args: Parameters<NonNullable<typeof step.check>>) => {
+                  try {
+                    const result = await step.check!(...args);
+                    await checkpointFault.afterCheck?.(result, args[1]);
+                    return result;
+                  } catch (error) {
+                    checkpointFault.errors.push(String(error));
+                    throw error;
+                  }
+                }
+              : undefined,
+          })),
         },
-      };
-    },
+      }),
   };
 });
 
@@ -548,7 +545,7 @@ afterEach(async () => {
   for (const controller of activeTurns.keys()) controller.abort();
   await Promise.allSettled(activeTurns.values());
   checkpointFault.errors.length = 0;
-  checkpointFault.beforeSave = undefined;
+  checkpointFault.afterCheck = undefined;
   await host?.shutdown();
   if (http) {
     http.closeAllConnections();
@@ -687,7 +684,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       owner.id,
     );
   });
-  async function durableDesignHost(preview = true, passes: number | null = 3) {
+  async function durableWorkflowHost(preview = true, steps: number | null = 3) {
     const runtime = host.runtime;
     await host.shutdown();
     host.dispose();
@@ -699,7 +696,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       packageName: '@fixture/host-app',
       app: { cookbook, catalog },
       assistant: { ai: { chat: calls } as never },
-      ...(passes === null ? {} : { workflowBudget: { passes } }),
+      ...(steps === null ? {} : { workflowBudget: { steps } }),
     });
     await host.init();
     await request(event('/'), async (e) => json(await host.load(e)));
@@ -724,17 +721,34 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     });
     return calls;
   }
-  async function designState(id: string) {
-    return JSON.parse(
-      String(
-        (
-          await db.query(
-            'SELECT payload FROM _smrt_inference_design_runs WHERE id = ?',
-            id,
-          )
-        ).rows[0].payload,
-      ),
-    );
+  /** A workflow run as core records it: run row plus checkpoint state. */
+  async function workflowState(id: string) {
+    const run = await getAiRun(db, id);
+    const checkpoint = await readAiRunCheckpoint(db, id);
+    const state = checkpoint?.state as {
+      stepIndex: number;
+      phase: 'call' | 'check';
+      outputs: unknown[];
+      pending: { output: unknown } | null;
+      input: Record<string, unknown>;
+    };
+    return {
+      id,
+      status: run?.status,
+      stopReason: run?.stopReason ?? null,
+      budget: run?.budget ?? {},
+      tokens: run?.inclusiveTokens ?? 0,
+      calls: run?.inclusiveCalls ?? 0,
+      definitionVersion: checkpoint?.definitionVersion ?? null,
+      lease: checkpoint?.lease ?? null,
+      stepIndex: state.stepIndex,
+      phase: state.phase,
+      input: state.input as Record<string, any>,
+      /** Accepted outputs, then the output awaiting its check. */
+      outputs: (state.pending
+        ? [...state.outputs.slice(0, state.stepIndex), state.pending.output]
+        : state.outputs) as any[],
+    };
   }
 
   it("binds the assistant's best tier to the strongest ranked ChatGPT account model, never the first catalog entry", async () => {
@@ -882,7 +896,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
   });
 
   it('admits a durable design proposal before a structural tool executes', async () => {
-    await durableDesignHost();
+    await durableWorkflowHost();
     await request(event('/api/onboarding'), host.onboarding);
     await db.query(
       `UPDATE _smrt_cookbook_onboarding SET state = ? WHERE tenant_id = ? AND user_id = ?`,
@@ -901,7 +915,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     const privateReasoning =
       '@happyvertical/smrt-commerce:Customer app.addField expectedRevision 2 cookbook';
     response = (messages) =>
-      messages.some((m) => m.content.includes('Design pass '))
+      messages.some((m) => m.content.includes('Workflow step '))
         ? {
             content: JSON.stringify({
               summary: privateReasoning,
@@ -943,7 +957,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect((await host.cookbookApp(tenantId)).cookbook.recipes).not.toContain(
       'host.memos',
     );
-    const raw = await designState(done?.runId as string);
+    const raw = await workflowState(done?.runId as string);
     expect(raw.outputs).toHaveLength(3);
     for (const output of raw.outputs) {
       expect(output.summary).toBe(privateReasoning);
@@ -975,7 +989,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       runtime,
       packageName: '@fixture/host-app',
       app: { cookbook, catalog },
-      workflowBudget: { passes: 3 },
+      workflowBudget: { steps: 3 },
       assistant: {
         ai: {
           chat: async (messages: never, options: never) => {
@@ -1022,18 +1036,9 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     const runId = (await admitted.json()).run.runId;
     await vi.waitFor(
       async () => {
-        const state = JSON.parse(
-          String(
-            (
-              await db.query(
-                'SELECT payload FROM _smrt_inference_design_runs WHERE id = ?',
-                runId,
-              )
-            ).rows[0].payload,
-          ),
-        );
+        const state = await workflowState(runId);
         expect(state.status).toBe('waiting-approval');
-        expect(state.definition).toBe('cookbook-design/v5/3');
+        expect(state.definitionVersion).toBe('1/steps-3');
         expect(state.outputs[2].operations[0].tool).toBe('app.addField');
       },
       { timeout: 15000 },
@@ -1056,20 +1061,21 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(pending.status).toBe(200);
     const approvals = (await pending.json()).approvals;
     expect(approvals).toHaveLength(1);
-    const before = await designState(runId);
+    const before = await workflowState(runId);
     const decision = await chat(`approvals/${approvals[0].id}/decide`, {
       approve: true,
     });
     expect(decision.status).toBe(200);
     expect((await decision.json()).approval.status).toBe('succeeded');
     await vi.waitFor(
-      async () => expect((await designState(runId)).status).toBe('done'),
+      async () => expect((await workflowState(runId)).status).toBe('done'),
       { timeout: 15000 },
     );
-    const done = await designState(runId);
+    const done = await workflowState(runId);
     expect(done.outputs).toEqual(before.outputs);
-    expect(done.attempts).toEqual(before.attempts);
+    // The approval re-ran only the check: no further model call or usage.
     expect(done.tokens).toBe(before.tokens);
+    expect(done.calls).toBe(3);
     expect(calls).toHaveLength(3);
     const applied = await mcp('tools/call', {
       name: 'app_history',
@@ -1167,7 +1173,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     ).toHaveLength(0);
   });
   it('replaces unsafe canonical business captions separately from private design reasoning', async () => {
-    await durableDesignHost();
+    await durableWorkflowHost();
     const id = await thread();
     let label = 'Tenant Id';
     response = () => ({
@@ -1197,7 +1203,8 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(refused.status).toBe(202);
     const refusedId = (await refused.json()).run.runId;
     await vi.waitFor(
-      async () => expect((await designState(refusedId)).status).toBe('failed'),
+      async () =>
+        expect((await workflowState(refusedId)).status).toBe('failed'),
       { timeout: 15000 },
     );
     // The real core refuses this reserved existing field before a hold exists.
@@ -1217,7 +1224,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     const runId = (await admitted.json()).run.runId;
     await vi.waitFor(
       async () =>
-        expect((await designState(runId)).status).toBe('waiting-approval'),
+        expect((await workflowState(runId)).status).toBe('waiting-approval'),
       { timeout: 15000 },
     );
     const pending = (
@@ -1276,7 +1283,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
   });
 
   it('presents prospective canonical app, recipe and template captions without changing the ledger', async () => {
-    await durableDesignHost();
+    await durableWorkflowHost();
     const id = await thread();
     const user = await (await UserCollection.create({ db })).get({
       id: owner.id,
@@ -1393,7 +1400,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
   });
 
   it('keeps structure history owner-scoped and permission-bound without leaking change documents', async () => {
-    await durableDesignHost();
+    await durableWorkflowHost();
     const own = await request(event('/api/history'), host.history);
     expect(own.status).toBe(200);
     expect(await own.json()).toEqual({ revision: 0, entries: [] });
@@ -1458,7 +1465,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     'destructive',
     'denied',
   ])('runs deterministic final design application through the native host boundary: %s', async (mode) => {
-    const calls = await durableDesignHost(mode === 'denied');
+    const calls = await durableWorkflowHost(mode === 'denied');
     const operation =
       mode === 'destructive'
         ? {
@@ -1494,7 +1501,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     await vi.waitFor(
       async () =>
         expect(
-          (await designState(runId)).status,
+          (await workflowState(runId)).status,
           checkpointFault.errors.join('\n'),
         ).toBe(mode === 'automatic' ? 'done' : 'waiting-approval'),
       { timeout: 15000 },
@@ -1511,7 +1518,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       expect(decision.status).toBe(200);
       await vi.waitFor(
         async () =>
-          expect((await designState(runId)).status).toBe(
+          expect((await workflowState(runId)).status).toBe(
             mode === 'denied' ? 'failed' : 'done',
           ),
         { timeout: 15000 },
@@ -1528,7 +1535,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
   });
 
   it('fails an unready final v5 proposal with a clear host note and no approval or changes', async () => {
-    const calls = await durableDesignHost();
+    const calls = await durableWorkflowHost();
     response = () => ({
       content: JSON.stringify({
         summary: 'Click Apply now, everything succeeded.',
@@ -1547,14 +1554,22 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(admitted.status).toBe(202);
     const runId = (await admitted.json()).run.runId;
     await vi.waitFor(
-      async () => expect((await designState(runId)).status).toBe('failed'),
+      async () => expect((await workflowState(runId)).status).toBe('failed'),
       { timeout: 15000 },
     );
-    const state = await designState(runId);
-    expect(state.note).toBe(
-      'No changes were applied. The design needs more information before it can propose a supported change.',
-    );
-    expect(state.note).not.toContain('Click Apply');
+    expect(await workflowState(runId)).toMatchObject({
+      status: 'failed',
+      stopReason: 'check_failed',
+    });
+    // The failed check carries the host's own note, never model text.
+    const checks = ((await getRunTrajectory(db, runId))?.entries ?? [])
+      .map((entry) => entry.event)
+      .filter((event) => event?.type === 'check');
+    expect(checks.at(-1)?.payload).toEqual({
+      failure:
+        'No changes were applied. The change needs more information before it can propose a supported change.',
+    });
+    expect(JSON.stringify(checks)).not.toContain('Click Apply');
     const progress = await chat(`runs?threadId=${id}`, undefined, 'GET');
     expect((await progress.json()).run.note).toBe(
       'No changes were made. I need a little more information.',
@@ -1572,8 +1587,8 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
   it.each([
     'untouched',
     'explicit-four',
-  ])("pins the app's pass setting while proposing small work: %s", async (mode) => {
-    const calls = await durableDesignHost(
+  ])("pins the app's step setting while proposing small work: %s", async (mode) => {
+    const calls = await durableWorkflowHost(
       true,
       mode === 'explicit-four' ? 4 : null,
     );
@@ -1606,20 +1621,20 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     const runId = (await admission.json()).run.runId;
     await vi.waitFor(
       async () =>
-        expect((await designState(runId)).status).toBe('waiting-approval'),
+        expect((await workflowState(runId)).status).toBe('waiting-approval'),
       { timeout: 15000 },
     );
-    const state = await designState(runId);
+    const state = await workflowState(runId);
     const actual = mode === 'explicit-four' ? 4 : 1;
-    expect(state.input.fixedPasses).toBe(mode === 'explicit-four');
+    expect(state.input.fixedSteps).toBe(mode === 'explicit-four');
     expect(state.outputs).toHaveLength(actual);
-    expect(state.attempts).toHaveLength(actual);
-    expect(state.passIndex).toBe(actual - 1);
+    expect(state.calls).toBe(actual);
+    expect(state.stepIndex).toBe(actual - 1);
     expect(calls).toHaveBeenCalledTimes(actual);
     const progress = await (
       await chat(`runs?threadId=${id}`, undefined, 'GET')
     ).json();
-    expect(progress.run.pass).toMatchObject({ index: actual, count: actual });
+    expect(progress.run.step).toMatchObject({ index: actual, count: actual });
     const { approvals } = await (
       await chat(`threads/${id}/approvals`, undefined, 'GET')
     ).json();
@@ -1632,7 +1647,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
   });
 
   it('replays one actual proposal across same-list native action holds without another model turn', async () => {
-    const calls = await durableDesignHost(true, null);
+    const calls = await durableWorkflowHost(true, null);
     const operations = [
       {
         tool: 'app.addField',
@@ -1705,8 +1720,8 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
         args: operation.args,
         context: { workflowAction: { runId, actionId: String(index) } },
       });
-      expect(await designState(runId)).toMatchObject({
-        passIndex: 0,
+      expect(await workflowState(runId)).toMatchObject({
+        stepIndex: 0,
         phase: 'check',
         outputs: [expect.any(Object)],
       });
@@ -1716,17 +1731,30 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       ).toBe(200);
     }
     await vi.waitFor(
-      async () => expect((await designState(runId)).status).toBe('done'),
+      async () => expect((await workflowState(runId)).status).toBe('done'),
       { timeout: 15000 },
     );
-    const done = await designState(runId);
+    const done = await workflowState(runId);
     expect(done).toMatchObject({
-      passIndex: 0,
+      stepIndex: 0,
       phase: 'check',
       outputs: [expect.any(Object)],
-      attempts: [expect.any(Object)],
     });
     expect(done.input.results).toHaveLength(4);
+    // One hold per gated action, each its own approval in the run.
+    const approvals = ((await getRunTrajectory(db, runId))?.entries ?? [])
+      .map((entry) => entry.event)
+      .filter((event) => event?.type === 'approval');
+    expect(approvals.map((event) => event?.status)).toEqual([
+      'requested',
+      'approved',
+      'requested',
+      'approved',
+      'requested',
+      'approved',
+      'requested',
+      'approved',
+    ]);
     expect(calls).toHaveBeenCalledTimes(1);
     expect(
       (await mcp('tools/call', { name: 'app_history', arguments: {} })).body
@@ -1737,7 +1765,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
   });
 
   it('records approval while stopped and waits for explicit Resume before applying the same hold', async () => {
-    const calls = await durableDesignHost(true, null);
+    const calls = await durableWorkflowHost(true, null);
     response = () => ({
       content: JSON.stringify({
         summary: 'Add Paused note.',
@@ -1767,7 +1795,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     const runId = (await admitted.json()).run.runId;
     await vi.waitFor(
       async () =>
-        expect((await designState(runId)).status).toBe('waiting-approval'),
+        expect((await workflowState(runId)).status).toBe('waiting-approval'),
       { timeout: 15000 },
     );
     const holds = (
@@ -1775,9 +1803,9 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     ).approvals;
     expect(holds).toHaveLength(1);
     expect(holds[0].summary).toBe('Add Paused note to Customers.');
-    expect(await designState(runId)).toMatchObject({
+    expect(await workflowState(runId)).toMatchObject({
       phase: 'check',
-      passIndex: 0,
+      stepIndex: 0,
       outputs: [expect.any(Object)],
     });
     expect((await chat(`runs/${runId}/stop`, {})).status).toBe(200);
@@ -1790,7 +1818,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       status: 'approved',
       summary: 'Add Paused note to Customers.',
     });
-    expect((await designState(runId)).status).toBe('stopped');
+    expect((await workflowState(runId)).status).toBe('stopped');
     expect(
       (await mcp('tools/call', { name: 'app_history', arguments: {} })).body
         .result.structuredContent.changes,
@@ -1840,7 +1868,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     }
 
     await vi.waitFor(
-      async () => expect((await designState(runId)).status).toBe('done'),
+      async () => expect((await workflowState(runId)).status).toBe('done'),
       { timeout: 15000 },
     );
     expect(
@@ -1896,7 +1924,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
   });
 
   it('recovers the exact applied result after simulated worker death before the final checkpoint', async () => {
-    const calls = await durableDesignHost(false, null);
+    const calls = await durableWorkflowHost(false, null);
     response = () => ({
       content: JSON.stringify({
         summary: 'Add Visit note.',
@@ -1921,33 +1949,17 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     const paused = new Promise<void>((resolve) => {
       release = resolve;
     });
-    let checkpoint!: (
-      state: import('@happyvertical/smrt-inference/server').DesignRunState,
-    ) => void;
-    const reached = new Promise<
-      import('@happyvertical/smrt-inference/server').DesignRunState
-    >((resolve) => {
-      checkpoint = resolve;
-    });
-    let captured:
-      | import('@happyvertical/smrt-inference/server').DesignRunState
-      | undefined;
-    checkpointFault.beforeSave = async (state) => {
-      if (
-        state.definition === 'cookbook-design/v5/4' &&
-        state.phase === 'check' &&
-        state.passIndex === 0 &&
-        state.status === 'done'
-      ) {
-        checkpointFault.beforeSave = undefined;
-        captured = structuredClone(state);
-        checkpoint(captured);
+    let captured: Record<string, unknown> | undefined;
+    // The worker dies after the check applied the change through core and
+    // before the driver saved the step: the check's result is never saved.
+    checkpointFault.afterCheck = async (result) => {
+      if (result.complete) {
+        checkpointFault.afterCheck = undefined;
+        captured = structuredClone(result.input) as Record<string, unknown>;
         await paused;
       }
     };
-    const oldHost = host;
-    const oldDb = db;
-    let stopping: Promise<void> | undefined;
+    let rescuer: TaskRunner | undefined;
     try {
       const id = await thread();
       const admission = await chat('runs', {
@@ -1958,49 +1970,50 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       const runId = (await admission.json()).run.runId;
       await vi.waitFor(
         async () => {
-          const current = await designState(runId);
+          const current = await workflowState(runId);
           if (current.status === 'failed')
-            throw new Error(
-              `${current.note} ${checkpointFault.errors.join('\n')} ${JSON.stringify({ pass: current.passIndex, phase: current.phase, validationErrors: current.validationErrors, hasInvalidOutput: current.invalidOutput !== undefined })}`,
-            );
+            throw new Error(checkpointFault.errors.join('\n'));
           expect(captured).toBeDefined();
         },
         { timeout: 15000 },
       );
-      const uncommitted = await reached;
-      const before = await designState(runId);
+      const before = await workflowState(runId);
       expect(before).toMatchObject({
-        status: 'checking',
+        status: 'running',
         phase: 'check',
-        passIndex: 0,
+        stepIndex: 0,
       });
-      expect(before.leaseRevision).toBeTypeOf('number');
-      expect(before.leaseUntil).toBeTypeOf('number');
+      expect(JSON.parse(String(before.lease))).toMatchObject({
+        holder: expect.any(String),
+      });
+      // The change is applied, its step is not saved, its job still runs.
+      expect(
+        (await mcp('tools/call', { name: 'app_history', arguments: {} })).body
+          .result.structuredContent.changes,
+      ).toHaveLength(1);
       expect((await chat(`runs/${runId}/resume`, {})).status).toBe(409);
       const prior = (
-        await oldDb.query(
-          "SELECT id, worker_id, attempts FROM _smrt_jobs WHERE object_id = ? AND status = 'running'",
+        await db.query(
+          "SELECT id, worker_id, attempts FROM _smrt_jobs WHERE dedupe_key = ? AND status = 'running'",
           runId,
         )
       ).rows[0];
       expect(prior.worker_id).toBeTypeOf('string');
-      stopping = oldHost.shutdown();
+      // The worker dies: its liveness ends. A second real runner (claim
+      // fencing on, the same registered handler) recovers its job.
       unregisterLiveWorker(String(prior.worker_id));
-      await (await SmrtWorkerCollection.create({ db: oldDb })).expireWorker(
+      await (await SmrtWorkerCollection.create({ db })).expireWorker(
         String(prior.worker_id),
       );
-      db = await getDatabase({
-        type: 'sqlite',
-        url: join(stateDirectory, 'crash.sqlite'),
+      rescuer = new TaskRunner({
+        concurrency: 1,
+        queues: ['default'],
+        retention: false,
+        claimFencing: true,
+        pollInterval: 10,
       });
-      expect(db).not.toBe(oldDb);
-      host = createCookbookHost({
-        runtime: oldHost.runtime,
-        packageName: '@fixture/host-app',
-        app: { cookbook, catalog },
-        assistant: { ai: { chat: calls } as never },
-      });
-      await host.init();
+      await rescuer.initialize(db);
+      await rescuer.start();
       await vi.waitFor(
         async () =>
           expect(
@@ -2013,23 +2026,41 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
           ).toBe('failed'),
         { timeout: 15000 },
       );
-      expect((await designState(runId)).leaseRevision).toBe(
-        before.leaseRevision,
-      );
+      // No lease is cleared to bypass ownership: the stale one is replaced
+      // only by the new job's claim.
+      expect((await workflowState(runId)).lease).toBe(before.lease);
       const resumed = await chat(`runs/${runId}/resume`, {});
       expect(resumed.status).toBe(200);
       await vi.waitFor(
-        async () => expect((await designState(runId)).status).toBe('done'),
+        async () => expect((await workflowState(runId)).status).toBe('done'),
         { timeout: 15000 },
       );
-      const done = await designState(runId);
-      expect(done.input.results).toEqual(
-        (uncommitted.input as { results: unknown[] }).results,
-      );
+      const done = await workflowState(runId);
+      // The replayed check returned the exact committed core result.
+      expect(done.input.results).toEqual(captured?.results);
       expect(done.outputs).toEqual(before.outputs);
-      expect(done.attempts).toEqual(before.attempts);
       expect(done.tokens).toBe(before.tokens);
       expect(done.input.schemaPin).toBe(before.input.schemaPin);
+      // The dead worker wakes up: claim fencing refuses its save, so it
+      // writes nothing over the recovered run.
+      const settledRevision = (await readAiRunCheckpoint(db, runId))?.revision;
+      release();
+      await vi.waitFor(
+        async () =>
+          expect(
+            (
+              await db.query(
+                "SELECT id FROM _smrt_jobs WHERE dedupe_key = ? AND status = 'running'",
+                runId,
+              )
+            ).rows,
+          ).toHaveLength(0),
+        { timeout: 15000 },
+      );
+      expect((await readAiRunCheckpoint(db, runId))?.revision).toBe(
+        settledRevision,
+      );
+      expect((await workflowState(runId)).status).toBe('done');
       const history = await mcp('tools/call', {
         name: 'app_history',
         arguments: {},
@@ -2037,27 +2068,22 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       expect(history.body.result.structuredContent.changes).toHaveLength(1);
       expect(calls).toHaveBeenCalledTimes(1);
       const claims = await db.query(
-        'SELECT id, attempts FROM _smrt_jobs WHERE object_id = ?',
+        'SELECT id, attempts FROM _smrt_jobs WHERE dedupe_key = ?',
         runId,
       );
       expect(claims.rows).toHaveLength(2);
     } finally {
-      checkpointFault.beforeSave = undefined;
+      checkpointFault.afterCheck = undefined;
       release();
-      await stopping;
-      if (host !== oldHost) {
-        await host.shutdown();
-        oldHost.dispose();
-        await oldDb.close?.();
-      }
+      await rescuer?.stop();
     }
   });
 
   it.each([
-    1, 20,
-  ])("resumes the same design run with the app's current aggregate token cap %s and retained usage", async (cap) => {
-    // The app's setting for the design workflow's budget: a new host with
-    // the new value, as a redeploy would bring.
+    1, 10_000_000,
+  ])("stops at the app's token cap and resumes the same workflow run under its current cap %s", async (cap) => {
+    // The app's setting for the workflow's budget: a new host with the new
+    // value, as a redeploy would bring.
     async function setCap(value: number) {
       const runtime = host.runtime;
       await host.shutdown();
@@ -2080,10 +2106,10 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       });
       await host.init();
     }
-    await setCap(2);
+    await setCap(1);
     const id = await thread();
     response = (messages) =>
-      messages.some((m) => m.content.includes('Design pass '))
+      messages.some((m) => m.content.includes('Workflow step '))
         ? {
             content: JSON.stringify({
               summary: 'No changes applied.',
@@ -2099,47 +2125,47 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     const events = await turn(id, 'Review the Memos setup');
     const runId = events.find((e) => e.type === 'done')?.runId;
     expect(runId).toBeTruthy();
-    async function state() {
-      const row = (
-        await db.query(
-          'SELECT payload FROM _smrt_inference_design_runs WHERE id = ? AND owner_id = ? AND tenant_id = ?',
-          runId,
-          owner.id,
-          tenantId,
-        )
-      ).rows[0];
-      return JSON.parse(String(row.payload));
-    }
+    // The step's first call cannot be reserved within one token: the run
+    // stops (resumable) with the limit's reason before any model call.
     await vi.waitFor(
       async () => {
-        expect((await state()).status).toBe('stopped');
+        expect(await workflowState(runId as string)).toMatchObject({
+          status: 'stopped',
+          stopReason: 'max_tokens',
+        });
         const active = await db.query(
-          "SELECT id FROM _smrt_jobs WHERE object_id = ? AND status = 'running'",
+          "SELECT id FROM _smrt_jobs WHERE dedupe_key = ? AND status = 'running'",
           runId,
         );
         expect(active.rows).toHaveLength(0);
       },
       { timeout: 15000 },
     );
-    const before = await state();
+    const before = await workflowState(runId as string);
     expect(before.input.listCatalog).toBeUndefined();
-    expect(before.phase).toBe('check');
-    expect(before.tokens).toBe(2);
+    expect(before.calls).toBe(0);
     await setCap(cap);
     const resumed = await chat(`runs/${runId}/resume`, {});
-    expect(resumed.status).toBe(200);
-    await vi.waitFor(
-      async () => {
-        const after = await state();
-        expect(after.id).toBe(before.id);
-        expect(after.definition).toBe(before.definition);
-        expect(after.budget.maxTokens).toBe(cap);
-        expect(after.tokens).toBeGreaterThanOrEqual(before.tokens);
-        expect(after.status).toBe(cap < before.tokens ? 'stopped' : 'done');
-        if (cap < before.tokens) expect(after.tokens).toBe(before.tokens);
-      },
-      { timeout: 15000 },
-    );
+    if (cap === 1) {
+      // A budget stop resumes only with the stopping limit raised.
+      expect(resumed.status).toBe(409);
+      expect(await workflowState(runId as string)).toMatchObject({
+        status: 'stopped',
+        stopReason: 'max_tokens',
+        calls: 0,
+      });
+    } else {
+      expect(resumed.status).toBe(200);
+      await vi.waitFor(
+        async () => {
+          const after = await workflowState(runId as string);
+          expect(after.budget.maxTokens).toBe(cap);
+          expect(after.status).toBe('done');
+          expect(after.calls).toBeGreaterThan(0);
+        },
+        { timeout: 15000 },
+      );
+    }
     const messages = await (
       await chat(`threads/${id}/messages`, undefined, 'GET')
     ).json();
