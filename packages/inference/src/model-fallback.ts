@@ -20,7 +20,12 @@ export interface EngineExecution {
   requestedModel?: string;
   effort?: ReasoningEffort;
   durationMs: number;
+  /** Input plus output; unknown when the engine omits it. */
   tokens?: number;
+  /** The input part of `tokens`, when the engine reports the split. */
+  inputTokens?: number;
+  /** The output part of `tokens`, when the engine reports the split. */
+  outputTokens?: number;
   toolCalls: number;
   fallback?: { from: string; to: string; reason: 'plan-model-refused' };
 }

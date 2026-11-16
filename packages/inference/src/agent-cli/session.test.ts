@@ -438,7 +438,9 @@ it('keeps unexpected structured-output tools forbidden and captures runtime mode
         usage: { input_tokens: 15, output_tokens: 5 },
       }),
     ),
-  ).toEqual([{ type: 'done', ok: true, tokens: 20 }]);
+  ).toEqual([
+    { type: 'done', ok: true, tokens: 20, inputTokens: 15, outputTokens: 5 },
+  ]);
 });
 
 it('includes Anthropic cache usage without double-counting Codex cached input', () => {
@@ -455,7 +457,9 @@ it('includes Anthropic cache usage without double-counting Codex cached input', 
         },
       }),
     ),
-  ).toEqual([{ type: 'done', ok: true, tokens: 135 }]);
+  ).toEqual([
+    { type: 'done', ok: true, tokens: 135, inputTokens: 130, outputTokens: 5 },
+  ]);
   expect(
     codexParser()(
       JSON.stringify({
@@ -463,7 +467,9 @@ it('includes Anthropic cache usage without double-counting Codex cached input', 
         usage: { input_tokens: 100, output_tokens: 5, cached_input_tokens: 80 },
       }),
     ),
-  ).toEqual([{ type: 'done', ok: true, tokens: 105 }]);
+  ).toEqual([
+    { type: 'done', ok: true, tokens: 105, inputTokens: 100, outputTokens: 5 },
+  ]);
   expect(
     claudeParser()(
       JSON.stringify({

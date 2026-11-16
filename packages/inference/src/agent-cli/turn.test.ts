@@ -632,6 +632,8 @@ else {console.log(JSON.stringify({type:'system',subtype:'init',session_id:'runti
         requestedModel: 'opus',
         effort: 'max',
         tokens: 42,
+        inputTokens: 30,
+        outputTokens: 12,
         fallback: { from: 'fable', to: 'opus', reason: 'plan-model-refused' },
       }),
     );
@@ -767,6 +769,8 @@ console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:10,output_
       engine: 'codex',
       requestedModel: 'verified-model',
       tokens: 12,
+      inputTokens: 10,
+      outputTokens: 2,
     }),
   );
 });

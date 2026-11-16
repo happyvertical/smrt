@@ -355,6 +355,8 @@ async function runAgentTurnImpl(
   let toolCalls = 0;
   let reportedModel: string | undefined;
   let reportedTokens: number | undefined;
+  // The input/output split, kept only while every report carried it.
+  let reportedSplit: { input: number; output: number } | null | undefined;
   const limits = {
     ...DEFAULT_AGENT_LIMITS,
     ...options.limits,
@@ -637,8 +639,18 @@ async function runAgentTurnImpl(
           reportedModel = event.model;
           return;
         case 'done':
-          if (event.tokens !== undefined)
+          if (event.tokens !== undefined) {
             reportedTokens = (reportedTokens ?? 0) + event.tokens;
+            reportedSplit =
+              reportedSplit !== null &&
+              event.inputTokens !== undefined &&
+              event.outputTokens !== undefined
+                ? {
+                    input: (reportedSplit?.input ?? 0) + event.inputTokens,
+                    output: (reportedSplit?.output ?? 0) + event.outputTokens,
+                  }
+                : null;
+          }
           finished = event;
           if (!event.ok && event.error === 'tool_host_policy') {
             emit({
@@ -827,6 +839,12 @@ async function runAgentTurnImpl(
       durationMs: Date.now() - startedAt,
       toolCalls,
       ...(reportedTokens !== undefined ? { tokens: reportedTokens } : {}),
+      ...(reportedSplit
+        ? {
+            inputTokens: reportedSplit.input,
+            outputTokens: reportedSplit.output,
+          }
+        : {}),
     };
     // Native commands can see their process environment. Buffer this mode's
     // answer until a tool/message boundary so split credentials cannot escape.

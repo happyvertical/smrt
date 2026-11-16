@@ -391,9 +391,12 @@ of at least that timeout plus one minute, retaining owner holder/scopes and
 revocation at exit. CLI usage is recorded only when input/output token counts
 are reported, otherwise unknown. `host.recordExecution(execution)` receives an
 `EngineExecution` (engine, runtime-reported model when known, requested model,
-effort, duration, tool count, tokens when known, fallback). It is the host's
+effort, duration, tool count, tokens when known with their `inputTokens` /
+`outputTokens` split when every report carried it, fallback). It is the host's
 record; it is never stored on a message (a CLI session message carries only
-`cliSession`). `createChatGPTModel` reports the same shape.
+`cliSession`). `createChatGPTModel` reports the same shape (total only). Chat
+records a CLI turn as one tracked call of its turn run from this record
+([assistant turn runs](../../chat/agents/assistant-turn-runs.md)).
 
 Both invocation adapters wire `runWithModelFallback` (`model-fallback.ts`)
 when a host supplies a scoped fallback store and the next model in the tier
