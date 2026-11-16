@@ -61,10 +61,10 @@ import {
 import {
   createWorkerKey,
   isWorkerAlive,
-  offLoopEligible,
+  type LivenessConnectionPlan,
+  planLivenessConnection,
   registerLiveWorker,
   resolveEngine,
-  resolveUrl,
   tuneSqliteForConcurrency,
   unregisterLiveWorker,
 } from './worker-liveness.js';
@@ -164,6 +164,10 @@ export interface TaskRunnerEvents {
   'runner:started': () => void;
   'runner:stopped': () => void;
   'runner:error': (error: Error) => void;
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -444,12 +448,27 @@ export class TaskRunner extends EventEmitter {
     // Renew the worker lease. Prefer an off-loop worker thread so a CPU-bound
     // synchronous handler can never starve renewal (#1474); fall back to
     // main-loop renewal for engines a second connection can't reach
-    // (in-memory SQLite, DuckDB) or if the thread fails to start.
-    if (offLoopEligible(this.db as DatabaseInterface)) {
-      const threadStarted = await this.startLivenessThread();
-      if (!threadStarted) this.startLeaseRenewal();
-    } else {
+    // (in-memory SQLite, DuckDB), for SQLite when no second connection on the
+    // runtime's own engine is available (#4978), or if the thread fails to
+    // start.
+    const plan = planLivenessConnection(this.db as DatabaseInterface);
+    if (plan.kind === 'none') {
+      // Warn only where a thread used to run and now cannot; engines that never
+      // had a usable second connection keep renewing on the main loop quietly.
+      const log = plan.degraded ? this.logger.warn : this.logger.debug;
+      log.call(
+        this.logger,
+        `Liveness thread not used: ${plan.reason}. Renewing the worker lease on the main loop; a long synchronous handler can delay renewal, so keep leaseTtlMs well above the longest synchronous section.`,
+      );
       this.startLeaseRenewal();
+    } else {
+      const started = await this.startLivenessThread(plan);
+      if (!started.ok) {
+        this.logger.warn(
+          `Liveness thread did not start (${started.reason}); renewing the worker lease on the main loop.`,
+        );
+        this.startLeaseRenewal();
+      }
     }
 
     // Start polling loop
@@ -1676,8 +1695,10 @@ export class TaskRunner extends EventEmitter {
    * false if the thread can't be resolved or fails to start, so the caller can
    * fall back to main-loop renewal.
    */
-  private async startLivenessThread(): Promise<boolean> {
-    if (!this.db) return false;
+  private async startLivenessThread(
+    plan: Exclude<LivenessConnectionPlan, { kind: 'none' }>,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    if (!this.db) return { ok: false, reason: 'no database' };
     let entry: string;
     try {
       // Resolve by package subpath, not as a sibling of this module: the bundle
@@ -1685,24 +1706,35 @@ export class TaskRunner extends EventEmitter {
       entry = (
         import.meta as unknown as { resolve(s: string): string }
       ).resolve('@happyvertical/smrt-jobs/worker-liveness-thread');
-    } catch {
-      return false;
+    } catch (error) {
+      return {
+        ok: false,
+        reason: `worker entry not resolvable: ${errorText(error)}`,
+      };
     }
 
     let worker: Worker;
     try {
       worker = new Worker(new URL(entry), {
         workerData: {
-          url: resolveUrl(this.db),
-          type: resolveEngine(this.db),
+          ...(plan.kind === 'reopen'
+            ? {
+                url: '',
+                reopen: plan.reopen,
+                expectedEngine: plan.engine,
+              }
+            : { url: plan.url, type: plan.type }),
           workerKey: this.workerKey,
           leaseTtlMs: this.effectiveLeaseTtlMs,
           leaseTickMs: this.config.leaseTickMs,
           queues: this.config.queues,
         },
       });
-    } catch {
-      return false;
+    } catch (error) {
+      return {
+        ok: false,
+        reason: `worker could not be spawned: ${errorText(error)}`,
+      };
     }
     const exited = new Promise<void>((resolve) => {
       worker.once('exit', () => resolve());
@@ -1710,6 +1742,7 @@ export class TaskRunner extends EventEmitter {
 
     // Bound the handshake so a hung connect inside the thread (slow/unreachable
     // database) can't stall start() forever — fall back to main-loop renewal.
+    let failure = 'thread exited before it was ready';
     const handshake = await new Promise<'ready' | 'failed' | 'timeout'>(
       (resolve) => {
         const onMessage = (message: unknown) => {
@@ -1721,11 +1754,13 @@ export class TaskRunner extends EventEmitter {
             typeof message === 'object' &&
             (message as { type?: string }).type === 'error'
           ) {
+            failure = String((message as { message?: unknown }).message);
             cleanup();
             resolve('failed');
           }
         };
-        const onFail = () => {
+        const onFail = (error?: unknown) => {
+          if (error instanceof Error) failure = error.message;
           cleanup();
           resolve('failed');
         };
@@ -1749,12 +1784,15 @@ export class TaskRunner extends EventEmitter {
     if (handshake === 'timeout') {
       // A hung thread will not exit on its own; terminating is the last resort.
       await worker.terminate().catch(() => {});
-      return false;
+      return {
+        ok: false,
+        reason: `no ready signal within ${LIVENESS_THREAD_START_TIMEOUT_MS} ms`,
+      };
     }
     if (handshake === 'failed') {
       // A failed startup leaves the thread nothing to wait on: it exits.
       await retireLivenessWorker(worker, exited);
-      return false;
+      return { ok: false, reason: failure };
     }
 
     this.livenessWorker = worker;
@@ -1765,7 +1803,7 @@ export class TaskRunner extends EventEmitter {
     // renewal so the lease keeps being renewed.
     worker.once('error', () => this.handleLivenessThreadLoss(worker));
     worker.once('exit', () => this.handleLivenessThreadLoss(worker));
-    return true;
+    return { ok: true };
   }
 
   private handleLivenessThreadLoss(worker: Worker): void {

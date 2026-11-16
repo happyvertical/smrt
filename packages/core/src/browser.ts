@@ -818,5 +818,11 @@ export {
   resolveOperationPermissionAlias,
 } from './operation-permission.js';
 export * from './runtime-exposure.js';
+// Plain numbers shared with the jobs and app-runtime packages (#4978).
+export {
+  SQLITE_BUSY_TIMEOUT_MS,
+  SQLITE_COLLECTION_BUSY_TIMEOUT_MS,
+  setBusyTimeoutIfUnset,
+} from './sqlite-lock-wait.js';
 // Presentation metadata helpers (#3599): widget hints, display label, selector lookup
 export * from './ui-metadata.js';

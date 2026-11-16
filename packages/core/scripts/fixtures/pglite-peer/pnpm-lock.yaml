@@ -12,8 +12,8 @@ importers:
         specifier: 0.5.15
         version: 0.5.15
       '@happyvertical/sql':
-        specifier: 0.112.3
-        version: 0.112.3(@electric-sql/pglite@0.5.15)
+        specifier: 0.113.0
+        version: 0.113.0(@electric-sql/pglite@0.5.15)
 
 packages:
 
@@ -51,8 +51,8 @@ packages:
   '@electric-sql/pglite@0.5.15':
     resolution: {integrity: sha512-ERZWgaRTxueGV4cvL1tfpAOzFCWTXoUtbCBqnf2FhHDVs/so9eAKaanvrwWF9Dntx7BYsmFQujVQ0/B4S8Mmiw==}
 
-  '@happyvertical/sql@0.112.3':
-    resolution: {integrity: sha512-sVtbCvjdMw6CbVbSDtYFDHpmnzapq7Nf0Oy2s2JjHa9U75Lzh76SfT6zs+qc+TTTexG/zeVU3ZiEoq7S8dSVRg==}
+  '@happyvertical/sql@0.113.0':
+    resolution: {integrity: sha512-ILlMvBWK4sK+mlvqp8lSX5r9z50YWkbv5yc6oWtIapNJwSE0c9cEOmNxr7j0CzyllV8h51dl9F718UwYr1LXQA==}
     hasBin: true
     peerDependencies:
       '@electric-sql/pglite': '>=0.5.0 <1'
@@ -66,8 +66,8 @@ packages:
       '@sqliteai/sqlite-vector':
         optional: true
 
-  '@happyvertical/utils@0.112.3':
-    resolution: {integrity: sha512-M1DFbB61AOxCIyK0VejrIwZHQXZ54iDPsDSHInoDdmU8mwNKrWdqcQbwWvJeNwYxjFpxKqMZYJloTIe7WbjJIw==}
+  '@happyvertical/utils@0.113.0':
+    resolution: {integrity: sha512-p3vmEGX1NoanmtCTxHKnHKE5rm10gxvzZ9dJcA29U8BwHzcY4RwZsbxaAHaSMG34f9sxsXleqJBHG457R6dSjA==}
     hasBin: true
 
   '@libsql/client@0.17.2':
@@ -347,10 +347,10 @@ snapshots:
 
   '@electric-sql/pglite@0.5.15': {}
 
-  '@happyvertical/sql@0.112.3(@electric-sql/pglite@0.5.15)':
+  '@happyvertical/sql@0.113.0(@electric-sql/pglite@0.5.15)':
     dependencies:
       '@duckdb/node-api': 1.4.3-r.3
-      '@happyvertical/utils': 0.112.3
+      '@happyvertical/utils': 0.113.0
       '@libsql/client': 0.17.2
       pg: 8.23.1
       sqlite-vss: 0.1.2
@@ -362,7 +362,7 @@ snapshots:
       - pg-native
       - utf-8-validate
 
-  '@happyvertical/utils@0.112.3':
+  '@happyvertical/utils@0.113.0':
     dependencies:
       '@paralleldrive/cuid2': 3.3.0
       '@types/pluralize': 0.0.33

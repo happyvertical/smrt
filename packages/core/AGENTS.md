@@ -112,6 +112,7 @@ and repository rules.
   PostgreSQL schema version is not yet stamped: inside a caller's transaction it
   is held until that transaction ends (#2868). Application tables still require migrations;
   runtime verification checks table existence and the last migrate fingerprint.
+- Collection connections wait for locks: [agents/sqlite-lock-wait.md](agents/sqlite-lock-wait.md).
 - Manifest generation fails closed on scanner errors, including unresolved
   decorator spreads. Never emit partial, default-open registration.
 - Generated registration repairs bundled class identity using the exact imported
