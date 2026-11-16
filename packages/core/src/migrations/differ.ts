@@ -3882,8 +3882,11 @@ export class SchemaComparer {
               // The re-added column is nullable when the code no longer
               // requires it. That is a change of its own, planned as for an
               // ordinary column (`column.drop-not-null`), never a silent one.
+              // It runs ahead of the drop half, while the column still exists
+              // (`deferredDrops` is ordered), and the CHECK probe projects it
+              // on that live column.
               if (actual !== undefined && dependents.notNull && !colDef.notNull)
-                changes.push(
+                deferredDrops.push(
                   this.buildAlterColumnChange({
                     tableName,
                     colName,
