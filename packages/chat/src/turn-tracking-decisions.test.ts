@@ -33,7 +33,7 @@ afterEach(async () => {
 
 type Decision = { approvalId: string; status: 'approved' | 'refused' };
 
-async function turn(decisions: Decision[]) {
+async function turn(decisions: Decision[] | (() => Promise<Decision[]>)) {
   const tracked = createTrackedAiClient({
     db,
     tenantId: null,
@@ -49,7 +49,8 @@ async function turn(decisions: Decision[]) {
     tracked,
     prompt,
     threadId: 'thread-1',
-    decisions: async () => decisions,
+    decisions:
+      typeof decisions === 'function' ? decisions : async () => decisions,
   });
 }
 
@@ -83,8 +84,9 @@ describe('decisions recorded in the next turn', () => {
     ];
     const query = vi.spyOn(db, 'query');
     const next = await turn(decided);
+    // One lookup of the decided approvals (the waiting check aside).
     const lookups = query.mock.calls.filter(([sql]) =>
-      String(sql).includes("e.status = 'requested'"),
+      String(sql).includes('e.payload_ref IN'),
     );
     expect(lookups).toHaveLength(1);
     query.mockRestore();
@@ -104,5 +106,22 @@ describe('decisions recorded in the next turn', () => {
     const later = await turn(decided);
     expect(await approvalEvents(later.runId)).toEqual([]);
     await later.finish('done');
+  });
+
+  it('reads no decisions while no approval request waits for one', async () => {
+    // Reading them opens the approval store, which may create its table:
+    // a tenant role under database-rls may not (#5005).
+    const decisions = vi.fn(async (): Promise<Decision[]> => []);
+    const first = await turn(decisions);
+    expect(decisions).not.toHaveBeenCalled();
+
+    await first.approvalRequested(
+      { id: 'late', tool: 'chore_delete', callId: 'call-late', summary: 'x' },
+      'call-late',
+    );
+    await first.finish('done');
+    const second = await turn(decisions);
+    await second.finish('done');
+    expect(decisions).toHaveBeenCalledTimes(1);
   });
 });
