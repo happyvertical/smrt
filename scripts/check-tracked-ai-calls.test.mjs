@@ -205,6 +205,21 @@ test('reads regular expression literals as literals, not code', () => {
 
 test('a line comment right after a colon is a comment', () => {
   assert.deepEqual(kinds('const o = { key:// ai.chat(m)\n  value: 1 };\n'), []);
+  assert.deepEqual(kinds('const o = { key://ai.chat(m)\n  value: 1 };\n'), []);
+});
+
+test('a URL in markup is not a comment', () => {
+  assert.deepEqual(kinds('<a href=https://x>{ai.chat(p)}</a>\n'), ['untracked-call']);
+  assert.deepEqual(kinds('<p>see http://x.org/a/b then {ai.chat(p)}</p>\n'), [
+    'untracked-call',
+  ]);
+});
+
+test('a division after a postfix increment or decrement is not a regular expression', () => {
+  assert.deepEqual(kinds('i++ / 2; await ai.chat(p); q / 3;\n'), ['untracked-call']);
+  assert.deepEqual(kinds('i-- / 2; await ai.chat(p); q / 3;\n'), ['untracked-call']);
+  // An operator before a literal still opens one.
+  assert.deepEqual(kinds('const r = a + /ai.chat(m)/.source;\n'), []);
 });
 
 test('known limit: origins are matched by name across the file, not by scope', () => {

@@ -183,6 +183,8 @@ function regexEnd(source, start, before) {
   let k = before.length - 1;
   while (k >= 0 && /\s/.test(before[k])) k -= 1;
   const last = before[k];
+  // A postfix `++` or `--` ends an operand: a division follows it.
+  if ((last === '+' || last === '-') && before[k - 1] === last) return -1;
   if (
     last !== undefined &&
     !REGEX_AFTER_CHAR.has(last) &&
@@ -213,6 +215,23 @@ function regexEnd(source, start, before) {
   return -1;
 }
 
+/** A URL scheme and its colon, ending where a `//` starts. */
+const URL_SCHEME = /(?:^|[^\w$])(?:https?|wss?|ftps?|file):$/i;
+
+/**
+ * Whether the `//` at `start` belongs to a URL in markup, as in
+ * `<a href=https://x>`: right after a URL scheme's colon and followed by the
+ * URL itself, not by a space. Anything else (`key:// note`) is a comment.
+ */
+function urlSlashes(source, start) {
+  const after = source[start + 2];
+  return (
+    after !== undefined &&
+    !/\s/.test(after) &&
+    URL_SCHEME.test(source.slice(Math.max(0, start - 7), start))
+  );
+}
+
 /**
  * Blank comments, string bodies and regular expression literals so prose
  * that names the API is not counted. A template literal keeps its `${...}`
@@ -237,6 +256,11 @@ export function stripNoise(source) {
       const stop = end < 0 ? source.length : end + 2;
       out += blank(source.slice(i, stop));
       i = stop;
+      continue;
+    }
+    if (ch === '/' && next === '/' && urlSlashes(source, i)) {
+      out += '//';
+      i += 2;
       continue;
     }
     if (ch === '/' && next === '/') {
