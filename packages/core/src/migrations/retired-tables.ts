@@ -339,14 +339,20 @@ export function parseCarriedRetiredTable(entry: unknown): RetiredTable {
  * only its own declarations: an entry labelled with another package is
  * refused, never relabelled. An app's merged manifest (with `consumed`, the
  * packages it depends on) carries its own and its dependencies' entries; an
- * entry of a package it no longer depends on is stale and left out.
+ * entry of a package it no longer depends on is stale and left out, or, with
+ * `outside: 'refuse'`, refused (a freshly built manifest, which the consumer
+ * plugin writes from the current dependencies only, never carries one).
  */
 export function readManifestRetiredTables(
   manifest: {
     packageName?: string;
     retiredTables?: unknown;
   },
-  options: { consumed?: Iterable<string>; source?: string } = {},
+  options: {
+    consumed?: Iterable<string>;
+    source?: string;
+    outside?: 'leave-out' | 'refuse';
+  } = {},
 ): RetiredTable[] {
   const list = manifest.retiredTables;
   if (list === undefined) return [];
@@ -363,11 +369,14 @@ export function readManifestRetiredTables(
       out.push(entry);
       continue;
     }
-    if (!consumed)
+    if (consumed?.has(entry.packageName)) {
+      out.push(entry);
+      continue;
+    }
+    if (!consumed || options.outside === 'refuse')
       throw new RetiredTableDeclarationError(
-        `Retired table ${entry.table} in ${source} is labelled ${entry.packageName}, not ${manifest.packageName ?? 'its own package'}. A package's manifest carries only its own retirements.`,
+        `Retired table ${entry.table} in ${source} is labelled ${entry.packageName}, not ${manifest.packageName ?? 'its own package'}${consumed ? ' or a package it depends on (smrtDependencies)' : ''}. A package's manifest carries only its own retirements${consumed ? " and its dependencies'" : ''}.`,
       );
-    if (consumed.has(entry.packageName)) out.push(entry);
   }
   return mergeRetiredTables(out);
 }
@@ -562,6 +571,29 @@ export function registerRetiredTables(
         `Retired table ${entry.table} is labelled ${entry.packageName}, but ${packageName} registered it. A package registers only its own retirements.`,
       );
   slot().set(packageName, mergeRetiredTables(parsed));
+}
+
+/**
+ * Register entries a manifest carries for packages other than its own (an
+ * app's merged manifest carries its dependencies'), each under its own
+ * package. An entry already registered for that package and table is kept:
+ * the same entry arriving through several manifests registers once, and a
+ * carried copy never replaces or shrinks what the package's own manifest
+ * registered. Only the package's own registration replaces its list.
+ * @internal
+ */
+export function addCarriedRetiredTables(list: readonly unknown[]): void {
+  const byPackage = new Map<string, RetiredTable[]>();
+  for (const entry of list.map(parseCarriedRetiredTable)) {
+    const group = byPackage.get(entry.packageName) ?? [];
+    group.push(entry);
+    byPackage.set(entry.packageName, group);
+  }
+  for (const [packageName, entries] of byPackage)
+    slot().set(
+      packageName,
+      mergeRetiredTables(slot().get(packageName), entries),
+    );
 }
 
 /** Every registered declaration, in stable order. */

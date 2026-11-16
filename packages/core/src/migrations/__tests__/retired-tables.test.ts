@@ -371,6 +371,102 @@ describe('a package carries its retirement into manifest, build and registry (#5
     expect(ObjectRegistry.getRetiredTables()).toEqual([]);
   });
 
+  it("registers an app manifest's carried dependency entries under their own package; plan and stamp agree", () => {
+    // A package built as an app (app-shell): its dist/manifest.json carries
+    // the retirements of the packages it depends on.
+    const app = {
+      packageName: '@acme/app',
+      version: '1.0.0',
+      timestamp: 0,
+      smrtDependencies: [PKG],
+      objects: {},
+      retiredTables: [{ ...entry(), packageName: PKG }],
+    };
+    expect(ObjectRegistry.registerPackageManifest(app).loaded).toBe(true);
+    expect(ObjectRegistry.getRetiredTables()).toEqual([
+      { ...entry(), packageName: PKG },
+    ]);
+    // The plan without a build reads the registry; with one, the build's
+    // description; the stamp covers the description's set. All one set.
+    expect(resolveRetiredTables()).toEqual(describeManifestSchema(app).retired);
+    registerBuildSchema(describeManifestSchema(app));
+    expect(resolveRetiredTables()).toEqual(ObjectRegistry.getRetiredTables());
+    expect(describeManifestSchema(app).fingerprint).toBe(
+      computeSchemaFingerprint([], {
+        retired: ObjectRegistry.getRetiredTables(),
+      }),
+    );
+  });
+
+  it('refuses a carried entry of a package outside the manifest dependencies, registering nothing', () => {
+    const forged = {
+      ...entry({ table: 'other_table', lastOwner: '@other/pkg:Old' }),
+      packageName: '@other/pkg',
+    };
+    expect(() =>
+      ObjectRegistry.registerPackageManifest({
+        packageName: '@acme/app',
+        version: '1.0.0',
+        timestamp: 0,
+        smrtDependencies: [PKG],
+        objects: {},
+        retiredTables: [{ ...entry(), packageName: PKG }, forged],
+      }),
+    ).toThrow(
+      /labelled @other\/pkg, not @acme\/app or a package it depends on/,
+    );
+    // Still fully checked: a dependency's entry naming another owner fails.
+    expect(() =>
+      ObjectRegistry.registerPackageManifest({
+        packageName: '@acme/app',
+        version: '1.0.0',
+        timestamp: 0,
+        smrtDependencies: [PKG],
+        objects: {},
+        retiredTables: [
+          {
+            ...entry({ lastOwner: '@other/pkg:OrderDraft' }),
+            packageName: PKG,
+          },
+        ],
+      }),
+    ).toThrow(/belongs to another package/);
+    expect(ObjectRegistry.getRetiredTables()).toEqual([]);
+  });
+
+  it.each([
+    ['own first', true],
+    ['app first', false],
+  ])('collapses an entry arriving through several manifests (%s), and a carried copy never shrinks the own list', (_name, ownFirst) => {
+    const second = entry({
+      table: 'acme_order_notes',
+      lastOwner: `${PKG}:OrderNote`,
+    });
+    const own = manifestFor(packageJson(entry(), second));
+    const carrying = (name: string) => ({
+      packageName: name,
+      version: '1.0.0',
+      timestamp: 0,
+      smrtDependencies: [PKG],
+      objects: {},
+      retiredTables: [{ ...entry(), packageName: PKG }],
+    });
+    const order = ownFirst
+      ? [own, carrying('@acme/app'), carrying('@acme/shell')]
+      : [carrying('@acme/app'), carrying('@acme/shell'), own];
+    for (const manifest of order)
+      ObjectRegistry.registerPackageManifest(manifest);
+    expect(
+      ObjectRegistry.getRetiredTables().map((item) => [
+        item.packageName,
+        item.table,
+      ]),
+    ).toEqual([
+      [PKG, 'acme_order_drafts'],
+      [PKG, 'acme_order_notes'],
+    ]);
+  });
+
   it('describes the build with only the packages it depends on, and stamps the same set', () => {
     const app = {
       packageName: '@acme/app',

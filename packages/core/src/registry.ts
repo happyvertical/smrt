@@ -80,6 +80,7 @@ import {
   loadExternalManifestSyncWithNode,
 } from './manifest/store.js';
 import {
+  addCarriedRetiredTables,
   clearRegisteredRetiredTables,
   getRegisteredRetiredTables,
   type RetiredTable,
@@ -2756,16 +2757,15 @@ export class ObjectRegistry {
     }
 
     // The package's declared table retirements (#5005), which migrate reads
-    // wherever the package is installed.
+    // wherever the package is installed. A package built as an app
+    // (app-shell) writes a merged manifest that also carries the entries of
+    // the packages it depends on (`smrtDependencies`); each keeps its own
+    // package. An entry of any other package is refused.
     if (packageName) {
-      // Checked: a package's manifest carries only its own entries (#5005).
-      registerRetiredTables(
-        packageName,
-        readManifestRetiredTables({
-          packageName,
-          retiredTables: manifest.retiredTables,
-        }),
-      );
+      ObjectRegistry.registerManifestRetiredTables(manifest, {
+        source: sourceLabel,
+        outside: 'refuse',
+      });
     }
 
     verboseLog(
@@ -2825,25 +2825,48 @@ export class ObjectRegistry {
 
   /**
    * Register the retirements a loaded manifest file carries (#5005), checked.
-   * A package's manifest carries only its own; an app's merged manifest
-   * (`consumed`: the packages it depends on) also its dependencies', and an
-   * entry of a package it no longer depends on is left out. Each entry keeps
-   * its own package; each package's list replaces what it registered before.
-   * `registerPackageManifest` does this for a package manifest already.
+   * A package's manifest carries its own; an app's merged manifest also those
+   * of the packages it depends on: `consumed`, or else the manifest's own
+   * `smrtDependencies`. An entry of any other package is left out (stale), or
+   * refused with `outside: 'refuse'`. Each entry keeps its own package. The
+   * manifest's own list replaces what its package registered before; a
+   * carried entry registers once per package and table and never replaces
+   * the package's own list. `registerPackageManifest` does this for a
+   * manifest it loads, refusing outside entries.
    */
   static registerManifestRetiredTables(
-    manifest: { packageName?: string; retiredTables?: unknown },
-    options: { consumed?: Iterable<string>; source?: string } = {},
+    manifest: {
+      packageName?: string;
+      retiredTables?: unknown;
+      smrtDependencies?: readonly string[];
+    },
+    options: {
+      consumed?: Iterable<string>;
+      source?: string;
+      outside?: 'leave-out' | 'refuse';
+    } = {},
   ): void {
-    const entries = readManifestRetiredTables(manifest, options);
-    const packages = new Set(entries.map((entry) => entry.packageName));
+    const consumed =
+      options.consumed ??
+      (Array.isArray(manifest.smrtDependencies)
+        ? manifest.smrtDependencies
+        : undefined);
+    const entries = readManifestRetiredTables(
+      {
+        packageName: manifest.packageName,
+        retiredTables: manifest.retiredTables,
+      },
+      { ...options, ...(consumed ? { consumed } : {}) },
+    );
     // The manifest's own package always replaces its list, empty or not.
-    if (manifest.packageName) packages.add(manifest.packageName);
-    for (const packageName of packages)
+    if (manifest.packageName)
       registerRetiredTables(
-        packageName,
-        entries.filter((entry) => entry.packageName === packageName),
+        manifest.packageName,
+        entries.filter((entry) => entry.packageName === manifest.packageName),
       );
+    addCarriedRetiredTables(
+      entries.filter((entry) => entry.packageName !== manifest.packageName),
+    );
   }
 
   /**

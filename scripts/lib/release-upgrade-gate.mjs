@@ -49,28 +49,15 @@ export function deterministicUuid(key) {
 }
 
 /**
- * Register one built `dist/manifest.json` as CLI discovery does
- * (`loadManifest` in packages/cli/src/discovery/manifest-discovery.ts): the
- * objects, then the table retirements (#5005) through
- * `registerManifestRetiredTables`. A package built as an app (app-shell)
- * writes a merged manifest that also carries the retirements of the packages
- * it consumes (`smrtDependencies`); those are accepted under their own
- * package, and an entry labelled with any other package is still refused.
+ * Register one built `dist/manifest.json`: its objects and its table
+ * retirements (#5005). A package built as an app (app-shell) writes a merged
+ * manifest that also carries the retirements of the packages it depends on
+ * (`smrtDependencies`); `registerPackageManifest` accepts those under their
+ * own package and refuses an entry of any other package.
  */
 export function registerBuiltManifest(core, manifest, source) {
-  const { retiredTables, ...objects } = manifest;
-  const result = core.ObjectRegistry.registerPackageManifest(objects);
+  const result = core.ObjectRegistry.registerPackageManifest(manifest);
   if (!result.loaded) throw new Error(`Could not load manifest ${source}`);
-  if (retiredTables !== undefined)
-    core.ObjectRegistry.registerManifestRetiredTables(
-      { packageName: manifest.packageName, retiredTables },
-      {
-        source,
-        ...(Array.isArray(manifest.smrtDependencies)
-          ? { consumed: manifest.smrtDependencies }
-          : {}),
-      },
-    );
   return result;
 }
 

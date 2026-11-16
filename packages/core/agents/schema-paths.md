@@ -720,15 +720,25 @@ carrying its `packageName`. A malformed declaration fails the build naming the
 table. Every way in checks each entry again (`parseCarriedRetiredTable`,
 `readManifestRetiredTables`) and keeps the entry's own `packageName`:
 
-- `ObjectRegistry.registerPackageManifest()` registers a package manifest's
-  entries; one labelled with another package is refused, never relabelled.
-- The CLI's manifest loader uses `ObjectRegistry.registerManifestRetiredTables()`,
-  the one public way to register a loaded manifest's entries. An app's merged
-  manifest carries its dependencies' entries (`smrtDependencies`); an entry of
-  a package it no longer depends on drops out.
+- `ObjectRegistry.registerPackageManifest()` registers a manifest's entries:
+  its own package's, and, for a package built as an app (app-shell, whose
+  `dist/manifest.json` merges its dependencies'), those of the packages in its
+  `smrtDependencies`. An entry of any other package is refused, never
+  relabelled. The own list replaces what the package registered before; a
+  carried entry registers once per (package, table) and never replaces or
+  shrinks the package's own list, so the same entry arriving through several
+  manifests registers once in either load order.
+- The CLI's manifest loader uses `ObjectRegistry.registerManifestRetiredTables()`
+  with the same rule, except that an entry of a package the app no longer
+  depends on drops out (stale) instead of failing. The release upgrade gate
+  loads each built manifest through `registerPackageManifest`.
 - The consumer plugin rebuilds the merged manifest's list from the current
   dependencies on every build: only the app's own entries stay from the file.
-  A malformed or mislabelled entry in a consumed manifest fails the build.
+  A consumed manifest's entries are read by the `registerPackageManifest` rule;
+  a malformed entry, or one of a package outside that manifest's
+  dependencies, fails the build. A carried entry of a package the app reaches
+  only through another package (not in its own `smrtDependencies`) is left
+  out, because the build description and stamp would not honour it.
 - The bundled build description (`BuildSchema.retired`) and the build stamp
   both read `honouredRetiredTables()` of the manifest, the same set.
 

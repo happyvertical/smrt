@@ -1681,12 +1681,20 @@ async function aggregateTypeManifests(
               `[smrt:consumer] Loaded manifest from ${packageName} (${Object.keys(manifest.objects).length} objects)`,
             );
 
-            // Checked: a package's manifest carries only its own entries,
-            // each labelled with that package (#5005).
+            // Checked (#5005): a package's manifest carries its own entries
+            // and, when it was built as an app (app-shell), those of the
+            // packages it depends on (its `smrtDependencies`), each labelled
+            // with its own package. An entry of any other package is refused.
             retiredTables.push(
               ...readManifestRetiredTables(
                 { packageName, retiredTables: manifest.retiredTables },
-                { source: `the manifest of ${packageName}` },
+                {
+                  source: `the manifest of ${packageName}`,
+                  consumed: Array.isArray(manifest.smrtDependencies)
+                    ? manifest.smrtDependencies
+                    : [],
+                  outside: 'refuse',
+                },
               ),
             );
 
@@ -1791,7 +1799,14 @@ async function aggregateTypeManifests(
   aggregatedManifest.recipes = [...recipes.values()].sort((a, b) =>
     a.id.localeCompare(b.id),
   );
-  const consumedRetired = mergeRetiredTables(retiredTables);
+  // Only entries of the packages this build depends on: what the build
+  // description and stamp honour (`honouredRetiredTables`, by
+  // `smrtDependencies`), and so all that registration accepts. A carried
+  // entry of a package reached only through another package is left out.
+  const consumedPackages = new Set(packages);
+  const consumedRetired = mergeRetiredTables(
+    retiredTables.filter((entry) => consumedPackages.has(entry.packageName)),
+  );
   if (consumedRetired.length > 0)
     aggregatedManifest.retiredTables = consumedRetired;
   return aggregatedManifest;

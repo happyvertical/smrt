@@ -54,9 +54,9 @@ describe('smrtConsumer carries checked retirements (#5005)', () => {
     );
   const merged = () =>
     JSON.parse(readFileSync(join(tmpDir, '.smrt', 'manifest.json'), 'utf-8'));
-  const plugin = () =>
+  const plugin = (packages = ['@test/pkg']) =>
     smrtConsumer({
-      packages: ['@test/pkg'],
+      packages,
       projectRoot: tmpDir,
       disableScanning: true,
       generateTypes: false,
@@ -113,6 +113,67 @@ describe('smrtConsumer carries checked retirements (#5005)', () => {
         `${item.packageName}:${item.table}`,
     );
     expect(tables).toEqual(['@fixture/app:app_old', '@test/pkg:pkg_old']);
+  });
+
+  describe('a consumed package built as an app (app-shell)', () => {
+    // Its dist/manifest.json carries the entries of the packages it depends
+    // on, each labelled with its own package.
+    const appShellManifest = (retiredTables: unknown[]) =>
+      writeFileSync(
+        join(tmpDir, 'node_modules', '@test', 'pkg', 'dist', 'manifest.json'),
+        JSON.stringify({
+          packageName: '@test/pkg',
+          objects: {},
+          smrtDependencies: ['@test/dep'],
+          retiredTables,
+        }),
+      );
+    const installDep = () => {
+      const dir = join(tmpDir, 'node_modules', '@test', 'dep');
+      mkdirSync(join(dir, 'dist'), { recursive: true });
+      writeFileSync(
+        join(dir, 'package.json'),
+        JSON.stringify({
+          name: '@test/dep',
+          version: '2.0.0',
+          exports: { '.': './dist/index.js' },
+        }),
+      );
+      writeFileSync(join(dir, 'dist', 'index.js'), 'export {};\n');
+      writeFileSync(
+        join(dir, 'dist', 'manifest.json'),
+        JSON.stringify({
+          packageName: '@test/dep',
+          objects: {},
+          retiredTables: [entry('@test/dep', 'dep_old')],
+        }),
+      );
+    };
+
+    it('keeps a carried entry once, under its own package, when the app depends on that package too', async () => {
+      installDep();
+      appShellManifest([entry('@test/dep', 'dep_old')]);
+      await buildStart(plugin(['@test/pkg', '@test/dep']));
+      expect(
+        merged().retiredTables.map(
+          (item: { table: string; packageName: string }) =>
+            `${item.packageName}:${item.table}`,
+        ),
+      ).toEqual(['@test/dep:dep_old']);
+    });
+
+    it('leaves out a carried entry of a package the app reaches only through it, as the build stamp would', async () => {
+      appShellManifest([entry('@test/dep', 'dep_old')]);
+      await buildStart(plugin());
+      expect(merged().retiredTables).toBeUndefined();
+    });
+
+    it('refuses a carried entry of a package outside its dependencies', async () => {
+      appShellManifest([entry('@other/pkg', 'pkg_forged')]);
+      await expect(buildStart(plugin())).rejects.toThrow(
+        /labelled @other\/pkg, not @test\/pkg or a package it depends on/,
+      );
+    });
   });
 
   it.each([
