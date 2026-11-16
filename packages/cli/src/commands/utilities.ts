@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import {
   collectConfirmedRecomputes,
   collectMigrateRecordInput,
+  confirmedRetirementsOf,
   ensureDeferredSystemTableCompatibility,
   ensureSystemTables,
   generateDDLForEngine,
@@ -25,9 +26,10 @@ import {
   recordSuccessfulMigrate,
   SchemaComparer,
 } from '@happyvertical/smrt-core';
-import type {
-  MigrationDefinition,
-  MigrationResult,
+import {
+  type MigrationDefinition,
+  type MigrationResult,
+  unusedRetireConfirmations,
 } from '@happyvertical/smrt-core/migrations';
 import { renderForeignKeyAddStatements } from '@happyvertical/smrt-core/schema';
 import type { DomainKnowledgeManifest } from '@happyvertical/smrt-types';
@@ -172,6 +174,19 @@ function migrationResultFailure(
     results.find((result) => !result.success && !result.rolled_back) ??
     results.find((result) => !result.success)
   );
+}
+
+/**
+ * Whether a successful tracker result actually ran its statements. The
+ * tracker's own `applied`/`skipped` flags decide; a sub-millisecond apply
+ * reports `execution_time_ms: 0` with `applied: true`, so the duration is
+ * only a fallback for a result that carries neither flag (#5005: a fast
+ * PGlite DROP TABLE was reported as "already applied").
+ */
+export function migrationResultRan(result: MigrationResult): boolean {
+  if (result.skipped === true || result.applied === false) return false;
+  if (result.applied === true) return true;
+  return result.execution_time_ms !== 0;
 }
 
 function migrationResultError(result: MigrationResult): Error {
@@ -351,6 +366,7 @@ interface DbMigrateOptions {
   'force-migration'?: string | readonly string[];
   'confirm-removed-package'?: string | readonly string[];
   'confirm-recompute'?: string | readonly string[];
+  'confirm-retire-table'?: string | readonly string[];
   'repair-data'?: boolean;
   'upgrade-sti'?: boolean;
   'drop-indexes'?: boolean;
@@ -1758,6 +1774,12 @@ export default testManifest;
           'Make one ordinary column calculated although stored values differ from the expression, as <table>.<column>: the stored values are replaced by the calculated ones, and the run records it. Without it the conversion applies only when no stored value changes, and stops otherwise, naming the count and example rows. Repeat for each column.',
         multiple: true,
       },
+      'confirm-retire-table': {
+        type: 'string',
+        description:
+          'Retire one declared table although the live table is not the one any release its declaration lists describes. Exact table name, no patterns; repeat for each table. Lifts only that stop: rows, dependents and declarations still stop.',
+        multiple: true,
+      },
       'force-migration': {
         type: 'string',
         description:
@@ -2106,6 +2128,13 @@ export default testManifest;
             : Array.isArray(recomputeOption)
               ? [...recomputeOption]
               : [];
+        const retireOption = options['confirm-retire-table'];
+        const confirmRetireTables =
+          typeof retireOption === 'string'
+            ? [retireOption]
+            : Array.isArray(retireOption)
+              ? [...retireOption]
+              : [];
         const comparer = new SchemaComparer(db, {
           confirmRecompute,
           includeDroppedIndexes: Boolean(options['drop-indexes']),
@@ -2114,6 +2143,18 @@ export default testManifest;
           relaxColumns: Boolean(options['relax-columns']),
           postgresTimestampMigration,
           emptyTextAsNull: Boolean(options['empty-text-as-null']),
+          // Tables a package declares retired (#5005): dropped here, in this
+          // whole-schema run, and nowhere else.
+          retireDeclaredTables: true,
+          // Each named table's definition mismatch, confirmed by the operator.
+          ...(confirmRetireTables.length
+            ? {
+                confirmRetireTables: {
+                  tables: confirmRetireTables,
+                  by: 'flag' as const,
+                },
+              }
+            : {}),
         });
         const diff = await comparer.compare(manifestSchemas);
         const engine = tracker.getEngine();
@@ -2302,6 +2343,12 @@ export default testManifest;
         });
         const recomputes = collectConfirmedRecomputes(diff.changes);
         for (const notice of runDecision.notices) console.log(notice);
+        for (const notice of unusedRetireConfirmations(
+          confirmRetireTables,
+          diff.changes,
+          '--confirm-retire-table',
+        ))
+          console.log(notice);
         for (const id of confirmRecompute) {
           if (!recomputes.some((item) => `${item.table}.${item.column}` === id))
             console.log(
@@ -2375,6 +2422,20 @@ export default testManifest;
           );
           for (const migration of destructiveForeignKeys) {
             console.log(`   ${migration.advisory?.message}`);
+          }
+          console.log();
+        }
+
+        // A retired table is dropped with its rows, so it is never silent.
+        const retirements = migrations.filter(
+          (migration) => migration.type === 'retire_table',
+        );
+        if (retirements.length > 0) {
+          console.log(
+            `\n🗑️  ${retirements.length} table(s) declared retired by their package will be DROPPED:`,
+          );
+          for (const migration of retirements) {
+            console.log(`   ${migration.tableName}: ${migration.note ?? ''}`);
           }
           console.log();
         }
@@ -2469,6 +2530,19 @@ export default testManifest;
             const columnDrops = migrations.filter(
               (m) => m.type === 'drop_column',
             );
+
+            const tableRetirements = migrations.filter(
+              (m) => m.type === 'retire_table',
+            );
+            if (tableRetirements.length > 0) {
+              console.log(
+                `  🗑️  Tables to retire (DESTRUCTIVE, declared by their package): ${tableRetirements.length}`,
+              );
+              for (const m of tableRetirements) {
+                console.log(`     ${m.tableName}: ${m.note ?? ''}`);
+              }
+              console.log();
+            }
 
             if (columnMigrations.length > 0) {
               console.log(`  📊 Columns to add: ${columnMigrations.length}`);
@@ -2662,6 +2736,9 @@ export default testManifest;
             } else if (migration.type === 'drop_foreign_key') {
               migrationSql = migration.sql || '';
               actionDesc = `Dropped foreign-key constraint on ${migration.tableName}`;
+            } else if (migration.type === 'retire_table') {
+              migrationSql = migration.sql || '';
+              actionDesc = `Retired table ${migration.tableName}${migration.note ? ` (${migration.note})` : ''}`;
             } else {
               return;
             }
@@ -2682,11 +2759,13 @@ export default testManifest;
                         ? `Upgrade column ${migration.column?.name} on ${migration.tableName} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`
                         : migration.type === 'drop_index'
                           ? `Drop index ${migration.indexName} on ${migration.tableName}`
-                          : migration.type === 'add_foreign_key'
-                            ? `Add foreign-key constraint on ${migration.tableName}`
-                            : migration.type === 'drop_foreign_key'
-                              ? `Drop foreign-key constraint on ${migration.tableName}`
-                              : `Add index ${migration.index?.name} on ${migration.tableName}`,
+                          : migration.type === 'retire_table'
+                            ? `Retire table ${migration.tableName}`
+                            : migration.type === 'add_foreign_key'
+                              ? `Add foreign-key constraint on ${migration.tableName}`
+                              : migration.type === 'drop_foreign_key'
+                                ? `Drop foreign-key constraint on ${migration.tableName}`
+                                : `Add index ${migration.index?.name} on ${migration.tableName}`,
               version: '1.0.0',
               // Auto-migrations don't carry a DOWN script. Atomic execution
               // rolls back the surrounding transaction instead of relying on
@@ -2808,7 +2887,7 @@ export default testManifest;
 
                 const logInfo = migrationLogs.get(result.name);
                 const checksum = shortChecksum(result.checksum);
-                if (result.execution_time_ms === 0 || result.skipped) {
+                if (!migrationResultRan(result)) {
                   if (options.verbose) {
                     console.log(
                       `  ⊙ ${logInfo?.skippedMessage ?? result.name} (${checksum})`,
@@ -2835,17 +2914,10 @@ export default testManifest;
             }
 
             successCount += results.filter(
-              (result) =>
-                result.success &&
-                result.applied !== false &&
-                result.execution_time_ms !== 0,
+              (result) => result.success && migrationResultRan(result),
             ).length;
             skippedCount += results.filter(
-              (result) =>
-                result.success &&
-                (result.skipped ||
-                  result.applied === false ||
-                  result.execution_time_ms === 0),
+              (result) => result.success && !migrationResultRan(result),
             ).length;
           } catch (error) {
             errorCount++;
@@ -3169,6 +3241,10 @@ export default testManifest;
               engineHint: dbType,
               input: recordInput,
               recomputes,
+              // Every drop over a confirmed definition mismatch (#5005).
+              confirmedRetirements: applySchemaMigrations
+                ? confirmedRetirementsOf(diff.changes)
+                : [],
             });
           }
         }

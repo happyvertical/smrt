@@ -8,7 +8,13 @@
  * ({@link createChainClient}), so alias chains, classified fallback and the
  * ladder apply per seat, and every seat's usage row comes from core's usage
  * pipeline tagged `runId`, `fusionKey` and `seat`. The run itself is one
- * `_smrt_ai_runs` row through `context.recordRun()`.
+ * `_smrt_ai_runs` row of type `fusion`, opened through `context.openRun()`
+ * before the first seat and closed at the end (#5005): every seat and the
+ * judge reserve room together, all or none, and each seat's call is a call
+ * of the fusion run (a child run of the caller's run, when the entry call
+ * carries a `runContext`). A run that stops reaches the caller as a stop,
+ * never as a failed fusion. Older cores without `openRun` get the record at
+ * the end through `context.recordRun()`.
  *
  * Model calls per mode are fixed: `single` 1, `pair` 3, `handoff` 2. A gate
  * adds one typed-decision call and can only remove the remaining stage
@@ -28,6 +34,8 @@ import {
   type InferenceFusionSeat,
   type InferenceModelClient,
   type InferenceResolution,
+  type InferenceRunCallShare,
+  type InferenceRunHandle,
   type InferenceRunStatus,
   type InferenceTarget,
   type InferenceTier,
@@ -36,7 +44,11 @@ import {
   inferenceTargetKind,
   resolveAutoTier,
 } from '@happyvertical/smrt-core';
-import { classifyInferenceFailure, isInferenceAbort } from './classify.js';
+import {
+  classifyInferenceFailure,
+  isAiRunInterruption,
+  isInferenceAbort,
+} from './classify.js';
 import {
   candidateLabel,
   EXECUTOR_KINDS,
@@ -400,8 +412,18 @@ function describeSeat(seat: FusionSeatResult, role: string): string {
   return `--- ${role} ${seatHeading(seat)}${note} ---\n${seatOutputText(seat)}\n--- end of ${seat.name} ---`;
 }
 
+/** The default output allowance when a seat declares none (core's `D`). */
+const DEFAULT_SEAT_OUTPUT_TOKENS = 4096;
+/** The text a judge or gate adds around the panel's outputs, in characters. */
+const JUDGE_FRAMING_CHARS = 240;
+/** A gate's verdict is one short answer. */
+const GATE_OUTPUT_TOKENS = 512;
+
 class FusionRun {
-  private readonly runId = newRunId();
+  private runId = newRunId();
+  /** The run opened at the start (#5005), on cores with `openRun`. */
+  private handle: InferenceRunHandle | undefined;
+  private readonly entryOptions: InferenceCallOptions;
   private readonly seats: FusionSeatResult[];
   private readonly usage = new Map<string, FusionSeatUsage>();
   private gate: FusionGateResult | undefined;
@@ -420,7 +442,15 @@ class FusionRun {
     private readonly options: Required<ChainExecutorOptions>,
   ) {
     this.started = options.now();
-    const { usageTags, model: _model, ...rest } = callerOptions;
+    this.entryOptions = callerOptions;
+    // The caller's run context names the run that made the entry call; the
+    // seats are calls of the fusion run instead (seatOptions).
+    const {
+      usageTags,
+      model: _model,
+      runContext: _runContext,
+      ...rest
+    } = callerOptions as InferenceCallOptions & { runContext?: unknown };
     this.callerTags = Object.fromEntries(
       Object.entries(usageTags ?? {}).filter(([tag]) => !ENTRY_TAGS.has(tag)),
     );
@@ -570,9 +600,11 @@ class FusionRun {
             }
           : {}),
         history: [{ role: 'system', content: prompt.instructions }],
+        ...(this.handle?.seatOptions(result.name) ?? {}),
         usageTags: {
           ...this.callerTags,
           ...(prompt.usageTags ?? {}),
+          ...(this.handle ? { callId: this.handle.entryCallId } : {}),
           promptKey: seat.prompt,
           runId: this.runId,
           fusionKey: this.key,
@@ -605,6 +637,12 @@ class FusionRun {
         result.text = text;
       }
     } catch (error) {
+      if (isAiRunInterruption(error)) {
+        // The run stopped (#5005): not a dead seat, and never a fallback.
+        result.status = 'failed';
+        result.failure = { reason: 'stopped', message: shortMessage(error) };
+        throw error;
+      }
       if (
         error instanceof InferenceConfigError ||
         isInferenceAbort(error) ||
@@ -679,10 +717,13 @@ class FusionRun {
         {
           usageTags: {
             ...this.callerTags,
-            runId: this.runId,
+            // Older cores group the decision under the run by tag; a core
+            // that opens the run reserves it as the `gate` seat (below).
+            ...(this.handle ? {} : { runId: this.runId }),
             fusionKey: this.key,
             seat: FUSION_GATE_SEAT,
           },
+          ...(this.handle ? this.handle.seatOptions(FUSION_GATE_SEAT) : {}),
           ...(this.signal ? { signal: this.signal } : {}),
         },
       );
@@ -704,7 +745,8 @@ class FusionRun {
         model: `${result.provenance.provider}/${result.provenance.model}`,
       };
     } catch (error) {
-      if (isInferenceAbort(error)) throw error;
+      // A stop of the run is a stop, never a gate that errored (#5005).
+      if (isInferenceAbort(error) || isAiRunInterruption(error)) throw error;
       return { status: 'error', message: shortMessage(error) };
     }
   }
@@ -802,11 +844,143 @@ class FusionRun {
     };
   }
 
+  /**
+   * Each seat's share of the joint reservation (#5005): every seat that may
+   * run, judge included, sized like any call. The judge's input is the
+   * request plus the panel's output allowances, since their answers are
+   * its input; it is checked `running` just before it is sent.
+   */
+  private async shares(input: string): Promise<InferenceRunCallShare[]> {
+    const { definition } = this;
+    const finalIndex = definition.seats.length - 1;
+    const panel =
+      definition.mode === 'single' ? [0] : [...Array(finalIndex).keys()];
+    const finalLimit =
+      typeof this.finalOptions.maxTokens === 'number'
+        ? this.finalOptions.maxTokens
+        : undefined;
+    const out: InferenceRunCallShare[] = [];
+    let panelAllowance = 0;
+    for (const [index, seat] of definition.seats.entries()) {
+      const final = index === finalIndex;
+      const target = await this.priceTarget(seat);
+      const outputLimit = final ? finalLimit : undefined;
+      // What the seat sends: the request, its prompt's instructions and,
+      // for a seat that reads the others (the judge), the framing text.
+      const sent = input.length + (await this.instructionChars(seat));
+      if (definition.mode === 'single' || panel.includes(index)) {
+        panelAllowance += outputLimit ?? DEFAULT_SEAT_OUTPUT_TOKENS;
+        out.push({
+          name: seatName(seat),
+          ...(target ? { target } : {}),
+          inputTokens: Math.ceil(sent / 4),
+          ...(outputLimit !== undefined ? { outputLimit } : {}),
+        });
+      } else {
+        out.push({
+          name: seatName(seat),
+          ...(target ? { target } : {}),
+          inputTokens:
+            Math.ceil((sent + JUDGE_FRAMING_CHARS) / 4) + panelAllowance,
+          ...(outputLimit !== undefined ? { outputLimit } : {}),
+          later: true,
+        });
+      }
+    }
+    if (definition.gate) {
+      // The gate is a call of the run too (#5005): the request plus what the
+      // panel answered, a short verdict back. It is sent between the stages,
+      // so it is checked `running` first.
+      out.push({
+        name: FUSION_GATE_SEAT,
+        inputTokens:
+          Math.ceil((input.length + JUDGE_FRAMING_CHARS) / 4) + panelAllowance,
+        expectedOutputTokens: GATE_OUTPUT_TOKENS,
+        later: true,
+      });
+    }
+    return out;
+  }
+
+  /** Characters of a seat's resolved prompt instructions; 0 when unreadable. */
+  private async instructionChars(seat: InferenceFusionSeat): Promise<number> {
+    try {
+      const prompt = await promptResolver()(seat.prompt, {
+        ...(this.context.request.tenantId !== undefined
+          ? { tenantId: this.context.request.tenantId }
+          : {}),
+        ...(this.context.db ? { db: this.context.db } : {}),
+      });
+      return String(prompt.instructions ?? '').length;
+    } catch {
+      return 0;
+    }
+  }
+
+  /** A seat's first concrete target, for pricing its share; best effort. */
+  private async priceTarget(
+    seat: InferenceFusionSeat,
+  ): Promise<InferenceTarget | undefined> {
+    try {
+      let target: InferenceTarget;
+      if (typeof seat.target === 'string') {
+        const tier =
+          seat.target === 'auto'
+            ? resolveAutoTier(this.context.config)
+            : seat.target;
+        target = (
+          await this.context.resolveTier(tier, { promptKey: seat.prompt })
+        ).target;
+      } else {
+        target = seat.target;
+      }
+      return this.firstConcrete(target, 0);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * The first single target a chain would try (an alias entry, an inline
+   * candidate, or an alias a candidate names), for its price.
+   */
+  private firstConcrete(
+    target: InferenceTarget,
+    depth: number,
+  ): InferenceTarget | undefined {
+    if (depth > 8) return undefined;
+    const kind = inferenceTargetKind(target);
+    if (kind === 'single') return target;
+    let list: unknown;
+    if (kind === 'alias') {
+      list = this.context.config?.aliases?.[String(target.alias)]?.candidates;
+    } else if (kind === 'candidates') {
+      list = target.candidates;
+    }
+    const first = Array.isArray(list) ? list[0] : undefined;
+    if (!first || typeof first !== 'object') return undefined;
+    const candidate = first as InferenceTarget;
+    return candidate.alias
+      ? this.firstConcrete({ alias: candidate.alias }, depth + 1)
+      : candidate;
+  }
+
   private async record(result: FusionRunResult): Promise<void> {
-    if (!this.context.recordRun) return;
     const ran = result.seats.filter(
       (seat) => seat.status === 'ok' || seat.status === 'failed',
     );
+    // Identities and totals only: never prompts, inputs or outputs.
+    const details = this.details(result);
+    if (this.handle) {
+      await this.handle.close({
+        status: result.status,
+        seats: ran.length,
+        degradedSeats: ran.filter(isDegraded).length,
+        details,
+      });
+      return;
+    }
+    if (!this.context.recordRun) return;
     try {
       await this.context.recordRun({
         id: result.runId,
@@ -817,52 +991,65 @@ class FusionRun {
         degradedSeats: ran.filter(isDegraded).length,
         status: result.status,
         duration: result.durationMs,
-        // Identities and totals only: never prompts, inputs or outputs.
-        details: {
-          seats: result.seats.map((seat) => ({
-            persona: seat.name,
-            prompt: seat.prompt,
-            status: seat.status,
-            target: seat.target,
-            ...(seat.model ? { model: seat.model } : {}),
-            ...(seat.usage ? { usage: seat.usage } : {}),
-            ...(seat.substitutions
-              ? { substitutions: seat.substitutions }
-              : {}),
-            ...(seat.failure
-              ? {
-                  failure: {
-                    reason: seat.failure.reason,
-                    ...(seat.failure.code ? { code: seat.failure.code } : {}),
-                  },
-                }
-              : {}),
-            ...(seat.raw !== undefined ? { json: 'unparsed' } : {}),
-            ...(seat.json !== undefined ? { json: 'parsed' } : {}),
-            ...(seat.durationMs !== undefined
-              ? { durationMs: seat.durationMs }
-              : {}),
-          })),
-          ...(result.gate
-            ? {
-                gate: {
-                  status: result.gate.status,
-                  ...(result.gate.choice ? { choice: result.gate.choice } : {}),
-                  ...(result.gate.confidence !== undefined
-                    ? { confidence: result.gate.confidence }
-                    : {}),
-                  ...(result.gate.model ? { model: result.gate.model } : {}),
-                },
-              }
-            : {}),
-        },
+        details,
       });
     } catch {
       // Recording must never mask the run's own outcome.
     }
   }
 
+  private details(result: FusionRunResult): Record<string, unknown> {
+    return {
+      seats: result.seats.map((seat) => ({
+        persona: seat.name,
+        prompt: seat.prompt,
+        status: seat.status,
+        target: seat.target,
+        ...(seat.model ? { model: seat.model } : {}),
+        ...(seat.usage ? { usage: seat.usage } : {}),
+        ...(seat.substitutions ? { substitutions: seat.substitutions } : {}),
+        ...(seat.failure
+          ? {
+              failure: {
+                reason: seat.failure.reason,
+                ...(seat.failure.code ? { code: seat.failure.code } : {}),
+              },
+            }
+          : {}),
+        ...(seat.raw !== undefined ? { json: 'unparsed' } : {}),
+        ...(seat.json !== undefined ? { json: 'parsed' } : {}),
+        ...(seat.durationMs !== undefined
+          ? { durationMs: seat.durationMs }
+          : {}),
+      })),
+      ...(result.gate
+        ? {
+            gate: {
+              status: result.gate.status,
+              ...(result.gate.choice ? { choice: result.gate.choice } : {}),
+              ...(result.gate.confidence !== undefined
+                ? { confidence: result.gate.confidence }
+                : {}),
+              ...(result.gate.model ? { model: result.gate.model } : {}),
+            },
+          }
+        : {}),
+    };
+  }
+
   async run(input: string): Promise<FusionRunResult> {
+    if (this.context.openRun) {
+      // The run's row is written before the first seat; without usage
+      // tracking this throws and no seat runs (#5005).
+      this.handle = await this.context.openRun({
+        type: 'fusion',
+        definitionKey: this.key,
+        mode: this.definition.mode,
+        ...(this.entryPromptKey ? { promptKey: this.entryPromptKey } : {}),
+        callOptions: this.entryOptions,
+      });
+      this.runId = this.handle.runId;
+    }
     const stop = this.context.observeUsage?.(this.runId, (event) => {
       const seat = event.tags.seat;
       if (!seat) return;
@@ -882,8 +1069,15 @@ class FusionRun {
     try {
       let text: string | undefined;
       try {
+        // Every seat and the judge reserve together, all or none, before
+        // any is sent.
+        if (this.handle) await this.handle.reserve(await this.shares(input));
         text = await this.interpret(input);
       } catch (error) {
+        if (this.handle && isAiRunInterruption(error)) {
+          // A stop reaches the caller as a stop, never a failed fusion.
+          throw await this.handle.stop(error);
+        }
         const failed = this.result('failed', '');
         await this.record(failed);
         if (error instanceof InferenceConfigError || isInferenceAbort(error)) {

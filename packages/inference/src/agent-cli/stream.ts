@@ -29,7 +29,12 @@ export type AgentEvent =
       ok: boolean;
       text?: string;
       error?: string;
+      /** Input plus output, as the CLI reported them. */
       tokens?: number;
+      /** The input part (cache reads and writes included). */
+      inputTokens?: number;
+      /** The output part. */
+      outputTokens?: number;
     };
 
 /** The MCP server name both tools are given, and so the tool-name prefix. */
@@ -328,7 +333,11 @@ export function codexParser(
 
 /** Native Anthropic input_tokens excludes cache reads/creation. Codex cached_input_tokens
  * is already part of input_tokens and is deliberately not added again. */
-function usageTokens(value: unknown): { tokens?: number } {
+function usageTokens(value: unknown): {
+  tokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+} {
   const usage = obj(value);
   if (usage?.input_tokens === undefined || usage.output_tokens === undefined)
     return {};
@@ -345,6 +354,10 @@ function usageTokens(value: unknown): { tokens?: number } {
     )
   )
     return {};
-  const total = (counts as number[]).reduce((sum, count) => sum + count, 0);
-  return Number.isSafeInteger(total) ? { tokens: total } : {};
+  const [input, output, cacheRead, cacheWrite] = counts as number[];
+  const inputTokens = input + cacheRead + cacheWrite;
+  const total = inputTokens + output;
+  return Number.isSafeInteger(total)
+    ? { tokens: total, inputTokens, outputTokens: output }
+    : {};
 }

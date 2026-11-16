@@ -139,6 +139,7 @@ Skill-aware harnesses can parse the frontmatter; other harnesses can ignore it.
 - `skills/smrt-catalog/SKILL.md` — catalog router skill (#4708), installed into consumers by `smrt docs:agents`.
 - `skills/smrt-contribute/SKILL.md` — contributor skill (#4709) for forks of this repository; an identical copy is
   checked in at the root `.agents/skills/smrt-contribute/SKILL.md` and a test fails on drift.
+- `skills/smrt-ai-work/SKILL.md` — AI work skill (#5005): prompt, tracked call, workflow definition, handler job contract, and the runs vocabulary.
 
 Trigger evals, the registry and install contract, and the drift rule: [agents/agent-skills.md](agents/agent-skills.md).
 
@@ -203,6 +204,7 @@ when `dist` is missing or older, so rebuild `dist` after server edits. Guarded b
 - `skills/smrt-code-review/SKILL.md` — downstream SMRT review procedure
 - `skills/smrt-contribute/SKILL.md` — contributor skill (copy at repo-root `.agents/skills/smrt-contribute/`)
 - `skills/smrt-catalog/SKILL.md` — catalog router skill; `skills/smrt-catalog/evals.json` — its trigger eval set
+- `skills/smrt-ai-work/SKILL.md` — AI work skill; `get-agent-skill` serves every name in `AGENT_SKILL_NAMES` (`src/tool-catalog.ts`)
 - `src/tools/generate-smrt-class.ts` — class generation logic and package-ready templates
 - `src/tools/harden-smrt-class.ts` — hardening suggestion; file write only, no database or SQL (#4936)
 - `src/tools/introspect-project.ts` — manifest-first project scanning, falling back to `@happyvertical/smrt-scanner`

@@ -181,6 +181,10 @@ Durable owner approvals of destructive server tools: [agents/owner-approvals.md]
 Tool summaries and inference engine adapters: [agents/tool-summaries.md](agents/tool-summaries.md).
 Live cookbook exposure of manifest tools: [agents/runtime-exposure.md](agents/runtime-exposure.md).
 
+## Assistant turns as AI runs (#5005)
+
+Each turn opens one `turn` run and sends every model call through core's tracked client; the system prompt is the registered `chat.assistant.system` prompt. Details: [agents/assistant-turn-runs.md](agents/assistant-turn-runs.md).
+
 ## AssistantDock (#2904)
 
 `AssistantDock` (`svelte/components/assistant/`, exported from `./svelte`)

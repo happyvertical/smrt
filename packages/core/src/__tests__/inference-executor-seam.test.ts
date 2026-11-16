@@ -381,19 +381,12 @@ describe('inference executor seam', () => {
     });
     expect(seen).toEqual(['m:skeptic:0']);
 
-    // No database: recordRun is a quiet no-op.
+    // The run is opened at the start through openRun (#5005), which needs
+    // usage tracking: without a database it refuses before any call.
+    expect(context?.recordRun).toBeUndefined();
     await expect(
-      context?.recordRun?.({
-        id: 'r1',
-        fusionKey: 'review',
-        mode: 'pair',
-        seats: 3,
-        degradedSeats: 0,
-        status: 'ok',
-        duration: 5,
-        details: {},
-      }),
-    ).resolves.toBeUndefined();
+      context?.openRun?.({ type: 'fusion', definitionKey: 'review' }),
+    ).rejects.toMatchObject({ code: 'AI_RUN_TRACKING_DISABLED' });
   });
 
   it('merges fusions whole per key and rejects malformed ones', () => {

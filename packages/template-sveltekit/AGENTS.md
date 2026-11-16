@@ -4,7 +4,7 @@
 
 ## Exports
 
-- [Cookbook host](agents/cookbook-host.md).
+- [Cookbook host](agents/cookbook-host.md); its [workflow runs](agents/cookbook-workflow-runs.md).
 
 - `getTemplatePath()` returns the template directory.
 - `copyTemplate(destination, options)` copies authored files, substitutes the

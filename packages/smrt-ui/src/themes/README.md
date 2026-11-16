@@ -308,7 +308,7 @@ import '@happyvertical/smrt-ui/themes/styles/happyvertical.css';
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `preset` | `'material' \| 'glass' \| 'studio' \| 'smrt' \| 'happyvertical'` | `'material'` | Theme preset |
-| `colorScheme` | `'light' \| 'dark' \| 'system'` | `'system'` | Color scheme preference |
+| `colorScheme` | `'light' \| 'dark' \| 'system'` | `'system'` | Color scheme preference. Nested inside another provider, `system` follows the parent's resolved scheme instead of the OS |
 | `primaryColor` | `string` | - | Override primary accent color |
 | `borderRadius` | `'none' \| 'sm' \| 'md' \| 'lg' \| 'xl' \| 'full'` | `'md'` | Border radius scale |
 | `overrides` | `Record<string, string>` | `{}` | Custom CSS variable overrides |

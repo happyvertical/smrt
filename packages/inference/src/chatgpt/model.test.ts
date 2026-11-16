@@ -155,7 +155,8 @@ it('executes one plan fallback and records actual model without unsupported effo
         defaultModel: options?.model,
       }),
     },
-    profile: 'design',
+    tier: 'best',
+    effort: 'max',
     catalog: [
       { id: 'fast', intelligenceRank: 1 },
       { id: 'strong', intelligenceRank: 2 },
@@ -185,7 +186,8 @@ it('executes one plan fallback and records actual model without unsupported effo
   expect((await model.complete(request())).text).toBe('done');
   expect(recordExecution).toHaveBeenCalledWith(
     expect.objectContaining({
-      profile: 'design',
+      engine: 'chatgpt',
+      effort: 'max',
       model: 'native-fast',
       requestedModel: 'fast',
       tokens: 42,
@@ -204,7 +206,6 @@ it('never retries a plan refusal after streaming text', async () => {
   });
   const model = await createChatGPTModel({
     connection: { clientOptions: async () => ({}) },
-    profile: 'assist',
     model: 'strong',
     toolNamespace: namespace,
     fallback: {
@@ -222,7 +223,7 @@ it('never retries a plan refusal after streaming text', async () => {
   expect(chat).toHaveBeenCalledOnce();
 });
 
-it('discovers ranked account choices for design and derives the single fallback while publishing shared wording', async () => {
+it('binds the best tier to the strongest ranked account model and derives the single fallback while publishing shared wording', async () => {
   const calls: string[] = [];
   const onText = vi.fn();
   const model = await createChatGPTModel({
@@ -233,7 +234,7 @@ it('discovers ranked account choices for design and derives the single fallback 
       ],
       clientOptions: async (o) => ({ defaultModel: o?.model }),
     },
-    profile: 'design',
+    tier: 'best',
     toolNamespace: namespace,
     fallback: {
       ownerId: 'owner',

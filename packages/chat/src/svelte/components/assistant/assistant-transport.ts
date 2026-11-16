@@ -145,10 +145,11 @@ export interface AssistantSendMessageResult {
   };
 }
 
-/** Durable design progress, supplied by an authenticated host. */
-export interface AssistantDesignRun {
+/** Durable workflow run progress, supplied by an authenticated host. */
+export interface AssistantWorkflowRun {
   runId: string;
-  pass: { index: number; count: number; name: string };
+  /** The step the run is on (one-based) and the host's plain name for it. */
+  step: { index: number; count: number; name: string };
   status:
     | 'running'
     | 'checking'
@@ -160,9 +161,9 @@ export interface AssistantDesignRun {
 }
 
 export interface AssistantTransport {
-  designRun?(threadId: string): Promise<AssistantDesignRun | undefined>;
-  stopDesignRun?(runId: string): Promise<AssistantDesignRun | undefined>;
-  resumeDesignRun?(runId: string): Promise<AssistantDesignRun | undefined>;
+  workflowRun?(threadId: string): Promise<AssistantWorkflowRun | undefined>;
+  stopWorkflowRun?(runId: string): Promise<AssistantWorkflowRun | undefined>;
+  resumeWorkflowRun?(runId: string): Promise<AssistantWorkflowRun | undefined>;
   listApprovals?(threadId?: string): Promise<AssistantApprovalView[]>;
   decideApproval?(id: string, approve: boolean): Promise<AssistantApprovalView>;
   listThreads(): Promise<AssistantThreadSummary[]>;

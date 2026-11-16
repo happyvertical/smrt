@@ -189,7 +189,7 @@ export interface InferenceUsageView {
     totalTokens: number;
     estimatedCost: number;
     uncostedCalls?: number;
-    outcomes?: Record<string, number>;
+    evaluations?: Record<string, number>;
     /** Calls with a stored transcript (`usage({ transcripts: true })`, #4781). */
     transcripts?: number;
   }>;
@@ -227,6 +227,30 @@ export interface InferenceTranscriptSettingsView {
   promptOverrides?: string[];
 }
 
+/**
+ * The assistant's ordinary settings (#5005), stored by the host's
+ * `assistant-settings` preference. An absent setting is on.
+ */
+export interface InferenceAssistantSettingsView {
+  settings: {
+    escalateToWorkflow?: boolean;
+    previewBeforeApply?: boolean;
+    requireRemovalApproval?: boolean;
+    protectLocalCli?: boolean;
+  };
+  /** The owner, in a browser session: only then may they be changed. */
+  editable: boolean;
+}
+
+/**
+ * What saving the assistant settings emits. Turning local AI protection off
+ * carries the owner's explicit `confirmUnprotectedCli`.
+ */
+export interface InferenceAssistantSettingsChange {
+  settings: InferenceAssistantSettingsView['settings'];
+  confirmUnprotectedCli?: boolean;
+}
+
 /** What saving the transcript setting emits. Always the app row; `null` reverts it. */
 export interface InferenceTranscriptSettingsChange {
   settings: { enabled: boolean; sample: number; maxBytes: number } | null;
@@ -239,7 +263,8 @@ export interface InferenceTranscriptSettingsChange {
 export interface InferenceTranscriptLinkFilters {
   promptKey?: string;
   templateHash?: string;
-  outcome?: string;
+  /** An evaluation label (`listAiTranscripts({ label })`). */
+  label?: string;
   /** ISO timestamps of the report window. */
   since?: string;
   until?: string;
@@ -356,13 +381,13 @@ export function defaultTierRevertPreview(
 
 /**
  * The transcript-route filters for one usage bucket (and, optionally, one
- * outcome label): the prompt key and template hash when the report was
+ * evaluation label): the prompt key and template hash when the report was
  * grouped by them, and the report window.
  */
 export function transcriptLinkFilters(
   view: Pick<InferenceUsageView, 'since' | 'until'>,
   key: Record<string, string | null | undefined>,
-  outcome?: string,
+  label?: string,
 ): InferenceTranscriptLinkFilters {
   const filters: InferenceTranscriptLinkFilters = {};
   if (typeof key.prompt === 'string' && key.prompt) {
@@ -371,7 +396,7 @@ export function transcriptLinkFilters(
   if (typeof key.template === 'string' && key.template) {
     filters.templateHash = key.template;
   }
-  if (outcome) filters.outcome = outcome;
+  if (label) filters.label = label;
   const iso = (value: Date | string | null | undefined) =>
     value instanceof Date
       ? value.toISOString()

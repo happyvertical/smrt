@@ -15,6 +15,12 @@ import { existsSync, join, readFileSync } from '../manifest/node-host.js';
 import { isRefusedTestArtifact } from '../manifest/test-artifacts.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import {
+  getRegisteredRetiredTables,
+  honouredRetiredTables,
+  mergeRetiredTables,
+  type RetiredTable,
+} from './retired-tables.js';
+import {
   manifestTableEntries,
   tryComputeManifestSchemaFingerprint,
 } from './schema-fingerprint.js';
@@ -49,6 +55,12 @@ export interface BuildSchema {
   tables: Record<string, string[]>;
   /** Packages that contribute tables to the build, sorted. */
   packages: string[];
+  /**
+   * Tables a package in the build declares retired (#5005), in stable order.
+   * Part of the build's stamp. Absent in a description written before this
+   * field existed, which declares none.
+   */
+  retired?: RetiredTable[];
   /** Where the build schema came from (a path, or `registered`). */
   source: string;
   /**
@@ -59,7 +71,12 @@ export interface BuildSchema {
 }
 
 type ManifestLike = Pick<SmartObjectManifest, 'objects'> &
-  Partial<Pick<SmartObjectManifest, 'packageName' | 'schemaFingerprint'>>;
+  Partial<
+    Pick<
+      SmartObjectManifest,
+      'packageName' | 'schemaFingerprint' | 'retiredTables' | 'smrtDependencies'
+    >
+  >;
 
 function entryPackage(
   key: string,
@@ -100,11 +117,13 @@ export function describeManifestSchema(
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       .map(([table, owners]) => [table, [...owners].sort()]),
   );
+  const retired = honouredRetiredTables(manifest);
   return {
     ...(fingerprint ? { fingerprint } : {}),
     ...(missingReason ? { missingReason } : {}),
     tables: byTable,
     packages: [...new Set(Object.values(byTable).flat())].sort(),
+    ...(retired.length ? { retired } : {}),
     source,
   };
 }
@@ -245,4 +264,19 @@ export function resolveBuildSchema(): BuildSchema | undefined {
   if (named) return readBuildSchemaFile(named);
   if (process.env.NODE_ENV === 'test') return undefined;
   return readProjectBuildSchema(process.cwd());
+}
+
+/**
+ * The tables this run treats as declared retired (#5005), and the list the
+ * migrate record's stamp covers: the same set, always. With a build, the
+ * build's own list (which the build's stamp covers): a declaration only a
+ * package loaded at run time carries is not honoured. Without one, the
+ * registry's, filled as package manifests register.
+ */
+export function resolveRetiredTables(
+  build: BuildSchema | undefined = resolveBuildSchema(),
+): RetiredTable[] {
+  return build
+    ? mergeRetiredTables(build.retired)
+    : getRegisteredRetiredTables();
 }

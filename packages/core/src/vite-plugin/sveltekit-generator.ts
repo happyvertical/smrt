@@ -2247,7 +2247,12 @@ async function generateRegistrationFile(
 
   // Per-module copies of the manifest never carry the build's stamp: startup
   // reads it from the project manifest, never from a registered copy (#4929).
-  const { schemaFingerprint: _buildStamp, ...registrationBase } = manifest;
+  // Nor the retired list: the build's description carries it (#5005).
+  const {
+    schemaFingerprint: _buildStamp,
+    retiredTables: _retired,
+    ...registrationBase
+  } = manifest;
   const collectionMetadataLiteral = JSON.stringify(
     JSON.stringify({
       ...registrationBase,

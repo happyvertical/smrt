@@ -13,6 +13,16 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareReleases } from '../../packages/core/dist/migrations.js';
 import {
+  loadCheckoutManifests,
+  loadCore,
+  ownersFileName,
+  readOwnersOverlay,
+  releaseFacts,
+  validateOwnersFiles,
+  verifyRetiredFactsOnline,
+  writeOwnersOverlay,
+} from './retired-table-facts.mjs';
+import {
   getSystemTableShapes,
   SYSTEM_TABLE_NAMES,
 } from '../../packages/core/dist/index.js';
@@ -38,6 +48,19 @@ export function deterministicUuid(key) {
   return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
 }
 
+/**
+ * Register one built `dist/manifest.json`: its objects and its table
+ * retirements (#5005). A package built as an app (app-shell) writes a merged
+ * manifest that also carries the retirements of the packages it depends on
+ * (`smrtDependencies`); `registerPackageManifest` accepts those under their
+ * own package and refuses an entry of any other package.
+ */
+export function registerBuiltManifest(core, manifest, source) {
+  const result = core.ObjectRegistry.registerPackageManifest(manifest);
+  if (!result.loaded) throw new Error(`Could not load manifest ${source}`);
+  return result;
+}
+
 export async function loadBuild(root, { manifests = true } = {}) {
   const core = await import(
     pathToFileURL(path.join(root, 'packages/core/dist/index.js')).href
@@ -57,9 +80,7 @@ export async function loadBuild(root, { manifests = true } = {}) {
     for (const name of names) {
       const file = path.join(packages, name, 'dist/manifest.json');
       if (!existsSync(file)) continue;
-      const manifest = readJSON(file);
-      const result = core.ObjectRegistry.registerPackageManifest(manifest);
-      if (!result.loaded) throw new Error(`Could not load manifest ${file}`);
+      registerBuiltManifest(core, readJSON(file), file);
       count++;
     }
     if (!count)
@@ -635,6 +656,7 @@ export async function rehearse({
   const matchedLeftovers = new Set();
   let seededTables = 0;
   let seedFailures = [];
+  const retiredChecked = [];
   let db;
   let planned;
   try {
@@ -651,6 +673,28 @@ export async function rehearse({
         (failure) => `Seeding smrt ${snapshot.release}: ${failure}`,
       ),
     );
+    // A retired table the snapshot holds is restored in its real shape and
+    // seeded, so the upgrade compares its definitions with the table the
+    // release created, not with a fixture (#5005).
+    const listTables = async () =>
+      new Set(
+        (
+          await db.query(
+            `SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p')`,
+          )
+        ).rows.map((row) => row.name),
+      );
+    const heldRetired = (build.ObjectRegistry.getRetiredTables?.() ?? []).filter(
+      (entry) => snapshotModelTables(snapshot).has(entry.table),
+    );
+    if (heldRetired.length) {
+      const restored = await listTables();
+      for (const entry of heldRetired)
+        if (!restored.has(entry.table))
+          failures.push(
+            `Retired table ${entry.table} was not restored from the smrt ${snapshot.release} snapshot, so the rehearsal proves nothing about its retirement.`,
+          );
+    }
     onProgress(`${label}: applying the upgrade`);
     const result = await build.migrateSmrtSchemas({
       db,
@@ -664,6 +708,25 @@ export async function rehearse({
     if (result.refused && !failures.length)
       failures.push('Migrate was refused without a reason');
     if (!result.refused) {
+      // A snapshot that holds a table a package declares retired: it is gone
+      // after the upgrade (#5005).
+      const live = await listTables();
+      for (const entry of heldRetired) {
+        retiredChecked.push(entry.table);
+        if (live.has(entry.table))
+          failures.push(
+            `Retired table ${entry.table} is still there after the upgrade from smrt ${snapshot.release}.`,
+          );
+        // Dropped by its retirement, which matched the restored table.
+        else if (
+          !result.statements.includes(
+            `DROP TABLE IF EXISTS "public"."${entry.table}"`,
+          )
+        )
+          failures.push(
+            `Retired table ${entry.table} went away in the upgrade from smrt ${snapshot.release}, but not by its retirement.`,
+          );
+      }
       onProgress(`${label}: checking convergence`);
       const pending = await build.getPendingSchemaStatements(db, {
         engineHint: 'postgres',
@@ -771,8 +834,95 @@ export async function rehearse({
     seededTables,
     seedFailures,
     matchedLeftovers: [...matchedLeftovers],
+    retiredChecked,
     ok: failures.length === 0,
   };
+}
+
+/**
+ * The tables a snapshot holds as models (not smrt's bookkeeping tables).
+ */
+function snapshotModelTables(snapshot) {
+  return new Set(
+    snapshot.modelTables ??
+      Object.keys(snapshot.tables).filter((name) => !bookkeepingTables.has(name)),
+  );
+}
+
+/**
+ * The declared retirements (#5005) against the release snapshots, without a
+ * database. Each failure names the table.
+ *
+ * - A declaration whose table is in no supported snapshot is stale: the list
+ *   shrinks over time, so it fails until the declaration is removed.
+ * - `lastOwner` must be a class that declared the table, in every supported
+ *   snapshot that holds it. Who declared what comes from the release's owners
+ *   file (`owners/<release>.json`), written by
+ *   `scripts/retired-table-facts.mjs owners` from that release's published
+ *   manifests; a snapshot without one cannot vouch for the owner, and fails
+ *   naming the command.
+ * - A package retires only a table its own models declared: `lastOwner` must
+ *   be a class of the declaring package.
+ * - Every supported snapshot that holds the table matches one of the
+ *   declaration's `definitions` column for column, by name. The definitions
+ *   are the published manifests projected through this build's core; a base
+ *   column or reference kind core gained since that release would appear in
+ *   them and not in the release's tables, and migrate would then refuse the
+ *   retirement. This fails it at build time instead. (Types are proven by the
+ *   rehearsal: migrate compares each definition with the restored table.)
+ *
+ * `supported` are the snapshots at or after the oldest supported release;
+ * `owners` maps a release to its owners file, when it has one.
+ */
+export function checkRetiredDeclarations({ retired, supported, owners }) {
+  const failures = [];
+  for (const entry of retired) {
+    const where = `Retired table ${entry.table} (${entry.packageName})`;
+    if (!entry.lastOwner.startsWith(`${entry.packageName}:`))
+      failures.push(
+        `${where}: lastOwner ${entry.lastOwner} is not a class of ${entry.packageName}. A package may retire only a table its own models declared.`,
+      );
+    const holding = supported.filter((snapshot) =>
+      snapshotModelTables(snapshot).has(entry.table),
+    );
+    if (!holding.length) {
+      failures.push(
+        `${where}: stale. The table is in no supported release snapshot (${supported.map((snapshot) => snapshot.release).join(', ') || 'none'}). Remove the declaration.`,
+      );
+      continue;
+    }
+    for (const snapshot of holding) {
+      const physical = Object.keys(
+        snapshot.tables[entry.table]?.columns ?? {},
+      ).sort();
+      const definitions = entry.definitions ?? [];
+      const matching = definitions.find((definition) => {
+        const declared = Object.keys(definition.columns ?? {}).sort();
+        return declared.join(',') === physical.join(',');
+      });
+      if (!matching) {
+        const tried = definitions.map((definition) => {
+          const declared = new Set(Object.keys(definition.columns ?? {}));
+          const lacks = physical.filter((name) => !declared.has(name));
+          const extra = [...declared].filter((name) => !physical.includes(name));
+          return `release ${definition.release}${lacks.length ? ` lacks ${lacks.join(', ')}` : ''}${extra.length ? `${lacks.length ? ' and' : ''} has ${extra.join(', ')}` : ''}`;
+        });
+        failures.push(
+          `${where}: no definition has the columns smrt ${snapshot.release} created (${physical.join(', ')})${tried.length ? `: ${tried.join('; ')}` : ''}. Either that release's shape is not declared (run node scripts/retired-table-facts.mjs definition --package ${entry.packageName} --table ${entry.table} --release ${snapshot.release}) or this build's core projects the manifests differently from that release, and migrate would refuse the retirement.`,
+        );
+      }
+      const recorded = owners?.get(snapshot.release)?.owners?.[entry.table];
+      if (!recorded)
+        failures.push(
+          `${where}: smrt ${snapshot.release} has no owners file recording who declared the table, so lastOwner ${entry.lastOwner} cannot be checked. Run node scripts/retired-table-facts.mjs owners --release ${snapshot.release} to write owners/${snapshot.release}.json from that release's published manifests. Never edit the snapshot.`,
+        );
+      else if (!recorded.includes(entry.lastOwner))
+        failures.push(
+          `${where}: lastOwner ${entry.lastOwner} did not declare the table in smrt ${snapshot.release} (declared by ${recorded.join(', ')}).`,
+        );
+    }
+  }
+  return failures;
 }
 
 export function selectPrevious(snapshots, current, compare) {
@@ -842,6 +992,9 @@ export function prune(directory, oldest, compare) {
       unlinkSync(path.join(directory, `snapshots/${version}.json`));
       const plan = path.join(directory, seedFileName(version));
       if (existsSync(plan)) unlinkSync(plan);
+      // The owners file goes with its snapshot (#5005).
+      const owners = path.join(directory, ownersFileName(version));
+      if (existsSync(owners)) unlinkSync(owners);
     }
   return [...keep].sort(compare);
 }
@@ -910,11 +1063,20 @@ export function assertSnapshotPlausible(snapshot, previous) {
       `Refusing ${label}: ${count} model table(s) is fewer than ${MIN_MODEL_TABLE_SHARE * 100}% of the ${before} in ${previous.release}. Rebuild with a clean build and capture again.`,
     );
 }
+/** The repository this script runs from: its core projects manifests. */
+const harnessRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../..',
+);
 
 export async function check({
   root,
   directory = path.join(root, 'packages/core/release-upgrade'),
   report = console.log,
+  // Opt in (`check --verify-owners`): regenerate the owners files and
+  // definitions of the supported snapshots from npm and compare (#5005).
+  verifyOwners = false,
+  verify = verifyRetiredFactsOnline,
 }) {
   const build = await loadBuild(root);
   const versions = snapshotVersions(directory);
@@ -945,6 +1107,14 @@ export async function check({
         : undefined,
     ),
   );
+  // Owners files are checked with their snapshots (#5005).
+  const snapshots = new Map(
+    versions.map((version) => [
+      version,
+      readJSON(path.join(directory, `snapshots/${version}.json`)),
+    ]),
+  );
+  validateOwnersFiles(directory, snapshots);
   const results = [];
   for (const release of selected) {
     const snapshot = readJSON(
@@ -967,21 +1137,91 @@ export async function check({
     for (const failure of result.failures)
       report(`FAIL ${release}: ${failure}`);
   }
+  // Declared retirements against every supported snapshot (#5005).
+  const supportedVersions = versions
+    .filter((version) => build.compareReleases(version, oldest.release) >= 0)
+    .filter((version) => build.compareReleases(version, build.release) <= 0);
+  const supported = supportedVersions.map((version) => snapshots.get(version));
+  const owners = new Map(
+    supportedVersions.map((version) => [
+      version,
+      readOwnersOverlay(directory, version),
+    ]),
+  );
+  const retired = build.ObjectRegistry.getRetiredTables?.() ?? [];
+  const retiredFailures = checkRetiredDeclarations({
+    retired,
+    supported,
+    owners,
+  });
+  for (const failure of retiredFailures) report(`FAIL retired table: ${failure}`);
+  // Asked for, so it fails when npm cannot answer rather than skipping.
+  if (verifyOwners) {
+    const verdict = await verify({
+      root,
+      directory,
+      releases: supportedVersions,
+      log: report,
+    });
+    report(verdict.message);
+    for (const failure of verdict.failures)
+      retiredFailures.push(`owners check: ${failure}`);
+    if (verdict.state === 'skipped')
+      retiredFailures.push(`owners check: ${verdict.message}`);
+    for (const failure of verdict.failures) report(`FAIL owners: ${failure}`);
+  }
   const matched = new Set(results.flatMap((result) => result.matchedLeftovers));
   const stale = leftovers.filter(
     (entry) => !matched.has(`${entry.table}.${entry.column}`),
   );
   for (const entry of stale)
     report(`FAIL stale leftover: ${entry.table}.${entry.column}`);
-  const ok = results.every((result) => result.ok) && stale.length === 0;
+  const ok =
+    results.every((result) => result.ok) &&
+    stale.length === 0 &&
+    retiredFailures.length === 0;
   report(
-    `Release upgrade gate: ${ok ? 'PASS' : 'FAIL'} (${results.length} starting release(s), ${results.reduce((n, result) => n + result.failures.length, stale.length)} failure(s))`,
+    `Release upgrade gate: ${ok ? 'PASS' : 'FAIL'} (${results.length} starting release(s), ${results.reduce((n, result) => n + result.failures.length, stale.length + retiredFailures.length)} failure(s))`,
   );
-  return { ok, results, stale };
+  return { ok, results, stale, retiredFailures };
 }
 
-export async function save({ root, directory }) {
-  const snapshot = await capture({ root });
+/**
+ * Write the owners overlay of `release` (#5005) from a built checkout's own
+ * manifests: the checkout the snapshot is captured from, so no registry is
+ * needed. The manifests are projected through `coreRoot`'s core (this
+ * script's build), as `retired-table-facts.mjs refresh` and `check` project
+ * the published ones, so the three agree.
+ */
+export async function writeSnapshotOwners({
+  root,
+  directory,
+  release,
+  coreRoot = harnessRoot,
+}) {
+  const facts = releaseFacts(
+    await loadCore(coreRoot),
+    loadCheckoutManifests({ root, release }),
+  );
+  return writeOwnersOverlay({ directory, release, owners: facts.owners });
+}
+
+/**
+ * Capture the built checkout's snapshot, write its empty seed plan and its
+ * owners overlay (from the same checkout), prune, and, when npm can answer,
+ * check the overlay and the release's definitions against the published
+ * manifests (skipped with a message when it cannot). A check that finds a
+ * difference fails the save after the files are written.
+ */
+export async function save({
+  root,
+  directory,
+  captureSnapshot = capture,
+  coreRoot = harnessRoot,
+  verify = verifyRetiredFactsOnline,
+  report = console.log,
+}) {
+  const snapshot = await captureSnapshot({ root });
   mkdirSync(path.join(directory, 'snapshots'), { recursive: true });
   const build = await loadBuild(root, { manifests: false });
   const compare = build.compareReleases ?? compareReleases;
@@ -1007,5 +1247,24 @@ export async function save({ root, directory }) {
       path.join(directory, seedFileName(snapshot.release)),
       stableJSON(emptySeedPlan()),
     );
-  return { snapshot, kept: prune(directory, oldest.release, compare) };
+  // And its owners overlay, from the checkout it was captured from.
+  const owners = await writeSnapshotOwners({
+    root,
+    directory,
+    release: snapshot.release,
+    coreRoot,
+  });
+  const kept = prune(directory, oldest.release, compare);
+  const verdict = await verify({
+    root: coreRoot,
+    directory,
+    releases: [snapshot.release],
+    log: (line) => console.error(line),
+  });
+  report(verdict.message);
+  if (verdict.state === 'failed')
+    throw new Error(
+      `${verdict.message}:\n${verdict.failures.join('\n')}\nThe snapshot and ${path.relative(directory, owners)} were written; regenerate with ${'pnpm release-upgrade:refresh-owners'} and compare.`,
+    );
+  return { snapshot, kept, owners, verified: verdict.state };
 }

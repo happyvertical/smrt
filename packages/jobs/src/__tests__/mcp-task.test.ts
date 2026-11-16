@@ -5,7 +5,7 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { backgroundEligible } from '../background-policy.js';
 import type { JobExecutionContext } from '../logger-extension.js';
 import { McpTaskStore } from '../mcp-task.js';
@@ -165,6 +165,40 @@ describe('MCP Tasks durable jobs adapter', () => {
       });
     } finally {
       await runner.stop();
+    }
+  });
+
+  it('cancels a task when a runner claims between its read and terminal update', async () => {
+    const { db, probe } = await createProbe();
+    const store = await McpTaskStore.create(db, { ownerId: 'principal-a' });
+    const created = await store.createTask({
+      objectType: 'McpTaskProbe',
+      objectId: probe.id ?? '',
+      method: 'slow',
+      invocationArgs: [{ value: 'never' }],
+    });
+    const { SmrtJobCollection } = await import('../smrt-job.js');
+    const { ensureTerminalOutcomeStorage } = await import(
+      '../terminal-outcome.js'
+    );
+    await ensureTerminalOutcomeStorage(db);
+    const jobs = await SmrtJobCollection.create({ db });
+    const original = db.transaction!.bind(db);
+    const spy = vi
+      .spyOn(db, 'transaction')
+      .mockImplementationOnce(async (callback) => {
+        const [claimed] = await jobs.claimReady({
+          workerId: 'racing-mcp-worker',
+        });
+        expect(claimed.taskId).toBe(created.taskId);
+        return original(callback);
+      });
+    try {
+      await store.cancelTask(created.taskId);
+      expect((await store.getTask(created.taskId)).status).toBe('cancelled');
+    } finally {
+      spy.mockRestore();
+      await db.close?.();
     }
   });
 

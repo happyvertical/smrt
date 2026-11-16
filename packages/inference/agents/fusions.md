@@ -72,11 +72,19 @@ await contract.do('Summarize this contract', { tier: 'best' }); // unchanged cal
   `onProgress`, …) reach the final seat only; `signal` / `timeout` reach every
   seat; `history` is the seat's instructions. `onFusionResult(result)`
   receives the structured `FusionRunResult`. Only `message()` runs a fusion.
-- **Record**: every seat's usage row carries `runId`, `fusionKey`, `seat`
-  and the seat's prompt tags; `context.recordRun()` writes one
-  `_smrt_ai_runs` row (`ok | degraded | failed`; a seat is degraded when it
-  died or answered through a substitution) with identities and totals only
-  (`../../core/agents/ai-usage.md`). `smrt ai:usage --by fusion` totals runs.
+- **Record** (#5005): `run()` opens the `fusion` run through
+  `context.openRun()` before the first seat (no seat runs when usage
+  tracking is off), reserves every seat and the judge together, all or none
+  (`shares()`; the judge's input counts the panel's output allowances), and
+  closes it `done` (with `degraded` when a seat died or answered through a
+  substitution) or `failed`, with identities and totals only. A refused
+  reservation or an ancestor's stop (`AI_RUN_STOPPED`, `isAiRunInterruption`)
+  is never a dead seat or a fallback: `handle.stop()` turns it into the
+  caller's stop. Every seat's usage row carries `runId`, `fusionKey`, `seat`
+  and the seat's prompt tags; the gate's decision call does not carry
+  `runId`. Older cores without `openRun` still get `context.recordRun()` at
+  the end (`../../core/agents/ai-usage.md`). `smrt ai:usage --by fusion`
+  totals runs.
 - **Validation**: `findInferenceConfigIssues()` names structural offenders
   by path (`fusion-invalid`, `fusion-unknown`, `fusion-nested`); an
   unregistered seat prompt key is a load error (`fusion-prompt-unknown`) from

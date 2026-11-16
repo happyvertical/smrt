@@ -177,7 +177,8 @@ describe('app-row fusions reach the executor (#4800)', () => {
       fusionKey: 'panel-pair',
       mode: 'pair',
       seats: 3,
-      status: 'ok',
+      status: 'done',
+      degraded: false,
     });
 
     // The panel's list shows exactly that definition, valid.

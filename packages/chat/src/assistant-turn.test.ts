@@ -19,14 +19,14 @@ import type {
   ChatOptions,
 } from '@happyvertical/ai';
 import type { PrincipalTool } from '@happyvertical/smrt-agents';
-import { resolveWorkProfile } from '@happyvertical/smrt-inference';
+import { AiRunStoppedError } from '@happyvertical/smrt-core';
 import {
   MembershipCollection,
   RoleCollection,
   TenantCollection,
   UserCollection,
 } from '@happyvertical/smrt-users';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ASSISTANT_TURN_GENERIC_ERROR,
   type AuthoredToolReply,
@@ -195,18 +195,11 @@ describe('assistant turn', () => {
     allowedTools: ['data.discover'],
   });
 
-  it('restarts a design batch before executing any assist calls and preserves spent tokens', async () => {
+  it('refuses a workflow-only tool in a chat turn before it runs and hands the request to a workflow run', async () => {
     const ran: string[] = [];
-    const metadata: unknown[] = [];
-    const ai = scriptedAI([
-      calls(['data-discover', {}]),
-      calls(['data-discover', {}]),
-      () => ({
-        content: 'Done',
-        finishReason: 'stop',
-        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-      }),
-    ]);
+    const executions: unknown[] = [];
+    const handoff = vi.fn(async () => ({ runId: 'workflow-1' }));
+    const ai = scriptedAI([calls(['data-discover', {}])]);
     const events = await collect(
       runAssistantTurn({
         ai,
@@ -214,25 +207,100 @@ describe('assistant turn', () => {
         principal: principal(),
         userMessage: 'Build the app',
         extraTools: [readTool(ran)],
-        designTools: ['data.discover'],
-        workProfile: resolveWorkProfile({ engine: 'api' }),
-        resolveWorkProfile: async () =>
-          resolveWorkProfile({ engine: 'api', profile: 'design' }),
-        onWorkRun: (value) => metadata.push(value),
+        workflowTools: ['data.discover'],
+        selection: { engine: 'api', tier: 'best', effort: 'high' },
+        onWorkflowEscalation: handoff,
+        onExecution: (value) => executions.push(value),
         audit: () => {},
       }),
     );
-    expect(ran).toEqual(['data.discover']);
-    expect(metadata).toEqual([
-      expect.objectContaining({ profile: 'design', tokens: 24, toolCalls: 1 }),
+    expect(ran).toEqual([]);
+    expect(handoff).toHaveBeenCalledOnce();
+    expect(handoff.mock.calls[0]?.[0]).toMatchObject({ tool: 'data.discover' });
+    expect(executions).toEqual([
+      expect.objectContaining({ engine: 'api', effort: 'high', toolCalls: 0 }),
     ]);
     expect(
       events.some(
-        (event) =>
-          event.type === 'status' &&
-          event.status.label === 'Thinking this through',
+        (event) => event.type === 'done' && event.runId === 'workflow-1',
       ),
     ).toBe(true);
+  });
+
+  it('ends the turn with a refusal when handing off to a workflow run is turned off', async () => {
+    const ran: string[] = [];
+    const handoff = vi.fn(async () => ({ runId: 'never' }));
+    const events = await collect(
+      runAssistantTurn({
+        ai: scriptedAI([calls(['data-discover', {}])]),
+        db,
+        principal: principal(),
+        userMessage: 'Build the app',
+        extraTools: [
+          {
+            ...readTool(ran),
+            annotations: { runTypes: ['workflow'] },
+          } as PrincipalTool,
+        ],
+        assistantSettings: { escalateToWorkflow: false },
+        onWorkflowEscalation: handoff,
+        audit: () => {},
+      }),
+    );
+    expect(ran).toEqual([]);
+    expect(handoff).not.toHaveBeenCalled();
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'error', code: 'tool_run_type' }),
+    );
+  });
+
+  it('ends the turn as a budget stop when its run stops at a limit', async () => {
+    const events = await collect(
+      runAssistantTurn({
+        ai: scriptedAI([
+          () => {
+            throw new AiRunStoppedError({
+              runId: 'turn-run',
+              status: 'stopped',
+              stopReason: 'max_tokens',
+              stoppedByRunId: 'turn-run',
+            });
+          },
+        ]),
+        db,
+        principal: principal(),
+        userMessage: 'Keep going',
+        budget: { maxTokens: 10 },
+        audit: () => {},
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'done', stoppedReason: 'budget' }),
+    );
+    expect(events.some((event) => event.type === 'error')).toBe(false);
+  });
+
+  it("applies the turn's budget to the loop", async () => {
+    const ran: string[] = [];
+    const ai = scriptedAI([
+      calls(['data-discover', {}]),
+      calls(['data-discover', {}]),
+      text('Answered'),
+    ]);
+    const events = await collect(
+      runAssistantTurn({
+        ai,
+        db,
+        principal: principal(),
+        userMessage: 'Look around',
+        extraTools: [readTool(ran)],
+        budget: { maxSteps: 1 },
+        maxSteps: 10,
+        audit: () => {},
+      }),
+    );
+    expect(ran).toHaveLength(1);
+    expect(events.at(-1)).toBeDefined();
   });
 
   describe('runToolLoop browser tools', () => {

@@ -34,6 +34,7 @@ describe.skipIf(!pgUrl)(
         packages: 'text',
         fingerprint: 'text',
         recomputes: 'text',
+        confirmed_retirements: 'text',
         created_at: 'timestamp with time zone',
       });
       // Everything is rolled back, including writes by the public writer.

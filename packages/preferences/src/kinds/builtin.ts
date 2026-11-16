@@ -4,14 +4,14 @@
  * built-in kind it does not know.
  */
 import { getPreferenceKind, registerPreferenceKind } from '../kinds.js';
+import { assistantSettingsPreferenceKind } from './assistant-settings.js';
 import { overviewPreferenceKind } from './overview.js';
 import { prebuiltComponentsPreferenceKind } from './prebuilt-components.js';
 import { shellLayoutPreferenceKind } from './shell-layout.js';
-import { workProfilesPreferenceKind } from './work-profiles.js';
 
 export function ensureBuiltinPreferenceKinds(): void {
   for (const kind of [
-    workProfilesPreferenceKind,
+    assistantSettingsPreferenceKind,
     overviewPreferenceKind,
     shellLayoutPreferenceKind,
     prebuiltComponentsPreferenceKind,

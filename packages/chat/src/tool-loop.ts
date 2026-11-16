@@ -1,4 +1,4 @@
-import { WorkProfileEscalation } from './work-profile.js';
+import { ToolRunTypeRefusal } from './tool-run-types.js';
 /**
  * ToolLoop — a bounded `tool_call → observe → respond` agentic loop over the
  * SMRT manifest operation surface (L3 of the learning-agents epic, #1891).
@@ -118,7 +118,8 @@ export interface ManifestTool {
   functionName?: string;
   /** Trusted host metadata; never model arguments. */
   annotations?: {
-    workProfile?: 'design';
+    /** The AI run types that may call the tool (#5005); absent: any. */
+    runTypes?: readonly string[];
     /** Trusted host declaration: this canonical delete removes one app-data record. Never mark security, identity, credentials, roles, tenants, settings or installation tools. */
     recordDeletion?: true;
   };
@@ -1537,7 +1538,7 @@ export async function runToolLoop(
             if (tool) options.beforeToolExecution?.(tool);
           }
         } catch (error) {
-          if (error instanceof WorkProfileEscalation)
+          if (error instanceof ToolRunTypeRefusal)
             error.messages = [...working];
           throw error;
         }

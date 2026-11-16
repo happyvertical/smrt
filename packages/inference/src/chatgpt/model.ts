@@ -1,39 +1,48 @@
 import type { AIMessage, AITool, AIToolCall } from '@happyvertical/ai';
+import type {
+  InferenceTierRequest,
+  ReasoningEffort,
+} from '@happyvertical/smrt-core';
 import {
   type EngineModel,
   EngineModelFailure,
   engineModelReply,
 } from '../engine-model.js';
 import {
-  nextWorkModel,
-  type ResolvedWorkProfile,
-  resolveWorkProfile,
-  runWorkModelWithFallback,
-  validateWorkModel,
-  type WorkModelCatalogEntry,
-  type WorkModelFallbackStore,
-  type WorkProfileName,
-  type WorkProfileSettings,
-  type WorkRunMetadata,
-} from '../work-profiles.js';
+  engineTierModel,
+  nextEngineModel,
+  type RankedModel,
+  validateModelId,
+} from '../engine-tiers.js';
+import {
+  type EngineExecution,
+  type ModelFallbackStore,
+  runWithModelFallback,
+} from '../model-fallback.js';
 import type { ChatGPTPlanConnection } from './connection.js';
 import { chatgptFailureNote } from './support.js';
 
 export interface ChatGPTModelOptions {
   connection: Pick<ChatGPTPlanConnection, 'clientOptions'> &
     Partial<Pick<ChatGPTPlanConnection, 'models'>>;
+  /** An explicit model; otherwise `tier` picks one from the plan's catalog. */
   model?: string;
-  profile?: WorkProfileName;
-  settings?: WorkProfileSettings;
-  catalog?: readonly WorkModelCatalogEntry[];
+  /** The tier the prompt asks for (#5005), bound to the plan's ranked models. */
+  tier?: InferenceTierRequest;
+  /**
+   * Recorded on the execution, never sent: the ChatGPT plan provider
+   * rejects reasoning options.
+   */
+  effort?: ReasoningEffort;
+  catalog?: readonly RankedModel[];
   fallback?: {
     ownerId: string;
     connectionKey: string;
     nextModel?: string;
-    store: WorkModelFallbackStore;
+    store: ModelFallbackStore;
     notify?(message: string): void;
   };
-  recordExecution?(metadata: WorkRunMetadata): Promise<void>;
+  recordExecution?(execution: EngineExecution): Promise<void>;
   toolNamespace: { name: string; description: string };
   settingsHref?: string;
   /** Tests/hosts may supply a provider factory; never a raw API-key fallback. */
@@ -60,22 +69,17 @@ export async function createChatGPTModel(
 ): Promise<EngineModel> {
   const catalog =
     input.catalog ??
-    (input.profile ? await input.connection.models?.() : undefined);
-  const profile: ResolvedWorkProfile | undefined = input.profile
-    ? resolveWorkProfile({
-        profile: input.profile,
-        engine: 'chatgpt',
-        settings: {
-          ...input.settings,
-          ...(input.model ? { model: input.model } : {}),
-        },
-        catalog,
-      })
-    : undefined;
-  if (profile && profile.engine !== 'chatgpt')
-    throw new Error('The work profile does not match this connected engine.');
-  const selectedModel = profile?.model ?? input.model;
-  if (selectedModel !== undefined) validateWorkModel(selectedModel);
+    (input.tier && !input.model
+      ? await input.connection.models?.()
+      : undefined);
+  const selectedModel =
+    input.model ??
+    (input.tier
+      ? engineTierModel({ engine: 'chatgpt', tier: input.tier, catalog })
+      : undefined);
+  if (input.tier && !selectedModel)
+    throw new Error('The connected engine has no available model.');
+  if (selectedModel !== undefined) validateModelId(selectedModel);
   const options = await input.connection.clientOptions({
     ...(selectedModel ? { model: selectedModel } : {}),
     toolNamespace: input.toolNamespace,
@@ -118,15 +122,20 @@ export async function createChatGPTModel(
             }),
           );
         };
-        let fallback: WorkRunMetadata['fallback'];
+        let fallback: EngineExecution['fallback'];
         let reply: Awaited<ReturnType<typeof execute>>;
-        if (profile && input.fallback) {
-          const outcome = await runWorkModelWithFallback({
+        if (selectedModel && input.fallback) {
+          const outcome = await runWithModelFallback({
             ...input.fallback,
             nextModel:
               input.fallback.nextModel ??
-              nextWorkModel(catalog ?? [], profile.model),
-            profile,
+              nextEngineModel({
+                engine: 'chatgpt',
+                model: selectedModel,
+                catalog: catalog ?? [],
+              }),
+            engine: 'chatgpt',
+            model: selectedModel,
             notify: (message) => {
               input.fallback?.notify?.(message);
               request.onText(`${message}\n\n`);
@@ -143,18 +152,18 @@ export async function createChatGPTModel(
           reply = outcome.result;
           fallback = outcome.fallback;
         } else reply = await execute(actualModel);
-        if (profile)
-          await input.recordExecution?.({
-            profile: profile.name,
-            engine: 'chatgpt',
-            model: reply.model,
-            requestedModel: actualModel,
-            effort: profile.effort,
-            durationMs: Date.now() - startedAt,
-            tokens: reply.totalTokens,
-            toolCalls: reply.toolCalls.length,
-            ...(fallback ? { fallback } : {}),
-          });
+        await input.recordExecution?.({
+          engine: 'chatgpt',
+          ...(reply.model ? { model: reply.model } : {}),
+          ...(actualModel ? { requestedModel: actualModel } : {}),
+          ...(input.effort ? { effort: input.effort } : {}),
+          durationMs: Date.now() - startedAt,
+          ...(reply.totalTokens !== undefined
+            ? { tokens: reply.totalTokens }
+            : {}),
+          toolCalls: reply.toolCalls.length,
+          ...(fallback ? { fallback } : {}),
+        });
         return reply;
       } catch (error) {
         const note = chatgptFailureNote(error, input.settingsHref);

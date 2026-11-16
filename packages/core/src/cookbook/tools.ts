@@ -53,9 +53,9 @@ export interface CookbookToolContext {
   userId?: string | null;
   surface: 'mcp' | 'assistant';
   /** Trusted host run/action identity, never tool arguments or permission authority. */
-  designAction?: { application: string; runId: string; actionId: string };
+  workflowAction?: { application: string; runId: string; actionId: string };
   threadId?: string;
-  /** Person Profile identity resolved by the host, not a work profile selector. */
+  /** Person Profile identity resolved by the host. */
   profileId?: string | null;
   /** Trusted human first-run route, derived from durable server state; never tool arguments. */
   initialSetup?: boolean;
@@ -66,7 +66,12 @@ export interface CookbookToolDefinition {
   inputSchema: JsonSchema;
   outputSchema: { type: 'object'; additionalProperties: true };
   annotations: {
-    workProfile?: 'design';
+    /**
+     * The AI run types that may call the tool (#5005). Structural writes
+     * name only `workflow`: a chat `turn` run is refused before execution.
+     * Absent: any run type.
+     */
+    runTypes?: readonly ['workflow'];
     readOnlyHint: boolean;
     destructiveHint: boolean;
     idempotentHint: boolean;
@@ -406,7 +411,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       inputSchema: schemas[name],
       outputSchema: { type: 'object', additionalProperties: true },
       annotations: {
-        ...(writes.has(name) ? { workProfile: 'design' as const } : {}),
+        ...(writes.has(name) ? { runTypes: ['workflow'] as const } : {}),
         readOnlyHint: !writes.has(name),
         destructiveHint:
           name === 'recipes.disable' ||
@@ -428,7 +433,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     expires: number;
   };
   const previews = new Map<string, Preview>();
-  const supportsDesignAction = (name: string): name is CookbookToolName =>
+  const supportsWorkflowAction = (name: string): name is CookbookToolName =>
     writes.has(name as CookbookToolName);
   function designBinding(
     name: CookbookToolName,
@@ -440,7 +445,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       stableStringify({
         tool: name,
         args: boundArgs,
-        designAction: context.designAction,
+        workflowAction: context.workflowAction,
         ...(context.threadId
           ? {
               threadId: context.threadId,
@@ -456,22 +461,22 @@ export function createCookbookToolService(options: CookbookToolOptions) {
   }
   function actionKey(context: CookbookToolContext): string {
     return digest([
-      context.designAction!.application,
+      context.workflowAction!.application,
       context.tenantId,
       context.userId,
-      context.designAction!.runId,
-      context.designAction!.actionId,
+      context.workflowAction!.runId,
+      context.workflowAction!.actionId,
     ]);
   }
   function validateDesignAction(
     name: CookbookToolName,
     context: CookbookToolContext,
   ) {
-    if (!context.designAction) return;
-    const action = context.designAction;
+    if (!context.workflowAction) return;
+    const action = context.workflowAction;
     const editor = options.modelEditorFor?.(context);
     if (
-      !supportsDesignAction(name) ||
+      !supportsWorkflowAction(name) ||
       !editor?.supportsDurableOperations ||
       editor.application !== action.application ||
       Object.keys(action).sort().join(',') !== 'actionId,application,runId' ||
@@ -484,7 +489,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     )
       fail(
         'unsupported_design_action',
-        'This host cannot safely recover this design action.',
+        'This host cannot safely recover this workflow action.',
       );
   }
   async function recoverDesign(
@@ -492,7 +497,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     args: Record<string, unknown>,
     context: CookbookToolContext,
   ): Promise<CookbookToolResult | null> {
-    if (!context.designAction) return null;
+    if (!context.workflowAction) return null;
     await assertAllowed(context, name);
     validateDesignAction(name, context);
     const row = await options.modelEditorFor!(context)!.recover({
@@ -515,7 +520,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
         held.requestedBy !== context.userId ||
         held.tool !== name ||
         !same(held.args, boundArgs) ||
-        !same(held.context.designAction, context.designAction) ||
+        !same(held.context.workflowAction, context.workflowAction) ||
         !['executing', 'succeeded'].includes(held.status)
       )
         return fail(
@@ -624,7 +629,9 @@ export function createCookbookToolService(options: CookbookToolOptions) {
   ): Promise<string | CookbookToolResult> {
     binding = {
       ...binding,
-      ...(context.designAction ? { designAction: context.designAction } : {}),
+      ...(context.workflowAction
+        ? { workflowAction: context.workflowAction }
+        : {}),
       ...(context.threadId
         ? {
             threadId: context.threadId,
@@ -643,14 +650,14 @@ export function createCookbookToolService(options: CookbookToolOptions) {
         tenantId: context.tenantId!,
         requestedBy: context.userId!,
         tool: name,
-        callId: context.designAction ? actionKey(context) : randomUUID(),
-        ...(context.designAction ? { requestKey: actionKey(context) } : {}),
+        callId: context.workflowAction ? actionKey(context) : randomUUID(),
+        ...(context.workflowAction ? { requestKey: actionKey(context) } : {}),
         args: boundArgs,
         summary,
         context: binding,
       });
       if (
-        context.designAction &&
+        context.workflowAction &&
         request.status &&
         request.status !== 'pending'
       ) {
@@ -662,7 +669,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
         if (request.status !== 'approved')
           fail(
             'approval_terminal',
-            `The original approval is ${request.status}; start a new design action.`,
+            `The original approval is ${request.status}; start a new workflow run.`,
           );
         approvalId = request.id;
       } else {
@@ -778,7 +785,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       name === 'app.removeList' ||
       name === 'app.undo' ||
       options.requiresApproval?.(name, context) ||
-      (context.designAction &&
+      (context.workflowAction &&
         (await options.previewBeforeApply?.(context)) !== false)
     ) {
       const approval = await approveChange(
@@ -820,10 +827,10 @@ export function createCookbookToolService(options: CookbookToolOptions) {
           actor: context.userId!,
           tenantId: context.tenantId!,
           expectedRevision: before.revision,
-          requestId: context.designAction
+          requestId: context.workflowAction
             ? actionKey(context)
             : (hold ?? randomUUID()),
-          ...(context.designAction
+          ...(context.workflowAction
             ? {
                 operation: {
                   binding: designBinding(name, args, context),
@@ -841,7 +848,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
             : {}),
         },
       );
-      if (context.designAction)
+      if (context.workflowAction)
         return (await recoverDesign(name, args, context))!;
       const result: CookbookToolResult = {
         status: 'ok',
@@ -856,7 +863,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     } catch (error) {
       if (
         hold &&
-        (!context.designAction ||
+        (!context.workflowAction ||
           !(await editor.history()).some(
             (row) => row.requestId === actionKey(context),
           ))
@@ -880,7 +887,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       const problem = checkSchema(schemas[name], args);
       if (problem) fail('invalid_input', problem.message);
       validateDesignAction(name, context);
-      if (context.designAction && name === 'cookbook.apply') {
+      if (context.workflowAction && name === 'cookbook.apply') {
         args.apply = true;
         delete args.previewToken;
       }
@@ -1001,7 +1008,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
         summary = `Use ${template.name}.`;
         const requiresPreview =
           (await options.previewBeforeApply?.(context)) !== false;
-        if (!context.designAction && args.apply !== true && requiresPreview) {
+        if (!context.workflowAction && args.apply !== true && requiresPreview) {
           for (const [key, value] of previews)
             if (value.expires <= Date.now()) previews.delete(key);
           if (previews.size >= 500)
@@ -1057,7 +1064,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
           }
         }
         if (
-          (context.designAction || !requiresPreview) &&
+          (context.workflowAction || !requiresPreview) &&
           args.expectedRevision !== before.revision
         )
           fail(
@@ -1066,7 +1073,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
           );
         const preview = previews.get(String(args.previewToken));
         if (
-          !context.designAction &&
+          !context.workflowAction &&
           requiresPreview &&
           (!preview ||
             preview.expires <= Date.now() ||
@@ -1152,7 +1159,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
         replacingApp ||
         name === 'recipes.disable' ||
         options.requiresApproval?.(name, context) === true ||
-        (context.designAction &&
+        (context.workflowAction &&
           (await options.previewBeforeApply?.(context)) !== false);
       let hold: string | undefined;
       const binding = {
@@ -1161,7 +1168,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
         after: digest(staged.state()),
         ...(name === 'cookbook.apply'
           ? {
-              preview: context.designAction
+              preview: context.workflowAction
                 ? { before: before.cookbook, after: staged.cookbook() }
                 : previews.get(String(args.previewToken)),
             }
@@ -1245,10 +1252,10 @@ export function createCookbookToolService(options: CookbookToolOptions) {
               actor: context.userId!,
               tenantId: context.tenantId!,
               expectedRevision: snapshot.revision,
-              requestId: context.designAction
+              requestId: context.workflowAction
                 ? actionKey(context)
                 : (hold ?? randomUUID()),
-              ...(context.designAction
+              ...(context.workflowAction
                 ? {
                     operation: {
                       binding: designBinding(name, args, context),
@@ -1259,7 +1266,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
                 : {}),
             },
           );
-          if (context.designAction)
+          if (context.workflowAction)
             return (await recoverDesign(name, args, context))!;
           result.revision = options.engineFor(context)!.snapshot().revision;
           result.snapshot = options.engineFor(context)!.snapshot();
@@ -1283,7 +1290,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       } catch (error) {
         if (
           hold &&
-          (!context.designAction ||
+          (!context.workflowAction ||
             !(await options.modelEditorFor!(context)!.history()).some(
               (row) => row.requestId === actionKey(context),
             ))
@@ -1372,7 +1379,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       }
     },
     invoke,
-    supportsDesignAction,
+    supportsWorkflowAction,
     /** Chat/agents' existing PrincipalTool contract, kept structural to avoid a back edge. */
     async assistantTools(context: CookbookToolContext) {
       return (await this.list(context)).map((definition) => ({

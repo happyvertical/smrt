@@ -402,6 +402,10 @@ export {
   type InferenceResolutionSource,
   type InferenceResolver,
   type InferenceResolverContext,
+  type InferenceRunCallShare,
+  type InferenceRunHandle,
+  type InferenceRunOpenInput,
+  type InferenceRunOutcome,
   type InferenceRunRecord,
   type InferenceRunStatus,
   type InferenceTarget,
@@ -420,9 +424,12 @@ export {
   isInferenceTargetSource,
   isInferenceTier,
   isInferenceTierRequest,
+  isReasoningEffort,
   lookupInferenceFusion,
   MIN_TRANSCRIPT_MAX_BYTES,
   mergeInferenceConfigs,
+  REASONING_EFFORTS,
+  type ReasoningEffort,
   type ResolveInferenceOptions,
   resolveAutoTier,
   resolveInference,
@@ -722,6 +729,14 @@ export type {
 export { resetVerifiedTables } from './table-cache';
 // AI function calling tools
 export * from './tools/index';
+export {
+  AiPromptKeyRequiredError,
+  createTrackedAiClient,
+  type TrackedAiClient,
+  type TrackedAiClientOptions,
+  type TrackedAiRun,
+  type TrackedPromptCall,
+} from './tracked-ai-client';
 // IN-list chunking contract for loaders that build IN lists from data-sized
 // arrays (#2367); exported so owning packages chunk at the same bound (#3047).
 export { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';
@@ -789,13 +804,17 @@ export {
 export * from './migrations/change-kinds.js';
 export {
   type ConfirmedRecompute,
+  type ConfirmedRetirement,
+  type ConfirmedRetirementRecord,
   collectConfirmedRecomputes,
   collectMigrateRecordInput,
+  confirmedRetirementsOf,
   type LastMigrateRecord,
   type MigrateRecord,
   type MigrateRecordInput,
   type MigrateRecordOptions,
   packagesSeenInput,
+  readConfirmedRetirements,
   readLastMigrateRecord,
   recordSuccessfulMigrate,
   type UnloadedBuildPackage,

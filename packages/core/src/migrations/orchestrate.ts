@@ -18,7 +18,7 @@ import { getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import { planForeignKeyCreation } from '../schema/foreign-key-planner.js';
 import type { MigrationResult, SchemaChange } from '../schema/types.js';
-import { resolveBuildSchema } from './build-schema.js';
+import { resolveBuildSchema, resolveRetiredTables } from './build-schema.js';
 import { decideSchemaChange, isCommentOnlySql } from './change-kinds.js';
 import {
   generateSchemaDiff,
@@ -35,6 +35,7 @@ import {
   type ConfirmedRecompute,
   collectConfirmedRecomputes,
   collectMigrateRecordInput,
+  confirmedRetirementsOf,
   packagesSeenInput,
   readLastMigrateRecord,
   recordSuccessfulMigrate,
@@ -44,6 +45,7 @@ import {
   formatMigrationRefusal,
   type MigrationRunDecision,
 } from './migration-run-decision.js';
+import { isRetiredTableRowsAppeared } from './retire-guard.js';
 import { MigrationTracker } from './tracker.js';
 
 const logger = createLogger({ level: 'info' });
@@ -163,6 +165,27 @@ export interface MigrateSmrtSchemasOptions {
    * ordinary column becomes calculated only while no stored value would change.
    */
   confirmRecompute?: string[];
+  /**
+   * Retire these declared tables although the live table is not the one any
+   * release their declaration lists describes (#5005): exact table names, no
+   * patterns (without case on SQLite and DuckDB, exactly on PostgreSQL). The
+   * code form of `smrt db:migrate --confirm-retire-table`. It lifts only the
+   * `table.retire-mismatch` stop: a table with rows (without
+   * `rows: 'discard'`), with dependents, still declared by a model, with a
+   * failing declaration, or on the JSON adapter still stops. Each confirmed
+   * drop is written, with the differences confirmed, to the migrate record
+   * (`readConfirmedRetirements`).
+   *
+   * **Hazard.** In code the confirmation applies to every installation of the
+   * app, including one where the mismatch means the live table really is a
+   * different table that happens to have the retired name: exactly the
+   * accident the definition match exists to catch, and the table is dropped
+   * with its rows when the declaration says `rows: 'discard'`. Use it only for
+   * a local or desktop app where no operator can answer the stop, after
+   * checking the differences the stop names; prefer the flag wherever an
+   * operator runs the migrate. `confirmRemovedPackages` is the precedent.
+   */
+  confirmRetireTables?: string[];
   /** Opt-in physical-table subset, including its FK closure. Omitted keeps eager behavior. */
   tables?: Iterable<string>;
   /** Refuse the entire plan before executing DDL when manual drift remains. */
@@ -277,6 +300,11 @@ export async function getPendingSchemaStatements(
     /** See {@link MigrateSmrtSchemasOptions.confirmRecompute}. */
     confirmRecompute?: readonly string[];
     tables?: Iterable<string>;
+    /**
+     * See `MigrateSmrtSchemasOptions.confirmRetireTables`, and its hazard:
+     * in code it applies to every installation of the app.
+     */
+    confirmRetireTables?: string[];
   } = {},
 ): Promise<PendingSchemaStatementsResult> {
   const schemas = ObjectRegistry.getAllSchemasAsDefinitions(
@@ -293,6 +321,23 @@ export async function getPendingSchemaStatements(
     emptyTextAsNull: options.emptyTextAsNull,
     relaxColumns: options.relaxColumns,
     confirmRecompute: options.confirmRecompute,
+    // Declared retirements (#5005), in a whole-schema run only. A run limited
+    // to tables neither plans nor reports them: retiring waits for the next
+    // whole-schema migrate, which the build stamp forces before production
+    // starts (a limited run writes no migrate record).
+    ...(options.tables
+      ? {}
+      : {
+          retireDeclaredTables: true,
+          ...(options.confirmRetireTables?.length
+            ? {
+                confirmRetireTables: {
+                  tables: [...options.confirmRetireTables],
+                  by: 'code' as const,
+                },
+              }
+            : {}),
+        }),
   });
   const statements = collectStatementsFromDiff(diff, db, options.engineHint);
   const unactionableChanges = collectUnactionableChanges(
@@ -352,6 +397,52 @@ function buildOwnedTables(
 }
 
 /**
+ * The tables declared retired, by lower-cased name, each with its declaration
+ * as an operator reads it (#5005). A run limited to tables stops when it would
+ * create or add to one.
+ */
+function retiredTableNames(): ReadonlyMap<string, string> {
+  const names = new Map<string, string>();
+  for (const entry of resolveRetiredTables()) {
+    const key = entry.table.toLowerCase();
+    const said = `by ${entry.packageName} in ${entry.since}: ${entry.reason}`;
+    names.set(key, names.has(key) ? `${names.get(key)}; ${said}` : said);
+  }
+  return names;
+}
+
+/**
+ * A notice for each confirmed table name that lifted nothing: no declared
+ * retirement of that exact table stopped on a definition mismatch (#5005).
+ * Names are compared without case, as the plan reports the live spelling.
+ * @internal
+ */
+export function unusedRetireConfirmations(
+  names: readonly string[],
+  changes: readonly SchemaChange[],
+  form: 'confirmRetireTables' | '--confirm-retire-table',
+  partial = false,
+): string[] {
+  // A confirmation is used when it lifted a mismatch, whether the table then
+  // dropped or stopped on rows or dependents.
+  const used = new Set(
+    changes
+      .filter(
+        (change) =>
+          change.type === 'retire_table' && change.retirement?.confirmed,
+      )
+      .map((change) => change.table.toLowerCase()),
+  );
+  return [...new Set(names)]
+    .filter((name) => partial || !used.has(name.toLowerCase()))
+    .map((name) =>
+      partial
+        ? `Ignoring ${form} ${name}: a run limited to tables retires nothing.`
+        : `Ignoring ${form} ${name}: no declared retirement of exactly this table stops on a definition mismatch.`,
+    );
+}
+
+/**
  * Apply any pending schema changes from `ObjectRegistry` to `db`.
  *
  * Returns `applied: false` (with no error) if the database is already in
@@ -390,6 +481,7 @@ export async function migrateSmrtSchemas(
     relaxColumns: options.relaxColumns,
     confirmRecompute: options.confirmRecompute,
     tables: options.tables,
+    confirmRetireTables: options.confirmRetireTables,
   });
   if (options.requireComplete && pending.hasManualDrift) {
     throw new Error('SMRT activation requires a manual schema migration');
@@ -418,12 +510,24 @@ export async function migrateSmrtSchemas(
           options.confirmRemovedPackages ?? [],
         )
       : undefined,
-    ...(partial ? { onlyAddTo: buildOwnedTables(pending.diff.changes) } : {}),
+    ...(partial
+      ? {
+          onlyAddTo: buildOwnedTables(pending.diff.changes),
+          retiredTables: retiredTableNames(),
+        }
+      : {}),
   });
   const { stops, heldBack, proceed, packageStops, releaseStop } = decision;
+  const confirmedRetirements = confirmedRetirementsOf(pending.diff.changes);
   const recomputed = collectConfirmedRecomputes(pending.diff.changes);
   const notices = [
     ...decision.notices,
+    ...unusedRetireConfirmations(
+      options.confirmRetireTables ?? [],
+      pending.diff.changes,
+      'confirmRetireTables',
+      partial,
+    ),
     ...(options.confirmRecompute ?? [])
       .filter(
         (id) =>
@@ -505,6 +609,48 @@ export async function migrateSmrtSchemas(
   });
 
   const failed = results.find((result) => !result.success);
+  if (failed && isRetiredTableRowsAppeared(failed.error)) {
+    // Rows reached a retired table after the plan counted it empty (#5005).
+    // The batch rolled back; report it as the named stop it is.
+    const appeared = failed.error;
+    const changes = pending.diff.changes.map((change) =>
+      change.type === 'retire_table' &&
+      change.kindHint === 'table.retire' &&
+      change.table === appeared.table
+        ? {
+            type: change.type,
+            table: change.table,
+            kindHint: appeared.kind,
+            advisory: {
+              severity: 'warning' as const,
+              message: appeared.message,
+            },
+            ...(change.retirement ? { retirement: change.retirement } : {}),
+          }
+        : change,
+    );
+    const refusal = decideMigrationRun({
+      changes,
+      addedTables: pending.diff.added_tables,
+      engine: resolveMigrationEngine(options.db, options.engineHint),
+    });
+    return {
+      applied: false,
+      refused: true,
+      stops: refusal.stops,
+      packageStops,
+      releaseStop,
+      notices,
+      heldBack: refusal.heldBack,
+      results,
+      statements: pending.statements,
+      schemaCount: pending.schemaCount,
+      unactionableChanges: pending.unactionableChanges,
+      hasManualDrift: pending.hasManualDrift,
+      relaxedColumns: [],
+      recomputed: [],
+    };
+  }
   if (failed) {
     throw failed.error instanceof Error
       ? failed.error
@@ -516,6 +662,7 @@ export async function migrateSmrtSchemas(
       input: recordInput,
       engineHint: options.engineHint,
       recomputes: recomputed,
+      confirmedRetirements,
     });
   }
 

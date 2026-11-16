@@ -366,6 +366,20 @@ export type ColumnAlteration =
   | 'drop_check';
 
 /**
+ * How a retirement was confirmed over a definition mismatch (#5005):
+ * `--confirm-retire-table` on `smrt db:migrate`, or `confirmRetireTables`
+ * passed in code to `migrateSmrtSchemas` / `getPendingSchemaStatements`.
+ */
+export type RetireConfirmationSource = 'flag' | 'code';
+
+/** A confirmed retirement as the plan and the migrate record carry it. */
+export interface RetireConfirmation {
+  by: RetireConfirmationSource;
+  /** The differences confirmed, `release <v>: <difference>; ...` per release. */
+  differences: string[];
+}
+
+/**
  * Advisory attached to a change the differ reports but does not execute
  * (orphan columns/indexes, or relaxations the caller has not opted into).
  * `suggestedSql` is remediation the operator can run by hand; it is never
@@ -400,6 +414,11 @@ export interface SchemaChange {
   type:
     | 'add_table'
     | 'drop_table'
+    /**
+     * A table a package declares retired (#5005): `DROP TABLE` when it is
+     * safe, otherwise a named stop. Never produced by orphan detection.
+     */
+    | 'retire_table'
     | 'add_column'
     | 'drop_column'
     | 'alter_column'
@@ -491,6 +510,24 @@ export interface SchemaChange {
    * under `emptyTextAsNull` (#3226). Printed by `db:diff`/`db:migrate`.
    */
   note?: string;
+  /**
+   * On a `retire_table` change: the declaration it carries (#5005), for the
+   * report that names each retirement and its reason. `rows` is the live row
+   * count when it could be read.
+   */
+  retirement?: {
+    packageName: string;
+    lastOwner: string;
+    since: string;
+    reason: string;
+    rows: number | null;
+    /**
+     * Set on a drop the operator confirmed although the live table is not
+     * the one any listed release describes (#5005): who confirmed it and the
+     * differences they confirmed, one per release tried.
+     */
+    confirmed?: RetireConfirmation;
+  };
   /**
    * On an `add_index` that is really an `ALTER INDEX ... RENAME`: the live
    * index name being renamed to `name`. The DDL is unchanged; reporting

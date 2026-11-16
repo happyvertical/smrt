@@ -367,6 +367,7 @@ export class PromptSettingsService {
       template: definition.template,
       profile: definition.ai.profile ?? null,
       model: definition.ai.model ?? null,
+      effort: definition.ai.effort ?? null,
       params: definition.ai.params,
     };
     const configLayer = normalizePromptLayer(config.prompts?.[key]);

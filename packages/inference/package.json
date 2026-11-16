@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-inference",
-  "version": "0.61.6",
+  "version": "0.62.0",
   "description": "Inference alias chains with classified failures, recorded fallback and ladder degradation, consumer-defined fusions, per-user and per-tenant bindings, the InferenceSettingsPanel, hosted provisioning and spend gate, and the smrt doctor --ai binding check, for SMRT inference tiers",
   "type": "module",
   "main": "./dist/index.js",
@@ -110,5 +110,96 @@
     "type": "git",
     "url": "https://github.com/happyvertical/smrt.git",
     "directory": "packages/inference"
+  },
+  "smrt": {
+    "retiredTables": [
+      {
+        "table": "_smrt_inference_design_runs",
+        "lastOwner": "@happyvertical/smrt-inference:DesignRunRecord",
+        "since": "0.62.0",
+        "reason": "Design runs are replaced by workflow runs, whose checkpoints are kept in _smrt_ai_run_checkpoints (#5005); the old rows are not carried over.",
+        "rows": "discard",
+        "definitions": [
+          {
+            "release": "0.61.2",
+            "columns": {
+              "_sync_origin_device_id": {
+                "type": "TEXT"
+              },
+              "_sync_revision": {
+                "type": "INTEGER"
+              },
+              "context": {
+                "type": "TEXT"
+              },
+              "created_at": {
+                "type": "TIMESTAMP"
+              },
+              "id": {
+                "type": "UUID",
+                "referenceKind": "id"
+              },
+              "owner_id": {
+                "type": "TEXT"
+              },
+              "payload": {
+                "type": "TEXT"
+              },
+              "revision": {
+                "type": "INTEGER"
+              },
+              "slug": {
+                "type": "TEXT"
+              },
+              "tenant_id": {
+                "type": "UUID"
+              },
+              "updated_at": {
+                "type": "TIMESTAMP"
+              }
+            }
+          },
+          {
+            "release": "0.61.3",
+            "columns": {
+              "_sync_origin_device_id": {
+                "type": "TEXT"
+              },
+              "_sync_revision": {
+                "type": "INTEGER"
+              },
+              "context": {
+                "type": "TEXT"
+              },
+              "created_at": {
+                "type": "TIMESTAMP"
+              },
+              "id": {
+                "type": "UUID",
+                "referenceKind": "id"
+              },
+              "owner_id": {
+                "type": "TEXT"
+              },
+              "payload": {
+                "type": "TEXT"
+              },
+              "revision": {
+                "type": "INTEGER"
+              },
+              "slug": {
+                "type": "TEXT"
+              },
+              "tenant_id": {
+                "type": "UUID"
+              },
+              "updated_at": {
+                "type": "TIMESTAMP"
+              }
+            }
+          }
+        ]
+      }
+    ]
   }
 }

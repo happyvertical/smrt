@@ -11,6 +11,10 @@
 
 // Installs the tenant-type-agnostic change-feed helpers before a conversion.
 export { ensurePostgresChangeFeedAppendFunction } from '../change-feed.js';
+export type {
+  RetireConfirmation,
+  RetireConfirmationSource,
+} from '../schema/types.js';
 // System-table tenant columns converted by `smrt db:migrate-uuid` (#3297)
 export { SYSTEM_TABLE_TENANT_UUID_COLUMNS } from '../system/schema.js';
 // Backfill tracking (data corrections, not schema migrations)
@@ -34,6 +38,7 @@ export {
   registerBuildSchema,
   registeredBuildSchema,
   resolveBuildSchema,
+  resolveRetiredTables,
 } from './build-schema.js';
 export * from './change-kinds.js';
 // Checksum utilities
@@ -112,13 +117,17 @@ export {
 } from './integer-width.js';
 export {
   type ConfirmedRecompute,
+  type ConfirmedRetirement,
+  type ConfirmedRetirementRecord,
   collectConfirmedRecomputes,
   collectMigrateRecordInput,
+  confirmedRetirementsOf,
   type LastMigrateRecord,
   type MigrateRecord,
   type MigrateRecordInput,
   type MigrateRecordOptions,
   packagesSeenInput,
+  readConfirmedRetirements,
   readLastMigrateRecord,
   recordSuccessfulMigrate,
   type UnloadedBuildPackage,
@@ -177,6 +186,7 @@ export {
   migrateSmrtSchemas,
   type PendingSchemaStatementsResult,
   type RelaxedColumn,
+  unusedRetireConfirmations,
 } from './orchestrate.js';
 // Stored deprecated qualified names: doctor counts + opt-in backfill (#3338)
 export {
@@ -192,6 +202,34 @@ export {
   type LegacyQualifiedNameTarget,
   legacyQualifiedNamesBackfillName,
 } from './qualified-name-aliases.js';
+// Declared table retirements (#5005). Planning is the differ's
+// (`DiffOptions.retireDeclaredTables`); packages declare in package.json and
+// register through their manifest (`ObjectRegistry.registerPackageManifest`,
+// `ObjectRegistry.registerManifestRetiredTables`).
+export {
+  isRetiredTableRowsAppeared,
+  RetiredTableRowsAppearedError,
+} from './retire-guard.js';
+export {
+  isRetireTableConfirmed,
+  RETIRE_POSTGRES_SCHEMA,
+  type RetireDependent,
+  type RetireTableConfirmations,
+} from './retire-plan.js';
+export {
+  FRAMEWORK_PACKAGE_PREFIX,
+  honouredRetiredTables,
+  mergeRetiredTables,
+  parseCarriedRetiredTable,
+  RETIRED_TABLE_DEFINITION_SCRIPT,
+  type RetiredTable,
+  type RetiredTableColumn,
+  type RetiredTableDeclaration,
+  RetiredTableDeclarationError,
+  type RetiredTableDefinition,
+  readManifestRetiredTables,
+  readRetiredTablesFromPackageJson,
+} from './retired-tables.js';
 export {
   declareRuntimeManagedDatabase,
   type RuntimeManagedDatabaseDeclaration,

@@ -95,10 +95,42 @@ export {
 } from './job-builder.js';
 // Job handle for tracking
 export {
+  assertAbandonedJobClaim,
+  assertFailedJobDispatch,
+  assertJobClaim,
+  assertJobClaimForRelease,
+  type JobClaim,
+  JobClaimLostError,
+  type JobDispatch,
+} from './job-claim.js';
+export {
   JobHandle,
   type JobResult,
   type WaitOptions,
 } from './job-handle.js';
+// Named job handlers: a job targets a model method or a registered handler.
+export {
+  assertJobHandlerName,
+  isJobHandlerName,
+  isJobHandlerTarget,
+  JOB_HANDLER_METHOD,
+  JOB_HANDLER_TARGET_PREFIX,
+  type JobHandler,
+  JobHandlerAlreadyRegisteredError,
+  JobHandlerLimitError,
+  JobHandlerNameError,
+  type JobHandlerPayload,
+  JobHandlerRegistrationClosedError,
+  type JobHandlerTarget,
+  JobHandlerTargetError,
+  JobHandlerUnregisteredError,
+  jobHandlerName,
+  jobHandlerTarget,
+  listJobHandlers,
+  MAX_JOB_HANDLERS,
+  registerJobHandler,
+  unregisterJobHandler,
+} from './job-handlers.js';
 // Logger extension
 export {
   type JobContext,
@@ -148,7 +180,10 @@ export {
 // Task runner
 export {
   createTaskRunner,
+  DEFAULT_HANDLER_UNCLAIMED_DEADLINE_MS,
   getActiveJobExecutionContext,
+  getJobClaim,
+  HANDLER_UNCLAIMED_SWEEP_LIMIT,
   isRunnerExecutionContext,
   JobCancelledError,
   JobTimeoutError,
@@ -178,6 +213,7 @@ export {
 // Core job model
 export {
   type ClaimReadyOptions,
+  type HandlerJobData,
   type JobStatus,
   type ListReadyOptions,
   SmrtJob,
@@ -188,6 +224,7 @@ export {
 export { SmrtJobDedupeSlot } from './smrt-job-dedupe-slot.js';
 // Durable job telemetry
 export {
+  type GetTerminalOutcomeOptions,
   type JobEventCursor,
   type ListJobEventsOptions,
   type ListTerminalOutcomesOptions,
@@ -208,6 +245,7 @@ export {
 } from './smrt-worker.js';
 export {
   createWorkerKey,
+  enablePgliteJobs,
   isWorkerAlive,
   registerLiveWorker,
   unregisterLiveWorker,

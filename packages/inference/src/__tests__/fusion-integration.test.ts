@@ -191,7 +191,8 @@ describe('fusions through a SmrtObject (#4753)', () => {
       className: 'Issue4753Note',
       seats: 3,
       degradedSeats: 0,
-      status: 'ok',
+      status: 'done',
+      degraded: false,
     });
     const seats = runs[0]?.details.seats as Array<Record<string, unknown>>;
     expect(seats.map((seat) => seat.persona)).toEqual([

@@ -47,6 +47,63 @@ It proceeds. A successful run records the loaded packages, excluding confirmed
 removals, even when the schema was already current. Refused runs and dry runs
 write nothing. Dry-run shows the same missing-package stop and exits 1.
 
+## Retired tables (#5005)
+
+Migrate drops a table only when its owning package has declared it retired
+(`smrt.retiredTables` in the package's `package.json`; core's `schema-paths.md`,
+"Retiring a table"). The drop is the change kind `table.retire`, one
+`DROP TABLE IF EXISTS` in the same atomic batch, after every other change. An
+absent table is nothing to do, so a rerun is a no-op. Nothing undeclared is ever
+dropped: a table with no declaration stays, whatever the code declares.
+
+Named stops hold the whole run back, like any other stop, each saying
+`loses-data` and naming the table:
+
+- `table.retire-owner`: the declaration fails its checks (a `lastOwner`
+  outside the declaring package, a `_smrt_` table retired by a package outside
+  smrt, no generated definition).
+- `table.retire-declared`: a model in the build, or a run-time list stored in
+  the app model journal, still declares the table. Remove the retirement or
+  the model.
+- `table.retire-mismatch`: the live table is not the one the declaration
+  describes in any release it lists. The message names, per release of the
+  declaration's `definitions` (each written from a published release by
+  `scripts/retired-table-facts.mjs`), each missing or extra column and each
+  type migrate would not convert. A type migrate would convert without losing
+  data is the same table; the run's `--postgres-timestamp-legacy-timezone UTC`
+  and `--empty-text-as-null` opt-ins count. It may be another table under the
+  same name: check what it holds. When it is the retired table at a shape no
+  supported release made, `--confirm-retire-table <table>` (exact name, no
+  patterns; repeat per table) retires it anyway. It lifts this stop alone:
+  rows, dependents and declarations still stop. The differences it confirms
+  are printed with the drop (`--dry-run` shows them first) and written to the
+  run's migrate record (`_smrt_migrate_runs.confirmed_retirements`, with
+  `by: 'flag'`). A name that lifts nothing is printed as ignored.
+- `table.retire-rows`: the table holds rows and its declaration does not say
+  `rows: 'discard'`. The message gives the row count. The count runs again
+  inside the batch, right before the drop (after `LOCK TABLE` on
+  PostgreSQL; on DuckDB it also counts rows another connection committed after
+  the batch began), so rows a still-running old instance writes after the plan
+  roll the whole batch back with the same stop.
+- `table.retire-dependent`: something undeclared depends on the table. One stop
+  per dependent names it: a foreign key (`child.column`), a view or
+  materialized view, a trigger on another table, a function whose body names
+  it, a DuckDB macro, or on PostgreSQL a policy, a column default on its
+  sequence, a column of its row type or an inheriting table. Drop or move each
+  first.
+- `table.retire-unsupported`: the JSON adapter never drops a table.
+
+On PostgreSQL the statements name `"public"."<table>"`, whatever the
+`search_path`. A run limited to named tables (lazy activation, the run-time
+model editor) neither plans nor reports retirements, and is not held back by
+one: retiring waits for the next `smrt db:migrate`. It stops only when it would
+create or add to a table on the retired list (reason `retired-table`).
+`--dry-run` and `db:diff` list each table that would be dropped (**Tables to
+retire**) with its reason, and `db:migrate` prints the same list before it
+applies, because the rows go with the table. The retired list is part of the
+build's stamp, so production refuses to start a build that retires a table
+until `db:migrate` has run.
+
 ## `--null-orphans`
 
 This explicit data step stays available. It clears orphan foreign-key references
@@ -130,6 +187,12 @@ An unreachable database or failed inspection is an issue, never a pass.
   missing shared-table subclass checks. It explains whether migrate can add
   the rule, existing rows break it, or the engine leaves it to save-time
   validation. PostgreSQL reads CHECK names from `pg_constraint`.
+- **Tables the next migrate retires (dropped with their rows)** lists each
+  table a package declares retired that the next migrate drops, with the
+  declaration's reason, its last owning class, the release that retired it and
+  the rows that go (`Next migrate drops N table(s) their package declares
+  retired` is a warning). A retirement that stops is under **What the next
+  migrate stops on**.
 - **What the next migrate applies** groups apply changes by kind with counts
   and up to ten names, then lists new tables. **Packages** compares the last
   migrate's packages with loaded packages. Missing packages stop migrate and

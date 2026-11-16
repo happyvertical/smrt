@@ -3,7 +3,7 @@
   "description": "smrt framework for building vertical AI agents",
   "author": "Will Griffin <willgriffin@gmail.com>",
   "type": "module",
-  "version": "0.61.6",
+  "version": "0.62.0",
   "files": [
     "AGENTS.md",
     "CLAUDE.md"
@@ -19,7 +19,7 @@
     "test:watch": "turbo test:watch",
     "test:coverage": "npx vitest run --coverage",
     "test:ui": "npx vitest --ui",
-    "lint": "npx --yes @biomejs/biome@2.5.3 ci --diagnostic-level=error . && node scripts/component-roots.mjs --check && node scripts/check-smrt-token-vocabulary.mjs && node scripts/check-smrt-cascade-layers.mjs && node scripts/check-smrt-sort-layers.mjs && node scripts/generate-smrt-required-tokens.mjs --check && node scripts/codemod-smrt-fallbacks.mjs --check && node scripts/check-required-reasons.mjs && node scripts/check-hand-written-ddl.mjs && node scripts/check-runtime-managed-databases.mjs",
+    "lint": "npx --yes @biomejs/biome@2.5.3 ci --diagnostic-level=error . && node scripts/component-roots.mjs --check && node scripts/check-smrt-token-vocabulary.mjs && node scripts/check-smrt-cascade-layers.mjs && node scripts/check-smrt-sort-layers.mjs && node scripts/generate-smrt-required-tokens.mjs --check && node scripts/codemod-smrt-fallbacks.mjs --check && node scripts/check-required-reasons.mjs && node scripts/check-hand-written-ddl.mjs && node scripts/check-runtime-managed-databases.mjs && node scripts/check-tracked-ai-calls.mjs",
     "lint:fix": "pnpm run format",
     "lint:fix-unsafe": "npx --yes @biomejs/biome@2.5.3 check --write --unsafe --staged",
     "clean": "turbo clean && rm -rf .turbo node_modules/.cache",
@@ -58,6 +58,8 @@
     "check:manifest-paths": "node scripts/check-manifest-paths.mjs",
     "check:manifest-stamps": "node scripts/check-manifest-stamps.mjs",
     "check:release-upgrade": "node scripts/release-upgrade-gate.mjs check",
+    "check:release-upgrade:owners": "node scripts/release-upgrade-gate.mjs check --verify-owners",
+    "release-upgrade:refresh-owners": "node scripts/retired-table-facts.mjs refresh",
     "release:snapshot": "node scripts/release-upgrade-gate.mjs save",
     "check:node-roots": "node scripts/survey-node-root-load.mjs --strict --allow=@happyvertical/smrt-products",
     "knowledge:check": "tsx scripts/check-knowledge.ts",

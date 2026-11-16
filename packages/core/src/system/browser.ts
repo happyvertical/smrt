@@ -12,9 +12,51 @@
 // need outside this package — e.g. to assert against the version
 // `ensureSystemTables()` stamps into `_smrt_migrations` — without hardcoding
 // a literal that goes stale on every bump (#3080).
-// Prompt-run observability: outcome labels and the ai:usage report (#4751),
+// Prompt-run observability: evaluations and the ai:usage report (#4751),
 // fusion run records (#4753), prompt comparison and template history (#4782).
 export * from './ai-prompt-compare.js';
+// The AI run lifecycle, events, trajectories and accounting (#5005).
+export * from './ai-run-accounting.js';
+export * from './ai-run-calls.js';
+export * from './ai-run-entry.js';
+export * from './ai-run-events.js';
+export * from './ai-run-lifecycle.js';
+export {
+  AI_RUN_FINAL_STATUSES,
+  AI_RUN_FRAMEWORK_TYPES,
+  AI_RUN_LIFECYCLE_STATUSES,
+  AI_RUN_LIMIT_REASONS,
+  AI_RUN_STOP_REASONS,
+  AI_RUN_TX_ATTEMPTS,
+  AiCallLimitError,
+  type AiRunBudget,
+  type AiRunBudgetLimit,
+  AiRunCheckpointConflictError,
+  type AiRunClaimFence,
+  AiRunClaimLostError,
+  type AiRunEngine,
+  AiRunError,
+  type AiRunLimitStopReason,
+  AiRunNotFoundError,
+  AiRunResumeRefusedError,
+  type AiRunRow,
+  type AiRunStatus,
+  type AiRunStopDetail,
+  AiRunStoppedError,
+  type AiRunStopReason,
+  AiRunTrackingDisabledError,
+  AiRunTransitionError,
+  type AiRunTx,
+  type AiRunTxOptions,
+  aiRunActiveTime,
+  aiRunEngine,
+  getAiRun,
+  isAiRunFinal,
+  isValidAiRunType,
+  lockAiRunChain,
+  withAiRunTransaction,
+} from './ai-run-model.js';
+export * from './ai-run-policy.js';
 export * from './ai-runs.js';
 export * from './ai-transcripts.js';
 export * from './ai-usage-observability.js';

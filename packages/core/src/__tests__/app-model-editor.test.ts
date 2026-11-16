@@ -505,6 +505,49 @@ describe('durable app model editor', () => {
     expect(await e.history()).toHaveLength(0);
   });
 
+  it('refuses a custom history store that does not append to the app model journal (#5005)', async () => {
+    // smrt db:migrate learns which tables run-time lists use only from the
+    // journal; a store writing elsewhere would let it drop a list's table.
+    const elsewhere = {
+      read: async () => [],
+      append: async () => {},
+      complete: async () => {},
+      transaction: async <T>(
+        work: (store: never, db: typeof database) => Promise<T>,
+      ) => work(elsewhere as never, database),
+    };
+    const database = db;
+    await expect(
+      createAppModelEditor({
+        db,
+        application: 'fixture-app',
+        tenantId: TENANT,
+        packageName: APP,
+        cookbook: book(),
+        catalog,
+        store: elsewhere,
+        authorize: () => true,
+      }),
+    ).rejects.toThrow(/MODEL_HISTORY_JOURNAL_REQUIRED/);
+    // A store that delegates to the journal's own append is one.
+    const journal = await createAppModelHistory({
+      db,
+      application: 'fixture-app',
+      tenantId: TENANT,
+    });
+    const wrapped = await createAppModelEditor({
+      db,
+      application: 'fixture-app',
+      tenantId: TENANT,
+      packageName: APP,
+      cookbook: book(),
+      catalog,
+      store: { ...journal, read: () => journal.read() },
+      authorize: () => true,
+    });
+    expect(wrapped.snapshot().revision).toBe(0);
+  });
+
   it('refuses a field inherited from an upstream ancestor', async () => {
     await db.close?.();
     ObjectRegistry.clear();

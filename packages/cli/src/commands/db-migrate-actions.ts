@@ -131,6 +131,7 @@ export interface SchemaChangeLike {
   type:
     | 'add_table'
     | 'drop_table'
+    | 'retire_table'
     | 'add_column'
     | 'drop_column'
     | 'alter_column'
@@ -424,6 +425,9 @@ export function getSyntheticMigrationNameForAction(
         : null;
     }
 
+    case 'retire_table':
+      return `retire_table_${action.tableName}`;
+
     case 'drop_index': {
       if (!action.indexName) return null;
       const fingerprint = sqlShapeFingerprint(action);
@@ -493,6 +497,9 @@ export function getSyntheticMigrationNameForChange(
         ? `drop_foreign_key_${change.table}_${fingerprint}`
         : null;
     }
+
+    case 'retire_table':
+      return `retire_table_${change.table}`;
 
     case 'drop_index': {
       if (!change.name) return null;
@@ -596,6 +603,7 @@ export function getUnresolvedGeneratedMigrationNames(
       change.type !== 'drop_foreign_key' &&
       change.type !== 'add_index' &&
       change.type !== 'drop_index' &&
+      change.type !== 'retire_table' &&
       change.type !== 'type_upgrade'
     ) {
       continue;
@@ -611,7 +619,9 @@ export function getUnresolvedGeneratedMigrationNames(
     // Report-only relaxations and refused convergences (#2608) never become
     // tracker migrations.
     if (
-      (change.type === 'alter_column' || change.type === 'type_upgrade') &&
+      (change.type === 'alter_column' ||
+        change.type === 'type_upgrade' ||
+        change.type === 'retire_table') &&
       isAdvisoryOnlyChangeLike(change)
     ) {
       continue;
