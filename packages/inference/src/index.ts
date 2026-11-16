@@ -91,7 +91,6 @@ export {
 registerInference();
 
 export * from './assistant-settings.js';
-export * from './design-run.js';
 export { engineLabel, type InferenceEngineId } from './engine-id.js';
 export * from './engine-tiers.js';
 export * from './model-fallback.js';

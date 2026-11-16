@@ -1169,7 +1169,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     ).toBe(403);
     expect(calls).not.toHaveBeenCalled();
     expect(
-      (await db.query('SELECT id FROM _smrt_inference_design_runs')).rows,
+      (await db.query('SELECT run_id FROM _smrt_ai_run_checkpoints')).rows,
     ).toHaveLength(0);
   });
   it('replaces unsafe canonical business captions separately from private design reasoning', async () => {

@@ -122,8 +122,6 @@ export {
   openSystemBrowser,
   type SpawnLike,
 } from './chatgpt/support.js';
-export * from './design-run.js';
-export * from './design-run-store.js';
 export {
   type EngineModel,
   EngineModelFailure,
