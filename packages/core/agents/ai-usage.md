@@ -111,6 +111,11 @@ those rows. A call on its own is not a run (`run_id` NULL).
 | `src/system/ai-runs.ts` | Readers `listAiRuns` / `reportAiRuns`; deprecated `recordAiRun` |
 | `src/system/ai-run-policy.ts` | The six decided product rules as constants (`AI_RUN_POLICY`) |
 
+**Run context on operations.** `AiOperationOptions.runContext` (an
+`AiRunContext`) is how `is()` / `do()` / `describe()` join a run: explicit,
+never ambient. `prepareAiOperation` keeps it in the call options, the tracked
+client reserves and settles under it, and it never reaches the provider.
+
 **Tables.** `_smrt_ai_runs` (one row per run: type, definition, status,
 stop fields, budget, own, inclusive and reserved totals, saved check and
 approval counts, `retain`, `trajectory_pruned`), `_smrt_ai_run_events`
