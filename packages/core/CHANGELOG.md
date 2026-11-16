@@ -1,5 +1,19 @@
 # @happyvertical/smrt-core
 
+## 0.62.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - one model for AI calls, runs, events and workflows (replaces design runs) (#5026)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.62.0
+  - @happyvertical/smrt-scanner@0.62.0
+  - @happyvertical/smrt-types@0.62.0
+
 ## 0.61.6
 
 ### Patch Changes

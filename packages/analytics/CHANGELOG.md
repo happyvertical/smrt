@@ -1,5 +1,16 @@
 # @happyvertical/smrt-analytics
 
+## 0.62.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.62.0
+  - @happyvertical/smrt-prompts@0.62.0
+  - @happyvertical/smrt-tenancy@0.62.0
+  - @happyvertical/smrt-ui@0.62.0
+  - @happyvertical/smrt-types@0.62.0
+
 ## 0.61.6
 
 ### Patch Changes
