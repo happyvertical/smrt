@@ -532,4 +532,15 @@ describe('the consumer workflow keeps secret custody (smrt#4965)', () => {
       }
     });
   });
+
+  it('runs on hosted runners only, with no runner variable', () => {
+    expect(text).not.toMatch(
+      /DESKTOP_MACOS_SIGNING_RUNNER|self-hosted|\bvars\./,
+    );
+    expect(job('sign').body).toContain('runs-on: ${{ matrix.runner }}');
+    expect(job('sign').body).not.toContain('fromJSON(matrix.runner)');
+    for (const m of text.matchAll(/runner: "([^"]+)"/g)) {
+      expect(['macos-15', 'macos-15-intel', 'ubuntu-latest']).toContain(m[1]);
+    }
+  });
 });

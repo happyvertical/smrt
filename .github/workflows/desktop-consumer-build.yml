@@ -163,10 +163,6 @@ jobs:
       - name: Validate the inputs and plan the matrix
         id: plan
         env:
-          # A label or a JSON array of labels, never a secret. Only a release
-          # reads it; the default is the hosted macos-15.
-          SIGNING_RUNNER: ${{ vars.DESKTOP_MACOS_SIGNING_RUNNER }}
-          RELEASE: ${{ inputs.release }}
           APP_DIR: ${{ inputs.app_dir }}
           TARGETS: ${{ inputs.targets }}
           BRIDGE_PATH: ${{ inputs.bridge_path }}
@@ -176,7 +172,7 @@ jobs:
             import { appendFileSync } from "node:fs";
             const safe = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._\/-]+$/;
             const fail = (message) => { console.error(message); process.exit(1); };
-            const { APP_DIR, TARGETS, BRIDGE_PATH, DESKTOP_VERSION, SIGNING_RUNNER = "", RELEASE } = process.env;
+            const { APP_DIR, TARGETS, BRIDGE_PATH, DESKTOP_VERSION } = process.env;
             if (!safe.test(APP_DIR)) fail("app_dir must be a relative path of plain segments");
             if (BRIDGE_PATH !== "" && !safe.test(BRIDGE_PATH)) fail("bridge_path must be a relative path of plain segments");
             if (DESKTOP_VERSION !== "" && !/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/.test(DESKTOP_VERSION)) fail("smrt_desktop_version must be an exact version");
@@ -191,18 +187,11 @@ jobs:
               if (!Object.hasOwn(table, target)) fail("unsupported target: " + target);
               return { target, ...table[target] };
             });
-            const label = /^[A-Za-z0-9._-]{1,64}$/;
-            let runner = ["macos-15"];
-            if (SIGNING_RUNNER !== "") {
-              let parsed = null;
-              try { parsed = SIGNING_RUNNER.startsWith("[") ? JSON.parse(SIGNING_RUNNER) : [SIGNING_RUNNER]; } catch { parsed = null; }
-              const valid = Array.isArray(parsed) && parsed.length > 0 && parsed.length <= 8 && parsed.every((value) => typeof value === "string" && label.test(value));
-              if (valid) runner = parsed;
-              else if (RELEASE === "true") fail("DESKTOP_MACOS_SIGNING_RUNNER must be a runner label or a JSON array of labels");
-            }
+            // Both macOS arches sign on the hosted arm64 runner; nothing here
+            // reads a repository variable, so no other runner can appear.
             const sign = targets.map((target) => target.endsWith("-apple-darwin")
-              ? { target, runner: JSON.stringify(runner) }
-              : { target, runner: JSON.stringify(["ubuntu-latest"]), installer_dir: "deb" });
+              ? { target, runner: "macos-15" }
+              : { target, runner: "ubuntu-latest", installer_dir: "deb" });
             appendFileSync(process.env.GITHUB_OUTPUT, "matrix=" + JSON.stringify({ include }) + "\n");
             appendFileSync(process.env.GITHUB_OUTPUT, "targets=" + targets.join(",") + "\n");
             appendFileSync(process.env.GITHUB_OUTPUT, "sign_matrix=" + JSON.stringify({ include: sign }) + "\n");
@@ -605,11 +594,9 @@ jobs:
     name: Sign and verify (${{ matrix.target }})
     if: inputs.release
     needs: [plan, tools, release-preflight, build]
-    # The macOS signing runner is the repository (or organization) variable
-    # DESKTOP_MACOS_SIGNING_RUNNER, default the hosted macos-15, validated by
-    # the plan job. It may name ONLY a dedicated, ephemeral runner in a runner
-    # group limited to this repository and workflow, never a shared one.
-    runs-on: ${{ fromJSON(matrix.runner) }}
+    # Hosted runners only (macos-15 for both macOS targets, from the plan
+    # job's closed table); no repository variable can name another runner.
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     environment: desktop-release
     permissions:

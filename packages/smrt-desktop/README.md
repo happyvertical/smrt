@@ -850,9 +850,9 @@ the lockfile pinning `@happyvertical/smrt-desktop` (and `@happyvertical/smrt-cli
 which provides `smrt`), and the pre-bundled MCP bridge if any (`bridge_path`).
 What the caller creates in its repository settings: the `desktop-release`
 environment (restricted to the default branch, required reviewers, the secrets
-above) and, optionally, the variable `DESKTOP_MACOS_SIGNING_RUNNER` (a runner
-label or JSON array of labels of a dedicated, ephemeral runner; default the
-hosted `macos-15`).
+above). The signing legs run on the hosted `macos-15` runner only; the
+reusable workflow reads no runner variable, so a self-hosted signing runner is
+not offered.
 
 ```yaml
 # .github/workflows/desktop.yml in the consuming repository
