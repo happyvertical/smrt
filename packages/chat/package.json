@@ -77,14 +77,14 @@
   "scripts": {
     "build": "node ../../scripts/run-with-env.mjs SMRT_PACKAGE_BUILD=1 -- vite build --mode library && node ../../scripts/run-with-env.mjs SMRT_PACKAGE_BUILD=1 -- svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist",
     "build:watch": "vite build --mode library --watch",
-    "check": "svelte-kit sync && pnpm exec svelte-check --tsconfig ./tsconfig.kit.json",
+    "check": "svelte-kit sync && node ../../scripts/write-source-typecheck-config.mjs tsconfig.kit.json .svelte-kit/tsconfig.typecheck.json && pnpm exec svelte-check --tsconfig ./.svelte-kit/tsconfig.typecheck.json",
     "clean": "rm -rf dist",
     "dev": "vite dev",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
     "test:e2e": "playwright test -c playwright.config.ts",
     "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/__tests__/agent-reply-postgres.test.ts src/sveltekit.postgres.test.ts",
-    "typecheck": "svelte-kit sync && tsc -p tsconfig.typecheck.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.kit.json",
+    "typecheck": "svelte-kit sync && node ../../scripts/write-source-typecheck-config.mjs tsconfig.kit.json .svelte-kit/tsconfig.typecheck.json && tsc -p tsconfig.typecheck.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./.svelte-kit/tsconfig.typecheck.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js . && node ../../scripts/verify-packed-chat-helper-preferences.mjs"
   },
   "keywords": [

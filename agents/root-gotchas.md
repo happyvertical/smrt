@@ -17,6 +17,19 @@ consumes deterministic `dist/` artifacts. Vite 8 requires Oxc legacy decorators
 (see core guidance). Svelte subpaths require `svelte-check`, not just `tsc`;
 use named `$props()` interfaces to avoid recursive inline intersections.
 
+## Workspace typechecks
+
+Run `pnpm --filter <package> typecheck` after installing dependencies. The
+standalone check resolves authored types for public workspace imports through
+`tsconfig.workspace-source-paths.json`, so a sibling’s stale or absent declaration
+output does not affect the result. SvelteKit sync and package generators still
+produce their required inputs. Turbo typecheck retains its build dependencies
+for those generators and for tooling that loads runtime package entry points.
+Run `node scripts/generate-workspace-source-paths.mjs` when changing an export
+or moving its source entry. The CI script tests check that the committed map
+matches the current export declarations. Check published declarations with the
+package’s normal build and `verify:pack`.
+
 ## Build-time gates beyond Biome
 
 - `pnpm build` runs `check:manifest-paths` after Turbo: a built manifest must

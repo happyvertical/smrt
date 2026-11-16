@@ -48,7 +48,7 @@
     "catalog:generate": "node scripts/generate-catalog.ts",
     "clean": "rm -rf dist app build .svelte-kit",
     "preview": "vite preview",
-    "typecheck": "svelte-kit sync && tsc --noEmit -p tsconfig.json && svelte-check --tsconfig ./tsconfig.json",
+    "typecheck": "svelte-kit sync && node ../../scripts/write-source-typecheck-config.mjs tsconfig.typecheck.json .svelte-kit/tsconfig.typecheck.json && tsc -p .svelte-kit/tsconfig.typecheck.json && svelte-check --tsconfig ./.svelte-kit/tsconfig.typecheck.json",
     "test": "vitest run",
     "test:package": "node scripts/test-packed-package.mjs",
     "test:kitchen": "node scripts/test-packed-kitchen.mjs",

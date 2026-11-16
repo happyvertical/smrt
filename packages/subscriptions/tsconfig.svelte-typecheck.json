@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.typecheck.json",
+  "compilerOptions": {
+    "types": ["node", "svelte"]
+  },
+  "include": ["src/**/*", "ambient.d.ts"],
+  "exclude": ["**/*.test.ts", "**/*.spec.ts"]
+}

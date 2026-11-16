@@ -44,8 +44,8 @@
   "scripts": {
     "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist",
     "build:watch": "vite build --mode library --watch",
-    "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
-    "typecheck": "tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
+    "check": "pnpm exec svelte-check --config ../../scripts/svelte.config.typecheck.mjs --tsconfig ./tsconfig.svelte-typecheck.json",
+    "typecheck": "tsc -p tsconfig.typecheck.json && node ../../scripts/svelte-check-a11y.mjs --config ../../scripts/svelte.config.typecheck.mjs --tsconfig ./tsconfig.svelte-typecheck.json",
     "clean": "rm -rf dist",
     "dev": "vite dev",
     "prepack": "node ../../scripts/prepack-package.js",

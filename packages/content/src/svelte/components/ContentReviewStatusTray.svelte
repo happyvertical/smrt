@@ -1,20 +1,17 @@
+<script module lang="ts">
+export type {
+  ContentReviewStatusIcon,
+  ContentReviewStatusTone,
+  ContentReviewStatusTrayItem,
+} from '../types.js';
+</script>
+
 <script lang="ts">
 import { Button } from '@happyvertical/smrt-ui/ui';
-
-export type ContentReviewStatusTone =
-  | 'neutral'
-  | 'danger'
-  | 'warning'
-  | 'success';
-export type ContentReviewStatusIcon = 'content' | 'facts' | 'safety' | 'custom';
-
-export interface ContentReviewStatusTrayItem {
-  id: string;
-  icon: ContentReviewStatusIcon;
-  label: string;
-  tone: ContentReviewStatusTone;
-  status: string;
-}
+import type {
+  ContentReviewStatusIcon,
+  ContentReviewStatusTrayItem,
+} from '../types.js';
 
 export interface Props {
   /** Review status items to display in the tray. */

@@ -1,3 +1,7 @@
+<script module lang="ts">
+export type { ModelOption } from '../assistant/assistant-transport.js';
+</script>
+
 <script lang="ts">
 /**
  * ModelPicker - AI model selector
@@ -12,11 +16,7 @@
 import { Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n.js';
-
-export interface ModelOption {
-  id: string;
-  label: string;
-}
+import type { ModelOption } from '../assistant/assistant-transport.js';
 
 export const DEFAULT_MODEL_OPTIONS: ModelOption[] = [
   { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },

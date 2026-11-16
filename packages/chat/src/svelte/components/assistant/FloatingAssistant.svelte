@@ -1,3 +1,7 @@
+<script module lang="ts">
+export type { FloatingAssistantPresentationState } from '../../types.js';
+</script>
+
 <script lang="ts">
 /**
  * A permanently mounted AssistantDock with a compact launcher.
@@ -13,6 +17,7 @@ import { type Snippet, tick } from 'svelte';
 import type { Attachment } from 'svelte/attachments';
 import type { AssistantStatus } from '../../../assistant-turn-events.js';
 import { M } from '../../i18n.js';
+import type { FloatingAssistantPresentationState } from '../../types.js';
 import AssistantDock, {
   type Props as AssistantDockProps,
 } from './AssistantDock.svelte';
@@ -22,12 +27,6 @@ import type {
 } from './create-assistant-dock-controller.svelte.js';
 
 const { t } = useI18n();
-
-export interface FloatingAssistantPresentationState {
-  expanded: boolean;
-  status: AssistantStatus;
-  run: AssistantRun | null;
-}
 
 export interface Props extends AssistantDockProps {
   /** Optional host-owned visual; it receives no media or animation contract. */

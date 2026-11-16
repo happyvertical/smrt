@@ -49,15 +49,24 @@ it('preserves runtime redirects and action failures across a production SvelteKi
     join(installed, 'node_modules'),
     'dir',
   );
-  // Model an app whose installed Kit peer context differs from the runtime's.
-  // A fixture nested under app-runtime otherwise inherits its own Kit and
-  // silently misses the copied-template development redirect regression.
-  mkdirSync(join(root, 'node_modules/@sveltejs'), { recursive: true });
-  const appKit = resolve(
-    import.meta.dirname,
-    '../../template-sveltekit/node_modules/@sveltejs/kit',
+  // Give the app a separate Kit installation even when pnpm dedupes the two
+  // workspace peer contexts. Reuse the template installation's dependencies.
+  const templateKit = realpathSync(
+    resolve(
+      import.meta.dirname,
+      '../../template-sveltekit/node_modules/@sveltejs/kit',
+    ),
   );
-  symlinkSync(appKit, join(root, 'node_modules/@sveltejs/kit'), 'dir');
+  const appKit = join(root, 'node_modules/@sveltejs/kit');
+  cpSync(templateKit, appKit, {
+    recursive: true,
+    filter: (source) => source !== join(templateKit, 'node_modules'),
+  });
+  symlinkSync(
+    resolve(templateKit, '../..'),
+    join(appKit, 'node_modules'),
+    'dir',
+  );
   expect(realpathSync(appKit)).not.toBe(
     realpathSync(resolve(import.meta.dirname, '../node_modules/@sveltejs/kit')),
   );
