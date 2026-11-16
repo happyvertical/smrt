@@ -813,7 +813,7 @@ tarball and main stay in step.
 ### Reusable workflow
 
 `.github/workflows/desktop-consumer-build.yml` is a `workflow_call` workflow
-for a consuming repository (the Tricia and Arthur repositories call it). It
+for a consuming repository (consumer apps call it). It
 reads nothing from this repository: every script it runs comes from the
 caller's installed `@happyvertical/smrt-desktop`.
 
@@ -830,10 +830,11 @@ publishes, in these jobs:
 
 | Job | Environment | Secrets | What it does |
 | --- | --- | --- | --- |
-| `release-preflight` | `desktop-release` | all eight, one step, presence only | fail closed: every secret, a real `updaterPublicKey` in `smrt-desktop.json`, safe product inputs. Nothing builds until it passes |
+| `tools` | none | none | installs the caller's locked tree (`--ignore-scripts`) and hands the packaged release scripts, signing-tools lockfile and Node pin table to the environment jobs as an artifact; the environment jobs never install the caller's dependencies, so no caller-controlled code runs next to a secret |
+| `release-preflight` | `desktop-release` | all eight, one step, presence only | fail closed: the environment is protected (required reviewers, no admin bypass, deployment branch exactly the default branch; needs `actions: read`), every secret, a real `updaterPublicKey` in `smrt-desktop.json`, a non-empty `bridge_path`. Nothing builds until it passes |
 | `build` | none | none | bundle (`--require-verified-pins`) and unsigned installer per target; uploads the bundle and the unsigned output as artifact directories |
 | `sign` | `desktop-release` | three named steps | re-verifies the bundle against the packaged Node pin table, signs and notarizes the macOS app and dmg, signs the updater archive, verifies it against the committed key; no cargo, no `smrt`, no app build |
-| `publish` | `desktop-release` | none (`contents: write`) | needs every leg; verifies every updater signature against the committed key, writes the `desktop-latest` prerelease and `latest.json` in the CALLER's repository |
+| `publish` | `desktop-release` | none (`contents: write`) | serialized by a `desktop-release-publish-<repo>` concurrency group (`cancel-in-progress: false`); needs every leg; verifies every updater signature against the committed key, writes the `desktop-latest` prerelease and `latest.json` in the CALLER's repository |
 
 The eight secrets are `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
 `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`,
@@ -860,12 +861,17 @@ on:
   pull_request:
   push:
     branches: [main]
-# The called workflow's publish job asks for contents: write, and GitHub checks
-# that against the caller even for runs that never release. Every job in the
+# The called workflow asks for contents: write (publish) and actions: read (the
+# environment check), and GitHub checks that against the caller even for runs
+# that never release. Every job in the
 # called workflow narrows its own token again; pull requests from forks get a
 # read-only token regardless.
 permissions:
-  contents: write
+  contents: write   # publish
+  actions: read     # the environment-protection check
+concurrency:        # one release run at a time; never cancel one mid-publish
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   desktop:
     uses: happyvertical/smrt/.github/workflows/desktop-consumer-build.yml@<commit sha>
@@ -897,10 +903,11 @@ evaluated outside any environment, so with environment-only secrets prefer
 `secrets: inherit` or omit the block. Not proven by a run yet (see below).
 
 Inputs: `app_dir`, `targets`, `release`, `smrt_desktop_version` (empty means the
-lockfile's version; a different value fails the run), `bridge_path`,
-`node_version`, `pnpm_version`. Artifact names (`desktop-bundle-<target>`,
+lockfile's version; a different value fails the run), `bridge_path` (optional for unsigned builds; required when `release` is true,
+the preflight refuses an empty value), `node_version`, `pnpm_version`. Artifact names (`desktop-bundle-<target>`,
 `desktop-unsigned-<target>`, `desktop-release-<target>`) are run-wide: call the
-workflow once per run.
+workflow once per run. Set your own workflow-level `concurrency` as in the
+example; the called `publish` job also serializes itself.
 
 Blocked until Apple's D-U-N-S number arrives and the Developer ID certificate
 and notarization credentials exist: the six `APPLE_*` secrets, so the
@@ -915,6 +922,8 @@ written, that a second repository may call the workflow (needs the
 organization's Actions access setting for it, and a scratch repository), the
 `contents: write` permission check described above, and the macOS signing and
 notarization legs, which have only been exercised through this repository's own
-release workflow structure, never with real Apple credentials. The release
-workflow's environment-protection check is not part of the reusable workflow:
-protecting `desktop-release` is the caller owner's job.
+release workflow structure, never with real Apple credentials, and the
+environment check's `actions: read` token permission (it fails closed if
+GitHub refuses it). A builder without `updaterPublicKey` writes an invalid
+placeholder key into the installer (never the wrapper's own key), which the
+release preflight rejects.

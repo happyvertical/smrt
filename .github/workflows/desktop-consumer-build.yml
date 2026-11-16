@@ -26,7 +26,13 @@
 # Only after it passes does anything build, and the legs mirror this
 # repository's own release workflow:
 #
-#   release-preflight  presence of all eight secrets, the updater key in
+#   tools              installs the caller's locked tree (scripts disabled) in a
+#                      job with no environment and no secret and hands the
+#                      packaged release scripts, signing-tools lockfile and Node
+#                      pin table to the environment jobs as an artifact, so no
+#                      environment job installs or runs caller-controlled code.
+#   release-preflight  environment protection (needs actions: read), presence
+#                      of all eight secrets, the updater key in
 #                      smrt-desktop.json, the product inputs. Secrets: this one
 #                      step.
 #   build              the unsigned bundle and installer (no environment, no
@@ -53,7 +59,7 @@
 # installed @happyvertical/smrt-desktop package; nothing is checked out from or
 # copied out of this repository.
 #
-# The caller's calling job needs `permissions: contents: write` (GitHub checks a
+# The calling job needs `permissions: contents: write` and `actions: read` (GitHub checks a
 # called workflow's requested permissions against the caller's even for jobs
 # that are skipped); every job here narrows its own token again.
 #
@@ -99,7 +105,9 @@ on:
       bridge_path:
         description: >-
           Caller-repository-relative path of the pre-bundled MCP bridge file
-          (passed to smrt desktop bundle --bridge). Empty omits it.
+          (passed to smrt desktop bundle --bridge). Optional for unsigned
+          builds (empty omits it); REQUIRED when release is true (the release
+          preflight refuses an empty value).
         type: string
         default: ''
       node_version:
@@ -150,6 +158,7 @@ jobs:
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       sign_matrix: ${{ steps.plan.outputs.sign_matrix }}
+      targets: ${{ steps.plan.outputs.targets }}
     steps:
       - name: Validate the inputs and plan the matrix
         id: plan
@@ -195,21 +204,93 @@ jobs:
               ? { target, runner: JSON.stringify(runner) }
               : { target, runner: JSON.stringify(["ubuntu-latest"]), installer_dir: "deb" });
             appendFileSync(process.env.GITHUB_OUTPUT, "matrix=" + JSON.stringify({ include }) + "\n");
+            appendFileSync(process.env.GITHUB_OUTPUT, "targets=" + targets.join(",") + "\n");
             appendFileSync(process.env.GITHUB_OUTPUT, "sign_matrix=" + JSON.stringify({ include: sign }) + "\n");
           '
 
   # Only when release is requested. The one job that sees the secrets, and
   # only in one step, for presence. It never builds or installs anything the
   # caller wrote.
-  release-preflight:
-    name: Release preflight (fails closed)
+  # Resolves the packaged release tools from the caller's own locked tree (the
+  # same smrt-desktop the build uses) and hands them to the environment jobs as
+  # data. The caller's install runs here, in a job with no environment, no
+  # secret and a read-only token; the environment jobs install nothing of the
+  # caller's. Nothing is copied or checked out from the smrt repository.
+  tools:
+    name: Packaged release tools
     if: inputs.release
     needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: desktop-release
     permissions:
       contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout the caller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Install the pinned smrt-desktop (scripts disabled)
+        env:
+          PNPM_VERSION: ${{ inputs.pnpm_version }}
+          APP_DIR: ${{ inputs.app_dir }}
+        run: |
+          npm install --global --ignore-scripts "pnpm@${PNPM_VERSION}"
+          pnpm --dir "$APP_DIR" install --frozen-lockfile --ignore-scripts
+
+      - name: Collect the packaged release tools
+        env:
+          APP_DIR: ${{ inputs.app_dir }}
+        run: |
+          pkg="$(pnpm --dir "$APP_DIR" exec node --input-type=module -e '
+            import { createRequire } from "node:module";
+            import { dirname } from "node:path";
+            import { fileURLToPath } from "node:url";
+            const cli = fileURLToPath(import.meta.resolve("@happyvertical/smrt-cli"));
+            const desktop = createRequire(cli).resolve("@happyvertical/smrt-desktop/package.json");
+            console.log(dirname(desktop));
+          ')"
+          out="$RUNNER_TEMP/release-tools"
+          rm -rf "$out"
+          mkdir -p "$out/wrapper/scripts" "$out/wrapper/signing-tools" "$out/src/bundler"
+          for file in release-preflight.mjs release-environment.mjs release-feed.mjs minisign.mjs; do
+            test -f "$pkg/wrapper/scripts/$file" || { echo "The installed smrt-desktop does not ship $file; pin a version that does." >&2; exit 1; }
+            cp "$pkg/wrapper/scripts/$file" "$out/wrapper/scripts/$file"
+          done
+          for file in package.json package-lock.json; do
+            test -f "$pkg/wrapper/signing-tools/$file" || { echo "The installed smrt-desktop does not ship signing-tools/$file." >&2; exit 1; }
+            cp "$pkg/wrapper/signing-tools/$file" "$out/wrapper/signing-tools/$file"
+          done
+          test -f "$pkg/src/bundler/node-pins.ts" || { echo "The installed smrt-desktop does not ship the Node pin table." >&2; exit 1; }
+          cp "$pkg/src/bundler/node-pins.ts" "$out/src/bundler/node-pins.ts"
+
+      - name: Upload the release tools
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: desktop-tools
+          path: ${{ runner.temp }}/release-tools
+          if-no-files-found: error
+          retention-days: 1
+
+  release-preflight:
+    name: Release preflight (fails closed)
+    if: inputs.release
+    needs: [plan, tools]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: desktop-release
+    # `actions: read` lets the environment check read the environment's rules.
+    permissions:
+      contents: read
+      actions: read
     defaults:
       run:
         shell: bash
@@ -234,31 +315,34 @@ jobs:
         with:
           node-version: ${{ inputs.node_version }}
 
-      - name: Install the pinned smrt-desktop (scripts disabled)
-        env:
-          PNPM_VERSION: ${{ inputs.pnpm_version }}
-          APP_DIR: ${{ inputs.app_dir }}
-        run: |
-          npm install --global --ignore-scripts "pnpm@${PNPM_VERSION}"
-          pnpm --dir "$APP_DIR" install --frozen-lockfile --ignore-scripts
+      # The packaged release tools come from the no-environment `tools` job.
+      # Nothing from the caller's dependency tree is installed or run in this
+      # job, so no caller-controlled code can touch the environment (GITHUB_ENV,
+      # GITHUB_PATH, the runner) before a secret step.
+      - name: Download the release tools
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: desktop-tools
+          path: ${{ runner.temp }}/release-tools
 
-      # Resolves the packaged release tools from the caller's own locked tree
-      # (the same smrt-desktop the build uses). Nothing is copied or checked
-      # out from the smrt repository.
-      - name: Locate the packaged release tools
+      - name: Point at the release tools
+        run: echo "DESKTOP_PKG=$RUNNER_TEMP/release-tools" >> "$GITHUB_ENV"
+
+      # Refuses unless the environment has required reviewers (self-review
+      # prevented), no admin bypass and a deployment rule of exactly the default
+      # branch: a workflow naming a missing environment creates it unprotected.
+      # Catches the owner's mistake; the environment's branch rule is the
+      # control. No secret in this step.
+      - name: Verify the environment is protected
         env:
-          APP_DIR: ${{ inputs.app_dir }}
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          pkg="$(pnpm --dir "$APP_DIR" exec node --input-type=module -e '
-            import { createRequire } from "node:module";
-            import { dirname } from "node:path";
-            import { fileURLToPath } from "node:url";
-            const cli = fileURLToPath(import.meta.resolve("@happyvertical/smrt-cli"));
-            const desktop = createRequire(cli).resolve("@happyvertical/smrt-desktop/package.json");
-            console.log(dirname(desktop));
-          ')"
-          test -f "$pkg/wrapper/scripts/release-feed.mjs" || { echo "The installed smrt-desktop does not ship the release tools; pin a version that does." >&2; exit 1; }
-          echo "DESKTOP_PKG=$pkg" >> "$GITHUB_ENV"
+          node "$DESKTOP_PKG/wrapper/scripts/release-environment.mjs" \
+            --repo "$REPO" \
+            --environment desktop-release \
+            --branch "$BRANCH"
 
       # Presence only. The script names what is missing and never prints a
       # value. The secrets reach this one step and no other in this job. The
@@ -445,7 +529,7 @@ jobs:
   sign:
     name: Sign and verify (${{ matrix.target }})
     if: inputs.release
-    needs: [plan, release-preflight, build]
+    needs: [plan, tools, release-preflight, build]
     # The macOS signing runner is the repository (or organization) variable
     # DESKTOP_MACOS_SIGNING_RUNNER, default the hosted macos-15, validated by
     # the plan job. It may name ONLY a dedicated, ephemeral runner in a runner
@@ -472,34 +556,18 @@ jobs:
         with:
           node-version: ${{ inputs.node_version }}
 
-      # Installs the caller's locked tree with lifecycle scripts disabled (pnpm
-      # verifies every integrity hash from the lockfile). Only to resolve the
-      # packaged release tools; the app is never built here.
-      - name: Install the pinned smrt-desktop (scripts disabled)
-        env:
-          PNPM_VERSION: ${{ inputs.pnpm_version }}
-          APP_DIR: ${{ inputs.app_dir }}
-        run: |
-          npm install --global --ignore-scripts "pnpm@${PNPM_VERSION}"
-          pnpm --dir "$APP_DIR" install --frozen-lockfile --ignore-scripts
+      # The packaged release tools come from the no-environment `tools` job.
+      # Nothing from the caller's dependency tree is installed or run in this
+      # job, so no caller-controlled code can touch the environment (GITHUB_ENV,
+      # GITHUB_PATH, the runner) before a secret step.
+      - name: Download the release tools
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: desktop-tools
+          path: ${{ runner.temp }}/release-tools
 
-      # Resolves the packaged release tools from the caller's own locked tree
-      # (the same smrt-desktop the build uses). Nothing is copied or checked
-      # out from the smrt repository.
-      - name: Locate the packaged release tools
-        env:
-          APP_DIR: ${{ inputs.app_dir }}
-        run: |
-          pkg="$(pnpm --dir "$APP_DIR" exec node --input-type=module -e '
-            import { createRequire } from "node:module";
-            import { dirname } from "node:path";
-            import { fileURLToPath } from "node:url";
-            const cli = fileURLToPath(import.meta.resolve("@happyvertical/smrt-cli"));
-            const desktop = createRequire(cli).resolve("@happyvertical/smrt-desktop/package.json");
-            console.log(dirname(desktop));
-          ')"
-          test -f "$pkg/wrapper/scripts/release-feed.mjs" || { echo "The installed smrt-desktop does not ship the release tools; pin a version that does." >&2; exit 1; }
-          echo "DESKTOP_PKG=$pkg" >> "$GITHUB_ENV"
+      - name: Point at the release tools
+        run: echo "DESKTOP_PKG=$RUNNER_TEMP/release-tools" >> "$GITHUB_ENV"
 
       # Both downloads go into empty directories under RUNNER_TEMP, never into
       # the checkout, and nothing is extracted from an archive.
@@ -726,7 +794,7 @@ jobs:
           if [ "$RUNNER_OS" = macOS ]; then
             security delete-keychain "$RUNNER_TEMP/desktop-signing.keychain-db" || true
           fi
-          rm -rf "$RUNNER_TEMP"/desktop-* .desktop-leg
+          rm -rf "$RUNNER_TEMP"/desktop-* "$RUNNER_TEMP/release-tools" .desktop-leg
 
   # The only job that can write the release. It needs every leg, so a failed
   # leg, a failed signature check or a missing artifact publishes nothing. New
@@ -736,10 +804,16 @@ jobs:
   publish:
     name: Publish the release (all legs verified)
     if: inputs.release
-    needs: [plan, sign]
+    needs: [plan, tools, sign]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: desktop-release
+    # One publish at a time per repository; a later run waits rather than
+    # cancelling a publish that is mid-upload (a queued one is replaced by
+    # the newest). Callers should also set their own workflow `concurrency`.
+    concurrency:
+      group: desktop-release-publish-${{ github.repository }}
+      cancel-in-progress: false
     permissions:
       contents: write
     defaults:
@@ -768,34 +842,18 @@ jobs:
         with:
           node-version: ${{ inputs.node_version }}
 
-      # Installs the caller's locked tree with lifecycle scripts disabled (pnpm
-      # verifies every integrity hash from the lockfile). Only to resolve the
-      # packaged release tools; the app is never built here.
-      - name: Install the pinned smrt-desktop (scripts disabled)
-        env:
-          PNPM_VERSION: ${{ inputs.pnpm_version }}
-          APP_DIR: ${{ inputs.app_dir }}
-        run: |
-          npm install --global --ignore-scripts "pnpm@${PNPM_VERSION}"
-          pnpm --dir "$APP_DIR" install --frozen-lockfile --ignore-scripts
+      # The packaged release tools come from the no-environment `tools` job.
+      # Nothing from the caller's dependency tree is installed or run in this
+      # job, so no caller-controlled code can touch the environment (GITHUB_ENV,
+      # GITHUB_PATH, the runner) before a secret step.
+      - name: Download the release tools
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: desktop-tools
+          path: ${{ runner.temp }}/release-tools
 
-      # Resolves the packaged release tools from the caller's own locked tree
-      # (the same smrt-desktop the build uses). Nothing is copied or checked
-      # out from the smrt repository.
-      - name: Locate the packaged release tools
-        env:
-          APP_DIR: ${{ inputs.app_dir }}
-        run: |
-          pkg="$(pnpm --dir "$APP_DIR" exec node --input-type=module -e '
-            import { createRequire } from "node:module";
-            import { dirname } from "node:path";
-            import { fileURLToPath } from "node:url";
-            const cli = fileURLToPath(import.meta.resolve("@happyvertical/smrt-cli"));
-            const desktop = createRequire(cli).resolve("@happyvertical/smrt-desktop/package.json");
-            console.log(dirname(desktop));
-          ')"
-          test -f "$pkg/wrapper/scripts/release-feed.mjs" || { echo "The installed smrt-desktop does not ship the release tools; pin a version that does." >&2; exit 1; }
-          echo "DESKTOP_PKG=$pkg" >> "$GITHUB_ENV"
+      - name: Point at the release tools
+        run: echo "DESKTOP_PKG=$RUNNER_TEMP/release-tools" >> "$GITHUB_ENV"
 
       - name: Download every leg
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -812,11 +870,11 @@ jobs:
         env:
           REPO: ${{ github.repository }}
           APP_DIR: ${{ inputs.app_dir }}
-          TARGETS: ${{ inputs.targets }}
+          TARGETS: ${{ needs.plan.outputs.targets }}
         run: |
           node "$DESKTOP_PKG/wrapper/scripts/release-feed.mjs" feed \
             --legs .desktop-legs \
-            --targets "${TARGETS// /}" \
+            --targets "$TARGETS" \
             --repo "$REPO" \
             --tag "$RELEASE_TAG" \
             --pubkey-config "$APP_DIR/smrt-desktop.json" \

@@ -2,7 +2,12 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { TAURI_CLI_VERSION } from './constants.js';
+import {
+  NODE_PINS_PACKAGE_PATH,
+  TAURI_CLI_VERSION,
+  WRAPPER_SIGNING_TOOLS,
+  WRAPPER_TOOLS,
+} from './constants.js';
 
 /**
  * Structure of the reusable consumer workflow (smrt#4965). Text based on
@@ -71,6 +76,7 @@ describe('the consumer workflow keeps secret custody (smrt#4965)', () => {
   it('has the jobs plan, release-preflight, build, sign and publish', () => {
     expect(jobs.map((j) => j.id)).toEqual([
       'plan',
+      'tools',
       'release-preflight',
       'build',
       'sign',
@@ -181,7 +187,7 @@ describe('the consumer workflow keeps secret custody (smrt#4965)', () => {
       expect(writes, j.id).toBe(j.id === 'publish');
     }
     expect(secretNames(job('publish').body)).toEqual([]);
-    expect(job('publish').body).toMatch(/needs: \[plan, sign\]/);
+    expect(job('publish').body).toMatch(/needs: \[plan, tools, sign\]/);
   });
 
   it('runs the release legs in the desktop-release environment, on a release only', () => {
@@ -195,7 +201,7 @@ describe('the consumer workflow keeps secret custody (smrt#4965)', () => {
     expect(build).toContain("needs.release-preflight.result == 'success'");
     expect(build).toContain("needs.release-preflight.result == 'skipped'");
     expect(job('sign').body).toContain(
-      'needs: [plan, release-preflight, build]',
+      'needs: [plan, tools, release-preflight, build]',
     );
     expect(text).not.toMatch(/continue-on-error/);
   });
@@ -211,7 +217,8 @@ describe('the consumer workflow keeps secret custody (smrt#4965)', () => {
     expect(code).not.toMatch(/packages\/smrt-desktop|WRAPPER_DIR|\.github\//);
     for (const id of ['release-preflight', 'sign', 'publish']) {
       const body = job(id).body;
-      expect(body, id).toContain('Locate the packaged release tools');
+      expect(body, id).toContain('Download the release tools');
+      expect(body, id).toContain('name: desktop-tools');
       for (const script of body.matchAll(
         /node "\$[A-Z_]+\/wrapper\/scripts\/([a-z-]+\.mjs)"/g,
       )) {
@@ -256,5 +263,97 @@ describe('the consumer workflow keeps secret custody (smrt#4965)', () => {
     expect(lock.packages['node_modules/@tauri-apps/cli'].version).toBe(
       TAURI_CLI_VERSION,
     );
+  });
+
+  it('installs nothing of the caller in any job that has an environment', () => {
+    const withEnvironment = jobs.filter((j) =>
+      /^ {4}environment:/m.test(j.body),
+    );
+    expect(withEnvironment.map((j) => j.id)).toEqual([
+      'release-preflight',
+      'sign',
+      'publish',
+    ]);
+    for (const j of withEnvironment) {
+      const code = nonComment(j.body);
+      // no pnpm, no pnpmfile, no caller lockfile install: the packaged tools
+      // arrive as an artifact from the no-environment `tools` job
+      expect(code, j.id).not.toMatch(/\bpnpm\b/);
+      expect(code, j.id).not.toMatch(/\bnpm\s+(install|i|exec|run|x)\b|npx\b/);
+      expect(code, j.id).not.toContain('pnpm-lock');
+      // the one npm call is the locked, script-less signing CLI install
+      for (const call of code.matchAll(/\bnpm\s+ci\b[^\n]*/g)) {
+        expect(j.id).toBe('sign');
+        expect(call[0]).toContain('--ignore-scripts');
+        expect(call[0]).toContain('--prefix "$SIGNING_TOOLS"');
+      }
+    }
+    // the caller's install happens only in the environment-free tools job
+    const tools = job('tools');
+    expect(tools.body).not.toMatch(/\benvironment:/);
+    expect(tools.body).not.toContain('secrets.');
+    expect(tools.body).toMatch(/permissions:\n {6}contents: read\n/);
+    expect(tools.body).toContain('install --frozen-lockfile --ignore-scripts');
+  });
+
+  it('hands over exactly the packaged tools the legs run', () => {
+    const body = job('tools').body;
+    for (const file of [...WRAPPER_TOOLS, ...WRAPPER_SIGNING_TOOLS]) {
+      expect(body, file).toContain(file.split('/').pop() as string);
+    }
+    expect(body).toContain(NODE_PINS_PACKAGE_PATH);
+    expect(WRAPPER_TOOLS).toContain('scripts/release-environment.mjs');
+    // every script an environment job runs is one of the handed-over files
+    for (const id of ['release-preflight', 'sign', 'publish']) {
+      for (const m of job(id).body.matchAll(
+        /\$DESKTOP_PKG\/wrapper\/scripts\/([a-z-]+\.mjs)/g,
+      )) {
+        expect(WRAPPER_TOOLS, m[1]).toContain(`scripts/${m[1]}`);
+      }
+    }
+  });
+
+  it('checks the environment protection in the preflight with actions: read', () => {
+    const preflight = job('release-preflight');
+    expect(preflight.body).toMatch(
+      /permissions:\n {6}contents: read\n {6}actions: read\n/,
+    );
+    const step = preflight.steps.find(
+      (s) => s.name === 'Verify the environment is protected',
+    );
+    expect(step?.body).toContain('release-environment.mjs');
+    expect(step?.body).toContain('--environment desktop-release');
+    expect(step?.body).toContain('--branch "$BRANCH"');
+    expect(step?.body).toContain('default_branch');
+    expect(secretNames(step?.body ?? '')).toEqual([]);
+    // it runs before the secrets step
+    const names = preflight.steps.map((s) => s.name);
+    expect(names.indexOf('Verify the environment is protected')).toBeLessThan(
+      names.indexOf('Check secrets and product inputs'),
+    );
+  });
+
+  it('serializes publishing without cancelling a publish in flight', () => {
+    const body = job('publish').body;
+    expect(body).toMatch(/concurrency:\n {6}group: desktop-release-publish-/);
+    expect(body).toMatch(/cancel-in-progress: false/);
+    expect(text).not.toMatch(/cancel-in-progress: true/);
+  });
+
+  it('publishes the planner-normalized targets', () => {
+    expect(job('plan').body).toContain(
+      'targets: ${{ steps.plan.outputs.targets }}',
+    );
+    expect(job('plan').body).toContain('"targets=" + targets.join(",")');
+    const publish = job('publish').body;
+    expect(publish).toContain('TARGETS: ${{ needs.plan.outputs.targets }}');
+    expect(publish).not.toContain('inputs.targets');
+  });
+
+  it('says the bridge is required for a release', () => {
+    const description =
+      /bridge_path:\n {8}description: >-\n((?: {10}.*\n)+)/.exec(text)?.[1];
+    expect(description).toMatch(/REQUIRED when release is true/);
+    expect(description).not.toMatch(/Empty omits it\./);
   });
 });

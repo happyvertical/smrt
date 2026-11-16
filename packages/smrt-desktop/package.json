@@ -23,6 +23,7 @@
     "wrapper/scripts/launch-smoke.mjs",
     "wrapper/scripts/smoke-support.mjs",
     "wrapper/scripts/release-preflight.mjs",
+    "wrapper/scripts/release-environment.mjs",
     "wrapper/scripts/release-feed.mjs",
     "wrapper/scripts/minisign.mjs",
     "wrapper/signing-tools/package.json",

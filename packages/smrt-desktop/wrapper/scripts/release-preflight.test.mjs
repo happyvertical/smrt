@@ -861,6 +861,46 @@ const NODE_PIN_PROVENANCE_DATA: NodePinProvenanceTable = {
     assert.match(text, /pin table is unreadable/);
   });
 
+  it('verifies a bundle against a consumer-shaped smrt-desktop.json', () => {
+    const dir = writeBundle();
+    const app = mkdtempSync(join(tmpdir(), 'app-'));
+    dirs.push(app);
+    const product = join(app, 'smrt-desktop.json');
+    writeFileSync(
+      product,
+      JSON.stringify({ updaterPublicKey: fakeMinisignPubkey() }),
+    );
+    const overlay = join(app, 'overlay.json');
+    const args = (config) => [
+      '--secrets',
+      '--config',
+      config,
+      '--bundle',
+      dir,
+      '--target',
+      TARGET,
+      '--node-pins',
+      pinsFile(),
+      '--write-overlay',
+      overlay,
+    ];
+    assert.equal(run(args(product), secrets()).code, 0);
+    assert.ok(existsSync(overlay));
+    rmSync(overlay);
+    // a product without the key, or with the builder's placeholder, is refused
+    const missing = join(app, 'missing.json');
+    writeFileSync(missing, JSON.stringify({ name: 'x' }));
+    assert.equal(run(args(missing), secrets()).code, 1);
+    const placeholder = join(app, 'placeholder.json');
+    writeFileSync(
+      placeholder,
+      JSON.stringify({ updaterPublicKey: 'PLACEHOLDER-NO-UPDATER-KEY-CONFIGURED' }),
+    );
+    const refused = run(args(placeholder), secrets());
+    assert.equal(refused.code, 1);
+    assert.equal(existsSync(overlay), false);
+  });
+
   it('passes, writes the overlay and stages only verified files', () => {
     const dir = writeBundle();
     writeFileSync(join(dir, 'resources/unlisted'), 'x');

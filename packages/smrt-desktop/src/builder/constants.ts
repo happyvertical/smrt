@@ -42,6 +42,7 @@ export const WRAPPER_SCRIPTS: readonly string[] = Object.freeze([
  */
 export const WRAPPER_TOOLS: readonly string[] = Object.freeze([
   'scripts/release-preflight.mjs',
+  'scripts/release-environment.mjs',
   'scripts/release-feed.mjs',
   'scripts/minisign.mjs',
 ]);
@@ -77,6 +78,15 @@ export const INSTALLER_KINDS = Object.freeze({
   win32: { bundles: 'nsis', directory: 'nsis', match: /-setup\.exe$/ },
   linux: { bundles: 'deb', directory: 'deb', match: /\.deb$/ },
 } as const);
+
+/**
+ * Written as the updater public key when the product has none. Deliberately not
+ * a valid key (the release preflight rejects it as a placeholder), so an
+ * installer built without `updaterPublicKey` never trusts the wrapper's own
+ * committed key. Not a default for `updaterPublicKey`: nothing is configured.
+ */
+export const MISSING_UPDATER_KEY_PLACEHOLDER =
+  'PLACEHOLDER-NO-UPDATER-KEY-CONFIGURED';
 
 export const SCRATCH_OVERLAY = 'tauri.build.json';
 export const PRODUCT_ICON_DIR = 'icons/product';

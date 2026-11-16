@@ -29,7 +29,9 @@
 // (403, 401, or the 404 GitHub also answers) the guard FAILS CLOSED and names
 // the permission. Never prints the token.
 //
-//   --repo <owner/name> --environment <name>      token in env GITHUB_TOKEN
+//   --repo <owner/name> --environment <name> [--branch <name>]
+//                                  token in env GITHUB_TOKEN; --branch is the
+//                                  one deployment branch allowed (default main)
 //
 // Node built-ins only. Exit 0 ok, 1 refused, 2 usage.
 
@@ -38,6 +40,7 @@ import { fileURLToPath } from 'node:url';
 const OWNER_REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const ENV_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 export const REQUIRED_BRANCH = 'main';
+const BRANCH_NAME = /^[A-Za-z0-9][A-Za-z0-9._\/-]{0,100}$/;
 
 const READ_HINT =
   'the workflow token needs "actions: read" (permissions: contents: read, actions: read; ' +
@@ -79,8 +82,17 @@ function isObject(value) {
  * Returns the list of problems (empty = the environment is protected as
  * required). `api(path)` resolves to `{ status, body }`.
  */
-export async function checkEnvironment({ repo, environment, api }) {
-  if (!OWNER_REPO.test(repo ?? '') || !ENV_NAME.test(environment ?? '')) {
+export async function checkEnvironment({
+  repo,
+  environment,
+  api,
+  branch = REQUIRED_BRANCH,
+}) {
+  if (
+    !OWNER_REPO.test(repo ?? '') ||
+    !ENV_NAME.test(environment ?? '') ||
+    !BRANCH_NAME.test(branch)
+  ) {
     return ['the repository or environment name is not a plain name'];
   }
   const base = `/repos/${repo}/environments/${encodeURIComponent(environment)}`;
@@ -167,10 +179,10 @@ export async function checkEnvironment({ repo, environment, api }) {
     list.length !== 1 ||
     !isObject(list[0]) ||
     list[0].type !== 'branch' ||
-    list[0].name !== REQUIRED_BRANCH
+    list[0].name !== branch
   ) {
     problems.push(
-      `environment ${environment} deployment branches must be exactly the branch ${REQUIRED_BRANCH}: no tags, no patterns, no other branch`,
+      `environment ${environment} deployment branches must be exactly the branch ${branch}: no tags, no patterns, no other branch`,
     );
   }
   return problems;
@@ -181,7 +193,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i += 2) {
     const key = argv[i];
     const value = argv[i + 1];
-    if (!['--repo', '--environment'].includes(key) || value === undefined) {
+    if (!['--repo', '--environment', '--branch'].includes(key) || value === undefined) {
       throw new Error(`bad option ${key}`);
     }
     options[key.slice(2)] = value;
@@ -219,6 +231,7 @@ export async function main(argv, env, io = {}) {
   const problems = await checkEnvironment({
     repo: options.repo,
     environment: options.environment,
+    branch: options.branch,
     api,
   });
   if (problems.length > 0) {
