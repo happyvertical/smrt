@@ -13,13 +13,7 @@ Application infrastructure composition for the validated runtime profiles in
 - SQLite is acquired through `@happyvertical/sql`'s explicit
   `{ driver: 'node:sqlite', custody: 'trusted-parent' }` boundary after the
   runtime establishes its user-owned mode-0700 data root.
-- One `node:sqlite` connection per database file per process (#5022): the
-  runtime handle is opened through core's `resolveDatabase`, so it shares the
-  `smrt:<url>` cache identity with `databaseConfig()` collections. Never open a
-  second main-thread connection to the app file (two handles wait on each
-  other's locks synchronously and fail `database is locked`); worker threads
-  (liveness, lock worker) keep their own and the uncached token store is an
-  operator command.
+- One SQLite connection per file per process: [sqlite-lock-wait](../core/agents/sqlite-lock-wait.md).
 - The initialization lease lives beside the data root
   (`<parent>/.smrt-lease-<key>/initialization.sqlite`, #3877), then the legacy
   `/tmp/.smrt-<uid>/<key>` lease, which older releases take alone: secure when
