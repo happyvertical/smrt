@@ -24,10 +24,7 @@
 import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createLogger } from '@happyvertical/logger';
-import {
-  discoverSmrtPackages,
-  resolveManifestPath,
-} from './discover-smrt-packages.js';
+import { discoverSmrtPackageLocations } from './discover-smrt-packages.js';
 
 const logger = createLogger({ level: 'info' });
 
@@ -108,7 +105,7 @@ export async function discoverBaseClasses(
     : [];
 
   // Discover external SMRT packages
-  const smrtDependencies = discoverSmrtPackages({ baseDir: cwd });
+  const smrtPackages = discoverSmrtPackageLocations({ baseDir: cwd });
 
   // Load external base classes from SMRT package manifests.
   // Resolve each manifest the same way discovery does (honoring `.smrt/` and
@@ -116,15 +113,7 @@ export async function discoverBaseClasses(
   // built to dist/ still contributes its base classes (#1378). A hardcoded
   // `node_modules/{pkg}/dist/manifest.json` path silently degraded inheritance
   // detection for source-only packages.
-  for (const pkgName of smrtDependencies) {
-    const manifestPath = resolveManifestPath(pkgName, cwd);
-    if (!manifestPath) {
-      logger.debug(
-        `[discoverBaseClasses] No SMRT manifest resolved for ${pkgName}; skipping.`,
-      );
-      continue;
-    }
-
+  for (const [pkgName, { manifestPath }] of Object.entries(smrtPackages)) {
     try {
       const manifestContent = await readFile(manifestPath, 'utf-8');
       const manifest = JSON.parse(manifestContent);
@@ -175,20 +164,12 @@ export function discoverBaseClassesSync(
     : [];
 
   // Discover external SMRT packages
-  const smrtDependencies = discoverSmrtPackages({ baseDir: cwd });
+  const smrtPackages = discoverSmrtPackageLocations({ baseDir: cwd });
 
   // Load external base classes from SMRT package manifests. Same resolution as
   // the async variant (honors `.smrt/` and `src/manifest/`, not just `dist/`),
   // so source-only workspace packages still contribute base classes (#1378).
-  for (const pkgName of smrtDependencies) {
-    const manifestPath = resolveManifestPath(pkgName, cwd);
-    if (!manifestPath) {
-      logger.debug(
-        `[discoverBaseClassesSync] No SMRT manifest resolved for ${pkgName}; skipping.`,
-      );
-      continue;
-    }
-
+  for (const [pkgName, { manifestPath }] of Object.entries(smrtPackages)) {
     try {
       // Use fs.readFileSync for synchronous loading (works in ESM)
       const manifestContent = readFileSync(manifestPath, 'utf-8');
