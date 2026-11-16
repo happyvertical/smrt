@@ -9,7 +9,6 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { resolveWorkProfile } from '../work-profiles.js';
 import { assertLoopbackUrl, buildAgentRun, TOKEN_ENV } from './session.js';
 import { claudeParser, codexParser, shellToolName } from './stream.js';
 import { tempDir } from './test-support.js';
@@ -335,20 +334,16 @@ describe('stream parsers', () => {
   });
 });
 
-describe('explicit profile invocation', () => {
+describe('explicit model and effort invocation', () => {
   it.each([
     'claude-code',
     'codex',
   ] as const)('passes %s model effort and JSON schema without relaxing lockdown', (tool) => {
     const schema = { type: 'object', properties: { ok: { type: 'boolean' } } };
-    const profile = resolveWorkProfile({
-      engine: tool,
-      profile: 'design',
-      settings: { model: 'strong-test' },
-    });
     const run = buildAgentRun({
       tool,
-      profile,
+      model: 'strong-test',
+      effort: 'max',
       outputSchema: schema,
       location: { path: '/fake/cli', extraPath: [] },
       stateDir: tempDir(),
@@ -381,6 +376,28 @@ describe('explicit profile invocation', () => {
       expect(run.args).toContain('sandbox_mode="workspace-write"');
     }
     expect(run.args.join(' ')).not.toContain(TOKEN);
+    run.cleanup();
+  });
+
+  it.each([
+    'claude-code',
+    'codex',
+  ] as const)('sends no %s effort when none is asked for, leaving the CLI default', (tool) => {
+    const run = buildAgentRun({
+      tool,
+      location: { path: '/fake/cli', extraPath: [] },
+      stateDir: tempDir(),
+      mcpUrl: 'http://127.0.0.1:4801/mcp',
+      token: TOKEN,
+      systemPrompt: 'app only',
+      prompt: 'hello',
+    });
+    expect(run.args).not.toContain('--effort');
+    expect(run.args.join(' ')).not.toContain('model_reasoning_effort');
+    if (tool === 'claude-code')
+      // The best tier of Claude Code's default binding.
+      expect(run.args[run.args.indexOf('--model') + 1]).toBe('fable');
+    else expect(run.args).not.toContain('-m');
     run.cleanup();
   });
 });
@@ -462,14 +479,10 @@ it.each([
   'claude-code',
   'codex',
 ] as const)('rejects unsafe %s argv before building run files', (tool) => {
-  const profile = {
-    ...resolveWorkProfile({ engine: tool, settings: { model: 'valid-model' } }),
-    model: '--dangerously-skip-permissions',
-  };
   expect(() =>
     buildAgentRun({
       tool,
-      profile,
+      model: '--dangerously-skip-permissions',
       location: { path: '/unused', extraPath: [] },
       stateDir: tempDir(),
       mcpUrl: 'http://127.0.0.1:4801/mcp',
@@ -477,7 +490,7 @@ it.each([
       systemPrompt: '',
       prompt: '',
     }),
-  ).toThrow('Invalid work profile model');
+  ).toThrow('Invalid model id.');
 });
 
 it('treats host-enabled StructuredOutput as a result channel with no executable tool events', () => {

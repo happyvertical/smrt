@@ -1,4 +1,4 @@
-import type { WorkRunMetadata } from './work-profiles.js';
+import type { EngineExecution } from './model-fallback.js';
 
 /** Host-facing progress; names are plain text supplied by the host. */
 export interface DesignRunProgress {
@@ -42,7 +42,7 @@ export interface DesignRunState {
   note?: string;
   input: unknown;
   outputs: unknown[];
-  attempts: WorkRunMetadata[];
+  attempts: EngineExecution[];
   invalidOutput?: unknown;
   validationErrors?: string[];
   leaseUntil?: number;
@@ -115,7 +115,7 @@ export interface DesignPassRequest {
 /** Shared engine-neutral result; the adapter reports actual engine/model usage. */
 export interface DesignPassResult {
   output: unknown;
-  metadata: WorkRunMetadata;
+  metadata: EngineExecution;
 }
 
 /** Host wiring. A full JSON Schema validator is mandatory, including for CLIs. */

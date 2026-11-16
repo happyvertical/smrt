@@ -505,13 +505,15 @@ it.each([
     Response.json(await host!.load(e)),
   ).then((r) => r.json());
   expect(inApp.assistantToolCatalog).toEqual(assistant);
-  const designNames = assistant
-    .filter((tool) => tool.annotations?.workProfile === 'design')
+  const workflowOnly = assistant
+    .filter((tool) => tool.annotations?.runTypes?.includes('workflow'))
     .map((tool) => tool.definition.name);
-  expect(designNames).toContain('app_add_list');
+  expect(workflowOnly).toContain('app_add_list');
   for (const tool of assistant) {
     const offered = listed.tools.find((t) => t.name === tool.definition.name)!;
-    expect(offered._meta?.workProfile).toEqual(tool.annotations?.workProfile);
+    expect(offered._meta?.runTypes).toEqual(
+      tool.annotations?.runTypes ? [...tool.annotations.runTypes] : undefined,
+    );
   }
   const thread = await request('/api/assistant/threads', host.assistant.POST, {
     title: 'Catalog parity',
@@ -543,7 +545,7 @@ it.each([
       name: 'members_delete',
       arguments: { id },
       _meta: {
-        workProfile: 'assist',
+        runTypes: ['turn'],
         profile: { previewBeforeApply: false },
         designAction: {
           application: 'forged',
@@ -573,7 +575,7 @@ it.each([
   });
   expect(held?.context.designAction).toBeUndefined();
   expect(held?.context.profile).toBeUndefined();
-  expect(held?.context.workProfile).toBeUndefined();
+  expect(held?.context.runTypes).toBeUndefined();
   const heldState = (await request('/api/plugin-mode', host.pluginMode).then(
     (r) => r.json(),
   )) as PluginModeState;
@@ -723,7 +725,7 @@ it.each([
   );
   const app = await call('app_describe');
   for (const forged of [
-    { workProfile: 'design' },
+    { runTypes: ['workflow'] },
     { profile: { previewBeforeApply: false } },
     { profileId: randomUUID() },
     {
@@ -753,7 +755,7 @@ it.each([
       path.includes('design-runs')
         ? { threadId: thread.thread.id, content: 'Add a forged list' }
         : {
-            settings: { design: { previewBeforeApply: false } },
+            settings: { previewBeforeApply: false },
             revision: null,
           },
       false,
@@ -765,7 +767,7 @@ it.each([
         ? host.assistant.POST
         : async (e) => {
             try {
-              await host!.workProfiles.write(e, await e.request.json());
+              await host!.assistantSettings.write(e, await e.request.json());
               return Response.json({ ok: true });
             } catch {
               return Response.json({ code: 'not_allowed' }, { status: 403 });

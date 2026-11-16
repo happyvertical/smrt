@@ -44,7 +44,6 @@ function fixture() {
     async () => ({
       output: { valid: true },
       metadata: {
-        profile: 'design' as const,
         engine: 'claude-code' as const,
         model: 'strongest',
         effort: 'max' as const,
@@ -104,7 +103,6 @@ describe('durable design run driver', () => {
       return {
         output: { valid: true },
         metadata: {
-          profile: 'design',
           engine: 'claude-code',
           model: 'strongest',
           effort: 'max',
@@ -144,7 +142,6 @@ describe('durable design run driver', () => {
     f.executePass.mockResolvedValueOnce({
       output: { valid: false },
       metadata: {
-        profile: 'design',
         engine: 'claude-code',
         effort: 'max',
         model: 'strongest',
@@ -216,7 +213,6 @@ describe('durable design run driver', () => {
     release({
       output: { valid: true },
       metadata: {
-        profile: 'design',
         engine: 'claude-code',
         effort: 'max',
         model: 'strongest',
@@ -253,7 +249,6 @@ describe('durable design run driver', () => {
       return {
         output: { valid: true },
         metadata: {
-          profile: 'design',
           engine: 'claude-code',
           effort: 'max',
           model: 'strongest',
@@ -326,7 +321,6 @@ describe('durable design run driver', () => {
       return {
         output: { valid: true },
         metadata: {
-          profile: 'design',
           engine: 'claude-code',
           effort: 'max',
           durationMs: 2,
@@ -448,7 +442,6 @@ describe('durable design run driver', () => {
     settle({
       output: { valid: true },
       metadata: {
-        profile: 'design',
         engine: 'claude-code',
         effort: 'max',
         durationMs: 1,
@@ -494,7 +487,6 @@ describe('approval-gated check checkpoints', () => {
     f.executePass.mockResolvedValueOnce({
       output: { valid: false },
       metadata: {
-        profile: 'design',
         engine: 'claude-code',
         effort: 'max',
         model: 'strongest',

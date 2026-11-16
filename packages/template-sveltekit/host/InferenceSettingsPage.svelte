@@ -2,7 +2,6 @@
 import type { InferenceSettingsPageData } from '@happyvertical/smrt-inference/server';
 import { InferenceSettingsPanel } from '@happyvertical/smrt-inference/svelte';
 import { ShellSettingsPage } from '@happyvertical/smrt-svelte/app';
-import { WorkProfileSettings } from '@happyvertical/smrt-svelte/settings';
 import type { createCookbookHost } from '@happyvertical/smrt-template-sveltekit/host/server';
 import { postSetting } from '@happyvertical/smrt-template-sveltekit/host/sveltekit-client';
 import { goto } from '$app/navigation';
@@ -12,8 +11,10 @@ let {
   data,
 }: {
   data: InferenceSettingsPageData & {
-    workProfiles?: Awaited<
-      ReturnType<ReturnType<typeof createCookbookHost>['workProfiles']['read']>
+    assistant?: Awaited<
+      ReturnType<
+        ReturnType<typeof createCookbookHost>['assistantSettings']['read']
+      >
     >;
   };
 } = $props();
@@ -60,11 +61,6 @@ async function discover(): Promise<void> {
 <ShellSettingsPage basePath="/settings" title="Assistant">
   <!-- The owner edits the whole app (app scope); a member without the
        permission reads it, and the server refuses their writes. -->
-  {#if data.workProfiles}
-    <WorkProfileSettings settings={data.workProfiles.settings} resolved={data.workProfiles.resolved} editable={data.workProfiles.editable} chatgptSignedIn={data.workProfiles.chatgptSignedIn}
-      onsave={async (settings, confirmation) => { const result = await postSetting('saveWorkProfiles', { settings, ...confirmation, revision: data.workProfiles?.revision }); if (!result.ok) throw new Error('Save refused'); }}
-      onreset={async () => { const result = await postSetting('resetWorkProfiles', { revision: data.workProfiles?.revision }); if (!result.ok) throw new Error('Reset refused'); }} />
-  {/if}
   <InferenceSettingsPanel
     defaults={data.defaults}
     providers={data.providers}
@@ -93,6 +89,11 @@ async function discover(): Promise<void> {
     onSaveTranscripts={data.canEdit
       ? (change) => save('saveTranscripts', change)
       : undefined}
+    assistant={data.assistant ?? null}
+    onSaveAssistant={(change) =>
+      save('saveAssistant', { ...change, revision: data.assistant?.revision ?? null })}
+    onResetAssistant={() =>
+      save('resetAssistant', { revision: data.assistant?.revision ?? null })}
     onUsageGroupBy={(by) =>
       goto(`${page.url.pathname}?by=${by.join(',')}`, {
         keepFocus: true,

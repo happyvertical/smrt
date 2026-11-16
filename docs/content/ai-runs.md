@@ -60,8 +60,9 @@ Proposed: a run type owned by an app or package is written `@scope/pkg:type`,
 for example `@happyvertical/smrt-agents:coding`. The framework's own three
 types have no prefix.
 
-A "work profile" is not a concept any more. What it bundled is expressed
-through the tier, latency, reasoning effort and the budget.
+Which model answers, how long to wait and what a piece of work may spend are
+expressed through the tier (and its binding), latency, reasoning effort and
+the budget; there is no per-request bundle of them.
 
 ## 2. The model
 
@@ -1417,7 +1418,9 @@ supported release; nothing needs hand-written SQL by an operator.
   reason and `rows: 'discard'`, and only a whole-schema migrate drops it. See
   the retired-tables section of the core schema notes.
 - **Queued jobs** that target the old design-run code are marked failed.
-- **Work profiles.** Saved work-profile preferences are dropped, not converted.
+- **Saved assistant model choices.** The old per-profile preferences (kind
+  `work-profiles`) are dropped, not converted: the kind is no longer
+  registered, so a stored row is never read.
 - **Fusion runs.** Stored `status 'ok'` becomes `'done'`, in one idempotent
   update. Proposed: stored `'degraded'` becomes `'done'` with `degraded` set,
   and `'failed'` stays `'failed'` with `stop_reason` `error`. Proposed: an old

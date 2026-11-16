@@ -246,6 +246,7 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
     title: 'Onboarding regression',
     packageName: APP,
     onboarding: true,
+    designBudget: { passes: 3 },
     app: {
       cookbook: {
         $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json',
@@ -545,9 +546,9 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
       expect(result.result.structuredContent).toMatchObject({ status: 'ok', revision: initial.revision + 1 });
     } else {
       await request('/settings/inference', async (e) => {
-        const saved = await host!.workProfiles.read(e);
-        expect((await host!.workProfiles.write(e, {
-          settings: { design: { previewBeforeApply: true, budgets: { passes: 3 } } },
+        const saved = await host!.assistantSettings.read(e);
+        expect((await host!.assistantSettings.write(e, {
+          settings: { previewBeforeApply: true },
           revision: saved.revision,
         })).ok).toBe(true);
         return new Response();

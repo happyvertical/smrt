@@ -92,6 +92,16 @@ await article.do('Write a headline', { tier: 'good', latency: 'interactive' });
   cheaper tier and records the step. It never moves up. Pin a floor with
   `minimumTier` on the call or `ai: { minimumTier }` on the prompt; set
   `inference.degrade: false` to stop degrading entirely.
+- Reasoning effort travels beside the tier (#5005): `ai: { effort }` on the
+  prompt (`low`, `medium`, `high`, `xhigh`, `max`; validated, never an open
+  `params` entry, so a tenant override cannot widen it), sent as
+  `reasoning: { effort }`. A tier binding may carry a default in its
+  `params.reasoning` (config-file tiers). Precedence: the caller's option, the
+  prompt, the binding, the provider's default.
+- A local agent CLI (Claude Code, Codex) or a ChatGPT plan sign-in has no
+  stored binding: its tiers bind to the engine's own ranked models
+  (`best`/`great` the strongest, `good` the next, `cheap` the lowest). See
+  [inference settings](./inference-settings.md#which-model-answers-on-a-local-ai-or-chatgpt-plan).
 
 Contract: [core inference.md](https://github.com/happyvertical/smrt/blob/main/packages/core/agents/inference.md).
 

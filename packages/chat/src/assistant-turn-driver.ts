@@ -4,17 +4,14 @@ import type {
   PrincipalBinding,
   PrincipalTool,
 } from '@happyvertical/smrt-agents';
-import type {
-  ResolvedWorkProfile,
-  WorkRunMetadata,
-} from '@happyvertical/smrt-inference';
+import type { EngineExecution } from '@happyvertical/smrt-inference';
 import { requiresOwnerApproval } from './assistant-approvals.js';
 import {
   type AssistantTurnOptions,
   type AssistantTurnResult,
   type AssistantTurnState,
   AssistantTurnUserError,
-  runAssistantTurn,
+  refusedInTurn,
 } from './assistant-turn.js';
 import type {
   AssistantApprovalRequest,
@@ -30,12 +27,16 @@ import {
   resolveTurnReply,
   type ToolLoopUsage,
 } from './tool-loop.js';
-import type { DescribeAssistantTool } from './tool-summary.js';
 import {
-  assertWorkProfileTool,
-  WORK_RUN_ACCOUNTING,
-  WorkProfileEscalation,
-} from './work-profile.js';
+  type AssistantModelSelection,
+  assertToolRunType,
+  mayEscalateToWorkflow,
+  reportExecution,
+  ToolRunTypeRefusal,
+  TURN_ACCOUNTING,
+  turnExecution,
+} from './tool-run-types.js';
+import type { DescribeAssistantTool } from './tool-summary.js';
 
 /** A decision from the host's owner-approval authority, never from model output. */
 export interface AssistantApprovalDecision {
@@ -56,7 +57,8 @@ export interface AssistantTurnDriverContext {
   /** Only offered, allow-listed server tools. MCP execution must enforce this principal too. */
   tools: readonly ManifestTool[];
   extraTools: readonly PrincipalTool[];
-  workProfile?: ResolvedWorkProfile;
+  /** The engine, tier, model and effort the host's tier binding chose. */
+  selection?: AssistantModelSelection;
   /** MUST run at the authenticated MCP boundary before any side effect. */
   beforeToolExecution(tool: string): void;
   signal: AbortSignal;
@@ -84,11 +86,12 @@ export interface AssistantTurnDriverCallbacks {
   approvalNeeded(
     request: AssistantApprovalRequest,
   ): Promise<AssistantApprovalDecision>;
-  execution?(metadata: WorkRunMetadata): void;
+  /** What the engine ran with and used, as soon as it knows. */
+  execution?(execution: EngineExecution): void;
   done(result: {
     text: string;
     usage?: ToolLoopUsage;
-    workRun?: WorkRunMetadata;
+    execution?: EngineExecution;
   }): void;
   /** Detail is logged server-side; the wire and stored error are sanitized. */
   error(error: unknown): void;
@@ -134,17 +137,16 @@ async function runExternalAssistantAttempt<M>(
   const signal = options.signal
     ? AbortSignal.any([options.signal, attempt.signal])
     : attempt.signal;
-  let escalation: WorkProfileEscalation | undefined;
+  let escalation: ToolRunTypeRefusal | undefined;
   const completedHistory: AIMessage[] = [];
-  const accounting = options[WORK_RUN_ACCOUNTING] ?? {
+  const accounting = options[TURN_ACCOUNTING] ?? {
     startedAt: Date.now(),
     tokens: 0,
     usageKnown: true,
     toolCalls: 0,
   };
-  options = { ...options, [WORK_RUN_ACCOUNTING]: accounting };
-  let observed: WorkRunMetadata | undefined;
-  const startedAt = accounting.startedAt;
+  options = { ...options, [TURN_ACCOUNTING]: accounting };
+  let observed: EngineExecution | undefined;
   const allowed = new Set(options.principal.allowedTools ?? []);
   const context: AssistantTurnDriverContext = {
     thread: options.thread,
@@ -163,16 +165,16 @@ async function runExternalAssistantAttempt<M>(
       allowed.has(tool.slug),
     ),
     signal,
-    workProfile: options.workProfile,
+    ...(options.selection ? { selection: options.selection } : {}),
     beforeToolExecution(name) {
       const tool = [...context.tools, ...context.extraTools].find(
         (tool) => tool.slug === name,
       );
       if (!tool) throw new Error('The tool is not offered to this turn.');
       try {
-        assertWorkProfileTool(options, tool);
+        assertToolRunType(options, tool);
       } catch (error) {
-        if (error instanceof WorkProfileEscalation) {
+        if (error instanceof ToolRunTypeRefusal) {
           escalation = error;
           attempt.abort();
         }
@@ -208,7 +210,7 @@ async function runExternalAssistantAttempt<M>(
   const approved = new Set<string>();
   let text = '';
   let final:
-    | { text: string; usage?: ToolLoopUsage; workRun?: WorkRunMetadata }
+    | { text: string; usage?: ToolLoopUsage; execution?: EngineExecution }
     | undefined;
   let failure: unknown;
   let failed = false;
@@ -247,8 +249,8 @@ async function runExternalAssistantAttempt<M>(
     return wire;
   };
   const callbacks: AssistantTurnDriverCallbacks = {
-    execution(metadata) {
-      observed = metadata;
+    execution(execution) {
+      observed = execution;
     },
     text(delta) {
       if (!active() || !delta) return;
@@ -468,13 +470,15 @@ async function runExternalAssistantAttempt<M>(
     }
   }
   const tokens =
-    observed?.tokens ?? final?.workRun?.tokens ?? final?.usage?.totalTokens;
+    observed?.tokens ?? final?.execution?.tokens ?? final?.usage?.totalTokens;
   if (typeof tokens !== 'number' || !Number.isFinite(tokens) || tokens < 0)
     accounting.usageKnown = false;
   else accounting.tokens += tokens;
   accounting.toolCalls += observed?.toolCalls ?? completed.size;
+  const seen = observed ?? final?.execution;
+  if (seen?.model) accounting.model = seen.model;
   if (escalation) {
-    escalation.workRun = observed ?? final?.workRun;
+    escalation.execution = observed ?? final?.execution;
     escalation.messages = [
       ...context.history,
       { role: 'user', content: context.userMessage },
@@ -513,37 +517,13 @@ async function runExternalAssistantAttempt<M>(
     : undefined;
   const content = formatted?.content ?? reply.content;
   const stoppedReason = reply.fallback ? 'empty' : 'stop';
-  const { tokens: _tokens, ...observedMetadata } =
-    observed ?? final.workRun ?? {};
-  const workRun = options.workProfile
-    ? {
-        ...observedMetadata,
-        profile: options.workProfile.name,
-        engine: options.workProfile.engine,
-        effort: options.workProfile.effort,
-        durationMs: Date.now() - startedAt,
-        ...((observed?.model ?? final.workRun?.model)
-          ? { model: observed?.model ?? final.workRun?.model }
-          : {}),
-        ...(accounting.usageKnown ? { tokens: accounting.tokens } : {}),
-        toolCalls: accounting.toolCalls,
-      }
-    : undefined;
-  if (workRun) {
-    try {
-      (
-        options.onWorkRun ??
-        // biome-ignore lint/suspicious/noConsole: sanitized turn accounting defaults to the server log; hosts may supply onWorkRun
-        ((value) => console.info('assistant.workRun', value))
-      )(workRun);
-    } catch {
-      /* Telemetry never breaks a turn. */
-    }
-  }
+  reportExecution(
+    options,
+    turnExecution(options, accounting, observed ?? final.execution),
+  );
   const message = await persist(content, 'text', undefined, {
     ...replyMetadataFor({ stoppedReason }, reply),
     ...formatted?.metadata,
-    ...(workRun ? { workRun } : {}),
   });
   if (final.usage) {
     try {
@@ -566,42 +546,19 @@ async function runExternalAssistantAttempt<M>(
   };
 }
 
-/** Persist the human handoff and the intercepted assist work before the durable job takes over. */
+/** Persist the human handoff and report the turn's work before the workflow run takes over. */
 export async function recordDesignHandoff<M>(
   options: AssistantTurnOptions<M>,
   accepted: { runId: string; message?: string },
   emit: (event: AssistantTurnEvent<M>) => void,
   serialize: (message: unknown) => M,
-  observed?: WorkRunMetadata,
+  observed?: EngineExecution,
 ): Promise<{ content: string; message?: M }> {
   const content = accepted.message ?? 'Thinking this through';
-  const accounting = options[WORK_RUN_ACCOUNTING];
-  const profile = options.workProfile;
-  const model = observed?.model ?? accounting?.model;
-  const workRun: WorkRunMetadata | undefined =
-    profile && accounting
-      ? {
-          profile: profile.name,
-          engine: profile.engine,
-          effort: profile.effort,
-          ...(model ? { model } : {}),
-          ...(observed?.fallback ? { fallback: observed.fallback } : {}),
-          durationMs: Date.now() - accounting.startedAt,
-          toolCalls: accounting.toolCalls,
-          ...(accounting.usageKnown ? { tokens: accounting.tokens } : {}),
-        }
-      : undefined;
-  if (workRun) {
-    try {
-      (
-        options.onWorkRun ??
-        // biome-ignore lint/suspicious/noConsole: sanitized turn accounting defaults to server logging
-        ((value) => console.info('assistant.workRun', value))
-      )(workRun);
-    } catch {
-      /* Accounting never breaks a turn. */
-    }
-  }
+  reportExecution(
+    options,
+    turnExecution(options, options[TURN_ACCOUNTING], observed),
+  );
   let message: M | undefined;
   if (options.author) {
     const author = options.author;
@@ -616,7 +573,6 @@ export async function recordDesignHandoff<M>(
         metadata: {
           ...author.metadata,
           designRunId: accepted.runId,
-          ...(workRun ? { workRun } : {}),
         },
       }),
     );
@@ -625,7 +581,7 @@ export async function recordDesignHandoff<M>(
   return { content, ...(message ? { message } : {}) };
 }
 
-/** Restart once with the same authority after a host-boundary design interception. */
+/** Run an external turn; a refused workflow-only tool hands off to a workflow run or ends it. */
 export async function runExternalAssistantTurn<M>(
   options: AssistantTurnOptions<M>,
   emit: (event: AssistantTurnEvent<M>) => void,
@@ -635,7 +591,7 @@ export async function runExternalAssistantTurn<M>(
 ): Promise<AssistantTurnResult> {
   options = {
     ...options,
-    [WORK_RUN_ACCOUNTING]: options[WORK_RUN_ACCOUNTING] ?? {
+    [TURN_ACCOUNTING]: options[TURN_ACCOUNTING] ?? {
       startedAt: Date.now(),
       tokens: 0,
       usageKnown: true,
@@ -651,75 +607,38 @@ export async function runExternalAssistantTurn<M>(
       report,
     );
   } catch (error) {
-    if (
-      !(error instanceof WorkProfileEscalation) ||
-      (!options.resolveWorkProfile && !options.onDesignEscalation)
-    )
-      throw error;
-    if (options.onDesignEscalation) {
-      const accepted = await options.onDesignEscalation({
-        tool: error.tool,
-        history: error.messages ?? options.history ?? [],
-        userMessage: options.userMessage,
-        thread: options.thread,
-        originMessageId: options.originMessageId,
-      });
-      const { content, message } = await recordDesignHandoff(
-        options,
-        accepted,
-        emit,
-        serialize,
-        error.workRun,
-      );
-      emit({
-        type: 'status',
-        status: { state: 'working', label: content, cancellable: true },
-      });
-      await report('completed');
-      emit({
-        type: 'done',
-        stoppedReason: 'stop',
-        runId: accepted.runId,
-        ...(message ? { message } : {}),
-      });
-      return {
-        content,
-        stoppedReason: 'stop',
-        originMessageId: options.originMessageId,
-        runId: accepted.runId,
-      };
-    }
-    const workProfile = await options.resolveWorkProfile!('design');
-    if (workProfile.name !== 'design')
-      throw new Error('Design escalation requires the design profile.');
+    if (!(error instanceof ToolRunTypeRefusal)) throw error;
+    if (!mayEscalateToWorkflow(options)) throw refusedInTurn(error);
+    const accepted = await options.onDesignEscalation!({
+      tool: error.tool,
+      history: error.messages ?? options.history ?? [],
+      userMessage: options.userMessage,
+      thread: options.thread,
+      originMessageId: options.originMessageId,
+    });
+    const { content, message } = await recordDesignHandoff(
+      options,
+      accepted,
+      emit,
+      serialize,
+      error.execution,
+    );
     emit({
       type: 'status',
-      status: {
-        state: 'working',
-        label: 'Thinking this through',
-        cancellable: true,
-      },
+      status: { state: 'working', label: content, cancellable: true },
     });
-    const runtime = await options.resolveWorkProfileRuntime?.(workProfile);
-    const next = {
-      ...options,
-      ...runtime,
-      workProfile,
-      history: error.messages ?? options.history,
+    await report('completed');
+    emit({
+      type: 'done',
+      stoppedReason: 'stop',
+      runId: accepted.runId,
+      ...(message ? { message } : {}),
+    });
+    return {
+      content,
+      stoppedReason: 'stop',
+      originMessageId: options.originMessageId,
+      runId: accepted.runId,
     };
-    if (next.turnDriver)
-      return runExternalAssistantAttempt(
-        next,
-        emit,
-        serialize,
-        describe,
-        report,
-      );
-    const turn = runAssistantTurn(next);
-    while (true) {
-      const item = await turn.next();
-      if (item.done) return item.value;
-      emit(item.value);
-    }
   }
 }

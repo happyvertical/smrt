@@ -264,4 +264,3 @@ export {
   loadInferenceTranscriptSettings,
   storedTranscriptSettings,
 } from './settings/transcripts.js';
-export * from './work-profiles.js';

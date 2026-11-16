@@ -1,33 +1,29 @@
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import { createCookbookToolService } from '@happyvertical/smrt-core/cookbook/tools';
-import {
-  type ResolvedWorkProfile,
-  recommendedWorkProfile,
-} from '@happyvertical/smrt-inference/server';
 import { SmrtJobCollection, TaskRunner } from '@happyvertical/smrt-jobs';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   type CookbookDesignRunsOptions,
   createCookbookDesignRuns,
+  type DesignRunExecution,
 } from '../host/design-runs.js';
 
-const profile = (): ResolvedWorkProfile => ({
-  ...recommendedWorkProfile('design'),
-  name: 'design',
+const execution = (): DesignRunExecution => ({
   engine: 'api',
   tier: 'best',
-  budgets: {
-    ...recommendedWorkProfile('design').budgets,
-    passes: 3,
-    maxRunTokens: 100,
-    maxTurnTokens: 10,
-    runTimeoutMs: 10_000,
-    turnTimeoutMs: 1000,
-  },
+  previewBeforeApply: true,
 });
+/** The design workflow's budget as this suite's app sets it. */
+const budget = () => ({
+  passes: 3,
+  maxRunTokens: 100,
+  maxTurnTokens: 10,
+  runTimeoutMs: 10_000,
+  turnTimeoutMs: 1000,
+});
+const run = () => ({ execution: execution(), budget: budget() });
 const metadata = {
-  profile: 'design' as const,
   engine: 'api' as const,
   effort: 'max' as const,
   tokens: 2,
@@ -106,7 +102,7 @@ describe('cookbook durable design jobs', () => {
     const created = await bound.start({
       threadId: 'thread',
       content: 'Add a field',
-      profile: profile(),
+      ...run(),
     });
     expect(execute).not.toHaveBeenCalled();
     const jobs = await db.query(
@@ -156,14 +152,14 @@ describe('cookbook durable design jobs', () => {
       })
       .mockResolvedValue({ output, metadata });
     const bound = install(execute);
-    const selected = profile();
-    selected.budgets.turnTimeoutMs = 1_800_000;
-    selected.budgets.runTimeoutMs = 3_600_000;
+    const selected = run();
+    selected.budget.turnTimeoutMs = 1_800_000;
+    selected.budget.runTimeoutMs = 3_600_000;
     const permissionCeiling = ['app.describe'];
     const created = await bound.start({
       threadId: 'thread',
       content: 'Inspect the app',
-      profile: selected,
+      ...selected,
       permissions: permissionCeiling,
     });
     permissionCeiling.push('app.removeList');
@@ -206,13 +202,13 @@ describe('cookbook durable design jobs', () => {
       })
       .mockResolvedValue({ output, metadata });
     const bound = install(execute);
-    const selected = profile();
-    selected.budgets.turnTimeoutMs = 1_800_000;
-    selected.budgets.runTimeoutMs = 3_600_000;
+    const selected = run();
+    selected.budget.turnTimeoutMs = 1_800_000;
+    selected.budget.runTimeoutMs = 3_600_000;
     const created = await bound.start({
       threadId: 'thread',
       content: 'Inspect the app',
-      profile: selected,
+      ...selected,
     });
     await startWorker();
     await started;
@@ -250,13 +246,13 @@ describe('cookbook durable design jobs', () => {
       await external;
       return { output, metadata };
     });
-    const selected = profile();
-    selected.budgets.turnTimeoutMs = 1_800_000;
-    selected.budgets.runTimeoutMs = 3_600_000;
+    const selected = run();
+    selected.budget.turnTimeoutMs = 1_800_000;
+    selected.budget.runTimeoutMs = 3_600_000;
     const created = await bound.start({
       threadId: 'thread',
       content: 'Inspect the app',
-      profile: selected,
+      ...selected,
     });
     await startWorker();
     await started;
@@ -298,7 +294,7 @@ describe('cookbook durable design jobs', () => {
     const created = await bound.start({
       threadId: 'thread',
       content: 'Review the list',
-      profile: profile(),
+      ...run(),
     });
     await startWorker();
     const done = await terminal(created.id);
@@ -320,7 +316,7 @@ describe('cookbook durable design jobs', () => {
     const created = await bound.start({
       threadId: 'thread',
       content: 'Review the list',
-      profile: profile(),
+      ...run(),
     });
     await startWorker();
     const done = await terminal(created.id);
@@ -387,12 +383,12 @@ describe('cookbook durable design jobs', () => {
       executeOperation: apply,
       onProgress,
     });
-    const selected = profile();
-    selected.previewBeforeApply = true;
+    const selected = run();
+    selected.execution.previewBeforeApply = true;
     const created = await bound.start({
       threadId: 'thread',
       content: 'Add a birthday field',
-      profile: selected,
+      ...selected,
       fixedPasses: true,
       permissions: ['app.addField'],
     });
@@ -731,12 +727,12 @@ describe('cookbook durable design jobs', () => {
               ],
             },
     });
-    const selected = profile();
-    if (scenario === 'fixed-four') selected.budgets.passes = 4;
+    const selected = run();
+    if (scenario === 'fixed-four') selected.budget.passes = 4;
     const created = await bound.start({
       threadId: 'thread',
       content: 'Change my lists',
-      profile: selected,
+      ...selected,
       permissions: definitions.map((tool) => tool.name),
       fixedPasses: scenario === 'fixed-four',
     });
@@ -782,7 +778,7 @@ describe('cookbook durable design jobs', () => {
     const created = await bound.start({
       threadId: 'thread',
       content: 'Review my app',
-      profile: profile(),
+      ...run(),
       fixedPasses: true,
     });
     const state = await bound.status(created.id);
@@ -814,7 +810,7 @@ describe('cookbook durable design jobs', () => {
     const created = await bound.start({
       threadId: 'thread',
       content: 'Add Birthday',
-      profile: profile(),
+      ...run(),
     });
     const legacy = {
       ...created,
@@ -848,7 +844,7 @@ describe('cookbook durable design jobs', () => {
         label: 'Birthday',
         kind: 'date',
         expectedRevision: 1,
-        profile: 'design',
+        runTypes: ['workflow'],
       },
     },
     {
@@ -892,7 +888,7 @@ describe('cookbook durable design jobs', () => {
     const created = await bound.start({
       threadId: 'thread',
       content: 'Add Birthday',
-      profile: profile(),
+      ...run(),
     });
     await startWorker();
     expect((await terminal(created.id)).status).toBe('done');
@@ -990,7 +986,7 @@ describe('cookbook durable design jobs', () => {
     const created = await bound.start({
       threadId: 'thread',
       content: 'Add Note',
-      profile: profile(),
+      ...run(),
       permissions: scenario === 'missing-permission' ? [] : ['app.addField'],
     });
     await bound.stop(created.id);
@@ -1080,12 +1076,12 @@ describe('cookbook durable design jobs', () => {
       }),
     );
     const bound = install(execute);
-    const settings = profile();
-    settings.budgets.maxRunTokens = 10;
+    const settings = run();
+    settings.budget.maxRunTokens = 10;
     const created = await bound.start({
       threadId: 'thread',
       content: 'Review the list',
-      profile: settings,
+      ...settings,
     });
     await startWorker();
     const paused = await terminal(created.id);

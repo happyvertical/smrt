@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
+import type { InferenceTier, ReasoningEffort } from '@happyvertical/smrt-core';
+import { isReasoningEffort } from '@happyvertical/smrt-core';
 import type {
   CookbookToolDefinition,
   CookbookToolName,
@@ -13,8 +15,8 @@ import {
   type DesignRunBudget,
   type DesignRunProgress,
   type DesignRunState,
+  type InferenceEngineId,
   installDesignRunExecutor,
-  type ResolvedWorkProfile,
 } from '@happyvertical/smrt-inference/server';
 import {
   isRunnerExecutionContext,
@@ -24,6 +26,50 @@ import {
 } from '@happyvertical/smrt-jobs';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import Ajv from 'ajv/dist/2020.js';
+
+/**
+ * How a design run's passes run (#5005): the engine, the tier the design
+ * asks for and the model the engine's tier binding chose for it, the effort,
+ * and the owner's preview setting captured when the run started.
+ */
+export interface DesignRunExecution {
+  engine: InferenceEngineId;
+  tier: InferenceTier;
+  model?: string;
+  effort?: ReasoningEffort;
+  previewBeforeApply: boolean;
+}
+
+/**
+ * The design workflow definition's budget (#5005): the run's passes, tokens,
+ * time and repairs, and each pass turn's steps, per-call output, tokens,
+ * reply time and kept tool result size.
+ */
+export interface DesignWorkflowBudget {
+  passes: number;
+  maxRunTokens: number;
+  runTimeoutMs: number;
+  repairRetries: number;
+  maxSteps: number;
+  maxTokens: number;
+  maxTurnTokens: number;
+  requestTimeoutMs: number;
+  turnTimeoutMs: number;
+  toolResultChars: number;
+}
+export const DESIGN_WORKFLOW_BUDGET: Readonly<DesignWorkflowBudget> =
+  Object.freeze({
+    passes: 4,
+    maxRunTokens: 2_000_000,
+    runTimeoutMs: 7_200_000,
+    repairRetries: 2,
+    maxSteps: 64,
+    maxTokens: 32_768,
+    maxTurnTokens: 400_000,
+    requestTimeoutMs: 600_000,
+    turnTimeoutMs: 1_800_000,
+    toolResultChars: 120_000,
+  });
 
 /** Host callbacks retain the normal authenticated assistant dispatcher and approvals. */
 export interface CookbookDesignRunsOptions {
@@ -67,7 +113,7 @@ export interface CookbookDesignRunsOptions {
     content: string;
     stage: 'profile' | 'propose' | 'revise';
     request: DesignPassRequest;
-    profile: ResolvedWorkProfile;
+    execution: DesignRunExecution;
     permissions: readonly string[];
   }): Promise<DesignPassResult>;
   readResource?(
@@ -425,7 +471,7 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
             throw new Error(
               'The design schema changed; start a new design run',
             );
-          const preview = input.profile.previewBeforeApply;
+          const preview = input.execution.previewBeforeApply;
           if (maximum && applicableDefinitions.test(definition) && !plan.ready)
             return {
               failure:
@@ -568,7 +614,7 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
           tenantId,
           threadId: input.threadId,
           content: input.content,
-          profile: input.profile,
+          execution: input.execution,
           permissions: input.permissions,
           stage: definition.startsWith(definitionPrefix)
             ? request.pass.index === 1
@@ -694,7 +740,9 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
         async start(input: {
           threadId: string;
           content: string;
-          profile: ResolvedWorkProfile;
+          execution: DesignRunExecution;
+          /** The app's setting for the definition's budget; default {@link DESIGN_WORKFLOW_BUDGET}. */
+          budget?: Partial<DesignWorkflowBudget>;
           resourceIds?: string[];
           /** Captured authenticated permission ceiling; never model supplied. */
           permissions?: readonly string[];
@@ -703,9 +751,7 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
         }) {
           await options.authorize(ownerId, tenantId);
           readInput(input);
-          if (input.profile.name !== 'design')
-            throw new Error('Design runs require the design profile');
-          const budget = input.profile.budgets;
+          const budget = { ...DESIGN_WORKFLOW_BUDGET, ...input.budget };
           const description =
             input.fixedPasses !== true
               ? await options.describeApp?.(ownerId, tenantId)
@@ -752,7 +798,7 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
             input: {
               threadId: input.threadId,
               content: input.content,
-              profile: input.profile,
+              execution: input.execution,
               permissions: [...(input.permissions ?? [])],
               fixedPasses: input.fixedPasses === true,
               ...(listCatalog ? { listCatalog } : {}),
@@ -1091,10 +1137,37 @@ export function createCookbookDesignRuns(options: CookbookDesignRunsOptions) {
   };
 }
 
+/**
+ * A stored execution. A run started before #5005 stored the same fields
+ * under `profile`; it is read the same way.
+ */
+function readExecution(value: unknown): DesignRunExecution | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.engine !== 'string' ||
+    !['api', 'chatgpt', 'claude-code', 'codex'].includes(record.engine) ||
+    (record.model !== undefined && typeof record.model !== 'string') ||
+    (record.effort !== undefined && !isReasoningEffort(record.effort))
+  )
+    return undefined;
+  return {
+    engine: record.engine as InferenceEngineId,
+    tier:
+      typeof record.tier === 'string' &&
+      ['cheap', 'good', 'great', 'best'].includes(record.tier)
+        ? (record.tier as InferenceTier)
+        : 'best',
+    ...(typeof record.model === 'string' ? { model: record.model } : {}),
+    ...(isReasoningEffort(record.effort) ? { effort: record.effort } : {}),
+    previewBeforeApply: record.previewBeforeApply !== false,
+  };
+}
+
 function readInput(input: unknown): {
   threadId: string;
   content: string;
-  profile: ResolvedWorkProfile;
+  execution: DesignRunExecution;
   permissions: string[];
   fixedPasses?: boolean;
   listCatalog?: unknown;
@@ -1103,14 +1176,13 @@ function readInput(input: unknown): {
   if (!input || typeof input !== 'object')
     throw new Error('Invalid design input');
   const value = input as Record<string, unknown>;
+  const execution = readExecution(value.execution ?? value.profile);
   if (
     typeof value.threadId !== 'string' ||
     !value.threadId ||
     typeof value.content !== 'string' ||
     !value.content.trim() ||
-    !value.profile ||
-    typeof value.profile !== 'object' ||
-    (value.profile as ResolvedWorkProfile).name !== 'design' ||
+    !execution ||
     (value.permissions !== undefined &&
       (!Array.isArray(value.permissions) ||
         !value.permissions.every(
@@ -1121,7 +1193,7 @@ function readInput(input: unknown): {
   return {
     threadId: value.threadId,
     content: value.content,
-    profile: value.profile as ResolvedWorkProfile,
+    execution,
     permissions: (value.permissions as string[] | undefined) ?? [],
     ...(typeof value.fixedPasses === 'boolean'
       ? { fixedPasses: value.fixedPasses }

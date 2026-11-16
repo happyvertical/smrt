@@ -20,6 +20,7 @@
 
 import type { AIClient } from '@happyvertical/ai';
 import {
+  type AiRunBudget,
   type AiRunContext,
   appendAiRunEvent,
   finishAiRun,
@@ -72,6 +73,8 @@ export interface AssistantTurnTracking {
    * (`<prefix>:<id>`). Default `chat-message`.
    */
   messageRefPrefix?: string;
+  /** The turn's budget (#5005), stored on its `turn` run. */
+  budget?: AiRunBudget;
   /** Recorded as the run's tags, for finding a thread's turns. */
   threadId?: string;
   agentSessionId?: string;
@@ -191,6 +194,7 @@ export class AssistantTurnRun {
           ? { agentSessionId: tracking.agentSessionId }
           : {}),
       },
+      ...(tracking.budget ? { budget: tracking.budget } : {}),
     });
     const turn = new AssistantTurnRun(tracking, context, run.id);
     const ref = messageRef(turn.refPrefix, input.originMessageId);

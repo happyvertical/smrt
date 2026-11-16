@@ -47,7 +47,6 @@ describe('owner-scoped design run checkpoints', () => {
       executePass: async () => ({
         output: {},
         metadata: {
-          profile: 'design',
           engine: 'claude-code',
           effort: 'max',
           durationMs: 1,

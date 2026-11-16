@@ -57,7 +57,7 @@ therefore resumes the same check before completion, without another model call.
 Model output fields cannot select completion. Done runs remain terminal for
 `run`, `stop` and `resume` even when their index is below the configured count.
 The host owns versioned adaptive eligibility and exact owner-selected pass-count
-semantics; the inference driver does not reinterpret work-profile budgets.
+semantics; the inference driver does not reinterpret the host's budget.
 The existing design-run tests cover first/later completion, conflicting check
 results, approval resume, lost completion CAS with same-action recovery under a
 replacement claim, and stale completion after Stop.
@@ -95,7 +95,7 @@ Progress uses exactly `{ runId, pass: { index, count, name }, status, note? }`.
 Indices are one-based. Statuses are `running`, `checking`, `waiting-approval`,
 `stopped`, `failed`, and `done`. Publish this on the existing event stream;
 subscriber failures cannot interrupt durable work. Each attempt stores its
-`WorkRunMetadata`, including actual provider usage when available. Host tool
+`EngineExecution` (#5005), including actual provider usage when available. Host tool
 policy, durable approvals and history apply throughout all passes.
 
 ## Reuse audit

@@ -5,10 +5,10 @@ description: "Typed prompt registry, override resolution, and tenant-aware promp
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-16T00:57:22Z"
+  at: "2026-11-16T03:44:31Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:623ec5c705f0f398e0556384911c3caf8e38cc86ee3a572d96ec4c27a397e49d"
+source_revision: "sha256:b86d86ee21ac5296e4da4d516e34ea04d53f1440e4008837b7491003b1870dc7"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/prompts/package.json"

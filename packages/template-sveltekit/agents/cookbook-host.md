@@ -509,25 +509,42 @@ no auth, persistence, retry or protocol implementation is duplicated. Reuse sear
 for CLI setup/config and bridge imports found `generateLocalMcpSetup`,
 `saveCliConfig`, and the existing async plugin operations; no new helper is added.
 
-## Assistant work profiles
+## Which model answers, limits and assistant settings (#5005)
 
-The host resolves owner work-profile preferences in inference for each request.
-Normal owner work defaults to assist; actual assistant calls while durable
-onboarding is unfinished or rerunning use design. Deterministic Fresh/template
-preview and apply remain the canonical onboarding operations. An assist design
-tool attempt is intercepted before execution and admitted as a durable design
-job; authenticated CLI MCP calls run the same check before side effects. Each
-CLI binding also checks app-tool count and pass wall time before execution.
+Every assistant turn asks for the `best` tier (`CHAT_ASSISTANT_TIER`). The host
+binds it per request: an API key through core's resolver, Claude Code, Codex
+and a ChatGPT plan through inference's default tier binding
+(`engineTierModel`: `fable`, `gpt-6-astra`, or the strongest ranked model the
+ChatGPT account offers). The effort is the tier binding's
+(`resolveEngineEffort`), else the engine's default. While durable onboarding is
+unfinished or rerunning, assistant requests go straight to a design run
+(`deferDesignTurn`). Deterministic Fresh/template preview and apply remain the
+canonical onboarding operations. A chat turn that asks for a structural tool
+(limited to workflow runs) is refused before execution and, with the owner's
+`escalateToWorkflow` setting on, admitted as a durable design run; with it off
+the turn ends with a refusal. Authenticated CLI MCP calls run the same check
+before side effects.
 
-`createInferenceSettingsPage(host.inferenceSettings,host.workProfiles)` composes
-the owner quality editor into the existing settings route. Missing engine/model
-catalogs leave editing/reset usable. The preferences facade preserves live owner
-checks, `inference.customize` and revisions. CLI fallback memos reuse host state,
-keyed by owner, engine, requested model, CLI version, connection selection
-generation and work-profile preference revision. Selection changes invalidate
-old memos; an external CLI account change cannot currently be detected by its
-sanitized status API. ChatGPT fallback requires a verified catalog rank, which
-the current SDK projection does not provide.
+The assistant turn's budget is `ASSISTANT_TURN_LIMITS.budget` (24 steps,
+160,000 tokens, 10 minutes, 3-minute calls; 16,384 output tokens per call and
+40,000-character tool results as loop options). It is stored on the turn's AI
+run. Each CLI binding checks the same step count and wall time before
+execution. A design pass uses the design workflow definition's budget
+(`DESIGN_WORKFLOW_BUDGET` in `host/design-runs.ts`, overridable by the app's
+`designBudget` host option): 4 passes, 2,000,000 run tokens, 2 hours, 2 repairs;
+per pass 64 steps, 32,768 output tokens per call, 400,000 tokens, 10-minute
+calls, 30 minutes, 120,000-character tool results. A design run pins its engine,
+tier, model, effort and the preview setting when it starts.
+
+`createInferenceSettingsPage(host.inferenceSettings, host.assistantSettings)`
+adds the owner's assistant settings (workflow handoff, preview before applying,
+removal approval, local AI protection) to the one inference settings panel. The
+preferences facade preserves live owner checks, `inference.customize` and
+revisions. CLI fallback memos reuse host state, keyed by owner, engine,
+requested model, CLI version and connection selection generation; the next
+model is one step down the engine's tier binding order. Selection changes
+invalidate old memos; an external CLI account change cannot currently be
+detected by its sanitized status API.
 
 [Durable design runs](cookbook-design-runs.md) use inference checkpoints and the
 existing TaskRunner. The host installs its executor before starting one default
@@ -558,17 +575,18 @@ progress. No profile grants authority, disables owner approval, or enables CLI
 built-ins. Native CLI per-call output-token limits are unavailable; their token
 settings are advisory while reported usage bounds subsequent passes.
 
-Explicit Resume adopts current owner design aggregate token/time settings while
-retaining consumed usage and the pinned engine, model and pass definition. A
-lowered cap may pause the same run immediately; it never resets its allowance.
+Explicit Resume adopts the design workflow definition's current aggregate
+token/time budget (the app's `designBudget`) while retaining consumed usage and
+the pinned engine, model and pass definition. A lowered cap may pause the same
+run immediately; it never resets its allowance.
 
 The owner layout's `assistantToolCatalog` and plugin settings use one live,
 principal-filtered host projection. Native cookbook definitions supply their
-annotations, including `workProfile: design`; MCP preserves that presentation
-hint in `_meta.workProfile`. Provider function schemas remain unchanged. This
-metadata cannot select a profile or grant authority: tool arguments retain their
-closed schemas, and delegated plugin tokens cannot write owner work profiles or
-start host design runs. Native decisions use `OwnerApprovalContinuations` and
+annotations, including `runTypes: ['workflow']`; MCP preserves that
+presentation hint in `_meta.runTypes`. Provider function schemas remain
+unchanged. This metadata cannot select a model or grant authority: tool
+arguments retain their closed schemas, and delegated plugin tokens cannot write
+owner assistant settings or start host design runs. Native decisions use `OwnerApprovalContinuations` and
 its canonical adapters; the design runner only schedules its deterministic
 checkpoint after the recorded native outcome.
 
@@ -593,10 +611,9 @@ started before initialization failed without a second failure or exit-code chang
 C4 follow-up: `/favicon.ico` redirects with public caching to the shipped
 `/favicon.svg` before runtime authorization/initialization (browser requests need
 no owner session). Cookbook host regression checks this conventional icon path.
-OpenAI work profiles reuse inference's reviewed rankings and single-step fallback;
-ChatGPT catalogs stay account-bound, and fallback memos include catalog, connection
-generation and preference revision. Codex gets the same fallback-store seam as
-Claude. No app-local engine, token or approval implementation is introduced.
+OpenAI models reuse inference's reviewed rankings and single-step fallback;
+ChatGPT catalogs stay account-bound, and fallback memos include catalog and
+connection generation. Codex gets the same fallback-store seam as Claude. No app-local engine, token or approval implementation is introduced.
 
 Drive-by validation repair: onboardingWriteThrough's test fixture uses core's public
 `resolveManifestPath` rather than assuming every package emits dist/manifest.json.
@@ -642,13 +659,10 @@ fixed. Private classification metadata grants no authority, and the actual propo
 index survives native holds, Stop and replacement-worker recovery without padded
 outputs or reset usage. See [design runs](cookbook-design-runs.md) for boundaries.
 
-Settings at `/settings/inference` is titled Assistant. Resolved profiles keep the
-requested model; their derived `modelSelection` may show the existing remembered
-downgrade. Settings and native execution share the same memo connection key:
-CLI version, owner engine generation and raw work-profile revision, scoped by
-tenant, owner, engine and requested model. Reading this projection neither probes
-a provider nor writes a fallback, and a remembered model never becomes the key
-for another fallback. Unknown model strength stays configured.
+Settings at `/settings/inference` is titled Assistant. Native execution keys
+its memo by CLI version and owner engine generation, scoped by tenant, owner,
+engine and requested model; a remembered model never becomes the key for
+another fallback.
 
 Canonical approval captions describe pending, approved and executing changes in
 prospective language; successful captions and history describe completed changes.
@@ -702,9 +716,9 @@ the owning plugin fixture checks this without executing or approving that hold.
 
 ## S1 assistant safety composition
 
-The existing work-profile facade stores per-app owner safety choices. Reads report editability only for a verified owner session; writes/reset require that session, live owner membership and revision checks, and protection-off requires explicit confirmation. No tool exposes these settings. Both the built-in chat policy and native/model MCP dispatch read the same removal preference. Only a short-lived token bound to this host's actual thread may opt out; outside MCP/plugin/local tokens always hold. Purges stay held. Only canonical single-record deletes from placed app-data lists receive trusted `recordDeletion` metadata; chat refuses that waiver for security/control identities and sensitive models. Native cookbook services always hold structure removals, undo and recipe disable, independently of both owner settings; design preview remains independent for non-removal changes. There is no host-side structural waiver or duplicate downstream check. Existing CRUD/audit execution is retained. CLI protection reaches turn specs and the same mode-specific readiness preflight; it never alters credential or cancellation boundaries.
+The assistant-settings facade stores per-app owner safety choices. Reads report editability only for a verified owner session; writes/reset require that session, live owner membership and revision checks, and protection-off requires explicit confirmation. No tool exposes these settings. Both the built-in chat policy and native/model MCP dispatch read the same removal preference. Only a short-lived token bound to this host's actual thread may opt out; outside MCP/plugin/local tokens always hold. Purges stay held. Only canonical single-record deletes from placed app-data lists receive trusted `recordDeletion` metadata; chat refuses that waiver for security/control identities and sensitive models. Native cookbook services always hold structure removals, undo and recipe disable, independently of both owner settings; design preview remains independent for non-removal changes. There is no host-side structural waiver or duplicate downstream check. Existing CRUD/audit execution is retained. CLI protection reaches turn specs and the same mode-specific readiness preflight; it never alters credential or cancellation boundaries.
 
-Reuse check: smrt-dev-mcp reviews and purpose/name searches covered app-runtime, chat, core, inference, preferences, smrt-svelte, template-sveltekit and app-shell, plus `docs/knowledge/intents/index.md`. No new production files/components/helpers were introduced. Extended the existing work-profile types/facade, approval policy/authority, CLI specs/parsers/preflight, failure reporter/redactor, runtime cookie, ConnectAi route/client and UI primitives.
+Reuse check: smrt-dev-mcp reviews and purpose/name searches covered app-runtime, chat, core, inference, preferences, smrt-svelte, template-sveltekit and app-shell, plus `docs/knowledge/intents/index.md`. No new production files/components/helpers were introduced. Extended the existing settings types/facade, approval policy/authority, CLI specs/parsers/preflight, failure reporter/redactor, runtime cookie, ConnectAi route/client and UI primitives.
 
 In-flight removal settings: the MCP boundary honors both the current owner preference and the running turn's existing `requiresApproval` gate. Tightening can add a hold immediately; relaxing never waives a hold already bound to that request. This prevents an effect from running and then being rejected by result authoring. CLI host tests flip the preference just before MCP execution and still require the original owner decision exactly once.
 

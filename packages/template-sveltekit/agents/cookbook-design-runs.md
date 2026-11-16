@@ -15,7 +15,9 @@ owner and tenant binding after a restart. `latest` considers the newest 100 owne
 runs. Resume rejects while the prior job still runs, avoiding a dedupe race with
 its terminal write; retry once the current pass has stopped.
 
-The pinned design profile, original authenticated permission ceiling and
+The pinned execution (engine, tier, model, effort, preview setting; a run
+started before #5005 stored the same fields as `profile` and is read the same
+way), original authenticated permission ceiling and
 thread/request text are durable inputs, never a credential or captured Request.
 Live permissions are intersected with that ceiling for every pass, so restart
 cannot expand authority. Each pass reauthorizes the owner. A real
@@ -75,9 +77,9 @@ reinterpreted as valid actions.
 
 Authenticated same-origin `POST /api/assistant/design-runs` admits a design job
 directly using exactly `{ threadId, content }`. It reuses chat's own thread-read
-handler to check session ownership, then resolves the design profile and
-permission ceiling on the server. It accepts no identity, engine, profile or
-action-key overrides and performs no preliminary model turn.
+handler to check session ownership, then resolves the execution and
+permission ceiling on the server. It accepts no identity, engine, execution,
+budget or action-key overrides and performs no preliminary model turn.
 
 The server's pass executor uses its existing authenticated assistant route and
 engine adapters with job-bound limits. Design passes offer only read/proposal

@@ -776,3 +776,78 @@ describe('InferenceSettingsPanel transcripts (#4781)', () => {
     expect(target.textContent).toContain('duo');
   });
 });
+
+describe('assistant settings (#5005)', () => {
+  const form = (target: HTMLElement) =>
+    target.querySelector<HTMLFormElement>(
+      '[data-testid="inference-assistant-form"]',
+    )!;
+  const box = (target: HTMLElement, name: string) =>
+    target.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
+
+  it('is absent without assistant settings', () => {
+    const target = render();
+    expect(
+      target.querySelector('[data-testid="inference-assistant"]'),
+    ).toBeNull();
+  });
+
+  it('shows every setting on by default and saves the owner choice', () => {
+    const onSaveAssistant = vi.fn();
+    const target = render({
+      assistant: { settings: {}, editable: true },
+      onSaveAssistant,
+    });
+    for (const name of [
+      'escalateToWorkflow',
+      'previewBeforeApply',
+      'requireRemovalApproval',
+      'protectLocalCli',
+    ])
+      expect(box(target, name).checked).toBe(true);
+    box(target, 'escalateToWorkflow').checked = false;
+    form(target).requestSubmit();
+    expect(onSaveAssistant).toHaveBeenCalledWith({
+      settings: {
+        escalateToWorkflow: false,
+        previewBeforeApply: true,
+        requireRemovalApproval: true,
+        protectLocalCli: true,
+      },
+    });
+  });
+
+  it('asks for an explicit confirmation to turn local AI protection off', async () => {
+    const onSaveAssistant = vi.fn();
+    const target = render({
+      assistant: { settings: {}, editable: true },
+      onSaveAssistant,
+    });
+    const protect = box(target, 'protectLocalCli');
+    protect.checked = false;
+    protect.dispatchEvent(new Event('change', { bubbles: true }));
+    await tick();
+    const confirm = target.querySelector<HTMLInputElement>(
+      '[data-testid="inference-assistant-confirm"]',
+    )!;
+    expect(confirm).not.toBeNull();
+    confirm.checked = true;
+    form(target).requestSubmit();
+    expect(onSaveAssistant).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settings: expect.objectContaining({ protectLocalCli: false }),
+        confirmUnprotectedCli: true,
+      }),
+    );
+  });
+
+  it('is read-only for someone who is not the owner', () => {
+    const target = render({
+      assistant: { settings: { previewBeforeApply: false }, editable: false },
+      onSaveAssistant: vi.fn(),
+    });
+    expect(box(target, 'previewBeforeApply').checked).toBe(false);
+    expect(box(target, 'previewBeforeApply').disabled).toBe(true);
+    expect(form(target).querySelector('button[type="submit"]')).toBeNull();
+  });
+});

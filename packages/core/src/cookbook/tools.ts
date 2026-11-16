@@ -55,7 +55,7 @@ export interface CookbookToolContext {
   /** Trusted host run/action identity, never tool arguments or permission authority. */
   designAction?: { application: string; runId: string; actionId: string };
   threadId?: string;
-  /** Person Profile identity resolved by the host, not a work profile selector. */
+  /** Person Profile identity resolved by the host. */
   profileId?: string | null;
   /** Trusted human first-run route, derived from durable server state; never tool arguments. */
   initialSetup?: boolean;
@@ -66,7 +66,12 @@ export interface CookbookToolDefinition {
   inputSchema: JsonSchema;
   outputSchema: { type: 'object'; additionalProperties: true };
   annotations: {
-    workProfile?: 'design';
+    /**
+     * The AI run types that may call the tool (#5005). Structural writes
+     * name only `workflow`: a chat `turn` run is refused before execution.
+     * Absent: any run type.
+     */
+    runTypes?: readonly ['workflow'];
     readOnlyHint: boolean;
     destructiveHint: boolean;
     idempotentHint: boolean;
@@ -406,7 +411,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       inputSchema: schemas[name],
       outputSchema: { type: 'object', additionalProperties: true },
       annotations: {
-        ...(writes.has(name) ? { workProfile: 'design' as const } : {}),
+        ...(writes.has(name) ? { runTypes: ['workflow'] as const } : {}),
         readOnlyHint: !writes.has(name),
         destructiveHint:
           name === 'recipes.disable' ||

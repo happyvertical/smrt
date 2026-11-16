@@ -227,6 +227,30 @@ export interface InferenceTranscriptSettingsView {
   promptOverrides?: string[];
 }
 
+/**
+ * The assistant's ordinary settings (#5005), stored by the host's
+ * `assistant-settings` preference. An absent setting is on.
+ */
+export interface InferenceAssistantSettingsView {
+  settings: {
+    escalateToWorkflow?: boolean;
+    previewBeforeApply?: boolean;
+    requireRemovalApproval?: boolean;
+    protectLocalCli?: boolean;
+  };
+  /** The owner, in a browser session: only then may they be changed. */
+  editable: boolean;
+}
+
+/**
+ * What saving the assistant settings emits. Turning local AI protection off
+ * carries the owner's explicit `confirmUnprotectedCli`.
+ */
+export interface InferenceAssistantSettingsChange {
+  settings: InferenceAssistantSettingsView['settings'];
+  confirmUnprotectedCli?: boolean;
+}
+
 /** What saving the transcript setting emits. Always the app row; `null` reverts it. */
 export interface InferenceTranscriptSettingsChange {
   settings: { enabled: boolean; sample: number; maxBytes: number } | null;

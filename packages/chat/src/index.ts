@@ -1,8 +1,11 @@
 export {
-  type AssistantWorkProfileOptions,
-  assertWorkProfileTool,
-  WorkProfileEscalation,
-} from './work-profile.js';
+  type AssistantModelSelection,
+  type AssistantRunTypeOptions,
+  assertToolRunType,
+  CHAT_ASSISTANT_TIER,
+  ToolRunTypeRefusal,
+  toolRunTypes,
+} from './tool-run-types.js';
 
 /**
  * @happyvertical/smrt-chat

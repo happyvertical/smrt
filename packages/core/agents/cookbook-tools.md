@@ -165,8 +165,9 @@ subsequent recipe enable under this contract.
 document and its resolved visible navigation (including cookbook labels).
 
 Structural write definitions expose the trusted annotation
-`annotations.workProfile: 'design'`; `assistantTools()` preserves it for chat's
-pre-execution interception. This is intelligence metadata only: permissions,
+`annotations.runTypes: ['workflow']` (#5005): only a workflow run may call
+them, and `assistantTools()` preserves it so chat refuses the call in a `turn`
+run before execution (and may hand the request to a workflow run). Permissions,
 revision checks and durable owner approvals remain authoritative.
 `previewBeforeApply(context)` is an optional owner-preference callback, default
 true. False permits cookbook application without a preview token but still
@@ -203,7 +204,7 @@ expiry. Denied, expired or failed holds refuse rather than creating another hold
 
 For thread presentation, the host may supply `threadId` and its live-resolved person
 `profileId`; the native envelope pins `principal: { userId, tenantId, profileId }`.
-These are host identity fields, unrelated to the selected work profile. Hosts must
+These are host identity fields, unrelated to which model answers. Hosts must
 validate the original principal before restoring them from a continuation.
 
 If activation/publication or journal completion fails after append, the existing

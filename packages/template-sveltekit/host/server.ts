@@ -42,13 +42,17 @@ import {
   createInferenceAssistantAdapters,
 } from '@happyvertical/smrt-chat/engines';
 import {
+  type AssistantModelSelection,
   type AssistantRequestContext,
+  CHAT_ASSISTANT_TIER,
   configuredAssistantAI,
   type MountAssistantRoutesOptions,
   mountAssistantRoutes,
   resolveAssistantPrincipalFromLocals,
 } from '@happyvertical/smrt-chat/sveltekit';
 import {
+  type AiRunBudget,
+  type InferenceTier,
   ObjectRegistry,
   toSnakeCase,
   withEmbeddedWriteTransaction,
@@ -87,34 +91,30 @@ import {
   setRuntimeExposureGate,
 } from '@happyvertical/smrt-core/runtime-exposure';
 import {
+  type AssistantSettings,
   type ChatGPTPlanConnection,
   createAgentCliService,
   createChatGPTPlanConnection,
   createDesignRunStore,
   createInferenceSettingsController,
   createInferenceSettingsHost,
+  type EngineExecution,
+  engineTierModel,
   INFERENCE_PERMISSION_DEFINITIONS,
+  type InferenceEngineId,
   inferencePreferenceKind,
   locateCli,
-  nextWorkModel,
-  OPENAI_WORK_MODEL_RANKS,
-  projectWorkModelSelection,
-  type ResolvedWorkProfile,
-  rankOpenAIWorkModels,
-  recommendedWorkProfile,
-  resolveWorkProfile,
+  nextEngineModel,
+  resolveEngineEffort,
   tokenCredentials,
-  type WorkProfileName,
-  type WorkRunMetadata,
 } from '@happyvertical/smrt-inference/server';
 import { TaskRunner } from '@happyvertical/smrt-jobs';
 import {
+  createAssistantSettingsPreference,
   createPrebuiltComponentsPreference,
   createPreferenceStore,
-  createWorkProfilesPreference,
   getPreferencePrincipal,
   registerPreferenceKind,
-  type WorkProfilePreferences,
 } from '@happyvertical/smrt-preferences';
 import { mountConnectAiRoutes } from '@happyvertical/smrt-svelte/connect-ai/server';
 import {
@@ -137,6 +137,9 @@ import type { Handle, RequestEvent, ServerLoad } from '@sveltejs/kit';
 import { error, redirect } from '@sveltejs/kit';
 import {
   createCookbookDesignRuns,
+  DESIGN_WORKFLOW_BUDGET,
+  type DesignRunExecution,
+  type DesignWorkflowBudget,
   isCookbookDesignFinalCheck,
   presentCookbookDesignProgress,
 } from './design-runs.js';
@@ -148,6 +151,22 @@ import {
   type PluginModeState,
 } from './plugin-mode.js';
 import { createCookbookHostState } from './state.js';
+
+/**
+ * The assistant turn's limits (#5005): its budget (stored on the turn's AI
+ * run, enforced by core and the loop) and the per-call output cap and kept
+ * tool result size, which stay loop options.
+ */
+const ASSISTANT_TURN_LIMITS = Object.freeze({
+  budget: Object.freeze({
+    maxSteps: 24,
+    maxTokens: 160_000,
+    maxDurationMs: 600_000,
+    callTimeoutMs: 180_000,
+  }) satisfies AiRunBudget,
+  maxTokens: 16_384,
+  toolResultChars: 40_000,
+});
 
 const describePublicAssistantTool: typeof describeAssistantTool = (
   name,
@@ -218,6 +237,11 @@ export interface CookbookHostOptions {
   /** In-process test/host seams; inference still owns vendor discovery and credentials. */
   cli?: ReturnType<typeof createAgentCliService>;
   chatgpt?: ChatGPTPlanConnection;
+  /**
+   * The app's setting for the design workflow definition's budget (#5005);
+   * unset keys keep {@link DESIGN_WORKFLOW_BUDGET}.
+   */
+  designBudget?: Partial<DesignWorkflowBudget>;
 }
 
 async function readHostApp(
@@ -359,12 +383,47 @@ export function createCookbookHost(options: CookbookHostOptions) {
   const designRequests = new WeakMap<
     Request,
     {
-      profile: ResolvedWorkProfile;
+      execution: DesignRunExecution;
+      /**
+       * The pass turn's limits, within the design workflow's. Its run stores
+       * steps and the call timeout; tokens and time stay loop limits, since
+       * the design run itself accounts a pass's usage after it ends.
+       */
+      limits: {
+        maxSteps: number;
+        callTimeoutMs: number;
+        maxTurnTokens: number;
+        maxTurnMs: number;
+      };
       schema: Record<string, unknown>;
       prompt: string;
       content: string;
+      /** What the pass turn ran with and used, reported by the turn. */
+      observed?: EngineExecution;
     }
   >();
+  const designBudget: DesignWorkflowBudget = {
+    ...DESIGN_WORKFLOW_BUDGET,
+    ...options.designBudget,
+  };
+  /** A design pass's run budget, else the assistant turn's. */
+  const turnBudget = (context: AssistantRequestContext): AiRunBudget => {
+    const pass = designRequests.get(context.event.request);
+    return pass
+      ? {
+          maxSteps: pass.limits.maxSteps,
+          callTimeoutMs: pass.limits.callTimeoutMs,
+        }
+      : ASSISTANT_TURN_LIMITS.budget;
+  };
+  /** The turn's wall time: a design pass's own, else the assistant budget's. */
+  const turnMaxMs = (context: AssistantRequestContext): number =>
+    designRequests.get(context.event.request)?.limits.maxTurnMs ??
+    ASSISTANT_TURN_LIMITS.budget.maxDurationMs;
+  const toolResultChars = (context: AssistantRequestContext): number =>
+    designRequests.has(context.event.request)
+      ? designBudget.toolResultChars
+      : ASSISTANT_TURN_LIMITS.toolResultChars;
   let origin: string | undefined;
   let taskRunner: TaskRunner | undefined;
   let disposeDesignRuns: (() => void) | undefined;
@@ -435,7 +494,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
       store: createPreferenceStore({ db }),
       isOwner: (p) => isOwner(p.tenantId, p.userId),
     });
-    const workProfiles = createWorkProfilesPreference({
+    const assistantSettings = createAssistantSettingsPreference({
       store: createPreferenceStore({ db }),
       isOwner: (p) => isOwner(p.tenantId, p.userId),
     });
@@ -668,14 +727,18 @@ export function createCookbookHost(options: CookbookHostOptions) {
               throw new Error('Read only');
             },
           }).load(context.designAction.runId, context.userId);
+          const input = saved?.input as
+            | {
+                execution?: { previewBeforeApply?: boolean };
+                profile?: { previewBeforeApply?: boolean };
+              }
+            | undefined;
           return (
-            (saved?.input as { profile?: ResolvedWorkProfile } | undefined)
-              ?.profile?.previewBeforeApply !== false
+            (input?.execution ?? input?.profile)?.previewBeforeApply !== false
           );
         }
         return (
-          (await workProfiles.read()).settings.design?.previewBeforeApply !==
-          false
+          (await assistantSettings.read()).settings.previewBeforeApply !== false
         );
       },
       isAppEmpty: async (context) => {
@@ -939,7 +1002,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
         tenantId,
         threadId,
         content,
-        profile,
+        execution,
         permissions,
         request,
         stage,
@@ -979,25 +1042,25 @@ export function createCookbookHost(options: CookbookHostOptions) {
               }),
               signal: request.signal,
             });
-            designRequests.set(detached, {
-              profile: {
-                ...profile,
-                budgets: {
-                  ...profile.budgets,
-                  maxTurnTokens: Math.min(
-                    profile.budgets.maxTurnTokens,
-                    request.maxTokens,
-                  ),
-                  turnTimeoutMs: Math.min(
-                    profile.budgets.turnTimeoutMs,
-                    request.timeoutMs,
-                  ),
-                },
+            const pass = {
+              execution,
+              limits: {
+                maxSteps: designBudget.maxSteps,
+                callTimeoutMs: designBudget.requestTimeoutMs,
+                maxTurnTokens: Math.min(
+                  designBudget.maxTurnTokens,
+                  request.maxTokens,
+                ),
+                maxTurnMs: Math.min(
+                  designBudget.turnTimeoutMs,
+                  request.timeoutMs,
+                ),
               },
               schema: request.schema,
               prompt,
               content,
-            });
+            } as Parameters<typeof designRequests.set>[1];
+            designRequests.set(detached, pass);
             const e = {
               url,
               request: detached,
@@ -1016,16 +1079,14 @@ export function createCookbookHost(options: CookbookHostOptions) {
                 throw new Error('The design pass could not start');
               const outcome = await readAssistantTurnStream<{
                 content?: string;
-                metadata?: {
-                  workRun?: WorkRunMetadata;
-                  designOutput?: unknown;
-                };
+                metadata?: { designOutput?: unknown };
               }>(response, () => {});
               const reply = outcome.done?.message;
-              if (!reply?.metadata?.workRun)
+              if (!reply || !pass.observed)
                 throw new Error('Design execution metadata is unavailable');
-              const output = reply.metadata.designOutput ?? reply.content ?? '';
-              return { output, metadata: reply.metadata.workRun };
+              const output =
+                reply.metadata?.designOutput ?? reply.content ?? '';
+              return { output, metadata: pass.observed };
             } finally {
               designRequests.delete(detached);
             }
@@ -1048,7 +1109,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
       authority,
       continuations,
       preferences,
-      workProfiles,
+      assistantSettings,
       designRuns,
       service,
       gate,
@@ -1517,103 +1578,99 @@ export function createCookbookHost(options: CookbookHostOptions) {
     ];
   };
   // Exactly the execution memo generation. Never key a fallback by its resolved model.
-  async function workModelConnectionKey(tenantId: string, ownerId: string) {
+  async function modelConnectionKey(tenantId: string, ownerId: string) {
     const host = await ready();
-    return `${(await cli.cliStatus('claude-code')).version ?? 'unknown'}:${await host.state.engineGeneration(tenantId, ownerId)}:${(await host.workProfiles.read()).revision ?? 'recommended'}`;
+    return `${(await cli.cliStatus('claude-code')).version ?? 'unknown'}:${await host.state.engineGeneration(tenantId, ownerId)}`;
   }
 
-  async function resolveProfile(
+  /**
+   * The model of a turn on `engine` at `tier` (#5005): an API key binds the
+   * tier through core; Claude Code, Codex and a ChatGPT plan take their
+   * default tier binding (inference `engineTierModel`). The effort is the
+   * tier binding's, else the engine's default.
+   */
+  async function engineSelection(
+    engine: InferenceEngineId,
+    tier: InferenceTier,
+  ): Promise<AssistantModelSelection> {
+    const model =
+      engine === 'api'
+        ? undefined
+        : engineTierModel({
+            engine,
+            tier,
+            ...(engine === 'chatgpt'
+              ? { catalog: await (await chatgpt()).models() }
+              : {}),
+          });
+    if (engine !== 'api' && !model)
+      throw new Error('The connected engine has no available model.');
+    const effort = resolveEngineEffort({ tier });
+    return {
+      engine,
+      tier,
+      ...(model ? { model } : {}),
+      ...(effort ? { effort } : {}),
+    };
+  }
+
+  /** A design pass keeps its run's pinned execution; any other turn asks for the assistant's tier. */
+  async function resolveSelection(
     context: AssistantRequestContext,
-    profile?: WorkProfileName,
-  ) {
-    const host = await ready();
+  ): Promise<AssistantModelSelection> {
     const pinned = designRequests.get(context.event.request);
-    if (pinned) return pinned.profile;
-    const saved = await host.workProfiles.read();
-    if (!profile) {
-      const onboarding = host.onboarding
-        ? await host.onboarding.load(context.event as RequestEvent)
-        : null;
-      profile =
-        onboarding && (!onboarding.completed || onboarding.rerunning)
-          ? 'design'
-          : 'assist';
+    if (pinned) {
+      const { previewBeforeApply: _preview, ...selection } = pinned.execution;
+      return selection;
     }
     const engine =
-      (await host.state.engine(
-        context.principal.tenantId,
-        context.principal.userId,
-      )) ?? 'api';
-    const selected = saved.settings[profile]?.engine ?? engine;
-    return resolveWorkProfile({
-      profile,
-      engine,
-      settings: saved.settings[profile],
-      ...(selected === 'chatgpt'
-        ? { catalog: await (await chatgpt()).models() }
-        : {}),
-    });
+      (await (
+        await ready()
+      ).state.engine(context.principal.tenantId, context.principal.userId)) ??
+      'api';
+    return engineSelection(engine, CHAT_ASSISTANT_TIER);
   }
-  const workProfiles = {
+
+  /** A new design run's execution: the owner's engine at the assistant's tier. */
+  async function designExecution(
+    context: AssistantRequestContext,
+  ): Promise<DesignRunExecution> {
+    const host = await ready();
+    return {
+      ...(await resolveSelection(context)),
+      previewBeforeApply:
+        (await host.assistantSettings.read()).settings.previewBeforeApply !==
+        false,
+    };
+  }
+
+  /** The onboarding flow's requests go straight to a design run. */
+  async function onboardingActive(context: AssistantRequestContext) {
+    const host = await ready();
+    const onboarding = host.onboarding
+      ? await host.onboarding.load(context.event as RequestEvent)
+      : null;
+    return !!onboarding && (!onboarding.completed || onboarding.rerunning);
+  }
+
+  /** The owner's assistant settings, edited in the inference settings panel. */
+  const assistantSettings = {
     async read(event: RequestEvent) {
       const principal = resolveAssistantPrincipalFromLocals(event.locals);
       if (!principal) error(401, 'Sign in required');
-      const saved = await (await ready()).workProfiles.read();
-      const context = { event, principal } as AssistantRequestContext;
-      const engine =
-        (await (
-          await ready()
-        ).state.engine(principal.tenantId, principal.userId)) ?? 'api';
-      const resolved = await Promise.all(
-        (['design', 'assist', 'background'] as const).map(async (name) => {
-          try {
-            const profile = await resolveProfile(context, name);
-            const projected =
-              profile.engine === 'claude-code' &&
-              profile.model &&
-              ['fable', 'opus'].includes(profile.model)
-                ? await projectWorkModelSelection({
-                    profile,
-                    ownerId: principal.userId,
-                    connectionKey: await workModelConnectionKey(
-                      principal.tenantId,
-                      principal.userId,
-                    ),
-                    store: (await ready()).state.fallbackStore(
-                      principal.tenantId,
-                    ),
-                  })
-                : profile;
-            return { ...projected, unavailable: false };
-          } catch {
-            const defaults = recommendedWorkProfile(name);
-            const setting = saved.settings[name];
-            return {
-              ...defaults,
-              ...setting,
-              name,
-              engine: setting?.engine ?? engine,
-              tier:
-                name === 'background' ? ('cheap' as const) : ('best' as const),
-              budgets: { ...defaults.budgets, ...setting?.budgets },
-              unavailable: true,
-            };
-          }
-        }),
-      );
+      const saved = await (await ready()).assistantSettings.read();
       return {
-        ...saved,
-        resolved,
+        settings: saved.settings,
+        revision: saved.revision,
         editable:
           typeof (event.locals as SmrtRuntimeLocals).sessionId === 'string' &&
           (await isOwner(principal.tenantId, principal.userId)),
-        chatgptSignedIn: (await (await chatgpt()).status()).signedIn,
       };
     },
     async write(
       event: RequestEvent,
       payload: {
-        settings: WorkProfilePreferences;
+        settings: AssistantSettings;
         revision: string | null;
         confirmUnprotectedCli?: boolean;
       },
@@ -1632,7 +1689,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
       )
         error(400, 'Invalid settings');
       try {
-        return await (await ready()).workProfiles.write(
+        return await (await ready()).assistantSettings.write(
           payload.settings,
           payload.revision,
           { confirmUnprotectedCli: payload.confirmUnprotectedCli === true },
@@ -1653,7 +1710,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
         error(403, 'Owner required');
       if (!(revision === null || typeof revision === 'string'))
         error(400, 'Invalid revision');
-      return (await ready()).workProfiles.reset(revision);
+      return (await ready()).assistantSettings.reset(revision);
     },
   };
   const adapters = createInferenceAssistantAdapters({
@@ -1665,8 +1722,8 @@ export function createCookbookHost(options: CookbookHostOptions) {
       cliStatus: async (tool) =>
         cli.cliStatus(tool, {
           protection:
-            (await (await ready()).workProfiles.read()).settings.safety
-              ?.protectLocalCli !== false,
+            (await (await ready()).assistantSettings.read()).settings
+              .protectLocalCli !== false,
         }),
       chatgpt: { status: async () => (await chatgpt()).status() },
       apiStatus: () => apiStatus(c),
@@ -1676,7 +1733,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
       connection: await chatgpt(),
       fallback: {
         ownerId: context.principal.userId,
-        connectionKey: `chatgpt:${JSON.stringify(await (await chatgpt()).models())}:${await (await ready()).state.engineGeneration(context.principal.tenantId, context.principal.userId)}:${(await (await ready()).workProfiles.read()).revision ?? 'recommended'}`,
+        connectionKey: `chatgpt:${JSON.stringify(await (await chatgpt()).models())}:${await (await ready()).state.engineGeneration(context.principal.tenantId, context.principal.userId)}`,
         store: (await ready()).state.fallbackStore(context.principal.tenantId),
       },
       toolNamespace: { name: 'smrt_app', description: 'Work with this app' },
@@ -1725,8 +1782,8 @@ export function createCookbookHost(options: CookbookHostOptions) {
           });
           return {
             protection:
-              (await host.workProfiles.read()).settings.safety
-                ?.protectLocalCli !== false,
+              (await host.assistantSettings.read()).settings.protectLocalCli !==
+              false,
             mcpUrl: new URL('/mcp', context.event.url).href,
             ...(designRequests.get(context.event.request)
               ? {
@@ -1734,40 +1791,28 @@ export function createCookbookHost(options: CookbookHostOptions) {
                     .schema,
                 }
               : {}),
-            ...(turn.workProfile?.model &&
-            ((tool === 'claude-code' &&
-              ['fable', 'opus'].includes(turn.workProfile.model)) ||
-              (tool === 'codex' &&
-                nextWorkModel(
-                  rankOpenAIWorkModels(
-                    Object.keys(OPENAI_WORK_MODEL_RANKS).map((id) => ({ id })),
-                  ),
-                  turn.workProfile.model,
-                )))
+            ...(turn.selection?.model &&
+            nextEngineModel({ engine: tool, model: turn.selection.model })
               ? {
                   fallback: {
                     ownerId: context.principal.userId,
-                    connectionKey: await workModelConnectionKey(
+                    connectionKey: await modelConnectionKey(
                       context.principal.tenantId,
                       context.principal.userId,
                     ),
-                    nextModel:
-                      tool === 'claude-code'
-                        ? turn.workProfile.model === 'fable'
-                          ? 'opus'
-                          : 'sonnet'
-                        : nextWorkModel(
-                            rankOpenAIWorkModels(
-                              Object.keys(OPENAI_WORK_MODEL_RANKS).map(
-                                (id) => ({ id }),
-                              ),
-                            ),
-                            turn.workProfile.model,
-                          )!,
+                    // One step down the engine's tier binding order.
+                    nextModel: nextEngineModel({
+                      engine: tool,
+                      model: turn.selection.model,
+                    })!,
                     store: host.state.fallbackStore(context.principal.tenantId),
                   },
                 }
               : {}),
+            limits: {
+              turnTimeoutMs: turnBudget(context).callTimeoutMs!,
+              toolResultChars: toolResultChars(context),
+            },
             canonicalToolName: (name) => names.get(name),
             describeTool: (name, args, outcome) => {
               const model = models.find((entry) => entry.slug === name);
@@ -1910,12 +1955,32 @@ export function createCookbookHost(options: CookbookHostOptions) {
         : null;
     },
     ...adapters,
-    resolveWorkProfile: resolveProfile,
+    resolveSelection,
+    assistantSettings: async () =>
+      (await (await ready()).assistantSettings.read()).settings,
+    turnBudget: (context) => turnBudget(context),
+    maxTurnTokens: (context) =>
+      designRequests.get(context.event.request)?.limits.maxTurnTokens,
+    maxTurnMs: (context) =>
+      designRequests.get(context.event.request)?.limits.maxTurnMs,
+    toolResultChars: (context) => toolResultChars(context),
+    maxTokens: (context) =>
+      designRequests.has(context.event.request)
+        ? designBudget.maxTokens
+        : ASSISTANT_TURN_LIMITS.maxTokens,
+    onExecution: (context, execution) => {
+      const pass = designRequests.get(context.event.request);
+      if (pass) pass.observed = execution;
+    },
     internalTurn: (context) => {
       const design = designRequests.get(context.event.request);
       return design ? { userMessage: design.content } : undefined;
     },
-    deferDesignTurn: (context) => !designRequests.has(context.event.request),
+    // Onboarding asks for a design straight away: a workflow run, before any
+    // model call. A design pass itself never defers.
+    deferDesignTurn: async (context) =>
+      !designRequests.has(context.event.request) &&
+      (await onboardingActive(context)),
     onDesignEscalation: async (context, input) => {
       const original =
         input.userMessage ??
@@ -1925,18 +1990,14 @@ export function createCookbookHost(options: CookbookHostOptions) {
       if (!input.thread?.id || typeof original !== 'string' || !original.trim())
         throw new Error('Design runs require a saved thread and user request');
       const host = await ready();
-      const profile = await resolveProfile(context, 'design');
-      const fixedPasses = Object.hasOwn(
-        (await host.workProfiles.read()).settings.design?.budgets ?? {},
-        'passes',
-      );
       const state = await host.designRuns
         .forOwner(context.principal.userId, context.principal.tenantId)
         .start({
           threadId: String(input.thread.id),
           content: original,
-          profile,
-          fixedPasses,
+          execution: await designExecution(context),
+          ...(options.designBudget ? { budget: options.designBudget } : {}),
+          fixedPasses: Object.hasOwn(options.designBudget ?? {}, 'passes'),
           permissions: [...(context.principal.permissions ?? [])],
         });
       return { runId: state.id, message: 'Thinking this through' };
@@ -1959,8 +2020,8 @@ export function createCookbookHost(options: CookbookHostOptions) {
     // These tools hold in their own canonical service; never create a second chat hold.
     approvalPolicy: async () => ({
       allowRemovalsInChat:
-        (await (await ready()).workProfiles.read()).settings.safety
-          ?.requireRemovalApproval === false,
+        (await (await ready()).assistantSettings.read()).settings
+          .requireRemovalApproval === false,
       tools: Object.fromEntries(
         COOKBOOK_TOOL_NAMES.map((name) => [name, false]),
       ),
@@ -2249,19 +2310,15 @@ export function createCookbookHost(options: CookbookHostOptions) {
           },
         });
         if (!thread.ok) return thread;
-        const profile = await resolveProfile(
-          { event, principal: p } as AssistantRequestContext,
-          'design',
-        );
         const state = await runs.start({
           threadId: body.threadId,
           content: body.content,
-          profile,
-          fixedPasses: Object.hasOwn(
-            (await (await ready()).workProfiles.read()).settings.design
-              ?.budgets ?? {},
-            'passes',
-          ),
+          execution: await designExecution({
+            event,
+            principal: p,
+          } as AssistantRequestContext),
+          ...(options.designBudget ? { budget: options.designBudget } : {}),
+          fixedPasses: Object.hasOwn(options.designBudget ?? {}, 'passes'),
           permissions: [
             ...(p.permissions ??
               (event.locals as SmrtRuntimeLocals).permissions ??
@@ -2275,19 +2332,15 @@ export function createCookbookHost(options: CookbookHostOptions) {
         return json({ code: 'not_found' }, 404);
       if (event.request.headers.get('origin') !== event.url.origin)
         return json({ code: 'invalid_origin' }, 403);
-      const saved = await (await ready()).workProfiles.read();
-      const budgets = {
-        ...recommendedWorkProfile('design').budgets,
-        ...saved.settings.design?.budgets,
-      };
-      // Explicit Resume adopts the owner's current aggregate allowances, without
-      // resetting usage or changing the run's pinned engine, model or passes.
+      // Explicit Resume adopts the design workflow definition's allowances,
+      // without resetting usage or changing the run's pinned engine, model or
+      // passes.
       const state =
         match[2] === 'stop'
           ? await runs.stop(match[1])
           : await runs.resume(match[1], {
-              maxTokens: budgets.maxRunTokens,
-              maxDurationMs: budgets.runTimeoutMs,
+              maxTokens: designBudget.maxRunTokens,
+              maxDurationMs: designBudget.runTimeoutMs,
             });
       return json({ run: designProgress(state) });
     } catch {
@@ -2587,8 +2640,8 @@ export function createCookbookHost(options: CookbookHostOptions) {
                 cli.cliStatus(tool, {
                   ...statusOptions,
                   protection:
-                    (await host.workProfiles.read()).settings.safety
-                      ?.protectLocalCli !== false,
+                    (await host.assistantSettings.read()).settings
+                      .protectLocalCli !== false,
                 }),
             ),
         },
@@ -2610,7 +2663,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
     connectAi,
     pluginMode: pluginMode.handle,
     inferenceSettings,
-    workProfiles,
+    assistantSettings,
     async history(event: RequestEvent) {
       if (event.request.method !== 'GET')
         return json({ code: 'method_not_allowed' }, 405);
@@ -2951,9 +3004,9 @@ export function createCookbookHost(options: CookbookHostOptions) {
                     ? 'read'
                     : 'write',
                 ...(spec.annotations &&
-                'workProfile' in spec.annotations &&
-                spec.annotations.workProfile === 'design'
-                  ? { metadata: { workProfile: spec.annotations.workProfile } }
+                'runTypes' in spec.annotations &&
+                Array.isArray(spec.annotations.runTypes)
+                  ? { metadata: { runTypes: [...spec.annotations.runTypes] } }
                   : {}),
                 idempotent: spec.annotations?.idempotentHint === true,
                 openWorld: spec.annotations?.openWorldHint === true,
@@ -2971,11 +3024,11 @@ export function createCookbookHost(options: CookbookHostOptions) {
                     throw new Error('Principal changed');
                   binding?.turn.beforeToolExecution(spec.slug);
                   if (binding) {
-                    const budget = binding.turn.workProfile?.budgets;
                     if (
-                      budget &&
-                      (binding.toolCalls >= budget.maxSteps ||
-                        Date.now() - binding.startedAt >= budget.turnTimeoutMs)
+                      binding.toolCalls >=
+                        turnBudget(binding.context).maxSteps! ||
+                      Date.now() - binding.startedAt >=
+                        turnMaxMs(binding.context)
                     )
                       throw new Error(
                         'This pass has reached its tool or time limit',
@@ -2997,8 +3050,8 @@ export function createCookbookHost(options: CookbookHostOptions) {
                     !designRequests.has(binding.context.event.request)
                       ? {
                           allowRemovalsInChat:
-                            (await host.workProfiles.read()).settings.safety
-                              ?.requireRemovalApproval === false,
+                            (await host.assistantSettings.read()).settings
+                              .requireRemovalApproval === false,
                         }
                       : undefined;
                   if (

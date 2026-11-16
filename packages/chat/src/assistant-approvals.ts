@@ -81,7 +81,7 @@ export function requiresOwnerApproval(
     'action' in tool &&
     tool.action === 'delete' &&
     tool.annotations?.recordDeletion === true &&
-    tool.annotations?.workProfile !== 'design' &&
+    !tool.annotations?.runTypes?.includes('workflow') &&
     typeof args.id === 'string' &&
     args.id.trim().length > 0;
   if (purge) return true;

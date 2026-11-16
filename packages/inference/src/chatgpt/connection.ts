@@ -1,4 +1,4 @@
-import { rankOpenAIWorkModels, strongestWorkModel } from '../work-profiles.js';
+import { rankOpenAIModels, strongestModel } from '../engine-tiers.js';
 /**
  * "Sign in with ChatGPT" connection service (host-agnostic, Node-only).
  *
@@ -377,7 +377,7 @@ export function createChatGPTPlanConnection(
               typeof import('@happyvertical/ai')['getAI']
             >[0],
           )) as unknown as ChatGPTPlanModelLister);
-      const models = rankOpenAIWorkModels(
+      const models = rankOpenAIModels(
         (await client.getModels()).map((m) => ({
           id: m.id,
           label: m.name?.trim() || m.id,
@@ -391,7 +391,7 @@ export function createChatGPTPlanConnection(
     },
 
     async defaultModel() {
-      return strongestWorkModel(await connection.models());
+      return strongestModel(await connection.models());
     },
   };
   return connection;

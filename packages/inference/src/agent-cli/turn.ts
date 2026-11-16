@@ -2,14 +2,14 @@
 // tool policy and approval authority; this engine never decides an approval.
 import { randomUUID } from 'node:crypto';
 import type { AIToolCall } from '@happyvertical/ai';
-import { redactInferenceSecret } from '../settings/keys.js';
+import type { ReasoningEffort } from '@happyvertical/smrt-core';
+import { validateModelId } from '../engine-tiers.js';
 import {
-  type ResolvedWorkProfile,
-  runWorkModelWithFallback,
-  validateWorkModel,
-  type WorkModelFallbackStore,
-  type WorkRunMetadata,
-} from '../work-profiles.js';
+  type EngineExecution,
+  type ModelFallbackStore,
+  runWithModelFallback,
+} from '../model-fallback.js';
+import { redactInferenceSecret } from '../settings/keys.js';
 import type { AgentCredentials } from './credentials.js';
 import type { AgentCliLocation } from './detect.js';
 import { runProcess } from './runner.js';
@@ -103,7 +103,8 @@ export interface AgentTurnHost {
     ok: boolean;
     approvalId?: string;
   }): Promise<{ summary: string; details?: Record<string, unknown> }>;
-  recordExecution?(metadata: WorkRunMetadata): Promise<void>;
+  /** What the turn ran with and used; never stored on a message. */
+  recordExecution?(execution: EngineExecution): Promise<void>;
   completionNote?(): Promise<string | null>;
 }
 
@@ -120,20 +121,26 @@ export interface AgentTurnMessage {
         summary: string;
         approvalId?: string;
       }
-    | { cliSession: { tool: string; id: string }; workRun?: WorkRunMetadata };
+    | { cliSession: { tool: string; id: string } };
 }
 
 export interface AgentTurnOptions {
   /** Trusted host setting, never engine input; default protected. */
   protection?: boolean;
   text: string;
-  profile?: ResolvedWorkProfile;
+  /** The model the engine's tier binding chose (#5005). */
+  model?: string;
+  /** The effort the caller, prompt or tier binding asks for; omitted: the CLI's. */
+  effort?: ReasoningEffort;
+  /** This turn's limits, from its budget; `deps.limits` still wins. */
+  limits?: Partial<Pick<AgentTurnLimits, 'turnTimeoutMs' | 'toolResultChars'>>;
   outputSchema?: Record<string, unknown>;
+  /** Needs `model`: one step down the tier binding order on a plan refusal. */
   fallback?: {
     ownerId: string;
     connectionKey: string;
     nextModel: string;
-    store: WorkModelFallbackStore;
+    store: ModelFallbackStore;
   };
   tool: AgentTool;
   mcpUrl: string;
@@ -327,15 +334,9 @@ async function runAgentTurnImpl(
   options: AgentTurnOptions,
 ): Promise<AgentTurnStop> {
   const { host, tool, deps } = options;
-  if (
-    options.profile &&
-    (options.profile.engine !== tool || !options.profile.model)
-  )
-    throw new Error('The work profile does not match this connected engine.');
-  if (options.profile?.model !== undefined)
-    validateWorkModel(options.profile.model);
+  if (options.model !== undefined) validateModelId(options.model);
   if (options.fallback?.nextModel !== undefined)
-    validateWorkModel(options.fallback.nextModel);
+    validateModelId(options.fallback.nextModel);
   const emit: AgentTurnOptions['emit'] = (event) => {
     if (event.type === 'error' && !event.message.includes(' Reference: ')) {
       const reference = reportAgentFailure(
@@ -356,12 +357,7 @@ async function runAgentTurnImpl(
   let reportedTokens: number | undefined;
   const limits = {
     ...DEFAULT_AGENT_LIMITS,
-    ...(options.profile
-      ? {
-          turnTimeoutMs: options.profile.budgets.requestTimeoutMs,
-          toolResultChars: options.profile.budgets.toolResultChars,
-        }
-      : {}),
+    ...options.limits,
     ...deps.limits,
   };
   const label = AGENT_TOOL_INFO[tool].label;
@@ -660,14 +656,15 @@ async function runAgentTurnImpl(
     const checkHostFailure = () => {
       if (hostFailure) throw hostFailure.error;
     };
-    let activeProfile = options.profile;
-    let fallback: WorkRunMetadata['fallback'];
+    let activeModel = options.model;
+    let fallback: EngineExecution['fallback'];
     const attempt = async (resume: string | null) => {
       const guidance = await host.guidance();
       const spec = buildAgentRun({
         tool,
         protection: options.protection,
-        profile: activeProfile,
+        ...(activeModel ? { model: activeModel } : {}),
+        ...(options.effort ? { effort: options.effort } : {}),
         outputSchema: options.outputSchema,
         location,
         stateDir: await deps.stateDir(),
@@ -711,13 +708,14 @@ async function runAgentTurnImpl(
     };
 
     let result: Awaited<ReturnType<typeof attempt>>;
-    const requestedProfile = options.profile;
-    if (options.fallback && requestedProfile) {
-      const outcome = await runWorkModelWithFallback({
+    const requestedModel = options.model;
+    if (options.fallback && requestedModel) {
+      const outcome = await runWithModelFallback({
         ...options.fallback,
-        profile: requestedProfile,
+        engine: tool,
+        model: requestedModel,
         execute: async (model, activity) => {
-          activeProfile = { ...requestedProfile, model };
+          activeModel = model;
           finished = null;
           reportedModel = undefined;
           const result = await attempt(resumeId);
@@ -820,39 +818,29 @@ async function runAgentTurnImpl(
       if (options.protection !== false)
         emit({ type: 'text', delta: `\n\n${note}` });
     }
-    const execution: WorkRunMetadata | undefined = options.profile
-      ? {
-          profile: options.profile.name,
-          engine: tool,
-          model: reportedModel,
-          requestedModel: activeProfile?.model,
-          ...(fallback ? { fallback } : {}),
-          effort: options.profile.effort,
-          durationMs: Date.now() - startedAt,
-          toolCalls,
-          ...(reportedTokens !== undefined ? { tokens: reportedTokens } : {}),
-        }
-      : undefined;
+    const execution: EngineExecution = {
+      engine: tool,
+      ...(reportedModel ? { model: reportedModel } : {}),
+      ...(activeModel ? { requestedModel: activeModel } : {}),
+      ...(fallback ? { fallback } : {}),
+      ...(options.effort ? { effort: options.effort } : {}),
+      durationMs: Date.now() - startedAt,
+      toolCalls,
+      ...(reportedTokens !== undefined ? { tokens: reportedTokens } : {}),
+    };
     // Native commands can see their process environment. Buffer this mode's
     // answer until a tool/message boundary so split credentials cannot escape.
     if (options.protection === false) {
       pendingText = redactInferenceSecret(pendingText, token);
       if (pendingText) emit({ type: 'text', delta: pendingText });
     }
-    if (pendingText || sessionId || execution)
+    if (pendingText || sessionId)
       await host.appendMessage({
         role: 'assistant',
         content: pendingText,
-        ...(sessionId
-          ? {
-              meta: {
-                cliSession: { tool, id: sessionId },
-                ...(execution ? { workRun: execution } : {}),
-              },
-            }
-          : {}),
+        ...(sessionId ? { meta: { cliSession: { tool, id: sessionId } } } : {}),
       });
-    if (execution) await host.recordExecution?.(execution);
+    await host.recordExecution?.(execution);
     emit({ type: 'done', stop });
     return stop;
   } finally {

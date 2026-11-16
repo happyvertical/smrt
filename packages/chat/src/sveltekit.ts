@@ -1,14 +1,20 @@
+import type { AiRunBudget } from '@happyvertical/smrt-core';
 import type {
-  ResolvedWorkProfile,
-  WorkProfileName,
-  WorkRunMetadata,
+  AssistantSettings,
+  EngineExecution,
 } from '@happyvertical/smrt-inference';
+import type {
+  AssistantModelSelection,
+  AssistantRunTypeOptions,
+} from './tool-run-types.js';
 
 export {
-  type AssistantWorkProfileOptions,
-  assertWorkProfileTool,
-  WorkProfileEscalation,
-} from './work-profile.js';
+  type AssistantModelSelection,
+  type AssistantRunTypeOptions,
+  assertToolRunType,
+  CHAT_ASSISTANT_TIER,
+  ToolRunTypeRefusal,
+} from './tool-run-types.js';
 
 import {
   executeAsPrincipal,
@@ -200,8 +206,8 @@ export type AssistantPrincipalResolver = (
 
 /** What every per-request option callback receives. */
 export interface AssistantRequestContext {
-  /** Server-selected profile; never populated from request input. */
-  workProfile?: ResolvedWorkProfile;
+  /** Server-selected engine, tier, model and effort; never from request input. */
+  selection?: AssistantModelSelection;
   event: AssistantRouteEvent;
   principal: AssistantPrincipal;
   /**
@@ -303,13 +309,28 @@ export interface MountAssistantRoutesOptions {
     | { userMessage: string; originMessageId?: string }
     | undefined
     | Promise<{ userMessage: string; originMessageId?: string } | undefined>;
-  /** Authenticated host selection; request body profile values are never accepted. */
-  resolveWorkProfile?(
+  /**
+   * Authenticated host selection of the turn's engine, tier, model and
+   * effort (#5005); a request body model is never accepted with one.
+   */
+  resolveSelection?(
     context: AssistantRequestContext,
-    name?: WorkProfileName,
-  ): Promise<ResolvedWorkProfile>;
+  ): Promise<AssistantModelSelection | undefined>;
+  /** The owner's assistant settings; absent ones are on. */
+  assistantSettings?(
+    context: AssistantRequestContext,
+  ): Promise<AssistantSettings | undefined>;
+  /** The turn's budget, stored on its `turn` run and enforced by the loop. */
+  turnBudget?: AssistantRouteValue<AiRunBudget | undefined>;
+  /** Longest tool result kept in the conversation (characters). */
+  toolResultChars?: AssistantRouteValue<number | undefined>;
+  /** App tools limited to workflow runs, besides annotated ones. */
   designTools?: readonly string[];
-  onWorkRun?(metadata: WorkRunMetadata): void;
+  /** What the turn ran with and used; never stored on a message. */
+  onExecution?(
+    context: AssistantRequestContext,
+    execution: EngineExecution,
+  ): void;
   formatAssistantReply?(
     content: string,
     context: AssistantRequestContext,
@@ -317,9 +338,7 @@ export interface MountAssistantRoutesOptions {
   onDesignEscalation?(
     context: AssistantRequestContext,
     input: Parameters<
-      NonNullable<
-        import('./work-profile.js').AssistantWorkProfileOptions['onDesignEscalation']
-      >
+      NonNullable<AssistantRunTypeOptions['onDesignEscalation']>
     >[0],
   ): Promise<{ runId: string; message?: string }>;
   /** External loop; omitted uses the built-in model/tool loop. */
@@ -430,8 +449,10 @@ export interface MountAssistantRoutesOptions {
   maxSteps?: number;
   /** Repeated-call stop (see `AssistantTurnOptions`, #4391). */
   maxRepeatedCalls?: number;
-  maxTurnTokens?: number;
-  maxTurnMs?: number;
+  /** The loop's token limit for the turn; per request when a function. */
+  maxTurnTokens?: AssistantRouteValue<number | undefined>;
+  /** The loop's time limit for the turn; per request when a function. */
+  maxTurnMs?: AssistantRouteValue<number | undefined>;
   /** Per-model-call timeout in ms (see `AssistantTurnOptions`, #4379). */
   requestTimeoutMs?: number;
   /** Reply stored when the turn produced no answer (#4379). */
@@ -442,7 +463,8 @@ export interface MountAssistantRoutesOptions {
    * and nothing stored.
    */
   providerErrorFallback?: ProviderErrorFallback;
-  maxTokens?: number;
+  /** Output tokens per model call; per request when a function. */
+  maxTokens?: AssistantRouteValue<number | undefined>;
   temperature?: number;
   /**
    * Earlier user and assistant turns sent with a new turn; persisted tool
@@ -547,9 +569,8 @@ export interface AssistantThreadWire {
 
 /** Message as the routes send it (chronological in lists). */
 export interface AssistantMessageWire {
-  /** Explicit host design output and sanitized execution accounting only. */
+  /** Explicit host design output only. */
   metadata?: {
-    workRun?: unknown;
     designRunId?: string;
   };
   id: string;
@@ -737,7 +758,7 @@ export async function configuredAssistantAI(
         ...(base ? { base } : {}),
         tenantId: principal.tenantId,
         className: 'AssistantRoute',
-        ...(context.workProfile ? { tier: context.workProfile.tier } : {}),
+        ...(context.selection ? { tier: context.selection.tier } : {}),
         usage: { className: 'AssistantRoute', tenantId: principal.tenantId },
         // smrt-chat stores the conversation itself: never a second copy in
         // `_smrt_ai_transcripts` (#4780, owner decision).
@@ -750,7 +771,7 @@ export async function configuredAssistantAI(
   const { getAI } = await import('@happyvertical/ai');
   return getAI({
     ...resolved.options,
-    ...(context.workProfile?.model ? { model: context.workProfile.model } : {}),
+    ...(context.selection?.model ? { model: context.selection.model } : {}),
   } as Parameters<typeof getAI>[0]);
 }
 
@@ -938,15 +959,8 @@ export function toAssistantMessageWire(
     createdAt: toIso(message.created_at) ?? new Date(0).toISOString(),
     ...(attachments.length > 0 ? { attachments } : {}),
     ...(toolCallData ? { toolCallData } : {}),
-    ...(metadata && ('workRun' in metadata || 'designRunId' in metadata)
-      ? {
-          metadata: {
-            ...('workRun' in metadata ? { workRun: metadata.workRun } : {}),
-            ...(typeof metadata.designRunId === 'string'
-              ? { designRunId: metadata.designRunId }
-              : {}),
-          },
-        }
+    ...(metadata && typeof metadata.designRunId === 'string'
+      ? { metadata: { designRunId: metadata.designRunId } }
       : {}),
     ...(clientRequestId ? { clientRequestId } : {}),
   };
@@ -1370,9 +1384,11 @@ export function mountAssistantRoutes(
     context: AssistantRequestContext,
     body: Record<string, unknown>,
   ) => {
-    const workProfile = await options.resolveWorkProfile?.(context);
-    context = { ...context, workProfile };
-    const model = workProfile?.model ?? resolveModel(body.model);
+    const selection = await options.resolveSelection?.(context);
+    context = selection ? { ...context, selection } : context;
+    // A host selection decides the model; a body model is only honoured
+    // without one.
+    const model = selection ? selection.model : resolveModel(body.model);
     const allowedTools = await allowedToolsFor(context);
     const clientTools = sanitizeClientToolDeclarations(
       body.clientTools,
@@ -1416,7 +1432,7 @@ export function mountAssistantRoutes(
       model,
       allowedTools,
       clientTools,
-      workProfile,
+      selection,
     };
   };
   type PreparedTurn = Awaited<ReturnType<typeof prepareTurn>>;
@@ -1576,24 +1592,25 @@ export function mountAssistantRoutes(
       turn: {
         ai,
         turnDriver: prepared.turnDriver,
-        workProfile: prepared.workProfile,
+        ...(prepared.selection ? { selection: prepared.selection } : {}),
+        ...(options.assistantSettings
+          ? { assistantSettings: await options.assistantSettings(context) }
+          : {}),
         deferDesignTurn: await resolveValue(options.deferDesignTurn, context),
         designTools: options.designTools,
-        resolveWorkProfileRuntime: async (workProfile: ResolvedWorkProfile) => {
-          const nextContext = { ...context, workProfile };
-          const turnDriver =
-            (await options.resolveTurnDriver?.({
-              ...nextContext,
-              model: workProfile.model,
-            })) ?? options.turnDriver;
-          return {
-            turnDriver,
-            ai: turnDriver
-              ? undefined
-              : await resolveAI(nextContext, workProfile.model),
-          };
-        },
-        onWorkRun: options.onWorkRun,
+        ...(await resolveValue(options.turnBudget, context).then((budget) =>
+          budget ? { budget } : {},
+        )),
+        ...(await resolveValue(options.toolResultChars, context).then(
+          (toolResultChars) =>
+            toolResultChars !== undefined ? { toolResultChars } : {},
+        )),
+        ...(options.onExecution
+          ? {
+              onExecution: (execution: EngineExecution) =>
+                options.onExecution!(context, execution),
+            }
+          : {}),
         ...(options.formatAssistantReply
           ? {
               formatAssistantReply: (content: string) =>
@@ -1604,17 +1621,9 @@ export function mountAssistantRoutes(
           ? {
               onDesignEscalation: (
                 input: Parameters<
-                  NonNullable<
-                    import('./work-profile.js').AssistantWorkProfileOptions['onDesignEscalation']
-                  >
+                  NonNullable<AssistantRunTypeOptions['onDesignEscalation']>
                 >[0],
               ) => options.onDesignEscalation!(context, input),
-            }
-          : {}),
-        ...(options.resolveWorkProfile
-          ? {
-              resolveWorkProfile: (name: WorkProfileName) =>
-                options.resolveWorkProfile!(context, name),
             }
           : {}),
         waitForApproval: options.waitForApproval,
@@ -1650,12 +1659,13 @@ export function mountAssistantRoutes(
         ...(options.maxRepeatedCalls !== undefined
           ? { maxRepeatedCalls: options.maxRepeatedCalls }
           : {}),
-        ...(options.maxTurnTokens !== undefined
-          ? { maxTurnTokens: options.maxTurnTokens }
-          : {}),
-        ...(options.maxTurnMs !== undefined
-          ? { maxTurnMs: options.maxTurnMs }
-          : {}),
+        ...(await resolveValue(options.maxTurnTokens, context).then(
+          (maxTurnTokens) =>
+            maxTurnTokens !== undefined ? { maxTurnTokens } : {},
+        )),
+        ...(await resolveValue(options.maxTurnMs, context).then((maxTurnMs) =>
+          maxTurnMs !== undefined ? { maxTurnMs } : {},
+        )),
         ...(options.requestTimeoutMs !== undefined
           ? { requestTimeoutMs: options.requestTimeoutMs }
           : {}),
@@ -1665,9 +1675,9 @@ export function mountAssistantRoutes(
         ...(options.providerErrorFallback !== undefined
           ? { providerErrorFallback: options.providerErrorFallback }
           : {}),
-        ...(options.maxTokens !== undefined
-          ? { maxTokens: options.maxTokens }
-          : {}),
+        ...(await resolveValue(options.maxTokens, context).then((maxTokens) =>
+          maxTokens !== undefined ? { maxTokens } : {},
+        )),
         ...(options.temperature !== undefined
           ? { temperature: options.temperature }
           : {}),

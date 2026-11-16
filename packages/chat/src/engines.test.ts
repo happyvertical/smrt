@@ -177,7 +177,10 @@ describe.each<AgentTool>([
     bind.mockResolvedValue(bound);
     const cb = callbacks();
     await driver.run(context('say Desktop ready'), cb);
-    expect(cb.done).toHaveBeenCalledExactlyOnceWith({ text: 'Desktop ready' });
+    expect(cb.done).toHaveBeenCalledExactlyOnceWith({
+      text: 'Desktop ready',
+      execution: expect.objectContaining({ engine: tool }),
+    });
     expect(cb.error).not.toHaveBeenCalled();
   });
 
@@ -191,7 +194,10 @@ describe.each<AgentTool>([
         .mock.calls.map(([text]) => text)
         .join(''),
     ).toBe('Hello owner');
-    expect(cb.done).toHaveBeenCalledExactlyOnceWith({ text: 'Hello owner' });
+    expect(cb.done).toHaveBeenCalledExactlyOnceWith({
+      text: 'Hello owner',
+      execution: expect.objectContaining({ engine: tool }),
+    });
     expect(mint).toHaveBeenCalledOnce();
     expect(revoke).toHaveBeenCalledOnce();
     expect(JSON.stringify(cb)).not.toContain('owner-bound-test-token');
@@ -222,7 +228,10 @@ describe.each<AgentTool>([
       ok: true,
       result: '{"summary":"Added customer Ada"}',
     });
-    expect(cb.done).toHaveBeenCalledWith({ text: 'All done.' });
+    expect(cb.done).toHaveBeenCalledWith({
+      text: 'All done.',
+      execution: expect.objectContaining({ engine: tool }),
+    });
     expect(revoke).toHaveBeenCalledOnce();
   });
 
@@ -314,6 +323,7 @@ describe.each<AgentTool>([
           outcome === 'approved'
             ? 'Approval recorded. Ask the assistant to continue.'
             : 'That action was not approved.',
+        execution: expect.objectContaining({ engine: tool }),
       });
     expect(listeners.size).toBe(0);
   });

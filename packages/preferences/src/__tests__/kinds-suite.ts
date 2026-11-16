@@ -9,11 +9,12 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { UiPreferenceRecordCollection } from '../collections/UiPreferenceRecordCollection.js';
 import {
+  ASSISTANT_SETTINGS_PREFERENCE_KIND,
   CUSTOMIZE_SHELL_PERMISSION,
+  createAssistantSettingsPreference,
   createOverviewStore,
   createPreferenceStore,
   createShellSettingsPreferences,
-  createWorkProfilesPreference,
   listPreferenceKinds,
   PERSONALIZE_OVERVIEW_PERMISSION,
   PERSONALIZE_SHELL_PERMISSION,
@@ -100,7 +101,7 @@ export function preferenceKindsSuite(
       NOTE_USER,
     ];
 
-    it('round trips owner work-profile settings, conflicts on stale writes and resets recommendations', async () => {
+    it('round trips owner assistant settings, conflicts on stale writes and resets to all on', async () => {
       const dispose = registerPermissionDefinitions([
         {
           slug: 'inference.customize',
@@ -110,41 +111,37 @@ export function preferenceKindsSuite(
       ]);
       try {
         await as(['inference.customize'], async () => {
-          const profiles = createWorkProfilesPreference({
+          const assistant = createAssistantSettingsPreference({
             store,
             isOwner: async () => true,
           });
-          expect((await profiles.read()).settings).toEqual({});
+          expect((await assistant.read()).settings).toEqual({});
           const settings = {
-            safety: { requireRemovalApproval: false, protectLocalCli: false },
-            assist: { effort: 'high' as const, autoEscalate: false },
-            design: {
-              engine: 'codex' as const,
-              model: 'gpt-6.1',
-              previewBeforeApply: false,
-              budgets: { maxSteps: 72, repairRetries: 0 },
-            },
+            escalateToWorkflow: false,
+            previewBeforeApply: false,
+            requireRemovalApproval: false,
+            protectLocalCli: false,
           };
-          await expect(profiles.write(settings, null)).rejects.toThrow(
+          await expect(assistant.write(settings, null)).rejects.toThrow(
             PreferenceAccessError,
           );
-          expect((await profiles.read()).settings).toEqual({});
+          expect((await assistant.read()).settings).toEqual({});
           expect(
             (
-              await profiles.write(settings, null, {
+              await assistant.write(settings, null, {
                 confirmUnprotectedCli: true,
               })
             ).ok,
           ).toBe(true);
-          const saved = await profiles.read();
+          const saved = await assistant.read();
           expect(saved.settings).toEqual(settings);
-          expect(await profiles.write({}, null)).toEqual({
+          expect(await assistant.write({}, null)).toEqual({
             ok: false,
             reason: 'conflict',
           });
-          expect((await profiles.reset(saved.revision)).ok).toBe(true);
-          expect((await profiles.read()).settings).toEqual({});
-          const denied = createWorkProfilesPreference({
+          expect((await assistant.reset(saved.revision)).ok).toBe(true);
+          expect((await assistant.read()).settings).toEqual({});
+          const denied = createAssistantSettingsPreference({
             store,
             isOwner: async () => false,
           });
@@ -155,25 +152,87 @@ export function preferenceKindsSuite(
             PreferenceAccessError,
           );
           for (const payload of [
-            { safety: { modelCanChange: true } },
-            { safety: { requireRemovalApproval: 'false' } },
-            { design: { approvals: false } },
-            { assist: { effort: ['high'] } },
-            { design: { budgets: { passes: 0 } } },
-            { design: { model: '--help' } },
-            { design: { model: ' fable' } },
-            { design: { model: 'fable\n' } },
+            { modelCanChange: true },
+            { requireRemovalApproval: 'false' },
+            { approvals: false },
+            { effort: 'high' },
+            { safety: { protectLocalCli: false } },
           ]) {
             expect(
               (
-                await store.save('work-profiles', 'assistant', {
-                  scope: 'tenant',
-                  payload,
-                  revision: null,
-                })
+                await store.save(
+                  ASSISTANT_SETTINGS_PREFERENCE_KIND,
+                  'assistant',
+                  {
+                    scope: 'tenant',
+                    payload,
+                    revision: null,
+                  },
+                )
               ).ok,
             ).toBe(false);
           }
+        });
+      } finally {
+        dispose();
+      }
+    });
+
+    it('ignores a stored row of the removed work-profiles kind', async () => {
+      const dispose = registerPermissionDefinitions([
+        {
+          slug: 'inference.customize',
+          category: 'inference',
+          name: 'Configure inference',
+        },
+      ]);
+      try {
+        await insertRawPreference(db, {
+          tenantId,
+          kind: 'work-profiles',
+          surfaceId: 'assistant',
+          scopeType: 'tenant',
+          payloadJson: JSON.stringify({
+            safety: { protectLocalCli: false },
+            assist: { effort: 'high' },
+          }),
+        });
+        await as([...all, 'inference.customize'], async () => {
+          // Saved work-profile choices are dropped, never converted: the
+          // assistant settings on the same surface read as all on.
+          const assistant = createAssistantSettingsPreference({
+            store,
+            isOwner: async () => true,
+          });
+          expect(await assistant.read()).toMatchObject({
+            settings: {},
+            revision: null,
+          });
+          expect(
+            (await assistant.write({ previewBeforeApply: false }, null)).ok,
+          ).toBe(true);
+          // The removed kind is refused by name, never read.
+          await expect(
+            store.load('work-profiles', 'assistant'),
+          ).rejects.toBeInstanceOf(UnknownPreferenceKindError);
+          // Other kinds keep working, and listing the rows does not throw.
+          expect(
+            (
+              await store.save(NOTE_KIND, 'assistant', {
+                scope: 'tenant',
+                payload: { text: 'kept' },
+                revision: null,
+              })
+            ).ok,
+          ).toBe(true);
+          const records = await UiPreferenceRecordCollection.create({ db });
+          expect(
+            (await records.list({})).map((row) => row.kind).sort(),
+          ).toEqual([
+            ASSISTANT_SETTINGS_PREFERENCE_KIND,
+            NOTE_KIND,
+            'work-profiles',
+          ]);
         });
       } finally {
         dispose();

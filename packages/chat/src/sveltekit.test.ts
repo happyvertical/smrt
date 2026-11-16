@@ -36,7 +36,6 @@ import {
   createCookbookRuntimeExposure,
   setRuntimeExposureGate,
 } from '@happyvertical/smrt-core/runtime-exposure';
-import { resolveWorkProfile } from '@happyvertical/smrt-inference';
 import {
   MembershipCollection,
   PermissionCollection,
@@ -342,7 +341,7 @@ describe('mountAssistantRoutes', () => {
     'unknown',
     'zero',
     'partial',
-  ] as const)('preserves %s provider usage in stored turn metadata', async (mode) => {
+  ] as const)('reports %s provider usage to the host and never stores it on the reply', async (mode) => {
     const answer: Round = () => ({
       content: 'Done',
       model: 'reported-model',
@@ -356,12 +355,13 @@ describe('mountAssistantRoutes', () => {
       usage: { promptTokens: 10, completionTokens: 2, totalTokens: 12 },
     });
     const ai = scriptedAI(mode === 'partial' ? [knownCall, answer] : [answer]);
+    const executions: unknown[] = [];
     const routes = mount({
       ai,
-      resolveWorkProfile: async () => resolveWorkProfile({ engine: 'api' }),
+      resolveSelection: async () => ({ engine: 'api', tier: 'best' }),
       allowedTools: mode === 'partial' ? ['data.discover'] : [],
       extraTools: mode === 'partial' ? [discoverTool([])] : [],
-      onWorkRun: () => {},
+      onExecution: (_context, execution) => executions.push(execution),
     });
     const threadId = await createThread(routes);
     expect(
@@ -375,9 +375,11 @@ describe('mountAssistantRoutes', () => {
       ).thrown,
     ).toBeNull();
     const stored = await listMessages(routes, threadId);
-    const metadata = stored.at(-1)?.metadata?.workRun;
+    expect(stored.at(-1)?.metadata ?? {}).not.toHaveProperty('workRun');
+    expect(executions).toHaveLength(1);
+    const metadata = executions[0];
     expect(metadata).toMatchObject({
-      profile: 'assist',
+      engine: 'api',
       toolCalls: mode === 'partial' ? 1 : 0,
     });
     if (mode === 'zero') expect(metadata).toHaveProperty('tokens', 0);
@@ -390,7 +392,7 @@ describe('mountAssistantRoutes', () => {
   it.each([
     true,
     false,
-  ])('stores assist handoff accounting before durable design (usage known: %s)', async (known) => {
+  ])('reports the turn before handing a workflow-only tool to a workflow run (usage known: %s)', async (known) => {
     const ran: PrincipalRun[] = [];
     const ai = scriptedAI([
       () => ({
@@ -406,12 +408,12 @@ describe('mountAssistantRoutes', () => {
     const accounting = vi.fn();
     const routes = mount({
       ai,
-      resolveWorkProfile: async () => resolveWorkProfile({ engine: 'api' }),
+      resolveSelection: async () => ({ engine: 'api', tier: 'best' }),
       allowedTools: ['data.discover'],
       extraTools: [discoverTool(ran)],
       designTools: ['data.discover'],
       onDesignEscalation: async () => ({ runId: 'queued-design' }),
-      onWorkRun: accounting,
+      onExecution: (_context, execution) => accounting(execution),
     });
     const threadId = await createThread(routes);
     const response = await events(
@@ -426,14 +428,17 @@ describe('mountAssistantRoutes', () => {
     expect(stored).toMatchObject({
       role: 'assistant',
       content: 'Thinking this through',
-      metadata: {
-        designRunId: 'queued-design',
-        workRun: { profile: 'assist', model: 'reported-assist', toolCalls: 0 },
-      },
+      metadata: { designRunId: 'queued-design' },
     });
-    if (known) expect(stored?.metadata?.workRun).toHaveProperty('tokens', 12);
-    else expect(stored?.metadata?.workRun).not.toHaveProperty('tokens');
     expect(accounting).toHaveBeenCalledTimes(1);
+    const execution = accounting.mock.calls[0]?.[0];
+    expect(execution).toMatchObject({
+      engine: 'api',
+      model: 'reported-assist',
+      toolCalls: 0,
+    });
+    if (known) expect(execution).toHaveProperty('tokens', 12);
+    else expect(execution).not.toHaveProperty('tokens');
     const messageIndex = response.seen.findIndex(
       (event) => event.type === 'message' && event.message.role === 'assistant',
     );
