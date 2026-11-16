@@ -2039,5 +2039,4 @@ exercises delete after owner approval against a fresh runtime database.
   whose snapshot is gone, and regenerates every retired-table declaration's
   `definitions` for the snapshot set (#5005). The gate fails on a missing or
   stale overlay; `pnpm check:release-upgrade:owners` (`check --verify-owners`)
-  adds the npm comparison (opt-in, not in PR CI). Details:
-  [agents/schema-paths.md](agents/schema-paths.md).
+  adds the npm comparison (opt-in, not in PR CI).
