@@ -334,6 +334,7 @@ export {
   CHAT_ASSISTANT_PROMPT_KEY,
   CHAT_TURN_DEFINITION_KEY,
   chatAssistantSystemPrompt,
+  chatClientForTracking,
   resolveChatAssistantPrompt,
   resolveChatAssistantTier,
 } from './turn-tracking.js';
@@ -383,3 +384,7 @@ export {
   VoiceSessionExpiredError,
   VoiceSessionRejectedError,
 } from './voice.js';
+export {
+  runWorkflowStepTurn,
+  type WorkflowStepTurnOptions,
+} from './workflow-step-turn.js';
