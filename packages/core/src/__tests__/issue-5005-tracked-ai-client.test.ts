@@ -65,7 +65,7 @@ describe('createTrackedAiClient (#5005)', () => {
     }
   });
 
-  const ai = { provider: 'openai', model: 'gpt-4o' };
+  const ai = { type: 'openai', model: 'gpt-4o' } as const;
 
   it('writes a run and its calls to its own database and tenant only', async () => {
     const dbA = await memoryDb();
