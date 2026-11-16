@@ -153,7 +153,9 @@ export function createImportAssistant(
                           return (await runtime.localRuntime()).mcpTokens;
                         },
                         {
-                          holder: `import-plan-${input.parent.context.runId}-${crypto.randomUUID()}`,
+                          // Token holders accept at most 80 characters. One UUID
+                          // already isolates this attempt from every other worker.
+                          holder: `import-plan-${crypto.randomUUID()}`,
                           scopes: ['assistant.use'],
                           label: 'Workbook planning',
                         },

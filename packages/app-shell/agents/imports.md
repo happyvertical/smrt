@@ -21,6 +21,8 @@ spreadsheet package's 250,000; `/settings/import` saves an integer in
   CLI planning uses `/mcp?scope=import-plan`: empty catalog, all calls rejected
   before dispatch, protected invocation and a distinct expiring token holder
   per attempt. A late worker cannot revoke the next worker's token or run tools.
+  Holders use one attempt UUID (48 characters including the prefix), within
+  app-runtime's 80-character limit. Job engine tests mint real local credentials.
   The runtime state-root origin file supplies the current desktop address;
   the upload origin is retained privately in the existing import JSON as the
   development fallback across job recovery.
