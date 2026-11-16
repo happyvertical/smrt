@@ -93,6 +93,7 @@ export async function proveFinancialFactsMigration(
   expect(await expenses.get({ id })).not.toBeNull();
   expect((await expenses.get({ id: refund.id! }))?.refundOfId).toBe(id);
   const again = await migrate();
+  expect(again.refused).toBe(false);
   expect(again.applied).toBe(false);
   expect(again.hasManualDrift).toBe(false);
   expect(again.statements).toEqual([]);

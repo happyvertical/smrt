@@ -16,6 +16,7 @@ import {
 import {
   type FailedMigrationClassification,
   getFailedMigrationRecommendation,
+  resolveSchemaChangeEngine,
 } from './db-migrate-actions.js';
 import {
   assessFailedMigrations,
@@ -144,6 +145,7 @@ export const dbHistoryCommand: CLICommand = {
         '@happyvertical/smrt-core/migrations'
       );
 
+      const engine = resolveSchemaChangeEngine(String(dbType));
       const tracker = new MigrationTracker({ db });
       await tracker.initialize();
 
@@ -177,7 +179,11 @@ export const dbHistoryCommand: CLICommand = {
         (migration) => migration.status === 'failed',
       );
       let liveSchemaCompared = false;
-      let failedAssessments = assessFailedMigrations(failedHistory, null);
+      let failedAssessments = assessFailedMigrations(
+        failedHistory,
+        null,
+        engine,
+      );
 
       if (failedHistory.length > 0 && typeof db.getTableSchema === 'function') {
         try {
@@ -185,13 +191,22 @@ export const dbHistoryCommand: CLICommand = {
           const manifestSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
           const comparer = new SchemaComparer(db, {
             emptyTextAsNull: Boolean(options['empty-text-as-null']),
+            engineHint: dbType,
           });
           const diff = await comparer.compare(manifestSchemas);
           liveSchemaCompared = true;
-          failedAssessments = assessFailedMigrations(failedHistory, diff);
+          failedAssessments = assessFailedMigrations(
+            failedHistory,
+            diff,
+            engine,
+          );
         } catch {
           liveSchemaCompared = false;
-          failedAssessments = assessFailedMigrations(failedHistory, null);
+          failedAssessments = assessFailedMigrations(
+            failedHistory,
+            null,
+            engine,
+          );
         }
       }
       const failedAssessmentsByName = new Map(

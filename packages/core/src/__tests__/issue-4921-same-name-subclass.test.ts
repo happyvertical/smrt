@@ -58,6 +58,15 @@ describe('#4921 same-name app subclass is used by smrt collections', () => {
     return rows.map((r) => String(r._meta_type));
   }
 
+  it('resolveEffectiveConstructor() returns the app class, else the class itself (#4931)', () => {
+    expect(
+      ObjectRegistry.resolveEffectiveConstructor(SmrtShared as never),
+    ).toBe(app.Shared4921);
+    expect(
+      ObjectRegistry.resolveEffectiveConstructor(Untouched4921 as never),
+    ).toBe(Untouched4921);
+  });
+
   it('replaces the smrt entry in the registry', () => {
     expect(ObjectRegistry.getClassByConstructor(SmrtShared as never)).toBe(
       undefined,

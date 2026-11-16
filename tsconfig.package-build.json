@@ -3,6 +3,9 @@
   "compilerOptions": {
     "types": ["node"],
     "paths": {
+      "@happyvertical/smrt-vitest/minimal-row": [
+        "./packages/vitest/src/minimal-row.ts"
+      ],
       "@happyvertical/smrt-ui/data": [
         "./packages/smrt-ui/src/components/data/index.ts"
       ],

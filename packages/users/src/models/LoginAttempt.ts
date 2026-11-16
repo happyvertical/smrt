@@ -32,7 +32,12 @@ export type LoginAttemptScope = 'subject' | 'source';
 })
 export class UsersLoginAttempt extends SmrtObject {
   /** `sha256(scope:normalizedKey)` — the UPSERT arbiter. */
-  @field({ type: 'text', required: true, unique: true })
+  @field({
+    type: 'text',
+    required: true,
+    requiredFor: 'identity',
+    unique: true,
+  })
   limiterKey = '';
 
   /** Which budget this row protects. Informational; the key already encodes it. */

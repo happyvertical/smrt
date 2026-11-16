@@ -265,7 +265,7 @@ export type ReleasedLessonView = Readonly<{
   courseId: string;
   lessonKey: string;
   lessonId: string;
-  sectionId: string;
+  sectionId: string | null;
   lessonRevisionId: string;
   revision: CourseLessonRevisionView;
   worksheet: GuardianWorksheetBundle;

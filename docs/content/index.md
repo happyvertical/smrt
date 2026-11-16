@@ -38,4 +38,5 @@ Then follow the repository's validated [quick start](https://github.com/happyver
 - Browse **Packages** in the sidebar for install and API guidance.
 - Working with a coding agent? Start with [agent tooling](./agent-tooling.md).
 - Read the [core architecture](./architecture/core-architecture.md).
+- Read the [data shape rules](./data-shape-rules.md): what smrt requires, how your app hardens a smrt class, and what changes for operators.
 - Read the [package standards](./standards.md) before contributing.

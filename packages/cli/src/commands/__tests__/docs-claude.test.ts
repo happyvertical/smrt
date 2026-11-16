@@ -301,6 +301,80 @@ Gamma content.
     });
   });
 
+  describe('data shape rules section (#4938)', () => {
+    let coreDir: string;
+    beforeEach(() => {
+      coreDir = mkdtempSync(join(tmpdir(), 'smrt-core-shape-'));
+    });
+    afterEach(() => {
+      rmSync(coreDir, { recursive: true, force: true });
+    });
+
+    const corePackage = (directory?: string): PackageInfo => ({
+      name: '@happyvertical/smrt-core',
+      version: '9.9.9',
+      readme: null,
+      agentMd: null,
+      directory,
+    });
+
+    it('carries the rules of the installed smrt-core, headings one level down', () => {
+      mkdirSync(join(coreDir, 'agents'));
+      writeFileSync(
+        join(coreDir, 'agents', 'data-shape-rules.md'),
+        [
+          '# Data shape rules (#4920)',
+          '',
+          '## The rules',
+          '',
+          '1. smrt requires a field only when its own code needs it.',
+          '',
+          '```ts',
+          '## not a heading',
+          '```',
+          '',
+          'See [the merge rule](schema-paths.md#field-inheritance).',
+          '',
+        ].join('\n'),
+      );
+
+      const markdown = generateMarkdown([corePackage(coreDir)]);
+
+      expect(markdown).toContain('## Data shape rules\n');
+      expect(markdown).toContain('### The rules');
+      expect(markdown).toContain('1. smrt requires a field only when');
+      expect(markdown).not.toContain('# Data shape rules (#4920)');
+      // Inside a fence the text is untouched.
+      expect(markdown).toContain('```ts\n## not a heading\n```');
+      // A relative module link names the file in the installed package.
+      expect(markdown).toContain(
+        'the merge rule (`@happyvertical/smrt-core` `agents/schema-paths.md`)',
+      );
+      // It comes before the package tables.
+      expect(markdown.indexOf('## Data shape rules')).toBeLessThan(
+        markdown.indexOf('## Installed SMRT Packages'),
+      );
+    });
+
+    it('points at the rules when the installed smrt-core predates the file', () => {
+      const markdown = generateMarkdown([corePackage(coreDir)]);
+
+      expect(markdown).toContain('## Data shape rules');
+      expect(markdown).toContain('does not ship `agents/data-shape-rules.md`');
+      expect(markdown).toContain(
+        'https://github.com/happyvertical/smrt/blob/main/packages/core/agents/data-shape-rules.md',
+      );
+    });
+
+    it('is left out when smrt-core is not installed', () => {
+      const markdown = generateMarkdown([
+        { name: '@test/pkg-a', version: '1.0.0', readme: null, agentMd: null },
+      ]);
+
+      expect(markdown).not.toContain('## Data shape rules');
+    });
+  });
+
   describe('generateMarkdown with root docs', () => {
     it('should include framework documentation section when root docs provided', () => {
       const packages: PackageInfo[] = [

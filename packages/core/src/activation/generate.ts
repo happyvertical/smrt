@@ -389,6 +389,9 @@ export function generateActivationRegistration(
     // Runtime registration consumes object metadata; the host loads its recipe
     // catalog separately. Never duplicate that documentation per activation unit.
     recipes: undefined,
+    // Per-module copies never carry the build's stamp: startup reads it from the
+    // build schema module the registration imports first (#4929).
+    schemaFingerprint: undefined,
     objects: Object.fromEntries(
       Object.entries(manifest.objects).map(([id, object]) => [
         id,

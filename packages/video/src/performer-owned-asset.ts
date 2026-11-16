@@ -31,10 +31,16 @@ export class PerformerOwnedAsset extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @foreignKey(() => Performer, { required: true })
+  @foreignKey(() => Performer, {
+    required: true,
+    requiredFor: 'identity',
+  })
   performerId = '';
 
-  @crossPackageRef('@happyvertical/smrt-assets:Asset', { required: true })
+  @crossPackageRef('@happyvertical/smrt-assets:Asset', {
+    required: true,
+    requiredFor: 'identity',
+  })
   assetId = '';
 
   @field({ required: true })

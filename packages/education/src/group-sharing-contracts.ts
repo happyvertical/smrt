@@ -62,8 +62,8 @@ export interface EducationGroupView {
   readonly tenantId: string;
   readonly name: string;
   readonly active: boolean;
-  readonly creatorUserId: string;
-  readonly creatorProfileId: string;
+  readonly creatorUserId: string | null;
+  readonly creatorProfileId: string | null;
 }
 export interface GroupLearnerInvitationView {
   readonly id: string;
@@ -71,7 +71,7 @@ export interface GroupLearnerInvitationView {
   readonly familyTenantId: string;
   readonly learnerId: string;
   readonly invitedParentUserId: string;
-  readonly creatorUserId: string;
+  readonly creatorUserId: string | null;
   readonly expiresAt: string;
   readonly status: GroupLearnerInvitationStatus;
   readonly acceptedMembershipId: string | null;
@@ -88,7 +88,7 @@ export interface GroupLearnerMembershipView {
   readonly familyTenantId: string;
   readonly groupId: string;
   readonly learnerId: string;
-  readonly consentParentUserId: string;
+  readonly consentParentUserId: string | null;
   readonly status: GroupLearnerMembershipStatus;
   readonly policyVersion: number;
 }
@@ -105,7 +105,7 @@ export interface GroupSharingPolicyHistoryEntryView {
   readonly version: number;
   readonly schemaVersion: 1;
   readonly policy: GroupSharingPolicyV1;
-  readonly actorUserId: string;
+  readonly actorUserId: string | null;
   readonly recordedAt: string;
 }
 export interface GroupSharingPolicyHistoryView {
@@ -171,8 +171,8 @@ export interface GroupRevisionCommentView {
   readonly activityId: string;
   readonly attemptId: string;
   readonly revisionId: string;
-  readonly authorUserId: string;
-  readonly authorProfileId: string;
+  readonly authorUserId: string | null;
+  readonly authorProfileId: string | null;
   readonly body: string;
   readonly recordedAt: string;
   readonly childVisible: boolean;

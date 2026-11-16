@@ -18,6 +18,6 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 })
 export class ParticipationRateBucket extends SmrtObject {
   @tenantId() tenantId = '';
-  @field({ required: true }) bucketKey = '';
+  @field({ required: true, requiredFor: 'identity' }) bucketKey = '';
   @field({ required: true }) actionCount = 0;
 }

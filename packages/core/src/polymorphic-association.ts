@@ -74,7 +74,7 @@ export class SmrtPolymorphicAssociation extends SmrtObject {
   static readonly _isPolymorphicAssociationBase = true as const;
 
   /** Target class name or qualified name (e.g. `'Article'` or `'@pkg:Article'`). */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   metaType = '';
 
   /**
@@ -82,7 +82,7 @@ export class SmrtPolymorphicAssociation extends SmrtObject {
    * `@foreignKey` / `@crossPackageRef`, because there is no single target
    * table to point at.
    */
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   metaId = '';
 
   /** Role of this association (e.g. `'hero'`, `'thumbnail'`, `'attachment'`). */

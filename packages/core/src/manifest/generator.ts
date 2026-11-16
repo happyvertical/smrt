@@ -72,6 +72,13 @@ export interface ManifestBuilderOptions {
   outputName?: string;
   generateTypeStub?: boolean;
   stubName?: string;
+  /**
+   * What absolute source paths are written relative to. `'workspace'`
+   * (default) is the workspace root, which apps that scan workspace packages
+   * rely on (#3110). A package that publishes its manifest passes `'package'`
+   * so the file does not name the repository layout (#4948).
+   */
+  filePathBase?: 'workspace' | 'package';
 
   // Metadata
   injectPackageInfo?: boolean;
@@ -173,14 +180,20 @@ export class ManifestBuilder {
     );
 
     // 5. Write output files
-    this.normalizeFilePaths(manifest);
+    this.normalizeFilePaths(manifest, options.filePathBase);
     await this.writeOutput(manifest, options);
 
     return manifest;
   }
 
-  private normalizeFilePaths(manifest: SmartObjectManifest): void {
-    const workspaceRoot = this.findWorkspaceRoot(this.root());
+  private normalizeFilePaths(
+    manifest: SmartObjectManifest,
+    base: 'workspace' | 'package' = 'workspace',
+  ): void {
+    const workspaceRoot =
+      base === 'package'
+        ? resolve(this.root())
+        : this.findWorkspaceRoot(this.root());
 
     for (const obj of Object.values(manifest.objects || {})) {
       if (obj.filePath && isAbsolute(obj.filePath)) {

@@ -54,6 +54,7 @@ it('should get fields from a class without values', async () => {
       name: 'test_string',
       type: 'text',
       _meta: {
+        __statedOptions: ['default'],
         default: '',
         required: false, // Has default value
       },
@@ -62,6 +63,7 @@ it('should get fields from a class without values', async () => {
       name: 'test_number',
       type: 'integer',
       _meta: {
+        __statedOptions: ['default'],
         default: 0,
         required: false, // Has default value
       },
@@ -70,6 +72,7 @@ it('should get fields from a class without values', async () => {
       name: 'test_date',
       type: 'datetime',
       _meta: {
+        __statedOptions: [],
         required: false, // Has default value
       },
     },
@@ -122,6 +125,7 @@ it('should get fields from a class with values', async () => {
       name: 'test_string',
       type: 'text',
       _meta: {
+        __statedOptions: ['default'],
         default: '',
         required: false, // Has default value
       },
@@ -131,6 +135,7 @@ it('should get fields from a class with values', async () => {
       name: 'test_number',
       type: 'integer',
       _meta: {
+        __statedOptions: ['default'],
         default: 0,
         required: false, // Has default value
       },
@@ -140,6 +145,7 @@ it('should get fields from a class with values', async () => {
       name: 'test_date',
       type: 'datetime',
       _meta: {
+        __statedOptions: [],
         required: false, // Has default value
       },
       value: '2024-01-01',

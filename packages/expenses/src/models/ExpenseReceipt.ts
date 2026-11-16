@@ -116,11 +116,18 @@ export class ExpenseReceipt extends SmrtObject {
   tenantId: string | null = null;
 
   /** The expense this receipt proves. Deleting the expense removes the link. */
-  @foreignKey(Expense, { required: true, onDelete: 'CASCADE' })
+  @foreignKey(Expense, {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'CASCADE',
+  })
   expenseId: string = '';
 
   /** The smrt-assets `Asset` holding the file. */
-  @crossPackageRef('@happyvertical/smrt-assets:Asset', { required: true })
+  @crossPackageRef('@happyvertical/smrt-assets:Asset', {
+    required: true,
+    requiredFor: 'identity',
+  })
   assetId: string = '';
 
   /** Profile that uploaded the file. */
@@ -140,7 +147,7 @@ export class ExpenseReceipt extends SmrtObject {
   byteCount: number = 0;
 
   /** Lowercase hex SHA-256 of the file's bytes. */
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
   contentSha256: string = '';
 
   constructor(options: ExpenseReceiptOptions = {}) {

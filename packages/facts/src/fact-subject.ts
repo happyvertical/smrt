@@ -17,13 +17,13 @@ import type { FactSubjectOptions, SubjectRole } from './types';
   cli: { skipApiCheck: true },
 })
 export class FactSubject extends SmrtObject {
-  @foreignKey('Fact', { required: true })
+  @foreignKey('Fact', { required: true, requiredFor: 'identity' })
   factId: string = '';
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   entityType: string = '';
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   entityId: string = '';
 
   @field()

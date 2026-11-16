@@ -28,7 +28,7 @@ export class DevelopmentRequestHistory extends SmrtObject {
   @tenantId()
   tenantId: string = '';
 
-  @foreignKey('DevelopmentRequest', { required: true })
+  @foreignKey('DevelopmentRequest', { required: true, requiredFor: 'identity' })
   requestId: string = '';
 
   fromStatus: string = '';

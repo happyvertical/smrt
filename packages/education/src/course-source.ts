@@ -19,8 +19,8 @@ export interface CourseSourceConfig {
 @smrt({ api: false, cli: false, mcp: false })
 export class CourseSource extends SmrtObject {
   @tenantId() tenantId = '';
-  @field({ required: true }) key = '';
-  @field({ required: true }) name = '';
+  @field({ required: true, requiredFor: 'identity' }) key = '';
+  @field() name = '';
   kind: CourseSourceKind = 'adapter';
   adapterKey = 'easy-peasy';
   config = '{}';

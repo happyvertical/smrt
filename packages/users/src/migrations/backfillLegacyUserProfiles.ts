@@ -1,3 +1,4 @@
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { BackfillTracker } from '@happyvertical/smrt-core/migrations';
 import {
   normalizeIdentityEmail,
@@ -227,7 +228,7 @@ export async function backfillLegacyUserProfiles(
           personType.id,
           'Person ProfileType id',
         );
-        let profile = new Person({
+        let profile = new (ObjectRegistry.resolveEffectiveConstructor(Person))({
           db: tx,
           email: candidate.email,
           name: candidate.email,

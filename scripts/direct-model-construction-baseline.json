@@ -1,0 +1,4 @@
+{
+  "$comment": "Direct new Model() calls in package sources (#4931). May only shrink; every entry needs file, model, count and a reason why create() or ObjectRegistry.resolveEffectiveConstructor() cannot be used. Empty: the sweep found none that must stay.",
+  "entries": []
+}

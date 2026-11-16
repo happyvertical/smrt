@@ -31,7 +31,7 @@ export interface ProjectSpecificationOptions
 export class ProjectSpecification extends SmrtPolymorphicAssociation {
   @tenantId()
   tenantId = '';
-  @field({ required: true })
+  @field()
   title = '';
   summary = '';
   /** Canonical Cookbook v1 JSON; use getCookbook(). */
@@ -59,8 +59,6 @@ export class ProjectSpecification extends SmrtPolymorphicAssociation {
 
   protected override async validateBeforeSave(): Promise<void> {
     this.title = this.title.trim();
-    if (!this.title)
-      throw new TypeError('Project specification title is required.');
     if (!Number.isSafeInteger(this.revision) || this.revision < 1)
       throw new TypeError(
         'Project specification revision must be a positive integer.',

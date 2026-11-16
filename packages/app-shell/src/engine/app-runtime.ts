@@ -13,6 +13,7 @@ import {
 } from '@happyvertical/smrt-core';
 import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
 import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
+import { declareRuntimeManagedDatabase } from '@happyvertical/smrt-core/migrations';
 import type { RuntimeReportSpec } from '@happyvertical/smrt-reports';
 import { getDatabase } from '@happyvertical/sql';
 import {
@@ -117,6 +118,13 @@ export class AppRuntime {
       type: 'sqlite',
       url: join(this.dataDir, 'app.db'),
     } as any);
+    // The only place the engine opens app.db: the live app, every draft copy,
+    // publish rehearsal and the read-only report worker all boot through here.
+    declareRuntimeManagedDatabase(this.db, {
+      owner: '@happyvertical/smrt-app-shell',
+      reason:
+        "The engine builds app.db's schema from the app definition with its own versioned steps (_app_meta.version); core's migrate never runs against it.",
+    });
     await this.register();
     for (const report of Object.values(this.def.reports ?? {}))
       await compileReport(this.def, report.spec);

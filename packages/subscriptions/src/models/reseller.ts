@@ -56,6 +56,7 @@ export function isCurrencyCode(value: unknown): value is string {
 export class PriceBook extends SmrtObject {
   /** The seller that publishes and owns the book. */
   @tenantId() tenantId?: string;
+  @field({ required: true, requiredFor: 'identity' })
   bookKey: string = '';
   name: string = '';
   kind: PriceBookKind = 'retail';
@@ -90,10 +91,10 @@ export class PriceBook extends SmrtObject {
 })
 export class PriceBookAssignment extends SmrtObject {
   @crossPackageRef('@happyvertical/smrt-users:Tenant')
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'tenant-scope' })
   childTenantId: string = '';
   @crossPackageRef('@happyvertical/smrt-users:Tenant')
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'tenant-scope' })
   resellerTenantId: string = '';
   @foreignKey('PriceBook')
   wholesalePriceBookId: string = '';

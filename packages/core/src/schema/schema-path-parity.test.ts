@@ -47,9 +47,10 @@
  *   is part of the parity contract.
  */
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, assert, beforeAll, describe, expect, it } from 'vitest';
 import { foreignKey } from '../decorators/index.js';
 import { normalizeIndexPredicate } from '../migrations/differ.js';
+import { computeSchemaFingerprint } from '../migrations/schema-fingerprint.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 import { ManifestGenerator } from '../scanner/manifest-generator.js';
@@ -864,6 +865,20 @@ describe('schema path parity (#2359)', () => {
     migrateSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
   });
 
+  it('stamps the exact runtime fingerprint for the same build declarations (#4929)', () => {
+    const schemas = ObjectRegistry.getAllSchemasAsDefinitions({
+      tables: manifestSchemas.keys(),
+    });
+    expect(manifest.schemaFingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(manifest.schemaFingerprint).toBe(computeSchemaFingerprint(schemas));
+    const changed = structuredClone(schemas);
+    const first = Object.values(changed)[0];
+    first.columns.stamp_regression = { type: 'TEXT' };
+    expect(manifest.schemaFingerprint).not.toBe(
+      computeSchemaFingerprint(changed),
+    );
+  });
+
   afterAll(() => {
     restoreRegistry?.();
   });
@@ -1539,6 +1554,230 @@ describe('schema path parity (#2359)', () => {
       expect(identifierByteLength(partial?.name ?? '')).toBeLessThanOrEqual(
         MAX_IDENTIFIER_BYTES,
       );
+    });
+  });
+});
+
+describe('registry completion of older manifest indexes (#4946)', () => {
+  function fixture(editChild?: (child: SmartObjectDefinition) => void) {
+    const target = objectDef('FallbackTarget4946', {});
+    const base = objectDef('FallbackBase4946', {
+      targetId: { type: 'foreignKey', related: 'FallbackTarget4946' },
+      lookupCode: { type: 'text', _meta: { indexed: true } },
+    });
+    const child = objectDef(
+      'FallbackChild4946',
+      { detail: { type: 'text' } },
+      { tableName: 'fallback_children_4946' },
+      'FallbackBase4946',
+    );
+    child.extendsQualified = base.qualifiedName;
+    const generator = new SchemaGenerator();
+    // Older/prebuilt manifests contain only each class's OWN fields and schema.
+    for (const def of [target, base, child]) {
+      def.schema = generator.generateCTISchemaFromManifest(
+        `${PKG}:${def.className}`,
+        def.decoratorConfig?.tableName || def.className.toLowerCase(),
+        def.fields,
+        def.decoratorConfig,
+      );
+      if (def === child) editChild?.(child);
+      ObjectRegistry.registerFromManifest(`${PKG}:${def.className}`, def, PKG);
+    }
+    return { base, child, generator };
+  }
+
+  function isolated(run: () => void) {
+    const restore = snapshotObjectRegistryState();
+    try {
+      ObjectRegistry.clear();
+      run();
+    } finally {
+      restore();
+    }
+  }
+
+  it('adds inherited foreign-key and opted-in indexes missing from an unmerged own-table manifest', () => {
+    isolated(() => {
+      const { child } = fixture();
+      expect(child.schema?.columns).not.toHaveProperty('target_id');
+      expect(child.schema?.columns).not.toHaveProperty('lookup_code');
+      const schema =
+        ObjectRegistry.getAllSchemasAsDefinitions().fallback_children_4946;
+      expect(schema.columns.target_id.foreignKey).toBeDefined();
+      expect(schema.indexes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: 'fallback_children_4946_target_id_idx',
+            columns: ['target_id'],
+          }),
+          expect.objectContaining({
+            name: 'fallback_children_4946_lookup_code_idx',
+            columns: ['lookup_code'],
+          }),
+        ]),
+      );
+    });
+  });
+
+  it('indexes a runtime-injected tenant_id missing from the manifest', () => {
+    isolated(() => {
+      const def = objectDef(
+        'FallbackTenant4946',
+        {},
+        {
+          tableName: 'fallback_tenants_4946',
+          tenantScoped: true,
+          conflictColumns: ['id'],
+        },
+      );
+      // Generate before tenant injection; the manifest has no tenant column.
+      def.schema = new SchemaGenerator().generateCTISchemaFromManifest(
+        `${PKG}:${def.className}`,
+        'fallback_tenants_4946',
+        {},
+        { conflictColumns: ['id'] },
+      );
+      class FallbackTenant4946 extends SmrtObject {}
+      smrt({ packageName: PKG, ...def.decoratorConfig })(FallbackTenant4946);
+      ObjectRegistry.registerFromManifest(`${PKG}:${def.className}`, def, PKG);
+      const schema =
+        ObjectRegistry.getAllSchemasAsDefinitions().fallback_tenants_4946;
+      expect(schema.columns.tenant_id.referenceKind).toBe('tenantId');
+      // The reference pass runs last: default ordering already serves tenant reads.
+      expect(schema.indexes).toContainEqual({
+        name: 'fallback_tenants_4946_tenant_id_created_at_idx',
+        columns: ['tenant_id', 'created_at'],
+      });
+      expect(
+        schema.indexes.some(
+          (i) => i.name === 'fallback_tenants_4946_tenant_id_idx',
+        ),
+      ).toBe(false);
+    });
+  });
+
+  it('matches manifest-path indexes for the same effective inherited fields', () => {
+    isolated(() => {
+      const { base, child, generator } = fixture();
+      const manifestSchema = generator.generateCTISchemaFromManifest(
+        `${PKG}:${child.className}`,
+        'fallback_children_4946',
+        { ...base.fields, ...child.fields },
+        child.decoratorConfig,
+      );
+      const runtimeSchema =
+        ObjectRegistry.getAllSchemasAsDefinitions().fallback_children_4946;
+      expect(indexSet(runtimeSchema.indexes)).toEqual(
+        indexSet(manifestSchema.indexes),
+      );
+    });
+  });
+
+  it('generates field-derived indexes when no manifest schema is registered', () => {
+    isolated(() => {
+      const def = objectDef(
+        'FallbackSchemaless4946',
+        {
+          lookupCode: { type: 'text', _meta: { indexed: true } },
+          externalId: {
+            type: 'crossPackageRef',
+            related: '@external/pkg:Target',
+          },
+        },
+        { tableName: 'fallback_schemaless_4946' },
+      );
+      ObjectRegistry.registerFromManifest(`${PKG}:${def.className}`, def, PKG);
+      const schema =
+        ObjectRegistry.getAllSchemasAsDefinitions().fallback_schemaless_4946;
+      expect(schema.indexes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: 'fallback_schemaless_4946_lookup_code_idx',
+            columns: ['lookup_code'],
+          }),
+          expect.objectContaining({
+            name: 'fallback_schemaless_4946_external_id_idx',
+            columns: ['external_id'],
+          }),
+        ]),
+      );
+    });
+  });
+
+  it.each([
+    'same-name',
+    'leading-composite',
+    'partial',
+    'long-name',
+    'long-partial',
+  ] as const)('preserves supplied indexes without duplicates (%s)', (mode) => {
+    isolated(() => {
+      const supplied =
+        mode === 'leading-composite'
+          ? {
+              name: 'existing_target_lookup_4946',
+              columns: ['target_id', 'detail'],
+            }
+          : mode === 'partial'
+            ? {
+                name: 'existing_partial_lookup_4946',
+                columns: ['target_id'],
+                where: "detail = 'active'",
+              }
+            : {
+                name: 'fallback_children_4946_target_id_idx',
+                columns: ['target_id'],
+              };
+      const { child } = fixture((child) => {
+        assert(child.schema);
+        assert(child.decoratorConfig);
+        child.schema.indexes.push(supplied);
+        // An index may be supplied even when its runtime column was omitted.
+        if (mode === 'long-name' || mode === 'long-partial') {
+          child.decoratorConfig.tableName =
+            'fallback_children_with_a_very_long_table_name_for_index_completion_4946';
+          child.schema = new SchemaGenerator().generateCTISchemaFromManifest(
+            `${PKG}:${child.className}`,
+            child.decoratorConfig.tableName,
+            {
+              targetId: {
+                type: 'crossPackageRef',
+                related: '@external/pkg:Target',
+              },
+              lookupCode: { type: 'text', _meta: { indexed: true } },
+            },
+          );
+          // Keep the prebuilt opt-in index while forcing column fallback.
+          delete child.schema.columns.lookup_code;
+          if (mode === 'long-partial') {
+            const referenceIndex = child.schema.indexes.find(
+              (index) => index.columns[0] === 'target_id',
+            );
+            assert(referenceIndex);
+            referenceIndex.where = "detail = 'active'";
+          }
+        }
+      });
+      const table = child.schema?.tableName;
+      assert(table);
+      const first = ObjectRegistry.getAllSchemasAsDefinitions()[table];
+      const second = ObjectRegistry.getAllSchemasAsDefinitions()[table];
+      expect(first.indexes).toEqual(second.indexes);
+      expect(new Set(first.indexes.map((i) => i.name)).size).toBe(
+        first.indexes.length,
+      );
+      if (mode !== 'long-name' && mode !== 'long-partial')
+        expect(first.indexes).toContainEqual(expect.objectContaining(supplied));
+      const referenceIndexes = first.indexes.filter(
+        (i) => !i.where && i.columns[0] === 'target_id',
+      );
+      expect(referenceIndexes).toHaveLength(mode === 'long-partial' ? 0 : 1);
+      expect(
+        first.indexes.every(
+          (i) => identifierByteLength(i.name) <= MAX_IDENTIFIER_BYTES,
+        ),
+      ).toBe(true);
     });
   });
 });

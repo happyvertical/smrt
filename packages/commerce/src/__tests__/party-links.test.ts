@@ -60,16 +60,13 @@ describe('Contract party branches', () => {
     ]) {
       expect(model(name).fields.customerId?.type).toBe('foreignKey');
       expect(model(name).fields.vendorId).toBeUndefined();
-      expect(model(name).fields.customerId.required).toBe(
-        !['Cart', 'LicenseSale'].includes(name),
-      );
+      // smrt's own code copes with no customer (#4935): not required.
+      expect(model(name).fields.customerId.required).toBe(false);
     }
     for (const name of ['SupplierQuote', 'PurchaseOrder', 'ProductionOrder']) {
       expect(model(name).fields.vendorId?.type).toBe('foreignKey');
       expect(model(name).fields.customerId).toBeUndefined();
-      expect(model(name).fields.vendorId.required).toBe(
-        name !== 'ProductionOrder',
-      );
+      expect(model(name).fields.vendorId.required).toBe(false);
     }
     for (const name of ['Invoice', 'Payment', 'Fulfillment']) {
       expect(model(name).fields.contractId.related).toBe('SalesContract');
@@ -207,15 +204,17 @@ describe('Contract party branches', () => {
     expect(report.invalidPurchaseReferences).toEqual([]);
   });
 
-  it('requires parties only on the specified leaves', async () => {
-    await expect(save(new Order({ db: contracts.db }))).rejects.toThrow();
-    await expect(save(new Estimate({ db: contracts.db }))).rejects.toThrow();
+  it('saves every leaf without a party; smrt does not require one (#4935)', async () => {
+    await expect(save(new Order({ db: contracts.db }))).resolves.toBeDefined();
+    await expect(
+      save(new Estimate({ db: contracts.db })),
+    ).resolves.toBeDefined();
     await expect(
       save(new PurchaseOrder({ db: contracts.db })),
-    ).rejects.toThrow();
+    ).resolves.toBeDefined();
     await expect(
       save(new SupplierQuote({ db: contracts.db })),
-    ).rejects.toThrow();
+    ).resolves.toBeDefined();
     await expect(save(new Cart({ db: contracts.db }))).resolves.toBeDefined();
     await expect(
       save(new ProductionOrder({ db: contracts.db })),

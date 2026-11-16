@@ -124,6 +124,42 @@ Measured on a 333-file, 3,259-test unit suite, 16 cores (#2897, follow-up to #28
 
 ## API
 
+### Minimal-row contracts
+
+Every package declaring models keeps this generated test in
+`src/__tests__/minimal-row.generated.test.ts`:
+
+```typescript
+import { registerMinimalRowTests } from '@happyvertical/smrt-vitest/minimal-row';
+
+await registerMinimalRowTests();
+```
+
+The shared test loads real models and collections from the active test manifest.
+ObjectRegistry supplies the model list. Each model gets its own SQLite database
+and a create/save/get/list round trip. Required parents are created first.
+Optional inputs stay empty or at their defaults. Failures identify the model
+and optional field when the error or a single-field probe can identify it.
+Framework bases, abstract models, test fixtures and collection classes report
+their skip reasons. Known findings stay in a shared shrinking ledger by model,
+field, stable error excerpt and kind: optional-field, service-only or
+needs-domain-value. Service-only tests assert the owning service's exact direct
+write refusal; domain-value entries describe the value/context metadata cannot
+supply. A changed error fails. A listed model that passes fails with an
+instruction to remove its entry.
+
+The same subpath exports `buildMinimalRow(modelName, { db })` for service seed
+data. It returns required input only and saves required parents on `db`.
+Required tenant fields are filled; optional tenant fields on the model under
+test are omitted. Required parents inherit the same tenant, including optionally
+scoped parents. Repeated named relationships reuse the same ancestor identity;
+different roles retain different rows. The `TESTING_STANDARD.md` release gate
+requires each touched package's services to run once against these minimal rows,
+including the named owner of every service-only model.
+
+This subpath imports Vitest and belongs in test code. The main package entry
+does not import Vitest globals.
+
 ### Plugin
 
 | Export | Description |

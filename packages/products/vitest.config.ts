@@ -46,6 +46,8 @@ export default defineConfig(async () => {
     ],
 
     test: {
+      // One test file at a time: keeps concurrent agent worktrees within memory (TESTING_STANDARD.md, standards.md).
+      fileParallelism: false,
       // Test environment
       environment: 'node',
 

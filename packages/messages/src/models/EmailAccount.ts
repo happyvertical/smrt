@@ -8,7 +8,7 @@
 // runs, whichever chunk the library build places it in (#3098).
 import '../__smrt-register__.js';
 import type { FetchOptions, GetEmailClientOptions } from '@happyvertical/email';
-import { field, smrt } from '@happyvertical/smrt-core';
+import { field, ObjectRegistry, smrt } from '@happyvertical/smrt-core';
 import type {
   EmailAccountOptions,
   MessageSenderInterface,
@@ -194,7 +194,9 @@ export class EmailAccount extends Account {
           if (!folder) {
             // Create folder record
             const { EmailFolder } = await import('./EmailFolder');
-            folder = new EmailFolder({
+            folder = new (ObjectRegistry.resolveEffectiveConstructor(
+              EmailFolder,
+            ))({
               ...this.childOptions(),
               accountId,
               name: folderName,
@@ -240,10 +242,12 @@ export class EmailAccount extends Account {
               const { Email } = await import('./Email');
               let email = existingEmail;
               if (!email) {
-                email = new Email({
-                  ...this.childOptions(),
-                  accountId,
-                });
+                email = new (ObjectRegistry.resolveEffectiveConstructor(Email))(
+                  {
+                    ...this.childOptions(),
+                    accountId,
+                  },
+                );
                 // Bind the DB connection before save() (existingEmail is already
                 // initialized via the query that loaded it).
                 await email.initialize();

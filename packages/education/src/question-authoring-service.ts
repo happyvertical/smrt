@@ -1359,7 +1359,8 @@ export class QuestionAuthoringService extends CourseAuthoringService {
         courseId: String(release.course_id),
         lessonKey: String(released.lesson_key),
         lessonId: String(released.lesson_id),
-        sectionId: String(released.section_id),
+        sectionId:
+          released.section_id == null ? null : String(released.section_id),
         lessonRevisionId: String(lesson.id),
         revision: this.lessonView(model),
         worksheet: buildGuardianWorksheet(input),

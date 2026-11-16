@@ -242,9 +242,10 @@ describe('#2370 SQLite table rebuild — live database', () => {
     const price = columns.find((c) => c.name === 'price');
     expect(price?.type).toBe('REAL');
     expect(price?.dflt_value).toBe('0');
-    // Untouched columns keep their constraints.
+    // The manifest declares `name` optional, so the same rebuild drops its
+    // NOT NULL (#4937); the primary key stays.
     const name = columns.find((c) => c.name === 'name');
-    expect(name?.notnull).toBe(1);
+    expect(name?.notnull).toBe(0);
     expect(columns.find((c) => c.name === 'id')?.pk).toBe(1);
 
     // Indexes (including the partial one) and the trigger are back.
@@ -436,7 +437,7 @@ describe('#2370 SQLite table rebuild — live database', () => {
     expect(reDiff.changes).toEqual([]);
   });
 
-  it('refuses the rebuild when another table has a foreign key onto it', async () => {
+  it('rebuilds a table other tables reference and keeps their rows (#4937)', async () => {
     await seedProducts();
     await db.query(
       `CREATE TABLE "order_lines" (
@@ -446,33 +447,46 @@ describe('#2370 SQLite table rebuild — live database', () => {
     );
     await db.query(`INSERT INTO "order_lines" VALUES ('l1', 'p1')`);
 
-    // Guard the premise: this adapter enables foreign-key enforcement, which
-    // makes DROP TABLE cascade-delete the child rows.
+    // This adapter enables foreign-key enforcement, which makes a bare DROP
+    // TABLE cascade-delete the child rows. The tracker turns it off around the
+    // rebuild and checks the keys again before it commits.
     const enforcement = (await db.query('PRAGMA foreign_keys')).rows[0] as {
       foreign_keys: number;
     };
     expect(enforcement.foreign_keys).toBe(1);
 
     const diff = await new SchemaComparer(db).compare(productsManifest());
-    const upgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    const [result] = await new MigrationTracker({ db }).applyAll(
+      [
+        {
+          id: 'rebuild_referenced_products',
+          description: 'rebuild a referenced table',
+          version: '1.0.0',
+          up: executableSql(diff),
+          down: [],
+        },
+      ],
+      { atomic: true },
+    );
 
-    expect(upgrades).toHaveLength(1);
-    expect(upgrades[0].sqlStatements).toBeUndefined();
-    expect(upgrades[0].sql?.startsWith('--')).toBe(true);
-    expect(upgrades[0].sql).toContain('order_lines');
-    // No rebuild DDL is emitted, so the child rows are never at risk.
+    expect(result.error).toBeUndefined();
+    expect(result.success).toBe(true);
+    expect((await db.query(`SELECT * FROM "order_lines"`)).rows).toEqual([
+      { id: 'l1', product_id: 'p1' },
+    ]);
     expect(
-      getSQLFromDiff(diff).filter((sql) => sql.includes('_smrt_rebuild_')),
-    ).toEqual([]);
-    expect(
-      (await db.query(`SELECT COUNT(*) AS n FROM "order_lines"`)).rows[0],
-    ).toMatchObject({ n: 1 });
+      (await db.query(`SELECT COUNT(*) AS n FROM "products"`)).rows[0],
+    ).toMatchObject({ n: 2 });
+    expect((await db.query('PRAGMA foreign_key_check')).rows).toEqual([]);
+    expect((await db.query('PRAGMA foreign_keys')).rows[0]).toEqual({
+      foreign_keys: 1,
+    });
   });
 
-  it('refuses the rebuild when the table references itself', async () => {
-    // The staging table copies the self-reference verbatim, which makes it a
-    // child of the live table — so `DROP TABLE` cascades the *staged* rows
-    // away and the rebuild would silently lose data.
+  it('rebuilds a table that references itself and keeps every row (#4937)', async () => {
+    // The staging table copies the self-reference verbatim. With foreign keys
+    // on, DROP TABLE would cascade the staged rows away; the tracker turns
+    // them off for the rebuild.
     await db.query(
       `CREATE TABLE "products" (
         "id" TEXT PRIMARY KEY,
@@ -485,14 +499,26 @@ describe('#2370 SQLite table rebuild — live database', () => {
     await db.query(`INSERT INTO "products" VALUES ('p2', 'Part', 2, 'p1')`);
 
     const diff = await new SchemaComparer(db).compare(productsManifest());
-    const upgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    const [result] = await new MigrationTracker({ db }).applyAll(
+      [
+        {
+          id: 'rebuild_self_referencing_products',
+          description: 'rebuild a self-referencing table',
+          version: '1.0.0',
+          up: executableSql(diff),
+          down: [],
+        },
+      ],
+      { atomic: true },
+    );
 
-    expect(upgrades).toHaveLength(1);
-    expect(upgrades[0].sqlStatements).toBeUndefined();
-    expect(upgrades[0].sql).toContain('products');
+    expect(result.success).toBe(true);
     expect(
-      getSQLFromDiff(diff).filter((sql) => sql.includes('_smrt_rebuild_')),
-    ).toEqual([]);
+      (await db.query(`SELECT id, parent_id FROM "products" ORDER BY id`)).rows,
+    ).toEqual([
+      { id: 'p1', parent_id: null },
+      { id: 'p2', parent_id: 'p1' },
+    ]);
   });
 
   it('rolls the table back intact when a later statement in the batch fails', async () => {

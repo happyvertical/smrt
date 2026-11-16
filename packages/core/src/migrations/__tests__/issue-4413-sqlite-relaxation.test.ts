@@ -80,13 +80,13 @@ describe('#4413 explicit SQLite nullable relaxation', () => {
       { atomic: true },
     );
   }
-  it('remains advisory without explicit opt-in', async () => {
+  it('plans the relaxation by default, without the opt-in (#4937)', async () => {
     const diff = await new SchemaComparer(db).compare(schema);
     expect(
       diff.changes.find((c) => c.alteration === 'drop_not_null')?.advisory,
-    ).toBeDefined();
+    ).toBeUndefined();
     expect(getSQLFromDiff(diff).some((s) => s.includes('_smrt_rebuild_'))).toBe(
-      false,
+      true,
     );
   });
   it('preserves populated referenced rows and native DDL, converges, then permits NULL', async () => {

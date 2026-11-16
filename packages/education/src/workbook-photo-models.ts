@@ -41,7 +41,8 @@ function denyHistoryDeletion(): never {
 })
 export class WorkbookPhotoIntake extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
   override async delete(): Promise<void> {
     denyHistoryDeletion();
   }
@@ -94,11 +95,16 @@ export class WorkbookPhotoIntakeCollection extends SmrtCollection<WorkbookPhotoI
 })
 export class WorkbookPhotoAsset extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
   override async delete(): Promise<void> {
     denyHistoryDeletion();
   }
-  @foreignKey('WorkbookPhotoIntake', { required: true }) intakeId = '';
+  @foreignKey('WorkbookPhotoIntake', {
+    required: true,
+    requiredFor: 'identity',
+  })
+  intakeId = '';
   @crossPackageRef('@happyvertical/smrt-assets:Asset') assetId = '';
   name = '';
   mimeType = '';
@@ -180,11 +186,16 @@ export class WorkbookPhotoAssetCollection extends SmrtCollection<WorkbookPhotoAs
 })
 export class WorkbookPhotoDecision extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
   override async delete(): Promise<void> {
     denyHistoryDeletion();
   }
-  @foreignKey('WorkbookPhotoIntake', { required: true }) intakeId = '';
+  @foreignKey('WorkbookPhotoIntake', {
+    required: true,
+    requiredFor: 'identity',
+  })
+  intakeId = '';
   requestKey = '';
   sequence = 0;
   actorUserId = '';
@@ -223,12 +234,18 @@ export class WorkbookPhotoDecisionCollection extends SmrtCollection<WorkbookPhot
 })
 export class BookContextRevision extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
+  @foreignKey('Learner', { required: true, requiredFor: 'identity' })
+  learnerId = '';
   override async delete(): Promise<void> {
     denyHistoryDeletion();
   }
-  @foreignKey('Course', { required: true }) courseId = '';
-  @foreignKey('WorkbookPhotoDecision', { required: true }) decisionId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' })
+  courseId = '';
+  @foreignKey('WorkbookPhotoDecision', {
+    required: true,
+    requiredFor: 'identity',
+  })
+  decisionId = '';
   @field({ type: 'text' }) metadataJson = '{}';
   constructor(options: Record<string, unknown> = {}) {
     super(options);

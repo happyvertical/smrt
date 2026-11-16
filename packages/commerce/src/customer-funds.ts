@@ -1,5 +1,6 @@
 /** Conserved customer advances with explicit policy and real ledger reclassification. */
 import { createHash } from 'node:crypto';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
 import { ISO_4217_MINOR_UNITS } from '@happyvertical/smrt-ui/currency';
@@ -369,7 +370,7 @@ async function settle(
 ) {
   if (!Object.values(PaymentMethod).includes(input.method))
     throw new Error('Explicit supported payment method required');
-  const payment = new Payment({
+  const payment = new (ObjectRegistry.resolveEffectiveConstructor(Payment))({
     db,
     id: input.id,
     tenantId: input.tenantId,
@@ -622,7 +623,9 @@ export async function allocateCustomerFunds(
         'Issued invoice does not match the customer funds and approved snapshot',
       );
     await validateCustomerFundsAccounts(db, input.tenantId, state.policy);
-    const allocation = new PaymentAllocation({
+    const allocation = new (ObjectRegistry.resolveEffectiveConstructor(
+      PaymentAllocation,
+    ))({
       db,
       id: operation.allocationId,
       tenantId: input.tenantId,

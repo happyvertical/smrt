@@ -1,5 +1,6 @@
 import {
   isUniqueViolationError,
+  ObjectRegistry,
   type SmrtClassOptions,
 } from '@happyvertical/smrt-core';
 import { NotificationOptOutCollection } from '../collections/NotificationOptOutCollection.js';
@@ -210,7 +211,9 @@ export class NotificationOptOutService {
       if (existing) return apply(existing);
       if (!optedOut) {
         // Nothing to clear; return an unsaved, opted-in view of the key.
-        return new NotificationOptOut({
+        return new (ObjectRegistry.resolveEffectiveConstructor(
+          NotificationOptOut,
+        ))({
           tenantId,
           recipientUserId,
           channel,

@@ -43,7 +43,7 @@ export interface MagicLinkTokenOptions extends SmrtObjectOptions {
 })
 export class UsersMagicLinkToken extends SmrtObject {
   /** Unique nonce embedded in the signed JWT */
-  @field({ required: true, unique: true })
+  @field({ required: true, requiredFor: 'identity', unique: true })
   nonce: string = '';
 
   /** Email address this token was generated for */

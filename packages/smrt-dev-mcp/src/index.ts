@@ -29,6 +29,7 @@ import {
 import { SERVER_NAME, SERVER_VERSION } from './server-info.js';
 import { REVIEW_SKILL_NAME, TOOLS } from './tool-catalog.js';
 import { generateSmrtClass } from './tools/generate-smrt-class.js';
+import { hardenSmrtClass } from './tools/harden-smrt-class.js';
 import { reviewSmrtProject } from './tools/review-smrt-project.js';
 import { redactConnectionString } from './tools/runtime/connection.js';
 
@@ -467,6 +468,12 @@ export function createServer(): Server {
         case 'generate-smrt-class':
           result = await generateSmrtClass(
             args as unknown as Parameters<typeof generateSmrtClass>[0],
+          );
+          break;
+
+        case 'harden-smrt-class':
+          result = await hardenSmrtClass(
+            args as unknown as Parameters<typeof hardenSmrtClass>[0],
           );
           break;
 

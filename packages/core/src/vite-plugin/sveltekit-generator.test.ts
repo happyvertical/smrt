@@ -895,6 +895,17 @@ describe('SvelteKit Route Generator', () => {
       expect(registrationContent).toContain(
         "import '../../../.smrt/register.js';",
       );
+      // The app build's schema is imported first, before smrt-core (#4929).
+      expect(
+        registrationContent.indexOf("import '../../../.smrt/build-schema.js';"),
+      ).toBeGreaterThanOrEqual(0);
+      expect(
+        registrationContent.indexOf("import '../../../.smrt/build-schema.js';"),
+      ).toBeLessThan(
+        registrationContent.indexOf(
+          "import { ObjectRegistry } from '@happyvertical/smrt-core';",
+        ),
+      );
       expect(registrationContent).toMatch(
         /ObjectRegistry\.register\(LocalThing,\s*\{\s*name: 'LocalThing',\s*packageName: '@test\/app',\s*_manifest: smrtRegistrationManifests\['LocalThing'\],\s*_manifestKey: 'LocalThing',\s*\}\);/s,
       );

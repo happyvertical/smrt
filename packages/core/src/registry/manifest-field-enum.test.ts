@@ -35,3 +35,30 @@ describe('manifest field enum (#3598)', () => {
     expect(readFieldEnum(undefined)).toBeUndefined();
   });
 });
+
+describe('manifest field bounds (#4924)', () => {
+  it('retains top-level numeric and length constraints during registration and merge', () => {
+    const field = createFieldFromManifest({
+      type: 'integer',
+      min: 3,
+      max: 5,
+      _meta: { min: 1, max: 9 },
+    });
+    expect(field._meta).toMatchObject({ min: 3, max: 5 });
+    const merged = mergeManifestField(field, {
+      type: 'integer',
+      min: 4,
+      max: 6,
+    });
+    expect(merged._meta).toMatchObject({ min: 4, max: 6 });
+    const text = createFieldFromManifest({
+      type: 'text',
+      minLength: 4,
+      maxLength: 8,
+    });
+    expect(text._meta).toMatchObject({ minLength: 4, maxLength: 8 });
+    expect(
+      mergeManifestField(text, { type: 'text', maxLength: 5 })._meta,
+    ).toMatchObject({ minLength: 4, maxLength: 5 });
+  });
+});

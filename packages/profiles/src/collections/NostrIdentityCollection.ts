@@ -83,7 +83,7 @@ export class NostrIdentityCollection extends SmrtCollection<NostrIdentity> {
       nip05Username?.toLowerCase() || normalizedEmail.split('@')[0];
 
     // Create identity
-    const identity = new NostrIdentity({
+    const identity = await this.create({
       ...this.options,
       profileId: profile.id as string,
       pubkey: keypair.pubkey,
@@ -93,9 +93,6 @@ export class NostrIdentityCollection extends SmrtCollection<NostrIdentity> {
       email: normalizedEmail,
       nip05Username: username,
     });
-
-    await identity.initialize();
-    await identity.save();
 
     return identity;
   }
@@ -126,7 +123,7 @@ export class NostrIdentityCollection extends SmrtCollection<NostrIdentity> {
       throw new Error('Nostr identity with this email already exists');
     }
 
-    const identity = new NostrIdentity({
+    const identity = await this.create({
       ...this.options,
       profileId: profile.id as string,
       pubkey: nostrData.pubkey,
@@ -138,9 +135,6 @@ export class NostrIdentityCollection extends SmrtCollection<NostrIdentity> {
         nostrData.nip05Username?.toLowerCase() ||
         nostrData.email.toLowerCase().split('@')[0],
     });
-
-    await identity.initialize();
-    await identity.save();
 
     return identity;
   }

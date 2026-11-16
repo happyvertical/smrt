@@ -106,6 +106,7 @@ type Acl = {
 const bookkeeping = new Set([
   '_smrt_migrations',
   '_smrt_schema_migrations',
+  '_smrt_migrate_runs',
   '_smrt_backfills',
 ]);
 const identifier = (value: string) => `"${value.replaceAll('"', '""')}"`;

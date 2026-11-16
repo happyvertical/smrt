@@ -17,6 +17,8 @@ suite('received sales contract PostgreSQL', () => {
         'Contract',
         'ContractLineItem',
         'Customer',
+        'Profile',
+        'ProfileType',
         'Vendor',
         'Invoice',
         'InvoiceLineItem',

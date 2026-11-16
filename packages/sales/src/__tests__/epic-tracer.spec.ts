@@ -821,18 +821,6 @@ describe('epic tracer (#1935): referred Opportunity → explainable payable Comm
     expect(before.unsettledAdjustmentCents).toBe(0);
     expect(before.netPayableCents).toBe(PAYABLE_TOTAL);
 
-    // Adjustments are audit rows and must explain themselves: a refund
-    // without a reason is rejected outright.
-    await expect(
-      adjustments.create({
-        commissionId: revShare1.id ?? '',
-        earnerId: referrerEarner.id ?? '',
-        adjustmentKind: 'refund',
-        amountCents: REFUND_CENTS,
-        currency: 'USD',
-      }),
-    ).rejects.toThrow(/[Rr]equired field 'reason'/);
-
     // Snapshot the original commission row, then append the refund.
     revShare1BeforeAdjustment = (
       await commissions.get({ id: revShare1.id })

@@ -8,6 +8,7 @@ import { Worker } from 'node:worker_threads';
 import type { RetryDecision } from '@happyvertical/jobs';
 import { createLogger } from '@happyvertical/logger';
 import {
+  assertDatabaseMigratedForBuild,
   getClassConfigResolvers,
   normalizeCustomActionFailure,
   ObjectRegistry,
@@ -163,6 +164,10 @@ export interface TaskRunnerEvents {
   'runner:started': () => void;
   'runner:stopped': () => void;
   'runner:error': (error: Error) => void;
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -413,6 +418,7 @@ export class TaskRunner extends EventEmitter {
 
     // Fail fast if the job-system tables were never migrated, with an
     // actionable error rather than a confusing recovery failure later.
+    await assertDatabaseMigratedForBuild(this.collection.db);
     await this.workerCollection.assertReady();
 
     await this.prepareTerminalOutcomeStorage();
@@ -447,15 +453,22 @@ export class TaskRunner extends EventEmitter {
     // start.
     const plan = planLivenessConnection(this.db as DatabaseInterface);
     if (plan.kind === 'none') {
-      this.logger.warn(
+      // Warn only where a thread used to run and now cannot; engines that never
+      // had a usable second connection keep renewing on the main loop quietly.
+      const log = plan.degraded ? this.logger.warn : this.logger.debug;
+      log.call(
+        this.logger,
         `Liveness thread not used: ${plan.reason}. Renewing the worker lease on the main loop; a long synchronous handler can delay renewal, so keep leaseTtlMs well above the longest synchronous section.`,
       );
       this.startLeaseRenewal();
-    } else if (!(await this.startLivenessThread(plan))) {
-      this.logger.warn(
-        'Liveness thread did not start; renewing the worker lease on the main loop.',
-      );
-      this.startLeaseRenewal();
+    } else {
+      const started = await this.startLivenessThread(plan);
+      if (!started.ok) {
+        this.logger.warn(
+          `Liveness thread did not start (${started.reason}); renewing the worker lease on the main loop.`,
+        );
+        this.startLeaseRenewal();
+      }
     }
 
     // Start polling loop
@@ -1684,8 +1697,8 @@ export class TaskRunner extends EventEmitter {
    */
   private async startLivenessThread(
     plan: Exclude<LivenessConnectionPlan, { kind: 'none' }>,
-  ): Promise<boolean> {
-    if (!this.db) return false;
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    if (!this.db) return { ok: false, reason: 'no database' };
     let entry: string;
     try {
       // Resolve by package subpath, not as a sibling of this module: the bundle
@@ -1693,8 +1706,11 @@ export class TaskRunner extends EventEmitter {
       entry = (
         import.meta as unknown as { resolve(s: string): string }
       ).resolve('@happyvertical/smrt-jobs/worker-liveness-thread');
-    } catch {
-      return false;
+    } catch (error) {
+      return {
+        ok: false,
+        reason: `worker entry not resolvable: ${errorText(error)}`,
+      };
     }
 
     let worker: Worker;
@@ -1714,8 +1730,11 @@ export class TaskRunner extends EventEmitter {
           queues: this.config.queues,
         },
       });
-    } catch {
-      return false;
+    } catch (error) {
+      return {
+        ok: false,
+        reason: `worker could not be spawned: ${errorText(error)}`,
+      };
     }
     const exited = new Promise<void>((resolve) => {
       worker.once('exit', () => resolve());
@@ -1723,6 +1742,7 @@ export class TaskRunner extends EventEmitter {
 
     // Bound the handshake so a hung connect inside the thread (slow/unreachable
     // database) can't stall start() forever — fall back to main-loop renewal.
+    let failure = 'thread exited before it was ready';
     const handshake = await new Promise<'ready' | 'failed' | 'timeout'>(
       (resolve) => {
         const onMessage = (message: unknown) => {
@@ -1734,11 +1754,13 @@ export class TaskRunner extends EventEmitter {
             typeof message === 'object' &&
             (message as { type?: string }).type === 'error'
           ) {
+            failure = String((message as { message?: unknown }).message);
             cleanup();
             resolve('failed');
           }
         };
-        const onFail = () => {
+        const onFail = (error?: unknown) => {
+          if (error instanceof Error) failure = error.message;
           cleanup();
           resolve('failed');
         };
@@ -1762,12 +1784,15 @@ export class TaskRunner extends EventEmitter {
     if (handshake === 'timeout') {
       // A hung thread will not exit on its own; terminating is the last resort.
       await worker.terminate().catch(() => {});
-      return false;
+      return {
+        ok: false,
+        reason: `no ready signal within ${LIVENESS_THREAD_START_TIMEOUT_MS} ms`,
+      };
     }
     if (handshake === 'failed') {
       // A failed startup leaves the thread nothing to wait on: it exits.
       await retireLivenessWorker(worker, exited);
-      return false;
+      return { ok: false, reason: failure };
     }
 
     this.livenessWorker = worker;
@@ -1778,7 +1803,7 @@ export class TaskRunner extends EventEmitter {
     // renewal so the lease keeps being renewed.
     worker.once('error', () => this.handleLivenessThreadLoss(worker));
     worker.once('exit', () => this.handleLivenessThreadLoss(worker));
-    return true;
+    return { ok: true };
   }
 
   private handleLivenessThreadLoss(worker: Worker): void {

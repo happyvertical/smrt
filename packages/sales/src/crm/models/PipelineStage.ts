@@ -47,14 +47,18 @@ export class PipelineStage extends SmrtObject {
 
   /** Owning pipeline. Required. */
   @field({ description: 'The pipeline this stage belongs to.' })
-  @foreignKey('PipelineDefinition', { required: true })
+  @foreignKey('PipelineDefinition', { required: true, requiredFor: 'identity' })
   pipelineId: string = '';
 
   /**
    * Stable machine key, unique within the pipeline (natural key with
    * `pipelineId`). Required — e.g. `'proposal'`, `'closed_won'`.
    */
-  @field({ required: true, description: 'A short code for the stage.' })
+  @field({
+    required: true,
+    requiredFor: 'identity',
+    description: 'A short code for the stage.',
+  })
   key: string = '';
 
   /** Human-readable stage name shown on board columns. */

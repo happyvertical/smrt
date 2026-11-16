@@ -9,6 +9,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import {
   field,
   foreignKey,
+  ObjectRegistry,
   SmrtObject,
   type SmrtObjectOptions,
   smrt,
@@ -50,7 +51,7 @@ export class MagicLinkToken extends SmrtObject {
   /**
    * Link to the NostrIdentity this token is for
    */
-  @foreignKey('NostrIdentity', { required: true })
+  @foreignKey('NostrIdentity', { required: true, requiredFor: 'identity' })
   nostrIdentityId?: string;
 
   /**
@@ -131,7 +132,9 @@ export class MagicLinkToken extends SmrtObject {
       options.expiresInMinutes ?? DEFAULT_EXPIRATION_MINUTES;
     const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);
 
-    const magicLinkToken = new MagicLinkToken({
+    const magicLinkToken = new (ObjectRegistry.resolveEffectiveConstructor(
+      MagicLinkToken,
+    ))({
       db: options.db ?? nostrIdentity.options?.db,
       nostrIdentityId: nostrIdentity.id as string,
       tokenHash,

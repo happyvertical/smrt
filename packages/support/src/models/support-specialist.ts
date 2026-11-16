@@ -44,7 +44,10 @@ export class SupportSpecialist extends SmrtObject {
 
   /** The Participant (Person profile) this specialist role belongs to. */
   @field({ description: 'The profile of the person on your team.' })
-  @crossPackageRef('@happyvertical/smrt-profiles:Profile', { required: true })
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile', {
+    required: true,
+    requiredFor: 'identity',
+  })
   profileId: string = '';
 
   /** Display name for queues/routing rationale (denormalized from Profile). */
@@ -123,7 +126,7 @@ export class SupportQualification extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @foreignKey('SupportSpecialist', { required: true })
+  @foreignKey('SupportSpecialist', { required: true, requiredFor: 'identity' })
   specialistId: string = '';
 
   /** App-defined Project this qualification covers. */
@@ -175,7 +178,7 @@ export class SupportAvailability extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @foreignKey('SupportSpecialist', { required: true })
+  @foreignKey('SupportSpecialist', { required: true, requiredFor: 'identity' })
   specialistId: string = '';
 
   @field({ type: 'text' })

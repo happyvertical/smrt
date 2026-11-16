@@ -28,7 +28,7 @@ import { Operation } from './Operation.js';
 export interface RoutingStepOptions extends SmrtObjectOptions {
   tenantId?: string | null;
   bomId?: string;
-  operationId?: string;
+  operationId?: string | null;
   sequence?: number;
   estimatedMinutes?: number;
   notes?: string;
@@ -53,13 +53,17 @@ export class RoutingStep extends SmrtObject {
    * (`BomLine.bomId` is still a plain string; see AGENTS.md.)
    */
   @field({ description: 'The list of parts this step is part of.' })
-  @foreignKey(BillOfMaterials, { required: true, onDelete: 'CASCADE' })
+  @foreignKey(BillOfMaterials, {
+    required: true,
+    requiredFor: 'identity',
+    onDelete: 'CASCADE',
+  })
   bomId: string = '';
 
   /** The {@link Operation} performed here. Restrict: operations are retired, never deleted. */
   @field({ description: 'The kind of work done in this step.' })
-  @foreignKey(Operation, { required: true, onDelete: 'RESTRICT' })
-  operationId: string = '';
+  @foreignKey(Operation, { nullable: true, onDelete: 'RESTRICT' })
+  operationId: string | null = null;
 
   /** Position in the routing, starting at 1 and without gaps. */
   @field({

@@ -74,7 +74,7 @@ function getPlaybookConfig(): PlaybookPackageConfig {
   mcp: { include: [] },
 })
 export class PlaybookOverride extends SmrtObject {
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   key: string = '';
 
   // Not tenant-scoped (any scope is writable), but the value is a tenant id:

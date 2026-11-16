@@ -31,6 +31,7 @@ import {
 import {
   getEffectiveFieldsSync,
   getOwnTableFieldsSync,
+  getResolvedFieldsSync,
   inheritsHierarchicalBase,
 } from './registry/inheritance-resolver.js';
 import { fieldsToColumns } from './registry/schema-builder.js';
@@ -42,6 +43,7 @@ import type {
   MethodDefinition,
   SmartObjectDefinition,
 } from './scanner/types.js';
+import { resolveInheritedFields } from './schema/field-inheritance.js';
 import type { ColumnDefinition } from './schema/types.js';
 import {
   displayLabelFieldProblem,
@@ -157,7 +159,16 @@ function pluralize(name: string): string {
   return `${s}s`;
 }
 
-function toFieldDefinition(def: RuntimeFieldDefinition): FieldDefinition {
+/**
+ * A run-time field as a manifest field. The options the caller wrote are the
+ * stated ones (`_meta.__statedOptions`, as the scanner records them), so a
+ * redeclaration of a parent's field inherits the rest by the shared rule. A
+ * field with no parent to inherit from is optional unless it says otherwise.
+ */
+function toFieldDefinition(
+  def: RuntimeFieldDefinition,
+  redeclared: boolean,
+): FieldDefinition {
   if (
     (def.type === 'foreignKey' || def.type === 'crossPackageRef') &&
     (typeof def.related !== 'string' || !isQualifiedName(def.related))
@@ -184,17 +195,32 @@ function toFieldDefinition(def: RuntimeFieldDefinition): FieldDefinition {
   ) {
     throw new Error(`Invalid ui.format ${String(format)} for ${def.type}`);
   }
+  const stated = [
+    ...(def.required !== undefined ? ['required'] : []),
+    ...(def.enum ? ['enum'] : []),
+    ...(def.description ? ['description'] : []),
+    ...(def.default !== undefined ? ['default'] : []),
+    ...(def.generated !== undefined ? ['generated'] : []),
+    ...(def.sensitive !== undefined ? ['sensitive'] : []),
+    ...(def.readPermission ? ['readPermission'] : []),
+  ];
+  const meta = {
+    ...(def.ui ? { ui: { ...def.ui } } : {}),
+    ...(redeclared ? { __statedOptions: stated } : {}),
+  };
   return {
     type: def.type,
     ...(def.generated !== undefined ? { generated: def.generated } : {}),
     ...(def.sensitive !== undefined ? { sensitive: def.sensitive } : {}),
     ...(def.readPermission ? { readPermission: def.readPermission } : {}),
-    required: def.required ?? false,
+    ...(def.required !== undefined || !redeclared
+      ? { required: def.required ?? false }
+      : {}),
     ...(def.enum ? { enum: [...def.enum] } : {}),
     ...(def.description ? { description: def.description } : {}),
     ...(def.default !== undefined ? { default: def.default } : {}),
     ...(def.related ? { related: def.related } : {}),
-    ...(def.ui ? { _meta: { ui: { ...def.ui } } } : {}),
+    ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
   } as FieldDefinition;
 }
 
@@ -271,9 +297,18 @@ export function runtimeModelEntry(
       : undefined;
   const fields: Record<string, FieldDefinition> = {};
   let declaresGenerated = Boolean(parent?.generatedFields);
-  // Keep ordinary STI fields on their declaring class, as before #4915.
-  // Copy only generated metadata needed by output/write consumers; validation
-  // below resolves dependencies from the complete effective parent ancestry.
+  // Independent tables carry concrete ancestors' fields through the shared
+  // inheritance rule (#4922). A replacement keeps its provider's storage and
+  // requiredness. An ordinary subclass of a one-table-per-class parent lists
+  // the copied fields relaxed to optional, because this entry's own column
+  // list is authoritative; a definition that restates one still yields a
+  // single column (its own declaration wins below). A field smrt needs (one
+  // with `requiredFor`, #4923) keeps `required` and its reason in both cases:
+  // it is not relaxed. An STI subclass shares its parent's table: its ordinary
+  // fields stay on their declaring class, as before #4915, and only generated
+  // metadata is copied for output/write consumers (keeping the provider's
+  // `required`); validation below resolves dependencies from the complete
+  // effective parent ancestry.
   if (
     parent &&
     (def.replaces ||
@@ -301,13 +336,16 @@ export function runtimeModelEntry(
         name === 'parentId' && hierarchical && inherited.related === parent.name
           ? def.name
           : inherited.related;
+      const requiredFor = inherited._meta?.requiredFor;
+      const keep =
+        inherited.required === true && typeof requiredFor === 'string';
       fields[name] = {
         ...inherited,
         type: inherited.type,
         required:
           def.replaces || sharedTable
             ? (inherited.required ?? inherited._meta?.required ?? false)
-            : false,
+            : keep,
         ...(related ? { related } : {}),
         ...(inherited._meta
           ? {
@@ -322,8 +360,13 @@ export function runtimeModelEntry(
       } as FieldDefinition;
     }
   }
-  for (const [name, fd] of Object.entries(def.fields ?? {})) {
-    fields[name] = toFieldDefinition(fd);
+  // A field the definition redeclares resolves against the parent's effective
+  // fields by the one inheritance rule (`schema/field-inheritance.ts`): it
+  // inherits the options it does not state, and refuses loosening a field smrt
+  // needs (#4932, #4942). A replacement redeclares the same way.
+  const parentFields = parent ? getResolvedFieldsSync(parent) : undefined;
+  const declared = Object.entries(def.fields ?? {});
+  for (const [name, fd] of declared) {
     if (generatedExpression(fd) !== undefined) declaresGenerated = true;
     if (
       fd.type === 'foreignKey' &&
@@ -334,6 +377,37 @@ export function runtimeModelEntry(
         `Run-time field ${name}: use crossPackageRef across packages`,
       );
     }
+  }
+  const redeclaredNames = new Set(
+    declared.map(([n]) => n).filter((n) => parentFields?.has(n)),
+  );
+  const own = declared.map(
+    ([name, fd]) =>
+      [name, toFieldDefinition(fd, redeclaredNames.has(name))] as const,
+  );
+  if (parent && parentFields) {
+    const resolved = resolveInheritedFields<FieldDefinition>({
+      strategy:
+        ObjectRegistry.getSTIBase(parentKey!) === null
+          ? 'own-table'
+          : 'shared-table',
+      className: def.name,
+      ancestors: [
+        {
+          name: parent.name,
+          fields: parentFields as unknown as Map<string, FieldDefinition>,
+          frameworkBase: false,
+        },
+      ],
+      own,
+      representation: 'manifest',
+    });
+    for (const [name] of own) {
+      const field = resolved.get(name);
+      if (field) fields[name] = field;
+    }
+  } else {
+    for (const [name, fd] of own) fields[name] = fd;
   }
   const tenantScoped = def.tenantScoped ?? parent?.config.tenantScoped;
   const scopedFields = new Map<string, RegisteredField>(
@@ -473,13 +547,12 @@ export function runtimeModelEntry(
       ...baseColumns(false, 'UUID'),
       ...fieldsToColumns(new Map(Object.entries(fields))),
       ...(parentSchema?.columns ?? {}),
+      // A replacement's own fields win over the provider's columns, as
+      // resolved above: a redeclared field keeps what it does not state.
       ...(def.replaces
         ? fieldsToColumns(
             new Map(
-              Object.entries(def.fields ?? {}).map(([name, field]) => [
-                name,
-                toFieldDefinition(field),
-              ]),
+              Object.keys(def.fields ?? {}).map((name) => [name, fields[name]]),
             ),
           )
         : {}),

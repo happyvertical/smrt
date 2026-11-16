@@ -130,10 +130,10 @@ export class ForgeDelivery extends SmrtObject {
   @tenantId()
   tenantId: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
   provider: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
   deliveryId: string = '';
 
   @field({ type: 'text', nullable: true })
@@ -142,7 +142,7 @@ export class ForgeDelivery extends SmrtObject {
   @field({ type: 'text', nullable: true })
   repositoryKey: string | null = null;
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text' })
   eventName: string = '';
 
   @field({ type: 'json' })
@@ -194,10 +194,10 @@ export class ForgeProjectionCheckpoint extends SmrtObject {
   @tenantId()
   tenantId: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
   projection: string = '';
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
   subjectKey: string = '';
 
   // The current portable field contract persists this as a signed 32-bit
@@ -205,7 +205,7 @@ export class ForgeProjectionCheckpoint extends SmrtObject {
   @field({ type: 'integer', required: true })
   observationVersion: number = 0;
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text' })
   deliveryId: string = '';
 
   @field({ type: 'datetime', required: true })

@@ -1,4 +1,4 @@
-import { detectEngine } from '@happyvertical/smrt-core';
+import { detectEngine, SQLITE_BUSY_TIMEOUT_MS } from '@happyvertical/smrt-core';
 import type {
   DatabaseInterface,
   ReopenOptions,
@@ -113,16 +113,6 @@ export function resolveUrl(db: DatabaseInterface): string {
 }
 
 /**
- * Busy timeout, in milliseconds, applied to the runner's SQLite connection and
- * to the liveness thread's reopened connection. It matches the value the local
- * runtime sets on its own connection (`tuneLocalSqlite` in
- * `@happyvertical/smrt-app-runtime`). Neither SQLite engine waits for a lock
- * by default, and a reopened connection does not inherit the first one's
- * PRAGMAs.
- */
-export const SQLITE_BUSY_TIMEOUT_MS = 5000;
-
-/**
  * Tune a SQLite connection for the off-loop liveness topology.
  *
  * The runner's main connection and the off-loop ticker's connection both touch
@@ -197,7 +187,18 @@ export type LivenessConnectionPlan =
       reopen: ReopenOptions;
     }
   | { kind: 'url'; url: string; type: string }
-  | { kind: 'none'; reason: string };
+  | {
+      kind: 'none';
+      reason: string;
+      /**
+       * True where a liveness thread used to run and now cannot (file-backed
+       * SQLite without a same-engine connection, or secure SQLite on Windows).
+       * False for engines that never had a usable second connection
+       * (in-memory SQLite, DuckDB, JSON), where main-loop renewal is the
+       * long-standing design and not a degradation.
+       */
+      degraded: boolean;
+    };
 
 /** Decide how (and whether) the liveness thread may open its connection. */
 export function planLivenessConnection(
@@ -211,12 +212,14 @@ export function planLivenessConnection(
   if (engine !== 'sqlite') {
     return {
       kind: 'none',
+      degraded: false,
       reason: `the ${engine} engine has one owner per database`,
     };
   }
   if (isInMemory(db)) {
     return {
       kind: 'none',
+      degraded: false,
       reason:
         'an in-memory SQLite database cannot be reached by a second connection',
     };
@@ -225,6 +228,7 @@ export function planLivenessConnection(
   if (dbEngine !== 'node-sqlite' && dbEngine !== 'libsql') {
     return {
       kind: 'none',
+      degraded: true,
       reason:
         'the connection does not report which SQLite engine it uses, so a second connection may use a different engine on the same file',
     };
@@ -232,6 +236,7 @@ export function planLivenessConnection(
   if (typeof db.reopenOptions !== 'function') {
     return {
       kind: 'none',
+      degraded: true,
       reason: 'the connection cannot give options to reopen the same database',
     };
   }
@@ -241,6 +246,7 @@ export function planLivenessConnection(
   } catch (error) {
     return {
       kind: 'none',
+      degraded: true,
       reason: `the connection cannot be reopened on the same engine (${
         error instanceof Error ? error.message : String(error)
       })`,
@@ -253,6 +259,7 @@ export function planLivenessConnection(
   ) {
     return {
       kind: 'none',
+      degraded: true,
       reason:
         'on Windows the secure SQLite custody verifier cannot be handed to a worker thread',
     };

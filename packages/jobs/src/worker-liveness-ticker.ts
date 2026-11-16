@@ -1,30 +1,20 @@
 import {
   applyPostgresRuntimeTimeouts,
   detectEngine,
+  SQLITE_BUSY_TIMEOUT_MS,
 } from '@happyvertical/smrt-core';
 import {
   getDatabase,
   type ReopenOptions,
   type DatabaseEngine as SqlEngine,
 } from '@happyvertical/sql';
-import { SQLITE_BUSY_TIMEOUT_MS } from './worker-liveness.js';
 
-/**
- * Configuration for an off-loop liveness ticker (passed via `workerData`).
- */
-export interface LivenessTickerOptions {
+/** Options common to every engine. */
+interface LivenessTickerBaseOptions {
   /** Database URL the owning runner is using (PostgreSQL only). */
   url: string;
   /** Optional explicit engine/type hint (PostgreSQL only). */
   type?: string;
-  /**
-   * Options that reopen the runner's own database on the same engine, from
-   * `db.reopenOptions()`. Required for SQLite; the thread never builds SQLite
-   * connection options from a URL (#4978).
-   */
-  reopen?: ReopenOptions;
-  /** The engine the runner's connection reported; the thread must match it. */
-  expectedEngine?: SqlEngine;
   /** This runner incarnation's worker key (the `_smrt_workers.worker_id`). */
   workerKey: string;
   /** Lease time-to-live in milliseconds. */
@@ -34,6 +24,24 @@ export interface LivenessTickerOptions {
   /** Queues the runner polls, re-written on every renewal. */
   queues?: string[];
 }
+
+/**
+ * Configuration for an off-loop liveness ticker (passed via `workerData`).
+ *
+ * SQLite connects only through `reopen` (from the runtime connection's
+ * `db.reopenOptions()`) together with the `expectedEngine` that connection
+ * reported; the thread refuses to run on a different engine. Without `reopen`
+ * only PostgreSQL may be reached, from `url`.
+ */
+export type LivenessTickerOptions = LivenessTickerBaseOptions &
+  (
+    | {
+        reopen: ReopenOptions;
+        /** The engine the runner's connection reported; required with `reopen`. */
+        expectedEngine: SqlEngine;
+      }
+    | { reopen?: undefined; expectedEngine?: undefined }
+  );
 
 export interface LivenessTicker {
   /** Stop renewing and close the connection. */
@@ -91,8 +99,14 @@ export async function runLivenessTicker(
   if (options.reopen) {
     try {
       // Two SQLite engines do not coordinate file locks: refuse to run on a
-      // different engine than the runner's connection.
-      if (options.expectedEngine && db.engine !== options.expectedEngine) {
+      // different engine than the runner's connection, and never without
+      // knowing which one that is.
+      if (!options.expectedEngine) {
+        throw new Error(
+          "The liveness ticker needs the runtime connection's engine (expectedEngine) to use reopen options.",
+        );
+      }
+      if (db.engine !== options.expectedEngine) {
         throw new Error(
           `Liveness connection uses engine ${db.engine ?? 'unknown'}, expected ${options.expectedEngine}; refusing to share the SQLite file across engines.`,
         );

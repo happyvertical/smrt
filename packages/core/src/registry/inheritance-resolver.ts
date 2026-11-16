@@ -418,6 +418,18 @@ export function getOwnTableFieldsSync(
 ): Map<string, RegisteredField> {
   const key = registered.qualifiedName ?? registered.name;
   if (ObjectRegistry.getSTIBase(key) !== null) return registered.fields;
+  return getResolvedFieldsSync(registered);
+}
+
+/**
+ * The effective fields of a registered class (own table or shared table),
+ * resolved synchronously by the one inheritance rule. A class with no
+ * registered ancestor returns its registered fields.
+ */
+export function getResolvedFieldsSync(
+  registered: RegisteredClass,
+): Map<string, RegisteredField> {
+  const key = registered.qualifiedName ?? registered.name;
   const ancestors: Array<FieldInheritanceLink<InheritedFieldDefinition>> = [];
   for (const ancestorName of getInheritanceChain(key)) {
     if (ancestorName === key) continue;
@@ -427,7 +439,11 @@ export function getOwnTableFieldsSync(
     ancestors.push(toLink(ancestor));
   }
   if (ancestors.length === 0) return registered.fields;
-  return resolveRegistryFields(registered, ancestors, 'own-table');
+  return resolveRegistryFields(
+    registered,
+    ancestors,
+    ObjectRegistry.getSTIBase(key) === null ? 'own-table' : 'shared-table',
+  );
 }
 
 /** Effective ancestry without manifest I/O, including shared-table parents. */

@@ -16,7 +16,6 @@ import type { PlaceTypeOptions } from '../types';
 export class PlaceType extends SmrtObject {
   // id and slug are inherited from SmrtObject
   @field({
-    required: true,
     description:
       'The name of the kind of place, such as "Building", "Room" or "Zone".',
   })

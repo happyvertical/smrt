@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { ensureJobEventsSystemTableCompatibility } from '@happyvertical/smrt-core';
+import {
+  ensureJobEventsSystemTableCompatibility,
+  ObjectRegistry,
+} from '@happyvertical/smrt-core';
 import { ensureSchema } from '@happyvertical/smrt-core/schema/utils';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { JobStatus, SmrtJob } from './smrt-job.js';
@@ -215,7 +218,9 @@ export async function transitionTerminalJob(
   });
 
   if (!persisted) return null;
-  const event = new SmrtJobEvent({ db });
+  const event = new (ObjectRegistry.resolveEffectiveConstructor(SmrtJobEvent))({
+    db,
+  });
   await event.initialize();
   await event.loadDataFromDb(persisted);
   return event;

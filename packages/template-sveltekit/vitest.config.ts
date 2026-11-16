@@ -28,6 +28,8 @@ export default defineConfig({
     },
   },
   test: {
+    // One test file at a time: keeps concurrent agent worktrees within memory (TESTING_STANDARD.md, standards.md).
+    fileParallelism: false,
     globals: true,
     environment: 'node',
     // Tests live in `__tests__/` (outside `template/`) so they aren't

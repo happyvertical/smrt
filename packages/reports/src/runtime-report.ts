@@ -123,7 +123,7 @@ export class RuntimeReport extends SmrtObject {
   sourceId: string = '';
 
   /** Normalized spec JSON; use {@link getSpec}/{@link setSpec}. */
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'integrity' })
   spec: string = '';
 
   /** Hash of the normalized spec; detects out-of-band edits to `spec`. */

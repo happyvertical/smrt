@@ -303,7 +303,7 @@ describe.each([
   'duckdb',
   'json',
 ] as const)('planned parent on %s (#3240)', (engine) => {
-  it('retains the unsupported existing-table ALTER refusal', async () => {
+  it('rebuilds the existing table to add the key (#4937)', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'smrt-3240-'));
     const db = await getDatabase({
       type: engine,
@@ -325,10 +325,16 @@ describe.each([
         (change) => change.type === 'add_foreign_key',
       );
       // The JSON adapter does not expose getTableSchema, so it cannot
-      // inspect an existing constraint; SQLite/DuckDB report the refusal.
-      if (engine === 'json') expect(fk).toBeUndefined();
-      else expect(fk?.engineUnsupported).toBe(true);
-      expect(fk?.sqlStatements).toBeUndefined();
+      // inspect an existing constraint. SQLite and DuckDB add the key by
+      // rebuilding the table, after the planned parent exists.
+      if (engine === 'json') {
+        expect(fk).toBeUndefined();
+      } else {
+        expect(fk?.engineUnsupported).toBeUndefined();
+        expect(
+          fk?.sqlStatements?.some((sql) => sql.includes('_smrt_rebuild_')),
+        ).toBe(true);
+      }
     } finally {
       await db.close?.();
       rmSync(directory, { recursive: true, force: true });

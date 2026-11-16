@@ -143,7 +143,10 @@ export class AgentPersona extends SmrtObject {
    * concrete principal. Stored as a plain id column; no DDL FK constraint is
    * emitted (cross-package).
    */
-  @crossPackageRef('@happyvertical/smrt-users:User', { required: true })
+  @crossPackageRef('@happyvertical/smrt-users:User', {
+    required: true,
+    requiredFor: 'identity',
+  })
   runAsUserId: string = '';
 
   /**

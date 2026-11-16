@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-vitest",
-  "version": "0.61.2",
+  "version": "0.61.3",
   "description": "Vitest plugin for automatic cross-package manifest loading in SMRT tests",
   "type": "module",
   "main": "dist/index.js",
@@ -31,6 +31,11 @@
       "types": "./dist/svelte.d.ts",
       "import": "./dist/svelte.js",
       "default": "./dist/svelte.js"
+    },
+    "./minimal-row": {
+      "types": "./dist/minimal-row.d.ts",
+      "import": "./dist/minimal-row.js",
+      "default": "./dist/minimal-row.js"
     },
     "./a11y": {
       "types": "./dist/a11y.d.ts",

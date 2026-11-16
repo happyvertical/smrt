@@ -73,6 +73,7 @@ export function renderAgentsBlock(inputs: AgentsBlockInputs): string {
     inputs.intentIndexPath
       ? `- Intent index: \`${slash(inputs.intentIndexPath)}\``
       : '- Intent index: none was exported (no installed package ships intent pages)',
+    `- Data shape rules (what smrt requires of a field, how to harden a smrt class in this app): the "Data shape rules" section of the framework reference.`,
     `- Before adding infrastructure, utility or integration code, read the ${inputs.intentIndexPath ? 'intent index' : 'framework reference'}.`,
     '- If smrt has the home package but lacks the behaviour, or lacks it entirely, file an issue on happyvertical/smrt and mark any local shim temporary: framework first, no glue.',
     '- Refresh this block and the references: `smrt docs:agents`.',

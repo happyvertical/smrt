@@ -59,6 +59,8 @@ async function generateManifest() {
         outputName: 'static-manifest.json',
         generateTypeStub: true,
         stubName: 'static-manifest.ts',
+        // Published with the package: paths relative to it, not to the repo (#4948).
+        filePathBase: 'package',
 
         // === METADATA ===
         injectPackageInfo: true,

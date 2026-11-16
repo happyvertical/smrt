@@ -1,4 +1,4 @@
-import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
+import { ObjectRegistry, SmrtCollection, smrt } from '@happyvertical/smrt-core';
 import {
   getCurrentTenant,
   TenantIsolationError,
@@ -381,7 +381,7 @@ export class FieldUsageCounterCollection extends SmrtCollection<FieldUsageCounte
     const existing = await this.get(id);
     const counter =
       existing ??
-      new FieldUsageCounter({
+      new (ObjectRegistry.resolveEffectiveConstructor(FieldUsageCounter))({
         db: this.db,
         id,
         objectRef: options.objectRef,

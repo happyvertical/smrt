@@ -55,8 +55,8 @@ never the answer, and a reflex issue usually is not either.
   the standing default means changing the control-plane kernel.
 
 pnpm/TypeScript monorepo: `@smrt()` business objects generate persistence,
-REST, CLI, MCP, and AI operations. Read the affected package's `AGENTS.md`;
-use [CONTEXT-MAP.md](CONTEXT-MAP.md) for cross-package orientation.
+REST, CLI, MCP, and AI operations. Read the package's `AGENTS.md`;
+use [CONTEXT-MAP.md](CONTEXT-MAP.md) for orientation.
 
 ## Validation
 
@@ -92,7 +92,7 @@ Test and build gotchas (Vitest plugin, Oxc decorators, `svelte-check`):
   Asset ownership uses noun-specific joins; generic associations are provenance.
 - Use public registry/database/collection APIs; add an owning-package API rather
   than reaching into private state. JSON fields use guarded string get/set helpers.
-- Runtime checks table existence only and never creates application schema.
+- Runtime checks table existence and the migrate fingerprint; it never creates application schema.
   Use migrations and `smrt doctor --db` / `db:status --parity`. Existing int4
   deployments require the maintenance-window `db:migrate-int8` flow; normal
   parity intentionally treats int4/int8 as equivalent. See CLI guidance.
@@ -103,7 +103,7 @@ Test and build gotchas (Vitest plugin, Oxc decorators, `svelte-check`):
 ## Documentation and skills
 
 `AGENTS.md` is canonical; `CLAUDE.md` stays exactly `@AGENTS.md`. Keep instructions
-focused on source locations, non-obvious invariants, validation, and links.
+focused on locations, invariants, validation, and links.
 Remove stale/redundant prose; move detailed current contracts into linked
 `agents/<module>.md` references. Do not add AGENTS below a package root: ancestry
 is additive. `pnpm check:agents-chain` checks the 32 KB cap.

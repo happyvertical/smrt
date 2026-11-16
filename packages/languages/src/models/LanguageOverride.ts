@@ -33,10 +33,10 @@ export interface LanguageOverrideCtorOptions
   mcp: { include: [] },
 })
 export class LanguageOverride extends SmrtObject {
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   key: string = '';
 
-  @field({ required: true })
+  @field({ required: true, requiredFor: 'identity' })
   locale: string = '';
 
   // Not tenant-scoped (any scope is writable), but the value is a tenant id:
@@ -44,7 +44,7 @@ export class LanguageOverride extends SmrtObject {
   @field({ sqlType: 'UUID', nullable: true })
   tenantId: string | null = null;
 
-  @field({ type: 'text', required: true })
+  @field({ type: 'text' })
   template: string = '';
 
   /** True when this row was produced by the AI translation job. */

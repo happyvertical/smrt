@@ -21,7 +21,18 @@ export {
 export const getDatabase: typeof import('@happyvertical/sql').getDatabase =
   async (options) => {
     const sql = await import('@happyvertical/sql');
-    return sql.getDatabase(options);
+    const db = await sql.getDatabase(options);
+    // Every collection connection on a SQLite file waits for the lock (#4978).
+    // Loaded by specifier like the package discovery below, so this file still
+    // runs under Node's type stripping, which does not map `.js` to `.ts`.
+    const lockWaitSpecifier = import.meta.url.endsWith('.ts')
+      ? './sqlite-lock-wait.ts'
+      : './sqlite-lock-wait.js';
+    const { applyCollectionLockWait } = (await import(
+      lockWaitSpecifier
+    )) as typeof import('./sqlite-lock-wait.js');
+    await applyCollectionLockWait(db);
+    return db;
   };
 
 /** The AI SDK, loaded on first use to keep it off the cold-start path (#2894). */

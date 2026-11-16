@@ -151,7 +151,8 @@ export class CourseBundleImportCollection extends SmrtCollection<CourseBundleImp
 })
 export class CourseBundleMember extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('CourseBundleImport', { required: true }) importId = '';
+  @foreignKey('CourseBundleImport', { required: true, requiredFor: 'identity' })
+  importId = '';
   /** Position in the bundle's canonical order. */
   ordinal = 0;
   path = '';
@@ -237,7 +238,8 @@ export class CourseBundleMemberCollection extends SmrtCollection<CourseBundleMem
 })
 export class CourseBundleRendering extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('CourseBundleImport', { required: true }) importId = '';
+  @foreignKey('CourseBundleImport', { required: true, requiredFor: 'identity' })
+  importId = '';
   /** Content hash of the Word/PowerPoint member that was rendered. */
   sha256 = '';
   renderedSha256 = '';
@@ -300,8 +302,10 @@ export class CourseBundleRenderingCollection extends SmrtCollection<CourseBundle
 })
 export class CourseBundleAttachment extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('CourseBundleImport', { required: true }) importId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
+  @foreignKey('CourseBundleImport', { required: true, requiredFor: 'identity' })
+  importId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
   /** The unit key (`course.key`), or `bundle:<identity>` for an unnamed bundle. */
   unitKey = '';
   partIndex = 1;
@@ -400,7 +404,8 @@ export class CourseBundleAttachmentCollection extends SmrtCollection<CourseBundl
 })
 export class CourseBundleAudienceChoice extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('CourseBundleImport', { required: true }) importId = '';
+  @foreignKey('CourseBundleImport', { required: true, requiredFor: 'identity' })
+  importId = '';
   target = '';
   audience = '';
   chosenByUserId = '';
@@ -462,7 +467,8 @@ export class CourseBundleAudienceChoiceCollection extends SmrtCollection<CourseB
 })
 export class CourseBundlePlacement extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
   /** `section` or `lesson`. */
   kind = 'section';
   key = '';
@@ -584,13 +590,16 @@ export class CourseBundleUnitCollection extends SmrtCollection<CourseBundleUnit>
 })
 export class CourseBundleSupersession extends SmrtObject {
   @tenantId() tenantId = '';
-  @foreignKey('Course', { required: true }) courseId = '';
+  @foreignKey('Course', { required: true, requiredFor: 'identity' }) courseId =
+    '';
   unitKey = '';
   partIndex = 1;
   /** The newer import that now holds the part. */
-  @foreignKey('CourseBundleImport', { required: true }) importId = '';
+  @foreignKey('CourseBundleImport', { required: true, requiredFor: 'identity' })
+  importId = '';
   /** The import it replaced. */
-  @foreignKey('CourseBundleImport', { required: true }) supersededImportId = '';
+  @foreignKey('CourseBundleImport', { required: true, requiredFor: 'identity' })
+  supersededImportId = '';
   supersededByUserId = '';
   recordedAt = new Date();
   constructor(options: Record<string, unknown> = {}) {

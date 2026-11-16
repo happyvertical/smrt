@@ -1,6 +1,8 @@
 import { getDatabase } from '@happyvertical/sql';
 import { describe, expect, it } from 'vitest';
-import { SchemaComparer } from '../migrations/differ.js';
+import { getSQLFromDiff, SchemaComparer } from '../migrations/differ.js';
+import { createMigrationDefinition } from '../migrations/generator.js';
+import { MigrationTracker } from '../migrations/tracker.js';
 import type { ColumnDefinition, SchemaDefinition } from './types.js';
 
 function manifest(column: Partial<ColumnDefinition> = {}): SchemaDefinition {
@@ -88,24 +90,55 @@ describe('new nullable SQLite reference columns (#3795)', () => {
     { defaultValue: 'original' },
     { notNull: true },
     { backfill: "'original'" },
-  ])('does not hide unsupported column shape %j', async (column) => {
+  ])('adds the column and its key in one rebuild for column shape %j (#4937)', async (column) => {
     const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
     try {
+      await db.query('PRAGMA foreign_keys = ON');
       await db.query('CREATE TABLE records (id TEXT PRIMARY KEY)');
+      // A required column with no default needs an empty table: there is no
+      // value to give the rows that exist.
+      if (!('notNull' in column))
+        await db.query("INSERT INTO records VALUES ('original')");
       const diff = await new SchemaComparer(db).compare({
         records: manifest(column),
       });
+      // SQLite cannot add a key column with a default or NOT NULL in place, so
+      // the rebuild carries the column and the key together.
       expect(
         diff.changes.some(
           (item) => item.type === 'add_foreign_key' && item.engineUnsupported,
         ),
-      ).toBe(true);
+      ).toBe(false);
+      const tracker = new MigrationTracker({ db });
+      await tracker.initialize();
+      const results = await tracker.applyAll(
+        [
+          createMigrationDefinition(
+            'add_key',
+            getSQLFromDiff(diff).filter((sql) => !sql.startsWith('--')),
+          ),
+        ],
+        { atomic: true },
+      );
+      expect(results.every((result) => result.success)).toBe(true);
+      expect(
+        (await db.query('PRAGMA foreign_key_list(records)')).rows.map(
+          (row) => row.from,
+        ),
+      ).toEqual(['source_id']);
+      expect((await db.query('SELECT id FROM records')).rows).toEqual(
+        'notNull' in column ? [] : [{ id: 'original' }],
+      );
+      const repeated = await new SchemaComparer(db).compare({
+        records: manifest(column),
+      });
+      expect(repeated.changes).toEqual([]);
     } finally {
       await db.close?.();
     }
   });
 
-  it('keeps existing-column FK additions manual and honors engine exclusions', async () => {
+  it('rebuilds to add a key on an existing column and honors engine exclusions (#4937)', async () => {
     const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
     try {
       await db.query(
@@ -116,7 +149,10 @@ describe('new nullable SQLite reference columns (#3795)', () => {
       });
       expect(
         diff.changes.some(
-          (item) => item.type === 'add_foreign_key' && item.engineUnsupported,
+          (item) =>
+            item.type === 'add_foreign_key' &&
+            !item.engineUnsupported &&
+            item.sqlStatements?.some((sql) => sql.includes('_smrt_rebuild_')),
         ),
       ).toBe(true);
       await db.query('DROP TABLE records');

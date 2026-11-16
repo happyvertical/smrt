@@ -4,6 +4,8 @@ import { smrtVitestPlugin } from '../vitest/src/index.ts';
 export default defineConfig({
   plugins: [smrtVitestPlugin()],
   test: {
+    // One test file at a time: keeps concurrent agent worktrees within memory (TESTING_STANDARD.md, standards.md).
+    fileParallelism: false,
     environment: 'node',
     testTimeout: 240_000,
     // The beforeAll hook generates the MCP server, spawns it through tsx, and

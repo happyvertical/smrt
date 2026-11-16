@@ -23,6 +23,8 @@
  * Scheduling is the caller's: `smrt db:prune` is the cron entry point, and a
  * running `TaskRunner` sweeps on an interval unless configured otherwise.
  *
+ * `_smrt_migrate_runs` is a permanent ledger and has no prune task.
+ *
  * ## Failure policy
  *
  * A sweep is maintenance, not a transaction. One failing task never aborts the

@@ -1,19 +1,21 @@
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { getTestDatabase } from '@happyvertical/smrt-core';
 import {
+  getTestDatabase,
+  SQLITE_BUSY_TIMEOUT_MS,
+} from '@happyvertical/smrt-core';
+import {
+  type DatabaseEngine,
   type DatabaseInterface,
   getDatabase,
   ReopenNotSupportedError,
+  type ReopenOptions,
 } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTaskRunner } from '../runner.js';
 import { SmrtWorkerCollection } from '../smrt-worker.js';
-import {
-  planLivenessConnection,
-  SQLITE_BUSY_TIMEOUT_MS,
-} from '../worker-liveness.js';
+import { planLivenessConnection } from '../worker-liveness.js';
 import { runLivenessTicker } from '../worker-liveness-ticker.js';
 
 // Capture every connection opened through getDatabase so tests can inspect it.
@@ -105,7 +107,67 @@ function wrap(
 }
 
 describe('liveness thread and the runtime share one SQLite engine (#4978)', () => {
-  it('keeps the SQLite file intact while renewals race main-thread write transactions', async () => {
+  it('does not let the liveness thread write while the runtime holds the write lock', async () => {
+    const db = await openNodeSqlite();
+    await db.query('CREATE TABLE IF NOT EXISTS probe (id INTEGER, v TEXT)');
+    const reader = await openNodeSqlite({ migrate: false });
+
+    const runner = createTaskRunner({
+      pollInterval: 60_000,
+      leaseTickMs: TICK_MS,
+      leaseTtlMs: 60_000,
+      retention: false,
+    });
+    await runner.initialize(db);
+    await runner.start();
+    closers.push(() => runner.stop());
+    const internals = runner as unknown as {
+      livenessWorker: unknown;
+      workerKey: string;
+    };
+    expect(internals.livenessWorker).not.toBeNull();
+
+    // The thread is renewing every 5 ms: wait until it has done so at least once
+    // since start, then take the write lock on the runtime's own connection.
+    const atStart = await readLease(reader, internals.workerKey);
+    await expect
+      .poll(() => readLease(reader, internals.workerKey), {
+        timeout: 5_000,
+        interval: 5,
+      })
+      .not.toBe(atStart);
+
+    const tx = await db.beginTransaction?.();
+    if (!tx) throw new Error('beginTransaction() is required');
+    await tx.query('INSERT INTO probe (id, v) VALUES (?, ?)', 1, 'held');
+    const held = await readLease(reader, internals.workerKey);
+
+    // While the write lock is held, a renewal from the same engine must wait.
+    // A thread on the other engine (the #4978 defect) ignores the lock and its
+    // write lands here: observe it for as long as it takes to arrive, up to a
+    // ceiling, and stop at the first change.
+    let wroteWhileHeld = false;
+    const deadline = Date.now() + 400;
+    while (Date.now() < deadline && !wroteWhileHeld) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      wroteWhileHeld = (await readLease(reader, internals.workerKey)) !== held;
+    }
+    expect(wroteWhileHeld).toBe(false);
+
+    await tx.commit();
+
+    // Once the lock is released the waiting renewal goes through.
+    await expect
+      .poll(() => readLease(reader, internals.workerKey), {
+        timeout: 5_000,
+        interval: 5,
+      })
+      .not.toBe(held);
+    const check = await db.query('PRAGMA integrity_check');
+    expect(check.rows).toEqual([{ integrity_check: 'ok' }]);
+  }, 30_000);
+
+  it('stress: keeps the SQLite file intact while renewals race main-thread write transactions', async () => {
     const db = await openNodeSqlite();
     expect(db.engine).toBe('node-sqlite');
     await db.query('CREATE TABLE IF NOT EXISTS probe (id INTEGER, v TEXT)');
@@ -170,8 +232,8 @@ describe('liveness thread and the runtime share one SQLite engine (#4978)', () =
 
     const ticker = await runLivenessTicker({
       url: '',
-      reopen: db.reopenOptions?.(),
-      expectedEngine: db.engine,
+      reopen: db.reopenOptions?.() as ReopenOptions,
+      expectedEngine: db.engine as DatabaseEngine,
       workerKey: 'eng-w',
       leaseTtlMs: 10_000,
       leaseTickMs: 60_000,
@@ -194,7 +256,7 @@ describe('liveness thread and the runtime share one SQLite engine (#4978)', () =
     await expect(
       runLivenessTicker({
         url: '',
-        reopen: db.reopenOptions?.(),
+        reopen: db.reopenOptions?.() as ReopenOptions,
         expectedEngine: 'libsql',
         workerKey: 'x',
         leaseTtlMs: 10_000,
@@ -278,6 +340,88 @@ describe('liveness thread and the runtime share one SQLite engine (#4978)', () =
         .toBe(true);
       expect(warn).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('refuses reopen options without the expected engine', async () => {
+    const db = await openNodeSqlite();
+    await expect(
+      runLivenessTicker({
+        url: '',
+        reopen: db.reopenOptions?.() as ReopenOptions,
+        workerKey: 'x',
+        leaseTtlMs: 10_000,
+        leaseTickMs: 60_000,
+      } as unknown as Parameters<typeof runLivenessTicker>[0]),
+    ).rejects.toThrow(/expectedEngine/);
+  });
+
+  it('names the thread error when the thread cannot start, and renews on the main loop', async () => {
+    const real = await openNodeSqlite();
+    // Report a different engine than the reopened connection really has, so the
+    // thread's engine check refuses to run.
+    const db = wrap(real, { engine: 'libsql' });
+    expect(planLivenessConnection(db).kind).toBe('reopen');
+    const runner = createTaskRunner({
+      pollInterval: 60_000,
+      leaseTickMs: 20,
+      leaseTtlMs: 10_000,
+      retention: false,
+    });
+    const warn = vi.spyOn(
+      (runner as unknown as { logger: { warn(m: string): void } }).logger,
+      'warn',
+    );
+    await runner.initialize(db);
+    await runner.start();
+    closers.push(() => runner.stop());
+    const internals = runner as unknown as {
+      livenessWorker: unknown;
+      leaseTimer: unknown;
+    };
+    expect(internals.livenessWorker).toBeNull();
+    expect(internals.leaseTimer).not.toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toContain('across engines');
+  });
+
+  it('keeps main-loop renewal quiet for engines that never had a second connection', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const plan = planLivenessConnection(db);
+    expect(plan.kind).toBe('none');
+    if (plan.kind === 'none') expect(plan.degraded).toBe(false);
+
+    const runner = createTaskRunner({
+      pollInterval: 60_000,
+      leaseTickMs: 20,
+      leaseTtlMs: 10_000,
+      retention: false,
+    });
+    const logger = (
+      runner as unknown as {
+        logger: { warn(m: string): void; debug(m: string): void };
+      }
+    ).logger;
+    const warn = vi.spyOn(logger, 'warn');
+    const debug = vi.spyOn(logger, 'debug');
+    await runner.initialize(db);
+    await runner.start();
+    closers.push(() => runner.stop());
+    expect(warn).not.toHaveBeenCalled();
+    expect(debug).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks file SQLite fallbacks as degraded', async () => {
+    const real = await openNodeSqlite();
+    for (const db of [
+      wrap(real, { engine: undefined }),
+      wrap(real, { reopenOptions: undefined }),
+    ]) {
+      const plan = planLivenessConnection(db);
+      expect(plan.kind).toBe('none');
+      if (plan.kind === 'none') expect(plan.degraded).toBe(true);
+    }
+    const plan = planLivenessConnection(real, 'win32');
+    if (plan.kind === 'none') expect(plan.degraded).toBe(true);
   });
 
   it('plans no thread for secure SQLite on Windows, a reopen for it elsewhere', async () => {

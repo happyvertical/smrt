@@ -134,4 +134,8 @@ export class PostgresStrategy extends BaseDDLStrategy {
   requiresInlineUnique(): boolean {
     return false;
   }
+
+  supportsTableChecks(): boolean {
+    return true;
+  }
 }
