@@ -1242,6 +1242,48 @@ async function writeEntry(
   return 'ledger';
 }
 
+/** Run an entry's handlers after its write committed; a failure is logged. */
+async function runAfterCommit(entry: PendingSettlement): Promise<void> {
+  if (!entry.afterCommit) return;
+  try {
+    await entry.afterCommit();
+  } catch (error) {
+    logger.warn(
+      `[smrt] AI usage handlers failed for call ${entry.input.callId}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+}
+
+/**
+ * Write one entry without anyone waiting for it; its handlers run after the
+ * commit, by this write. A failure stays on the list, warned about under the
+ * same once-per-interval rule.
+ */
+function writeInBackground(
+  db: DatabaseInterface,
+  list: PendingSettlement[],
+  entry: PendingSettlement,
+  options: AiRunTxOptions,
+): void {
+  const settling = writePending(db, list, entry, options);
+  entry.settling = settling;
+  settling
+    .then((outcome) =>
+      outcome === 'pending' ? undefined : runAfterCommit(entry),
+    )
+    .catch((error) => {
+      warnPending(
+        entry,
+        (options.now ?? (() => new Date()))(),
+        `[smrt] AI run settlement for call ${entry.input.callId} of run ${entry.input.runId} is still pending: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    });
+}
+
 /**
  * Write the pending settlements of this database, oldest first. An entry
  * leaves the list only when its settlement is written, or, when its run no
@@ -1255,9 +1297,11 @@ async function writeEntry(
  * still charges it (`settled_late`). Concurrent flushes share each entry's
  * write, so a settlement is written once and its handlers run once, by the
  * flush that wrote it, after the commit; a handler may itself make a tracked
- * call. With `runId`, other runs' entries get one attempt each, and it
- * throws when a settlement of that run is still pending, so the run's next
- * reservation does not go ahead.
+ * call. With `runId`, this run's entries are written in line, and it throws
+ * when one is still pending, so the run's next reservation does not go
+ * ahead; another run's oldest entry gets one attempt in the background (none
+ * while it is already being written), so a stuck settlement of one run never
+ * delays another run's reservation.
  */
 export async function flushAiRunSettlements(
   db: DatabaseInterface,
@@ -1277,36 +1321,28 @@ export async function flushAiRunSettlements(
       if (!list.includes(next)) continue;
       const runId = next.input.runId;
       if (held.has(runId)) continue;
+      if (options.runId && runId !== options.runId) {
+        // Another run's entry never delays this run: one attempt, in the
+        // background, unless it is already being written. Its later entries
+        // wait for it either way.
+        held.add(runId);
+        if (!next.settling) {
+          writeInBackground(db, list, next, { ...options, attempts: 1 });
+        }
+        continue;
+      }
       if (next.settling) {
         // Another flush is writing it; follow, and leave its handlers to it.
         if ((await next.settling) === 'pending') held.add(runId);
         continue;
       }
-      const settling = writePending(
-        db,
-        list,
-        next,
-        options.runId && runId !== options.runId
-          ? { ...options, attempts: 1 }
-          : options,
-      );
+      const settling = writePending(db, list, next, options);
       next.settling = settling;
-      const outcome = await settling;
-      if (outcome === 'pending') {
+      if ((await settling) === 'pending') {
         held.add(runId);
         continue;
       }
-      if (next.afterCommit) {
-        try {
-          await next.afterCommit();
-        } catch (error) {
-          logger.warn(
-            `[smrt] AI usage handlers failed for call ${next.input.callId}: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
-        }
-      }
+      await runAfterCommit(next);
     }
   }
   if (

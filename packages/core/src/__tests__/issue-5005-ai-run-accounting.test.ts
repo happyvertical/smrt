@@ -1050,10 +1050,13 @@ describe.each(aiRunTestEngines)('AI run accounting on %s (#5005)', (engine) => {
       },
     );
     // The run's next reservation is not held by a settlement nothing can take.
+    // Another run's entry is written in the background, the run's own in
+    // line.
     await reserveAiCall(database, run.id, { inputTokens: 1 });
+    expect(order).toContain('first');
+    await vi.waitFor(() => expect(pendingAiRunSettlements(database)).toBe(0));
     // The spend stays in the ledger, and its handlers see it.
-    expect(order).toEqual(['gone', 'first']);
-    expect(pendingAiRunSettlements(database)).toBe(0);
+    expect(order.sort()).toEqual(['first', 'gone']);
     expect((await getAiRun(database, run.id))?.calls).toBe(1);
     const [row] = rowsOf(
       await database.query(
@@ -1173,6 +1176,95 @@ describe.each(aiRunTestEngines)('AI run accounting on %s (#5005)', (engine) => {
       'settled',
     );
     expect((await getAiRun(database, stuck.id))?.calls).toBe(1);
+  });
+
+  it("never makes a run's reservation wait for another run's stuck settlement", async () => {
+    const database = await db();
+    const stuck = await openAiRun(store(database), { type: 'turn' });
+    const other = await openAiRun(store(database), { type: 'turn' });
+    const call = await reserveAiCall(database, stuck.id, { inputTokens: 5 });
+    // Only the stuck call's settle transaction fails (retryably, as a lock
+    // timeout would), after it ran; every other transaction goes through.
+    const failing = { on: true };
+    let attempts = 0;
+    const handle = new Proxy(database, {
+      get(target, prop) {
+        const value = Reflect.get(target, prop, target);
+        if (typeof value !== 'function') return value;
+        if (prop !== 'transaction') return value.bind(target);
+        const transaction = value.bind(target) as NonNullable<
+          DatabaseInterface['transaction']
+        >;
+        return (operation: (tx: DatabaseInterface) => Promise<unknown>) =>
+          transaction(async (tx: DatabaseInterface) => {
+            const result = await operation(tx);
+            const settled = rowsOf(
+              await tx.query(
+                'SELECT id FROM _smrt_ai_usage WHERE id = $1',
+                call.callId,
+              ),
+            );
+            if (settled.length > 0 && failing.on) {
+              attempts++;
+              throw new Error('lock timeout');
+            }
+            return result;
+          });
+      },
+    });
+    let handled = 0;
+    deferAiRunSettlement(
+      handle,
+      { runId: stuck.id, callId: call.callId, usage: usageEvent(10) },
+      async () => {
+        handled++;
+      },
+    );
+    // (a) The stuck run's own flush is writing it, with every retry: the
+    // other run's reservation does not wait for that write.
+    let ownDone = false;
+    const own = flushAiRunSettlements(handle, { runId: stuck.id })
+      .then(
+        () => 'written',
+        (error: Error) => error.message,
+      )
+      .finally(() => {
+        ownDone = true;
+      });
+    await reserveAiCall(handle, other.id, { inputTokens: 1 });
+    expect(ownDone).toBe(false);
+    expect(attempts).toBeLessThan(5);
+    expect(await own).toMatch(/could not be written yet/);
+    // Its five tries, and none added by the other run.
+    expect(attempts).toBe(5);
+    // (b) With no write in flight, each reservation of the other run tries
+    // it at most once, in the background, and never waits for it.
+    for (let i = 1; i <= 3; i++) {
+      await reserveAiCall(handle, other.id, { inputTokens: 1 });
+      await vi.waitFor(() => expect(attempts).toBe(5 + i));
+      // Let the background write finish before the next reservation.
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    expect(pendingAiRunSettlements(handle)).toBe(1);
+    expect(handled).toBe(0);
+    expect((await getAiRun(database, other.id))?.reservedCalls).toBe(4);
+    // (c) Once it can be written, the stuck run's own reservation writes it
+    // in line: charged once, its handler called once.
+    failing.on = false;
+    await reserveAiCall(handle, stuck.id, { inputTokens: 1 });
+    expect(pendingAiRunSettlements(handle)).toBe(0);
+    expect(handled).toBe(1);
+    await flushAiRunSettlements(handle);
+    await reserveAiCall(handle, other.id, { inputTokens: 1 });
+    expect(handled).toBe(1);
+    expect(await usageRows(database, call.callId)).toHaveLength(1);
+    expect(await getAiRun(database, stuck.id)).toMatchObject({
+      calls: 1,
+      tokens: 10,
+    });
+    expect((await reservation(database, call.callId))?.reservation).toBe(
+      'settled',
+    );
   });
 
   it('charges a pending settlement once when the sweep abandoned its reservation meanwhile (settled_late)', async () => {

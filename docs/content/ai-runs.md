@@ -959,6 +959,10 @@ and logs and swallows their failures. For a call inside a run:
   next reservation does not go ahead until its own pending settlements are
   written. The list is written oldest first; one that still fails holds
   back the later settlements of its own run, never those of other runs.
+  A run's reservation writes its own settlements in line and never waits
+  for another run's: those get one attempt each in the background (none
+  while one is already being written), so a stuck settlement of one run
+  never slows another run's reservation.
   Each pending settlement is written once, even by concurrent writers of the
   list, and its handlers are called once, when it commits. A settlement
   leaves the list only when it is written, or, when its run no longer
