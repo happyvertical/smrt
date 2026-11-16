@@ -221,9 +221,13 @@ relative to the resource directory, which is the child's working directory
 
 `.github/workflows/desktop-consumer-build.yml` is the reusable, unsigned build
 for apps in other repositories (smrt#4965); it never reads this repository's
-paths. The signing legs below exist only for this repository's own products:
-a consumer's release stops after its preflight until those legs are made
-reusable too.
+paths. With `release: true` it also runs the signing and publishing legs
+described below (preflight, unsigned build, one signing job per target,
+publish), using the scripts, the `signing-tools` lockfile and the Node pin table
+shipped in the installed package, with the same secret custody and the same
+fail-closed preflight. The consumer-facing description, caller YAML and what is
+still blocked on Apple are in "Reusable workflow" in `../README.md`; the rest of
+this section describes `desktop-release.yml`, this repository's own pipeline.
 
 `.github/workflows/desktop-release.yml` (epic #4663 item 5, issue #4836) holds
 two paths that share a file and nothing else. `desktop-wrapper.yml` keeps the fast

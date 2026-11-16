@@ -177,6 +177,15 @@ describe('updater public key', () => {
     assert.equal(checkUpdaterPubkey({}).length, 1);
   });
 
+  it('reads a product smrt-desktop.json updaterPublicKey too', () => {
+    const key = fakeMinisignPubkey();
+    assert.deepEqual(checkUpdaterPubkey({ updaterPublicKey: key }), []);
+    assert.equal(
+      checkUpdaterPubkey({ updaterPublicKey: 'PLACEHOLDER-NOT-A-KEY' }).length,
+      1,
+    );
+  });
+
   it('accepts a structurally valid minisign key', () => {
     const config = { plugins: { updater: { pubkey: fakeMinisignPubkey() } } };
     assert.deepEqual(checkUpdaterPubkey(config), []);

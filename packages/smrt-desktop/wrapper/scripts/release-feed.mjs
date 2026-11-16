@@ -37,7 +37,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { verifyUpdaterSignature } from './minisign.mjs';
-import { isSafeDisplayName, isSemver } from './release-preflight.mjs';
+import {
+  isSafeDisplayName,
+  isSemver,
+  updaterPubkeyOf,
+} from './release-preflight.mjs';
 
 /**
  * Per target: the Tauri bundle sub-directories and file suffixes to expect,
@@ -274,13 +278,14 @@ export function assembleFeed({
   return feed;
 }
 
-/** The committed `plugins.updater.pubkey`; a missing option is a refusal. */
+/** The committed updater key (`plugins.updater.pubkey` or a product's
+ * `updaterPublicKey`); a missing option is a refusal. */
 function committedPubkey(configPath) {
   if (configPath === undefined) {
-    throw new Error('--pubkey-config is required (the committed Tauri config)');
+    throw new Error('--pubkey-config is required (the committed Tauri config or smrt-desktop.json)');
   }
   const config = JSON.parse(readFileSync(configPath, 'utf8'));
-  return config?.plugins?.updater?.pubkey;
+  return updaterPubkeyOf(config);
 }
 
 function parseOptions(argv) {

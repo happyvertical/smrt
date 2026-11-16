@@ -19,17 +19,50 @@
 # Unsigned path (release: false, the default): `contents: read`, no secrets, no
 # environment. A pull request in the caller's repository can run it.
 #
-# Release path (release: true): the preflight runs in the caller's
-# `desktop-release` environment and refuses unless the run is on main and every
-# signing input exists (the packaged release-preflight.mjs, fail closed; no
-# default, fallback or generated value for any of them). The signing, notarizing
-# and publishing legs are NOT part of this reusable workflow yet: the run stops
-# after the preflight with a failure that says so. See "Building an installer"
-# in packages/smrt-desktop/README.md for what remains.
+# Release path (release: true, default branch only): the preflight runs in the
+# caller's `desktop-release` environment and refuses unless every signing input
+# exists (the packaged release-preflight.mjs, fail closed; no default, fallback
+# or generated value for any of them, and no unsigned-release escape hatch).
+# Only after it passes does anything build, and the legs mirror this
+# repository's own release workflow:
 #
-# The secrets are declared so a caller can pass them from its own environment;
-# they reach exactly one step (the preflight's presence check), never a step
-# that installs or builds.
+#   release-preflight  presence of all eight secrets, the updater key in
+#                      smrt-desktop.json, the product inputs. Secrets: this one
+#                      step.
+#   build              the unsigned bundle and installer (no environment, no
+#                      secrets, runs the app's and the crates' code). On a
+#                      release it also uploads the verified-by-digest bundle and
+#                      the unsigned output as DIRECTORIES (never an archive the
+#                      signing job would have to extract).
+#   sign               one job per target in the `desktop-release` environment.
+#                      It runs no cargo, rustup, app build or `smrt` command:
+#                      it re-verifies the bundle against the Node pin table
+#                      committed in the caller's installed package, then uses
+#                      only OS signing tools and the locked Tauri CLI (npm ci
+#                      --ignore-scripts from the packaged lockfile). Secrets
+#                      reach exactly three named steps; an always() step removes
+#                      the keychain, certificate and tools.
+#   publish            the only job with contents: write, also in the
+#                      environment and without any secret. Verifies every
+#                      updater signature against the committed public key and
+#                      writes the rolling release and latest.json in the
+#                      CALLER's repository. All targets or nothing.
+#
+# Every script (release-preflight.mjs, release-feed.mjs, minisign.mjs, the
+# signing-tools lockfile, the Node pin table) is resolved from the caller's
+# installed @happyvertical/smrt-desktop package; nothing is checked out from or
+# copied out of this repository.
+#
+# The caller's calling job needs `permissions: contents: write` (GitHub checks a
+# called workflow's requested permissions against the caller's even for jobs
+# that are skipped); every job here narrows its own token again.
+#
+# The secrets are declared so a caller can pass them with `secrets:` or
+# `secrets: inherit`; when they live in the caller's `desktop-release`
+# environment, the jobs below that name that environment read them from it.
+# They reach exactly one preflight step and three signing steps, never a step
+# that installs, builds or publishes. See "Reusable workflow" in
+# packages/smrt-desktop/README.md.
 # =============================================================================
 
 name: Desktop build (reusable)
@@ -51,8 +84,9 @@ on:
         default: 'aarch64-apple-darwin,x86_64-unknown-linux-gnu'
       release:
         description: >-
-          Run the fail-closed release preflight (main only, every owner input).
-          The signing legs are not part of this workflow yet.
+          Build, sign, notarize and publish the rolling release (default branch
+          only). Fails closed before building unless every signing secret and
+          the updater key exist.
         type: boolean
         default: false
       smrt_desktop_version:
@@ -115,10 +149,15 @@ jobs:
     timeout-minutes: 5
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
+      sign_matrix: ${{ steps.plan.outputs.sign_matrix }}
     steps:
       - name: Validate the inputs and plan the matrix
         id: plan
         env:
+          # A label or a JSON array of labels, never a secret. Only a release
+          # reads it; the default is the hosted macos-15.
+          SIGNING_RUNNER: ${{ vars.DESKTOP_MACOS_SIGNING_RUNNER }}
+          RELEASE: ${{ inputs.release }}
           APP_DIR: ${{ inputs.app_dir }}
           TARGETS: ${{ inputs.targets }}
           BRIDGE_PATH: ${{ inputs.bridge_path }}
@@ -128,7 +167,7 @@ jobs:
             import { appendFileSync } from "node:fs";
             const safe = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._\/-]+$/;
             const fail = (message) => { console.error(message); process.exit(1); };
-            const { APP_DIR, TARGETS, BRIDGE_PATH, DESKTOP_VERSION } = process.env;
+            const { APP_DIR, TARGETS, BRIDGE_PATH, DESKTOP_VERSION, SIGNING_RUNNER = "", RELEASE } = process.env;
             if (!safe.test(APP_DIR)) fail("app_dir must be a relative path of plain segments");
             if (BRIDGE_PATH !== "" && !safe.test(BRIDGE_PATH)) fail("bridge_path must be a relative path of plain segments");
             if (DESKTOP_VERSION !== "" && !/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/.test(DESKTOP_VERSION)) fail("smrt_desktop_version must be an exact version");
@@ -143,7 +182,20 @@ jobs:
               if (!Object.hasOwn(table, target)) fail("unsupported target: " + target);
               return { target, ...table[target] };
             });
+            const label = /^[A-Za-z0-9._-]{1,64}$/;
+            let runner = ["macos-15"];
+            if (SIGNING_RUNNER !== "") {
+              let parsed = null;
+              try { parsed = SIGNING_RUNNER.startsWith("[") ? JSON.parse(SIGNING_RUNNER) : [SIGNING_RUNNER]; } catch { parsed = null; }
+              const valid = Array.isArray(parsed) && parsed.length > 0 && parsed.length <= 8 && parsed.every((value) => typeof value === "string" && label.test(value));
+              if (valid) runner = parsed;
+              else if (RELEASE === "true") fail("DESKTOP_MACOS_SIGNING_RUNNER must be a runner label or a JSON array of labels");
+            }
+            const sign = targets.map((target) => target.endsWith("-apple-darwin")
+              ? { target, runner: JSON.stringify(runner) }
+              : { target, runner: JSON.stringify(["ubuntu-latest"]), installer_dir: "deb" });
             appendFileSync(process.env.GITHUB_OUTPUT, "matrix=" + JSON.stringify({ include }) + "\n");
+            appendFileSync(process.env.GITHUB_OUTPUT, "sign_matrix=" + JSON.stringify({ include: sign }) + "\n");
           '
 
   # Only when release is requested. The one job that sees the secrets, and
@@ -190,8 +242,27 @@ jobs:
           npm install --global --ignore-scripts "pnpm@${PNPM_VERSION}"
           pnpm --dir "$APP_DIR" install --frozen-lockfile --ignore-scripts
 
+      # Resolves the packaged release tools from the caller's own locked tree
+      # (the same smrt-desktop the build uses). Nothing is copied or checked
+      # out from the smrt repository.
+      - name: Locate the packaged release tools
+        env:
+          APP_DIR: ${{ inputs.app_dir }}
+        run: |
+          pkg="$(pnpm --dir "$APP_DIR" exec node --input-type=module -e '
+            import { createRequire } from "node:module";
+            import { dirname } from "node:path";
+            import { fileURLToPath } from "node:url";
+            const cli = fileURLToPath(import.meta.resolve("@happyvertical/smrt-cli"));
+            const desktop = createRequire(cli).resolve("@happyvertical/smrt-desktop/package.json");
+            console.log(dirname(desktop));
+          ')"
+          test -f "$pkg/wrapper/scripts/release-feed.mjs" || { echo "The installed smrt-desktop does not ship the release tools; pin a version that does." >&2; exit 1; }
+          echo "DESKTOP_PKG=$pkg" >> "$GITHUB_ENV"
+
       # Presence only. The script names what is missing and never prints a
-      # value. The secrets reach this one step and no other in this workflow.
+      # value. The secrets reach this one step and no other in this job. The
+      # updater key is read from the caller's committed smrt-desktop.json.
       - name: Check secrets and product inputs
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -205,24 +276,20 @@ jobs:
           APP_DIR: ${{ inputs.app_dir }}
           BRIDGE_PATH: ${{ inputs.bridge_path }}
         run: |
-          preflight="$(pnpm --dir "$APP_DIR" exec node --input-type=module -e '
-            import { createRequire } from "node:module";
-            import { dirname, join } from "node:path";
-            import { fileURLToPath } from "node:url";
-            const cli = fileURLToPath(import.meta.resolve("@happyvertical/smrt-cli"));
-            const desktop = createRequire(cli).resolve("@happyvertical/smrt-desktop/package.json");
-            console.log(join(dirname(desktop), "wrapper", "scripts", "release-preflight.mjs"));
-          ')"
-          node "$preflight" --secrets --inputs "$APP_DIR" "$BRIDGE_PATH"
+          node "$DESKTOP_PKG/wrapper/scripts/release-preflight.mjs" \
+            --secrets \
+            --config "$APP_DIR/smrt-desktop.json" \
+            --inputs "$APP_DIR" "$BRIDGE_PATH"
 
-      - name: Stop before signing
-        run: |
-          echo "The release preflight passed, but the signing, notarization and publishing legs are not part of the reusable workflow yet (smrt#4965 follow-up)." >&2
-          exit 1
-
+  # On a release nothing is built until the preflight passed; otherwise the
+  # preflight is skipped and the build runs as before.
   build:
     name: Build unsigned (${{ matrix.target }})
-    needs: plan
+    needs: [plan, release-preflight]
+    if: >-
+      ${{ !cancelled() && needs.plan.result == 'success' &&
+      (needs.release-preflight.result == 'success' ||
+      needs.release-preflight.result == 'skipped') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     permissions:
@@ -302,9 +369,12 @@ jobs:
           APP_DIR: ${{ inputs.app_dir }}
           BRIDGE_PATH: ${{ inputs.bridge_path }}
           TARGET: ${{ matrix.target }}
+          RELEASE: ${{ inputs.release }}
         run: |
           rm -rf "$RUNNER_TEMP/bundle"
           args=(--app "$GITHUB_WORKSPACE/$APP_DIR" --target "$TARGET" --out "$RUNNER_TEMP/bundle")
+          # The signing path refuses a Node pin that is not gpg-verified.
+          if [ "$RELEASE" = "true" ]; then args+=(--require-verified-pins); fi
           if [ -n "$BRIDGE_PATH" ]; then args+=(--bridge "$GITHUB_WORKSPACE/$BRIDGE_PATH"); fi
           pnpm --dir "$APP_DIR" exec smrt desktop bundle "${args[@]}"
 
@@ -329,14 +399,440 @@ jobs:
       # upload-artifact drops Unix modes, which would break a macOS .app, so
       # the installer directory goes up as one tar archive (modes preserved).
       - name: Archive the unsigned installer
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && !inputs.release
         run: tar -C "$RUNNER_TEMP/installer" -cf "$RUNNER_TEMP/installer.tar" .
 
       - name: Upload the unsigned installer
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && !inputs.release
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: desktop-installer-unsigned-${{ matrix.target }}
           path: ${{ runner.temp }}/installer.tar
           if-no-files-found: error
           retention-days: 3
+
+      # Release only. The signing job never extracts an archive made by this
+      # job (it runs the app's and the crates' code): the bundle and the
+      # unsigned output go up as DIRECTORIES of files (upload-artifact drops
+      # modes and flattens links; the signing job re-verifies the bundle digests
+      # and restores the modes it needs). Hidden files are included.
+      - name: Upload the bundle for signing
+        if: inputs.release
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: desktop-bundle-${{ matrix.target }}
+          path: ${{ runner.temp }}/bundle
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload the unsigned output for signing
+        if: inputs.release
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: desktop-unsigned-${{ matrix.target }}
+          path: ${{ runner.temp }}/installer
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  # Signs and verifies one target and uploads the result as a workflow artifact.
+  # It publishes nothing and holds only `contents: read`; the secrets come from
+  # the `desktop-release` environment and reach only the three signing steps
+  # named below. It runs no cargo, rustup, `smrt` or app build: only OS signing
+  # tools and the Tauri CLI installed from the packaged, integrity-locked
+  # signing-tools lockfile in a step that has no secrets.
+  sign:
+    name: Sign and verify (${{ matrix.target }})
+    if: inputs.release
+    needs: [plan, release-preflight, build]
+    # The macOS signing runner is the repository (or organization) variable
+    # DESKTOP_MACOS_SIGNING_RUNNER, default the hosted macos-15, validated by
+    # the plan job. It may name ONLY a dedicated, ephemeral runner in a runner
+    # group limited to this repository and workflow, never a shared one.
+    runs-on: ${{ fromJSON(matrix.runner) }}
+    timeout-minutes: 90
+    environment: desktop-release
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: true
+      matrix: ${{ fromJSON(needs.plan.outputs.sign_matrix) }}
+    steps:
+      - name: Checkout the caller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      # Installs the caller's locked tree with lifecycle scripts disabled (pnpm
+      # verifies every integrity hash from the lockfile). Only to resolve the
+      # packaged release tools; the app is never built here.
+      - name: Install the pinned smrt-desktop (scripts disabled)
+        env:
+          PNPM_VERSION: ${{ inputs.pnpm_version }}
+          APP_DIR: ${{ inputs.app_dir }}
+        run: |
+          npm install --global --ignore-scripts "pnpm@${PNPM_VERSION}"
+          pnpm --dir "$APP_DIR" install --frozen-lockfile --ignore-scripts
+
+      # Resolves the packaged release tools from the caller's own locked tree
+      # (the same smrt-desktop the build uses). Nothing is copied or checked
+      # out from the smrt repository.
+      - name: Locate the packaged release tools
+        env:
+          APP_DIR: ${{ inputs.app_dir }}
+        run: |
+          pkg="$(pnpm --dir "$APP_DIR" exec node --input-type=module -e '
+            import { createRequire } from "node:module";
+            import { dirname } from "node:path";
+            import { fileURLToPath } from "node:url";
+            const cli = fileURLToPath(import.meta.resolve("@happyvertical/smrt-cli"));
+            const desktop = createRequire(cli).resolve("@happyvertical/smrt-desktop/package.json");
+            console.log(dirname(desktop));
+          ')"
+          test -f "$pkg/wrapper/scripts/release-feed.mjs" || { echo "The installed smrt-desktop does not ship the release tools; pin a version that does." >&2; exit 1; }
+          echo "DESKTOP_PKG=$pkg" >> "$GITHUB_ENV"
+
+      # Both downloads go into empty directories under RUNNER_TEMP, never into
+      # the checkout, and nothing is extracted from an archive.
+      - name: Prepare empty directories
+        run: |
+          {
+            echo "UNSIGNED_DIR=$RUNNER_TEMP/desktop-unsigned"
+            echo "SIGNED_DIR=$RUNNER_TEMP/desktop-signed"
+            echo "OVERLAY_FILE=$RUNNER_TEMP/desktop-overlay.json"
+            echo "SIGNING_TOOLS=$RUNNER_TEMP/desktop-signing-tools"
+          } >> "$GITHUB_ENV"
+          rm -rf "$RUNNER_TEMP"/desktop-*
+          mkdir -p "$RUNNER_TEMP/desktop-bundle" "$RUNNER_TEMP/desktop-unsigned" "$RUNNER_TEMP/desktop-signed"
+
+      - name: Download the bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: desktop-bundle-${{ matrix.target }}
+          path: ${{ runner.temp }}/desktop-bundle
+
+      - name: Download the unsigned build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: desktop-unsigned-${{ matrix.target }}
+          path: ${{ runner.temp }}/desktop-unsigned
+
+      # Derives the product identity from the bundle, checked against the
+      # Node pin table committed in the caller's installed package, never from
+      # the unsigned build's own claim, and re-checks the updater key.
+      - name: Re-verify the bundle and read the product identity
+        env:
+          TARGET: ${{ matrix.target }}
+          APP_DIR: ${{ inputs.app_dir }}
+        run: |
+          node "$DESKTOP_PKG/wrapper/scripts/release-preflight.mjs" \
+            --config "$APP_DIR/smrt-desktop.json" \
+            --bundle "$RUNNER_TEMP/desktop-bundle" \
+            --target "$TARGET" \
+            --node-pins "$DESKTOP_PKG/src/bundler/node-pins.ts" \
+            --write-overlay "$OVERLAY_FILE"
+          node -e '
+            const o = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+            process.stdout.write("PRODUCT_NAME=" + o.productName + "\n");
+            process.stdout.write("PRODUCT_VERSION=" + o.version + "\n");
+          ' "$OVERLAY_FILE" >> "$GITHUB_ENV"
+
+      # No secret here; nothing is installed or downloaded afterwards. The two
+      # packaged files are copied out of the dependency tree so the install
+      # never writes into it. `npm ci` takes exactly the locked versions and
+      # sha512 integrity and refuses a lockfile that disagrees with
+      # package.json. The signing step runs the binary by absolute path.
+      - name: Install the locked Tauri CLI
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p "$SIGNING_TOOLS"
+          cp "$DESKTOP_PKG/wrapper/signing-tools/package.json" "$DESKTOP_PKG/wrapper/signing-tools/package-lock.json" "$SIGNING_TOOLS/"
+          npm ci --ignore-scripts --no-audit --no-fund --registry https://registry.npmjs.org/ --prefix "$SIGNING_TOOLS"
+
+      # SECRET STEP 1 of 3 (macOS): the certificate and its password only.
+      # Imports the .p12 into a temporary keychain that the always() step
+      # deletes. The certificate file is removed as soon as it is imported.
+      - name: Import the signing certificate (macOS)
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          keychain="$RUNNER_TEMP/desktop-signing.keychain-db"
+          cert="$RUNNER_TEMP/desktop-signing-cert.p12"
+          keychain_password="$(openssl rand -hex 24)"
+          echo "::add-mask::$keychain_password"
+          trap 'rm -f "$cert"' EXIT
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$cert"
+          security import "$cert" -k "$keychain" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+            -k "$keychain_password" "$keychain" > /dev/null
+          existing="$(security list-keychains -d user | tr -d '"')"
+          # shellcheck disable=SC2086
+          security list-keychains -d user -s "$keychain" $existing
+
+      # SECRET STEP 2 of 3 (macOS): the signing identity and notarization
+      # credentials only. Signs every Mach-O file and the app with the hardened
+      # runtime, notarizes and staples the app, builds the dmg from the stapled
+      # app, signs, notarizes and staples the dmg, and archives the stapled app
+      # for the updater. The artifact hop dropped the executable bit and
+      # flattened links, so the executable files are marked first.
+      - name: Sign and notarize (macOS)
+        if: runner.os == 'macOS'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/desktop-signing.keychain-db"
+          app="$UNSIGNED_DIR/$PRODUCT_NAME.app"
+          test -d "$app" || { echo "The unsigned build has no $PRODUCT_NAME.app." >&2; exit 1; }
+          chmod -R u+rwX "$app"
+          chmod 755 "$app"/Contents/MacOS/*
+
+          sign() {
+            codesign --force --timestamp --options runtime \
+              --keychain "$keychain" --sign "$APPLE_SIGNING_IDENTITY" "$1"
+          }
+          notarize() {
+            result="$(xcrun notarytool submit "$1" \
+              --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" --wait --output-format json)" \
+              || { echo "Notarization could not be submitted." >&2; exit 1; }
+            printf '%s' "$result" | grep -Eq '"status" *: *"Accepted"' \
+              || { echo "Notarization was not accepted." >&2; exit 1; }
+          }
+
+          while IFS= read -r -d '' file; do
+            if file -b "$file" | grep -q 'Mach-O'; then sign "$file"; fi
+          done < <(find "$app/Contents" -type f -print0)
+          sign "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+          zip="$RUNNER_TEMP/desktop-notarize-app.zip"
+          ditto -c -k --keepParent "$app" "$zip"
+          notarize "$zip"
+          xcrun stapler staple "$app"
+
+          arch="${TARGET%%-*}"
+          dmg_src="$RUNNER_TEMP/desktop-dmg-src"
+          mkdir -p "$dmg_src" "$SIGNED_DIR/dmg" "$SIGNED_DIR/macos"
+          ditto "$app" "$dmg_src/$PRODUCT_NAME.app"
+          ln -s /Applications "$dmg_src/Applications"
+          dmg="$SIGNED_DIR/dmg/${PRODUCT_NAME}_${PRODUCT_VERSION}_${arch}.dmg"
+          hdiutil create -volname "$PRODUCT_NAME" -srcfolder "$dmg_src" \
+            -ov -format UDZO "$dmg"
+          sign "$dmg"
+          notarize "$dmg"
+          xcrun stapler staple "$dmg"
+
+          COPYFILE_DISABLE=1 tar -czf "$SIGNED_DIR/macos/$PRODUCT_NAME.app.tar.gz" \
+            -C "$UNSIGNED_DIR" "$PRODUCT_NAME.app"
+
+      # The Linux installer is copied, unchanged, to the layout the leg stager
+      # expects (no platform code-signing certificate exists for it, and the
+      # updater cannot update a .deb, so it carries no signature).
+      - name: Stage the installer (Linux)
+        if: runner.os == 'Linux'
+        env:
+          INSTALLER_DIR: ${{ matrix.installer_dir }}
+        run: |
+          set -euo pipefail
+          test "$(find "$UNSIGNED_DIR" -maxdepth 1 -type f | wc -l)" -eq 1
+          mkdir -p "$SIGNED_DIR/$INSTALLER_DIR"
+          cp "$UNSIGNED_DIR"/* "$SIGNED_DIR/$INSTALLER_DIR/"
+
+      # SECRET STEP 3 of 3 (macOS): the updater signing key and
+      # its password only, read by `tauri signer sign` from the environment.
+      # It signs exactly one file and writes `<file>.sig` beside it. Nothing is
+      # built or installed here.
+      - name: Sign the updater payload
+        if: runner.os == 'macOS'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          payloads=("$SIGNED_DIR"/macos/*.app.tar.gz)
+          test "${#payloads[@]}" -eq 1
+          "$SIGNING_TOOLS/node_modules/.bin/tauri" signer sign "${payloads[0]}"
+
+      # A build that came out unsigned or un-notarized must not stand as a
+      # release. This runs BEFORE the leg is uploaded.
+      - name: Verify the macOS signature and notarization tickets
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          app="$UNSIGNED_DIR/$PRODUCT_NAME.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          xcrun stapler validate "$app"
+          dmg="$(find "$SIGNED_DIR/dmg" -maxdepth 1 -name '*.dmg')"
+          test -n "$dmg"
+          codesign --verify --strict --verbose=2 "$dmg"
+          xcrun stapler validate "$dmg"
+
+      # Collect exactly one installer (and, where the updater can use it, one
+      # archive with its signature) under safe unique names. The updater
+      # signature is verified here against the public key committed in the
+      # caller's smrt-desktop.json, so a private key that is not its pair stops
+      # this leg.
+      - name: Stage the leg output
+        env:
+          TARGET: ${{ matrix.target }}
+          APP_DIR: ${{ inputs.app_dir }}
+        run: |
+          node "$DESKTOP_PKG/wrapper/scripts/release-feed.mjs" leg \
+            --target "$TARGET" \
+            --bundle-dir "$SIGNED_DIR" \
+            --overlay "$OVERLAY_FILE" \
+            --pubkey-config "$APP_DIR/smrt-desktop.json" \
+            --out .desktop-leg
+
+      - name: Upload the leg
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: desktop-release-${{ matrix.target }}
+          path: .desktop-leg
+          if-no-files-found: error
+          retention-days: 1
+
+      # Removes everything this job wrote that could outlive it on a runner
+      # that is not wiped: the temporary keychain (and with it the imported
+      # certificate), certificate files, notarization and dmg staging, the
+      # downloaded bundles and the installed Tauri CLI. The signing key is only
+      # ever in the environment of one step; no key file is written.
+      - name: Clean up
+        if: always()
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            security delete-keychain "$RUNNER_TEMP/desktop-signing.keychain-db" || true
+          fi
+          rm -rf "$RUNNER_TEMP"/desktop-* .desktop-leg
+
+  # The only job that can write the release. It needs every leg, so a failed
+  # leg, a failed signature check or a missing artifact publishes nothing. New
+  # assets are uploaded first and latest.json last, so the feed never points at
+  # an asset that is not there yet. It holds no secret and runs in the
+  # `desktop-release` environment. The release lives in the CALLER's repository.
+  publish:
+    name: Publish the release (all legs verified)
+    if: inputs.release
+    needs: [plan, sign]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: desktop-release
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      RELEASE_TAG: desktop-latest
+    steps:
+      - name: Require the default branch
+        env:
+          REF: ${{ github.ref }}
+          DEFAULT_REF: refs/heads/${{ github.event.repository.default_branch }}
+        run: |
+          if [ "$REF" != "$DEFAULT_REF" ]; then
+            echo "A release is only published from the default branch; this run is on ${REF}." >&2
+            exit 1
+          fi
+
+      - name: Checkout the caller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      # Installs the caller's locked tree with lifecycle scripts disabled (pnpm
+      # verifies every integrity hash from the lockfile). Only to resolve the
+      # packaged release tools; the app is never built here.
+      - name: Install the pinned smrt-desktop (scripts disabled)
+        env:
+          PNPM_VERSION: ${{ inputs.pnpm_version }}
+          APP_DIR: ${{ inputs.app_dir }}
+        run: |
+          npm install --global --ignore-scripts "pnpm@${PNPM_VERSION}"
+          pnpm --dir "$APP_DIR" install --frozen-lockfile --ignore-scripts
+
+      # Resolves the packaged release tools from the caller's own locked tree
+      # (the same smrt-desktop the build uses). Nothing is copied or checked
+      # out from the smrt repository.
+      - name: Locate the packaged release tools
+        env:
+          APP_DIR: ${{ inputs.app_dir }}
+        run: |
+          pkg="$(pnpm --dir "$APP_DIR" exec node --input-type=module -e '
+            import { createRequire } from "node:module";
+            import { dirname } from "node:path";
+            import { fileURLToPath } from "node:url";
+            const cli = fileURLToPath(import.meta.resolve("@happyvertical/smrt-cli"));
+            const desktop = createRequire(cli).resolve("@happyvertical/smrt-desktop/package.json");
+            console.log(dirname(desktop));
+          ')"
+          test -f "$pkg/wrapper/scripts/release-feed.mjs" || { echo "The installed smrt-desktop does not ship the release tools; pin a version that does." >&2; exit 1; }
+          echo "DESKTOP_PKG=$pkg" >> "$GITHUB_ENV"
+
+      - name: Download every leg
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: desktop-release-*
+          path: .desktop-legs
+
+      # Refuses a missing leg, a version or product-name mismatch, a symlink, a
+      # missing signature, and any updater signature that does not verify
+      # against the public key committed in smrt-desktop.json. Runs BEFORE
+      # anything is uploaded. Writes the assets and latest.json to
+      # .desktop-publish.
+      - name: Verify the signatures and assemble the assets and the updater feed
+        env:
+          REPO: ${{ github.repository }}
+          APP_DIR: ${{ inputs.app_dir }}
+          TARGETS: ${{ inputs.targets }}
+        run: |
+          node "$DESKTOP_PKG/wrapper/scripts/release-feed.mjs" feed \
+            --legs .desktop-legs \
+            --targets "${TARGETS// /}" \
+            --repo "$REPO" \
+            --tag "$RELEASE_TAG" \
+            --pubkey-config "$APP_DIR/smrt-desktop.json" \
+            --out .desktop-publish
+
+      - name: Publish to the rolling release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --prerelease \
+              --target "$GITHUB_SHA" \
+              --title 'Desktop (rolling)' \
+              --notes 'Rolling desktop build and updater feed (latest.json). Not a versioned release.'
+          fi
+          gh release upload "$RELEASE_TAG" .desktop-publish/assets/* --clobber
+          gh release upload "$RELEASE_TAG" .desktop-publish/latest.json --clobber

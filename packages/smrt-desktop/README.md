@@ -743,9 +743,13 @@ An app outside this repository builds its own installer from published
 packages only: no copied Rust, no copied scripts. The tarball ships the Tauri
 wrapper under `wrapper/` (the crate sources, `Cargo.lock`, icons placeholders,
 `scripts/launch-smoke.mjs` with `scripts/smoke-support.mjs`, and
-`scripts/release-preflight.mjs`); it does not ship `target/`, tests or
-`signing-tools/` (the signed release path stays in this repository, see
-`wrapper/README.md`). `package-contents.test.ts` checks the tarball listing.
+`scripts/release-preflight.mjs`, `scripts/release-feed.mjs`,
+`scripts/minisign.mjs`, the two files of `signing-tools/` (package.json and
+its lockfile, never an installed tree) and `src/bundler/node-pins.ts`, the
+pin table the release preflight parses); it does not ship `target/` or tests.
+The release legs of the reusable workflow below read those files from the
+installed package; see `wrapper/README.md` for the pipeline.
+`package-contents.test.ts` checks the tarball listing.
 
 Prerequisites on the build host: the app's locked tree installed (it provides
 `smrt`), a Rust toolchain for the target, and the exact Tauri CLI release
@@ -809,33 +813,70 @@ tarball and main stay in step.
 ### Reusable workflow
 
 `.github/workflows/desktop-consumer-build.yml` is a `workflow_call` workflow
-for a consuming repository. It checks out the caller, installs the caller's
-locked tree (`pnpm install --frozen-lockfile --ignore-scripts`), builds the
-app, runs `smrt desktop bundle` and `smrt desktop build --smoke` for each
-target on a hosted runner (macOS arm64, macOS x64, Linux x64) and uploads the
-unsigned installers (one `installer.tar` per target, so macOS `.app` modes
-survive; extract with `tar -xf installer.tar`) from non-pull-request runs. It reads nothing from this
-repository and holds no secret on the unsigned path (`contents: read`, no
-environment).
+for a consuming repository (the Tricia and Arthur repositories call it). It
+reads nothing from this repository: every script it runs comes from the
+caller's installed `@happyvertical/smrt-desktop`.
+
+Without `release` (pull requests, the default) it checks out the caller,
+installs the caller's locked tree (`pnpm install --frozen-lockfile
+--ignore-scripts`), builds the app, runs `smrt desktop bundle` and `smrt desktop
+build --smoke` per target on a hosted runner (macOS arm64, macOS x64, Linux
+x64) and, outside pull requests, uploads the unsigned installer (one
+`installer.tar` per target, so macOS `.app` modes survive). `contents: read`,
+no secret, no environment.
+
+With `release: true` (default branch only) it builds, signs, notarizes and
+publishes, in these jobs:
+
+| Job | Environment | Secrets | What it does |
+| --- | --- | --- | --- |
+| `release-preflight` | `desktop-release` | all eight, one step, presence only | fail closed: every secret, a real `updaterPublicKey` in `smrt-desktop.json`, safe product inputs. Nothing builds until it passes |
+| `build` | none | none | bundle (`--require-verified-pins`) and unsigned installer per target; uploads the bundle and the unsigned output as artifact directories |
+| `sign` | `desktop-release` | three named steps | re-verifies the bundle against the packaged Node pin table, signs and notarizes the macOS app and dmg, signs the updater archive, verifies it against the committed key; no cargo, no `smrt`, no app build |
+| `publish` | `desktop-release` | none (`contents: write`) | needs every leg; verifies every updater signature against the committed key, writes the `desktop-latest` prerelease and `latest.json` in the CALLER's repository |
+
+The eight secrets are `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
+`APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`,
+`TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. All are
+required for a release; there is no unsigned-release switch. Linux builds are
+copied through as `.deb` (no code signing, no updater entry); Windows is not
+offered by this workflow.
+
+What the caller commits: `smrt-desktop.json` with the product identity,
+`icons` and `updaterPublicKey` (the public half of the Tauri updater key; the
+private half only ever lives in the `desktop-release` secrets), the icon files,
+the lockfile pinning `@happyvertical/smrt-desktop` (and `@happyvertical/smrt-cli`,
+which provides `smrt`), and the pre-bundled MCP bridge if any (`bridge_path`).
+What the caller creates in its repository settings: the `desktop-release`
+environment (restricted to the default branch, required reviewers, the secrets
+above) and, optionally, the variable `DESKTOP_MACOS_SIGNING_RUNNER` (a runner
+label or JSON array of labels of a dedicated, ephemeral runner; default the
+hosted `macos-15`).
 
 ```yaml
 # .github/workflows/desktop.yml in the consuming repository
 name: Desktop
 on:
   pull_request:
-  workflow_dispatch:
-    inputs:
-      release:
-        type: boolean
-        default: false
+  push:
+    branches: [main]
+# The called workflow's publish job asks for contents: write, and GitHub checks
+# that against the caller even for runs that never release. Every job in the
+# called workflow narrows its own token again; pull requests from forks get a
+# read-only token regardless.
+permissions:
+  contents: write
 jobs:
   desktop:
     uses: happyvertical/smrt/.github/workflows/desktop-consumer-build.yml@<commit sha>
     with:
       app_dir: .
-      targets: aarch64-apple-darwin,x86_64-unknown-linux-gnu
+      targets: aarch64-apple-darwin,x86_64-apple-darwin,x86_64-unknown-linux-gnu
       bridge_path: build/smrt-mcp-bridge.mjs
-      release: ${{ inputs.release || false }}
+      smrt_desktop_version: 0.62.0   # must equal what the lockfile resolves
+      # Unsigned on pull requests; signed and published only from main.
+      release: ${{ github.event_name == 'push' }}
+    # Either map the secrets explicitly ...
     secrets:
       APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
       APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -845,17 +886,35 @@ jobs:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    # ... or replace the block above with `secrets: inherit`.
 ```
 
+Pin the workflow by commit SHA. Secrets stored as repository or organization
+secrets work with either form. Secrets stored only in the `desktop-release`
+environment are read by the called jobs that name that environment (the
+preflight, `sign` and `publish` jobs), but the caller's `secrets:` mapping is
+evaluated outside any environment, so with environment-only secrets prefer
+`secrets: inherit` or omit the block. Not proven by a run yet (see below).
+
 Inputs: `app_dir`, `targets`, `release`, `smrt_desktop_version` (empty means the
-version the lockfile resolves; a different non-empty value fails the run),
-`bridge_path`, `node_version`, `pnpm_version`. The `secrets:` are declared
-optional; on pull requests pass none. With `release: true` the
-`release-preflight` job runs in the caller's `desktop-release` environment on
-the default branch and refuses (the packaged `release-preflight.mjs --secrets
---inputs`, fail closed) unless every signing secret and the product inputs
-exist. The signing, notarization and publishing legs are not part of the
-reusable workflow yet, so a release run stops after the preflight with a
-failure that says so. Not proven: that the environment's secrets reach the
-called job as written, and a run from a second repository (needs an org-level
-setting that allows the workflow to be called, and a scratch repository).
+lockfile's version; a different value fails the run), `bridge_path`,
+`node_version`, `pnpm_version`. Artifact names (`desktop-bundle-<target>`,
+`desktop-unsigned-<target>`, `desktop-release-<target>`) are run-wide: call the
+workflow once per run.
+
+Blocked until Apple's D-U-N-S number arrives and the Developer ID certificate
+and notarization credentials exist: the six `APPLE_*` secrets, so the
+preflight refuses every release run (by design; nothing is defaulted). Also
+open: the updater key pair (the public half in `smrt-desktop.json`, the private
+half in the environment), a gpg-verified Node pin (`--require-verified-pins`
+stops the bundle until a maintainer runs `scripts/update-node-pins.mjs` with
+`gpg`), and real product icons. The unsigned path needs none of these.
+
+Not proven by a real run: that environment secrets reach the called jobs as
+written, that a second repository may call the workflow (needs the
+organization's Actions access setting for it, and a scratch repository), the
+`contents: write` permission check described above, and the macOS signing and
+notarization legs, which have only been exercised through this repository's own
+release workflow structure, never with real Apple credentials. The release
+workflow's environment-protection check is not part of the reusable workflow:
+protecting `desktop-release` is the caller owner's job.
