@@ -99,7 +99,7 @@ describe.each([false, true])('#4931 users app replacement=%s', (replace) => {
     );
     await expect(
       backfillLegacyUserProfiles({ transaction } as never),
-    ).resolves.toEqual({ created: 1, linked: 1 });
+    ).resolves.toEqual({ created: 1, linked: 1, skipped: 0 });
     assertPerson();
     expect(transaction).toHaveBeenCalledOnce();
     expect(
