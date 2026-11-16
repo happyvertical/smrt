@@ -1617,9 +1617,10 @@ export function mountAssistantRoutes(
         ? await trackingFor(context, ai, db, systemPrompt, thread, session)
         : undefined;
     // A workflow step's turn sends the host's system prompt, then the step's
-    // registered prompt.
-    const systemText = tracking?.parent
-      ? [systemPrompt, tracking.prompt.text].filter(Boolean).join('\n\n')
+    // registered prompt (an external engine's step too, untracked here).
+    const stepPrompt = internalRequests.get(context.event.request)?.prompt;
+    const systemText = stepPrompt
+      ? [systemPrompt, stepPrompt.text].filter(Boolean).join('\n\n')
       : tracking
         ? chatAssistantSystemText(tracking.prompt)
         : systemPrompt;
