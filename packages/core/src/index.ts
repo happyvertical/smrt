@@ -719,6 +719,14 @@ export {
 } from './testing/database';
 // AI function calling tools
 export * from './tools/index';
+export {
+  AiPromptKeyRequiredError,
+  createTrackedAiClient,
+  type TrackedAiClient,
+  type TrackedAiClientOptions,
+  type TrackedAiRun,
+  type TrackedPromptCall,
+} from './tracked-ai-client';
 // Presentation metadata helpers (#3599): widget hints, display label, selector lookup
 export * from './ui-metadata.js';
 // IN-list chunking contract for loaders that build IN lists from data-sized
