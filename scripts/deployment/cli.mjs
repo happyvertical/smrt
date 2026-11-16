@@ -13,6 +13,7 @@ import {
   adoptOrResume,
   validateAdoptionPlan,
   validateAdoptionState,
+  validateSnapshotRequest,
 } from './adopt.mjs';
 import {
   DeploymentError,
@@ -35,14 +36,28 @@ export async function main(args, adapterFactory = createLiveAdapter) {
       'status',
       'recover',
       'repair',
+      'adopt-snapshot',
       'adopt-plan',
       'adopt-or-resume',
       'adopt-status',
     ].includes(operation) && configuration,
-    'Usage: cli.mjs plan|apply-or-resume|status|recover|repair|adopt-plan|adopt-or-resume|adopt-status|tls-plan|tls-apply-or-resume|tls-rollback config.json [target-runtime.json|plan.json] [release-id]',
+    'Usage: cli.mjs plan|apply-or-resume|status|recover|repair|adopt-snapshot|adopt-plan|adopt-or-resume|adopt-status|tls-plan|tls-apply-or-resume|tls-rollback config.json [target-runtime.json|plan.json|snapshot-request.json] [release-id|snapshot-capture.json]',
   );
   const config = JSON.parse(await readFile(configuration, 'utf8'));
   const adapter = await adapterFactory(config);
+  if (operation === 'adopt-snapshot') {
+    // Two observations, printed as JSON: a capture while the legacy application
+    // is still active, then the snapshot once the reviewed stop revision is
+    // applied (pass the saved capture as the fourth argument).
+    demand(input, 'adopt-snapshot requires the reviewed snapshot request file');
+    const request = validateSnapshotRequest(
+      JSON.parse(await readFile(input, 'utf8')),
+    );
+    return adapter.snapshotLegacy(
+      request,
+      releaseId ? JSON.parse(await readFile(releaseId, 'utf8')) : null,
+    );
+  }
   if (operation.startsWith('adopt-')) {
     demand(input, 'Adoption commands require the reviewed plan file');
     const plan = validateAdoptionPlan(

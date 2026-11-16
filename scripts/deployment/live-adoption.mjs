@@ -12,6 +12,11 @@ import {
   validateAdoptionState,
   verifyNativeWriterFence,
   legacyRepositoryUrl,
+  laterLegacyRevisions,
+  legacyInventoryEntry,
+  snapshotCaptureVersion,
+  snapshotVersion,
+  validateSnapshotRequest,
 } from './adopt.mjs';
 import { demand, hash, identity } from './release.mjs';
 const bytesHash = (value) => createHash('sha256').update(value).digest('hex');
@@ -313,70 +318,12 @@ export function createAdoptionMethods(config, command, helpers, options) {
         'Adoption requires Flux auto-generated directory resources; explicit resource lists cannot rename atomically',
       );
   }
-  async function qualifyAdoption(plan, snapshot) {
+  // The snapshot contract every consumer applies: identity, the exact legacy
+  // object, the normalization record, and UID-bound resources whose identities
+  // are the hashes of what they retain.
+  function verifySavedSnapshot(saved, plan) {
     demand(
-      config.adoption?.snapshotSha256 === plan.snapshot.sha256 &&
-        config.adoption?.qualificationSha256 === plan.qualification.sha256 &&
-        config.chartSource?.digest === plan.chartOciDigest,
-      'Adoption artifacts must be bound by protected configuration',
-    );
-    for (const artifact of [plan.snapshot, plan.qualification])
-      demand(
-        snapshot.raw[artifact.file] &&
-          bytesHash(snapshot.raw[artifact.file]) === artifact.sha256,
-        'Protected adoption artifact content mismatch',
-      );
-    demand(
-      bytesHash(await readFile(config.chart)) === plan.chartArtifactSha256,
-      'Adoption chart package identity mismatch',
-    );
-    const fluxPath = adoptionPath(config.adoption.fluxPath);
-    await verifyFluxDirectory(plan, snapshot.revision);
-    const ks = await helpers.get(
-      'kustomization',
-      config.kustomization.name,
-      config.kustomization.namespace,
-    );
-    const source = await helpers.get(
-      'gitrepository',
-      config.source.name,
-      config.source.namespace,
-    );
-    demand(
-      ks.metadata.uid === config.adoption.kustomizationUid &&
-        source.metadata.uid === config.adoption.sourceUid &&
-        (ks.spec.path ?? '').replace(/^\.\//, '').replace(/\/$/, '') ===
-          fluxPath &&
-        ks.spec.sourceRef?.kind === 'GitRepository' &&
-        ks.spec.sourceRef.name === config.source.name &&
-        (ks.spec.sourceRef.namespace ?? ks.metadata.namespace) ===
-          (config.source.namespace ?? ks.metadata.namespace),
-      'Adoption target Flux source/Kustomization identity/path mismatch',
-    );
-    const qualification = JSON.parse(snapshot.raw[plan.qualification.file]);
-    demand(
-      qualification.apiVersion ===
-        'smrt.happyvertical.com/legacy-adoption-qualification-v1' &&
-        qualification.adoptionId === plan.adoptionId &&
-        qualification.snapshotSha256 === plan.snapshot.sha256 &&
-        qualification.normalizedCurrentIdentity ===
-          plan.normalizedCurrentIdentity &&
-        qualification.targetIdentity === plan.targetIdentity &&
-        qualification.configurationIdentity === plan.configurationIdentity &&
-        qualification.chartArtifactSha256 === plan.chartArtifactSha256 &&
-        qualification.chartOciDigest === plan.chartOciDigest &&
-        qualification.fenceContractIdentity === plan.fenceContract.identity &&
-        ['source', 'tree', 'lock', 'toolchain'].every(
-          (key) =>
-            typeof qualification[key] === 'string' &&
-            qualification[key].length > 0,
-        ) &&
-        qualification.validation?.passed === true,
-      'Missing trusted CI adoption qualification association',
-    );
-    const saved = JSON.parse(snapshot.raw[plan.snapshot.file]);
-    demand(
-      saved.apiVersion === 'smrt.happyvertical.com/legacy-snapshot-v1' &&
+      saved.apiVersion === snapshotVersion &&
         saved.adoptionId === plan.adoptionId &&
         hash(saved.legacy) === hash(plan.legacy) &&
         saved.normalization?.normalizedCurrentIdentity ===
@@ -441,6 +388,71 @@ export function createAdoptionMethods(config, command, helpers, options) {
           'Legacy snapshot must retain actual full PodSpec, selectors and old images',
         );
     }
+    return saved;
+  }
+  async function qualifyAdoption(plan, snapshot) {
+    demand(
+      config.adoption?.snapshotSha256 === plan.snapshot.sha256 &&
+        config.adoption?.qualificationSha256 === plan.qualification.sha256 &&
+        config.chartSource?.digest === plan.chartOciDigest,
+      'Adoption artifacts must be bound by protected configuration',
+    );
+    for (const artifact of [plan.snapshot, plan.qualification])
+      demand(
+        snapshot.raw[artifact.file] &&
+          bytesHash(snapshot.raw[artifact.file]) === artifact.sha256,
+        'Protected adoption artifact content mismatch',
+      );
+    demand(
+      bytesHash(await readFile(config.chart)) === plan.chartArtifactSha256,
+      'Adoption chart package identity mismatch',
+    );
+    const fluxPath = adoptionPath(config.adoption.fluxPath);
+    await verifyFluxDirectory(plan, snapshot.revision);
+    const ks = await helpers.get(
+      'kustomization',
+      config.kustomization.name,
+      config.kustomization.namespace,
+    );
+    const source = await helpers.get(
+      'gitrepository',
+      config.source.name,
+      config.source.namespace,
+    );
+    demand(
+      ks.metadata.uid === config.adoption.kustomizationUid &&
+        source.metadata.uid === config.adoption.sourceUid &&
+        (ks.spec.path ?? '').replace(/^\.\//, '').replace(/\/$/, '') ===
+          fluxPath &&
+        ks.spec.sourceRef?.kind === 'GitRepository' &&
+        ks.spec.sourceRef.name === config.source.name &&
+        (ks.spec.sourceRef.namespace ?? ks.metadata.namespace) ===
+          (config.source.namespace ?? ks.metadata.namespace),
+      'Adoption target Flux source/Kustomization identity/path mismatch',
+    );
+    const qualification = JSON.parse(snapshot.raw[plan.qualification.file]);
+    demand(
+      qualification.apiVersion ===
+        'smrt.happyvertical.com/legacy-adoption-qualification-v1' &&
+        qualification.adoptionId === plan.adoptionId &&
+        qualification.snapshotSha256 === plan.snapshot.sha256 &&
+        qualification.normalizedCurrentIdentity ===
+          plan.normalizedCurrentIdentity &&
+        qualification.targetIdentity === plan.targetIdentity &&
+        qualification.configurationIdentity === plan.configurationIdentity &&
+        qualification.chartArtifactSha256 === plan.chartArtifactSha256 &&
+        qualification.chartOciDigest === plan.chartOciDigest &&
+        qualification.fenceContractIdentity === plan.fenceContract.identity &&
+        ['source', 'tree', 'lock', 'toolchain'].every(
+          (key) =>
+            typeof qualification[key] === 'string' &&
+            qualification[key].length > 0,
+        ) &&
+        qualification.validation?.passed === true,
+      'Missing trusted CI adoption qualification association',
+    );
+    const saved = JSON.parse(snapshot.raw[plan.snapshot.file]);
+    verifySavedSnapshot(saved, plan);
     return saved;
   }
   async function releaseFenceProvider(revision) {
@@ -745,7 +757,7 @@ export function createAdoptionMethods(config, command, helpers, options) {
     // The operator may reach the same legacy repository through another
     // address than the cluster does (protected config). Identity stays bound
     // by the Flux source URL and by the tracked ref containing the revision.
-    const fetchUrl = config.adoption.legacyFetchUrl ?? plan.legacy.repository;
+    const fetchUrl = config.adoption?.legacyFetchUrl ?? plan.legacy.repository;
     demand(
       fetchUrl === plan.legacy.repository ||
         legacyRepositoryUrl(fetchUrl) ||
@@ -825,6 +837,212 @@ export function createAdoptionMethods(config, command, helpers, options) {
       rev,
       await helpers.bindings(plan.candidate),
     );
+  }
+  // Workload kinds whose snapshot record retains the actual PodSpec and images;
+  // the same list qualifyAdoption checks.
+  const podSpecOf = (o) =>
+    o.kind === 'Pod'
+      ? o.spec
+      : o.kind === 'CronJob'
+        ? o.spec?.jobTemplate?.spec?.template?.spec
+        : [
+              'Deployment',
+              'Job',
+              'ReplicaSet',
+              'StatefulSet',
+              'DaemonSet',
+            ].includes(o.kind)
+          ? o.spec?.template?.spec
+          : undefined;
+  const nativeControllers = ['kube-controller-manager', 'kube-scheduler'];
+  // The reviewed legacy snapshot is observed, never hand-written. Capturing
+  // (no prior capture) requires the legacy Kustomization Ready at the reviewed
+  // original revision and records every object it manages in this namespace
+  // with its actual spec, selector, PodSpec, images and single field manager.
+  // Completing (with that capture) re-reads the same objects by UID once the
+  // reviewed stop revision is applied, records their stopped spec identity as
+  // normalizedSpecIdentity, and proves the reviewed revisions in the legacy
+  // repository. Both outputs are the CLI's stdout; the snapshot's bytes are
+  // what the plan binds by SHA256.
+  async function snapshotLegacy(request, capture = null) {
+    validateSnapshotRequest(request);
+    const complete = laterLegacyRevisions.every((k) =>
+      Object.hasOwn(request.legacy, k),
+    );
+    demand(
+      complete === Boolean(capture),
+      capture
+        ? 'Snapshot completion requires the reviewed maintenance, stop and relinquish revisions'
+        : 'Snapshot capture precedes the reviewed maintenance, stop and relinquish revisions',
+    );
+    const [source, ks] = await Promise.all([
+      helpers.get(
+        'gitrepository',
+        request.legacy.source.name,
+        request.legacy.source.namespace,
+      ),
+      helpers.get(
+        'kustomization',
+        request.legacy.kustomization.name,
+        request.legacy.kustomization.namespace,
+      ),
+    ]);
+    const rev = complete ? request.legacy.stopRevision : request.legacy.revision;
+    demand(
+      legacyRepositoryUrl(source.spec?.url) &&
+        ready(source) &&
+        ready(ks) &&
+        !ks.spec?.suspend &&
+        matches(source.status.artifact?.revision, rev) &&
+        matches(ks.status.lastAppliedRevision, rev) &&
+        ks.spec?.sourceRef?.kind === 'GitRepository' &&
+        ks.spec.sourceRef.name === request.legacy.source.name &&
+        (ks.spec.sourceRef.namespace ?? ks.metadata.namespace) ===
+          request.legacy.source.namespace,
+      'Legacy Flux source/Kustomization has not acknowledged the reviewed revision',
+    );
+    const legacy = {
+      repository: source.spec.url,
+      revision: request.legacy.revision,
+      ...(complete
+        ? Object.fromEntries(
+            laterLegacyRevisions.map((k) => [k, request.legacy[k]]),
+          )
+        : {}),
+      source: { ...request.legacy.source, uid: source.metadata.uid },
+      kustomization: {
+        ...request.legacy.kustomization,
+        uid: ks.metadata.uid,
+      },
+    };
+    const normalization = {
+      normalizedCurrentIdentity: hash(request.current),
+      explanation: request.explanation,
+    };
+    const entries = (ks.status.inventory?.entries ?? [])
+      .map((entry) => legacyInventoryEntry(entry.id))
+      .filter((entry) => entry.namespace === namespace);
+    demand(
+      entries.length > 0,
+      'Legacy Kustomization manages nothing in the release namespace',
+    );
+    const live = async (entry) => {
+      const actual = await helpers.getManaged(
+        `${entry.kind.toLowerCase()}${entry.group ? `.${entry.group}` : ''}`,
+        entry.name,
+        namespace,
+      );
+      demand(
+        actual.kind === entry.kind &&
+          actual.metadata.name === entry.name &&
+          actual.metadata.namespace === namespace &&
+          actual.metadata.uid,
+        'Legacy inventory entry does not name the live object',
+      );
+      return actual;
+    };
+    if (!capture) {
+      const resources = [];
+      for (const entry of entries) {
+        const actual = await live(entry);
+        const managers = specManagers(
+          actual.kind,
+          actual.metadata.managedFields,
+        ).filter((manager) => !nativeControllers.includes(manager));
+        demand(
+          managers.length === 1,
+          'Legacy object must have exactly one non-native field manager; review the cluster before snapshotting',
+        );
+        const spec = actual.spec ?? actual.data ?? {};
+        const podSpec = podSpecOf(actual);
+        resources.push({
+          apiVersion: actual.apiVersion,
+          kind: actual.kind,
+          namespace,
+          name: actual.metadata.name,
+          uid: actual.metadata.uid,
+          spec,
+          specIdentity: hash(spec),
+          selector: actual.spec?.selector ?? {},
+          legacyManager: managers[0],
+          fluxInventoryId: entry.id,
+          ...(podSpec
+            ? {
+                podSpec,
+                oldImages: [
+                  ...podSpec.containers,
+                  ...(podSpec.initContainers ?? []),
+                ].map((c) => c.image),
+              }
+            : {}),
+        });
+      }
+      return {
+        apiVersion: snapshotCaptureVersion,
+        adoptionId: request.adoptionId,
+        legacy,
+        normalization,
+        resources,
+      };
+    }
+    const sameRef = ({ uid, ...ref }) => ref;
+    demand(
+      capture.apiVersion === snapshotCaptureVersion &&
+        capture.adoptionId === request.adoptionId &&
+        hash(capture.normalization) === hash(normalization) &&
+        capture.legacy?.repository === legacy.repository &&
+        capture.legacy.revision === legacy.revision &&
+        hash(sameRef(capture.legacy.source ?? {})) ===
+          hash(request.legacy.source) &&
+        hash(sameRef(capture.legacy.kustomization ?? {})) ===
+          hash(request.legacy.kustomization) &&
+        Array.isArray(capture.resources) &&
+        capture.resources.length > 0,
+      'Snapshot capture does not belong to this request',
+    );
+    demand(
+      capture.legacy.source.uid === source.metadata.uid &&
+        capture.legacy.kustomization.uid === ks.metadata.uid,
+      'Legacy Flux identity changed since capture',
+    );
+    // The relinquish commit is reviewed now but pushed only once the writers
+    // have stopped; its existence is proven at the relinquished stage.
+    await legacyAncestry({ legacy }, rev, false);
+    const resources = [];
+    for (const r of capture.resources) {
+      const entry = entries.find((e) => e.id === r.fluxInventoryId);
+      demand(entry, 'Captured legacy object left the Flux inventory');
+      const actual = await live(entry);
+      demand(
+        actual.apiVersion === r.apiVersion &&
+          actual.metadata.uid === r.uid &&
+          hash(actual.spec?.selector ?? {}) === hash(r.selector ?? {}),
+        'Captured legacy object UID/selector changed',
+      );
+      const { selector, legacyManager, fluxInventoryId, podSpec, oldImages, ...head } = r;
+      resources.push({
+        ...head,
+        normalizedSpecIdentity: hash(actual.spec ?? actual.data ?? {}),
+        selector,
+        legacyManager,
+        fluxInventoryId,
+        ...(podSpec ? { podSpec, oldImages } : {}),
+      });
+    }
+    const snapshot = {
+      apiVersion: snapshotVersion,
+      adoptionId: request.adoptionId,
+      legacy,
+      normalization,
+      resources,
+    };
+    // The output must pass the same validation the plan applies later.
+    verifySavedSnapshot(snapshot, {
+      adoptionId: request.adoptionId,
+      legacy,
+      normalizedCurrentIdentity: normalization.normalizedCurrentIdentity,
+    });
+    return snapshot;
   }
   async function preflightAdoption(plan, snapshot) {
     const saved = await qualifyAdoption(plan, snapshot);
@@ -1168,6 +1386,7 @@ export function createAdoptionMethods(config, command, helpers, options) {
     readAdoption,
     qualifyAdoption,
     observeLegacy,
+    snapshotLegacy,
     observeWriterFence,
     prepareReleaseWriterFence,
     observeReleaseWriterFence,
