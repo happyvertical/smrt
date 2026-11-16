@@ -501,7 +501,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
     async function restoredDesignContext(
       record: import('@happyvertical/smrt-app-runtime').OwnerApproval,
     ) {
-      const action = record.context.designAction as
+      const action = record.context.workflowAction as
         | Record<string, unknown>
         | undefined;
       if (!action) return {};
@@ -549,7 +549,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
           record.args,
         );
       return {
-        designAction: {
+        workflowAction: {
           application: action.application as string,
           runId: action.runId,
           actionId: action.actionId,
@@ -593,7 +593,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
     }
     const continuations = new OwnerApprovalContinuations(authority, {
       cookbook: async (record) => {
-        const action = record.context.designAction as
+        const action = record.context.workflowAction as
           | { runId?: unknown }
           | undefined;
         if (typeof action?.runId === 'string') {
@@ -718,7 +718,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
       },
       approvals: continuations.adapter('cookbook'),
       previewBeforeApply: async (context) => {
-        if (context.designAction && context.userId && context.tenantId) {
+        if (context.workflowAction && context.userId && context.tenantId) {
           const saved = await createDesignRunStore({
             db,
             ownerId: context.userId,
@@ -726,7 +726,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
             enqueue: async () => {
               throw new Error('Read only');
             },
-          }).load(context.designAction.runId, context.userId);
+          }).load(context.workflowAction.runId, context.userId);
           const input = saved?.input as
             | {
                 execution?: { previewBeforeApply?: boolean };
@@ -908,7 +908,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
             await prepare(tenantId, false);
             return (
               await service.list({ surface: 'mcp', userId: ownerId, tenantId })
-            ).filter((tool) => service.supportsDesignAction(tool.name));
+            ).filter((tool) => service.supportsWorkflowAction(tool.name));
           },
         );
       },
@@ -925,7 +925,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
         if (
           !tenantId ||
           !options.packageName ||
-          !service.supportsDesignAction(operation.tool)
+          !service.supportsWorkflowAction(operation.tool)
         )
           throw new Error('Durable design operation unavailable');
         return runtime.runAsPrincipal(
@@ -984,7 +984,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
                       userId: ownerId,
                       profileId: user.profileId,
                       threadId,
-                      designAction: {
+                      workflowAction: {
                         application:
                           options.application ?? options.packageName!,
                         runId,
@@ -1235,7 +1235,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
           if (record.status !== 'approved' || !record.continuation) continue;
           try {
             const outcome = await host.continuations.resume(owner, record.id);
-            const action = outcome.context.designAction as
+            const action = outcome.context.workflowAction as
               | { runId?: unknown }
               | undefined;
             if (
@@ -2198,7 +2198,7 @@ export function createCookbookHost(options: CookbookHostOptions) {
       if (response.ok && decision && event.request.method === 'POST' && actor) {
         const host = await ready();
         const record = await host.authority.get(actor.tenantId, decision[1]);
-        const action = record?.context.designAction as
+        const action = record?.context.workflowAction as
           | { runId?: unknown }
           | undefined;
         if (

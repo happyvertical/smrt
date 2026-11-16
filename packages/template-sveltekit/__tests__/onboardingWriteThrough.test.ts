@@ -581,7 +581,7 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
         callId: pending.approvals[0].id, status: 'pending',
       });
       expect(Object.keys(heldCards[0].toolCallData)).toEqual(['approval']);
-      expect(/"(args|context|designAction|requestKey|result)"\s*:/.test(JSON.stringify(heldCards[0]))).toBe(false);
+      expect(/"(args|context|workflowAction|requestKey|result)"\s*:/.test(JSON.stringify(heldCards[0]))).toBe(false);
       expect(editor!.snapshot().revision).toBe(initial.revision);
       const decision = await request(`/api/assistant/approvals/${pending.approvals[0].id}/decide`, host.assistant.POST, { approve: true });
       expect(decision.status, await decision.clone().text()).toBe(200);
@@ -606,7 +606,7 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
       expect(completedCards[0].toolCallData.approval.summary).toContain('Licence plate');
       expect(completedCards[0].toolCallData.approval.summary).toContain('Customers');
       expect(Object.keys(completedCards[0].toolCallData)).toEqual(['approval']);
-      expect(/"(args|context|designAction|requestKey|result)"\s*:/.test(JSON.stringify(completedCards[0]))).toBe(false);
+      expect(/"(args|context|workflowAction|requestKey|result)"\s*:/.test(JSON.stringify(completedCards[0]))).toBe(false);
       expect(designCalls).toBe(3);
     }
     for (const phase of ['applied', 'reopened']) {

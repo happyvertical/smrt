@@ -547,7 +547,7 @@ it.each([
       _meta: {
         runTypes: ['turn'],
         profile: { previewBeforeApply: false },
-        designAction: {
+        workflowAction: {
           application: 'forged',
           runId: randomUUID(),
           actionId: '0',
@@ -573,7 +573,7 @@ it.each([
     status: 'pending',
     context: { pluginMode: true },
   });
-  expect(held?.context.designAction).toBeUndefined();
+  expect(held?.context.workflowAction).toBeUndefined();
   expect(held?.context.profile).toBeUndefined();
   expect(held?.context.runTypes).toBeUndefined();
   const heldState = (await request('/api/plugin-mode', host.pluginMode).then(
@@ -729,7 +729,7 @@ it.each([
     { profile: { previewBeforeApply: false } },
     { profileId: randomUUID() },
     {
-      designAction: {
+      workflowAction: {
         application: 'forged',
         runId: randomUUID(),
         actionId: '0',

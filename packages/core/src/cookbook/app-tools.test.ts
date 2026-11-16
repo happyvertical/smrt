@@ -1467,7 +1467,7 @@ describe('host design action durable boundary', () => {
             },
             {
               ...context,
-              designAction: {
+              workflowAction: {
                 application: 'curated',
                 runId: 'curated-run',
                 actionId: 'field',
@@ -1591,7 +1591,7 @@ describe('host design action durable boundary', () => {
   });
   const host = (actionId = '1'): CookbookToolContext => ({
     ...context,
-    designAction: { application: 'c6', runId: 'design-run', actionId },
+    workflowAction: { application: 'c6', runId: 'design-run', actionId },
   });
   const reopenEditor = async (store?: AppModelHistoryStore) => {
     editor = await createAppModelEditor({
@@ -1652,7 +1652,7 @@ describe('host design action durable boundary', () => {
     expect(Number.isSafeInteger(first.revision)).toBe(true);
     expect(first.operation?.binding).toMatchObject({
       tool: 'app.addField',
-      designAction: host().designAction,
+      workflowAction: host().workflowAction,
       args: add,
     });
     expect(
@@ -1768,7 +1768,7 @@ describe('host design action durable boundary', () => {
     await expect(
       call('app.addField', add, {
         ...host(),
-        designAction: { ...host().designAction!, application: 'other' },
+        workflowAction: { ...host().workflowAction!, application: 'other' },
       }),
     ).rejects.toThrow('safely recover');
     permission = false;
@@ -1787,7 +1787,7 @@ describe('host design action durable boundary', () => {
     await expect(
       call(
         'app.addField',
-        { ...add, designAction: host().designAction },
+        { ...add, workflowAction: host().workflowAction },
         host(),
       ),
     ).rejects.toThrow();
@@ -2108,7 +2108,7 @@ describe.each([
             surface,
             ...(design
               ? {
-                  designAction: {
+                  workflowAction: {
                     application: 'c6',
                     runId: 'floor',
                     actionId: name,

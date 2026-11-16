@@ -1108,7 +1108,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       'actionKey',
       'actionId',
       'runId',
-      'designAction',
+      'workflowAction',
       'approvalId',
       'ownerId',
       'userId',
@@ -1703,7 +1703,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       expect(await authority.get(tenantId, hold!.id)).toMatchObject({
         tool: operation.tool,
         args: operation.args,
-        context: { designAction: { runId, actionId: String(index) } },
+        context: { workflowAction: { runId, actionId: String(index) } },
       });
       expect(await designState(runId)).toMatchObject({
         passIndex: 0,

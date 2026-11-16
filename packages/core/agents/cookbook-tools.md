@@ -173,11 +173,11 @@ revision checks and durable owner approvals remain authoritative.
 true. False permits cookbook application without a preview token but still
 requires the current `expectedRevision` and all destructive approval checks.
 
-## Trusted durable design actions
+## Trusted workflow run actions
 
-A host can supply `CookbookToolContext.designAction` with its immutable
+A host can supply `CookbookToolContext.workflowAction` with its immutable
 `{ application, runId, actionId }`. This is correlation, never authentication.
-Arguments cannot supply it. `supportsDesignAction(name)` identifies supported
+Arguments cannot supply it. `supportsWorkflowAction(name)` identifies supported
 structural app, recipe and cookbook writes; `list(context)` retains their existing
 input schemas. Durable calls require the matching application editor and a history
 store explicitly advertising `supportsDurableOperations`. Legacy custom stores
@@ -194,7 +194,7 @@ original lists/snapshot/revision, even after later edits or installed catalog ch
 Recovery does not publish old state or erase later changes. Live owner membership,
 permission and tenant checks still run on apply and recovery.
 
-With `previewBeforeApply` enabled, every design write requests an existing native
+With `previewBeforeApply` enabled, every workflow write requests an existing native
 owner hold before appending history. The host can resolve this preference from its
 pinned run snapshot using the trusted run id. Destructive app removals, undo and
 recipe disable always require approval, including when preview is off or a custom
@@ -215,6 +215,6 @@ applied journal result and reconciles executing to succeeded. An executing hold
 without journal proof reports an explicit unknown outcome; it is never dispatched
 again automatically. Generic owner continuations retain their at-most-once rule.
 
-S1 review correction: structure removal (`app.removeField`, `app.removeList`), undo and `recipes.disable` always require the existing durable owner hold. The record-deletion setting never waives these calls, whether invoked through assistant tools, outside MCP or durable design Apply; `previewBeforeApply` and a permissive custom policy cannot lower this floor. The obsolete optional `requireRemovalApproval` callback is retained for source compatibility but ignored. Tool descriptions tell the same rule. The regression matrix exercises all four removal/preview setting combinations on both surfaces, with and without a trusted design action, and proves no mutation or history append before approval. Safe non-removal design changes retain the independent preview setting.
+S1 review correction: structure removal (`app.removeField`, `app.removeList`), undo and `recipes.disable` always require the existing durable owner hold. The record-deletion setting never waives these calls, whether invoked through assistant tools, outside MCP or a workflow run's Apply; `previewBeforeApply` and a permissive custom policy cannot lower this floor. The obsolete optional `requireRemovalApproval` callback is retained for source compatibility but ignored. Tool descriptions tell the same rule. The regression matrix exercises all four removal/preview setting combinations on both surfaces, with and without a trusted workflow action, and proves no mutation or history append before approval. Safe non-removal workflow changes retain the independent preview setting.
 
 Reuse check: MCP `review_smrt_project` on core/chat/template/inference, architecture query for app-data record versus security/identity deletion, the intent index, and `rg` searches by approval/removal/record/security purpose across core, chat, smrt-ui, smrt-svelte, users and tenancy. No new helper/component/model file was introduced; the native cookbook approval authority remains the single structural gate.

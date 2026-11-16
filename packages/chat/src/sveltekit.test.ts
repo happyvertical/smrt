@@ -4306,7 +4306,11 @@ describe('mountAssistantRoutes', () => {
       requestKey: 'private-recovery-key',
       args: { internal: 'private-arguments' },
       summary: 'Add Licence plate to Members',
-      context: { threadId, principal, designAction: { runId: 'private-run' } },
+      context: {
+        threadId,
+        principal,
+        workflowAction: { runId: 'private-run' },
+      },
       continuation: {
         executor: 'fixture',
         principal: {
@@ -4363,7 +4367,7 @@ describe('mountAssistantRoutes', () => {
       },
     ]);
     expect(JSON.stringify(rows)).not.toMatch(
-      /private-|requestedBy|designAction|permission/,
+      /private-|requestedBy|workflowAction|permission/,
     );
     const status = await call(routes, 'GET', `threads/${threadId}/approvals`);
     expect((await status.json()).approvals).toHaveLength(1);
