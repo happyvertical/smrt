@@ -13,14 +13,13 @@ import {
   finishAiRun,
   getAiRun,
   getRunTrajectory,
-  isEmbeddedDatabase,
   reconcileAiRunOnClaim,
   resumeAiRun,
   startAiRunStep,
   stopAiRun,
   type TrackedAiClient,
   waitAiRunApproval,
-  withEmbeddedWriteTransaction,
+  withAiRunTransaction,
 } from '@happyvertical/smrt-core';
 import {
   promptMessageOptions,
@@ -894,24 +893,21 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
         return current(store, runId);
       }
       await reconcileAiRunOnClaim(db, runId);
-      // The embedded write queue serializes it like any accounting write.
-      const refused = await withEmbeddedWriteTransaction(
-        db,
-        isEmbeddedDatabase(db),
-        async (tx) => {
-          let resumed: Awaited<ReturnType<typeof resumeAiRun>>;
-          try {
-            resumed = await resumeWith(tx, false);
-          } catch (error) {
-            // A refusal may have written its reason (`definition_changed`):
-            // commit it, admit nothing, and throw after the commit.
-            if (error instanceof AiRunResumeRefusedError) return error;
-            throw error;
-          }
-          await admit(tx, resumed.budget);
-          return null;
-        },
-      );
+      // One accounting transaction for the status change and the enqueue:
+      // retried as a whole on a conflict, with PostgreSQL's lock timeout.
+      const refused = await withAiRunTransaction(db, async (tx) => {
+        let resumed: Awaited<ReturnType<typeof resumeAiRun>>;
+        try {
+          resumed = await resumeWith(tx.db, false);
+        } catch (error) {
+          // A refusal may have written its reason (`definition_changed`):
+          // commit it, admit nothing, and throw after the commit.
+          if (error instanceof AiRunResumeRefusedError) return error;
+          throw error;
+        }
+        await admit(tx.db, resumed.budget);
+        return null;
+      });
       if (refused) throw refused;
       return current(store, runId);
     },

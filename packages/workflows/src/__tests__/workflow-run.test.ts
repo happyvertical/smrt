@@ -446,6 +446,45 @@ describe.each(engines)('workflow runs on %s', (engine) => {
     expect(calls).toHaveLength(2);
   });
 
+  it('retries a resume and its admission as one transaction after a conflict', async () => {
+    const db = await workflowDb(engine);
+    const { model } = scriptedModel(() => ({
+      output: { value: 1 },
+      tokens: 30,
+    }));
+    const steps = twoSteps.map((step) => ({
+      ...step,
+      expectedOutputTokens: 100,
+    }));
+    const driver = driverFor(db, model, definitionOf(steps));
+    const run = await driver.start({
+      ownerId: 'owner',
+      budget: { maxTokens: 130 },
+    });
+    expect((await driver.run(run.id, 'owner')).status).toBe('stopped');
+    const seen: string[] = [];
+    const resumed = await driver.resume(run.id, 'owner', {
+      budget: { maxTokens: 5000 },
+      admit: async (tx) => {
+        const [row] = rowsOf(
+          await tx.query(
+            'SELECT status FROM _smrt_ai_runs WHERE id = $1',
+            run.id,
+          ),
+        );
+        seen.push(String(row?.status));
+        // A write conflict on the first try: the status change rolls back
+        // with it, so the second try resumes a stopped run again.
+        if (seen.length === 1) throw new Error('write-write conflict');
+      },
+    });
+    expect(seen).toEqual(['running', 'running']);
+    expect(resumed).toMatchObject({
+      status: 'running',
+      budget: { maxTokens: 5000 },
+    });
+  });
+
   it('counts a step once against maxSteps across stop and resume', async () => {
     const db = await workflowDb(engine);
     const gate = deferred();
