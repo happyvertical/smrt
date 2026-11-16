@@ -18,6 +18,9 @@
  *
  * SQLite and DuckDB run here; PostgreSQL runs on PGlite under `test:pglite`.
  */
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ObjectRegistry } from '../../registry.js';
@@ -274,6 +277,190 @@ describe.each(ENGINES)('calculated columns on %s', (engine) => {
     ).toEqual(['total']);
   });
 
+  // #5008 case 1: a column's type change and a calculated column that reads it
+  // getting a new expression in one run. PostgreSQL refuses to convert a column
+  // a calculated column depends on (0A000), so the swap's DROP runs first, the
+  // conversion second, and the swap's ADD last.
+  it('converts a column and swaps the calculated column that reads it in one run, whichever column is declared first', async () => {
+    if (engine === 'duckdb') return; // DuckDB refuses any expression change (VALIDATION_GENERATED_DIALECT)
+    for (const swapFirst of [false, true]) {
+      await db.query('DROP TABLE IF EXISTS items');
+      const inputs = { generatedInputTypes: { qty: 'number' as const } };
+      const total = (factor: number) => ({
+        type: 'INTEGER' as const,
+        generated: times('qty', { value: factor }),
+        ...inputs,
+      });
+      const declared = (qty: 'INTEGER' | 'REAL', factor: number) =>
+        swapFirst
+          ? { total: total(factor), qty: { type: qty } }
+          : { qty: { type: qty }, total: total(factor) };
+      declare(table(declared('INTEGER', 2)));
+      expect(await migrate()).toMatchObject({ applied: true });
+      await db.query("INSERT INTO items (id, qty) VALUES ('a', 3)");
+      declare(table(declared('REAL', 5)));
+      const result = await migrate();
+      expect(stopKinds(result)).toEqual([]);
+      expect(result).toMatchObject({ applied: true, refused: false });
+      expect(await rows()).toEqual([{ id: 'a', qty: 3, total: 15 }]);
+      expect(await migrate()).toMatchObject({ applied: false, refused: false });
+    }
+  });
+
+  it('adds the new calculated column after a column its expression reads, declared later (#5008)', async () => {
+    if (engine === 'duckdb') return;
+    await created({ qty: { type: 'INTEGER' }, total: doubled });
+    declare(
+      table({
+        total: {
+          type: 'INTEGER',
+          generated: times('qty', { col: 'price' }),
+          generatedInputTypes: { qty: 'number', price: 'number' },
+        },
+        qty: { type: 'INTEGER' },
+        price: { type: 'INTEGER', defaultValue: 4 },
+      }),
+    );
+    expect(await migrate()).toMatchObject({ applied: true, refused: false });
+    expect(await rows()).toEqual([{ id: 'a', qty: 3, price: 4, total: 12 }]);
+  });
+
+  // #5008 case 2: a required calculated column whose new expression is NULL for
+  // a stored row used to fail mid-run with a raw NOT NULL error.
+  it('stops, by name, when a required calculated column would be NULL for a stored row', async () => {
+    if (engine === 'duckdb') return;
+    const required = (factor: number) => ({
+      type: 'INTEGER' as const,
+      notNull: true,
+      generated: times('qty', { value: factor }),
+    });
+    declare(table({ qty: { type: 'INTEGER' }, total: doubled }));
+    expect(await migrate()).toMatchObject({ applied: true });
+    await db.query("INSERT INTO items (id, qty) VALUES ('a', 3)");
+    await db.query("INSERT INTO items (id, qty) VALUES ('b', NULL)");
+    declare(table({ qty: { type: 'INTEGER' }, total: required(7) }));
+    const result = await migrate();
+    expect(result).toMatchObject({ applied: false, refused: true });
+    expect(stopKinds(result)).toEqual([
+      'invents-data:column.generated-required-null',
+    ]);
+    expect(result.stops[0]?.message).toContain('items.total');
+    expect(await rows()).toEqual([
+      { id: 'a', qty: 3, total: 6 },
+      { id: 'b', qty: null, total: null },
+    ]);
+    // Once every row has a value the same swap applies.
+    await db.query("DELETE FROM items WHERE id = 'b'");
+    expect(await migrate()).toMatchObject({ applied: true, refused: false });
+    expect(await rows()).toEqual([{ id: 'a', qty: 3, total: 21 }]);
+  });
+
+  it('judges a required calculated column on the rows the run leaves: PostgreSQL replays a fill, SQLite stops by name (#5008)', async () => {
+    if (engine === 'duckdb') return;
+    declare(table({ qty: { type: 'INTEGER' }, total: doubled }));
+    expect(await migrate()).toMatchObject({ applied: true });
+    await db.query("INSERT INTO items (id, qty) VALUES ('b', NULL)");
+    declare(
+      table({
+        qty: { type: 'INTEGER', notNull: true, backfill: '0' },
+        total: {
+          type: 'INTEGER',
+          notNull: true,
+          generated: times('qty', { value: 5 }),
+        },
+      }),
+    );
+    const result = await migrate();
+    if (engine === 'postgres') {
+      // The run fills qty with 0 first, so the new total is 0, never NULL.
+      expect(result).toMatchObject({ applied: true, refused: false });
+      expect(await rows()).toEqual([{ id: 'b', qty: 0, total: 0 }]);
+      return;
+    }
+    // SQLite rebuilds the table to fill qty; the planner does not replay it.
+    expect(result).toMatchObject({ applied: false, refused: true });
+    expect(stopKinds(result)).toEqual([
+      'unresolved-non-data-stop:column.generated-required-unprojectable',
+    ]);
+    expect(result.stops[0]?.message).toContain('qty');
+  });
+
+  // #5008 case 4: SQLite refuses DROP COLUMN while something it tracks reads
+  // the column. The planner asks SQLite (a dry run in a savepoint) and stops by
+  // name instead of failing mid-run.
+  it.skipIf(engine !== 'sqlite')(
+    'stops, by name, when SQLite would refuse to drop the calculated column',
+    async () => {
+      // SQLite drops and re-adds a column under a view or trigger without
+      // complaint (they read it again once it is back); an index is what it
+      // refuses.
+      for (const setup of [
+        'CREATE INDEX items_total_hand ON items (total)',
+        'CREATE INDEX items_total_partial ON items (qty) WHERE total > 0',
+      ]) {
+        await db.query('DROP TABLE IF EXISTS items');
+        await created({ qty: { type: 'INTEGER' }, total: doubled });
+        await db.query(setup);
+        const before = (
+          await db.query(
+            'SELECT type, name, sql FROM sqlite_master ORDER BY type, name',
+          )
+        ).rows;
+        declare(
+          table({
+            qty: { type: 'INTEGER' },
+            total: { type: 'INTEGER', generated: times('qty', { value: 5 }) },
+          }),
+        );
+        const result = await migrate();
+        expect(result).toMatchObject({ applied: false, refused: true });
+        expect(stopKinds(result)).toEqual([
+          'loses-data:column.generated-replace-dependents',
+        ]);
+        expect(result.stops[0]?.message).toContain('SQLite refuses');
+        // The dry run left no trace.
+        expect(
+          (
+            await db.query(
+              'SELECT type, name, sql FROM sqlite_master ORDER BY type, name',
+            )
+          ).rows,
+        ).toEqual(before);
+        expect(await rows()).toEqual([{ id: 'a', qty: 3, total: 6 }]);
+      }
+    },
+  );
+
+  it.skipIf(engine !== 'sqlite')(
+    'runs the SQLite drop probe on one connection of a file database',
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'smrt-5008-'));
+      const file = getDatabase({ type: 'sqlite', url: join(dir, 'a.db') });
+      await db.close?.();
+      db = await file;
+      try {
+        await created({ qty: { type: 'INTEGER' }, total: doubled });
+        await db.query('CREATE INDEX items_total_hand ON items (total)');
+        declare(
+          table({
+            qty: { type: 'INTEGER' },
+            total: { type: 'INTEGER', generated: times('qty', { value: 5 }) },
+          }),
+        );
+        expect(stopKinds(await migrate())).toEqual([
+          'loses-data:column.generated-replace-dependents',
+        ]);
+        expect(await rows()).toEqual([{ id: 'a', qty: 3, total: 6 }]);
+        await db.query('DROP INDEX items_total_hand');
+        expect(await migrate()).toMatchObject({ applied: true });
+        expect(await rows()).toEqual([{ id: 'a', qty: 3, total: 15 }]);
+      } finally {
+        await db.close?.();
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
   it('reports no change on a second migrate', async () => {
     declare(table({ qty: { type: 'INTEGER' }, total: doubled }));
     expect(await migrate()).toMatchObject({ applied: true });
@@ -482,6 +669,36 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
       ).toContain('invents-data:check.violated');
       expect(await totals()).toEqual([['a', 0]]);
       expect(await liveChecks()).toEqual([rule.name]);
+    });
+
+    // #5008 case 3. Constraint drift of a column is judged once its type is
+    // settled, so a release that converts qty and requires it fills qty only
+    // on the next run. Folding the fill into the conversion run would plan
+    // NOT NULL and defaults against a column whose type, default and NULLs the
+    // conversion itself rewrites, so the planner does not; a rule that rests
+    // on that fill stops by name instead.
+    it('names a rule that rests on a fill deferred by a type conversion (#5008)', async () => {
+      await db.query(
+        'CREATE TABLE items (id TEXT PRIMARY KEY NOT NULL, _meta_type TEXT, qty REAL, total INTEGER GENERATED ALWAYS AS ((COALESCE(qty, 0) * 2)::integer) STORED)',
+      );
+      await insertStrict('a', null);
+      declare(
+        shared(times('qty', { value: 5 }), true, {
+          type: 'INTEGER',
+          notNull: true,
+          backfill: '0',
+        }),
+      );
+      const result = await migrate();
+      expect(result).toMatchObject({ applied: false, refused: true });
+      expect(result.stops.map((stop) => `${stop.reason}:${stop.kind}`)).toEqual(
+        ['invents-data:check.deferred-fill'],
+      );
+      expect(result.stops[0]?.message).toContain(
+        'planned only on the next run',
+      );
+      // Nothing ran: the conversion waits for the stop to be resolved.
+      expect(await totals()).toEqual([['a', 0]]);
     });
 
     it('stops, never guesses, when the run also writes rows in a way the probe cannot replay', async () => {

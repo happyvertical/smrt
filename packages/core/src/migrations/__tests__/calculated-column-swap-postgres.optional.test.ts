@@ -502,18 +502,17 @@ describe.skipIf(!pgUrl)(
 
     it('judges the rule through a type conversion, its preflight and a replacement in one run', async () => {
       // qty is REAL live; the run converts it (after a read-only preflight)
-      // and then replaces total so that it reads qty. The live total reads
-      // another column: PostgreSQL refuses to convert a column a calculated
-      // column reads.
+      // and replaces total, which reads qty. The old total is dropped before
+      // the conversion and the new one added after it (#5008): PostgreSQL
+      // refuses to convert a column a calculated column reads.
       await db.query(
-        'CREATE TABLE items (id TEXT PRIMARY KEY NOT NULL, _meta_type TEXT, n INTEGER, qty REAL, total INTEGER GENERATED ALWAYS AS ((COALESCE(n, 0) * 2)) STORED)',
+        'CREATE TABLE items (id TEXT PRIMARY KEY NOT NULL, _meta_type TEXT, qty REAL, total INTEGER GENERATED ALWAYS AS ((COALESCE(qty, 0) * 2)::integer) STORED)',
       );
       await insert('a', 2);
       await insert('b', null, '@app/a:Loose');
       declare(
         items(
           {
-            n: { type: 'INTEGER' },
             qty: { type: 'INTEGER' },
             total: total(times(5)),
           },
@@ -530,10 +529,60 @@ describe.skipIf(!pgUrl)(
       expect(await liveChecks()).toEqual([rule.name]);
     });
 
+    it('converts a column and swaps the calculated column that reads it, whichever is declared first', async () => {
+      const reads = (factor: number): Column => ({
+        ...total(times(factor)),
+        generatedInputTypes: { qty: 'number' },
+      });
+      for (const swapFirst of [false, true]) {
+        await db.query('DROP TABLE IF EXISTS items');
+        const declared = (qty: 'INTEGER' | 'REAL', factor: number) =>
+          swapFirst
+            ? { total: reads(factor), qty: { type: qty } }
+            : { qty: { type: qty }, total: reads(factor) };
+        declare(items(declared('INTEGER', 2)));
+        expect(await migrate()).toMatchObject({ applied: true });
+        await insert('a', 3);
+        declare(items(declared('REAL', 5)));
+        const result = await migrate();
+        expect(kinds(result)).toEqual([]);
+        expect(result).toMatchObject({ applied: true, refused: false });
+        expect(await rows()).toEqual([['a', 3, 15]]);
+        await unchanged();
+      }
+    });
+
+    it('stops, by name, when a required calculated column would be NULL for a stored row (#5008)', async () => {
+      declare(items({ qty: { type: 'INTEGER' }, total: total(times(2)) }));
+      expect(await migrate()).toMatchObject({ applied: true });
+      await insert('a', 3);
+      await insert('b', null, '@app/a:Loose');
+      declare(
+        items({
+          qty: { type: 'INTEGER' },
+          total: total(times(5), { notNull: true }),
+        }),
+      );
+      const result = await migrate();
+      expect(result).toMatchObject({ applied: false, refused: true });
+      expect(kinds(result)).toEqual([
+        'invents-data:column.generated-required-null',
+      ]);
+      expect(result.stops[0]?.message).toContain('items.total');
+      expect(await rows()).toEqual([
+        ['a', 3, 6],
+        ['b', null, null],
+      ]);
+      await db.query("DELETE FROM items WHERE id = 'b'");
+      expect(await migrate()).toMatchObject({ applied: true, refused: false });
+      expect(await totalNotNull()).toBe(true);
+    });
+
     it('stops a rule a type conversion leaves broken in the same run', async () => {
       // The run converts qty but fills it only on the next run (a column
       // whose type drifts compares its NOT NULL once the type is settled),
-      // so the Strict row still has no total when the rule would be added.
+      // so the Strict row still has no total when the rule would be added:
+      // a named stop, `check.deferred-fill`, not a bare `check.violated`.
       await db.query(
         'CREATE TABLE items (id TEXT PRIMARY KEY NOT NULL, _meta_type TEXT, qty REAL, total INTEGER GENERATED ALWAYS AS ((COALESCE(qty, 0) * 2)::integer) STORED)',
       );
@@ -549,7 +598,7 @@ describe.skipIf(!pgUrl)(
       );
       const result = await migrate();
       expect(result).toMatchObject({ applied: false, refused: true });
-      expect(kinds(result)).toContain('invents-data:check.violated');
+      expect(kinds(result)).toEqual(['invents-data:check.deferred-fill']);
     });
   },
 );

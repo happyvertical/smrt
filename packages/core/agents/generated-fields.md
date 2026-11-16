@@ -169,6 +169,10 @@ Generated-to-ordinary migrations have explicit value semantics:
   results are not materialized. A populated table targeting NOT NULL without a
   non-NULL default stays manual drift and emits no destructive SQL: supply a
   deliberate data migration or a default first.
+- A changed-expression replacement is planned so that no run fails raw (#5008):
+  statement order, required-column NULL check, the SQLite drop dry run and the
+  trigger limit are in [schema-paths](schema-paths.md) ("Planning rules for the
+  swap").
 - Ordinary-to-generated and changed-expression migrations replace the derived
   column, discard its old values and recalculate from the expression. Source
   columns and rows remain intact. Execute multi-statement plans through the

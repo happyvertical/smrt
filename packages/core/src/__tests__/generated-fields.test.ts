@@ -697,11 +697,16 @@ describe('database-generated fields #4915', () => {
       const changed = await new SchemaComparer(db, {
         engineHint: engine,
       }).compare(schemas);
-      const replacement = changed.changes.find(
+      // PostgreSQL plans the swap as a drop half and a re-add half (#5008).
+      const replacement = changed.changes.filter(
         (change) => change.name === 'total',
-      )!;
-      expect(replacement.type).toBe('alter_column');
-      for (const sql of replacement.sqlStatements!) await db.query(sql);
+      );
+      expect(replacement.map((change) => change.type)).toEqual(
+        replacement.map(() => 'alter_column'),
+      );
+      expect(replacement).toHaveLength(engine === 'postgres' ? 2 : 1);
+      for (const change of replacement)
+        for (const sql of change.sqlStatements!) await db.query(sql);
       expect(
         Number(
           (await db.query('SELECT total FROM generated_migration')).rows[0]
