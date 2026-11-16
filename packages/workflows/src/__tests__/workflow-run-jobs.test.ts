@@ -798,8 +798,26 @@ describe('workflow run jobs', () => {
       new Date(Date.now() - 60_000).toISOString(),
       job?.id,
     );
-    // The first poll sweeps before it claims: the job never ran.
-    await worker({ handlerUnclaimedDeadlineMs: 1_000 });
+    // A runner sweeps only handlers it did not register itself, so the
+    // sweep comes from a worker in a process with no workflow handler.
+    const runner = new TaskRunner({
+      claimFencing: true,
+      concurrency: 1,
+      pollInterval: 10,
+      cancelPollInterval: 10,
+      retention: false,
+      handlerUnclaimedDeadlineMs: 1_000,
+    });
+    runners.push(runner);
+    await runner.initialize(db);
+    await runner.start();
+    // Handlers are snapshotted at start: model a process that has none.
+    const internal = runner as unknown as {
+      jobHandlers: ReadonlyMap<string, unknown>;
+      handlerNames: readonly string[];
+    };
+    internal.jobHandlers = new Map();
+    internal.handlerNames = [];
     await jobSettled(run.id);
     expect((await jobsOf(run.id))[0]).toMatchObject({
       status: 'failed',
@@ -811,7 +829,9 @@ describe('workflow run jobs', () => {
     });
     expect(calls).toHaveLength(0);
     await bound.resume(run.id);
-    expect((await end(run.id)).status).toBe('done');
+    // A worker that registered the handler now runs the resumed job.
+    await worker();
+    await until(async () => (await bound.get(run.id)).status === 'done');
     expect(await jobsOf(run.id)).toHaveLength(2);
   });
 
