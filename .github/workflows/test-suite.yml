@@ -37,7 +37,6 @@ jobs:
     # hang guard against a stuck checkout, not a capacity budget.
     timeout-minutes: 10
     outputs:
-      knowledge: ${{ steps.filter.outputs.knowledge }}
       workbench: ${{ steps.filter.outputs.workbench }}
     steps:
       - name: Checkout repository
@@ -45,23 +44,11 @@ jobs:
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
-      - name: Detect knowledge-sensitive changes
+      - name: Detect workbench-sensitive changes
         id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         with:
           filters: |
-            knowledge:
-              - 'AGENTS.md'
-              - 'docs/**'
-              - 'package.json'
-              - 'packages/*/AGENTS.md'
-              - 'packages/*/package.json'
-              - 'packages/cli/src/commands/docs-claude.ts'
-              - 'packages/core/src/scanner/**'
-              - 'packages/core/src/schema/**'
-              - 'packages/smrt-app-mcp/**'
-              - 'packages/smrt-dev-mcp/**'
-              - 'scripts/check-knowledge.ts'
             # Core and config own the browser entry evaluated in this lane (#2838).
             workbench:
               - 'packages/core/**'
@@ -407,8 +394,10 @@ jobs:
 
   affected-knowledge:
     name: Affected Knowledge Freshness
-    needs: affected-scope
-    if: inputs.mode == 'affected' && needs.affected-scope.outputs.knowledge == 'true'
+    # Every pull request, not a paths filter: the merge group always runs this
+    # check, and a hand-kept list of what can stale a knowledge artifact let
+    # #5019 through to be ejected twice on it (#5045).
+    if: inputs.mode == 'affected'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
