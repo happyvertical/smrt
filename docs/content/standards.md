@@ -529,7 +529,7 @@ never disable the scan.
 - **`./workbench` subpath**: exports package-owned routes and workbench metadata for use by `smrt-workbench`
 - **Svelte peer**: one uniform floor (currently `svelte: ^5.57.0`), not bumped with the devDependency. Drop the `^4.0.0 || ^5.0.0` range.
 - **Build script**: `vite build && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist`
-- **Typecheck script** uses a workspace source config for both TypeScript and the Svelte a11y wrapper. For example, `tsc --noEmit -p tsconfig.typecheck.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig tsconfig.svelte-typecheck.json`. SvelteKit-backed packages sync Kit’s generated types and preserve Kit-specific aliases alongside workspace source paths.
+- **Typecheck script** uses a workspace source config for both TypeScript and the Svelte a11y wrapper. For example, `tsc --noEmit -p tsconfig.typecheck.json && node ../../scripts/svelte-check-a11y.mjs --config ../../scripts/svelte.config.typecheck.mjs --tsconfig tsconfig.svelte-typecheck.json`. Packages using Vite for CSS preprocessing provide a check config that preserves the transform with runtime config discovery disabled. SvelteKit-backed packages sync Kit’s generated types and preserve Kit-specific aliases alongside workspace source paths.
 - **`tsconfig.svelte.json`**: extends `tsconfig.package-svelte.json`, includes `ambient.d.ts` and `*.svelte`
 
 ### Accessibility enforcement (S12, #1417)

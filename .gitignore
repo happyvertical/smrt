@@ -139,6 +139,7 @@ ci-debug-*.log
 
 *.traineddata
 .svelte-kit
+/.svelte-check-*.json
 .npmrc
 .npmrc.local
 

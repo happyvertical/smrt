@@ -28,7 +28,10 @@ for those generators and for tooling that loads runtime package entry points.
 Run `node scripts/generate-workspace-source-paths.mjs` when changing an export
 or moving its source entry. The CI script tests check that the committed map
 matches the current export declarations. Check published declarations with the
-package’s normal build and `verify:pack`.
+package’s normal build and `verify:pack`. The Svelte checker scopes the selected
+check config across sibling source and keeps the package’s TypeScript inputs.
+CSS checks use Vite’s transform with config discovery disabled. Running runtime
+Vite plugins during a source check can publish stray manifests into UI packages.
 
 ## Build-time gates beyond Biome
 

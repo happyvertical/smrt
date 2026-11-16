@@ -63,7 +63,7 @@
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite",
-    "check": "pnpm exec svelte-check --config ../../scripts/svelte.config.typecheck.mjs --tsconfig ./tsconfig.svelte-typecheck.json",
+    "check": "node ../../scripts/svelte-check-workspace.mjs --config ../../scripts/svelte.config.typecheck.mjs --tsconfig ./tsconfig.svelte-typecheck.json",
     "prepack": "node ../../scripts/prepack-package.js",
     "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
     "test": "vitest run",

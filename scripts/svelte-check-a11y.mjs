@@ -12,10 +12,9 @@
  * Usage (from a package directory, mirroring the original svelte-check call):
  *   node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json
  *
- * All CLI args are forwarded verbatim to svelte-check; this wrapper only appends
- * the `--compiler-warnings "<a11y rules>:error"` promotion. The package-local
- * svelte-check binary is resolved from the calling package's cwd, so the exact
- * version pinned by that package is used.
+ * The workspace runner scopes explicit diagnostic configs to sibling source and
+ * uses the package-local checker. This wrapper also promotes the a11y rules
+ * below through `--compiler-warnings`.
  *
  * Escape hatch: set SMRT_A11Y_ENFORCE=0 to run plain svelte-check without the
  * a11y promotion (local debugging only; CI always enforces).
@@ -26,11 +25,8 @@
  * introduces a NEW a11y code will surface it as a plain warning (non-gating)
  * until it is added below — add new `a11y_*` codes here to enforce them.
  */
-import { spawn } from 'node:child_process';
-import { createRequire } from 'node:module';
-import path from 'node:path';
+import { runSvelteCheck } from './svelte-check-workspace.mjs';
 
-/** Svelte 5 compiler accessibility warning codes — promoted to errors. */
 const A11Y_CODES = [
   'a11y_accesskey',
   'a11y_aria_activedescendant_has_tabindex',
@@ -79,41 +75,11 @@ const A11Y_CODES = [
 const enforce = process.env.SMRT_A11Y_ENFORCE !== '0';
 const forwardedArgs = process.argv.slice(2);
 
-// Resolve the package-local svelte-check binary from the calling package's cwd
-// so the version pinned by that package is used (not whatever happens to be on
-// PATH). svelte-check ships its CLI at `bin/svelte-check`.
-const require = createRequire(import.meta.url);
-let svelteCheckBin;
-try {
-  const pkgJsonPath = require.resolve('svelte-check/package.json', {
-    paths: [process.cwd()],
-  });
-  svelteCheckBin = path.join(path.dirname(pkgJsonPath), 'bin', 'svelte-check');
-} catch {
-  console.error(
-    '[svelte-check-a11y] Could not resolve svelte-check from ' +
-      `${process.cwd()} — is it a devDependency of this package?`,
-  );
-  process.exit(2);
-}
-
-const args = [svelteCheckBin, ...forwardedArgs];
 if (enforce) {
-  args.push(
+  forwardedArgs.push(
     '--compiler-warnings',
     A11Y_CODES.map((code) => `${code}:error`).join(','),
   );
 }
 
-const child = spawn(process.execPath, args, { stdio: 'inherit' });
-child.on('exit', (code, signal) => {
-  if (signal) {
-    process.kill(process.pid, signal);
-    return;
-  }
-  process.exit(code ?? 0);
-});
-child.on('error', (err) => {
-  console.error(`[svelte-check-a11y] Failed to launch svelte-check: ${err.message}`);
-  process.exit(2);
-});
+runSvelteCheck(forwardedArgs, 'svelte-check-a11y');

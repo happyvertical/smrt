@@ -34,7 +34,7 @@
     "start": "node build",
     "clean": "rm -rf dist build .svelte-kit",
     "test": "svelte-kit sync && vitest run && vitest run -c vitest.dom.config.ts",
-    "typecheck": "svelte-kit sync && node ../../scripts/write-source-typecheck-config.mjs tsconfig.json .svelte-kit/tsconfig.typecheck.json && tsc -p .svelte-kit/tsconfig.typecheck.json && svelte-check --tsconfig ./.svelte-kit/tsconfig.typecheck.json",
+    "typecheck": "svelte-kit sync && node ../../scripts/write-source-typecheck-config.mjs tsconfig.json .svelte-kit/tsconfig.typecheck.json && tsc -p .svelte-kit/tsconfig.typecheck.json && node ../../scripts/svelte-check-workspace.mjs --config ./svelte.config.typecheck.js --tsconfig ./.svelte-kit/tsconfig.typecheck.json",
     "prepack": "node ../../scripts/prepack-package.js"
   },
   "dependencies": {

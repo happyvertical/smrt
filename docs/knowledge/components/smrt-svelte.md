@@ -5,10 +5,10 @@ description: "Svelte 5 components for SMRT user management - auth, users, tenant
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-16T19:29:11Z"
+  at: "2026-11-16T20:28:29Z"
 audience: "internal"
-evidence_level: "source-inspected"
-source_revision: "sha256:a0e695f30c9b39fd231beeec2d440106d0f895308d17d4502993eaa6e658c986"
+evidence_level: "manifest-described"
+source_revision: "sha256:0770f6d7501250ce87d633968a08891223933bdf79183be4143ae7e690c9880e"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-svelte/package.json"
@@ -63,8 +63,8 @@ sources:
 
 - Directory: `packages/smrt-svelte`
 - Private: no
-- Object source: `domain-artifact`
-- Evidence level: `source-inspected`
+- Object source: `none`
+- Evidence level: `manifest-described`
 
 ## Documentation
 
@@ -143,8 +143,3 @@ sources:
 - `./workspace/legacy`
 - `./workspace/live`
 - `./workspace/server`
-
-## Agent intents
-
-- `mcpfixture.next`: Next page (`e2e/mcp-apps.intents.ts`)
-- `mcpfixture.stage`: Propose notes (`e2e/mcp-apps.intents.ts`)

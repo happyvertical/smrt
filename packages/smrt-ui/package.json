@@ -158,7 +158,7 @@
   "scripts": {
     "build": "svelte-package -i src --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist",
     "dev": "svelte-package -i src --watch",
-    "check": "pnpm exec svelte-check --config ../../scripts/svelte.config.typecheck.mjs --tsconfig ./tsconfig.svelte-typecheck.json",
+    "check": "node ../../scripts/svelte-check-workspace.mjs --config ../../scripts/svelte.config.typecheck.mjs --tsconfig ./tsconfig.svelte-typecheck.json",
     "bench:data-table": "vitest bench src/components/data/__benchmarks__/DataTable.bench.ts",
     "generate:themes": "tsx scripts/generate-theme-styles.ts",
     "prepack": "node ../../scripts/prepack-package.js",

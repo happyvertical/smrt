@@ -30,7 +30,7 @@
   "scripts": {
     "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist",
     "test": "vitest run",
-    "check": "svelte-check --config ../../scripts/svelte.config.typecheck.mjs --tsconfig ./tsconfig.svelte-typecheck.json",
+    "check": "node ../../scripts/svelte-check-workspace.mjs --config ../../scripts/svelte.config.typecheck.mjs --tsconfig ./tsconfig.svelte-typecheck.json",
     "typecheck": "tsc -p tsconfig.typecheck.json && tsc -p tsconfig.test.json && node ../../scripts/svelte-check-a11y.mjs --config ../../scripts/svelte.config.typecheck.mjs --tsconfig ./tsconfig.svelte-test.json",
     "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/comments.test.ts"
   },
