@@ -27,8 +27,9 @@
  *
  * The files below are the only exceptions, each with its reason. A stale entry
  * (a file that no longer needs the exception) fails too, so the list only
- * shrinks. Comments and string bodies are ignored (a template literal's
- * `${...}` expressions are code); test files are not scanned.
+ * shrinks. Comments, string bodies and regular expression literals are
+ * ignored (a template literal's `${...}` expressions are code); test files
+ * are not scanned.
  *
  * Known limits (a text scan, not a type checker):
  *   - Origins are matched by name across the whole file, not by scope: a
@@ -38,8 +39,9 @@
  *     client (a model-client name with no tracked origin counts as one); on
  *     any other receiver whose origin the file does not show, it is taken
  *     as tracked.
- *   - Regular expression literals are read as code: a quote inside one
- *     blanks the rest of its line.
+ *   - A `/` is taken for a regular expression literal by the character or
+ *     keyword before it, and only when the literal closes on its own line;
+ *     a literal after `)` or `]` (`if (x) /re/.test(s)`) is read as code.
  *
  * Usage: node scripts/check-tracked-ai-calls.mjs [--root <dir>]
  */
@@ -138,7 +140,7 @@ const TRACKED_ORIGIN =
   /\b(?:prepareAiOperation|getAiClient|getOptionalAiClient|createTrackedAiClient|trackedAiClient|transcriptClient|TrackedAiClient)\b/;
 
 /** `.client(` in an origin, with its receiver. */
-const CLIENT_ORIGIN = /([A-Za-z_$][\w$]*)\s*\??\.\s*client\s*\(/;
+const CLIENT_ORIGIN = /([A-Za-z_$][\w$]*)\s*\??\.\s*client\s*\(/g;
 
 /** What makes a variable a provider client outside the tracked path. */
 const UNTRACKED_ORIGIN = /\bgetAI\b|\bAI(?:Client|Interface)\b/;
@@ -159,11 +161,63 @@ function walk(dir, out) {
 }
 
 /**
- * Blank comments and string bodies so prose that names the API is not
- * counted. A template literal keeps its `${...}` expressions: code there is
- * code. One left-to-right pass, so a quote inside a template's text (or a
- * backtick inside a string) never unbalances the other. Regular expression
- * literals are not recognized: a quote in one blanks the rest of its line.
+ * Characters after which a `/` starts a regular expression literal rather
+ * than a division. `)`, `]` and `}` are left out (a division, or the end of
+ * a block, or a Svelte tag's `/>`), and so are `<` and `>` (Svelte markup).
+ */
+const REGEX_AFTER_CHAR = new Set('(,=:[!&|?{;+-*%~^'.split(''));
+/** Keywords after which a `/` starts a regular expression literal. */
+const REGEX_AFTER_WORD =
+  /(?:^|[^\w$])(?:return|typeof|instanceof|in|of|new|delete|void|throw|case|do|else|yield|await)$/;
+
+/**
+ * The end (exclusive) of a regular expression literal whose opening `/` is
+ * at `start`, or -1 when this `/` is not one: by the last significant
+ * character before it in `before` (a heuristic, not a parser), and only when
+ * the literal closes on its own line. Svelte's `{/if}` and the like are not
+ * literals.
+ */
+function regexEnd(source, start, before) {
+  let k = before.length - 1;
+  while (k >= 0 && /\s/.test(before[k])) k -= 1;
+  const last = before[k];
+  if (
+    last !== undefined &&
+    !REGEX_AFTER_CHAR.has(last) &&
+    !REGEX_AFTER_WORD.test(before.slice(Math.max(0, k - 11), k + 1))
+  ) {
+    return -1;
+  }
+  if (last === '{' && /^\/(?:if|each|await|key|snippet)\b/.test(source.slice(start, start + 9))) {
+    return -1;
+  }
+  let inClass = false;
+  for (let j = start + 1; j < source.length; j += 1) {
+    const c = source[j];
+    if (c === '\n') return -1;
+    if (c === '\\') {
+      j += 1;
+      continue;
+    }
+    if (c === '[') inClass = true;
+    else if (c === ']') inClass = false;
+    else if (c === '/' && !inClass) {
+      let end = j + 1;
+      while (end < source.length && /[a-z]/i.test(source[end])) end += 1;
+      return end;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Blank comments, string bodies and regular expression literals so prose
+ * that names the API is not counted. A template literal keeps its `${...}`
+ * expressions: code there is code. One left-to-right pass, so a quote inside
+ * a template's text (or a backtick inside a string, or a quote, backtick or
+ * `/*` inside a regular expression) never unbalances the other. A `/` is
+ * read as a regular expression by the character or keyword before it (see
+ * {@link regexEnd}).
  */
 export function stripNoise(source) {
   let out = '';
@@ -182,12 +236,20 @@ export function stripNoise(source) {
       i = stop;
       continue;
     }
-    if (ch === '/' && next === '/' && !/[:\\]/.test(source[i - 1] ?? '')) {
+    if (ch === '/' && next === '/') {
       let stop = source.indexOf('\n', i);
       if (stop < 0) stop = source.length;
       out += blank(source.slice(i, stop));
       i = stop;
       continue;
+    }
+    if (ch === '/') {
+      const end = regexEnd(source, i, out);
+      if (end > 0) {
+        out += `/${blank(source.slice(i + 1, end))}`;
+        i = end;
+        continue;
+      }
     }
     if (ch === "'" || ch === '"') {
       // A string ends at its quote, or (unterminated) at the line end.
@@ -340,7 +402,11 @@ function resolvedOrigins(code, name, seen = new Set()) {
 function receiverKind(code, name, seen = new Set()) {
   if (seen.has(name)) return 'other';
   seen.add(name);
-  const kinds = resolvedOrigins(code, name).map((origin) => originKind(code, origin, seen));
+  // Each origin follows its own path: a name seen while reading one origin
+  // is not taken as settled for the next.
+  const kinds = resolvedOrigins(code, name).map((origin) =>
+    originKind(code, origin, new Set(seen)),
+  );
   if (kinds.includes('tracked')) return 'tracked';
   if (AI_NAME.test(name) || kinds.includes('model')) return 'model';
   return 'other';
@@ -348,18 +414,23 @@ function receiverKind(code, name, seen = new Set()) {
 
 /**
  * What an origin makes: `tracked` (a tracked factory or type, or `.client(`
- * on a receiver that is not a provider client), `model` (a provider factory
- * or type, or `.client(` on a provider client) or null. `.client(` on a
- * receiver whose origin the file does not show counts as tracked, so the
- * client it makes is held to the prompt-key rule.
+ * on receivers that are not provider clients), `model` (a provider factory
+ * or type, or `.client(` on any provider client: in `x ? t.client() :
+ * ai.client()` one untracked branch makes it untracked) or null. `.client(`
+ * on a receiver whose origin the file does not show counts as tracked, so
+ * the client it makes is held to the prompt-key rule.
  */
 function originKind(code, origin, seen) {
   if (TRACKED_ORIGIN.test(origin)) return 'tracked';
   if (UNTRACKED_ORIGIN.test(origin)) return 'model';
-  const receiver = CLIENT_ORIGIN.exec(origin)?.[1];
-  if (!receiver) return null;
-  if (/^tracked/i.test(receiver)) return 'tracked';
-  return receiverKind(code, receiver, seen) === 'model' ? 'model' : 'tracked';
+  const receivers = [...origin.matchAll(CLIENT_ORIGIN)].map((match) => match[1]);
+  if (receivers.length === 0) return null;
+  const untracked = receivers.some(
+    (receiver) =>
+      !/^tracked/i.test(receiver) &&
+      receiverKind(code, receiver, new Set(seen)) === 'model',
+  );
+  return untracked ? 'model' : 'tracked';
 }
 
 /**

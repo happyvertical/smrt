@@ -154,6 +154,56 @@ test('a client made by .client( on a provider client is not tracked', () => {
   );
 });
 
+test('reads each origin of a receiver on its own, and every receiver of an origin', () => {
+  // Two origins through the same provider receiver: both untracked.
+  assert.deepEqual(
+    kinds('let c = ai.client(a);\nc = ai.client(b);\nawait c.message(x, opts);\n'),
+    ['untracked-call'],
+  );
+  // One untracked branch makes the client untracked.
+  assert.deepEqual(
+    kinds(
+      "const c = x ? tracked.client({ promptKey: 'k' }) : ai.client({ promptKey: 'k' });\nawait c.message(m, opts);\n",
+    ),
+    ['untracked-call'],
+  );
+  assert.deepEqual(
+    kinds(
+      "const tracked = createTrackedAiClient({ db });\nconst c = x ? tracked.client({ promptKey: 'k' }) : trackedOther.client({ promptKey: 'j' });\nawait c.message(m, opts);\n",
+    ),
+    [],
+  );
+});
+
+test('reads regular expression literals as literals, not code', () => {
+  // A `/*`, a backtick or a quote inside one never blanks the code after it.
+  assert.deepEqual(kinds('const re = /[/*]/;\nawait ai.chat(m);\n'), ['untracked-call']);
+  assert.deepEqual(kinds('const re = /`/;\nawait ai.chat(m);\n'), ['untracked-call']);
+  assert.deepEqual(kinds("if (/'/.test(s)) await ai.chat(m);\n"), ['untracked-call']);
+  assert.deepEqual(kinds('const ok = x && /a\\/b/i.test(s); await ai.chat(m);\n'), [
+    'untracked-call',
+  ]);
+  // Prose in one is not code.
+  assert.deepEqual(kinds('const re = /ai.chat(m)/;\n'), []);
+  assert.deepEqual(kinds('return /getAI(/.test(s);\n'), []);
+  // A division is not one.
+  assert.deepEqual(kinds("const r = a / b; const s = 'x/y'; await ai.chat(m);\n"), [
+    'untracked-call',
+  ]);
+  assert.deepEqual(kinds('const r = f(a) / 2 / ai.chat(m);\n'), ['untracked-call']);
+  // Svelte markup: a self-closing tag and a block closer are not one.
+  assert.deepEqual(kinds('<A x={1} /><B on:click={() => ai.message(p)} />\n'), [
+    'untracked-call',
+  ]);
+  assert.deepEqual(kinds('{#if a}<A />{/if}<B on:click={() => ai.message(p)} />\n'), [
+    'untracked-call',
+  ]);
+});
+
+test('a line comment right after a colon is a comment', () => {
+  assert.deepEqual(kinds('const o = { key:// ai.chat(m)\n  value: 1 };\n'), []);
+});
+
 test('known limit: origins are matched by name across the file, not by scope', () => {
   // A tracked `ai` in one function covers a provider `ai` in another.
   assert.deepEqual(
