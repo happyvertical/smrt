@@ -1,17 +1,19 @@
 import {
   applyPostgresRuntimeTimeouts,
   detectEngine,
+  SQLITE_BUSY_TIMEOUT_MS,
 } from '@happyvertical/smrt-core';
-import { getDatabase } from '@happyvertical/sql';
-import { tuneSqliteForConcurrency } from './worker-liveness.js';
+import {
+  getDatabase,
+  type ReopenOptions,
+  type DatabaseEngine as SqlEngine,
+} from '@happyvertical/sql';
 
-/**
- * Configuration for an off-loop liveness ticker (passed via `workerData`).
- */
-export interface LivenessTickerOptions {
-  /** Database URL the owning runner is using. */
+/** Options common to every engine. */
+interface LivenessTickerBaseOptions {
+  /** Database URL the owning runner is using (PostgreSQL only). */
   url: string;
-  /** Optional explicit engine/type hint. */
+  /** Optional explicit engine/type hint (PostgreSQL only). */
   type?: string;
   /** This runner incarnation's worker key (the `_smrt_workers.worker_id`). */
   workerKey: string;
@@ -22,6 +24,24 @@ export interface LivenessTickerOptions {
   /** Queues the runner polls, re-written on every renewal. */
   queues?: string[];
 }
+
+/**
+ * Configuration for an off-loop liveness ticker (passed via `workerData`).
+ *
+ * SQLite connects only through `reopen` (from the runtime connection's
+ * `db.reopenOptions()`) together with the `expectedEngine` that connection
+ * reported; the thread refuses to run on a different engine. Without `reopen`
+ * only PostgreSQL may be reached, from `url`.
+ */
+export type LivenessTickerOptions = LivenessTickerBaseOptions &
+  (
+    | {
+        reopen: ReopenOptions;
+        /** The engine the runner's connection reported; required with `reopen`. */
+        expectedEngine: SqlEngine;
+      }
+    | { reopen?: undefined; expectedEngine?: undefined }
+  );
 
 export interface LivenessTicker {
   /** Stop renewing and close the connection. */
@@ -40,8 +60,15 @@ export interface LivenessTicker {
  * Other engines pass through unchanged.
  */
 export function livenessConnectionOptions(
-  options: Pick<LivenessTickerOptions, 'url' | 'type'>,
+  options: Pick<LivenessTickerOptions, 'url' | 'type' | 'reopen'>,
 ): Parameters<typeof getDatabase>[0] {
+  // Reopen options (SQLite) are used exactly as the SDK produced them.
+  if (options.reopen) return options.reopen;
+  if (detectEngine(options.url, options.type) === 'sqlite') {
+    throw new Error(
+      'The liveness ticker needs reopen options for SQLite: building a connection from a URL can pick a different SQLite engine than the runtime and corrupt the file (#4978).',
+    );
+  }
   const base = {
     url: options.url,
     type: options.type as 'sqlite' | 'postgres' | 'duckdb' | undefined,
@@ -69,12 +96,29 @@ export async function runLivenessTicker(
 ): Promise<LivenessTicker> {
   const db = await getDatabase(livenessConnectionOptions(options));
 
-  // The ticker's connection shares the SQLite file with the runner's main
-  // connection; enable WAL + a busy timeout so renewals don't lose a lock race.
-  const looksSqlite =
-    (options.type ?? '').toLowerCase() === 'sqlite' ||
-    (!options.type && /^file:|\.(db|sqlite)\b|:memory:/i.test(options.url));
-  if (looksSqlite) await tuneSqliteForConcurrency(db);
+  if (options.reopen) {
+    try {
+      // Two SQLite engines do not coordinate file locks: refuse to run on a
+      // different engine than the runner's connection, and never without
+      // knowing which one that is.
+      if (!options.expectedEngine) {
+        throw new Error(
+          "The liveness ticker needs the runtime connection's engine (expectedEngine) to use reopen options.",
+        );
+      }
+      if (db.engine !== options.expectedEngine) {
+        throw new Error(
+          `Liveness connection uses engine ${db.engine ?? 'unknown'}, expected ${options.expectedEngine}; refusing to share the SQLite file across engines.`,
+        );
+      }
+      // A reopened connection does not inherit PRAGMAs and neither engine
+      // waits for a lock by default. Same value as the runtime's own.
+      await db.query(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
+    } catch (error) {
+      await db.close?.().catch(() => {});
+      throw error;
+    }
+  }
 
   const renew = async (): Promise<void> => {
     const now = new Date();

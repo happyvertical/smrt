@@ -4,7 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Worker } from 'node:worker_threads';
 import { getTestDatabase } from '@happyvertical/smrt-core';
-import type { DatabaseInterface } from '@happyvertical/sql';
+import type {
+  DatabaseEngine,
+  DatabaseInterface,
+  ReopenOptions,
+} from '@happyvertical/sql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTaskRunner } from '../runner.js';
 import { SmrtWorkerCollection } from '../smrt-worker.js';
@@ -54,7 +58,8 @@ describe('off-loop liveness (Stage 2)', () => {
 
     const ticker = await runLivenessTicker({
       url: dbUrl,
-      type: 'sqlite',
+      reopen: seed.reopenOptions?.() as ReopenOptions,
+      expectedEngine: seed.engine as DatabaseEngine,
       workerKey: 'tick-w',
       leaseTtlMs: 10_000,
       leaseTickMs: 40,

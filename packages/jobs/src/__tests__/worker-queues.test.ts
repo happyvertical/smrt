@@ -3,6 +3,7 @@ import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getTestDatabase } from '@happyvertical/smrt-core';
+import type { DatabaseEngine, ReopenOptions } from '@happyvertical/sql';
 import { describe, expect, it } from 'vitest';
 import { createTaskRunner } from '../runner.js';
 import { SmrtWorkerCollection } from '../smrt-worker.js';
@@ -66,7 +67,8 @@ describe('SmrtWorker.queues (#3902)', () => {
     await workers.registerWorker({ workerKey: 'tw', leaseTtlMs: 10_000 });
     const ticker = await runLivenessTicker({
       url: dbUrl,
-      type: 'sqlite',
+      reopen: seed.reopenOptions?.() as ReopenOptions,
+      expectedEngine: seed.engine as DatabaseEngine,
       workerKey: 'tw',
       leaseTtlMs: 10_000,
       leaseTickMs: 60_000,

@@ -9,7 +9,7 @@ import { SmrtJobCollection } from '../smrt-job.js';
 import { SmrtJobEventCollection } from '../smrt-job-event.js';
 import {
   enablePgliteJobs,
-  offLoopEligible,
+  planLivenessConnection,
   resolveEngine,
 } from '../worker-liveness.js';
 
@@ -23,7 +23,7 @@ it.runIf(Boolean(process.env.SMRT_TEST_PGLITE_MODULE))(
     try {
       enablePgliteJobs(db);
       expect(resolveEngine(db)).toBe('postgres');
-      expect(offLoopEligible(db)).toBe(false);
+      expect(planLivenessConnection(db).kind).toBe('none');
       const jobs = await SmrtJobCollection.create({ db });
       await jobs.enqueueJob({ objectType: 'PgliteProof', method: 'run' });
       const now = new Date(Date.now() + 120_000);
@@ -79,10 +79,10 @@ it('does not change engine or ticker selection merely because a client looks lik
     client,
   } as unknown as import('@happyvertical/sql').DatabaseInterface;
   expect(resolveEngine(db)).toBe('sqlite');
-  expect(offLoopEligible(db)).toBe(false);
+  expect(planLivenessConnection(db).kind).toBe('none');
   enablePgliteJobs(db);
   expect(resolveEngine(db)).toBe('postgres');
-  expect(offLoopEligible(db)).toBe(false);
+  expect(planLivenessConnection(db).kind).toBe('none');
   // Transaction handles share the SDK client, so the explicit choice follows it.
   expect(resolveEngine({ ...db })).toBe('postgres');
   expect(() =>
