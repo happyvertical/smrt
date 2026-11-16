@@ -320,7 +320,8 @@ export function createWorkflowRunJobs<Input = unknown>(
    * A run whose job ended for good while it is still `running` is closed to
    * match (page section 6.7): a failed job fails the run, a cancelled job
    * cancels it. A crashed worker (stale recovery) leaves it recoverable, and
-   * a worker without the handler leaves it stopped and resumable.
+   * a job no worker with the handler took (`handler-unregistered`,
+   * `handler-unclaimed`) leaves it stopped and resumable.
    */
   const reconcile = async (owner: WorkflowRunOwner, runId: string) => {
     const run = await getAiRun(db, runId);
@@ -336,7 +337,11 @@ export function createWorkflowRunJobs<Input = unknown>(
     const outcome = await outcomeOf(owner, job);
     if (!outcome || outcome.failureKind === 'stale-recovery') return;
     if ((await jobsOf(owner, runId, undefined, ACTIVE)).length) return;
-    if (outcome.failureKind === 'handler-unregistered') {
+    // The job never ran here: no worker had the handler (#5005).
+    if (
+      outcome.failureKind === 'handler-unregistered' ||
+      outcome.failureKind === 'handler-unclaimed'
+    ) {
       await stopAiRun(db, runId, { reason: 'interrupted' }).catch(() => null);
       return;
     }

@@ -82,8 +82,9 @@ driver wiring on every job (after a restart nothing lives in a closure); its
   nothing.
 - **Job ends, run follows** (read by `get` and `resume`): a cancelled job with
   the run still `running` cancels the run; a job failed with any kind but
-  stale recovery fails it (`error`); `handler-unregistered` stops it
-  (resumable once a worker registers the handler). Stale recovery (the worker
+  stale recovery fails it (`error`); `handler-unregistered` and
+  `handler-unclaimed` stop it (resumable once a worker registers the
+  handler). Stale recovery (the worker
   died) leaves the run `running`: `resume(runId)` then proves the dead
   dispatch (`assertFailedJobDispatch`) and admits a new job in one
   transaction; the second worker's `reconcileAiRunOnClaim` returns what the
@@ -95,6 +96,11 @@ driver wiring on every job (after a restart nothing lives in a closure); its
   approved, admits a job that re-runs the check; `continueAfterApproval` does
   the same for a decision recorded elsewhere, and is harmless to repeat.
   `retry` opens the new run and admits its job.
-- **Mixed fleets.** A worker whose process did not create a host for a
-  definition fails that run's job (the run is then failed on the next read);
-  route a definition's jobs to a queue only capable workers consume.
+- **Mixed fleets.** A runner claims a workflow run's job only when its
+  process registered the workflow-run handler; a job no such runner claims
+  within `handlerUnclaimedDeadlineMs` (default 24 h) fails
+  `handler-unclaimed` and the run stops, resumable. A worker that registered
+  the handler but created no host for the job's definition still fails that
+  job (the run is then failed on the next read), so create every
+  definition's host in each process that registers the handler, or give
+  definitions their own queues. Upgrade every runner before enqueueing.

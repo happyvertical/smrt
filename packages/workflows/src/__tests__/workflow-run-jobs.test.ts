@@ -789,6 +789,32 @@ describe('workflow run jobs', () => {
     expect((await end(run.id)).status).toBe('done');
   });
 
+  it('stops a run whose job no worker claimed before the deadline and resumes it', async () => {
+    const bound = install();
+    const run = await bound.start(startInput());
+    const [job] = await jobsOf(run.id);
+    await db.query(
+      'UPDATE _smrt_jobs SET run_at = ? WHERE id = ?',
+      new Date(Date.now() - 60_000).toISOString(),
+      job?.id,
+    );
+    // The first poll sweeps before it claims: the job never ran.
+    await worker({ handlerUnclaimedDeadlineMs: 1_000 });
+    await jobSettled(run.id);
+    expect((await jobsOf(run.id))[0]).toMatchObject({
+      status: 'failed',
+      attempts: 0,
+    });
+    expect(await bound.get(run.id)).toMatchObject({
+      status: 'stopped',
+      stopReason: 'interrupted',
+    });
+    expect(calls).toHaveLength(0);
+    await bound.resume(run.id);
+    expect((await end(run.id)).status).toBe('done');
+    expect(await jobsOf(run.id)).toHaveLength(2);
+  });
+
   it('a job whose run belongs to another definition does no work', async () => {
     const bound = install();
     const run = await bound.start(startInput());
@@ -873,12 +899,48 @@ describe('workflow run jobs', () => {
       late.dispose();
     });
 
-    it('stops a run whose job a runner without the handler failed, then resumes it', async () => {
+    it('leaves a run job pending on a runner without the handler for one that has it', async () => {
       const bound = install();
       const run = await bound.start(startInput());
       kit.dispose();
       expect(listJobHandlers()).not.toContain(WORKFLOW_RUN_HANDLER);
       const bare = await worker();
+      await delay(100);
+      // The claim filter keeps the job away from a runner that cannot run it.
+      expect((await jobsOf(run.id))[0]).toMatchObject({
+        status: 'pending',
+        attempts: 0,
+      });
+      expect(calls).toHaveLength(0);
+      await bare.stop();
+      install();
+      await worker();
+      expect((await end(run.id)).status).toBe('done');
+      expect(await jobsOf(run.id)).toHaveLength(1);
+    });
+
+    it('stops a run whose job a runner without the handler failed, then resumes it', async () => {
+      const bound = install();
+      const run = await bound.start(startInput());
+      kit.dispose();
+      expect(listJobHandlers()).not.toContain(WORKFLOW_RUN_HANDLER);
+      // The backstop: a claim made without the handler filter.
+      const bare = new TaskRunner({
+        claimFencing: true,
+        concurrency: 1,
+        pollInterval: 10,
+        cancelPollInterval: 10,
+        retention: false,
+      });
+      runners.push(bare);
+      await bare.initialize(db);
+      const internal = bare as unknown as { collection: SmrtJobCollection };
+      const claimReady = internal.collection.claimReady.bind(
+        internal.collection,
+      );
+      internal.collection.claimReady = ({ handlerNames: _names, ...options }) =>
+        claimReady(options);
+      await bare.start();
       await jobSettled(run.id);
       const [job] = await jobsOf(run.id);
       expect(job?.status).toBe('failed');
