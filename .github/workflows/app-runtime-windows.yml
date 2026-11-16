@@ -146,6 +146,28 @@ jobs:
       - name: Restore the core test manifest
         run: pnpm turbo run generate:test --filter='@happyvertical/smrt-core'
 
+      - name: DIAG powershell timing
+        shell: pwsh
+        run: |
+          $ps = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+          function T($name, $cmd) {
+            $sw = [Diagnostics.Stopwatch]::StartNew()
+            & $ps -NoLogo -NoProfile -NonInteractive -InputFormat None -Command $cmd | Out-Null
+            "{0,-28} {1:n1}s exit={2}" -f $name, $sw.Elapsed.TotalSeconds, $LASTEXITCODE
+          }
+          T 'empty' '1'
+          T 'empty again' '1'
+          T 'whoami' '& ($env:SystemRoot + "\System32\whoami.exe") /user /fo csv /nh'
+          T 'Get-Item' 'Get-Item -LiteralPath C:\ -Force | Out-Null'
+          T 'Get-Acl' 'Get-Acl -LiteralPath C:\ | Out-Null'
+          T 'Get-Acl again' 'Get-Acl -LiteralPath C:\ | Out-Null'
+          T 'Get-CimInstance' 'Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID=''C:''" | Out-Null'
+          T 'Get-CimInstance again' 'Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID=''C:''" | Out-Null'
+          T 'DriveInfo' '[System.IO.DriveInfo]::new("C").DriveFormat | Out-Null'
+          T 'ConvertTo-Json' '[pscustomobject]@{a=1} | ConvertTo-Json -Compress | Out-Null'
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          Get-Process | Where-Object { $_.ProcessName -match 'defender|MsMpEng|antimalware' } | Select-Object -First 3 ProcessName | Out-String
+
       - name: Windows custody tests
         working-directory: packages/app-runtime
         env:
