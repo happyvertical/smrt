@@ -1,4 +1,8 @@
-import { detectEngine, SQLITE_BUSY_TIMEOUT_MS } from '@happyvertical/smrt-core';
+import {
+  detectEngine,
+  SQLITE_BUSY_TIMEOUT_MS,
+  setBusyTimeoutIfUnset,
+} from '@happyvertical/smrt-core';
 import type {
   DatabaseInterface,
   ReopenOptions,
@@ -131,7 +135,9 @@ export async function tuneSqliteForConcurrency(
   db: DatabaseInterface,
 ): Promise<void> {
   try {
-    await db.query(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
+    // Only when unset: a shared collection connection keeps its shorter
+    // main-thread wait (#4978) and the runtime's own keeps its 5000.
+    await setBusyTimeoutIfUnset(db, SQLITE_BUSY_TIMEOUT_MS);
     await db.query('PRAGMA journal_mode = WAL');
   } catch {
     // Best-effort connection tuning.

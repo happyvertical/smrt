@@ -25,7 +25,7 @@ export const SQLITE_BUSY_TIMEOUT_MS = 5000;
  */
 export const SQLITE_COLLECTION_BUSY_TIMEOUT_MS = 250;
 
-const settled = new WeakSet<object>();
+const settled = new WeakMap<object, Promise<void>>();
 
 function isFileSqlite(db: DatabaseInterface): boolean {
   if (db.engine !== 'node-sqlite' && db.engine !== 'libsql') return false;
@@ -41,27 +41,47 @@ function isFileSqlite(db: DatabaseInterface): boolean {
 }
 
 /**
+ * Set `busy_timeout` on a SQLite connection unless something already did.
+ *
+ * A timeout already set (the runtime's 5000 ms, or the 250 ms collection value)
+ * is never overridden, so a shared connection keeps the shortest wait chosen
+ * for it and a later caller cannot lengthen a main-thread wait.
+ */
+export async function setBusyTimeoutIfUnset(
+  db: DatabaseInterface,
+  timeoutMs: number,
+): Promise<void> {
+  const current = await db.query('PRAGMA busy_timeout');
+  const value = Object.values((current.rows[0] ?? {}) as object)[0];
+  if (Number(value) > 0) return;
+  await db.query(`PRAGMA busy_timeout = ${timeoutMs}`);
+}
+
+/**
  * Make a file-backed SQLite connection wait for a lock instead of failing at
  * once with `database is locked`.
  *
- * Applied once per cached connection, and only when nothing has set a timeout
- * yet, so a connection the runtime already tuned (`SQLITE_BUSY_TIMEOUT_MS`)
- * keeps its longer value. Other engines and in-memory databases are untouched.
- * Best-effort: a failing PRAGMA must never break opening a database.
+ * Applied once per cached connection (concurrent callers share one attempt),
+ * and only when nothing has set a timeout yet, so a connection the runtime
+ * already tuned (`SQLITE_BUSY_TIMEOUT_MS`) keeps its longer value. Other
+ * engines and in-memory databases are untouched. Best-effort: a failing PRAGMA
+ * must never break opening a database.
  */
-export async function applyCollectionLockWait(
+export function applyCollectionLockWait(
   db: DatabaseInterface,
   timeoutMs: number = SQLITE_COLLECTION_BUSY_TIMEOUT_MS,
 ): Promise<void> {
-  if (!db || typeof db !== 'object' || settled.has(db)) return;
-  settled.add(db);
-  if (!isFileSqlite(db)) return;
-  try {
-    const current = await db.query('PRAGMA busy_timeout');
-    const value = Object.values((current.rows[0] ?? {}) as object)[0];
-    if (Number(value) > 0) return;
-    await db.query(`PRAGMA busy_timeout = ${timeoutMs}`);
-  } catch {
-    // Best-effort connection tuning.
-  }
+  if (!db || typeof db !== 'object') return Promise.resolve();
+  const existing = settled.get(db);
+  if (existing) return existing;
+  const attempt = (async () => {
+    if (!isFileSqlite(db)) return;
+    try {
+      await setBusyTimeoutIfUnset(db, timeoutMs);
+    } catch {
+      // Best-effort connection tuning.
+    }
+  })();
+  settled.set(db, attempt);
+  return attempt;
 }

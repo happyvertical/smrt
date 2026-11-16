@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import {
   getTestDatabase,
   SQLITE_BUSY_TIMEOUT_MS,
+  SQLITE_COLLECTION_BUSY_TIMEOUT_MS,
 } from '@happyvertical/smrt-core';
 import {
   type DatabaseEngine,
@@ -422,6 +423,33 @@ describe('liveness thread and the runtime share one SQLite engine (#4978)', () =
     }
     const plan = planLivenessConnection(real, 'win32');
     if (plan.kind === 'none') expect(plan.degraded).toBe(true);
+  });
+
+  it('start() keeps a shorter collection busy timeout and sets one when unset', async () => {
+    const db = await openNodeSqlite();
+    const timeout = async () =>
+      Number(
+        Object.values(
+          ((await db.query('PRAGMA busy_timeout')).rows[0] ?? {}) as object,
+        )[0],
+      );
+    for (const [before, after] of [
+      [SQLITE_COLLECTION_BUSY_TIMEOUT_MS, SQLITE_COLLECTION_BUSY_TIMEOUT_MS],
+      [0, SQLITE_BUSY_TIMEOUT_MS],
+    ]) {
+      await db.query(`PRAGMA busy_timeout = ${before}`);
+      const runner = createTaskRunner({
+        pollInterval: 60_000,
+        leaseTickMs: 20,
+        leaseTtlMs: 10_000,
+        retention: false,
+      });
+      await runner.initialize(db);
+      await runner.start();
+      closers.push(() => runner.stop());
+      expect(await timeout()).toBe(after);
+      await runner.stop();
+    }
   });
 
   it('plans no thread for secure SQLite on Windows, a reopen for it elsewhere', async () => {

@@ -8,6 +8,7 @@ import {
   applyCollectionLockWait,
   SQLITE_BUSY_TIMEOUT_MS,
   SQLITE_COLLECTION_BUSY_TIMEOUT_MS,
+  setBusyTimeoutIfUnset,
 } from './sqlite-lock-wait.js';
 
 let dir: string;
@@ -90,5 +91,31 @@ describe('collection lock wait (#4978)', () => {
     await db.query('PRAGMA busy_timeout = 0');
     await applyCollectionLockWait(db);
     expect(await busyTimeout(db)).toBe(0);
+  });
+
+  it('a concurrent caller only returns once the timeout is applied', async () => {
+    const db = await getSqlDatabase({
+      type: 'sqlite',
+      url: join(dir, 'e.sqlite'),
+      cache: false,
+    });
+    open.push(db);
+    const first = applyCollectionLockWait(db);
+    await applyCollectionLockWait(db);
+    expect(await busyTimeout(db)).toBe(SQLITE_COLLECTION_BUSY_TIMEOUT_MS);
+    await first;
+  });
+
+  it('setBusyTimeoutIfUnset sets an unset timeout and never overrides one', async () => {
+    const db = await getSqlDatabase({
+      type: 'sqlite',
+      url: join(dir, 'f.sqlite'),
+      cache: false,
+    });
+    open.push(db);
+    await setBusyTimeoutIfUnset(db, SQLITE_BUSY_TIMEOUT_MS);
+    expect(await busyTimeout(db)).toBe(SQLITE_BUSY_TIMEOUT_MS);
+    await setBusyTimeoutIfUnset(db, 17);
+    expect(await busyTimeout(db)).toBe(SQLITE_BUSY_TIMEOUT_MS);
   });
 });

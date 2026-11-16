@@ -820,6 +820,7 @@ export * from './runtime-exposure.js';
 export {
   SQLITE_BUSY_TIMEOUT_MS,
   SQLITE_COLLECTION_BUSY_TIMEOUT_MS,
+  setBusyTimeoutIfUnset,
 } from './sqlite-lock-wait.js';
 // Presentation metadata helpers (#3599): widget hints, display label, selector lookup
 export * from './ui-metadata.js';

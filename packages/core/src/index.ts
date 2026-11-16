@@ -689,6 +689,7 @@ export * from './signals/index';
 export {
   SQLITE_BUSY_TIMEOUT_MS,
   SQLITE_COLLECTION_BUSY_TIMEOUT_MS,
+  setBusyTimeoutIfUnset,
 } from './sqlite-lock-wait.js';
 // Idempotent sync-apply batch write contract (#1759) — shared by the runtime
 // REST generator and the generated SvelteKit sync route
