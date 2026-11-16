@@ -69,7 +69,7 @@ describe('AssistantDock (mounted component)', () => {
     await transport.createThread('Design');
     const read = vi.fn(async () => ({
       runId: 'workflow',
-      pass: { index: 1, count: 2, name: 'Shape the plan' },
+      step: { index: 1, count: 2, name: 'Shape the plan' },
       status,
     }));
     transport.workflowRun = read;

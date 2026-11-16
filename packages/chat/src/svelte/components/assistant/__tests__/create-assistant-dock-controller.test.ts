@@ -2827,7 +2827,7 @@ describe('durable workflow runs', () => {
     const { transport } = scriptedTransport({ thread: [] });
     const running = {
       runId: 'workflow-1',
-      pass: { index: 2, count: 3, name: 'Check the plan' },
+      step: { index: 2, count: 3, name: 'Check the plan' },
       status: 'running' as const,
     };
     transport.workflowRun = vi.fn(async () => running);

@@ -145,10 +145,11 @@ export interface AssistantSendMessageResult {
   };
 }
 
-/** Durable design progress, supplied by an authenticated host. */
+/** Durable workflow run progress, supplied by an authenticated host. */
 export interface AssistantWorkflowRun {
   runId: string;
-  pass: { index: number; count: number; name: string };
+  /** The step the run is on (one-based) and the host's plain name for it. */
+  step: { index: number; count: number; name: string };
   status:
     | 'running'
     | 'checking'

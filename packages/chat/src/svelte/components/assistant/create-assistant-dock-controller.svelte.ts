@@ -1959,7 +1959,7 @@ export function createAssistantDockController(
           workflowRun.status === 'stopped' || workflowRun.status === 'failed'
             ? 'idle'
             : 'working',
-        label: `Thinking this through · ${workflowRun.pass.name} (${workflowRun.pass.index}/${workflowRun.pass.count})${workflowRun.note ? ` · ${workflowRun.note}` : ''}`,
+        label: `Thinking this through · ${workflowRun.step.name} (${workflowRun.step.index}/${workflowRun.step.count})${workflowRun.note ? ` · ${workflowRun.note}` : ''}`,
         cancellable:
           workflowRun.status === 'running' ||
           workflowRun.status === 'checking' ||
