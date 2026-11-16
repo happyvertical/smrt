@@ -16,7 +16,7 @@ import { getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { listAiRuns, recordAiRun, reportAiRuns } from '../system/ai-runs';
 import { ensureSystemTables } from '../system/bootstrap';
-import { pruneAiRuns } from '../system/retention';
+import { pruneAiRuns, pruneAiRunTrajectories } from '../system/retention';
 import { SMRT_SCHEMA_VERSION } from '../system/schema';
 import { getTestDatabase } from '../testing/database';
 
@@ -88,7 +88,9 @@ describe.skipIf(!pgUrl)('fusion run records on PostgreSQL (#4753)', () => {
       'tags',
       'status',
       'stop_reason',
+      'stop_detail',
       'stopped_by_run_id',
+      'retry_of_run_id',
       'budget',
       'mode',
       'details',
@@ -114,7 +116,8 @@ describe.skipIf(!pgUrl)('fusion run records on PostgreSQL (#4753)', () => {
       'seats',
       'degraded_seats',
     ];
-    const real = ['cost_used', 'inclusive_cost', 'reserved_cost'];
+    // Cost totals are DOUBLE PRECISION (#5005): REAL drifts on summed cents.
+    const double = ['cost_used', 'inclusive_cost', 'reserved_cost'];
     const timestamps = [
       'active_since',
       'started_at',
@@ -124,7 +127,7 @@ describe.skipIf(!pgUrl)('fusion run records on PostgreSQL (#4753)', () => {
     expect(await liveColumns()).toEqual({
       ...Object.fromEntries(text.map((name) => [name, 'text'])),
       ...Object.fromEntries(bigint.map((name) => [name, 'bigint'])),
-      ...Object.fromEntries(real.map((name) => [name, 'real'])),
+      ...Object.fromEntries(double.map((name) => [name, 'double precision'])),
       ...Object.fromEntries(
         timestamps.map((name) => [name, 'timestamp with time zone']),
       ),
@@ -197,6 +200,19 @@ describe.skipIf(!pgUrl)('fusion run records on PostgreSQL (#4753)', () => {
       }),
     ]);
 
+    // A run row outlives its trajectory (#5005): none goes while kept.
+    expect(await pruneAiRuns(db, { maxAgeMs: 86_400_000 })).toEqual({
+      pruned: 0,
+    });
+    expect(
+      await pruneAiRunTrajectories(db, {
+        maxAgeMs: 0,
+        now: new Date(Date.now() + 60_000),
+      }),
+    ).toEqual({
+      pruned: 2,
+    });
+    // Then only the unprotected run finished before the usage age limit.
     expect(await pruneAiRuns(db, { maxAgeMs: 86_400_000 })).toEqual({
       pruned: 1,
     });

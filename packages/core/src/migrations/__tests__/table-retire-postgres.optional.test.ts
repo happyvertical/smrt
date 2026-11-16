@@ -183,11 +183,12 @@ describe.skipIf(!pgUrl)('retire step on real PostgreSQL (#5005)', () => {
     registerFresh('r5005_pg_fresh_a');
     await make('r5005_pg_dropfail', 0);
     registerRetiredTables(PKG, [retired('r5005_pg_dropfail')]);
-    // A dependent appears after the plan: PostgreSQL refuses the DROP.
+    // A dependent appears after the plan's last dependents read (the
+    // function-body scan follows the row count and the catalog read), so
+    // the plan drops and PostgreSQL refuses the DROP.
     const hooked = hookAfter(
       db,
-      (sql) =>
-        /COUNT\(\*\) AS n FROM/.test(sql) && sql.includes('r5005_pg_dropfail'),
+      (sql) => /p\.prosrc AS src FROM pg_proc/.test(sql),
       async () => {
         await db.query(
           'CREATE VIEW "r5005_pg_late_view" AS SELECT id FROM "r5005_pg_dropfail"',
