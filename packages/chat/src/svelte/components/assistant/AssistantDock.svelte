@@ -1164,8 +1164,8 @@ async function handleConfirmAction(requestId: string) {
       {#if controller.status.state === 'working' || (controller.status.state === 'idle' && controller.status.label)}
         <div class="smrt-assistant-dock__status" role="status" aria-live="polite">
           <span class="smrt-assistant-dock__status-label">{controller.status.label}</span>
-          {#if controller.designRun?.status === 'stopped'}
-            <Button type="button" size="sm" variant="ghost" onclick={() => controller.resumeDesignRun()}>{t(M['chat.assistant_dock.resume_design'])}</Button>
+          {#if controller.workflowRun?.status === 'stopped'}
+            <Button type="button" size="sm" variant="ghost" onclick={() => controller.resumeWorkflowRun()}>{t(M['chat.assistant_dock.resume_workflow'])}</Button>
           {/if}
           {#if controller.status.cancellable}
             <Button type="button" size="sm" variant="ghost" onclick={() => controller.cancel()}>

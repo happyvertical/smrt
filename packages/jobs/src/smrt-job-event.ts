@@ -3,7 +3,7 @@
 import './__smrt-register__.js';
 
 import {
-  detectEngine,
+  type detectEngine,
   ensureJobEventsSystemTableCompatibility,
   field,
   foreignKey,
@@ -17,6 +17,7 @@ import {
   tenantId,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { resolveEngine } from './worker-liveness.js';
 
 export type SmrtJobEventType = 'status' | 'progress' | 'log' | 'error' | string;
 
@@ -58,7 +59,18 @@ export interface SmrtJobTerminalOutcome {
   objectType: string;
   method: string;
   attempts: number;
-  failureKind?: 'execution' | 'timeout' | 'stale-recovery';
+  /**
+   * Why a `failed` job failed. `handler-unregistered` (#5005): the runner that
+   * claimed a handler job had no handler registered under its name.
+   * `handler-unclaimed` (#5005): no runner registered for the handler claimed
+   * it before the unclaimed deadline; it never ran.
+   */
+  failureKind?:
+    | 'execution'
+    | 'timeout'
+    | 'stale-recovery'
+    | 'handler-unregistered'
+    | 'handler-unclaimed';
   completedAt: string;
   cursor: string;
 }
@@ -73,6 +85,13 @@ export interface ListTerminalOutcomesOptions {
   queues?: string[];
   objectTypes?: string[];
   methods?: string[];
+}
+
+/** Exact-job lookup; optional dispatch outcome fields bind a current job snapshot. */
+export interface GetTerminalOutcomeOptions {
+  tenantId: string | null;
+  attempts?: number;
+  completedAt?: string;
 }
 
 export interface SmrtJobTerminalOutcomePage {
@@ -213,10 +232,7 @@ function databaseEngine(
     type?: string;
     client?: { constructor?: { name?: string }; connection?: unknown };
   };
-  const engine = detectEngine(
-    db.url || configured.config?.url || '',
-    configured.type || configured.config?.type,
-  );
+  const engine = resolveEngine(db);
   const clientName = configured.client?.constructor?.name?.toLowerCase() ?? '';
   if (
     engine === 'sqlite' &&
@@ -436,6 +452,47 @@ export class SmrtJobEventCollection extends SmrtCollection<SmrtJobEvent> {
     };
   }
 
+  /**
+   * Read one job's newest matching authoritative outcome, independently of the
+   * tenant-wide feed's 1,000-candidate limit. Retention still applies.
+   * @param jobId - Authorized job identity; the caller owns resource authorization.
+   * @param options - Explicit tenant and optional current completion identity.
+   * @returns A safe outcome or null; never raw errors, arguments or results.
+   */
+  async getTerminalOutcome(
+    jobId: string,
+    options: GetTerminalOutcomeOptions,
+  ): Promise<SmrtJobTerminalOutcome | null> {
+    if (!Object.hasOwn(options, 'tenantId') || options.tenantId === undefined)
+      throw new Error(
+        'Terminal outcome queries require tenantId or tenantId: null',
+      );
+    const where = [
+      'job_id = ?',
+      "stage IN ('completed', 'failed', 'cancelled', 'stale-recovery')",
+    ];
+    const params: unknown[] = [jobId];
+    this.addTenantPredicate(where, params, options);
+    const events = await this.query(
+      `SELECT ${JOB_EVENT_STORAGE_COLUMNS} FROM _smrt_job_events
+        WHERE ${where.join(' AND ')} ORDER BY ${this.createdAtComparableExpression()} DESC, id DESC`,
+      params,
+      { allowRawOnTenantScoped: true },
+    );
+    for (const event of events) {
+      const outcome = terminalOutcome(event);
+      if (
+        outcome &&
+        (options.attempts === undefined ||
+          options.attempts === outcome.attempts) &&
+        (options.completedAt === undefined ||
+          options.completedAt === outcome.completedAt)
+      )
+        return outcome;
+    }
+    return null;
+  }
+
   private addTenantPredicate(
     where: string[],
     params: unknown[],
@@ -590,9 +647,13 @@ function terminalOutcome(event: SmrtJobEvent): SmrtJobTerminalOutcome | null {
 
 function isFailureKind(
   value: unknown,
-): value is 'execution' | 'timeout' | 'stale-recovery' {
+): value is NonNullable<SmrtJobTerminalOutcome['failureKind']> {
   return (
-    value === 'execution' || value === 'timeout' || value === 'stale-recovery'
+    value === 'execution' ||
+    value === 'timeout' ||
+    value === 'stale-recovery' ||
+    value === 'handler-unregistered' ||
+    value === 'handler-unclaimed'
   );
 }
 

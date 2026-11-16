@@ -89,3 +89,20 @@ export function estimateAiUsageCost(
     (promptTokens / 1000) * rate.input + (completionTokens / 1000) * rate.output
   );
 }
+
+/**
+ * The rate-card entry for a call, per 1K tokens, or `undefined` when the
+ * model has no price (an uncosted call, #5005). Same key order as
+ * {@link estimateAiUsageCost}; never warns.
+ */
+export function lookupAiCostRate(
+  provider: string,
+  model: string,
+  customRates?: Record<string, { input: number; output: number }>,
+): { input: number; output: number } | undefined {
+  const rates = { ...DEFAULT_AI_COST_RATES, ...(customRates ?? {}) };
+  for (const key of aiCostRateKeys(provider, model)) {
+    if (Object.hasOwn(rates, key)) return rates[key];
+  }
+  return undefined;
+}

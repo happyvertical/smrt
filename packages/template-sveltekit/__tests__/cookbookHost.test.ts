@@ -17,8 +17,11 @@ import {
 import { Customer } from '@happyvertical/smrt-commerce';
 import {
   field,
+  getAiRun,
   getChangesSince,
+  getRunTrajectory,
   ObjectRegistry,
+  readAiRunCheckpoint,
   SmrtCollection,
   SmrtObject,
   smrt,
@@ -71,61 +74,55 @@ import { createCookbookHostState } from '../host/state.js';
 
 const checkpointFault = vi.hoisted(() => ({
   errors: [] as string[],
-  beforeSave: undefined as
+  /** Runs after a step's check returned, before the driver saves it. */
+  afterCheck: undefined as
     | undefined
     | ((
-        state: import('@happyvertical/smrt-inference/server').DesignRunState,
+        result: import('@happyvertical/smrt-workflows').WorkflowStepCheck,
+        context: import('@happyvertical/smrt-workflows').WorkflowCheckContext,
       ) => Promise<void>),
 }));
-vi.mock('@happyvertical/smrt-inference/server', async (importOriginal) => {
+vi.mock('@happyvertical/smrt-workflows', async (importOriginal) => {
   const original =
-    await importOriginal<
-      typeof import('@happyvertical/smrt-inference/server')
-    >();
+    await importOriginal<typeof import('@happyvertical/smrt-workflows')>();
   return {
     ...original,
-    createDesignRunDriver: (
-      options: Parameters<typeof original.createDesignRunDriver>[0],
+    createWorkflowRunJobs: (
+      options: Parameters<typeof original.createWorkflowRunJobs>[0],
     ) =>
-      original.createDesignRunDriver({
+      original.createWorkflowRunJobs({
         ...options,
-        executePass: async (...args) => {
-          try {
-            return await options.executePass(...args);
-          } catch (error) {
-            checkpointFault.errors.push(String(error));
-            throw error;
-          }
-        },
-        passes: options.passes.map((pass) => ({
-          ...pass,
-          check: pass.check
-            ? async (...args: Parameters<NonNullable<typeof pass.check>>) => {
-                try {
-                  return await pass.check!(...args);
-                } catch (error) {
-                  checkpointFault.errors.push(String(error));
-                  throw error;
+        definition: {
+          ...options.definition,
+          steps: options.definition.steps.map((step) => ({
+            ...step,
+            execute: step.execute
+              ? async (
+                  ...args: Parameters<NonNullable<typeof step.execute>>
+                ) => {
+                  try {
+                    return await step.execute!(...args);
+                  } catch (error) {
+                    checkpointFault.errors.push(String(error));
+                    throw error;
+                  }
                 }
-              }
-            : undefined,
-        })),
-      }),
-    createDesignRunStore: (
-      ...args: Parameters<typeof original.createDesignRunStore>
-    ) => {
-      const store = original.createDesignRunStore(...args);
-      return {
-        ...store,
-        async save(
-          state: import('@happyvertical/smrt-inference/server').DesignRunState,
-          revision: number | null,
-        ) {
-          await checkpointFault.beforeSave?.(state);
-          return store.save(state, revision);
+              : undefined,
+            check: step.check
+              ? async (...args: Parameters<NonNullable<typeof step.check>>) => {
+                  try {
+                    const result = await step.check!(...args);
+                    await checkpointFault.afterCheck?.(result, args[1]);
+                    return result;
+                  } catch (error) {
+                    checkpointFault.errors.push(String(error));
+                    throw error;
+                  }
+                }
+              : undefined,
+          })),
         },
-      };
-    },
+      }),
   };
 });
 
@@ -548,7 +545,7 @@ afterEach(async () => {
   for (const controller of activeTurns.keys()) controller.abort();
   await Promise.allSettled(activeTurns.values());
   checkpointFault.errors.length = 0;
-  checkpointFault.beforeSave = undefined;
+  checkpointFault.afterCheck = undefined;
   await host?.shutdown();
   if (http) {
     http.closeAllConnections();
@@ -687,23 +684,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       owner.id,
     );
   });
-  async function directStructuralService() {
-    // These legacy service/continuation cases explicitly exercise the owner's
-    // supported opt-out. The default durable-escalation regression stays on.
-    await request(event('/settings/inference'), async (e) => {
-      const state = await host.workProfiles.read(e);
-      const result = await host.workProfiles.write(e, {
-        settings: {
-          ...state.settings,
-          assist: { ...state.settings.assist, autoEscalate: false },
-        },
-        revision: state.revision,
-      });
-      expect(result.ok).toBe(true);
-      return new Response();
-    });
-  }
-  async function durableDesignHost(preview = true, passes: number | null = 3) {
+  async function durableWorkflowHost(preview = true, steps: number | null = 3) {
     const runtime = host.runtime;
     await host.shutdown();
     host.dispose();
@@ -715,6 +696,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       packageName: '@fixture/host-app',
       app: { cookbook, catalog },
       assistant: { ai: { chat: calls } as never },
+      ...(steps === null ? {} : { workflowBudget: { steps } }),
     });
     await host.init();
     await request(event('/'), async (e) => json(await host.load(e)));
@@ -726,16 +708,11 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       ).permissions,
     ];
     await request(event('/settings/inference'), async (e) => {
-      const saved = await host.workProfiles.read(e);
+      const saved = await host.assistantSettings.read(e);
       expect(
         (
-          await host.workProfiles.write(e, {
-            settings: {
-              design: {
-                previewBeforeApply: preview,
-                ...(passes === null ? {} : { budgets: { passes } }),
-              },
-            },
+          await host.assistantSettings.write(e, {
+            settings: { previewBeforeApply: preview },
             revision: saved.revision,
           })
         ).ok,
@@ -744,23 +721,43 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     });
     return calls;
   }
-  async function designState(id: string) {
-    return JSON.parse(
-      String(
-        (
-          await db.query(
-            'SELECT payload FROM _smrt_inference_design_runs WHERE id = ?',
-            id,
-          )
-        ).rows[0].payload,
-      ),
-    );
+  /** A workflow run as core records it: run row plus checkpoint state. */
+  async function workflowState(id: string) {
+    const run = await getAiRun(db, id);
+    const checkpoint = await readAiRunCheckpoint(db, id);
+    const state = checkpoint?.state as {
+      stepIndex: number;
+      phase: 'call' | 'check';
+      outputs: unknown[];
+      pending: { output: unknown } | null;
+      input: Record<string, unknown>;
+    };
+    return {
+      id,
+      status: run?.status,
+      stopReason: run?.stopReason ?? null,
+      budget: run?.budget ?? {},
+      tokens: run?.inclusiveTokens ?? 0,
+      calls: run?.inclusiveCalls ?? 0,
+      definitionVersion: checkpoint?.definitionVersion ?? null,
+      lease: checkpoint?.lease ?? null,
+      stepIndex: state.stepIndex,
+      phase: state.phase,
+      input: state.input as Record<string, any>,
+      /** Accepted outputs, then the output awaiting its check. */
+      outputs: (state.pending
+        ? [...state.outputs.slice(0, state.stepIndex), state.pending.output]
+        : state.outputs) as any[],
+    };
   }
 
-  it('resolves design and assist to the strongest ranked ChatGPT account model without choosing the first catalog entry', async () => {
+  it("binds the assistant's best tier to the strongest ranked ChatGPT account model, never the first catalog entry", async () => {
     const runtime = host.runtime;
     await host.shutdown();
     host.dispose();
+    const clientOptions = vi.fn(async () => {
+      throw new Error('stop before a provider call');
+    });
     host = createCookbookHost({
       runtime,
       app: { cookbook, catalog },
@@ -771,66 +768,70 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
           { id: 'strong', label: 'Strong', intelligenceRank: 3 },
         ],
         defaultModel: async () => 'strong',
-        clientOptions: vi.fn(),
+        clientOptions,
         start: vi.fn(),
         cancel: vi.fn(),
         signOut: vi.fn(),
-      },
+      } as never,
     });
-    await request(event('/settings/inference'), async (e) => {
-      const before = await host.workProfiles.read(e);
-      expect(
-        (
-          await host.workProfiles.write(e, {
-            settings: {
-              design: { engine: 'chatgpt' },
-              assist: { engine: 'chatgpt' },
-            },
-            revision: before.revision,
-          })
-        ).ok,
-      ).toBe(true);
-      const saved = await host.workProfiles.read(e);
-      for (const name of ['design', 'assist'])
-        expect(
-          saved.resolved.find((profile) => profile.name === name),
-        ).toMatchObject({ model: 'strong', unavailable: false });
-      return new Response();
-    });
+    await host.init();
+    expect(
+      (
+        await request(
+          event('/api/connect-ai', 'POST', {
+            action: 'select',
+            engine: 'chatgpt',
+          }),
+          host.connectAi.POST,
+        )
+      ).status,
+    ).toBe(200);
+    const id = await thread();
+    // The stub stops before a provider call: the route answers 503.
+    const refused = await request(
+      event(`/api/assistant/threads/${id}/messages`, 'POST', {
+        content: 'Hello',
+        clientRequestId: randomUUID(),
+      }),
+      host.assistant.handle,
+    );
+    expect(refused.status).toBe(503);
+    expect(clientOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'strong' }),
+    );
   });
-  it('loads owner quality overrides, rejects stale saves, and resets without exposing unavailable model failures', async () => {
+
+  it('loads the owner assistant settings, rejects stale saves and resets to all on', async () => {
     await request(event('/settings/inference'), async (e) => {
-      const before = await host.workProfiles.read(e);
+      const before = await host.assistantSettings.read(e);
       expect(before.settings).toEqual({});
-      expect(before.resolved.find((p) => p.name === 'assist')?.effort).toBe(
-        'high',
-      );
-      const settings = {
-        design: { engine: 'chatgpt' as const, budgets: { passes: 6 } },
-      };
+      expect(before.editable).toBe(true);
+      const settings = { escalateToWorkflow: false, previewBeforeApply: false };
       expect(
         (
-          await host.workProfiles.write(e, {
+          await host.assistantSettings.write(e, {
             settings,
             revision: before.revision,
           })
         ).ok,
       ).toBe(true);
-      const saved = await host.workProfiles.read(e);
+      const saved = await host.assistantSettings.read(e);
       expect(saved.settings).toEqual(settings);
-      expect(saved.resolved.find((p) => p.name === 'design')?.unavailable).toBe(
+      expect(
+        await host.assistantSettings.write(e, {
+          settings: {},
+          revision: null,
+        }),
+      ).toEqual({ ok: false, reason: 'conflict' });
+      expect((await host.assistantSettings.reset(e, saved.revision)).ok).toBe(
         true,
       );
-      expect(
-        await host.workProfiles.write(e, { settings: {}, revision: null }),
-      ).toEqual({ ok: false, reason: 'conflict' });
-      expect((await host.workProfiles.reset(e, saved.revision)).ok).toBe(true);
-      expect((await host.workProfiles.read(e)).settings).toEqual({});
+      expect((await host.assistantSettings.read(e)).settings).toEqual({});
       return new Response();
     });
   });
 
-  it('projects the same requested-model memo into Settings and native execution within its exact scope', async () => {
+  it('steps a refused model down the tier binding order only within its exact memo scope', async () => {
     const state = await createCookbookHostState(db, catalog, cookbook);
     expect(
       (
@@ -843,100 +844,29 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
         )
       ).status,
     ).toBe(200);
-    await request(event('/settings/inference'), async (e) => {
-      const saved = await host.workProfiles.read(e);
-      expect(
-        (
-          await host.workProfiles.write(e, {
-            settings: {
-              design: { engine: 'claude-code' },
-              assist: { engine: 'claude-code' },
-            },
-            revision: saved.revision,
-          })
-        ).ok,
-      ).toBe(true);
-      return new Response();
-    });
-    const read = async (selected = event('/settings/inference')) =>
-      (
-        await request(selected, async (e) =>
-          json(await host.workProfiles.read(e)),
-        )
-      ).json();
-    const before = await read();
-    const profile = before.resolved.find(
-      (value: { name: string }) => value.name === 'design',
-    );
-    expect(profile).toMatchObject({
-      model: 'fable',
-      modelSelection: {
-        kind: 'strongest',
-        requestedModel: 'fable',
-        resolvedModel: 'fable',
-      },
-    });
     const version = (await cli.cliStatus('claude-code')).version ?? 'unknown';
     const generation = await state.engineGeneration(tenantId, owner.id);
-    const connection = `${version}:${generation}:${before.revision ?? 'recommended'}`;
+    const connection = `${version}:${generation}`;
     const store = state.fallbackStore(tenantId);
+    // Memos of another scope never apply.
     await store.write(
       owner.id,
       'claude-code',
       'fable',
-      `other:${generation}:${before.revision}`,
+      `other:${generation}`,
       'opus',
     );
     await store.write(
       owner.id,
       'claude-code',
       'fable',
-      `${version}:other:${before.revision}`,
-      'opus',
-    );
-    await store.write(
-      owner.id,
-      'claude-code',
-      'fable',
-      `${version}:${generation}:other`,
+      `${version}:other`,
       'opus',
     );
     await store.write(randomUUID(), 'claude-code', 'fable', connection, 'opus');
     await state
       .fallbackStore(randomUUID())
       .write(owner.id, 'claude-code', 'fable', connection, 'opus');
-    await store.write(owner.id, 'claude-code', 'opus', connection, 'sonnet');
-    expect(
-      (await read()).resolved.find(
-        (value: { name: string }) => value.name === 'design',
-      ).modelSelection.kind,
-    ).toBe('strongest');
-    await store.write(owner.id, 'claude-code', 'fable', connection, 'opus');
-    const downgraded = await read();
-    expect(
-      downgraded.resolved.find(
-        (value: { name: string }) => value.name === 'design',
-      ),
-    ).toMatchObject({
-      model: 'fable',
-      modelSelection: {
-        kind: 'fallback',
-        requestedModel: 'fable',
-        resolvedModel: 'opus',
-      },
-    });
-    expect(downgraded.settings).toEqual(before.settings);
-    expect(JSON.stringify(downgraded)).not.toContain(connection);
-    const other = event('/settings/inference');
-    (other.locals as { user: typeof owner }).user = {
-      ...owner,
-      id: randomUUID(),
-    };
-    expect(
-      (await read(other)).resolved.find(
-        (value: { name: string }) => value.name === 'design',
-      ).modelSelection.kind,
-    ).not.toBe('fallback');
     const path = join(stateDirectory, 'bin', 'claude');
     const binary = await readFile(path, 'utf8');
     await writeFile(
@@ -950,113 +880,23 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     response = () => {
       throw new Error('API fallback is forbidden');
     };
+    const first = await turn(await thread(), 'selected-model');
+    // No memo: the best tier of Claude Code's default binding answers.
+    expect(first.find((value) => value.type === 'done')).toMatchObject({
+      message: { content: 'fable' },
+    });
+    await store.write(owner.id, 'claude-code', 'fable', connection, 'opus');
+    issued.length = 0;
     const actual = await turn(await thread(), 'selected-model');
     expect(actual.find((value) => value.type === 'done')).toMatchObject({
       message: { content: 'opus' },
     });
     expect(issued).toHaveLength(1);
     expect(revoked).toContain(issued[0].holder);
-    const currentStatus = await cli.cliStatus('claude-code');
-    const changedVersion = vi
-      .spyOn(cli, 'cliStatus')
-      .mockResolvedValue({ ...currentStatus, version: 'changed' });
-    expect(
-      (await read()).resolved.find(
-        (value: { name: string }) => value.name === 'design',
-      ).modelSelection.kind,
-    ).toBe('strongest');
-    changedVersion.mockRestore();
-    expect(
-      (await read()).resolved.find(
-        (value: { name: string }) => value.name === 'design',
-      ).modelSelection.kind,
-    ).toBe('fallback');
-    await request(event('/settings/inference'), async (e) => {
-      const saved = await host.workProfiles.read(e);
-      expect(
-        (
-          await host.workProfiles.write(e, {
-            settings: {
-              ...saved.settings,
-              assist: { ...saved.settings.assist, autoEscalate: false },
-            },
-            revision: saved.revision,
-          })
-        ).ok,
-      ).toBe(true);
-      return new Response();
-    });
-    expect(
-      (await read()).resolved.find(
-        (value: { name: string }) => value.name === 'design',
-      ),
-    ).toMatchObject({
-      model: 'fable',
-      modelSelection: { kind: 'strongest', resolvedModel: 'fable' },
-    });
-  });
-
-  it('keeps ranked, custom and configured selection metadata honest in the Settings loader', async () => {
-    const runtime = host.runtime;
-    await host.shutdown();
-    host.dispose();
-    host = createCookbookHost({
-      runtime,
-      cli,
-      app: { cookbook, catalog },
-      chatgpt: {
-        models: async () => [
-          { id: 'catalog-basic', intelligenceRank: 1 },
-          { id: 'catalog-best', intelligenceRank: 2 },
-        ],
-        status: async () => ({ ready: true }),
-      } as never,
-    });
-    await host.init();
-    await request(event('/settings/inference'), async (e) => {
-      let saved = await host.workProfiles.read(e);
-      expect(
-        saved.resolved.find((value) => value.name === 'design')?.modelSelection
-          ?.kind,
-      ).toBe('configured');
-      expect(
-        (
-          await host.workProfiles.write(e, {
-            settings: { design: { engine: 'chatgpt' } },
-            revision: saved.revision,
-          })
-        ).ok,
-      ).toBe(true);
-      saved = await host.workProfiles.read(e);
-      expect(
-        saved.resolved.find((value) => value.name === 'design'),
-      ).toMatchObject({
-        model: 'catalog-best',
-        modelSelection: { kind: 'strongest', resolvedModel: 'catalog-best' },
-      });
-      expect(
-        (
-          await host.workProfiles.write(e, {
-            settings: {
-              design: { engine: 'chatgpt', model: 'unranked-custom' },
-            },
-            revision: saved.revision,
-          })
-        ).ok,
-      ).toBe(true);
-      saved = await host.workProfiles.read(e);
-      expect(
-        saved.resolved.find((value) => value.name === 'design'),
-      ).toMatchObject({
-        model: 'unranked-custom',
-        modelSelection: { kind: 'custom', resolvedModel: 'unranked-custom' },
-      });
-      return new Response();
-    });
   });
 
   it('admits a durable design proposal before a structural tool executes', async () => {
-    await durableDesignHost();
+    await durableWorkflowHost();
     await request(event('/api/onboarding'), host.onboarding);
     await db.query(
       `UPDATE _smrt_cookbook_onboarding SET state = ? WHERE tenant_id = ? AND user_id = ?`,
@@ -1075,7 +915,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     const privateReasoning =
       '@happyvertical/smrt-commerce:Customer app.addField expectedRevision 2 cookbook';
     response = (messages) =>
-      messages.some((m) => m.content.includes('Design pass '))
+      messages.some((m) => m.content.includes('Workflow step '))
         ? {
             content: JSON.stringify({
               summary: privateReasoning,
@@ -1100,11 +940,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     );
     await vi.waitFor(
       async () => {
-        const response = await chat(
-          `design-runs?threadId=${id}`,
-          undefined,
-          'GET',
-        );
+        const response = await chat(`runs?threadId=${id}`, undefined, 'GET');
         expect(response.status).toBe(200);
         const body = await response.json();
         expect(body.run.runId).toBe(done?.runId);
@@ -1121,7 +957,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect((await host.cookbookApp(tenantId)).cookbook.recipes).not.toContain(
       'host.memos',
     );
-    const raw = await designState(done?.runId as string);
+    const raw = await workflowState(done?.runId as string);
     expect(raw.outputs).toHaveLength(3);
     for (const output of raw.outputs) {
       expect(output.summary).toBe(privateReasoning);
@@ -1153,6 +989,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       runtime,
       packageName: '@fixture/host-app',
       app: { cookbook, catalog },
+      workflowBudget: { steps: 3 },
       assistant: {
         ai: {
           chat: async (messages: never, options: never) => {
@@ -1190,20 +1027,8 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
         ).resolvePermissions(owner.id, tenantId)
       ).permissions,
     ];
-    await request(event('/settings/inference'), async (e) => {
-      const saved = await host.workProfiles.read(e);
-      expect(
-        (
-          await host.workProfiles.write(e, {
-            settings: { design: { budgets: { passes: 3 } } },
-            revision: saved.revision,
-          })
-        ).ok,
-      ).toBe(true);
-      return new Response();
-    });
     const id = await thread();
-    const admitted = await chat('design-runs', {
+    const admitted = await chat('runs', {
       threadId: id,
       content: 'Add a birthday field to Customers.',
     });
@@ -1211,18 +1036,9 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     const runId = (await admitted.json()).run.runId;
     await vi.waitFor(
       async () => {
-        const state = JSON.parse(
-          String(
-            (
-              await db.query(
-                'SELECT payload FROM _smrt_inference_design_runs WHERE id = ?',
-                runId,
-              )
-            ).rows[0].payload,
-          ),
-        );
+        const state = await workflowState(runId);
         expect(state.status).toBe('waiting-approval');
-        expect(state.definition).toBe('cookbook-design/v5/3');
+        expect(state.definitionVersion).toBe('1/steps-3');
         expect(state.outputs[2].operations[0].tool).toBe('app.addField');
       },
       { timeout: 15000 },
@@ -1245,20 +1061,21 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     expect(pending.status).toBe(200);
     const approvals = (await pending.json()).approvals;
     expect(approvals).toHaveLength(1);
-    const before = await designState(runId);
+    const before = await workflowState(runId);
     const decision = await chat(`approvals/${approvals[0].id}/decide`, {
       approve: true,
     });
     expect(decision.status).toBe(200);
     expect((await decision.json()).approval.status).toBe('succeeded');
     await vi.waitFor(
-      async () => expect((await designState(runId)).status).toBe('done'),
+      async () => expect((await workflowState(runId)).status).toBe('done'),
       { timeout: 15000 },
     );
-    const done = await designState(runId);
+    const done = await workflowState(runId);
     expect(done.outputs).toEqual(before.outputs);
-    expect(done.attempts).toEqual(before.attempts);
+    // The approval re-ran only the check: no further model call or usage.
     expect(done.tokens).toBe(before.tokens);
+    expect(done.calls).toBe(3);
     expect(calls).toHaveLength(3);
     const applied = await mcp('tools/call', {
       name: 'app_history',
@@ -1288,7 +1105,8 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     const id = await thread();
     for (const key of [
       'profile',
-      'workProfile',
+      'execution',
+      'budget',
       'fixedPasses',
       'listCatalog',
       'expanded',
@@ -1296,7 +1114,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       'actionKey',
       'actionId',
       'runId',
-      'designAction',
+      'workflowAction',
       'approvalId',
       'ownerId',
       'userId',
@@ -1304,7 +1122,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     ]) {
       expect(
         (
-          await chat('design-runs', {
+          await chat('runs', {
             threadId: id,
             content: 'Review Customers.',
             [key]: 'forged',
@@ -1314,7 +1132,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     }
     expect(
       (
-        await chat('design-runs', {
+        await chat('runs', {
           threadId: randomUUID(),
           content: 'Review Customers.',
         })
@@ -1322,13 +1140,13 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     ).toBe(404);
     expect(
       (
-        await chat('design-runs', {
+        await chat('runs', {
           threadId: id,
           content: 'x'.repeat(140_000),
         })
       ).status,
     ).toBe(413);
-    const crossOrigin = event('/api/assistant/design-runs', 'POST', {
+    const crossOrigin = event('/api/assistant/runs', 'POST', {
       threadId: id,
       content: 'Review Customers.',
     });
@@ -1340,7 +1158,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       (
         await request(
           event(
-            '/api/assistant/design-runs',
+            '/api/assistant/runs',
             'POST',
             { threadId: id, content: 'Review Customers.' },
             false,
@@ -1351,11 +1169,11 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     ).toBe(403);
     expect(calls).not.toHaveBeenCalled();
     expect(
-      (await db.query('SELECT id FROM _smrt_inference_design_runs')).rows,
+      (await db.query('SELECT run_id FROM _smrt_ai_run_checkpoints')).rows,
     ).toHaveLength(0);
   });
   it('replaces unsafe canonical business captions separately from private design reasoning', async () => {
-    await durableDesignHost();
+    await durableWorkflowHost();
     const id = await thread();
     let label = 'Tenant Id';
     response = () => ({
@@ -1378,14 +1196,15 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       }),
       finishReason: 'stop',
     });
-    const refused = await chat('design-runs', {
+    const refused = await chat('runs', {
       threadId: id,
       content: 'Add a Tenant Id field',
     });
     expect(refused.status).toBe(202);
     const refusedId = (await refused.json()).run.runId;
     await vi.waitFor(
-      async () => expect((await designState(refusedId)).status).toBe('failed'),
+      async () =>
+        expect((await workflowState(refusedId)).status).toBe('failed'),
       { timeout: 15000 },
     );
     // The real core refuses this reserved existing field before a hold exists.
@@ -1397,7 +1216,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
         .approvals,
     ).toEqual([]);
     label = 'Birthday';
-    const admitted = await chat('design-runs', {
+    const admitted = await chat('runs', {
       threadId: id,
       content: 'Add a birthday field',
     });
@@ -1405,7 +1224,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     const runId = (await admitted.json()).run.runId;
     await vi.waitFor(
       async () =>
-        expect((await designState(runId)).status).toBe('waiting-approval'),
+        expect((await workflowState(runId)).status).toBe('waiting-approval'),
       { timeout: 15000 },
     );
     const pending = (
@@ -1464,7 +1283,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
   });
 
   it('presents prospective canonical app, recipe and template captions without changing the ledger', async () => {
-    await durableDesignHost();
+    await durableWorkflowHost();
     const id = await thread();
     const user = await (await UserCollection.create({ db })).get({
       id: owner.id,
@@ -1581,7 +1400,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
   });
 
   it('keeps structure history owner-scoped and permission-bound without leaking change documents', async () => {
-    await durableDesignHost();
+    await durableWorkflowHost();
     const own = await request(event('/api/history'), host.history);
     expect(own.status).toBe(200);
     expect(await own.json()).toEqual({ revision: 0, entries: [] });
@@ -1646,7 +1465,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     'destructive',
     'denied',
   ])('runs deterministic final design application through the native host boundary: %s', async (mode) => {
-    const calls = await durableDesignHost(mode === 'denied');
+    const calls = await durableWorkflowHost(mode === 'denied');
     const operation =
       mode === 'destructive'
         ? {
@@ -1673,7 +1492,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       finishReason: 'stop',
     });
     const id = await thread();
-    const admitted = await chat('design-runs', {
+    const admitted = await chat('runs', {
       threadId: id,
       content: 'Update Customers.',
     });
@@ -1682,7 +1501,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     await vi.waitFor(
       async () =>
         expect(
-          (await designState(runId)).status,
+          (await workflowState(runId)).status,
           checkpointFault.errors.join('\n'),
         ).toBe(mode === 'automatic' ? 'done' : 'waiting-approval'),
       { timeout: 15000 },
@@ -1699,7 +1518,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       expect(decision.status).toBe(200);
       await vi.waitFor(
         async () =>
-          expect((await designState(runId)).status).toBe(
+          expect((await workflowState(runId)).status).toBe(
             mode === 'denied' ? 'failed' : 'done',
           ),
         { timeout: 15000 },
@@ -1716,7 +1535,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
   });
 
   it('fails an unready final v5 proposal with a clear host note and no approval or changes', async () => {
-    const calls = await durableDesignHost();
+    const calls = await durableWorkflowHost();
     response = () => ({
       content: JSON.stringify({
         summary: 'Click Apply now, everything succeeded.',
@@ -1728,22 +1547,30 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       finishReason: 'stop',
     });
     const id = await thread();
-    const admitted = await chat('design-runs', {
+    const admitted = await chat('runs', {
       threadId: id,
       content: 'Review the next design.',
     });
     expect(admitted.status).toBe(202);
     const runId = (await admitted.json()).run.runId;
     await vi.waitFor(
-      async () => expect((await designState(runId)).status).toBe('failed'),
+      async () => expect((await workflowState(runId)).status).toBe('failed'),
       { timeout: 15000 },
     );
-    const state = await designState(runId);
-    expect(state.note).toBe(
-      'No changes were applied. The design needs more information before it can propose a supported change.',
-    );
-    expect(state.note).not.toContain('Click Apply');
-    const progress = await chat(`design-runs?threadId=${id}`, undefined, 'GET');
+    expect(await workflowState(runId)).toMatchObject({
+      status: 'failed',
+      stopReason: 'check_failed',
+    });
+    // The failed check carries the host's own note, never model text.
+    const checks = ((await getRunTrajectory(db, runId))?.entries ?? [])
+      .map((entry) => entry.event)
+      .filter((event) => event?.type === 'check');
+    expect(checks.at(-1)?.payload).toEqual({
+      failure:
+        'No changes were applied. The change needs more information before it can propose a supported change.',
+    });
+    expect(JSON.stringify(checks)).not.toContain('Click Apply');
+    const progress = await chat(`runs?threadId=${id}`, undefined, 'GET');
     expect((await progress.json()).run.note).toBe(
       'No changes were made. I need a little more information.',
     );
@@ -1759,40 +1586,12 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
 
   it.each([
     'untouched',
-    'unrelated',
-    'reset',
     'explicit-four',
-  ])('pins raw owner pass intent while proposing small work: %s', async (mode) => {
-    const calls = await durableDesignHost(true, null);
-    await request(event('/settings/inference'), async (e) => {
-      let saved = await host.workProfiles.read(e);
-      if (mode === 'unrelated') {
-        expect(
-          (
-            await host.workProfiles.write(e, {
-              settings: { ...saved.settings, assist: { autoEscalate: false } },
-              revision: saved.revision,
-            })
-          ).ok,
-        ).toBe(true);
-      } else if (mode === 'reset' || mode === 'explicit-four') {
-        expect(
-          (
-            await host.workProfiles.write(e, {
-              settings: { design: { budgets: { passes: 4 } } },
-              revision: saved.revision,
-            })
-          ).ok,
-        ).toBe(true);
-        if (mode === 'reset') {
-          saved = await host.workProfiles.read(e);
-          expect((await host.workProfiles.reset(e, saved.revision)).ok).toBe(
-            true,
-          );
-        }
-      }
-      return new Response();
-    });
+  ])("pins the app's step setting while proposing small work: %s", async (mode) => {
+    const calls = await durableWorkflowHost(
+      true,
+      mode === 'explicit-four' ? 4 : null,
+    );
     response = () => ({
       content: JSON.stringify({
         summary: 'Add a note.',
@@ -1814,7 +1613,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       finishReason: 'stop',
     });
     const id = await thread();
-    const admission = await chat('design-runs', {
+    const admission = await chat('runs', {
       threadId: id,
       content: 'Add a note to Customers',
     });
@@ -1822,21 +1621,20 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     const runId = (await admission.json()).run.runId;
     await vi.waitFor(
       async () =>
-        expect((await designState(runId)).status).toBe('waiting-approval'),
+        expect((await workflowState(runId)).status).toBe('waiting-approval'),
       { timeout: 15000 },
     );
-    const state = await designState(runId);
+    const state = await workflowState(runId);
     const actual = mode === 'explicit-four' ? 4 : 1;
-    expect(state.input.fixedPasses).toBe(mode === 'explicit-four');
-    expect(state.input.profile.budgets.passes).toBe(4);
+    expect(state.input.fixedSteps).toBe(mode === 'explicit-four');
     expect(state.outputs).toHaveLength(actual);
-    expect(state.attempts).toHaveLength(actual);
-    expect(state.passIndex).toBe(actual - 1);
+    expect(state.calls).toBe(actual);
+    expect(state.stepIndex).toBe(actual - 1);
     expect(calls).toHaveBeenCalledTimes(actual);
     const progress = await (
-      await chat(`design-runs?threadId=${id}`, undefined, 'GET')
+      await chat(`runs?threadId=${id}`, undefined, 'GET')
     ).json();
-    expect(progress.run.pass).toMatchObject({ index: actual, count: actual });
+    expect(progress.run.step).toMatchObject({ index: actual, count: actual });
     const { approvals } = await (
       await chat(`threads/${id}/approvals`, undefined, 'GET')
     ).json();
@@ -1849,7 +1647,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
   });
 
   it('replays one actual proposal across same-list native action holds without another model turn', async () => {
-    const calls = await durableDesignHost(true, null);
+    const calls = await durableWorkflowHost(true, null);
     const operations = [
       {
         tool: 'app.addField',
@@ -1889,7 +1687,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       finishReason: 'stop',
     });
     const id = await thread();
-    const admission = await chat('design-runs', {
+    const admission = await chat('runs', {
       threadId: id,
       content: 'Add, label and hide a field, then label the list Members.',
     });
@@ -1920,10 +1718,10 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       expect(await authority.get(tenantId, hold!.id)).toMatchObject({
         tool: operation.tool,
         args: operation.args,
-        context: { designAction: { runId, actionId: String(index) } },
+        context: { workflowAction: { runId, actionId: String(index) } },
       });
-      expect(await designState(runId)).toMatchObject({
-        passIndex: 0,
+      expect(await workflowState(runId)).toMatchObject({
+        stepIndex: 0,
         phase: 'check',
         outputs: [expect.any(Object)],
       });
@@ -1933,17 +1731,30 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       ).toBe(200);
     }
     await vi.waitFor(
-      async () => expect((await designState(runId)).status).toBe('done'),
+      async () => expect((await workflowState(runId)).status).toBe('done'),
       { timeout: 15000 },
     );
-    const done = await designState(runId);
+    const done = await workflowState(runId);
     expect(done).toMatchObject({
-      passIndex: 0,
+      stepIndex: 0,
       phase: 'check',
       outputs: [expect.any(Object)],
-      attempts: [expect.any(Object)],
     });
     expect(done.input.results).toHaveLength(4);
+    // One hold per gated action, each its own approval in the run.
+    const approvals = ((await getRunTrajectory(db, runId))?.entries ?? [])
+      .map((entry) => entry.event)
+      .filter((event) => event?.type === 'approval');
+    expect(approvals.map((event) => event?.status)).toEqual([
+      'requested',
+      'approved',
+      'requested',
+      'approved',
+      'requested',
+      'approved',
+      'requested',
+      'approved',
+    ]);
     expect(calls).toHaveBeenCalledTimes(1);
     expect(
       (await mcp('tools/call', { name: 'app_history', arguments: {} })).body
@@ -1954,7 +1765,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
   });
 
   it('records approval while stopped and waits for explicit Resume before applying the same hold', async () => {
-    const calls = await durableDesignHost(true, null);
+    const calls = await durableWorkflowHost(true, null);
     response = () => ({
       content: JSON.stringify({
         summary: 'Add Paused note.',
@@ -1976,7 +1787,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       finishReason: 'stop',
     });
     const id = await thread();
-    const admitted = await chat('design-runs', {
+    const admitted = await chat('runs', {
       threadId: id,
       content: 'Add Paused note.',
     });
@@ -1984,7 +1795,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     const runId = (await admitted.json()).run.runId;
     await vi.waitFor(
       async () =>
-        expect((await designState(runId)).status).toBe('waiting-approval'),
+        expect((await workflowState(runId)).status).toBe('waiting-approval'),
       { timeout: 15000 },
     );
     const holds = (
@@ -1992,12 +1803,12 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     ).approvals;
     expect(holds).toHaveLength(1);
     expect(holds[0].summary).toBe('Add Paused note to Customers.');
-    expect(await designState(runId)).toMatchObject({
+    expect(await workflowState(runId)).toMatchObject({
       phase: 'check',
-      passIndex: 0,
+      stepIndex: 0,
       outputs: [expect.any(Object)],
     });
-    expect((await chat(`design-runs/${runId}/stop`, {})).status).toBe(200);
+    expect((await chat(`runs/${runId}/stop`, {})).status).toBe(200);
     const decision = await chat(`approvals/${holds[0].id}/decide`, {
       approve: true,
     });
@@ -2007,7 +1818,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       status: 'approved',
       summary: 'Add Paused note to Customers.',
     });
-    expect((await designState(runId)).status).toBe('stopped');
+    expect((await workflowState(runId)).status).toBe('stopped');
     expect(
       (await mcp('tools/call', { name: 'app_history', arguments: {} })).body
         .result.structuredContent.changes,
@@ -2030,7 +1841,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
         return originalApply(...args);
       });
     try {
-      expect((await chat(`design-runs/${runId}/resume`, {})).status).toBe(200);
+      expect((await chat(`runs/${runId}/resume`, {})).status).toBe(200);
       await vi.waitFor(() => expect(executing).toBe(true), { timeout: 15000 });
       const records = (
         await (await chat(`threads/${id}/approvals`, undefined, 'GET')).json()
@@ -2057,7 +1868,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     }
 
     await vi.waitFor(
-      async () => expect((await designState(runId)).status).toBe('done'),
+      async () => expect((await workflowState(runId)).status).toBe('done'),
       { timeout: 15000 },
     );
     expect(
@@ -2113,7 +1924,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
   });
 
   it('recovers the exact applied result after simulated worker death before the final checkpoint', async () => {
-    const calls = await durableDesignHost(false, null);
+    const calls = await durableWorkflowHost(false, null);
     response = () => ({
       content: JSON.stringify({
         summary: 'Add Visit note.',
@@ -2138,36 +1949,20 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     const paused = new Promise<void>((resolve) => {
       release = resolve;
     });
-    let checkpoint!: (
-      state: import('@happyvertical/smrt-inference/server').DesignRunState,
-    ) => void;
-    const reached = new Promise<
-      import('@happyvertical/smrt-inference/server').DesignRunState
-    >((resolve) => {
-      checkpoint = resolve;
-    });
-    let captured:
-      | import('@happyvertical/smrt-inference/server').DesignRunState
-      | undefined;
-    checkpointFault.beforeSave = async (state) => {
-      if (
-        state.definition === 'cookbook-design/v5/4' &&
-        state.phase === 'check' &&
-        state.passIndex === 0 &&
-        state.status === 'done'
-      ) {
-        checkpointFault.beforeSave = undefined;
-        captured = structuredClone(state);
-        checkpoint(captured);
+    let captured: Record<string, unknown> | undefined;
+    // The worker dies after the check applied the change through core and
+    // before the driver saved the step: the check's result is never saved.
+    checkpointFault.afterCheck = async (result) => {
+      if (result.complete) {
+        checkpointFault.afterCheck = undefined;
+        captured = structuredClone(result.input) as Record<string, unknown>;
         await paused;
       }
     };
-    const oldHost = host;
-    const oldDb = db;
-    let stopping: Promise<void> | undefined;
+    let rescuer: TaskRunner | undefined;
     try {
       const id = await thread();
-      const admission = await chat('design-runs', {
+      const admission = await chat('runs', {
         threadId: id,
         content: 'Add Visit note.',
       });
@@ -2175,49 +1970,50 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       const runId = (await admission.json()).run.runId;
       await vi.waitFor(
         async () => {
-          const current = await designState(runId);
+          const current = await workflowState(runId);
           if (current.status === 'failed')
-            throw new Error(
-              `${current.note} ${checkpointFault.errors.join('\n')} ${JSON.stringify({ pass: current.passIndex, phase: current.phase, validationErrors: current.validationErrors, hasInvalidOutput: current.invalidOutput !== undefined })}`,
-            );
+            throw new Error(checkpointFault.errors.join('\n'));
           expect(captured).toBeDefined();
         },
         { timeout: 15000 },
       );
-      const uncommitted = await reached;
-      const before = await designState(runId);
+      const before = await workflowState(runId);
       expect(before).toMatchObject({
-        status: 'checking',
+        status: 'running',
         phase: 'check',
-        passIndex: 0,
+        stepIndex: 0,
       });
-      expect(before.leaseRevision).toBeTypeOf('number');
-      expect(before.leaseUntil).toBeTypeOf('number');
-      expect((await chat(`design-runs/${runId}/resume`, {})).status).toBe(409);
+      expect(JSON.parse(String(before.lease))).toMatchObject({
+        holder: expect.any(String),
+      });
+      // The change is applied, its step is not saved, its job still runs.
+      expect(
+        (await mcp('tools/call', { name: 'app_history', arguments: {} })).body
+          .result.structuredContent.changes,
+      ).toHaveLength(1);
+      expect((await chat(`runs/${runId}/resume`, {})).status).toBe(409);
       const prior = (
-        await oldDb.query(
-          "SELECT id, worker_id, attempts FROM _smrt_jobs WHERE object_id = ? AND status = 'running'",
+        await db.query(
+          "SELECT id, worker_id, attempts FROM _smrt_jobs WHERE dedupe_key = ? AND status = 'running'",
           runId,
         )
       ).rows[0];
       expect(prior.worker_id).toBeTypeOf('string');
-      stopping = oldHost.shutdown();
+      // The worker dies: its liveness ends. A second real runner (claim
+      // fencing on, the same registered handler) recovers its job.
       unregisterLiveWorker(String(prior.worker_id));
-      await (await SmrtWorkerCollection.create({ db: oldDb })).expireWorker(
+      await (await SmrtWorkerCollection.create({ db })).expireWorker(
         String(prior.worker_id),
       );
-      db = await getDatabase({
-        type: 'sqlite',
-        url: join(stateDirectory, 'crash.sqlite'),
+      rescuer = new TaskRunner({
+        concurrency: 1,
+        queues: ['default'],
+        retention: false,
+        claimFencing: true,
+        pollInterval: 10,
       });
-      expect(db).not.toBe(oldDb);
-      host = createCookbookHost({
-        runtime: oldHost.runtime,
-        packageName: '@fixture/host-app',
-        app: { cookbook, catalog },
-        assistant: { ai: { chat: calls } as never },
-      });
-      await host.init();
+      await rescuer.initialize(db);
+      await rescuer.start();
       await vi.waitFor(
         async () =>
           expect(
@@ -2230,23 +2026,41 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
           ).toBe('failed'),
         { timeout: 15000 },
       );
-      expect((await designState(runId)).leaseRevision).toBe(
-        before.leaseRevision,
-      );
-      const resumed = await chat(`design-runs/${runId}/resume`, {});
+      // No lease is cleared to bypass ownership: the stale one is replaced
+      // only by the new job's claim.
+      expect((await workflowState(runId)).lease).toBe(before.lease);
+      const resumed = await chat(`runs/${runId}/resume`, {});
       expect(resumed.status).toBe(200);
       await vi.waitFor(
-        async () => expect((await designState(runId)).status).toBe('done'),
+        async () => expect((await workflowState(runId)).status).toBe('done'),
         { timeout: 15000 },
       );
-      const done = await designState(runId);
-      expect(done.input.results).toEqual(
-        (uncommitted.input as { results: unknown[] }).results,
-      );
+      const done = await workflowState(runId);
+      // The replayed check returned the exact committed core result.
+      expect(done.input.results).toEqual(captured?.results);
       expect(done.outputs).toEqual(before.outputs);
-      expect(done.attempts).toEqual(before.attempts);
       expect(done.tokens).toBe(before.tokens);
       expect(done.input.schemaPin).toBe(before.input.schemaPin);
+      // The dead worker wakes up: claim fencing refuses its save, so it
+      // writes nothing over the recovered run.
+      const settledRevision = (await readAiRunCheckpoint(db, runId))?.revision;
+      release();
+      await vi.waitFor(
+        async () =>
+          expect(
+            (
+              await db.query(
+                "SELECT id FROM _smrt_jobs WHERE dedupe_key = ? AND status = 'running'",
+                runId,
+              )
+            ).rows,
+          ).toHaveLength(0),
+        { timeout: 15000 },
+      );
+      expect((await readAiRunCheckpoint(db, runId))?.revision).toBe(
+        settledRevision,
+      );
+      expect((await workflowState(runId)).status).toBe('done');
       const history = await mcp('tools/call', {
         name: 'app_history',
         arguments: {},
@@ -2254,43 +2068,48 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       expect(history.body.result.structuredContent.changes).toHaveLength(1);
       expect(calls).toHaveBeenCalledTimes(1);
       const claims = await db.query(
-        'SELECT id, attempts FROM _smrt_jobs WHERE object_id = ?',
+        'SELECT id, attempts FROM _smrt_jobs WHERE dedupe_key = ?',
         runId,
       );
       expect(claims.rows).toHaveLength(2);
     } finally {
-      checkpointFault.beforeSave = undefined;
+      checkpointFault.afterCheck = undefined;
       release();
-      await stopping;
-      if (host !== oldHost) {
-        await host.shutdown();
-        oldHost.dispose();
-        await oldDb.close?.();
-      }
+      await rescuer?.stop();
     }
   });
 
   it.each([
-    1, 20,
-  ])('resumes the same design run with current aggregate token cap %s and retained usage', async (cap) => {
+    1, 10_000_000,
+  ])("stops at the app's token cap and resumes the same workflow run under its current cap %s", async (cap) => {
+    // The app's setting for the workflow's budget: a new host with the new
+    // value, as a redeploy would bring.
     async function setCap(value: number) {
-      await request(event('/settings/inference'), async (e) => {
-        const saved = await host.workProfiles.read(e);
-        expect(
-          (
-            await host.workProfiles.write(e, {
-              settings: { design: { budgets: { maxRunTokens: value } } },
-              revision: saved.revision,
-            })
-          ).ok,
-        ).toBe(true);
-        return new Response();
+      const runtime = host.runtime;
+      await host.shutdown();
+      host.dispose();
+      host = createCookbookHost({
+        onboarding: true,
+        runtime,
+        cli,
+        app: { cookbook, catalog },
+        assistant: {
+          ai: {
+            chat: async (m: unknown, o: unknown) =>
+              response(m as never, o as never),
+          } as never,
+          onError: (e) => {
+            errors.push(String(e));
+          },
+        },
+        workflowBudget: { maxRunTokens: value },
       });
+      await host.init();
     }
-    await setCap(2);
+    await setCap(1);
     const id = await thread();
     response = (messages) =>
-      messages.some((m) => m.content.includes('Design pass '))
+      messages.some((m) => m.content.includes('Workflow step '))
         ? {
             content: JSON.stringify({
               summary: 'No changes applied.',
@@ -2306,47 +2125,47 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     const events = await turn(id, 'Review the Memos setup');
     const runId = events.find((e) => e.type === 'done')?.runId;
     expect(runId).toBeTruthy();
-    async function state() {
-      const row = (
-        await db.query(
-          'SELECT payload FROM _smrt_inference_design_runs WHERE id = ? AND owner_id = ? AND tenant_id = ?',
-          runId,
-          owner.id,
-          tenantId,
-        )
-      ).rows[0];
-      return JSON.parse(String(row.payload));
-    }
+    // The step's first call cannot be reserved within one token: the run
+    // stops (resumable) with the limit's reason before any model call.
     await vi.waitFor(
       async () => {
-        expect((await state()).status).toBe('stopped');
+        expect(await workflowState(runId as string)).toMatchObject({
+          status: 'stopped',
+          stopReason: 'max_tokens',
+        });
         const active = await db.query(
-          "SELECT id FROM _smrt_jobs WHERE object_id = ? AND status = 'running'",
+          "SELECT id FROM _smrt_jobs WHERE dedupe_key = ? AND status = 'running'",
           runId,
         );
         expect(active.rows).toHaveLength(0);
       },
       { timeout: 15000 },
     );
-    const before = await state();
+    const before = await workflowState(runId as string);
     expect(before.input.listCatalog).toBeUndefined();
-    expect(before.phase).toBe('check');
-    expect(before.tokens).toBe(2);
+    expect(before.calls).toBe(0);
     await setCap(cap);
-    const resumed = await chat(`design-runs/${runId}/resume`, {});
-    expect(resumed.status).toBe(200);
-    await vi.waitFor(
-      async () => {
-        const after = await state();
-        expect(after.id).toBe(before.id);
-        expect(after.definition).toBe(before.definition);
-        expect(after.budget.maxTokens).toBe(cap);
-        expect(after.tokens).toBeGreaterThanOrEqual(before.tokens);
-        expect(after.status).toBe(cap < before.tokens ? 'stopped' : 'done');
-        if (cap < before.tokens) expect(after.tokens).toBe(before.tokens);
-      },
-      { timeout: 15000 },
-    );
+    const resumed = await chat(`runs/${runId}/resume`, {});
+    if (cap === 1) {
+      // A budget stop resumes only with the stopping limit raised.
+      expect(resumed.status).toBe(409);
+      expect(await workflowState(runId as string)).toMatchObject({
+        status: 'stopped',
+        stopReason: 'max_tokens',
+        calls: 0,
+      });
+    } else {
+      expect(resumed.status).toBe(200);
+      await vi.waitFor(
+        async () => {
+          const after = await workflowState(runId as string);
+          expect(after.budget.maxTokens).toBe(cap);
+          expect(after.status).toBe('done');
+          expect(after.calls).toBeGreaterThan(0);
+        },
+        { timeout: 15000 },
+      );
+    }
     const messages = await (
       await chat(`threads/${id}/messages`, undefined, 'GET')
     ).json();
@@ -2555,19 +2374,14 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       host.connectAi.POST,
     );
     expect(selection.status).toBe(200);
-    // The compatible fake CLI has this explicit fixture model; no native
-    // strongest-model claim is inferred from its synthetic catalog.
     await request(event('/settings/inference'), async (e) => {
-      const state = await host.workProfiles.read(e);
+      const state = await host.assistantSettings.read(e);
       expect(
         (
-          await host.workProfiles.write(e, {
+          await host.assistantSettings.write(e, {
             settings: {
-              assist: { model: 'fixture-best' },
-              safety: {
-                requireRemovalApproval: removalApproval,
-                ...(!removalApproval ? { protectLocalCli: false } : {}),
-              },
+              requireRemovalApproval: removalApproval,
+              ...(!removalApproval ? { protectLocalCli: false } : {}),
             },
             revision: state.revision,
             confirmUnprotectedCli: !removalApproval,
@@ -2691,7 +2505,7 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       const outsideList = await mcp();
       expect(
         outsideList.body.result.tools.some((t: { name: string }) =>
-          /preference|work_profile|assistant_safety/i.test(t.name),
+          /preference|assistant_settings|assistant_safety/i.test(t.name),
         ),
       ).toBe(false);
       const outsideName = outsideList.body.result.tools.find(
@@ -2708,16 +2522,14 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       ).toBeTruthy();
       expect(deleted).toHaveBeenCalledTimes(1);
       const forbidden = await mcp('tools/call', {
-        name: 'work_profiles_update',
-        arguments: {
-          safety: { requireRemovalApproval: true, protectLocalCli: true },
-        },
+        name: 'assistant_settings_update',
+        arguments: { requireRemovalApproval: true, protectLocalCli: true },
       });
       expect(
         forbidden.body.error ?? forbidden.body.result?.isError,
       ).toBeTruthy();
       await request(event('/settings/inference'), async (e) => {
-        expect((await host.workProfiles.read(e)).settings.safety).toEqual({
+        expect((await host.assistantSettings.read(e)).settings).toEqual({
           requireRemovalApproval: false,
           protectLocalCli: false,
         });
@@ -2728,7 +2540,10 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       await expect(
         request(noSession, async (e) =>
           json(
-            await host.workProfiles.write(e, { settings: {}, revision: null }),
+            await host.assistantSettings.write(e, {
+              settings: {},
+              revision: null,
+            }),
           ),
         ),
       ).rejects.toMatchObject({ status: 403 });
@@ -2736,12 +2551,9 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       // A running turn must not lose its initial hold policy if the owner
       // disables approval while the CLI is approaching the MCP boundary.
       await request(event('/settings/inference'), async (e) => {
-        const saved = await host.workProfiles.read(e);
-        await host.workProfiles.write(e, {
-          settings: {
-            ...saved.settings,
-            safety: { ...saved.settings.safety, requireRemovalApproval: true },
-          },
+        const saved = await host.assistantSettings.read(e);
+        await host.assistantSettings.write(e, {
+          settings: { ...saved.settings, requireRemovalApproval: true },
           revision: saved.revision,
         });
         return new Response();
@@ -2756,15 +2568,9 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       beforeMcpCall = async () => {
         beforeMcpCall = undefined;
         await request(event('/settings/inference'), async (e) => {
-          const saved = await host.workProfiles.read(e);
-          await host.workProfiles.write(e, {
-            settings: {
-              ...saved.settings,
-              safety: {
-                ...saved.settings.safety,
-                requireRemovalApproval: false,
-              },
-            },
+          const saved = await host.assistantSettings.read(e);
+          await host.assistantSettings.write(e, {
+            settings: { ...saved.settings, requireRemovalApproval: false },
             revision: saved.revision,
           });
           return new Response();
@@ -3319,7 +3125,6 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
   });
 
   it('resumes app remove-field and remove-list holds through the shared owner route across restart', async () => {
-    await directStructuralService();
     const runtime = host.runtime;
     host.dispose();
     const app = { cookbook, catalog: structuredClone(catalog) };
@@ -3370,20 +3175,19 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       offered.find((entry: { name: string }) => entry.name === 'app_history')
         .annotations.readOnlyHint,
     ).toBe(true);
-    let rounds = 0;
-    response = () =>
-      ++rounds === 1
-        ? tool('app.removeField', {
-            list: 'Loaner mats',
-            field: 'Size',
-            expectedRevision: editor!.snapshot().revision,
-          })
-        : text();
-    const seen = await turn(
-      await thread(),
-      'Remove the Size field from Loaner mats',
+    // Structural tools run only in workflow runs, never in a chat turn
+    // (#5005): the app's MCP surface asks for the hold directly.
+    const fieldCall = await mcp('tools/call', {
+      name: 'app_remove_field',
+      arguments: {
+        list: 'Loaner mats',
+        field: 'Size',
+        expectedRevision: editor!.snapshot().revision,
+      },
+    });
+    expect(JSON.parse(fieldCall.body.result.content[0].text).status).toBe(
+      'approval_required',
     );
-    expect(seen.some((e) => e.type === 'error')).toBe(false);
     const ownerRows = (await (await chat('approvals', undefined, 'GET')).json())
       .approvals;
     const fieldRows = ownerRows.filter(
@@ -3926,18 +3730,16 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     }
   });
 
-  it('enables a recipe through an assistant extra tool and exposes its section, REST and MCP without rebuilding', async () => {
-    await directStructuralService();
-    let round = 0;
-    response = () =>
-      ++round === 1
-        ? tool('recipes.enable', { id: 'host.memos', expectedRevision: 0 })
-        : text();
-    const seen = await turn(await thread(), 'Enable memos');
-    expect(
-      seen.some((e) => e.type === 'error'),
-      JSON.stringify(errors),
-    ).toBe(false);
+  it('enables a recipe through the app tool and exposes its section, REST and MCP without rebuilding', async () => {
+    // Structural tools run only in workflow runs, never in a chat turn
+    // (#5005): the app's MCP surface calls it directly.
+    const enabled = await mcp('tools/call', {
+      name: 'recipes_enable',
+      arguments: { id: 'host.memos', expectedRevision: 0 },
+    });
+    expect(enabled.body.result.isError, JSON.stringify(enabled.body)).not.toBe(
+      true,
+    );
     expect((await host.cookbookApp(tenantId)).cookbook.recipes).toContain(
       'host.memos',
     );

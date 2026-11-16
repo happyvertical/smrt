@@ -14,9 +14,12 @@
 
 export type { AiUsageSnapshot, AiUsageStats } from '@happyvertical/smrt-types';
 export {
+  AI_OWN_CALL_ID_TAG,
   AI_USAGE_TAG_COLUMNS,
   AiUsageCollector,
   AiUsagePersistenceHandler,
+  type AiUsageRowOverrides,
+  insertAiUsageRow,
 } from './ai-usage.js';
 export type {
   AiUsageRecorder,
@@ -37,6 +40,7 @@ export {
 export {
   DEFAULT_AI_COST_RATES,
   estimateAiUsageCost,
+  lookupAiCostRate,
 } from './cost-rates.js';
 export type {
   MethodMetrics,

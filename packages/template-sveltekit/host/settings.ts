@@ -36,7 +36,9 @@ export async function readPayload<T>(request: Request): Promise<T> {
 
 export function createInferenceSettingsPage(
   controller: InferenceSettingsController,
-  workProfiles?: ReturnType<typeof createCookbookHost>['workProfiles'],
+  assistantSettings?: ReturnType<
+    typeof createCookbookHost
+  >['assistantSettings'],
 ) {
   const inferenceSettingsController = () => controller;
   type Payload<K extends keyof InferenceSettingsController> = Parameters<
@@ -60,35 +62,36 @@ export function createInferenceSettingsPage(
         session,
         url.searchParams.get('by'),
       )),
-      ...(workProfiles
+      ...(assistantSettings
         ? {
-            workProfiles: await workProfiles.read({ locals, url } as Parameters<
-              typeof workProfiles.read
-            >[0]),
+            assistant: await assistantSettings.read({
+              locals,
+              url,
+            } as Parameters<typeof assistantSettings.read>[0]),
           }
         : {}),
     };
   }) satisfies ServerLoad;
 
   const actions: Actions = {
-    saveWorkProfiles: async (event) => {
-      if (!workProfiles) error(404, 'Unavailable');
+    saveAssistant: async (event) => {
+      if (!assistantSettings) error(404, 'Unavailable');
       const payload = await readPayload<
-        Parameters<typeof workProfiles.write>[1]
+        Parameters<typeof assistantSettings.write>[1]
       >(event.request);
-      const outcome = await workProfiles.write(event, payload);
+      const outcome = await assistantSettings.write(event, payload);
       return outcome.ok
         ? outcome
         : fail(outcome.reason === 'conflict' ? 409 : 400, {
             error: 'The change was refused.',
           });
     },
-    resetWorkProfiles: async (event) => {
-      if (!workProfiles) error(404, 'Unavailable');
+    resetAssistant: async (event) => {
+      if (!assistantSettings) error(404, 'Unavailable');
       const payload = await readPayload<{ revision: string | null }>(
         event.request,
       );
-      const outcome = await workProfiles.reset(event, payload.revision);
+      const outcome = await assistantSettings.reset(event, payload.revision);
       return outcome.ok
         ? outcome
         : fail(outcome.reason === 'conflict' ? 409 : 400, {

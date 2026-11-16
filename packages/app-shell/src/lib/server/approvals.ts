@@ -226,6 +226,38 @@ export async function getApprovalView(
   return row ? view(row) : null;
 }
 
+/** Approvals looked up per query by {@link approvalStatuses}. */
+const STATUS_LOOKUP_CHUNK = 200;
+
+/**
+ * The view status of each of `ids` that exists, in one query per
+ * {@link STATUS_LOOKUP_CHUNK} ids (an accepted or executing approval reads
+ * `approved`, as in {@link getApprovalView}).
+ */
+export async function approvalStatuses(
+  ids: readonly string[],
+): Promise<Map<string, ApprovalView['status']>> {
+  const out = new Map<string, ApprovalView['status']>();
+  if (!ids.length) return out;
+  const coll = await approvals();
+  for (let at = 0; at < ids.length; at += STATUS_LOOKUP_CHUNK) {
+    const chunk = ids.slice(at, at + STATUS_LOOKUP_CHUNK);
+    const rows = await coll.list({
+      where: { id: chunk },
+      limit: chunk.length,
+    });
+    for (const row of rows) {
+      out.set(
+        row.id as string,
+        row.status === 'accepted' || row.status === 'executing'
+          ? 'approved'
+          : row.status,
+      );
+    }
+  }
+  return out;
+}
+
 export async function listApprovalViews(
   filter: { status?: Approval['status'] } = {},
 ): Promise<ApprovalView[]> {

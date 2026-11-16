@@ -103,22 +103,24 @@ adapter from this model package root: even a metadata import makes its
 `node:crypto` dependency reachable to browser bundlers. The preferences suite
 reuses bundle-gate's browser build and ownership attribution to guard this edge.
 
-## Assistant work profiles
+## Assistant settings
 
-`createWorkProfilesPreference({store,isOwner})` owns the tenant-wide
-`work-profiles` / `assistant` kind. Its sparse design, assist and background
-settings contain engine, model, effort, budgets, automatic escalation and preview
-preferences. Inference owns recommendations and resolution; this package imports
-only its types, preserving the dependency direction. Missing settings resolve to
-recommendations. `write(settings,revision)` and `reset(revision)` both check the
-live owner plus `inference.customize`, and retain store CAS. User-tier overrides,
-unknown fields (including approval/CLI authority), malformed budgets and models
-are refused. Reads return validation issues without rewriting stored data.
+`createAssistantSettingsPreference({store,isOwner})` owns the tenant-wide
+`assistant-settings` / `assistant` kind (#5005): `escalateToWorkflow`,
+`previewBeforeApply`, `requireRemovalApproval` and `protectLocalCli`, each a
+boolean, absent meaning on. Inference owns the names and defaults
+(`AssistantSettings`); this package imports only the type (a value import of
+inference's root would register its executor) and mirrors the key list.
+`write(settings,revision)` and `reset(revision)` both check the live owner plus
+`inference.customize`, and retain store CAS. User-tier rows and unknown keys are
+refused. Turning protection off requires the facade's explicit
+`confirmUnprotectedCli` acknowledgement unless already off. Hosts must require
+an owner browser session, not just a scoped API principal, and must not register
+preference mutation as an assistant tool. Which model answers is the tier
+binding's choice, never a preference here.
 
-Reuse inventory: MCP architecture context and name/purpose searches of the intent
-index, preferences, inference, chat, core, smrt-ui and smrt-svelte found the generic
-kind/store and the existing owner pre-built facade. This new kind reuses both;
-no new table or preference persistence layer was added. Round-trip/reset and
-owner/conflict/invalid-value assertions run in the existing SQLite/DuckDB suite.
-
-S1 extends the existing owner `work-profiles` tenant preference with `safety.requireRemovalApproval` and `safety.protectLocalCli` booleans; absent means true. Unknown safety keys are invalid. Turning protection off requires the facade's explicit `confirmUnprotectedCli` acknowledgement unless already off; owner authorization and optimistic revision checks still apply. Reset removes the override and restores both defaults. Hosts must require an owner browser session, not just a scoped API principal, and must not register preference mutation as an assistant tool.
+The removed `work-profiles` kind is not registered and saved rows of it are
+dropped, never converted: reads are per kind, so such a row is never read, and a
+store call that names the kind is refused with `UnknownPreferenceKindError`.
+The kinds suite seeds one with raw SQL and proves other kinds still load, save
+and list.

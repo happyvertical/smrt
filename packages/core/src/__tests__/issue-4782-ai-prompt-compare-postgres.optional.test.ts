@@ -18,7 +18,7 @@ import {
 } from '../system/ai-prompt-compare';
 import { recordAiRun } from '../system/ai-runs';
 import { recordAiTranscript } from '../system/ai-transcripts';
-import { recordAiUsageOutcome } from '../system/ai-usage-observability';
+import { recordAiEvaluation } from '../system/ai-usage-observability';
 import { getTestDatabase } from '../testing/database';
 
 const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
@@ -45,7 +45,8 @@ describe.skipIf(!pgUrl)('Prompt comparison on PostgreSQL (#4782)', () => {
       prompt,
     );
     await db.query(
-      "DELETE FROM _smrt_ai_usage_outcomes WHERE actor = 'pg-4782'",
+      `DELETE FROM _smrt_ai_evaluations WHERE call_id IN
+        (SELECT id FROM _smrt_ai_usage WHERE class_name = 'Pg4782')`,
     );
     await db.query('DELETE FROM _smrt_ai_runs WHERE id = $1', run);
     await db.query("DELETE FROM _smrt_ai_usage WHERE class_name = 'Pg4782'");
@@ -89,11 +90,16 @@ describe.skipIf(!pgUrl)('Prompt comparison on PostgreSQL (#4782)', () => {
       tenantId: 'pg-a',
       promptKey: prompt,
     });
-    await recordAiUsageOutcome(db, {
-      callId: `${suffix}-2`,
+    const found = await db.query(
+      'SELECT id FROM _smrt_ai_usage WHERE entry_call_id = $1 AND tenant_id = $2',
+      `${suffix}-2`,
+      'pg-a',
+    );
+    await recordAiEvaluation(db, {
+      callId: String((found.rows as { id: string }[])[0]?.id),
       label: 'rejected',
-      score: 0,
-      actor: 'pg-4782',
+      value: 0,
+      evaluator: 'human',
     });
     const { id } = await recordAiTranscript(db, {
       callId: `${suffix}-2`,

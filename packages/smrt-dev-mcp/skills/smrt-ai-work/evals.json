@@ -1,0 +1,18 @@
+{
+  "skill": "smrt-ai-work",
+  "note": "Trigger eval set. Positive: adding or explaining AI work in a project that depends on smrt packages. Negative: editing an existing prompt's wording, or work with no model call. src/agent-skills.test.ts asserts the description covers the positive classes.",
+  "positive": [
+    { "prompt": "summarize each ticket with a model", "signal": "add" },
+    { "prompt": "classify incoming mail with AI", "signal": "add" },
+    { "prompt": "add a multi-step AI workflow that drafts then reviews a proposal", "signal": "workflow" },
+    { "prompt": "call a model to draft a reply", "signal": "add" },
+    { "prompt": "what is the difference between a run and a call?", "signal": "explain" },
+    { "prompt": "why did this AI run stop on its budget?", "signal": "explain" },
+    { "prompt": "how do I record whether an AI answer was good?", "signal": "explain" }
+  ],
+  "negative": [
+    { "prompt": "reword the system prompt for tickets.summarize", "reason": "editing an existing prompt's wording" },
+    { "prompt": "add a price field to Invoice", "reason": "no model call" },
+    { "prompt": "add a nightly cleanup job", "reason": "background work with no model call; smrt-catalog" }
+  ]
+}

@@ -336,6 +336,10 @@ export {
   type InferenceResolutionSource,
   type InferenceResolver,
   type InferenceResolverContext,
+  type InferenceRunCallShare,
+  type InferenceRunHandle,
+  type InferenceRunOpenInput,
+  type InferenceRunOutcome,
   type InferenceRunRecord,
   type InferenceRunStatus,
   type InferenceTarget,
@@ -354,9 +358,12 @@ export {
   isInferenceTargetSource,
   isInferenceTier,
   isInferenceTierRequest,
+  isReasoningEffort,
   lookupInferenceFusion,
   MIN_TRANSCRIPT_MAX_BYTES,
   mergeInferenceConfigs,
+  REASONING_EFFORTS,
+  type ReasoningEffort,
   type ResolveInferenceOptions,
   resolveAutoTier,
   resolveInference,
@@ -516,13 +523,17 @@ export {
 } from './migrations/differ';
 export {
   type ConfirmedRecompute,
+  type ConfirmedRetirement,
+  type ConfirmedRetirementRecord,
   collectConfirmedRecomputes,
   collectMigrateRecordInput,
+  confirmedRetirementsOf,
   type LastMigrateRecord,
   type MigrateRecord,
   type MigrateRecordInput,
   type MigrateRecordOptions,
   packagesSeenInput,
+  readConfirmedRetirements,
   readLastMigrateRecord,
   recordSuccessfulMigrate,
   type UnloadedBuildPackage,
@@ -718,6 +729,14 @@ export {
 } from './testing/database';
 // AI function calling tools
 export * from './tools/index';
+export {
+  AiPromptKeyRequiredError,
+  createTrackedAiClient,
+  type TrackedAiClient,
+  type TrackedAiClientOptions,
+  type TrackedAiRun,
+  type TrackedPromptCall,
+} from './tracked-ai-client';
 // Presentation metadata helpers (#3599): widget hints, display label, selector lookup
 export * from './ui-metadata.js';
 // IN-list chunking contract for loaders that build IN lists from data-sized

@@ -29,6 +29,8 @@ import { orphanCountSql } from './db-migrate-actions.js';
 
 export interface MigratePreviewReport {
   removed: string[];
+  /** Tables the next migrate drops because their package declares them retired (#5005). */
+  retired: string[];
   kept: string[];
   rules: string[];
   apply: Record<string, string[]>;
@@ -116,6 +118,7 @@ export async function buildMigratePreview(
   });
   const report: MigratePreviewReport = {
     removed: [],
+    retired: [],
     kept: [],
     rules: [],
     apply: {},
@@ -144,6 +147,12 @@ export async function buildMigratePreview(
     if (removal || change.alteration === 'drop_check') {
       report.removed.push(
         `${name}: removes ${removal ?? 'CHECK'}. To keep it, declare it in code.`,
+      );
+    }
+    if (verdict.kind === 'table.retire' && change.retirement) {
+      const { lastOwner, since, reason, rows } = change.retirement;
+      report.retired.push(
+        `${change.table}: ${reason} (${lastOwner}, retired in ${since}; ${rows === null ? 'its rows are discarded' : `${rows} row(s) discarded`})`,
       );
     }
     if (verdict.kind === 'column.relaxation-report')
@@ -213,6 +222,10 @@ export async function buildMigratePreview(
     report.issues.push(`Next migrate: ${stop.message}`);
   if (report.removed.length)
     report.warnings.push('Next migrate removes constraints made by hand');
+  if (report.retired.length)
+    report.warnings.push(
+      `Next migrate drops ${report.retired.length} table(s) their package declares retired`,
+    );
   if (report.rules.length)
     report.warnings.push(
       'Next migrate: rules in code the database is not enforcing',
@@ -291,6 +304,12 @@ export function formatMigratePreview(
   group(
     'Constraints made by hand that the next migrate removes',
     report.removed,
+  );
+  group(
+    'Tables the next migrate retires (dropped with their rows)',
+    report.retired.map(
+      (item) => `${item}${!report.decision.proceed ? ' (held back)' : ''}`,
+    ),
   );
   group('Constraint relaxations kept until you opt in', report.kept);
   group('Rules in code the database is not enforcing', report.rules);

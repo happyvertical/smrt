@@ -835,6 +835,46 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
       expect(manifest.smrtDependencies).toContain('@fixture/undiscovered');
     });
 
+    it('keep a consumed package retirement only while the app depends on it (#5005)', async () => {
+      createConsumerProject();
+      mkdirSync(join(tmpDir, '.smrt'), { recursive: true });
+      const retired = (packageName: string, table: string) => ({
+        table,
+        lastOwner: `${packageName}:Old`,
+        since: '1.0.0',
+        reason: 'Folded into another table.',
+        rows: 'discard',
+        definitions: [{ release: '0.9.0', columns: { id: { type: 'UUID' } } }],
+        packageName,
+      });
+      writeFileSync(
+        join(tmpDir, '.smrt', 'manifest.json'),
+        JSON.stringify({
+          version: '1.0.0',
+          timestamp: 0,
+          packageName: '@fixture/test-app',
+          objects: {},
+          smrtDependencies: [externalPackage],
+          retiredTables: [
+            retired(externalPackage, 'messages_old'),
+            retired('@fixture/gone', 'gone_old'),
+          ],
+        }),
+      );
+
+      const producer: any = smrtPlugin({
+        include: ['src/**/*.ts'],
+        generateTypes: false,
+      });
+      await producer.configResolved(viteConfig());
+
+      expect(
+        readManifest().retiredTables.map(
+          (entry: { packageName: string }) => entry.packageName,
+        ),
+      ).toEqual([externalPackage]);
+    });
+
     it('are described by the knowledge artifact the local write refreshes', async () => {
       // .smrt/smrt-knowledge.json hashes the manifest it was derived from, so
       // it has to be rebuilt from the merged manifest that is actually

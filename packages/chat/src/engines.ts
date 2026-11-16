@@ -1,10 +1,11 @@
-import type { WorkRunMetadata } from '@happyvertical/smrt-inference';
+import type { EngineExecution } from '@happyvertical/smrt-inference';
 
 export {
-  type AssistantWorkProfileOptions,
-  assertWorkProfileTool,
-  WorkProfileEscalation,
-} from './work-profile.js';
+  type AssistantModelSelection,
+  type AssistantRunTypeOptions,
+  assertToolRunType,
+  ToolRunTypeRefusal,
+} from './tool-run-types.js';
 
 /** Node-only adapters over inference's engines; chat retains transcript ownership. */
 import type { AIInterface } from '@happyvertical/ai';
@@ -42,7 +43,7 @@ import {
 /** All credentials, working directories and MCP authority are bound by the host per turn. */
 export type AgentCliChatBinding = Pick<
   AgentTurnOptions,
-  'mcpUrl' | 'deps' | 'fallback' | 'outputSchema' | 'protection'
+  'mcpUrl' | 'deps' | 'fallback' | 'outputSchema' | 'protection' | 'limits'
 > &
   Pick<AgentTurnHost, 'allowTool' | 'approvals'> & {
     /** Optional MCP wire-name → canonical offered chat slug mapping. Unknown names deny. */
@@ -130,7 +131,7 @@ export function createAgentCliTurnDriver(options: {
       let queue = Promise.resolve();
       let failure: unknown;
       let text = '';
-      let workRun: WorkRunMetadata | undefined;
+      let execution: EngineExecution | undefined;
       let decision: boolean | undefined;
       const append = async (message: AgentTurnMessage) => {
         // Inference clips event.args for display; the persisted engine callback
@@ -151,7 +152,13 @@ export function createAgentCliTurnDriver(options: {
       try {
         const stop = await runAgentTurn({
           tool: options.tool,
-          profile: context.workProfile,
+          ...(context.selection?.model
+            ? { model: context.selection.model }
+            : {}),
+          ...(context.selection?.effort
+            ? { effort: context.selection.effort }
+            : {}),
+          ...(binding.limits ? { limits: binding.limits } : {}),
           text: context.userMessage,
           mcpUrl: binding.mcpUrl,
           deps: binding.deps,
@@ -161,9 +168,9 @@ export function createAgentCliTurnDriver(options: {
           signal,
           host: {
             appendMessage: append,
-            recordExecution: async (metadata) => {
-              workRun = metadata;
-              callbacks.execution?.(metadata);
+            recordExecution: async (recorded) => {
+              execution = recorded;
+              callbacks.execution?.(recorded);
             },
             lastSession: async () => null,
             guidance: async () => ({
@@ -251,7 +258,7 @@ export function createAgentCliTurnDriver(options: {
         // A pending MCP response is NOT a successful effect. No auto-resume or
         // approval decision is performed here; only the host can execute a hold.
         callbacks.done({
-          workRun,
+          ...(execution ? { execution } : {}),
           text: held.size
             ? decision
               ? 'Approval recorded. Ask the assistant to continue.'
@@ -277,7 +284,7 @@ export async function createChatGPTAssistantAI(
   options: ChatGPTModelOptions,
 ): Promise<
   Pick<AIInterface, 'chat'> & {
-    getWorkRunMetadata(): WorkRunMetadata | undefined;
+    getEngineExecution(): EngineExecution | undefined;
   }
 > {
   const safeFailure = (error: unknown): never => {
@@ -291,16 +298,16 @@ export async function createChatGPTAssistantAI(
       'chatgpt_unavailable',
     );
   };
-  let workRun: WorkRunMetadata | undefined;
+  let execution: EngineExecution | undefined;
   const model = await createChatGPTModel({
     ...options,
-    recordExecution: async (metadata) => {
-      workRun = metadata;
-      await options.recordExecution?.(metadata);
+    recordExecution: async (recorded) => {
+      execution = recorded;
+      await options.recordExecution?.(recorded);
     },
   }).catch(safeFailure);
   return {
-    getWorkRunMetadata: () => workRun,
+    getEngineExecution: () => execution,
     async chat(messages, request) {
       const reply = await model
         .complete({
@@ -313,7 +320,7 @@ export async function createChatGPTAssistantAI(
         .catch(safeFailure);
       return {
         content: reply.text,
-        ...(workRun?.model ? { model: workRun.model } : {}),
+        ...(execution?.model ? { model: execution.model } : {}),
         ...(reply.raw ? { toolCalls: reply.raw } : {}),
         finishReason: reply.toolCalls.length ? 'tool_calls' : 'stop',
         ...(reply.totalTokens !== undefined
@@ -360,7 +367,7 @@ export function createInferenceAssistantAdapters(options: {
   const selected = new WeakMap<Request, Promise<InferenceEngineId>>();
   const resolve = async (context: Context) => {
     const engine =
-      context.workProfile?.engine ?? (await options.binding(context)) ?? 'api';
+      context.selection?.engine ?? (await options.binding(context)) ?? 'api';
     if (!['api', 'chatgpt', 'claude-code', 'codex'].includes(engine))
       throw new InferenceUnavailableError({ reason: 'unconfigured' });
     const status = await inferenceEngineStatus(
@@ -386,7 +393,7 @@ export function createInferenceAssistantAdapters(options: {
     return engine;
   };
   const select = (context: Context) => {
-    if (context.workProfile) return resolve(context);
+    if (context.selection) return resolve(context);
     let pending = selected.get(context.event.request);
     if (!pending) {
       pending = resolve(context);
@@ -406,15 +413,15 @@ export function createInferenceAssistantAdapters(options: {
       if (engine === 'chatgpt')
         return createChatGPTAssistantAI({
           ...(await options.chatgpt(context)),
-          ...(context.workProfile
+          ...(context.selection
             ? {
-                profile: context.workProfile.name,
-                model: context.workProfile.model,
-                settings: {
-                  model: context.workProfile.model,
-                  effort: context.workProfile.effort,
-                  budgets: context.workProfile.budgets,
-                },
+                tier: context.selection.tier,
+                ...(context.selection.model
+                  ? { model: context.selection.model }
+                  : {}),
+                ...(context.selection.effort
+                  ? { effort: context.selection.effort }
+                  : {}),
               }
             : {}),
         });

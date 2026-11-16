@@ -68,13 +68,13 @@ describe('AssistantDock (mounted component)', () => {
     const transport = createInMemoryAssistantTransport();
     await transport.createThread('Design');
     const read = vi.fn(async () => ({
-      runId: 'design',
-      pass: { index: 1, count: 2, name: 'Shape the plan' },
+      runId: 'workflow',
+      step: { index: 1, count: 2, name: 'Shape the plan' },
       status,
     }));
-    transport.designRun = read;
-    transport.stopDesignRun = vi.fn(async () => undefined);
-    transport.resumeDesignRun = vi.fn(async () => undefined);
+    transport.workflowRun = read;
+    transport.stopWorkflowRun = vi.fn(async () => undefined);
+    transport.resumeWorkflowRun = vi.fn(async () => undefined);
     render(AssistantDock, {
       props: {
         transport,

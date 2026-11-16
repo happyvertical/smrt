@@ -343,6 +343,23 @@ describe('SmrtClass inference tiers', () => {
     expect(options).not.toHaveProperty('latency');
   });
 
+  it("a tier binding's params.reasoning is the effort default; a call's reasoning wins (#5005)", async () => {
+    config({
+      inference: {
+        tiers: {
+          best: { model: 'top', params: { reasoning: { effort: 'high' } } },
+        },
+      },
+    });
+    const note = new Issue4750Note({ ai: BASE_AI } as never);
+    await note.do('x', { tier: 'best' });
+    await note.do('y', { tier: 'best', reasoning: { effort: 'low' } } as never);
+    const best = getAIMock.mock.results[1].value as Promise<FakeClient>;
+    const calls = (await best).message.mock.calls;
+    expect(calls[0][1]).toMatchObject({ reasoning: { effort: 'high' } });
+    expect(calls[1][1]).toMatchObject({ reasoning: { effort: 'low' } });
+  });
+
   it('tags the unconfigured tier path on the configured client', async () => {
     const note = new Issue4750Note({ ai: BASE_AI } as never);
     expect(await note.is('ok', { tier: 'best' })).toBe(true);

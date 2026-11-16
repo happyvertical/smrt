@@ -68,6 +68,10 @@ await article.do('Summarize this', { tier: 'great' });
   never a default and never a fallback. See
   [Inference settings](../../docs/content/inference-settings.md#sign-in-with-chatgpt-local-apps).
 
+A fusion is recorded as a `fusion` run with one usage row per seat call; the
+vocabulary (run, event, evaluation, budget) is in
+[AI runs](../../docs/content/ai-runs.md).
+
 The app-author guide, with a worked example, is
 [Inference tiers, bindings and usage](../../docs/content/inference.md).
 

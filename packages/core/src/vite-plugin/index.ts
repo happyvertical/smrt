@@ -14,6 +14,7 @@ import type {
   DomainKnowledgeConfig,
   DomainKnowledgeManifest,
 } from '@happyvertical/smrt-types';
+import { mergeRetiredTables } from '../migrations/retired-tables.js';
 import { tryComputeManifestSchemaFingerprint } from '../migrations/schema-fingerprint.js';
 import type {
   SmrtDevServer,
@@ -671,17 +672,40 @@ function mergeExternalManifestEntries(
     ...scannedDependencies,
     ...readManifestDependencies(existing),
   ]);
+  // Retirements declared by consumed packages stay with the file as their
+  // objects do, but only for a package the app still depends on; the local
+  // scan owns the local package's own list (#5005).
+  const preservedRetired = Array.isArray(existing.retiredTables)
+    ? existing.retiredTables.filter(
+        (entry) =>
+          typeof entry?.packageName === 'string' &&
+          !localPackageNames.has(entry.packageName) &&
+          mergedDependencies.has(entry.packageName),
+      )
+    : [];
+  const retiredTables = mergeRetiredTables(
+    manifest.retiredTables,
+    preservedRetired,
+  );
+  const carriesRetired =
+    retiredTables.length > (manifest.retiredTables?.length ?? 0);
+
   // The union can only grow, so equal sizes mean the scan already covers it.
   const carriesExtraDependency =
     mergedDependencies.size > scannedDependencies.size;
 
-  if (Object.keys(preserved).length === 0 && !carriesExtraDependency) {
+  if (
+    Object.keys(preserved).length === 0 &&
+    !carriesExtraDependency &&
+    !carriesRetired
+  ) {
     return manifest;
   }
 
   return {
     ...manifest,
     objects: { ...preserved, ...manifest.objects },
+    ...(retiredTables.length > 0 ? { retiredTables } : {}),
     ...(mergedDependencies.size > 0
       ? { smrtDependencies: [...mergedDependencies].sort() }
       : {}),

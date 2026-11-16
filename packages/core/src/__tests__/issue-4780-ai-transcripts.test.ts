@@ -37,8 +37,8 @@ import {
   listAiTranscripts,
 } from '../system/ai-transcripts.js';
 import {
-  listAiUsageOutcomes,
-  recordAiUsageOutcome,
+  listAiEvaluations,
+  recordAiEvaluation,
   reportAiUsage,
 } from '../system/ai-usage-observability.js';
 import { runRetentionSweep } from '../system/retention.js';
@@ -246,20 +246,31 @@ describe('AI call transcripts (#4780)', () => {
     ).message('hello', { temperature: 0.2 });
     expect(raw.message.mock.calls[0]?.[1]).toEqual({ temperature: 0.2 });
     expect(await transcriptRows()).toHaveLength(0);
-    const usage = await rows(db, 'SELECT call_id FROM _smrt_ai_usage');
+    const usage = await rows(
+      db,
+      'SELECT id, call_id, entry_call_id FROM _smrt_ai_usage',
+    );
     expect(usage).toHaveLength(1);
-    expect(usage[0]?.call_id ?? null).toBeNull();
+    // A call with no transcript tag is its own entry call (#5005).
+    expect(usage[0]?.call_id).toBe(usage[0]?.id);
+    expect(usage[0]?.entry_call_id).toBe(usage[0]?.id);
   });
 
   describe('enabled at sample 0', () => {
-    it('lifts callId to call_id but stores no sampled-out success', async () => {
+    it('lifts callId to entry_call_id but stores no sampled-out success', async () => {
       enable();
       const ai = await (await probe()).client();
       expect(await ai.message('hello')).toBe('ok');
-      const usage = await rows(db, 'SELECT call_id, tags FROM _smrt_ai_usage');
+      const usage = await rows(
+        db,
+        'SELECT id, call_id, entry_call_id, tags FROM _smrt_ai_usage',
+      );
       expect(usage).toHaveLength(1);
-      expect(usage[0]?.call_id).toMatch(/^[0-9a-f-]{36}$/);
-      expect(JSON.parse(String(usage[0]?.tags)).callId).toBe(usage[0]?.call_id);
+      expect(usage[0]?.call_id).toBe(usage[0]?.id);
+      expect(usage[0]?.entry_call_id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(JSON.parse(String(usage[0]?.tags)).callId).toBe(
+        usage[0]?.entry_call_id,
+      );
       expect(await transcriptRows()).toHaveLength(0);
     });
 
@@ -331,8 +342,8 @@ describe('AI call transcripts (#4780)', () => {
       ).rejects.toThrow('boom');
       expect(await transcriptRows()).toHaveLength(0);
       // The call is still identified on its usage row.
-      const usage = await rows(db, 'SELECT call_id FROM _smrt_ai_usage');
-      expect(usage[0]?.call_id).toBeTruthy();
+      const usage = await rows(db, 'SELECT entry_call_id FROM _smrt_ai_usage');
+      expect(usage[0]?.entry_call_id).toBeTruthy();
     });
 
     it('takes the directive from prepareAiOperation options', async () => {
@@ -797,7 +808,7 @@ describe('AI call transcripts (#4780)', () => {
           ?.messages?.[0]?.content,
       ).toBe('t1 question');
       expect(t1[0]?.usage).toHaveLength(1);
-      expect(t1[0]?.usage[0]?.callId).toBe(t1[0]?.callId);
+      expect(t1[0]?.usage[0]?.entryCallId).toBe(t1[0]?.callId);
       expect(
         await listAiTranscripts(db, { actor: 'x', tenantId: null }),
       ).toEqual([]);
@@ -842,37 +853,43 @@ describe('AI call transcripts (#4780)', () => {
       ).rejects.toThrow('audit down');
     });
 
-    it('labels a call by callId and joins labels to the transcript', async () => {
+    it('evaluates a call and joins evaluations to the transcript', async () => {
       await seedTwoTenants();
       const [t1] = await listAiTranscripts(db, { actor: 'x', tenantId: 't1' });
-      const callId = String(t1?.callId);
-      const label = await recordAiUsageOutcome(db, {
+      // An evaluation names the call itself; the transcript is found through
+      // the call's entry call id.
+      const callId = String(t1?.usage[0]?.id);
+      const label = await recordAiEvaluation(db, {
         callId,
         label: 'rejected',
-        score: 0.1,
-        actor: 'reviewer',
+        value: 0.1,
+        evaluator: 'human',
       });
       expect(label).toMatchObject({ callId, tenantId: 't1' });
       await expect(
-        recordAiUsageOutcome(db, {
+        recordAiEvaluation(db, {
           callId,
           label: 'x',
-          actor: 'r',
+          evaluator: 'human',
           tenantId: 't2',
         }),
       ).rejects.toThrow(/tenant/);
       await expect(
-        recordAiUsageOutcome(db, { callId: 'nope', label: 'x', actor: 'r' }),
-      ).rejects.toThrow(/call_id/);
+        recordAiEvaluation(db, {
+          callId: 'nope',
+          label: 'x',
+          evaluator: 'human',
+        }),
+      ).rejects.toThrow(/_smrt_ai_usage/);
 
       const [joined] = await listAiTranscripts(db, {
         actor: 'x',
         tenantId: 't1',
-        outcome: 'rejected',
+        label: 'rejected',
       });
-      expect(joined?.outcomes.map((outcome) => outcome.label)).toEqual([
-        'rejected',
-      ]);
+      expect(joined?.evaluations.map((evaluation) => evaluation.label)).toEqual(
+        ['rejected'],
+      );
       expect(
         await listAiTranscripts(db, {
           actor: 'x',
@@ -880,10 +897,10 @@ describe('AI call transcripts (#4780)', () => {
           labelled: true,
         }),
       ).toEqual([]);
-      const outcomes = await listAiUsageOutcomes(db, { callId });
-      expect(outcomes[0]?.usage.map((row) => row.callId)).toEqual([callId]);
+      const evaluations = await listAiEvaluations(db, { callId });
+      expect(evaluations[0]?.usage.map((row) => row.callId)).toEqual([callId]);
       const report = await reportAiUsage(db, { by: ['tenant'] });
-      expect(report.totals.outcomes).toEqual({ rejected: 1 });
+      expect(report.totals.evaluations).toEqual({ rejected: 1 });
     });
   });
 

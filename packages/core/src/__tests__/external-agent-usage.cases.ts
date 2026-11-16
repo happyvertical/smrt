@@ -102,6 +102,9 @@ export function externalAgentUsageSuite(
       const row = await db.get('_smrt_ai_usage', { id: receipt.id });
       expect(row?.estimated_cost).toBeNull();
       expect(row?.total_tokens).toBeNull();
+      // Every usage row is its own call (#5005).
+      expect(row?.call_id).toBe(receipt.id);
+      expect(row?.entry_call_id).toBe(receipt.id);
     });
     it('arbitrates concurrent same sequence and refuses conflicting reports', async () => {
       const recorder = new ExternalAgentUsageRecorder(db, binding);

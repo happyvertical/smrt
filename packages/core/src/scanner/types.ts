@@ -8,6 +8,7 @@ import type {
   RecipeDefinition,
 } from '@happyvertical/smrt-types';
 import type { RequiredForReason } from '../decorators/index.js';
+import type { RetiredTable } from '../migrations/retired-tables.js';
 import type { SmartObjectConfig } from '../registry.js';
 
 /**
@@ -732,6 +733,13 @@ export interface SmartObjectManifest {
    * Omitted when the package declares none.
    */
   recipes?: RecipeDefinition[];
+  /**
+   * Tables this package (and, in an app's merged manifest, the packages it
+   * consumes) declares retired (#5005), read from `smrt.retiredTables` in the
+   * package's `package.json`. Migrate drops only a table listed here, and the
+   * list is part of the build's schema stamp. Omitted when there are none.
+   */
+  retiredTables?: RetiredTable[];
   /**
    * Whether this package's root entry builds for a browser (#3709), derived
    * from the bundle-gate ratchet. Omitted for packages the gate does not

@@ -18,7 +18,7 @@ import {
   listAiTranscripts,
   recordAiTranscript,
 } from '../system/ai-transcripts';
-import { recordAiUsageOutcome } from '../system/ai-usage-observability';
+import { recordAiEvaluation } from '../system/ai-usage-observability';
 
 let instance: SmrtClass;
 let db: DatabaseInterface;
@@ -65,8 +65,9 @@ async function usage(row: Row): Promise<void> {
     `INSERT INTO _smrt_ai_usage
       (id, provider, model, operation, prompt_tokens, completion_tokens,
        total_tokens, estimated_cost, duration, class_name, tenant_id, tags,
-       created_at, prompt_key, tier_requested, tier_resolved, run_id, call_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+       created_at, prompt_key, tier_requested, tier_resolved, run_id, call_id,
+       entry_call_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
     row.id,
     row.provider ?? 'openai',
     row.model ?? 'gpt-4o',
@@ -84,6 +85,7 @@ async function usage(row: Row): Promise<void> {
     row.tierRequested ?? null,
     row.tierResolved ?? null,
     row.runId ?? null,
+    row.id,
     row.callId ?? null,
   );
 }
@@ -198,31 +200,31 @@ async function seed(): Promise<Record<string, string>> {
     tenantId: 't2',
   });
 
-  await recordAiUsageOutcome(db, {
-    usageId: 'a1',
+  await recordAiEvaluation(db, {
+    callId: 'a1',
     label: 'accepted',
-    score: 1,
-    actor: 'r',
+    value: 1,
+    evaluator: 'human',
   });
-  await recordAiUsageOutcome(db, {
-    callId: 'c2',
+  await recordAiEvaluation(db, {
+    callId: 'a2',
     label: 'rejected',
-    score: 0,
-    actor: 'r',
+    value: 0,
+    evaluator: 'human',
     tenantId: 't1',
   });
-  await recordAiUsageOutcome(db, {
+  await recordAiEvaluation(db, {
     runId: 'r1',
     label: 'edited',
-    score: 0.5,
-    actor: 'r',
+    value: 0.5,
+    evaluator: 'human',
     tenantId: 't1',
   });
-  await recordAiUsageOutcome(db, {
-    callId: 'c5',
+  await recordAiEvaluation(db, {
+    callId: 'b1',
     label: 'accepted',
-    score: 0.8,
-    actor: 'r',
+    value: 0.8,
+    evaluator: 'human',
   });
   // Tenant t2 reuses call id c1 and run id r1 (after t1's run label, which
   // a run spanning tenants would refuse); its label, run and transcript
@@ -236,11 +238,11 @@ async function seed(): Promise<Record<string, string>> {
     callId: 'c1',
     runId: 'r1',
   });
-  await recordAiUsageOutcome(db, {
-    usageId: 't2a',
+  await recordAiEvaluation(db, {
+    callId: 't2a',
     label: 'rejected',
-    score: -5,
-    actor: 'r',
+    value: -5,
+    evaluator: 'human',
   });
 
   return {
@@ -294,7 +296,11 @@ describe('compareAiPromptRuns (#4782)', () => {
     expect(a.estimatedCost).toBeCloseTo(0.06);
     expect(a.meanCost).toBeCloseTo(0.02);
     expect(a.meanScore).toBeCloseTo(0.5);
-    expect({ ...a.outcomes }).toEqual({ accepted: 1, rejected: 1, edited: 1 });
+    expect({ ...a.evaluations }).toEqual({
+      accepted: 1,
+      rejected: 1,
+      edited: 1,
+    });
     // Worst-labelled first: c2 (0), c1 (worst 0.5 of 1 and the run's 0.5),
     // then the unlabelled c3.
     expect(a.transcripts.map((ref) => ref.id)).toEqual([
@@ -400,7 +406,7 @@ describe('compareAiPromptRuns (#4782)', () => {
       transcriptCount: 0,
       transcripts: [],
     });
-    expect({ ...result.b.outcomes }).toEqual({});
+    expect({ ...result.b.evaluations }).toEqual({});
     expect(result.unmatched).toBe(4);
 
     const empty = await compareAiPromptRuns(db, {
@@ -472,27 +478,20 @@ describe('compareAiPromptRuns (#4782)', () => {
     expect([overlap.a.calls, overlap.b.calls]).toEqual([1, 1]);
   });
 
-  it('counts a call label once per side however many rows the call has', async () => {
+  it('counts a run label once per side however many rows the run has', async () => {
     await usage({ id: 's1', hash: 'h1', callId: 'cx', runId: 'rx' });
     await usage({ id: 's2', hash: 'h1', callId: 'cx', runId: 'rx' });
-    await recordAiUsageOutcome(db, {
-      callId: 'cx',
-      label: 'bad',
-      score: 2,
-      actor: 'r',
-    });
-    await recordAiUsageOutcome(db, {
+    await recordAiEvaluation(db, {
       runId: 'rx',
       label: 'bad',
-      score: 4,
-      actor: 'r',
+      value: 4,
+      evaluator: 'human',
     });
-    // A label naming a usage row and its run judges the row only.
-    await recordAiUsageOutcome(db, {
-      usageId: 's1',
-      runId: 'rx',
+    // A call label counts on that call's row only.
+    await recordAiEvaluation(db, {
+      callId: 's1',
       label: 'row',
-      actor: 'r',
+      evaluator: 'human',
     });
     const result = await compareAiPromptRuns(db, {
       promptKey: PROMPT,
@@ -504,9 +503,9 @@ describe('compareAiPromptRuns (#4782)', () => {
     for (const side of [result.a, result.b]) {
       expect(side.calls).toBe(2);
       expect(side.callIds).toBe(1);
-      expect({ ...side.outcomes }).toEqual({ bad: 2, row: 1 });
-      expect(side.scoredLabels).toBe(2);
-      expect(side.meanScore).toBe(3);
+      expect({ ...side.evaluations }).toEqual({ bad: 1, row: 1 });
+      expect(side.scoredLabels).toBe(1);
+      expect(side.meanScore).toBe(4);
     }
   });
 
@@ -570,11 +569,11 @@ describe('compareAiPromptRuns (#4782)', () => {
       const id = `k${String(index).padStart(4, '0')}`;
       await usage({ id, hash: 'h1', callId: `call-${id}`, duration: index });
     }
-    await recordAiUsageOutcome(db, {
-      callId: 'call-k0510',
+    await recordAiEvaluation(db, {
+      callId: 'k0510',
       label: 'late',
-      score: -1,
-      actor: 'r',
+      value: -1,
+      evaluator: 'human',
     });
     await transcript('call-k0510', 't1');
     const result = await compareAiPromptRuns(db, {
@@ -584,7 +583,7 @@ describe('compareAiPromptRuns (#4782)', () => {
       tenantId: 't1',
     });
     expect(result.a.calls).toBe(520);
-    expect({ ...result.a.outcomes }).toEqual({ late: 1 });
+    expect({ ...result.a.evaluations }).toEqual({ late: 1 });
     expect(result.a.transcripts[0]?.callId).toBe('call-k0510');
     expect(result.a.latencyMs.p50).toBe(259);
   });
@@ -603,15 +602,15 @@ describe('transcript reads behind ai:compare --transcripts (#4782)', () => {
     expect(row?.usage.map((usage) => usage.id)).toEqual(['a1']);
     const joins = query.mock.calls
       .map(([sql]) => String(sql))
-      .filter((sql) => /FROM _smrt_ai_usage(_outcomes)?\b/.test(sql));
+      .filter((sql) => /FROM _smrt_ai_(usage|evaluations)\b/.test(sql));
     expect(joins).toHaveLength(2);
     for (const sql of joins) expect(sql).toMatch(/AND tenant_id = \$\d+/);
     const t2Rows = await Promise.all(
       query.mock.results.map(async (result) => {
         const value = (await result.value) as {
-          rows?: { id?: string; usage_id?: string }[];
+          rows?: { id?: string; call_id?: string }[];
         };
-        return (value?.rows ?? []).flatMap((r) => [r.id, r.usage_id]);
+        return (value?.rows ?? []).flatMap((r) => [r.id, r.call_id]);
       }),
     );
     expect(t2Rows.flat()).not.toContain('t2a');

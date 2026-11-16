@@ -5,10 +5,10 @@ description: "Background job processing for SMRT objects with persistence and sc
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-16T03:35:11Z"
+  at: "2026-11-16T10:32:55Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:2190ddc2936e5d16b1b438b5c1b41e024089f1d12974206f343605b7524b1ccc"
+source_revision: "sha256:8e8aa23d2086bd52508dbc818c5941b3a60fe0eea3e5221f4895884545d2453d"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/jobs/package.json"
@@ -17,12 +17,21 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/jobs/AGENTS.md"
     title: "@happyvertical/smrt-jobs packages/jobs/AGENTS.md"
   - id: "agents-2"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/jobs/agents/forge-projections.md"
+    title: "@happyvertical/smrt-jobs packages/jobs/agents/forge-projections.md"
+  - id: "agents-3"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/jobs/agents/job-claims.md"
+    title: "@happyvertical/smrt-jobs packages/jobs/agents/job-claims.md"
+  - id: "agents-4"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/jobs/agents/job-handlers.md"
+    title: "@happyvertical/smrt-jobs packages/jobs/agents/job-handlers.md"
+  - id: "agents-5"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/jobs/agents/provider-loading.md"
     title: "@happyvertical/smrt-jobs packages/jobs/agents/provider-loading.md"
-  - id: "agents-3"
+  - id: "agents-6"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/jobs/agents/scheduling.md"
     title: "@happyvertical/smrt-jobs packages/jobs/agents/scheduling.md"
-  - id: "agents-4"
+  - id: "agents-7"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/jobs/agents/worker-liveness.md"
     title: "@happyvertical/smrt-jobs packages/jobs/agents/worker-liveness.md"
 ---
@@ -39,6 +48,9 @@ sources:
 ## Documentation
 
 - `packages/jobs/AGENTS.md`
+- `packages/jobs/agents/forge-projections.md`
+- `packages/jobs/agents/job-claims.md`
+- `packages/jobs/agents/job-handlers.md`
 - `packages/jobs/agents/provider-loading.md`
 - `packages/jobs/agents/scheduling.md`
 - `packages/jobs/agents/worker-liveness.md`

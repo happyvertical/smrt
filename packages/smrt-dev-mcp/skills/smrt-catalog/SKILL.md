@@ -24,6 +24,12 @@ installed package already provides the behaviour.
    from its output. If `check-knowledge-freshness` reports the bundle stale,
    say so and suggest rerunning `smrt docs:agents`.
 
+## AI work
+
+A request to add a model call, a prompt or a multi-step AI workflow, or to
+explain runs, evaluations, tiers or budgets, goes to the `smrt-ai-work` skill
+(`get-agent-skill`), not to a provider SDK.
+
 ## When the package lacks the behaviour
 
 The home package exists but does not do what is needed:

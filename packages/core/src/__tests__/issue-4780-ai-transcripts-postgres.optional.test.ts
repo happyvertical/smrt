@@ -21,7 +21,7 @@ import {
   listAiTranscripts,
   recordAiTranscript,
 } from '../system/ai-transcripts';
-import { recordAiUsageOutcome } from '../system/ai-usage-observability';
+import { recordAiEvaluation } from '../system/ai-usage-observability';
 import { ensureSystemTables } from '../system/bootstrap';
 import { pruneAiTranscripts } from '../system/retention';
 import { SMRT_SCHEMA_VERSION } from '../system/schema';
@@ -54,7 +54,8 @@ describe.skipIf(!pgUrl)('AI call transcripts on PostgreSQL (#4780)', () => {
     if (!db) return;
     await db.query('DELETE FROM _smrt_ai_transcripts');
     await db.query(
-      "DELETE FROM _smrt_ai_usage_outcomes WHERE actor = 'pg-4780'",
+      `DELETE FROM _smrt_ai_evaluations WHERE call_id IN
+        (SELECT id FROM _smrt_ai_usage WHERE class_name = 'Pg4780')`,
     );
     await db.query("DELETE FROM _smrt_ai_usage WHERE class_name = 'Pg4780'");
   });
@@ -73,13 +74,12 @@ describe.skipIf(!pgUrl)('AI call transcripts on PostgreSQL (#4780)', () => {
   }
 
   it('adds the table and call_id columns to an existing database, idempotently', async () => {
-    // Reshape to a 1.14.0 install: no transcript table, no call_id columns.
+    // Reshape to a 1.14.0 install: no transcript table, no call id columns.
     await db.query('DROP TABLE IF EXISTS _smrt_ai_transcripts');
-    await db.query('DROP INDEX IF EXISTS idx_smrt_ai_usage_call');
-    await db.query('DROP INDEX IF EXISTS idx_smrt_ai_usage_outcomes_call');
+    await db.query('DROP INDEX IF EXISTS idx_smrt_ai_usage_entry_call');
     await db.query('ALTER TABLE _smrt_ai_usage DROP COLUMN IF EXISTS call_id');
     await db.query(
-      'ALTER TABLE _smrt_ai_usage_outcomes DROP COLUMN IF EXISTS call_id',
+      'ALTER TABLE _smrt_ai_usage DROP COLUMN IF EXISTS entry_call_id',
     );
     await db.query(
       'DELETE FROM _smrt_migrations WHERE version = $1',
@@ -109,21 +109,22 @@ describe.skipIf(!pgUrl)('AI call transcripts on PostgreSQL (#4780)', () => {
       created_at: 'timestamp with time zone',
     });
     expect((await columns('_smrt_ai_usage')).call_id).toBe('text');
-    expect((await columns('_smrt_ai_usage_outcomes')).call_id).toBe('text');
+    expect((await columns('_smrt_ai_usage')).entry_call_id).toBe('text');
+    expect((await columns('_smrt_ai_evaluations')).call_id).toBe('text');
     const indexes = rowsOf(
       await db.query(
         `SELECT indexname FROM pg_indexes
           WHERE schemaname = current_schema()
             AND indexname IN ('idx_smrt_ai_transcripts_call',
-              'idx_smrt_ai_transcripts_tenant_created', 'idx_smrt_ai_usage_call',
-              'idx_smrt_ai_usage_outcomes_call')`,
+              'idx_smrt_ai_transcripts_tenant_created',
+              'idx_smrt_ai_usage_entry_call', 'idx_smrt_ai_evaluations_call')`,
       ),
     ).map((row) => String(row.indexname));
     expect(indexes.sort()).toEqual([
+      'idx_smrt_ai_evaluations_call',
       'idx_smrt_ai_transcripts_call',
       'idx_smrt_ai_transcripts_tenant_created',
-      'idx_smrt_ai_usage_call',
-      'idx_smrt_ai_usage_outcomes_call',
+      'idx_smrt_ai_usage_entry_call',
     ]);
   });
 
@@ -152,21 +153,31 @@ describe.skipIf(!pgUrl)('AI call transcripts on PostgreSQL (#4780)', () => {
       bytes: 30,
       createdAt: old,
     });
-    await recordAiUsageOutcome(db, {
-      callId,
+    const usageId = String(
+      rowsOf(
+        await db.query(
+          'SELECT id FROM _smrt_ai_usage WHERE entry_call_id = $1',
+          callId,
+        ),
+      )[0]?.id,
+    );
+    await recordAiEvaluation(db, {
+      callId: usageId,
       label: 'rejected',
-      score: 0,
-      actor: 'pg-4780',
+      value: 0,
+      evaluator: 'human',
     });
     const [row] = await listAiTranscripts(db, {
       actor: 'pg-4780',
       tenantId: 'pg-tenant',
       callId,
-      outcome: 'rejected',
+      label: 'rejected',
     });
     expect(row).toMatchObject({ callId, truncated: true, bytes: 30 });
-    expect(row?.usage.map((usage) => usage.callId)).toEqual([callId]);
-    expect(row?.outcomes.map((outcome) => outcome.label)).toEqual(['rejected']);
+    expect(row?.usage.map((usage) => usage.entryCallId)).toEqual([callId]);
+    expect(row?.evaluations.map((evaluation) => evaluation.label)).toEqual([
+      'rejected',
+    ]);
     expect(
       await listAiTranscripts(db, {
         actor: 'pg-4780',

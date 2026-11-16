@@ -129,7 +129,23 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
   `resolveInferenceTarget` through the resolver `installShellInference`
   registered: the owner's key saved in Settings, then stored bindings, then
   config/env as `base`. Keys are written only by the owner-only `saveKey`
-  action; none is logged or returned (`inference-settings.test.ts`). Model errors are never
+  action; none is logged or returned (`inference-settings.test.ts`). The assistant is tracked AI work (#5005): its system prompt is the
+  registered prompt `app-shell.assistant.system` (`assistant/guidance.ts`,
+  resolved through `resolvePrompt` on shell.db with the owner's tenant, so an
+  app or tenant override applies; the mode line is appended per step), the
+  `api` engine's model is a tracked model over core's `createTrackedAiClient`
+  on shell.db (`assistant/model.ts`; no `getAI`, no transcript copy), and each
+  turn opens one `turn` run (`app-shell.assistant.turn`) through smrt-chat's
+  `AssistantTurnRun`: a usage row and `call` event per model call, `action` and
+  `observation` events per tool call, a requested `approval` event when a risky
+  call is held and its decision in the same run once the owner decides (the
+  shell holds the turn in process; a decision made after the hold timed out
+  is recorded once, in the thread's next turn run, with the request as its
+  parent: `threadDecisions` reads the approval ids in the thread's tool
+  chips), and messages by reference
+  (`assistant-message:<id>`). With usage persistence off a turn answers the
+  error `ai_tracking_disabled`. Test stubs through `modelFactory` are plain
+  models and open no run. Model errors are never
   forwarded or logged beyond class/code (SDK messages can echo keys). Tests use
   a stub through `modelFactory`.
 

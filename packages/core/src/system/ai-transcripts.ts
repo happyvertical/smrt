@@ -5,9 +5,10 @@
  * `_smrt_ai_usage` stores metrics, never content. A transcript is the readable
  * part of one call (request messages, response, tool events) for prompt
  * tuning, written only when the app enables `inference.transcripts` (capture:
- * `../ai-transcripts.ts`). It shares `call_id` with the call's usage rows and
- * outcome labels and `run_id` with its fusion run; none of these are foreign
- * keys, so each table is pruned on its own schedule.
+ * `../ai-transcripts.ts`). Its `call_id` is the entry call's id, which the
+ * call's usage rows carry in `entry_call_id`; it shares `run_id` with its
+ * fusion run and is judged by evaluations of its calls and run. None of these
+ * are foreign keys, so each table is pruned on its own schedule.
  *
  * Tenant content at rest: every read names a tenant (or global rows) unless
  * the caller takes the reviewed `allowCrossTenant` path, and every read
@@ -19,8 +20,8 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import type { AuditWriter, CollectionAuditOptions } from '../audit.js';
 import { toSafeInteger } from '../utils/safe-integer.js';
 import type {
-  AiUsageOutcomeRecord,
-  AiUsageOutcomeUsageRow,
+  AiEvaluationRecord,
+  AiEvaluationUsageRow,
 } from './ai-usage-observability.js';
 
 const logger = createLogger({ level: 'info' });
@@ -196,9 +197,9 @@ export interface AiTranscriptListOptions {
   runId?: string;
   promptKey?: string;
   templateHash?: string;
-  /** Only transcripts with an outcome label of this name. */
-  outcome?: string;
-  /** Only transcripts with at least one outcome label. */
+  /** Only transcripts with an evaluation labelled with this name. */
+  label?: string;
+  /** Only transcripts with at least one evaluation label. */
   labelled?: boolean;
   since?: Date;
   until?: Date;
@@ -233,13 +234,13 @@ export interface AiTranscriptRecord {
 
 /** A transcript with the usage rows of its call and their labels. */
 export interface AiTranscriptWithUsage extends AiTranscriptRecord {
-  /** `_smrt_ai_usage` rows sharing `call_id` (same tenant), oldest first. */
-  usage: AiUsageOutcomeUsageRow[];
+  /** `_smrt_ai_usage` rows sharing `entry_call_id` (same tenant), oldest first. */
+  usage: AiEvaluationUsageRow[];
   /**
-   * Labels naming the call (`call_id`), its run (`run_id`) or one of its
-   * usage rows (same tenant), newest first.
+   * Evaluations naming one of its calls (`call_id`) or its run (`run_id`)
+   * (same tenant), newest first.
    */
-  outcomes: AiUsageOutcomeRecord[];
+  evaluations: AiEvaluationRecord[];
 }
 
 /** The transcript read was refused before any query ran. */
@@ -276,7 +277,7 @@ function hydrateTranscript(row: Record<string, unknown>): AiTranscriptRecord {
   };
 }
 
-function hydrateUsage(row: Record<string, unknown>): AiUsageOutcomeUsageRow {
+function hydrateUsage(row: Record<string, unknown>): AiEvaluationUsageRow {
   return {
     id: String(row.id),
     provider: String(row.provider),
@@ -289,6 +290,7 @@ function hydrateUsage(row: Record<string, unknown>): AiUsageOutcomeUsageRow {
     tierResolved: nullableString(row.tier_resolved),
     runId: nullableString(row.run_id),
     callId: nullableString(row.call_id),
+    entryCallId: nullableString(row.entry_call_id),
     totalTokens:
       row.total_tokens === null || row.total_tokens === undefined
         ? null
@@ -299,16 +301,27 @@ function hydrateUsage(row: Record<string, unknown>): AiUsageOutcomeUsageRow {
   };
 }
 
-function hydrateOutcome(row: Record<string, unknown>): AiUsageOutcomeRecord {
+function hydrateEvaluation(row: Record<string, unknown>): AiEvaluationRecord {
+  const valueType = String(row.value_type) as AiEvaluationRecord['valueType'];
+  const stored = row.value;
   return {
     id: String(row.id),
-    usageId: nullableString(row.usage_id),
-    runId: nullableString(row.run_id),
     callId: nullableString(row.call_id),
-    label: String(row.label),
-    score: nullableNumber(row.score),
+    runId: nullableString(row.run_id),
+    metric: String(row.metric),
+    value:
+      stored === null || stored === undefined
+        ? null
+        : valueType === 'number'
+          ? nullableNumber(stored)
+          : valueType === 'boolean'
+            ? String(stored) === 'true'
+            : String(stored),
+    valueType,
+    scale: nullableString(row.scale),
+    label: nullableString(row.label),
     evidence: nullableString(row.evidence),
-    actor: String(row.actor),
+    evaluator: String(row.evaluator),
     tenantId: nullableString(row.tenant_id),
     createdAt: toDate(row.created_at),
   };
@@ -364,7 +377,7 @@ async function auditTranscriptRead(
 
 /**
  * Read transcripts, newest first, each joined to the usage rows of its call
- * and their outcome labels (joins never cross the transcript's tenant).
+ * and their evaluations (joins never cross the transcript's tenant).
  *
  * Tenant-scoped: pass `tenantId` (or `null` for global rows); a read of every
  * tenant needs `allowCrossTenant: true`. `actor` is required and every read
@@ -406,20 +419,21 @@ export async function listAiTranscripts(
   }
   if (options.since) add('t.created_at >= ?', options.since.toISOString());
   if (options.until) add('t.created_at <= ?', options.until.toISOString());
-  if (options.outcome !== undefined || options.labelled === true) {
+  if (options.label !== undefined || options.labelled === true) {
     let label = '';
-    if (options.outcome !== undefined) {
-      params.push(options.outcome);
+    if (options.label !== undefined) {
+      params.push(options.label);
       label = `o.label = $${params.length} AND `;
     }
-    // Served by the outcome indexes on call_id / run_id / usage_id and
-    // idx_smrt_ai_usage_call; the tenant equality keeps the join in-tenant.
+    // Served by the evaluation indexes on call_id / run_id and by
+    // idx_smrt_ai_usage_entry_call; the tenant equality keeps the join
+    // in-tenant.
     conditions.push(`EXISTS (
-      SELECT 1 FROM _smrt_ai_usage_outcomes o
-       WHERE ${label}(o.tenant_id = t.tenant_id OR (o.tenant_id IS NULL AND t.tenant_id IS NULL))
-         AND (o.call_id = t.call_id
-              OR (t.run_id IS NOT NULL AND o.run_id = t.run_id)
-              OR o.usage_id IN (SELECT u.id FROM _smrt_ai_usage u WHERE u.call_id = t.call_id
+      SELECT 1 FROM _smrt_ai_evaluations o
+       WHERE ${label}o.label IS NOT NULL
+         AND (o.tenant_id = t.tenant_id OR (o.tenant_id IS NULL AND t.tenant_id IS NULL))
+         AND ((t.run_id IS NOT NULL AND o.run_id = t.run_id)
+              OR o.call_id IN (SELECT u.id FROM _smrt_ai_usage u WHERE u.entry_call_id = t.call_id
                 AND (u.tenant_id = t.tenant_id OR (u.tenant_id IS NULL AND t.tenant_id IS NULL)))))`);
   }
   params.push(limit);
@@ -462,51 +476,54 @@ export async function listAiTranscripts(
   const usage = getRows(
     await db.query(
       `SELECT id, provider, model, operation, class_name, tenant_id, prompt_key,
-              tier_requested, tier_resolved, run_id, call_id, total_tokens,
-              estimated_cost, duration, created_at
+              tier_requested, tier_resolved, run_id, call_id, entry_call_id,
+              total_tokens, estimated_cost, duration, created_at
          FROM _smrt_ai_usage
-        WHERE call_id IN (${list(usageParams, callIds)})${scoped(usageParams)}
+        WHERE entry_call_id IN (${list(usageParams, callIds)})${scoped(usageParams)}
         ORDER BY created_at ASC, id ASC`,
       ...usageParams,
     ),
   ).map(hydrateUsage);
 
   const usageIds = [...new Set(usage.map((row) => row.id))];
-  const outcomeParams: unknown[] = [];
-  const predicates = [`call_id IN (${list(outcomeParams, callIds)})`];
+  const evaluationParams: unknown[] = [];
+  const predicates: string[] = [];
   if (runIds.length > 0) {
-    predicates.push(`run_id IN (${list(outcomeParams, runIds)})`);
+    predicates.push(`run_id IN (${list(evaluationParams, runIds)})`);
   }
   if (usageIds.length > 0) {
-    predicates.push(`usage_id IN (${list(outcomeParams, usageIds)})`);
+    predicates.push(`call_id IN (${list(evaluationParams, usageIds)})`);
   }
-  const outcomes = getRows(
-    await db.query(
-      `SELECT id, usage_id, run_id, call_id, label, score, evidence, actor,
-              tenant_id, created_at
-         FROM _smrt_ai_usage_outcomes
-        WHERE (${predicates.join(' OR ')})${scoped(outcomeParams)}
-        ORDER BY created_at DESC, id DESC`,
-      ...outcomeParams,
-    ),
-  ).map(hydrateOutcome);
+  const evaluations =
+    predicates.length === 0
+      ? []
+      : getRows(
+          await db.query(
+            `SELECT id, call_id, run_id, metric, value, value_type, scale, label,
+                    evidence, evaluator, tenant_id, created_at
+               FROM _smrt_ai_evaluations
+              WHERE (${predicates.join(' OR ')})${scoped(evaluationParams)}
+              ORDER BY created_at DESC, id DESC`,
+            ...evaluationParams,
+          ),
+        ).map(hydrateEvaluation);
 
   return transcripts.map((transcript) => {
     const rows = usage.filter(
       (row) =>
-        row.callId === transcript.callId &&
+        row.entryCallId === transcript.callId &&
         sameTenant(row.tenantId, transcript.tenantId),
     );
     const ids = new Set(rows.map((row) => row.id));
     return {
       ...transcript,
       usage: rows,
-      outcomes: outcomes.filter(
-        (outcome) =>
-          sameTenant(outcome.tenantId, transcript.tenantId) &&
-          (outcome.callId === transcript.callId ||
-            (transcript.runId !== null && outcome.runId === transcript.runId) ||
-            (outcome.usageId !== null && ids.has(outcome.usageId))),
+      evaluations: evaluations.filter(
+        (evaluation) =>
+          sameTenant(evaluation.tenantId, transcript.tenantId) &&
+          ((transcript.runId !== null &&
+            evaluation.runId === transcript.runId) ||
+            (evaluation.callId !== null && ids.has(evaluation.callId))),
       ),
     };
   });

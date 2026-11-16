@@ -1,14 +1,21 @@
+import type { AiRunBudget, AiRunContext } from '@happyvertical/smrt-core';
 import type {
-  ResolvedWorkProfile,
-  WorkProfileName,
-  WorkRunMetadata,
+  AssistantSettings,
+  EngineExecution,
 } from '@happyvertical/smrt-inference';
+import type { ResolvedPrompt } from '@happyvertical/smrt-prompts';
+import type {
+  AssistantModelSelection,
+  AssistantRunTypeOptions,
+} from './tool-run-types.js';
 
 export {
-  type AssistantWorkProfileOptions,
-  assertWorkProfileTool,
-  WorkProfileEscalation,
-} from './work-profile.js';
+  type AssistantModelSelection,
+  type AssistantRunTypeOptions,
+  assertToolRunType,
+  ToolRunTypeRefusal,
+} from './tool-run-types.js';
+export { resolveChatAssistantTier } from './turn-tracking.js';
 
 import {
   executeAsPrincipal,
@@ -30,6 +37,12 @@ import {
   type DescribeAssistantTool,
   describeAssistantTool,
 } from './tool-summary.js';
+import {
+  type AssistantTurnTracking,
+  chatAssistantSystemText,
+  chatClientForTracking,
+  resolveChatAssistantPrompt,
+} from './turn-tracking.js';
 /**
  * Mountable SvelteKit routes for the AssistantDock (#3368).
  *
@@ -91,6 +104,7 @@ import {
   toAIClientOptions,
 } from '@happyvertical/smrt-config';
 import {
+  createTrackedAiClient,
   ObjectRegistry,
   resolveDatabase,
   resolveInferenceTarget,
@@ -193,8 +207,8 @@ export type AssistantPrincipalResolver = (
 
 /** What every per-request option callback receives. */
 export interface AssistantRequestContext {
-  /** Server-selected profile; never populated from request input. */
-  workProfile?: ResolvedWorkProfile;
+  /** Server-selected engine, tier, model and effort; never from request input. */
+  selection?: AssistantModelSelection;
   event: AssistantRouteEvent;
   principal: AssistantPrincipal;
   /**
@@ -286,33 +300,67 @@ export interface AssistantRouteBoundPrincipal {
   readonly scopes: readonly string[];
 }
 
+/** A host's trusted internal turn: see `internalTurn`. */
+interface AssistantInternalTurn {
+  userMessage: string;
+  originMessageId?: string;
+  step?: {
+    /** The workflow run's context for this step (its run, db and fence). */
+    parent: AiRunContext;
+    /** The step's registered prompt, resolved by the host. */
+    prompt: ResolvedPrompt;
+    stepIndex?: number | null;
+    name?: string | null;
+  };
+}
+
 /** Options for {@link mountAssistantRoutes}. */
 export interface MountAssistantRoutesOptions {
-  deferDesignTurn?: AssistantRouteValue<boolean>;
-  /** Trusted detached pass binding, never a request body flag. Does not author a user message. */
+  deferWorkflowTurn?: AssistantRouteValue<boolean>;
+  /**
+   * Trusted detached turn binding (a host's workflow step), never a request
+   * body flag. Does not author a user message. With `step`, the turn runs as
+   * that workflow step: its `turn` run is a child of the workflow run (a
+   * `handoff` event there, the parent's claim fence), and its calls are
+   * tracked under the step's registered prompt, whose text follows the
+   * host's system prompt.
+   */
   internalTurn?(
     context: AssistantRequestContext,
   ):
-    | { userMessage: string; originMessageId?: string }
+    | AssistantInternalTurn
     | undefined
-    | Promise<{ userMessage: string; originMessageId?: string } | undefined>;
-  /** Authenticated host selection; request body profile values are never accepted. */
-  resolveWorkProfile?(
+    | Promise<AssistantInternalTurn | undefined>;
+  /**
+   * Authenticated host selection of the turn's engine, tier, model and
+   * effort (#5005); a request body model is never accepted with one.
+   */
+  resolveSelection?(
     context: AssistantRequestContext,
-    name?: WorkProfileName,
-  ): Promise<ResolvedWorkProfile>;
-  designTools?: readonly string[];
-  onWorkRun?(metadata: WorkRunMetadata): void;
+  ): Promise<AssistantModelSelection | undefined>;
+  /** The owner's assistant settings; absent ones are on. */
+  assistantSettings?(
+    context: AssistantRequestContext,
+  ): Promise<AssistantSettings | undefined>;
+  /** The turn's budget, stored on its `turn` run and enforced by the loop. */
+  turnBudget?: AssistantRouteValue<AiRunBudget | undefined>;
+  /** Longest tool result kept in the conversation (characters). */
+  toolResultChars?: AssistantRouteValue<number | undefined>;
+  /** App tools limited to workflow runs, besides annotated ones. */
+  workflowTools?: readonly string[];
+  /** What the turn ran with and used; never stored on a message. */
+  onExecution?(
+    context: AssistantRequestContext,
+    execution: EngineExecution,
+  ): void;
   formatAssistantReply?(
     content: string,
     context: AssistantRequestContext,
   ): { content: string; metadata?: Record<string, unknown> };
-  onDesignEscalation?(
+  onWorkflowEscalation?(
     context: AssistantRequestContext,
     input: Parameters<
-      NonNullable<
-        import('./work-profile.js').AssistantWorkProfileOptions['onDesignEscalation']
-      >
+      NonNullable<AssistantRunTypeOptions['onWorkflowEscalation']>
     >[0],
   ): Promise<{ runId: string; message?: string }>;
   /** External loop; omitted uses the built-in model/tool loop. */
@@ -423,8 +471,10 @@ export interface MountAssistantRoutesOptions {
   maxSteps?: number;
   /** Repeated-call stop (see `AssistantTurnOptions`, #4391). */
   maxRepeatedCalls?: number;
-  maxTurnTokens?: number;
-  maxTurnMs?: number;
+  /** The loop's token limit for the turn; per request when a function. */
+  maxTurnTokens?: AssistantRouteValue<number | undefined>;
+  /** The loop's time limit for the turn; per request when a function. */
+  maxTurnMs?: AssistantRouteValue<number | undefined>;
   /** Per-model-call timeout in ms (see `AssistantTurnOptions`, #4379). */
   requestTimeoutMs?: number;
   /** Reply stored when the turn produced no answer (#4379). */
@@ -435,7 +485,8 @@ export interface MountAssistantRoutesOptions {
    * and nothing stored.
    */
   providerErrorFallback?: ProviderErrorFallback;
-  maxTokens?: number;
+  /** Output tokens per model call; per request when a function. */
+  maxTokens?: AssistantRouteValue<number | undefined>;
   temperature?: number;
   /**
    * Earlier user and assistant turns sent with a new turn; persisted tool
@@ -540,10 +591,9 @@ export interface AssistantThreadWire {
 
 /** Message as the routes send it (chronological in lists). */
 export interface AssistantMessageWire {
-  /** Explicit host design output and sanitized execution accounting only. */
+  /** Explicit host design output only. */
   metadata?: {
-    workRun?: unknown;
-    designRunId?: string;
+    runId?: string;
   };
   id: string;
   threadId: string;
@@ -590,6 +640,11 @@ export const DEFAULT_ASSISTANT_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const MAX_TITLE_LENGTH = 200;
 const MAX_ATTACHMENTS_PER_MESSAGE = 10;
 const MAX_ID_LENGTH = 128;
+/**
+ * The latest tool messages of a thread a turn reads approval ids from (#5005):
+ * an approval older than that is no longer looked up for its decision.
+ */
+const APPROVAL_LOOKUP_MESSAGES = 200;
 const CLIENT_REQUEST_ID = /^[A-Za-z0-9_.:-]{1,128}$/;
 /** Default age after which an unanswered, unsettled send counts as failed. */
 export const DEFAULT_ASSISTANT_ABANDONED_TURN_MS = 15 * 60 * 1000;
@@ -730,7 +785,7 @@ export async function configuredAssistantAI(
         ...(base ? { base } : {}),
         tenantId: principal.tenantId,
         className: 'AssistantRoute',
-        ...(context.workProfile ? { tier: context.workProfile.tier } : {}),
+        ...(context.selection ? { tier: context.selection.tier } : {}),
         usage: { className: 'AssistantRoute', tenantId: principal.tenantId },
         // smrt-chat stores the conversation itself: never a second copy in
         // `_smrt_ai_transcripts` (#4780, owner decision).
@@ -743,7 +798,7 @@ export async function configuredAssistantAI(
   const { getAI } = await import('@happyvertical/ai');
   return getAI({
     ...resolved.options,
-    ...(context.workProfile?.model ? { model: context.workProfile.model } : {}),
+    ...(context.selection?.model ? { model: context.selection.model } : {}),
   } as Parameters<typeof getAI>[0]);
 }
 
@@ -931,15 +986,8 @@ export function toAssistantMessageWire(
     createdAt: toIso(message.created_at) ?? new Date(0).toISOString(),
     ...(attachments.length > 0 ? { attachments } : {}),
     ...(toolCallData ? { toolCallData } : {}),
-    ...(metadata && ('workRun' in metadata || 'designRunId' in metadata)
-      ? {
-          metadata: {
-            ...('workRun' in metadata ? { workRun: metadata.workRun } : {}),
-            ...(typeof metadata.designRunId === 'string'
-              ? { designRunId: metadata.designRunId }
-              : {}),
-          },
-        }
+    ...(metadata && typeof metadata.runId === 'string'
+      ? { metadata: { runId: metadata.runId } }
       : {}),
     ...(clientRequestId ? { clientRequestId } : {}),
   };
@@ -1055,7 +1103,10 @@ export function mountAssistantRoutes(
   const maxBody = options.maxBodyBytes ?? DEFAULT_ASSISTANT_MAX_BODY_BYTES;
   const maxContent = options.maxContentLength ?? MAX_CHAT_STREAM_CONTENT_LENGTH;
   const historyLimit = Math.max(0, options.historyLimit ?? 20);
-  const internalRequests = new WeakSet<Request>();
+  const internalRequests = new WeakMap<
+    Request,
+    AssistantInternalTurn['step'] | null
+  >();
   const publicMessage = (message: ChatMessage): AssistantMessageWire => {
     const wire = toAssistantMessageWire(message);
     if (options.toolPresentation !== 'generic' || wire.role !== 'tool')
@@ -1363,9 +1414,11 @@ export function mountAssistantRoutes(
     context: AssistantRequestContext,
     body: Record<string, unknown>,
   ) => {
-    const workProfile = await options.resolveWorkProfile?.(context);
-    context = { ...context, workProfile };
-    const model = workProfile?.model ?? resolveModel(body.model);
+    const selection = await options.resolveSelection?.(context);
+    context = selection ? { ...context, selection } : context;
+    // The selection's model (an engine's tier binding) wins; a body model is
+    // honoured where the selection names none (an API key).
+    const model = selection?.model ?? resolveModel(body.model);
     const allowedTools = await allowedToolsFor(context);
     const clientTools = sanitizeClientToolDeclarations(
       body.clientTools,
@@ -1409,10 +1462,114 @@ export function mountAssistantRoutes(
       model,
       allowedTools,
       clientTools,
-      workProfile,
+      selection,
     };
   };
   type PreparedTurn = Awaited<ReturnType<typeof prepareTurn>>;
+
+  /**
+   * What tracks a turn as an AI run (#5005): the tracked client of the
+   * principal's tenant and the request's database over the turn's client, the
+   * resolved system prompt, and the approval decisions made since the last
+   * turn (recorded once, in this turn's run). The conversation is stored by
+   * smrt-chat itself, so no transcript copy is made.
+   */
+  const trackingFor = async (
+    context: AssistantRequestContext,
+    ai: Pick<AIInterface, 'chat'> | undefined,
+    db: NonNullable<SmrtClassOptions['db']>,
+    systemPrompt: string | undefined,
+    thread: ChatThread,
+    session: AgentSession,
+    selection: AssistantModelSelection | undefined,
+  ): Promise<AssistantTurnTracking> => {
+    const { principal } = context;
+    const database = await resolveDatabase(db);
+    const step = internalRequests.get(context.event.request) ?? undefined;
+    const tracked = createTrackedAiClient({
+      db: database,
+      tenantId: principal.tenantId,
+      className: 'AssistantRoute',
+      // An external driver's turn makes no call through a client: the
+      // engine's turn is recorded as one call of the run (#5005).
+      ...(ai ? { ai: chatClientForTracking(ai) } : {}),
+      // A host-built engine client (a ChatGPT plan) is recorded under its
+      // engine and the model its tier binding chose.
+      ...(selection && selection.engine !== 'api'
+        ? {
+            label: {
+              provider: selection.engine,
+              ...(selection.model ? { model: selection.model } : {}),
+            },
+          }
+        : {}),
+      transcript: false,
+    });
+    const threadId = String(thread.id);
+    return {
+      tracked,
+      prompt: step
+        ? step.prompt
+        : await resolveChatAssistantPrompt({
+            db: database,
+            tenantId: principal.tenantId,
+            ...(systemPrompt ? { systemPrompt } : {}),
+          }),
+      ...(step
+        ? {
+            parent: {
+              context: step.parent,
+              stepIndex: step.stepIndex ?? null,
+              name: step.name ?? null,
+            },
+          }
+        : {}),
+      threadId,
+      agentSessionId: String(session.id),
+      decisions: {
+        // The approvals the thread's latest tool messages name: a request
+        // carries `approval.id`, a result `approvalId`. Read from the thread,
+        // never from the approval store.
+        asked: async () => {
+          const chat = await chatFor(context);
+          const messages = await chat.getThreadMessages({
+            threadId,
+            actorProfileId: principal.profileId,
+            tenantId: principal.tenantId,
+            roles: ['tool'],
+            limit: APPROVAL_LOOKUP_MESSAGES,
+          });
+          const ids = new Set<string>();
+          for (const message of messages) {
+            const data = parseObject(message.toolCallData);
+            const requested = parseObject(data?.approval)?.id;
+            if (typeof requested === 'string') ids.add(requested);
+            if (typeof data?.approvalId === 'string') ids.add(data.approvalId);
+          }
+          return [...ids];
+        },
+        decided: async () => {
+          const decided: Array<{
+            approvalId: string;
+            status: 'approved' | 'refused';
+          }> = [];
+          for (const record of await ownedThreadApprovals(context, threadId)) {
+            if (
+              record.status === 'approved' ||
+              record.status === 'executing' ||
+              record.status === 'succeeded' ||
+              record.status === 'failed'
+            ) {
+              decided.push({ approvalId: record.id, status: 'approved' });
+            } else if (record.status === 'denied') {
+              decided.push({ approvalId: record.id, status: 'refused' });
+            }
+          }
+          return decided;
+        },
+      },
+    };
+  };
 
   /**
    * Everything a turn needs that is bound to a database: built for the
@@ -1493,6 +1650,46 @@ export function mountAssistantRoutes(
         (await bridgeFor()).complete!(request, ok, result),
     };
     const continuations = continuationStoreFor(context, chat, session);
+    // The turn is an AI run on this tenant's database (#5005): its calls go
+    // through core's tracked client (an external engine's turn is one call of
+    // it), and its system prompt is the registered `chat.assistant.system`
+    // prompt with the host's text as its runtime layer.
+    const tracking =
+      db && (ai || prepared.turnDriver)
+        ? await trackingFor(
+            context,
+            prepared.turnDriver ? undefined : ai,
+            db,
+            systemPrompt,
+            thread,
+            session,
+            prepared.selection,
+          )
+        : undefined;
+    // A workflow step's turn sends the host's system prompt, then the step's
+    // registered prompt (an external engine's step too).
+    const stepPrompt = internalRequests.get(context.event.request)?.prompt;
+    const systemText = stepPrompt
+      ? [systemPrompt, stepPrompt.text].filter(Boolean).join('\n\n')
+      : tracking
+        ? chatAssistantSystemText(tracking.prompt)
+        : systemPrompt;
+    // The turn's effort (#5005): the assistant prompt's `ai.effort`, else the
+    // tier binding's the host selected. A turn without a tracked prompt
+    // resolves the prompt here for its effort.
+    const selection = prepared.selection
+      ? withPromptEffort(
+          prepared.selection,
+          tracking?.prompt ??
+            (db
+              ? await resolveChatAssistantPrompt({
+                  db: await resolveDatabase(db),
+                  tenantId: principal.tenantId,
+                  ...(systemPrompt ? { systemPrompt } : {}),
+                }).catch(() => undefined)
+              : undefined),
+        )
+      : undefined;
     return {
       abort,
       ai,
@@ -1503,45 +1700,41 @@ export function mountAssistantRoutes(
       turn: {
         ai,
         turnDriver: prepared.turnDriver,
-        workProfile: prepared.workProfile,
-        deferDesignTurn: await resolveValue(options.deferDesignTurn, context),
-        designTools: options.designTools,
-        resolveWorkProfileRuntime: async (workProfile: ResolvedWorkProfile) => {
-          const nextContext = { ...context, workProfile };
-          const turnDriver =
-            (await options.resolveTurnDriver?.({
-              ...nextContext,
-              model: workProfile.model,
-            })) ?? options.turnDriver;
-          return {
-            turnDriver,
-            ai: turnDriver
-              ? undefined
-              : await resolveAI(nextContext, workProfile.model),
-          };
-        },
-        onWorkRun: options.onWorkRun,
+        ...(selection ? { selection } : {}),
+        ...(options.assistantSettings
+          ? { assistantSettings: await options.assistantSettings(context) }
+          : {}),
+        deferWorkflowTurn: await resolveValue(
+          options.deferWorkflowTurn,
+          context,
+        ),
+        workflowTools: options.workflowTools,
+        ...(await resolveValue(options.turnBudget, context).then((budget) =>
+          budget ? { budget } : {},
+        )),
+        ...(await resolveValue(options.toolResultChars, context).then(
+          (toolResultChars) =>
+            toolResultChars !== undefined ? { toolResultChars } : {},
+        )),
+        ...(options.onExecution
+          ? {
+              onExecution: (execution: EngineExecution) =>
+                options.onExecution!(context, execution),
+            }
+          : {}),
         ...(options.formatAssistantReply
           ? {
               formatAssistantReply: (content: string) =>
                 options.formatAssistantReply!(content, context),
             }
           : {}),
-        ...(options.onDesignEscalation
+        ...(options.onWorkflowEscalation
           ? {
-              onDesignEscalation: (
+              onWorkflowEscalation: (
                 input: Parameters<
-                  NonNullable<
-                    import('./work-profile.js').AssistantWorkProfileOptions['onDesignEscalation']
-                  >
+                  NonNullable<AssistantRunTypeOptions['onWorkflowEscalation']>
                 >[0],
-              ) => options.onDesignEscalation!(context, input),
-            }
-          : {}),
-        ...(options.resolveWorkProfile
-          ? {
-              resolveWorkProfile: (name: WorkProfileName) =>
-                options.resolveWorkProfile!(context, name),
+              ) => options.onWorkflowEscalation!(context, input),
             }
           : {}),
         waitForApproval: options.waitForApproval,
@@ -1563,7 +1756,8 @@ export function mountAssistantRoutes(
           allowedTools,
         },
         ...(db ? { db } : {}),
-        ...(systemPrompt ? { systemPrompt } : {}),
+        ...(systemText ? { systemPrompt: systemText } : {}),
+        ...(tracking ? { tracking } : {}),
         extraTools: [...(extraTools ?? [])],
         tools: [...tools],
         clientTools,
@@ -1576,12 +1770,13 @@ export function mountAssistantRoutes(
         ...(options.maxRepeatedCalls !== undefined
           ? { maxRepeatedCalls: options.maxRepeatedCalls }
           : {}),
-        ...(options.maxTurnTokens !== undefined
-          ? { maxTurnTokens: options.maxTurnTokens }
-          : {}),
-        ...(options.maxTurnMs !== undefined
-          ? { maxTurnMs: options.maxTurnMs }
-          : {}),
+        ...(await resolveValue(options.maxTurnTokens, context).then(
+          (maxTurnTokens) =>
+            maxTurnTokens !== undefined ? { maxTurnTokens } : {},
+        )),
+        ...(await resolveValue(options.maxTurnMs, context).then((maxTurnMs) =>
+          maxTurnMs !== undefined ? { maxTurnMs } : {},
+        )),
         ...(options.requestTimeoutMs !== undefined
           ? { requestTimeoutMs: options.requestTimeoutMs }
           : {}),
@@ -1591,9 +1786,9 @@ export function mountAssistantRoutes(
         ...(options.providerErrorFallback !== undefined
           ? { providerErrorFallback: options.providerErrorFallback }
           : {}),
-        ...(options.maxTokens !== undefined
-          ? { maxTokens: options.maxTokens }
-          : {}),
+        ...(await resolveValue(options.maxTokens, context).then((maxTokens) =>
+          maxTokens !== undefined ? { maxTokens } : {},
+        )),
         ...(options.temperature !== undefined
           ? { temperature: options.temperature }
           : {}),
@@ -1626,11 +1821,11 @@ export function mountAssistantRoutes(
           const metadata = parseObject((message as ChatMessage).metadata);
           return {
             ...wire,
-            ...(metadata && 'designOutput' in metadata
+            ...(metadata && 'workflowOutput' in metadata
               ? {
                   metadata: {
                     ...wire.metadata,
-                    designOutput: metadata.designOutput,
+                    workflowOutput: metadata.workflowOutput,
                   },
                 }
               : {}),
@@ -2237,7 +2432,7 @@ export function mountAssistantRoutes(
         )
           throw notFound();
       }
-      internalRequests.add(context.event.request);
+      internalRequests.set(context.event.request, internal.step ?? null);
       const prepared = await prepareTurn(context, body);
       const setup = await turnSetup(context, chat, session, thread, prepared);
       const earlier =
@@ -3115,4 +3310,13 @@ function detached<M>(
     }
   })();
   return { events, settled };
+}
+
+/** The selection with the assistant prompt's effort over the tier binding's. */
+function withPromptEffort(
+  selection: AssistantModelSelection,
+  prompt: { ai: { effort?: AssistantModelSelection['effort'] } } | undefined,
+): AssistantModelSelection {
+  const effort = prompt?.ai.effort ?? selection.effort;
+  return effort ? { ...selection, effort } : selection;
 }

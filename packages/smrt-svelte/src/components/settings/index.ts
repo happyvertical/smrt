@@ -7,5 +7,3 @@ export type {
   SettingsCatalogItem,
   SettingsCatalogPage,
 } from './types.js';
-
-export { default as WorkProfileSettings } from './WorkProfileSettings.svelte';

@@ -597,6 +597,331 @@ scenario table on SQLite, DuckDB and PostgreSQL (PGlite). Each scenario gives
 its outcome per engine, and a test fails if a scenario differs by engine without
 an entry in its `DIFFERENCES` list.
 
+### Retiring a table (#5005)
+
+Migrate never drops a table it was not told to drop. The policy was "migrate
+never drops a table"; it is now "migrate drops only a table its owning package
+has declared retired, with a reason, in a whole-schema run". Orphan detection
+plays no part: the differ still skips `_smrt_` orphans and still only reports
+the others (`includeDroppedTables` stays opt-in and separate).
+
+**The declaration** is in the owning package's `package.json`, so the package
+ships it and every install sees it:
+
+```json
+{
+  "name": "@acme/orders",
+  "smrt": {
+    "retiredTables": [
+      {
+        "table": "acme_order_drafts",
+        "lastOwner": "@acme/orders:OrderDraft",
+        "since": "1.4.0",
+        "reason": "Drafts are kept on the order itself.",
+        "rows": "discard",
+        "definitions": [
+          {
+            "release": "1.3.2",
+            "columns": {
+              "id": { "type": "UUID", "referenceKind": "id" },
+              "title": { "type": "TEXT" }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+`table` is the physical table, lower case only (SQLite and DuckDB compare
+table names without case). `lastOwner` is the qualified class that last
+declared it, and must be a class of the declaring package: a package may retire
+only a table its own models declared. Only smrt's own packages
+(`@happyvertical/smrt-*`) may retire a `_smrt_` table, and a smrt system table
+(`SYSTEM_TABLE_NAMES`) can never be retired. `since` is the release that
+retires it. `reason` is the sentence `smrt doctor --db` and the migrate output
+show. `rows: 'discard'` is the only value; it is written out because dropping
+rows is the owner's decision. Without it a retired table that holds rows stops
+the migrate. The model class is removed in the same release that declares the
+retirement.
+
+`definitions` prove the table, not just its name: the table's columns and
+types as the owning model declared them, one entry per published release, each
+naming its release. A table can change shape between releases, and a database
+may be at any supported release, so the declaration carries one definition for
+each shape a supported database may still hold; migrate drops the live table
+when it matches any one of them. Each is generated, never typed:
+
+```sh
+node scripts/retired-table-facts.mjs definition \
+  --package @acme/orders --table acme_order_drafts --release 1.3.2
+```
+
+reads that release's published package manifests (from npm, or `--from` an
+install), projects them through the registry, checks that `lastOwner`
+declared the table there, and writes that release's entry of `definitions`
+(replacing only that release's entry; the list stays in release order). Run it
+for each supported release whose shape differs. A declaration without
+`definitions` (or with the old single `definition`) fails the build and names
+the command. `node scripts/retired-table-facts.mjs check` regenerates every
+definition and every owners file from the published manifests and fails on any
+difference, so a hand edit is caught (it fetches from npm, so it is not part of
+the offline gate).
+
+**Saving a snapshot writes its overlay.** `pnpm release:snapshot`
+(`node scripts/release-upgrade-gate.mjs save [--root <built checkout>]`)
+writes the new snapshot's `owners/<release>.json` from the same built checkout
+the snapshot is captured from: that checkout's `packages/*/dist/manifest.json`
+for every publishable package at the release's version (a package at another
+version was not published at it), projected through this script's core as
+`refresh` and `check` project the published ones. No registry is needed, so it
+works offline. When npm answers, `save` then runs the `check` below for that
+release, so the files are verified when they are created; offline, or before
+the release is on npm, it says the check was skipped and names the command to
+run later. A difference fails the save after the files are written. `prune`
+removes an overlay with its snapshot.
+
+**One command keeps them current.** The owners overlays and the definitions
+both follow the snapshot set, so a change to `release-upgrade/snapshots/`
+that `save` did not make (a base merge that adds a snapshot, a rebase) makes
+them stale. Run
+
+```sh
+pnpm release-upgrade:refresh-owners   # node scripts/retired-table-facts.mjs refresh
+```
+
+after any such change, in particular after a base merge that adds a snapshot
+(it reads npm, so it needs network). It is the backfill and repair tool for
+overlays and definitions; it is idempotent:
+it writes `owners/<release>.json` for each snapshot lacking one and rewrites
+the others from the published manifests, deletes an overlay whose snapshot is
+gone, and for every retired-table declaration in a package.json sets
+`definitions` to one entry per snapshot release whose snapshot holds the table.
+The gate fails on a snapshot with no overlay and on an overlay with no
+snapshot, and names this command. `pnpm check:release-upgrade:owners`
+(`release-upgrade-gate.mjs check --verify-owners`) also regenerates the
+supported snapshots' overlays and definitions from npm and fails on a
+difference, or when npm cannot answer. It is opt-in: the gate does not run it
+by default, and PR CI does not pass it.
+
+The projection runs through the current build's core, not the release's: a
+base column or reference kind core gained after the release would show in a
+definition and not in the release's tables. The upgrade gate compares each
+definition with the release snapshots' physical columns (below), so that drift
+fails the build. Between 0.61.0 and the time of writing no such drift
+exists: every model table of the 0.61.0 and 0.61.1 snapshots has exactly the
+columns the projection gives.
+
+**How it travels** (`migrations/retired-tables.ts`): the manifest generator
+(`applyRetiredTables`, run before the schemas so the stamp covers it) reads
+`smrt.retiredTables` into the package manifest's `retiredTables`, each entry
+carrying its `packageName`. A malformed declaration fails the build naming the
+table. Every way in checks each entry again (`parseCarriedRetiredTable`,
+`readManifestRetiredTables`) and keeps the entry's own `packageName`:
+
+- `ObjectRegistry.registerPackageManifest()` registers a manifest's entries:
+  its own package's, and, for a package built as an app (app-shell, whose
+  `dist/manifest.json` merges its dependencies'), those of the packages in its
+  `smrtDependencies`. An entry of any other package is refused, never
+  relabelled. The own list replaces what the package registered before; a
+  carried entry registers once per (package, table) and never replaces or
+  shrinks the package's own list, so the same entry arriving through several
+  manifests registers once in either load order.
+- The CLI's manifest loader uses `ObjectRegistry.registerManifestRetiredTables()`
+  with the same rule, except that an entry of a package the app no longer
+  depends on drops out (stale) instead of failing. The release upgrade gate
+  loads each built manifest through `registerPackageManifest`.
+- The consumer plugin rebuilds the merged manifest's list from the current
+  dependencies on every build: only the app's own entries stay from the file.
+  A consumed manifest's entries are read by the `registerPackageManifest` rule;
+  a malformed entry, or one of a package outside that manifest's
+  dependencies, fails the build. A carried entry of a package the app reaches
+  only through another package (not in its own `smrtDependencies`) is left
+  out, because the build description and stamp would not honour it.
+- The bundled build description (`BuildSchema.retired`) and the build stamp
+  both read `honouredRetiredTables()` of the manifest, the same set.
+
+`resolveRetiredTables()` is what a run honours, and what the migrate record's
+stamp covers: with a build, the build's own list (a declaration only a package
+loaded at run time carries is not honoured); without one, the registry's.
+
+**Public and internal.** Public: the declaration types,
+`readRetiredTablesFromPackageJson`, `readManifestRetiredTables`,
+`honouredRetiredTables`, `parseCarriedRetiredTable`, `mergeRetiredTables`,
+`ObjectRegistry.getRetiredTables()` and `registerManifestRetiredTables()`, the
+in-batch stop `RetiredTableRowsAppearedError`, the comparer flags
+`DiffOptions.retireDeclaredTables` and `DiffOptions.confirmRetireTables`,
+`confirmRetireTables` on `migrateSmrtSchemas` / `getPendingSchemaStatements`,
+and `readConfirmedRetirements` / `confirmedRetirementsOf`. Internal: `registerRetiredTables`,
+`planTableRetirements` and `resolveRetirementContext`. A run plans retirements
+only with `retireDeclaredTables` (`getPendingSchemaStatements` without
+`tables`, `db:migrate` and `db:diff` set it). The comparer then resolves the
+declarations and every declarer itself (registered classes, the compared
+schemas, the build's tables, run-time lists stored in `_smrt_app_model_changes`
+and smrt's own tables), so no caller can hand it a list or leave a declarer
+out.
+
+**What migrate does** (`migrations/retire-plan.ts`): change type
+`retire_table`, kinds in `SCHEMA_CHANGE_KINDS`, checked in this order:
+
+| Kind | Decision | When |
+|---|---|---|
+| `table.retire-owner` | stop (loses data) | An entry fails its checks (a `lastOwner` outside the package, a `_smrt_` table of a package outside smrt, no definition). The loaders refuse these already; the plan checks again, since a build description can be registered directly. |
+| `table.retire-declared` | stop (loses data) | A model, a run-time list stored in the app model journal (even one this process never registered), or smrt itself still declares the table. A journal that cannot be read stops every retirement. |
+| `table.retire-mismatch` | stop (loses data; the operator may confirm it, below) | The live table is not the one the declaration describes in any release it lists. Each definition is compared with the live table by the differ (`compareTable` on a fresh comparer, with the run's `postgresTimestampMigration`, `emptyTextAsNull` and `relaxColumns`), and its columns with the catalog's (generated and hidden columns included). A missing or extra column stops it. A type difference counts as the same table when the ordinary migrate would converge it without losing data or only report it (`decideSchemaChange` is not `stop`: a live PostgreSQL `int4` declared INTEGER, `varchar(n)` declared TEXT, a uuid held as text, a PostgreSQL `timestamp` declared TIMESTAMP under `postgresTimestampMigration`), and stops it when the ordinary migrate would stop (an incompatible type; that `timestamp` without the opt-in). On SQLite a column declared `INT2`, `INT4`, `INT8` or `MEDIUMINT` (SQLite reports the spelling; its affinity is INTEGER) also matches INTEGER, through `retireTypeEquivalence`, which only this comparison applies (`DiffOptions.retireComparison`); the ordinary migrate still stops on such a column (#5016). The check proves identity, not convergence. Constraints, defaults and indexes are not part of the definition. It needs no recorded owner, so it works for a database upgrading straight from 0.61.x. |
+| `table.retire-rows` | stop (loses data) | The table holds rows and a declaration does not say `rows: 'discard'` (or the rows could not be counted). |
+| `table.retire-dependent` | stop (loses data) | Something undeclared depends on it, one stop per dependent (see below). |
+| `table.retire-unsupported` | stop (loses data) | The JSON adapter: it never drops, so a live retired table stops the run and no migrate record says it is gone. |
+| `table.retire` | apply | None of the above. `DROP TABLE IF EXISTS`, last in the atomic batch, referencing retired tables first. Never `CASCADE`. |
+
+**Confirming a mismatch (M3).** When the live table is the retired table at a
+shape no supported release made (a hand edit, a release whose shape was never
+declared), the operator confirms it by exact table name:
+`smrt db:migrate --confirm-retire-table <table>` (repeatable), or in code
+`confirmRetireTables: ['<table>']` on `migrateSmrtSchemas` and
+`getPendingSchemaStatements` (`DiffOptions.confirmRetireTables`, with how it
+was confirmed). Names are exact, never patterns, and match as live tables do
+(without case on SQLite and DuckDB, exactly on PostgreSQL). The confirmation
+lifts `table.retire-mismatch` alone, and only when the differences were read
+(a catalog that could not be read or a comparison that threw still stops). The
+table then goes through the rows, dependents and cycle checks like any other;
+the owner, still-declared and JSON-adapter stops come first and are never
+lifted. The stop message names, per release tried, every difference and the
+rerun line (flag and code form), so the operator confirms what they can see;
+`smrt doctor --db` (**Next migrate**) shows the same message. The drop carries
+`retirement.confirmed` (`by: 'flag' | 'code'`, the differences); its note and
+the CLI's drop list print them, and the successful run writes them, with the
+table, package, last owner and release, to the migrate record
+(`_smrt_migrate_runs.confirmed_retirements`, read by
+`readConfirmedRetirements`; a run with a confirmation always writes a record).
+A name that lifted nothing is a notice ("Ignoring ...").
+
+**The code form's hazard.** In code the confirmation applies to every
+installation of the app, including one where the mismatch means the live table
+really is a different table under the retired name: the accident the
+definition match exists to catch, and with `rows: 'discard'` its rows go with
+it. It is meant for a local or desktop app where no operator can answer the
+stop, after the differences were checked; anywhere an operator runs migrate,
+use the flag. `confirmRemovedPackages` is the precedent. `smrt doctor --db`
+cannot see an app's code options, so it still shows the stop.
+
+These are named stops in the ordinary decision (`stops`, `heldBack`), never a
+thrown error. An absent table is nothing to do, so the step is idempotent. Two
+packages retiring one table drop it once, and only when both say
+`rows: 'discard'`. Two whole-schema migrate runs at once may both plan the
+drop; the one that finds the table gone (its row count, its lock or its
+in-batch count) has nothing to do for it and ends cleanly.
+
+**Rows written after the plan.** The plan counts rows outside any transaction.
+A retirement without `rows: 'discard'` therefore carries a second count right
+before its `DROP TABLE`, in the same atomic batch (`retire-guard.ts`, run by
+the tracker). On PostgreSQL the batch first takes `LOCK TABLE ... IN ACCESS
+EXCLUSIVE MODE` (in a `DO` block that tolerates a table another run dropped
+meanwhile), so no writer gets a row in between. DuckDB has no table locks and
+its batch reads one snapshot: a row another connection commits after the batch
+began is invisible to the count and would be dropped with the table, with no
+conflict raised (proven on DuckDB 1.4.3 with two connections). So the DuckDB
+count also compares the table's storage row count (`duckdb_tables()
+.estimated_size`, which counts every committed row whatever the snapshot) with
+the one the plan read: any growth counts as rows. A write still uncommitted
+when the drop commits fails at its own commit. SQLite has one writer at a
+time. Rows found there roll the whole batch back, and `migrateSmrtSchemas`
+returns the named stop `table.retire-rows` (the CLI fails with it). The lock,
+count and drop stay in the atomic part in PostgreSQL concurrent-index mode.
+
+**Dependents.** SQLite: `PRAGMA foreign_key_list` (whether foreign keys are
+enforced or not) and views and triggers whose SQL names the table as a whole
+word. DuckDB: `duckdb_constraints().referenced_table` (verified on DuckDB
+1.4.3), views and macros whose text names the table. PostgreSQL: foreign keys
+from any schema, every object `pg_depend` records on the table, its row type or
+a sequence it owns (views and materialized views, policies, another table's
+default on its sequence, row-type columns, inheriting tables, functions on its
+row type), and functions whose body names the table as a whole word (a trigger
+on another table is named by its trigger; one used only by the table's own
+triggers goes unused with it). A model the build declares with a foreign key to
+the table is a dependent too. The table's own indexes, constraints, triggers
+and policies go with it. Retired tables that reference each other drop in one
+run, the referencing table first; a cycle among them is a stop.
+
+**Schema.** On PostgreSQL every read, the count, the lock and the `DROP` name
+the `public` schema (`RETIRE_POSTGRES_SCHEMA`), the one the differ reads live
+tables from, whatever the `search_path`. smrt supports only `public`.
+
+**Table-limited runs.** A run limited to named tables (`tables`: lazy
+activation, the run-time model editor, `requireComplete`) neither plans nor
+reports retirements: retiring waits for the next whole-schema migrate. A
+limited run writes no migrate record, so the build stamp still forces that
+migrate before production starts. It stops only when it would create or add to
+a table on the retired list (reason `retired-table`). `planRuntimeModelDDL`
+throws `RetiredTableInUseError` for a run-time table under a retired name; its
+`stop` is that same named stop (`reason: 'retired-table'`, kind `table.add` or
+`column.add`). The deprecated dev/test `ensureSchema` (`SchemaManager
+.ensureTables`) refuses a retired name too. Nothing else creates a table at run
+time: `generateDDLFromColumns` (registry/schema-builder.ts) and
+`SchemaGenerator.generateSQL` only render preview text.
+
+**Run-time lists.** The app model editor journals every list in
+`_smrt_app_model_changes`; a whole-schema migrate in any process reads it
+(`public` on PostgreSQL, like every other read) and counts each list's table,
+its snake-cased plural, as declared. `createAppModelEditor` therefore refuses a
+custom `store` that does not append through a store `createAppModelHistory`
+made (`MODEL_HISTORY_JOURNAL_REQUIRED`); a wrapper that delegates to one is
+fine. A run-time model app code registers directly with `registerRuntimeModel`
+is not in the journal: only the process that registered it knows it, so in any
+other process only the retirement's definition match protects its table. The
+template host's own tables (`template-sveltekit/host/state.ts`,
+`onboarding.ts`) are created with raw `CREATE TABLE`, are not models and are
+unknown to the retire step; that matters only if a retirement ever names one.
+
+**Build stamp.** `retiredTablesStampInput()` (table, whether rows may be
+discarded, and the columns of each definition, not their releases) is part of
+`computeSchemaFingerprint()`; the key is left out when nothing is retired, so
+no existing build's stamp moves. The plan and the stamp read one set
+(`resolveRetiredTables`). Parity tests: `issue-5005-retired-stamp.test.ts` (a
+build whose only change is a retirement is refused at startup until migrate has
+run, migrate records the stamp the build made, and with several packages and a
+run-time-only declaration the plan and the record's stamp cover the same set).
+
+**Coverage.** `table-retire.test.ts` runs the step on SQLite with foreign keys
+ON (and OFF for the foreign-key stop), DuckDB, and on PGlite under
+`pnpm test:pglite` (dependents, a non-public `search_path`);
+`table-retire-postgres.optional.test.ts` runs it on a real server (a failed
+DROP rolls back its batch, materialized-view and PL/pgSQL trigger dependents,
+a concurrent writer held off by the lock, concurrent-index mode, a non-public
+`search_path`). It also covers the type equivalences per engine (an `int4`,
+a `varchar(n)`, a uuid held as text, a PostgreSQL `timestamp` with and without
+the opt-in, `emptyTextAsNull`), a definition with only some of the columns, a
+live table without a declared column, a generated column, a database at an
+older shape, a missing and an unreadable journal, the JSON adapter end to end,
+two concurrent runs, and the DuckDB race with a second connection.
+`retired-tables.test.ts` and `consumer-plugin/retired-tables.test.ts` cover
+the declaration and every way into the registry and the build.
+
+**Upgrade gate.** For each snapshot that holds a retired table the gate
+restores that table in the shape the release created (and fails if it was not
+restored, since a missing table would prove nothing), seeds it as for any model
+table, migrates, and asserts the table was dropped by its retirement and the
+schema converges (a `table.retire-mismatch` there means no definition matches
+the table that release made; the gate test runs this against a real 0.61.1
+model table). `checkRetiredDeclarations()` fails a declaration whose table is
+in no supported snapshot (stale, so the list shrinks), whose `lastOwner` did
+not declare the table in a supported release, whose `lastOwner` is not a class
+of the declaring package, or none of whose definitions has exactly the columns
+a supported snapshot holding the table has (projection drift, or a release
+shape not declared; the failure names the command). Who declared
+what comes from `release-upgrade/owners/<release>.json`, written by
+`node scripts/retired-table-facts.mjs owners --release <release>` from that
+release's published manifests, never by editing the snapshot. An owners file is
+pruned with its snapshot, fails as stale without it, and fails when it names a
+table its snapshot does not hold as a model table. A snapshot without one
+cannot vouch for `lastOwner`, and the gate names the command.
+
+**A declaration that goes stale.** Once no supported snapshot holds the table
+the gate fails the declaration until it is removed. A database still on the
+first-hop release (`upgradeFirstTo`) that upgrades after that keeps the table
+as an orphan: nothing is retired, and nothing is lost.
+
 ### A SQLite type change is a table rebuild (#2370)
 
 SQLite has no `ALTER TABLE ... ALTER COLUMN ... TYPE`, so
@@ -1001,7 +1326,11 @@ additionally needs an `addColumnIfMissing()` entry in `system/compatibility.ts`
 upgrades to exactly the shape a fresh install gets.
 Bootstrap-table columns go in `ensureBootstrapSystemTableCompatibility()`,
 which runs before the replay so its indexes find them: `_smrt_ai_usage`'s
-#4751 columns are the model (`agents/ai-usage.md`).
+#4751 columns are the model (`agents/ai-usage.md`). A table whose columns must
+stop being NOT NULL or be renamed is rebuilt instead, once and only while the
+old shape is present (`_smrt_ai_runs`, 1.17.0, #5005: `ensureAiRunsSystemTableCompatibility()`);
+a table that is replaced by another is copied and dropped the same way
+(`_smrt_ai_usage_outcomes` into `_smrt_ai_evaluations`).
 
 `_smrt_jobs` / `_smrt_job_events` are dual-owned: `db:migrate` creates them,
 the compatibility pass reshapes them. On a fresh install bootstrap runs first,
@@ -1400,7 +1729,10 @@ A successful whole-schema migrate,
 including an already-current database, records the core release, the build's
 packages and fingerprint (below). Failed, stopped, and dry runs never stamp
 it. Identical release/packages/fingerprint skip the insert; changed values append
-and preserve history. This permanent ledger has no retention/prune task.
+and preserve history. A run that dropped a retired table over a confirmed
+definition mismatch always appends, with `confirmed_retirements` (system schema
+1.18.0; JSON, one entry per table: table, package, last owner, release, `by`
+flag or code, the differences confirmed); other rows leave it NULL. This permanent ledger has no retention/prune task.
 `readLastMigrateRecord` is SELECT-only and returns `state: 'none'` for an absent
 or empty table: the first run under this scheme, not a schema mismatch. The latest
 row orders by `created_at`, then `id`. Call the writer on the caller's database
@@ -1657,6 +1989,17 @@ new code cannot insert. Ship a needed data step with the schema change. A field 
 `table`, `column`, `since` and a non-empty `reason`. Review that reason as a data
 decision. Entries that match no leftover in either rehearsal fail as stale.
 
+A table a package declares retired (see "Retiring a table (#5005)") is the one
+way a model table leaves a release. For each rehearsed snapshot that holds it,
+the gate seeds the table like any model table, migrates, and asserts the table
+is gone and the schema converges. It also fails a declaration whose table is in
+no supported snapshot (stale), whose `lastOwner` did not declare it in a
+supported release (`owners/<release>.json`, written by
+`scripts/retired-table-facts.mjs owners` from that release's published
+manifests, pruned with its snapshot), or whose `lastOwner` is not in the
+declaring package. A table the code simply stopped declaring, with no
+declaration, still fails as an old column that holds data.
+
 Migrate refuses a database whose last migrate record is older than the floor.
 It names the supported release and the first upgrade to run. A database without
 a record is a first run under this scheme and proceeds. To move the floor, run
@@ -1669,10 +2012,31 @@ time passed. Review and commit that decision with the code deletion.
 
 P8: the release workflow is not wired to this gate yet. A release job cannot be
 verified without publishing. This change supplies a tested command and a PR
-job; a later verified release change must wire the publishing path.
+job; a later verified release change must wire the publishing path. Wiring the
+gate and `retired-table-facts.mjs check` (or `check:release-upgrade:owners`) into the
+release workflow is a follow-up for the release owner. Until then the manual
+step after publishing is `pnpm release:snapshot` on the built release checkout
+(which writes and, online, checks the overlay), then commit the snapshot, its
+seed plan and its owners file.
 
 Fallback registry aggregation includes `_sync_origin_device_id` and
 `_sync_revision` even without a generated manifest schema. Migration-created
 source-only models must support the same tracked delete path as compiled models.
 The fallback id-type regression also asserts these columns; the plugin fixture
 exercises delete after owner approval against a fresh runtime database.
+
+
+## Release snapshot owners overlay (#5005)
+
+`release:snapshot` (`release-upgrade-gate.mjs save`) writes the new
+  snapshot's `owners/<release>.json` from the same built checkout's manifests
+  (no registry needed) and, when npm answers, checks it and that release's
+  definitions against the published manifests (skipped with a message
+  offline); `prune` removes an overlay with its snapshot. After a base merge or
+  a rebase that adds or changes a snapshot, run
+  `pnpm release-upgrade:refresh-owners` (needs npm), the backfill and repair
+  tool: it writes an `owners/<release>.json` for every snapshot, deletes one
+  whose snapshot is gone, and regenerates every retired-table declaration's
+  `definitions` for the snapshot set (#5005). The gate fails on a missing or
+  stale overlay; `pnpm check:release-upgrade:owners` (`check --verify-owners`)
+  adds the npm comparison (opt-in, not in PR CI).

@@ -20,6 +20,7 @@ import type {
 import { clearRuntimeConfig, setConfig } from '@happyvertical/smrt-config';
 import {
   field,
+  resolveDatabase,
   SmrtObject,
   setInferenceResolver,
   smrt,
@@ -484,12 +485,23 @@ describe('mountAssistantRoutes defaults (#3414)', () => {
         const threadId = await createThread(routes, ownerA);
         await events(await send(routes, threadId, ownerA, 't1'));
         expect(seenOptions).toHaveLength(1);
-        // The factory passes `transcript: false`: the client is used as built,
-        // so no call id and no transcript capture.
-        expect(
-          (seenOptions[0] as { usageTags?: Record<string, string> } | undefined)
-            ?.usageTags?.callId,
-        ).toBeUndefined();
+        // The turn is a tracked call (it carries its entry call id, #5005),
+        // but the tracked client passes `transcript: false`: no capture.
+        const database = await resolveDatabase(db);
+        let stored = 0;
+        try {
+          const result = await database.query(
+            'SELECT call_id FROM _smrt_ai_transcripts',
+          );
+          stored = (
+            Array.isArray(result)
+              ? result
+              : ((result as { rows?: unknown[] }).rows ?? [])
+          ).length;
+        } catch {
+          // No transcript table: nothing was ever stored.
+        }
+        expect(stored).toBe(0);
       } finally {
         smrtConfig.reset();
       }

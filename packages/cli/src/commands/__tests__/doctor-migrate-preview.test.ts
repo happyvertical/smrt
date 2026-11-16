@@ -115,6 +115,93 @@ describe('doctor next migrate (#4934)', () => {
       'found no migrate record. Run smrt db:migrate before starting this build.',
     );
   });
+  describe('declared table retirements (#5005)', () => {
+    const declare = (rows?: 'discard') =>
+      ObjectRegistry.registerManifestRetiredTables({
+        packageName: '@doctor/pkg',
+        retiredTables: [
+          {
+            table: 'old_drafts',
+            lastOwner: '@doctor/pkg:Draft',
+            since: '1.2.0',
+            reason: 'Drafts live on the order.',
+            ...(rows ? { rows } : {}),
+            definitions: [
+              {
+                release: '1.1.0',
+                columns: { id: { type: 'TEXT' } },
+              },
+            ],
+            packageName: '@doctor/pkg',
+          },
+        ],
+      });
+    afterEach(() =>
+      ObjectRegistry.registerManifestRetiredTables({
+        packageName: '@doctor/pkg',
+      }),
+    );
+
+    it('lists each retirement with its reason and the rows that go, as a warning', async () => {
+      await db.query('CREATE TABLE old_drafts (id TEXT PRIMARY KEY)');
+      await db.query("INSERT INTO old_drafts VALUES ('a'), ('b')");
+      declare('discard');
+      const { report, out } = await preview();
+      expect(report.retired).toEqual([
+        'old_drafts: Drafts live on the order. (@doctor/pkg:Draft, retired in 1.2.0; 2 row(s) discarded)',
+      ]);
+      expect(out).toContain(
+        'Tables the next migrate retires (dropped with their rows):\n      old_drafts: Drafts live on the order.',
+      );
+      expect(out).toContain('table.retire: 1 — old_drafts');
+      expect(report.stops).toEqual([]);
+      expect(report.warnings).toContain(
+        'Next migrate drops 1 table(s) their package declares retired',
+      );
+      // Read-only: the table is still there.
+      const live = await db.query('SELECT COUNT(*) AS n FROM old_drafts');
+      expect(Number(live.rows[0].n)).toBe(2);
+    });
+
+    it('says none when nothing is retired', async () => {
+      const { out } = await preview();
+      expect(out).toContain(
+        'Tables the next migrate retires (dropped with their rows):\n      none',
+      );
+    });
+
+    it('shows a retirement that stops, with its row count, and holds the rest back', async () => {
+      await db.query('CREATE TABLE old_drafts (id TEXT PRIMARY KEY)');
+      await db.query("INSERT INTO old_drafts VALUES ('a'), ('b')");
+      declare();
+      schemas.new_table = schema('new_table');
+      const { report, out } = await preview();
+      expect(report.retired).toEqual([]);
+      expect(report.stops.join()).toContain('table.retire-rows (loses-data)');
+      expect(report.stops.join()).toContain('2 row(s)');
+      expect(out).toContain('Create table new_table');
+    });
+
+    it('shows a mismatch with the differences an operator would confirm (M3)', async () => {
+      await db.query(
+        'CREATE TABLE old_drafts (id TEXT PRIMARY KEY, note TEXT, n INTEGER)',
+      );
+      declare('discard');
+      const { report, out } = await preview();
+      expect(report.retired).toEqual([]);
+      const line = report.stops.join('\n');
+      expect(line).toContain('table.retire-mismatch');
+      expect(line).toContain(
+        'release 1.1.0: column n is not in the definition; column note is not in the definition',
+      );
+      expect(line).toContain('--confirm-retire-table old_drafts');
+      expect(out).toContain('What the next migrate stops on:');
+      expect(out).toContain('column note is not in the definition');
+      expect(report.issues.join()).toContain(
+        'Next migrate: table.retire-mismatch',
+      );
+    });
+  });
   it('lists live NOT NULL removal on PostgreSQL and opt-in default retention', async () => {
     await pg();
     await db.query(

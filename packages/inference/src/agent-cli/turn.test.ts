@@ -6,7 +6,6 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { resolveWorkProfile } from '../work-profiles.js';
 import { nodeDir } from './env.js';
 import { installStub, tempDir } from './test-support.js';
 import type { AgentTool } from './tools.js';
@@ -582,7 +581,7 @@ it.each([
   );
 });
 
-describe('profile subprocess execution', () => {
+describe('model subprocess execution', () => {
   it('retries a refused Claude model once and persists actual-model usage', async () => {
     const { deps, stateDir } = setup('claude-code');
     const location = await deps.locate('claude-code');
@@ -613,7 +612,8 @@ else {console.log(JSON.stringify({type:'system',subtype:'init',session_id:'runti
       signal: new AbortController().signal,
       emit: (e) => events.push(e),
       host: { ...threadHost('design', messages), recordExecution },
-      profile: resolveWorkProfile({ engine: 'claude-code', profile: 'design' }),
+      model: 'fable',
+      effort: 'max',
       fallback: {
         ownerId: 'owner',
         connectionKey: 'account-v1',
@@ -627,19 +627,19 @@ else {console.log(JSON.stringify({type:'system',subtype:'init',session_id:'runti
     ).toHaveLength(2);
     expect(recordExecution).toHaveBeenCalledWith(
       expect.objectContaining({
+        engine: 'claude-code',
         model: 'claude-opus-native',
         requestedModel: 'opus',
-        profile: 'design',
+        effort: 'max',
         tokens: 42,
+        inputTokens: 30,
+        outputTokens: 12,
         fallback: { from: 'fable', to: 'opus', reason: 'plan-model-refused' },
       }),
     );
-    expect(messages.at(-1)?.meta).toMatchObject({
-      workRun: {
-        model: 'claude-opus-native',
-        requestedModel: 'opus',
-        tokens: 42,
-      },
+    // The execution is the host's to record; it is never stored on a message.
+    expect(messages.at(-1)?.meta).toEqual({
+      cliSession: { tool: 'claude-code', id: 'runtime-session' },
     });
     expect(
       events.filter(
@@ -673,11 +673,7 @@ console.log(JSON.stringify({type:'item.completed',item:{type:'error',message:'co
       signal: new AbortController().signal,
       emit: (e) => events.push(e),
       host: threadHost('design', messages),
-      profile: resolveWorkProfile({
-        engine: 'codex',
-        profile: 'design',
-        settings: { model: 'ranked-test' },
-      }),
+      model: 'ranked-test',
       fallback: {
         ownerId: 'owner',
         connectionKey: 'v1',
@@ -699,19 +695,15 @@ console.log(JSON.stringify({type:'item.completed',item:{type:'error',message:'co
 it.each([
   'claude-code',
   'codex',
-] as const)('rejects an unsafe %s profile before credential mint or spawn', async (tool) => {
+] as const)('rejects an unsafe %s model before credential mint or spawn', async (tool) => {
   const { deps } = setup(tool);
   const mint = vi.spyOn(deps.credentials, 'mint');
   const locate = vi.spyOn(deps, 'locate');
   const appendMessage = vi.fn();
-  const profile = {
-    ...resolveWorkProfile({ engine: tool, settings: { model: 'valid-model' } }),
-    model: '--dangerously-skip-permissions',
-  };
   await expect(
     runAgentTurn({
       tool,
-      profile,
+      model: '--dangerously-skip-permissions',
       text: 'hello',
       mcpUrl: 'http://127.0.0.1:4801/mcp',
       deps,
@@ -719,26 +711,17 @@ it.each([
       emit: vi.fn(),
       host: { ...threadHost('hello', []), appendMessage },
     }),
-  ).rejects.toThrow('Invalid work profile model');
+  ).rejects.toThrow('Invalid model id.');
   expect(mint).not.toHaveBeenCalled();
   expect(locate).not.toHaveBeenCalled();
   expect(appendMessage).not.toHaveBeenCalled();
 });
 
-it('keeps execution metadata structurally compatible with legacy host messages', () => {
+it('keeps session metadata structurally compatible with legacy host messages', () => {
   const current: AgentTurnMessage = {
     role: 'assistant',
     content: 'done',
-    meta: {
-      cliSession: { tool: 'claude-code', id: 's' },
-      workRun: {
-        profile: 'assist',
-        engine: 'claude-code',
-        effort: 'high',
-        durationMs: 1,
-        toolCalls: 0,
-      },
-    },
+    meta: { cliSession: { tool: 'claude-code', id: 's' } },
   };
   const legacy: {
     role: 'user' | 'assistant' | 'tool';
@@ -772,10 +755,7 @@ console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:10,output_
   const result = await runAgentTurn({
     tool: 'codex',
     text: 'hello',
-    profile: resolveWorkProfile({
-      engine: 'codex',
-      settings: { model: 'verified-model' },
-    }),
+    model: 'verified-model',
     mcpUrl: 'http://127.0.0.1:4801/mcp',
     deps,
     signal: new AbortController().signal,
@@ -786,9 +766,11 @@ console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:10,output_
   expect(messages.at(-1)).toEqual({ role: 'assistant', content: 'done' });
   expect(recordExecution).toHaveBeenCalledWith(
     expect.objectContaining({
-      profile: 'assist',
+      engine: 'codex',
       requestedModel: 'verified-model',
       tokens: 12,
+      inputTokens: 10,
+      outputTokens: 2,
     }),
   );
 });

@@ -101,7 +101,9 @@
     "@sveltejs/kit": "^2.70.3",
     "svelte": "^5.57.1",
     "@happyvertical/sql": ">=0.89.12",
-    "@happyvertical/smrt-jobs": "workspace:*"
+    "@happyvertical/smrt-jobs": "workspace:*",
+    "@happyvertical/smrt-prompts": "workspace:*",
+    "@happyvertical/smrt-workflows": "workspace:*"
   },
   "scripts": {
     "prepack": "node ../../scripts/prepack-package.js",
@@ -135,6 +137,7 @@
     "@happyvertical/smrt-ui": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/smrt-web": "workspace:*",
+    "@happyvertical/smrt-workflows": "workspace:*",
     "@happyvertical/sql": "^0.89.12",
     "@modelcontextprotocol/client": "2.3.1",
     "@modelcontextprotocol/server": "^2.3.1",

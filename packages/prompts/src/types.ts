@@ -2,6 +2,7 @@ import type {
   InferenceLatency,
   InferenceTier,
   InferenceTierRequest,
+  ReasoningEffort,
   SmrtClassOptions,
 } from '@happyvertical/smrt-core';
 
@@ -36,6 +37,13 @@ export interface PromptAIInput {
    * lower it.
    */
   minimumTier?: InferenceTier;
+  /**
+   * Reasoning effort the prompt asks for (#5005): one of core's
+   * `REASONING_EFFORTS`, validated, sent as `reasoning: { effort }`. A named
+   * field, never a `params` entry: params (which a tenant override edits)
+   * cannot carry `effort` or `reasoning`.
+   */
+  effort?: ReasoningEffort;
   [key: string]: unknown;
 }
 
@@ -85,6 +93,8 @@ export interface PromptConfigOverrideInput {
   template?: string | null;
   profile?: string | null;
   model?: string | null;
+  /** Validated against core's `REASONING_EFFORTS`. */
+  effort?: ReasoningEffort | null;
   params?: PromptParams | null;
   ai?: PromptAIInput | null;
   temperature?: number;
@@ -104,6 +114,8 @@ export interface PromptLayer {
   template?: string | null;
   profile?: string | null;
   model?: string | null;
+  /** Code default, config or runtime only; stored overrides carry none. */
+  effort?: ReasoningEffort | null;
   params?: PromptParams | null;
 }
 
@@ -114,6 +126,7 @@ export interface NormalizedPromptAI {
   latency?: InferenceLatency;
   /** From the code default only (#4752). */
   minimumTier?: InferenceTier;
+  effort?: ReasoningEffort;
   params: PromptParams;
 }
 
@@ -166,6 +179,8 @@ export interface ResolvedPromptAI extends PromptParams {
   latency?: InferenceLatency;
   /** The definition's `ai.minimumTier`, set with `tier` (#4752). */
   minimumTier?: InferenceTier;
+  /** The prompt's validated reasoning effort (#5005). */
+  effort?: ReasoningEffort;
   allowedModels?: string[];
   params: PromptParams;
   temperature?: number;
