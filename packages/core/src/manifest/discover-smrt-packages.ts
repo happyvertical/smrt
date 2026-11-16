@@ -228,9 +228,19 @@ function resolvePackageDirUncached(
     // Fall through to direct node_modules lookup below.
   }
 
-  const directPath = join(baseDir, 'node_modules', packageName);
-  if (existsSync(directPath)) {
-    return normalizePackagePath(directPath);
+  // Node's lookup order: the nearest `node_modules` up the tree. Needed for an
+  // ESM-only package (no `require` condition makes `resolve()` throw) reached
+  // from a dependent in pnpm's virtual store, where the sibling lives in an
+  // ancestor `node_modules`, not under the dependent itself (#5027).
+  let dir = baseDir;
+  for (;;) {
+    const candidate = join(dir, 'node_modules', packageName);
+    if (existsSync(candidate)) {
+      return normalizePackagePath(candidate);
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
   }
 
   return null;

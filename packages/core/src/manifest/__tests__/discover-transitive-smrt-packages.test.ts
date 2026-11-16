@@ -83,7 +83,10 @@ beforeEach(() => {
     dependencies: { [IMAGES]: '1.0.0' },
     peerDependencies: { [PEER]: '1.0.0' },
   });
-  smrtPackage(imagesDir, IMAGES, 'ImagesBase');
+  // ESM-only exports: `require.resolve` throws, as for real smrt packages.
+  smrtPackage(imagesDir, IMAGES, 'ImagesBase', {
+    exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' } },
+  });
   imagesManifest = join(imagesDir, 'dist', 'manifest.json');
   // The virtual-store directory of smrt-content holds its dependencies beside
   // it; a peer is the host's to provide and is not installed there.
