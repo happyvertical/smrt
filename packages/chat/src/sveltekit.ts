@@ -1386,9 +1386,9 @@ export function mountAssistantRoutes(
   ) => {
     const selection = await options.resolveSelection?.(context);
     context = selection ? { ...context, selection } : context;
-    // A host selection decides the model; a body model is only honoured
-    // without one.
-    const model = selection ? selection.model : resolveModel(body.model);
+    // The selection's model (an engine's tier binding) wins; a body model is
+    // honoured where the selection names none (an API key).
+    const model = selection?.model ?? resolveModel(body.model);
     const allowedTools = await allowedToolsFor(context);
     const clientTools = sanitizeClientToolDeclarations(
       body.clientTools,
@@ -1582,6 +1582,22 @@ export function mountAssistantRoutes(
     const systemText = tracking
       ? chatAssistantSystemText(tracking.prompt)
       : systemPrompt;
+    // The turn's effort (#5005): the assistant prompt's `ai.effort`, else the
+    // tier binding's the host selected. An external driver has no tracked
+    // prompt, so the prompt is resolved here for its effort.
+    const selection = prepared.selection
+      ? withPromptEffort(
+          prepared.selection,
+          tracking?.prompt ??
+            (db
+              ? await resolveChatAssistantPrompt({
+                  db: await resolveDatabase(db),
+                  tenantId: principal.tenantId,
+                  ...(systemPrompt ? { systemPrompt } : {}),
+                }).catch(() => undefined)
+              : undefined),
+        )
+      : undefined;
     return {
       abort,
       ai,
@@ -1592,7 +1608,7 @@ export function mountAssistantRoutes(
       turn: {
         ai,
         turnDriver: prepared.turnDriver,
-        ...(prepared.selection ? { selection: prepared.selection } : {}),
+        ...(selection ? { selection } : {}),
         ...(options.assistantSettings
           ? { assistantSettings: await options.assistantSettings(context) }
           : {}),
@@ -3199,4 +3215,13 @@ function detached<M>(
     }
   })();
   return { events, settled };
+}
+
+/** The selection with the assistant prompt's effort over the tier binding's. */
+function withPromptEffort(
+  selection: AssistantModelSelection,
+  prompt: { ai: { effort?: AssistantModelSelection['effort'] } } | undefined,
+): AssistantModelSelection {
+  const effort = prompt?.ai.effort ?? selection.effort;
+  return effort ? { ...selection, effort } : selection;
 }

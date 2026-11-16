@@ -27,7 +27,10 @@ export interface AssistantModelSelection {
   tier: InferenceTier;
   /** The model the engine's tier binding chose; absent: the engine's own. */
   model?: string;
-  /** Caller > prompt > tier binding; absent: the engine's default. */
+  /**
+   * The tier binding's effort; the assistant prompt's `ai.effort` wins
+   * over it. Absent: the engine's default.
+   */
   effort?: ReasoningEffort;
 }
 

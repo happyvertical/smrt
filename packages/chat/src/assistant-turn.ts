@@ -1673,12 +1673,12 @@ function applyTurnBudget<M>(
 }
 
 /**
- * The reasoning effort the turn's calls send: the host's selection (the
- * caller), else the assistant prompt's `effort`. A tier binding's default
- * applies where the call routes a tier; none: the provider's default.
+ * The reasoning effort the turn's calls send: the assistant prompt's
+ * `effort`, else the selection's (the tier binding's); none: the provider's
+ * default.
  */
 function turnEffort<M>(options: AssistantTurnOptions<M>) {
-  return options.selection?.effort ?? options.tracking?.prompt.ai.effort;
+  return options.tracking?.prompt.ai.effort ?? options.selection?.effort;
 }
 
 /** A refused workflow-only tool, as the turn's user-facing error. */

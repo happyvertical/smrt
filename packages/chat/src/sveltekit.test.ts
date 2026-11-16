@@ -25,6 +25,7 @@ import {
   OwnerApprovalAuthority,
   OwnerApprovalContinuations,
 } from '@happyvertical/smrt-app-runtime';
+import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import {
   config,
   ObjectRegistry,
@@ -36,6 +37,7 @@ import {
   createCookbookRuntimeExposure,
   setRuntimeExposureGate,
 } from '@happyvertical/smrt-core/runtime-exposure';
+import { clearPromptCache } from '@happyvertical/smrt-prompts';
 import {
   MembershipCollection,
   PermissionCollection,
@@ -336,6 +338,100 @@ describe('mountAssistantRoutes', () => {
     body: Record<string, unknown>,
     actor: Actor = ownerA,
   ) => call(routes, 'POST', `threads/${threadId}/messages`, { actor, body });
+
+  describe("the turn's reasoning effort (#5005)", () => {
+    afterEach(() => {
+      clearPromptCache();
+      clearCache();
+      setConfig({});
+    });
+    function promptEffort(effort: 'low' | undefined) {
+      clearPromptCache();
+      clearCache();
+      setConfig({
+        packages: {
+          prompts: effort
+            ? { prompts: { 'chat.assistant.system': { effort } } }
+            : {},
+        },
+      });
+    }
+
+    it('sends the prompt effort over the tier binding effort on an API turn', async () => {
+      promptEffort('low');
+      const sent: unknown[] = [];
+      const ai = scriptedAI([
+        (_messages, options) => {
+          sent.push(options?.reasoning);
+          return text('Done')([], undefined);
+        },
+      ]);
+      const routes = mount({
+        ai,
+        resolveSelection: async () => ({
+          engine: 'api',
+          tier: 'best',
+          effort: 'high',
+        }),
+      });
+      const threadId = await createThread(routes);
+      await events(
+        await send(routes, threadId, {
+          content: 'Help',
+          clientRequestId: 'effort-api',
+        }),
+      );
+      expect(sent).toEqual([{ effort: 'low' }]);
+    });
+
+    it("hands an external driver the prompt effort, else the binding's", async () => {
+      const seen: unknown[] = [];
+      for (const effort of ['low', undefined] as const) {
+        promptEffort(effort);
+        const routes = mount({
+          resolveSelection: async () => ({
+            engine: 'claude-code',
+            tier: 'best',
+            model: 'fable',
+            effort: 'high',
+          }),
+          turnDriver: {
+            async run(context, callbacks) {
+              seen.push(context.selection?.effort);
+              callbacks.done({ text: 'Done' });
+            },
+          },
+        });
+        const threadId = await createThread(routes);
+        await events(
+          await send(routes, threadId, {
+            content: 'Help',
+            clientRequestId: `effort-cli-${effort ?? 'none'}`,
+          }),
+        );
+      }
+      expect(seen).toEqual(['low', 'high']);
+    });
+
+    it('honours a body model only where the selection names none', async () => {
+      promptEffort(undefined);
+      const ai = scriptedAI([text('Done')]);
+      const routes = mount({
+        ai,
+        resolveSelection: async () => ({ engine: 'api', tier: 'best' }),
+        models: [{ id: 'body-model', label: 'Body' }],
+      } as Partial<MountAssistantRoutesOptions>);
+      const threadId = await createThread(routes);
+      await events(
+        await send(routes, threadId, {
+          content: 'Help',
+          model: 'body-model',
+          clientRequestId: 'body-model',
+        }),
+      );
+      expect(ai.models).toContain('body-model');
+    });
+  });
 
   it.each([
     'unknown',
@@ -1354,6 +1450,37 @@ describe('mountAssistantRoutes', () => {
             `SELECT id FROM _smrt_ai_run_events WHERE type = 'approval' AND status = 'approved'`,
           ),
         ).toHaveLength(1);
+      });
+
+      it("stores the turn budget on its run and ends the turn 'budget' when core refuses a call at a limit (#5005)", async () => {
+        const toolRound: Round = (messages, options) => ({
+          ...calls(['page_read', {}])(messages, options),
+          model: 'm-1',
+          usage,
+        });
+        const routes = mount({
+          ai: scriptedAI([toolRound, withUsage('never sent')]),
+          turnBudget: { maxTokens: 20 },
+        });
+        const threadId = await createThread(routes);
+        const { seen, thrown } = await events(
+          await send(routes, threadId, {
+            content: 'Keep going',
+            clientRequestId: 'run-budget',
+          }),
+        );
+        expect(thrown).toBeNull();
+        expect(seen.some((event) => event.type === 'error')).toBe(false);
+        expect(seen).toContainEqual(
+          expect.objectContaining({ type: 'done', stoppedReason: 'budget' }),
+        );
+        const runs = await query(
+          'SELECT status, stop_reason, budget FROM _smrt_ai_runs',
+        );
+        expect(runs).toHaveLength(1);
+        expect(runs[0]).toMatchObject({ status: 'stopped' });
+        expect(String(runs[0]?.stop_reason)).toMatch(/^max_/);
+        expect(JSON.parse(String(runs[0]?.budget))).toEqual({ maxTokens: 20 });
       });
 
       it('opens no run and answers a user error while usage persistence is off', async () => {

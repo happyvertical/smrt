@@ -186,10 +186,14 @@ shell; no dependency change is appropriate for C1.
 the user message is authored; a request body model is honoured only without
 one. The host binds the tier: core for an API key, inference's
 `engineTierModel` for Claude Code, Codex and a ChatGPT plan. The assistant asks
-for `CHAT_ASSISTANT_TIER` (`best`). The selection's effort is the caller's; the
-built-in loop sends `reasoning: { effort }` from it, else from the assistant
-prompt's `ai.effort`. `turnBudget` (an `AiRunBudget`) is stored on the turn's
-`turn` run (core enforces it on tracked calls) and applied to the loop
+for `CHAT_ASSISTANT_TIER` (`best`). The selection's effort is the tier
+binding's; the assistant prompt's `ai.effort` wins over it, and the route
+hands the result to the built-in loop (`reasoning: { effort }`) and to an
+external driver (`context.selection.effort`). A body model is honoured only
+where the selection names none (an API key). `turnBudget` (an `AiRunBudget`)
+is stored on the turn's `turn` run (core enforces it on tracked calls; it
+counts `maxSteps` only for calls with a step index, so the loop enforces a
+turn's steps) and applied to the loop
 (`maxSteps`, `maxTokens` → `maxTurnTokens`, `maxDurationMs` → `maxTurnMs`,
 `callTimeoutMs` → `requestTimeoutMs`); a call core refuses at a budget limit
 ends the turn `budget` with a plain reply. `maxTokens` (output per call) and
