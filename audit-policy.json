@@ -48,6 +48,24 @@
       "remediation": "Prefer owner dependency updates, then adopt them here; otherwise validate a targeted uuid >=11.1.1 override across all three parents. Modern gaxios 8/google-auth-library 11 remove their uuid edges but cross additional parent majors. Metadata: https://registry.npmjs.org/uuid/11.1.1 and https://registry.npmjs.org/bull/latest . Reassess by 2026-11-23.",
       "suppressed": false,
       "recheckBy": "2026-11-23"
+    },
+    {
+      "ghsa": "GHSA-3r8g-jcqq-3p5j",
+      "package": "@sveltejs/kit",
+      "severity": "high",
+      "presentVersions": [
+        "2.69.1",
+        "2.69.3",
+        "2.70.3"
+      ],
+      "firstPatchedVersion": "3.1.1",
+      "reachability": "prod",
+      "introducedVia": "Workspace dependency of app-runtime, app-shell, planner, template-sveltekit, assets, chat, content, images, smrt-playground host and core (and their adapters); 15 audit paths (checked 2026-11-16).",
+      "exploitability": "The flaw is a denial of service while parsing form data for SvelteKit remote functions (`form`). No package or shipped template uses remote functions: there are no `$app/server` imports, no `.remote.ts` files and no `experimental.remoteFunctions` flag anywhere in the repository (searched 2026-11-16), so the vulnerable parser is not constructed by any SMRT code or template. Advisory: https://github.com/advisories/GHSA-3r8g-jcqq-3p5j",
+      "decision": "Suppress for 30 days instead of forcing a breaking, repo-wide SvelteKit 3 migration (no 2.x release carries the fix) under a CI gate. smrt-workbench is already on 3.1.1 (#5036). A consumer that enables remote functions on its own kit 2.x install is exposed regardless of this record.",
+      "remediation": "Migrate every package and template to SvelteKit >=3.1.1: https://github.com/happyvertical/smrt/issues/5038",
+      "suppressed": true,
+      "recheckBy": "2026-12-16"
     }
   ]
 }
