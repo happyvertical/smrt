@@ -118,3 +118,12 @@ occupied cells, not range size, and by a work budget (`maxWork`, refusal
 the work for reading it back before it writes anything. Plans are bounded too:
 200 tables, 500 fields per table, 2 MB of JSON; all can be raised through
 `validatePlan(plan, limits)`.
+
+Model hosts can use `IMPORT_PLAN_GUIDE` and `IMPORT_PLAN_EXAMPLES` beside
+`IMPORT_PLAN_SCHEMA`. The recursive schema constrains portable expression
+shapes; `validatePlan` still checks expression types and reference graphs.
+`importPlanRule(path)` selects a short repair hint. Unrepresentable workbook
+formulas should map to plain source columns to preserve cached values;
+`untranslatedFormulas(plan, workbook)` lists these for owner review (20 formula
+examples per field, each at most 500 characters). Wrong translations still
+fail the calculated-value proof. Reports remain target-owned, opaque specs.

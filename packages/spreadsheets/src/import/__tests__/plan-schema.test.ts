@@ -116,3 +116,31 @@ it('rejects unknown shapes, sources and types before semantic validation', () =>
   ])
     expect(accepts(value)).toBe(false);
 });
+
+it('accepts every published worked example and refuses the previous opaque-expression hole', async () => {
+  const { IMPORT_PLAN_EXAMPLES, IMPORT_PLAN_GUIDE } = await import(
+    '../index.js'
+  );
+  for (const example of IMPORT_PLAN_EXAMPLES) {
+    expect(accepts(validatePlan(example)), JSON.stringify(accepts.errors)).toBe(
+      true,
+    );
+  }
+  expect(IMPORT_PLAN_GUIDE).toContain('cached values are imported');
+  const plan = structuredClone(
+    IMPORT_PLAN_EXAMPLES[0],
+  ) as unknown as ImportPlan;
+  for (const calculated of [
+    'D5*E5',
+    { op: '*', left: { col: 'unit_price' }, right: { col: 'qty' } },
+    { op: 'mul', args: [{ col: 'unit_price' }, { col: 'qty' }] },
+    { op: 'mul', left: { col: 'unit_price' } },
+    { col: 'qty', extra: true },
+    { op: 'case', branches: [], else: { value: 0 } },
+  ]) {
+    plan.tables[0].fields[2].calculated =
+      calculated as ImportPlan['tables'][number]['fields'][number]['calculated'];
+    expect(accepts(plan)).toBe(false);
+    expect(() => validatePlan(plan)).toThrow();
+  }
+});
