@@ -55,11 +55,13 @@ stops the run the new worker holds. The stop written when the signal aborts
 uses `stopFence` (default `fence`): `workflowStopFence(claim)` accepts the
 worker's own attempt after its job settled (cancelled, timed out) and refuses
 a claim another worker took over, or a job a newer job of the run replaced
-(stale recovery keeps the worker on its failed row). It locks the run row
-before it looks for a newer job, and `resume` changes the run's status and
-admits its new job in one transaction (`driver.resume`'s `admit`) while
-holding that row, so a stale stop never lands between them and stops the
-resumed run. Settlements do not assert it: spending that happened is counted.
+(stale recovery keeps the worker on its failed row). It locks the run's
+chain root first, down to the run (the accounting lock order, so it never
+deadlocks with a settle on the same chain), before it looks for a newer job,
+and `resume` changes the run's status and admits its new job in one
+accounting transaction (`driver.resume`'s `admit`; retried as a whole on a
+conflict) while holding that row, so a stale stop never lands between them
+and stops the resumed run. Settlements do not assert it: spending that happened is counted.
 
 ## Job running (`src/jobs.ts`)
 
