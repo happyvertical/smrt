@@ -392,10 +392,22 @@ export function principalFromSessionLocals(event: {
     !permissions.every((value) => typeof value === 'string')
   )
     return null;
+  // The SMRT runtime classifies the session user (`locals.principalKind`):
+  // an agent user with a session cookie must not pass as a human. A runtime
+  // that could not classify it publishes `null`, which denies. Apps without
+  // that field keep the established `human` default.
+  const classified = locals.principalKind;
+  if (classified === null) return null;
+  if (
+    classified !== undefined &&
+    (typeof classified !== 'string' || classified.length === 0)
+  ) {
+    return null;
+  }
   return {
     id: user.id,
     tenantId,
-    kind: 'human',
+    kind: classified ?? 'human',
     scopes: [...permissions].sort(),
   };
 }
@@ -506,7 +518,9 @@ export interface MountMcpRouteOptions {
    * `sessionFallback` adapter (the local owner-token adapter) challenges only
    * requests that carry an `Authorization` header; others keep the session
    * principal. Set `allowAnonymous` to permit a headerless request with a
-   * non-fallback adapter. Ignored by the deprecated REST-shaped mounts.
+   * non-fallback adapter. The deprecated REST-shaped mounts
+   * (`mountMcpToolsRoute`, `mountMcpCallRoute`) honor `auth` and
+   * `bindPrincipal` the same way, so list and call authorize identically.
    */
   auth?: McpRouteResourceAuthSource;
   /**
@@ -551,6 +565,68 @@ function protocolServerForRequest(
 }
 
 /**
+ * Resolve the request principal for one request and run `dispatch` with it:
+ * the bearer adapter (when the source yields one) authenticates and, with
+ * `bindPrincipal`, dispatch runs inside the principal's binding with the
+ * binder's live scopes as the effective authority. Shared by the modern
+ * endpoint and the deprecated REST-shaped mounts, so every route lists and
+ * calls against the same principal.
+ */
+async function authenticateAndDispatch(
+  event: SvelteKitRequestEvent,
+  options: MountMcpRouteOptions,
+  resolveAuth: () =>
+    | McpRouteResourceAuth
+    | null
+    | Promise<McpRouteResourceAuth | null>,
+  dispatch: (
+    event: SvelteKitRequestEvent,
+    resolved: ResolvedRequestPrincipal,
+  ) => Promise<Response>,
+): Promise<Response> {
+  const auth = await resolveAuth();
+  if (!auth) return dispatch(event, resolveRequestPrincipal(event, options));
+  if (!event.request.headers.has('authorization')) {
+    // A session-fallback adapter (local owner tokens) keeps its established
+    // session path. Explicit anonymous access is separate: it deliberately
+    // ignores session locals and custom resolvers, so bearer auth cannot be
+    // bypassed through ambient authority.
+    if (auth.sessionFallback === true) {
+      return dispatch(event, resolveRequestPrincipal(event, options));
+    }
+    if (options.allowAnonymous === true) {
+      return dispatch(event, { principal: null });
+    }
+  }
+  const checked = await auth.authenticate(event.request);
+  if (!checked.ok) return checked.response;
+  if (!options.bindPrincipal) {
+    return dispatch(event, { principal: checked.principal });
+  }
+  let entered = false;
+  let response: Response;
+  try {
+    response = await options.bindPrincipal(checked.principal, async (bound) => {
+      entered = true;
+      const principal = effectiveBoundPrincipal(checked.principal, bound);
+      if (!principal) return principalUnboundResponse();
+      // Materialize the body inside the binding so no dispatch work can
+      // outlive the principal's context (or its RLS transaction).
+      const dispatched = await dispatch(event, { principal });
+      return new Response(await dispatched.arrayBuffer(), {
+        status: dispatched.status,
+        statusText: dispatched.statusText,
+        headers: dispatched.headers,
+      });
+    });
+  } catch (error) {
+    if (entered) throw error;
+    return principalUnboundResponse();
+  }
+  return entered ? response : principalUnboundResponse();
+}
+
+/**
  * Mount a modern, stateless Streamable HTTP MCP endpoint as a SvelteKit
  * `POST` handler. The scoped SDK validates the 2026-07-28 envelope plus the
  * required `Mcp-Method` and `Mcp-Name` headers, returning `-32020` on a
@@ -589,49 +665,7 @@ function mountMcpRouteWith(
     if (trustedOrigins && !originPermitted(event, trustedOrigins)) {
       return originDeniedResponse();
     }
-    const auth = await resolveAuth();
-    if (!auth) return dispatch(event, resolveRequestPrincipal(event, options));
-    if (!event.request.headers.has('authorization')) {
-      // A session-fallback adapter (local owner tokens) keeps its established
-      // session path. Explicit anonymous access is separate: it deliberately
-      // ignores session locals and custom resolvers, so bearer auth cannot be
-      // bypassed through ambient authority.
-      if (auth.sessionFallback === true) {
-        return dispatch(event, resolveRequestPrincipal(event, options));
-      }
-      if (options.allowAnonymous === true) {
-        return dispatch(event, { principal: null });
-      }
-    }
-    const checked = await auth.authenticate(event.request);
-    if (!checked.ok) return checked.response;
-    if (!options.bindPrincipal) {
-      return dispatch(event, { principal: checked.principal });
-    }
-    let entered = false;
-    let response: Response;
-    try {
-      response = await options.bindPrincipal(
-        checked.principal,
-        async (bound) => {
-          entered = true;
-          const principal = effectiveBoundPrincipal(checked.principal, bound);
-          if (!principal) return principalUnboundResponse();
-          // Materialize the body inside the binding so no dispatch work can
-          // outlive the principal's context (or its RLS transaction).
-          const dispatched = await dispatch(event, { principal });
-          return new Response(await dispatched.arrayBuffer(), {
-            status: dispatched.status,
-            statusText: dispatched.statusText,
-            headers: dispatched.headers,
-          });
-        },
-      );
-    } catch (error) {
-      if (entered) throw error;
-      return principalUnboundResponse();
-    }
-    return entered ? response : principalUnboundResponse();
+    return authenticateAndDispatch(event, options, resolveAuth, dispatch);
   };
 
   async function dispatch(
@@ -1158,19 +1192,23 @@ export function mountMcpToolsRoute(
   server: McpAppServer,
   options: MountMcpRouteOptions = {},
 ): McpSvelteKitHandler {
-  return async (event) => {
-    try {
-      const tools = await server.listTools(
-        listToolsInput(resolveRequestPrincipal(event, options)),
-      );
-      return jsonResponse({ tools });
-    } catch (error) {
-      if (error instanceof McpAccessError) {
-        return jsonResponse(mcpAccessErrorBody(error), error.status);
-      }
-      throw error;
-    }
-  };
+  return (event) =>
+    authenticateAndDispatch(
+      event,
+      options,
+      () => currentResourceAuth(options.auth),
+      async (_event, resolved) => {
+        try {
+          const tools = await server.listTools(listToolsInput(resolved));
+          return jsonResponse({ tools });
+        } catch (error) {
+          if (error instanceof McpAccessError) {
+            return jsonResponse(mcpAccessErrorBody(error), error.status);
+          }
+          throw error;
+        }
+      },
+    );
 }
 
 /**
@@ -1184,31 +1222,38 @@ export function mountMcpCallRoute(
   server: McpAppServer,
   options: MountMcpRouteOptions = {},
 ): McpSvelteKitHandler {
-  return async (event) => {
-    const body = (await event.request.json().catch(() => null)) as {
-      arguments?: Record<string, unknown>;
-      name?: string;
-    } | null;
+  return (event) =>
+    authenticateAndDispatch(
+      event,
+      options,
+      () => currentResourceAuth(options.auth),
+      async (_event, resolved) => {
+        // Parsed after authentication, inside the principal's binding.
+        const body = (await event.request.json().catch(() => null)) as {
+          arguments?: Record<string, unknown>;
+          name?: string;
+        } | null;
 
-    if (!body?.name) {
-      return jsonResponse({ error: 'name is required.' }, 400);
-    }
+        if (!body?.name) {
+          return jsonResponse({ error: 'name is required.' }, 400);
+        }
 
-    const input: CallToolInput = {
-      arguments: body.arguments ?? {},
-      name: body.name,
-      principal: resolveRequestPrincipal(event, options).principal,
-    };
+        const input: CallToolInput = {
+          arguments: body.arguments ?? {},
+          name: body.name,
+          principal: resolved.principal,
+        };
 
-    try {
-      return jsonResponse(await server.callTool(input));
-    } catch (error) {
-      if (error instanceof McpAccessError) {
-        return jsonResponse(mcpAccessErrorBody(error), error.status);
-      }
-      throw error;
-    }
-  };
+        try {
+          return jsonResponse(await server.callTool(input));
+        } catch (error) {
+          if (error instanceof McpAccessError) {
+            return jsonResponse(mcpAccessErrorBody(error), error.status);
+          }
+          throw error;
+        }
+      },
+    );
 }
 
 function mcpAccessErrorBody(error: McpAccessError): unknown {

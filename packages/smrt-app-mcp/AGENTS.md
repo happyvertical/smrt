@@ -74,6 +74,17 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
   `direct-or-inherited`. Never derive it from request input. Both adapters
   read principals/mappings from own data only (`own-data.ts`): inherited
   values, accessors and poison keys deny.
+- A policy-denied call (scopes, `toolPolicy`, effects) answers exactly like an
+  unknown tool (404 `Unknown MCP tool.`, no `data.code`) so the catalog cannot
+  be probed; only the audit record carries `mcp_tool_access_denied` (the
+  `McpAccessError.auditCode`). Anonymous callers still get 401 for a tool that
+  needs authentication, which the OAuth challenge requires. Agent principals
+  (`kind: 'agent'`, #5086) pass the default policy only when `principalKinds`
+  lists them.
+- `mountMcpToolsRoute`/`mountMcpCallRoute` share the modern route's
+  `auth`/`bindPrincipal` sequence (`authenticateAndDispatch`): a bearer agent
+  lists and calls with the same live-capped scopes on every route. `mountMcpRoute`
+  with `auth` but no `bindPrincipal` authorizes on token scopes only.
 - Keep tool catalogs private by default. Public caching requires an explicit
   attestation and a global, unauthenticated, read-only, non-tenant catalog with
   no principal-aware policy.

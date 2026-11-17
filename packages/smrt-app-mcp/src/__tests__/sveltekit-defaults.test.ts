@@ -26,7 +26,6 @@ import {
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createMcpResourceAuth } from '../auth.js';
-import { MCP_TOOL_ACCESS_DENIED_CODE } from '../errors.js';
 
 it('mounts the published route without the SDK and reports its first-use load failure', () => {
   const child = spawnSync(
@@ -336,10 +335,10 @@ describe('mountMcpAppRoute', () => {
         title: 'nope',
       },
     );
-    expect(body.error).toEqual({
-      code: -32600,
-      message: 'MCP tool access is not permitted.',
-      data: { code: MCP_TOOL_ACCESS_DENIED_CODE, retryable: false },
+    // Refused exactly like an unknown tool.
+    expect(body.error).toMatchObject({
+      code: -32602,
+      message: 'Unknown MCP tool.',
     });
     expect(await rowCount('lane_route_items')).toBe(before);
   });
@@ -434,10 +433,8 @@ describe('mountMcpAppRoute', () => {
     expect(await toolNames(throwing, ownerLocals)).toEqual([]);
     const { body } = await call(throwing, 'lanerouteitem_list', ownerLocals);
     expect(JSON.stringify(body)).not.toContain('secret policy detail');
-    expect(body.error.data).toEqual({
-      code: MCP_TOOL_ACCESS_DENIED_CODE,
-      retryable: false,
-    });
+    expect(body.error).toMatchObject({ message: 'Unknown MCP tool.' });
+    expect(body.error.data?.code).toBeUndefined();
   });
 
   it('matches the overlay policy: non-human or tenant-less principals see nothing', async () => {

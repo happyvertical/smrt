@@ -140,6 +140,12 @@ permissions; the route resolves the profile per request and fails closed when
 the runtime cannot supply the profile's adapter. Hosted profiles use the runtime's membership-backed
 `resolveMcpPrincipal` unless the application supplies `resolvePrincipal`.
 
+Agent users (a user whose profile is a `bot` profile) map to `kind: 'agent'`;
+the default policy accepts that kind only when `principalKinds` lists it. Token
+scopes are capped by the agent's live role permissions on every request, a tool
+it may not use is absent from `tools/list`, and a call to it is refused exactly
+like a call to an unknown tool.
+
 ### Write tools
 
 Keep the remote tool catalog read-only until the application supplies and tests

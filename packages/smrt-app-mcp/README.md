@@ -52,7 +52,8 @@ export const POST = mountMcpAppRoute({
   error (404 semantics).
 - **Principal** — `principalFromSessionLocals` reads only `locals.user.id`, the
   session-authorized `locals.tenantId`, and `locals.permissions` (as sorted
-  `scopes`, `kind: 'human'`). Missing or malformed fields mean unauthenticated.
+  `scopes`, `kind` from `locals.principalKind` when the SMRT runtime classified
+  the user, else `'human'`; an unclassifiable user is unauthenticated). Missing or malformed fields mean unauthenticated.
   URL-selected tenants, headers and bodies are never identity inputs. Override
   with `resolvePrincipal`.
 - **Policy** — `requiredScopes` is required: every authenticated principal must
@@ -279,6 +280,16 @@ workflowTools: [{
 }],
 ```
 
+### Agent users
+
+An agent is a user with a `bot` profile. `runtime.resolveMcpPrincipal` stamps
+`kind: 'agent'` for it (app-issued or OIDC tokens); the default policy accepts
+`human` only, so serve agents with `principalKinds: ['human', 'agent']`. With
+`mountMcpAppRoute({ runtime })` the binder caps the token's scopes by the
+agent's live role permissions, and `toolScopes` maps tools to permission slugs:
+the agent lists and calls only what both its role and its token allow, and a
+revoked permission removes the tool from the next list and call.
+
 ### Tool scopes, confirm gate and persistent audit
 
 Scoped credentials for external agents need no app-local policy parsing:
@@ -297,8 +308,9 @@ createDefaultMcpAppServer({
 
 - **Scopes.** A workflow tool declares `requiredScopes`; the host may also map
   patterns with `toolScopes`. A tool whose scopes the principal (`principal.scopes`)
-  does not hold is hidden from `tools/list` and denied (403) on call; this is
-  ANDed with `toolPolicy`. An anonymous caller holds none, so a scoped tool is
+  does not hold is hidden from `tools/list` and refused on call exactly like an
+  unknown tool (404, no existence oracle; the audit record keeps the real
+  reason); this is ANDed with `toolPolicy`. An anonymous caller holds none, so a scoped tool is
   never public.
 - **Confirm.** A gated tool is refused before any `workflowAssertions` or
   handler runs unless `arguments.confirm === true`: the result is `isError` with
@@ -414,7 +426,9 @@ await client.callTool({
 Applications that have not moved their route path can retain the deprecated
 handlers below while they migrate. They are REST-shaped compatibility aliases,
 not an MCP transport. Direct calls to a tool outside the app allow-list
-continue to receive the safe 404 behavior.
+continue to receive the safe 404 behavior. They honor `auth` and
+`bindPrincipal` like `mountMcpRoute`, so a bearer principal (including an
+agent user) gets the same live-role-filtered list and the same refusals.
 
 ```ts
 // src/routes/api/mcp/tools/+server.ts

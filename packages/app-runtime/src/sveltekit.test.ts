@@ -2722,6 +2722,8 @@ describe('desktop owner link auto sign-in', () => {
       testEvent('http://127.0.0.1/', { sid }),
     );
     expect(observed.locals.userName).toBe('Ada Lovelace');
+    // The session user is classified from its live profile (#5086).
+    expect(observed.locals.principalKind).toBe('human');
     expect(
       createSessionLayoutLoad()({ locals: observed.locals }).session.user,
     ).toMatchObject({ email: '', name: 'Ada Lovelace' });
