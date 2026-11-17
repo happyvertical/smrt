@@ -12,7 +12,95 @@ export function toolSummary(name: string, result: unknown, ok = true): string {
       if (summary !== 'Completed this action') return summary;
     }
   }
+  if (!ok) {
+    const reason = plainFailureReason(result);
+    if (reason) return reason;
+  }
   return sharedToolSummary(name, result, ok, options);
+}
+
+/**
+ * Known failure classes, each with a fixed owner-facing sentence. The raw
+ * error text (SQL, field lists, ids, paths) is only ever matched, never
+ * echoed, so nothing from it can reach the card. Order matters: first match
+ * wins. The sentences must not match their own patterns (stored summaries
+ * pass through here again on reload).
+ */
+const FAILURE_REASONS: readonly [RegExp, string][] = [
+  [
+    /invalid where clause operator|unsupported .*filter operator|unknown (?:filter )?operator/i,
+    'That search used a comparison the app cannot do, so nothing was looked up.',
+  ],
+  [
+    /invalid where clause field|field does not exist|unknown field|no such column/i,
+    'That used a field this list does not have.',
+  ],
+  [
+    /sensitive field/i,
+    'That field is private, so it cannot be used to search.',
+  ],
+  [
+    /unique constraint|duplicate|already exists/i,
+    'A record with those details already exists.',
+  ],
+  [
+    /not null constraint|is required|required field|missing required|cannot be (?:null|empty)/i,
+    'A required value was missing.',
+  ],
+  [
+    /not found|no such record|does not exist/i,
+    'That could not be found. It may have been removed.',
+  ],
+  [
+    /forbidden|not allowed|permission|unauthori[sz]ed|access denied/i,
+    'You do not have permission to do that.',
+  ],
+  [/timed? ?out|took too long/i, 'That took too long and was stopped.'],
+  [
+    /invalid (?:input|argument|value|type|enum)|validation|must be (?:a|an|one of)|expected (?:a|an|string|number|boolean)/i,
+    'Some of the values were not in a form the app accepts.',
+  ],
+];
+
+/** Every string an error result carries, however the tool wrapped it. */
+function failureTexts(value: unknown, depth = 0, out: string[] = []): string[] {
+  if (depth > 6 || out.length > 12) return out;
+  if (typeof value === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (parsed && typeof parsed === 'object')
+        return failureTexts(parsed, depth + 1, out);
+    } catch {
+      // Plain text: matched as is.
+    }
+    out.push(value.slice(0, 2000));
+    return out;
+  }
+  if (!value || typeof value !== 'object') return out;
+  if (Array.isArray(value)) {
+    for (const item of value) failureTexts(item, depth + 1, out);
+    return out;
+  }
+  const record = value as Record<string, unknown>;
+  for (const key of [
+    'error',
+    'message',
+    'summary',
+    'text',
+    'content',
+    'structuredContent',
+    'result',
+    'data',
+  ])
+    failureTexts(record[key], depth + 1, out);
+  return out;
+}
+
+/** The owner-facing sentence for a recognised failure, else undefined. */
+function plainFailureReason(result: unknown): string | undefined {
+  const text = failureTexts(result).join('\n');
+  if (!text) return;
+  return FAILURE_REASONS.find(([pattern]) => pattern.test(text))?.[1];
 }
 
 /**

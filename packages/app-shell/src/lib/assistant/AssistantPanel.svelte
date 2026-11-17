@@ -1,4 +1,5 @@
 <script lang="ts">
+import { renderAssistantMarkdown } from '@happyvertical/smrt-chat/svelte';
 import { ReportResult } from '@happyvertical/smrt-reports/svelte';
 import { Badge } from '@happyvertical/smrt-ui';
 import { onDestroy, onMount, tick, untrack } from 'svelte';
@@ -278,7 +279,7 @@ onDestroy(() => controller?.abort());
       {#if item.kind === 'user'}
         <p class="smrt-assistant-panel__msg smrt-assistant-panel__user"><span class="smrt-assistant-panel__sr-only">You: </span>{item.text}</p>
       {:else if item.kind === 'assistant'}
-        <p class="smrt-assistant-panel__msg smrt-assistant-panel__bot"><span class="smrt-assistant-panel__sr-only">Assistant: </span>{item.text}</p>
+        <div class="smrt-assistant-panel__msg smrt-assistant-panel__bot smrt-assistant-panel__markdown"><span class="smrt-assistant-panel__sr-only">Assistant: </span>{@html renderAssistantMarkdown(item.text)}</div>
       {:else if item.kind === 'tool'}
         <p
           class="smrt-assistant-panel__chip"
@@ -404,6 +405,29 @@ onDestroy(() => controller?.abort());
     padding: var(--smrt-spacing-xs, 0.25rem) var(--smrt-spacing-md, 0.75rem);
     white-space: pre-wrap;
     max-inline-size: 90%;
+  }
+  /* The renderer's blocks carry their own spacing, so no pre-wrap here. */
+  .smrt-assistant-panel__markdown {
+    white-space: normal;
+    overflow-x: auto;
+  }
+  .smrt-assistant-panel__markdown :global(:is(p, ul, ol, pre, table)) {
+    margin: 0 0 var(--smrt-spacing-xs, 0.25rem);
+  }
+  .smrt-assistant-panel__markdown :global(:is(p, ul, ol, pre, table):last-child) {
+    margin-bottom: 0;
+  }
+  .smrt-assistant-panel__markdown :global(table) {
+    border-collapse: collapse;
+    font-size: 0.9em;
+  }
+  .smrt-assistant-panel__markdown :global(:is(th, td)) {
+    border: 1px solid var(--smrt-color-outline-variant, currentColor);
+    padding: 0.2rem 0.5rem;
+    text-align: start;
+  }
+  .smrt-assistant-panel__markdown :global(th) {
+    font-weight: 600;
   }
   .smrt-assistant-panel__user {
     align-self: flex-end;

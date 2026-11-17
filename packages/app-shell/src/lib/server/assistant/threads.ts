@@ -2,7 +2,7 @@
 // user id, so a thread id from another user is a 404, never a leak.
 import type { AIMessage, AIToolCall } from '@happyvertical/ai';
 import type { ThreadMessage, ThreadSummary } from '../../assistant/events.ts';
-import { toolSummary } from '../../assistant/tool-summary.ts';
+import { shownSummary } from '../../assistant/tool-summary.ts';
 import {
   type AssistantMessage,
   AssistantMessageCollection,
@@ -137,7 +137,7 @@ export async function viewMessages(threadId: string): Promise<ThreadMessage[]> {
         ? {
             tool: {
               ...tool,
-              summary: toolSummary(tool.name, tool.summary, tool.ok),
+              summary: shownSummary(tool.name, tool.summary, tool.ok),
             },
           }
         : {}),

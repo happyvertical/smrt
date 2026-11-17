@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { reportLink, reportPresentation, toolSummary } from './tool-summary.ts';
+import {
+  reportLink,
+  reportPresentation,
+  shownSummary,
+  toolSummary,
+} from './tool-summary.ts';
 
 describe('human tool summaries', () => {
   it.each([
@@ -103,4 +108,46 @@ it('preserves a server-tagged report failure across CLI/MCP envelopes while keep
   expect(toolSummary('app_runreport', 'arbitrary driver text', false)).toBe(
     'Could not complete this action',
   );
+});
+
+describe('plain failure reasons for the owner', () => {
+  const operator =
+    "Invalid WHERE clause operator: 'ne'. Valid operators: =, !=, >, <, like";
+  it.each([
+    operator,
+    { error: operator },
+    { content: [{ type: 'text', text: JSON.stringify({ error: operator }) }] },
+    JSON.stringify({ structuredContent: { error: { message: operator } } }),
+  ])('explains a rejected filter without echoing the raw error: %s', (result) => {
+    const summary = toolSummary('dog_list', result, false);
+    expect(summary).toBe(
+      'That search used a comparison the app cannot do, so nothing was looked up.',
+    );
+    expect(summary).not.toMatch(/WHERE|operator/);
+  });
+  it('never leaks SQL, paths or ids from a recognised failure', () => {
+    expect(
+      toolSummary(
+        'dog_create',
+        'UNIQUE constraint failed: dogs.id /private/tmp/a.db 12345678-1234-1234-1234-123456789012',
+        false,
+      ),
+    ).toBe('A record with those details already exists.');
+  });
+  it('keeps the reason stable when a stored summary is shown again', () => {
+    for (const raw of [
+      operator,
+      'Invalid WHERE clause field: owner. Field does not exist on Dog. Valid fields: id',
+      'Record not found',
+    ]) {
+      const first = toolSummary('dog_list', raw, false);
+      expect(first).not.toBe('Could not complete this action');
+      expect(shownSummary('dog_list', first, false)).toBe(first);
+    }
+  });
+  it('still falls back for unrecognised failures', () => {
+    expect(toolSummary('dog_list', 'driver exploded at /tmp/x', false)).toBe(
+      'Could not complete this action',
+    );
+  });
 });

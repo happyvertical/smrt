@@ -1420,6 +1420,16 @@ async function handleConfirmAction(requestId: string) {
   .smrt-assistant-dock__markdown :global(:is(ul, ol)) {
     padding-inline-start: 1.25em;
   }
+  .smrt-assistant-dock__markdown :global(table) {
+    display: block;
+    overflow-x: auto;
+    border-collapse: collapse;
+  }
+  .smrt-assistant-dock__markdown :global(:is(th, td)) {
+    border: 1px solid currentColor;
+    padding: 0.15em 0.5em;
+    text-align: start;
+  }
   .smrt-assistant-dock__markdown :global(pre) {
     overflow-x: auto;
     white-space: pre;

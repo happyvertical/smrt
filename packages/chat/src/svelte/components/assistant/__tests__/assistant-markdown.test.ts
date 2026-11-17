@@ -115,4 +115,26 @@ describe('renderAssistantMarkdown (#4505)', () => {
       '&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;',
     );
   });
+
+  it('renders pipe tables as escaped tables', () => {
+    expect(
+      md(
+        'Here you go:\n| Dog | Walks |\n| --- | :-: |\n| Rex | **3** |\n| <b>Bo</b> | a \\| b |\n\nDone',
+      ),
+    ).toBe(
+      '<p>Here you go:</p><table><thead><tr><th>Dog</th><th>Walks</th></tr></thead>' +
+        '<tbody><tr><td>Rex</td><td><strong>3</strong></td></tr>' +
+        '<tr><td>&lt;b&gt;Bo&lt;/b&gt;</td><td>a | b</td></tr></tbody></table><p>Done</p>',
+    );
+    // Outer pipes are optional; short rows are padded.
+    expect(md('a | b\n- | -\n1 |')).toBe(
+      '<table><thead><tr><th>a</th><th>b</th></tr></thead>' +
+        '<tbody><tr><td>1</td><td></td></tr></tbody></table>',
+    );
+  });
+
+  it('leaves a pipe line without a delimiter row as text', () => {
+    expect(md('| a | b |\n| c | d |')).toBe('<p>| a | b |<br>| c | d |</p>');
+    expect(md('| a | b |\n| --- |')).not.toContain('<table');
+  });
 });

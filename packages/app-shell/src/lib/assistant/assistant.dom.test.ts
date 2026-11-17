@@ -255,3 +255,62 @@ it('shows a working indicator with the current step while a turn runs', async ()
   unmount(mounted);
   target.remove();
 });
+
+it('renders a markdown table in a reply and the plain reason on a failed card', async () => {
+  const table = '| Dog | Walks |\n| --- | --- |\n| Rex | 3 |';
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input) => {
+      const path = String(input);
+      if (path.includes('/turn'))
+        return new Response(
+          [
+            { type: 'tool_call', id: 't', name: 'dog_list', args: '{}' },
+            {
+              type: 'tool_result',
+              id: 't',
+              name: 'dog_list',
+              ok: false,
+              summary:
+                "Invalid WHERE clause operator: 'ne'. Valid operators: =, !=",
+            },
+            { type: 'text', delta: `Here you go:\n\n${table}` },
+            { type: 'done', stop: 'complete' },
+          ]
+            .map((e) => `event: turn\ndata: ${JSON.stringify(e)}\n\n`)
+            .join(''),
+          { headers: { 'content-type': 'text/event-stream' } },
+        );
+      return new Response(
+        JSON.stringify(
+          path.includes('/status')
+            ? { configured: true }
+            : { threads: [], approvals: [] },
+        ),
+      );
+    }),
+  );
+  const target = document.createElement('div');
+  document.body.appendChild(target);
+  const mounted = mount(AssistantPanel, { target, props: { open: true } });
+  await vi.waitFor(() =>
+    expect(target.textContent).toContain('Tell me what you want'),
+  );
+  const field = target.querySelector('textarea');
+  if (!field) throw new Error('Missing assistant input');
+  field.value = 'List dogs';
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+  target
+    .querySelector('form')
+    ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  await vi.waitFor(() => expect(target.querySelector('table')).not.toBeNull());
+  expect(target.querySelectorAll('td')[1]?.textContent).toBe('3');
+  expect(target.textContent).not.toContain('| Dog |');
+  const chip = target.querySelector('.smrt-assistant-panel__err');
+  expect(chip?.getAttribute('title')).toBe(
+    'That search used a comparison the app cannot do, so nothing was looked up.',
+  );
+  expect(target.textContent).not.toMatch(/WHERE|Valid operators/);
+  unmount(mounted);
+  target.remove();
+});
