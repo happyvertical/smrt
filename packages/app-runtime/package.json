@@ -87,7 +87,6 @@
   "devDependencies": {
     "@happyvertical/auth": "catalog:",
     "@happyvertical/smrt-app-mcp": "workspace:*",
-    "@happyvertical/smrt-features": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/kit": "2.70.3",
     "@types/node": "24.13.6",

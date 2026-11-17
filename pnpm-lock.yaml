@@ -429,9 +429,6 @@ importers:
       '@happyvertical/smrt-app-mcp':
         specifier: workspace:*
         version: link:../smrt-app-mcp
-      '@happyvertical/smrt-features':
-        specifier: workspace:*
-        version: link:../features
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
