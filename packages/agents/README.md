@@ -146,6 +146,7 @@ such as `MessagingSettingsService`.
 | `SmrtCollectionQueryCollection` | Structural collection interface the generic adapter executes against |
 | `SmrtCollectionQueryScope` | Trusted, server-derived scope conditions for the generic adapter |
 | `SmrtCollectionDataSurfaceAction` | Declarative row/bulk action catalog entry surfaced via `metadata.actionCatalog` |
+| `PrincipalBinding` / `PrincipalRun` | `executeAsPrincipal` binding and run handle. Optional server-set `sessionId`, `credentialKind` (`PrincipalCredentialKind`), and `bindingMetadata` pass through to the run (`run.context.sessionId`, `run.credentialKind`, frozen `run.bindingMetadata`). Set them from verified server auth state, never browser input; they never affect `allowedTools` or permissions |
 
 ### Summary Discovery
 

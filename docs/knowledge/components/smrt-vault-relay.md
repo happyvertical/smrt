@@ -5,10 +5,10 @@ description: "Blind snapshot relay: device-signed, per-account encrypted blob st
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T18:00:38Z"
+  at: "2026-11-17T18:19:37Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:6e1512cdd9f3cee25d539c448cf2a5414b9034874b8d358e948dd3701545a844"
+source_revision: "sha256:e4b921ef0fc657ff6425c2fb37efef5ed4cd03954e430ec60a232b225ba59e2c"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/vault-relay/package.json"
@@ -27,7 +27,7 @@ sources:
 
 - Directory: `packages/vault-relay`
 - Private: no
-- Object source: `none`
+- Object source: `domain-artifact`
 - Evidence level: `manifest-described`
 
 ## Documentation

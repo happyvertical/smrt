@@ -731,7 +731,7 @@ generated RLS helpers:
 
 - `smrt.tenant_id`
 - `smrt.user_id`
-- `smrt.session_id`
+- `smrt.session_id` (only for a loaded session; stays empty for principal runs, whose `sessionId` is an unverified label)
 - `smrt.permissions`
 - `smrt.super_admin_bypass`
 - `smrt.system_context`
