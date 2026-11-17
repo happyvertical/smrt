@@ -1,4 +1,7 @@
-import { WORKBOOK_LOOKUP, WORKBOOK_ROW } from '../../engine/import-names.ts';
+import {
+  WORKBOOK_LOOKUP,
+  WORKBOOK_ROW,
+} from '../../engine/import-bookkeeping.ts';
 import { versionSummary } from './command-summary.ts';
 import { fieldLabel, humanize } from './fields.ts';
 import { formulaWords } from './formula.ts';
