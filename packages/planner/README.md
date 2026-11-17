@@ -143,6 +143,21 @@ router and every in-planner link stays inside it.
 />
 ```
 
+By default the planner is as tall as the viewport. To mount it under your own
+header or inside a container of its own height, set the shell's public
+`--smrt-admin-shell-block-size` property on the container (it inherits through
+the planner's theme provider; do not target the shell's class names). With a
+size container, `100cqb` follows the container; a length such as
+`calc(100svh - 4rem)` works too. Only the planner's own regions scroll.
+
+```css
+.planner-frame {
+  block-size: 600px;
+  container-type: size;
+  --smrt-admin-shell-block-size: 100cqb;
+}
+```
+
 Hosts that already own an `AppShell` can mount `PlannerControls` inside it.
 The controls are the reusable part; `Planner` remains the complete shell.
 Use the exported shell defaults to start navigation open, with inference
