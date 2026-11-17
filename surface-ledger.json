@@ -1,0 +1,5982 @@
+[
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-ads",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-affiliates",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-agents",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-analytics",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-android",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-app-cli",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-app-mcp",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-app-runtime",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-app-shell",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-approvals",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-assets",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-assets-ergot",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-assets-local",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-bookings",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-bundle-gate",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-chat",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-cli",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-comments",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-commerce",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-config",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-content",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-core",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-desktop",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-dev-mcp",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-education",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-events",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-expenses",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-facts",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-features",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-fields",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-gnode",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-human-resources",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-images",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-inference",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-ingestion",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-inventory",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-ios",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-jobs",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-languages",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-ledgers",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-manufacturing",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-marketing",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-mcp-apps",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-mcp-conformance-fixture",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-mcp-openai",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-messages",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-mobile",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-mobile-contract",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-personas",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-places",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-planner",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-playbooks",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-playground",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-preferences",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-products",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-profiles",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-projects",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-prompts",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-properties",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-reactions",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-reports",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-sales",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-scanner",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-secrets",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-sites",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-social",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-spreadsheets",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-subscriptions",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-support",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-tags",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-template-site-static-json",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-template-sveltekit",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-tenancy",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-timesheets",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-types",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-ui",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-users",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-vault-relay",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-video",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-vitest",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-voice",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-web",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-webhooks",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-workbench",
+    "grandfathered": true
+  },
+  {
+    "kind": "package",
+    "name": "@happyvertical/smrt-workflows",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ads#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ads#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ads#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-affiliates#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-affiliates#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-affiliates#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-agents#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-agents#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-agents#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-agents#./playground",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-agents#./server",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-agents#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-agents#./svelte/admin",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-agents#./ui",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-agents#./vite",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-analytics#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-analytics#./browser",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-analytics#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-analytics#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-analytics#./observability",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-analytics#./playground",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-analytics#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-analytics#./ui",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-cli#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-mcp#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-mcp#./audit-store",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-mcp#./auth",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-mcp#./host-operations",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-mcp#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-mcp#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-mcp#./sveltekit",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-runtime#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-runtime#./device-entitlements",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-runtime#./sveltekit",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-runtime#./sveltekit-runtime",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-runtime#./vault-device-key",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-runtime#./vault-device-transfer",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-runtime#./vault-key-generation",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-runtime#./vault-key-lifecycle",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-runtime#./vault-key-store",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-runtime#./vault-recovery",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-shell#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-shell#./engine",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-shell#./engine/worker",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-shell#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-approvals#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-approvals#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-approvals#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-assets#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-assets#./filesystem",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-assets#./locator",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-assets#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-assets#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-assets#./playground",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-assets#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-assets#./ui",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-assets#./workbench",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-assets-ergot#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-assets-local#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-bookings#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-chat#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-chat#./assistant-approvals",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-chat#./assistant-turn",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-chat#./client",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-chat#./data-surface",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-chat#./data-surface-bridge",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-chat#./engines",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-chat#./helper-preferences",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-chat#./internal/agent-runtime",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-chat#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-chat#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-chat#./playground",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-chat#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-chat#./sveltekit",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-chat#./tool-summary",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-chat#./ui",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-cli#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-cli#./app",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-cli#./source-checkout",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-comments#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-comments#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-comments#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-comments#./participation",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-comments#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-commerce#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-commerce#./cost-billing",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-commerce#./invoices",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-commerce#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-commerce#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-commerce#./money",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-commerce#./playground",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-commerce#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-config#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-config#./deployment",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-config#./deployment/hosting",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-config#./schemas/*",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-content#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-content#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-content#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-content#./mock-smrt-client",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-content#./playground",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-content#./server",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-content#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-content#./ui",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-content#./workbench",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./activation",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./activation/generate",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./api-actions",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./app-models",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./byo-inference",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./consumer-plugin",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./cookbook",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./cookbook/engine",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./cookbook/tools",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./cookbook/v1.schema.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./filesystem",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./generators",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./generators/custom-action",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./generators/mcp",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./generators/rest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./generators/swagger",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./inference-availability",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./knowledge",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./manifest/discover-base-classes",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./manifest/discover-smrt-packages",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./mcp-serializer",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./migrations",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./prebuild",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./prebuild/cli",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./recipe-demo",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./runtime",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./runtime-exposure",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./scanner",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./scanner/types",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./schema",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./schema/utils",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./smrt-error",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./smrt-knowledge.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./table-cache",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./testing",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./ui-metadata",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./utils",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./utils/database-url",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./utils/import-workspace-module",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./vite",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./vite-plugin",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-desktop#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-desktop#./builder",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-desktop#./bundler",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-desktop#./launcher",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-desktop#./package.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-dev-mcp#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-dev-mcp#./agent-skills",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-dev-mcp#./dev-plane",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-dev-mcp#./knowledge",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-dev-mcp#./runtime",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-dev-mcp#./schemas/agent-plugins-1.0.0/mcp.schema.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-dev-mcp#./schemas/agent-plugins-1.0.0/plugin.schema.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-education#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-education#./ingestion",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-education#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-education#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-education#./node",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-events#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-events#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-events#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-events#./playground",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-events#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-events#./ui",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-events#./utils",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-expenses#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-expenses#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-expenses#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-expenses#./playground",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-expenses#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-expenses#./ui",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-facts#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-facts#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-facts#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-features#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-features#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-features#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-features#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-fields#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-fields#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-fields#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-fields#./playground",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-fields#./policy",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-fields#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-gnode#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-gnode#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-gnode#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-human-resources#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-human-resources#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-human-resources#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-human-resources#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-human-resources#./ui",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-images#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-images#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-images#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-images#./playground",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-images#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-images#./ui",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-images#./workbench",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-inference#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-inference#./gate",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-inference#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-inference#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-inference#./models",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-inference#./node",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-inference#./resolver",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-inference#./server",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-inference#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-inference#./test-support",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ingestion#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ingestion#./dto",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ingestion#./execution",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ingestion#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ingestion#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ingestion#./models",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ingestion#./proposals",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ingestion#./server",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ingestion#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-inventory#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-inventory#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-inventory#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-inventory#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-jobs#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-jobs#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-jobs#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-jobs#./playground",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-jobs#./runner",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-jobs#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-jobs#./ui",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-jobs#./worker-liveness-thread",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-languages#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-languages#./cli",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-languages#./jobs",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-languages#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-languages#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ledgers#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ledgers#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ledgers#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-manufacturing#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-manufacturing#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-manufacturing#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-manufacturing#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-manufacturing#./ui",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-manufacturing#./views",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-marketing#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-marketing#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-marketing#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-marketing#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-mcp-apps#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-mcp-openai#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-mcp-openai#./client",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-mcp-openai#./context",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-mcp-openai#./files",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-mcp-openai#./files/server",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-mcp-openai#./forms",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-mcp-openai#./forms/server",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-mcp-openai#./forms/view",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-mcp-openai#./mentions",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-mcp-openai#./messages",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-messages#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-messages#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-messages#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-messages#./playground",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-messages#./providers/all",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-messages#./providers/email",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-messages#./providers/slack",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-messages#./providers/twitter",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-messages#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-messages#./ui",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-mobile-contract#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-personas#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-personas#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-personas#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-personas#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-places#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-places#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-places#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-places#./utils",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-planner#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-planner#./app",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-planner#./app/*",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-planner#./commands",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-planner#./core",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-planner#./package.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-playbooks#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-playbooks#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-playbooks#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-playground#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-playground#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-playground#./vite",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-preferences#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-preferences#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-preferences#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-products#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-products#./collections",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-products#./components",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-products#./generated",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-products#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-products#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-products#./models",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-products#./stores",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-products#./stores/product-collection",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-products#./utils",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-profiles#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-profiles#./internal/oidc-provisioning",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-profiles#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-profiles#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-profiles#./utils",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-projects#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-projects#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-projects#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-projects#./playground",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-projects#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-projects#./ui",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-prompts#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-prompts#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-prompts#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-prompts#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-properties#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-properties#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-properties#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-reactions#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-reactions#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-reactions#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-reactions#./server",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-reactions#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-reports#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-reports#./aggregate",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-reports#./compiler",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-reports#./decorators",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-reports#./display",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-reports#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-reports#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-reports#./playground",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-reports#./refresh",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-reports#./scheduler",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-reports#./spec",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-reports#./state",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-reports#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-sales#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-sales#./agreements",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-sales#./commissions",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-sales#./crm",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-sales#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-sales#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-sales#./referrals",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-sales#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-scanner#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-scanner#./cli",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-scanner#./knowledge",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-scanner#./types",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-secrets#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-secrets#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-secrets#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-secrets#./models",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-secrets#./service",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-sites#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-sites#./hostname",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-sites#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-sites#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-social#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-social#./connect",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-social#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-social#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-social#./server",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-social#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-spreadsheets#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-spreadsheets#./import",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-spreadsheets#./testing",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-subscriptions#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-subscriptions#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-subscriptions#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-subscriptions#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-support#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-support#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-support#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-support#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./app",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./app/runtime-diagnostics",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./board",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./browser-ai",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./browser-ai/speech-worker",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./browser-ai/svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./browser-ai/whisper-worker",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./command-palette",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./connect-ai",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./connect-ai/client",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./connect-ai/server",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./cookbook",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./cookbook/server",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./cookbook/surfaces",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./data",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./data-surface",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./forms",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./i18n/server",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./import-export",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./import-export/csv",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./mcp-apps",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./notifications",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./onboarding",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./overview",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./overview/server",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./playground",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./screens",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./settings",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./sortable",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./web",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./workspace",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./workspace/layout",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./workspace/legacy",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./workspace/live",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-svelte#./workspace/server",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-tags#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-tags#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-tags#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-tags#./utils",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-template-site-static-json#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-template-site-static-json#./template/*",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-template-sveltekit#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-template-sveltekit#./host/CookbookModelPage.svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-template-sveltekit#./host/InferenceSettingsPage.svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-template-sveltekit#./host/client",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-template-sveltekit#./host/generate",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-template-sveltekit#./host/plugin-mode",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-template-sveltekit#./host/preferences",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-template-sveltekit#./host/server",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-template-sveltekit#./host/settings",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-template-sveltekit#./host/sveltekit-client",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-template-sveltekit#./template.config.js",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-template-sveltekit#./template/*",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-tenancy#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-tenancy#./adapters",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-tenancy#./decorators",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-tenancy#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-tenancy#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-tenancy#./playground",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-tenancy#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-tenancy#./testing",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-tenancy#./ui",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-timesheets#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-timesheets#./attendance",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-timesheets#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-timesheets#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-timesheets#./rollup",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-timesheets#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-timesheets#./ui",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-types#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./analytics",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./calendar",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./charts",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./charts/format",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./chat",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./currency",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./data",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./data-surface",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./display",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./feedback",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./form-retry",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./forms",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./forms/hands-free",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./i18n",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./layout",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./playground",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./registry",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./styles/layers.css",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./styles/tokens.css",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./styles/unstyled.css",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./test-support/*",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./theme",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./themes",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./themes/presets",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./themes/styles/*",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./ui",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-ui#./utils/*",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-users#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-users#./app-contract",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-users#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-users#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-users#./operator",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-users#./permission-registry",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-users#./playground",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-users#./step-up",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-users#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-users#./sveltekit",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-vault-relay#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-video#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-video#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-video#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-vitest#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-vitest#./a11y",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-vitest#./minimal-row",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-vitest#./setup",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-vitest#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-vitest#./svelte-setup",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-vitest#./test-home",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-vitest#./test-home/global-setup",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-voice#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-voice#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-voice#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-web#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-web#./ai",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-web#./intents",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-web#./webmcp",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-web#./webmcp-page-tools",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-web#./webmcp-tool-names",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-webhooks#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-webhooks#./admin",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-webhooks#./manifest",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-webhooks#./manifest.json",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-webhooks#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-workbench#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-workbench#./runtime",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-workbench#./svelte",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-workbench#./vite",
+    "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-workflows#.",
+    "grandfathered": true
+  },
+  {
+    "kind": "system-table",
+    "name": "_smrt_ai_evaluations",
+    "grandfathered": true
+  },
+  {
+    "kind": "system-table",
+    "name": "_smrt_ai_run_checkpoints",
+    "grandfathered": true
+  },
+  {
+    "kind": "system-table",
+    "name": "_smrt_ai_run_events",
+    "grandfathered": true
+  },
+  {
+    "kind": "system-table",
+    "name": "_smrt_ai_runs",
+    "grandfathered": true
+  },
+  {
+    "kind": "system-table",
+    "name": "_smrt_ai_transcripts",
+    "grandfathered": true
+  },
+  {
+    "kind": "system-table",
+    "name": "_smrt_ai_usage",
+    "grandfathered": true
+  },
+  {
+    "kind": "system-table",
+    "name": "_smrt_backfills",
+    "grandfathered": true
+  },
+  {
+    "kind": "system-table",
+    "name": "_smrt_changes",
+    "grandfathered": true
+  },
+  {
+    "kind": "system-table",
+    "name": "_smrt_changes_pending",
+    "grandfathered": true
+  },
+  {
+    "kind": "system-table",
+    "name": "_smrt_contexts",
+    "grandfathered": true
+  },
+  {
+    "kind": "system-table",
+    "name": "_smrt_dispatch",
+    "grandfathered": true
+  },
+  {
+    "kind": "system-table",
+    "name": "_smrt_dispatch_subscriptions",
+    "grandfathered": true
+  },
+  {
+    "kind": "system-table",
+    "name": "_smrt_embeddings",
+    "grandfathered": true
+  },
+  {
+    "kind": "system-table",
+    "name": "_smrt_migrate_runs",
+    "grandfathered": true
+  },
+  {
+    "kind": "system-table",
+    "name": "_smrt_migrations",
+    "grandfathered": true
+  },
+  {
+    "kind": "system-table",
+    "name": "_smrt_run_once_claims",
+    "grandfathered": true
+  },
+  {
+    "kind": "system-table",
+    "name": "_smrt_schema_migrations",
+    "grandfathered": true
+  },
+  {
+    "kind": "system-table",
+    "name": "_smrt_sync_tombstones",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ads:AdDeliveryTier",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ads:AdEvent",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ads:AdFormat",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ads:AdGroup",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ads:AdVariation",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-agents:Agent",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-agents:AgentConfig",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-agents:AgentSchedule",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-agents:DataSurfaceActionIdempotencyState",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-agents:DataSurfaceActionTokenState",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-agents:SmrtDataSurfaceActionTask",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-agents:TenantAgent",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-analytics:AnalyticsDataStream",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-analytics:AnalyticsEvent",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-analytics:AnalyticsProperty",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-analytics:AnalyticsReport",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-app-mcp:McpCallAudit",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-app-shell:App",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-app-shell:AppDraft",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-app-shell:AppDraftVersion",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-app-shell:AppVersion",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-app-shell:Approval",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-app-shell:AssistantMessage",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-app-shell:AssistantThread",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-approvals:ApprovalEvent",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-approvals:ApprovalEventCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-approvals:ApprovalPolicy",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-approvals:ApprovalPolicyCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-approvals:ApprovalRequest",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-approvals:ApprovalRequestCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-assets:Asset",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-assets:AssetAssociation",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-assets:AssetAssociationCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-assets:AssetMetafield",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-assets:AssetStatus",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-assets:AssetTag",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-assets:AssetTagCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-assets:AssetType",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-assets:Folder",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-chat:AgentSession",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-chat:ChatMessage",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-chat:ChatParticipant",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-chat:ChatReaction",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-chat:ChatRoom",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-chat:ChatThread",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-chat:VoiceGatewayTurn",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-chat:VoiceSession",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-comments:Comment",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-comments:CommentReport",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-comments:CommentRevision",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-comments:ParticipationBan",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-comments:ParticipationPolicy",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-comments:ParticipationRateBucket",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:Agreement",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:BillingAccount",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:BillingLineSource",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:BillingPaymentAttempt",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:BillingPeriodClose",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:Cart",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:Contract",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:ContractLineItem",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:Customer",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:DocumentTax",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:Estimate",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:Fulfillment",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:FulfillmentLineItem",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:HistoricalCustomerFunds",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:HistoricalCustomerFundsAllocation",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:HistoricalSalesLine",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:Invoice",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:InvoiceLineItem",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:Lease",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:LicenseSale",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:Order",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:Payment",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:PaymentAllocation",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:PaymentInstrument",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:PaymentIntent",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:Payout",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:ProductionOrder",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:PurchaseContract",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:PurchaseOrder",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:PurchasePriceObservation",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:SalesContract",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:SupplierQuote",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:TaxCode",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:TaxComponent",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:TaxSettings",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:TaxSummaryReport",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:TenantPaymentAccount",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:TenantPaymentDispute",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:TenantPaymentWebhookEvent",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:Vendor",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:WholesaleOrder",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:Article",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:Content",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:ContentAsset",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:ContentAssetCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:ContentContribution",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:ContentContributionAttachment",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:ContentContributionAttachmentCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:ContentContributionRevision",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:ContentContributionType",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:ContentContributions",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:ContentContributor",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:ContentContributorCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:ContentCorrection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:ContentCorrectionCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:ContentDocument",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:ContentFeedSource",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:ContentGovernanceAssignment",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:ContentGovernancePolicy",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:ContentGovernanceProfile",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:ContentReference",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:ContentReferences",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:ContentReview",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:ContentVersion",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:Contents",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-content:Mirror",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:Attestation",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:AuthoredCourse",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:BookContextRevision",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CatalogAcquisition",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CatalogProvider",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CatalogResource",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CatalogSelection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CatalogSyncState",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:Course",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseArchiveDecision",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseAsset",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseBundleAttachment",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseBundleAudienceChoice",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseBundleImport",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseBundleMember",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseBundlePlacement",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseBundleRendering",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseBundleSupersession",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseBundleUnit",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseCoverChange",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseDiscardTombstone",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseDraftHead",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseFindingResolution",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseGenerationBriefRecord",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseGenerationEvent",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseGenerationJob",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseProposal",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseProposalDecision",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseRelease",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseReview",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseReviewFinding",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseReviewOutdatedMarker",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseRevision",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseSection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseSource",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseUpgradeChoice",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CourseVisibilityChange",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:Curriculum",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:CurriculumCreationRecord",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:EducationGroup",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:Enrollment",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:EnrollmentAssignmentRecord",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:EnrollmentAutoUpgradeSkip",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:EnrollmentPaceChange",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:EnrollmentParentNote",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:EnrollmentReleasePin",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:EnrollmentStatusChange",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:Exercise",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:ExternalCompletion",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:ExternalCourse",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:ExtractedQuestionLink",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:FamilyIntake",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:FamilyIntakeAsset",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:FamilyIntakeDecision",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:GeneratedPrintable",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:Grade",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:GroupLearnerInvitation",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:GroupLearnerMembership",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:GroupLearnerRosterEntry",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:GroupRevisionComment",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:GroupSharingPolicy",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:Learner",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:LearnerInterestThemeChange",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:LearningObjective",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:LearningObjectiveRevision",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:Lesson",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:LessonActivity",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:LessonAsset",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:LessonCompletionRecord",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:LessonExternalVideo",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:LessonPage",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:LessonProgress",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:LessonProgressTransition",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:LessonRevision",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:LessonSelfAttestation",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:LessonWorkFiling",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:Question",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:QuestionExtractionRecord",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:QuestionResponse",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:QuestionRevision",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:Reading",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:ReleasedLesson",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:ScannedSubmission",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:Submission",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:SubmissionAsset",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:SubmissionIntakeBinding",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:TutorExchange",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:TutorSession",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:TutorSessionClosure",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:Video",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:WorkAssessmentRevision",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:WorkAttempt",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:WorkCompletionDecision",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:WorkFeedbackDelivery",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:WorkFeedbackRelease",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:WorkbookPhotoAsset",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:WorkbookPhotoDecision",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:WorkbookPhotoIntake",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-education:Worksheet",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-events:Event",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-events:EventAsset",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-events:EventAssetCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-events:EventParticipant",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-events:EventParticipantCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-events:EventSeries",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-events:EventType",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-expenses:Billings",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-expenses:Expense",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-expenses:ExpenseAllocationBilling",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-expenses:ExpenseAllocationPortion",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-expenses:ExpenseAllocationRevision",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-expenses:ExpenseCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-expenses:ExpenseReceipt",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-expenses:ExpenseReceiptCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-expenses:Portions",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-expenses:Revisions",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-facts:Fact",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-facts:FactContent",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-facts:FactContentCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-facts:FactEvidence",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-facts:FactSource",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-facts:FactSubject",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-facts:FactTag",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-features:FeatureDefinition",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-features:FeatureOverride",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-fields:FieldPolicy",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-fields:FieldPolicyCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-fields:FieldPolicySuggestion",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-fields:FieldPolicySuggestionCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-fields:FieldUsageCounter",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-fields:FieldUsageCounterCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-fields:FieldUsageLearningAgent",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-fields:FieldUsageReportReceipt",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-fields:FieldUsageReportReceiptCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-human-resources:Employment",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-human-resources:EmploymentChange",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-human-resources:EmploymentChangeCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-human-resources:EmploymentCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-human-resources:EmploymentTerm",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-human-resources:EmploymentTermCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-human-resources:HeldQualification",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-human-resources:HeldQualificationChange",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-human-resources:HeldQualificationChangeCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-human-resources:HeldQualificationCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-human-resources:Qualification",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-human-resources:QualificationCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-images:Image",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-inference:InferenceOverride",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ingestion:IntakeAction",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ingestion:IntakeAnalysis",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ingestion:IntakeAnalysisAttempt",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ingestion:IntakeDeletion",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ingestion:IntakeDispatch",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ingestion:IntakeDisposition",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ingestion:IntakeEvidence",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ingestion:IntakeExecution",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ingestion:IntakeFeedback",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ingestion:IntakeItem",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ingestion:IntakePlan",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ingestion:IntakeProposal",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ingestion:IntakeReviewDecision",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-inventory:InventoryLocation",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-inventory:Lot",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-inventory:LotCorrection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-inventory:LotDocument",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-inventory:LotStockLevel",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-inventory:LotUsage",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-inventory:StockLevel",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-inventory:StockMovement",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-jobs:ForgeDelivery",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-jobs:ForgeDeliveryCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-jobs:ForgeProjectionCheckpoint",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-jobs:SmrtJob",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-jobs:SmrtJobDedupeSlot",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-jobs:SmrtJobEvent",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-jobs:SmrtWorker",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-languages:LanguageOverride",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-languages:LanguageTranslationTask",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ledgers:Account",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ledgers:Journal",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ledgers:JournalEntry",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-ledgers:Ledger",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-manufacturing:Assembly",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-manufacturing:BillOfMaterials",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-manufacturing:BomLine",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-manufacturing:Operation",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-manufacturing:ProductionRun",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-manufacturing:ProductionRunCompletion",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-manufacturing:RoutingStep",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-marketing:Campaign",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-marketing:CampaignChannel",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-marketing:CampaignMetricSnapshot",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-mcp-conformance-fixture:ConformanceAnimal",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-mcp-conformance-fixture:ConformanceCat",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-mcp-conformance-fixture:ConformanceGadget",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-mcp-conformance-fixture:ConformanceTaskWidget",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-mcp-conformance-fixture:ConformanceWidget",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-mcp-conformance-fixture:IolausApplication",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-messages:Account",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-messages:Attachment",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-messages:Blacklist",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-messages:Email",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-messages:EmailAccount",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-messages:EmailFolder",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-messages:Message",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-messages:MessagingEndpoint",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-messages:NotificationDelivery",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-messages:NotificationOptOut",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-messages:PersonaMessageRoute",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-messages:SlackAccount",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-messages:SlackMessage",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-messages:TelegramAccount",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-messages:Tweet",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-messages:TwitterAccount",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-messages:UserNotification",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-messages:Whitelist",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-messages:ZulipAccount",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-personas:AgentPersona",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-personas:DirectiveProposal",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-personas:Feedback",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-places:Place",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-places:PlaceAsset",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-places:PlaceAssetCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-places:PlaceType",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-playbooks:PlaybookOverride",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-preferences:UiPreferenceRecord",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-products:Category",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-products:Material",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-products:Product",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-products:ProductAsset",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-products:ProductAssetCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-products:ProductVariant",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-products:Sku",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-profiles:ApiKey",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-profiles:AuditLog",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-profiles:Bot",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-profiles:MagicLinkToken",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-profiles:NostrIdentity",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-profiles:OidcIdentity",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-profiles:OidcProfileEmailReservation",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-profiles:Organization",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-profiles:Person",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-profiles:Profile",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-profiles:ProfileAsset",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-profiles:ProfileAssetCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-profiles:ProfileLink",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-profiles:ProfileMetadata",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-profiles:ProfileMetafield",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-profiles:ProfileRelationship",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-profiles:ProfileRelationshipTerm",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-profiles:ProfileRelationshipType",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-profiles:ProfileType",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-projects:AssistanceRequest",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-projects:AssistanceRequestEvent",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-projects:Comment",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-projects:DevelopmentRequest",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-projects:DevelopmentRequestHistory",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-projects:DevelopmentRequestWorkLink",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-projects:Issue",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-projects:Label",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-projects:PreviewApproval",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-projects:Project",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-projects:ProjectDecision",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-projects:ProjectDeliveryEvent",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-projects:ProjectGovernanceEvent",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-projects:ProjectIntegration",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-projects:ProjectIntegrationAudit",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-projects:ProjectQuestion",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-projects:ProjectRepository",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-projects:ProjectRepositoryCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-projects:ProjectSpecification",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-projects:PullRequest",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-projects:Repository",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-prompts:PromptOverride",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-properties:Property",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-properties:Zone",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-reactions:Poll",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-reactions:PollVote",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-reactions:Reaction",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-reports:RuntimeReport",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-reports:SmrtPrincipalReportRefreshTask",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-reports:SmrtReportLock",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-reports:SmrtReportRefreshTask",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-reports:SmrtReportRun",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-reports:SmrtReportSchedule",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-reports:SmrtReportWatermark",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:Agreement",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:AgreementExecution",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:AgreementExecutionEvent",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:AttributionException",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:AttributionPolicy",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:Commission",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:CommissionAdjustment",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:CommissionAdjustmentOperation",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:CommissionPayout",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:CommissionPlan",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:Earner",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:EarnerSourceAttribution",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:EarningEvent",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:ExecutedAgreement",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:Lead",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:Opportunity",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:OpportunityConversion",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:PipelineDefinition",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:PipelineStage",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:Referral",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:ReferralAgreement",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:ReferralClickOperation",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:ReferralLink",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:ReferralProgram",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:ReferralTermSnapshot",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:ReferralTouch",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:Referrer",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:ReferrerIdentifier",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:SalesActivity",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:SalesGovernanceEvent",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:SalesGovernanceState",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sales:SalesRepresentative",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-secrets:Secret",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-secrets:SecretAuditLog",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-secrets:TenantKey",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sites:DnsZone",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sites:Domain",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sites:ProjectDomain",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sites:ProjectDomainCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sites:Site",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-sites:SiteAgentBinding",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-social:OAuthState",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-social:SocialAccount",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-social:SocialPost",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-social:SocialPostAnalyticsSnapshot",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-subscriptions:BillingAdjustment",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-subscriptions:BillingCheckoutSession",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-subscriptions:ClientCharge",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-subscriptions:CreditGrant",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-subscriptions:PriceBook",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-subscriptions:PriceBookAssignment",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-subscriptions:PricingRule",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-subscriptions:RetailCharge",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-subscriptions:SpendingPolicy",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-subscriptions:SubscriptionPlan",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-subscriptions:SubscriptionPlanVersion",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-subscriptions:TenantSubscription",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-subscriptions:TenantUsageMetric",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-support:ServiceTimeEntry",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-support:SupportAiRun",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-support:SupportAvailability",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-support:SupportCase",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-support:SupportCaseEvent",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-support:SupportChannelBinding",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-support:SupportCharge",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-support:SupportCompensation",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-support:SupportCompensationPlan",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-support:SupportEscalation",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-support:SupportInteraction",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-support:SupportPlan",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-support:SupportPolicy",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-support:SupportQualification",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-support:SupportServiceTarget",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-support:SupportSpecialist",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-support:SupportWorkLink",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-tags:Tag",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-tags:TagAlias",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-tenancy:BillingRelationship",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-timesheets:AttendanceBreak",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-timesheets:AttendanceCorrection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-timesheets:AttendancePunch",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-timesheets:AttendanceReplay",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-timesheets:AttendanceSegment",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-timesheets:PeriodTimecard",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-timesheets:ServiceChargeSnapshot",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-timesheets:ServiceChargeSnapshotCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-timesheets:ServiceCompensationSnapshot",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-timesheets:ServiceCompensationSnapshotCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-timesheets:ServiceTimeEntry",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-timesheets:ServiceTimeEntryCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-timesheets:TimecardAdjustment",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-timesheets:TimecardReopening",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:AccessRequest",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:Group",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:GroupMember",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:GroupRole",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:LegalMember",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:LegalMemberCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:LegalMemberReference",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:LegalMemberReferenceCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:LegalMemberStatusHistory",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:LegalMemberStatusHistoryCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:MemberClass",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:MemberClassCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:MemberEligibilitySnapshot",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:MemberEligibilitySnapshotCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:MemberOfficerAppointment",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:MemberOfficerAppointmentCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:Membership",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:MembershipOverride",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:Permission",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:ResourceGrant",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:Role",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:RolePermission",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:Session",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:Tenant",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:TenantIntegration",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:TenantPermissionOverride",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:User",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:UsersCliAuthApproveLimit",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:UsersCliAuthRequest",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:UsersLoginAttempt",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:UsersLoginAuditEvent",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:UsersMagicLinkToken",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:UsersOAuthAccessTokenRevocation",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:UsersOAuthAuthorization",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:UsersOAuthAuthorizationCode",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:UsersOAuthClient",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:UsersOAuthRefreshFamily",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:UsersOAuthRefreshGrant",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:UsersPasskeyChallenge",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:UsersPasskeyCredential",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:UsersPasswordCredential",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-users:UsersPinCredential",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-video:Character",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-video:CharacterAsset",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-video:CharacterOwnedAsset",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-video:CharacterOwnedAssetCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-video:CompositeJob",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-video:Performer",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-video:PerformerAsset",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-video:PerformerOwnedAsset",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-video:PerformerOwnedAssetCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-video:Scene",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-video:SceneAsset",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-video:SceneOwnedAsset",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-video:SceneOwnedAssetCollection",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-video:VideoComposition",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-video:VideoCompositionAsset",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-video:VideoSequence",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-video:VideoSequenceAsset",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-video:VideoShot",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-video:VideoShotAsset",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-video:VideoShotCharacter",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-video:VideoWorkflow",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-voice:VoiceOutput",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-voice:VoiceProfile",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-voice:VoiceSample",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-webhooks:WebhookCursor",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-webhooks:WebhookDelivery",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-webhooks:WebhookDeliveryTask",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-webhooks:WebhookSubscription",
+    "grandfathered": true
+  }
+]
