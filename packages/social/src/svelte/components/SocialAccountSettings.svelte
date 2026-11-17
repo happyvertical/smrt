@@ -49,6 +49,8 @@ let pending = $state<{
   change: PublishPolicyChange;
 } | null>(null);
 let busyId = $state<string | null>(null);
+// Bumped to remount the controls so they re-read the account, never a local draft.
+let resetKey = $state(0);
 let policyError = $state<{ accountId: string; message: string } | null>(null);
 
 async function submitPolicy(
@@ -67,6 +69,7 @@ async function submitPolicy(
       message: err instanceof Error ? err.message : 'The change did not save.',
     };
   } finally {
+    resetKey += 1;
     busyId = null;
   }
 }
@@ -89,16 +92,19 @@ async function requestPolicy(
   } catch (err) {
     if (err instanceof PublishPolicyConfirmationRequired) {
       pending = { accountId: account.id, change };
+      resetKey += 1;
       return;
     }
     policyError = {
       accountId: account.id,
       message: err instanceof Error ? err.message : 'Invalid change.',
     };
+    resetKey += 1;
     return;
   }
   pending = null;
   await submitPolicy(account, change, false);
+  resetKey += 1;
 }
 
 function modeLabel(mode: PublishMode): string {
@@ -170,6 +176,7 @@ function statusLabel(account: SocialAccountSettingsItem): string {
             {/if}
             {#if !readonly && onChangePublishPolicy && account.isActive}
               <div class="smrt-social-account-settings__policy" role="group" aria-label="Publishing control for {account.name}">
+                {#key resetKey}
                 <label>
                   Publish mode
                   <Select
@@ -197,6 +204,7 @@ function statusLabel(account: SocialAccountSettingsItem): string {
                       requestPolicy(account, { publicPublishingAllowed: value });
                     }}
                 />
+                {/key}
                 {#if pending?.accountId === account.id}
                   <div class="smrt-social-account-settings__confirm" role="alertdialog" aria-label="Confirm public posting">
                     <p>
@@ -210,7 +218,13 @@ function statusLabel(account: SocialAccountSettingsItem): string {
                     >
                       Allow public posting
                     </Button>
-                    <Button variant="secondary" onclick={() => (pending = null)}>Cancel</Button>
+                    <Button
+                      variant="secondary"
+                      onclick={() => {
+                        pending = null;
+                        resetKey += 1;
+                      }}>Cancel</Button
+                    >
                   </div>
                 {/if}
                 {#if policyError?.accountId === account.id}
