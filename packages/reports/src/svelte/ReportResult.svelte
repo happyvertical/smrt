@@ -104,9 +104,10 @@ const figures = $derived(
         currency,
         groupLabel,
         fn: spec?.measures.find((m) => m.as === measure.id)?.fn,
-        formatValue: formatCell
-          ? (value) => cell(value, measure, { [measure.id]: value })
-          : undefined,
+        formatValue:
+          measure.format === 'money' && formatCell
+            ? (value) => cell(value, measure, { [measure.id]: value })
+            : undefined,
       })
     : [],
 );
@@ -235,7 +236,7 @@ const measureOptions = $derived(
         readout={variant !== 'full'}
         {locale}
         data={chartData}
-        formatValue={formatCell ? (value) => cell(value, measure, { [measure.id]: value }) : undefined}
+        formatValue={measure.format === 'money' && formatCell ? (value) => cell(value, measure, { [measure.id]: value }) : undefined}
       />
       {#if variant === 'compact' && measures.length > 1}
         <p class="smrt-report-result__more" data-smrt-part="description">

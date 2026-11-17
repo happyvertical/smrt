@@ -172,3 +172,71 @@ it.each([
     container.querySelector('[data-smrt-component="Chart"]')?.textContent,
   ).toContain(text);
 });
+
+it.each([
+  [
+    'count',
+    'integer',
+    [3333, 3333, 3334],
+    ['10,000', '3,333.33', '3,334'],
+    ['4K', '2K', '0'],
+    '3,334',
+  ],
+  [
+    'sum',
+    'decimal',
+    [12345.678, 1, 0],
+    ['12,346.68', '4,115.56', '12,345.68'],
+    ['20K', '10K', '0'],
+    '12,345.68',
+  ],
+  [
+    'avg',
+    'decimal',
+    [12345.678, 1, 0],
+    ['4,115.56', '12,345.68'],
+    ['20K', '10K', '0'],
+    '12,345.68',
+  ],
+] as const)('keeps the original non-money %s figures, chart values and compact axes', async (fn, type, values, figures, ticks, peak) => {
+  const d = data();
+  d.report = {
+    ...report,
+    spec: {
+      ...report.spec,
+      measures: [
+        { fn, ...(fn === 'count' ? {} : { field: 'amount' }), as: 'total' },
+      ],
+      chart: { type: 'line', x: 'customer', y: ['total'] },
+    },
+  };
+  d.result = {
+    ...result,
+    columns: [
+      { id: 'customer', label: 'Customer', role: 'dimension', type: 'string' },
+      { id: 'total', label: 'Total', role: 'measure', type },
+    ],
+    rows: values.map((total, i) => ({
+      customer: ['Acme', 'North', 'West'][i],
+      total,
+    })),
+    rowCount: 3,
+    chart: d.report.spec.chart,
+  };
+  component = mount(ReportPage, {
+    target: container,
+    props: { data: d } as never,
+  });
+  await tick();
+  expect(
+    [...container.querySelectorAll('dd')].map((el) => el.textContent),
+  ).toEqual(figures);
+  expect(
+    [...container.querySelectorAll('[data-smrt-part="scale"] span')].map(
+      (el) => el.textContent,
+    ),
+  ).toEqual(ticks);
+  expect(
+    container.querySelector('[data-smrt-component="Chart"]')?.textContent,
+  ).toContain(peak);
+});
