@@ -101,6 +101,14 @@ consumption after the deadline are refused even before the sweep runs.
   a hand-written `ApprovalEvent`) is refused at the model layer. `consume` also refuses an approval its event
   ledger does not back (`unbacked_approval`).
 
+## Gating MCP tool calls
+
+`createApprovalMcpGate({ service })` is the `approvals` adapter for
+`@happyvertical/smrt-app-mcp` `confirmTools`. The calling agent or token is only
+ever a requester and consumer (it is mapped to a principal with no permissions);
+a human other than the requester decides, and the retried call consumes the
+approval. See the app-mcp README, "Person-approved gated calls".
+
 ## Permissions
 
 | Slug | Grants |
@@ -108,6 +116,7 @@ consumption after the deadline are refused even before the sweep runs.
 | per-kind slug | Deciding requests of that kind. |
 | `approvals.cancel-any` | Cancelling someone else's pending request. |
 | `approvals.manage-policy` | Writing tenant policy (humans only). |
+| `approvals.approve-mcp-tool` | Deciding approvals of gated MCP tool calls (humans only). |
 
 ## Development
 

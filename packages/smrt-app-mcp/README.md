@@ -329,6 +329,44 @@ createDefaultMcpAppServer({
   Run your schema bootstrap/migrations so the table exists. Implement
   `McpAuditSink` for any other store; `createInMemoryMcpAuditSink()` suits tests.
 
+### Person-approved gated calls (`approvals`)
+
+Set `approvals` to an `McpApprovalGate` (structural `{ check(request) }`) and a
+`confirmTools`/`requiresConfirm` call stops being authorized by
+`confirm: true`. `@happyvertical/smrt-approvals` ships the adapter, so neither
+package depends on the other:
+
+```ts
+import { createApprovalMcpGate } from '@happyvertical/smrt-approvals';
+
+createMcpAppServer({
+  confirmTools: ['mail_send'],
+  approvals: createApprovalMcpGate({ service: new ApprovalService({ db }) }),
+  auditSink,
+  // ...
+});
+```
+
+1. First call: host assertions run, then one approval request is opened per
+   binding (idempotent) and the call answers `isError` `approval_pending`
+   (`details.approvalId`). Nothing runs.
+2. A person (a `human` principal holding `approvals.approve-mcp-tool`, never the
+   requester, never an agent or service) decides through the host's approval UI
+   or `ApprovalService.decide`. This server exposes no decide path.
+3. The identical retried call consumes the approval and runs once. The binding
+   is SHA-256 over tool, canonical arguments (key order ignored, `confirm`
+   excluded), tenant and principal id. Replays, changed arguments, another
+   principal or tenant, rejection, expiry and an already-consumed approval
+   answer `approval_refused` with a short reason.
+
+The approver reviews a server-built summary stored on the request (tool, principal kind and id, and the arguments as JSON with values under secret-looking keys such as password, token, apiKey, authorization or cookie replaced by `[redacted]`, at any depth; `approvalRedact(tool, args)` can mask more). It never contains agent-supplied free text outside that JSON, and arguments too large to review (3000 characters) are refused. The binding hash covers the real arguments, so changing even a redacted value needs a new approval. After a reviewer requests changes the call is refused with a hint to change the arguments. A consumed or expired approval never runs again, but the identical call later opens a fresh request (concurrent retries share one live request), so a failed or legitimately repeated call can be approved again; a rejected or changes-requested call stays refused until its arguments change. Any adapter error, missing principal id or tenant, or non-JSON
+argument answers `approval_unavailable` and the call does not run. The approval
+is consumed before the tool runs, so a tool that fails after consumption needs a
+new approval. Audit records use `errorCode`: `approval_requested` (request
+opened, `denied`), `approval_pending`, `approval_refused`, `approval_unavailable`
+(all `denied`) and `approval_consumed` on the `allowed` record of the call that
+ran; the approver and decision are in the approvals event ledger.
+
 ### Host operations, audit and typed errors
 
 `@happyvertical/smrt-app-mcp/host-operations` (browser-safe, dependency-free)
