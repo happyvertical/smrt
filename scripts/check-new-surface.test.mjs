@@ -262,21 +262,87 @@ test('a missing ledger fails', () =>
 
 test('the generator is idempotent and keeps full entries', () =>
   withRoot(fixture(), (root) => {
-    run(GENERATE, root);
+    assert.equal(run(GENERATE, root).code, 0);
     writeFileSync(
       join(root, 'packages/core/src/system/schema.ts'),
       SCHEMA(['_smrt_ai_runs', '_smrt_ai_usage', '_smrt_ai_run_events']),
     );
-    run(GENERATE, root);
-    const entries = readEntries(root).map((e) =>
-      e.name === FULL.name ? FULL : e,
-    );
-    writeEntries(root, entries);
-    run(GENERATE, root);
+    // The new table is reported, not added.
+    writeEntries(root, [...readEntries(root), FULL]);
+    assert.equal(run(GENERATE, root).code, 0);
     const first = readFileSync(ledgerPath(root), 'utf8');
-    run(GENERATE, root);
+    assert.equal(run(GENERATE, root).code, 0);
     assert.equal(readFileSync(ledgerPath(root), 'utf8'), first);
     assert.deepEqual(readEntries(root).find((e) => e.name === FULL.name), FULL);
+    assert.equal(run(CHECK, root).code, 0);
+  }));
+
+test('with a ledger, the generator never adds: it fails and the check still fails', () =>
+  withRoot(recorded(), (root) => {
+    mkdirSync(join(root, 'packages/fresh'), { recursive: true });
+    writeFileSync(join(root, 'packages/fresh/package.json'), JSON.stringify({ name: '@x/fresh' }));
+    const before = readFileSync(ledgerPath(root), 'utf8');
+    const g = run(GENERATE, root);
+    assert.equal(g.code, 1);
+    assert.match(g.output, /"name": "@x\/fresh"/);
+    assert.match(g.output, /"reason"/);
+    assert.equal(readFileSync(ledgerPath(root), 'utf8'), before);
+    assert.ok(!readEntries(root).some((e) => e.name === '@x/fresh'));
+    const c = run(CHECK, root);
+    assert.equal(c.code, 1);
+    assert.match(c.output, /unrecorded package: @x\/fresh/);
+  }));
+
+test('bootstrap with no ledger writes grandfathered entries', () =>
+  withRoot(fixture(), (root) => {
+    assert.equal(run(GENERATE, root).code, 0);
+    assert.ok(readEntries(root).length > 0);
+    assert.ok(readEntries(root).every((e) => e.grandfathered === true));
+  }));
+
+test('the generator prunes a stale entry and exits 0', () =>
+  withRoot(recorded(), (root) => {
+    rmSync(join(root, 'packages/prompts'), { recursive: true });
+    assert.equal(run(CHECK, root).code, 1);
+    assert.equal(run(GENERATE, root).code, 0);
+    assert.ok(!readEntries(root).some((e) => e.name.startsWith('@x/prompts')));
+    assert.equal(run(CHECK, root).code, 0);
+  }));
+
+test('a hand-added grandfathered entry beyond the frozen count fails', () =>
+  withRoot(recorded(), (root) => {
+    const n = readEntries(root).length;
+    assert.equal(run(CHECK, root, ['--frozen-count', String(n)]).code, 0);
+    mkdirSync(join(root, 'packages/fresh'), { recursive: true });
+    writeFileSync(join(root, 'packages/fresh/package.json'), JSON.stringify({ name: '@x/fresh' }));
+    writeEntries(root, [
+      ...readEntries(root),
+      { kind: 'package', name: '@x/fresh', grandfathered: true },
+    ]);
+    const r = run(CHECK, root, ['--frozen-count', String(n)]);
+    assert.equal(r.code, 1);
+    assert.match(r.output, /frozen/);
+  }));
+
+test('a one-line CREATE TABLE on the template opening line is inventoried', () =>
+  withRoot(recorded(), (root) => {
+    writeFileSync(
+      join(root, 'packages/core/src/system/schema.ts'),
+      "export const CREATE_NEW_TABLE = `CREATE TABLE IF NOT EXISTS _smrt_new (id TEXT PRIMARY KEY);`;\n" +
+        SCHEMA(['_smrt_ai_runs', '_smrt_ai_usage']),
+    );
+    const r = run(CHECK, root);
+    assert.equal(r.code, 1);
+    assert.match(r.output, /unrecorded system-table: _smrt_new\b/);
+  }));
+
+test('a CREATE TABLE mention inside a comment is not a table', () =>
+  withRoot(recorded(), (root) => {
+    writeFileSync(
+      join(root, 'packages/core/src/system/schema.ts'),
+      "// CREATE TABLE _smrt_x (old design)\n/* CREATE TABLE IF NOT EXISTS _smrt_y (id) */\n" +
+        SCHEMA(['_smrt_ai_runs', '_smrt_ai_usage']).replace('`;', '-- CREATE TABLE _smrt_z (id)\n`;'),
+    );
     assert.equal(run(CHECK, root).code, 0);
   }));
 

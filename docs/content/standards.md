@@ -807,19 +807,23 @@ item, an invalid entry, or a stale one.
 | `system-table` | table name | `CREATE TABLE _smrt_*` in `packages/core/src/system/schema.ts` |
 | `model` | `<package>:<Class>` | classes decorated `@smrt` in `packages/*/src` (tests excluded; aliased imports followed; classes registered without their own `@smrt` are not listed) |
 
-Existing items are `{ "kind", "name", "grandfathered": true }`. Anything added
-later needs a full entry:
+Existing items are `{ "kind", "name", "grandfathered": true }`. That set is
+frozen: `scripts/check-new-surface.mjs` fails if the grandfathered count exceeds
+`FROZEN_GRANDFATHERED_COUNT`, so anything added later needs a full entry by hand:
 
 - `issue`: positive integer, the tracking issue.
 - `nearest`: names of existing ledger entries you looked at. An empty list needs a
   non-empty `noneBecause`.
 - `reason`: why the nearest surface was not extended.
 
-`pnpm surface:ledger` (idempotent) adds missing items as grandfathered, keeps
-existing entries, drops entries for removed items, and sorts output; then replace
-the new grandfathered entry with a full one. Search first with
+`pnpm surface:ledger` never adds an entry to an existing ledger. It drops entries
+for removed items, re-sorts, and prints the full entry to fill in for each
+unrecorded item (exit 1). Only when no ledger file exists does it bootstrap
+grandfathered entries. Search first with
 `node packages/smrt-dev-mcp/dist/index.js review --directory <pkg> --format summary`
 and `rg <noun> surface-ledger.json`. Removing an item means deleting its entry.
+The `model` scan is shared with `check-direct-model-construction.mjs`
+(`scripts/smrt-model-scan.mjs`).
 
 ---
 

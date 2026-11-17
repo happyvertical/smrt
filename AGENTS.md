@@ -64,7 +64,7 @@ Use Node/pnpm versions from `package.json`. Install with `pnpm install`, then
 `pnpm build`. Package checks first, then root checks:
 `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm format-check`,
 `pnpm knowledge:check --strict --format markdown`, `pnpm audit:policy`,
-`pnpm check:new-surface` (`surface-ledger.json`; `pnpm surface:ledger`), and
+`pnpm check:new-surface` (full `surface-ledger.json` entry per new surface), and
 `pnpm check:node-roots` (built model roots load under plain Node, #4219;
 allow-list in its root `package.json` script).
 [TESTING_STANDARD.md](TESTING_STANDARD.md) defines package release gates.

@@ -15,22 +15,12 @@
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { modelsInSource, sourceFiles } from './smrt-model-scan.mjs';
 
 export const KINDS = ['package', 'entry-point', 'system-table', 'model'];
 export const LEDGER_FILE = 'surface-ledger.json';
 
 const SCHEMA_FILE = join('packages', 'core', 'src', 'system', 'schema.ts');
-const SKIPPED_DIRS = new Set([
-  'node_modules',
-  'dist',
-  '.svelte-kit',
-  '__tests__',
-  '__fixtures__',
-  'fixtures',
-  'tests',
-  'test',
-]);
-
 export const itemKey = (kind, name) => `${kind}\u0000${name}`;
 
 function readPackages(root) {
@@ -57,177 +47,20 @@ function readPackages(root) {
 export function systemTables(root) {
   const file = join(root, SCHEMA_FILE);
   if (!existsSync(file)) return [];
-  const text = readFileSync(file, 'utf8');
+  // Comments blanked so prose that mentions a CREATE TABLE is not a declaration;
+  // the statement may start anywhere on a line (e.g. right after the backtick).
+  const text = readFileSync(file, 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+    .replace(/(^|[^:\\])(\/\/|--)[^\n]*/gm, (m, p) => p + ' '.repeat(m.length - p.length));
   const names = new Set();
   // Any SQL whitespace (newlines included) between keywords and name, any
   // keyword case, and an optionally quoted / schema-qualified name.
   for (const m of text.matchAll(
-    /^[ \t]*CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+(?:[A-Za-z_]\w*\s*\.\s*)?["`\[]?(_smrt_[A-Za-z0-9_]+)/gim,
+    /\bCREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+(?:[A-Za-z_]\w*\s*\.\s*)?["`\[]?(_smrt_[A-Za-z0-9_]+)/gim,
   )) {
     names.add(m[1]);
   }
   return [...names];
-}
-
-/**
- * Blank comments, string literals and template-literal text (keeping newlines
- * and length) so a decorator mentioned in prose or generated-code text is never
- * mistaken for a real one.
- */
-export function blankNonCode(src) {
-  const out = src.split('');
-  const n = src.length;
-  const blank = (from, to) => {
-    for (let k = from; k < to; k++) if (out[k] !== '\n') out[k] = ' ';
-  };
-  let i = 0;
-  let prev = ''; // last significant (non-space) code character
-  while (i < n) {
-    const c = src[i];
-    const d = src[i + 1];
-    if (c === '/' && d === '/') {
-      const end = src.indexOf('\n', i);
-      const stop = end === -1 ? n : end;
-      blank(i, stop);
-      i = stop;
-    } else if (c === '/' && d === '*') {
-      const end = src.indexOf('*/', i + 2);
-      const stop = end === -1 ? n : end + 2;
-      blank(i, stop);
-      i = stop;
-    } else if (c === '"' || c === "'") {
-      let j = i + 1;
-      while (j < n && src[j] !== c && src[j] !== '\n') j += src[j] === '\\' ? 2 : 1;
-      blank(i + 1, j);
-      i = j + 1;
-      prev = c;
-    } else if (c === '`') {
-      let j = i + 1;
-      let depth = 0;
-      while (j < n) {
-        if (src[j] === '\\') j += 2;
-        else if (depth === 0 && src[j] === '`') break;
-        else if (src[j] === '$' && src[j + 1] === '{') {
-          depth++;
-          j += 2;
-        } else if (depth > 0 && src[j] === '}') {
-          depth--;
-          j++;
-        } else j++;
-      }
-      blank(i + 1, j);
-      i = j + 1;
-      prev = '`';
-    } else if (c === '/' && (prev === '' || '(,=:[!&|?{};+-*%<>~^'.includes(prev))) {
-      // Regex literal: blank so quotes inside do not open a string.
-      let j = i + 1;
-      let inClass = false;
-      while (j < n && src[j] !== '\n') {
-        if (src[j] === '\\') j += 2;
-        else if (src[j] === '[') {
-          inClass = true;
-          j++;
-        } else if (src[j] === ']') {
-          inClass = false;
-          j++;
-        } else if (src[j] === '/' && !inClass) break;
-        else j++;
-      }
-      blank(i + 1, j);
-      i = j + 1;
-      prev = '/';
-    } else {
-      if (!/\s/.test(c)) prev = c;
-      i++;
-    }
-  }
-  return out.join('');
-}
-
-/**
- * Decorator spellings `smrt` is reachable under: `smrt`, any
- * `import { smrt as x }` alias, and `ns.smrt` for each `import * as ns`.
- * Returned as regex source fragments.
- */
-function decoratorNames(code) {
-  const esc = (v) => v.replace(/\$/g, '\\$');
-  const names = new Set(['smrt']);
-  for (const m of code.matchAll(/import\s*(?:type\s*)?\{([^}]*)\}\s*from/g)) {
-    for (const part of m[1].split(',')) {
-      const am = part.trim().match(/^smrt\s+as\s+([A-Za-z_$][\w$]*)$/);
-      if (am) names.add(esc(am[1]));
-    }
-  }
-  for (const m of code.matchAll(/import\s+(?:[\w$]+\s*,\s*)?\*\s*as\s+([A-Za-z_$][\w$]*)\s+from/g)) {
-    names.add(`${esc(m[1])}\\s*\\.\\s*smrt`);
-  }
-  return [...names];
-}
-
-/** Index just past the `)` closing the `(` at `open` (code is blanked). */
-function skipParens(code, open) {
-  let depth = 0;
-  for (let k = open; k < code.length; k++) {
-    if (code[k] === '(') depth++;
-    else if (code[k] === ')' && --depth === 0) return k + 1;
-  }
-  return -1;
-}
-
-/** Class names carrying an `@smrt` decorator in one source file. */
-export function modelsInSource(src) {
-  const code = blankNonCode(src);
-  const alt = decoratorNames(code).join('|');
-  const found = [];
-  const re = new RegExp(`@\\s*(?:${alt})(?![\\w$])(?!\\s*\\.)`, 'g');
-  for (const m of code.matchAll(re)) {
-    let k = m.index + m[0].length;
-    const skipWs = () => {
-      while (k < code.length && /\s/.test(code[k])) k++;
-    };
-    skipWs();
-    if (code[k] === '(') {
-      k = skipParens(code, k);
-      if (k === -1) continue;
-    }
-    // Further stacked decorators, then modifiers, then the class name.
-    for (;;) {
-      skipWs();
-      const dm = /^@[A-Za-z_$][\w$.]*/.exec(code.slice(k, k + 200));
-      if (!dm) break;
-      k += dm[0].length;
-      skipWs();
-      if (code[k] === '(') {
-        k = skipParens(code, k);
-        if (k === -1) break;
-      }
-    }
-    if (k === -1) continue;
-    const cm = /^(?:export\s+)?(?:default\s+)?(?:abstract\s+)?(?:declare\s+)?class\s+([A-Za-z_$][\w$]*)/.exec(
-      code.slice(k, k + 300),
-    );
-    if (cm) found.push(cm[1]);
-    else
-      throw new Error(
-        `@smrt decorator at offset ${m.index} is not followed by a class declaration`,
-      );
-  }
-  return found;
-}
-
-function* sourceFiles(dir) {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.isDirectory()) {
-      if (SKIPPED_DIRS.has(entry.name)) continue;
-      yield* sourceFiles(join(dir, entry.name));
-    } else if (
-      /\.(ts|mts|tsx)$/.test(entry.name) &&
-      !/\.(d|test|spec)\.(ts|mts|tsx)$/.test(entry.name) &&
-      !entry.name.endsWith('.d.ts')
-    ) {
-      yield join(dir, entry.name);
-    }
-  }
 }
 
 function modelsOfPackage(pkg) {

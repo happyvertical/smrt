@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 /**
- * Write `surface-ledger.json` (happyvertical/smrt#5076). Idempotent.
+ * Maintain `surface-ledger.json` (happyvertical/smrt#5076). Idempotent.
  *
- * Every item in the working-tree inventory that has no entry is added as
- * `{ kind, name, grandfathered: true }`; existing entries (including full,
- * non-grandfathered ones) are kept untouched. Entries for items that no longer
- * exist are dropped (a removed item simply loses its entry). Output is sorted
- * by kind then name, so a second run is byte-identical.
+ * - No ledger file (bootstrap): writes every inventory item as
+ *   `{ kind, name, grandfathered: true }`.
+ * - Existing ledger: NEVER adds an entry. It drops entries for items that no
+ *   longer exist, re-sorts, and for each unrecorded item prints the full entry
+ *   to fill in by hand, then exits 1. New surface needs a full entry; it cannot
+ *   be grandfathered.
  *
  * Usage: pnpm surface:ledger   (node scripts/generate-surface-ledger.mjs [--root DIR])
  */
@@ -19,6 +20,7 @@ import {
   LEDGER_FILE,
   readLedger,
   sortItems,
+  template,
 } from './surface-ledger-lib.mjs';
 
 const argv = process.argv.slice(2);
@@ -40,15 +42,23 @@ if (existsSync(file)) {
 }
 
 const inventory = buildInventory(ROOT);
+const exists = new Set(inventory.map((i) => itemKey(i.kind, i.name)));
+const bootstrap = !existsSync(file);
 const byKey = new Map(existing.map((e) => [itemKey(e.kind, e.name), e]));
-const entries = inventory.map(
-  (item) =>
-    byKey.get(itemKey(item.kind, item.name)) ?? {
-      kind: item.kind,
-      name: item.name,
-      grandfathered: true,
-    },
+const missing = bootstrap
+  ? []
+  : inventory.filter((i) => !byKey.has(itemKey(i.kind, i.name)));
+const entries = bootstrap
+  ? inventory.map((i) => ({ kind: i.kind, name: i.name, grandfathered: true }))
+  : existing.filter((e) => exists.has(itemKey(e.kind, e.name)));
+writeFileSync(file, `${JSON.stringify(sortItems(entries), null, 2)}\n`);
+console.log(
+  `generate-surface-ledger: wrote ${entries.length} entries to ${LEDGER_FILE}${bootstrap ? ' (bootstrap, grandfathered)' : ''}.`,
 );
-const body = `${JSON.stringify(sortItems(entries), null, 2)}\n`;
-writeFileSync(file, body);
-console.log(`generate-surface-ledger: wrote ${entries.length} entries to ${LEDGER_FILE}.`);
+if (missing.length > 0) {
+  console.error(
+    `\ngenerate-surface-ledger: ${missing.length} item(s) are not in the ledger. New surface needs a full entry; add each by hand (search for existing surface first):`,
+  );
+  for (const item of missing) console.error(`\n${template(item)}`);
+  process.exit(1);
+}
