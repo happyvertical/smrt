@@ -27,10 +27,10 @@ import { platform } from 'node:os';
 import { isAbsolute, parse, relative, resolve, sep, win32 } from 'node:path';
 import { promisify } from 'node:util';
 import { Worker } from 'node:worker_threads';
-import {
-  type DatabaseInterface,
-  getDatabase,
-  type SecureSqliteWindowsCustody,
+import { resolveDatabase } from '@happyvertical/smrt-core';
+import type {
+  DatabaseInterface,
+  SecureSqliteWindowsCustody,
 } from '@happyvertical/sql';
 import { custodyContext } from './custody-context.js';
 import type {
@@ -337,7 +337,12 @@ export async function acquireLocalDatabase(
   );
   let db: DatabaseInterface | undefined;
   try {
-    db = await getDatabase({
+    // Resolved through core so the handle carries the same `smrt:<url>` cache
+    // identity as every collection on this file: `runtime.database()` and
+    // `runtime.databaseConfig()` collections are ONE `node:sqlite` connection.
+    // Two in-process handles wait on each other's locks synchronously and
+    // deadlock with `database is locked` (#5022).
+    db = await resolveDatabase({
       type: 'sqlite',
       url: paths.database,
       secureFile: {
@@ -1785,7 +1790,7 @@ async function acquireWindowsLocalDatabase(
         file: { path: pendingPath, size: 0 },
       }).createdFile;
     }
-    db = await getDatabase({
+    db = await resolveDatabase({
       type: 'sqlite',
       url: paths.database,
       secureFile: {

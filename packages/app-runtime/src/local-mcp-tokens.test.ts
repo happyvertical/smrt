@@ -677,7 +677,8 @@ describe('local MCP tokens', () => {
       runtime.classOptions('Membership'),
     );
     openApplicationDatabases.add(appMemberships.db);
-    expect(appMemberships.db).not.toBe(local.db);
+    // One connection per file per process (#5022).
+    expect(appMemberships.db).toBe(local.db);
     const users = await UserCollection.create(runtime.classOptions('User'));
     const permissions = await PermissionCollection.create(
       runtime.classOptions('Permission'),

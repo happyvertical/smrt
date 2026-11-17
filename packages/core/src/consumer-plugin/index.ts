@@ -2176,7 +2176,7 @@ async function generateRegistrationFile(
   };
 
   const registrations: string[] = [];
-  const registrationManifests: Record<string, ConsumerManifest> = {};
+  const registrationManifests: Record<string, Partial<ConsumerManifest>> = {};
   let importedEntryCount = 0;
   let registeredObjectCount = 0;
 
@@ -2358,14 +2358,9 @@ async function generateRegistrationFile(
 
     const logicalName = def.className || exportName;
     // The build's stamp stays in .smrt/manifest.json only (#4929).
-    // Nor the retired list: the build's description carries it (#5005).
-    const {
-      schemaFingerprint: _buildStamp,
-      retiredTables: _retired,
-      ...registrationBase
-    } = manifest;
+    // Aggregate-level fields (recipes, smrtDependencies, ...) are emitted once
+    // as smrtRegistrationShared and merged by reference at load (#5028).
     registrationManifests[objectName] = {
-      ...registrationBase,
       packageName: def.packageName,
       packageVersion: def.packageVersion || manifest.packageVersion,
       objects: { [objectName]: def },
@@ -2495,6 +2490,19 @@ if (${viteOnlyNamespaceBindings.has(namespaceBinding) ? 'SMRT_VITE_RUNTIME && ' 
   const registrationManifestLiteral = JSON.stringify(
     JSON.stringify(registrationManifests),
   );
+  // The build's stamp stays in .smrt/manifest.json only (#4929).
+  const {
+    schemaFingerprint: _buildStamp,
+    // Nor the retired list: the build's description carries it (#5005).
+    retiredTables: _retired,
+    objects: _allObjects,
+    packageName: _sharedPackageName,
+    packageVersion: _sharedPackageVersion,
+    ...registrationShared
+  } = manifest;
+  const registrationSharedLiteral = JSON.stringify(
+    JSON.stringify(registrationShared),
+  );
 
   // Generate file content
   const content = `/**
@@ -2550,6 +2558,10 @@ ${transitiveDeclarations.join('\n')}
 ${transitiveCollectionDeclarations.join('\n')}
 
 const smrtRegistrationManifests = JSON.parse(${registrationManifestLiteral});
+const smrtRegistrationShared = JSON.parse(${registrationSharedLiteral});
+for (const key of Object.keys(smrtRegistrationManifests)) {
+  smrtRegistrationManifests[key] = { ...smrtRegistrationShared, ...smrtRegistrationManifests[key] };
+}
 
 // Register all objects (executed during module evaluation)
 ${registrations.join('\n')}

@@ -5,7 +5,7 @@ description: "Site lifecycle management for multi-tenant SMRT networks"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-16T17:46:13Z"
+  at: "2026-11-16T07:13:54Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:c362364d4dd3c052be878b5f07dc4de2b816afc87dc1565698180c41ab6c5025"

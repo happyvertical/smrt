@@ -530,6 +530,39 @@ describe('local SvelteKit runtime', () => {
     expect(await runtime.database()).toBe(local.db);
   });
 
+  it('shares one SQLite connection between runtime.database() and collection handles (#5022)', async () => {
+    const { runtime } = await localRuntime('one-connection');
+    await runtime.init();
+    const shared = await runtime.database();
+    const collectionDb = await applicationDb(runtime);
+    // Two `node:sqlite` handles on one file wait on each other synchronously,
+    // so a transaction on one blocks the event loop while the other holds the
+    // write lock and fails `database is locked`. One handle cannot.
+    expect(collectionDb).toBe(shared);
+
+    await shared.query('CREATE TABLE IF NOT EXISTS one_connection (n INTEGER)');
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let held = false;
+    const holder = shared.transaction(async (tx) => {
+      await tx.query('INSERT INTO one_connection (n) VALUES (1)');
+      held = true;
+      await gate;
+    });
+    while (!held) await new Promise((resolve) => setTimeout(resolve, 1));
+    setTimeout(release, 20);
+    // Queues behind the holder; with a second handle it throws after the
+    // 250 ms collection busy timeout.
+    await collectionDb.transaction(async (tx) => {
+      await tx.query('INSERT INTO one_connection (n) VALUES (2)');
+    });
+    await holder;
+    const rows = await shared.query('SELECT n FROM one_connection ORDER BY n');
+    expect(rows.rows.map((row) => (row as { n: number }).n)).toEqual([1, 2]);
+  });
+
   it('keeps owner bootstrap loopback-only, single-use, and HMAC-only end to end', async () => {
     const onOwnerClaimed = vi.fn(() => {
       throw new Error('cleanup failure must not surface');
@@ -1193,7 +1226,9 @@ describe('local SvelteKit runtime', () => {
       sid,
     );
     const requestDb = await applicationDb(runtime);
-    expect(requestDb).not.toBe(local.db);
+    // One connection per file per process (#5022): the request handle IS the
+    // runtime handle, so it sees the committed session tenant.
+    expect(requestDb).toBe(local.db);
     expect(
       (
         await requestDb.query(

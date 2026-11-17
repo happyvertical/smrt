@@ -5,7 +5,7 @@ description: "HR records for the SMRT framework: who works for an organization, 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-16T17:46:13Z"
+  at: "2026-11-16T07:13:54Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:695d78a348ba46d4a35f9daf8cf93216252e6f8b12946b539a60b0e5e7bba1f6"
