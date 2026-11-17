@@ -5,7 +5,7 @@ description: "Hierarchical place management with geo integration and SMRT framew
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T17:40:06Z"
+  at: "2026-11-17T18:00:38Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:dacaf7c449000bd878e9f66e333e1663f37ebe78d26237f0c40a1cb1279f10e4"

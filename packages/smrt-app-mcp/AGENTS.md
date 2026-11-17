@@ -33,7 +33,9 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
 - Keep app policy outside generated tool schemas. The wrapper owns auth, allow-list, and workflow assertion behavior.
 - Return 404 for tools outside the app allow-list so private generated tools are not enumerated by mistake.
 - Trust only a principal supplied by the application adapter. This package
-  does not implement an OAuth authorization server. The opt-in `./auth` entry
+  validates tokens and does not issue them; issuance lives in
+  `@happyvertical/smrt-users` (see
+  `docs/content/architecture/remote-mcp-authorization.md`). The opt-in `./auth` entry
   validates JWT access tokens and requires an application-owned principal mapper.
 - Mount `mountMcpRoute` as one modern `POST` endpoint. It creates a fresh
   protocol server per request, emits no session id, and refuses subscriptions.
