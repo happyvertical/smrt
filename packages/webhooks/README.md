@@ -113,6 +113,29 @@ replay window (secret may be an array during rotation; the sender signs with one
 `signWebhookPayload` is the matching signer. Keys require at least 32 bytes of entropy-bearing
 secret material (generate them cryptographically; length alone is not entropy).
 
+### Signing profiles
+
+Each subscription may store a `signingProfile` (`{ preset, ...overrides }`, null
+by default). The default profile is the scheme above and is pinned byte-for-byte
+by a golden test. Presets:
+
+| Preset | Headers | Timestamp | Signature |
+| --- | --- | --- | --- |
+| `default` | `x-smrt-signature`, `x-smrt-timestamp` | ISO 8601 | `sha256=<hex>` over `timestamp.body` |
+| `paperclip` | `x-paperclip-signature`, `x-paperclip-timestamp` | Unix seconds | `sha256=<hex>` over `timestamp.body`; the prefix is optional on verify |
+| `standard-webhooks` | `webhook-signature`, `webhook-timestamp`, `webhook-id` | Unix seconds | `v1,<base64>` over `id.timestamp.body`, key = base64 of the `whsec_` secret (the secret must still be 32+ bytes) |
+
+Overridable fields: `signatureHeader`, `timestampHeader`, `deliveryHeader`,
+`eventHeader` (null omits it), `timestampFormat` (`iso` | `unix` | `unix-ms`),
+`signDeliveryId`, `signatureEncoding`, `signaturePrefix`,
+`signaturePrefixRequired`, `multipleSignatures`, `secretEncoding`. Header names
+must be distinct lowercase tokens. Resolve one with
+`resolveWebhookSigningProfile('paperclip')` and pass it as `profile` (plus
+`deliveryId` when the profile signs it) to `verifyWebhookSignature`; unix formats
+use the same 5-minute replay window. `WebhookAdminService.create` accepts
+`signingProfile`. Adding the nullable `signingProfile` column requires the normal
+application migration before deploying this version.
+
 Secrets and payloads are durable sensitive data: use protected database access,
 backups and encryption at rest. Never serialize model instances with `toJSON`
 for clients; use the admin service or `toPublicJSON`. The admin view omits secrets,

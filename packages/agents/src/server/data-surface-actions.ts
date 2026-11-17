@@ -58,6 +58,16 @@ export interface DataSurfaceActionInvocation {
   selection: ResolvedDataSurfaceSelection;
 }
 
+/**
+ * Context handed to a per-action `visibleTo` seam. It is invocation-like but
+ * selection-free, so the same predicate serves invocation and descriptor reads.
+ */
+export interface DataSurfaceActionVisibilityContext {
+  run: PrincipalRun;
+  descriptor: DataSurfaceDescriptor;
+  action: DataSurfaceServerActionDefinition;
+}
+
 export interface DataSurfaceServerActionDefinition {
   descriptor: DataSurfaceActionDescriptor;
   /** Serializable declaration for transport/schema generators; null means no input. */
@@ -79,6 +89,16 @@ export interface DataSurfaceServerActionDefinition {
     collection: Parameters<PrincipalRun['assertOperation']>[0];
     action: string;
   };
+  /**
+   * Optional per-principal visibility gate. When it resolves false the action
+   * exists but this principal may neither see nor run it: invocation is refused
+   * `denied` (before the descriptor/map consistency check) and
+   * `visibleDataSurfaceDescriptor()` omits it. A throwing or rejecting seam, or
+   * any non-`true` result, fails closed as not visible. Absent means visible.
+   */
+  visibleTo?(
+    context: DataSurfaceActionVisibilityContext,
+  ): boolean | Promise<boolean>;
   /** Fresh permission/domain authorization check, run for preview and apply. */
   authorize(
     invocation: DataSurfaceActionInvocation,
@@ -103,6 +123,39 @@ export interface ResolvedDataSurfaceActions {
   /** Current server-side revision, never trusted from the browser. */
   revision: number;
   actions: Record<string, DataSurfaceServerActionDefinition>;
+}
+
+async function isActionVisible(
+  run: PrincipalRun,
+  descriptor: DataSurfaceDescriptor,
+  action: DataSurfaceServerActionDefinition,
+): Promise<boolean> {
+  if (typeof action.visibleTo !== 'function') return true;
+  try {
+    return (await action.visibleTo({ run, descriptor, action })) === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Descriptor to hand back from a describe-style read: the resolved surface's
+ * descriptor with every action the principal may not see removed. Actions with
+ * no `visibleTo` seam are unaffected, so hosts without the seam see no change.
+ */
+export async function visibleDataSurfaceDescriptor(
+  run: PrincipalRun,
+  surface: ResolvedDataSurfaceActions,
+): Promise<DataSurfaceDescriptor> {
+  const visible: DataSurfaceDescriptor['actions'] = [];
+  for (const declared of surface.descriptor.actions) {
+    const action = Object.hasOwn(surface.actions, declared.id)
+      ? surface.actions[declared.id]
+      : undefined;
+    if (!action || (await isActionVisible(run, surface.descriptor, action)))
+      visible.push(declared);
+  }
+  return { ...surface.descriptor, actions: visible };
 }
 
 export interface DataSurfaceServerActionRequest
@@ -730,6 +783,11 @@ export function createDataSurfaceActionAdapter(
       return result(request, false, 'not_found');
     }
     const action = surface.actions[request.actionId];
+    // Visibility is evaluated first so a hidden-but-real action refuses
+    // `denied`; ids the surface does not define still refuse `unsupported`.
+    if (action && !(await isActionVisible(run, surface.descriptor, action))) {
+      return result(request, false, 'denied');
+    }
     const declared = surface.descriptor.actions.find(
       ({ id }) => id === request.actionId,
     );
@@ -1216,6 +1274,10 @@ export function createDataSurfaceActionAdapter(
           ({ id }) => id === request.actionId,
         );
         if (!action || !declared || action.descriptor.id !== declared.id)
+          return undefined;
+        // A hidden action must refuse `denied` from resolveInvocation, not
+        // leak server misconfiguration as `background_unavailable`.
+        if (!(await isActionVisible(run, surface.descriptor, action)))
           return undefined;
         if (
           action.execution === 'background' &&
