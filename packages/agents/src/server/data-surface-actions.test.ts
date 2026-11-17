@@ -19,6 +19,7 @@ import {
   type DataSurfaceServerActionDefinition,
   type DataSurfaceServerActionRequest,
   InMemoryDataSurfaceActionStateStore,
+  visibleDataSurfaceDescriptor,
 } from './data-surface-actions.js';
 
 const identity: DataSurfaceIdentity = {
@@ -67,6 +68,7 @@ function request(
 function harness(options: {
   now?: () => number;
   authorize?: () => boolean;
+  visibleTo?: DataSurfaceServerActionDefinition['visibleTo'];
   eligible?: (rowId: string | number) => { eligible: boolean; reason?: string };
   apply?: (
     rowId: string | number,
@@ -136,6 +138,7 @@ function harness(options: {
       collection: 'orders',
       action: 'update',
     },
+    ...(options.visibleTo ? { visibleTo: options.visibleTo } : {}),
     authorize: () => options.authorize?.() ?? true,
     eligible: (_invocation, rowId) =>
       options.eligible?.(rowId) ?? { eligible: true },
@@ -216,7 +219,19 @@ function harness(options: {
             options.resolveDeferredPrincipal ?? (async () => context.principal),
         }),
   });
-  return { adapter, assertOperation, calls, context, resolveSelectionCalls };
+  return {
+    adapter,
+    assertOperation,
+    calls,
+    context,
+    resolveSelectionCalls,
+    run,
+    surface: {
+      descriptor: { ...descriptor, actions: [definition.descriptor] },
+      revision: 7,
+      actions: { archive: definition },
+    },
+  };
 }
 
 it('rejects a selection scope excluded by the mounted surface descriptor', async () => {
@@ -1403,5 +1418,93 @@ describe('data-surface action adapter', () => {
       ok: true,
       details: { accepted: 2 },
     });
+  });
+});
+
+describe('data-surface action visibility seam (#2986)', () => {
+  it('refuses a hidden action as denied, ahead of every other check', async () => {
+    const authorize = vi.fn(() => true);
+    const setup = harness({ visibleTo: () => false, authorize });
+    const bad = request('preview', { payload: { nope: 1 } });
+    for (const req of [request('preview'), bad]) {
+      await expect(
+        setup.adapter.preview(req, setup.context),
+      ).resolves.toMatchObject({
+        ok: false,
+        reason: 'denied',
+      });
+    }
+    await expect(
+      setup.adapter.apply(request('apply'), setup.context),
+    ).resolves.toMatchObject({ ok: false, reason: 'denied' });
+    expect(authorize).not.toHaveBeenCalled();
+    expect(setup.resolveSelectionCalls).toEqual([]);
+  });
+
+  it('keeps unknown action ids unsupported, distinct from denied', async () => {
+    const setup = harness({ visibleTo: () => false });
+    await expect(
+      setup.adapter.preview(
+        request('preview', { actionId: 'no-such-action' }),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'unsupported' });
+  });
+
+  it('supports an async seam and hands it run, descriptor, and action', async () => {
+    const seen = vi.fn();
+    const setup = harness({
+      visibleTo: async (ctx) => {
+        seen(ctx.run, ctx.descriptor.identity, ctx.action.descriptor.id);
+        return true;
+      },
+    });
+    await expect(
+      setup.adapter.preview(request('preview'), setup.context),
+    ).resolves.toMatchObject({ ok: true });
+    expect(seen).toHaveBeenCalledWith(setup.run, identity, 'archive');
+  });
+
+  it('fails closed when the seam throws, rejects, or returns non-true', async () => {
+    const seams: Array<DataSurfaceServerActionDefinition['visibleTo']> = [
+      () => {
+        throw new Error('boom');
+      },
+      async () => {
+        throw new Error('boom');
+      },
+      (() => undefined) as unknown as () => boolean,
+    ];
+    for (const visibleTo of seams) {
+      const setup = harness({ visibleTo });
+      await expect(
+        setup.adapter.preview(request('preview'), setup.context),
+      ).resolves.toMatchObject({ ok: false, reason: 'denied' });
+      const d = await visibleDataSurfaceDescriptor(setup.run, setup.surface);
+      expect(d.actions).toEqual([]);
+    }
+  });
+
+  it('leaves behaviour unchanged when no seam is declared', async () => {
+    const setup = harness({});
+    await expect(
+      setup.adapter.preview(request('preview'), setup.context),
+    ).resolves.toMatchObject({ ok: true });
+    const d = await visibleDataSurfaceDescriptor(setup.run, setup.surface);
+    expect(d.actions.map(({ id }) => id)).toEqual(['archive']);
+    expect(d).toEqual(setup.surface.descriptor);
+  });
+
+  it('excludes hidden actions from the described descriptor only', async () => {
+    const hidden = harness({ visibleTo: () => false });
+    const visible = harness({ visibleTo: async () => true });
+    expect(
+      (await visibleDataSurfaceDescriptor(hidden.run, hidden.surface)).actions,
+    ).toEqual([]);
+    expect(
+      (await visibleDataSurfaceDescriptor(visible.run, visible.surface))
+        .actions,
+    ).toHaveLength(1);
+    expect(hidden.surface.descriptor.actions).toHaveLength(1);
   });
 });

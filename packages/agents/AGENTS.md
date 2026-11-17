@@ -203,6 +203,7 @@ declaring `isNull` (`eq`/`ne` with `null`, `"null"`, `""` or `[]`; a `not` namin
 Refusals (#4387: action-specific denials, the `{ action }` catalog argument,
 `onDenied`, audit `denied` entries, missing executors):
 [agents/data-surface-denials.md](agents/data-surface-denials.md).
+Action `visibleTo`: [#2986](agents/data-surface-denials.md#action-visibility-2986).
 
 
 ## Playbook Preflight (issue #2590)
