@@ -1,17 +1,38 @@
 #!/usr/bin/env node
-/** Partition every registered PostgreSQL suite; this never scopes suites away. */
+/**
+ * Partition every registered PostgreSQL suite; this never scopes suites away.
+ *
+ * Usage: postgres-test-shard.mjs <ingestion|remaining>[:<i>/<n>]
+ *
+ * `ingestion` is that one package; `remaining` is every other registered
+ * suite. `remaining:<i>/<n>` is one of `n` duration-balanced groups of them.
+ * `ingestion:<i>/<n>` is still the one package, with `-- --shard=<i>/<n>`
+ * appended so Turbo hands Vitest that slice of its files: the package's files
+ * share one database and run one at a time, so only separate jobs, each with
+ * its own service, run them side by side (#5045).
+ */
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { balanceShards, POSTGRES_TEST_SECONDS } from './test-shard-balance.mjs';
 import { discoverWorkspaces } from './workspaces.mjs';
 
 export const INGESTION = '@happyvertical/smrt-ingestion';
 const packageName = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
 
-export function selectPostgresShard(manifests, shard) {
-  if (!['ingestion', 'remaining'].includes(shard)) {
-    throw new Error(`Invalid PostgreSQL shard "${shard}"; expected ingestion or remaining`);
+/** Split `<group>[:<i>/<n>]` into its group and optional 1-based slice. */
+export function parsePostgresShard(shard) {
+  const match = /^(ingestion|remaining)(?::(\d+)\/(\d+))?$/.exec(shard ?? '');
+  const index = match?.[2] === undefined ? 1 : Number.parseInt(match[2], 10);
+  const count = match?.[3] === undefined ? 1 : Number.parseInt(match[3], 10);
+  if (!match || index < 1 || index > count) {
+    throw new Error(`Invalid PostgreSQL shard "${shard}"; expected ingestion or remaining, optionally with :<i>/<n>`);
   }
+  return { group: match[1], index, count };
+}
+
+export function selectPostgresShard(manifests, shard) {
+  const { group, index, count } = parsePostgresShard(shard);
   if (!Array.isArray(manifests) || manifests.length === 0) {
     throw new Error('PostgreSQL discovery returned no workspace manifests');
   }
@@ -36,9 +57,15 @@ export function selectPostgresShard(manifests, shard) {
   if (!registered.includes(INGESTION)) {
     throw new Error(`Required ingestion PostgreSQL suite is missing: ${INGESTION}`);
   }
-  const selected = registered.filter((name) => shard === 'ingestion' ? name === INGESTION : name !== INGESTION);
+  const remaining = registered.filter((name) => name !== INGESTION);
+  const selected = group === 'ingestion'
+    ? [INGESTION]
+    : balanceShards(remaining, count, POSTGRES_TEST_SECONDS)[index - 1];
   if (selected.length === 0) throw new Error(`PostgreSQL shard ${shard} is empty; check the suite registry`);
-  return { registered, selected };
+  // Only the one-package ingestion group can hand Vitest a file slice: Turbo
+  // passes these arguments to every selected package's script.
+  const vitestArgs = group === 'ingestion' && count > 1 ? [`--shard=${index}/${count}`] : [];
+  return { registered, selected, vitestArgs };
 }
 
 export async function readPostgresManifests(repoRoot) {
@@ -52,12 +79,13 @@ export async function readPostgresManifests(repoRoot) {
 }
 
 async function main() {
-  if (process.argv.length !== 3) throw new Error('Usage: postgres-test-shard.mjs <ingestion|remaining>');
+  if (process.argv.length !== 3) throw new Error('Usage: postgres-test-shard.mjs <ingestion|remaining>[:<i>/<n>]');
   const shard = process.argv[2];
   const root = fileURLToPath(new URL('../', import.meta.url));
-  const { registered, selected } = selectPostgresShard(await readPostgresManifests(root), shard);
+  const { registered, selected, vitestArgs } = selectPostgresShard(await readPostgresManifests(root), shard);
   console.error(`PostgreSQL shard ${shard}: ${selected.length} of ${registered.length} registered suite(s)`);
-  process.stdout.write(selected.map((name) => `--filter=${name}`).join(' '));
+  const filters = selected.map((name) => `--filter=${name}`);
+  process.stdout.write([...filters, ...(vitestArgs.length > 0 ? ['--', ...vitestArgs] : [])].join(' '));
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

@@ -103,9 +103,12 @@ jobs:
     timeout-minutes: 45
     strategy:
       fail-fast: false
-      max-parallel: 2
+      # One runner per shard; a shard waiting for a slot is pure wall-clock.
+      max-parallel: 5
       matrix:
-        shard: [ingestion, remaining]
+        # scripts/postgres-test-shard.mjs: ingestion as two file slices, and
+        # every other registered suite in three duration-balanced groups.
+        shard: ['ingestion:1/2', 'ingestion:2/2', 'remaining:1/3', 'remaining:2/3', 'remaining:3/3']
     # Each shard owns its service. CI_POSTGRES_BASE_URL keeps
     # scripts/run-with-ci-postgres.mjs on its managed path, so each package
     # still gets its own uniquely named database, dropped afterwards.

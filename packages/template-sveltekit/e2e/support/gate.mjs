@@ -31,23 +31,51 @@ import { fileURLToPath } from 'node:url';
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const packagesRoot = resolve(packageRoot, '..');
 
+/** The files that connect to the one disposable PostgreSQL database. */
+const POSTGRES_FILES = '.postgres.optional.test.ts';
+
 /**
- * Where vitest cases run. `template` is this package's whole suite. The
- * others are the owning packages of code the template used to copy (#3367):
- * a case whose implementation moved out of the template is proven where that
- * code now lives, and is matched by name exactly like the template's own.
+ * Where vitest cases run. The two `template` passes are this package's whole
+ * suite: every file is in exactly one of them. The others are the owning
+ * packages of code the template used to copy (#3367): a case whose
+ * implementation moved out of the template is proven where that code now
+ * lives, and is matched by name exactly like the template's own.
+ *
+ * Files named `*.postgres.optional.test.ts` share one disposable database, so
+ * they run one at a time. Every other template file opens its own SQLite
+ * database and runs two at a time: one at a time took 18 of this job's 25
+ * minutes (#5045). Two workers alone on a runner is the shape the package's
+ * dedicated `test` shard already runs; more starves the SQLite onboarding
+ * cases into SQLITE_PROTOCOL (#4990). A test that connects to the PostgreSQL
+ * database must carry the `.postgres.optional` name.
  */
 const VITEST_SUITES = [
-  { id: 'template', cwd: packageRoot, files: [] },
+  {
+    id: 'template',
+    cwd: packageRoot,
+    args: [
+      '--file-parallelism',
+      '--maxWorkers=2',
+      `--exclude=**/*${POSTGRES_FILES}`,
+    ],
+  },
+  {
+    id: 'template',
+    cwd: packageRoot,
+    args: ['--no-file-parallelism', POSTGRES_FILES],
+  },
   {
     id: 'cli',
     cwd: join(packagesRoot, 'cli'),
-    files: ['src/app/__tests__/portability-assets.test.ts'],
+    args: [
+      '--no-file-parallelism',
+      'src/app/__tests__/portability-assets.test.ts',
+    ],
   },
   {
     id: 'app-runtime',
     cwd: join(packagesRoot, 'app-runtime'),
-    files: ['src/sveltekit.test.ts'],
+    args: ['--no-file-parallelism', 'src/sveltekit.test.ts'],
   },
 ];
 
@@ -294,9 +322,6 @@ function collectVitestSuite(suite) {
         'exec',
         'vitest',
         'run',
-        // The PostgreSQL suites share one disposable database, so they must
-        // not run beside each other or beside the SQLite suites.
-        '--no-file-parallelism',
         // Human-readable failures go to stderr, which by design never reaches
         // the uploaded artifact — that is the file `emit()` writes. A gate
         // that reported only a case id would make a red merge group
@@ -304,7 +329,7 @@ function collectVitestSuite(suite) {
         '--reporter=default',
         '--reporter=json',
         `--outputFile=${outputFile}`,
-        ...suite.files,
+        ...suite.args,
       ],
       // stdout to fd 2: the reporter is for a human reading the log, and
       // this process's stdout carries only the sanitized summary.

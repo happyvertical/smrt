@@ -26,6 +26,10 @@ presented as WebMCP execution.
 - `pnpm test:m5` runs the whole aggregate gate through
   `e2e/support/gate.mjs`, which requires a PostgreSQL service and fails when a
   required profile case is missing rather than merely absent from the log.
+  Its Vitest half runs this package's whole suite in two passes: files named
+  `*.postgres.optional.test.ts` share the gate's one disposable database and
+  run one at a time; every other file runs two at a time. A test that connects
+  to that database must carry the `.postgres.optional` name.
 - Tracing, video, and screenshots stay off: onboarding carries a single-use
   bootstrap token in a URL.
 - `m5-gate-summary.json` is the one file the gate writes inside the package;
