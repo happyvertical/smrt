@@ -520,12 +520,15 @@ describe('draft controls in the shell header', () => {
       liveDescription: draftDescription('live'),
     });
 
-  it('offers a quiet Start draft within content when no draft is open', async () => {
+  it('offers a quiet Start draft in the header when no draft is open', async () => {
     await render();
     expect(button('Start a draft')).toBeTruthy();
     expect(
-      q('#smrt-admin-shell-main')?.contains(button('Start a draft') ?? null),
+      q('[data-slot="header.end"]')?.contains(button('Start a draft') ?? null),
     ).toBe(true);
+    expect(
+      q('#smrt-admin-shell-main')?.contains(button('Start a draft') ?? null),
+    ).toBe(false);
     expect(q('.smrt-draft-bar__draft-strip')).toBeNull();
   });
 

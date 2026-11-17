@@ -371,7 +371,7 @@ it('shows reviewed current-live counts for each replayed data command', async ()
     data?.querySelector('[data-smrt-component="Badge"]')?.textContent,
   ).toBe('3');
   expect(data?.textContent).toContain(
-    'Load records into Order (upsert): 2 inserted, 3 updated, 4 unchanged, 0 rejected.',
+    '2 records added, 3 updated, 4 unchanged',
   );
   expect(data?.textContent).toContain(
     'Extract from Order: 9 records, 5 distinct values, 1 folded, 3 created, 2 matched.',
