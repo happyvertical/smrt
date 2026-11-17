@@ -542,7 +542,20 @@ describe('AdminShell', () => {
 
   it('pins the shell to the viewport so long workspace content scrolls inside main', () => {
     expect(adminShellSource).toMatch(
-      /\.smrt-admin-shell\s*\{[^}]*\bblock-size:\s*100svh\s*;/,
+      /\.smrt-admin-shell\s*\{[^}]*\bblock-size:\s*var\(--smrt-admin-shell-block-size,\s*100svh\)\s*;/,
+    );
+  });
+
+  it('lets a host size the shell through one public property, phone bar included', () => {
+    expect(adminShellSource).toMatch(
+      /\.smrt-admin-shell\s*\{[^}]*\bmin-block-size:\s*var\(--smrt-admin-shell-block-size,\s*100svh\)\s*;/,
+    );
+    expect(adminShellSource).toMatch(
+      /\[data-bottom-bar='form'\]\s*\{[^}]*\bmin-block-size:\s*var\(--smrt-admin-shell-block-size,\s*100dvh\)\s*;[^}]*\bblock-size:\s*var\(--smrt-admin-shell-block-size,\s*100dvh\)\s*;/,
+    );
+    // No bare viewport unit may bypass the property.
+    expect(adminShellSource).not.toMatch(
+      /(?<!,\s*)\b(?:min-)?block-size:\s*100[sd]vh/,
     );
   });
 
