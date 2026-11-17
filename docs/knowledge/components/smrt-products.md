@@ -5,7 +5,7 @@ description: "SMRT products module: triple-purpose microservice template for sta
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T18:51:08Z"
+  at: "2026-11-17T21:17:44Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:9b43bb99d225c8b957b59a12fc67e8d9d7bc307ea1b26d3d5506d1895eb3c423"
