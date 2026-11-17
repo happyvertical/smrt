@@ -3246,6 +3246,17 @@
   },
   {
     "kind": "model",
+    "name": "@happyvertical/smrt-app-shell:AppImport",
+    "issue": 5034,
+    "nearest": [
+      "@happyvertical/smrt-app-shell:AppDraft",
+      "@happyvertical/smrt-education:CourseBundleImport",
+      "@happyvertical/smrt-jobs:SmrtJob"
+    ],
+    "reason": "The shell's record of one workbook import: stored file, owner-facing state, findings, retained plan and the draft it created. The run itself stays in the workflow and job tables; AppDraft holds draft data, not import status, and CourseBundleImport is education-specific."
+  },
+  {
+    "kind": "model",
     "name": "@happyvertical/smrt-app-shell:AppVersion",
     "grandfathered": true
   },
