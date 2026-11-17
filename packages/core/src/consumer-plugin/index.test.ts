@@ -1728,6 +1728,60 @@ describe('smrtConsumer registration generation', () => {
     ).toEqual({ beta: { type: 'number' } });
   });
 
+  it('emits aggregate-level manifest fields once, not per object (#5028)', async () => {
+    const objectCount = 30;
+    const marker = 'RECIPE_MARKER_5028';
+    const objects: Record<string, unknown> = {};
+    for (let i = 0; i < objectCount; i++) {
+      objects[`@test/pkg:Thing${i}`] = {
+        className: `Thing${i}`,
+        qualifiedName: `@test/pkg:Thing${i}`,
+        collection: `things_${i}`,
+        fields: {},
+        methods: {},
+        decoratorConfig: {},
+      };
+    }
+    writeFileSync(
+      join(tmpDir, 'node_modules', '@test', 'pkg', 'dist', 'manifest.json'),
+      JSON.stringify({
+        packageName: '@test/pkg',
+        recipes: [
+          {
+            id: 'recipe-5028',
+            title: marker,
+            description: 'x'.repeat(4096),
+          },
+        ],
+        objects,
+      }),
+    );
+
+    const plugin = smrtConsumer({
+      packages: ['@test/pkg'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+    await buildStart(plugin, {} as any);
+
+    const content = readFileSync(join(tmpDir, '.smrt', 'register.js'), 'utf-8');
+    expect(content.split(marker).length - 1).toBe(1);
+    // Size is bounded by object count, not by shared payload x object count.
+    expect(content.length).toBeLessThan(objectCount * 2048 + 32 * 1024);
+
+    const manifests = content.match(
+      /const smrtRegistrationManifests = JSON\.parse\((.+)\);/,
+    )?.[1];
+    expect(JSON.parse(JSON.parse(manifests as string))).not.toHaveProperty(
+      '@test/pkg:Thing0.recipes',
+    );
+    const shared = content.match(
+      /const smrtRegistrationShared = JSON\.parse\((.+)\);/,
+    )?.[1];
+    expect(JSON.parse(JSON.parse(shared as string)).recipes).toHaveLength(1);
+  });
+
   it('preserves local project entries already in .smrt/manifest.json (issue #1760 review)', async () => {
     // smrtPlugin() writes the project's own scanned objects to
     // .smrt/manifest.json; both plugins write in parallel buildStart hooks,
