@@ -5,10 +5,10 @@ description: "Multi-tenant user management for the SMRT framework - users, tenan
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-16T19:29:11Z"
+  at: "2026-11-17T17:40:06Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:8548fce6f7038cd3733d9f8d4a33c9c0a3b1c1c603070683c9f16aeb4d81991d"
+source_revision: "sha256:f162f5c0515dd8526560288fc5150d381e0387dd5f6ae48810a99ee81aeaf4df"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/users/package.json"
@@ -23,15 +23,18 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/users/agents/mobile-auth.md"
     title: "@happyvertical/smrt-users packages/users/agents/mobile-auth.md"
   - id: "agents-4"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/users/agents/oauth-authorization.md"
+    title: "@happyvertical/smrt-users packages/users/agents/oauth-authorization.md"
+  - id: "agents-5"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/users/agents/oidc-provisioning.md"
     title: "@happyvertical/smrt-users packages/users/agents/oidc-provisioning.md"
-  - id: "agents-5"
+  - id: "agents-6"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/users/agents/permissions.md"
     title: "@happyvertical/smrt-users packages/users/agents/permissions.md"
-  - id: "agents-6"
+  - id: "agents-7"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/users/agents/retention.md"
     title: "@happyvertical/smrt-users packages/users/agents/retention.md"
-  - id: "agents-7"
+  - id: "agents-8"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/users/agents/terminal-auth-testing.md"
     title: "@happyvertical/smrt-users packages/users/agents/terminal-auth-testing.md"
 ---
@@ -50,6 +53,7 @@ sources:
 - `packages/users/AGENTS.md`
 - `packages/users/agents/family-invitations.md`
 - `packages/users/agents/mobile-auth.md`
+- `packages/users/agents/oauth-authorization.md`
 - `packages/users/agents/oidc-provisioning.md`
 - `packages/users/agents/permissions.md`
 - `packages/users/agents/retention.md`

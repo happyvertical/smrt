@@ -44,6 +44,45 @@ by the SDK. Grant revocation POST has the same origin check and takes `grantId`.
 All account/consent responses use private, no-store. No handler authenticates a
 session from OAuth client identity or accepts a browser-submitted user/tenant.
 
+## Client ID Metadata Documents (#5081)
+
+Opt-in, off by default, like `dynamicClientRegistration`. The SDK server
+resolves clients only through `storage.getClient`, so
+`createCimdAuthorizationServer({ ...sdkOptions, clientIdMetadataDocuments })`
+(`src/services/oauth-cimd.ts`) wraps the storage and subclasses the server to
+add `client_id_metadata_document_supported: true` to RFC 8414 metadata. Without
+the option it returns the plain SDK server: https client_ids stay unknown,
+nothing is fetched, nothing is advertised. `withClientIdMetadataDocuments`
+composes the same decorator onto a storage directly.
+
+- `allowClientOrigin(origin, clientId)` is REQUIRED; construction throws
+  without it (there is no implicit allow-all; pass `() => true` explicitly).
+  It runs on every request before the cache, so a policy change is immediate;
+  a throw or non-`true` result denies.
+- client_id must be the canonical `https://` URL with a path, default port, no
+  credentials/fragment/dot segments, and a public DNS-style host (literal IPs,
+  single-label and `.local/.internal/.localhost`-style names are refused before
+  any network I/O).
+- Fetch (`oauth-cimd-fetch.ts`): DNS resolved once, every address must be
+  public (non-global-unicast IPv6, private/loopback/link-local/CGNAT/metadata
+  IPv4 refused), connection pinned to the vetted address, redirects never
+  followed, 5 s timeout, 16 KiB cap, `application/json` or `+json` only,
+  identity encoding. content's `safe-remote-url` is not reused: users cannot
+  depend on content (heavy graph, content dev-depends on users).
+- Document: `client_id` equals the URL; `redirect_uris` 1-10 https (loopback
+  http only with `allowLoopbackRedirects`); the authorization request's
+  `redirect_uri` must equal one entry exactly; `token_endpoint_auth_method`
+  absent or `none`; any `client_secret*` rejects; grant/response types limited
+  to `authorization_code`/`refresh_token`/`code`. Allowed scopes are the
+  document's `scope` intersected with the server's (all server scopes if
+  absent).
+- Cache: in-memory, honours `s-maxage`/`max-age`/`Age`, clamped to 60 s..24 h
+  (so `no-store` still gets the floor, bounding outbound fetches), 1 h default,
+  30 s negative cache, 1000 entries, concurrent lookups share one fetch. It is
+  per-process; replicas fetch independently.
+- Every failure is "unknown client" to the requester; `onRejected(clientId,
+  reason)` is for operator logs only. Tests: `src/__tests__/oauth-cimd.test.ts`.
+
 ## Transaction invariants
 
 Code consume uses a conditional write. Refresh rotation and revocation lock a
