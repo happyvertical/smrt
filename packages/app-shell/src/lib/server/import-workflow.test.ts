@@ -25,8 +25,10 @@ import {
   importFieldName,
   importModelName,
 } from '../../engine/import-target.ts';
+import { AppDraftCollection } from '../objects/AppDraft.ts';
 import { AppImportCollection } from '../objects/AppImport.ts';
 import { ApprovalCollection } from '../objects/Approval.ts';
+import { runCommand } from './builder.ts';
 import {
   discardNow,
   draftInfo,
@@ -597,15 +599,34 @@ it('refuses nonowners, invalid uploads, occupied draft and simultaneous imports'
     ),
   ).rejects.toMatchObject({ status: 415 });
   await startDraft('My draft', h.owner.id);
+  await runCommand(
+    {
+      type: 'defineModel',
+      name: 'Scratch',
+      fields: { note: { type: 'text' } },
+    },
+    h.owner.id,
+    'draft',
+  );
   await expect(service.start(h.owner, await request())).rejects.toMatchObject({
     status: 409,
+    message: /A draft is already open/,
   });
+  expect((await draftInfo())?.name).toBe('My draft');
   await discardNow();
   await service.start(h.owner, await request());
   await expect(service.start(h.owner, await request())).rejects.toMatchObject({
     status: 409,
   });
   expect(await service.current(h.member).catch(() => null)).toBeNull();
+});
+it('reuses an open draft that has no changes', async () => {
+  const unused = await startDraft('Never used', h.owner.id);
+  await service.start(h.owner, await request());
+  expect(
+    (await (await AppDraftCollection.create({ db: h.db })).get(unused.id))
+      ?.status,
+  ).toBe('discarded');
 });
 it('refuses tracking-off and disconnected AI before consuming bytes, and validates owner cell settings', async () => {
   config({ usage: { enabled: false } });

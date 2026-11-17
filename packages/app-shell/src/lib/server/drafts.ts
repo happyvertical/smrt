@@ -421,6 +421,27 @@ export function discardNow(expectId?: string): Promise<{ discarded: string }> {
   });
 }
 
+/**
+ * Close the open draft only when it is provably unused: no hold, an open copy
+ * and an empty change chain. A draft with changes, or one that cannot be read,
+ * stays. Lets an import take over a draft the owner never used.
+ */
+export async function discardIfUnused(): Promise<boolean> {
+  const slot = await getDraftSlot();
+  if (!slot || slot.hold || !slot.host) return false;
+  try {
+    if ((await slot.host.draftChain()).versions.length > 0) return false;
+  } catch {
+    return false;
+  }
+  try {
+    await discardNow(slot.id);
+  } catch (error) {
+    if ((await getDraftSlot())?.id === slot.id) throw error;
+  }
+  return true;
+}
+
 /** Ask to discard (a tool's way): an Approval. */
 export async function requestDiscard(
   requestedBy: string,
