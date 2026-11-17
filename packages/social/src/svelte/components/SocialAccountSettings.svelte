@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Checkbox, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import {
@@ -171,7 +172,7 @@ function statusLabel(account: SocialAccountSettingsItem): string {
               <div class="smrt-social-account-settings__policy" role="group" aria-label="Publishing control for {account.name}">
                 <label>
                   Publish mode
-                  <select
+                  <Select
                     value={account.publishMode ?? 'dry_run'}
                     disabled={busyId === account.id}
                     onchange={(e) => {
@@ -184,11 +185,10 @@ function statusLabel(account: SocialAccountSettingsItem): string {
                     {#each supportedPublishModes(account.platform) as mode}
                       <option value={mode}>{modeLabel(mode)}</option>
                     {/each}
-                  </select>
+                  </Select>
                 </label>
-                <label>
-                  <input
-                    type="checkbox"
+                <Checkbox
+                    label="Allow public posting"
                     checked={account.publicPublishingAllowed ?? false}
                     disabled={busyId === account.id}
                     onchange={(e) => {
@@ -196,9 +196,7 @@ function statusLabel(account: SocialAccountSettingsItem): string {
                       e.currentTarget.checked = account.publicPublishingAllowed ?? false;
                       requestPolicy(account, { publicPublishingAllowed: value });
                     }}
-                  />
-                  Allow public posting
-                </label>
+                />
                 {#if pending?.accountId === account.id}
                   <div class="smrt-social-account-settings__confirm" role="alertdialog" aria-label="Confirm public posting">
                     <p>
