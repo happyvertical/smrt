@@ -5,7 +5,7 @@ description: "Multi-location stock tracking for the SMRT framework — Sku, Inve
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T17:27:50Z"
+  at: "2026-11-17T18:00:38Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:a3c4a9ff8fbd2aec3a19b5ec0bb0748978297ef541434584a434f9dd27cb934c"

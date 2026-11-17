@@ -5,7 +5,7 @@ description: "Layered playbook registry, app/tenant overrides, and plan resoluti
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T17:27:50Z"
+  at: "2026-11-17T18:00:38Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:b67d2d8fe69b781f9de58fc0b068190944194eaec991cff72c51f19aa8f22b10"

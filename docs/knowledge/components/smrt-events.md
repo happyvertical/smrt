@@ -5,7 +5,7 @@ description: "Hierarchical event management with participant tracking and SMRT f
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T17:27:50Z"
+  at: "2026-11-17T18:00:38Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:41ec99384614fb3c4615eab838bde39cab4cb4d5cbe7cec734d8c438abb9b2be"

@@ -5,7 +5,7 @@ description: "Cross-channel campaign coordination, immutable performance evidenc
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T17:27:50Z"
+  at: "2026-11-17T18:00:38Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:514b5e943cb001d58eab399e3b8cf539f76727c96503ff0208eab62f25648c9d"

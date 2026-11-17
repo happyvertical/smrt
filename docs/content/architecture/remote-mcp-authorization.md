@@ -6,18 +6,37 @@ This is the deployment contract for Anytown, Ergot, and other applications that
 put a SMRT MCP HTTP surface on the public internet. SMRT currently supplies the
 application-scoped `/api/mcp` stateless Streamable HTTP endpoint and a local
 stdio bridge. The REST-shaped `/api/mcp/tools` and `/api/mcp/call` adapters are
-deprecated compatibility routes for one release. SMRT does **not** supply an
-OAuth authorization server. Use an application gateway or the server-only JWT
-adapter below to validate tokens before supplying an authenticated principal.
-The issuer remains operator-owned; resolve current application membership and
-tenant authority on every request.
+deprecated compatibility routes for one release.
+
+`@happyvertical/smrt-app-mcp` validates tokens and trusts the principal your
+application supplies; it is not itself an authorization server. SMRT supports
+two issuer paths, and a deployment picks one:
+
+- **The application is its own issuer.** `@happyvertical/smrt-users` runs an
+  OAuth 2.0 authorization server (built on `@happyvertical/auth/server`): the
+  authorization-code flow with S256 PKCE, rotating refresh tokens with replay
+  revocation, RFC 8414 discovery, a JWKS endpoint, token revocation, RFC 8707
+  `resource` binding (the resource becomes the token `aud`), RFC 9207 `iss` on
+  authorization responses, and opt-in RFC 7591 Dynamic Client Registration.
+  The host owns the login and consent screens. Login can be any smrt-users
+  session method, including delegating to an external OIDC identity provider.
+  Wire it with `SmrtOAuthAuthorizationService` and the `createOAuthHandlers`
+  export of `@happyvertical/smrt-users/sveltekit`; see the package's
+  `agents/oauth-authorization.md`.
+- **An external issuer.** Point the application gateway or the server-only JWT
+  adapter below at an existing issuer you operate or rent, such as Keycloak or
+  Cognito.
+
+In both paths, validate tokens before supplying an authenticated principal and
+resolve current application membership and tenant authority on every request.
 
 ## Authorization-server contract
 
 Use one stable HTTPS issuer identifier per authorization server. The application gateway or server-only JWT adapter
 must validate token signature, `iss`, audience/resource, expiry, and scopes
 before protected MCP operations run. Never accept a token minted for another
-issuer or resource.
+issuer or resource. This contract applies equally to the `@happyvertical/smrt-users`
+issuer and to an external one.
 
 The authorization server metadata must:
 
@@ -60,7 +79,8 @@ fallback includes `application_type`, `grant_types`, `response_types`, and
 
 Give the host the application's public HTTPS Streamable HTTP endpoint. Serve
 protected-resource metadata for that exact endpoint and point it at the
-operator's issuer. Configure registration in the host's connector settings.
+application's issuer: the `@happyvertical/smrt-users` authorization server or
+an external one the operator runs. Configure registration in the host's connector settings.
 The registration helper above applies to clients that call it. The external
 host selects and presents its own client identity.
 

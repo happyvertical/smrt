@@ -5,7 +5,7 @@ description: "Outbound webhook subscriptions, signed delivery, and durable retri
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T17:27:50Z"
+  at: "2026-11-17T18:00:38Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:1b74aa9805572c009b01a58ef57db277f67897bede188c3163b7a752d2467cfe"

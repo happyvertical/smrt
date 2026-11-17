@@ -5,7 +5,7 @@ description: "Expense records for the SMRT framework - reviewed costs against a 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T17:27:50Z"
+  at: "2026-11-17T18:00:38Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:c97d490136beb90dabe3ac5beb2191f99693f7669dbf2cee18eb9cef1ad01af1"

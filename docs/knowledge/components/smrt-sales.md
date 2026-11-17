@@ -5,7 +5,7 @@ description: "Modular sales for the SMRT framework: agreement execution, CRM, re
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T17:27:50Z"
+  at: "2026-11-17T18:00:38Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:1c5c2d3c5ec417a74003551d1ed50dcf0940bed93991a3cb5f63c5a947250b17"

@@ -12,6 +12,11 @@ import {
 } from '@happyvertical/smrt-jobs';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { assertHmacSecret, assertWebhookUrl } from './security.js';
+import {
+  assertWebhookProfileSecret,
+  resolveWebhookSigningProfile,
+  type WebhookSigningProfileConfig,
+} from './signing.js';
 
 /** Server-only subscription. Hosts authorize administration before accessing it. */
 @smrt({
@@ -35,10 +40,21 @@ export class WebhookSubscription extends SmrtObject {
   })
   secret: string = '';
   @field({ type: 'boolean', default: true }) enabled: boolean = true;
+  /**
+   * Optional wire-format profile (`{ preset, ...overrides }`); null keeps the
+   * historical `x-smrt-*` default. Nullable column: add it with the normal
+   * application migration before deploying.
+   */
+  @field({ type: 'json', nullable: true })
+  signingProfile: WebhookSigningProfileConfig | null = null;
 
   override async save(options?: SmrtSaveOptions): Promise<this> {
     assertWebhookUrl(this.url);
     assertHmacSecret(this.secret);
+    assertWebhookProfileSecret(
+      this.secret,
+      resolveWebhookSigningProfile(this.signingProfile),
+    );
     for (const values of [this.events, this.models]) {
       if (
         !Array.isArray(values) ||

@@ -5,7 +5,7 @@ description: "Operator-managed service reservations for SMRT"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T17:27:50Z"
+  at: "2026-11-17T18:00:38Z"
 audience: "internal"
 evidence_level: "manifest-described"
 source_revision: "sha256:079991b480df12baab28a902c8f828e78ce621a2d36d06baed4cdd69efa1ce44"
