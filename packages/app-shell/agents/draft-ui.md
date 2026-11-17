@@ -190,3 +190,32 @@ the assistant tool returns the same sentence-case reason without a pending
 marker. Existing blocked pending cards retain a Deny action through the normal
 decision endpoint. A later edit after a valid preview still fails at apply; the
 engine preflight and migration guards remain in place.
+
+
+## Related records on the record page (#5064)
+
+Reuse check: the intent index was read; `smrt-dev-mcp review` was unavailable
+(server down). Reused `cellText`, `indexReferences`, `orderByCreated`,
+`loadRecords`, `hostFor` and the shell records route. The route gained an
+owner-only `field`/`equals` filter (no raw SQL, no engine change).
+
+Below the record's details, `RelatedRecords.svelte` shows the reverse of link
+(`reference`) fields: one tab per model (the field is named in the label only
+when two fields of one model link here), with a count pill. Pure rules live in
+`src/lib/ui/related.ts`: `reverseRelations` (visible link fields only; one level,
+a related record's own relations are never loaded), `arrangeTabs` (at most 4 tabs
+ordered by count; empty relations and the overflow go under More),
+`relatedColumns` (first four visible non-json fields without the link back),
+`parseLinkParam`/`matchLink`. A tab shows up to 8 rows, "Showing X of Y", Add
+(`/m/<Model>/new?with=field:id`, prefilled, returning to the record) and "See
+all ... for <record>" (`/m/<Model>?where=field:id`, with a banner and Show all).
+At 40rem and narrower the relations stack as collapsible sections.
+
+| Behavior | Trigger and positive case | Failure case | Level |
+|---|---|---|---|
+| Reverse relations, tab order, overflow, link params | Client with Invoice (two links) and Walk | Hidden/other-target links skipped; 0-count under More; bad `field:id` ignored | Node `related.test.ts` |
+| Filtered records route | `?field=client&equals=<id>&limit=2` returns 2 of 3 with total | Anonymous 401, member 403, missing/unsafe values 400 | Node `related-records-route.test.ts` |
+| Tabs, More menu, stacked sections, prefilled Add | Record page with related rows | The loader carries the viewed copy, so a draft reads draft rows | DOM not run here (jsdom cannot start); CI |
+
+Rows beyond the first 1000 of a related model are not counted (`truncated` is
+set and the "Showing" line shows a plus).

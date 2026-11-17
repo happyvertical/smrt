@@ -19,6 +19,8 @@ const info = $derived(description?.models[data.model]);
       model={data.model}
       {description}
       references={data.references}
+      prefill={data.prefill}
+      returnTo={data.returnTo}
     />
   </div>
 {/if}

@@ -52,13 +52,36 @@ export async function loadRecords(
   model: string,
   limit = 500,
   target: Target = 'live',
+  link?: { field: string; id: string },
 ): Promise<RecordRow[]> {
-  const out = await load<{ records: RecordRow[] }>(
+  return (await loadRelated(fetchImpl, model, limit, target, link)).records;
+}
+
+/** Records whose link field equals an id, with their full count. */
+export async function loadRelated(
+  fetchImpl: Fetch,
+  model: string,
+  limit: number,
+  target: Target,
+  link?: { field: string; id: string },
+): Promise<{ records: RecordRow[]; total: number; truncated: boolean }> {
+  const filter = link
+    ? `&field=${encodeURIComponent(link.field)}&equals=${encodeURIComponent(link.id)}`
+    : '';
+  const out = await load<{
+    records: RecordRow[];
+    total?: number;
+    truncated?: boolean;
+  }>(
     fetchImpl,
-    `/api/shell/records/${encodeURIComponent(model)}?limit=${limit}`,
+    `/api/shell/records/${encodeURIComponent(model)}?limit=${limit}${filter}`,
     target,
   );
-  return out.records;
+  return {
+    records: out.records,
+    total: out.total ?? out.records.length,
+    truncated: out.truncated ?? false,
+  };
 }
 
 /** Records of every model the given fields point at. */

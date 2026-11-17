@@ -28,9 +28,20 @@ interface Props {
   record?: RecordRow | null;
   /** Records of the models this one refers to, by model name. */
   references?: Record<string, RecordRow[]>;
+  /** Values a new record starts with (link fields set from a related tab). */
+  prefill?: Record<string, string>;
+  /** Where to go after a new record is saved; default its table. */
+  returnTo?: string | null;
 }
 
-let { model, description, record = null, references = {} }: Props = $props();
+let {
+  model,
+  description,
+  record = null,
+  references = {},
+  prefill = {},
+  returnTo = null,
+}: Props = $props();
 
 const info = $derived(description.models[model]);
 const specs = $derived(formFields(info));
@@ -54,7 +65,10 @@ let loadedId: string | null | undefined;
 $effect(() => {
   const id = record?.id ?? null;
   if (id !== loadedId || !touched) {
-    values = initialValues(info.fields, record);
+    values = {
+      ...initialValues(info.fields, record),
+      ...(record ? {} : prefill),
+    };
     errors = {};
     touched = false;
   }
@@ -87,7 +101,7 @@ async function save(event: SubmitEvent) {
       await records.create(model, data, description.mode);
       touched = false;
       await invalidate(DEPENDS.records);
-      await goto(modelHref(model));
+      await goto(returnTo ?? modelHref(model));
     }
   } catch (e) {
     const message = e instanceof ApiError ? e.message : 'Could not save.';

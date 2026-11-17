@@ -110,9 +110,11 @@ owner). Writes must be same-origin `application/json`. Errors are
 | `GET /api/shell/approvals?status=` | | `{ approvals: ApprovalView[], pending }`; `status` is `pending`, `approved`, `denied` or `failed` |
 | `POST /api/shell/approvals/<id>` | `{ approve: boolean }` | `{ id, status: 'approved'\|'denied'\|'failed', result?, error? }`; 404 unknown, 409 already decided |
 | `GET /api/shell/records/<Model>?limit=&target=` | | `{ records: object[] }` |
+| `GET /api/shell/records/<Model>?field=&equals=&limit=&target=` | | The related records of one record: `{ records, total, truncated }` for the rows whose link field equals the id (`records` capped at `limit`; `total` counts matches among the first 1000 rows, `truncated` when that scan hit its limit). Owner only, one named copy; no new SQL |
 | `POST /api/shell/records/<Model>?target=` | the record's fields | 201 the record |
 | `GET /PUT /api/shell/records/<Model>/<id>?target=` | PUT: changed fields | the record |
 | `DELETE /api/shell/records/<Model>/<id>?target=` | | live: **202** `PendingApproval`, nothing is deleted until approved; draft: **200** `{ deleted: id }` |
+| `GET /m/<Model>?where=<field>:<id>` and `/m/<Model>/new?with=<field>:<id>` | | Pages: the table filtered to the records linked to one record, and a new-record form with that link field set (saving returns to the linked record). Only a visible link field and a plain id are honored |
 | `/api/app/<route>` (any method; copy in the `x-shell-target` header) | as the app's REST | the app's generated REST (`/api/app/chores` is the app's `/api/chores`); `DELETE` answers **202** `PendingApproval`; only the app's own collection routes are served (`sync/apply`, `_changes`, `_events` and unknown collections are 404) |
 | `GET /reports`, `GET /reports/<name>` | | Saved report list and live result in the owner's saved copy; sidebar group appears when reports exist |
 | `GET /api/shell/reports/<name>?target=` | | Bounded engine result; labels and reference destinations remain separate from raw ids |

@@ -1,5 +1,6 @@
 <script lang="ts">
 import RecordForm from '$lib/components/RecordForm.svelte';
+import RelatedRecords from '$lib/components/RelatedRecords.svelte';
 import { recordLabel } from '$lib/ui/fields';
 import type { PageProps } from './$types';
 
@@ -24,6 +25,13 @@ const info = $derived(description?.models[data.model]);
       {description}
       record={data.record}
       references={data.references}
+    />
+    <RelatedRecords
+      model={data.model}
+      {description}
+      record={data.record}
+      related={data.related}
+      references={data.relatedReferences}
     />
   </div>
 {/if}
