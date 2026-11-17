@@ -52,8 +52,11 @@ export const POST = mountMcpAppRoute({
   error (404 semantics).
 - **Principal** — `principalFromSessionLocals` reads only `locals.user.id`, the
   session-authorized `locals.tenantId`, and `locals.permissions` (as sorted
-  `scopes`, `kind` from `locals.principalKind` when the app runtime classified
-  the user, else `'human'`; an unclassifiable user is unauthenticated). Missing or malformed fields mean unauthenticated.
+  `scopes`, `kind` from `locals.principalKind` as classified by the app
+  runtime). An absent or unclassifiable kind is unauthenticated, so a session
+  hook that never sets it (for example `smrt-users` `createSessionHandler`
+  without the app runtime) is denied; a host that knowingly asserts one kind
+  opts in with `defaultPrincipalKind`, unset by default. Missing or malformed fields mean unauthenticated.
   URL-selected tenants, headers and bodies are never identity inputs. Override
   with `resolvePrincipal`.
 - **Policy** — `requiredScopes` is required: every authenticated principal must

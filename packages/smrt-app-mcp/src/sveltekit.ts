@@ -375,10 +375,21 @@ function originDeniedResponse(): Response {
  * (`locals.selectedTenantId`), request bodies and route arguments are never
  * identity inputs. Any missing or malformed field yields `null`
  * (unauthenticated), which fails closed for every non-public tool.
+ *
+ * The principal kind comes from `locals.principalKind`, published by the SMRT
+ * app runtime. A session hook that does not classify the user (for example
+ * `createSessionHandler` from `@happyvertical/smrt-users` without the app
+ * runtime) leaves it absent, and an absent kind is unauthenticated: a bot
+ * profile with a session cookie must not pass as a person. A host that
+ * knowingly asserts one kind for every session user opts in with
+ * `options.defaultPrincipalKind`; it is unset by default.
  */
-export function principalFromSessionLocals(event: {
-  locals?: Record<string, unknown>;
-}): McpAppPrincipal | null {
+export function principalFromSessionLocals(
+  event: {
+    locals?: Record<string, unknown>;
+  },
+  options: { defaultPrincipalKind?: string } = {},
+): McpAppPrincipal | null {
   const locals = event.locals;
   if (!locals || typeof locals !== 'object') return null;
   const user = locals.user as { id?: unknown } | null | undefined;
@@ -394,20 +405,15 @@ export function principalFromSessionLocals(event: {
     return null;
   // The SMRT runtime classifies the session user (`locals.principalKind`):
   // an agent user with a session cookie must not pass as a human. A runtime
-  // that could not classify it publishes `null`, which denies. Apps without
-  // that field keep the established `human` default.
-  const classified = locals.principalKind;
-  if (classified === null) return null;
-  if (
-    classified !== undefined &&
-    (typeof classified !== 'string' || classified.length === 0)
-  ) {
-    return null;
-  }
+  // that could not classify it publishes `null`, which denies. An absent
+  // field denies too unless the host opted into `defaultPrincipalKind`.
+  if (locals.principalKind === null) return null;
+  const classified = locals.principalKind ?? options.defaultPrincipalKind;
+  if (typeof classified !== 'string' || classified.length === 0) return null;
   return {
     id: user.id,
     tenantId,
-    kind: classified ?? 'human',
+    kind: classified,
     scopes: [...permissions].sort(),
   };
 }
@@ -745,6 +751,13 @@ export interface MountMcpAppRouteOptions
    */
   resolvePrincipal?: McpPrincipalResolver;
   /**
+   * Kind assumed for session users whose `locals.principalKind` is absent.
+   * Unset by default: an unclassified session is unauthenticated. Set it only
+   * when the host knowingly asserts one kind for every session user. Ignored
+   * when `resolvePrincipal` is given.
+   */
+  defaultPrincipalKind?: string;
+  /**
    * The application runtime (`runtime` from
    * `@happyvertical/smrt-app-runtime/sveltekit`). It supplies the three
    * bindings an app otherwise wires by hand, each still overridable:
@@ -816,6 +829,7 @@ export function mountMcpAppRoute(
     bindPrincipal,
     extensions,
     resolvePrincipal,
+    defaultPrincipalKind,
     checkOrigin,
     trustedOrigins,
     runtime,
@@ -842,7 +856,9 @@ export function mountMcpAppRoute(
     // Default on: the default principal is an ambient session cookie.
     checkOrigin: checkOrigin ?? true,
     trustedOrigins,
-    resolvePrincipal: resolvePrincipal ?? principalFromSessionLocals,
+    resolvePrincipal:
+      resolvePrincipal ??
+      ((event) => principalFromSessionLocals(event, { defaultPrincipalKind })),
   };
   const handler = mountMcpRouteWith(
     server,

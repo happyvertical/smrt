@@ -310,8 +310,13 @@ describe('session principals carry the user kind', () => {
     tenantId: TENANT,
     permissions: ['notes.read'],
   };
-  it('defaults to human, honors the runtime classification, fails closed', () => {
-    expect(principalFromSessionLocals({ locals: base })?.kind).toBe('human');
+  it('honors the runtime classification, fails closed without one', () => {
+    expect(principalFromSessionLocals({ locals: base })).toBeNull();
+    expect(
+      principalFromSessionLocals({
+        locals: { ...base, principalKind: 'human' },
+      })?.kind,
+    ).toBe('human');
     expect(
       principalFromSessionLocals({
         locals: { ...base, principalKind: 'agent' },

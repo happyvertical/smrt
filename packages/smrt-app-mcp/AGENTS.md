@@ -48,7 +48,8 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
   protocol server per request, emits no session id, and refuses subscriptions.
 - `mountMcpAppRoute` (`src/defaults.ts` + `./sveltekit`) is the one-call app
   route: explicit `models` allow-list, required `requiredScopes`, principal from
-  session locals (`principalFromSessionLocals`). App policies compose with the
+  session locals (`principalFromSessionLocals`; absent `principalKind` denies
+  unless `defaultPrincipalKind` is set). App policies compose with the
   default and may only narrow it. Its `Origin` check (default on; opt-in on
   `mountMcpRoute`) runs before auth and dispatch; no-`Origin` clients pass.
   `effects` filters the catalog by `mcpToolEffect` (excluded tools 404).

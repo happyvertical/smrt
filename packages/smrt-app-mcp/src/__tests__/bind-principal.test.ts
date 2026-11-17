@@ -33,6 +33,7 @@ const cookieLocals = {
   user: { id: 'cookie-user' },
   tenantId: 'tenant-c',
   permissions: ['items.read'],
+  principalKind: 'human',
   sessionId: 'sid',
 };
 

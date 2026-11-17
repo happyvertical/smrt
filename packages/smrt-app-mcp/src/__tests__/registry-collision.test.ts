@@ -114,6 +114,7 @@ const ownerLocals = {
   user: { id: 'owner-1' },
   tenantId: 'tenant-a',
   permissions: ['notes.read'],
+  principalKind: 'human',
   sessionId: 'sid-1',
 };
 
