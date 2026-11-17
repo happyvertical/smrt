@@ -167,6 +167,59 @@ function statusLabel(account: SocialAccountSettingsItem): string {
             {#if account.missingPermissions?.length}
               <p class="smrt-social-account-settings__warning" data-smrt-part="description">Missing: {account.missingPermissions.join(', ')}</p>
             {/if}
+            {#if !readonly && onChangePublishPolicy && account.isActive}
+              <div class="smrt-social-account-settings__policy" role="group" aria-label="Publishing control for {account.name}">
+                <label>
+                  Publish mode
+                  <select
+                    value={account.publishMode ?? 'dry_run'}
+                    disabled={busyId === account.id}
+                    onchange={(e) => {
+                      const value = e.currentTarget.value as PublishMode;
+                      // The prop stays authoritative: snap back, the host reload applies it.
+                      e.currentTarget.value = account.publishMode ?? 'dry_run';
+                      requestPolicy(account, { publishMode: value });
+                    }}
+                  >
+                    {#each supportedPublishModes(account.platform) as mode}
+                      <option value={mode}>{modeLabel(mode)}</option>
+                    {/each}
+                  </select>
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={account.publicPublishingAllowed ?? false}
+                    disabled={busyId === account.id}
+                    onchange={(e) => {
+                      const value = e.currentTarget.checked;
+                      e.currentTarget.checked = account.publicPublishingAllowed ?? false;
+                      requestPolicy(account, { publicPublishingAllowed: value });
+                    }}
+                  />
+                  Allow public posting
+                </label>
+                {#if pending?.accountId === account.id}
+                  <div class="smrt-social-account-settings__confirm" role="alertdialog" aria-label="Confirm public posting">
+                    <p>
+                      This lets {account.name} post publicly: approved posts will go live on
+                      {account.platform}. Turn it off at any time to stop posting.
+                    </p>
+                    <Button
+                      variant="danger"
+                      disabled={busyId === account.id}
+                      onclick={() => pending && submitPolicy(account, pending.change, true)}
+                    >
+                      Allow public posting
+                    </Button>
+                    <Button variant="secondary" onclick={() => (pending = null)}>Cancel</Button>
+                  </div>
+                {/if}
+                {#if policyError?.accountId === account.id}
+                  <p class="smrt-social-account-settings__warning" role="alert">{policyError.message}</p>
+                {/if}
+              </div>
+            {/if}
           </div>
 
           <div class="smrt-social-account-settings__actions" data-smrt-part="actions">
@@ -190,6 +243,28 @@ function statusLabel(account: SocialAccountSettingsItem): string {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
+  .smrt-social-account-settings__policy {
+    display: grid;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+  .smrt-social-account-settings__policy label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .smrt-social-account-settings__confirm {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    border: 1px solid currentColor;
+    border-radius: 8px;
+    padding: 0.75rem;
+  }
+  .smrt-social-account-settings__confirm p {
+    flex-basis: 100%;
+  }
   .smrt-social-account-settings__root {
     display: grid;
     gap: 1rem;
