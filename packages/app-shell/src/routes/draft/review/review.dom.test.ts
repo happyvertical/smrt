@@ -12,7 +12,6 @@ import {
   description,
   draftInfo,
   preview,
-  publishApproval,
 } from '../../../test/draft-fixtures.ts';
 import Review from './+page.svelte';
 
@@ -26,7 +25,7 @@ const navigation = vi.hoisted(() => ({
 vi.mock('$app/navigation', () => navigation);
 let container: HTMLDivElement;
 let component: ReturnType<typeof mount>;
-let changedAt: 'request' | 'decision' | null;
+let changed: boolean;
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status });
 const button = (label: string) =>
@@ -35,7 +34,7 @@ const button = (label: string) =>
   );
 
 beforeEach(() => {
-  changedAt = null;
+  changed = false;
   vi.clearAllMocks();
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -48,28 +47,10 @@ beforeEach(() => {
         expect(JSON.parse(String(init?.body))).toEqual({
           expect: preview.digest,
         });
-        return changedAt === 'request'
+        return changed
           ? json({ error: 'The draft changed since this preview.' }, 409)
-          : json(
-              {
-                status: 'pending_approval',
-                approvalId: 'approval-publish',
-                summary: 'Publish Better orders',
-                preview,
-              },
-              202,
-            );
+          : json({ id: 'approval-publish', status: 'approved', result: {} });
       }
-      if (path.includes('/approvals/'))
-        return changedAt === 'decision'
-          ? json({
-              id: 'approval-publish',
-              status: 'failed',
-              error: 'The draft changed since this preview.',
-            })
-          : json({ id: 'approval-publish', status: 'approved' });
-      if (path.includes('/approvals'))
-        return json({ approvals: [publishApproval()] });
       throw new Error(`Unexpected request ${path}`);
     }),
   );
@@ -109,60 +90,46 @@ describe('publish review', () => {
       expect.objectContaining({ method: 'POST' }),
     );
   });
-  it('requests the digest-pinned Approval and resolves it using the existing card', async () => {
+  it("publishes in one step on the owner's click, pinned to the reviewed digest", async () => {
     await render();
     button('Publish')?.click();
-    await vi.waitFor(() =>
-      expect(container.querySelector('button')?.textContent).toContain(
-        'Approve',
-      ),
-    );
-    const approve = [
-      ...container.querySelectorAll<HTMLButtonElement>('button'),
-    ].find((b) => b.textContent?.startsWith('Approve'));
-    expect(approve).toBeTruthy();
-    expect(button('Publish')).toBeUndefined();
-    approve?.click();
     await vi.waitFor(() =>
       expect(navigation.goto).toHaveBeenCalledWith('/', {
         invalidateAll: true,
       }),
     );
     expect(fetch).toHaveBeenCalledWith(
-      '/api/shell/approvals/approval-publish?target=live',
+      '/api/shell/draft/publish?target=draft',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ approve: true }),
+        body: JSON.stringify({ expect: preview.digest }),
       }),
     );
+    // No second Approve step: nothing is fetched from the approvals routes.
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.some(([input]) => String(input).includes('/approvals')),
+    ).toBe(false);
+    expect(
+      [...container.querySelectorAll('button')].some((b) =>
+        b.textContent?.startsWith('Approve'),
+      ),
+    ).toBe(false);
   });
-  it.each([
-    'request',
-    'decision',
-  ] as const)('shows a changed-chain refusal at %s and offers a fresh review', async (at) => {
-    changedAt = at;
+  it('shows a changed-draft refusal and offers a fresh review', async () => {
+    changed = true;
     await render();
     button('Publish')?.click();
-    if (at === 'decision') {
-      await vi.waitFor(() =>
-        expect(
-          [...container.querySelectorAll('button')].some((b) =>
-            b.textContent?.startsWith('Approve'),
-          ),
-        ).toBe(true),
-      );
-      [...container.querySelectorAll<HTMLButtonElement>('button')]
-        .find((b) => b.textContent?.startsWith('Approve'))
-        ?.click();
-    }
     await vi.waitFor(() =>
       expect(container.textContent).toContain(
         'The draft changed since this preview.',
       ),
     );
     expect(button('Review again')).toBeTruthy();
+    expect(button('Publish')).toBeUndefined();
     expect(navigation.goto).not.toHaveBeenCalled();
-    changedAt = null;
+    changed = false;
     button('Review again')?.click();
     await vi.waitFor(() => expect(button('Publish')).toBeTruthy());
     await tick();
@@ -347,13 +314,9 @@ it('shows each loaded table with its counts and a preview of the draft rows', as
   );
 });
 
-it('shows progress while publishing and a success notice once approved', async () => {
+it('shows a success notice once published', async () => {
   await render();
   button('Publish')?.click();
-  await vi.waitFor(() => expect(container.textContent).toContain('Approve'));
-  [...container.querySelectorAll<HTMLButtonElement>('button')]
-    .find((b) => b.textContent?.startsWith('Approve'))
-    ?.click();
   await vi.waitFor(() =>
     expect(container.textContent).toContain('Published. Opening your app'),
   );

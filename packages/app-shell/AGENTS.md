@@ -23,7 +23,7 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
 | `src/lib/server/target.ts`, `drafts.ts`, `view.ts` | The copy a request names (`live`/`draft`, `CallScope`), the draft lifecycle (start, describe, preview, publish and discard apply, History grouping) and the owner's saved view. README "Draft then publish (the shell)" lists routes, payloads, events. |
 | `src/lib/server/version-store.ts` | `ShellVersionStore` (engine `VersionStore` on `AppVersion` + the `App` row; `commit` is one transaction, a publish's draft mark rides in it) and `DraftVersionStore` (`AppDraftVersion` rows of one `AppDraft`). |
 | `src/lib/server/owner.ts` | Owner check, `Principal`, `assertOwner`, `runAs`. |
-| `src/lib/server/approvals.ts`, `approval-store.ts` | Shared-authority storage adapter and shell action executor; the only place `approved: true` is set. |
+| `src/lib/server/approvals.ts`, `approval-store.ts` | Shared-authority storage adapter and shell action executor; the only place `approved: true` is set (`decideApproval`; `publishOwnDraft` is the owner's one-step Publish). |
 | `src/lib/server/engine-tools.ts` | New engine catalog adapters: owner check, explicit structure/record targets, builder approval path. |
 | `src/lib/server/builder.ts` | `runCommand`/`runAppTool`/`runRest`/`requestRecordDelete`: execute or turn into an Approval. |
 | `src/lib/server/catalog.ts`, `policy.ts`, `mcp-server.ts` | Merged tool catalog, the one policy, the `/mcp` server. |
@@ -49,8 +49,10 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
 - **Approval gate.** A risky builder command, `<model>_delete` tool, REST
   `DELETE` or record delete never runs: it becomes an `Approval`
   (`pending_approval`, idempotent per identical pending action). Only
-  `decideApproval` (called by `Approval.decide`) passes the engine's
-  `approved: true`; `invariants.test.ts` fails if any other source does, or if
+  `decideApproval` passes the engine's `approved: true`, and it has exactly two
+  callers: `Approval.decide` and `publishOwnDraft` (the owner's own Publish
+  click, reachable only from the session route `POST /api/shell/draft/publish`);
+  `invariants.test.ts` fails if any other source sets it or calls either, or if
   a route reads an `approved` input. The engine refuses without it as well.
   `undo` is risky when the version being undone has a type conversion (it would
   overwrite newer values with the archived originals); `POST /api/shell/undo`
@@ -70,7 +72,10 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
   draft is open live is frozen (also after a restart): builder calls naming live
   are refused naming the draft; live records keep working. `publishDraft` is
   always an Approval (`publish-draft`, pinned to the preview digest; the engine
-  refuses at apply if the chain changed); a discard is direct from the UI route,
+  refuses at apply if the chain changed): tools, the assistant, `/mcp` and the
+  generated REST leave it pending; the owner's review-page Publish (required
+  `expect` = the reviewed digest, re-checked against a fresh preview, else
+  409) records and decides it in one step; a discard is direct from the UI route,
   an Approval from a tool. Approvals only ever run against live. Table changes
   here are new tables only (`prepareShellSchema` cannot ALTER).
 - **Decorator configs are literals** (`@smrt({...})` on `App`, `Approval`). The

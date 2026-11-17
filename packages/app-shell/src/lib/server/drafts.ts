@@ -296,7 +296,9 @@ export async function previewDraft(): Promise<{
 /**
  * Ask to publish: ALWAYS an Approval, pinned to the digest of a preview taken
  * now. `expect`, when given, is the digest the person reviewed: a draft that
- * changed since is refused (review it again), not published.
+ * changed since is refused (review it again), not published. Tools leave it
+ * pending; only the owner's review-page Publish (`publishOwnDraft`, which
+ * requires `expect`) decides it in the same request.
  */
 export async function requestPublish(
   expect: unknown,

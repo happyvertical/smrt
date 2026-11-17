@@ -1,15 +1,15 @@
 // The draft routes, called as functions with a fake SvelteKit event: owner only
 // (401/403 for everyone else), the copy named by the request, and the whole
-// start -> build -> preview -> publish-by-approval -> undo -> discard cycle.
+// start -> build -> preview -> one-step owner publish -> undo -> discard cycle.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { App } from '../lib/objects/App.ts';
 import { appsRestHandle } from '../lib/server/apps-rest.ts';
 import { type ShellEvent, subscribe } from '../lib/server/events.ts';
 import { getDraftSlot, getHost } from '../lib/server/host.ts';
 import { runAs } from '../lib/server/owner.ts';
+import { callTool } from '../lib/server/policy.ts';
 import { openShell, type ShellHarness } from '../lib/server/test-support.ts';
 import * as appRoute from './api/app/[...path]/+server.ts';
-import * as approvalRoute from './api/shell/approvals/[id]/+server.ts';
 import * as describeRoute from './api/shell/describe/+server.ts';
 import * as draftRoute from './api/shell/draft/+server.ts';
 import * as discardRoute from './api/shell/draft/discard/+server.ts';
@@ -478,7 +478,7 @@ describe('the cycle', () => {
   });
 
   let digest = '';
-  it('preview shows the rehearsal; publish is ALWAYS a 202 Approval pinned to its digest', async () => {
+  it("preview shows the rehearsal; tools and generated REST only ask; the owner's Publish applies in one step", async () => {
     const prev = await body(
       previewRoute.POST(event(h.owner, 'POST', '/api/shell/draft/preview')),
     );
@@ -487,6 +487,31 @@ describe('the cycle', () => {
     expect(prev.json.draft.changes).toBe(3);
     expect(prev.json.preview.versions.length).toBe(3);
     expect(Array.isArray(prev.json.preview.methods)).toBe(true);
+    // the MCP / assistant tool path and the generated REST still only ask
+    const tool = await callTool(h.owner, 'app_publishdraft', {
+      expect: digest,
+    });
+    const asked = JSON.parse((tool.content as { text: string }[])[0].text);
+    const toolPending = (asked.result ?? asked) as Record<string, string>;
+    expect(toolPending.status).toBe('pending_approval');
+    const generated = await appsRestHandle({
+      event: event(h.owner, 'POST', '/api/apps/publishDraft', {
+        body: { expect: digest },
+      }),
+      resolve: (async () => new Response('generated')) as never,
+    });
+    expect(generated.status).toBe(202);
+    expect(((await generated.json()) as { status: string }).status).toBe(
+      'pending_approval',
+    );
+    expect((await getHost()).version).toBe(liveBase); // nothing applied
+    // the owner's route needs the digest it reviewed, and refuses a stale one
+    const missing = await body(
+      publishRoute.POST(
+        event(h.owner, 'POST', '/api/shell/draft/publish', { body: {} }),
+      ),
+    );
+    expect(missing.status).toBe(400);
     const stale = await body(
       publishRoute.POST(
         event(h.owner, 'POST', '/api/shell/draft/publish', {
@@ -495,36 +520,42 @@ describe('the cycle', () => {
       ),
     );
     expect(stale.status).toBe(409);
-    const asked = await body(
+    expect(stale.json.error).toMatch(/review it again/);
+    const crossSite = await body(
+      publishRoute.POST(
+        event(h.owner, 'POST', '/api/shell/draft/publish', {
+          body: { expect: digest },
+          headers: { origin: 'https://evil.example' },
+        }),
+      ),
+    );
+    expect(crossSite.status).toBe(403);
+    expect((await getHost()).version).toBe(liveBase);
+    // one step: the owner's click publishes, deciding the same pinned Approval
+    const published = await body(
       publishRoute.POST(
         event(h.owner, 'POST', '/api/shell/draft/publish', {
           body: { expect: digest },
         }),
       ),
     );
-    expect(asked.status).toBe(202);
-    expect(asked.json.status).toBe('pending_approval');
-    expect((await getHost()).version).toBe(liveBase); // nothing applied
-    // approving through the ordinary approvals route publishes
-    const decided = await body(
-      approvalRoute.POST(
-        event(
-          h.owner,
-          'POST',
-          `/api/shell/approvals/${asked.json.approvalId}`,
-          {
-            params: { id: asked.json.approvalId },
-            body: { approve: true },
-          },
-        ),
-      ),
-    );
-    expect(decided.json.status).toBe('approved');
+    expect(published.status).toBe(200);
+    expect(published.json.status).toBe('approved');
+    expect(published.json.id).toBe(toolPending.approvalId);
     expect((await getHost()).version).toBeGreaterThan(liveBase);
     expect(await getDraftSlot()).toBeNull();
     expect(
       seen.some((e) => e.type === 'draft' && e.status === 'published'),
     ).toBe(true);
+    // a second click finds nothing to publish
+    const again = await body(
+      publishRoute.POST(
+        event(h.owner, 'POST', '/api/shell/draft/publish', {
+          body: { expect: digest },
+        }),
+      ),
+    );
+    expect(again.status).toBe(404);
     const after = await body(
       draftRoute.GET(event(h.owner, 'GET', '/api/shell/draft')),
     );

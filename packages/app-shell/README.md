@@ -397,7 +397,7 @@ can rely on:
 | `GET /api/shell/draft` | | `{ draft: DraftInfo \| null, view: 'live'\|'draft' }` |
 | `POST /api/shell/draft` | `{ name? }` | **201** `DraftInfo`; 409 if one is already open |
 | `POST /api/shell/draft/preview` | none | `{ draft: DraftInfo, preview: PublishPreview }`; 404 no draft; 409 unpublishable |
-| `POST /api/shell/draft/publish` | `{ expect? }` (the preview's `digest`) | **always 202** `PendingApproval`; 409 when `expect` no longer matches (review again) |
+| `POST /api/shell/draft/publish` | `{ expect }` (required: the reviewed preview's `digest`) | the owner's own Publish, one step: `{ id, status: 'approved', result }`; 400 no `expect`; 409 when `expect` no longer matches or the apply refused (review again) |
 | `POST /api/shell/draft/discard` | `{ draftId? }` | `{ discarded: name }`; the owner's direct action (the UI confirms first); 404 none, 409 wrong id |
 | `GET /api/shell/draft/view` | | `{ view }` (`live` whenever no draft is open) |
 | `PUT /api/shell/draft/view` | `{ view: 'live'\|'draft' }` | `{ view }`; `draft` with no usable draft is 409 |
@@ -422,8 +422,11 @@ it). Archive counts are of that moment and can drift. The publish Approval's
 `preview` is this object plus `draft` (the name); its `action` is
 `{ kind: 'publish-draft', draftId, draftName, digest }`. Approving applies
 exactly that chain and **fails** (status `failed`, the draft stays open) if the
-draft changed since. Approve through `POST /api/shell/approvals/<id>` as for any
-Approval. A discard asked by a tool is `{ kind: 'discard-draft', draftId,
+draft changed since. A tool, the assistant, `/mcp` or the generated REST leaves
+it pending; approve through `POST /api/shell/approvals/<id>` as for any
+Approval. The owner's review-page Publish (`POST /api/shell/draft/publish`,
+session cookie and same origin only) records the same Approval and decides it
+in one step, so it stays in Approvals as the audit row. A discard asked by a tool is `{ kind: 'discard-draft', draftId,
 draftName }`. A successful publish result is `{ version, versions, summary,
 archives, appRestartMs, draft }`.
 

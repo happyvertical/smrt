@@ -1,7 +1,8 @@
 // Who may do what, in one place. The shell has exactly one person: the owner.
 // Every builder operation, approval decision and route requires the owner's
 // session; the engine's `approved` flag is reachable only from
-// `Approval.decide` (see approvals.ts).
+// `Approval.decide` and the owner's own review-page Publish (`publishOwnDraft`;
+// see approvals.ts).
 //
 // Owner = an ACTIVE membership holding the built-in system `owner` role in the
 // principal's tenant, looked up in shell.db on every check (no claim in a
