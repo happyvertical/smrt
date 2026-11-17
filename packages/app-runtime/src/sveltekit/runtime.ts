@@ -1476,25 +1476,39 @@ export function composeSmrtSvelteKitRuntime(
     kind: SmrtRuntimeMcpPrincipalKind | null;
   }> => {
     if (!user?.profileId) return { name: null, kind: null };
-    try {
-      const profiles = await ProfileCollection.create(
-        baseClassOptions('Profile'),
-      );
-      const profile = await profiles.get(user.profileId);
+    const profileId = user.profileId;
+    // Keyed by the authenticated user's own profile id, and only a display
+    // name and a kind leave. A session in an inherited (child) tenant must
+    // still classify a user whose profile belongs to an ancestor, which a
+    // tenant-scoped read cannot see.
+    return withSystemContext(async () => {
+      let profile: Awaited<ReturnType<ProfileCollection['get']>>;
+      try {
+        const profiles = await ProfileCollection.create(
+          baseClassOptions('Profile'),
+        );
+        profile = await profiles.get(profileId);
+      } catch {
+        return { name: null, kind: null };
+      }
       if (!profile) return { name: null, kind: null };
-      const name = (profile as { name?: unknown }).name;
-      const slug = await profile.getTypeSlug();
-      return {
-        name: typeof name === 'string' && name.trim() ? name.trim() : null,
-        kind: slug
+      const rawName = (profile as { name?: unknown }).name;
+      const name =
+        typeof rawName === 'string' && rawName.trim() ? rawName.trim() : null;
+      // A type that cannot be read must not drop the display name; the kind
+      // alone fails closed.
+      try {
+        const slug = await profile.getTypeSlug();
+        const kind = slug
           ? slug === AGENT_PROFILE_TYPE_SLUG
             ? 'agent'
             : 'human'
-          : null,
-      };
-    } catch {
-      return { name: null, kind: null };
-    }
+          : null;
+        return { name, kind };
+      } catch {
+        return { name, kind: null };
+      }
+    });
   };
 
   /**

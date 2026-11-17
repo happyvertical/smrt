@@ -12,12 +12,13 @@ import {
 } from '@modelcontextprotocol/server';
 import { describe, expect, it } from 'vitest';
 import { createInMemoryMcpAuditSink } from '../audit.js';
-import { MCP_TOOL_ACCESS_DENIED_CODE } from '../errors.js';
-import type { McpAppPrincipal } from '../server.js';
+import { MCP_TOOL_ACCESS_DENIED_CODE, McpAccessError } from '../errors.js';
+import type { McpAppPrincipal, McpAppServer } from '../server.js';
 import {
   type McpRouteResourceAuth,
   mountMcpAppRoute,
   mountMcpCallRoute,
+  mountMcpRoute,
   mountMcpToolsRoute,
   principalFromSessionLocals,
 } from '../sveltekit.js';
@@ -322,5 +323,55 @@ describe('session principals carry the user kind', () => {
     expect(
       principalFromSessionLocals({ locals: { ...base, principalKind: '' } }),
     ).toBeNull();
+  });
+});
+
+describe('task-capable tools are refused like unknown tools (#5086)', () => {
+  it('answers a forbidden task tool and an unknown name identically with the tasks capability', async () => {
+    const { MCP_TASKS_EXTENSION } = await import('../protocol.js');
+    const refuse = () => {
+      throw new McpAccessError(
+        404,
+        'Unknown MCP tool.',
+        {},
+        MCP_TOOL_ACCESS_DENIED_CODE,
+      );
+    };
+    const server: McpAppServer = {
+      serverInfo: { name: 'app', version: '1' },
+      tasksEnabled: true,
+      listTools: async () => [],
+      callTool: async () => refuse(),
+      // The catalog knows the tool, whatever the principal may use.
+      isTaskTool: async (name) => name === 'export_notes',
+      callTask: async () => refuse(),
+      getTask: async () => refuse(),
+      updateTask: async () => undefined,
+      cancelTask: async () => undefined,
+    };
+    const handler = mountMcpRoute(server, {
+      auth: auth(KINDS),
+      bindPrincipal: binder(roles()),
+    });
+    const send = async (name: string) => {
+      const event = rpc('agent-1', 'tools/call', { name, arguments: {} });
+      const body = await event.request.json();
+      body.params._meta['io.modelcontextprotocol/clientCapabilities'] = {
+        extensions: { [MCP_TASKS_EXTENSION]: {} },
+      };
+      const response = await handler({
+        ...event,
+        request: new Request(event.url, {
+          method: 'POST',
+          headers: event.request.headers,
+          body: JSON.stringify(body),
+        }),
+      });
+      return { status: response.status, body: await response.json() };
+    };
+    const forbidden = await send('export_notes');
+    const unknown = await send('no_such_tool');
+    expect(forbidden.body.error.message).toBe('Unknown MCP tool.');
+    expect(forbidden).toEqual(unknown);
   });
 });
