@@ -1,5 +1,28 @@
 # @happyvertical/smrt-core
 
+## 0.62.1
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - stop() during start() no longer leaks the runner (#5071) (jobs)
+  - bump SvelteKit to 3.1.1 in smrt-workbench (#5036) (deps)
+  - emit shared registration manifest fields once (#5028) (#5029) (core)
+  - one SQLite connection per file per process (#5037) (app-runtime)
+  - resolve workspace packages to current source (#5043) (typecheck)
+  - Windows custody inspector timeout; consumer desktop release legs (#5041) (app-runtime)
+  - resolve transitive smrt packages in discovery (#5027) (#5032) (core)
+  - accept GHSA-3r8g-jcqq-3p5j until SvelteKit 3 migration (#5038) (#5039) (deps)
+  - nested ThemeProvider follows its parent's colour scheme (#5030) (smrt-ui)
+  
+  ### Other Changes
+  
+  - ci: cut PR and merge-queue wall-clock without dropping checks (#5073)
+- @happyvertical/smrt-config@0.62.1
+  - @happyvertical/smrt-scanner@0.62.1
+  - @happyvertical/smrt-types@0.62.1
+
 ## 0.62.0
 
 ### Minor Changes
