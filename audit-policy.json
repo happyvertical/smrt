@@ -66,6 +66,23 @@
       "remediation": "Migrate every package and template to SvelteKit >=3.1.1: https://github.com/happyvertical/smrt/issues/5038",
       "suppressed": true,
       "recheckBy": "2026-12-16"
+    },
+    {
+      "ghsa": "GHSA-fc5q-39xc-vjpf",
+      "package": "picomatch",
+      "severity": "high",
+      "presentVersions": [
+        "4.0.5",
+        "4.0.7"
+      ],
+      "firstPatchedVersion": "none",
+      "reachability": "prod",
+      "introducedVia": "tinyglobby (production dependency of cli, scanner, smrt-playground, smrt-workbench) -> fdir/picomatch; also dev-only via vite, vitest and changesets (checked 2026-11-17). npm latest picomatch is 4.0.7, which is still in the vulnerable range (<= 4.0.7); the advisory lists no patched version.",
+      "exploitability": "Regular-expression DoS needs an attacker-chosen glob PATTERN (single-branch repeated extglob such as `+(*)`); the file paths being matched are not the input. Every tinyglobby call site was read on 2026-11-17: cli (npm-loader, schema-contract, json-validator, utils/generator, discovery/manifest-discovery), smrt-playground (discovery, vite), smrt-workbench (discovery, vite) and scanner (discovery) use hard-coded literals, or patterns built from the developer's own working directory, `node_modules` path, local workspace package directories, a template name typed on the `smrt create` command line, a `packagesPattern` Vite plugin option, or scanner include/exclude from the developer's own config, `--include/--exclude` flags and smrt-dev-mcp constants. No call site takes a pattern from an HTTP request, an MCP or AI tool argument, or other remote input (smrt-dev-mcp tools expose a directory, not a glob). Advisory: https://github.com/advisories/GHSA-fc5q-39xc-vjpf",
+      "decision": "Suppress, with the default 90-day recheck: no patched release exists to override to, and the pattern is always developer-supplied in build-time tooling, so the attacker model (untrusted pattern) is not present. A consumer that forwards untrusted input as a glob pattern to these packages or to picomatch is exposed regardless of this record.",
+      "remediation": "Raise the picomatch/tinyglobby resolution as soon as a release above 4.0.7 patches the advisory, then delete this record and the ignoreGhsas entry. Recheck npm and the advisory for a patched range by 2027-02-15.",
+      "suppressed": true,
+      "recheckBy": "2027-02-15"
     }
   ]
 }
