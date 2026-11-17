@@ -35,11 +35,19 @@ export {
   type WebhookTransport,
 } from './security.js';
 export {
+  buildWebhookHeaders,
   DEFAULT_WEBHOOK_TOLERANCE_MS,
+  formatWebhookTimestamp,
+  resolveWebhookSigningProfile,
   signWebhookPayload,
   type VerifyWebhookOptions,
   type VerifyWebhookResult,
   verifyWebhookSignature,
+  WEBHOOK_SIGNING_PRESETS,
+  type WebhookSigningPresetName,
+  type WebhookSigningProfile,
+  type WebhookSigningProfileConfig,
+  type WebhookTimestampFormat,
 } from './signing.js';
 export { WebhookStore } from './store.js';
 export type {
