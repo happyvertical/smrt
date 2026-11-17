@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { preview } from '../../test/draft-fixtures.ts';
+import { preview, versions } from '../../test/draft-fixtures.ts';
 import {
+  groupHistory,
+  historyEntries,
   isPlumbingSummary,
   publishChanges,
   publishDataTables,
@@ -120,5 +122,44 @@ describe('publish summary', () => {
       steps: [],
     }));
     expect(publishChanges(p).map((c) => c.text)).toEqual(['Add model: Orders']);
+  });
+});
+
+describe('history entries', () => {
+  const rows = (texts: string[]) =>
+    texts.map((text, i) => ({
+      ...versions[2],
+      version: i + 2,
+      parent: i + 1,
+      summary: text,
+      humanSummary: text,
+      current: i === texts.length - 1,
+    }));
+  it('drops importer bookkeeping and makes one entry per publish', () => {
+    const entries = historyEntries(
+      groupHistory([
+        versions[0],
+        ...rows([
+          'Hide field: Workbook row in Orders',
+          'Add field Total in Orders.',
+          'Hide field: Workbook lookup in Orders',
+        ]),
+      ]),
+    );
+    const publish = entries.find((e) => e.group.name);
+    expect(publish?.title).toBe('Better orders');
+    expect(publish?.changes).toEqual(['Add field Total in Orders.']);
+    expect(entries.filter((e) => e.group.name)).toHaveLength(1);
+  });
+  it('drops a bookkeeping-only entry unless it is the current state', () => {
+    const only = rows(['Hide field: Workbook row in Orders']);
+    expect(
+      historyEntries(
+        groupHistory(
+          only.map((v) => ({ ...v, current: false, publish: null })),
+        ),
+      ),
+    ).toEqual([]);
+    expect(historyEntries(groupHistory(only))).toHaveLength(1);
   });
 });

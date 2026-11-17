@@ -522,3 +522,43 @@ export function groupHistory(versions: VersionInfo[]): HistoryGroup[] {
   }
   return groups.reverse();
 }
+
+export interface HistoryEntry {
+  group: HistoryGroup;
+  title: string;
+  /** Each change of the entry, oldest first, importer bookkeeping removed. */
+  changes: string[];
+  /** The newest version of the entry, which dates it. */
+  newest: VersionInfo;
+  current: boolean;
+  purged: boolean;
+}
+
+/**
+ * One entry per publish. Importer bookkeeping (the rule the review page
+ * uses) is left out; an entry that is only bookkeeping is dropped unless it
+ * is the current state, so it can still be undone.
+ */
+export function historyEntries(groups: HistoryGroup[]): HistoryEntry[] {
+  return groups.flatMap((group) => {
+    // Versions run newest first inside a group.
+    const newest = group.versions[0];
+    if (!newest) return [];
+    const changes = [...group.versions]
+      .reverse()
+      .map((v) => v.humanSummary || 'Change to your app')
+      .filter((text) => !isPlumbingSummary(text));
+    const current = group.versions.some((v) => v.current);
+    if (!changes.length && !current) return [];
+    return [
+      {
+        group,
+        title: group.name || changes[0] || 'Change to your app',
+        changes,
+        newest,
+        current,
+        purged: group.versions.some((v) => v.purged),
+      },
+    ];
+  });
+}

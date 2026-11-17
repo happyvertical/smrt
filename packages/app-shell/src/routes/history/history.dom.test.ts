@@ -70,6 +70,10 @@ describe('publish history', () => {
     ).toHaveLength(1);
     expect(container.textContent).toContain('Change 2');
     expect(container.textContent).toContain('Change 3');
+    expect(container.textContent).not.toMatch(/Version \d/);
+    expect(container.querySelectorAll('details summary')[0]?.textContent).toBe(
+      '2 changes',
+    );
     expect(
       [...container.querySelectorAll('button')].filter(
         (b) => b.textContent?.trim() === 'Undo this publish',
