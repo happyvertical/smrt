@@ -57,17 +57,22 @@ export class ProfileType extends SmrtObject {
   override async save(
     options?: Parameters<SmrtObject['save']>[0],
   ): Promise<this> {
-    if (this.isPersisted && this.id && isUnprivilegedPrincipalContext()) {
-      const { ProfileTypeCollection } = await import(
-        '../collections/ProfileTypeCollection'
-      );
-      const types = await ProfileTypeCollection.create(this.options);
-      const stored = await types.get(this.id);
-      if (!stored) throw new AgentTypeChangeError();
+    if (isUnprivilegedPrincipalContext()) {
+      const slug = this.slug || (await this.getSlug());
+      let storedSlug: string | undefined;
+      if (this.isPersisted && this.id) {
+        const { ProfileTypeCollection } = await import(
+          '../collections/ProfileTypeCollection'
+        );
+        const types = await ProfileTypeCollection.create(this.options);
+        const stored = await types.get(this.id);
+        if (!stored) throw new AgentTypeChangeError();
+        storedSlug = stored.slug ?? undefined;
+      }
+      // Creating the `bot` type, renaming it away, or renaming onto it.
       if (
-        stored.slug !== this.slug &&
-        (stored.slug === AGENT_PROFILE_TYPE_SLUG ||
-          this.slug === AGENT_PROFILE_TYPE_SLUG)
+        (slug === AGENT_PROFILE_TYPE_SLUG && storedSlug !== slug) ||
+        (storedSlug === AGENT_PROFILE_TYPE_SLUG && slug !== storedSlug)
       ) {
         throw new AgentTypeChangeError();
       }

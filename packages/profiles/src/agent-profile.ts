@@ -23,7 +23,10 @@
  * @module
  */
 
-import { AGENT_PROFILE_TYPE_SLUG } from './agent-type-guard';
+import {
+  AGENT_PROFILE_TYPE_SLUG,
+  withTrustedAgentProvisioning,
+} from './agent-type-guard';
 import type { ProfileCollection } from './collections/ProfileCollection';
 import { ProfileTypeCollection } from './collections/ProfileTypeCollection';
 import type { Profile } from './models/Profile';
@@ -85,21 +88,25 @@ export async function resolveAgentProfile(
     if (existing) return existing;
 
     try {
-      const profileTypes = await ProfileTypeCollection.create(profiles.options);
-      const agentType = await profileTypes.getOrCreateBySlug(
-        AGENT_PROFILE_TYPE_SLUG,
-        {
-          name: 'Bot',
-          description: 'Automated agents, bots, and AI entities',
-        },
-      );
+      await withTrustedAgentProvisioning(async () => {
+        const profileTypes = await ProfileTypeCollection.create(
+          profiles.options,
+        );
+        const agentType = await profileTypes.getOrCreateBySlug(
+          AGENT_PROFILE_TYPE_SLUG,
+          {
+            name: 'Bot',
+            description: 'Automated agents, bots, and AI entities',
+          },
+        );
 
-      const profile = await profiles.create({
-        ...key,
-        typeId: agentType.id as string,
-        name: params.name?.trim() || agentId,
+        const profile = await profiles.create({
+          ...key,
+          typeId: agentType.id as string,
+          name: params.name?.trim() || agentId,
+        });
+        await profile.save();
       });
-      await profile.save();
     } catch (error) {
       lastError = error;
     }

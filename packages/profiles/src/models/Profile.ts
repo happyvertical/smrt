@@ -141,9 +141,7 @@ export class Profile extends SmrtObject {
    * closed when either side cannot be resolved.
    */
   private async assertAgentTypeUnchanged(): Promise<void> {
-    if (!this.isPersisted || !this.id || !isUnprivilegedPrincipalContext()) {
-      return;
-    }
+    if (!isUnprivilegedPrincipalContext()) return;
     const { ProfileCollection } = await import(
       '../collections/ProfileCollection'
     );
@@ -151,28 +149,34 @@ export class Profile extends SmrtObject {
       '../collections/ProfileTypeCollection'
     );
     const profiles = await ProfileCollection.create(this.options);
-    const stored = await profiles.get(this.id);
-    if (!stored) throw new AgentTypeChangeError();
-    if ((stored.typeId ?? null) === (this.typeId ?? null)) return;
-    const types = await ProfileTypeCollection.create(this.options);
-    const tenantId = this.tenantId || getTenantId();
-    const slugOf = async (id: string | undefined): Promise<string | null> => {
-      if (!id) return '';
-      if (!tenantId) return (await types.get(id))?.slug ?? null;
-      return (await types.getAvailableById(id, tenantId))?.slug ?? null;
-    };
-    const [from, to] = await Promise.all([
-      slugOf(stored.typeId),
-      slugOf(this.typeId),
-    ]);
-    if (
-      from === null ||
-      to === null ||
-      from === AGENT_PROFILE_TYPE_SLUG ||
-      to === AGENT_PROFILE_TYPE_SLUG
-    ) {
-      throw new AgentTypeChangeError();
+    const tenantId = this.tenantId || getTenantId() || null;
+    // The row this save would change: the persisted one, or the one a
+    // natural-key upsert would adopt.
+    let stored: Profile | null = null;
+    if (this.isPersisted && this.id) {
+      stored = await profiles.get(this.id);
+      if (!stored) throw new AgentTypeChangeError();
+    } else {
+      const slug = this.slug || (await this.getSlug());
+      if (slug) {
+        stored = await profiles.get({ slug, context: this.context, tenantId });
+      }
     }
+    if (stored && (stored.typeId ?? null) === (this.typeId ?? null)) return;
+    const types = await ProfileTypeCollection.create(this.options);
+    const isBot = async (id: string | undefined): Promise<boolean> => {
+      if (!id) return false;
+      const type = tenantId
+        ? await types.getAvailableById(id, tenantId)
+        : await types.get(id);
+      if (!type) throw new AgentTypeChangeError();
+      return type.slug === AGENT_PROFILE_TYPE_SLUG;
+    };
+    const [was, now] = await Promise.all([
+      isBot(stored?.typeId),
+      isBot(this.typeId),
+    ]);
+    if (was !== now) throw new AgentTypeChangeError();
   }
 
   /**

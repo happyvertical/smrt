@@ -128,4 +128,47 @@ describe('bot profile type guard', () => {
     });
     expect((await types.get(bot.id as string))?.slug).toBe('bot');
   });
+
+  it('refuses a natural-key upsert that would adopt an agent row as a person', async () => {
+    const { agent, person, tenantId } = await setup();
+    await asPrincipal(plain, async () => {
+      // `create` persists, so the refusal surfaces from the call itself.
+      await expect(
+        profiles.create({
+          slug: agent.slug,
+          context: agent.context,
+          tenantId,
+          name: 'Impostor',
+          typeId: person.id as string,
+        }),
+      ).rejects.toBeInstanceOf(AgentTypeChangeError);
+    });
+    expect(await (await profiles.get(agent.id as string))?.getTypeSlug()).toBe(
+      'bot',
+    );
+  });
+
+  it('refuses creating a bot profile or a bot type, but provisioning still works', async () => {
+    const { types, tenantId } = await setup();
+    const bot = await types.getBySlug('bot');
+    await asPrincipal(plain, async () => {
+      await expect(
+        profiles.create({
+          slug: 'fake-agent',
+          tenantId,
+          name: 'Fake',
+          typeId: bot?.id as string,
+        }),
+      ).rejects.toBeInstanceOf(AgentTypeChangeError);
+      await expect(
+        types.create({ slug: 'bot', name: 'Bot' }),
+      ).rejects.toBeInstanceOf(AgentTypeChangeError);
+      // The framework's own provisioning API stays usable by any caller.
+      const made = await resolveAgentProfile(profiles, {
+        agentId: 'another_agent',
+        tenantId,
+      });
+      expect(await made.getTypeSlug()).toBe('bot');
+    });
+  });
 });

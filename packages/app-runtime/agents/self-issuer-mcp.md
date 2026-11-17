@@ -34,8 +34,9 @@ cannot launder an agent into `human`.
   every request, so revoking a role permission removes the tool from the next
   `tools/list` and `tools/call`.
 - The classification cannot be self-edited: `Profile.save`/`ProfileType.save`
-  refuse an unprivileged request principal moving a profile to or from the
-  `bot` type (or renaming that type), `AgentTypeChangeError`; system,
+  refuse an unprivileged request principal changing whether a profile is
+  `bot` typed (update, create, or a natural-key upsert adopting an agent row)
+  or creating/renaming a type to `bot`, `AgentTypeChangeError`; `resolveAgentProfile` is the trusted path; system,
   super-admin and principal-free code (provisioning, CLI) is unchanged.
 - Tests: `src/self-issuer-mcp.test.ts` (kind mapping; revoke/grant round trip
   through the real `runAsPrincipal`), `smrt-app-mcp` `agent-principals.test.ts`.
