@@ -20,6 +20,7 @@ let approval = $state<ApprovalView | null>(null);
 let busy = $state(false);
 let error = $state('');
 let reviewAgain = $state(false);
+let published = $state(false);
 
 async function review() {
   busy = true;
@@ -83,6 +84,7 @@ async function decide(approve: boolean) {
       reviewAgain = true;
       approval = { ...approval, status: 'failed', result: { error } };
     } else if (out.status === 'approved') {
+      published = true;
       await goto('/', { invalidateAll: true });
       await invalidateAll();
     } else {
@@ -102,23 +104,32 @@ onMount(() => {
 });
 </script>
 
-<svelte:head><title>Review and publish</title></svelte:head>
+<svelte:head><title>Review draft</title></svelte:head>
 <div class="smrt-app-shell__page">
-  <header class="smrt-app-shell__head"><h1>Review and publish{name ? `: ${name}` : ''}</h1></header>
+  <header class="smrt-app-shell__head"><h1>Review your draft{name ? `: ${name}` : ''}</h1></header>
   {#if !data.description?.draft}
     <p>No draft is open.</p>
     <Button href="/" variant="secondary">Back to app</Button>
   {:else}
     {#if error}<p class="smrt-app-shell__alert smrt-app-shell__alert-error" role="alert">{error}</p>{/if}
-    {#if busy}<p role="status">Working…</p>{/if}
-    {#if preview}<PublishPreview {preview} />{/if}
-    {#if reviewAgain}
+    {#if published}<p role="status">Published. Opening your app…</p>
+    {:else if busy}<p role="status">{preview ? (approval ? 'Publishing…' : 'Preparing to publish…') : 'Reviewing your draft…'}</p>{/if}
+    {#if preview}
+      <PublishPreview {preview}>
+        {#snippet actions()}
+          {#if reviewAgain}
+            <p>Review the latest draft before trying again.</p>
+            <Button disabled={busy} onclick={review}>Review again</Button>
+          {:else if approval}
+            <ApprovalCard owner={data.session?.user} {approval} {busy} ondecide={decide} />
+          {:else}
+            <Button disabled={busy} onclick={publish}>{busy ? 'Publishing…' : 'Publish'}</Button>
+          {/if}
+        {/snippet}
+      </PublishPreview>
+    {:else if reviewAgain}
       <p>Review the latest draft before trying again.</p>
       <Button disabled={busy} onclick={review}>Review again</Button>
-    {:else if approval}
-      <ApprovalCard owner={data.session?.user} {approval} {busy} ondecide={decide} />
-    {:else if preview}
-      <Button disabled={busy} onclick={publish}>Publish</Button>
     {/if}
   {/if}
 </div>

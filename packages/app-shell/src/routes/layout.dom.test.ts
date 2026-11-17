@@ -694,6 +694,14 @@ describe('draft controls in the content column', () => {
     expect(review?.getAttribute('href')).toBeNull();
   });
 
+  it('offers no review link on the review page itself', async () => {
+    page.url = new URL('/draft/review', 'http://localhost');
+    await render(draftData());
+    expect(q('[data-testid="draft-header"]')).toBeTruthy();
+    expect(q('a[href="/draft/review"]')).toBeNull();
+    expect(button('Discard')).toBeTruthy();
+  });
+
   it('keeps the switch, actions and warning inside content at phone width', async () => {
     phone = true;
     await render(draftData());

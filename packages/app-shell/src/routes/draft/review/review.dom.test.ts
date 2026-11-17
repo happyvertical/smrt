@@ -98,10 +98,6 @@ describe('publish review', () => {
       'Age in Customer: text to integer',
       'Archived values: 7',
       'Archived tables: 1',
-      'Data commands replay against current live records.',
-      'If reviewed counts change, review a fresh preview before publishing.',
-      'Direct record edits made in the draft are discarded;',
-      'records loaded by a draft command are replayed.',
       'All method code (2)',
     ])
       expect(text).toContain(expected);
@@ -176,16 +172,10 @@ describe('publish review', () => {
   });
 });
 
-it('groups definition changes into counted sections before ordered changes and method code', async () => {
+it('leads with a single-column summary, then the Publish action, then the details', async () => {
   await render();
   const group = (name: string) =>
     container.querySelector<HTMLElement>(`section[aria-label="${name}"]`);
-  expect(group('Data')?.textContent).toContain(
-    'Replayed against current live records.',
-  );
-  expect(
-    group('Data')?.querySelector('[data-smrt-component="Badge"]')?.textContent,
-  ).toBe('0');
   expect(group('Added')?.textContent).toContain('Add model Order');
   expect(group('Added')?.textContent).toContain('Add field Email in Customer');
   expect(
@@ -193,67 +183,189 @@ it('groups definition changes into counted sections before ordered changes and m
   ).toBe('3');
   expect(group('Added')?.textContent).toContain('Add method Total in Order');
   expect(group('Removed')?.textContent).toContain('Remove model Note');
-  expect(group('Removed')?.textContent).toContain(
-    'Remove field Old name in Customer',
-  );
   expect(group('Changed')?.textContent).toContain(
     'Age in Customer: text to integer',
   );
   expect(group('Archived')?.textContent).toContain('Archived values: 7');
   expect(group('Archived')?.textContent).toContain('Archived tables: 1');
-  expect(
-    group('Archived')?.querySelector('[data-smrt-component="Badge"]')
-      ?.textContent,
-  ).toBe('8');
-  const changes = container.querySelector('ol');
-  expect(changes?.querySelectorAll('li').length).toBe(2);
-  expect(
+  // No data was loaded, so there is no Data section and no card grid.
+  expect(group('Data')).toBeNull();
+  expect(container.querySelector('[data-smrt-component="Card"]')).toBeNull();
+  const follows = (a: Node | null | undefined, b: Node | null | undefined) =>
     Boolean(
-      (group('Archived')?.compareDocumentPosition(changes as Node) ?? 0) &
+      ((a as Node).compareDocumentPosition(b as Node) ?? 0) &
         Node.DOCUMENT_POSITION_FOLLOWING,
-    ),
-  ).toBe(true);
-  expect(
-    Boolean(
-      (changes?.compareDocumentPosition(
-        container.querySelector('pre') as Node,
-      ) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ),
-  ).toBe(true);
-  expect(
-    container.querySelectorAll('[data-smrt-component="Card"]').length,
-  ).toBe(5);
+    );
+  const publish = button('Publish');
+  expect(follows(group('Archived'), publish)).toBe(true);
+  const changes = container.querySelector('details ol');
+  expect(changes?.querySelectorAll('li').length).toBe(2);
+  expect(follows(publish, changes)).toBe(true);
+  expect(follows(changes, container.querySelector('pre'))).toBe(true);
+  // The summary precedes every other heading.
+  expect(container.querySelector('h2')?.textContent).toBe(
+    'What will be published',
+  );
 });
 
-it('keeps empty change groups visible with zero counts', async () => {
+it('hides empty groups and importer bookkeeping, and shows one quiet line', async () => {
+  const plumbing = structuredClone(preview);
+  plumbing.methods = [];
+  plumbing.archives = { values: 0, tables: 0 };
+  plumbing.definition = {
+    modelsAdded: [],
+    modelsRemoved: [],
+    recipesAdded: [],
+    recipesRemoved: [],
+    models: {},
+  };
+  plumbing.versions = [
+    {
+      version: 2,
+      summary: 'Hide',
+      humanSummary: 'Hide field: Workbook row in Orders',
+      statements: [],
+      steps: [],
+    },
+    {
+      version: 3,
+      summary: 'Hide',
+      humanSummary: 'Hide field: Workbook lookup in Orders',
+      statements: [],
+      steps: [],
+    },
+    {
+      version: 4,
+      summary: 'Load',
+      humanSummary: 'Load 2 records into Orders',
+      statements: [],
+      steps: [],
+    },
+  ];
   vi.mocked(fetch).mockResolvedValue(
-    json({
-      draft: draftInfo,
-      preview: {
-        ...preview,
-        versions: [],
-        methods: [],
-        archives: { values: 0, tables: 0 },
-        definition: {
-          modelsAdded: [],
-          modelsRemoved: [],
-          recipesAdded: [],
-          recipesRemoved: [],
-          models: {},
-        },
-      },
-    }),
+    json({ draft: draftInfo, preview: plumbing }),
   );
   await render();
-  for (const name of ['Data', 'Added', 'Removed', 'Changed', 'Archived']) {
-    const group = container.querySelector(`section[aria-label="${name}"]`);
-    expect(
-      group?.querySelector('[data-smrt-component="Badge"]')?.textContent,
-    ).toBe('0');
-  }
-  expect(container.querySelector('ol')?.children.length).toBe(0);
+  for (const name of ['Data', 'Added', 'Removed', 'Changed', 'Archived'])
+    expect(container.querySelector(`section[aria-label="${name}"]`)).toBeNull();
+  const text = container.textContent ?? '';
+  expect(text).toContain('No changes to publish.');
+  expect(text).not.toContain('Workbook row');
+  expect(text).not.toContain('Workbook lookup');
+  expect(text).not.toContain('All method code');
+  expect(container.querySelectorAll('details li').length).toBe(1);
+  expect(container.textContent).not.toContain('0 inserted');
 });
 
+it('does not request a preview when mounted without a ready draft', async () => {
+  component = mount(Review, {
+    target: container,
+    props: {
+      data: { description: { ...description(), draft: null } },
+    } as never,
+  });
+  await tick();
+  await tick();
+  expect(fetch).not.toHaveBeenCalled();
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
+it('shows each loaded table with its counts and a preview of the draft rows', async () => {
+  const withData = structuredClone(preview);
+  withData.fields = {
+    Order: {
+      workbookRow: { type: 'integer', label: 'Workbook row' },
+      workbookLookup: { type: 'text', label: 'Workbook lookup' },
+      item: { type: 'text', label: 'Item' },
+      paid: { type: 'boolean', label: 'Paid' },
+    },
+  };
+  withData.modelLabels = { Order: 'Orders' };
+  withData.versions[0].dataSteps = [
+    {
+      op: 'loadRecords',
+      model: 'Order',
+      mode: 'insert',
+      counts: { insert: 5, update: 0, unchanged: 0, rejected: 0 },
+    },
+    {
+      op: 'extractModel',
+      model: 'Order',
+      counts: { rows: 9, distinct: 5, folded: 1, create: 3, matched: 2 },
+    },
+    {
+      op: 'mergeRecords',
+      model: 'Customer',
+      counts: { removed: 2, references: { Order: 7 } },
+    },
+  ];
+  const rows = [1, 2, 3, 4, 5].map((n) => ({
+    id: `r${n}`,
+    workbookRow: n,
+    workbookLookup: `k${n}`,
+    item: `Widget ${n}`,
+    paid: n % 2 === 0,
+  }));
+  vi.mocked(fetch).mockImplementation(async (input) => {
+    const path = String(input);
+    if (path.includes('/api/shell/records/Order')) {
+      const limit = Number(new URL(path, 'http://x').searchParams.get('limit'));
+      return json({ records: rows.slice(0, limit) });
+    }
+    return json({ draft: draftInfo, preview: withData });
+  });
+  await render();
+  const data = container.querySelector('section[aria-label="Data"]');
+  expect(data?.textContent).toContain('Orders');
+  expect(data?.textContent).toContain('5 records added');
+  expect(data?.textContent).not.toContain('0 updated');
+  expect(data?.textContent).toContain(
+    'Extract from Orders: 9 records, 5 distinct values, 1 folded, 3 created, 2 matched.',
+  );
+  expect(data?.textContent).toContain(
+    'Merge 2 records in Customer; references repointed (7 references in Orders).',
+  );
+  await vi.waitFor(() =>
+    expect(data?.querySelectorAll('tbody tr').length).toBe(3),
+  );
+  const headers = [...(data?.querySelectorAll('th') ?? [])].map((th) =>
+    th.textContent?.trim(),
+  );
+  expect(headers.join('|')).toContain('Item');
+  expect(headers.join('|')).toContain('Paid');
+  expect(headers.join('|')).not.toContain('Workbook');
+  expect(data?.textContent).toContain('Widget 1');
+  expect(data?.textContent).toContain('Showing 3 of 5 rows');
+  expect(fetch).toHaveBeenCalledWith(
+    '/api/shell/records/Order?target=draft&limit=3',
+  );
+  [...(data?.querySelectorAll('button') ?? [])]
+    .find((b) => b.textContent?.includes('Show all 5 rows'))
+    ?.click();
+  await vi.waitFor(() =>
+    expect(data?.querySelectorAll('tbody tr').length).toBe(5),
+  );
+});
+
+it('shows progress while publishing and a success notice once approved', async () => {
+  await render();
+  button('Publish')?.click();
+  await vi.waitFor(() => expect(container.textContent).toContain('Approve'));
+  [...container.querySelectorAll<HTMLButtonElement>('button')]
+    .find((b) => b.textContent?.startsWith('Approve'))
+    ?.click();
+  await vi.waitFor(() =>
+    expect(container.textContent).toContain('Published. Opening your app'),
+  );
+});
+
+it('names the page differently from the Publish button', async () => {
+  await render();
+  expect(container.querySelector('h1')?.textContent).toBe(
+    'Review your draft: Better orders',
+  );
+  expect(document.title).not.toBe('Publish');
+});
 it('does not request a preview when mounted without a ready draft', async () => {
   component = mount(Review, {
     target: container,
@@ -328,20 +440,12 @@ it('reviews real load and field rename rehearsals without false removals or form
       await render();
       // The surrounding chat/sidebar can leave a 300px main column even on desktop.
       container.style.width = '300px';
-      const grid = container.querySelector<HTMLElement>(
-        '.smrt-publish-preview__groups',
+      const summary = container.querySelector<HTMLElement>(
+        '.smrt-publish-preview__summary',
       );
-      expect(grid).toBeTruthy();
-      expect(
-        [...grid!.children].map((section) =>
-          section.getAttribute('aria-label'),
-        ),
-      ).toEqual(['Data', 'Added', 'Removed', 'Changed', 'Archived']);
-      for (const section of grid!.children) {
-        const heading = section.querySelector(
-          '.smrt-publish-preview__group-heading',
-        );
-        expect(heading?.querySelector('h2')).toBeTruthy();
+      expect(summary).toBeTruthy();
+      for (const section of summary!.querySelectorAll('section')) {
+        const heading = section.querySelector('.smrt-publish-preview__heading');
         expect(
           heading?.querySelector('[data-smrt-component="Badge"]'),
         ).toBeTruthy();
@@ -352,23 +456,18 @@ it('reviews real load and field rename rehearsals without false removals or form
       expect(text).toContain('Rename field Quantity to units in Orders');
       expect(text).not.toContain('Order.units');
       expect(text).not.toContain('Order.quantity');
-      if (name !== 'allLabels')
-        expect(group('Added')?.textContent).toContain('None.');
-      expect(group('Removed')?.textContent).not.toMatch(/Quantity|units/);
-      expect(group('Data')?.textContent).toContain(
-        'Load records into Orders (insert): 1 inserted, 0 updated, 0 unchanged, 0 rejected.',
-      );
+      if (name !== 'allLabels') expect(group('Added')).toBeNull();
+      expect(group('Removed')?.textContent ?? '').not.toMatch(/Quantity|units/);
+      expect(group('Data')?.textContent).toContain('Orders');
+      expect(group('Data')?.textContent).toContain('1 record added');
+      expect(group('Data')?.textContent).not.toMatch(/0 updated|0 rejected/);
       expect(container.querySelector('ol')?.textContent).toContain(
         'Load 1 record into Orders',
       );
       if (name === 'renamed' || name === 'differingLabels') {
         expect(group('Changed')?.textContent).not.toContain('calculated as');
         expect(text).not.toContain('Calculated field changes');
-        expect(group('Archived')?.textContent).toContain('None.');
-        expect(
-          group('Archived')?.querySelector('[data-smrt-component="Badge"]')
-            ?.textContent,
-        ).toBe('0');
+        expect(group('Archived')).toBeNull();
         expect(actual.archives.values).toBeGreaterThan(0); // engine undo journals remain intact
       }
       if (name === 'differingLabels')
@@ -439,18 +538,18 @@ it('reviews real load and field rename rehearsals without false removals or form
   }
 });
 
-it('sizes summary tracks to the available column and keeps heading words intact', () => {
+it('keeps the summary a single column and the heading words intact', () => {
   const source = readFileSync(
     'src/lib/components/PublishPreview.svelte',
     'utf8',
   );
   expect(source).toContain('@layer smrt.structure {');
-  expect(source).toContain('repeat(auto-fit, minmax(min(100%, 18rem), 1fr))');
+  expect(source).not.toContain('grid-template-columns');
   expect(source).toMatch(
-    /\.smrt-publish-preview__group-heading\s*\{[^}]*white-space: nowrap;/s,
+    /\.smrt-publish-preview__heading\s*\{[^}]*white-space: nowrap;/s,
   );
   expect(source).toMatch(
-    /\.smrt-publish-preview__group\s*\{[^}]*overflow-wrap: normal;[^}]*word-break: normal;/s,
+    /\.smrt-publish-preview__summary\s*\{[^}]*overflow-wrap: normal;[^}]*word-break: normal;/s,
   );
   expect(source).not.toMatch(
     /word-break:\s*break-all|overflow-wrap:\s*anywhere/,

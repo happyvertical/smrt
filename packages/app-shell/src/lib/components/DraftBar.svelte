@@ -4,7 +4,10 @@ import { goto, invalidateAll } from '$app/navigation';
 import { ApiError, api } from '$lib/ui/api';
 import type { Description, DraftInfo, Target } from '$lib/ui/types';
 
-let { description }: { description: Description } = $props();
+let {
+  description,
+  reviewing = false,
+}: { description: Description; reviewing?: boolean } = $props();
 const draft = $derived(description.draft);
 let busy = $state(false);
 let error = $state('');
@@ -55,7 +58,7 @@ async function act(operation: 'start' | 'discard' | Target) {
       <span>{draft.changes} {draft.changes === 1 ? 'change' : 'changes'}, not published</span>
       <div class="smrt-draft-bar__draft-actions">
         <Button variant="secondary" disabled={busy} onclick={() => (confirming = true)}>Discard</Button>
-        <Button href="/draft/review" disabled={busy || !draft.publishable}>Review and publish</Button>
+        {#if !reviewing}<Button href="/draft/review" disabled={busy || !draft.publishable}>Review and publish</Button>{/if}
       </div>
     {:else}
       <Button variant="ghost" disabled={busy} onclick={() => act('start')}>Start draft</Button>

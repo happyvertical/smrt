@@ -1,6 +1,6 @@
 # Draft UI validation
 
-The content header owns draft controls on home, model, history and review pages; welcome and settings have none. Chat is hidden during onboarding. The publish preview groups Added, Removed, Changed and Archived items in counted cards before its ordered changes and full method code. The saved owner view selects the
+The content header owns draft controls on home, model, history and review pages; welcome and settings have none. Chat is hidden during onboarding. The publish review is one column: a summary first (loaded tables with counts and a row preview, then only non-empty Added, Removed, Changed and Archived lists and one quiet line for the rest), then Publish, then collapsed ordered changes (importer bookkeeping hidden) and full method code. The review page has no header review link. The saved owner view selects the
 layout description; loaders and mutations carry that description's explicit
 target. Changing copies remounts forms and returns home. Approvals always name
 live. Reports use the same saved copy at `/reports` and `/reports/[name]`; both keep the content-header draft controls. Shell copy uses the existing plain-text
