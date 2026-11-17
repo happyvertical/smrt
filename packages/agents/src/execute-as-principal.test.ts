@@ -121,6 +121,93 @@ describe('executeAsPrincipal', () => {
     expect(seen).toContain('widgets.read');
   });
 
+  it('defaults: sessionId null, no credentialKind or bindingMetadata when absent', async () => {
+    await executeAsPrincipal(
+      { db, principal: { runAsUserId: userId, tenantId }, audit: () => {} },
+      async (run) => {
+        expect(run.context.sessionId).toBeNull();
+        expect(run.sessionId).toBeNull();
+        expect('credentialKind' in run).toBe(false);
+        expect('bindingMetadata' in run).toBe(false);
+        expect(run.allowedTools).toEqual([]);
+      },
+    );
+  });
+
+  it('plumbs the server-set sessionId into run.context without fabricating a session', async () => {
+    await executeAsPrincipal(
+      {
+        db,
+        principal: { runAsUserId: userId, tenantId, sessionId: 'sess-1' },
+        audit: () => {},
+      },
+      async (run) => {
+        expect(run.context.sessionId).toBe('sess-1');
+        expect(run.sessionId).toBe('sess-1');
+        expect(run.context.session).toBeNull();
+      },
+    );
+  });
+
+  it('passes credentialKind and bindingMetadata through without touching allowedTools or permissions', async () => {
+    let baseline: string[] = [];
+    await executeAsPrincipal(
+      { db, principal: { runAsUserId: userId, tenantId }, audit: () => {} },
+      async (run) => {
+        baseline = run.permissions;
+      },
+    );
+    await executeAsPrincipal(
+      {
+        db,
+        principal: {
+          runAsUserId: userId,
+          tenantId,
+          allowedTools: ['a.tool'],
+          credentialKind: 'device',
+          bindingMetadata: { deviceId: 'tab-1', flags: { shop: true } },
+        },
+        audit: () => {},
+      },
+      async (run) => {
+        expect(run.credentialKind).toBe('device');
+        expect(run.bindingMetadata).toEqual({
+          deviceId: 'tab-1',
+          flags: { shop: true },
+        });
+        expect(run.allowedTools).toEqual(['a.tool']);
+        expect(run.isToolAllowed('device')).toBe(false);
+        expect(run.permissions).toEqual(baseline);
+      },
+    );
+  });
+
+  it('isolates bindingMetadata from the binding (frozen deep clone)', async () => {
+    const metadata = { deviceId: 'tab-1', nested: { ids: ['a'] } };
+    await executeAsPrincipal(
+      {
+        db,
+        principal: { runAsUserId: userId, tenantId, bindingMetadata: metadata },
+        audit: () => {},
+      },
+      async (run) => {
+        const seen = run.bindingMetadata as typeof metadata;
+        expect(seen).not.toBe(metadata);
+        expect(Object.isFrozen(seen)).toBe(true);
+        expect(Object.isFrozen(seen.nested)).toBe(true);
+        expect(() => {
+          seen.deviceId = 'evil';
+        }).toThrow(TypeError);
+        expect(() => {
+          seen.nested.ids.push('b');
+        }).toThrow(TypeError);
+        metadata.nested.ids.push('later');
+        expect(seen.nested.ids).toEqual(['a']);
+      },
+    );
+    expect(metadata.deviceId).toBe('tab-1');
+  });
+
   it('enforces the persona tool ceiling (allowedTools)', async () => {
     await executeAsPrincipal(
       {

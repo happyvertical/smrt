@@ -165,6 +165,8 @@ export {
   type PrincipalAuditEntry,
   type PrincipalAuditSink,
   type PrincipalBinding,
+  type PrincipalBindingJsonValue,
+  type PrincipalCredentialKind,
   type PrincipalRun,
   PrincipalToolNotAllowedError,
 } from './execute-as-principal.js';

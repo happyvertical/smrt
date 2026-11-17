@@ -42,6 +42,28 @@ import {
   withPrincipalPermissionContext,
 } from '@happyvertical/smrt-users';
 
+/** JSON-safe value carried in {@link PrincipalBinding.bindingMetadata}. */
+export type PrincipalBindingJsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | PrincipalBindingJsonValue[]
+  | { [key: string]: PrincipalBindingJsonValue };
+
+/**
+ * How the credential behind a principal run authenticated. Extensible: hosts
+ * may supply their own kind string. Descriptive only — it never grants or
+ * narrows authority.
+ */
+export type PrincipalCredentialKind =
+  | 'session'
+  | 'device'
+  | 'api-key'
+  | 'oauth'
+  | 'service'
+  | (string & {});
+
 /**
  * The bound principal an agent runs as. A resolved persona structurally
  * satisfies this once its optional `runAsUserId` has been narrowed to a
@@ -64,6 +86,27 @@ export interface PrincipalBinding {
   allowedTools?: string[];
   /** Optional acting `Bot` profile id, recorded in the audit entry. */
   actsAsProfileId?: string | null;
+  /**
+   * Id of the session this run was bound from. **Server-set only**: the host
+   * supplies it from its own verified auth state, never from browser or user
+   * input. Surfaces as `run.sessionId` and `run.context.sessionId`; absent
+   * means `null`. A passthrough — it never affects permissions or
+   * `allowedTools`.
+   */
+  sessionId?: string | null;
+  /**
+   * How the run authenticated (e.g. `'device'`). **Server-set only**, same
+   * rule as `sessionId`. Surfaces as `run.credentialKind`; never affects
+   * permissions or `allowedTools`.
+   */
+  credentialKind?: PrincipalCredentialKind;
+  /**
+   * Generic server-set facts about how the run was bound, passed to
+   * `run.bindingMetadata` unchanged (deep-cloned and frozen, so a run cannot
+   * mutate the binding). Use this instead of smuggling identity through
+   * `allowedTools`. Never affects permissions or `allowedTools`.
+   */
+  bindingMetadata?: Record<string, PrincipalBindingJsonValue>;
 }
 
 /**
@@ -167,6 +210,15 @@ export interface PrincipalRun {
    * absent binding allow-list normalizes to `[]`, i.e. no tools).
    */
   allowedTools: string[];
+  /** Server-set session id the run was bound from (`null` when none). */
+  sessionId: string | null;
+  /** Server-set credential kind, when the binding supplied one. */
+  credentialKind?: PrincipalCredentialKind;
+  /**
+   * Server-set binding metadata: a frozen deep copy of
+   * {@link PrincipalBinding.bindingMetadata}, present only when supplied.
+   */
+  bindingMetadata?: Readonly<Record<string, PrincipalBindingJsonValue>>;
   /**
    * Whether `tool` is within the fail-closed allow-list. An empty allow-list,
    * or an empty/non-string tool name, permits nothing.
@@ -187,6 +239,14 @@ export interface PrincipalRun {
     action: string,
     extraOptions?: SmrtClassOptions,
   ): Promise<OperationPermissionDecision>;
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === 'object') {
+    for (const child of Object.values(value)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
 }
 
 async function emitAudit(
@@ -263,6 +323,21 @@ export async function executeAsPrincipal<T>(
   const isToolAllowed = (tool: string): boolean =>
     typeof tool === 'string' && tool.length > 0 && toolWhitelist.includes(tool);
 
+  const boundSessionId =
+    typeof principal.sessionId === 'string' && principal.sessionId.length > 0
+      ? principal.sessionId
+      : null;
+  const credentialKind =
+    typeof principal.credentialKind === 'string' &&
+    principal.credentialKind.length > 0
+      ? principal.credentialKind
+      : undefined;
+  const bindingMetadata =
+    principal.bindingMetadata !== undefined &&
+    principal.bindingMetadata !== null
+      ? deepFreeze(structuredClone(principal.bindingMetadata))
+      : undefined;
+
   await emitAudit(
     {
       action,
@@ -282,6 +357,7 @@ export async function executeAsPrincipal<T>(
       ...smrtOptions,
       userId: runAsUserId,
       tenantId,
+      sessionId: boundSessionId,
       permissions,
       resolver,
       postgresRls,
@@ -295,6 +371,9 @@ export async function executeAsPrincipal<T>(
           ? { permissionSnapshot: [...context.permissions] }
           : {}),
         allowedTools: toolWhitelist,
+        sessionId: boundSessionId,
+        ...(credentialKind !== undefined ? { credentialKind } : {}),
+        ...(bindingMetadata !== undefined ? { bindingMetadata } : {}),
         isToolAllowed,
         assertToolAllowed(tool: string): void {
           if (!isToolAllowed(tool)) {

@@ -79,6 +79,14 @@ export interface PrincipalPermissionRuntimeOptions extends SmrtClassOptions {
   postgresRls?: boolean;
   /** Reuse an initialized resolver instead of creating one per call. */
   resolver?: PermissionResolver;
+  /**
+   * Id of the session this principal run was bound from, when the host has
+   * one. **Server-set only** — never derive it from browser or user input.
+   * Surfaced verbatim as `context.sessionId` (default `null`); it is a pure
+   * passthrough and never feeds permission resolution. No `session` object is
+   * loaded or fabricated: `context.session` stays `null`.
+   */
+  sessionId?: string | null;
   /** Tenant the principal acts within. `null` resolves to no permissions. */
   tenantId: string | null;
   /** The user whose live permissions bound this execution. */
@@ -429,6 +437,7 @@ export async function withPrincipalPermissionContext<T>(
     permissions: providedPermissions,
     postgresRls: _postgresRls,
     resolver: providedResolver,
+    sessionId: boundSessionId,
     tenantId,
     userId,
     ...serviceOptions
@@ -481,7 +490,10 @@ export async function withPrincipalPermissionContext<T>(
       permissions,
       membership: null,
       session: null,
-      sessionId: null,
+      sessionId:
+        typeof boundSessionId === 'string' && boundSessionId.length > 0
+          ? boundSessionId
+          : null,
       superAdminBypass: false,
       systemContext: false,
       tenantId: tenantId ?? null,
