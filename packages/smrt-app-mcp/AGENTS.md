@@ -65,6 +65,10 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
   principal; a presented bearer must verify (401, never cookie fallback); no
   metadata (404). Hosted, `runtime.resolveMcpPrincipal` is the default
   identity mapping; an explicit `resolvePrincipal` overrides it.
+  `runtime.mcpSelfIssuer` (app is its own issuer, #5080): verify in process via
+  `verifyAccessToken(token, resource)`, then `validateGrant(claims)` on every
+  call (anything but `true` = 401); no JWKS/issuer env; metadata advertises
+  its issuer. Override mappings never skip the liveness check.
 - Adapters stamp `principal.tenantBinding` for `bindPrincipal`: the local
   token adapter always `direct`; the JWT adapter the mapping's value or
   `direct-or-inherited`. Never derive it from request input. Both adapters

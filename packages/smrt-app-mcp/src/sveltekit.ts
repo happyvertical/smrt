@@ -30,6 +30,7 @@
 
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import type {
+  McpAuthRuntime,
   McpDeploymentProfile,
   McpLocalTokenPrincipal,
   McpPrincipalMapping,
@@ -167,6 +168,11 @@ export interface McpRouteAuthRuntime {
   resolveMcpPrincipal(
     identity: McpVerifiedIdentity,
   ): Promise<McpPrincipalMapping | null>;
+  /**
+   * Present when the app is its own MCP issuer (smrt#5080): hosted bearer
+   * auth then verifies in process with per-call grant liveness.
+   */
+  readonly mcpSelfIssuer?: McpAuthRuntime['mcpSelfIssuer'];
 }
 
 /**

@@ -268,6 +268,38 @@ remain usable during an issuer outage. A required key fetch that fails denies
 the request. Provider availability, timeouts and any revocation lookup inside
 the callback are the application's responsibility.
 
+### The app as its own issuer
+
+An application that already runs the `smrt-users` OAuth server can be its own
+MCP issuer with one runtime option, instead of wiring resource, issuer, JWKS and
+metadata by hand:
+
+```ts
+createSmrtSvelteKitRuntime({
+  mcp: {
+    authorizationServer: { server, authorization, resource, scopes },
+  },
+});
+```
+
+`server` is the `createAuthorizationServer` instance and `authorization` the
+`SmrtOAuthAuthorizationService` that owns consent grants. With
+`createHostedMcpResourceAuth({ runtime })` the hosted profiles then:
+
+- verify the token in process with the issuer's own key (no JWKS fetch, no
+  `SMRT_MCP_ISSUER` or `SMRT_MCP_JWKS_URI`), including its audience and
+  server-side access-token revocation;
+- re-check the grant on **every call** (`smrt_grant_id` not revoked, session and
+  tenant live, user active, active direct membership), failing closed, so the
+  call after a revoke is refused;
+- map `sub` and `tenant_id` to the principal by default, re-derived from the
+  live grant (claims never select a tenant). An explicit `resolvePrincipal`
+  overrides the mapping but never the liveness check;
+- advertise the app's own issuer in protected-resource metadata.
+
+External identity providers stay the login method through host-owned login and
+consent. A runtime without the option behaves exactly as described above.
+
 ### Supported deployment profiles
 
 | Profile | Required configuration | Operator responsibility |
