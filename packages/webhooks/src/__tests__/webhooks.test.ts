@@ -155,6 +155,14 @@ for (const type of dialects)
         expect(requests).toHaveLength(1);
         const request = requests[0];
         expect(request.body).toBe(JSON.stringify(event));
+        expect(Object.keys(request.headers)).toEqual([
+          'content-type',
+          'user-agent',
+          'x-smrt-event',
+          'x-smrt-delivery',
+          'x-smrt-timestamp',
+          'x-smrt-signature',
+        ]);
         expect(request.headers['x-smrt-signature']).toBe(
           `sha256=${createHmac('sha256', secret).update(`${request.headers['x-smrt-timestamp']}.${request.body}`).digest('hex')}`,
         );
@@ -175,6 +183,27 @@ for (const type of dialects)
         expect(JSON.stringify(view)).not.toMatch(
           /payload-only|super-private-secret|leaseToken/,
         );
+      });
+    });
+    it('delivers with a persisted per-endpoint signing profile', async () => {
+      await tenant(async () => {
+        const subs = await dispatcher.store.subscriptions();
+        for (const sub of subs) {
+          sub.signingProfile = { preset: 'paperclip' };
+          await sub.save();
+        }
+        const [id] = await dispatcher.dispatch(event);
+        await dispatcher.deliver(id);
+        const { headers, body } = requests[0];
+        expect(headers['x-smrt-signature']).toBeUndefined();
+        expect(headers['x-paperclip-timestamp']).toMatch(/^\d{10}$/);
+        expect(headers['x-paperclip-signature']).toBe(
+          `sha256=${createHmac('sha256', secret).update(`${headers['x-paperclip-timestamp']}.${body}`).digest('hex')}`,
+        );
+        const [saved] = await dispatcher.store.subscriptions();
+        expect(saved.signingProfile).toEqual({ preset: 'paperclip' });
+        saved.signingProfile = { preset: 'nope' } as never;
+        await expect(saved.save()).rejects.toThrow();
       });
     });
     it('suppresses concurrent dispatch for the same durable identity', async () => {
