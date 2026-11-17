@@ -296,3 +296,47 @@ test('replay of the design-runs addition (#4954) fails', () =>
     assert.match(r.output, /unrecorded system-table: _smrt_inference_design_runs/);
     assert.match(r.output, /unrecorded package: @x\/design-runs/);
   }));
+
+test('a namespace-qualified @ns.smrt model is inventoried and named', () =>
+  withRoot(recorded(), (root) => {
+    writeFileSync(
+      join(root, 'packages/core/src/Extra.ts'),
+      "import * as core from '@x/core';\n@core.smrt({ api: {} })\nexport class Extra {}\n",
+    );
+    const r = run(CHECK, root);
+    assert.equal(r.code, 1);
+    assert.match(r.output, /unrecorded model: @x\/core:Extra/);
+  }));
+
+test('a table name on the next line is still inventoried', () =>
+  withRoot(recorded(), (root) => {
+    writeFileSync(
+      join(root, 'packages/core/src/system/schema.ts'),
+      'export const A = `\nCREATE TABLE IF NOT EXISTS\n  _smrt_new (\n id TEXT\n);\n`;\n',
+    );
+    const r = run(CHECK, root);
+    assert.equal(r.code, 1);
+    assert.match(r.output, /unrecorded system-table: _smrt_new/);
+  }));
+
+test('lower-case, quoted and schema-qualified table names are inventoried', () =>
+  withRoot(recorded(), (root) => {
+    writeFileSync(
+      join(root, 'packages/core/src/system/schema.ts'),
+      'export const A = `\ncreate  table if not exists "_smrt_quoted" (id TEXT);\nCREATE TABLE public._smrt_qualified (id TEXT);\nCREATE TABLE [_smrt_bracket] (id TEXT);\n`;\n',
+    );
+    const r = run(CHECK, root);
+    assert.equal(r.code, 1);
+    for (const n of ['_smrt_quoted', '_smrt_qualified', '_smrt_bracket'])
+      assert.match(r.output, new RegExp(`unrecorded system-table: ${n}`));
+  }));
+
+test('spaced decorator and stacked aliased import forms are inventoried', () =>
+  withRoot(recorded(), (root) => {
+    writeFileSync(
+      join(root, 'packages/core/src/Spaced.ts'),
+      "import {\n  type Foo,\n  smrt as m,\n} from '@x/core';\n@ m ()\nexport class Spaced {}\n",
+    );
+    const r = run(CHECK, root);
+    assert.match(r.output, /unrecorded model: @x\/core:Spaced/);
+  }));

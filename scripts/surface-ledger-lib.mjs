@@ -59,8 +59,10 @@ export function systemTables(root) {
   if (!existsSync(file)) return [];
   const text = readFileSync(file, 'utf8');
   const names = new Set();
+  // Any SQL whitespace (newlines included) between keywords and name, any
+  // keyword case, and an optionally quoted / schema-qualified name.
   for (const m of text.matchAll(
-    /^[ \t]*CREATE TABLE(?: IF NOT EXISTS)?[ \t]+(_smrt_[A-Za-z0-9_]+)/gm,
+    /^[ \t]*CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+(?:[A-Za-z_]\w*\s*\.\s*)?["`\[]?(_smrt_[A-Za-z0-9_]+)/gim,
   )) {
     names.add(m[1]);
   }
@@ -142,16 +144,24 @@ export function blankNonCode(src) {
   return out.join('');
 }
 
-/** Local names `smrt` is imported under (`import { smrt as x }`), plus `smrt`. */
+/**
+ * Decorator spellings `smrt` is reachable under: `smrt`, any
+ * `import { smrt as x }` alias, and `ns.smrt` for each `import * as ns`.
+ * Returned as regex source fragments.
+ */
 function decoratorNames(code) {
+  const esc = (v) => v.replace(/\$/g, '\\$');
   const names = new Set(['smrt']);
   for (const m of code.matchAll(/import\s*(?:type\s*)?\{([^}]*)\}\s*from/g)) {
     for (const part of m[1].split(',')) {
       const am = part.trim().match(/^smrt\s+as\s+([A-Za-z_$][\w$]*)$/);
-      if (am) names.add(am[1]);
+      if (am) names.add(esc(am[1]));
     }
   }
-  return names;
+  for (const m of code.matchAll(/import\s+(?:[\w$]+\s*,\s*)?\*\s*as\s+([A-Za-z_$][\w$]*)\s+from/g)) {
+    names.add(`${esc(m[1])}\\s*\\.\\s*smrt`);
+  }
+  return [...names];
 }
 
 /** Index just past the `)` closing the `(` at `open` (code is blanked). */
@@ -167,10 +177,9 @@ function skipParens(code, open) {
 /** Class names carrying an `@smrt` decorator in one source file. */
 export function modelsInSource(src) {
   const code = blankNonCode(src);
-  const names = decoratorNames(code);
-  const alt = [...names].map((s) => s.replace(/\$/g, '\\$')).join('|');
+  const alt = decoratorNames(code).join('|');
   const found = [];
-  const re = new RegExp(`@(?:${alt})(?![\\w$])`, 'g');
+  const re = new RegExp(`@\\s*(?:${alt})(?![\\w$])`, 'g');
   for (const m of code.matchAll(re)) {
     let k = m.index + m[0].length;
     const skipWs = () => {
