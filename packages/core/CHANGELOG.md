@@ -1,5 +1,26 @@
 # @happyvertical/smrt-core
 
+## 0.62.2
+
+### Patch Changes
+
+- ### Features
+  
+  - publish-mode and public-latch policy control on the account card (#5078) (social)
+  - let a host size the admin shell and planner to a container (#5056) (smrt-svelte)
+  - add new-surface ledger and check:new-surface gate (#5085) (tooling)
+  
+  ### Bug Fixes
+  
+  - accept GHSA-fc5q-39xc-vjpf until picomatch ships a fix (#5113) (#5114) (deps)
+  
+  ### Other Changes
+  
+  - ci: refresh the test shard duration table from complete job logs (#5075)
+- @happyvertical/smrt-config@0.62.2
+  - @happyvertical/smrt-scanner@0.62.2
+  - @happyvertical/smrt-types@0.62.2
+
 ## 0.62.1
 
 ### Patch Changes
