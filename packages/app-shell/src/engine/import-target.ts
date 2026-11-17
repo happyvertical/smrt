@@ -128,7 +128,7 @@ export function createEngineImportTarget(
           [SOURCE_ROW]: {
             type: 'integer',
             label: 'Workbook row',
-            required: true,
+            required: false,
           },
           [LOOKUP_KEY]: { type: 'text', label: 'Workbook lookup' },
         };
@@ -247,6 +247,8 @@ export function createEngineImportTarget(
           ]),
       );
       const rows = batch.records.map((record) => {
+        if (!Number.isSafeInteger(record.sourceRow) || record.sourceRow < 1)
+          throw new EngineImportError(batch.table);
         const values: Record<string, unknown> = {
           [SOURCE_ROW]: record.sourceRow,
           [LOOKUP_KEY]: JSON.stringify(
@@ -322,6 +324,8 @@ export function createEngineImportTarget(
         sourceRows,
       );
       for (const row of rows) {
+        // Owner-created records have no corresponding workbook row.
+        if (row[SOURCE_ROW] == null) continue;
         const values: Record<string, unknown> = {};
         for (const f of fields) {
           const fd = definitions.get(key)!.get(f)!;
