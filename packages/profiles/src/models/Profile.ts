@@ -172,10 +172,10 @@ export class Profile extends SmrtObject {
       if (!type) throw new AgentTypeChangeError();
       return type.slug === AGENT_PROFILE_TYPE_SLUG;
     };
-    const [was, now] = await Promise.all([
-      isBot(stored?.typeId),
-      isBot(this.typeId),
-    ]);
+    // Sequential on purpose: SQLite/DuckDB multiplex one native connection and
+    // overlapping reads can fail a prepared statement (see AGENTS.md).
+    const was = await isBot(stored?.typeId);
+    const now = await isBot(this.typeId);
     if (was !== now) throw new AgentTypeChangeError();
   }
 

@@ -83,6 +83,28 @@ describe('bot profile type guard', () => {
     });
   });
 
+  it('allows a principal moving a profile between two non-bot types', async () => {
+    const { person, types, tenantId } = await setup();
+    const org = await types.getOrCreateBySlug('organization', {
+      name: 'Organization',
+    });
+    const human = await profiles.create({
+      slug: 'between-types',
+      name: 'Between types',
+      tenantId,
+      typeId: person.id as string,
+    });
+    await human.save();
+    await asPrincipal(plain, async () => {
+      const loaded = await profiles.get(human.id as string);
+      if (!loaded) throw new Error('missing');
+      loaded.typeId = org.id as string;
+      await loaded.save();
+      const back = await profiles.get(human.id as string);
+      expect(back?.typeId).toBe(org.id);
+    });
+  });
+
   it('allows system, super-admin and principal-free code, and unrelated edits', async () => {
     const { agent, person } = await setup();
     // An unrelated edit by a principal is untouched.
