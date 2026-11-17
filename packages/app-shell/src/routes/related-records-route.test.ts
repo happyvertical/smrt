@@ -1,8 +1,10 @@
 // Related records: the records route filtered by a link field.
+
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { App } from '../lib/objects/App.ts';
 import { runAs } from '../lib/server/owner.ts';
 import { openShell, type ShellHarness } from '../lib/server/test-support.ts';
+import { FILTER_SCAN_LIMIT } from '../lib/ui/related.ts';
 import * as recordsRoute from './api/shell/records/[model]/+server.ts';
 
 let h: ShellHarness;
@@ -10,6 +12,9 @@ beforeAll(async () => {
   h = await openShell();
   await runAs(h.owner, async () => {
     await App.defineModel('Client', { name: { type: 'text' } });
+    await App.defineModel('Visit', {
+      client: { type: 'reference', ref: 'Client' },
+    });
     await App.defineModel('Walk', {
       day: { type: 'text' },
       client: { type: 'reference', ref: 'Client' },
@@ -103,4 +108,42 @@ describe('records filtered by a link field', () => {
         .status,
     ).toBe(400);
   });
+
+  it('flags a lower bound when the model has more rows than the scan reads', async () => {
+    const post = async (model: string, data: object) =>
+      (
+        await (
+          await recordsRoute.POST(event(h.owner, model, '', 'POST', data))
+        ).json()
+      ).id as string;
+    const old = await post('Client', { name: 'Old' });
+    const busy = await post('Client', { name: 'Busy' });
+    await post('Visit', { client: old });
+    // Exactly the scan limit of rows: nothing is hidden yet.
+    for (let i = 0; i < FILTER_SCAN_LIMIT - 1; i++)
+      await post('Visit', { client: busy });
+    const full = await (
+      await recordsRoute.GET(
+        event(h.owner, 'Visit', `?field=client&equals=${old}`),
+      )
+    ).json();
+    expect(full).toMatchObject({ total: 1, truncated: false });
+
+    // One more row pushes the oldest out of the scan: the count is a lower bound.
+    await post('Visit', { client: busy });
+    const over = await (
+      await recordsRoute.GET(
+        event(h.owner, 'Visit', `?field=client&equals=${old}`),
+      )
+    ).json();
+    expect(over.truncated).toBe(true);
+    expect(over.total).toBe(0);
+    const hot = await (
+      await recordsRoute.GET(
+        event(h.owner, 'Visit', `?field=client&equals=${busy}&limit=5`),
+      )
+    ).json();
+    expect(hot).toMatchObject({ total: FILTER_SCAN_LIMIT, truncated: true });
+    expect(hot.records).toHaveLength(5);
+  }, 120_000);
 });

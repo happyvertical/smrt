@@ -7,7 +7,8 @@
  * `GET  ...?field=<link field>&equals=<id>&limit=` -> { records, total,
  *   truncated }: only the records whose field equals the id (the related
  *   records of a record), `total` counting every match among the first
- *   `FILTER_SCAN_LIMIT` rows; `truncated` when that scan hit its limit.
+ *   `FILTER_SCAN_LIMIT` (newest) rows, a lower bound when `truncated`: the
+ *   model has more rows than were scanned.
  * `POST /api/shell/records/<Model>?target=` body = the record's fields (JSON
  *   object) -> 201 the created record
  * Errors: { error, code? } with 400 (bad data), 404 (no such model/record, or
@@ -36,14 +37,16 @@ export const GET: RequestHandler = guarded(async (event) => {
   const model = ident(event.params.model, 'model');
   const field = event.url.searchParams.get('field');
   if (field !== null) {
-    const rows = await host.list(model, FILTER_SCAN_LIMIT);
+    // One row past the limit tells a table of exactly the limit from a longer one.
+    const all = await host.list(model, FILTER_SCAN_LIMIT + 1);
+    const rows = all.slice(0, FILTER_SCAN_LIMIT);
     const hits = matchLink(
       rows,
       ident(field, 'field'),
       ident(event.url.searchParams.get('equals') ?? undefined, 'equals'),
       limit,
     );
-    return json({ ...hits, truncated: rows.length >= FILTER_SCAN_LIMIT });
+    return json({ ...hits, truncated: all.length > FILTER_SCAN_LIMIT });
   }
   return json({ records: await host.list(model, limit) });
 });

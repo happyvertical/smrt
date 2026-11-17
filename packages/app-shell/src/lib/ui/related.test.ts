@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   arrangeTabs,
+  countLabel,
   filteredHref,
   matchLink,
   parseLinkParam,
@@ -120,5 +121,13 @@ describe('matchLink', () => {
     const out = matchLink(rows, 'client', 'c1', 2);
     expect(out.total).toBe(3);
     expect(out.records.map((r) => r.id)).toEqual(['1', '3']);
+  });
+});
+
+describe('countLabel', () => {
+  it('marks a count from a partial scan as a lower bound', () => {
+    expect(countLabel(3, false)).toBe('3');
+    expect(countLabel(0, true)).toBe('0+');
+    expect(countLabel(12, true)).toBe('12+');
   });
 });

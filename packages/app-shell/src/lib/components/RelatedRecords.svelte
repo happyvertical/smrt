@@ -4,6 +4,8 @@ import { recordLabel } from '$lib/ui/fields';
 import { modelHref } from '$lib/ui/menu';
 import {
   arrangeTabs,
+  countLabel,
+  FILTER_SCAN_LIMIT,
   filteredHref,
   prefilledNewHref,
   type RelatedData,
@@ -30,6 +32,8 @@ const relations = $derived(reverseRelations(description.models, model));
 const data = $derived(new Map(related.map((r) => [r.key, r])));
 const lookup = $derived(indexReferences(references));
 const count = (key: string) => data.get(key)?.total ?? 0;
+const badge = (key: string) =>
+  countLabel(count(key), data.get(key)?.truncated ?? false);
 const arranged = $derived(
   arrangeTabs(relations.map((r) => ({ key: r.key, count: count(r.key) }))),
 );
@@ -112,7 +116,7 @@ function onTabKeys(event: KeyboardEvent) {
           </table>
         </div>
         <p class="smrt-app-shell__muted" data-smrt-part="description">
-          Showing {rows.length} of {loaded?.total ?? rows.length}{loaded?.truncated ? '+' : ''}
+          Showing {rows.length} of {loaded?.total ?? rows.length}{loaded?.truncated ? '+' : ''}{loaded?.truncated ? ` (only the newest ${FILTER_SCAN_LIMIT} ${lower} were searched)` : ''}
         </p>
       {/if}
       <div class="smrt-related__actions">
@@ -136,7 +140,7 @@ function onTabKeys(event: KeyboardEvent) {
         {@const rel = byKey.get(key)}
         {#if rel}
           <details class="smrt-app-shell__card smrt-related__section" open={arranged.tabs.includes(key) && key === arranged.tabs[0]}>
-            <summary>{rel.tabLabel} <span class="smrt-app-shell__badge smrt-related__pill">{count(key)}</span></summary>
+            <summary>{rel.tabLabel} <span class="smrt-app-shell__badge smrt-related__pill">{badge(key)}</span></summary>
             {@render panel(key)}
           </details>
         {/if}
@@ -157,7 +161,7 @@ function onTabKeys(event: KeyboardEvent) {
                 class="smrt-related__tab"
                 onclick={() => pick(key)}
               >
-                {rel.tabLabel} <span class="smrt-app-shell__badge smrt-related__pill">{count(key)}</span>
+                {rel.tabLabel} <span class="smrt-app-shell__badge smrt-related__pill">{badge(key)}</span>
               </button>
             {/if}
           {/each}
@@ -174,7 +178,7 @@ function onTabKeys(event: KeyboardEvent) {
                   {#if rel}
                     <li>
                       <button type="button" class="smrt-related__menuitem" onclick={() => pick(key)}>
-                        {rel.tabLabel} <span class="smrt-app-shell__badge smrt-related__pill">{count(key)}</span>
+                        {rel.tabLabel} <span class="smrt-app-shell__badge smrt-related__pill">{badge(key)}</span>
                       </button>
                     </li>
                   {/if}

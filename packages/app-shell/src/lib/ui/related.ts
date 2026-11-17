@@ -159,6 +159,14 @@ export function matchLink<T extends Record<string, unknown>>(
   return { records: hits.slice(0, Math.max(0, limit)), total: hits.length };
 }
 
+/**
+ * A count for a badge: `N+` when the route only scanned part of the table, so
+ * the real count may be higher.
+ */
+export function countLabel(total: number, truncated: boolean): string {
+  return truncated ? `${total}+` : String(total);
+}
+
 /** One relation's loaded data, from the filtered records route. */
 export interface RelatedData {
   key: string;
