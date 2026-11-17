@@ -32,7 +32,8 @@ it('describes the spec and reuses formula words for calculated measures', () => 
       measures: [{ fn: 'sum' as const, field: 'total', as: 'total' }],
     },
   };
-  expect(reportWords(r, models)).toContain('Total of Total (Quantity × Price)');
+  expect(reportWords(r, models)).toContain('Sum of Total from');
+  expect(reportWords(r, models)).toContain('Total is Quantity × Price.');
 });
 it('names added, changed, renamed and removed reports in review', () => {
   const changes = [

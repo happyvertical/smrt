@@ -61,11 +61,11 @@ const operators: Record<string, string> = {
 };
 const measures: Record<string, string> = {
   count: 'Count',
-  countDistinct: 'Count distinct',
-  sum: 'Total',
+  countDistinct: 'Distinct count',
+  sum: 'Sum',
   avg: 'Average',
-  min: 'Minimum',
-  max: 'Maximum',
+  min: 'Lowest',
+  max: 'Highest',
 };
 /** Explain the saved spec, including calculated inputs, without asking a model. */
 export function reportWords(
@@ -77,23 +77,34 @@ export function reportWords(
   const fields = model?.fields ?? {};
   const label = (name: string) => {
     const field = fields[name];
-    return field
-      ? `${fieldLabel(name, field)}${field.calculated ? ` (${formulaWords(field.calculated, fields)})` : ''}`
-      : 'Removed field';
+    return field ? fieldLabel(name, field) : 'Removed field';
+  };
+  // A calculated field is named plainly; how it is worked out follows once.
+  const calculated = new Set<string>();
+  const note = (name: string) => {
+    if (fields[name]?.calculated) calculated.add(name);
+    return label(name);
   };
   const conditions = spec.filters.map((f) =>
-    `${label(f.field)} ${operators[f.op]} ${f.value === undefined ? '' : (Array.isArray(f.value) ? f.value : [f.value]).map((v) => (fields[f.field]?.type === 'reference' ? 'the selected record' : cellText(fields[f.field] ?? { type: 'text' }, v))).join(', ')}`.trim(),
+    `${note(f.field)} ${operators[f.op]} ${f.value === undefined ? '' : (Array.isArray(f.value) ? f.value : [f.value]).map((v) => (fields[f.field]?.type === 'reference' ? 'the selected record' : cellText(fields[f.field] ?? { type: 'text' }, v))).join(', ')}`.trim(),
   );
   conditions.push(
     ...spec.having.map((h) => {
       const measure = spec.measures.find((m) => m.as === h.measure);
       const name = measure
-        ? `${measures[measure.fn]}${measure.field ? ` of ${label(measure.field)}` : ' of records'}`
+        ? `${measures[measure.fn]}${measure.field ? ` of ${note(measure.field)}` : ' of records'}`
         : 'Removed measure';
       return `${name} ${operators[h.op]} ${measure?.field && fields[measure.field] ? cellText(fields[measure.field], h.value) : h.value}`;
     }),
   );
-  return `${spec.measures.map((m) => `${measures[m.fn]}${m.field ? ` of ${label(m.field)}` : ' of records'}`).join(', ')} from ${model?.label ?? 'a removed model'}${spec.dimensions.length ? `, grouped by ${spec.dimensions.map((d) => `${label(d.field)}${d.bucket ? ` by ${d.bucket}` : ''}`).join(', ')}` : ''}${conditions.length ? `, where ${conditions.join(' and ')}` : ''}.`;
+  const text = `${spec.measures.map((m) => `${measures[m.fn]}${m.field ? ` of ${note(m.field)}` : ' of records'}`).join(', ')} from ${model?.label ?? 'a removed model'}${spec.dimensions.length ? `, grouped by ${spec.dimensions.map((d) => `${note(d.field)}${d.bucket ? ` by ${d.bucket}` : ''}`).join(', ')}` : ''}${conditions.length ? `, where ${conditions.join(' and ')}` : ''}.`;
+  const how = [...calculated].flatMap((name) => {
+    const formula = fields[name]?.calculated;
+    return formula
+      ? [`${label(name)} is ${formulaWords(formula, fields)}.`]
+      : [];
+  });
+  return [text, ...how].join(' ');
 }
 
 export interface ReportChange {

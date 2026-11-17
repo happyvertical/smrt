@@ -44,7 +44,7 @@ async function change(name: string, action: 'rename' | 'remove') {
   {#if Object.keys(data.description?.reports ?? {}).length === 0}<p class="smrt-app-shell__empty">No reports yet. Ask the assistant for a total or a breakdown.</p>{/if}
   <ul class="smrt-app-shell__list">
     {#each Object.entries(data.description?.reports ?? {}) as [name, report] (name)}
-      <li class="smrt-app-shell__card"><h2><a href={reportHref(name)}>{report.label ?? report.spec.title}</a></h2><p>{report.description ?? report.spec.description ?? ''}</p><p class="smrt-app-shell__muted">Source: {data.description?.models[report.spec.source]?.label ?? 'Removed model'}</p>
+      <li class="smrt-app-shell__card smrt-app-shell-reports__item"><h2 class="smrt-app-shell-reports__name"><a href={reportHref(name)}>{report.label ?? report.spec.title}</a></h2><p class="smrt-app-shell-reports__summary">{report.description ?? report.spec.description ?? ''}</p><p class="smrt-app-shell__muted">Source: {data.description?.models[report.spec.source]?.label ?? 'Removed model'}</p>
         <div class="smrt-app-shell__actions"><a class="smrt-app-shell__btn" href={reportHref(name)}>Run report</a><button class="smrt-app-shell__btn" aria-label={`Rename ${report.label ?? report.spec.title}`} onclick={() => { renaming = name; to = report.label ?? report.spec.title; problem = ''; }}>Rename</button><button class="smrt-app-shell__btn smrt-app-shell__btn-danger" aria-label={`Remove ${report.label ?? report.spec.title}`} onclick={() => { selected = name; problem = ''; }}>Remove</button></div>
         {#if renaming === name}<form onsubmit={(e) => { e.preventDefault(); void change(name, 'rename'); }}><label class="smrt-app-shell__label">Report label<input class="smrt-app-shell__input" bind:value={to} required /></label><div class="smrt-app-shell__actions"><button class="smrt-app-shell__btn" disabled={busy}>Save label</button><button type="button" class="smrt-app-shell__btn" onclick={() => (renaming = null)}>Cancel</button></div></form>{/if}
       </li>
@@ -52,3 +52,31 @@ async function change(name: string, action: 'rename' | 'remove') {
   </ul>
 </div>
 <ConfirmDialog open={selected !== null} title="Remove this report?" confirmLabel="Remove report" danger {busy} onconfirm={() => selected && change(selected, 'remove')} oncancel={() => (selected = null)}><p>Remove the saved report definition? The source records stay in your app.</p></ConfirmDialog>
+
+<style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+
+@layer smrt.structure {
+  .smrt-app-shell-reports__name {
+    margin: 0 0 var(--smrt-spacing-sm, 0.5rem);
+  }
+  .smrt-app-shell-reports__summary {
+    margin: 0 0 var(--smrt-spacing-sm, 0.5rem);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-app-shell-reports__name {
+    font-size: 1.0625rem;
+  }
+  .smrt-app-shell-reports__name a {
+    color: var(--smrt-color-on-surface);
+    text-decoration: none;
+  }
+  .smrt-app-shell-reports__name a:hover,
+  .smrt-app-shell-reports__name a:focus-visible {
+    color: var(--smrt-color-primary);
+    text-decoration: underline;
+  }
+}
+</style>
