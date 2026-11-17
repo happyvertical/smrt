@@ -5,10 +5,10 @@ description: "App-runtime MCP server scaffolding for SMRT apps — `createMcpApp
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-16T07:13:54Z"
+  at: "2026-11-17T15:51:53Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:67077d1855fb9ccabb90b098c8deea6f3f941af3032c0a9d4b6816b0415b43d4"
+source_revision: "sha256:2bd0f7153420c638908b745c3ffb85819ae79c7b14c210b523528c7fe0b39e23"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-app-mcp/package.json"
@@ -27,7 +27,7 @@ sources:
 
 - Directory: `packages/smrt-app-mcp`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `scanner`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -59,4 +59,3 @@ sources:
 ## Models
 
 - `McpCallAudit` (collection `mcpcallaudits`, extends `SmrtObject`)
-- `McpCallAuditCollection` (collection `mcpcallaudits`, extends `SmrtCollection`)

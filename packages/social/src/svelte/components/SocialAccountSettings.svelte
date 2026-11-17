@@ -1,7 +1,13 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
-import type { SocialPlatformType } from '../../social-account.js';
+import {
+  type PublishPolicyChange,
+  PublishPolicyConfirmationRequired,
+  planPublishPolicyChange,
+  supportedPublishModes,
+} from '../../publish-policy.js';
+import type { PublishMode, SocialPlatformType } from '../../social-account.js';
 import { M } from '../i18n.js';
 import type { SocialAccountSettingsItem } from '../types.js';
 
@@ -15,6 +21,7 @@ let {
   onRefresh,
   onTest,
   onDeactivate,
+  onChangePublishPolicy,
 }: {
   accounts?: SocialAccountSettingsItem[];
   loading?: boolean;
@@ -23,7 +30,79 @@ let {
   onRefresh?: () => void | Promise<void>;
   onTest?: (account: SocialAccountSettingsItem) => void | Promise<void>;
   onDeactivate?: (account: SocialAccountSettingsItem) => void | Promise<void>;
+  /**
+   * Apply a publish-mode and/or public-latch change. When provided, each
+   * account shows the control. `confirmPublic` is true only after the user
+   * confirmed a change that makes the account post publicly; the host must
+   * still authorize and re-check that rule server-side.
+   */
+  onChangePublishPolicy?: (
+    account: SocialAccountSettingsItem,
+    change: PublishPolicyChange,
+    options: { confirmPublic: boolean },
+  ) => void | Promise<void>;
 } = $props();
+
+let pending = $state<{
+  accountId: string;
+  change: PublishPolicyChange;
+} | null>(null);
+let busyId = $state<string | null>(null);
+let policyError = $state<{ accountId: string; message: string } | null>(null);
+
+async function submitPolicy(
+  account: SocialAccountSettingsItem,
+  change: PublishPolicyChange,
+  confirmPublic: boolean,
+) {
+  busyId = account.id;
+  policyError = null;
+  try {
+    await onChangePublishPolicy?.(account, change, { confirmPublic });
+    pending = null;
+  } catch (err) {
+    policyError = {
+      accountId: account.id,
+      message: err instanceof Error ? err.message : 'The change did not save.',
+    };
+  } finally {
+    busyId = null;
+  }
+}
+
+/** Lowering or clearing applies at once; raising to public asks first. */
+async function requestPolicy(
+  account: SocialAccountSettingsItem,
+  change: PublishPolicyChange,
+) {
+  policyError = null;
+  try {
+    planPublishPolicyChange(
+      account.platform,
+      {
+        publishMode: account.publishMode ?? 'dry_run',
+        publicPublishingAllowed: account.publicPublishingAllowed ?? false,
+      },
+      change,
+    );
+  } catch (err) {
+    if (err instanceof PublishPolicyConfirmationRequired) {
+      pending = { accountId: account.id, change };
+      return;
+    }
+    policyError = {
+      accountId: account.id,
+      message: err instanceof Error ? err.message : 'Invalid change.',
+    };
+    return;
+  }
+  pending = null;
+  await submitPolicy(account, change, false);
+}
+
+function modeLabel(mode: PublishMode): string {
+  return mode.replaceAll('_', ' ');
+}
 
 const platforms: Array<{ platform: SocialPlatformType; label: string }> = [
   { platform: 'youtube', label: 'YouTube' },
