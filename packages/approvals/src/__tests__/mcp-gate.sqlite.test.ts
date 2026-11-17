@@ -149,6 +149,33 @@ describe('MCP confirmTools approvals (SQLite)', () => {
     ]);
   });
 
+  it('stores the requester type from the principal kind, failing safe to agent', async () => {
+    const w = world();
+    const kinds = ['human', 'owner', 'user', 'agent', 'mystery'];
+    const stored: Record<string, unknown> = {};
+    for (const kind of kinds) {
+      const id = `req-${kind}`;
+      const { approvalId } = await w.call({
+        id,
+        kind,
+        tenantId: w.tenantId,
+        scopes: [],
+      } as McpAppPrincipal);
+      const request = await w.service.getRequest(
+        w.person(),
+        approvalId as string,
+      );
+      stored[kind] = request?.requestedByType;
+    }
+    expect(stored).toEqual({
+      human: 'human',
+      owner: 'human',
+      user: 'human',
+      agent: 'agent',
+      mystery: 'agent',
+    });
+  });
+
   it('agents and services cannot approve or reject, including their own request', async () => {
     const w = world();
     const { approvalId } = await w.call(w.agent());

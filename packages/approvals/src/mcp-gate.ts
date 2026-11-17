@@ -67,11 +67,14 @@ export interface ApprovalMcpGateOptions {
 }
 
 /**
- * Principal kinds that count as a person at the MCP boundary. Everything else,
+ * Principal kinds that count as a person at the MCP boundary (`human` is what
+ * the framework emits; `owner` and `user` are legacy names). Everything else,
  * including unknown kinds, is treated as an agent: fail closed.
  */
 function requesterType(kind: string | null): ApprovalPrincipalType {
-  return kind === 'owner' || kind === 'user' ? 'human' : 'agent';
+  return kind === 'human' || kind === 'owner' || kind === 'user'
+    ? 'human'
+    : 'agent';
 }
 
 /** The requester as an approval principal that can decide nothing. */
