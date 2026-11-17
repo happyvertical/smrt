@@ -5,7 +5,7 @@ description: "Inference alias chains with classified failures, recorded fallback
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T18:00:38Z"
+  at: "2026-11-17T18:26:18Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:37c67d8083d0bcf859cb3eef0cd56710b9fe1f1445fe4ff940ba6a3d1a12f620"

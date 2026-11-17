@@ -5,7 +5,7 @@ description: "Blind snapshot relay: device-signed, per-account encrypted blob st
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T18:00:38Z"
+  at: "2026-11-17T18:26:18Z"
 audience: "internal"
 evidence_level: "manifest-described"
 source_revision: "sha256:6e1512cdd9f3cee25d539c448cf2a5414b9034874b8d358e948dd3701545a844"

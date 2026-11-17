@@ -5,7 +5,7 @@ description: "Durable tenant-scoped intake and evidence foundations"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T18:00:38Z"
+  at: "2026-11-17T18:26:18Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:9433378bf21210eeab076e4e91330d65d43697ec9fe5a141c955bf1b3df03286"

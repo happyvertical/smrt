@@ -5,7 +5,7 @@ description: "Shared time entries for the SMRT framework: who worked how long on
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T18:00:38Z"
+  at: "2026-11-17T18:26:18Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:cca831c121e9d971aca792f7ac52b9dbe8e648807e0d846c75ca2d16d61aba3c"

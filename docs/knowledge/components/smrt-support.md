@@ -5,7 +5,7 @@ description: "AI-first Support Cases: channel-neutral intake, lifecycle, routing
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T18:00:38Z"
+  at: "2026-11-17T18:26:18Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:3ecd118575c2c486873cca47c00307133856be577cf4f240fbcc91e5ec67d075"

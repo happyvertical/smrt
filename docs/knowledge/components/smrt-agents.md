@@ -5,10 +5,10 @@ description: "Agent framework for building autonomous actors in the SMRT ecosyst
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T18:00:38Z"
+  at: "2026-11-17T18:26:18Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:4eb6af1f6d86051fc52e0e43eb60eaef56a16955f2fed73150a72f72c364eff5"
+source_revision: "sha256:985dbc4c17868e21ca10c80b95ba8bcc71070ca8a1b1cf8b3a648f602fd0ae3a"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/agents/package.json"
@@ -25,6 +25,9 @@ sources:
   - id: "agents-4"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/agents/agents/lazy-config.md"
     title: "@happyvertical/smrt-agents packages/agents/agents/lazy-config.md"
+  - id: "agents-5"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/agents/agents/principal-binding.md"
+    title: "@happyvertical/smrt-agents packages/agents/agents/principal-binding.md"
 ---
 
 # @happyvertical/smrt-agents
@@ -42,6 +45,7 @@ sources:
 - `packages/agents/agents/data-surface-denials.md`
 - `packages/agents/agents/data-surface-discovery.md`
 - `packages/agents/agents/lazy-config.md`
+- `packages/agents/agents/principal-binding.md`
 
 ## Framework dependencies
 

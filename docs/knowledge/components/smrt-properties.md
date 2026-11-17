@@ -5,7 +5,7 @@ description: "Digital property and zone management models for SMRT framework"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T18:00:38Z"
+  at: "2026-11-17T18:26:18Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:da1eb8b1d187f0af04481f796831ba7326f9a087ee911a13739ef16c48b36108"

@@ -5,7 +5,7 @@ description: "DEPRECATED compatibility shim over @happyvertical/smrt-sales — r
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T18:00:38Z"
+  at: "2026-11-17T18:26:18Z"
 audience: "internal"
 evidence_level: "manifest-described"
 source_revision: "sha256:c6a6a68c23abba757c2762baff99818db8c19dd7956301771d53a8a87c9a0362"

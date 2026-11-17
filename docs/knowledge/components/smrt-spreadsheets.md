@@ -5,7 +5,7 @@ description: "Spreadsheet capabilities for smrt, starting with validated import 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T18:00:38Z"
+  at: "2026-11-17T18:26:18Z"
 audience: "internal"
 evidence_level: "manifest-described"
 source_revision: "sha256:6b6734983ce476a3a522760bdbcba1e64cade40db78b6d1a63ec8167049d6f1c"

@@ -5,7 +5,7 @@ description: "Video content management for AI-powered video production in the SM
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T18:00:38Z"
+  at: "2026-11-17T18:26:18Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:c968bfb244ff2843605d1de114ae9fa1ece00b83d70cca03e24c3f061c5a544e"
