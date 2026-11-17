@@ -10,9 +10,10 @@ exact-head review and delivery; this worker runs ingestion domain evidence only.
 | Immutable contract and full binding | Suggest/read/adopt/replay | Projection version+fields+values retained in ledger and rule | Changed version/fields, old unprojected capture, tampered full args or digest reject | Same actor/source ownership and active scope | Same executor; full source binding rechecked | SQLite/PostgreSQL | Additive DTO; callers cannot choose selectors | U/P |
 | Authority, retention and CAS | Adoption or replay after owner callback | Exactly one CAS and audit; inert routing preferences | Denial, source revocation/deletion, policy change and callback contract change roll back | Reviewer plus current source grants; tenant/scope deny | Policy and ingestion audit share executor and rollback | SQLite/PostgreSQL | No provider/permission/automation widening | U/P plus existing feedback regressions |
 
-U: `pnpm exec vitest run src/proposals.test.ts -t feedback` from packages/ingestion.
+U: `pnpm exec vitest run src/proposals.part -t feedback` from packages/ingestion
+(the suite is split over `proposals.part1..4.test.ts`; the filter matches all four).
 P: `node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run --config
-vitest.postgres.config.ts src/proposals.postgres.test.ts -t feedback`, using the
+vitest.postgres.config.ts src/proposals.part -t feedback`, using the
 documented provisioning runner with focused Vitest arguments.
 Type/build: `pnpm typecheck`, `pnpm build` in packages/ingestion.
 Browser N/A: no UI behavior changed. Provider I/O N/A: no provider contract changed.

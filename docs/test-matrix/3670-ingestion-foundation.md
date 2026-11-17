@@ -125,7 +125,7 @@ this matrix change; no numeric, UUID, conflict, timestamp or migration path chan
 
 ### #4212 reviewer instructions as trusted guidance
 
-`proposals.test.ts` and `proposals.postgres.test.ts` share three cases. The
+`proposals.part*.test.ts` and `proposals.part*.postgres.test.ts` share three cases. The
 record case covers reviewer-grant and actor denial, empty/oversized text, stale
 revision, replay identity and changed-text conflict, immediate suggestion
 staleness, the extraction-configuration record (`kind`, id, digest, actor), the

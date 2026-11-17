@@ -764,6 +764,9 @@ jobs:
     # the entry. Deliberately not one of Required CI's needs, and not run for
     # pull requests, where every job's own result is worth more than the time.
     if: github.event_name == 'merge_group'
+    # A failed checkout, a crash, or the timeout below must not turn an
+    # otherwise green run red: this job only ever shortens a failing run.
+    continue-on-error: true
     runs-on: ubuntu-latest
     # Above the 90-minute heavy-suite ceiling; the script stops by itself when
     # Required CI starts.

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import { decide, watch } from './merge-group-fail-fast.mjs';
@@ -84,4 +85,18 @@ test('watch survives a refused cancel', async () => {
     names,
   });
   assert.equal(outcome, 'done');
+});
+
+test('the workflow job runs for merge groups only and can fail neither the run nor Required CI', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/on-pull-request.yml', import.meta.url), 'utf8');
+  const jobBlock = (id) => workflow.match(new RegExp(`^  ${id}:\\n(?:(?:    .*)?\\n)+`, 'm'))?.[0] ?? '';
+  const watcher = jobBlock('merge-group-fail-fast');
+  assert.match(watcher, /^    if: github\.event_name == 'merge_group'$/m);
+  assert.match(watcher, /^    continue-on-error: true$/m);
+  assert.match(watcher, new RegExp(`^    name: ${names.self}$`, 'm'));
+  assert.match(watcher, new RegExp(`^          SELF_JOB: ${names.self}$`, 'm'));
+  assert.match(watcher, new RegExp(`^          AGGREGATE_JOB: ${names.aggregate}$`, 'm'));
+  const aggregate = jobBlock('required-ci');
+  assert.match(aggregate, new RegExp(`^    name: ${names.aggregate}$`, 'm'));
+  assert.doesNotMatch(aggregate, /merge-group-fail-fast/);
 });
