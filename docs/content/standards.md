@@ -25,6 +25,7 @@ The companion document `docs/PROJECT_REQUIREMENTS.md` defines requirements for S
 9. [Triple-consumption packages](#9-triple-consumption-packages)
 10. [Templates](#10-templates)
 11. [Forbidden artifacts](#11-forbidden-artifacts)
+    - [New-surface ledger](#new-surface-ledger)
 12. [Appendix A: audit snapshot](#appendix-a-audit-snapshot)
 13. [Appendix B: rationale for changes](#appendix-b-rationale-for-changes)
 
@@ -788,6 +789,37 @@ around that boundary; they must not require a specific model provider or harness
 | Generated `.agents/smrt-framework.md` / `.claude/smrt-framework.md` | `smrt docs:agents` / compatibility `smrt docs:claude` output | Generate to consumer projects only; remove from package directories |
 | Per-package `.changeset/` | Changesets at sub-package level | Move to repo root (currently in `cli/`) |
 | Empty config files | Dead | Remove (currently in `vitest/vite.config.ts`) |
+
+---
+
+## New-surface ledger
+
+`surface-ledger.json` (repo root) records every package, `exports` key, `_smrt_*`
+system table and `@smrt()` model, so a second copy of something smrt already has
+cannot land unnoticed (#5076). `pnpm check:new-surface` compares the working tree
+to the ledger (never to git history; no build needed) and fails for an unrecorded
+item, an invalid entry, or a stale one.
+
+| `kind` | `name` | Source |
+|---|---|---|
+| `package` | package name | `packages/*/package.json` |
+| `entry-point` | `<package>#<exports key>` | each key of `exports` |
+| `system-table` | table name | `CREATE TABLE _smrt_*` in `packages/core/src/system/schema.ts` |
+| `model` | `<package>:<Class>` | classes decorated `@smrt` in `packages/*/src` (tests excluded; aliased imports followed; classes registered without their own `@smrt` are not listed) |
+
+Existing items are `{ "kind", "name", "grandfathered": true }`. Anything added
+later needs a full entry:
+
+- `issue`: positive integer, the tracking issue.
+- `nearest`: names of existing ledger entries you looked at. An empty list needs a
+  non-empty `noneBecause`.
+- `reason`: why the nearest surface was not extended.
+
+`pnpm surface:ledger` (idempotent) adds missing items as grandfathered, keeps
+existing entries, drops entries for removed items, and sorts output; then replace
+the new grandfathered entry with a full one. Search first with
+`node packages/smrt-dev-mcp/dist/index.js review --directory <pkg> --format summary`
+and `rg <noun> surface-ledger.json`. Removing an item means deleting its entry.
 
 ---
 

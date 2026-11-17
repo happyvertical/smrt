@@ -63,13 +63,13 @@ use [CONTEXT-MAP.md](CONTEXT-MAP.md) for orientation.
 Use Node/pnpm versions from `package.json`. Install with `pnpm install`, then
 `pnpm build`. Package checks first, then root checks:
 `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm format-check`,
-`pnpm knowledge:check --strict --format markdown`, `pnpm audit:policy`, and
+`pnpm knowledge:check --strict --format markdown`, `pnpm audit:policy`,
+`pnpm check:new-surface` (`surface-ledger.json`; `pnpm surface:ledger`), and
 `pnpm check:node-roots` (built model roots load under plain Node, #4219;
 allow-list in its root `package.json` script).
-`pnpm lint`/`pnpm format-check`: [agents/root-gotchas.md](agents/root-gotchas.md#lint-and-format).
 [TESTING_STANDARD.md](TESTING_STANDARD.md) defines package release gates.
 
-Test and build gotchas (Vitest plugin, Oxc decorators, `svelte-check`):
+Lint/format, Vitest plugin, Oxc decorators, `svelte-check` gotchas:
 [agents/root-gotchas.md](agents/root-gotchas.md).
 
 ## Cross-package invariants
