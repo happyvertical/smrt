@@ -123,6 +123,7 @@ async function action(name: string) {
 <div class="smrt-app-shell__page" data-smrt-component="AppShellImport">
   <header class="smrt-app-shell__head" data-smrt-part="header"><h1>Import a workbook</h1></header>
   <p>Load an Excel workbook into a draft. Check the proof, then review and publish it.</p>
+  <p>A large workbook can take about a minute to import. Reviewing and publishing a large import can each take a while.</p>
   {#if error}<p class="smrt-app-shell__alert smrt-app-shell__alert-warn" role="alert" data-smrt-part="status">{error}</p>{/if}
   {#if reading}<p role="status">Reading the workbook</p>{/if}
   {#if active || review}

@@ -88,6 +88,50 @@ async function render() {
 }
 
 describe('publish review', () => {
+  it('explains the wait while preparing a review and publishing', async () => {
+    let release!: (response: Response) => void;
+    vi.mocked(fetch).mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve;
+        }),
+    );
+    component = mount(Review, {
+      target: container,
+      props: { data: { description: description() } } as never,
+    });
+    await vi.waitFor(() =>
+      expect(container.querySelector('[role="status"]')?.textContent).toContain(
+        'Reviewing and publishing a large import can each take a while.',
+      ),
+    );
+    release(json({ draft: draftInfo, preview }));
+    await vi.waitFor(() => expect(button('Publish')).toBeTruthy());
+    vi.mocked(fetch).mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve;
+        }),
+    );
+    button('Publish')?.click();
+    await vi.waitFor(() =>
+      expect(container.querySelector('[role="status"]')?.textContent).toContain(
+        'Reviewing and publishing a large import can each take a while.',
+      ),
+    );
+    release(
+      json(
+        {
+          status: 'pending_approval',
+          approvalId: 'approval-publish',
+          summary: 'Publish Better orders',
+          preview,
+        },
+        202,
+      ),
+    );
+    await vi.waitFor(() => expect(container.textContent).toContain('Approve'));
+  });
   it('renders the preview counts, changes and every method in full', async () => {
     await render();
     const text = container.textContent;
