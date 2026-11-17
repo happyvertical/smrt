@@ -82,8 +82,10 @@ export interface PrincipalPermissionRuntimeOptions extends SmrtClassOptions {
   /**
    * Id of the session this principal run was bound from, when the host has
    * one. **Server-set only** — never derive it from browser or user input.
-   * Surfaced verbatim as `context.sessionId` (default `null`); it is a pure
-   * passthrough and never feeds permission resolution. No `session` object is
+   * Surfaced verbatim as `context.sessionId` (default `null`); it is an
+   * UNVERIFIED label, not an authenticated session: it is never published to
+   * the `smrt.session_id` RLS GUC (which stays empty for principal runs) and
+   * never feeds permission resolution. No `session` object is
    * loaded or fabricated: `context.session` stays `null`.
    */
   sessionId?: string | null;
@@ -176,6 +178,18 @@ function isProbablyPostgres(
   return (database.constructor?.name || '').toLowerCase().includes('postgres');
 }
 
+/**
+ * Value published to the `smrt.session_id` RLS GUC. Only a session that was
+ * actually loaded (`context.session` non-null) is published; a principal run's
+ * `sessionId` is an unverified server-set label and keeps the GUC empty
+ * (fail closed).
+ */
+export function resolvePostgresSessionIdValue(
+  context: Pick<SessionPermissionRuntimeContext, 'session' | 'sessionId'>,
+): string {
+  return context.session ? (context.sessionId ?? '') : '';
+}
+
 async function setPostgresSessionVariables(
   database: QueryableDatabase,
   context: SessionPermissionRuntimeContext,
@@ -190,7 +204,7 @@ async function setPostgresSessionVariables(
   );
   await database.query(
     "SELECT set_config('smrt.session_id', $1, true)",
-    context.sessionId ?? '',
+    resolvePostgresSessionIdValue(context),
   );
   await database.query(
     "SELECT set_config('smrt.permissions', $1, true)",

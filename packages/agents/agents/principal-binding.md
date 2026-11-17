@@ -15,3 +15,9 @@ Hosts must set these from verified server auth state, never from browser or
 user input. They are descriptive passthroughs: they never feed `allowedTools`
 (still fail-closed) or permission resolution. Use them instead of encoding
 "how did this run authenticate" as a marker slug in `allowedTools`.
+
+`sessionId` is an **unverified server-set label**, not an authenticated
+session: `smrt.session_id` (the Postgres RLS GUC) stays empty for principal
+runs, since only a loaded session may populate it. `bindingMetadata` must be
+JSON-safe; Date, Map, typed arrays, class instances, and cycles throw a clear
+`TypeError` before the run starts.

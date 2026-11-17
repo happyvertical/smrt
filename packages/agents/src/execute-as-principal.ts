@@ -90,7 +90,8 @@ export interface PrincipalBinding {
    * Id of the session this run was bound from. **Server-set only**: the host
    * supplies it from its own verified auth state, never from browser or user
    * input. Surfaces as `run.sessionId` and `run.context.sessionId`; absent
-   * means `null`. A passthrough — it never affects permissions or
+   * means `null`. It is an unverified label, not an authenticated session, and
+   * is NOT published to the `smrt.session_id` RLS GUC. A passthrough — it never affects permissions or
    * `allowedTools`.
    */
   sessionId?: string | null;
@@ -241,12 +242,59 @@ export interface PrincipalRun {
   ): Promise<OperationPermissionDecision>;
 }
 
-function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === 'object') {
-    for (const child of Object.values(value)) deepFreeze(child);
-    Object.freeze(value);
+/**
+ * Deep-clone and freeze a JSON-only value. Rejects non-JSON values (Date, Map,
+ * typed arrays, functions, class instances, cycles) up front with a clear
+ * error rather than failing mid-run.
+ */
+function cloneJsonFrozen(
+  value: unknown,
+  path: string,
+  seen: Set<object>,
+): PrincipalBindingJsonValue {
+  if (value === null) return null;
+  const t = typeof value;
+  if (t === 'string' || t === 'boolean') return value as string | boolean;
+  if (t === 'number') {
+    if (!Number.isFinite(value as number)) {
+      throw new TypeError(
+        `PrincipalBinding.bindingMetadata${path} must be a finite number`,
+      );
+    }
+    return value as number;
   }
-  return value;
+  if (t === 'object') {
+    const obj = value as object;
+    if (seen.has(obj)) {
+      throw new TypeError(
+        `PrincipalBinding.bindingMetadata${path} contains a cycle`,
+      );
+    }
+    seen.add(obj);
+    let out: PrincipalBindingJsonValue;
+    if (Array.isArray(obj)) {
+      out = obj.map((v, i) => cloneJsonFrozen(v, `${path}[${i}]`, seen));
+    } else {
+      const proto = Object.getPrototypeOf(obj);
+      if (proto !== Object.prototype && proto !== null) {
+        throw new TypeError(
+          `PrincipalBinding.bindingMetadata${path} must be JSON-safe (got ${
+            (obj as object).constructor?.name ?? 'non-plain object'
+          })`,
+        );
+      }
+      const rec: { [key: string]: PrincipalBindingJsonValue } = {};
+      for (const [k, v] of Object.entries(obj)) {
+        rec[k] = cloneJsonFrozen(v, `${path}.${k}`, seen);
+      }
+      out = rec;
+    }
+    seen.delete(obj);
+    return Object.freeze(out) as PrincipalBindingJsonValue;
+  }
+  throw new TypeError(
+    `PrincipalBinding.bindingMetadata${path} must be JSON-safe (got ${t})`,
+  );
 }
 
 async function emitAudit(
@@ -335,7 +383,9 @@ export async function executeAsPrincipal<T>(
   const bindingMetadata =
     principal.bindingMetadata !== undefined &&
     principal.bindingMetadata !== null
-      ? deepFreeze(structuredClone(principal.bindingMetadata))
+      ? (cloneJsonFrozen(principal.bindingMetadata, '', new Set()) as Readonly<
+          Record<string, PrincipalBindingJsonValue>
+        >)
       : undefined;
 
   await emitAudit(

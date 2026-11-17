@@ -208,6 +208,35 @@ describe('executeAsPrincipal', () => {
     expect(metadata.deviceId).toBe('tab-1');
   });
 
+  it('rejects non-JSON bindingMetadata with a clear error before running', async () => {
+    for (const bad of [
+      { at: new Date() },
+      { m: new Map() },
+      { t: new Uint8Array(1) },
+      { f: () => 1 },
+      { n: Number.NaN },
+    ]) {
+      let ran = false;
+      await expect(
+        executeAsPrincipal(
+          {
+            db,
+            principal: {
+              runAsUserId: userId,
+              tenantId,
+              bindingMetadata: bad as never,
+            },
+            audit: () => {},
+          },
+          async () => {
+            ran = true;
+          },
+        ),
+      ).rejects.toThrow(/bindingMetadata.*(JSON-safe|finite)/);
+      expect(ran).toBe(false);
+    }
+  });
+
   it('enforces the persona tool ceiling (allowedTools)', async () => {
     await executeAsPrincipal(
       {
