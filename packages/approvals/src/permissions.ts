@@ -18,6 +18,9 @@ export const CANCEL_ANY_APPROVAL_PERMISSION = 'approvals.cancel-any';
 /** Write tenant approval policy rows (tighten-only). */
 export const MANAGE_APPROVAL_POLICY_PERMISSION = 'approvals.manage-policy';
 
+/** Decide an approval for a gated MCP tool call (humans only). */
+export const APPROVE_MCP_TOOL_PERMISSION = 'approvals.approve-mcp-tool';
+
 /** Catalog definitions for the package-wide slugs. */
 export const APPROVAL_PERMISSION_DEFINITIONS: PermissionDefinition[] = [
   {
@@ -33,6 +36,13 @@ export const APPROVAL_PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     name: 'Manage Approval Policy',
     description:
       "Tighten an approval kind's quorum, expiry, or required permission for the tenant",
+  },
+  {
+    slug: APPROVE_MCP_TOOL_PERMISSION,
+    category: 'approvals',
+    name: 'Approve MCP Tool Calls',
+    description:
+      'Approve or reject a gated MCP tool call an agent or token requested',
   },
 ];
 

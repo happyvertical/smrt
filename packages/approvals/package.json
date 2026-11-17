@@ -38,6 +38,7 @@
     "@happyvertical/sql": "catalog:"
   },
   "devDependencies": {
+    "@happyvertical/smrt-app-mcp": "workspace:*",
     "@happyvertical/smrt-scanner": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
