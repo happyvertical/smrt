@@ -278,7 +278,7 @@
     "packages/smrt-ui/src/themes/components/ThemeSwitcher.svelte": 2,
     "packages/smrt-workbench/src/svelte/MarkdownDocument.svelte": 1,
     "packages/smrt-workbench/src/svelte/WorkbenchHost.svelte": 19,
-    "packages/social/src/svelte/components/SocialAccountSettings.svelte": 2,
+    "packages/social/src/svelte/components/SocialAccountSettings.svelte": 3,
     "packages/subscriptions/src/svelte/PlanPicker.svelte": 1,
     "packages/support/src/svelte/components/CaseDetail.svelte": 1,
     "packages/tenancy/src/svelte/components/TenantCard.svelte": 5,
