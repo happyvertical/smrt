@@ -5,10 +5,10 @@ description: "Double-entry accounting ledger for the SMRT framework"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T18:54:39Z"
+  at: "2026-11-17T19:38:34Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:3135d405b699fc20ae591b603aecde79384d2c47b40941e4e5ce038efd7ef2ac"
+source_revision: "sha256:878d4b24e297a7d957516c553d8c729e6aa8496e63c5a45b21737fe57a18c8f2"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/ledgers/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/ledgers`
 - Private: no
-- Object source: `scanner`
+- Object source: `domain-artifact`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -47,20 +47,24 @@ sources:
 ## Models
 
 - `Account` (collection `accounts`, extends `SmrtHierarchical`)
+- `AccountCollection` (collection `accounts`, extends `SmrtCollection`)
 - `Journal` (collection `journals`, extends `SmrtObject`)
+- `JournalCollection` (collection `journals`, extends `SmrtCollection`)
 - `JournalEntry` (collection `journalentries`, extends `SmrtObject`)
+- `JournalEntryCollection` (collection `journalentries`, extends `SmrtCollection`)
 - `Ledger` (collection `ledgers`, extends `SmrtObject`)
+- `LedgerCollection` (collection `ledgers`, extends `SmrtCollection`)
 
 ## MCP tools
 
-- `create_accounts`: create on `@happyvertical/smrt-ledgers:Account`
-- `create_journals`: create on `@happyvertical/smrt-ledgers:Journal`
-- `create_ledgers`: create on `@happyvertical/smrt-ledgers:Ledger`
-- `get_accounts`: get on `@happyvertical/smrt-ledgers:Account`
-- `get_journalentries`: get on `@happyvertical/smrt-ledgers:JournalEntry`
-- `get_journals`: get on `@happyvertical/smrt-ledgers:Journal`
-- `get_ledgers`: get on `@happyvertical/smrt-ledgers:Ledger`
-- `list_accounts`: list on `@happyvertical/smrt-ledgers:Account`
-- `list_journalentries`: list on `@happyvertical/smrt-ledgers:JournalEntry`
-- `list_journals`: list on `@happyvertical/smrt-ledgers:Journal`
-- `list_ledgers`: list on `@happyvertical/smrt-ledgers:Ledger`
+- `account_create`: create on `@happyvertical/smrt-ledgers:Account`
+- `account_get`: get on `@happyvertical/smrt-ledgers:Account`
+- `account_list`: list on `@happyvertical/smrt-ledgers:Account`
+- `journal_create`: create on `@happyvertical/smrt-ledgers:Journal`
+- `journal_get`: get on `@happyvertical/smrt-ledgers:Journal`
+- `journal_list`: list on `@happyvertical/smrt-ledgers:Journal`
+- `journalentry_get`: get on `@happyvertical/smrt-ledgers:JournalEntry`
+- `journalentry_list`: list on `@happyvertical/smrt-ledgers:JournalEntry`
+- `ledger_create`: create on `@happyvertical/smrt-ledgers:Ledger`
+- `ledger_get`: get on `@happyvertical/smrt-ledgers:Ledger`
+- `ledger_list`: list on `@happyvertical/smrt-ledgers:Ledger`

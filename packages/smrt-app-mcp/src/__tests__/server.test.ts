@@ -7,7 +7,7 @@
 
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { MCP_TOOL_ACCESS_DENIED_CODE, McpAccessError } from '../errors.js';
+import { McpAccessError } from '../errors.js';
 import { createMcpAppServer } from '../server.js';
 
 const generateToolsMock = vi.fn();
@@ -214,7 +214,7 @@ describe('createMcpAppServer', () => {
         name: 'application_submit',
         principal: { id: 'owner-1', tenantId: 'tenant-b' },
       }),
-    ).rejects.toMatchObject({ status: 403 });
+    ).rejects.toMatchObject({ status: 404, message: 'Unknown MCP tool.' });
     expect(execute).not.toHaveBeenCalled();
   });
 
@@ -588,11 +588,9 @@ describe('createMcpAppServer', () => {
         },
       }),
     ).rejects.toMatchObject({
-      metadata: {
-        code: MCP_TOOL_ACCESS_DENIED_CODE,
-        retryable: false,
-      },
-      status: 403,
+      message: 'Unknown MCP tool.',
+      metadata: {},
+      status: 404,
     });
     expect(handleToolCallMock).not.toHaveBeenCalled();
   });
@@ -612,9 +610,9 @@ describe('createMcpAppServer', () => {
     await expect(
       server.callTool({ name: 'opportunity_get', principal: null }),
     ).rejects.toMatchObject({
-      message: 'MCP tool access is not permitted.',
-      metadata: { code: MCP_TOOL_ACCESS_DENIED_CODE, retryable: false },
-      status: 403,
+      message: 'Unknown MCP tool.',
+      metadata: {},
+      status: 404,
     });
   });
 

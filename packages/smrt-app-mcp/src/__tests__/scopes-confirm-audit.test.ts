@@ -77,10 +77,11 @@ describe('declarative tool scopes', () => {
     ]);
     await expect(
       app.callTool({ name: 'mail_send', arguments: {}, principal: agent }),
-    ).rejects.toMatchObject({ status: 403 });
+    ).rejects.toMatchObject({ status: 404, message: 'Unknown MCP tool.' });
     expect(sink.records[0]).toMatchObject({
       tool: 'mail_send',
       outcome: 'denied',
+      errorCode: 'mcp_tool_access_denied',
       principalId: 'cred-1',
       principalKind: 'agent',
     });

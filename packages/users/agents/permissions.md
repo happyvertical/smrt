@@ -249,3 +249,16 @@ custom-action receiver resolution and paths are unchanged. The existing resource
 handler suite retains positive and refusal coverage, and its fresh-Node published
 entry guard rejects Vite route-emitter/activation-generator loads. No SQL executor,
 transaction, authentication or tenant-boundary behavior changes in this import fix.
+
+## Agent users (#5086)
+
+There is no agent column on `User`. A user is an agent when its linked
+`Profile` has the `bot` profile type (`resolveAgentProfile` /
+`AGENT_PROFILE_TYPE_SLUG` in `@happyvertical/smrt-profiles`); give it a
+membership with a limited custom role like any member. MCP classifies the
+principal from that live profile (`kind: 'agent'`), the default MCP policy
+accepts the kind only when `principalKinds` lists it, and the role's
+permissions cap what its tokens can do on every request. The profile models
+refuse an unprivileged principal changing whether a profile is `bot` typed
+(including by create or natural-key upsert) or creating/renaming the type, so an agent cannot relabel itself. See
+`packages/app-runtime/agents/self-issuer-mcp.md`.

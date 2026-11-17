@@ -34,6 +34,7 @@ import {
   type SmrtObject,
 } from '@happyvertical/smrt-core';
 import {
+  AGENT_PROFILE_TYPE_SLUG,
   OidcIdentityCollection,
   ProfileCollection,
 } from '@happyvertical/smrt-profiles';
@@ -133,6 +134,12 @@ export interface SmrtRuntimeLocals extends SessionLocals {
    * `null` when signed out or the profile has none. Display only.
    */
   userName?: string | null;
+  /**
+   * The signed-in user's kind (`agent` for a `bot` profile, else `human`),
+   * from the live profile. `null` when it could not be determined, which
+   * `principalFromSessionLocals` treats as unauthenticated.
+   */
+  principalKind?: SmrtRuntimeMcpPrincipalKind | null;
 }
 
 /** Provider component whose readiness a deployed web process must prove. */
@@ -412,11 +419,19 @@ export interface SmrtRuntimeMcpOptions {
   readonly authorizationServer?: SmrtRuntimeMcpAuthorizationServer;
 }
 
+/** The kind of account an MCP principal acts as. */
+export type SmrtRuntimeMcpPrincipalKind = 'human' | 'agent';
+
 /** The current account and tenant a hosted MCP identity maps to. */
 export interface SmrtRuntimeMcpPrincipalMapping {
   readonly id: string;
   readonly tenantId: string;
-  readonly kind: 'human';
+  /**
+   * `agent` when the user's profile is a `bot` profile (the framework's
+   * agent marker, see `resolveAgentProfile`), otherwise `human`. The default
+   * principal policy accepts `agent` only when `principalKinds` lists it.
+   */
+  readonly kind: SmrtRuntimeMcpPrincipalKind;
   /** The default resolver maps only direct memberships. */
   readonly tenantBinding: 'direct';
 }
@@ -1298,7 +1313,11 @@ export function composeSmrtSvelteKitRuntime(
    */
   const liveSelfGrant = async (
     claims: Readonly<Record<string, unknown>> | undefined,
-  ): Promise<{ userId: string; tenantId: string } | null> => {
+  ): Promise<{
+    userId: string;
+    tenantId: string;
+    kind: SmrtRuntimeMcpPrincipalKind | null;
+  } | null> => {
     if (!selfServer || !claims || typeof claims !== 'object') return null;
     try {
       if ((await resolvedRuntime()).profile === 'local') return null;
@@ -1328,7 +1347,8 @@ export function composeSmrtSvelteKitRuntime(
         const active = (await memberships.findActiveByUser(userId)).some(
           (membership) => membership.tenantId === tenantId,
         );
-        return active ? { userId, tenantId } : null;
+        if (!active) return null;
+        return { userId, tenantId, kind: (await profileFactsOf(user)).kind };
       });
     } catch {
       return null;
@@ -1368,10 +1388,13 @@ export function composeSmrtSvelteKitRuntime(
     if (selfIssuerId !== undefined && issuer === selfIssuerId) {
       const live = await liveSelfGrant(ownValue(identity, 'claims') as never);
       if (!live || live.userId !== subject) return null;
+      // Unclassifiable (profile or type unresolved): deny rather than
+      // default to a kind the policy might accept.
+      if (!live.kind) return null;
       return Object.freeze({
         id: live.userId,
         tenantId: live.tenantId,
-        kind: 'human' as const,
+        kind: live.kind,
         tenantBinding: 'direct' as const,
       });
     }
@@ -1414,10 +1437,12 @@ export function composeSmrtSvelteKitRuntime(
       );
       if (tenants.size !== 1) return null;
       const [tenantId] = tenants;
+      const { kind } = await profileFactsOf(user);
+      if (!kind) return null;
       return Object.freeze({
         id: user.id,
         tenantId,
-        kind: 'human' as const,
+        kind,
         tenantBinding: 'direct' as const,
       });
     });
@@ -1439,21 +1464,51 @@ export function composeSmrtSvelteKitRuntime(
     return sessionServicePromise;
   };
 
-  /** The linked profile's name for the layout greeting; never throws. */
-  const profileNameOf = async (
+  /**
+   * The linked profile's display name (layout greeting; display only) and the
+   * user's principal kind. Never throws; the kind is `null` (fail closed)
+   * when the profile or its type cannot be resolved.
+   */
+  const profileFactsOf = async (
     user: { profileId?: string } | null,
-  ): Promise<string | null> => {
-    if (!user?.profileId) return null;
-    try {
-      const profiles = await ProfileCollection.create(
-        baseClassOptions('Profile'),
-      );
-      const profile = await profiles.get(user.profileId);
-      const name = (profile as { name?: unknown } | null)?.name;
-      return typeof name === 'string' && name.trim() ? name.trim() : null;
-    } catch {
-      return null;
-    }
+  ): Promise<{
+    name: string | null;
+    kind: SmrtRuntimeMcpPrincipalKind | null;
+  }> => {
+    if (!user?.profileId) return { name: null, kind: null };
+    const profileId = user.profileId;
+    // Keyed by the authenticated user's own profile id, and only a display
+    // name and a kind leave. A session in an inherited (child) tenant must
+    // still classify a user whose profile belongs to an ancestor, which a
+    // tenant-scoped read cannot see.
+    return withSystemContext(async () => {
+      let profile: Awaited<ReturnType<ProfileCollection['get']>>;
+      try {
+        const profiles = await ProfileCollection.create(
+          baseClassOptions('Profile'),
+        );
+        profile = await profiles.get(profileId);
+      } catch {
+        return { name: null, kind: null };
+      }
+      if (!profile) return { name: null, kind: null };
+      const rawName = (profile as { name?: unknown }).name;
+      const name =
+        typeof rawName === 'string' && rawName.trim() ? rawName.trim() : null;
+      // A type that cannot be read must not drop the display name; the kind
+      // alone fails closed.
+      try {
+        const slug = await profile.getTypeSlug();
+        const kind = slug
+          ? slug === AGENT_PROFILE_TYPE_SLUG
+            ? 'agent'
+            : 'human'
+          : null;
+        return { name, kind };
+      } catch {
+        return { name, kind: null };
+      }
+    });
   };
 
   /**
@@ -1510,7 +1565,9 @@ export function composeSmrtSvelteKitRuntime(
               });
             }
             locals.user = context.user;
-            locals.userName = await profileNameOf(context.user);
+            const facts = await profileFactsOf(context.user);
+            locals.userName = facts.name;
+            locals.principalKind = facts.kind;
             locals.membership = context.membership ?? null;
             locals.permissions = context.permissions;
             locals.tenantId = context.tenantId;
@@ -1649,6 +1706,7 @@ function clearSessionLocals(locals: SmrtRuntimeLocals): void {
   locals.authMethod = null;
   locals.sessionParent = null;
   locals.userName = null;
+  locals.principalKind = undefined;
   locals.tenantContext = undefined;
   verifiedSessionTenants.delete(locals);
 }

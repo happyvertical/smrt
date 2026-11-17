@@ -1090,10 +1090,15 @@ export function createMcpAppServer(
       );
     }
     if (!(await passesToolPolicy(tool, principal))) {
-      throw new McpAccessError(403, 'MCP tool access is not permitted.', {
-        code: MCP_TOOL_ACCESS_DENIED_CODE,
-        retryable: false,
-      });
+      // Answer exactly like an unknown tool so a caller cannot tell a tool it
+      // may not use from one that does not exist; only the audit record
+      // carries the real reason.
+      throw new McpAccessError(
+        404,
+        'Unknown MCP tool.',
+        {},
+        MCP_TOOL_ACCESS_DENIED_CODE,
+      );
     }
     if (needsConfirm(tool) && options.approvals) {
       // Assertions first: an invalid call must not open or burn an approval.
@@ -1228,6 +1233,7 @@ export function createMcpAppServer(
    */
   function deniedInfo(error: McpAccessError): McpToolErrorInfo {
     const code =
+      error.auditCode ??
       error.metadata.code ??
       (error.status === 404
         ? MCP_TOOL_NOT_FOUND_CODE

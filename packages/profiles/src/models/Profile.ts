@@ -28,6 +28,11 @@ import {
   TenantScoped,
   tenantId,
 } from '@happyvertical/smrt-tenancy';
+import {
+  AGENT_PROFILE_TYPE_SLUG,
+  AgentTypeChangeError,
+  isUnprivilegedPrincipalContext,
+} from '../agent-type-guard';
 import { normalizeIdentityEmail } from '../auth/normalizeIdentityEmail';
 import type { ProfileLinkInput } from '../collections/ProfileLinkCollection';
 import {
@@ -123,10 +128,55 @@ export class Profile extends SmrtObject {
 
   /** Keep the durable identity key derived from the public email field. */
   override async save(options?: SmrtSaveOptions): Promise<this> {
+    await this.assertAgentTypeUnchanged();
     this.emailKey = this.email?.trim()
       ? normalizeIdentityEmail(this.email)
       : null;
     return super.save(options);
+  }
+
+  /**
+   * Refuse an unprivileged principal moving an existing profile to or from
+   * the `bot` type (#5086): the MCP principal kind is read from it. Fails
+   * closed when either side cannot be resolved.
+   */
+  private async assertAgentTypeUnchanged(): Promise<void> {
+    if (!isUnprivilegedPrincipalContext()) return;
+    const { ProfileCollection } = await import(
+      '../collections/ProfileCollection'
+    );
+    const { ProfileTypeCollection } = await import(
+      '../collections/ProfileTypeCollection'
+    );
+    const profiles = await ProfileCollection.create(this.options);
+    const tenantId = this.tenantId || getTenantId() || null;
+    // The row this save would change: the persisted one, or the one a
+    // natural-key upsert would adopt.
+    let stored: Profile | null = null;
+    if (this.isPersisted && this.id) {
+      stored = await profiles.get(this.id);
+      if (!stored) throw new AgentTypeChangeError();
+    } else {
+      const slug = this.slug || (await this.getSlug());
+      if (slug) {
+        stored = await profiles.get({ slug, context: this.context, tenantId });
+      }
+    }
+    if (stored && (stored.typeId ?? null) === (this.typeId ?? null)) return;
+    const types = await ProfileTypeCollection.create(this.options);
+    const isBot = async (id: string | undefined): Promise<boolean> => {
+      if (!id) return false;
+      const type = tenantId
+        ? await types.getAvailableById(id, tenantId)
+        : await types.get(id);
+      if (!type) throw new AgentTypeChangeError();
+      return type.slug === AGENT_PROFILE_TYPE_SLUG;
+    };
+    const [was, now] = await Promise.all([
+      isBot(stored?.typeId),
+      isBot(this.typeId),
+    ]);
+    if (was !== now) throw new AgentTypeChangeError();
   }
 
   /**

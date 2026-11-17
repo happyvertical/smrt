@@ -12,6 +12,11 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  AGENT_PROFILE_TYPE_SLUG,
+  AgentTypeChangeError,
+  isUnprivilegedPrincipalContext,
+} from '../agent-type-guard';
 
 export interface ProfileTypeOptions extends SmrtObjectOptions {
   slug?: string;
@@ -43,6 +48,36 @@ export class ProfileType extends SmrtObject {
     if (options.name) this.name = options.name;
     if (options.description !== undefined)
       this.description = options.description;
+  }
+
+  /**
+   * An unprivileged principal cannot rename the `bot` type away or rename
+   * another type to `bot` (#5086): the MCP principal kind is read from it.
+   */
+  override async save(
+    options?: Parameters<SmrtObject['save']>[0],
+  ): Promise<this> {
+    if (isUnprivilegedPrincipalContext()) {
+      const slug = this.slug || (await this.getSlug());
+      let storedSlug: string | undefined;
+      if (this.isPersisted && this.id) {
+        const { ProfileTypeCollection } = await import(
+          '../collections/ProfileTypeCollection'
+        );
+        const types = await ProfileTypeCollection.create(this.options);
+        const stored = await types.get(this.id);
+        if (!stored) throw new AgentTypeChangeError();
+        storedSlug = stored.slug ?? undefined;
+      }
+      // Creating the `bot` type, renaming it away, or renaming onto it.
+      if (
+        (slug === AGENT_PROFILE_TYPE_SLUG && storedSlug !== slug) ||
+        (storedSlug === AGENT_PROFILE_TYPE_SLUG && slug !== storedSlug)
+      ) {
+        throw new AgentTypeChangeError();
+      }
+    }
+    return super.save(options);
   }
 
   /**

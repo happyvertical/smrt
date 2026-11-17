@@ -10,6 +10,10 @@ import { join } from 'node:path';
 import { createAuthorizationServer } from '@happyvertical/auth/server';
 import { createHostedMcpResourceAuth } from '@happyvertical/smrt-app-mcp/auth';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
+import {
+  ProfileCollection,
+  resolveAgentProfileId,
+} from '@happyvertical/smrt-profiles';
 import { disableTenancy } from '@happyvertical/smrt-tenancy';
 import {
   DEFAULT_ROLE_SLUGS,
@@ -123,7 +127,7 @@ async function fixture(label: string) {
     authMethod: 'magic-link',
   });
   const verifier = 'a'.repeat(43);
-  const issue = async (resource = RESOURCE) => {
+  const issue = async (resource = RESOURCE, session = sessionId) => {
     const request = await server.parseAuthorizationRequest(
       new URLSearchParams({
         client_id: clientId,
@@ -137,7 +141,7 @@ async function fixture(label: string) {
         resource,
       }),
     );
-    const approved = await authorization.approve(server, request, sessionId);
+    const approved = await authorization.approve(server, request, session);
     const tokens = await server.token(
       new URLSearchParams({
         grant_type: 'authorization_code',
@@ -157,7 +161,14 @@ async function fixture(label: string) {
     // Only a selector; every class below is overridden onto the SQLite db.
     env: { DATABASE_URL: 'postgres://unused.invalid/db' },
     classOverrides: Object.fromEntries(
-      ['OidcIdentity', 'User', 'Membership'].map((name) => [name, { db }]),
+      [
+        'OidcIdentity',
+        'User',
+        'Membership',
+        'Profile',
+        'Permission',
+        'Session',
+      ].map((name) => [name, { db }]),
     ),
     ...(withSelf
       ? {
@@ -172,6 +183,70 @@ async function fixture(label: string) {
         }
       : {}),
   });
+  /**
+   * An agent user: a `bot` profile, its own user and a limited custom role
+   * holding exactly `permissions`, with a live session to approve consent.
+   */
+  const addAgent = async (permissions: string[]) => {
+    const profiles = await ProfileCollection.create({ db });
+    const profileId = await resolveAgentProfileId(profiles, {
+      agentId: `agent-${randomUUID()}`,
+      tenantId: owner.tenantId,
+    });
+    const users = await UserCollection.create({ db });
+    const user = await users.create({
+      profileId,
+      email: `agent-${randomUUID()}@example.test`,
+      status: UserStatus.ACTIVE,
+    });
+    await user.save();
+    const role = await (await RoleCollection.create({ db })).create({
+      name: 'Notes agent',
+      slug: `notes-agent-${randomUUID()}`,
+      tenantId: owner.tenantId,
+    });
+    await role.save();
+    const rolePermissions = await RolePermissionCollection.create({ db });
+    const permissionCollection = await PermissionCollection.create({ db });
+    const grant = async (slug: string) => {
+      const found = await permissionCollection.findOrCreate(slug, {
+        name: slug,
+      });
+      await rolePermissions.addPermission(
+        role.id as string,
+        found.id as string,
+      );
+      return found;
+    };
+    for (const slug of permissions) await grant(slug);
+    const membership = await (await MembershipCollection.create({ db })).create(
+      {
+        userId: user.id as string,
+        tenantId: owner.tenantId,
+        roleId: role.id as string,
+        status: MembershipStatus.ACTIVE,
+      },
+    );
+    await membership.save();
+    const agentSession = await sessions.createSession(
+      user.id as string,
+      owner.tenantId,
+      { authMethod: 'magic-link' },
+    );
+    return {
+      userId: user.id as string,
+      tenantId: owner.tenantId,
+      roleId: role.id as string,
+      session: agentSession,
+      revoke: async (slug: string) =>
+        rolePermissions.removePermission(
+          role.id as string,
+          (await permissionCollection.findOrCreate(slug, { name: slug }))
+            .id as string,
+        ),
+      grant,
+    };
+  };
   const hosted = createSmrtSvelteKitRuntime(hostedOptions(true));
   const external = createSmrtSvelteKitRuntime(hostedOptions(false));
   const call = (
@@ -194,6 +269,7 @@ async function fixture(label: string) {
     hosted,
     external,
     call,
+    addAgent,
   };
 }
 
@@ -363,5 +439,77 @@ describe('app as its own MCP issuer (#5080)', () => {
         subject: 'someone',
       }),
     ).resolves.toBeNull();
+  });
+
+  it('maps a bot-profile user to the agent kind and a person to human', async () => {
+    const f = await fixture('agent-kind');
+    const agent = await f.addAgent([READ]);
+    const token = await f.issue(RESOURCE, agent.session);
+    const claims = await f.server.verifyAccessToken(token, RESOURCE);
+    await expect(
+      f.hosted.resolveMcpPrincipal({
+        issuer: ISSUER,
+        subject: agent.userId,
+        claims,
+      }),
+    ).resolves.toEqual({
+      id: agent.userId,
+      tenantId: agent.tenantId,
+      kind: 'agent',
+      tenantBinding: 'direct',
+    });
+    const ownerClaims = await f.server.verifyAccessToken(
+      await f.issue(),
+      RESOURCE,
+    );
+    await expect(
+      f.hosted.resolveMcpPrincipal({
+        issuer: ISSUER,
+        subject: f.owner.userId,
+        claims: ownerClaims,
+      }),
+    ).resolves.toMatchObject({ kind: 'human' });
+  });
+
+  it('authenticates an agent with its app-issued token and binds only its live role permissions', async () => {
+    const f = await fixture('agent-live-role');
+    const agent = await f.addAgent([READ]);
+    const auth = createHostedMcpResourceAuth({
+      profile: 'self-hosted',
+      runtime: f.hosted,
+      env: {},
+    })()!;
+    const token = await f.issue(RESOURCE, agent.session);
+    const checked = await f.call(auth, token);
+    expect(checked).toMatchObject({
+      ok: true,
+      principal: {
+        id: agent.userId,
+        tenantId: agent.tenantId,
+        kind: 'agent',
+        scopes: [READ],
+      },
+    });
+    if (!checked.ok) throw new Error('unreachable');
+    const bind = () =>
+      f.hosted.runAsPrincipal(checked.principal as never, async (bound) => [
+        ...bound.scopes,
+      ]);
+    expect(await bind()).toEqual([READ]);
+
+    // Revoke the role permission: the same token binds no scopes on the very
+    // next call, so tools/list and tools/call lose the tool.
+    expect(await agent.revoke(READ)).toBe(true);
+    expect(await bind()).toEqual([]);
+    // Granting it back is live as well.
+    await agent.grant(READ);
+    expect(await bind()).toEqual([READ]);
+
+    // A suspended membership refuses the call outright.
+    const memberships = await MembershipCollection.create({ db: f.db });
+    const [membership] = await memberships.findActiveByUser(agent.userId);
+    membership.status = MembershipStatus.SUSPENDED;
+    await membership.save();
+    expect((await f.call(auth, token)).ok).toBe(false);
   });
 });

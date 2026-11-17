@@ -2196,6 +2196,8 @@ describe('F1: tenant context requires verified membership authorization', () => 
     );
     expect(inherited.locals.user).not.toBeNull();
     expect(inherited.locals.tenantId).toBe(childTenantId);
+    // A session in a tenant other than the profile's still classifies (#5086).
+    expect(inherited.locals.principalKind).toBe('human');
     expect(inherited.activeTenantId).toBe(childTenantId);
     expect(
       (inherited.locals.tenantContext as { tenantId: string }).tenantId,
@@ -2722,6 +2724,8 @@ describe('desktop owner link auto sign-in', () => {
       testEvent('http://127.0.0.1/', { sid }),
     );
     expect(observed.locals.userName).toBe('Ada Lovelace');
+    // The session user is classified from its live profile (#5086).
+    expect(observed.locals.principalKind).toBe('human');
     expect(
       createSessionLayoutLoad()({ locals: observed.locals }).session.user,
     ).toMatchObject({ email: '', name: 'Ada Lovelace' });
