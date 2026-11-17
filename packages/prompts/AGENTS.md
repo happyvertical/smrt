@@ -19,7 +19,7 @@ SMRT prompt registry and tenant-aware prompt override package. Code defines defa
 3. App-level stored override — `PromptOverride` row with `tenantId = null`
 4. Tenant-level stored override — `PromptOverride` row with current tenant
 5. Ambient scoped override (#5065) — `withPromptOverrides({ [key]: layer }, fn)`
-6. Runtime override — passed to `resolvePrompt({ overrides })`
+6. Runtime override — passed to `resolvePrompt(key, { override })`
 
 Each layer can override any subset of fields (template, profile, model, params). Inheritance is field-by-field.
 
