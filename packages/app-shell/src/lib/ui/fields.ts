@@ -71,8 +71,12 @@ export function formFields(model: Pick<ModelInfo, 'fields'>): FieldSpec[] {
     .map(([n, d]) => fieldSpec(n, d));
 }
 
-/** A form value: text for most inputs, a boolean for checkboxes. */
-export type FormValue = string | boolean;
+/**
+ * A form value: text for most inputs, a boolean for checkboxes. A number input
+ * bound with `bind:value` yields a number (null/undefined when empty, NaN for a
+ * half-typed value), so numbers are accepted as input.
+ */
+export type FormValue = string | boolean | number | null;
 export type FormValues = Record<string, FormValue>;
 
 function isTrue(v: unknown): boolean {
@@ -130,13 +134,20 @@ export interface Serialized {
   errors: FormErrors;
 }
 
+/** A form value as the text the coercers parse; non-finite numbers are empty. */
+function formText(raw: FormValue | undefined): string {
+  if (typeof raw === 'string') return raw;
+  if (typeof raw === 'number') return Number.isFinite(raw) ? String(raw) : '';
+  return '';
+}
+
 /** One form value -> the value to send, or an error message. */
 export function coerceInput(
   def: FieldDef,
   raw: FormValue | undefined,
 ): { ok: true; value: unknown } | { ok: false; error: string } {
   if (def.type === 'boolean') return { ok: true, value: raw === true };
-  const text = typeof raw === 'string' ? raw : '';
+  const text = formText(raw);
   const empty = text.trim() === '';
   if (empty) {
     return def.required
@@ -213,7 +224,10 @@ export function changedFields(
   record: RecordRow,
 ): string[] {
   const base = initialValues(fields, record);
-  return Object.keys(base).filter((k) => base[k] !== values[k]);
+  return Object.keys(base).filter((k) => {
+    const now = values[k];
+    return base[k] !== (typeof now === 'number' ? formText(now) : now);
+  });
 }
 
 /**

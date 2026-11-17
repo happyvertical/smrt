@@ -115,6 +115,41 @@ describe('values', () => {
     });
   });
 
+  it.each([
+    'integer',
+    'number',
+  ] as const)('reads %s fields bound as numbers by a number input', (type) => {
+    const opt: FieldDef = { type };
+    const req: FieldDef = { type, required: true };
+    expect(coerceInput(opt, 7)).toEqual({ ok: true, value: 7 });
+    expect(coerceInput(req, 0)).toEqual({ ok: true, value: 0 });
+    expect(coerceInput(req, '7')).toEqual({ ok: true, value: 7 });
+    expect(coerceInput(opt, null)).toEqual({ ok: true, value: null });
+    expect(coerceInput(opt, '')).toEqual({ ok: true, value: null });
+    expect(coerceInput(opt, Number.NaN)).toEqual({ ok: true, value: null });
+    expect(coerceInput(req, null)).toEqual({
+      ok: false,
+      error: 'This field is required',
+    });
+    expect(coerceInput(req, '')).toMatchObject({ ok: false });
+    expect(coerceInput(req, Number.NaN)).toMatchObject({ ok: false });
+  });
+
+  it('rejects a fractional number for an integer field', () => {
+    expect(coerceInput({ type: 'integer' }, 1.5)).toMatchObject({ ok: false });
+    expect(coerceInput({ type: 'number' }, 1.5)).toEqual({
+      ok: true,
+      value: 1.5,
+    });
+  });
+
+  it('does not see a retyped number as a change', () => {
+    const rec: RecordRow = { id: 'r', title: 'a', qty: 7 };
+    const base = initialValues(fields, rec);
+    expect(changedFields(fields, { ...base, qty: 7 }, rec)).toEqual([]);
+    expect(changedFields(fields, { ...base, qty: 8 }, rec)).toEqual(['qty']);
+  });
+
   it('reports required, number, choice, json and money problems', () => {
     const { errors } = serializeForm(fields, {
       title: '  ',
