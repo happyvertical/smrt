@@ -239,6 +239,8 @@ export function getHost(): Promise<AppHost> {
       await host.close().catch(() => {});
       throw e;
     }
+    // Tables imported before workbook bookkeeping stopped being required.
+    await host.repairLegacyImport().catch(() => 0);
     storeRef = store;
     hostRef = host;
     return host;

@@ -1031,7 +1031,9 @@ export class AppRuntime {
           fd.required &&
           (data[k] === undefined || data[k] === null || data[k] === '')
         )
-          throw new AppError(`${model}.${k} is required`);
+          throw new AppError(
+            `${fd.label ?? k} is required for ${this.def.models[model]?.label ?? model}`,
+          );
     return out;
   }
 
@@ -1044,8 +1046,29 @@ export class AppRuntime {
     if (recipeModelFor(model, this.def.models[model]))
       base.typeId = await this.personType();
     if (opts.id) base.id = opts.id;
-    const obj = await (await this.collection(model)).create(base as never);
+    const obj = await (await this.collection(model))
+      .create(base as never)
+      .catch((e) => {
+        throw this.named(model, e);
+      });
     return this.get(model, String(obj.id));
+  }
+
+  /**
+   * Core's required-field error names the column id; the owner sees the
+   * field's label instead. Any other error is returned as it came.
+   */
+  private named(model: string, error: unknown): unknown {
+    const e = error as { code?: unknown; details?: { fieldName?: unknown } };
+    if (e?.code !== 'VALIDATION_REQUIRED_FIELD') return error;
+    const column = String(e.details?.fieldName ?? '');
+    const found = Object.entries(this.fieldsOf(model)).find(
+      ([k]) => k === column || snake(k) === column,
+    );
+    if (!found) return error;
+    return new AppError(
+      `${found[1].label ?? found[0]} is required for ${this.def.models[model]?.label ?? model}`,
+    );
   }
 
   async update(model: string, id: string, data: Row): Promise<Row> {
@@ -1053,7 +1076,9 @@ export class AppRuntime {
     const obj: any = await (await this.collection(model)).get(id);
     if (!obj) throw new AppError(`no ${model} ${id}`);
     for (const [k, v] of Object.entries(base)) obj[k] = v;
-    await obj.save();
+    await obj.save().catch((e: unknown) => {
+      throw this.named(model, e);
+    });
     return this.get(model, id);
   }
 

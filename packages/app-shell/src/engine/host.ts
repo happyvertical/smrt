@@ -62,6 +62,7 @@ import {
 } from './draft.ts';
 import { ApprovalRequiredError, EngineError } from './errors.ts';
 import type { ExtractPreview } from './extract-model.ts';
+import { WORKBOOK_LOOKUP, WORKBOOK_ROW } from './import-bookkeeping.ts';
 import type { MergePreview } from './merge-records.ts';
 import {
   archivedTables,
@@ -524,6 +525,46 @@ export class AppHost extends EventEmitter {
    */
   setFrozen(frozen: boolean) {
     this.frozenNow = frozen;
+  }
+
+  /**
+   * Repair tables a workbook import left with its bookkeeping columns
+   * (`workbookRow`, `workbookLookup`) required: records the owner adds have no
+   * workbook row, so Add and Edit failed. Loosens only those flags, as
+   * ordinary versioned conversions (nothing is emptied, undo restores them),
+   * and keeps a hidden field hidden. Nothing happens on a draft or a frozen
+   * host (a draft's base version must not move); the shell calls it again once
+   * live thaws. Returns how many fields were repaired.
+   */
+  repairLegacyImport(): Promise<number> {
+    if (this.draft || this.frozenNow) return Promise.resolve(0);
+    return this.run(async () => {
+      if (this.frozenNow) return 0;
+      await this.drainInflight();
+      let repaired = 0;
+      for (const [model, md] of Object.entries(this.def.models)) {
+        if (md.extends) continue;
+        for (const field of [WORKBOOK_ROW, WORKBOOK_LOOKUP]) {
+          const fd = this.def.models[model].fields[field];
+          if (!fd?.required || fd.calculated) continue;
+          const hidden = !!fd.hidden;
+          await (
+            await this.analyse({
+              type: 'changeFieldType',
+              model,
+              field,
+              to: { type: fd.type, required: false },
+            })
+          ).apply('engine');
+          if (hidden)
+            await (
+              await this.analyse({ type: 'hideField', model, field })
+            ).apply('engine');
+          repaired++;
+        }
+      }
+      return repaired;
+    });
   }
 
   private refuseIfFrozen(cmd: { type?: unknown }) {

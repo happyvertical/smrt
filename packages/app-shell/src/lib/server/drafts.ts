@@ -168,6 +168,8 @@ export function startDraft(
         `a draft is already open ("${open.name}"); publish or discard it first`,
         'refused',
       );
+    // A draft forks live, so live is repaired first (it is not frozen yet).
+    await live.repairLegacyImport().catch(() => 0);
     const db = await getShellDb();
     const dir = join(await dataRoot(), DRAFT_DIRNAME);
     // A leftover copy no row refers to (host.ts removes these at start): the
@@ -375,6 +377,7 @@ export function publishApproved(
       );
     }
     live.setFrozen(false);
+    await live.repairLegacyImport().catch(() => 0);
     publish({
       type: 'draft',
       status: 'published',
@@ -411,6 +414,7 @@ export function discardNow(expectId?: string): Promise<{ discarded: string }> {
     }
     setDraftSlot(null);
     live.setFrozen(false);
+    await live.repairLegacyImport().catch(() => 0);
     publish({
       type: 'draft',
       status: 'discarded',
