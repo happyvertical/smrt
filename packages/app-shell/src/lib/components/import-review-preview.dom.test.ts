@@ -105,6 +105,10 @@ it('previews the first three loaded rows per sheet with types and expands to all
     'link · Customers',
   );
   expect(orders.querySelector('tbody')?.textContent).toContain('17.50 CAD');
+  // The link cell shows the linked record's label, not its id.
+  expect(orders.querySelector('tbody')?.textContent).toContain('Person 0');
+  expect(orders.querySelector('tbody')?.textContent).not.toContain('c0');
+  expect(urls).toContain('/api/shell/records/Customer?target=draft&limit=1000');
   const text = document.body.textContent ?? '';
   expect(text).toContain('Showing 3 of 5 rows');
   expect(text).toContain('Totals match');

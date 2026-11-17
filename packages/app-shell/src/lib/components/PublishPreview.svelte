@@ -43,7 +43,10 @@ const calculations = $derived(publishCalculations(preview));
   {/each}
   {#if quiet}<p class="smrt-app-shell__muted">{quiet}</p>{/if}
 </section>
-{#if actions}{@render actions()}{/if}
+{#if calculations.length}
+<h2>Calculated field changes</h2>
+<ul>{#each calculations as line (line)}<li>{line}</li>{/each}</ul>
+{/if}
 {#if changes.length}
 <details>
   <summary>Changes in order ({changes.length})</summary>
@@ -51,10 +54,6 @@ const calculations = $derived(publishCalculations(preview));
     {#each changes as change (change.version)}<li><p>{change.text}</p></li>{/each}
   </ol>
 </details>
-{/if}
-{#if calculations.length}
-<h2>Calculated field changes</h2>
-<ul>{#each calculations as line (line)}<li>{line}</li>{/each}</ul>
 {/if}
 {#if preview.methods.length}
 <details>
@@ -69,6 +68,7 @@ const calculations = $derived(publishCalculations(preview));
   {/each}
 </details>
 {/if}
+{#if actions}<div class="smrt-publish-preview__actions" data-smrt-part="actions">{@render actions()}</div>{/if}
 </Stack>
 
 <style>
@@ -80,11 +80,24 @@ const calculations = $derived(publishCalculations(preview));
     overflow-wrap: normal;
     word-break: normal;
   }
+  /* Every section sits above the action, which stays in reach on a long review. */
+  .smrt-publish-preview__actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding-block: var(--smrt-spacing-sm);
+  }
   .smrt-publish-preview__heading {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-sm);
     white-space: nowrap;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-publish-preview__actions {
+    background: var(--smrt-color-surface);
   }
 }
 </style>

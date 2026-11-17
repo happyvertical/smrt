@@ -167,8 +167,10 @@ it('leads with a single-column summary, then the Publish action, then the detail
   expect(follows(group('Archived'), publish)).toBe(true);
   const changes = container.querySelector('details ol');
   expect(changes?.querySelectorAll('li').length).toBe(2);
-  expect(follows(publish, changes)).toBe(true);
-  expect(follows(changes, container.querySelector('pre'))).toBe(true);
+  // Every section, the change list and the method code sit above Publish.
+  expect(follows(changes, publish)).toBe(true);
+  expect(follows(container.querySelector('pre'), publish)).toBe(true);
+  expect(publish?.closest('[data-smrt-part="actions"]')).toBeTruthy();
   // The summary precedes every other heading.
   expect(container.querySelector('h2')?.textContent).toBe(
     'What will be published',
@@ -522,4 +524,111 @@ it('keeps the summary a single column and the heading words intact', () => {
       `${process.env.SMRT_DRAFT_REVIEW_ARTIFACT}-layout.css`,
       source.slice(source.indexOf('<style>') + 7, source.indexOf('</style>')),
     );
+});
+
+describe('review follow-ups', () => {
+  const follows = (a: Node | null | undefined, b: Node | null | undefined) =>
+    Boolean(
+      ((a as Node).compareDocumentPosition(b as Node) ?? 0) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  it('never shows storage terms for the undo history a data load saves', async () => {
+    const loaded = structuredClone(preview);
+    loaded.archives = { values: 84, tables: 0 };
+    loaded.versions[0].steps = [
+      { op: 'loadRecords', table: 'orders' } as never,
+    ];
+    loaded.definition.modelsRemoved = [];
+    loaded.definition.models = {};
+    vi.mocked(fetch).mockResolvedValue(
+      json({ draft: draftInfo, preview: loaded }),
+    );
+    await render();
+    expect(container.textContent).not.toMatch(/journal/i);
+    expect(
+      container.querySelector('section[aria-label="Archived"]'),
+    ).toBeNull();
+  });
+  it('says undo history is saved beside a real archive decision', async () => {
+    const loaded = structuredClone(preview);
+    loaded.versions[0].steps = [
+      { op: 'loadRecords', table: 'orders' } as never,
+    ];
+    vi.mocked(fetch).mockResolvedValue(
+      json({ draft: draftInfo, preview: loaded }),
+    );
+    await render();
+    const archived = container.querySelector('section[aria-label="Archived"]');
+    expect(archived?.textContent).toContain('undo history saved');
+    expect(container.textContent).not.toMatch(/journal/i);
+  });
+  it('lists calculated field changes above Publish, which comes last', async () => {
+    const calc = structuredClone(preview);
+    calc.fields = {
+      Customer: { score: { type: 'integer', calculated: { value: 2 } } },
+    };
+    calc.definition.models.Customer.fieldsAdded = ['score'];
+    vi.mocked(fetch).mockResolvedValue(
+      json({ draft: draftInfo, preview: calc }),
+    );
+    await render();
+    const heading = [...container.querySelectorAll('h2')].find(
+      (h) => h.textContent === 'Calculated field changes',
+    );
+    expect(heading).toBeTruthy();
+    const publish = button('Publish');
+    expect(follows(heading, publish)).toBe(true);
+    expect(follows(container.querySelector('details'), publish)).toBe(true);
+    const bar = publish?.closest('[data-smrt-part="actions"]');
+    expect(bar?.nextElementSibling).toBeNull();
+  });
+  it('says one short thing while reviewing and while publishing', async () => {
+    let release: (value: Response) => void = () => {};
+    await render();
+    vi.mocked(fetch).mockImplementation(
+      () => new Promise<Response>((resolve) => (release = resolve)),
+    );
+    button('Publish')?.click();
+    await vi.waitFor(() =>
+      expect(container.querySelector('[role="status"]')).toBeTruthy(),
+    );
+    expect(container.querySelector('[role="status"]')?.textContent).toBe(
+      'Publishing… a large import can take a minute',
+    );
+    // The button does not repeat the status line.
+    expect(button('Publish')?.disabled).toBe(true);
+    expect(container.textContent?.match(/Publishing/g)).toHaveLength(1);
+    release(json({ error: 'stop' }, 500));
+  });
+  it('shows linked records by label in the draft data preview', async () => {
+    const withLinks = structuredClone(preview);
+    withLinks.fields = {
+      Order: {
+        item: { type: 'text', label: 'Item' },
+        customer: { type: 'reference', label: 'Customer', ref: 'Customer' },
+      },
+      Customer: { name: { type: 'text', label: 'Name' } },
+    };
+    withLinks.modelLabels = { Order: 'Orders' };
+    withLinks.versions[0].dataSteps = [
+      {
+        op: 'loadRecords',
+        model: 'Order',
+        mode: 'insert',
+        counts: { insert: 1, update: 0, unchanged: 0, rejected: 0 },
+      },
+    ];
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const path = String(input);
+      if (path.includes('/api/shell/records/Order'))
+        return json({ records: [{ id: 'o1', item: 'Cake', customer: 'c-9' }] });
+      if (path.includes('/api/shell/records/Customer'))
+        return json({ records: [{ id: 'c-9', name: 'Ada Example' }] });
+      return json({ draft: draftInfo, preview: withLinks });
+    });
+    await render();
+    const data = container.querySelector('section[aria-label="Data"]');
+    await vi.waitFor(() => expect(data?.textContent).toContain('Ada Example'));
+    expect(data?.querySelector('tbody')?.textContent).not.toContain('c-9');
+  });
 });

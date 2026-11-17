@@ -113,7 +113,7 @@ function meaningfulChange(
     JSON.stringify(to)
   );
 }
-/** Data-command undo journals are not removed app values; show archive decisions only. */
+/** Saved undo history is not removed app values; show archive decisions only. */
 function archiveItems(preview: PublishPreview) {
   const steps = preview.versions.flatMap((v) => v.steps);
   if (
@@ -145,12 +145,12 @@ function archiveItems(preview: PublishPreview) {
         ),
     ]),
   ];
-  if (
-    steps.some((s) =>
-      ['loadRecords', 'extractModel', 'mergeRecords'].includes(s.op),
-    )
-  )
-    subjects.push('data-command undo journals');
+  const savedHistory = steps.some((s) =>
+    ['loadRecords', 'extractModel', 'mergeRecords'].includes(s.op),
+  );
+  // Loading data saves undo history, which is not a decision to archive anything.
+  if (savedHistory && !subjects.length) return [];
+  if (savedHistory) subjects.push('undo history saved');
   return [
     ...(preview.archives.values
       ? [
@@ -228,6 +228,8 @@ export interface PublishDataTable {
   /** "12 records added", plus any non-zero other counts. */
   sentence: string;
   columns: { key: string; label: string; field: FieldDef }[];
+  /** Tables the link columns point to, to label their cells. */
+  links: { model: string; fields: Record<string, FieldDef> }[];
 }
 
 const num = (value: unknown) =>
@@ -280,6 +282,13 @@ export function publishDataTables(preview: PublishPreview): PublishDataTable[] {
           label: fieldLabel(key, field),
           field,
         })),
+      links: [
+        ...new Set(
+          Object.values(preview.fields?.[model] ?? {})
+            .filter((f) => f.type === 'reference' && f.ref)
+            .map((f) => f.ref as string),
+        ),
+      ].map((ref) => ({ model: ref, fields: preview.fields?.[ref] ?? {} })),
     };
   });
 }

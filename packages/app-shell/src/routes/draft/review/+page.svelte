@@ -81,7 +81,7 @@ onMount(() => {
   {:else}
     {#if error}<p class="smrt-app-shell__alert smrt-app-shell__alert-error" role="alert">{error}</p>{/if}
     {#if published}<p role="status">Published. Opening your app…</p>
-    {:else if busy}<p role="status">{preview ? 'Publishing…' : 'Reviewing your draft…'}</p>{/if}
+    {:else if busy}<p role="status">{preview ? 'Publishing… a large import can take a minute' : 'Reviewing your draft… a large import can take a minute'}</p>{/if}
     {#if preview}
       <PublishPreview {preview}>
         {#snippet actions()}
@@ -89,7 +89,7 @@ onMount(() => {
             <p>Review the latest draft before trying again.</p>
             <Button disabled={busy} onclick={review}>Review again</Button>
           {:else}
-            <Button disabled={busy} onclick={publish}>{busy ? 'Publishing…' : 'Publish'}</Button>
+            <Button disabled={busy} onclick={publish}>Publish</Button>
           {/if}
         {/snippet}
       </PublishPreview>

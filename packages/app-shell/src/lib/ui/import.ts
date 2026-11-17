@@ -5,6 +5,8 @@ import type {
   UntranslatedFormula,
 } from '@happyvertical/smrt-spreadsheets/import';
 import type { RetainedImportPlan } from '../../engine/import-names.ts';
+import { recordLabel } from './fields.ts';
+import type { ModelInfo, RecordRow } from './types.ts';
 export interface ImportState {
   id: string;
   state: string;
@@ -90,12 +92,52 @@ export function previewType(
   );
 }
 
+/** A model whose draft records label the link cells of a preview. */
+export interface LinkTarget {
+  model: string;
+  fields: Record<string, { type: string }>;
+}
+/** Link labels by model, then record id: the label the record pages show. */
+export type LinkLabels = Record<string, Record<string, string>>;
+
+/** Read each linked table once from the draft and label its records. */
+export async function readLinkLabels(
+  targets: LinkTarget[],
+): Promise<LinkLabels> {
+  const out: LinkLabels = {};
+  await Promise.all(
+    [...new Map(targets.map((t) => [t.model, t])).values()].map(
+      async (target) => {
+        try {
+          const response = await fetch(
+            `/api/shell/records/${encodeURIComponent(target.model)}?target=draft&limit=${IMPORT_PREVIEW_MAX}`,
+          );
+          if (!response.ok) return;
+          const body = await response.json();
+          if (!Array.isArray(body.records)) return;
+          out[target.model] = Object.fromEntries(
+            (body.records as RecordRow[]).map((row) => [
+              row.id,
+              recordLabel(target as Pick<ModelInfo, 'fields'>, row),
+            ]),
+          );
+        } catch {
+          // Labels are optional; the cell keeps the id without them.
+        }
+      },
+    ),
+  );
+  return out;
+}
+
 /** One cell of a loaded draft row, in the words the review uses. */
 export function previewCell(
   value: unknown,
   field: { type: string; money?: { currency: string; scale: number } },
+  label?: string,
 ): string {
   if (value === null || value === undefined || value === '') return '';
+  if (field.type === 'reference' && label) return label;
   if (field.type === 'boolean') return value ? 'Yes' : 'No';
   if (field.type === 'money' && field.money && Number.isSafeInteger(value))
     return importTotal(value as number, field.money);
