@@ -136,7 +136,7 @@ async function action(name: string) {
       <a class="smrt-app-shell__btn smrt-app-shell__btn-primary" href="/draft/review" data-smrt-part="trigger">Review and publish</a>
       <button class="smrt-app-shell__btn" disabled={busy} onclick={() => action('discard')}>Discard import</button>
     {:else}
-      <button class="smrt-app-shell__btn" disabled={busy} onclick={() => action(current?.state === 'stopped' ? 'resume' : 'stop')}>{current?.state === 'stopped' ? 'Resume import' : 'Stop'}</button>
+      <button class="smrt-app-shell__btn" disabled={busy} onclick={() => action(current?.state === 'stopped' ? 'resume' : 'stop')}>{current?.state === 'stopped' ? 'Resume import' : 'Pause import'}</button>
       <button class="smrt-app-shell__btn" disabled={busy} onclick={() => action('cancel')}>Cancel import</button>
     {/if}
   {:else}

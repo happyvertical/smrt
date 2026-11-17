@@ -38,10 +38,13 @@ import {
 let {
   open = true,
   buildingInDraft = false,
+  viewingDraft = true,
   owner = null,
 }: {
   open?: boolean;
   buildingInDraft?: boolean;
+  /** The header's Live/Draft switch: the badge must not contradict it. */
+  viewingDraft?: boolean;
   owner?: OwnerProfile | null;
 } = $props();
 
@@ -246,7 +249,7 @@ onDestroy(() => controller?.abort());
   <header class="smrt-assistant-panel__bar">
     <div class="smrt-assistant-panel__title">
       <h2>Assistant</h2>
-      {#if buildingInDraft}<Badge variant="warning">Building in draft</Badge>{/if}
+      {#if buildingInDraft}<Badge variant="warning">{viewingDraft ? 'Building in draft' : 'Changes go to the draft'}</Badge>{/if}
       {#if dock.engineLabel}<p class="smrt-app-shell__muted smrt-assistant-panel__engine">Using {dock.engineLabel}</p>{/if}
     </div>
     <div class="smrt-assistant-panel__bar-actions">

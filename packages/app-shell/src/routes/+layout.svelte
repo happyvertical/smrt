@@ -157,7 +157,7 @@ onMount(() => {
   bind:panelOpen
 >
   {#snippet panel({ open })}
-    <AssistantPanel {open} owner={data.session.user} buildingInDraft={!!data.description?.draft} />
+    <AssistantPanel {open} owner={data.session.user} buildingInDraft={!!data.description?.draft} viewingDraft={data.description?.mode === 'draft'} />
   {/snippet}
   {#key data.description?.mode}
     {@render children()}

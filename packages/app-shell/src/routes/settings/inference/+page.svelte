@@ -51,6 +51,11 @@ async function discover(): Promise<void> {
   {#if fromWelcome}
     <p><a class="smrt-app-shell__link" href="/welcome">Back to the welcome steps</a></p>
   {/if}
+  <p class="smrt-app-shell__muted">
+    Advanced. Fine-tune the API provider, model and key the assistant uses when
+    you chose an API key. To pick what runs the assistant, use
+    <a class="smrt-app-shell__link" href="/settings/assistant">Assistant settings</a>.
+  </p>
   <!-- The owner is the only person here: the key they save is the one the
        assistant uses on its next turn. The page never receives a key back. -->
   <InferenceSettingsPanel

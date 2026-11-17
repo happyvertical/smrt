@@ -605,7 +605,9 @@ describe('draft controls in the shell header', () => {
     expect(button('Live')?.getAttribute('aria-pressed')).toBe('true');
     expect(q('.smrt-draft-bar__draft-strip')).toBeNull();
     expect(q('.smrt-tenant-nav a[href="/m/Order"]')).toBeNull();
-    expect(panel()?.textContent).toContain('Building in draft');
+    // The badge agrees with the Live switch instead of claiming Draft.
+    expect(panel()?.textContent).toContain('Changes go to the draft');
+    expect(panel()?.textContent).not.toContain('Building in draft');
   });
 
   it('persists switching copies and sends the new target on subsequent data loads', async () => {
