@@ -35,7 +35,7 @@ sources:
 
 # Entry point
 
-Mount one stateless Streamable HTTP endpoint with `mountMcpAppRoute({ ... })` from `@happyvertical/smrt-app-mcp/sveltekit` (or `createMcpAppServer()` for another transport) and list the models to publish in `allowedClassNames`. Tools are generated from your `@smrt()` objects. A local stdio bridge, `smrt-mcp-bridge`, pipes a deployed app to desktop MCP clients. Claude and ChatGPT connect to the same `/api/mcp` URL; embedded UI uses `@happyvertical/smrt-mcp-apps` (portable bridge), and ChatGPT-only navigation and settings extras live in the optional `@happyvertical/smrt-mcp-openai`. For the credentials those clients present, see [mcp-oauth](/intents/mcp-oauth.md).[^s2]
+Mount one stateless Streamable HTTP endpoint with `mountMcpAppRoute({ ... })` from `@happyvertical/smrt-app-mcp/sveltekit` (or `createMcpAppServer()` for another transport) passing the `models` to publish (`createMcpAppServer()` takes `allowedClassNames`). Tools are generated from your `@smrt()` objects. A local stdio bridge, `smrt-mcp-bridge`, pipes a deployed app to desktop MCP clients. Claude and ChatGPT connect to the same `/api/mcp` URL; embedded UI uses `@happyvertical/smrt-mcp-apps` (portable bridge), and ChatGPT-only navigation and settings extras live in the optional `@happyvertical/smrt-mcp-openai`. For the credentials those clients present, see [mcp-oauth](/intents/mcp-oauth.md).[^s2]
 
 # Why not hand-roll it
 

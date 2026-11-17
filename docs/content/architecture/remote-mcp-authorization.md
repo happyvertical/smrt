@@ -35,7 +35,8 @@ resolve current application membership and tenant authority on every request.
 Use one stable HTTPS issuer identifier per authorization server. The application gateway or server-only JWT adapter
 must validate token signature, `iss`, audience/resource, expiry, and scopes
 before protected MCP operations run. Never accept a token minted for another
-issuer or resource.
+issuer or resource. This contract applies equally to the `@happyvertical/smrt-users`
+issuer and to an external one.
 
 The authorization server metadata must:
 
@@ -78,7 +79,8 @@ fallback includes `application_type`, `grant_types`, `response_types`, and
 
 Give the host the application's public HTTPS Streamable HTTP endpoint. Serve
 protected-resource metadata for that exact endpoint and point it at the
-operator's issuer. Configure registration in the host's connector settings.
+application's issuer: the `@happyvertical/smrt-users` authorization server or
+an external one the operator runs. Configure registration in the host's connector settings.
 The registration helper above applies to clients that call it. The external
 host selects and presents its own client identity.
 

@@ -198,8 +198,8 @@ methods; the s-m-r-t SvelteKit runtime has both.
 
 `mountMcpProtectedResourceMetadataRoute` serves the RFC 9728 document only at
 the adapter's advertised `metadataUrl` path. It returns 404 for any other
-path, and in the `local` profile (no adapter, or the local token adapter). It
-does not implement an OAuth authorization server.
+path, and in the `local` profile (no adapter, or the local token adapter). This
+route does not issue tokens.
 
 For piping a deployed app's MCP surface to a local stdio MCP client, see `@happyvertical/smrt-app-cli` — the client-side runtime CLI exposes a `startMcpBridge()` default and a generic `smrt-mcp-bridge` bin.
 

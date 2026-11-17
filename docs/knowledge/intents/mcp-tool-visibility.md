@@ -30,7 +30,7 @@ sources:
 
 # Entry point
 
-Pass `allowedClassNames` to publish only chosen models, `toolScopes` (glob pattern to required scopes) so a principal sees only tools whose scopes it holds, `toolPolicy` for principal-aware rules, and `confirmTools` to refuse a gated tool unless `arguments.confirm === true`. For actions that need a person to sign off, use `@happyvertical/smrt-approvals`; see [human-approvals](/intents/human-approvals.md).[^s2]
+Pass `models` (`mountMcpAppRoute`) or `allowedClassNames` (`createMcpAppServer`) to publish only chosen models, `toolScopes` (glob pattern to required scopes) so a principal sees only tools whose scopes it holds, `toolPolicy` for principal-aware rules, and `confirmTools` to refuse a gated tool unless `arguments.confirm === true`. For actions that need a person to sign off, use `@happyvertical/smrt-approvals`; see [human-approvals](/intents/human-approvals.md).[^s2]
 
 # Why not hand-roll it
 
