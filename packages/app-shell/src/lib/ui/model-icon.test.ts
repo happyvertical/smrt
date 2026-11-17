@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FALLBACK_ICONS, modelIcon } from './model-icon.ts';
+import { FALLBACK_ICONS, modelIcon, modelIcons } from './model-icon.ts';
 
 describe('modelIcon', () => {
   it('is deterministic', () => {
@@ -38,5 +38,27 @@ describe('modelIcon', () => {
       'Orb',
     ];
     expect(new Set(names.map((n) => modelIcon(n))).size).toBeGreaterThan(3);
+  });
+});
+
+describe('modelIcons', () => {
+  it('never gives two models of one menu the same icon', () => {
+    const icons = modelIcons({
+      Clients: { fields: {} },
+      Customers: { fields: {} },
+      Walks: { fields: {} },
+      Orders: { fields: {} },
+      Invoices: { fields: {} },
+    });
+    expect(icons.Clients).toBe('users');
+    expect(icons.Customers).not.toBe(icons.Clients);
+    expect(new Set(Object.values(icons)).size).toBe(5);
+  });
+
+  it('is stable and does not depend on declaration order', () => {
+    const a = modelIcons({ Customers: {}, Clients: {} });
+    const b = modelIcons({ Clients: {}, Customers: {} });
+    expect(a).toEqual(b);
+    expect(modelIcons({ Customers: {}, Clients: {} })).toEqual(a);
   });
 });

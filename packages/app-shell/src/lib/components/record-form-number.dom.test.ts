@@ -32,6 +32,13 @@ function withCount(required: boolean): Description {
   };
 }
 
+async function startEditing() {
+  [...container.querySelectorAll('button')]
+    .find((b) => b.textContent?.trim() === 'Edit')
+    ?.click();
+  await tick();
+}
+
 function type(input: HTMLInputElement, text: string) {
   input.value = text;
   input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -97,6 +104,7 @@ describe('number input in the record form', () => {
       },
     });
     await tick();
+    await startEditing();
     const [name, seats] = [
       ...container.querySelectorAll<HTMLInputElement>('input'),
     ];
@@ -120,6 +128,7 @@ describe('number input in the record form', () => {
       },
     });
     await tick();
+    await startEditing();
     const seats = container.querySelectorAll<HTMLInputElement>('input')[1];
     type(seats, '9');
     await tick();

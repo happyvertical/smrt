@@ -24,6 +24,12 @@ afterEach(() => {
   container.remove();
   vi.unstubAllGlobals();
 });
+async function startEditing() {
+  [...container.querySelectorAll('button')]
+    .find((b) => b.textContent?.trim() === 'Edit')
+    ?.click();
+  await tick();
+}
 function data() {
   const d = description('draft');
   d.models.Customer.fields = {
@@ -68,6 +74,7 @@ it.each([
     },
   });
   await tick();
+  await startEditing();
   expect(container.querySelector('output')?.textContent).toBe(
     editing ? '$25.00' : '',
   );
@@ -273,6 +280,7 @@ it.each([
     },
   });
   await tick();
+  await startEditing();
   const control = container.querySelector<HTMLInputElement>('input')!;
   expect(control.value).toBe(input);
   expect(container.textContent).toContain(`Amount in ${currency}`);

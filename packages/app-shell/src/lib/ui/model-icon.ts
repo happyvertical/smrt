@@ -108,3 +108,52 @@ export function modelIcon(
     FALLBACK_ICONS[hash(name) % FALLBACK_ICONS.length]
   );
 }
+
+/** Every icon a model may get, preferred ones first (the order is the tie-break). */
+const ALL_ICONS: readonly string[] = [
+  ...KEYWORDS.map(([icon]) => icon),
+  ...FALLBACK_ICONS,
+  'creditCard',
+  'school',
+  'layers',
+];
+
+/** Close second choices, tried when a model's own icon is already taken. */
+const ALTERNATES: Record<string, readonly string[]> = {
+  users: ['creditCard', 'school', 'briefcase'],
+  receipt: ['creditCard', 'fileText', 'bank'],
+  calendar: ['repeat', 'book'],
+  truck: ['package', 'shoppingBag'],
+  package: ['archive', 'layers'],
+  shoppingBag: ['creditCard', 'package'],
+  tag: ['creditCard', 'bank'],
+  wrench: ['briefcase', 'repeat'],
+  briefcase: ['layers', 'folder'],
+  fileText: ['book', 'archive'],
+  bank: ['creditCard', 'briefcase'],
+};
+
+/**
+ * Icons for a whole menu: each model's own pick, but two models never share
+ * one while an unused icon is left (Clients and Customers both read "users").
+ * Models are settled in name order, so the result does not depend on the order
+ * they were declared in and an earlier name never loses its icon to a later one.
+ */
+export function modelIcons(
+  models: Record<string, { fields?: Record<string, FieldDef> }>,
+): Record<string, string> {
+  const used = new Set<string>();
+  const out: Record<string, string> = {};
+  for (const name of Object.keys(models).sort()) {
+    const wanted = modelIcon(name, models[name].fields);
+    const start = hash(name);
+    const spare = [...new Set(ALL_ICONS)].filter((i) => !used.has(i));
+    const close = (ALTERNATES[wanted] ?? []).find((i) => !used.has(i));
+    const pick = used.has(wanted)
+      ? (close ?? (spare.length ? spare[start % spare.length] : wanted))
+      : wanted;
+    used.add(pick);
+    out[name] = pick;
+  }
+  return out;
+}

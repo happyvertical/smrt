@@ -11,6 +11,8 @@ import {
   methodToolName,
   recordLabel,
   serializeForm,
+  singularLabel,
+  sortByLabel,
   stripFieldPrefix,
 } from './fields.ts';
 import type { FieldDef, RecordRow } from './types.ts';
@@ -225,5 +227,61 @@ describe('labels', () => {
 
   it('names the generated tool of a method', () => {
     expect(methodToolName('Chore', 'complete')).toBe('chore_complete');
+  });
+});
+
+describe('record titles, selects and singular labels', () => {
+  const client = {
+    fields: {
+      code: { type: 'text' as const, label: 'Client #' },
+      name: { type: 'text' as const },
+      balance: { type: 'money' as const },
+    },
+  };
+
+  it('titles a record by its name, not a leading code column', () => {
+    expect(
+      recordLabel(client, { id: 'x1', code: 'C003', name: 'Ada Lovelace' }),
+    ).toBe('Ada Lovelace');
+    // No name value: the first text value still labels it.
+    expect(recordLabel(client, { id: 'x1', code: 'C003', name: ' ' })).toBe(
+      'C003',
+    );
+    // A name-like label wins over declared order.
+    expect(
+      recordLabel(
+        {
+          fields: {
+            note: { type: 'text' },
+            title: { type: 'text', label: 'Walk title' },
+          },
+        },
+        { id: 'w1', note: 'n', title: 'Park loop' },
+      ),
+    ).toBe('Park loop');
+  });
+
+  it('sorts select options naturally by label', () => {
+    const invoice = { fields: { number: { type: 'text' as const } } };
+    const rows = ['INV-10', 'INV-8', 'INV-9', 'INV-1'].map(
+      (number, i) => ({ id: `i${i}`, number }) as RecordRow,
+    );
+    expect(sortByLabel(invoice, rows).map((r) => r.number)).toEqual([
+      'INV-1',
+      'INV-8',
+      'INV-9',
+      'INV-10',
+    ]);
+  });
+
+  it('makes a model label singular for buttons', () => {
+    expect(singularLabel('Walks')).toBe('Walk');
+    expect(singularLabel('Orders')).toBe('Order');
+    expect(singularLabel('Categories')).toBe('Category');
+    expect(singularLabel('Boxes')).toBe('Box');
+    expect(singularLabel('Order items')).toBe('Order item');
+    expect(singularLabel('Status')).toBe('Status');
+    expect(singularLabel('Address')).toBe('Address');
+    expect(singularLabel('Client')).toBe('Client');
   });
 });

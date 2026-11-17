@@ -1,7 +1,7 @@
 <script lang="ts">
 import RecordForm from '$lib/components/RecordForm.svelte';
 import RelatedRecords from '$lib/components/RelatedRecords.svelte';
-import { recordLabel } from '$lib/ui/fields';
+import { recordLabel, singularLabel } from '$lib/ui/fields';
 import type { PageProps } from './$types';
 
 let { data }: PageProps = $props();
@@ -17,7 +17,7 @@ const info = $derived(description?.models[data.model]);
     <header class="smrt-app-shell__head">
       <div>
         <h1>{recordLabel(info, data.record)}</h1>
-        <p class="smrt-app-shell__sub">{info.label}</p>
+        <p class="smrt-app-shell__sub">{singularLabel(info.label)}</p>
       </div>
     </header>
     <RecordForm

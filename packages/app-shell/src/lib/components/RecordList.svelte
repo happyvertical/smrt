@@ -8,7 +8,7 @@ import {
   selectColumns,
 } from '$lib/ui/columns';
 import { DEPENDS } from '$lib/ui/events';
-import { recordLabel } from '$lib/ui/fields';
+import { recordLabel, singularLabel } from '$lib/ui/fields';
 import { modelHref } from '$lib/ui/menu';
 import type { Description, PendingApproval, RecordRow } from '$lib/ui/types';
 import ConfirmDialog from './ConfirmDialog.svelte';
@@ -113,7 +113,7 @@ async function confirmDelete() {
   <div class="smrt-app-shell__empty" data-smrt-part="empty">
     <p><strong>No {info.label.toLowerCase()} yet</strong></p>
     <p class="smrt-app-shell__muted" data-smrt-part="description">Add the first one to get started.</p>
-    <a class="smrt-app-shell__btn smrt-app-shell__btn-primary" href="{base}/new" data-smrt-part="trigger">New {info.label.toLowerCase()}</a>
+    <a class="smrt-app-shell__btn smrt-app-shell__btn-primary" href="{base}/new" data-smrt-part="trigger">New {singularLabel(info.label).toLowerCase()}</a>
   </div>
 {:else}
   <div class="smrt-app-shell__tablewrap" data-smrt-part="body">
@@ -176,7 +176,7 @@ async function confirmDelete() {
 
 <ConfirmDialog
   open={target !== null}
-  title="Delete this {info.label.toLowerCase()}?"
+  title="Delete this {singularLabel(info.label).toLowerCase()}?"
   confirmLabel={description.mode === 'draft' ? 'Delete' : 'Ask to delete'}
   danger
   busy={deleting}
