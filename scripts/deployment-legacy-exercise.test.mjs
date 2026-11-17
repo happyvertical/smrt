@@ -268,10 +268,12 @@ test('supervised port-forward keeps its local port, respawns on exit with the re
   const handle = await pending;
   assert.equal(handle.port, 41234);
   assert.equal(spawns[0].local, 0);
+  assert.equal(handle.exits(), 0);
   spawns[0].child.stderr.write('E1108 lost connection to pod\n');
   spawns[0].child.emit('exit', 1, null);
   await new Promise((r) => setTimeout(r, 40));
   assert.equal(spawns.length, 2, 'respawned once');
+  assert.equal(handle.exits(), 1, 'exits are counted for probe correlation');
   assert.equal(spawns[1].local, 41234, 'same local port requested');
   assert.match(notes[0], /port-forward ingress exited \(1\): E1108 lost connection to pod; restarting on 127\.0\.0\.1:41234/);
   handle.kill('SIGTERM');
@@ -279,6 +281,7 @@ test('supervised port-forward keeps its local port, respawns on exit with the re
   await new Promise((r) => setTimeout(r, 40));
   assert.equal(spawns.length, 2, 'no respawn after stop');
   assert.equal(notes.length, 1);
+  assert.equal(handle.exits(), 1, 'a stop is not an exit');
   const failing = supervisedForward((local) => { const c = fake(); setTimeout(() => { c.stderr.write('error: unable to listen\n'); c.emit('exit', 1, null); }, 5); return c; }, { name: 'git', note: () => {}, retryMs: 10 });
   await assert.rejects(failing, /forward git exited \(1\) before listening: error: unable to listen/);
   await assert.rejects(supervisedForward(() => fake(), { name: 'slow', note: () => {}, startupMs: 30 }), /Timeout forward slow/);
