@@ -257,7 +257,7 @@ function statusLabel(account: SocialAccountSettingsItem): string {
     align-items: center;
     gap: 0.5rem;
     border: 1px solid currentColor;
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     padding: 0.75rem;
   }
   .smrt-social-account-settings__confirm p {
