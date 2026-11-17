@@ -606,27 +606,53 @@ export function createAdoptionMethods(config, command, helpers, options) {
       );
     }
   }
-  async function legacyFlux(plan, revision, relinquished, finalizing = false) {
+  // Returns the legacy Kustomization, or null once it is retired: only when
+  // the journal already records finalization (`retired`), an absent legacy
+  // Kustomization and source (deleted after the handover, the journaled UID
+  // gone for good) are accepted, as assertAdoptionComplete accepts them; a
+  // present one must still be the journaled object and suspended. Before the
+  // finalization is journaled, including the observation that commits it,
+  // absence is an error: that gate must see the suspended, non-pruning
+  // applier.
+  async function legacyFlux(
+    plan,
+    revision,
+    relinquished,
+    finalizing = false,
+    retired = false,
+  ) {
+    const read = finalizing && retired ? helpers.getIfPresent : helpers.get;
     const [source, ks] = await Promise.all([
-      helpers.get(
+      read(
         'gitrepository',
         plan.legacy.source.name,
         plan.legacy.source.namespace,
       ),
-      helpers.get(
+      read(
         'kustomization',
         plan.legacy.kustomization.name,
         plan.legacy.kustomization.namespace,
       ),
     ]);
+    if (finalizing && retired && !ks) {
+      demand(
+        !source ||
+          (source.metadata.uid === plan.legacy.source.uid &&
+            source.spec.url === plan.legacy.repository),
+        'Legacy Flux UID/repository/exact reviewed revision not acknowledged',
+      );
+      return null;
+    }
     demand(
-      source.metadata.uid === plan.legacy.source.uid &&
-        ks.metadata.uid === plan.legacy.kustomization.uid &&
-        source.spec.url === plan.legacy.repository &&
-        ready(source) &&
+      ks?.metadata.uid === plan.legacy.kustomization.uid &&
         (finalizing ? lastReady(ks) : ready(ks)) &&
-        matches(source.status.artifact?.revision, revision) &&
-        matches(ks.status.lastAppliedRevision, revision),
+        matches(ks.status.lastAppliedRevision, revision) &&
+        (finalizing && retired && !source
+          ? true
+          : source?.metadata.uid === plan.legacy.source.uid &&
+            source.spec.url === plan.legacy.repository &&
+            ready(source) &&
+            matches(source.status.artifact?.revision, revision)),
       'Legacy Flux UID/repository/exact reviewed revision not acknowledged',
     );
     // The legacy applier must keep reconciling (and reporting) through the
@@ -819,17 +845,22 @@ export function createAdoptionMethods(config, command, helpers, options) {
           hash(plan),
       'Adopted HelmRelease annotation mismatch',
     );
+    // Absence of the legacy applier is tolerated only once the journal says
+    // finalized (the post-publication reobservation and later re-runs); the
+    // observation that commits finalization still requires it present.
     const ks = await legacyFlux(
       plan,
       plan.legacy.relinquishRevision,
       true,
       stage === 'finalized',
+      stage === 'finalized' && snapshot.state?.stage === 'finalized',
     );
     demand(
-      Array.isArray(ks.status?.inventory?.entries) &&
-        !ks.status.inventory.entries.some((entry) =>
-          saved.resources.some((r) => r.fluxInventoryId === entry.id),
-        ),
+      !ks ||
+        (Array.isArray(ks.status?.inventory?.entries) &&
+          !ks.status.inventory.entries.some((entry) =>
+            saved.resources.some((r) => r.fluxInventoryId === entry.id),
+          )),
       'Legacy Flux inventory management returned',
     );
     await helpers.acknowledge(document, snapshot.revision);

@@ -2383,6 +2383,16 @@ export async function legacyMain(env = process.env) {
       /resumed after adoption/,
     );
     k(['-n', 'flux-system', 'patch', 'kustomization', 'legacy-app', '--type=merge', '-p', '{"spec":{"suspend":true}}']);
+    // Retired for good: the suspended legacy applier and its source may be
+    // deleted after finalization. The journaled UID is gone, so the finalized
+    // reobservation and every ordinary command below accept their absence,
+    // while the adopted objects stay (pruning was disabled at relinquishment).
+    k(['-n', 'flux-system', 'delete', 'kustomization', 'legacy-app', '--wait=true', '--timeout=120s']);
+    k(['-n', 'flux-system', 'delete', 'gitrepository', 'legacy-source', '--wait=true', '--timeout=120s']);
+    assert.equal(
+      (await resumeAdoption('adoption finalized (legacy applier deleted)')).stage,
+      'finalized',
+    );
     for (const old of original) {
       const actual = get(old.kind, old.metadata.name);
       assert.equal(actual.metadata.uid, old.metadata.uid);

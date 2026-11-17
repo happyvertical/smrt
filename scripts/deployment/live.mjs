@@ -532,6 +532,29 @@ export function createLiveAdapter(
       );
     }
   };
+  // Absence is a legitimate observation only where the protocol says so (a
+  // retired legacy applier); every other read failure stays an error.
+  const getIfPresent = async (kind, name, ns = namespace) => {
+    let output;
+    try {
+      output = await command('kubectl', [
+        '--namespace',
+        ns,
+        'get',
+        kind,
+        name,
+        '--ignore-not-found',
+        '-o',
+        'json',
+      ]);
+    } catch {
+      throw new DeploymentError(
+        `Kubernetes read failed: get ${safeReference(kind)}/${safeReference(name)} namespace ${safeReference(ns)}`,
+        'RESOURCE_READ',
+      );
+    }
+    return output.trim() ? JSON.parse(output) : null;
+  };
   async function read() {
     await git('fetch', 'origin', branch);
     const revision = (await git('rev-parse', `origin/${branch}`)).trim();
@@ -2058,6 +2081,7 @@ export function createLiveAdapter(
     command,
     {
       get,
+      getIfPresent,
       bindings,
       inventory,
       preflight,
