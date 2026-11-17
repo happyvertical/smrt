@@ -179,7 +179,7 @@ export function modelsInSource(src) {
   const code = blankNonCode(src);
   const alt = decoratorNames(code).join('|');
   const found = [];
-  const re = new RegExp(`@\\s*(?:${alt})(?![\\w$])`, 'g');
+  const re = new RegExp(`@\\s*(?:${alt})(?![\\w$])(?!\\s*\\.)`, 'g');
   for (const m of code.matchAll(re)) {
     let k = m.index + m[0].length;
     const skipWs = () => {

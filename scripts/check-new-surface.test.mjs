@@ -340,3 +340,28 @@ test('spaced decorator and stacked aliased import forms are inventoried', () =>
     const r = run(CHECK, root);
     assert.match(r.output, /unrecorded model: @x\/core:Spaced/);
   }));
+
+const SMRT_NS = "import * as smrt from '@x/core';\n@smrt.smrt()\nexport class Extra {}\n";
+
+test('a namespace named smrt: recorded model passes', () =>
+  withRoot(recorded({ 'packages/core/src/Extra.ts': SMRT_NS }), (root) => {
+    assert.ok(readEntries(root).some((e) => e.name === '@x/core:Extra'));
+    assert.equal(run(CHECK, root).code, 0);
+  }));
+
+test('a namespace named smrt: unrecorded model is named', () =>
+  withRoot(recorded(), (root) => {
+    writeFileSync(join(root, 'packages/core/src/Extra.ts'), SMRT_NS);
+    const r = run(CHECK, root);
+    assert.equal(r.code, 1);
+    assert.match(r.output, /unrecorded model: @x\/core:Extra/);
+  }));
+
+test('property-access decorators that are not model decorators are ignored', () =>
+  withRoot(recorded(), (root) => {
+    writeFileSync(
+      join(root, 'packages/core/src/Other.ts'),
+      "import * as smrt from '@x/core';\nimport * as core from '@x/core';\nclass Other {\n  @smrt.field()\n  a = 1;\n  @core.other()\n  b = 2;\n}\n@core.other()\nexport class Plain {}\n",
+    );
+    assert.equal(run(CHECK, root).code, 0);
+  }));
