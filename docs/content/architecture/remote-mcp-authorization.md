@@ -284,8 +284,8 @@ registration, login and consent pieces are the host's own.
 ```ts
 const authorization = await SmrtOAuthAuthorizationService.create({
   db,
-  // [] = any valid session may consent; the live role cap and `toolScopes`
-  // below do the narrowing (see "Limited agents" below and #5110).
+  // [] = any valid session may consent. Only for a resource that serves
+  // agent users; never for resources humans consent to (see "Scopes" below).
   scopePermissions: { 'notes.read': [], 'notes.write': [], 'notes.delete': [] },
 });
 const server = createCimdAuthorizationServer({
@@ -359,9 +359,22 @@ export const POST = mountMcpAppRoute({
 - **Registration.** DCR works as is. CIMD needs a client document at a public
   HTTPS URL with a default port, which the issuer fetches with its SSRF guard;
   it cannot be exercised from a private lab network.
+- **Scopes (#5110).** The resource requires a token to carry every scope it
+  advertises, and consent refuses a user who lacks a mapped permission, so a
+  limited-role agent can only connect if each scope maps to `[]`. That makes
+  the consent-time upper bound vacuous: the grant records no permissions and
+  an empty permission ceiling, and only the live role cap (the runtime binder)
+  and `toolScopes` limit what the agent can do. Use it only for resources
+  served to agent users, never for human consent.
 - **Protocol era.** Paperclip speaks the 2025 JSON-RPC handshake. The
   endpoint refuses it today (#5109), so a stock app does not connect yet.
 - **Webhook receivers** must currently be public HTTPS on port 443 (#5111).
+  The dispatcher's `transport` option is a test-only seam: it skips the
+  HTTPS, port 443 and SSRF rules and must not be used in production.
+
+Claims about Paperclip's own behaviour above (`quarantineNewEntries`, the
+install endpoints, the default per-agent `tools:use` grant, handshake and
+discovery order) were observed in v2026.1106.0 and may change.
 
 ### Acceptance results
 
@@ -371,17 +384,18 @@ deployment, with a reference app built from the options above on SQLite, the
 app as its own issuer behind a private test CA. smrt revision: release branch
 `release/5079-agent-ready-apps` at `f38c19ba6d`, with the `legacy: 'stateless'`
 option of the SDK `createMcpHandler` switched on locally for every row marked
-(a); nothing else was patched.
+(a) and the dispatcher `transport` seam used for row 6 (b); nothing else was
+patched.
 
 | # | Step | Result | Evidence |
 | --- | --- | --- | --- |
-| 1 | OAuth connect: discovery, registration, resource, refresh | Pass (a); CIMD not run | Probe 401 with `WWW-Authenticate`, then RFC 9728 and RFC 8414 path-insertion fetches, both 200; DCR `POST /oauth/register` 201 (`application_type: web`, https callback); code exchange with S256 and `resource`; refresh grant with `resource` after expiry returned 200 and a new token. Without (a) the connection fails at the handshake: #5109. CIMD is refused by design for a private host (`invalid_url`). |
-| 2 | Per-agent connection and install | Pass | Two connections, each authorized as a different smrt agent user, installed on one Paperclip agent each; the audit store shows two distinct principals of kind `agent`; access for the other agent was `off` once its default `tools:use` grant was removed. |
-| 3 | Tool listing and annotations | Pass (a) | Agent with write and delete roles saw 4 tools (`readOnlyHint` on list/get, `destructiveHint` on delete); the read-only agent saw 2. Paperclip classed them read, write and destructive. |
+| 1 | OAuth connect: discovery, registration, resource, refresh | Fail without patch (#5109); passes with local patch (a); CIMD not run | Probe 401 with `WWW-Authenticate`, then RFC 9728 and RFC 8414 path-insertion fetches, both 200; DCR `POST /oauth/register` 201 (`application_type: web`, https callback); code exchange with S256 and `resource`; refresh grant with `resource` after expiry returned 200 and a new token. Without (a) the connection fails at the handshake: #5109. CIMD is refused by design for a private host (`invalid_url`). |
+| 2 | Per-agent connection and install | Pass (needs #5110 configuration for a limited role) | Two connections, each authorized as a different smrt agent user, installed on one Paperclip agent each; the audit store shows two distinct principals of kind `agent`; access for the other agent was `off` once its default `tools:use` grant was removed. |
+| 3 | Tool listing and annotations | Fail without patch (#5109); passes with local patch (a) | Agent with write and delete roles saw 4 tools (`readOnlyHint` on list/get, `destructiveHint` on delete); the read-only agent saw 2. Paperclip classed them read, write and destructive. |
 | 4a | Scoped call, then refusal after the role permission is revoked | Pass | `note_create` ran; after removing `notes.write` from the role the next call returned "Unknown MCP tool", audited `denied` (`mcp_tool_access_denied`); `note_list` still ran with the capped scopes. |
 | 4b | Refusal after the grant is revoked | Pass | The next call returned 401 `invalid_token`; the refresh was refused; Paperclip showed "OAuth authorization has expired. Reconnect"; the other agent's connection was unaffected. |
 | 5 | Gated destructive call held, person approves, runs once | Pass | `note_delete` answered `approval_pending`; retry before approval stayed pending; a human with `approvals.approve-mcp-tool` approved; the identical retry deleted the note once; a further identical call opened a new pending request. Audit: `approval_requested`, `approval_pending`, `approval_consumed`. |
-| 6 | Routine trigger fired by a smrt webhook | Pass (b) | Trigger in `hmac_sha256` mode; subscription with the `paperclip` preset; delivery got 202 and created a routine run with `source: webhook` and an identity-only payload; a request signed with the default `x-smrt-*` headers or a wrong digest got 401. (b) The destination was not public port 443, so delivery used the dispatcher's trusted `transport` seam: #5111. |
+| 6 | Routine trigger fired by a smrt webhook | Fail for a private receiver (#5111); passes via test seam (b) | Trigger in `hmac_sha256` mode; subscription with the `paperclip` preset; delivery got 202 and created a routine run with `source: webhook` and an identity-only payload; a request signed with the default `x-smrt-*` headers or a wrong digest got 401. (b) The destination was not public port 443, so delivery used the dispatcher's trusted `transport` seam: #5111. |
 | 7 | Quarantine | Pass | With `quarantineNewEntries: false` a newly permitted tool was active and callable after a catalog refresh; with `true` it arrived `quarantined` and calls returned `tool_not_found`. |
 
 Re-run this table when Paperclip or the MCP protocol revision changes.
