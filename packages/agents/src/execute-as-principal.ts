@@ -285,7 +285,14 @@ function cloneJsonFrozen(
       }
       const rec: { [key: string]: PrincipalBindingJsonValue } = {};
       for (const [k, v] of Object.entries(obj)) {
-        rec[k] = cloneJsonFrozen(v, `${path}.${k}`, seen);
+        // defineProperty keeps a `__proto__` key an own data property rather
+        // than invoking the prototype setter.
+        Object.defineProperty(rec, k, {
+          value: cloneJsonFrozen(v, `${path}.${k}`, seen),
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
       }
       out = rec;
     }

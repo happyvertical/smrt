@@ -237,6 +237,25 @@ describe('executeAsPrincipal', () => {
     }
   });
 
+  it('clones a __proto__ key as an own property without touching the prototype', async () => {
+    const metadata = JSON.parse('{"__proto__":{"admin":true},"ok":1}');
+    await executeAsPrincipal(
+      {
+        db,
+        principal: { runAsUserId: userId, tenantId, bindingMetadata: metadata },
+        audit: () => {},
+      },
+      async (run) => {
+        const seen = run.bindingMetadata as Record<string, unknown>;
+        expect(Object.getPrototypeOf(seen)).toBe(Object.prototype);
+        expect(Object.hasOwn(seen, '__proto__')).toBe(true);
+        expect(seen.ok).toBe(1);
+        expect(({} as Record<string, unknown>).admin).toBeUndefined();
+        expect(JSON.stringify(seen)).toBe(JSON.stringify(metadata));
+      },
+    );
+  });
+
   it('enforces the persona tool ceiling (allowedTools)', async () => {
     await executeAsPrincipal(
       {
