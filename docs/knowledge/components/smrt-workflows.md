@@ -5,7 +5,7 @@ description: "Durable workflow runs for SMRT: ordered host steps over registered
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-16T15:42:51Z"
+  at: "2026-11-17T21:17:44Z"
 audience: "internal"
 evidence_level: "manifest-described"
 source_revision: "sha256:7dc8d0052fb5eb06d3c2b01c96463fa7d33646f154a38bd5f658fe997bb08273"

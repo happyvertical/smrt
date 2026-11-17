@@ -42,6 +42,16 @@ export {
   OAuthState,
   type OAuthStateOptions,
 } from './oauth-state.js';
+export {
+  isEffectivelyPublic,
+  type PublishPolicyChange,
+  PublishPolicyConfirmationRequired,
+  PublishPolicyInvalid,
+  type PublishPolicyPlan,
+  type PublishPolicyState,
+  planPublishPolicyChange,
+  supportedPublishModes,
+} from './publish-policy.js';
 export { SocialPostsRecipe } from './recipes.js';
 // Models
 export {
