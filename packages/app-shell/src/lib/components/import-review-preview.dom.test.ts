@@ -109,6 +109,12 @@ it('previews the first three loaded rows per sheet with types and expands to all
   expect(orders.querySelector('tbody')?.textContent).toContain('Person 0');
   expect(orders.querySelector('tbody')?.textContent).not.toContain('c0');
   expect(urls).toContain('/api/shell/records/Customer?target=draft&limit=1000');
+  // Columns appear once, in the table header, not again as a list.
+  expect(
+    document.querySelector(
+      '[data-smrt-component="AppShellImportReview"] ul[data-smrt-part="list"]',
+    ),
+  ).toBeNull();
   const text = document.body.textContent ?? '';
   expect(text).toContain('Showing 3 of 5 rows');
   expect(text).toContain('Totals match');
@@ -131,5 +137,5 @@ it('shows no preview and no request before the proof passes', async () => {
   });
   await settle();
   expect(send).not.toHaveBeenCalled();
-  expect(document.querySelector('table')).toBeNull();
+  expect(document.querySelectorAll('tbody tr')).toHaveLength(0);
 });

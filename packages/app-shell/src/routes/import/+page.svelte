@@ -122,7 +122,7 @@ async function action(name: string) {
 <svelte:head><title>Import a workbook</title></svelte:head>
 <div class="smrt-app-shell__page" data-smrt-component="AppShellImport">
   <header class="smrt-app-shell__head" data-smrt-part="header"><h1>Import a workbook</h1></header>
-  <p>Load an Excel workbook into a draft. Check the proof, then review and publish it.</p>
+  <p>Load an Excel workbook into a draft. Check the proof, then review and publish it in one step.</p>
   {#if error}<p class="smrt-app-shell__alert smrt-app-shell__alert-warn" role="alert" data-smrt-part="status">{error}</p>{/if}
   {#if reading}<p role="status">Reading the workbook</p>{/if}
   {#if active || review}
@@ -131,7 +131,7 @@ async function action(name: string) {
     {#if visibleProgress.length}<ol data-smrt-part="list" aria-label="Import progress">{#each visibleProgress as entry, index (index)}<li aria-current={index === visibleProgress.length - 1 && entry.stage === current?.step ? 'step' : undefined}>{importStages[entry.stage]}</li>{/each}</ol>{/if}
     {#if current?.state === 'stopped'}<p>{current.reason === 'budget' || current.stopReason?.startsWith('max_') ? 'This import reached its time or work limit. Resume to give it more time and continue, or discard it and try a smaller workbook.' : 'Your progress is saved. Resume to continue.'}</p>{/if}
     {#if review}
-      <p>The workbook passed its proof. Publishing still needs your approval on the draft review screen.</p>
+      <p>The workbook passed its proof. Review it, then publish in one step.</p>
       <p>To inspect the imported records first, choose Draft in the Live/Draft switch, then open a table from the menu.</p>
       <a class="smrt-app-shell__btn smrt-app-shell__btn-primary" href="/draft/review" data-smrt-part="trigger">Review and publish</a>
       <button class="smrt-app-shell__btn" disabled={busy} onclick={() => action('discard')}>Discard import</button>
