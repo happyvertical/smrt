@@ -70,8 +70,8 @@ describe('assistant copy labels', () => {
     await vi.waitFor(() =>
       expect(container.textContent).toContain(
         copy === 'draft'
-          ? 'Draft copy. Your live app is unchanged.'
-          : 'Live copy.',
+          ? 'Tried in a draft. Your live app is unchanged.'
+          : 'Changed in your live app.',
       ),
     );
   });
@@ -199,4 +199,59 @@ it('renders an assistant-run report with the shared result component and record 
   expect(container.querySelector('a[href="/reports/sales"]')?.textContent).toBe(
     'Open report',
   );
+});
+
+it('shows a working indicator with the current step while a turn runs', async () => {
+  const sse = (e: unknown) =>
+    new TextEncoder().encode(`event: turn\ndata: ${JSON.stringify(e)}\n\n`);
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input) => {
+      const path = String(input);
+      if (path.includes('/turn'))
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(
+                sse({
+                  type: 'tool_call',
+                  id: 't',
+                  name: 'app_describe',
+                  args: '{}',
+                }),
+              );
+            },
+          }),
+          { headers: { 'content-type': 'text/event-stream' } },
+        );
+      return new Response(
+        JSON.stringify(
+          path.includes('/status')
+            ? { configured: true }
+            : { threads: [], approvals: [] },
+        ),
+      );
+    }),
+  );
+  const target = document.createElement('div');
+  document.body.appendChild(target);
+  const mounted = mount(AssistantPanel, { target, props: { open: true } });
+  await vi.waitFor(() =>
+    expect(target.textContent).toContain('Tell me what you want'),
+  );
+  const field = target.querySelector('textarea');
+  if (!field) throw new Error('Missing assistant input');
+  field.value = 'Look around';
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+  target
+    .querySelector('form')
+    ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  await vi.waitFor(() =>
+    expect(
+      target.querySelector('[data-testid="assistant-working"]')?.textContent,
+    ).toContain('Looking at your app'),
+  );
+  expect(target.textContent).not.toContain('Describe');
+  unmount(mounted);
+  target.remove();
 });

@@ -15,6 +15,16 @@ export function toolSummary(name: string, result: unknown, ok = true): string {
   return sharedToolSummary(name, result, ok, options);
 }
 
+/**
+ * A summary the server already made safe, shown on the card. Failures keep
+ * their plain reason; chat re-checks it so nothing raw can reach the chip.
+ */
+export function shownSummary(name: string, summary: unknown, ok: boolean) {
+  return ok || typeof summary !== 'string'
+    ? toolSummary(name, summary, ok)
+    : toolSummary(name, { summary }, false);
+}
+
 const reportPayload = (
   input: unknown,
   depth = 0,

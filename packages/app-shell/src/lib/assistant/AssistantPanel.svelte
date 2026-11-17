@@ -20,12 +20,14 @@ import {
 import {
   type Action,
   announcement,
+  collapseFailures,
   type DockState,
   type Item,
   initialState,
   reduce,
   stopNote,
   toolLabel,
+  workingStep,
 } from './reducer';
 
 // The assistant's chat column, docked between the sidebar and the content by
@@ -272,7 +274,7 @@ onDestroy(() => controller?.abort());
       </p>
     {/if}
 
-    {#each dock.items as item (item.id)}
+    {#each collapseFailures(dock.items) as item (item.id)}
       {#if item.kind === 'user'}
         <p class="smrt-assistant-panel__msg smrt-assistant-panel__user"><span class="smrt-assistant-panel__sr-only">You: </span>{item.text}</p>
       {:else if item.kind === 'assistant'}
@@ -284,9 +286,10 @@ onDestroy(() => controller?.abort());
           title={item.summary}
         >
           <span aria-hidden="true">{item.state === 'running' ? '…' : item.state === 'ok' ? '✓' : '!'}</span>
-          <span>{toolLabel(item.name)}</span>
+          <span>{toolLabel(item.name)}{item.state === 'error' ? " didn't work" : ''}</span>
+          {#if 'failures' in item && item.failures > 1}<span class="smrt-app-shell__muted">Tried {item.failures} times.</span>{/if}
           {#if item.summary}<span class="smrt-app-shell__muted smrt-assistant-panel__sum">{item.summary}</span>{/if}
-          {#if item.copy}<span class="smrt-app-shell__muted">{item.copy === 'draft' ? 'Draft copy. Your live app is unchanged.' : 'Live copy.'}</span>{/if}
+          {#if item.copy}<span class="smrt-app-shell__muted">{item.copy === 'draft' ? 'Tried in a draft. Your live app is unchanged.' : 'Changed in your live app.'}</span>{/if}
           <span class="smrt-assistant-panel__sr-only">{item.state === 'running' ? 'running' : item.state === 'ok' ? 'done' : 'did not work'}</span>
         </p>
         {#if item.report}<div class="smrt-app-shell__card"><ReportResult result={item.report.result} formatCell={reportCell} cellHref={reportCellHref} />{#if item.report.href}<a href={item.report.href}>Open report</a>{/if}</div>
@@ -310,6 +313,9 @@ onDestroy(() => controller?.abort());
         <p class="smrt-app-shell__alert {item.tone === 'error' ? 'smrt-app-shell__alert-error' : ''}" role={item.tone === 'error' ? 'alert' : 'status'}>{item.text}{#if item.action} <a class="smrt-app-shell__link" href={item.action.href}>{item.action.label}</a>{/if}</p>
       {/if}
     {/each}
+    {#if dock.running}
+      <p class="smrt-assistant-panel__working" data-testid="assistant-working"><span class="smrt-assistant-panel__dots" aria-hidden="true"><i></i><i></i><i></i></span><span>{workingStep(dock)}…</span></p>
+    {/if}
   </div>
 
   <div class="smrt-assistant-panel__sr-only" aria-live="polite" role="status">{announce}</div>
@@ -336,6 +342,13 @@ onDestroy(() => controller?.abort());
 </div>
 
 <style>
+  .smrt-assistant-panel__working { display: flex; align-items: center; gap: 0.5rem; margin: 0; }
+  .smrt-assistant-panel__dots { display: inline-flex; gap: 0.2rem; }
+  .smrt-assistant-panel__dots i { width: 0.35rem; height: 0.35rem; border-radius: 50%; background: currentColor; animation: smrt-assistant-pulse 1s infinite ease-in-out; }
+  .smrt-assistant-panel__dots i:nth-child(2) { animation-delay: 0.15s; }
+  .smrt-assistant-panel__dots i:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes smrt-assistant-pulse { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .smrt-assistant-panel__dots i { animation: none; } }
 @layer smrt.reset, smrt.structure, smrt.theme;
 
 @layer smrt.structure {
