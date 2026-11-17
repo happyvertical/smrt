@@ -1441,6 +1441,17 @@ describe('data-surface action visibility seam (#2986)', () => {
     expect(setup.resolveSelectionCalls).toEqual([]);
   });
 
+  it('refuses a hidden background action denied even when background is unconfigured', async () => {
+    const setup = harness({
+      visibleTo: () => false,
+      execution: 'background',
+      confirmation: 'none',
+    });
+    await expect(
+      setup.adapter.apply(request('apply'), setup.context),
+    ).resolves.toMatchObject({ ok: false, reason: 'denied' });
+  });
+
   it('keeps unknown action ids unsupported, distinct from denied', async () => {
     const setup = harness({ visibleTo: () => false });
     await expect(

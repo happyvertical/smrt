@@ -1275,6 +1275,10 @@ export function createDataSurfaceActionAdapter(
         );
         if (!action || !declared || action.descriptor.id !== declared.id)
           return undefined;
+        // A hidden action must refuse `denied` from resolveInvocation, not
+        // leak server misconfiguration as `background_unavailable`.
+        if (!(await isActionVisible(run, surface.descriptor, action)))
+          return undefined;
         if (
           action.execution === 'background' &&
           (!options.backgroundQueue ||
