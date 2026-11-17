@@ -158,6 +158,18 @@ export {
   type OperationPermissionOptions,
 } from './OperationPermissionService.js';
 export {
+  type CimdAuthorizationServerOptions,
+  type CimdFetcher,
+  type CimdFetchResult,
+  type CimdRejectionReason,
+  type ClientIdMetadataDocumentOptions,
+  createCimdAuthorizationServer,
+  createSafeCimdFetcher,
+  isBlockedAddress as isBlockedCimdAddress,
+  isClientIdMetadataDocumentUrl,
+  withClientIdMetadataDocuments,
+} from './oauth-cimd.js';
+export {
   type BeginPasskeyRegistrationInput,
   DEFAULT_MAX_PASSKEYS_PER_USER,
   DEFAULT_PASSKEY_CHALLENGE_TTL_SECONDS,

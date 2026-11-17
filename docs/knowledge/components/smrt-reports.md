@@ -5,7 +5,7 @@ description: "Materialized aggregate report models for SMRT"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-14T02:10:08Z"
+  at: "2026-11-17T18:19:37Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:e4d08c521c6b8653e0def1443695385c6ec95f73dbf4a7e942627712013a51e4"

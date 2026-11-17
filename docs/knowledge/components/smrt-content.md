@@ -5,7 +5,7 @@ description: "Content processing module for SMRT framework - handles documents, 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-12T08:37:29Z"
+  at: "2026-11-17T18:19:37Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:7461555e22eb922236291de5e4a1da83b9c62a24699d09182dd602b06482626f"

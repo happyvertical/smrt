@@ -5,7 +5,7 @@ description: "Advertising delivery and tracking models for SMRT framework"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-16T07:13:54Z"
+  at: "2026-11-17T18:19:37Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:c1c82207bb60c26f1be88ca25e8923ea7989d75cd8ab53acb2ddffd009854e28"

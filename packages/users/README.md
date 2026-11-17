@@ -2008,6 +2008,29 @@ never silently drops PRAGMAs or temporary state. PostgreSQL does not require
 this option. The [transaction notes](agents/oauth-authorization.md#recoverable-local-sqlite-connections)
 show the factory contract.
 
+### Client ID Metadata Documents
+
+To let hosts such as MCP clients connect with an HTTPS-URL `client_id` and no
+prior registration, create the server with `createCimdAuthorizationServer`
+(opt-in; omit `clientIdMetadataDocuments` and it is the plain SDK server):
+
+```typescript
+import { createCimdAuthorizationServer } from '@happyvertical/smrt-users';
+
+const server = createCimdAuthorizationServer({
+  /* ...the same options as createAuthorizationServer... */
+  clientIdMetadataDocuments: {
+    // Required. Deny by default: there is no implicit allow-all.
+    allowClientOrigin: (origin) => ['https://chatgpt.com'].includes(origin),
+  },
+});
+```
+
+Metadata is fetched through an SSRF-guarded, DNS-pinned, size- and time-bounded
+fetch, validated (public client, exact `redirect_uris`, no secrets), cached per
+its HTTP cache headers, and advertised as `client_id_metadata_document_supported`.
+See [OAuth authorization](agents/oauth-authorization.md#client-id-metadata-documents-5081).
+
 ### HTTP CLI collection action discovery
 
 `createResourceListHandler` can discover custom actions on registered typed

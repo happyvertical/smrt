@@ -5,7 +5,7 @@ description: "Image asset management with AI-powered categorization, search, edi
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-12T05:53:42Z"
+  at: "2026-11-17T18:19:37Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:7c5a570d95cd96f36568bb2e045c19e9e16bbce36935705ea9c35a82f03be6c4"

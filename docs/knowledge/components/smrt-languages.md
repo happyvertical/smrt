@@ -5,7 +5,7 @@ description: "Code-first language strings with config + tenant overrides and AI 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-16T07:13:54Z"
+  at: "2026-11-17T18:19:37Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:b96c06893e47b251d531646b9d2c2dd9147eccca865cf1800b790bdb21d78aa5"
