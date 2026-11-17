@@ -5,10 +5,10 @@ description: "Tenant defaults and per-user overrides for user-interface preferen
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-16T15:42:51Z"
+  at: "2026-11-17T17:27:50Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:44e4a312a6662d0ad1cf117de70e11f8e7e6479f73feb8fd8623d259c02b6af3"
+source_revision: "sha256:f12c26690bc96d14ca3f5a788d1a067fb0b115e6d644ed95055afa4de57fbdd2"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/preferences/package.json"
@@ -27,7 +27,7 @@ sources:
 
 - Directory: `packages/preferences`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `scanner`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -57,4 +57,3 @@ sources:
 ## Models
 
 - `UiPreferenceRecord` (collection `uipreferencerecords`, extends `SmrtObject`)
-- `UiPreferenceRecordCollection` (collection `uipreferencerecords`, extends `SmrtCollection`)

@@ -5,10 +5,10 @@ description: "Agent framework for building autonomous actors in the SMRT ecosyst
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-09T01:37:22Z"
+  at: "2026-11-17T17:27:50Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:fc8e7296ecc64285a7c8833ccfb392eeb869f0d02cd0253f3defe5629da337c4"
+source_revision: "sha256:8cc9acbc0a65bad1ec15b8000673979bfd01ef2e032160c218e20277196edf84"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/agents/package.json"
@@ -33,7 +33,7 @@ sources:
 
 - Directory: `packages/agents`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `manifest`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -84,17 +84,29 @@ sources:
 - `AgentConfigCollection` (collection `agentconfigs`, extends `SmrtCollection`)
 - `AgentSchedule` (collection `agentschedules`, extends `SmrtObject`)
 - `AgentScheduleCollection` (collection `agentschedules`, extends `SmrtCollection`)
-- `DataSurfaceActionIdempotencyState` (collection `datasurfaceactionidempotencystates`, extends `SmrtObject`)
-- `DataSurfaceActionTokenState` (collection `datasurfaceactiontokenstates`, extends `SmrtObject`)
-- `SmrtDataSurfaceActionTask` (collection `smrtdatasurfaceactiontasks`, extends `SmrtObject`)
 - `TenantAgent` (collection `tenantagents`, extends `SmrtObject`)
 - `TenantAgentCollection` (collection `tenantagents`, extends `SmrtCollection`)
 
 ## MCP tools
 
-- `agentconfig_get`: get on `@happyvertical/smrt-agents:AgentConfig`
-- `agentconfig_list`: list on `@happyvertical/smrt-agents:AgentConfig`
-- `agentschedule_get`: get on `@happyvertical/smrt-agents:AgentSchedule`
-- `agentschedule_list`: list on `@happyvertical/smrt-agents:AgentSchedule`
-- `tenantagent_get`: get on `@happyvertical/smrt-agents:TenantAgent`
-- `tenantagent_list`: list on `@happyvertical/smrt-agents:TenantAgent`
+- `create_agentconfigs`: create on `@happyvertical/smrt-agents:AgentConfigCollection`
+- `create_agentschedules`: create on `@happyvertical/smrt-agents:AgentScheduleCollection`
+- `create_tenantagents`: create on `@happyvertical/smrt-agents:TenantAgentCollection`
+- `delete_agentconfigs`: delete on `@happyvertical/smrt-agents:AgentConfigCollection`
+- `delete_agentschedules`: delete on `@happyvertical/smrt-agents:AgentScheduleCollection`
+- `delete_tenantagents`: delete on `@happyvertical/smrt-agents:TenantAgentCollection`
+- `get_agentconfigs`: get on `@happyvertical/smrt-agents:AgentConfig`
+- `get_agentconfigs`: get on `@happyvertical/smrt-agents:AgentConfigCollection`
+- `get_agentschedules`: get on `@happyvertical/smrt-agents:AgentSchedule`
+- `get_agentschedules`: get on `@happyvertical/smrt-agents:AgentScheduleCollection`
+- `get_tenantagents`: get on `@happyvertical/smrt-agents:TenantAgent`
+- `get_tenantagents`: get on `@happyvertical/smrt-agents:TenantAgentCollection`
+- `list_agentconfigs`: list on `@happyvertical/smrt-agents:AgentConfig`
+- `list_agentconfigs`: list on `@happyvertical/smrt-agents:AgentConfigCollection`
+- `list_agentschedules`: list on `@happyvertical/smrt-agents:AgentSchedule`
+- `list_agentschedules`: list on `@happyvertical/smrt-agents:AgentScheduleCollection`
+- `list_tenantagents`: list on `@happyvertical/smrt-agents:TenantAgent`
+- `list_tenantagents`: list on `@happyvertical/smrt-agents:TenantAgentCollection`
+- `update_agentconfigs`: update on `@happyvertical/smrt-agents:AgentConfigCollection`
+- `update_agentschedules`: update on `@happyvertical/smrt-agents:AgentScheduleCollection`
+- `update_tenantagents`: update on `@happyvertical/smrt-agents:TenantAgentCollection`

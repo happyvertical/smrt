@@ -196,6 +196,13 @@ methods; the s-m-r-t SvelteKit runtime has both.
   membership, and denies anything else. Pass `resolvePrincipal` when users
   belong to several tenants.
 
+- **The app as its own issuer.** A runtime that sets `mcpSelfIssuer` (the
+  s-m-r-t runtime's `mcp.authorizationServer` option) makes hosted auth verify
+  tokens in process, re-check the grant's liveness on every call (revoked
+  grant, inactive user or tenant: 401), and advertise its own issuer; no
+  `SMRT_MCP_ISSUER` / `SMRT_MCP_JWKS_URI` is read. An explicit
+  `resolvePrincipal` still overrides the mapping, not the liveness check.
+
 `mountMcpProtectedResourceMetadataRoute` serves the RFC 9728 document only at
 the adapter's advertised `metadataUrl` path. It returns 404 for any other
 path, and in the `local` profile (no adapter, or the local token adapter). It

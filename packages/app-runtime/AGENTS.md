@@ -279,6 +279,12 @@ Application infrastructure composition for the validated runtime profiles in
   bindings; pass the runtime as `mountMcpAppRoute({ runtime })` (or
   `createHostedMcpResourceAuth({ runtime })`).
   Token claims never select a tenant.
+  `mcp: { authorizationServer: { server, authorization, resource?, scopes? } }`
+  (#5080) makes the app its own issuer: `runtime.mcpSelfIssuer` feeds
+  `createHostedMcpResourceAuth`; `liveSelfGrant` re-derives user/tenant from
+  the live grant per call (revoked grant, inactive user/membership = deny) and
+  is the default mapping for the app's own `iss`; other issuers keep the OIDC
+  path. Tests: `src/self-issuer-mcp.test.ts`.
 - `resolveApplicationId()` / `runtimeConfigurationFingerprint()` must stay
   byte-compatible with process managers (golden vectors in tests).
 

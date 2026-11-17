@@ -5,10 +5,10 @@ description: "Materialized aggregate report models for SMRT"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-14T02:10:08Z"
+  at: "2026-11-17T17:27:50Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:e4d08c521c6b8653e0def1443695385c6ec95f73dbf4a7e942627712013a51e4"
+source_revision: "sha256:ddb0ad350e091315b90382762d7427444223307567d6da5eb9549bb21c354747"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/reports/package.json"
@@ -33,7 +33,7 @@ sources:
 
 - Directory: `packages/reports`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `scanner`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -77,23 +77,16 @@ sources:
 ## Models
 
 - `RuntimeReport` (collection `runtimereports`, extends `SmrtObject`)
-- `RuntimeReportCollection` (collection `runtimereports`, extends `SmrtCollection`)
 - `SmrtPrincipalReportRefreshTask` (collection `smrtprincipalreportrefreshtasks`, extends `SmrtReportRefreshTask`)
-- `SmrtReport` (collection `smrtreports`, extends `SmrtObject`)
-- `SmrtReportCollection` (collection `smrtreports`, extends `SmrtCollection`)
 - `SmrtReportLock` (collection `smrtreportlocks`, extends `SmrtObject`)
-- `SmrtReportLockCollection` (collection `smrtreportlocks`, extends `SmrtCollection`)
 - `SmrtReportRefreshTask` (collection `smrtreportrefreshtasks`, extends `SmrtObject`)
 - `SmrtReportRun` (collection `smrtreportruns`, extends `SmrtObject`)
-- `SmrtReportRunCollection` (collection `smrtreportruns`, extends `SmrtCollection`)
 - `SmrtReportSchedule` (collection `smrtreportschedules`, extends `SmrtObject`)
-- `SmrtReportScheduleCollection` (collection `smrtreportschedules`, extends `SmrtCollection`)
 - `SmrtReportWatermark` (collection `smrtreportwatermarks`, extends `SmrtObject`)
-- `SmrtReportWatermarkCollection` (collection `smrtreportwatermarks`, extends `SmrtCollection`)
 
 ## MCP tools
 
-- `runtimereport_archive`: archive on `@happyvertical/smrt-reports:RuntimeReport`
-- `runtimereport_get`: get on `@happyvertical/smrt-reports:RuntimeReport`
-- `runtimereport_list`: list on `@happyvertical/smrt-reports:RuntimeReport`
-- `runtimereport_run`: run on `@happyvertical/smrt-reports:RuntimeReport`
+- `archive_runtimereports`: archive on `@happyvertical/smrt-reports:RuntimeReport`
+- `get_runtimereports`: get on `@happyvertical/smrt-reports:RuntimeReport`
+- `list_runtimereports`: list on `@happyvertical/smrt-reports:RuntimeReport`
+- `run_runtimereports`: run on `@happyvertical/smrt-reports:RuntimeReport`

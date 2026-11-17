@@ -201,6 +201,8 @@ export type SmrtRuntimeSessionOptions = Omit<
 
 /** App-specific options for {@link createSmrtSvelteKitRuntime}. */
 export interface SmrtSvelteKitRuntimeOptions {
+  /** MCP resource-auth options (see {@link SmrtRuntimeMcpOptions}). */
+  readonly mcp?: SmrtRuntimeMcpOptions;
   /**
    * Explicit application ID. Defaults to `SMRT_APP_ID` (strictly validated)
    * or the encoded `package.json` name under `sourceRoot`.
@@ -366,6 +368,48 @@ export interface SmrtRuntimeMcpIdentity {
   readonly issuer: string;
   /** Verified `sub` claim. */
   readonly subject: string;
+  /** Verified claims; read only for the app's own issuer. */
+  readonly claims?: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * The app's own in-process OAuth issuer (smrt#5080), structurally satisfied
+ * by `createAuthorizationServer` from `@happyvertical/auth/server` and
+ * `SmrtOAuthAuthorizationService` from `@happyvertical/smrt-users`.
+ */
+export interface SmrtRuntimeMcpAuthorizationServer {
+  /** The OAuth server that signs the access tokens. */
+  readonly server: {
+    verifyAccessToken(
+      token: string,
+      audience: string,
+    ): Promise<Readonly<Record<string, unknown>>>;
+    discovery(): { readonly issuer: string };
+  };
+  /** The consent service owning grants (`smrt_grant_id`). */
+  readonly authorization: {
+    validateAccessTokenClaims(payload: Record<string, unknown>): Promise<{
+      readonly user: { readonly id?: string };
+      readonly tenantId?: string | null;
+    } | null>;
+  };
+  /** Public MCP resource (token audience). Defaults to `SMRT_MCP_RESOURCE`. */
+  readonly resource?: string;
+  /** Scopes `/mcp` requires. Defaults to `SMRT_MCP_SCOPES`. */
+  readonly scopes?: readonly string[];
+}
+
+/** The `mcp` runtime option. */
+export interface SmrtRuntimeMcpOptions {
+  /**
+   * Make this app its own MCP issuer: hosted `/mcp` accepts only tokens this
+   * in-process server issued (no JWKS fetch), re-checks the grant and its
+   * user and tenant on every call, advertises this issuer in
+   * protected-resource metadata, and maps `sub`/`tenant_id` to the principal
+   * by default. An explicit `resolvePrincipal` still overrides the mapping,
+   * never the liveness check. External IdPs remain the login method.
+   */
+  readonly authorizationServer?: SmrtRuntimeMcpAuthorizationServer;
 }
 
 /** The current account and tenant a hosted MCP identity maps to. */
@@ -375,6 +419,18 @@ export interface SmrtRuntimeMcpPrincipalMapping {
   readonly kind: 'human';
   /** The default resolver maps only direct memberships. */
   readonly tenantBinding: 'direct';
+}
+
+/** The resolved self-issuer binding (see `McpSelfIssuer` in smrt-app-mcp). */
+export interface SmrtRuntimeMcpSelfIssuer {
+  readonly issuer: string;
+  readonly resource?: string;
+  readonly scopes?: readonly string[];
+  verifyAccessToken(
+    token: string,
+    audience: string,
+  ): Promise<Readonly<Record<string, unknown>>>;
+  validateGrant(claims: Readonly<Record<string, unknown>>): Promise<boolean>;
 }
 
 /** `T` with every nested array and object field readonly. */
@@ -490,6 +546,11 @@ export interface SmrtSvelteKitRuntime {
   resolveMcpPrincipal(
     identity: SmrtRuntimeMcpIdentity,
   ): Promise<SmrtRuntimeMcpPrincipalMapping | null>;
+  /**
+   * Set only when `mcp.authorizationServer` is configured: the in-process
+   * issuer binding `createHostedMcpResourceAuth({ runtime })` consumes.
+   */
+  readonly mcpSelfIssuer?: SmrtRuntimeMcpSelfIssuer;
   /**
    * The application's open database handle, for services that take a
    * `DatabaseInterface` rather than collection options (for example
@@ -1226,6 +1287,66 @@ export function composeSmrtSvelteKitRuntime(
     return (await local.mcpTokens?.verify(token)) ?? null;
   };
 
+  const selfServer = options.mcp?.authorizationServer;
+  const selfIssuerId = selfServer?.server.discovery().issuer;
+
+  /**
+   * Live state behind an app-issued token, or `null` (fail closed): the grant
+   * is not revoked and matches the token, its session and tenant are live,
+   * the user is active, and holds an active direct membership in the grant's
+   * tenant. Every id comes from the grant row, never from a request argument.
+   */
+  const liveSelfGrant = async (
+    claims: Readonly<Record<string, unknown>> | undefined,
+  ): Promise<{ userId: string; tenantId: string } | null> => {
+    if (!selfServer || !claims || typeof claims !== 'object') return null;
+    try {
+      if ((await resolvedRuntime()).profile === 'local') return null;
+      const context = await selfServer.authorization.validateAccessTokenClaims({
+        ...claims,
+      });
+      const userId = context?.user.id;
+      const tenantId = context?.tenantId;
+      if (
+        typeof userId !== 'string' ||
+        userId.length === 0 ||
+        typeof tenantId !== 'string' ||
+        tenantId.length === 0 ||
+        claims.sub !== userId ||
+        claims.tenant_id !== tenantId
+      ) {
+        return null;
+      }
+      return await withSystemContext(async () => {
+        const user = await (
+          await UserCollection.create(baseClassOptions('User'))
+        ).get(userId);
+        if (!user || user.status !== UserStatus.ACTIVE) return null;
+        const memberships = await MembershipCollection.create(
+          baseClassOptions('Membership'),
+        );
+        const active = (await memberships.findActiveByUser(userId)).some(
+          (membership) => membership.tenantId === tenantId,
+        );
+        return active ? { userId, tenantId } : null;
+      });
+    } catch {
+      return null;
+    }
+  };
+
+  const mcpSelfIssuer: SmrtRuntimeMcpSelfIssuer | undefined = selfServer
+    ? Object.freeze({
+        issuer: selfIssuerId as string,
+        ...(selfServer.resource ? { resource: selfServer.resource } : {}),
+        ...(selfServer.scopes ? { scopes: selfServer.scopes } : {}),
+        verifyAccessToken: (token: string, audience: string) =>
+          selfServer.server.verifyAccessToken(token, audience),
+        validateGrant: async (claims: Readonly<Record<string, unknown>>) =>
+          (await liveSelfGrant(claims)) !== null,
+      })
+    : undefined;
+
   const resolveMcpPrincipal = async (
     identity: SmrtRuntimeMcpIdentity,
   ): Promise<SmrtRuntimeMcpPrincipalMapping | null> => {
@@ -1240,6 +1361,19 @@ export function composeSmrtSvelteKitRuntime(
       subject.length === 0
     ) {
       return null;
+    }
+    // A token this app issued itself: `sub` is the user, `tenant_id` the
+    // grant's tenant; both are re-derived from the live grant, so claims
+    // alone never select a tenant. Every other issuer takes the OIDC path.
+    if (selfIssuerId !== undefined && issuer === selfIssuerId) {
+      const live = await liveSelfGrant(ownValue(identity, 'claims') as never);
+      if (!live || live.userId !== subject) return null;
+      return Object.freeze({
+        id: live.userId,
+        tenantId: live.tenantId,
+        kind: 'human' as const,
+        tenantBinding: 'direct' as const,
+      });
     }
     // Every read is keyed by the verified issuer/subject and the ids derived
     // from it, and only ids leave this block (the PermissionResolver rule).
@@ -1446,6 +1580,7 @@ export function composeSmrtSvelteKitRuntime(
     runAsPrincipal,
     verifyLocalMcpToken,
     resolveMcpPrincipal,
+    ...(mcpSelfIssuer ? { mcpSelfIssuer } : {}),
     database,
     localRuntime,
     secretMasterKey,
