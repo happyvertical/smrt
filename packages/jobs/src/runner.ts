@@ -493,14 +493,14 @@ export class TaskRunner extends EventEmitter {
    * Start processing jobs
    */
   async start(): Promise<void> {
+    // Checked first: a start() during an in-flight stop() is refused even when
+    // that stop is still waiting on an earlier start (#4944).
+    if (this.stopPromise) {
+      throw new Error('TaskRunner shutdown is still draining');
+    }
     if (this.startPromise) return this.startPromise;
     if (this.running) return;
-    if (
-      this.stopPromise ||
-      this.shutdownPromise ||
-      this.pollPromise ||
-      this.activeJobs.size > 0
-    ) {
+    if (this.shutdownPromise || this.pollPromise || this.activeJobs.size > 0) {
       throw new Error('TaskRunner shutdown is still draining');
     }
     if (!this.collection || !this.workerCollection) {

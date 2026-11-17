@@ -187,6 +187,25 @@ describe('stop() overlapping start() (#4944)', () => {
     expect(stopped).toBe(1);
   });
 
+  it('a start() while a stop() waits on an earlier start is refused', async () => {
+    const { runner, internals } = await fileRunner('start-stop-start');
+    const startThread = internals.startLivenessThread.bind(runner);
+    let stopping: Promise<void> | null = null;
+    let restart: Promise<void> | null = null;
+    internals.startLivenessThread = async (plan) => {
+      stopping = runner.stop();
+      restart = runner.start();
+      // Observe the rejection now so it is never reported as unhandled.
+      restart.catch(() => {});
+      return startThread(plan);
+    };
+
+    await runner.start();
+    await stopping;
+    await expect(restart).rejects.toThrow(/still draining/);
+    expectFullyStopped(runner, internals);
+  });
+
   it('a start() while a stop() drains is refused, not run alongside it', async () => {
     const { runner, internals } = await fileRunner('start-during-stop');
     await runner.start();
