@@ -110,7 +110,7 @@ owner). Writes must be same-origin `application/json`. Errors are
 | `GET /api/shell/approvals?status=` | | `{ approvals: ApprovalView[], pending }`; `status` is `pending`, `approved`, `denied` or `failed` |
 | `POST /api/shell/approvals/<id>` | `{ approve: boolean }` | `{ id, status: 'approved'\|'denied'\|'failed', result?, error? }`; 404 unknown, 409 already decided |
 | `GET /api/shell/records/<Model>?limit=&target=` | | `{ records: object[] }` |
-| `GET /api/shell/records/<Model>?field=&equals=&limit=&target=` | | The related records of one record: `{ records, total, truncated }` for the rows whose link field equals the id (`records` capped at `limit`; `total` counts matches among the first 1000 rows, `truncated` when that scan hit its limit). Owner only, one named copy; no new SQL |
+| `GET /api/shell/records/<Model>?field=&equals=&limit=&target=` | | The related records of one record: `{ records, total, truncated }` for the rows whose link field equals the id (`records` newest first by the model's main date field, else creation time, capped at `limit`; `total` counts matches among the first 1000 rows, `truncated` when that scan hit its limit). Owner only, one named copy; no new SQL |
 | `POST /api/shell/records/<Model>?target=` | the record's fields | 201 the record |
 | `GET /PUT /api/shell/records/<Model>/<id>?target=` | PUT: changed fields | the record |
 | `DELETE /api/shell/records/<Model>/<id>?target=` | | live: **202** `PendingApproval`, nothing is deleted until approved; draft: **200** `{ deleted: id }` |

@@ -4,7 +4,7 @@ import { ApiError, records as api, isPendingApproval } from '$lib/ui/api';
 import {
   cellText,
   indexReferences,
-  orderByCreated,
+  orderRows,
   selectColumns,
 } from '$lib/ui/columns';
 import { DEPENDS } from '$lib/ui/events';
@@ -37,7 +37,7 @@ $effect.pre(() => {
   }
 });
 const sorted = $derived.by(() => {
-  const ordered = orderByCreated(rows);
+  const ordered = orderRows(info, rows);
   if (!sortField || !info.fields[sortField]) return ordered;
   const field = sortField;
   const def = info.fields[field];

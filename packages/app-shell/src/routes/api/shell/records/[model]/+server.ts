@@ -8,7 +8,8 @@
  *   truncated }: only the records whose field equals the id (the related
  *   records of a record), `total` counting every match among the first
  *   `FILTER_SCAN_LIMIT` (newest) rows, a lower bound when `truncated`: the
- *   model has more rows than were scanned.
+ *   model has more rows than were scanned. `records` are newest first by the
+ *   model's main date field (else creation time).
  * `POST /api/shell/records/<Model>?target=` body = the record's fields (JSON
  *   object) -> 201 the created record
  * Errors: { error, code? } with 400 (bad data), 404 (no such model/record, or
@@ -24,6 +25,7 @@ import {
   readJson,
   targetOf,
 } from '$lib/server/http';
+import { orderRows } from '$lib/ui/columns';
 import { FILTER_SCAN_LIMIT, matchLink } from '$lib/ui/related';
 import type { RequestHandler } from './$types';
 
@@ -39,7 +41,12 @@ export const GET: RequestHandler = guarded(async (event) => {
   if (field !== null) {
     // One row past the limit tells a table of exactly the limit from a longer one.
     const all = await host.list(model, FILTER_SCAN_LIMIT + 1);
-    const rows = all.slice(0, FILTER_SCAN_LIMIT);
+    // Newest first by the model's main date, so the page the limit keeps is
+    // the latest rows, not the first imported.
+    const rows = orderRows(
+      host.def.models[model],
+      all.slice(0, FILTER_SCAN_LIMIT),
+    );
     const hits = matchLink(
       rows,
       ident(field, 'field'),

@@ -16,7 +16,7 @@ beforeAll(async () => {
       client: { type: 'reference', ref: 'Client' },
     });
     await App.defineModel('Walk', {
-      day: { type: 'text' },
+      day: { type: 'date' },
       client: { type: 'reference', ref: 'Client' },
     });
   });
@@ -65,10 +65,10 @@ describe('records filtered by a link field', () => {
       ).id as string;
     const ada = await make('Client', { name: 'Ada' });
     const bob = await make('Client', { name: 'Bob' });
-    for (const day of ['mon', 'tue', 'wed']) {
+    for (const day of ['2026-02-01', '2026-04-01', '2026-03-01']) {
       await make('Walk', { day, client: ada });
     }
-    await make('Walk', { day: 'thu', client: bob });
+    await make('Walk', { day: '2026-05-01', client: bob });
 
     const res = await recordsRoute.GET(
       event(h.owner, 'Walk', `?field=client&equals=${ada}&limit=2`),
@@ -79,6 +79,11 @@ describe('records filtered by a link field', () => {
     expect(body.records).toHaveLength(2);
     expect(body.truncated).toBe(false);
     for (const r of body.records) expect(r.client).toBe(ada);
+    // The newest by the model's date, not the first imported: the page the
+    // limit keeps is the latest two.
+    expect(
+      body.records.map((r: { day: string }) => r.day.slice(0, 10)),
+    ).toEqual(['2026-04-01', '2026-03-01']);
 
     const none = await (
       await recordsRoute.GET(

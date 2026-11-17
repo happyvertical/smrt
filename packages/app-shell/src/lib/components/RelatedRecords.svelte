@@ -1,6 +1,6 @@
 <script lang="ts">
-import { cellText, indexReferences, orderByCreated } from '$lib/ui/columns';
-import { recordLabel } from '$lib/ui/fields';
+import { cellText, indexReferences, orderRows } from '$lib/ui/columns';
+import { recordLabel, singularLabel } from '$lib/ui/fields';
 import { modelHref } from '$lib/ui/menu';
 import {
   arrangeTabs,
@@ -83,9 +83,10 @@ function onTabKeys(event: KeyboardEvent) {
   {@const relInfo = rel ? description.models[rel.model] : undefined}
   {#if rel && relInfo}
     {@const loaded = data.get(key)}
-    {@const rows = orderByCreated(loaded?.records ?? [])}
+    {@const rows = orderRows(relInfo, loaded?.records ?? [])}
     {@const columns = relatedColumns(relInfo, rel.field)}
     {@const lower = relInfo.label.toLowerCase()}
+    {@const one = singularLabel(relInfo.label).toLowerCase()}
     <div class="smrt-related__panel" data-smrt-part="body">
       {#if rows.length === 0}
         <p class="smrt-app-shell__muted" data-smrt-part="empty">No {lower} for {thisLabel} yet.</p>
@@ -121,7 +122,7 @@ function onTabKeys(event: KeyboardEvent) {
       {/if}
       <div class="smrt-related__actions">
         <a class="smrt-app-shell__btn smrt-app-shell__btn-small" href={prefilledNewHref(rel.model, rel.field, record.id)} data-smrt-part="trigger">
-          Add {lower}
+          Add {one}
         </a>
         {#if rows.length > 0}
           <a class="smrt-app-shell__link" href={filteredHref(rel.model, rel.field, record.id)} data-smrt-part="link">
@@ -135,7 +136,17 @@ function onTabKeys(event: KeyboardEvent) {
 
 {#if relations.length > 0}
   <section class="smrt-related__root" aria-label="Related records" data-smrt-part="related">
-    {#if narrow}
+    {#if arranged.tabs.length === 0}
+      <!-- Nothing links here yet: say so, instead of a lone "More" tab. -->
+      <ul class="smrt-related__empty" data-smrt-part="empty">
+        {#each relations as rel (rel.key)}
+          <li>
+            <span class="smrt-app-shell__muted">No {rel.tabLabel.toLowerCase()} yet</span> ·
+            <a class="smrt-app-shell__link" href={prefilledNewHref(rel.model, rel.field, record.id)} data-smrt-part="trigger">Add {singularLabel(rel.modelLabel).toLowerCase()}</a>
+          </li>
+        {/each}
+      </ul>
+    {:else if narrow}
       {#each [...arranged.tabs, ...arranged.more] as key (key)}
         {@const rel = byKey.get(key)}
         {#if rel}
@@ -257,6 +268,11 @@ function onTabKeys(event: KeyboardEvent) {
   }
   .smrt-related__section > summary {
     cursor: pointer;
+  }
+  .smrt-related__empty {
+    margin: 0;
+    padding: 0;
+    list-style: none;
   }
   .smrt-related__sr {
     position: absolute;

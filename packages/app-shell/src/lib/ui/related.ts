@@ -1,6 +1,6 @@
 // Related records on a record page: the reverse of link (reference) fields.
 // Pure helpers; the shell route and the components only call these.
-import { type Column, referencedModels } from './columns.ts';
+import { type Column, mainDateField, referencedModels } from './columns.ts';
 import { fieldLabel } from './fields.ts';
 import { modelHref } from './menu.ts';
 import type { ModelInfo, RecordRow } from './types.ts';
@@ -91,20 +91,46 @@ export function arrangeTabs(
 }
 
 /**
- * A few useful columns: the declared fields without the link back to this
- * record, hidden and json ones.
+ * A few useful columns for a related table: the record's own name first (it
+ * is the link to the record), then its date, amounts and state (choice
+ * fields), then the rest in declared order. Never the link back to the record
+ * the table is shown on (every row would repeat it), hidden or json fields.
+ * Columns keep declared order, the name first.
  */
 export function relatedColumns(
   info: Pick<ModelInfo, 'fields'>,
   backField: string,
   max = TAB_COLUMNS,
 ): Column[] {
-  return Object.entries(info.fields)
+  const all = Object.entries(info.fields)
     .filter(
       ([name, def]) => name !== backField && !def.hidden && def.type !== 'json',
     )
-    .slice(0, max)
-    .map(([name, def]) => ({ name, label: fieldLabel(name, def), def }));
+    .map(([name, def], order) => ({
+      name,
+      label: fieldLabel(name, def),
+      def,
+      order,
+    }));
+  const title = all.find((c) => c.def.type === 'text') ?? all[0];
+  const date = mainDateField(info);
+  const rank = (c: (typeof all)[number]) =>
+    c === title
+      ? 0
+      : c.name === date
+        ? 1
+        : c.def.type === 'money'
+          ? 2
+          : c.def.type === 'choice'
+            ? 3
+            : c.def.type === 'reference'
+              ? 5
+              : 4;
+  return [...all]
+    .sort((a, b) => rank(a) - rank(b) || a.order - b.order)
+    .slice(0, Math.max(0, max))
+    .sort((a, b) => (a === title ? -1 : b === title ? 1 : a.order - b.order))
+    .map(({ name, label, def }) => ({ name, label, def }));
 }
 
 /** Models whose records label the reference cells of these columns. */

@@ -36,6 +36,55 @@ export function orderByCreated<T extends { createdAt?: string | null }>(
     .map((e) => e.row);
 }
 
+/**
+ * The date field a model's rows are ordered by: the first visible date field,
+ * preferring one named like the record's own date (date, when, day...).
+ */
+export function mainDateField(
+  model: Pick<ModelInfo, 'fields'> | undefined,
+): string | null {
+  const dates = Object.entries(model?.fields ?? {}).filter(
+    ([, d]) => d.type === 'date' && !d.hidden,
+  );
+  const own = dates.find(([name, d]) =>
+    /^(date|day|when|start|starts?_?at|on)$/i.test(
+      (d.label ?? name).replace(/[\s_-]/g, ''),
+    ),
+  );
+  return (own ?? dates[0])?.[0] ?? null;
+}
+
+/**
+ * Rows in list order: by the model's main date, newest first (rows with no
+ * date last), else newest created first. Ties keep the creation order.
+ */
+export function orderRows<T extends { createdAt?: string | null }>(
+  model: Pick<ModelInfo, 'fields'> | undefined,
+  rows: T[],
+): T[] {
+  const ordered = orderByCreated(rows);
+  const field = mainDateField(model);
+  if (!field) return ordered;
+  const time = (row: T) => {
+    const v = (row as Record<string, unknown>)[field];
+    const t =
+      v === null || v === undefined || v === '' ? NaN : Date.parse(String(v));
+    return Number.isFinite(t) ? t : null;
+  };
+  return ordered
+    .map((row, i) => ({ row, i, t: time(row) }))
+    .sort((a, b) =>
+      a.t === b.t
+        ? a.i - b.i
+        : a.t === null
+          ? 1
+          : b.t === null
+            ? -1
+            : b.t - a.t,
+    )
+    .map((e) => e.row);
+}
+
 export function formatDate(v: unknown): string {
   if (v === null || v === undefined || v === '') return '';
   const d = new Date(String(v));

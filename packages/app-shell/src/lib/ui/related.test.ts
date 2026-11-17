@@ -87,6 +87,39 @@ describe('relatedColumns', () => {
   });
 });
 
+describe('relatedColumns choice', () => {
+  const order = {
+    fields: {
+      number: { type: 'text' as const },
+      customer: { type: 'reference' as const, ref: 'Customer' },
+      note: { type: 'text' as const },
+      placed: { type: 'date' as const },
+      total: { type: 'money' as const },
+      status: { type: 'choice' as const, choices: ['open', 'paid'] },
+    },
+  };
+
+  it('keeps Total and Status and never the link back', () => {
+    const names = relatedColumns(order, 'customer').map((c) => c.name);
+    expect(names).toEqual(['number', 'placed', 'total', 'status']);
+    expect(names).not.toContain('customer');
+  });
+
+  it('leads with the name column even when it is declared later', () => {
+    const cols = relatedColumns(
+      {
+        fields: {
+          day: { type: 'date' },
+          client: { type: 'reference', ref: 'Client' },
+          title: { type: 'text' },
+        },
+      },
+      'client',
+    ).map((c) => c.name);
+    expect(cols).toEqual(['title', 'day']);
+  });
+});
+
 describe('link params', () => {
   it('parses only link fields with plain ids', () => {
     expect(parseLinkParam('client:abc-1', models.Invoice)).toEqual({

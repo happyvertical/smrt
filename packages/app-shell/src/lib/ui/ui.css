@@ -104,6 +104,10 @@
   .smrt-app-shell__table th,
   .smrt-app-shell__table td {
     padding: 0.6rem 0.75rem;
+    /* The page allows breaks anywhere (long tokens in cards); a table cell
+       breaks only between words, and the wrapper scrolls when it cannot fit. */
+    overflow-wrap: normal;
+    word-break: normal;
   }
   .smrt-app-shell__table th {
     white-space: nowrap;
