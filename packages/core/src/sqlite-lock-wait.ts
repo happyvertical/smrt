@@ -11,7 +11,9 @@ export const SQLITE_BUSY_TIMEOUT_MS = 5000;
 
 /**
  * Busy timeout for the other connections the framework opens on a SQLite file
- * for collections (#4978). They run on the main thread, where `node:sqlite`
+ * for collections (#4978). Since #5022 the local runtime shares that same
+ * connection (one `smrt:<url>` handle per file), so the runtime's 5000 wins
+ * there and this value applies to collection-only handles. They run on the main thread, where `node:sqlite`
  * waits synchronously: a long value would freeze the event loop. The lock
  * holder worth waiting for is the jobs liveness thread, which holds the write
  * lock for one single-row commit. Measured on a local SSD with
@@ -44,8 +46,9 @@ function isFileSqlite(db: DatabaseInterface): boolean {
  * Set `busy_timeout` on a SQLite connection unless something already did.
  *
  * A timeout already set (the runtime's 5000 ms, or the 250 ms collection value)
- * is never overridden, so a shared connection keeps the shortest wait chosen
- * for it and a later caller cannot lengthen a main-thread wait.
+ * is never overridden by a collection open. The local runtime sets its 5000 ms
+ * deliberately, after core opened the shared handle, and so raises the one
+ * connection it shares with the collections (#5022).
  */
 export async function setBusyTimeoutIfUnset(
   db: DatabaseInterface,
