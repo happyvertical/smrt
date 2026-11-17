@@ -512,3 +512,131 @@ it.each([
     display.includes(',') ? `"${display}"` : display,
   );
 });
+
+it.each([
+  ['number', false],
+  ['text', false],
+  ['integer', false],
+  ['integer', true],
+] as const)('converts imported money to %s (calculated: %s) and undoes with its units intact', async (type, calculated) => {
+  const sheet = createSheet('Amounts');
+  sheet.cells.set(1, 1, { type: 'text', value: 'Amount' });
+  sheet.cells.set(2, 1, { type: 'number', value: 1000 });
+  const money = { currency: 'JPY', scale: 0 };
+  const proof = await runImport({
+    workbook: createWorkbook([sheet]),
+    plan: {
+      version: 1,
+      tables: [
+        {
+          key: 'amounts',
+          label: 'Amounts',
+          source: { sheet: 'Amounts', range: 'A1:A2', headerRow: 1 },
+          fields: [
+            { key: 'amount', label: 'Amount', type: 'money', column: 1, money },
+          ],
+        },
+      ],
+    },
+    target: createEngineImportTarget(draft),
+  });
+  expect(proof.ok).toBe(true);
+  if (calculated)
+    await draft.execute(
+      {
+        type: 'setCalculation',
+        model: 'Amounts',
+        field: 'amount',
+        calculated: { value: 1000 },
+      },
+      { author: 'test' },
+    );
+  const before = draft.describe().models.Amounts.fields.amount;
+  await draft.execute(
+    {
+      type: 'changeFieldType',
+      model: 'Amounts',
+      field: 'amount',
+      to: { type },
+    },
+    { author: 'test' },
+  );
+  const after = draft.describe().models.Amounts.fields.amount;
+  expect(after.type).toBe(type);
+  expect(after.money).toBeUndefined();
+  expect((await draft.list('Amounts'))[0].amount).toBe(
+    type === 'text' ? '1000' : 1000,
+  );
+  await draft.execute({ type: 'undo' }, { author: 'test' });
+  expect(draft.describe().models.Amounts.fields.amount).toEqual(before);
+  expect((await draft.list('Amounts'))[0].amount).toBe(1000);
+  expect(cellText(draft.describe().models.Amounts.fields.amount, 1000)).toBe(
+    cellText({ type: 'money', money }, 1000),
+  );
+});
+
+it('retains money units through rename, calculation, hiding and a template round trip', async () => {
+  const money = { currency: 'CAD', scale: 3 };
+  await draft.execute(
+    {
+      type: 'defineModel',
+      name: 'Amounts',
+      fields: {
+        amount: { type: 'money', money },
+      },
+    },
+    { author: 'test' },
+  );
+  await draft.execute(
+    { type: 'renameField', model: 'Amounts', from: 'amount', to: 'total' },
+    { author: 'test' },
+  );
+  await draft.execute(
+    {
+      type: 'setCalculation',
+      model: 'Amounts',
+      field: 'total',
+      calculated: { value: 1234 },
+    },
+    { author: 'test' },
+  );
+  expect(draft.describe().models.Amounts.fields.total.money).toEqual(money);
+  await draft.execute(
+    { type: 'hideField', model: 'Amounts', field: 'total' },
+    { author: 'test' },
+  );
+  const exported = await draft.execute(
+    { type: 'exportTemplate' },
+    { author: 'test' },
+  );
+  expect(exported).toMatchObject({
+    definition: {
+      models: {
+        Amounts: {
+          fields: {
+            total: {
+              type: 'money',
+              money,
+              hidden: true,
+              calculated: { value: 1234 },
+            },
+          },
+        },
+      },
+    },
+  });
+  await live.execute(
+    {
+      type: 'importTemplate',
+      data: exported as import('./commands.ts').Template,
+    },
+    { author: 'test' },
+  );
+  const reexported = await live.execute(
+    { type: 'exportTemplate' },
+    { author: 'test' },
+  );
+  expect(reexported).toMatchObject({
+    definition: (exported as import('./commands.ts').Template).definition,
+  });
+});

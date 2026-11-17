@@ -958,6 +958,8 @@ export class AppHost extends EventEmitter {
         const to: FieldDef = { ...st.fd, ...cmd.to, hidden: false };
         if (cmd.to.type !== 'choice' && !cmd.to.choices) delete to.choices;
         if (cmd.to.type !== 'reference' && !cmd.to.ref) delete to.ref;
+        if (cmd.to.type !== 'money' && cmd.to.money === undefined)
+          delete to.money;
         if (st.fd.calculated) {
           const d = this.clone();
           d.models[cmd.model].fields[cmd.field] = shown(to);

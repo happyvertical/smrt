@@ -377,10 +377,13 @@ export function validate(def: unknown): string[] {
         errs.push(
           `${at}: unknown type '${String(fd.type)}'; use one of ${TYPES.join(', ')}`,
         );
-      if (
+      if (fd.money !== undefined && fd.type !== 'money')
+        errs.push(
+          `${at}: only money fields can have currency and decimal places`,
+        );
+      else if (
         fd.money !== undefined &&
-        (fd.type !== 'money' ||
-          !isObj(fd.money) ||
+        (!isObj(fd.money) ||
           typeof fd.money.currency !== 'string' ||
           !/^[A-Z]{3}$/.test(fd.money.currency) ||
           !Number.isInteger(fd.money.scale) ||
@@ -388,7 +391,7 @@ export function validate(def: unknown): string[] {
           fd.money.scale > 6)
       )
         errs.push(
-          `${at}: money needs a three-letter currency and a scale from 0 to 6`,
+          `${at}: money needs a three-letter currency and decimal places from 0 to 6`,
         );
       if (fd.type === 'choice') {
         const c = fd.choices;
