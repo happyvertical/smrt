@@ -208,8 +208,12 @@ For public deployments, follow the
 The server trusts the principal supplied by the application adapter. Validate
 bearer tokens at an application gateway or with the server-only `./auth` JWT
 adapter, then resolve fresh application membership and tenant authority on every
-request. The OAuth issuer remains operator-owned; this package does not implement
-an OAuth authorization server.
+request. This package validates tokens; it does not issue them. Two issuer paths
+are supported: the application as its own OAuth authorization server through
+`@happyvertical/smrt-users` (authorization code with S256 PKCE, refresh,
+RFC 8414 discovery, JWKS, revocation, RFC 8707 resource binding, RFC 9207 `iss`,
+opt-in Dynamic Client Registration, host-owned login and consent), or an
+external issuer you operate. The contract page above describes both.
 
 ```ts
 // src/lib/server/mcp.ts
