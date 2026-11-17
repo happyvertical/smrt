@@ -1486,7 +1486,21 @@ export async function legacyMain(env = process.env) {
       capture.apiVersion,
       'smrt.happyvertical.com/legacy-snapshot-capture-v1',
     );
-    writeFileSync(captureFile, `${JSON.stringify(capture, null, 2)}\n`);
+    const captureBytes = `${JSON.stringify(capture, null, 2)}\n`;
+    writeFileSync(captureFile, captureBytes);
+    // Completion admits the capture only by the SHA256 recorded in protected
+    // configuration before the stop; without it (or with another) it refuses.
+    const snapshotConfig = JSON.parse(readFileSync(snapshotConfigFile, 'utf8'));
+    writeFileSync(
+      snapshotConfigFile,
+      JSON.stringify({
+        ...snapshotConfig,
+        adoption: {
+          ...snapshotConfig.adoption,
+          captureSha256: digest(captureBytes),
+        },
+      }),
+    );
     // A careful platform lands maintenance in two reviewed legacy commits:
     // first the responder itself (ingress still on the app), then the ingress
     // switch once the responder has endpoints, so the ingress never answers
@@ -1684,7 +1698,7 @@ export async function legacyMain(env = process.env) {
     );
     await assert.rejects(
       snapshotCli(snapshotRequestFile, foreignCapture),
-      /identity changed/,
+      /protected adoption.captureSha256/,
     );
     const snapshot = await snapshotCli(snapshotRequestFile, captureFile);
     const legacy = snapshot.legacy;

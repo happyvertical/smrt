@@ -172,27 +172,37 @@ will carry and the reviewed normalization `explanation`:
    `selector`, complete `podSpec`, `oldImages` and `fluxInventoryId`. Each object
    must have exactly one field manager besides the native controllers
    (`kube-controller-manager`, `kube-scheduler`); that manager is recorded as
-   `legacyManager`. The output is a
+   `legacyManager`. The Flux objects are re-read after the resources and must
+   show the same generation and revision, so every record comes from one
+   acknowledged revision. The output is a
    `smrt.happyvertical.com/legacy-snapshot-capture-v1` document, which no other
-   command accepts as a snapshot.
+   command accepts as a snapshot. Save its exact bytes and record their SHA256
+   as `adoption.captureSha256` in the protected configuration before the stop:
+   the capture is the only record of the original state, so completion admits
+   it by that reviewed byte identity alone, never by its contents.
 2. **Complete**, once the reviewed stop revision is applied and the request
    also carries `maintenanceRevision`, `stopRevision` and `relinquishRevision`:
-   the same Flux objects (by UID) must acknowledge `stopRevision`, the original,
-   maintenance and stop revisions are proven in the legacy repository (see
-   `legacyFetchUrl`; the relinquish commit is proven later, at the relinquished
-   stage, because it is pushed only after the writers stop), and each captured
-   object is re-read by UID with an unchanged selector so its stopped
-   `spec`/`data` identity becomes `normalizedSpecIdentity`. The output is the
-   `smrt.happyvertical.com/legacy-snapshot-v1` snapshot, already checked against
-   the same rules `adopt-plan` applies; commit its exact bytes and put their
-   SHA256 in the plan and the protected configuration.
+   the capture bytes must match `adoption.captureSha256` and belong to this
+   request, the same Flux objects (by UID) must acknowledge `stopRevision`, the
+   original, maintenance and stop revisions are proven in the legacy repository
+   (see `legacyFetchUrl`; the relinquish commit is proven later, at the
+   relinquished stage, because it is pushed only after the writers stop), the
+   Kustomization's in-namespace inventory must equal the captured set exactly
+   (no record dropped or added), and each captured object is re-read by UID
+   with unchanged kind, name and selector so its stopped `spec`/`data` identity
+   becomes `normalizedSpecIdentity`; the Flux objects are re-read afterwards as
+   in the capture. The output is the `smrt.happyvertical.com/legacy-snapshot-v1`
+   snapshot, already checked against the same rules `adopt-plan` applies;
+   commit its exact bytes and put their SHA256 in the plan and the protected
+   configuration.
 
 The command needs the ordinary protected configuration (`namespace`, Git and
 chart settings, `adoption.legacyFetchUrl` when the operator reaches the legacy
-repository through another address); the target Flux source and Kustomization
-need not exist yet. It never writes to the cluster or to Git. The capture
-retains the same actual PodSpecs the snapshot does; keep it under the same
-protection and discard it once the snapshot is committed.
+repository through another address, `adoption.captureSha256` for completion);
+the target Flux source and Kustomization need not exist yet. It never writes to
+the cluster or to Git. The capture retains the same actual PodSpecs the
+snapshot does; keep it under the same protection and discard it once the
+snapshot is committed.
 
 Trusted CI produces `smrt.happyvertical.com/legacy-adoption-qualification-v1` with
 `adoptionId`, `snapshotSha256`, the plan's current/target/configuration/chart

@@ -53,9 +53,11 @@ export async function main(args, adapterFactory = createLiveAdapter) {
     const request = validateSnapshotRequest(
       JSON.parse(await readFile(input, 'utf8')),
     );
+    // The capture is passed as bytes: completion admits it by the SHA256 in
+    // protected configuration, not by its parsed contents.
     return adapter.snapshotLegacy(
       request,
-      releaseId ? JSON.parse(await readFile(releaseId, 'utf8')) : null,
+      releaseId ? await readFile(releaseId) : null,
     );
   }
   if (operation.startsWith('adopt-')) {

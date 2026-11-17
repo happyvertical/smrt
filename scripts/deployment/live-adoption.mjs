@@ -862,45 +862,54 @@ export function createAdoptionMethods(config, command, helpers, options) {
   // Completing (with that capture) re-reads the same objects by UID once the
   // reviewed stop revision is applied, records their stopped spec identity as
   // normalizedSpecIdentity, and proves the reviewed revisions in the legacy
-  // repository. Both outputs are the CLI's stdout; the snapshot's bytes are
-  // what the plan binds by SHA256.
-  async function snapshotLegacy(request, capture = null) {
+  // repository. The capture is trusted only by byte identity: its SHA256 must
+  // be in protected configuration (`adoption.captureSha256`) before
+  // completion, as the snapshot's and qualification's are afterwards. Both
+  // observations re-read the Flux objects after the resource reads so every
+  // record comes from one acknowledged revision. Both outputs are the CLI's
+  // stdout; the snapshot's bytes are what the plan binds by SHA256.
+  async function snapshotLegacy(request, captureBytes = null) {
     validateSnapshotRequest(request);
     const complete = laterLegacyRevisions.every((k) =>
       Object.hasOwn(request.legacy, k),
     );
     demand(
-      complete === Boolean(capture),
-      capture
+      complete === (captureBytes !== null),
+      captureBytes !== null
         ? 'Snapshot completion requires the reviewed maintenance, stop and relinquish revisions'
         : 'Snapshot capture precedes the reviewed maintenance, stop and relinquish revisions',
     );
-    const [source, ks] = await Promise.all([
-      helpers.get(
-        'gitrepository',
-        request.legacy.source.name,
-        request.legacy.source.namespace,
-      ),
-      helpers.get(
-        'kustomization',
-        request.legacy.kustomization.name,
-        request.legacy.kustomization.namespace,
-      ),
-    ]);
     const rev = complete ? request.legacy.stopRevision : request.legacy.revision;
-    demand(
-      legacyRepositoryUrl(source.spec?.url) &&
-        ready(source) &&
-        ready(ks) &&
-        !ks.spec?.suspend &&
-        matches(source.status.artifact?.revision, rev) &&
-        matches(ks.status.lastAppliedRevision, rev) &&
-        ks.spec?.sourceRef?.kind === 'GitRepository' &&
-        ks.spec.sourceRef.name === request.legacy.source.name &&
-        (ks.spec.sourceRef.namespace ?? ks.metadata.namespace) ===
+    const flux = async () => {
+      const [source, ks] = await Promise.all([
+        helpers.get(
+          'gitrepository',
+          request.legacy.source.name,
           request.legacy.source.namespace,
-      'Legacy Flux source/Kustomization has not acknowledged the reviewed revision',
-    );
+        ),
+        helpers.get(
+          'kustomization',
+          request.legacy.kustomization.name,
+          request.legacy.kustomization.namespace,
+        ),
+      ]);
+      demand(
+        legacyRepositoryUrl(source.spec?.url) &&
+          (source.spec.ref?.branch || source.spec.ref?.tag) &&
+          ready(source) &&
+          ready(ks) &&
+          !ks.spec?.suspend &&
+          matches(source.status.artifact?.revision, rev) &&
+          matches(ks.status.lastAppliedRevision, rev) &&
+          ks.spec?.sourceRef?.kind === 'GitRepository' &&
+          ks.spec.sourceRef.name === request.legacy.source.name &&
+          (ks.spec.sourceRef.namespace ?? ks.metadata.namespace) ===
+            request.legacy.source.namespace,
+        'Legacy Flux source/Kustomization has not acknowledged the reviewed revision',
+      );
+      return { source, ks };
+    };
+    const { source, ks } = await flux();
     const legacy = {
       repository: source.spec.url,
       revision: request.legacy.revision,
@@ -941,7 +950,22 @@ export function createAdoptionMethods(config, command, helpers, options) {
       );
       return actual;
     };
-    if (!capture) {
+    // The same Flux objects, generation and acknowledged revision after the
+    // resource reads: otherwise an apply in between mixes two revisions.
+    const steady = async () => {
+      const after = await flux();
+      demand(
+        after.source.metadata.uid === source.metadata.uid &&
+          after.ks.metadata.uid === ks.metadata.uid &&
+          after.source.metadata.generation === source.metadata.generation &&
+          after.ks.metadata.generation === ks.metadata.generation &&
+          after.source.status.artifact?.revision ===
+            source.status.artifact?.revision &&
+          after.ks.status.lastAppliedRevision === ks.status.lastAppliedRevision,
+        'Legacy Flux state changed while the snapshot was observed',
+      );
+    };
+    if (captureBytes === null) {
       const resources = [];
       for (const entry of entries) {
         const actual = await live(entry);
@@ -977,6 +1001,7 @@ export function createAdoptionMethods(config, command, helpers, options) {
             : {}),
         });
       }
+      await steady();
       return {
         apiVersion: snapshotCaptureVersion,
         adoptionId: request.adoptionId,
@@ -984,6 +1009,20 @@ export function createAdoptionMethods(config, command, helpers, options) {
         normalization,
         resources,
       };
+    }
+    // Completion. The capture holds the only record of the original state, so
+    // it is admitted by protected byte identity, never by its contents alone.
+    const captureSha256 = config.adoption?.captureSha256;
+    demand(
+      /^[a-f0-9]{64}$/.test(captureSha256 ?? '') &&
+        bytesHash(captureBytes) === captureSha256,
+      'Snapshot capture identity is not the protected adoption.captureSha256',
+    );
+    let capture;
+    try {
+      capture = JSON.parse(captureBytes);
+    } catch {
+      demand(false, 'Snapshot capture is not JSON');
     }
     const sameRef = ({ uid, ...ref }) => ref;
     demand(
@@ -1005,30 +1044,46 @@ export function createAdoptionMethods(config, command, helpers, options) {
         capture.legacy.kustomization.uid === ks.metadata.uid,
       'Legacy Flux identity changed since capture',
     );
+    // Every object the legacy applier manages here at the stop revision must
+    // have been captured, and nothing else: a record cannot be dropped or
+    // invented between the two observations.
+    demand(
+      hash(capture.resources.map((r) => r.fluxInventoryId).sort()) ===
+        hash(entries.map((e) => e.id).sort()),
+      'Legacy Flux inventory differs from the capture',
+    );
     // The relinquish commit is reviewed now but pushed only once the writers
     // have stopped; its existence is proven at the relinquished stage.
     await legacyAncestry({ legacy }, rev, false);
     const resources = [];
     for (const r of capture.resources) {
       const entry = entries.find((e) => e.id === r.fluxInventoryId);
-      demand(entry, 'Captured legacy object left the Flux inventory');
       const actual = await live(entry);
       demand(
         actual.apiVersion === r.apiVersion &&
+          actual.kind === r.kind &&
+          actual.metadata.name === r.name &&
+          actual.metadata.namespace === r.namespace &&
           actual.metadata.uid === r.uid &&
           hash(actual.spec?.selector ?? {}) === hash(r.selector ?? {}),
         'Captured legacy object UID/selector changed',
       );
-      const { selector, legacyManager, fluxInventoryId, podSpec, oldImages, ...head } = r;
       resources.push({
-        ...head,
+        apiVersion: actual.apiVersion,
+        kind: actual.kind,
+        namespace,
+        name: actual.metadata.name,
+        uid: actual.metadata.uid,
+        spec: r.spec,
+        specIdentity: r.specIdentity,
         normalizedSpecIdentity: hash(actual.spec ?? actual.data ?? {}),
-        selector,
-        legacyManager,
-        fluxInventoryId,
-        ...(podSpec ? { podSpec, oldImages } : {}),
+        selector: actual.spec?.selector ?? {},
+        legacyManager: r.legacyManager,
+        fluxInventoryId: entry.id,
+        ...(r.podSpec ? { podSpec: r.podSpec, oldImages: r.oldImages } : {}),
       });
     }
+    await steady();
     const snapshot = {
       apiVersion: snapshotVersion,
       adoptionId: request.adoptionId,

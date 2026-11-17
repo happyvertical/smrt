@@ -1233,9 +1233,12 @@ test('adopt-snapshot observes the legacy inventory with managed fields, then com
   Object.assign(config, { repository: '/unit', source: { name: 'new-source', namespace: 'flux-system' }, kustomization: { name: 'new-app', namespace: 'test' }, chart: '/unit/chart.tgz' });
   const condition = { conditions: [{ type: 'Ready', status: 'True', observedGeneration: 1 }] };
   const stop = 'c'.repeat(40), maintenance = 'd'.repeat(40), relinquish = 'e'.repeat(40);
-  let applied = revision;
-  const source = () => ({ metadata: { uid: 'source-uid', generation: 1 }, spec: { url: 'https://example.test/legacy', ref: { branch: 'legacy' } }, status: { ...condition, artifact: { revision: `legacy@sha1:${applied}` } } });
-  const ks = () => ({ metadata: { uid: 'ks-uid', generation: 1, namespace: 'flux-system' }, spec: { prune: true, sourceRef: { kind: 'GitRepository', name: 'legacy' } }, status: { ...condition, lastAppliedRevision: `legacy@sha1:${applied}`, inventory: { entries: [{ id: 'test_app-web_apps_Deployment', v: 'v1' }, { id: 'test_app-config__ConfigMap', v: 'v1' }, { id: 'other_app-web_apps_Deployment', v: 'v1' }, { id: 'test_app-monitor_batch_CronJob', v: 'v1' }] } } });
+  let applied = revision, drift = null, ref = { branch: 'legacy' };
+  const source = () => ({ metadata: { uid: 'source-uid', generation: 1 }, spec: { url: 'https://example.test/legacy', ref }, status: { ...condition, artifact: { revision: `legacy@sha1:${applied}` } } });
+  let fluxReads = 0;
+  // `drift` models a reconcile landing between the first Flux check and the
+  // steadiness re-read: a new generation whose Ready condition still matches.
+  const ks = () => { const generation = drift && ++fluxReads > 1 ? 2 : 1; return ({ metadata: { uid: 'ks-uid', generation, namespace: 'flux-system' }, spec: { prune: true, sourceRef: { kind: 'GitRepository', name: 'legacy' } }, status: { conditions: [{ type: 'Ready', status: 'True', observedGeneration: generation }], lastAppliedRevision: `legacy@sha1:${applied}`, inventory: { entries: [{ id: 'test_app-web_apps_Deployment', v: 'v1' }, { id: 'test_app-config__ConfigMap', v: 'v1' }, { id: 'other_app-web_apps_Deployment', v: 'v1' }, { id: 'test_app-monitor_batch_CronJob', v: 'v1' }] } } }); };
   const podSpec = { containers: [{ name: 'web', image }], initContainers: [{ name: 'init', image: `${image}-init` }] };
   const selector = { matchLabels: { app: 'app-web' } };
   const managedFields = [
@@ -1263,8 +1266,13 @@ test('adopt-snapshot observes the legacy inventory with managed fields, then com
     current: plan.candidate.spec.values.current,
     explanation: 'Reviewed stop scales the Deployment to zero and suspends the CronJob',
   };
+  const { createHash } = await import('node:crypto');
+  const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+  const bytesOf = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
   const capture = await methods.snapshotLegacy(structuredClone(request));
   assert.equal(capture.apiVersion, snapshotCaptureVersion);
+  const captureBytes = bytesOf(capture);
+  config.adoption.captureSha256 = sha256(captureBytes);
   assert.deepEqual(reads, ['deployment.apps app-web test', 'configmap app-config test', 'cronjob.batch app-monitor test'], 'only this namespace, each object read with managed fields');
   assert.deepEqual(capture.legacy, { repository: 'https://example.test/legacy', revision, source: { namespace: 'flux-system', name: 'legacy', uid: 'source-uid' }, kustomization: { namespace: 'flux-system', name: 'legacy-app', uid: 'ks-uid' } });
   assert.equal(capture.normalization.normalizedCurrentIdentity, plan.normalizedCurrentIdentity);
@@ -1275,12 +1283,12 @@ test('adopt-snapshot observes the legacy inventory with managed fields, then com
   assert.ok(capture.resources.every((r) => !('normalizedSpecIdentity' in r)), 'capture precedes the stop');
   // Completion is refused while the legacy applier is not at the stop revision.
   const completion = { ...request, legacy: { ...request.legacy, maintenanceRevision: maintenance, stopRevision: stop, relinquishRevision: relinquish } };
-  await assert.rejects(methods.snapshotLegacy(structuredClone(completion), capture), /acknowledged the reviewed revision/);
-  await assert.rejects(methods.snapshotLegacy(structuredClone(request), capture), /completion requires/);
+  await assert.rejects(methods.snapshotLegacy(structuredClone(completion), captureBytes), /acknowledged the reviewed revision/);
+  await assert.rejects(methods.snapshotLegacy(structuredClone(request), captureBytes), /completion requires/);
   await assert.rejects(methods.snapshotLegacy(structuredClone(completion)), /capture precedes/);
   applied = stop;
   commands.length = 0;
-  const snapshot = await methods.snapshotLegacy(structuredClone(completion), capture);
+  const snapshot = await methods.snapshotLegacy(structuredClone(completion), captureBytes);
   assert.equal(snapshot.apiVersion, 'smrt.happyvertical.com/legacy-snapshot-v1');
   assert.deepEqual(snapshot.legacy, { ...capture.legacy, maintenanceRevision: maintenance, stopRevision: stop, relinquishRevision: relinquish });
   const stoppedWeb = snapshot.resources.find((r) => r.kind === 'Deployment');
@@ -1294,18 +1302,45 @@ test('adopt-snapshot observes the legacy inventory with managed fields, then com
   assert.ok(!commands.some((c) => c.join(' ').includes(relinquish)), 'the relinquish commit is pushed only after the writers stop');
   // The completed snapshot is exactly what the plan later qualifies.
   const bytes = `${JSON.stringify(snapshot, null, 2)}\n`;
-  const { createHash } = await import('node:crypto');
   plan.legacy = snapshot.legacy;
-  plan.snapshot.sha256 = createHash('sha256').update(bytes).digest('hex');
+  plan.snapshot.sha256 = sha256(bytes);
   Object.assign(config.adoption, { fluxPath: 'apps', sourceUid: 'new-source-uid', kustomizationUid: 'new-ks-uid', snapshotSha256: plan.snapshot.sha256, qualificationSha256: plan.qualification.sha256 });
-  // A tampered capture (foreign UID, foreign request) and a changed selector fail closed.
-  await assert.rejects(methods.snapshotLegacy(structuredClone(completion), { ...capture, legacy: { ...capture.legacy, kustomization: { ...capture.legacy.kustomization, uid: 'other' } } }), /identity changed/);
-  await assert.rejects(methods.snapshotLegacy(structuredClone({ ...completion, adoptionId: 'adopt-2' }), capture), /belong to this request/);
-  await assert.rejects(methods.snapshotLegacy(structuredClone(completion), { ...capture, resources: capture.resources.map((r) => ({ ...r, uid: 'forged' })) }), /UID\/selector changed/);
+  // The capture is admitted by protected byte identity: any edit, including a
+  // self-consistent rewrite of the original PodSpec and images, fails closed
+  // unless the protected digest is updated for it.
+  const forged = structuredClone(capture);
+  const web0 = forged.resources.find((r) => r.kind === 'Deployment');
+  web0.podSpec.containers[0].image = 'registry/evil@sha256:' + 'f'.repeat(64);
+  web0.spec.template.spec = web0.podSpec;
+  web0.oldImages = [web0.podSpec.containers[0].image, `${image}-init`];
+  web0.specIdentity = hash(web0.spec);
+  await assert.rejects(methods.snapshotLegacy(structuredClone(completion), bytesOf(forged)), /protected adoption.captureSha256/);
+  await assert.rejects(methods.snapshotLegacy(structuredClone(completion), Buffer.from(`${captureBytes.toString()} `)), /protected adoption.captureSha256/);
+  const bound = async (value, override = {}) => {
+    const b = bytesOf(value);
+    config.adoption.captureSha256 = sha256(b);
+    try { return await methods.snapshotLegacy(structuredClone({ ...completion, ...override }), b); } finally { config.adoption.captureSha256 = sha256(captureBytes); }
+  };
+  // Even a bound (reviewed) capture must still match the live cluster.
+  await assert.rejects(bound({ ...capture, legacy: { ...capture.legacy, kustomization: { ...capture.legacy.kustomization, uid: 'other' } } }), /identity changed/);
+  await assert.rejects(bound(capture, { adoptionId: 'adopt-2' }), /belong to this request/);
+  await assert.rejects(bound({ ...capture, resources: capture.resources.map((r) => ({ ...r, uid: 'forged' })) }), /UID\/selector changed/);
+  await assert.rejects(bound({ ...capture, resources: capture.resources.filter((r) => r.kind !== 'ConfigMap') }), /inventory differs/, 'a dropped record is refused');
+  await assert.rejects(bound({ ...capture, resources: capture.resources.map((r) => (r.kind === 'ConfigMap' ? { ...r, kind: 'Secret', name: 'app-config' } : r)) }), /UID\/selector changed|inventory entry/, 'a renamed record is refused');
+  // An apply landing between the Flux check and the resource reads fails closed.
+  drift = true; fluxReads = 0;
+  await assert.rejects(methods.snapshotLegacy(structuredClone(completion), captureBytes), /changed while the snapshot was observed/);
+  drift = null;
+  ref = {};
+  await assert.rejects(methods.snapshotLegacy(structuredClone(completion), captureBytes), /acknowledged the reviewed revision/, 'the source must track a branch or tag');
+  ref = { branch: 'legacy' };
   // A second non-native field manager on a legacy object blocks the capture.
   managedFields.push({ manager: 'kubectl-client-side-apply', operation: 'Update', fieldsType: 'FieldsV1', fieldsV1: { 'f:spec': { 'f:replicas': {} } } });
   applied = revision;
   await assert.rejects(methods.snapshotLegacy(structuredClone(request)), /exactly one non-native field manager/);
+  managedFields.pop();
+  drift = true; fluxReads = 0;
+  await assert.rejects(methods.snapshotLegacy(structuredClone(request)), /changed while the snapshot was observed/, 'capture also brackets its reads');
 });
 test('adopt-snapshot CLI prints the capture and the snapshot and forwards the saved capture', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'smrt-adopt-snapshot-'));
@@ -1317,7 +1352,7 @@ test('adopt-snapshot CLI prints the capture and the snapshot and forwards the sa
     await writeFile(requestFile, JSON.stringify(request));
     await writeFile(captureFile, JSON.stringify({ apiVersion: snapshotCaptureVersion }));
     const calls = [];
-    const adapter = { snapshotLegacy: async (r, capture) => { calls.push([r, capture]); return { apiVersion: capture ? 'snapshot' : 'capture' }; } };
+    const adapter = { snapshotLegacy: async (r, capture) => { calls.push([r, capture === null ? null : JSON.parse(capture.toString())]); assert.ok(capture === null || Buffer.isBuffer(capture), 'the capture reaches the adapter as bytes'); return { apiVersion: capture ? 'snapshot' : 'capture' }; } };
     assert.deepEqual(await main(['adopt-snapshot', configFile, requestFile], () => adapter), { apiVersion: 'capture' });
     assert.deepEqual(await main(['adopt-snapshot', configFile, requestFile, captureFile], () => adapter), { apiVersion: 'snapshot' });
     assert.deepEqual(calls.map(([r, c]) => [r.adoptionId, c]), [[plan.adoptionId, null], [plan.adoptionId, { apiVersion: snapshotCaptureVersion }]]);
