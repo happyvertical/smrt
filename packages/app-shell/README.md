@@ -519,8 +519,10 @@ See [AGENTS.md](AGENTS.md) for the invariants and [agents/engine.md](agents/engi
 
 ### Draft UI
 
-The content header offers **Start draft**, then **Live / Draft**, the unpublished
-change count, **Discard** (confirmed), and **Review and publish**. Starting a draft
+The app header (every owner page, not plugin views) offers a quiet **Start a draft**.
+Once a draft has changes it shows **Live / Draft**, the unpublished change count,
+**Discard** (confirmed), and **Review and publish**; an empty draft shows only the
+switch and **Close draft**. Starting a draft
 opens its view; switching copies saves the owner's choice and returns home. In
 Draft, a warning explains that test records are thrown away and draft-only models
 have a **new** marker. Chat shows **Building in draft**; tool chips name the copy,

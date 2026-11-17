@@ -48,7 +48,7 @@ pre-fix implementation as well as the fixed code.
 |---|---|---|---|---|
 | Assistant readiness | Connect Claude Code or ChatGPT, save key; open composer updates | Sign out disables composer; failed requests preserve known state | Browser connection controls and status route; no credentials in events | DOM |
 | Onboarding chat | Welcome or unfinished onboarding hides panel | Finished/skipped onboarding restores saved chat choice; plugin stays hidden | Layout server data and browser layout | DOM |
-| Draft bar routes | Home, model list/record, history and review show controls | Welcome and all settings pages hide controls | Browser pathname | DOM |
+| Draft bar (shell header) | Every owner page shows it in the header; quiet Start a draft with no draft; switch, count, Discard, Review and publish only while the draft has changes | Welcome, setup and plugin views hide it; empty draft has no Discard or Review (Close draft only); unpublishable draft keeps Discard, no Review | Browser pathname; pure plan in `src/lib/ui/draft-bar.ts` | Node + DOM |
 | Per-turn mode | Start draft after existing conversation, change viewed copy, resume CLI | No draft after discard/publish replaces stale draft context | Stub model and Claude Code/Codex subprocesses; same tool scopes | Node |
 | Tool summaries | Builder summary and describe/list phrase | No raw JSON, SQL or snapshot paths; unknown tools get generic phrase | API and CLI events, stored thread replay, HTTP responses | Node + DOM |
 | Attribution | Owner id resolves to profile name; recorded assistant and engine remain | Unknown identity uses neutral label; spacing survives DOM rendering | Session profile, approval cards and history | DOM |
@@ -108,7 +108,7 @@ sides and never display the key.
 Draft review rechecks the server's current draft after the parent layout loads,
 so layout data fetched during a draft start cannot produce a false no-draft
 screen. With no open draft the loader redirects home and the component never
-requests a preview. The draft bar keeps review links disabled through the
+requests a preview. The header draft state keeps review links disabled through the
 start request and view refresh.
 
 Failed report tools return an MCP `isError` result tagged `report_failure` with

@@ -2,6 +2,7 @@
 import { Button, Modal } from '@happyvertical/smrt-ui';
 import { goto, invalidateAll } from '$app/navigation';
 import { ApiError, api } from '$lib/ui/api';
+import { describeChanges, planDraftBar } from '$lib/ui/draft-bar';
 import type { Description, DraftInfo, Target } from '$lib/ui/types';
 
 let {
@@ -9,6 +10,7 @@ let {
   reviewing = false,
 }: { description: Description; reviewing?: boolean } = $props();
 const draft = $derived(description.draft);
+const plan = $derived(planDraftBar(draft));
 let busy = $state(false);
 let error = $state('');
 let confirming = $state(false);
@@ -48,26 +50,35 @@ async function act(operation: 'start' | 'discard' | Target) {
 
 <div class="smrt-draft-bar__draft-header" data-testid="draft-header">
   <div class="smrt-draft-bar__root" aria-label="App copy">
-    {#if draft}
+    {#if !draft}
+      <Button variant="ghost" disabled={busy} onclick={() => act('start')}>Start a draft</Button>
+    {:else}
       <div class="smrt-draft-bar__copy-switch" role="group" aria-label="View copy">
         <Button variant="ghost" aria-pressed={description.mode === 'live'} disabled={busy} onclick={() => act('live')}>Live</Button>
         <div class:smrt-draft-bar__active-draft={description.mode === 'draft'}>
           <Button variant="ghost" aria-pressed={description.mode === 'draft'} disabled={busy || !draft.publishable} onclick={() => act('draft')}>Draft</Button>
         </div>
       </div>
-      <span>{draft.changes} {draft.changes === 1 ? 'change' : 'changes'}, not published</span>
-      <div class="smrt-draft-bar__draft-actions">
-        <Button variant="secondary" disabled={busy} onclick={() => (confirming = true)}>Discard</Button>
-        {#if !reviewing}<Button href="/draft/review" disabled={busy || !draft.publishable}>Review and publish</Button>{/if}
-      </div>
-    {:else}
-      <Button variant="ghost" disabled={busy} onclick={() => act('start')}>Start draft</Button>
+      {#if plan.kind === 'changes'}
+        <span class="smrt-draft-bar__count">{describeChanges(plan.count)}</span>
+        <div class="smrt-draft-bar__draft-actions">
+          <Button variant="secondary" disabled={busy} onclick={() => (confirming = true)}>Discard</Button>
+          {#if !reviewing}<Button href="/draft/review" disabled={busy}>Review and publish</Button>{/if}
+        </div>
+      {:else if plan.kind === 'blocked'}
+        <div class="smrt-draft-bar__draft-actions">
+          <Button variant="secondary" disabled={busy} onclick={() => (confirming = true)}>Discard</Button>
+        </div>
+      {:else}
+        <span class="smrt-draft-bar__count">No changes yet</span>
+        <Button variant="ghost" disabled={busy} onclick={() => (confirming = true)}>Close draft</Button>
+      {/if}
     {/if}
   </div>
-  {#if draft && description.mode === 'draft'}
-    <p class="smrt-draft-bar__draft-strip" role="note">Draft: a test copy. Records you add here are thrown away when you publish.</p>
+  {#if draft && description.mode === 'draft' && plan.kind !== 'blocked'}
+    <p class="smrt-draft-bar__draft-strip" role="note" title="Records you add here are thrown away when you publish.">Draft: a test copy. Records you add here are thrown away when you publish.</p>
   {/if}
-  {#if draft && !draft.publishable}
+  {#if draft && plan.kind === 'blocked'}
     <p class="smrt-draft-bar__draft-strip" role="alert">This draft cannot be published. {draft.problem} Discard it to start again.</p>
   {:else if draft?.recovery === 'rolled-back'}
     <p class="smrt-draft-bar__draft-strip" role="status">The last publish was interrupted and taken back. Review the draft and publish again.</p>
@@ -95,14 +106,19 @@ async function act(operation: 'start' | 'discard' | Target) {
     gap: var(--smrt-spacing-sm);
   }
   .smrt-draft-bar__root {
-    padding: var(--smrt-spacing-md) var(--smrt-spacing-lg);
+    padding-inline: var(--smrt-spacing-sm);
   }
-  .smrt-draft-bar__draft-actions {
-    margin-inline-start: auto;
+  .smrt-draft-bar__draft-header {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    min-width: 0;
   }
   .smrt-draft-bar__draft-strip {
     margin: 0;
-    padding: var(--smrt-spacing-sm) var(--smrt-spacing-lg);
+    padding: 0 var(--smrt-spacing-sm);
+    max-inline-size: 28rem;
+    font-size: 0.75rem;
   }
 }
 
