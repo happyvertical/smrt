@@ -175,7 +175,7 @@ The chat column (`src/lib/assistant/AssistantPanel.svelte`, the `panel` of
 smrt-svelte's `AppShell` in `src/routes/+layout.svelte`, mounted for the owner)
 talks to `mountAssistantRoutes` (`src/lib/server/assistant/`). The layout is
 left sidebar, chat, content; the voice and assistant toggles and the user menu
-sit in the sidebar footer. The sidebar collapses to an icon rail (nav icons with
+sit in the sidebar footer. Each model gets its own sidebar icon, picked from its name and fields (`src/lib/ui/model-icon.ts`) and stable across reloads. The sidebar collapses to an icon rail (nav icons with
 tooltips, the footer controls as icons) from the chevron above the footer; the
 choice is remembered per owner, and the footer has no divider line (it would sit
 beside the chat composer's top border). The boundary between chat and content is a draggable
