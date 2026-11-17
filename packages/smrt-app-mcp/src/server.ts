@@ -38,6 +38,7 @@ import {
 } from '@happyvertical/smrt-jobs';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
+  buildMcpApprovalSummary,
   MCP_APPROVAL_CONSUMED_CODE,
   MCP_APPROVAL_PENDING_CODE,
   MCP_APPROVAL_REFUSED_CODE,
@@ -325,6 +326,12 @@ export interface CreateMcpAppServerOptions {
    * approval. Omitted: the legacy `confirm: true` gate.
    */
   approvals?: McpApprovalGate;
+  /**
+   * Narrow or mask the arguments shown to the approver (applied before the
+   * default secret-key redaction, which always runs). The binding hash still
+   * covers the real arguments.
+   */
+  approvalRedact?: (tool: string, args: Record<string, unknown>) => unknown;
   /** Receives (never rethrown) failures of {@link onToolCall}. */
   onToolCallHookError?: (error: unknown) => void;
   /**
@@ -986,6 +993,26 @@ export function createMcpAppServer(
         principalId: principal.id,
         args: callArgs,
       });
+      const summary = buildMcpApprovalSummary({
+        tool: tool.name,
+        principalId: principal.id,
+        principalKind: principal.kind ?? null,
+        args: callArgs,
+        redact: options.approvalRedact,
+      });
+      if (summary === null) {
+        return {
+          block: {
+            failure: {
+              code: MCP_APPROVAL_REFUSED_CODE,
+              message:
+                'Approval refused: arguments_too_large_to_review. Send smaller arguments.',
+              details: { reason: 'arguments_too_large_to_review' },
+            },
+            auditCode: MCP_APPROVAL_REFUSED_CODE,
+          },
+        };
+      }
       const result = await gate.check({
         tool: tool.name,
         tenantId: principal.tenantId,
@@ -993,7 +1020,7 @@ export function createMcpAppServer(
         principalKind: principal.kind ?? null,
         bindingHash,
         requestKey: `mcp:${bindingHash}`,
-        summary: `MCP tool ${tool.name}`.slice(0, 200),
+        summary,
       });
       if (result?.state === 'approved') return {};
       if (result?.state === 'pending') {
@@ -1021,7 +1048,10 @@ export function createMcpAppServer(
           block: {
             failure: {
               code: MCP_APPROVAL_REFUSED_CODE,
-              message: `Approval refused: ${reason}.`,
+              message:
+                reason === 'changes_requested'
+                  ? 'Approval refused: a reviewer requested changes. Change the arguments to open a new request.'
+                  : `Approval refused: ${reason}.`,
               details: { reason },
             },
             auditCode: MCP_APPROVAL_REFUSED_CODE,

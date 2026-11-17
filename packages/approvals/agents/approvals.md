@@ -90,7 +90,7 @@ and a valid `selfApprovalPermission` audit slug. Otherwise it refuses
   app-mcp `confirmTools`; kind `mcp.tool.call`, subject id the tool name,
   revision hash the call binding, `requestKey` `mcp:<binding>`. The caller is
   mapped to a permissionless principal; unknown principal kinds are `agent`.
-  The dependency edge is dev-only (app-mcp does not import approvals); keep it
+  The snapshot lives in the readonly `summary` (no schema change; a dedicated context column would need a migration); a request in `changes_requested` is refused, since the key returns the same row. The dependency edge is dev-only (app-mcp does not import approvals); keep it
   that way so the graph stays acyclic.
 - Slice 6: #3667 `pending_approval` hand-off.
 

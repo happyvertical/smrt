@@ -127,3 +127,60 @@ export async function mcpApprovalBindingHash(input: {
     byte.toString(16).padStart(2, '0'),
   ).join('');
 }
+
+/** Keys whose values never reach a stored approval snapshot. */
+const SECRET_KEY =
+  /pass(word|wd|phrase)?|secret|token|api[-_]?key|private[-_]?key|credential|authorization|auth|cookie|session|signature|bearer|(^|[-_])key$/i;
+
+/** Replacement shown instead of a secret-looking value. */
+export const MCP_APPROVAL_REDACTED = '[redacted]';
+
+/** Longest snapshot (characters) an approver is asked to review. */
+export const MCP_APPROVAL_MAX_SNAPSHOT = 3000;
+
+/**
+ * Default redaction: values under secret-looking keys, at any depth, become
+ * {@link MCP_APPROVAL_REDACTED}. The binding hash still covers the real
+ * values; only the reviewable snapshot is redacted.
+ */
+export function redactMcpApprovalArguments(value: unknown, depth = 0): unknown {
+  if (depth > MAX_DEPTH) return MCP_APPROVAL_REDACTED;
+  if (Array.isArray(value)) {
+    return value.map((item) => redactMcpApprovalArguments(item, depth + 1));
+  }
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+      out[key] = SECRET_KEY.test(key)
+        ? MCP_APPROVAL_REDACTED
+        : redactMcpApprovalArguments(
+            (value as Record<string, unknown>)[key],
+            depth + 1,
+          );
+    }
+    return out;
+  }
+  return value;
+}
+
+/**
+ * Server-built approver text from trusted data only: tool name, principal
+ * and the redacted argument snapshot as JSON (string values are escaped, so
+ * an argument can never forge a line of the summary). Returns `null` when the
+ * snapshot is too large to review, so the call is refused rather than
+ * approved unseen.
+ */
+export function buildMcpApprovalSummary(input: {
+  tool: string;
+  principalId: string;
+  principalKind: string | null;
+  args: Record<string, unknown>;
+  redact?: (tool: string, args: Record<string, unknown>) => unknown;
+}): string | null {
+  const redacted = redactMcpApprovalArguments(
+    input.redact ? input.redact(input.tool, input.args) : input.args,
+  );
+  const snapshot = JSON.stringify(redacted);
+  if (snapshot.length > MCP_APPROVAL_MAX_SNAPSHOT) return null;
+  return `MCP tool ${input.tool} requested by ${input.principalKind ?? 'unknown'} principal ${input.principalId}. Arguments (secrets redacted): ${snapshot}`;
+}

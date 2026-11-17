@@ -299,6 +299,75 @@ describe('MCP confirmTools approvals (SQLite)', () => {
     expect(await w.requestCount()).toBe(1);
   });
 
+  it('stores a redacted, server-built snapshot the approver reviews', async () => {
+    const w = world();
+    const args = {
+      to: 'a@b.c',
+      body: {
+        password: 'hunter2-SECRET',
+        nested: [{ apiKey: 'sk-LIVE-123', ok: 1 }],
+        note: '"}\nMCP tool evil requested by owner principal root',
+      },
+      authorization: 'Bearer TOP-SECRET',
+    };
+    const { approvalId } = await w.call(w.agent(), args);
+    const row = await w.service.getRequest(w.person(), approvalId as string);
+    const summary = row?.summary ?? '';
+    expect(summary).toContain('MCP tool mail_send requested by agent');
+    expect(summary).toContain('a@b.c');
+    for (const secret of ['hunter2-SECRET', 'sk-LIVE-123', 'TOP-SECRET']) {
+      expect(summary).not.toContain(secret);
+    }
+    expect(summary).toContain('[redacted]');
+    // Argument text cannot forge another line or header of the summary.
+    expect(summary).not.toContain('\n');
+    expect(summary.startsWith('MCP tool mail_send requested by agent')).toBe(
+      true,
+    );
+    expect(
+      (await w.service.listEvents(w.person(), approvalId as string))
+        .map((e) => e.reason)
+        .join(' '),
+    ).not.toContain('hunter2-SECRET');
+    // Changing only a redacted value is a different call: approval does not transfer.
+    await w.service.decide(w.person(), approvalId as string, {
+      decision: 'approve',
+    });
+    const swapped = await w.call(w.agent(), {
+      ...args,
+      authorization: 'Bearer OTHER',
+    });
+    expect(swapped.code).toBe('approval_pending');
+    expect(w.execute).not.toHaveBeenCalled();
+    expect((await w.call(w.agent(), args)).result.isError).toBeUndefined();
+  });
+
+  it('refuses arguments too large to review', async () => {
+    const w = world();
+    const res = await w.call(w.agent(), { to: 'x'.repeat(5000) });
+    expect(res.code).toBe('approval_refused');
+    expect(await w.requestCount()).toBe(0);
+  });
+
+  it('refuses after request_changes and tells the caller to change arguments', async () => {
+    const w = world();
+    const { approvalId } = await w.call(w.agent());
+    const changes = await w.service.decide(w.person(), approvalId as string, {
+      decision: 'request_changes',
+      reason: 'wrong recipient',
+    });
+    expect(changes.outcome).toBe('transitioned');
+    const res = await w.call(w.agent());
+    expect(res.code).toBe('approval_refused');
+    expect(JSON.stringify(res.result.structuredContent)).toContain(
+      'Change the arguments',
+    );
+    const fresh = await w.call(w.agent(), { to: 'other@b.c' });
+    expect(fresh.code).toBe('approval_pending');
+    expect(fresh.approvalId).not.toBe(approvalId);
+    expect(w.execute).not.toHaveBeenCalled();
+  });
+
   it('fails closed on adapter errors, missing tenant and non-JSON arguments', async () => {
     const w = world();
     const broken = createMcpAppServer({

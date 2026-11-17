@@ -23,8 +23,10 @@
  */
 
 export {
+  buildMcpApprovalSummary,
   MCP_APPROVAL_CONSUMED_CODE,
   MCP_APPROVAL_PENDING_CODE,
+  MCP_APPROVAL_REDACTED,
   MCP_APPROVAL_REFUSED_CODE,
   MCP_APPROVAL_REQUESTED_CODE,
   MCP_APPROVAL_UNAVAILABLE_CODE,
@@ -32,6 +34,7 @@ export {
   type McpApprovalGateRequest,
   type McpApprovalGateResult,
   mcpApprovalBindingHash,
+  redactMcpApprovalArguments,
 } from './approval-gate.js';
 export {
   createInMemoryMcpAuditSink,

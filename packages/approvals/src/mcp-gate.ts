@@ -133,8 +133,11 @@ export function createApprovalMcpGate(options: ApprovalMcpGateOptions): {
             reason: used.refusal?.reason ?? 'not_approved',
           };
         }
-        case 'pending':
         case 'changes_requested':
+          // The service has no resubmit path that keeps this binding; the
+          // request key returns this same row, so retrying cannot succeed.
+          return { state: 'refused', reason: 'changes_requested' };
+        case 'pending':
           if (!(row.expiresAtMs() > now().getTime())) {
             return { state: 'refused', reason: 'expired' };
           }

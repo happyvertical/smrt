@@ -349,7 +349,7 @@ createMcpAppServer({
    principal or tenant, rejection, expiry and an already-consumed approval
    answer `approval_refused` with a short reason.
 
-An identical call after a terminal outcome stays refused: change an argument to
+The approver reviews a server-built summary stored on the request (tool, principal kind and id, and the arguments as JSON with values under secret-looking keys such as password, token, apiKey, authorization or cookie replaced by `[redacted]`, at any depth; `approvalRedact(tool, args)` can mask more). It never contains agent-supplied free text outside that JSON, and arguments too large to review (3000 characters) are refused. The binding hash covers the real arguments, so changing even a redacted value needs a new approval. After a reviewer requests changes the call is refused with a hint to change the arguments. An identical call after a terminal outcome stays refused: change an argument to
 request again. Any adapter error, missing principal id or tenant, or non-JSON
 argument answers `approval_unavailable` and the call does not run. The approval
 is consumed before the tool runs, so a tool that fails after consumption needs a
