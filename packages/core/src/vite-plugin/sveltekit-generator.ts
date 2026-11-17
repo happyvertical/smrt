@@ -2275,7 +2275,6 @@ async function generateRegistrationFile(
         [
           className,
           {
-            ...registrationBase,
             packageName,
             objects: {
               [className]: portableObjectManifest(projectRoot, objectDef),
@@ -2287,6 +2286,16 @@ async function generateRegistrationFile(
   );
   const registrationManifestLiteral = JSON.stringify(
     JSON.stringify(registrationManifests),
+  );
+  // Aggregate-level fields are emitted once and merged by reference at load,
+  // not repeated per object (#5028).
+  const {
+    objects: _allObjects,
+    packageName: _sharedPackageName,
+    ...registrationShared
+  } = registrationBase;
+  const registrationSharedLiteral = JSON.stringify(
+    JSON.stringify(registrationShared),
   );
   const registrations = Object.entries(manifest.objects)
     .map(([className, objectDef]) => {
@@ -2369,6 +2378,10 @@ ${consumerRegistrationImport}
 ${imports}
 
 const smrtRegistrationManifests = JSON.parse(${registrationManifestLiteral});
+const smrtRegistrationShared = JSON.parse(${registrationSharedLiteral});
+for (const key of Object.keys(smrtRegistrationManifests)) {
+  smrtRegistrationManifests[key] = { ...smrtRegistrationShared, ...smrtRegistrationManifests[key] };
+}
 
 // Re-register imported objects with explicit package names for bundled runtimes
 ${registrations}

@@ -5,7 +5,7 @@ description: "A smrt app that builds and runs a person's own smrt app from defin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-16T23:22:04Z"
+  at: "2026-11-17T23:03:03Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:fdb22349877984a0a3c3ff9752026dc6acc3f55a9b4bb6f410699f8113ae7f66"

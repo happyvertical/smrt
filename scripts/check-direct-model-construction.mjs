@@ -21,6 +21,7 @@
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
+import { modelsInSource, sourceFiles } from './smrt-model-scan.mjs';
 
 const args = process.argv.slice(2);
 const rootIndex = args.indexOf('--root');
@@ -32,30 +33,6 @@ const BASELINE_PATH =
   baselineIndex >= 0
     ? args[baselineIndex + 1]
     : join(import.meta.dirname, 'direct-model-construction-baseline.json');
-
-const SKIP_DIRS = new Set([
-  'node_modules',
-  'dist',
-  '.svelte-kit',
-  '.smrt',
-  '__tests__',
-  '__fixtures__',
-  'fixtures',
-  'test-support',
-  'tests',
-  'e2e',
-]);
-const TEST_FILE = /\.(test|spec|e2e)\.[cm]?[jt]s$|\.d\.ts$/;
-
-function walk(dir, out) {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.isDirectory()) {
-      if (!SKIP_DIRS.has(entry.name)) walk(join(dir, entry.name), out);
-    } else if (/\.[cm]?ts$/.test(entry.name) && !TEST_FILE.test(entry.name)) {
-      out.push(join(dir, entry.name));
-    }
-  }
-}
 
 /** Drop comments and string bodies so `new X(` inside prose is not counted. */
 function stripNoise(source) {
@@ -70,7 +47,7 @@ for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
   if (!entry.isDirectory()) continue;
   const src = join(packagesDir, entry.name, 'src');
   try {
-    if (statSync(src).isDirectory()) walk(src, files);
+    if (statSync(src).isDirectory()) files.push(...sourceFiles(src));
   } catch {
     // package without src/
   }
@@ -86,13 +63,17 @@ function stripStrings(source) {
 
 const sources = new Map(); // comments removed; imports still readable
 const code = new Map(); // comments and string bodies removed
+const decorated = new Map(); // file -> class names carrying @smrt (shared scanner)
 for (const file of files) {
-  const text = stripNoise(readFileSync(file, 'utf8'));
+  const raw = readFileSync(file, 'utf8');
+  decorated.set(file, new Set(raw.includes('smrt') ? modelsInSource(raw) : []));
+  const text = stripNoise(raw);
   sources.set(file, text);
   code.set(file, stripStrings(text));
 }
 
-// Pass 1: registered models (decorated with @smrt) and their subclasses.
+// Pass 1: registered models (decorated with @smrt, enumerated by the shared
+// scanner in smrt-model-scan.mjs) and their subclasses.
 const classRe = /\bclass\s+([A-Z]\w*)(?:\s*<[^{]*?>)?(?:\s+extends\s+([A-Z]\w*))?/g;
 function addDeclaration(name, file) {
   if (!modelFiles.has(name)) modelFiles.set(name, new Set());
@@ -104,9 +85,7 @@ const parents = [];
 for (const [file, text] of code) {
   for (const match of text.matchAll(classRe)) {
     const [, name, parent] = match;
-    const before = text.slice(0, match.index);
-    const boundary = Math.max(before.lastIndexOf('\n}\n'), before.lastIndexOf(';\n'));
-    if (/@smrt\s*\(/.test(before.slice(boundary < 0 ? 0 : boundary))) {
+    if (decorated.get(file).has(name)) {
       models.add(name);
       addDeclaration(name, file);
     } else if (parent) {

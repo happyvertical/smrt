@@ -57,6 +57,14 @@ padding, `--smrt-spacing-2`) and `--smrt-admin-shell-tenant-gap` (gap between
 tenant panel rows, `--smrt-spacing-3`). The tenant panel only spaces rows it
 renders, so with no `tenantFooter` there is no empty footer-row gap.
 
+Sizing: the shell is viewport-tall (`100svh`, `100dvh` with the phone bottom
+bar) unless a host sets `--smrt-admin-shell-block-size` on the shell or any
+ancestor, such as a container of its own height. The property is inherited, so
+it crosses `AppShell`'s and `Planner`'s own theme provider root, which has auto
+height (a bare `100%` would resolve against that root). Use a length, a
+`calc()`, or `100cqb` on a `container-type: size` host; the phone branch
+honours it too. Host code never targets the shell's class names.
+
 Keep the `appBar` snippet for content in the center header band. Side-aligned
 identity and action content belongs in `topLeftCorner` / `topRightCorner`,
 wrapped in `ShellCorner side="left"` or `ShellCorner side="right"` so it follows

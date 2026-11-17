@@ -5,7 +5,7 @@ description: "Tenant subscriptions, entitlement resolution, usage thresholds, an
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-16T07:13:54Z"
+  at: "2026-11-17T21:17:44Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:48d3599db9578e435280b3dd42751090babf37fc1f9fc84da681314f14dc5579"

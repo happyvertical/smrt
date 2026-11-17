@@ -62,6 +62,18 @@ with `WorkspaceAccountMenu compact` for an avatar-only trigger that retains the
 full account identity as its accessible name. Keep the ordinary
 `tenantFooter` for the expanded panel.
 
+### Sizing the shell to a host container
+
+`.smrt-admin-shell` is viewport-sized by default and reads one public
+property for its `min-block-size`/`block-size`: `--smrt-admin-shell-block-size`
+(fallback `100svh`, and `100dvh` in the phone `data-bottom-bar` branch). A host
+sets it on a container or the shell; it inherits through `AppShell`'s and
+`Planner`'s theme provider root (`display: block`, auto height, so `100%` on
+the shell cannot work). Values: a length, `calc()`, or `100cqb` with
+`container-type: size` on the host. Never size the shell by host CSS on its
+class names. Guards: `AdminShell.test.ts` (source) and
+`e2e/host-height.spec.ts` (600px container, desktop and phone).
+
 ### Responsive chrome, viewport defaults, resizable edges
 
 The root grid has five rows: `header` · top edge · body · bottom edge · phone

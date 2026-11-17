@@ -26,10 +26,40 @@ test('selectAffectedTestPackages keeps every affected non-core test task once', 
       '@happyvertical/smrt-beta',
       '@happyvertical/smrt-zeta',
     ],
-    shard: ['@happyvertical/smrt-alpha', '@happyvertical/smrt-zeta'],
+    shard: [
+      '@happyvertical/smrt-alpha',
+      '@happyvertical/smrt-beta',
+      '@happyvertical/smrt-zeta',
+    ],
   });
-  assert.deepEqual(selectAffectedTestPackages(dryRun, { index: 2, count: 2 }).shard, [
+  // The trailing shard is reserved for the dedicated package, absent here.
+  assert.deepEqual(selectAffectedTestPackages(dryRun, { index: 2, count: 2 }).shard, []);
+  const shared = [1, 2].map(
+    (index) => selectAffectedTestPackages(dryRun, { index, count: 3 }).shard,
+  );
+  assert.deepEqual(shared.flat().sort(), [
+    '@happyvertical/smrt-alpha',
     '@happyvertical/smrt-beta',
+    '@happyvertical/smrt-zeta',
+  ]);
+});
+
+test('selectAffectedTestPackages gives the dedicated package its own trailing shard', () => {
+  const dryRun = {
+    tasks: [
+      { task: 'test', package: '@happyvertical/smrt-template-sveltekit' },
+      { task: 'test', package: '@happyvertical/smrt-ingestion' },
+      { task: 'test', package: '@happyvertical/smrt-commerce' },
+      { task: 'test', package: '@happyvertical/smrt-tags' },
+    ],
+  };
+  const shards = [1, 2, 3].map(
+    (index) => selectAffectedTestPackages(dryRun, { index, count: 3 }).shard,
+  );
+  assert.deepEqual(shards, [
+    ['@happyvertical/smrt-ingestion'],
+    ['@happyvertical/smrt-commerce', '@happyvertical/smrt-tags'],
+    ['@happyvertical/smrt-template-sveltekit'],
   ]);
 });
 
