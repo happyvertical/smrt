@@ -130,7 +130,7 @@ export async function mcpApprovalBindingHash(input: {
 
 /** Keys whose values never reach a stored approval snapshot. */
 const SECRET_KEY =
-  /pass(word|wd|phrase)?|secret|token|api[-_]?key|private[-_]?key|credential|authorization|auth|cookie|session|signature|bearer|(^|[-_])key$/i;
+  /pass|pwd|secret|token|key|credential|auth|cookie|session|signature|bearer|\bpin\b|^pin|pin$|otp|jwt|dsn|conn(ection)?[-_]?string|private|seed|mnemonic|cert/i;
 
 /** Replacement shown instead of a secret-looking value. */
 export const MCP_APPROVAL_REDACTED = '[redacted]';

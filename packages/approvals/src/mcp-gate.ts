@@ -37,6 +37,9 @@ export const mcpToolCallKind: ApprovalKind = defineApprovalKind({
   defaults: { requiredApprovals: 1, ttlMs: 24 * 60 * 60 * 1000 },
 });
 
+/** Most consumed or expired requests one binding may accumulate. */
+const MAX_EPOCHS = 100;
+
 /** Structural copy of app-mcp's gate request. */
 export interface ApprovalMcpGateRequest {
   tool: string;
@@ -94,58 +97,65 @@ export function createApprovalMcpGate(options: ApprovalMcpGateOptions): {
   return {
     async check(request) {
       const requester = requesterOf(request);
-      const opened = await service.requestApproval(requester, {
-        kind,
-        subjectId: request.tool,
-        subjectRevisionHash: request.bindingHash,
-        requestKey: request.requestKey,
-        summary: request.summary,
-      });
-      if (opened.outcome === 'refused' || !opened.request) {
-        return {
-          state: 'refused',
-          reason: opened.refusal?.reason ?? 'not_found',
-        };
-      }
-      const row = opened.request;
-      const created = opened.outcome === 'transitioned';
-      const approvalId = String(row.id);
-      // The binding already names the principal and tenant; verify the stored
-      // row independently so a key collision can never lend an approval.
-      if (
-        row.tenantId !== request.tenantId ||
-        row.requestedBy !== request.principalId ||
-        row.subjectId !== request.tool ||
-        row.subjectRevisionHash !== request.bindingHash
-      ) {
-        return { state: 'refused', reason: 'binding_mismatch' };
-      }
-      switch (row.status) {
-        case 'approved': {
-          const used = await service.consume(
-            requester,
-            approvalId,
-            request.bindingHash,
-          );
-          if (used.outcome === 'transitioned') return { state: 'approved' };
+      // Epoch 0 uses the plain key. A consumed or expired binding moves on to
+      // `<key>:<n>`, so an identical later call opens a fresh request while
+      // concurrent retries still converge on one live row per epoch.
+      for (let epoch = 0; epoch <= MAX_EPOCHS; epoch += 1) {
+        const opened = await service.requestApproval(requester, {
+          kind,
+          subjectId: request.tool,
+          subjectRevisionHash: request.bindingHash,
+          requestKey:
+            epoch === 0 ? request.requestKey : `${request.requestKey}:${epoch}`,
+          summary: request.summary,
+        });
+        if (opened.outcome === 'refused' || !opened.request) {
           return {
             state: 'refused',
-            reason: used.refusal?.reason ?? 'not_approved',
+            reason: opened.refusal?.reason ?? 'not_found',
           };
         }
-        case 'changes_requested':
-          // The service has no resubmit path that keeps this binding; the
-          // request key returns this same row, so retrying cannot succeed.
-          return { state: 'refused', reason: 'changes_requested' };
-        case 'pending':
-          if (!(row.expiresAtMs() > now().getTime())) {
-            return { state: 'refused', reason: 'expired' };
+        const row = opened.request;
+        const created = opened.outcome === 'transitioned';
+        const approvalId = String(row.id);
+        // The binding already names the principal and tenant; verify the
+        // stored row independently so a key collision can never lend an
+        // approval.
+        if (
+          row.tenantId !== request.tenantId ||
+          row.requestedBy !== request.principalId ||
+          row.subjectId !== request.tool ||
+          row.subjectRevisionHash !== request.bindingHash
+        ) {
+          return { state: 'refused', reason: 'binding_mismatch' };
+        }
+        const live = row.expiresAtMs() > now().getTime();
+        switch (row.status) {
+          case 'approved': {
+            if (row.isConsumed() || !live) continue;
+            const used = await service.consume(
+              requester,
+              approvalId,
+              request.bindingHash,
+            );
+            if (used.outcome === 'transitioned') return { state: 'approved' };
+            const reason = used.refusal?.reason ?? 'not_approved';
+            // A concurrent twin consumed it first, or it just expired.
+            if (reason === 'already_consumed' || reason === 'expired') continue;
+            return { state: 'refused', reason };
           }
-          return { state: 'pending', approvalId, created };
-        default:
-          // rejected, cancelled, expired
-          return { state: 'refused', reason: row.status };
+          case 'pending':
+            if (!live) continue;
+            return { state: 'pending', approvalId, created };
+          case 'expired':
+            continue;
+          default:
+            // rejected, cancelled, changes_requested: a person said no or
+            // asked for changes; only different arguments open a new request.
+            return { state: 'refused', reason: row.status };
+        }
       }
+      return { state: 'refused', reason: 'too_many_requests' };
     },
   };
 }

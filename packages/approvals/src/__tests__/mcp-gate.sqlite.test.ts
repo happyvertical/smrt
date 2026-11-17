@@ -191,7 +191,7 @@ describe('MCP confirmTools approvals (SQLite)', () => {
     expect(w.execute).not.toHaveBeenCalled();
   });
 
-  it('runs once after a person approves; replay is refused', async () => {
+  it('runs once per approval; the same call later needs a fresh approval', async () => {
     const w = world();
     const { approvalId } = await w.call(w.agent());
     const decided = await w.service.decide(w.person(), approvalId as string, {
@@ -203,15 +203,42 @@ describe('MCP confirmTools approvals (SQLite)', () => {
     expect(ran.result.isError).toBeUndefined();
     expect(w.execute).toHaveBeenCalledTimes(1);
 
+    // Replay of a consumed approval never runs: it opens a new pending request.
     const replay = await w.call(w.agent());
-    expect(replay.code).toBe('approval_refused');
+    expect(replay.code).toBe('approval_pending');
+    expect(replay.approvalId).not.toBe(approvalId);
     expect(w.execute).toHaveBeenCalledTimes(1);
-    expect(await w.requestCount()).toBe(1);
+    // Retries while that request is live reuse it.
+    expect((await w.call(w.agent())).approvalId).toBe(replay.approvalId);
+    expect(await w.requestCount()).toBe(2);
+
+    await w.service.decide(w.person(), replay.approvalId as string, {
+      decision: 'approve',
+    });
+    expect((await w.call(w.agent())).result.isError).toBeUndefined();
+    expect(w.execute).toHaveBeenCalledTimes(2);
     expect(w.sink.records.map((r) => [r.outcome, r.errorCode])).toEqual([
       ['denied', 'approval_requested'],
       ['allowed', 'approval_consumed'],
-      ['denied', 'approval_refused'],
+      ['denied', 'approval_requested'],
+      ['denied', 'approval_pending'],
+      ['allowed', 'approval_consumed'],
     ]);
+  });
+
+  it('concurrent retries of a consumed binding open exactly one live request', async () => {
+    const w = world();
+    const first = await w.call(w.agent());
+    await w.service.decide(w.person(), first.approvalId as string, {
+      decision: 'approve',
+    });
+    await w.call(w.agent());
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => w.call(w.agent())),
+    );
+    expect(new Set(results.map((r) => r.approvalId)).size).toBe(1);
+    expect(await w.requestCount()).toBe(2);
+    expect(w.execute).toHaveBeenCalledTimes(1);
   });
 
   it('refuses a changed argument, another principal and another tenant', async () => {
@@ -266,7 +293,7 @@ describe('MCP confirmTools approvals (SQLite)', () => {
     expect(w.execute).toHaveBeenCalledTimes(1);
   });
 
-  it('refuses an expired approval and an expired pending request', async () => {
+  it('never runs an expired approval or pending request; a new request opens', async () => {
     const w = world();
     const day = 24 * 60 * 60 * 1000;
     const approved = await w.call(w.agent(), { to: 'approved@x.y' });
@@ -275,11 +302,14 @@ describe('MCP confirmTools approvals (SQLite)', () => {
     });
     const pending = await w.call(w.agent(), { to: 'pending@x.y' });
     w.clock.advance(day + 1000);
-    for (const args of [{ to: 'approved@x.y' }, { to: 'pending@x.y' }]) {
+    for (const [args, old] of [
+      [{ to: 'approved@x.y' }, approved.approvalId],
+      [{ to: 'pending@x.y' }, pending.approvalId],
+    ] as const) {
       const res = await w.call(w.agent(), args);
-      expect(res.code).toBe('approval_refused');
+      expect(res.code).toBe('approval_pending');
+      expect(res.approvalId).not.toBe(old);
     }
-    expect(pending.approvalId).toBeTruthy();
     expect(w.execute).not.toHaveBeenCalled();
   });
 
@@ -340,6 +370,30 @@ describe('MCP confirmTools approvals (SQLite)', () => {
     expect(swapped.code).toBe('approval_pending');
     expect(w.execute).not.toHaveBeenCalled();
     expect((await w.call(w.agent(), args)).result.isError).toBeUndefined();
+  });
+
+  it('redacts camelCase and short secret key names', async () => {
+    const w = world();
+    const keys = [
+      'accessKey',
+      'sshKey',
+      'signingKey',
+      'encryptionKey',
+      'licenseKey',
+      'pwd',
+      'pin',
+      'otp',
+      'jwt',
+      'dsn',
+      'connectionString',
+      'conn_string',
+      'Authorization',
+    ];
+    const args = Object.fromEntries(keys.map((k) => [k, `LEAK-${k}`]));
+    const { approvalId } = await w.call(w.agent(), { ...args, to: 'a@b.c' });
+    const row = await w.service.getRequest(w.person(), approvalId as string);
+    expect(row?.summary).not.toContain('LEAK-');
+    expect(row?.summary).toContain('a@b.c');
   });
 
   it('refuses arguments too large to review', async () => {
