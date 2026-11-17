@@ -60,13 +60,13 @@ composes the same decorator onto a storage directly.
   It runs on every request before the cache, so a policy change is immediate;
   a throw or non-`true` result denies.
 - client_id must be the canonical `https://` URL with a path, default port, no
-  credentials/fragment/dot segments, and a public DNS-style host (literal IPs,
+  credentials/fragment/query/dot segments, and a public DNS-style host (literal IPs,
   single-label and `.local/.internal/.localhost`-style names are refused before
   any network I/O).
 - Fetch (`oauth-cimd-fetch.ts`): DNS resolved once, every address must be
   public (non-global-unicast IPv6, private/loopback/link-local/CGNAT/metadata
   IPv4 refused), connection pinned to the vetted address, redirects never
-  followed, 5 s timeout, 16 KiB cap, `application/json` or `+json` only,
+  followed, 5 s deadline covering DNS and the request (also enforced around any injected fetcher), 16 KiB cap, at most 8 concurrent cache-miss fetches (`maxConcurrentFetches`; excess is refused as unknown client, not failure-cached), `application/json` or `+json` only,
   identity encoding. content's `safe-remote-url` is not reused: users cannot
   depend on content (heavy graph, content dev-depends on users).
 - Document: `client_id` equals the URL; `redirect_uris` 1-10 https (loopback

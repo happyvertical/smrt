@@ -263,6 +263,8 @@ describe('Client ID Metadata Documents (#5081)', () => {
     'https://client.example:8443/c.json',
     'https://user:pw@client.example/c.json',
     'https://client.example/c.json#frag',
+    'https://client.example/c.json?x=1',
+    'https://client.example/c.json?',
     'https://client.example/a/../c.json',
     'https://client.example/a/%2e%2e/c.json',
     'http://client.example/c.json',
@@ -322,6 +324,56 @@ describe('Client ID Metadata Documents (#5081)', () => {
         ).rejects.toThrow();
       expect(fetcher).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('bounds a never-settling fetcher by timeoutMs and then failure-caches', async () => {
+    const fetcher = vi.fn<CimdFetcher>(() => new Promise(() => {}));
+    const { server, rejected } = await build(fetcher, { timeoutMs: 20 });
+    const params = authorizeParams('v'.repeat(43));
+    await expect(server.parseAuthorizationRequest(params)).rejects.toThrow();
+    await expect(server.parseAuthorizationRequest(params)).rejects.toThrow();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(rejected[0][1]).toBe('fetch_failed');
+  });
+
+  it('caps concurrent cache-miss fetches and refuses the excess without caching it', async () => {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fetcher = vi.fn<CimdFetcher>(async (url) => {
+      await gate;
+      return json({ ...doc(), client_id: url.href })();
+    });
+    const { server, rejected } = await build(fetcher, {
+      maxConcurrentFetches: 2,
+    });
+    const ids = [1, 2, 3].map((n) => `https://c${n}.example/m.json`);
+    const calls = ids.map((id) =>
+      server
+        .parseAuthorizationRequest(authorizeParams('v'.repeat(43), id))
+        .then(
+          () => 'ok',
+          () => 'refused',
+        ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    release?.();
+    expect(await Promise.all(calls)).toEqual(['ok', 'ok', 'refused']);
+    expect(rejected).toEqual([[ids[2], 'too_busy']]);
+    // Not failure-cached: succeeds once capacity is free.
+    await server.parseAuthorizationRequest(
+      authorizeParams('v'.repeat(43), ids[2]),
+    );
+  });
+
+  it('bounds the default fetcher DNS lookup by timeoutMs', async () => {
+    await expect(
+      createSafeCimdFetcher({ resolveHostname: () => new Promise(() => {}) })(
+        new URL(clientId),
+        { timeoutMs: 20, maxBytes: 1024 },
+      ),
+    ).rejects.toThrow(/timed out/u);
   });
 
   describe('default fetcher SSRF guard', () => {

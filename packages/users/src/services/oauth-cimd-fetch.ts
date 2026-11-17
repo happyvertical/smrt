@@ -94,7 +94,19 @@ export function createSafeCimdFetcher(
   const resolve = options.resolveHostname ?? defaultResolve;
   return async (url, { timeoutMs, maxBytes }) => {
     if (url.protocol !== 'https:') throw new Error('client_id must be https');
-    const pinned = await resolvePublic(url.hostname, resolve);
+    const started = Date.now();
+    // The deadline covers DNS too, not just the request.
+    let dnsTimer: ReturnType<typeof setTimeout> | undefined;
+    const pinned = await Promise.race([
+      resolvePublic(url.hostname, resolve),
+      new Promise<never>((_, rejectDns) => {
+        dnsTimer = setTimeout(
+          () => rejectDns(new Error('client metadata fetch timed out')),
+          timeoutMs,
+        );
+      }),
+    ]).finally(() => clearTimeout(dnsTimer));
+    const remainingMs = Math.max(1, timeoutMs - (Date.now() - started));
     return new Promise<CimdFetchResult>((resolvePromise, reject) => {
       let settled = false;
       const finish = (fn: () => void) => {
@@ -165,7 +177,7 @@ export function createSafeCimdFetcher(
       const timer = setTimeout(() => {
         req.destroy();
         finish(() => reject(new Error('client metadata fetch timed out')));
-      }, timeoutMs);
+      }, remainingMs);
       req.on('error', (error) => finish(() => reject(error)));
       req.end();
     });

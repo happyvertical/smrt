@@ -29,6 +29,7 @@ export type CimdRejectionReason =
   | 'invalid_url'
   | 'origin_denied'
   | 'fetch_failed'
+  | 'too_busy'
   | 'http_status'
   | 'content_type'
   | 'malformed_document'
@@ -63,6 +64,8 @@ export interface ClientIdMetadataDocumentOptions {
   defaultCacheSeconds?: number;
   /** How long a failed lookup is remembered. Default 30. */
   negativeCacheSeconds?: number;
+  /** Maximum simultaneous cache-miss fetches; excess are refused. Default 8. */
+  maxConcurrentFetches?: number;
   /** Maximum cached documents (oldest evicted). Default 1000. */
   maxCacheEntries?: number;
   /** Clock seam for tests. */
@@ -93,6 +96,8 @@ function parseClientIdUrl(clientId: string): URL | null {
     url.username ||
     url.password ||
     url.hash ||
+    url.search ||
+    clientId.includes('?') ||
     url.port ||
     url.pathname === '/' ||
     url.pathname
@@ -238,6 +243,8 @@ export function withClientIdMetadataDocuments(
     string,
     { client: OAuthClient | null; expiresAt: number }
   >();
+  const maxConcurrent = settings.maxConcurrentFetches ?? 8;
+  let active = 0;
   const inflight = new Map<string, Promise<OAuthClient | null>>();
   const reject = (clientId: string, reason: CimdRejectionReason) => {
     try {
@@ -253,10 +260,22 @@ export function withClientIdMetadataDocuments(
     url: URL,
   ): Promise<OAuthClient | null> => {
     let response: CimdFetchResult;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
     try {
-      response = await fetcher(url, { timeoutMs, maxBytes });
+      // Enforced here as well so an injected fetcher cannot hang a lookup.
+      response = await Promise.race([
+        fetcher(url, { timeoutMs, maxBytes }),
+        new Promise<never>((_, rejectFetch) => {
+          deadline = setTimeout(
+            () => rejectFetch(new Error('client metadata fetch timed out')),
+            timeoutMs,
+          );
+        }),
+      ]);
     } catch {
       return reject(clientId, 'fetch_failed');
+    } finally {
+      clearTimeout(deadline);
     }
     if (response.status !== 200) return reject(clientId, 'http_status');
     if (response.body.length > maxBytes)
@@ -304,7 +323,14 @@ export function withClientIdMetadataDocuments(
     const pending =
       inflight.get(clientId) ??
       (async () => {
-        const client = await load(clientId, url);
+        if (active >= maxConcurrent) return reject(clientId, 'too_busy');
+        active += 1;
+        let client: OAuthClient | null;
+        try {
+          client = await load(clientId, url);
+        } finally {
+          active -= 1;
+        }
         if (!client)
           cache.set(clientId, { client: null, expiresAt: now() + negativeMs });
         while (cache.size > maxEntries) {
