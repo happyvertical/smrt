@@ -15,19 +15,19 @@ evidence_level: source-inspected
 package_version: 0.60.8
 sources:
   - id: s1
-    resource: https://github.com/happyvertical/smrt/blob/26d4e7a76aa986684effaf3d9c86dc52da1d7f13/packages/smrt-app-mcp/AGENTS.md
+    resource: https://github.com/happyvertical/smrt/blob/8a6e6d05483ee701d6bc5eb3478a68b35373c5f3/packages/smrt-app-mcp/AGENTS.md
     path: packages/smrt-app-mcp/AGENTS.md
-    source_revision: 26d4e7a76aa986684effaf3d9c86dc52da1d7f13
+    source_revision: 8a6e6d05483ee701d6bc5eb3478a68b35373c5f3
     title: "packages/smrt-app-mcp/AGENTS.md (purpose and patterns)"
   - id: s2
-    resource: https://github.com/happyvertical/smrt/blob/26d4e7a76aa986684effaf3d9c86dc52da1d7f13/packages/smrt-app-mcp/src/sveltekit.ts
+    resource: https://github.com/happyvertical/smrt/blob/8a6e6d05483ee701d6bc5eb3478a68b35373c5f3/packages/smrt-app-mcp/src/sveltekit.ts
     path: packages/smrt-app-mcp/src/sveltekit.ts
-    source_revision: 26d4e7a76aa986684effaf3d9c86dc52da1d7f13
+    source_revision: 8a6e6d05483ee701d6bc5eb3478a68b35373c5f3
     title: "packages/smrt-app-mcp/src/sveltekit.ts (mountMcpAppRoute)"
   - id: s3
-    resource: https://github.com/happyvertical/smrt/blob/26d4e7a76aa986684effaf3d9c86dc52da1d7f13/docs/content/architecture/remote-mcp-authorization.md
+    resource: https://github.com/happyvertical/smrt/blob/8a6e6d05483ee701d6bc5eb3478a68b35373c5f3/docs/content/architecture/remote-mcp-authorization.md
     path: docs/content/architecture/remote-mcp-authorization.md
-    source_revision: 26d4e7a76aa986684effaf3d9c86dc52da1d7f13
+    source_revision: 8a6e6d05483ee701d6bc5eb3478a68b35373c5f3
     title: "docs/content/architecture/remote-mcp-authorization.md (remote deployment contract)"
 ---
 
@@ -56,6 +56,6 @@ The route creates a fresh protocol server per request, emits no session id and r
 - `regex:tools/list`
 - `regex:/api/mcp`
 
-[^s1]: `packages/smrt-app-mcp/AGENTS.md` at `26d4e7a76a`: packages/smrt-app-mcp/AGENTS.md (purpose and patterns).
-[^s2]: `packages/smrt-app-mcp/src/sveltekit.ts` at `26d4e7a76a`: packages/smrt-app-mcp/src/sveltekit.ts (mountMcpAppRoute).
-[^s3]: `docs/content/architecture/remote-mcp-authorization.md` at `26d4e7a76a`: docs/content/architecture/remote-mcp-authorization.md (remote deployment contract).
+[^s1]: `packages/smrt-app-mcp/AGENTS.md` at `8a6e6d0548`: packages/smrt-app-mcp/AGENTS.md (purpose and patterns).
+[^s2]: `packages/smrt-app-mcp/src/sveltekit.ts` at `8a6e6d0548`: packages/smrt-app-mcp/src/sveltekit.ts (mountMcpAppRoute).
+[^s3]: `docs/content/architecture/remote-mcp-authorization.md` at `8a6e6d0548`: docs/content/architecture/remote-mcp-authorization.md (remote deployment contract).

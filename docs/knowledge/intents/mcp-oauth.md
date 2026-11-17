@@ -15,19 +15,19 @@ evidence_level: source-inspected
 package_version: 0.60.8
 sources:
   - id: s1
-    resource: https://github.com/happyvertical/smrt/blob/26d4e7a76aa986684effaf3d9c86dc52da1d7f13/packages/users/agents/oauth-authorization.md
+    resource: https://github.com/happyvertical/smrt/blob/8a6e6d05483ee701d6bc5eb3478a68b35373c5f3/packages/users/agents/oauth-authorization.md
     path: packages/users/agents/oauth-authorization.md
-    source_revision: 26d4e7a76aa986684effaf3d9c86dc52da1d7f13
+    source_revision: 8a6e6d05483ee701d6bc5eb3478a68b35373c5f3
     title: "packages/users/agents/oauth-authorization.md (hosted OAuth authorization)"
   - id: s2
-    resource: https://github.com/happyvertical/smrt/blob/26d4e7a76aa986684effaf3d9c86dc52da1d7f13/packages/smrt-app-mcp/README.md
+    resource: https://github.com/happyvertical/smrt/blob/8a6e6d05483ee701d6bc5eb3478a68b35373c5f3/packages/smrt-app-mcp/README.md
     path: packages/smrt-app-mcp/README.md
-    source_revision: 26d4e7a76aa986684effaf3d9c86dc52da1d7f13
+    source_revision: 8a6e6d05483ee701d6bc5eb3478a68b35373c5f3
     title: "packages/smrt-app-mcp/README.md (Remote JWT authorization)"
   - id: s3
-    resource: https://github.com/happyvertical/smrt/blob/26d4e7a76aa986684effaf3d9c86dc52da1d7f13/docs/content/architecture/remote-mcp-authorization.md
+    resource: https://github.com/happyvertical/smrt/blob/8a6e6d05483ee701d6bc5eb3478a68b35373c5f3/docs/content/architecture/remote-mcp-authorization.md
     path: docs/content/architecture/remote-mcp-authorization.md
-    source_revision: 26d4e7a76aa986684effaf3d9c86dc52da1d7f13
+    source_revision: 8a6e6d05483ee701d6bc5eb3478a68b35373c5f3
     title: "docs/content/architecture/remote-mcp-authorization.md (issuer paths and profiles)"
 ---
 
@@ -56,6 +56,6 @@ The users service re-checks the live session, user, tenant membership and consen
 - `regex:code_challenge`
 - `regex:authorization_code`
 
-[^s1]: `packages/users/agents/oauth-authorization.md` at `26d4e7a76a`: packages/users/agents/oauth-authorization.md (hosted OAuth authorization).
-[^s2]: `packages/smrt-app-mcp/README.md` at `26d4e7a76a`: packages/smrt-app-mcp/README.md (Remote JWT authorization).
-[^s3]: `docs/content/architecture/remote-mcp-authorization.md` at `26d4e7a76a`: docs/content/architecture/remote-mcp-authorization.md (issuer paths and profiles).
+[^s1]: `packages/users/agents/oauth-authorization.md` at `8a6e6d0548`: packages/users/agents/oauth-authorization.md (hosted OAuth authorization).
+[^s2]: `packages/smrt-app-mcp/README.md` at `8a6e6d0548`: packages/smrt-app-mcp/README.md (Remote JWT authorization).
+[^s3]: `docs/content/architecture/remote-mcp-authorization.md` at `8a6e6d0548`: docs/content/architecture/remote-mcp-authorization.md (issuer paths and profiles).
