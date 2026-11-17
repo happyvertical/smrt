@@ -9,40 +9,55 @@
  * The tables hold measured seconds for packages that take 30 s or more;
  * everything else counts as DEFAULT_SECONDS. They only steer balance: a stale
  * or missing entry makes shards uneven, never drops a package. Refresh them
- * from the `Duration` line each package's Vitest run prints in a merge-group
- * `test-packages` or PostgreSQL job log.
+ * from the `Duration` lines each package's Vitest runs print in a merge-group
+ * `test-packages` or PostgreSQL job log, summed per package.
+ *
+ * Read those logs with `gh api repos/{owner}/{repo}/actions/jobs/{id}/logs`.
+ * `gh run view --job {id} --log` cuts a large job log short without saying so:
+ * the first table was built from it and missed five packages, among them the
+ * second and fourth slowest (#5074).
  */
 
-/** `test` task seconds at two Vitest workers, merge-group run 43955782588. */
+/** `test` task seconds at two Vitest workers, merge-group run 44026049881. */
 export const TEST_SECONDS = {
-  '@happyvertical/smrt-agents': 76,
-  '@happyvertical/smrt-analytics': 41,
-  '@happyvertical/smrt-app-runtime': 440,
-  '@happyvertical/smrt-assets': 38,
-  '@happyvertical/smrt-chat': 306,
-  '@happyvertical/smrt-cli': 257,
-  '@happyvertical/smrt-commerce': 308,
-  '@happyvertical/smrt-content': 121,
-  '@happyvertical/smrt-desktop': 32,
-  '@happyvertical/smrt-dev-mcp': 39,
-  '@happyvertical/smrt-expenses': 52,
-  '@happyvertical/smrt-fields': 43,
-  '@happyvertical/smrt-images': 32,
-  '@happyvertical/smrt-inference': 33,
-  '@happyvertical/smrt-ingestion': 824,
-  '@happyvertical/smrt-jobs': 62,
-  '@happyvertical/smrt-messages': 60,
-  '@happyvertical/smrt-profiles': 34,
-  '@happyvertical/smrt-projects': 45,
-  '@happyvertical/smrt-reports': 35,
-  '@happyvertical/smrt-sales': 85,
-  '@happyvertical/smrt-subscriptions': 37,
-  '@happyvertical/smrt-support': 45,
-  '@happyvertical/smrt-svelte': 254,
-  '@happyvertical/smrt-timesheets': 49,
-  '@happyvertical/smrt-ui': 126,
-  '@happyvertical/smrt-users': 268,
-  '@happyvertical/smrt-vitest': 35,
+  '@happyvertical/smrt-agents': 96,
+  '@happyvertical/smrt-analytics': 57,
+  '@happyvertical/smrt-app-mcp': 31,
+  '@happyvertical/smrt-app-runtime': 546,
+  '@happyvertical/smrt-app-shell': 628,
+  '@happyvertical/smrt-assets': 49,
+  '@happyvertical/smrt-bundle-gate': 82,
+  '@happyvertical/smrt-chat': 392,
+  '@happyvertical/smrt-cli': 315,
+  '@happyvertical/smrt-comments': 35,
+  '@happyvertical/smrt-commerce': 400,
+  '@happyvertical/smrt-content': 189,
+  '@happyvertical/smrt-desktop': 34,
+  '@happyvertical/smrt-dev-mcp': 51,
+  '@happyvertical/smrt-education': 466,
+  '@happyvertical/smrt-expenses': 90,
+  '@happyvertical/smrt-facts': 42,
+  '@happyvertical/smrt-fields': 52,
+  '@happyvertical/smrt-human-resources': 32,
+  '@happyvertical/smrt-images': 42,
+  '@happyvertical/smrt-inference': 53,
+  '@happyvertical/smrt-ingestion': 692,
+  '@happyvertical/smrt-jobs': 99,
+  '@happyvertical/smrt-manufacturing': 59,
+  '@happyvertical/smrt-messages': 82,
+  '@happyvertical/smrt-planner': 147,
+  '@happyvertical/smrt-profiles': 41,
+  '@happyvertical/smrt-projects': 79,
+  '@happyvertical/smrt-reports': 46,
+  '@happyvertical/smrt-sales': 104,
+  '@happyvertical/smrt-subscriptions': 51,
+  '@happyvertical/smrt-support': 61,
+  '@happyvertical/smrt-svelte': 401,
+  '@happyvertical/smrt-timesheets': 55,
+  '@happyvertical/smrt-ui': 199,
+  '@happyvertical/smrt-users': 336,
+  '@happyvertical/smrt-vitest': 42,
+  '@happyvertical/smrt-workflows': 37,
 };
 
 /** `test:postgres` task seconds, PostgreSQL merge-group run of 2026-11-16. */

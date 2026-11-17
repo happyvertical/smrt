@@ -30,7 +30,7 @@ test('the slowest measured packages land in different shards (#5045)', () => {
     ['1/5', '2/5', '3/5', '4/5'].findIndex((arg) =>
       shard(arg).filters.includes(`--filter=@happyvertical/smrt-${name}`),
     );
-  const homes = ['ingestion', 'app-runtime', 'commerce', 'chat'].map(home);
+  const homes = ['ingestion', 'app-shell', 'app-runtime', 'education'].map(home);
   assert.ok(homes.every((index) => index >= 0));
   assert.equal(new Set(homes).size, 4);
 });
