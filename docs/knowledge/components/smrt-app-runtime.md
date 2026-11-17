@@ -5,10 +5,10 @@ description: "Validated local, self-hosted, and cloud runtime composition for s-
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T17:27:50Z"
+  at: "2026-11-17T17:36:08Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:b2d18f19f118b6b7821c9487eb00972fef829dc9976ea0e2a11359710bb3ef2f"
+source_revision: "sha256:54599ecb64ef9f2b7434cf16b97c568e0aa84ed45c3d182c3480bb01f0685db9"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/package.json"
@@ -32,6 +32,9 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/agents/owner-approvals.md"
     title: "@happyvertical/smrt-app-runtime packages/app-runtime/agents/owner-approvals.md"
   - id: "agents-7"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/agents/self-issuer-mcp.md"
+    title: "@happyvertical/smrt-app-runtime packages/app-runtime/agents/self-issuer-mcp.md"
+  - id: "agents-8"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/agents/windows-custody.md"
     title: "@happyvertical/smrt-app-runtime packages/app-runtime/agents/windows-custody.md"
 ---
@@ -53,6 +56,7 @@ sources:
 - `packages/app-runtime/agents/keychain-vault-key-store.md`
 - `packages/app-runtime/agents/local-schema.md`
 - `packages/app-runtime/agents/owner-approvals.md`
+- `packages/app-runtime/agents/self-issuer-mcp.md`
 - `packages/app-runtime/agents/windows-custody.md`
 
 ## Framework dependencies
