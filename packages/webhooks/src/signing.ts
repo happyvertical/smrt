@@ -137,7 +137,9 @@ function assertWebhookSigningProfile(p: WebhookSigningProfile): void {
   if (
     names.some((n) => typeof n !== 'string' || !HEADER_NAME.test(n)) ||
     new Set(names).size !== names.length ||
-    names.some((n) => ['content-type', 'user-agent', 'host'].includes(n)) ||
+    names.some((n) =>
+      ['content-type', 'content-length', 'user-agent', 'host'].includes(n),
+    ) ||
     !['iso', 'unix', 'unix-ms'].includes(p.timestampFormat) ||
     !['hex', 'base64'].includes(p.signatureEncoding) ||
     !['utf8', 'whsec-base64'].includes(p.secretEncoding) ||
@@ -173,10 +175,31 @@ function parseTimestamp(
   return UNIX_MILLIS.test(timestamp) ? Number(timestamp) : Number.NaN;
 }
 
-function signingKey(secret: string, profile: WebhookSigningProfile) {
-  if (profile.secretEncoding === 'whsec-base64')
-    return Buffer.from(secret.replace(/^whsec_/, ''), 'base64');
-  return secret;
+/** Minimum decoded key length for `whsec-base64` secrets (Standard Webhooks floor). */
+const MIN_WHSEC_KEY_BYTES = 24;
+const STRICT_BASE64 =
+  /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+function signingKey(
+  secret: string,
+  profile: WebhookSigningProfile,
+): string | Buffer {
+  if (profile.secretEncoding !== 'whsec-base64') return secret;
+  const encoded = secret.replace(/^whsec_/, '');
+  const key = STRICT_BASE64.test(encoded)
+    ? Buffer.from(encoded, 'base64')
+    : null;
+  if (!key || key.length < MIN_WHSEC_KEY_BYTES)
+    throw new Error('Webhook signing secret is not a valid whsec key.');
+  return key;
+}
+
+/** Throws when `secret` cannot key `profile` (strict base64, decoded length floor). */
+export function assertWebhookProfileSecret(
+  secret: string,
+  profile: WebhookSigningProfile,
+): void {
+  signingKey(secret, profile);
 }
 
 /**

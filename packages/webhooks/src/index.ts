@@ -35,6 +35,7 @@ export {
   type WebhookTransport,
 } from './security.js';
 export {
+  assertWebhookProfileSecret,
   buildWebhookHeaders,
   DEFAULT_WEBHOOK_TOLERANCE_MS,
   formatWebhookTimestamp,

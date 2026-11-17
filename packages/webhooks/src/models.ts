@@ -13,6 +13,7 @@ import {
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { assertHmacSecret, assertWebhookUrl } from './security.js';
 import {
+  assertWebhookProfileSecret,
   resolveWebhookSigningProfile,
   type WebhookSigningProfileConfig,
 } from './signing.js';
@@ -50,7 +51,10 @@ export class WebhookSubscription extends SmrtObject {
   override async save(options?: SmrtSaveOptions): Promise<this> {
     assertWebhookUrl(this.url);
     assertHmacSecret(this.secret);
-    resolveWebhookSigningProfile(this.signingProfile);
+    assertWebhookProfileSecret(
+      this.secret,
+      resolveWebhookSigningProfile(this.signingProfile),
+    );
     for (const values of [this.events, this.models]) {
       if (
         !Array.isArray(values) ||
