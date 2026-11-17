@@ -203,6 +203,7 @@
   "optional": [
     "--smrt-admin-shell-background",
     "--smrt-admin-shell-band-padding-inline",
+    "--smrt-admin-shell-block-size",
     "--smrt-admin-shell-left-rail-padding",
     "--smrt-admin-shell-left-rail-padding-collapsed",
     "--smrt-admin-shell-scrollbar-thumb",
