@@ -175,10 +175,10 @@ function statusLabel(account: SocialAccountSettingsItem): string {
               <p class="smrt-social-account-settings__warning" data-smrt-part="description">Missing: {account.missingPermissions.join(', ')}</p>
             {/if}
             {#if !readonly && onChangePublishPolicy && account.isActive}
-              <div class="smrt-social-account-settings__policy" role="group" aria-label="Publishing control for {account.name}">
+              <div class="smrt-social-account-settings__policy" role="group" aria-label={t(M['social.account_settings.policy_aria'], { name: account.name })}>
                 {#key resetKey}
                 <label>
-                  Publish mode
+                  {t(M['social.account_settings.publish_mode'])}
                   <Select
                     value={account.publishMode ?? 'dry_run'}
                     disabled={busyId === account.id}
@@ -195,7 +195,7 @@ function statusLabel(account: SocialAccountSettingsItem): string {
                   </Select>
                 </label>
                 <Checkbox
-                    label="Allow public posting"
+                    label={t(M['social.account_settings.allow_public'])}
                     checked={account.publicPublishingAllowed ?? false}
                     disabled={busyId === account.id}
                     onchange={(e) => {
@@ -206,24 +206,23 @@ function statusLabel(account: SocialAccountSettingsItem): string {
                 />
                 {/key}
                 {#if pending?.accountId === account.id}
-                  <div class="smrt-social-account-settings__confirm" role="alertdialog" aria-label="Confirm public posting">
+                  <div class="smrt-social-account-settings__confirm" role="alertdialog" aria-label={t(M['social.account_settings.confirm_aria'])}>
                     <p>
-                      This lets {account.name} post publicly: approved posts will go live on
-                      {account.platform}. Turn it off at any time to stop posting.
+                      {t(M['social.account_settings.confirm_body'], { name: account.name, platform: account.platform })}
                     </p>
                     <Button
                       variant="danger"
                       disabled={busyId === account.id}
                       onclick={() => pending && submitPolicy(account, pending.change, true)}
                     >
-                      Allow public posting
+                      {t(M['social.account_settings.allow_public'])}
                     </Button>
                     <Button
                       variant="secondary"
                       onclick={() => {
                         pending = null;
                         resetKey += 1;
-                      }}>Cancel</Button
+                      }}>{t(M['social.account_settings.cancel'])}</Button
                     >
                   </div>
                 {/if}

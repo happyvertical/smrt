@@ -13,4 +13,11 @@ export const M = defineMessages({
   'social.account_settings.connect_aria': 'Connect social account',
   'social.account_settings.loading': 'Loading accounts...',
   'social.account_settings.empty': 'No social accounts are configured yet.',
+  'social.account_settings.policy_aria': 'Publishing control for {name}',
+  'social.account_settings.publish_mode': 'Publish mode',
+  'social.account_settings.allow_public': 'Allow public posting',
+  'social.account_settings.confirm_aria': 'Confirm public posting',
+  'social.account_settings.confirm_body':
+    'This lets {name} post publicly: approved posts will go live on {platform}. Turn it off at any time to stop posting.',
+  'social.account_settings.cancel': 'Cancel',
 });
