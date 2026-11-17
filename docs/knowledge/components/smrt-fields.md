@@ -5,7 +5,7 @@ description: "Layered field policy store and resolver (defaults, visibility tier
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T19:08:51Z"
+  at: "2026-11-17T18:51:08Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:a90ab07e867bceea21d2b6a38b710e3506cfc8d35f21c6f6d955e213ddb1e24c"

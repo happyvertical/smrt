@@ -5,7 +5,7 @@ description: "Validated local, self-hosted, and cloud runtime composition for s-
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T19:36:07Z"
+  at: "2026-11-17T19:38:34Z"
 audience: "internal"
 evidence_level: "manifest-described"
 source_revision: "sha256:5b0bd0a229dc32720aeaeb55ee0ee72832d546cb2587b31ac5dcb15e7afb5c8f"

@@ -5,7 +5,7 @@ description: "Unified multi-channel messaging with STI-based hierarchies"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T19:08:51Z"
+  at: "2026-11-17T18:51:08Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:daecc7b8b53b9fa44d951b5204d887468c9b08a84b61fe91e467dae67a1202ad"

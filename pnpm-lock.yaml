@@ -566,6 +566,9 @@ importers:
         specifier: ^0.113.0
         version: 0.113.0(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
+      '@happyvertical/smrt-app-mcp':
+        specifier: workspace:*
+        version: link:../smrt-app-mcp
       '@happyvertical/smrt-scanner':
         specifier: workspace:*
         version: link:../scanner

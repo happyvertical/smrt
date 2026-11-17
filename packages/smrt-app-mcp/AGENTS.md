@@ -23,6 +23,13 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
   `@smrt()` `McpCallAudit` model lives only behind the `./audit-store` subpath
   (smrt#4957), never in the main entry.
 
+- `approvals` (`src/approval-gate.ts`, structural `McpApprovalGate`) replaces
+  `confirm: true` for gated tools: assertions first, then the gate opens or
+  consumes an approval keyed by `mcpApprovalBindingHash` (tool, canonical args
+  without `confirm`, tenant, principal). Fail closed (`approval_unavailable`);
+  no decide path exists here; the adapter lives in `@happyvertical/smrt-approvals`
+  (`createApprovalMcpGate`). Never import approvals from this package.
+
 - Generate tools from core scoped to the allow-list (`MCPConfig.classNames`),
   then filter by allowed class names: a duplicate tool name among registered
   classes the app never publishes must not fail its catalog or calls (#3490).

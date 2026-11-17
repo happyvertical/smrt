@@ -5,7 +5,7 @@ description: "Double-entry accounting ledger for the SMRT framework"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T18:34:27Z"
+  at: "2026-11-17T19:38:34Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:878d4b24e297a7d957516c553d8c729e6aa8496e63c5a45b21737fe57a18c8f2"

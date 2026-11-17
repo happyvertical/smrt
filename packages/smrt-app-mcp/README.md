@@ -201,7 +201,9 @@ methods; the s-m-r-t SvelteKit runtime has both.
   s-m-r-t runtime's `mcp.authorizationServer` option) makes hosted auth verify
   tokens in process, re-check the grant's liveness on every call (revoked
   grant, inactive user or tenant: 401), and advertise its own issuer; no
-  `SMRT_MCP_ISSUER` / `SMRT_MCP_JWKS_URI` is read. An explicit
+  `SMRT_MCP_ISSUER` / `SMRT_MCP_JWKS_URI` is read. The default mapping is
+  `sub` to the principal id and the live grant's tenant to `tenantId`
+  (`kind: 'human'`); claims never select a tenant. An explicit
   `resolvePrincipal` still overrides the mapping, not the liveness check.
 
 `mountMcpProtectedResourceMetadataRoute` serves the RFC 9728 document only at
@@ -220,8 +222,14 @@ request. This package validates tokens; it does not issue them. Two issuer paths
 are supported: the application as its own OAuth authorization server through
 `@happyvertical/smrt-users` (authorization code with S256 PKCE, refresh,
 RFC 8414 discovery, JWKS, revocation, RFC 8707 resource binding, RFC 9207 `iss`,
-opt-in Dynamic Client Registration, host-owned login and consent), or an
-external issuer you operate. The contract page above describes both.
+opt-in Dynamic Client Registration, opt-in Client ID Metadata Documents through
+`createCimdAuthorizationServer` with a required `allowClientOrigin` policy,
+host-owned login and consent), or an external issuer you operate. The contract
+page above describes both, with the end-to-end app-as-issuer wiring (pass
+`mcp: { authorizationServer: { server, authorization, resource, scopes } }` to
+`createSmrtSvelteKitRuntime`), live per-call revocation, the default principal
+mapping, client registration choices, webhook signing profiles for waking
+agents and an ordered agent-ready app checklist.
 
 ```ts
 // src/lib/server/mcp.ts
@@ -316,7 +324,9 @@ createDefaultMcpAppServer({
   handler runs unless `arguments.confirm === true`: the result is `isError` with
   `structuredContent.error.code === 'confirm_required'`, audited `denied`.
   Discovery advertises a boolean `confirm` property. For generated tools the
-  `confirm` flag is consumed by the gate and not forwarded.
+  `confirm` flag is consumed by the gate and not forwarded. The flag is supplied
+  by the caller: it stops an agent acting without asking its user, and is not a
+  human sign-off (use `@happyvertical/smrt-approvals` for that).
 - **Audit.** `onToolCall` events now also carry `tenantId`, `argumentKeys`
   and `occurredAt`; `auditSink.record(record)` receives the persistable
   `McpAuditRecord` (`principalId`, `principalKind`, `tool`, `tenantId`,
@@ -330,6 +340,44 @@ createDefaultMcpAppServer({
   outcome?, limit? })`; `tenantId` is mandatory (`null` lists global rows).
   Run your schema bootstrap/migrations so the table exists. Implement
   `McpAuditSink` for any other store; `createInMemoryMcpAuditSink()` suits tests.
+
+### Person-approved gated calls (`approvals`)
+
+Set `approvals` to an `McpApprovalGate` (structural `{ check(request) }`) and a
+`confirmTools`/`requiresConfirm` call stops being authorized by
+`confirm: true`. `@happyvertical/smrt-approvals` ships the adapter, so neither
+package depends on the other:
+
+```ts
+import { createApprovalMcpGate } from '@happyvertical/smrt-approvals';
+
+createMcpAppServer({
+  confirmTools: ['mail_send'],
+  approvals: createApprovalMcpGate({ service: new ApprovalService({ db }) }),
+  auditSink,
+  // ...
+});
+```
+
+1. First call: host assertions run, then one approval request is opened per
+   binding (idempotent) and the call answers `isError` `approval_pending`
+   (`details.approvalId`). Nothing runs.
+2. A person (a `human` principal holding `approvals.approve-mcp-tool`, never the
+   requester, never an agent or service) decides through the host's approval UI
+   or `ApprovalService.decide`. This server exposes no decide path.
+3. The identical retried call consumes the approval and runs once. The binding
+   is SHA-256 over tool, canonical arguments (key order ignored, `confirm`
+   excluded), tenant and principal id. Replays, changed arguments, another
+   principal or tenant, rejection, expiry and an already-consumed approval
+   answer `approval_refused` with a short reason.
+
+The approver reviews a server-built summary stored on the request (tool, principal kind and id, and the arguments as JSON with values under secret-looking keys such as password, token, apiKey, authorization or cookie replaced by `[redacted]`, at any depth; `approvalRedact(tool, args)` can mask more). It never contains agent-supplied free text outside that JSON, and arguments too large to review (3000 characters) are refused. The binding hash covers the real arguments, so changing even a redacted value needs a new approval. After a reviewer requests changes the call is refused with a hint to change the arguments. A consumed or expired approval never runs again, but the identical call later opens a fresh request (concurrent retries share one live request), so a failed or legitimately repeated call can be approved again; a rejected or changes-requested call stays refused until its arguments change. Any adapter error, missing principal id or tenant, or non-JSON
+argument answers `approval_unavailable` and the call does not run. The approval
+is consumed before the tool runs, so a tool that fails after consumption needs a
+new approval. Audit records use `errorCode`: `approval_requested` (request
+opened, `denied`), `approval_pending`, `approval_refused`, `approval_unavailable`
+(all `denied`) and `approval_consumed` on the `allowed` record of the call that
+ran; the approver and decision are in the approvals event ledger.
 
 ### Host operations, audit and typed errors
 

@@ -54,6 +54,10 @@ authorization code is exchanged.
 
 ## Client registration
 
+This section is the client side (the helper a client calls). To make your own
+issuer accept CIMD or DCR, see [Server-side client
+registration](#server-side-client-registration).
+
 Prefer a pre-registered client when one exists. Otherwise use a Client ID
 Metadata Document; use DCR only when the authorization server does not advertise
 metadata-document support. `@happyvertical/smrt-app-cli` exports
@@ -161,6 +165,72 @@ create a pending application in their tenant. Repeating the request must
 preserve the owning workflow's idempotency and audit trail. Employer submission
 requires the separate human approval in the product's review flow. See the
 [MCP Apps security and deployment invariants](mcp-apps-integration.md#security-and-deployment-invariants).
+
+## Waking agents with signed webhooks
+
+An agent that is not connected can be woken by an outbound webhook, then call
+the MCP endpoint with its own grant. `@happyvertical/smrt-webhooks` delivers
+tenant-scoped events to public HTTPS port 443 endpoints with an HMAC signature
+and a durable retry queue. Each subscription may carry a `signingProfile`
+(`WebhookAdminService.create({ url, events, models, secret, signingProfile })`)
+so the receiver verifies its own scheme without a proxy:
+
+- `paperclip`: `x-paperclip-signature` and `x-paperclip-timestamp` (Unix
+  seconds), `sha256=<hex>` over `timestamp.body`.
+- `standard-webhooks`: `webhook-signature`, `webhook-timestamp` and
+  `webhook-id`, `v1,<base64>` over `id.timestamp.body`.
+- `default`: `x-smrt-signature` and `x-smrt-timestamp` (ISO 8601).
+
+Payloads are identity-only (`{ id }`); the woken agent fetches the data over
+MCP, where tenant and permission checks apply. Verify with
+`verifyWebhookSignature({ secret, body, timestamp, signature, profile:
+resolveWebhookSigningProfile('paperclip') })` (add `deliveryId` for
+`standard-webhooks`). Secrets need 32+ bytes of real entropy. Adding the
+`signingProfile` column needs the normal migration. See the
+`packages/webhooks/README.md` "Signing profiles" section.
+
+## Confirming dangerous tools
+
+`confirmTools: ['*_send', '*_publish', '*_pay', '*_delete']` on
+`createMcpAppServer` (or `mountMcpAppRoute`) refuses a matching tool unless
+`arguments.confirm === true`. The refusal is an `isError` result with
+`structuredContent.error.code === 'confirm_required'`, runs before any assertion
+or handler, is audited `denied`, and discovery advertises the boolean `confirm`
+argument. A workflow tool's own `requiresConfirm` combines with it. This is a
+guard against an agent acting without asking its user: the host or model
+supplies the flag, so it does not replace per-operation scopes (`toolScopes`),
+`effects: ['read']` or a human sign-off in `@happyvertical/smrt-approvals` for
+actions that must not proceed on the agent's word alone. Patterns that match no
+tool log a one-time warning.
+
+## Agent-ready app checklist
+
+In order; each step names where it is specified.
+
+1. Declare the `@smrt()` models and publish only chosen ones:
+   `mountMcpAppRoute({ runtime, models, requiredScopes, effects: ['read'] })`.
+   Keep the catalog read-only until each write has a policy.
+2. Pick the issuer: app as issuer ("The app as its own issuer") or an external one
+   (`createMcpResourceAuth`). Local installs use `smrt app token`.
+3. App as issuer: apply migrations, create the server with
+   `createCimdAuthorizationServer`, mount `createOAuthHandlers().protocol`, and
+   build the consent and grants pages. Set `scopePermissions` for every scope.
+4. Pass `mcp: { authorizationServer: { server, authorization, resource, scopes } }`
+   to `createSmrtSvelteKitRuntime`; mount the MCP route and
+   `mountMcpProtectedResourceMetadataRoute({ runtime })` at the exact RFC 9728
+   path.
+5. Choose registration: pre-register your own clients, enable CIMD with a real
+   `allowClientOrigin` policy for ChatGPT and Claude, and enable
+   `dynamicClientRegistration` only if a host needs it.
+6. Restrict what agents see and do: `toolScopes`, `toolPolicy`, `effects`,
+   `confirmTools`, and `@happyvertical/smrt-approvals` for human sign-off.
+7. Audit calls: `auditSink: createSmrtMcpAuditStore({ smrtOptions })` and
+   `auditTenantId`.
+8. Wake agents without polling: a webhook subscription with the
+   `paperclip` or `standard-webhooks` signing profile.
+9. Verify against the Deployment verification list below: wrong issuer, wrong
+   audience, no token, then revoke the grant and confirm the next call is
+   refused.
 
 ## Deployment verification
 
@@ -278,33 +348,144 @@ the callback are the application's responsibility.
 
 An application that already runs the `smrt-users` OAuth server can be its own
 MCP issuer with one runtime option, instead of wiring resource, issuer, JWKS and
-metadata by hand:
+metadata by hand. This is the full path, in the order to build it.
+
+**1. Create the issuer.** Apply the normal migrations (the six `users_oauth_*`
+models), then build the SDK server from `@happyvertical/auth/server` and the
+`smrt-users` consent service and storage. Use `createCimdAuthorizationServer`
+(exported from `@happyvertical/smrt-users`) instead of
+`createAuthorizationServer` when you also want CIMD; without its
+`clientIdMetadataDocuments` option it returns the plain SDK server.
 
 ```ts
-createSmrtSvelteKitRuntime({
+import { createCimdAuthorizationServer, SmrtOAuthAuthorizationService,
+  SmrtOAuthAuthorizationStorage } from '@happyvertical/smrt-users';
+
+const authorization = await SmrtOAuthAuthorizationService.create({
+  db,
+  // scope -> permissions the user must hold; unknown scopes fail closed
+  scopePermissions: { 'items.read': ['items.read'] },
+});
+const storage = await SmrtOAuthAuthorizationStorage.create({ db });
+const server = createCimdAuthorizationServer({
+  issuer: 'https://app.example/oauth',
+  signingKey, // OAuthSigningKey: key pair, publicJwk, algorithm RS256|ES256, keyId
+  storage,
+  identity: authorization.identity,
+  scopes: ['items.read'],
+  resources: ['https://app.example/api/mcp'],
+  // Client registration choices, both opt-in; see "Client registration".
+  dynamicClientRegistration: true,
+  clientIdMetadataDocuments: { allowClientOrigin: (origin) => allowed(origin) },
+});
+```
+
+**2. Mount the protocol and consent routes.** `createOAuthHandlers` from
+`@happyvertical/smrt-users/sveltekit` returns `authorize`, `consent`, `grants`
+and `protocol`. Mount `protocol` at the issuer path (it serves
+`/.well-known/oauth-authorization-server`, `/jwks`, `/token`, `/revoke` and,
+when enabled, `/register`). The host renders the consent screen at
+`authorization_endpoint` (`<issuer>/authorize`) and supplies `getSessionId`
+from its existing cookie. Login can be any smrt-users session method,
+including an external OIDC provider.
+
+Nothing installs these routes for you: `protocol` only delegates to
+`server.handle(request)`, and the runtime option does not mount anything. For
+an issuer with a path such as `https://app.example/oauth`, clients that follow
+RFC 8414 path insertion request
+`https://app.example/.well-known/oauth-authorization-server/oauth`, which is
+outside `/oauth/*`. `server.handle` answers that path (and
+`/.well-known/openid-configuration/oauth`), so add a host route that forwards it
+to the same handler:
+
+```ts
+// src/routes/oauth/[...path]/+server.ts  (token, jwks, revoke, register)
+// src/routes/.well-known/oauth-authorization-server/oauth/+server.ts
+// src/routes/.well-known/openid-configuration/oauth/+server.ts
+const handlers = createOAuthHandlers({ server, authorization, getSessionId });
+export const GET = (event) => handlers.protocol(event);
+export const POST = (event) => handlers.protocol(event); // oauth/* only
+```
+
+The RFC 9728 protected-resource document is separate and is served by
+`mountMcpProtectedResourceMetadataRoute({ runtime })` at
+`/.well-known/oauth-protected-resource/api/mcp`; it advertises the issuer in
+`authorization_servers`. Verify both well-known URLs return 200 before
+connecting a host.
+
+**3. Hand the issuer to the runtime.**
+
+```ts
+export const runtime = createSmrtSvelteKitRuntime({
   mcp: {
-    authorizationServer: { server, authorization, resource, scopes },
+    authorizationServer: {
+      server,
+      authorization,
+      resource: 'https://app.example/api/mcp', // else SMRT_MCP_RESOURCE
+      scopes: ['items.read'],                  // else SMRT_MCP_SCOPES
+    },
   },
 });
 ```
 
-`server` is the `createAuthorizationServer` instance and `authorization` the
-`SmrtOAuthAuthorizationService` that owns consent grants. With
+`server` is the SDK server instance and `authorization` the
+`SmrtOAuthAuthorizationService` that owns consent grants. Then mount the MCP
+endpoint with `mountMcpAppRoute({ runtime, models, requiredScopes })` and the
+protected-resource metadata with `mountMcpProtectedResourceMetadataRoute({
+runtime })` (see the `smrt-app-mcp` README). With
 `createHostedMcpResourceAuth({ runtime })` the hosted profiles then:
 
 - verify the token in process with the issuer's own key (no JWKS fetch, no
   `SMRT_MCP_ISSUER` or `SMRT_MCP_JWKS_URI`), including its audience and
   server-side access-token revocation;
-- re-check the grant on **every call** (`smrt_grant_id` not revoked, session and
-  tenant live, user active, active direct membership), failing closed, so the
-  call after a revoke is refused;
-- map `sub` and `tenant_id` to the principal by default, re-derived from the
-  live grant (claims never select a tenant). An explicit `resolvePrincipal`
-  overrides the mapping but never the liveness check;
-- advertise the app's own issuer in protected-resource metadata.
+- advertise the app's own issuer in protected-resource metadata. The local
+  profile never uses the option.
 
 External identity providers stay the login method through host-owned login and
 consent. A runtime without the option behaves exactly as described above.
+
+#### Live revocation
+
+The runtime re-checks the grant on **every call**: `smrt_grant_id` is not
+revoked and matches the token, its session and tenant are live, the user is
+active, and the user holds an active direct membership in the grant's tenant.
+Every id comes from the grant row. Any failure or throw is a 401 and fails
+closed, so the call after a revoke is refused even though the JWT has not
+expired. Users revoke from their account page through the `grants` handler
+(`GET` lists, `POST grantId` revokes); the service form is
+`authorization.revokeGrant(sessionId, grantId)`. Revoking or replaying a refresh
+token revokes its whole family and consent.
+
+#### Default principal mapping
+
+`sub` becomes the principal id and the grant's `tenant_id` the tenant
+(`kind: 'human'`, direct tenancy), re-derived from the live grant: claims never
+select a tenant. Pass `resolvePrincipal` to `createHostedMcpResourceAuth` to
+override the mapping (for example for multi-tenant users); it never overrides
+the liveness check. Tokens from any other issuer take the OIDC identity path.
+
+### Server-side client registration
+
+The server can accept two kinds of clients that are not pre-registered, each
+opt-in and off by default. Choose by who the connecting host is:
+
+| Choice | Option | Use when |
+| --- | --- | --- |
+| Pre-registered | `storage.registerClient({ id, redirectUris, allowedScopes, tokenEndpointAuthMethod: 'none', createdAt })` | You operate the client, or a connector lets you supply a client |
+| CIMD | `createCimdAuthorizationServer({ clientIdMetadataDocuments: { allowClientOrigin } })` | The host presents an HTTPS `client_id` URL (ChatGPT, Claude) |
+| DCR | `dynamicClientRegistration: true` (RFC 7591, public clients only) | A host only supports automatic registration; keep as a fallback |
+
+CIMD details: `allowClientOrigin(origin, clientId)` is required and construction
+throws without it (pass `() => true` explicitly to allow any origin); it runs on
+every request, so a policy change is immediate. The server fetches the
+document itself with SSRF protection (public DNS answers only, pinned
+connection, no redirects, 5 s deadline, 16 KiB cap, at most 8 concurrent
+fetches), requires the request's `redirect_uri` to equal a listed entry, rejects
+any `client_secret*`, and caches by the response headers. Every failure is
+"unknown client" to the requester; `onRejected(clientId, reason)` is for
+operator logs. Discovery then advertises `client_id_metadata_document_supported:
+true`; DCR adds `registration_endpoint`. Full contract:
+`packages/users/agents/oauth-authorization.md`.
 
 ### Supported deployment profiles
 

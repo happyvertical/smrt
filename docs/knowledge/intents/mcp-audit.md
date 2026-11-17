@@ -15,19 +15,19 @@ evidence_level: source-inspected
 package_version: 0.60.8
 sources:
   - id: s1
-    resource: https://github.com/happyvertical/smrt/blob/26d4e7a76aa986684effaf3d9c86dc52da1d7f13/packages/smrt-app-mcp/AGENTS.md
+    resource: https://github.com/happyvertical/smrt/blob/8c511d88ec6aae4e53b3df5d9d0911e6e727cd92/packages/smrt-app-mcp/AGENTS.md
     path: packages/smrt-app-mcp/AGENTS.md
-    source_revision: 26d4e7a76aa986684effaf3d9c86dc52da1d7f13
+    source_revision: 8c511d88ec6aae4e53b3df5d9d0911e6e727cd92
     title: "packages/smrt-app-mcp/AGENTS.md (audit sink)"
   - id: s2
-    resource: https://github.com/happyvertical/smrt/blob/26d4e7a76aa986684effaf3d9c86dc52da1d7f13/packages/smrt-app-mcp/src/audit-store.ts
+    resource: https://github.com/happyvertical/smrt/blob/de01f5cc3b0701ef075b3cbf86099a64deaa3cda/packages/smrt-app-mcp/src/audit-store.ts
     path: packages/smrt-app-mcp/src/audit-store.ts
-    source_revision: 26d4e7a76aa986684effaf3d9c86dc52da1d7f13
+    source_revision: de01f5cc3b0701ef075b3cbf86099a64deaa3cda
     title: "packages/smrt-app-mcp/src/audit-store.ts (McpCallAudit, createSmrtMcpAuditStore)"
   - id: s3
-    resource: https://github.com/happyvertical/smrt/blob/26d4e7a76aa986684effaf3d9c86dc52da1d7f13/packages/smrt-app-mcp/README.md
+    resource: https://github.com/happyvertical/smrt/blob/398f57847405df54509d7ba3a5b8cf4c28d28edf/packages/smrt-app-mcp/README.md
     path: packages/smrt-app-mcp/README.md
-    source_revision: 26d4e7a76aa986684effaf3d9c86dc52da1d7f13
+    source_revision: 398f57847405df54509d7ba3a5b8cf4c28d28edf
     title: "packages/smrt-app-mcp/README.md (persistent audit)"
 ---
 
@@ -52,6 +52,6 @@ Records carry principal, tool, tenant, outcome (`allowed`, `denied`, `error`), e
 - `regex:tool_?call_?audit`
 - `regex:console\.log\(.*tool`
 
-[^s1]: `packages/smrt-app-mcp/AGENTS.md` at `26d4e7a76a`: packages/smrt-app-mcp/AGENTS.md (audit sink).
-[^s2]: `packages/smrt-app-mcp/src/audit-store.ts` at `26d4e7a76a`: packages/smrt-app-mcp/src/audit-store.ts (McpCallAudit, createSmrtMcpAuditStore).
-[^s3]: `packages/smrt-app-mcp/README.md` at `26d4e7a76a`: packages/smrt-app-mcp/README.md (persistent audit).
+[^s1]: `packages/smrt-app-mcp/AGENTS.md` at `8c511d88ec`: packages/smrt-app-mcp/AGENTS.md (audit sink).
+[^s2]: `packages/smrt-app-mcp/src/audit-store.ts` at `de01f5cc3b`: packages/smrt-app-mcp/src/audit-store.ts (McpCallAudit, createSmrtMcpAuditStore).
+[^s3]: `packages/smrt-app-mcp/README.md` at `398f578474`: packages/smrt-app-mcp/README.md (persistent audit).

@@ -56,6 +56,14 @@ export {
   unregisterApprovalKind,
 } from './kinds.js';
 export {
+  APPROVE_MCP_TOOL_CALL_PERMISSION,
+  type ApprovalMcpGateOptions,
+  type ApprovalMcpGateRequest,
+  type ApprovalMcpGateResult,
+  createApprovalMcpGate,
+  mcpToolCallKind,
+} from './mcp-gate.js';
+export {
   ApprovalEvent,
   type ApprovalEventOptions,
 } from './models/ApprovalEvent.js';
