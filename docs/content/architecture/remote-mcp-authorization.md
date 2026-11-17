@@ -383,6 +383,30 @@ when enabled, `/register`). The host renders the consent screen at
 from its existing cookie. Login can be any smrt-users session method,
 including an external OIDC provider.
 
+Nothing installs these routes for you: `protocol` only delegates to
+`server.handle(request)`, and the runtime option does not mount anything. For
+an issuer with a path such as `https://app.example/oauth`, clients that follow
+RFC 8414 path insertion request
+`https://app.example/.well-known/oauth-authorization-server/oauth`, which is
+outside `/oauth/*`. `server.handle` answers that path (and
+`/.well-known/openid-configuration/oauth`), so add a host route that forwards it
+to the same handler:
+
+```ts
+// src/routes/oauth/[...path]/+server.ts  (token, jwks, revoke, register)
+// src/routes/.well-known/oauth-authorization-server/oauth/+server.ts
+// src/routes/.well-known/openid-configuration/oauth/+server.ts
+const handlers = createOAuthHandlers({ server, authorization, getSessionId });
+export const GET = (event) => handlers.protocol(event);
+export const POST = (event) => handlers.protocol(event); // oauth/* only
+```
+
+The RFC 9728 protected-resource document is separate and is served by
+`mountMcpProtectedResourceMetadataRoute({ runtime })` at
+`/.well-known/oauth-protected-resource/api/mcp`; it advertises the issuer in
+`authorization_servers`. Verify both well-known URLs return 200 before
+connecting a host.
+
 **3. Hand the issuer to the runtime.**
 
 ```ts
