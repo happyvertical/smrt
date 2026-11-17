@@ -342,16 +342,23 @@ onDestroy(() => controller?.abort());
 </div>
 
 <style>
-  .smrt-assistant-panel__working { display: flex; align-items: center; gap: 0.5rem; margin: 0; }
-  .smrt-assistant-panel__dots { display: inline-flex; gap: 0.2rem; }
-  .smrt-assistant-panel__dots i { width: 0.35rem; height: 0.35rem; border-radius: 50%; background: currentColor; animation: smrt-assistant-pulse 1s infinite ease-in-out; }
-  .smrt-assistant-panel__dots i:nth-child(2) { animation-delay: 0.15s; }
-  .smrt-assistant-panel__dots i:nth-child(3) { animation-delay: 0.3s; }
-  @keyframes smrt-assistant-pulse { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
-  @media (prefers-reduced-motion: reduce) { .smrt-assistant-panel__dots i { animation: none; } }
 @layer smrt.reset, smrt.structure, smrt.theme;
 
 @layer smrt.structure {
+  .smrt-assistant-panel__working {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+  }
+  .smrt-assistant-panel__dots {
+    display: inline-flex;
+    gap: 0.2rem;
+  }
+  .smrt-assistant-panel__dots i {
+    width: 0.35rem;
+    height: 0.35rem;
+  }
   /* Fills the docked column the layout gives it; the column owns the edge,
   width and resizing. */
   .smrt-assistant-panel__panel {
@@ -449,6 +456,15 @@ onDestroy(() => controller?.abort());
 }
 
 @layer smrt.theme {
+  .smrt-assistant-panel__dots i {
+    border-radius: 50%;
+    background: currentColor;
+    animation: smrt-assistant-pulse 1s infinite ease-in-out;
+  }
+  .smrt-assistant-panel__dots i:nth-child(2) { animation-delay: 0.15s; }
+  .smrt-assistant-panel__dots i:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes smrt-assistant-pulse { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .smrt-assistant-panel__dots i { animation: none; } }
   /* Fills the docked column the layout gives it; the column owns the edge,
   width and resizing. */
   .smrt-assistant-panel__panel {

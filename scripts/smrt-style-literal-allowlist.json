@@ -22,6 +22,7 @@
     "packages/app-shell/src/lib/assistant/AssistantPanel.svelte": 3,
     "packages/app-shell/src/lib/components/FieldInput.svelte": 2,
     "packages/app-shell/src/lib/components/RecordList.svelte": 2,
+    "packages/app-shell/src/lib/components/RelatedRecords.svelte": 5,
     "packages/app-shell/src/routes/+layout.svelte": 3,
     "packages/app-shell/src/routes/+page.svelte": 2,
     "packages/app-shell/src/routes/approvals/+page.svelte": 2,

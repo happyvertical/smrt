@@ -118,7 +118,6 @@ async function act(operation: 'start' | 'discard' | Target) {
     margin: 0;
     padding: 0 var(--smrt-spacing-sm);
     max-inline-size: 28rem;
-    font-size: 0.75rem;
   }
 }
 
@@ -140,6 +139,7 @@ async function act(operation: 'start' | 'discard' | Target) {
     text-decoration: underline;
   }
   .smrt-draft-bar__draft-strip {
+    font-size: 0.75rem;
     background: var(--smrt-color-warning-container);
     color: var(--smrt-color-on-warning-container);
   }

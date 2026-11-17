@@ -130,7 +130,7 @@ function onTabKeys(event: KeyboardEvent) {
 {/snippet}
 
 {#if relations.length > 0}
-  <section class="smrt-related" aria-label="Related records" data-smrt-part="related">
+  <section class="smrt-related__root" aria-label="Related records" data-smrt-part="related">
     {#if narrow}
       {#each [...arranged.tabs, ...arranged.more] as key (key)}
         {@const rel = byKey.get(key)}
@@ -194,14 +194,15 @@ function onTabKeys(event: KeyboardEvent) {
 {/if}
 
 <style>
-  .smrt-related {
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.structure {
+  .smrt-related__root {
     margin-top: 1.5rem;
   }
   .smrt-related__bar {
     display: flex;
     align-items: center;
     gap: 0.25rem;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
   .smrt-related__tabs {
     display: flex;
@@ -209,19 +210,8 @@ function onTabKeys(event: KeyboardEvent) {
     gap: 0.25rem;
   }
   .smrt-related__tab {
-    appearance: none;
-    background: none;
-    border: 0;
-    border-bottom: 2px solid transparent;
-    color: var(--smrt-color-on-surface-variant, inherit);
     cursor: pointer;
-    font: inherit;
     padding: 0.5rem 0.75rem;
-  }
-  .smrt-related__tab[aria-selected='true'] {
-    border-bottom-color: var(--smrt-color-primary);
-    color: var(--smrt-color-on-surface, inherit);
-    font-weight: 600;
   }
   .smrt-related__pill {
     margin-inline-start: 0.25rem;
@@ -238,23 +228,14 @@ function onTabKeys(event: KeyboardEvent) {
     margin: 0;
     padding: 0.25rem;
     list-style: none;
-    border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: var(--smrt-radius-md, 0.5rem);
-    background: var(--smrt-color-surface-container, Canvas);
   }
   .smrt-related__menuitem {
-    appearance: none;
-    background: none;
-    border: 0;
     cursor: pointer;
     display: flex;
     justify-content: space-between;
     gap: 0.5rem;
     width: 100%;
-    font: inherit;
     padding: 0.375rem 0.5rem;
-    text-align: start;
-    color: inherit;
   }
   .smrt-related__panel {
     padding-top: 0.75rem;
@@ -281,4 +262,38 @@ function onTabKeys(event: KeyboardEvent) {
     clip-path: inset(50%);
     white-space: nowrap;
   }
+}
+
+@layer smrt.theme {
+  .smrt-related__bar {
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
+  }
+  .smrt-related__tab {
+    appearance: none;
+    background: none;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    color: var(--smrt-color-on-surface-variant, inherit);
+    font: inherit;
+  }
+  .smrt-related__tab[aria-selected='true'] {
+    border-bottom-color: var(--smrt-color-primary);
+    color: var(--smrt-color-on-surface, inherit);
+    font-weight: 600;
+  }
+  .smrt-related__menu {
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-md, 0.5rem);
+    background: var(--smrt-color-surface-container, Canvas);
+  }
+  .smrt-related__menuitem {
+    appearance: none;
+    background: none;
+    border: 0;
+    font: inherit;
+    text-align: start;
+    color: inherit;
+  }
+}
+
 </style>
