@@ -75,14 +75,14 @@
         "4.0.5",
         "4.0.7"
       ],
-      "firstPatchedVersion": null,
+      "firstPatchedVersion": "none",
       "reachability": "prod",
-      "introducedVia": "Transitive via tinyglobby/fdir (packages cli, scanner, smrt-playground, smrt-workbench through vite and SvelteKit) and dev-only tooling such as @changesets/cli; ~200 audit paths (checked 2026-11-17). `pnpm why picomatch -r --prod` and `pnpm audit --prod` do show runtime-graph paths (tinyglobby, vite), but all are build or CLI file-discovery tooling.",
-      "exploitability": "ReDoS needs an attacker-controlled extglob pattern passed to picomatch. Every caller here (tinyglobby, fdir, vite, changesets) compiles patterns written by the developer or from the project's own config, never from network input, so the pattern is not attacker-reachable in SMRT code or templates. Advisory: https://github.com/advisories/GHSA-fc5q-39xc-vjpf",
-      "decision": "Suppress for 30 days: no patched picomatch exists, so no upgrade or override can clear it, and it otherwise blocks every PR.",
-      "remediation": "Bump the picomatch override once a fixed release ships: https://github.com/happyvertical/smrt/issues/5113",
+      "introducedVia": "tinyglobby (production dependency of cli, scanner, smrt-playground, smrt-workbench) -> fdir/picomatch; also dev-only via vite, vitest and changesets (checked 2026-11-17). npm latest picomatch is 4.0.7, which is still in the vulnerable range (<= 4.0.7); the advisory lists no patched version.",
+      "exploitability": "Regular-expression DoS needs an attacker-chosen glob PATTERN (single-branch repeated extglob such as `+(*)`); the file paths being matched are not the input. Every tinyglobby call site was read on 2026-11-17: cli (npm-loader, schema-contract, json-validator, utils/generator, discovery/manifest-discovery), smrt-playground (discovery, vite), smrt-workbench (discovery, vite) and scanner (discovery) use hard-coded literals, or patterns built from the developer's own working directory, `node_modules` path, local workspace package directories, a template name typed on the `smrt create` command line, a `packagesPattern` Vite plugin option, or scanner include/exclude from the developer's own config, `--include/--exclude` flags and smrt-dev-mcp constants. No call site takes a pattern from an HTTP request, an MCP or AI tool argument, or other remote input (smrt-dev-mcp tools expose a directory, not a glob). Advisory: https://github.com/advisories/GHSA-fc5q-39xc-vjpf",
+      "decision": "Suppress, with the default 90-day recheck: no patched release exists to override to, and the pattern is always developer-supplied in build-time tooling, so the attacker model (untrusted pattern) is not present. A consumer that forwards untrusted input as a glob pattern to these packages or to picomatch is exposed regardless of this record.",
+      "remediation": "Raise the picomatch/tinyglobby resolution as soon as a release above 4.0.7 patches the advisory, then delete this record and the ignoreGhsas entry (tracked in https://github.com/happyvertical/smrt/issues/5113). Recheck npm and the advisory for a patched range by 2027-02-15.",
       "suppressed": true,
-      "recheckBy": "2026-12-17"
+      "recheckBy": "2027-02-15"
     }
   ]
 }

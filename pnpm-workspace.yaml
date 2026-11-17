@@ -173,8 +173,8 @@ auditConfig:
   # GitHub on 2026-10-28, so its suppression and record were removed (#4607).
   # GHSA-3r8g-jcqq-3p5j: SvelteKit remote-function `form` DoS; unreachable (no
   # remote functions in any package or template). Migration: #5038.
-  # GHSA-fc5q-39xc-vjpf: picomatch extglob ReDoS; no patched release, patterns
-  # are developer-authored. Remove once fixed: #5113.
+  # GHSA-fc5q-39xc-vjpf: picomatch <= 4.0.7 ReDoS via an attacker-chosen glob
+  # pattern; no patched release, every tinyglobby pattern is developer-supplied.
   ignoreGhsas:
     - GHSA-3r8g-jcqq-3p5j
     - GHSA-fc5q-39xc-vjpf
