@@ -269,8 +269,6 @@ function statusLabel(account: SocialAccountSettingsItem): string {
     flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem;
-    border: 1px solid currentColor;
-    border-radius: var(--smrt-radius-md, 8px);
     padding: 0.75rem;
   }
   .smrt-social-account-settings__confirm p {
@@ -363,6 +361,10 @@ function statusLabel(account: SocialAccountSettingsItem): string {
   .smrt-social-account-settings__status.smrt-social-account-settings__attention,
   .smrt-social-account-settings__warning {
     color: var(--smrt-color-error);
+  }
+  .smrt-social-account-settings__confirm {
+    border: 1px solid currentColor;
+    border-radius: var(--smrt-radius-md, 8px);
   }
   .smrt-social-account-settings__empty {
     border: 1px dashed var(--smrt-color-outline-variant);
