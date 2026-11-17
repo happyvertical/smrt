@@ -23,6 +23,7 @@
  * @module
  */
 
+import { AGENT_PROFILE_TYPE_SLUG } from './agent-type-guard';
 import type { ProfileCollection } from './collections/ProfileCollection';
 import { ProfileTypeCollection } from './collections/ProfileTypeCollection';
 import type { Profile } from './models/Profile';
@@ -36,8 +37,7 @@ import type { Profile } from './models/Profile';
  */
 export const AGENT_PROFILE_CONTEXT = 'smrt:agent';
 
-/** Slug of the {@link ProfileType} agent profiles are classified under. */
-export const AGENT_PROFILE_TYPE_SLUG = 'bot';
+export { AGENT_PROFILE_TYPE_SLUG };
 
 /** Inputs for {@link resolveAgentProfile}. */
 export interface ResolveAgentProfileParams {

@@ -258,6 +258,7 @@ There is no agent column on `User`. A user is an agent when its linked
 membership with a limited custom role like any member. MCP classifies the
 principal from that live profile (`kind: 'agent'`), the default MCP policy
 accepts the kind only when `principalKinds` lists it, and the role's
-permissions cap what its tokens can do on every request. Do not grant an agent
-role write access to profiles or profile types. See
+permissions cap what its tokens can do on every request. The profile models
+refuse an unprivileged principal changing a profile to or from the `bot` type
+(or renaming it), so an agent cannot relabel itself. See
 `packages/app-runtime/agents/self-issuer-mcp.md`.

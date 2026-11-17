@@ -33,8 +33,10 @@ cannot launder an agent into `human`.
   `runAsPrincipal` caps token scopes by the agent's live role permissions on
   every request, so revoking a role permission removes the tool from the next
   `tools/list` and `tools/call`.
-- Agent roles must not carry write access to profiles or profile types: the
-  classification is read from them, so relabelling is an administrator act.
+- The classification cannot be self-edited: `Profile.save`/`ProfileType.save`
+  refuse an unprivileged request principal moving a profile to or from the
+  `bot` type (or renaming that type), `AgentTypeChangeError`; system,
+  super-admin and principal-free code (provisioning, CLI) is unchanged.
 - Tests: `src/self-issuer-mcp.test.ts` (kind mapping; revoke/grant round trip
   through the real `runAsPrincipal`), `smrt-app-mcp` `agent-principals.test.ts`.
 

@@ -28,6 +28,11 @@ import {
   TenantScoped,
   tenantId,
 } from '@happyvertical/smrt-tenancy';
+import {
+  AGENT_PROFILE_TYPE_SLUG,
+  AgentTypeChangeError,
+  isUnprivilegedPrincipalContext,
+} from '../agent-type-guard';
 import { normalizeIdentityEmail } from '../auth/normalizeIdentityEmail';
 import type { ProfileLinkInput } from '../collections/ProfileLinkCollection';
 import {
@@ -123,10 +128,51 @@ export class Profile extends SmrtObject {
 
   /** Keep the durable identity key derived from the public email field. */
   override async save(options?: SmrtSaveOptions): Promise<this> {
+    await this.assertAgentTypeUnchanged();
     this.emailKey = this.email?.trim()
       ? normalizeIdentityEmail(this.email)
       : null;
     return super.save(options);
+  }
+
+  /**
+   * Refuse an unprivileged principal moving an existing profile to or from
+   * the `bot` type (#5086): the MCP principal kind is read from it. Fails
+   * closed when either side cannot be resolved.
+   */
+  private async assertAgentTypeUnchanged(): Promise<void> {
+    if (!this.isPersisted || !this.id || !isUnprivilegedPrincipalContext()) {
+      return;
+    }
+    const { ProfileCollection } = await import(
+      '../collections/ProfileCollection'
+    );
+    const { ProfileTypeCollection } = await import(
+      '../collections/ProfileTypeCollection'
+    );
+    const profiles = await ProfileCollection.create(this.options);
+    const stored = await profiles.get(this.id);
+    if (!stored) throw new AgentTypeChangeError();
+    if ((stored.typeId ?? null) === (this.typeId ?? null)) return;
+    const types = await ProfileTypeCollection.create(this.options);
+    const tenantId = this.tenantId || getTenantId();
+    const slugOf = async (id: string | undefined): Promise<string | null> => {
+      if (!id) return '';
+      if (!tenantId) return (await types.get(id))?.slug ?? null;
+      return (await types.getAvailableById(id, tenantId))?.slug ?? null;
+    };
+    const [from, to] = await Promise.all([
+      slugOf(stored.typeId),
+      slugOf(this.typeId),
+    ]);
+    if (
+      from === null ||
+      to === null ||
+      from === AGENT_PROFILE_TYPE_SLUG ||
+      to === AGENT_PROFILE_TYPE_SLUG
+    ) {
+      throw new AgentTypeChangeError();
+    }
   }
 
   /**
