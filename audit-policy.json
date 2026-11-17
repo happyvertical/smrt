@@ -66,6 +66,23 @@
       "remediation": "Migrate every package and template to SvelteKit >=3.1.1: https://github.com/happyvertical/smrt/issues/5038",
       "suppressed": true,
       "recheckBy": "2026-12-16"
+    },
+    {
+      "ghsa": "GHSA-fc5q-39xc-vjpf",
+      "package": "picomatch",
+      "severity": "high",
+      "presentVersions": [
+        "4.0.5",
+        "4.0.7"
+      ],
+      "firstPatchedVersion": null,
+      "reachability": "prod",
+      "introducedVia": "Transitive via tinyglobby/fdir (packages cli, scanner, smrt-playground, smrt-workbench through vite and SvelteKit) and dev-only tooling such as @changesets/cli; ~200 audit paths (checked 2026-11-17). `pnpm why picomatch -r --prod` and `pnpm audit --prod` do show runtime-graph paths (tinyglobby, vite), but all are build or CLI file-discovery tooling.",
+      "exploitability": "ReDoS needs an attacker-controlled extglob pattern passed to picomatch. Every caller here (tinyglobby, fdir, vite, changesets) compiles patterns written by the developer or from the project's own config, never from network input, so the pattern is not attacker-reachable in SMRT code or templates. Advisory: https://github.com/advisories/GHSA-fc5q-39xc-vjpf",
+      "decision": "Suppress for 30 days: no patched picomatch exists, so no upgrade or override can clear it, and it otherwise blocks every PR.",
+      "remediation": "Bump the picomatch override once a fixed release ships: https://github.com/happyvertical/smrt/issues/5113",
+      "suppressed": true,
+      "recheckBy": "2026-12-17"
     }
   ]
 }

@@ -173,8 +173,11 @@ auditConfig:
   # GitHub on 2026-10-28, so its suppression and record were removed (#4607).
   # GHSA-3r8g-jcqq-3p5j: SvelteKit remote-function `form` DoS; unreachable (no
   # remote functions in any package or template). Migration: #5038.
+  # GHSA-fc5q-39xc-vjpf: picomatch extglob ReDoS; no patched release, patterns
+  # are developer-authored. Remove once fixed: #5113.
   ignoreGhsas:
     - GHSA-3r8g-jcqq-3p5j
+    - GHSA-fc5q-39xc-vjpf
 
 minimumReleaseAgeExclude:
   - '@happyvertical/accounting@0.90.0 || 0.94.0 || 0.94.1 || 0.96.0 || 0.96.1 || 0.98.0 || 0.100.3 || 0.102.1 || 0.102.2 || 0.102.3 || 0.102.4 || 0.102.5 || 0.102.7 || 0.103.1 || 0.103.2 || 0.103.4 || 0.103.5 || 0.103.6 || 0.103.7 || 0.105.0 || 0.105.1 || 0.105.2 || 0.105.3 || 0.105.4 || 0.105.5 || 0.106.0 || 0.107.0 || 0.108.0 || 0.109.0 || 0.110.0 || 0.111.0 || 0.111.3 || 0.111.5 || 0.111.6 || 0.111.7 || 0.111.8 || 0.111.11 || 0.112.2 || 0.112.3 || 0.113.0'
