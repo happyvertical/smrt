@@ -5,11 +5,44 @@ import { formulaWords } from '../../engine/formula.ts';
 import {
   fieldLabel,
   findingLabel,
+  IMPORT_PREVIEW_MAX,
+  IMPORT_PREVIEW_ROWS,
   type ImportState,
   importTotal,
+  previewCell,
+  previewType,
 } from '../ui/import.ts';
 
 let { current }: { current: ImportState } = $props();
+// Loaded draft rows per table key, read through the existing draft records route.
+let rows = $state<Record<string, Record<string, unknown>[]>>({});
+let expanded = $state<Record<string, boolean>>({});
+async function read(key: string, limit: number) {
+  const model = current.plan?.engineNames?.tables[key]?.model;
+  if (!model) return;
+  try {
+    const response = await fetch(
+      `/api/shell/records/${encodeURIComponent(model)}?target=draft&limit=${limit}`,
+    );
+    if (!response.ok) return;
+    const body = await response.json();
+    if (Array.isArray(body.records)) rows[key] = body.records;
+  } catch {
+    // The preview is optional; the proof above stands without it.
+  }
+}
+const previewable = $derived(
+  current.status === 'review' && current.proof?.ok === true,
+);
+$effect(() => {
+  if (!previewable) return;
+  for (const table of current.plan?.tables ?? [])
+    if (!rows[table.key]) void read(table.key, IMPORT_PREVIEW_ROWS);
+});
+async function showAll(key: string) {
+  expanded[key] = true;
+  await read(key, IMPORT_PREVIEW_MAX);
+}
 </script>
 <div data-smrt-component="AppShellImportReview" class="smrt-app-shell__page">
   {#each current.plan?.tables ?? [] as table (table.key)}
@@ -18,6 +51,7 @@ let { current }: { current: ImportState } = $props();
       <h2>{table.label}</h2>
       <p>{table.source.sheet} · {table.source.range}</p>
       {#if facts}<p>{facts.read} rows read · {facts.skipped} skipped · {current.proof?.loaded[table.key] ?? 0} loaded</p>{/if}
+      <p data-smrt-part="hint">{#if current.proof?.ok}<span>Totals match</span> · {/if}<span>{table.fields.length} {table.fields.length === 1 ? 'column' : 'columns'} detected</span></p>
       <ul data-smrt-part="list">
         {#each table.fields as field (field.key)}
           <li><strong>{field.label}</strong> · {field.type === 'reference' ? 'link' : field.type === 'integer' ? 'whole number' : field.type === 'boolean' ? 'yes or no' : field.type}
@@ -31,6 +65,20 @@ let { current }: { current: ImportState } = $props();
           </li>
         {/each}
       </ul>
+      {#if previewable && rows[table.key]?.length && current.plan?.engineNames?.tables[table.key]}
+        {@const names = current.plan.engineNames.tables[table.key].fields}
+        {@const loaded = current.proof?.loaded[table.key] ?? rows[table.key].length}
+        {@const shown = expanded[table.key] ? rows[table.key] : rows[table.key].slice(0, IMPORT_PREVIEW_ROWS)}
+        <div class="smrt-app-shell__tablewrap" data-smrt-part="body">
+          <table class="smrt-app-shell__table" data-smrt-part="table" aria-label="{table.label} row preview">
+            <thead><tr>{#each table.fields as field (field.key)}<th scope="col">{field.label}<br /><small data-smrt-part="hint">{previewType(field, current.plan)}</small></th>{/each}</tr></thead>
+            <tbody>{#each shown as row, index (row.id ?? index)}<tr>{#each table.fields as field (field.key)}<td>{previewCell(row[names[field.key]], field)}</td>{/each}</tr>{/each}</tbody>
+          </table>
+        </div>
+        <p data-smrt-part="hint">Showing {shown.length} of {loaded} rows
+          {#if !expanded[table.key] && loaded > shown.length} · <button type="button" onclick={() => showAll(table.key)}>Show all {loaded} rows</button>{/if}
+          {#if expanded[table.key] && loaded > IMPORT_PREVIEW_MAX} · The first {IMPORT_PREVIEW_MAX} are shown{/if}</p>
+      {/if}
       {#if current.proof}
         <h3>Totals proof</h3>
         <p>{current.proof.ok ? 'Row counts and source column checks match the workbook.' : 'The loaded data did not pass every check.'}</p>

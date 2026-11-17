@@ -66,6 +66,44 @@ export function fieldLabel(
     : (t?.label ?? 'Table');
 }
 
+/** Row preview: rows shown before "Show all", and the read ceiling. */
+export const IMPORT_PREVIEW_ROWS = 3;
+export const IMPORT_PREVIEW_MAX = 1000;
+
+/** Plain-words type shown under a preview column name. */
+export function previewType(
+  field: {
+    type: string;
+    money?: { currency: string };
+    reference?: { table: string };
+  },
+  plan?: ImportPlan,
+): string {
+  if (field.type === 'money')
+    return field.money ? `money · ${field.money.currency}` : 'money';
+  if (field.type === 'reference')
+    return field.reference
+      ? `link · ${fieldLabel(plan, field.reference.table)}`
+      : 'link';
+  return (
+    { integer: 'whole number', boolean: 'yes or no' }[field.type] ?? field.type
+  );
+}
+
+/** One cell of a loaded draft row, in the words the review uses. */
+export function previewCell(
+  value: unknown,
+  field: { type: string; money?: { currency: string; scale: number } },
+): string {
+  if (value === null || value === undefined || value === '') return '';
+  if (field.type === 'boolean') return value ? 'Yes' : 'No';
+  if (field.type === 'money' && field.money && Number.isSafeInteger(value))
+    return importTotal(value as number, field.money);
+  if (field.type === 'date' && typeof value === 'string')
+    return /^\d{4}-\d{2}-\d{2}T/.test(value) ? value.slice(0, 10) : value;
+  return typeof value === 'object' ? JSON.stringify(value) : String(value);
+}
+
 /** Render exact checked money totals in the workbook's currency. */
 export function importTotal(
   total: number,
