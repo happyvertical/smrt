@@ -47,3 +47,31 @@ it('explains invalid output aliases without forwarding compiler paths or raw mes
   expect(message).toContain('Keep the app’s source field names unchanged');
   expect(message).not.toMatch(/spec\.|orderCount|measures/);
 });
+
+it('returns the parser path and reason for an invalid sort, with a plain-language fix', () => {
+  let failure: unknown;
+  try {
+    parseRuntimeReportSpec({
+      title: 'Sales',
+      source: 'Sale',
+      dimensions: [{ field: 'day', bucket: 'month', as: 'month' }],
+      measures: [{ fn: 'count', as: 'sales' }],
+      sort: [{ field: 'month', dir: 'asc' }],
+    });
+  } catch (error) {
+    failure = error;
+  }
+  const message = reportFailure(failure).message;
+  expect(message).toContain('spec.sort[0].field');
+  expect(message).toContain('is not a known key');
+  expect(message).toContain('"by"');
+  expect(
+    reportFailure(
+      new RuntimeReportError(
+        'invalid_spec',
+        'SELECT x FROM /private/app.db',
+        'bad SELECT',
+      ),
+    ).message,
+  ).toMatch(/^The report definition is invalid at spec: bad SELECT\./);
+});
