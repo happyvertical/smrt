@@ -3219,11 +3219,19 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         border-color var(--smrt-duration-medium1) var(--smrt-easing-standard),
         color var(--smrt-duration-medium1) var(--smrt-easing-standard);
     }
-    /* Newly revealed sidebar / dock content fades in. */
+    /* Newly revealed sidebar / dock content fades in. The animation is
+    declared from first paint with a zero duration and only gains its
+    duration under `data-motion`: matching the rule only once `data-motion`
+    lands would start a fade-from-transparent on content that is already
+    on screen, dimming the sidebar (and its first click) at hydration. */
+    .smrt-admin-shell:not([data-viewport='phone']) .smrt-admin-shell__edge[data-presentation='push'] .smrt-admin-shell__tenant-stack:not([hidden]),
+    .smrt-admin-shell:not([data-viewport='phone']) .smrt-admin-shell__edge[data-presentation='push'] .smrt-admin-shell__panel--right:not([hidden]) {
+      animation: smrt-admin-shell-content-in 0s var(--smrt-easing-standard)
+        backwards;
+    }
     .smrt-admin-shell[data-motion]:not([data-viewport='phone']) .smrt-admin-shell__edge[data-presentation='push'] .smrt-admin-shell__tenant-stack:not([hidden]),
     .smrt-admin-shell[data-motion]:not([data-viewport='phone']) .smrt-admin-shell__edge[data-presentation='push'] .smrt-admin-shell__panel--right:not([hidden]) {
-      animation: smrt-admin-shell-content-in var(--smrt-duration-short2)
-        var(--smrt-easing-standard) backwards;
+      animation-duration: var(--smrt-duration-short2);
     }
     /* Layout edit mode: zones, strips and region controls fade / scale in. */
     .smrt-admin-shell__slot--editing,
