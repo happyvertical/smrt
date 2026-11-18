@@ -137,7 +137,7 @@ function state(): MailAccessState {
  * after the database is available. Calling again replaces the configuration.
  */
 export function configureMailAccess(config: MailAccessConfig): void {
-  state().config = config;
+  state().config = { ...config, options: withoutListBounds(config.options) };
 }
 
 /** Remove the configuration (tests). Owned accounts then fail closed. */
@@ -151,6 +151,16 @@ export function resetMailAccess(): void {
  * {@link configureMailAccess}, this lets the policy still find owned accounts
  * and hide their mail (no principal resolver means no one is a principal).
  */
+/**
+ * The options with their list bounds removed. `create()` forwards
+ * `defaultListLimit`/`maxListLimit` from any options bag, and an access
+ * decision needs every account: a truncated read would leave owned accounts
+ * out of the denied set and leak their mail.
+ */
+export function withoutListBounds<T extends object>(options: T): T {
+  return { ...options, defaultListLimit: undefined, maxListLimit: undefined };
+}
+
 export function learnMailAccessOptions(
   options: SmrtClassOptions | undefined,
 ): void {
@@ -159,7 +169,7 @@ export function learnMailAccessOptions(
   // One entry per database, so a process with several keeps each of them.
   const key = options.db ?? options;
   current.learned.delete(key);
-  current.learned.set(key, options);
+  current.learned.set(key, withoutListBounds(options));
   if (current.learned.size > 16) {
     const oldest = current.learned.keys().next().value;
     current.learned.delete(oldest);
@@ -509,7 +519,9 @@ export class MailAccessService {
     );
     const { withTenant } = await import('./host.js');
     return withTenant({ tenantId: this.actor.tenantId }, async () => {
-      const collection = await AccountCollection.create(this.options);
+      const collection = await AccountCollection.create(
+        withoutListBounds(this.options),
+      );
       const account = await collection.get({ id: accountId });
       if (!account || account.tenantId !== this.actor.tenantId) {
         throw new Error('Mail account was not found in this tenant.');
@@ -631,7 +643,9 @@ export class MailAccessService {
   /** Revoke a grant. Delegated children stop working with their ancestor. */
   private async revokeImpl(grantId: string): Promise<void> {
     const { users, verifyResource } = await this.grantsApi();
-    const grants = await users.ResourceGrantCollection.create(this.options);
+    const grants = await users.ResourceGrantCollection.create(
+      withoutListBounds(this.options),
+    );
     const grant = await grants.get({ id: grantId });
     if (
       !grant ||
@@ -664,7 +678,9 @@ export class MailAccessService {
       throw new Error('Only the account owner can list mail access.');
     }
     const { users } = await this.grantsApi();
-    const grants = await users.ResourceGrantCollection.create(this.options);
+    const grants = await users.ResourceGrantCollection.create(
+      withoutListBounds(this.options),
+    );
     const rows = await grants.list({
       where: {
         tenantId: this.actor.tenantId,

@@ -369,6 +369,60 @@ describe('mail account access (#5129)', () => {
       expect(labels.sort()).toEqual(['Hidden', 'open subject']);
     });
 
+    describe('bounded collection options', () => {
+      // maxListLimit below the number of accounts must not let owned accounts
+      // fall out of the denied set.
+      const bounded = { defaultListLimit: 2, maxListLimit: 2 };
+      let extraIds: string[] = [];
+      beforeEach(async () => {
+        extraIds = [];
+        for (const name of ['e1', 'e2', 'e3', 'e4']) {
+          extraIds.push(await seedAccount(tenantA, name, owner.id));
+        }
+      });
+
+      const checks = async () => {
+        await withTenant({ tenantId: tenantA }, async () => {
+          const emails = await EmailCollection.create({
+            ...options,
+            ...bounded,
+          });
+          expect(await emails.count({})).toBe(1);
+          expect(
+            (await emails.list({ select: ['subject'] })).map(
+              (row) => row.subject,
+            ),
+          ).toEqual(['open subject']);
+          const facets = JSON.stringify(
+            await emails.facets({ fields: ['accountId'] }),
+          );
+          for (const id of [privateAccountId, sharedAccountId, ...extraIds]) {
+            expect(facets).not.toContain(id);
+          }
+          await expect(
+            emails.query('SELECT * FROM messages', [], {
+              allowRawOnTenantScoped: true,
+            }),
+          ).rejects.toThrow(/Mail access denied/);
+        });
+      };
+
+      it('on a cold process', async () => {
+        resetMailAccess();
+        current = null;
+        await checks();
+      });
+
+      it('when the host configures bounded options', async () => {
+        configureMailAccess({
+          options: { ...options, ...bounded },
+          resolvePrincipal: () => current,
+        });
+        current = principalFor(stranger);
+        await checks();
+      });
+    });
+
     describe('STI subclasses served by a default collection', () => {
       // No collection class of their own: the registry builds a plain default
       // collection, so the policy must not depend on a messages collection.
