@@ -778,6 +778,18 @@ export {
   parseQualifiedName,
   qualifiedNamesEqual,
 } from './utils/qualified-names';
+// How `where` keys resolve to columns, shared by the collection and by anything
+// that inspects a filter before it runs (interceptors, generated routes).
+export {
+  applyWhereScope,
+  effectiveWhereOperator,
+  mergeOwnedWhere,
+  normalizeWhereKey,
+  type ResolvedWhereKey,
+  resolveWhereKey,
+  WhereClauseError,
+  whereColumnName,
+} from './where-keys';
 
 // Vite plugin excluded (Node.js-only)
 

@@ -780,6 +780,18 @@ export {
   parseQualifiedName,
   qualifiedNamesEqual,
 } from './utils/qualified-names';
+// How `where` keys resolve to columns, shared by the collection and by anything
+// that inspects a filter before it runs (interceptors, generated routes).
+export {
+  applyWhereScope,
+  effectiveWhereOperator,
+  mergeOwnedWhere,
+  normalizeWhereKey,
+  type ResolvedWhereKey,
+  resolveWhereKey,
+  WhereClauseError,
+  whereColumnName,
+} from './where-keys';
 // Preserve the synchronous build API without importing the Vite/scanner graph
 // into every Node runtime. Node >=26 supports synchronous require(ESM).
 export const smrtPlugin: typeof import('./vite-plugin/index').smrtPlugin = (

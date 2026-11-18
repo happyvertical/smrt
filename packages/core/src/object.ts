@@ -118,6 +118,7 @@ import {
   tableNameFromClass,
   toSnakeCase,
 } from './utils';
+import { WhereClauseError } from './where-keys';
 
 /**
  * Converts a hydration filter key to its column name, PRESERVING a leading
@@ -2703,7 +2704,17 @@ export class SmrtObject extends SmrtClass {
     for (const [key, value] of Object.entries(
       resolved as Record<string, unknown>,
     )) {
-      columnFilter[toFilterColumnName(key)] = value;
+      const columnKey = toFilterColumnName(key);
+      // Same rule as collection reads: two keys for one column would leave
+      // whichever came last, so the filter is refused instead.
+      if (Object.hasOwn(columnFilter, columnKey)) {
+        throw new WhereClauseError(
+          `Invalid hydration filter: more than one key filters '${columnKey}'.`,
+          'INVALID_WHERE_CLAUSE',
+          { column: columnKey },
+        );
+      }
+      columnFilter[columnKey] = value;
     }
     return columnFilter;
   }
