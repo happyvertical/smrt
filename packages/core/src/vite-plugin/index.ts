@@ -81,6 +81,7 @@ import {
   GENERATED_CLIENT_CRUD_METHODS,
   generateClientModule,
 } from './generated-client.js';
+import { assertSvelteKitObjectRoutesValid } from './generated-route-preflight.js';
 import {
   assertNoHostToolNameCollisions,
   type HostToolNameDeclaration,
@@ -949,6 +950,10 @@ export function smrtPlugin(
    */
   let agentSurface: DomainKnowledgeAgentSurface | undefined;
   let activeManifestScan: Promise<SmartObjectManifest> | undefined;
+  /** The last watcher rescan scheduled, running or waiting. */
+  let watchedRescanTail: Promise<void> = Promise.resolve();
+  /** The watcher rescan that has not started yet, if any. */
+  let queuedWatchedRescan: Promise<void> | undefined;
   let activeBuildStart: Promise<void> | undefined;
   let pluginMode: 'server' | 'client' = 'server';
   let projectRoot: string = process.cwd();
@@ -997,6 +1002,13 @@ export function smrtPlugin(
       );
       return;
     }
+    // Validate every object's routes before generation sweeps the route tree.
+    assertSvelteKitObjectRoutesValid(
+      rootDir,
+      currentManifest,
+      currentManifest,
+      routeOptions,
+    );
     await generateSvelteKitRoutes(rootDir, currentManifest, routeOptions);
   }
 
@@ -1971,7 +1983,7 @@ export function smrtPlugin(
     try {
       if (!(await shouldRescan(file))) return;
       console.log(`[smrt] Rescanning due to ${labels.cause} ${file}`);
-      await rescanAfterWatchEvent();
+      await scheduleWatchedRescan();
     } catch (error) {
       console.error(
         `[smrt] Failed to rescan after ${labels.failure} ${file}:`,
@@ -1981,12 +1993,35 @@ export function smrtPlugin(
   }
 
   /**
+   * Run watcher rescans one at a time. At most one rescan runs and one waits:
+   * events that arrive while a rescan waits join it, and events that arrive
+   * while one runs queue the waiting one, which starts after the running one
+   * finishes and so scans the latest sources. An older scan can therefore
+   * never finish after a newer one and overwrite its manifest or routes.
+   * The returned promise settles when the rescan that covers the event does.
+   */
+  function scheduleWatchedRescan(): Promise<void> {
+    if (queuedWatchedRescan) return queuedWatchedRescan;
+    const queued = watchedRescanTail
+      .catch(() => {})
+      .then(() => {
+        queuedWatchedRescan = undefined;
+        return rescanAfterWatchEvent();
+      });
+    queuedWatchedRescan = queued;
+    watchedRescanTail = queued;
+    return queued;
+  }
+
+  /**
    * Rescan, publish the manifest, regenerate routes, and drop every loaded
    * virtual module so the next import is generated from the new manifest.
    * A scan failure throws before anything is replaced, so the previous
    * manifest stays in place (#1378).
    */
   async function rescanAfterWatchEvent(): Promise<void> {
+    // The initial build owns the manifest until it has published it.
+    await activeBuildStart?.catch(() => {});
     const next = await scanAndGenerateManifest(projectRoot);
     manifest = next;
     try {
