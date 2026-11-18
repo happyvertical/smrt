@@ -76,6 +76,16 @@
   },
   {
     "kind": "package",
+    "name": "@happyvertical/smrt-capacitor-session",
+    "issue": 5077,
+    "nearest": [
+      "@happyvertical/smrt-mobile",
+      "@happyvertical/smrt-android"
+    ],
+    "reason": "Capacitor WebView shells (Hearth) keep a cookie session, not a native bearer session. smrt-mobile and smrt-android are private Kotlin/Compose packages with no WebView and no npm distribution, so they cannot supply a Capacitor plugin; this publishes the one plugin that flushes the WebView CookieManager."
+  },
+  {
+    "kind": "package",
     "name": "@happyvertical/smrt-chat",
     "grandfathered": true
   },
