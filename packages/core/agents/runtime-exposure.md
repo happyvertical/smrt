@@ -179,7 +179,8 @@ closed until activation/recovery succeeds. The coordinator owns schema/code
 readiness, not cookbook persistence, permission grants or tenant state.
 
 Pass the coordinator as `createCookbookToolService({ activation, ... })` in a
-lazy host. `recipes.enable` and applying a template reuse `coveredModels` on the
+lazy host. `recipes.enable`, applying a template and `app.undo` (on the
+cookbook it restores) reuse `coveredModels` on the
 private staged document, await activation after any required approval, recheck
 live authority/preference and revision, then commit through the existing CAS
 adapter. Migration failure returns `CookbookToolError` with `activation_failed`

@@ -143,6 +143,10 @@ with the host's existing screens. The editor does not rewrite static SvelteKit
 route files or already-imported AOT web modules; such a host needs this dynamic
 binding before using the API.
 
+With lazy activation, the tool service's `app.undo` activates every model the
+restored cookbook covers (custom lists aside) through its `activation` before
+applying, as `recipes.enable` does; failure is `activation_failed` with nothing
+undone.
 When also using A3 lazy activation, boot the installed/provider graph first.
 Its fixed-graph `readEnabled` input excludes only custom-list identities declared
 in the validated cookbook's `models.lists`; unexpected unknown ids must still
