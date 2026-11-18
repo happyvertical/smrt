@@ -337,6 +337,30 @@ describe('tenant filter key spellings', () => {
       );
     });
 
+    it('get inside a hierarchy scope validates every spelling against the caller tenant', async () => {
+      await asUs(() =>
+        runTenantHierarchyReadScope(scope, async () => {
+          for (const key of TENANT_KEY_SPELLINGS) {
+            await expect(
+              orders.get({ [key]: THEIRS, id: theirOrderId }),
+            ).rejects.toThrow(TenantIsolationError);
+            if (key === 'tenantId') continue;
+            await expect(
+              orders.get({ tenantId: OURS, [key]: THEIRS, id: theirOrderId }),
+            ).rejects.toThrow(TenantIsolationError);
+            await expect(
+              orders.get({ [key]: THEIRS, tenantId: OURS, id: theirOrderId }),
+            ).rejects.toThrow(TenantIsolationError);
+            const own = await orders.get({ [key]: OURS, id: ourOrderId });
+            expect(own?.title).toBe('our order 1');
+          }
+          // A point read keeps the caller's own tenant predicate.
+          expect((await orders.get(ourOrderId))?.title).toBe('our order 1');
+          expect(await orders.get(theirOrderId)).toBeNull();
+        }),
+      );
+    });
+
     it('a tenant/global read keeps its own predicate beside any spelling', async () => {
       for (const key of TENANT_KEY_SPELLINGS) {
         const rows = await asUs(() =>
