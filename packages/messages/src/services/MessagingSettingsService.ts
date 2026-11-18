@@ -2,7 +2,15 @@ import {
   ObjectRegistry,
   type SmrtClassOptions,
 } from '@happyvertical/smrt-core';
-import { runWithMailSystemAccess } from '../access.js';
+import {
+  decideMailAccess,
+  MAIL_ACCOUNT_RESOURCE_TYPE,
+  MAIL_SCOPES,
+  type MailPrincipal,
+  type MailScope,
+  runWithMailSystemAccess,
+  withoutListBounds,
+} from '../access.js';
 import { AccountCollection } from '../collections/AccountCollection.js';
 import { AttachmentCollection } from '../collections/AttachmentCollection.js';
 import { EmailFolderCollection } from '../collections/EmailFolderCollection.js';
@@ -101,6 +109,31 @@ export interface MessagingAccountView {
   connectionStatus: string | null;
   statusMessage: string | null;
 }
+
+/** An account the acting principal owns or holds a grant on. */
+export interface MessagingAccountListing extends MessagingAccountView {
+  /** `owner` administers the account; `shared` holds only grants. */
+  relation: 'owner' | 'shared';
+  /** Effective scopes: the owner holds all four, a grantee what grants allow. */
+  scopes: MailScope[];
+}
+
+export interface ListAccountsOptions {
+  /** Page size, 1 to 200. Default 50. */
+  limit?: number;
+  /** The `nextCursor` of the previous page. */
+  cursor?: string | null;
+}
+
+export interface ListAccountsResult {
+  accounts: MessagingAccountListing[];
+  /** Pass as `cursor` for the next page; null when there are no more. */
+  nextCursor: string | null;
+}
+
+const LIST_ACCOUNTS_DEFAULT_LIMIT = 50;
+const LIST_ACCOUNTS_MAX_LIMIT = 200;
+const CANDIDATE_PAGE = 500;
 
 export interface MessagingEndpointView {
   id: string;
@@ -505,6 +538,121 @@ export class MessagingSettingsService {
       await route.save();
       return route;
     });
+  }
+
+  /**
+   * Accounts the acting principal owns or holds an active grant on, in this
+   * service's tenant, with the effective scopes per account. It never lists
+   * unowned (tenant-wide) accounts or accounts of other users. Every decision
+   * goes through `decideMailAccess`, so ownership, grants, the tenant
+   * `messages.<scope>` ceiling and tenant isolation are the same as for mail
+   * reads; no separate authorization path exists here. Fail closed: no
+   * principal user, a principal of another tenant, or an unconfigured mail
+   * access policy (`configureMailAccess`, which owned accounts need to be
+   * decided at all) yields an empty list. Paged by account id.
+   */
+  async listAccounts(
+    options: ListAccountsOptions = {},
+  ): Promise<ListAccountsResult> {
+    const empty: ListAccountsResult = { accounts: [], nextCursor: null };
+    const userId = this.actingUserId;
+    const { tenantId, principal } = this.options;
+    if (!userId || !tenantId) return empty;
+    if (principal.tenantId && principal.tenantId !== tenantId) return empty;
+    const requested = Number.isFinite(options.limit)
+      ? Math.trunc(options.limit as number)
+      : LIST_ACCOUNTS_DEFAULT_LIMIT;
+    const limit = Math.min(Math.max(requested, 1), LIST_ACCOUNTS_MAX_LIMIT);
+    const subject: MailPrincipal = {
+      id: principal.id ?? userId,
+      userId,
+      tenantId,
+    };
+    return withTenant({ tenantId }, async () => {
+      const candidates = await this.accountCandidateIds(userId);
+      const accounts = await AccountCollection.create(
+        withoutListBounds({ db: this.options.db }),
+      );
+      const sorted = [...candidates].sort();
+      const start = options.cursor
+        ? sorted.findIndex((id) => id > (options.cursor as string))
+        : 0;
+      const out: MessagingAccountListing[] = [];
+      let lastId: string | null = null;
+      let more = false;
+      for (const id of start < 0 ? [] : sorted.slice(start)) {
+        if (out.length >= limit) {
+          more = true;
+          break;
+        }
+        const account = await accounts.get({ id });
+        if (!account || account.tenantId !== tenantId) continue;
+        lastId = id;
+        const scopes: MailScope[] = [];
+        let owner = false;
+        for (const scope of MAIL_SCOPES) {
+          const decision = await decideMailAccess(
+            {
+              id: account.id,
+              tenantId: account.tenantId,
+              ownerUserId: account.ownerUserId,
+            },
+            scope,
+            subject,
+          );
+          if (decision.reason === 'owner' && decision.allowed) owner = true;
+          if (
+            decision.allowed &&
+            (decision.reason === 'owner' || decision.reason === 'grant')
+          ) {
+            scopes.push(scope);
+          }
+        }
+        if (!scopes.length) continue;
+        out.push({
+          ...this.accountView(account),
+          relation: owner ? 'owner' : 'shared',
+          scopes,
+        });
+      }
+      return { accounts: out, nextCursor: more ? lastId : null };
+    });
+  }
+
+  /** Ids of accounts the user owns or holds a grant row on (tenant scoped). */
+  private async accountCandidateIds(userId: string): Promise<Set<string>> {
+    const { tenantId, db } = this.options;
+    const ids = new Set<string>();
+    const accounts = await AccountCollection.create(withoutListBounds({ db }));
+    const { ResourceGrantCollection } = await import(
+      '@happyvertical/smrt-users'
+    );
+    const grants = await ResourceGrantCollection.create(
+      withoutListBounds({ db }),
+    );
+    for (let offset = 0; ; offset += CANDIDATE_PAGE) {
+      const rows = await accounts.list({
+        where: { tenantId, ownerUserId: userId },
+        limit: CANDIDATE_PAGE,
+        offset,
+        orderBy: 'id ASC',
+      });
+      for (const row of rows) if (row.id) ids.add(row.id);
+      if (rows.length < CANDIDATE_PAGE) break;
+    }
+    for (let offset = 0; ; offset += CANDIDATE_PAGE) {
+      const rows = await grants.list({
+        where: { tenantId, userId, resourceType: MAIL_ACCOUNT_RESOURCE_TYPE },
+        limit: CANDIDATE_PAGE,
+        offset,
+        orderBy: 'id ASC',
+      });
+      for (const row of rows) {
+        if (row.isActive() && row.effect === 'grant') ids.add(row.resourceId);
+      }
+      if (rows.length < CANDIDATE_PAGE) break;
+    }
+    return ids;
   }
 
   /** The user who owns accounts this principal creates; null when unknown. */

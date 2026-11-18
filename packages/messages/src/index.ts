@@ -173,7 +173,10 @@ export { TelegramSender } from './senders/TelegramSender.js';
 export { TweetSender } from './senders/TweetSender';
 export { ZulipSender } from './senders/ZulipSender.js';
 export {
+  type ListAccountsOptions,
+  type ListAccountsResult,
   type MessagingAccountInput,
+  type MessagingAccountListing,
   type MessagingAccountView,
   type MessagingEndpointInput,
   type MessagingEndpointView,
