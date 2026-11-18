@@ -385,3 +385,37 @@ test('the wrapper crate version follows the release: synced, archived and commit
     for (const file of cargo) assert.ok(head.includes(file), `release commit stages ${file}`);
   }
 });
+
+test('prepare-release records an explicit skip decision when nothing is pending (#5152)', () => {
+  const prepare = job('prepare-release');
+  const check = prepare.indexOf('node scripts/release-pending-changesets.mjs');
+  const version = prepare.indexOf('pnpm run changeset:version');
+  assert.ok(check > prepare.indexOf('pnpm run changeset:auto'));
+  assert.ok(check > 0 && check < version, 'check must run before changeset version');
+  const guard = prepare.slice(check, version);
+  assert.match(guard, /should_publish=false/);
+  assert.match(guard, /exit 0/);
+  // validate-release-shards accepts exactly that decision and skips.
+  assert.match(
+    job('validate-release-shards'),
+    /PREPARE_RESULT" = success \] && \[ "\$SHOULD_PUBLISH" = false \]/,
+  );
+});
+
+test('release-pending-changesets exits 3 only when no changeset is pending (#5152)', () => {
+  const script = new URL('./release-pending-changesets.mjs', import.meta.url)
+    .pathname;
+  const root = mkdtempSync(join(tmpdir(), 'pending-changesets-'));
+  try {
+    const run = () => spawnSync(process.execPath, [script, root]).status;
+    assert.equal(run(), 3, 'no .changeset directory');
+    mkdirSync(join(root, '.changeset'));
+    writeFileSync(join(root, '.changeset', 'README.md'), '# readme');
+    writeFileSync(join(root, '.changeset', 'config.json'), '{}');
+    assert.equal(run(), 3, 'only README and config');
+    writeFileSync(join(root, '.changeset', 'auto-abc.md'), '---\n---\n');
+    assert.equal(run(), 0, 'a pending changeset');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

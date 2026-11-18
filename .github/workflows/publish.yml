@@ -151,6 +151,18 @@ jobs:
           echo "previous_version=$BEFORE_VERSION" >> "$GITHUB_OUTPUT"
 
           pnpm run changeset:auto
+
+          # Nothing to release (#5152): `changeset version` exits 1 with "No
+          # unreleased changesets found", which failed the scheduled run and
+          # left validate-release-shards without a decision. Record an
+          # explicit skip decision instead so validate and publish skip.
+          if ! node scripts/release-pending-changesets.mjs; then
+            echo "ℹ️  No unreleased changesets - no release needed"
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            echo "version=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           pnpm run changeset:version
 
           # Get version after changeset version ran
