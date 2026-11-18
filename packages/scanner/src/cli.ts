@@ -217,6 +217,13 @@ async function main(): Promise<void> {
     process.exit(results.errors.length > 0 ? 1 : 0);
   }
 
+  // A scan with errors has no complete manifest to write: the diagnostics
+  // above name values and classes that would be missing from it.
+  if (results.errors.some((error) => error.severity === 'error')) {
+    console.error('No manifest written: fix the scan errors above.');
+    process.exit(1);
+  }
+
   // Read package.json for metadata (Issue #713 - namespace isolation)
   let packageName: string | undefined;
   let packageVersion: string | undefined;
@@ -241,6 +248,20 @@ async function main(): Promise<void> {
     typeAliases: results.typeAliases,
   });
 
+  // The generation checks a SMRT producer runs (confirmed parents, known
+  // relationship and report targets) need the dependency manifests, which
+  // this standalone command does not read. Anything it cannot confirm from
+  // the scan itself refuses the output rather than publish it unchecked.
+  const unconfirmed = unconfirmedIdentities(manifest);
+  if (unconfirmed.length > 0) {
+    console.error('Cannot confirm from this scan alone:');
+    for (const problem of unconfirmed) console.error(`  ${problem}`);
+    console.error(
+      'No manifest written: build with the SMRT producer (ManifestBuilder or the Vite plugin), which reads dependency manifests, or name targets this package declares.',
+    );
+    process.exit(1);
+  }
+
   const output = JSON.stringify(manifest, null, 2);
 
   // Write output
@@ -254,6 +275,118 @@ async function main(): Promise<void> {
   }
 
   process.exit(results.errors.length > 0 ? 1 : 0);
+}
+
+/**
+ * Parents, relationship targets and report sources in `manifest` that the
+ * scan alone cannot confirm: another package's export (its manifest is not
+ * read here), or a name no class of this manifest has.
+ */
+function unconfirmedIdentities(manifest: {
+  packageName?: string;
+  objects: Record<
+    string,
+    {
+      className: string;
+      packageName?: string;
+      extendsQualified?: string;
+      fields?: Record<
+        string,
+        { type?: string; related?: string; relatedQualified?: string }
+      >;
+      decoratorConfig?: Record<string, unknown>;
+    }
+  >;
+}): string[] {
+  // Identity is the package and the class together: a name qualified with
+  // another package is that package's class, whatever this scan declares.
+  const identities = new Set(
+    Object.values(manifest.objects).map((obj) =>
+      `${obj.packageName ?? manifest.packageName ?? ''}:${obj.className}`.toLowerCase(),
+    ),
+  );
+  const names = new Set(
+    Object.values(manifest.objects).map((obj) => obj.className.toLowerCase()),
+  );
+  const own = (manifest.packageName ?? '').toLowerCase();
+  /** `undefined` for a known class, else why it cannot be confirmed here. */
+  const unconfirmed = (name: string): string | undefined => {
+    const separator = name.lastIndexOf(':');
+    const className = name
+      .slice(separator + 1)
+      .split('.')[0]
+      ?.toLowerCase();
+    if (separator < 0) {
+      return names.has(className ?? '')
+        ? undefined
+        : 'which no class of this scan declares';
+    }
+    const packageName = name.slice(0, separator).toLowerCase();
+    if (packageName !== own) return "another package's export";
+    return identities.has(`${packageName}:${className}`)
+      ? undefined
+      : 'which no class of this scan declares';
+  };
+  const problems: string[] = [];
+  for (const obj of Object.values(manifest.objects)) {
+    const parentProblem = obj.extendsQualified
+      ? unconfirmed(obj.extendsQualified)
+      : undefined;
+    if (obj.extendsQualified && parentProblem) {
+      problems.push(
+        `${obj.className} extends ${obj.extendsQualified}, ${parentProblem}`,
+      );
+    }
+    for (const [name, field] of Object.entries(obj.fields ?? {})) {
+      if (!['foreignKey', 'oneToMany', 'manyToMany'].includes(field.type ?? ''))
+        continue;
+      if (field.relatedQualified) {
+        problems.push(
+          `${obj.className}.${name} targets ${field.relatedQualified}, another package's export`,
+        );
+      } else if (!field.related?.trim()) {
+        problems.push(`${obj.className}.${name} names no target`);
+      } else {
+        const problem = unconfirmed(field.related);
+        if (problem) {
+          problems.push(
+            `${obj.className}.${name} targets "${field.related}", ${problem}`,
+          );
+        }
+      }
+    }
+    const report = obj.decoratorConfig?.report as
+      | {
+          source?: unknown;
+          sourceQualified?: unknown;
+          joins?: Record<
+            string,
+            { source?: unknown; sourceQualified?: unknown }
+          >;
+        }
+      | undefined;
+    for (const [path, holder] of [
+      ['source', report],
+      ...Object.entries(report?.joins ?? {}).map(
+        ([join, entry]) => [`joins.${join}.source`, entry] as const,
+      ),
+    ] as const) {
+      if (!holder) continue;
+      if (typeof holder.sourceQualified === 'string') {
+        problems.push(
+          `${obj.className} @report() ${path} is ${holder.sourceQualified}, another package's export`,
+        );
+      } else if (typeof holder.source === 'string' && holder.source !== '') {
+        const problem = unconfirmed(holder.source);
+        if (problem) {
+          problems.push(
+            `${obj.className} @report() ${path} is "${holder.source}", ${problem}`,
+          );
+        }
+      }
+    }
+  }
+  return problems;
 }
 
 main().catch((error) => {
