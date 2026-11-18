@@ -27,6 +27,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   configureMailAccess,
+  learnMailAccessOptions,
   type MailScope,
   resetMailAccess,
 } from '../access.js';
@@ -237,6 +238,40 @@ describe('MessagingSettingsService.listAccounts (#5162)', () => {
     resetMailAccess();
     expect((await service(owner).listAccounts()).accounts).toEqual([]);
     expect((await service(grantee).listAccounts()).accounts).toEqual([]);
+  });
+
+  it('stays closed when only a learned database exists, even with a principal', async () => {
+    resetMailAccess();
+    await seedAccount(tenantA, 'learned', owner);
+    // Using a mail row teaches the access module this database.
+    learnMailAccessOptions(options);
+    expect((await service(owner).listAccounts()).accounts).toEqual([]);
+  });
+
+  it('honours an agent allow-list and clamps scopes to the host ceiling', async () => {
+    const a = await seedAccount(tenantA, 'agent-a', owner);
+    const b = await seedAccount(tenantA, 'agent-b', owner);
+    const limited = (scopes?: MailScope[], accountIds?: string[]) =>
+      new MessagingSettingsService({
+        db,
+        tenantId: tenantA,
+        principal: messagingPrincipalFromPermissions([], {
+          id: owner,
+          userId: owner,
+          tenantId: tenantA,
+          scopes,
+          accountIds,
+        }),
+        resolvePersonaTenantId: async () => null,
+      });
+    const { accounts } = await limited(['read', 'draft'], [a]).listAccounts();
+    expect(accounts.map((x) => x.id)).toEqual([a]);
+    expect(accounts[0].scopes).toEqual(['read', 'draft']);
+    expect((await limited(undefined, []).listAccounts()).accounts).toEqual([]);
+    // Unrestricted user is unchanged.
+    const all = await service(owner).listAccounts();
+    expect(all.accounts.map((x) => x.id).sort()).toEqual([a, b].sort());
+    expect(all.accounts[0].scopes).toEqual(['read', 'triage', 'draft', 'send']);
   });
 
   it('isolates tenants: another tenant never leaks in, and a grant in another tenant does not count', async () => {

@@ -2,6 +2,7 @@ import {
   type PermissionDefinition,
   registerPermissionDefinitions,
 } from '@happyvertical/smrt-users/permission-registry';
+import type { MailScope } from './access.js';
 
 export const SEND_MESSAGES_PERMISSION = 'messages.send';
 export const MANAGE_MESSAGE_ROUTES_PERMISSION = 'messages.manage-routes';
@@ -152,12 +153,22 @@ export interface MessagingPrincipal {
    */
   readonly userId?: string;
   readonly tenantId?: string;
+  /** Host ceiling on mail scopes (agent credential); omit for none. */
+  readonly scopes?: readonly MailScope[];
+  /** Host ceiling on mail account ids (agent allow-list); omit for none. */
+  readonly accountIds?: readonly string[];
   can(slug: string): boolean;
 }
 
 export function messagingPrincipalFromPermissions(
   permissions: Iterable<string>,
-  options: { id?: string; userId?: string; tenantId?: string } = {},
+  options: {
+    id?: string;
+    userId?: string;
+    tenantId?: string;
+    scopes?: readonly MailScope[];
+    accountIds?: readonly string[];
+  } = {},
 ): MessagingPrincipal {
   const granted = new Set(permissions);
   return {

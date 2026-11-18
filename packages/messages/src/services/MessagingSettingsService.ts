@@ -4,6 +4,7 @@ import {
 } from '@happyvertical/smrt-core';
 import {
   decideMailAccess,
+  getMailAccessConfig,
   MAIL_ACCOUNT_RESOURCE_TYPE,
   MAIL_SCOPES,
   type MailPrincipal,
@@ -559,6 +560,9 @@ export class MessagingSettingsService {
     const { tenantId, principal } = this.options;
     if (!userId || !tenantId) return empty;
     if (principal.tenantId && principal.tenantId !== tenantId) return empty;
+    // Owned accounts are only decidable under an explicit policy; a database
+    // merely learned from mail rows must not open them up.
+    if (!getMailAccessConfig()) return empty;
     const requested = Number.isFinite(options.limit)
       ? Math.trunc(options.limit as number)
       : LIST_ACCOUNTS_DEFAULT_LIMIT;
@@ -567,9 +571,18 @@ export class MessagingSettingsService {
       id: principal.id ?? userId,
       userId,
       tenantId,
+      // The host's limits (an agent credential's allow-list and scopes) ride
+      // on the principal and are applied by decideMailAccess below.
+      ...(principal.scopes ? { scopes: principal.scopes } : {}),
+      ...(principal.accountIds ? { accountIds: principal.accountIds } : {}),
     };
     return withTenant({ tenantId }, async () => {
       const candidates = await this.accountCandidateIds(userId);
+      if (subject.accountIds) {
+        for (const id of [...candidates]) {
+          if (!subject.accountIds.includes(id)) candidates.delete(id);
+        }
+      }
       const accounts = await AccountCollection.create(
         withoutListBounds({ db: this.options.db }),
       );
