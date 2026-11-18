@@ -69,7 +69,10 @@ export const GET: RequestHandler = guarded(async (event) => {
       Object.entries(row).map(([field, value]) => [
         field,
         typeof value === 'bigint'
-          ? value.toString()
+          ? // JSON has no bigint: a safe value stays a number so money formats.
+            Number.isSafeInteger(Number(value))
+            ? Number(value)
+            : value.toString()
           : definition.fields[field]?.type === 'boolean' && value !== null
             ? Boolean(value)
             : value,
