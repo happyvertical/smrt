@@ -187,4 +187,199 @@ describe('app model editor: installed model names and tables', () => {
     expect(columns).not.toContain('note');
     expect(await e.history()).toEqual([]);
   });
+
+  it('keeps a journalled list editable when a model on its table is loaded beside it', async () => {
+    const e = await editorFor();
+    const apply = applier(e);
+    await apply({
+      type: 'create_list',
+      name: SAME_TABLE_LIST,
+      list: listDefinition,
+    });
+    // A model that shares the table loads later (state from before these checks).
+    await loadLedger();
+    await apply({
+      type: 'relabel_list',
+      name: SAME_TABLE_LIST,
+      label: 'Books',
+    });
+    await apply({ type: 'remove_list', name: SAME_TABLE_LIST });
+    expect(e.snapshot().revision).toBe(3);
+  });
+});
+
+const MEMBER_PKG = '@fixture/editor-guards-members';
+const MEMBER = `${MEMBER_PKG}:GuardMember`;
+const MEMBER_TABLE = 'guard_members';
+const memberBook = (): Cookbook => ({ ...book(), features: [MEMBER] });
+const memberCatalog = {
+  recipes: [],
+  models: [
+    {
+      id: MEMBER,
+      name: 'GuardMember',
+      packageId: 'editor-guards-members',
+      exposed: true,
+      fields: [{ name: 'name' }],
+    },
+  ],
+};
+const registerMember = (upgraded = false) => {
+  class GuardMember extends SmrtObject {
+    name = '';
+    visits = 0;
+  }
+  field({ type: 'text' })(GuardMember.prototype, 'name');
+  field({ type: 'integer' })(GuardMember.prototype, 'visits');
+  if (upgraded) field({ type: 'text' })(GuardMember.prototype, 'loyaltyTier');
+  ObjectRegistry.register(GuardMember, {
+    packageName: MEMBER_PKG,
+    tableName: MEMBER_TABLE,
+    tenantScoped: true,
+    api: true,
+    mcp: true,
+  });
+};
+const mats = {
+  label: 'Loaner mats',
+  icon: 'layers',
+  displayField: 'size',
+  fields: { size: { type: 'text' } },
+} as const;
+
+describe('app model editor: reconciliation scope and pending revisions', () => {
+  let restore: () => void;
+  let db: Awaited<ReturnType<typeof getDatabase>>;
+  beforeEach(async () => {
+    restore = snapshotObjectRegistryState();
+    ObjectRegistry.clear();
+    globalThis.__smrtModelReadiness?.clear();
+    db = await getTestDatabase({
+      type: databaseType,
+      classes: [],
+      includeSystemTables: false,
+    });
+    registerMember();
+    enableTenancy();
+    await migrateSmrtSchemas({ db, packageName: APP, engineHint: engine });
+  });
+  afterEach(async () => {
+    setRuntimeExposureGate(undefined);
+    globalThis.__smrtModelReadiness?.clear();
+    disableTenancy();
+    await db.close?.();
+    restore();
+  });
+  const editorFor = (extra: Partial<AppModelEditorOptions> = {}) =>
+    createAppModelEditor({
+      db,
+      application: 'editor-guards-scope',
+      tenantId: TENANT,
+      packageName: APP,
+      cookbook: memberBook(),
+      catalog: memberCatalog,
+      authorize: (c) => c.actor === 'owner',
+      ...extra,
+    });
+  const applier =
+    (e: Awaited<ReturnType<typeof editorFor>>) =>
+    (value: AppModelEdit, requestId = `req-${crypto.randomUUID()}`) =>
+      e.apply(value, {
+        actor: 'owner',
+        tenantId: TENANT,
+        expectedRevision: e.snapshot().revision,
+        requestId,
+      });
+  const columns = async (table: string) =>
+    (
+      await db.query(
+        engine === 'postgres'
+          ? `SELECT column_name AS name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = '${table}'`
+          : `PRAGMA table_info(${table})`,
+      )
+    ).rows.map((row) => String(row.name));
+  /** Out-of-band drift: `visits` stored as REAL while declared integer. */
+  const driftVisits = async () => {
+    if (engine === 'postgres')
+      await db.query(
+        `ALTER TABLE ${MEMBER_TABLE} ALTER COLUMN visits TYPE REAL`,
+      );
+    else {
+      await db.query(`ALTER TABLE ${MEMBER_TABLE} DROP COLUMN visits`);
+      await db.query(`ALTER TABLE ${MEMBER_TABLE} ADD COLUMN visits REAL`);
+    }
+  };
+  const repairVisits = async () => {
+    if (engine === 'postgres')
+      await db.query(
+        `ALTER TABLE ${MEMBER_TABLE} ALTER COLUMN visits TYPE BIGINT`,
+      );
+    else {
+      await db.query(`ALTER TABLE ${MEMBER_TABLE} DROP COLUMN visits`);
+      await db.query(`ALTER TABLE ${MEMBER_TABLE} ADD COLUMN visits INTEGER`);
+    }
+  };
+
+  it('edits that change no storage of a drifted table apply; an edit of that table is refused without a pending revision', async () => {
+    const e = await editorFor();
+    const apply = applier(e);
+    await apply({
+      type: 'add_field',
+      model: MEMBER,
+      name: 'vip',
+      field: { type: 'boolean' },
+    });
+    await apply({ type: 'create_list', name: 'GuardMat', list: mats });
+    await driftVisits();
+
+    // Label, list and policy edits of other models do not inspect the drifted table.
+    await apply({ type: 'relabel_list', name: 'GuardMat', label: 'Mats' });
+    await apply({
+      type: 'add_field',
+      model: 'GuardMat',
+      name: 'colour',
+      field: { type: 'text' },
+    });
+    await apply({
+      type: 'label_field',
+      model: MEMBER,
+      name: 'vip',
+      label: 'Very important',
+    });
+    expect(e.snapshot().revision).toBe(5);
+
+    // A storage change on the drifted table is refused before the journal.
+    await expect(
+      apply({
+        type: 'add_field',
+        model: MEMBER,
+        name: 'nickname',
+        field: { type: 'text' },
+      }),
+    ).rejects.toThrow(/MODEL_MIGRATION_REQUIRED|Migrate stopped/);
+    expect((await e.history()).map((row) => row.status)).toEqual([
+      'applied',
+      'applied',
+      'applied',
+      'applied',
+      'applied',
+    ]);
+    expect(await columns(MEMBER_TABLE)).not.toContain('nickname');
+    expect(() => e.snapshot()).not.toThrow();
+    await expect(
+      ObjectRegistry.getAllFields(`${APP}:GuardMember`).then((fields) =>
+        fields.has('nickname'),
+      ),
+    ).resolves.toBe(false);
+
+    // After the operator repairs the drift the same editor edits that table again.
+    await repairVisits();
+    await apply({
+      type: 'add_field',
+      model: MEMBER,
+      name: 'nickname',
+      field: { type: 'text' },
+    });
+    expect(await columns(MEMBER_TABLE)).toContain('nickname');
+  });
 });

@@ -127,7 +127,8 @@ Every operation uses the running process:
 
 | Operation | Activation |
 | --- | --- |
-| Add list / field; import; boot replay | Register/refresh runtime definitions, same-name replacement (STI and CTI), tracked migration, publish, release readiness |
+| Add list / field; import | Register/refresh runtime definitions, same-name replacement (STI and CTI), tracked migration of the changed models' tables, publish, release readiness |
+| Boot replay | Register/refresh every journalled definition, tracked reconciliation of every customised table, publish, release readiness |
 | Field label/hide/remove | Existing policy engine, same publication protocol; migration reconciliation is normally empty |
 | List relabel/remove | Runtime presentation refresh / feature removal, same publication protocol |
 | Undo | Restore previous cookbook, keep union of historical storage fields hidden, tracked additive reconciliation, publish |
@@ -158,16 +159,22 @@ API-operation and cookbook gates rather than admitting a collection separately.
 | Recipe field edit with collection-first registration and implicit table | Both trusted design `app.addField` and direct `editor.apply`; provider and existing same-namespace app replacement; GET/list/PUT preserve the original row, linked name and custom value | Closed delete, foreign tenant, pending or missing readiness, disabled recipe | Existing `cookbook/app-tools.test.ts`, SQLite and prepared in-process PGlite |
 | Curated presentation and journal reopen | One effective definition; original column order followed by custom column; revision replay retains REST record/value | Hidden custom column omitted; no duplicate provider definition | Same four-case matrix; registry restored to provider state before editor reopen |
 
-SQLite appends a pending revision before registration/DDL. Its existing failure
-contract keeps affected models closed and recovers pending work on reopen.
+SQLite registers the candidate and checks the edited tables for manual drift
+before appending its pending revision, so a refused migration leaves no journal
+row and restores the registry and readiness. A failure after the append (DDL
+execution or host publication) keeps affected models closed and recovers the
+pending work on reopen.
 PostgreSQL claims the revision and migrates application columns plus the tracker
 marker in one advisory-locked transaction, using transaction-bound inspection.
 DDL failure rolls back the history insert and registry registration, restores
 readiness, and permits the same request to retry. After commit, host publication
 runs while models remain gated; a publication failure stays durably pending and
 reopen completes that revision. No columns/tables are dropped. Reconciliation
-selects edited tables and their existing physical FK closure; unrelated models
-are not migrated. Manual drift still requires an operator migration. See the
+selects the tables of models whose stored fields the edit adds or changes, and
+their existing physical FK closure; label, hide, remove, relabel and undo edits
+run no DDL, and drift on an unrelated table never blocks an edit. Boot still
+reconciles every customised table. Manual drift on an edited table still
+requires an operator migration. See the
 [PostgreSQL scope and test matrix](postgres-parity.md).
 
 ## Durable history
