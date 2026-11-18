@@ -391,7 +391,10 @@ export function publishApproved(
 }
 
 /** Discard the open draft now: closes it, deletes its copy, thaws live. Owner's direct action. */
-export function discardNow(expectId?: string): Promise<{ discarded: string }> {
+export function discardNow(
+  expectId?: string,
+  options: { expectEmpty?: boolean } = {},
+): Promise<{ discarded: string }> {
   return exclusive(async () => {
     const live = await getHost();
     const slot = await getDraftSlot();
@@ -401,6 +404,12 @@ export function discardNow(expectId?: string): Promise<{ discarded: string }> {
         'this is not the draft that was asked about',
         'refused',
       );
+    // A change that landed after the caller's own check keeps the draft.
+    if (
+      options.expectEmpty &&
+      (!slot.host || (await slot.host.draftChain()).versions.length > 0)
+    )
+      throw new EngineError('this draft has changes', 'refused');
     if (slot.host) await slot.host.discard();
     else if (existsSync(slot.dir)) discardDraftDirectory(slot.dir);
     const row = await (
@@ -439,9 +448,14 @@ export async function discardIfUnused(): Promise<boolean> {
     return false;
   }
   try {
-    await discardNow(slot.id);
+    await discardNow(slot.id, { expectEmpty: true });
   } catch (error) {
-    if ((await getDraftSlot())?.id === slot.id) throw error;
+    const current = await getDraftSlot();
+    if (current?.id === slot.id) {
+      if (error instanceof EngineError && error.code === 'refused')
+        return false;
+      throw error;
+    }
   }
   return true;
 }

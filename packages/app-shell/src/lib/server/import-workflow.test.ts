@@ -30,6 +30,7 @@ import { AppImportCollection } from '../objects/AppImport.ts';
 import { ApprovalCollection } from '../objects/Approval.ts';
 import { runCommand } from './builder.ts';
 import {
+  discardIfUnused,
   discardNow,
   draftInfo,
   previewDraft,
@@ -627,6 +628,21 @@ it('reuses an open draft that has no changes', async () => {
     (await (await AppDraftCollection.create({ db: h.db })).get(unused.id))
       ?.status,
   ).toBe('discarded');
+});
+it('keeps a draft that gets a change after the unused check', async () => {
+  const draft = await startDraft('Just changed', h.owner.id);
+  expect(await discardIfUnused()).toBe(true);
+  const next = await startDraft('Changed after check', h.owner.id);
+  await (await hostFor('draft')).execute(
+    { type: 'defineModel', name: 'Pets', fields: { name: { type: 'text' } } },
+    { author: h.owner.id },
+  );
+  await expect(
+    discardNow(next.id, { expectEmpty: true }),
+  ).rejects.toMatchObject({ code: 'refused' });
+  expect((await getDraftSlot())?.id).toBe(next.id);
+  expect(await discardIfUnused()).toBe(false);
+  expect(draft.id).not.toBe(next.id);
 });
 it('refuses tracking-off and disconnected AI before consuming bytes, and validates owner cell settings', async () => {
   config({ usage: { enabled: false } });
