@@ -38,14 +38,16 @@
 
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { ensureChangeFeedTable, getChangesSince } from '../change-feed.js';
+import {
+  type ChangeFeedPage,
+  ensureChangeFeedTable,
+  getChangesSince,
+} from '../change-feed.js';
 import {
   type ChangeFeedRequestContext,
   filterVisibleChangeFeedEntries,
-  hasChangeFeedEntryVisibilityHook,
   hasChangeFeedTableAuthorizerHook,
   isChangeFeedDenyAll,
-  isChangeFeedEntryVisible,
   resolveAuthorizedChangeFeedTables,
 } from '../change-feed-authz.js';
 import {
@@ -54,6 +56,7 @@ import {
   subscribeToChangeSignals,
   tryReserveChangeSignalSubscriberSlot,
 } from '../change-signals.js';
+import { resolveDbCacheKey } from '../collection-cache.js';
 import {
   type DispatchTenantScope,
   resolveDispatchTenantScope,
@@ -214,7 +217,7 @@ export function eventStreamCapacityExceededResponse(): Response {
  * - enforced, tenant `T` → `T`'s signals plus global signals.
  */
 export function signalVisibleToTenant(
-  sig: ChangeSignal,
+  sig: Pick<ChangeSignal, 'tenantId'>,
   scope: DispatchTenantScope,
 ): boolean {
   if (!scope.enforced) return true;
@@ -255,37 +258,90 @@ function encodeSseComment(text: string): Uint8Array {
 }
 
 /**
+ * Delay before one re-read when a wake-up named a sequence the feed did not
+ * yet serve (a signal can be published by a writer whose commit is not yet
+ * visible to this reader's connection). After that one retry the outstanding
+ * wake-up is re-read on each heartbeat until the feed reaches it — or until a
+ * later write moves the feed past it, if the write was rolled back.
+ */
+const SHORT_READ_RETRY_MS = 250;
+
+/**
+ * Identical feed reads in flight, keyed by database scope, cursor and drain
+ * mode. Every caught-up connection on a database sits at the same cursor, so
+ * one write wakes them all onto the same read: they share its result instead
+ * of each issuing it. Entries live only while the read is in flight, so no
+ * connection ever receives a stale page.
+ */
+const inflightFeedReads = new Map<string, Promise<ChangeFeedPage>>();
+
+/**
+ * Read one unfiltered feed page after `since`, sharing an identical read that
+ * is already in flight. Tenant, table and row filters are applied by each
+ * connection afterwards, so the shared page is never narrowed for one reader
+ * at another's expense. Credential tables are refused inside
+ * `getChangesSince` itself.
+ */
+function readFeedPage(
+  db: DatabaseInterface,
+  since: number,
+  drain: boolean,
+): Promise<ChangeFeedPage> {
+  let key: string;
+  try {
+    key = `${resolveDbCacheKey(db)}\u0000${since}\u0000${drain ? 1 : 0}`;
+  } catch {
+    return getChangesSince(db, { since, drain });
+  }
+  const pending = inflightFeedReads.get(key);
+  if (pending) return pending;
+  const read = getChangesSince(db, { since, drain });
+  inflightFeedReads.set(key, read);
+  const clear = () => {
+    if (inflightFeedReads.get(key) === read) inflightFeedReads.delete(key);
+  };
+  read.then(clear, clear);
+  return read;
+}
+
+/**
  * Build the SSE body stream for an `_events` connection.
  *
+ * **Delivery invariant.** Every `change` frame is read from the durable feed,
+ * in sequence order, starting after the connection's own sent cursor. A live
+ * signal is only a wake-up: it tells the connection that the feed has moved,
+ * and the connection then reads from its cursor. So the stream never emits a
+ * sequence at or below one it already sent, and never emits a sequence while
+ * an earlier committed one it may see is still unsent — the `id:` a client
+ * resumes from (`Last-Event-ID`) always covers everything before it. Rows
+ * the connection may not see still advance its cursor; they are simply not
+ * framed.
+ *
+ * A read that fails closes the stream. The client reconnects with the last id
+ * it actually received and the server replays from there; staying open
+ * live-only would let a later id overtake the changes the failed read was
+ * meant to deliver.
+ *
  * `start(controller)`:
- *  0. Resolve the change-feed table authorization (#3020), if a hook is
+ *  a. **Subscribe first.** Signals published from now on raise the
+ *     connection's wanted sequence; nothing is emitted until the starting
+ *     cursor is known, and the first read covers everything signalled
+ *     meanwhile.
+ *  b. Fix the starting cursor: the supplied `cursor`, or — live-forward only
+ *     — the feed's current head.
+ *  c. Resolve the change-feed table authorization (#3020), if a hook is
  *     registered, and capture it for the life of the connection — exactly
  *     like `tenantScope`, and for the same reason (delivery runs outside this
- *     call's context). Skipped entirely (no `await`) when no table
- *     authorizer is registered, so the default connection setup stays
- *     synchronous up to the subscribe call below. When a hook IS registered
- *     and the connection has no explicit catch-up `cursor` (live-forward-only),
- *     the feed's current head is captured BEFORE this await as a gap-fill
- *     cursor: `unsubscribe` below only sees signals published after it
- *     attaches, so a write that commits (and signals) while the authorizer is
- *     pending would otherwise be lost forever, not merely delayed — a
- *     supplied `cursor` doesn't need this because its own catch-up phase (c)
- *     already starts from a value captured before this same await.
- *  a. **Subscribe FIRST**, before catch-up. Subscribing before the catch-up
- *     read closes the gap window: a write landing between subscribe and the
- *     catch-up read is delivered twice (once live, once in the replay) — which
- *     is safe, since the client dedupes by the SSE `id:`/seq. Each live signal
- *     is additionally checked against the captured table authorization and,
- *     if registered, the row-level `isChangeFeedEntryVisible` hook — denied
- *     signals are silently dropped, never enqueued.
- *  b. Write the `retry:` reconnection hint.
- *  c. If a cursor was supplied, OR step 0 captured a gap-fill cursor, replay
- *     changes after it (paging until exhausted, applying the same table/row
- *     authorization as live delivery); on `resyncRequired`, emit
- *     `event: resync` at the server's fresh horizon.
- *  d. Start the heartbeat interval.
+ *     call's context). Because the starting cursor was fixed before this
+ *     await, a write that commits while the hook is pending is still read.
+ *  d. Write the `retry:` reconnection hint and the optional manifest frame.
+ *  e. Read from the starting cursor until the feed is exhausted (catch-up),
+ *     applying the captured tenant scope and table/row authorization; on
+ *     `resyncRequired`, emit `event: resync` at the server's fresh horizon
+ *     and continue from it.
+ *  f. Start the heartbeat interval.
  *
- * `cancel()` tears down on disconnect: clears the heartbeat and unsubscribes,
+ * `cancel()` tears down on disconnect: clears the timers and unsubscribes,
  * so a dropped client never leaks its subscription (which would pin the dead
  * controller and keep the cross-replica listener refcount above 0).
  */
@@ -300,7 +356,25 @@ export function buildChangeEventStream(
   let unsubscribe: (() => void) | null = null;
   let releaseSubscriberSlot = options.releaseSubscriberSlot ?? null;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let closed = false;
+  let streamController: ReadableStreamDefaultController<Uint8Array> | null =
+    null;
+
+  // Delivery state (see the delivery invariant above).
+  /** Highest sequence delivered or passed over; null until the start is fixed. */
+  let sentCursor: number | null = null;
+  /** Highest sequence a wake-up has announced. */
+  let wantedSeq = 0;
+  let pumping = false;
+  let pumpRequested = false;
+  let pumpExhaustive = false;
+  let shortReadRetried = false;
+
+  // Captured table authorization (#3020). `null` = no table hook, or not yet
+  // resolved (wake-ups are then not pre-filtered; reads still are, below).
+  let allowedTableSet: Set<string> | null = null;
+  let denyAllTables = false;
 
   const teardown = () => {
     if (closed) return;
@@ -308,6 +382,10 @@ export function buildChangeEventStream(
     if (heartbeat) {
       clearInterval(heartbeat);
       heartbeat = null;
+    }
+    if (retryTimer) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
     }
     if (unsubscribe) {
       unsubscribe();
@@ -319,218 +397,224 @@ export function buildChangeEventStream(
     }
   };
 
+  /** End the stream after a failed read; the client resumes from its last id. */
+  const failClosed = (error: unknown) => {
+    if (closed) return;
+    logger.warn(
+      '_events: change-feed read failed; closing the stream so the client resumes from its last delivered id',
+      { error: error instanceof Error ? error.message : String(error) },
+    );
+    teardown();
+    try {
+      streamController?.close();
+    } catch {
+      // Already closed or errored by the platform.
+    }
+  };
+
+  /** Tenant scope + captured table allow-list, the synchronous filters. */
+  const passesStaticFilters = (entry: {
+    table: string;
+    tenantId: string | null;
+  }): boolean => {
+    if (denyAllTables) return false;
+    if (!signalVisibleToTenant(entry, tenantScope)) return false;
+    if (allowedTableSet && !allowedTableSet.has(entry.table)) return false;
+    return true;
+  };
+
+  const waitForCapacity = async (): Promise<void> => {
+    while (
+      !closed &&
+      streamController !== null &&
+      streamController.desiredSize !== null &&
+      streamController.desiredSize <= 0
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  };
+
+  /**
+   * Read forward from `sentCursor`, emitting what this connection may see.
+   * `exhaustive` keeps reading until the feed stops advancing (catch-up);
+   * otherwise reading stops once the announced sequence is covered.
+   */
+  const pumpOnce = async (exhaustive: boolean): Promise<void> => {
+    for (;;) {
+      if (closed || sentCursor === null || streamController === null) return;
+      await waitForCapacity();
+      if (closed) return;
+      const since = sentCursor;
+      // Catch-up reads sequence staged entries first (#2649); wake-up reads
+      // were triggered by an already-sequenced entry and stay SELECT-only.
+      const page = await readFeedPage(db, since, exhaustive);
+      if (closed) return;
+      if (page.resyncRequired) {
+        const resyncCursor =
+          typeof page.resyncCursor === 'number' &&
+          Number.isFinite(page.resyncCursor) &&
+          page.resyncCursor >= 0
+            ? page.resyncCursor
+            : since;
+        streamController.enqueue(encodeSseResyncEvent(resyncCursor));
+        sentCursor = resyncCursor;
+        if (resyncCursor === since) return;
+        continue;
+      }
+      const candidates = page.changes.filter(
+        (change) => change.seq > since && passesStaticFilters(change),
+      );
+      // Row-level visibility (#3020) — the same filter the `_changes` read
+      // path applies; never touches the cursor, so a denied entry is passed
+      // over rather than re-read forever.
+      const deliverable = await filterVisibleChangeFeedEntries(
+        requestContext,
+        candidates,
+      );
+      if (closed) return;
+      for (const change of deliverable) {
+        streamController.enqueue(
+          encodeSseEvent({
+            table: change.table,
+            operation: change.operation,
+            rowId: change.rowId,
+            tenantId: change.tenantId,
+            seq: change.seq,
+          }),
+        );
+      }
+      if (page.cursor <= since) {
+        // The feed did not move. A wake-up that named a later sequence came
+        // from a write this connection cannot see yet: read once more
+        // shortly, then leave it to the next signal or heartbeat.
+        if (wantedSeq > since) {
+          if (!shortReadRetried) {
+            shortReadRetried = true;
+            scheduleRetry();
+          }
+        }
+        return;
+      }
+      sentCursor = page.cursor;
+      shortReadRetried = false;
+      if (!exhaustive && sentCursor >= wantedSeq) return;
+    }
+  };
+
+  const schedulePump = (exhaustive = false) => {
+    if (exhaustive) pumpExhaustive = true;
+    pumpRequested = true;
+    if (pumping || closed || sentCursor === null) return;
+    pumping = true;
+    void (async () => {
+      try {
+        while (pumpRequested && !closed) {
+          pumpRequested = false;
+          const runExhaustive = pumpExhaustive;
+          pumpExhaustive = false;
+          await pumpOnce(runExhaustive);
+        }
+      } catch (error) {
+        failClosed(error);
+      } finally {
+        pumping = false;
+      }
+    })();
+  };
+
+  const scheduleRetry = () => {
+    if (retryTimer || closed) return;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      schedulePump();
+    }, SHORT_READ_RETRY_MS);
+    (retryTimer as { unref?: () => void }).unref?.();
+  };
+
+  /** A live signal is a wake-up only; the frame comes from the feed read. */
+  const onSignal = (sig: ChangeSignal) => {
+    if (closed) return;
+    // Pre-filtering is an optimisation only: a change this connection may not
+    // see never needs a read of its own — the next visible wake-up's read
+    // passes over it.
+    if (!passesStaticFilters(sig)) return;
+    if (sentCursor !== null && sig.seq <= sentCursor) return;
+    if (sig.seq > wantedSeq) wantedSeq = sig.seq;
+    schedulePump();
+  };
+
   return new ReadableStream<Uint8Array>({
     async start(controller) {
-      // (0) Table authorization (#3020), captured once for the connection's
-      // lifetime — mirrors `tenantScope`. `undefined` (no hook registered)
-      // keeps every downstream check a no-op; the `await` only runs when a
-      // hook is actually registered, so the unconfigured default reaches the
-      // subscribe call below with no yield in between.
-      let allowedTables: string[] | undefined;
-      // Gap-fill catch-up cursor (#3020 follow-up): in live-forward-only mode
-      // (`cursor === null`) there is no explicit catch-up phase below to
-      // recover a write that commits — and signals — while the table
-      // authorizer is awaited. `unsubscribe` below only sees signals
-      // published AFTER it attaches, so anything published during this await
-      // is otherwise lost forever, not merely delayed. Capture the feed's
-      // current head BEFORE the await (a single indexed MIN/MAX bounds
-      // query, via `denyAllTables` so it never touches the row-selecting
-      // path) so that once the allow-list resolves we can replay exactly the
-      // entries appended in that window — same mechanism the explicit-cursor
-      // path already gets for free, since its catch-up starts from a cursor
-      // captured before this same await. A non-null `cursor` needs no
-      // separate capture: its own catch-up phase already starts from that
-      // pre-await value.
-      let gapFillCursor: number | null = null;
-      if (hasChangeFeedTableAuthorizerHook()) {
-        if (cursor == null) {
-          // A rejected head query errors the stream, and cancelling an
-          // errored stream never reaches `cancel()` — release the reserved
-          // subscriber slot here or it stays allocated forever.
-          let headPage: Awaited<ReturnType<typeof getChangesSince>>;
-          try {
-            headPage = await getChangesSince(db, {
-              since: 0,
-              denyAllTables: true,
-            });
-          } catch (error) {
-            teardown();
-            throw error;
-          }
-          gapFillCursor = headPage.resyncRequired
-            ? (headPage.resyncCursor ?? 0)
-            : headPage.cursor;
-        }
-        allowedTables = await resolveAuthorizedChangeFeedTables(
-          requestContext,
-          undefined,
-        );
-        // The client may have disconnected while that awaited (#3020 P2):
-        // `cancel()` runs `teardown()` before any subscription exists,
-        // releasing the reserved slot but leaving `unsubscribe` null since
-        // there is nothing to unsubscribe yet. Subscribing below anyway
-        // would register a listener that no later `teardown()` call could
-        // ever remove — `closed` is already `true`, so `teardown()`
-        // short-circuits — permanently leaking a `change-signals` local
-        // listener (inflating `changeSignalSubscriberCount` forever) and
-        // then throwing on the very next `controller.enqueue` against an
-        // already-closed controller. Bail out here instead: the slot was
-        // already released by that earlier `teardown()`, so nothing further
-        // needs releasing.
-        if (closed) return;
-      }
-      const allowedTableSet = allowedTables ? new Set(allowedTables) : null;
-      // Same deny-all distinction `readAuthorized` makes (#3020 P1): an
-      // explicit empty allow-list must deny the catch-up read via
-      // `getChangesSince`'s `denyAllTables` option, never an empty `tables`
-      // array (which means "no filter") or a synthesized sentinel name.
-      const catchupDenyAllTables = isChangeFeedDenyAll(allowedTables);
-      const rowVisibilityActive = hasChangeFeedEntryVisibilityHook();
-      // Serializes the (possibly async) row-visibility check so signals are
-      // still delivered in arrival order; unused — and never allocated a
-      // microtask — when no row hook is registered (see the enqueue fast path
-      // below), preserving the documented synchronous per-listener delivery.
-      let deliveryQueue: Promise<void> = Promise.resolve();
-
-      // (a) Subscribe FIRST, before catch-up — closes the subscribe/catch-up
-      // gap window (a write in between is delivered twice; the client dedupes
-      // by seq). The tenant filter uses the scope captured at open, never a
-      // per-signal re-resolution; table authorization is the same captured
-      // value.
-      unsubscribe = subscribeToChangeSignals(db, (sig) => {
-        if (closed) return;
-        if (!signalVisibleToTenant(sig, tenantScope)) return;
-        if (allowedTableSet && !allowedTableSet.has(sig.table)) return;
-        if (!rowVisibilityActive) {
-          try {
-            controller.enqueue(encodeSseEvent(sig));
-          } catch {
-            // Controller already closed (client gone before cancel fired) —
-            // tear down so we stop trying to write to a dead controller.
-            teardown();
-          }
-          return;
-        }
-        deliveryQueue = deliveryQueue.then(async () => {
-          if (closed) return;
-          if (!(await isChangeFeedEntryVisible(requestContext, sig))) return;
-          try {
-            controller.enqueue(encodeSseEvent(sig));
-          } catch {
-            teardown();
-          }
-        });
-      });
+      streamController = controller;
+      // (a) Subscribe first; see the delivery invariant.
+      unsubscribe = subscribeToChangeSignals(db, onSignal);
       if (releaseSubscriberSlot) {
         releaseSubscriberSlot();
         releaseSubscriberSlot = null;
       }
 
-      // (b) Reconnection hint.
+      let startCursor = cursor;
+      try {
+        // (b) Live-forward only: start from the feed's current head (one
+        // bounds read via `denyAllTables`, no row scan).
+        if (startCursor == null) {
+          const head = await getChangesSince(db, {
+            since: 0,
+            denyAllTables: true,
+          });
+          startCursor = head.resyncRequired
+            ? (head.resyncCursor ?? 0)
+            : head.cursor;
+        }
+        if (closed) return;
+        // (c) Table authorization, captured once for the connection.
+        if (hasChangeFeedTableAuthorizerHook()) {
+          const allowedTables = await resolveAuthorizedChangeFeedTables(
+            requestContext,
+            undefined,
+          );
+          // The client may have disconnected while that awaited (#3020 P2);
+          // teardown already unsubscribed and released the slot.
+          if (closed) return;
+          allowedTableSet = allowedTables ? new Set(allowedTables) : null;
+          denyAllTables = isChangeFeedDenyAll(allowedTables);
+        }
+      } catch (error) {
+        // A rejected start errors the stream, and cancelling an errored
+        // stream never reaches `cancel()` — tear down here or the
+        // subscription and any reserved slot stay allocated forever.
+        teardown();
+        throw error;
+      }
+
+      // (d) Reconnection hint and contract advertisement (#1859).
       controller.enqueue(encoder.encode('retry: 3000\n\n'));
-      // Advertise the server contract at connection open (#1859). A reconnect
-      // naturally replays this frame, letting a long-lived tab learn about a
-      // shape-only API deploy without a full page load.
       if (manifestHash !== undefined) {
         controller.enqueue(encodeSseManifestEvent(manifestHash));
       }
 
-      // (c) Catch-up replay from the cursor, if one was supplied — or from
-      // the gap-fill cursor captured before the authorizer await (above),
-      // which replays only what was appended during that await so a
-      // live-forward-only connection never silently drops it.
-      const catchupCursor = cursor ?? gapFillCursor;
-      if (catchupCursor != null) {
-        try {
-          // Catch-up MUST filter by the scope captured at connection open, not
-          // re-resolve the tenant via ALS at call time. start() happens to run
-          // in-request today, but relying on that is fragile — and it must match
-          // the live-signal filter exactly (signalVisibleToTenant): when
-          // enforced, `scope.tenantId` (a tenant id → that tenant + global; null
-          // → global only); when not enforced, undefined → no tenant filter.
-          const catchupTenantId = tenantScope.enforced
-            ? tenantScope.tenantId
-            : undefined;
-          let since = catchupCursor;
-          // Page until exhausted (cursor stops advancing / resync).
-          for (;;) {
-            const page = await getChangesSince(db, {
-              since,
-              tenantId: catchupTenantId,
-              // Same captured table authorization as live delivery (#3020).
-              tables: catchupDenyAllTables ? undefined : allowedTables,
-              denyAllTables: catchupDenyAllTables,
-            });
-            if (page.resyncRequired) {
-              const resyncCursor =
-                typeof page.resyncCursor === 'number' &&
-                Number.isFinite(page.resyncCursor) &&
-                page.resyncCursor >= 0
-                  ? page.resyncCursor
-                  : since;
-              controller.enqueue(encodeSseResyncEvent(resyncCursor));
-              break;
-            }
-            // Row-level visibility (#3020) — filters the replayed page the
-            // same way the read `_changes` path does, never touching
-            // `page.cursor` below so the client still advances past a denied
-            // entry instead of re-requesting it forever.
-            const visibleChanges = await filterVisibleChangeFeedEntries(
-              requestContext,
-              page.changes,
-            );
-            for (const change of visibleChanges) {
-              controller.enqueue(
-                encodeSseEvent({
-                  table: change.table,
-                  operation: change.operation,
-                  rowId: change.rowId,
-                  tenantId: change.tenantId,
-                  seq: change.seq,
-                }),
-              );
-            }
-            if (closed) break;
-            if (page.cursor === since || page.changes.length === 0) {
-              break;
-            }
-            since = page.cursor;
-            // NOTE: catch-up enqueues per-page without a hard cap. It is
-            // bounded — an over-old cursor hits `resyncRequired` and stops — but
-            // a large retention window replayed to a slow client could spike
-            // memory. Honor the controller's backpressure signal cheaply: when
-            // the internal queue is full (`desiredSize <= 0`), yield between
-            // pages so the consumer drains first. Bounded by `closed` (set on
-            // cancel/disconnect), so it can't spin on a client that never reads.
-            while (
-              !closed &&
-              controller.desiredSize !== null &&
-              controller.desiredSize <= 0
-            ) {
-              await new Promise((resolve) => setTimeout(resolve, 5));
-            }
-          }
-        } catch (error) {
-          logger.warn('_events: cursor catch-up failed', {
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
+      // (e) Ordered catch-up from the starting cursor. Wake-ups received so
+      // far are covered by the same reads.
+      sentCursor = startCursor;
+      schedulePump(true);
 
-      // (d) Heartbeat keeps intermediaries from idling the connection out.
+      // (f) Heartbeat keeps intermediaries from idling the connection out,
+      // and re-reads when a wake-up is still outstanding.
       heartbeat = setInterval(() => {
         if (closed) return;
         try {
           controller.enqueue(encodeSseComment('heartbeat'));
         } catch {
           teardown();
+          return;
         }
+        if (sentCursor !== null && wantedSeq > sentCursor) schedulePump();
       }, heartbeatMs);
       // Do not keep the event loop alive solely for heartbeats.
       (heartbeat as { unref?: () => void }).unref?.();
     },
     cancel() {
-      // Client disconnected (abort) — release the subscription + heartbeat.
+      // Client disconnected (abort) — release the subscription + timers.
       teardown();
     },
   });
