@@ -475,8 +475,18 @@ async function scanSourceManifest(
   });
   const { results, resolved } = await scanner.scanAndResolve();
   const adapter = new ManifestAdapter();
+  // Introspection reports what it can read together with the scanner's
+  // diagnostics. Two models of one class name are such a diagnostic (a
+  // manifest holds one class per name); the description keeps the last one
+  // scanned so the rest of the project is still reported.
   const manifest = adapter.toManifest(
-    resolved.filter((classDef) => classDef.hasSmartDecorator),
+    [
+      ...new Map(
+        resolved
+          .filter((classDef) => classDef.hasSmartDecorator)
+          .map((classDef) => [classDef.className, classDef]),
+      ).values(),
+    ],
     {
       packageName: packageMetadata.name,
       packageVersion: packageMetadata.version,
