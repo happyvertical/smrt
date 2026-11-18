@@ -1814,6 +1814,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       undefined,
       targetIdentity,
     );
+    // The target's collection is not opened on this path before its read
+    // scope is asked for, so tell policies which database it uses first (a
+    // fresh process would otherwise scope the join without knowing it).
+    await GlobalInterceptors.executeCollectionReady(
+      target.getResolvedItemClassName(),
+      { db: target.db, options: target.options },
+      context,
+    );
     const scoped = (await GlobalInterceptors.executeBeforeList(
       target.getResolvedItemClassName(),
       { where: {} },

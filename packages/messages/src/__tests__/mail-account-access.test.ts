@@ -7,7 +7,13 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { ObjectRegistry, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  field,
+  ObjectRegistry,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import {
   disableTenancy,
@@ -60,6 +66,20 @@ const ALL_MAIL_SLUGS = [
 
 @smrt({ tableStrategy: 'sti' })
 class AppEmail extends Email {}
+
+// A non-mail model whose display label is joined from an email's subject.
+@smrt({
+  idType: 'uuid',
+  display: {
+    label: { via: 'emailId', field: 'subject', fallback: 'Hidden' },
+  },
+})
+class MailNote extends SmrtObject {
+  @crossPackageRef('@happyvertical/smrt-messages:Email')
+  emailId = '';
+  @field()
+  tenantId: string | null = null;
+}
 
 interface Person {
   id: string;
@@ -318,6 +338,35 @@ describe('mail account access (#5129)', () => {
         await other.close?.();
         expect(await emails.count({})).toBe(1);
       });
+    });
+
+    it('does not join subjects of denied accounts into another model label (cold)', async () => {
+      const ids = await withTenant({ tenantId: tenantA }, () =>
+        runWithMailSystemAccess(async () => {
+          const emails = await EmailCollection.create(options);
+          const pick = async (accountId: string) =>
+            (await emails.list({ where: { accountId } }))[0]?.id as string;
+          return {
+            hidden: await pick(privateAccountId),
+            open: await pick(openAccountId),
+          };
+        }),
+      );
+      await withTenant({ tenantId: tenantA }, async () => {
+        const notes = await ObjectRegistry.getCollection('MailNote', options);
+        for (const emailId of [ids.hidden, ids.open]) {
+          await notes.create({ emailId, tenantId: tenantA });
+        }
+      });
+      resetMailAccess();
+      current = null;
+      const labels = await withTenant({ tenantId: tenantA }, async () => {
+        const notes = await ObjectRegistry.getCollection('MailNote', options);
+        return (await notes.list({ select: ['id', 'displayLabel'] })).map(
+          (row: { displayLabel?: string }) => row.displayLabel,
+        );
+      });
+      expect(labels.sort()).toEqual(['Hidden', 'open subject']);
     });
 
     describe('STI subclasses served by a default collection', () => {

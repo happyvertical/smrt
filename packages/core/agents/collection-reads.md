@@ -49,7 +49,8 @@ routes explicitly request the projection for models whose web definitions
 publish it, so record headings and reference sources retain human names.
 
 The join resolves the effective qualified target (including same-name app
-subclasses), runs the target collection's `beforeList` authorization/tenant
+subclasses), runs the target collection's `onCollectionReady` hook (so a policy knows
+the target's database on a fresh process) and then its `beforeList` authorization/tenant
 scope and STI branch predicate, and never hydrates target records. Like other
 plain projections, target `afterList` hooks do not run; row authorization must
 be expressed in `beforeList`. Source/target tenant owners must match exactly,
