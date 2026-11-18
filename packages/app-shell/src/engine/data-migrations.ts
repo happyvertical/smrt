@@ -462,19 +462,23 @@ export async function applyLoad(
       withCallerOwnedDatabaseTransaction(batch, async () => {
         const collection = await collectionFor(def, batch, cmd.model);
         const slice = prepared.slice(offset, offset + 100);
-        for (const write of slice)
-          if (write.before)
+        // New records go in as core batches (same rows, ids, defaults and
+        // change-feed entries as creating them one by one). Input order is
+        // kept: a run of creates is flushed before each update.
+        let pending: never[] = [];
+        const flush = async () => {
+          if (pending.length > 0) await collection.createMany(pending);
+          pending = [];
+        };
+        for (const write of slice) {
+          if (write.before) {
+            await flush();
             await collection.update(write.id, write.data as never);
-        // New records go in as one core batch: same rows, ids, defaults and
-        // change-feed entries as creating them one by one, in a few statements.
-        await collection.createMany(
-          slice
-            .filter((write) => !write.before)
-            .map(
-              (write) =>
-                ({ ...defaults, ...write.data, id: write.id }) as never,
-            ),
-        );
+          } else {
+            pending.push({ ...defaults, ...write.data, id: write.id } as never);
+          }
+        }
+        await flush();
         const batchWrites = prepared.slice(offset, offset + 100);
         const byId = new Map(batchWrites.map((write) => [write.id, write]));
         const rows = (

@@ -3388,26 +3388,21 @@ export class SmrtObject extends SmrtClass {
       }
       return 'inserted';
     };
-    const embedded = usesEmbeddedRevisionFallback(first.db);
-    let outcome: Outcome;
-    if (embedded && isKnownDatabaseTransaction(first.db)) {
-      outcome = await withEmbeddedWriteQueue(first.db, true, () =>
-        write(first.db),
-      );
-    } else {
-      outcome = await withEmbeddedWriteTransaction(
-        first.db,
-        isEmbeddedDatabase(first.db),
-        write,
-        embedded,
-      );
-    }
-    if (outcome === 'fallback') return false;
-
-    // One read-back per batch supplies database-generated and calculated values.
-    const generated = first.getRegisteredClassInfo()?.generatedFields;
-    if (generated) {
-      const byId = new Map(instances.map((item) => [String(item.id), item]));
+    // Read-back, completion and the change feed run in the insert's
+    // transaction, so a failure there rolls the whole batch back. Instances are
+    // bound to that transaction's handle for the duration, as withDatabase()
+    // binds one.
+    const complete = async () => {
+      // One read-back per batch supplies database-generated and calculated
+      // values, for the instances whose class declares any.
+      const reloaded = new Set<SmrtObject>();
+      const byId = new Map<string, SmrtObject>();
+      for (const item of instances) {
+        if (item.getRegisteredClassInfo()?.generatedFields) {
+          byId.set(String(item.id), item);
+          reloaded.add(item);
+        }
+      }
       const all = [...byId.keys()];
       for (let at = 0; at < all.length; at += 500) {
         const filter = await first.interceptGetFilter({
@@ -3417,20 +3412,66 @@ export class SmrtObject extends SmrtClass {
           await byId.get(String(row.id))?.loadDataFromDb(row);
         }
       }
-    }
-    const completions: BulkMutationEntry[] = [];
-    for (let i = 0; i < instances.length; i++) {
-      await instances[i].completeSave(
-        prepared[i].interceptorContext,
-        false,
-        true,
+      const completions: BulkMutationEntry[] = [];
+      for (let i = 0; i < instances.length; i++) {
+        await instances[i].completeSave(
+          prepared[i].interceptorContext,
+          false,
+          reloaded.has(instances[i]),
+        );
+        completions.push({
+          instance: instances[i],
+          context: prepared[i].interceptorContext,
+        });
+      }
+      await GlobalInterceptors.executeBulkAfter('afterSave', completions);
+    };
+    const insertAndComplete = async (
+      tx: DatabaseInterface,
+    ): Promise<Outcome> => {
+      if ((await write(tx)) === 'fallback') return 'fallback';
+      if (tx === first.db) {
+        await complete();
+        return 'inserted';
+      }
+      const previous = instances.map((item) => [item._db, item.options.db]);
+      try {
+        await first.withDatabase(tx, async () => {
+          for (const item of instances) {
+            item._db = tx;
+            item.options.db = tx;
+          }
+          await complete();
+        });
+      } catch (error) {
+        for (const item of instances) item._persisted = false;
+        throw error;
+      } finally {
+        instances.forEach((item, i) => {
+          item._db = previous[i][0] as DatabaseInterface;
+          item.options.db = previous[i][1] as DatabaseInterface;
+        });
+      }
+      return 'inserted';
+    };
+    const embedded = usesEmbeddedRevisionFallback(first.db);
+    let outcome: Outcome;
+    if (embedded && isKnownDatabaseTransaction(first.db)) {
+      outcome = await withEmbeddedWriteQueue(first.db, true, () =>
+        insertAndComplete(first.db),
       );
-      completions.push({
-        instance: instances[i],
-        context: prepared[i].interceptorContext,
-      });
+    } else {
+      outcome = await withEmbeddedWriteTransaction(
+        first.db,
+        isEmbeddedDatabase(first.db),
+        insertAndComplete,
+        embedded,
+      );
     }
-    await GlobalInterceptors.executeBulkAfter('afterSave', completions);
+    if (outcome === 'fallback') return false;
+    // Completion invalidated through the transaction handle; the root handle's
+    // cached reads must go too.
+    first.invalidateCollectionReadCache();
     return true;
   }
 

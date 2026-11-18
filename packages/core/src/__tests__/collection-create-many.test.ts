@@ -51,6 +51,24 @@ class CmInvoices extends SmrtCollection<CmInvoice> {
   static readonly _itemClass = CmInvoice;
 }
 
+@smrt({ tableStrategy: 'sti', tableName: 'cm_mixed' })
+class CmMixedBase extends SmrtObject {
+  @field({ type: 'text' }) title = '';
+}
+@smrt()
+class CmMixedChild extends CmMixedBase {
+  @field({ type: 'integer' }) qty = 0;
+  @field({ type: 'integer' }) unitPrice = 0;
+  @field({
+    type: 'integer',
+    generated: { op: 'mul', left: { col: 'qty' }, right: { col: 'unitPrice' } },
+  })
+  total = 0;
+}
+class CmMixeds extends SmrtCollection<CmMixedBase> {
+  static readonly _itemClass = CmMixedBase;
+}
+
 const hookCalls: string[] = [];
 @smrt({ tableName: 'cm_hooked' })
 class CmHooked extends SmrtObject {
@@ -231,6 +249,41 @@ for (const type of engines) {
       expect((batch as { code?: string }).code).toBe(
         (single as { code?: string }).code,
       );
+    });
+
+    it('rolls back the whole batch when completion fails with no caller transaction', async () => {
+      GlobalInterceptors.register({
+        name: 'cm-failing-bulk',
+        priority: 1,
+        afterSave() {},
+        bulkMutation: {
+          compatible: () => true,
+          async afterSave() {
+            throw new Error('completion failed');
+          },
+        },
+      });
+      try {
+        await expect(
+          items.createMany(
+            [1, 2, 3].map((n) => ({ title: `Fail ${n}` })) as never,
+          ),
+        ).rejects.toThrow('completion failed');
+      } finally {
+        GlobalInterceptors.unregister('cm-failing-bulk');
+      }
+      expect(await rows('cm_items')).toHaveLength(0);
+      const feed = await getChangesSince(db, { since: 0 });
+      expect(feed.changes.filter((c) => c.table === 'cm_items')).toEqual([]);
+    });
+
+    it('reads generated values back for later children of a mixed STI batch', async () => {
+      const mixed = await CmMixeds.create({ db });
+      const created = await mixed.createMany([
+        { title: 'plain' },
+        { _meta_type: 'CmMixedChild', title: 'child', qty: 3, unitPrice: 7 },
+      ] as never);
+      expect((created[1] as CmMixedChild).total).toBe(21);
     });
 
     it('rolls back with the caller transaction', async () => {
