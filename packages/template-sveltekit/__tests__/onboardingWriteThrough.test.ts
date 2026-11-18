@@ -164,7 +164,7 @@ it.each(
       sourceFile,
       `import {smrt} from '@happyvertical/smrt-core';
 import {${name} as Base} from '@happyvertical/smrt-${pkg}';
-@smrt({packageName:'${APP}',name:'${name}'${presentation}}) export class ${name} extends Base {}
+@smrt({packageName:'${APP}',name:'${name}',replaceParent:true${presentation}}) export class ${name} extends Base {}
 `,
     );
     objects[`${APP}:${name}`] = {
@@ -174,6 +174,7 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
       filePath: sourceFile,
       extends: name,
       extendsQualified: parent,
+      decoratorConfig: { ...objects[parent].decoratorConfig, replaceParent: true },
     };
   }
   const manifest: SmartObjectManifest = {
