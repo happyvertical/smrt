@@ -60,7 +60,7 @@
     "test:e2e:invoices": "playwright test -c e2e/invoices/playwright.config.ts",
     "test:e2e:pricing": "cd ../.. && QUOTE_BROWSER_EXTENSION=packages/commerce/test-support/pricing-browser.mjs node packages/commerce/test-support/quote-browser.mjs",
     "test:e2e:purchasing": "cd ../.. && QUOTE_BROWSER_EXTENSION=packages/commerce/test-support/purchasing-browser-extension.mjs node packages/commerce/test-support/quote-browser.mjs && QUOTE_BROWSER_EXTENSION=packages/commerce/test-support/purchasing-header-browser.mjs node packages/commerce/test-support/quote-browser.mjs",
-    "test:pglite": "node ../core/scripts/test-pglite.mjs src/__tests__/customer-display-projection.test.ts src/__tests__/customer-write-through.test.ts"
+    "test:pglite": "node ../core/scripts/test-pglite.mjs src/__tests__/customer-display-projection.test.ts src/__tests__/customer-write-through.test.ts src/__tests__/accounting-connection.test.ts src/__tests__/accounting-mapping-records.test.ts"
   },
   "keywords": [
     "smrt",

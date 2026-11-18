@@ -66,8 +66,19 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
+// Tenant-scoped accounting connection (#5136)
+export * from './accounting-connection.js';
+export * from './accounting-live-gate.js';
+export * from './accounting-mapping.js';
+export * from './accounting-payment-sync.js';
 // Billing-period close, provider events, prepaid credit (#3060)
 export * from './billing/index.js';
+export { AccountingConnectionCollection } from './collections/AccountingConnectionCollection.js';
+export { AccountingMappingCollection } from './collections/AccountingMappingCollection.js';
+export {
+  AccountingInvoiceReadbackCollection,
+  AccountingPaymentSyncCollection,
+} from './collections/AccountingSyncRecordCollections.js';
 export {
   HistoricalCustomerFundsAllocationCollection,
   HistoricalCustomerFundsCollection,
@@ -300,6 +311,25 @@ export {
   type CommercePartyLinksPreflight,
   preflightCommercePartyLinks,
 } from './migrations/partyLinks.js';
+export {
+  AccountingConnection,
+  type AccountingConnectionEnvironment,
+  type AccountingConnectionOptions,
+  type AccountingConnectionProvider,
+  type AccountingConnectionStatus,
+} from './models/AccountingConnection.js';
+export {
+  AccountingMapping,
+  type AccountingMappingKind,
+  type AccountingMappingOptions,
+  type AccountingMappingStatus,
+} from './models/AccountingMapping.js';
+export {
+  AccountingInvoiceReadback,
+  AccountingPaymentSync,
+  type AccountingPaymentSyncStatus,
+  type AccountingReadbackStatus,
+} from './models/AccountingSyncRecords.js';
 export {
   HistoricalCustomerFunds,
   type HistoricalCustomerFundsOptions,

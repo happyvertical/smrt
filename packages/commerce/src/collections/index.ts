@@ -3,6 +3,12 @@
  * @packageDocumentation
  */
 
+export { AccountingConnectionCollection } from './AccountingConnectionCollection.js';
+export { AccountingMappingCollection } from './AccountingMappingCollection.js';
+export {
+  AccountingInvoiceReadbackCollection,
+  AccountingPaymentSyncCollection,
+} from './AccountingSyncRecordCollections.js';
 export { ContractCollection } from './ContractCollection.js';
 export { ContractLineItemCollection } from './ContractLineItemCollection.js';
 export { CustomerCollection } from './CustomerCollection.js';

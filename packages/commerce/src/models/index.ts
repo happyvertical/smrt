@@ -4,6 +4,25 @@
  */
 
 export {
+  AccountingConnection,
+  type AccountingConnectionEnvironment,
+  type AccountingConnectionOptions,
+  type AccountingConnectionProvider,
+  type AccountingConnectionStatus,
+} from './AccountingConnection.js';
+export {
+  AccountingMapping,
+  type AccountingMappingKind,
+  type AccountingMappingOptions,
+  type AccountingMappingStatus,
+} from './AccountingMapping.js';
+export {
+  AccountingInvoiceReadback,
+  AccountingPaymentSync,
+  type AccountingPaymentSyncStatus,
+  type AccountingReadbackStatus,
+} from './AccountingSyncRecords.js';
+export {
   BillingAccount,
   type BillingCloseKind,
   BillingLineSource,

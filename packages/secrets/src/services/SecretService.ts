@@ -1040,6 +1040,21 @@ export class SecretService {
   }
 
   /**
+   * Delete a secret for a specific tenant.
+   *
+   * The explicit-tenant counterpart of {@link SecretService.delete}, for
+   * integrations that resolved tenant ownership but run outside the ambient
+   * tenant context. Returns `false` when the tenant has no such secret.
+   */
+  async deleteForTenant(
+    tenantId: string,
+    name: string,
+    options: DeleteSecretOptions = {},
+  ): Promise<boolean> {
+    return withTenant({ tenantId }, () => this.delete(name, options));
+  }
+
+  /**
    * Disable a secret (soft delete)
    */
   async disable(name: string): Promise<boolean> {

@@ -17,6 +17,7 @@ import {
 } from '@happyvertical/accounting';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
+import { assertAccountingWriteAllowed } from './accounting-live-gate.js';
 import {
   type AccountingSnapshotInput,
   type FrozenAccountingDocumentSnapshot,
@@ -50,6 +51,12 @@ export interface QuickBooksFrozenInvoiceMapping
   extends FrozenQuickBooksTaxMapping {
   readonly realmId: string;
   readonly environment: 'sandbox' | 'production';
+  /**
+   * The provider customer id for this realm and environment (from the
+   * tenant's accounting mapping, `buildFrozenInvoiceMapping`). When set it
+   * replaces the flat, unscoped `Invoice.customerExternalId`.
+   */
+  readonly customerRef?: string;
 }
 
 export interface FrozenInvoiceAccountingOptions {
@@ -521,7 +528,15 @@ function toSdkInput(
     unsupported(
       'Signed-line accounting sync requires a public accounting SDK signed-line representation',
     );
-  return mapFrozenAccountingSnapshot(snapshot.document, mapping);
+  return mapFrozenAccountingSnapshot(
+    mapping.customerRef
+      ? {
+          ...snapshot.document,
+          customerExternalId: mapping.customerRef,
+        }
+      : snapshot.document,
+    mapping,
+  );
 }
 
 /** Load and validate one authoritative issued snapshot without provider I/O. */
@@ -845,6 +860,13 @@ async function syncFrozenInvoice(
   },
 ): Promise<FrozenAccountingSyncResult> {
   assertPrincipalTenant(input.tenantId);
+  await assertAccountingWriteAllowed({
+    db: input.db,
+    tenantId: input.tenantId,
+    invoiceId: input.invoiceId,
+    provider: input.provider,
+    scope: input.mapping,
+  });
   const prepared = await prepareSync(input, pilot?.acceptance);
   if (prepared.kind === 'unchanged') return prepared.result;
   let result: SyncResult;
