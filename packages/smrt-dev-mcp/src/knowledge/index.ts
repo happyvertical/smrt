@@ -2597,7 +2597,19 @@ async function scanPackageObjects(
     exclude: [...SCAN_EXCLUDE, ...extraExcludes],
   });
   const { results, resolved } = await scanner.scanAndResolve();
-  const decorated = resolved.filter((classDef) => classDef.hasSmartDecorator);
+  // A package tree can hold several embedded apps (examples, fixtures) that
+  // each declare a model of the same name. A manifest holds one class per
+  // name, and the scanner refuses to pick. This projection describes the
+  // package's sources rather than one app's manifest, so it keeps one
+  // declaration per name itself: the last one scanned, at the first one's
+  // position.
+  const decorated = [
+    ...new Map(
+      resolved
+        .filter((classDef) => classDef.hasSmartDecorator)
+        .map((classDef) => [classDef.className, classDef]),
+    ).values(),
+  ];
   if (decorated.length === 0) return [];
 
   const adapter = new ManifestAdapter();
