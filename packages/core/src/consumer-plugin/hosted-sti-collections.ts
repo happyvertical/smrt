@@ -19,7 +19,10 @@
  * hosted class advertises exactly the endpoint its route serves.
  */
 import { defaultCollectionName } from '@happyvertical/smrt-scanner';
-import { modelReplacements } from '../manifest/model-replacements.js';
+import {
+  isReplacedModel,
+  modelReplacements,
+} from '../manifest/model-replacements.js';
 import type {
   SmartObjectDefinition,
   SmartObjectManifest,
@@ -169,7 +172,9 @@ export function aliasHostedCollections<M extends object>(
     const ref = def.qualifiedName ?? key;
     if (
       (wanted && !wanted.has(ref)) ||
-      replacements.has(ref) ||
+      // A replaced declaration, and a same-named subtype served through its
+      // parent's route (#5143), own no route to alias.
+      isReplacedModel(source, def, replacements) ||
       isCollectionManifestClass(source, def)
     )
       continue;

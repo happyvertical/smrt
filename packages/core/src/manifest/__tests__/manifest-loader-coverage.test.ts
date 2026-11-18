@@ -96,19 +96,28 @@ describe('manifest-loader coverage', () => {
       expect(lookupInManifest(manifest, 'Nope')).toBeUndefined();
     });
 
-    it('prefers an STI child over its parent when both map to one simple name', () => {
+    it('gives the simple name to a same-named child only when it declares replaceParent: true', () => {
       // Two entries collapse to the same lowercase className via the index;
-      // the child (extends the parent) must win (#950).
-      const collide = makeManifest('@acme/pkg', {
-        Parent: { className: 'Thing', fields: { base: { type: 'text' } } },
-        Child: {
-          className: 'Thing',
-          extends: 'Thing',
-          fields: { extra: { type: 'text' } },
-        },
-      });
-      const hit = lookupInManifest(collide, 'thing');
-      expect(hit?.fields.extra).toBeDefined();
+      // the child (extends the parent) wins only by declaring that it
+      // replaces the parent (#950, #5143).
+      const collide = (decoratorConfig: Record<string, unknown>) =>
+        makeManifest('@acme/pkg', {
+          Parent: { className: 'Thing', fields: { base: { type: 'text' } } },
+          Child: {
+            className: 'Thing',
+            extends: 'Thing',
+            decoratorConfig,
+            fields: { extra: { type: 'text' } },
+          },
+        });
+      expect(
+        lookupInManifest(collide({ replaceParent: true }), 'thing')?.fields
+          .extra,
+      ).toBeDefined();
+      expect(
+        lookupInManifest(collide({ replaceParent: false }), 'thing')?.fields
+          .base,
+      ).toBeDefined();
     });
   });
 

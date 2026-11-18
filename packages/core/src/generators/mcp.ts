@@ -601,6 +601,10 @@ export class MCPGenerator {
       if (isFrameworkBaseClass(simpleName, classInfo.packageName)) {
         continue;
       }
+      // A same-named subtype is served through its parent's tools, or by
+      // the collection it declares; never under the parent's name (#5143).
+      const surfaceName = ObjectRegistry.getSurfaceName(key);
+      if (surfaceName === undefined) continue;
 
       const config = ObjectRegistry.getConfig(key);
       const mcpConfig = config.mcp;
@@ -633,7 +637,7 @@ export class MCPGenerator {
       };
 
       const objectTools = await this.generateObjectTools(
-        simpleName,
+        surfaceName,
         shouldInclude,
         key,
         exposureContext,

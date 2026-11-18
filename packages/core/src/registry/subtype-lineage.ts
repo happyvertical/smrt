@@ -1,12 +1,17 @@
 /** Qualified manifest lineage outlives registrations replaced by descendants. */
 
 import { ConfigurationError } from '../errors';
+import { sameNameSubclassChoice } from '../manifest/model-replacements.js';
 import { getRegistryGeneration } from './generation';
 import { transferRuntimeOverride } from './runtime-overrides';
 import { getClasses, getInheritanceCache } from './shared-state';
 import type { RegisteredClass } from './types';
 
 declare global {
+  var __smrtPendingSameName:
+    | Map<unknown, Array<{ ctor: unknown; config: unknown }>>
+    | undefined;
+  var __smrtRuntimeCoexisting: Set<string> | undefined;
   var __smrtSubtypeParents: Map<string, string> | undefined;
   var __smrtReplacedDeclarations: Map<string, RegisteredClass> | undefined;
 }
@@ -24,6 +29,14 @@ export function retainReplacedDeclaration(
     fields: new Map(entry.fields),
     methods: new Map(entry.methods),
   });
+}
+/** Stop retaining a declaration (it becomes, or is about to become, live again). */
+export function releaseReplacedDeclaration(
+  key: string,
+): RegisteredClass | undefined {
+  const declaration = replacedDeclarations().get(key);
+  replacedDeclarations().delete(key);
+  return declaration;
 }
 let replacementGeneration = -1;
 let replacementIndex = new Map<string, RegisteredClass>();
@@ -44,9 +57,33 @@ function parents(): Map<string, string> {
   globalThis.__smrtSubtypeParents ??= new Map();
   return globalThis.__smrtSubtypeParents;
 }
+/**
+ * Registry keys of run-time models (`registerRuntimeModel`) that extend a
+ * registered class without `replaces`: they coexist with that class by their
+ * own definition, so a later registration of the class never asks them for a
+ * `replaceParent` declaration (#5143).
+ */
+export function runtimeCoexistingModels(): Set<string> {
+  globalThis.__smrtRuntimeCoexisting ??= new Set();
+  return globalThis.__smrtRuntimeCoexisting;
+}
+/**
+ * Same-named subclasses waiting for their unregistered direct parent
+ * constructor (in a single-table family a class registers after its direct
+ * parent), keyed by that parent. They register when it does (#5143).
+ */
+export function pendingSameNameRegistrations(): Map<
+  unknown,
+  Array<{ ctor: unknown; config: unknown }>
+> {
+  globalThis.__smrtPendingSameName ??= new Map();
+  return globalThis.__smrtPendingSameName;
+}
 export function clearSubtypeLineage(): void {
   parents().clear();
   replacedDeclarations().clear();
+  runtimeCoexistingModels().clear();
+  pendingSameNameRegistrations().clear();
 }
 
 /** Roll back only the edited identities, retaining unrelated registrations. */
@@ -77,6 +114,10 @@ export function recordSubtypeParent(
   }
   parents().set(name, parent);
 }
+/** The same-named qualified parent recorded for `name`, if any. */
+export function recordedSubtypeParent(name: string): string | undefined {
+  return parents().get(name);
+}
 export function isSubtypeOf(child: string, ancestor: string): boolean {
   const visited = new Set<string>();
   for (
@@ -89,7 +130,94 @@ export function isSubtypeOf(child: string, ancestor: string): boolean {
   }
   return false;
 }
-/** Late intermediate manifests can connect a previously disjoint parent/leaf. */
+/**
+ * Whether the registered class under `key` is a same-named subtype served
+ * through its parent's generated surface (#5143): it declares
+ * `replaceParent: false`, its recorded same-named parent is registered on the
+ * same table, and it declares no `collection` of its own. The run-time
+ * generators skip such a class, as the manifest-driven ones do
+ * (`isReplacedModel`), so the shared simple name names one surface.
+ */
+export function servedThroughParent(key: string): boolean {
+  const entry = getClasses().get(key);
+  return (
+    !!entry &&
+    typeof entry.config?.collection !== 'string' &&
+    isSameNameSubtype(key, entry)
+  );
+}
+
+/**
+ * The name a run-time generator gives the class under `key` its route,
+ * tools, commands and schema by (#5143): `undefined` for a same-named subtype
+ * served through its parent, the declared `collection` for a same-named
+ * subtype that declares one (its simple name is its parent's), and the
+ * simple name otherwise.
+ */
+export function generatedSurfaceName(key: string): string | undefined {
+  const entry = getClasses().get(key);
+  if (!entry) return undefined;
+  if (!isSameNameSubtype(key, entry)) return entry.name || key;
+  const collection = entry.config?.collection;
+  return typeof collection === 'string' ? collection : undefined;
+}
+
+/**
+ * A `replaceParent: false` class whose recorded same-named parent shares its
+ * table, or a replacement of such a subtype: the replacement takes the
+ * subtype's place, so the base still owns the shared surface (#5143).
+ */
+function isSameNameSubtype(
+  key: string,
+  entry: RegisteredClass,
+  seen = new Set<string>(),
+): boolean {
+  if (entry.collectionOf || seen.has(key)) return false;
+  seen.add(key);
+  const choice = sameNameSubclassChoice(entry.config);
+  if (choice === 'replace') {
+    return (entry.replacedQualifiedNames ?? []).some((replaced) => {
+      const declaration = replacedDeclarations().get(replaced);
+      return (
+        !!declaration &&
+        typeof declaration.config?.collection !== 'string' &&
+        isSameNameSubtype(replaced, declaration, seen)
+      );
+    });
+  }
+  if (choice !== 'subtype') return false;
+  const parentKey = parents().get(entry.qualifiedName ?? key);
+  if (!parentKey) return false;
+  const parent = getClasses().get(parentKey) ?? findReplacement(parentKey);
+  return !!parent && parent.schema?.tableName === entry.schema?.tableName;
+}
+
+/**
+ * Whether `child` replaces `ancestor`: every same-named class on the recorded
+ * path from `child` up to `ancestor` declares `replaceParent: true` (#5143).
+ * Ancestry alone never replaces: a class that declares `replaceParent: false`
+ * is a subtype, and so is everything that only reaches `ancestor` through it.
+ */
+export function replacesAncestor(child: string, ancestor: string): boolean {
+  const visited = new Set<string>();
+  for (let current = child; !visited.has(current); ) {
+    visited.add(current);
+    const parent = parents().get(current);
+    if (!parent) return false;
+    const entry =
+      getClasses().get(current) ?? replacedDeclarations().get(current);
+    if (sameNameSubclassChoice(entry?.config) !== 'replace') return false;
+    if (parent === ancestor) return true;
+    current = parent;
+  }
+  return false;
+}
+
+/**
+ * Late intermediate manifests can connect a previously disjoint parent/leaf.
+ * Only a declared replacement (`replacesAncestor`) removes its parent, so a
+ * same-named subtype keeps the pair registered in every load order.
+ */
 export function reconcileSubtypeLineage(): void {
   if (parents().size === 0) return;
   const classes = getClasses();
@@ -117,7 +245,7 @@ export function reconcileSubtypeLineage(): void {
           childKey === parentKey ||
           child.name !== parent.name ||
           child.schema?.tableName !== parent.schema?.tableName ||
-          !isSubtypeOf(childKey, parentKey)
+          !replacesAncestor(childKey, parentKey)
         )
           continue;
         child.replacedQualifiedNames = [

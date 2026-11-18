@@ -32,6 +32,8 @@
  * @see https://github.com/happyvertical/smrt/issues/1134
  */
 
+import type { SameNameSubclassChoice } from '../manifest/model-replacements.js';
+
 export type RegistrationOrigin = 'decorator' | 'manifest';
 
 /**
@@ -69,6 +71,13 @@ export type Policy =
   | 'coexist-qualified'
   /** Existing wins; silently ignore the new registration. */
   | 'skip'
+  /**
+   * The existing entry is the declared replacement (`replaceParent: true`) of
+   * the incoming class. The incoming declaration is kept for ancestry only:
+   * its qualified name resolves to the existing entry and it never becomes an
+   * effective registration, whichever of the two registered first (#5143).
+   */
+  | 'retain-as-replaced'
   /** Unresolvable collision — raise a user-facing error. */
   | 'throw';
 
@@ -107,6 +116,20 @@ export interface CollisionInputs {
 
   /** Inverse direction: existing extends new. */
   readonly existingExtendsNew: boolean;
+
+  /**
+   * What the NEW class declares about a same-named parent (`replaceParent`
+   * in its own `@smrt()` options or manifest `decoratorConfig`, read through
+   * `sameNameSubclassChoice`): `'replace'`, `'subtype'`, or `undefined` when it
+   * declares nothing. Only meaningful with `newExtendsExisting` (#5143).
+   */
+  readonly newDeclaredChoice: SameNameSubclassChoice | undefined;
+
+  /**
+   * What the EXISTING entry declares about a same-named parent. Only
+   * meaningful with `existingExtendsNew`: the incoming class is that parent.
+   */
+  readonly existingDeclaredChoice: SameNameSubclassChoice | undefined;
 
   /** `new.packageName === existing.packageName` (both truthy). */
   readonly samePackage: boolean;
@@ -217,7 +240,8 @@ interface Row {
  *
  * Each row is named to match a scenario in the test suite so a reviewer
  * can bisect one-to-one between "new class extends existing" (the code)
- * and "sti-child-wins" (the test row and the verbose-log output).
+ * and "same-name-subclass-replaces-parent" (the test row and the
+ * verbose-log output).
  */
 const ROWS: readonly Row[] = [
   // --- Cross-origin: constructor identity and stub replacement ----------
@@ -230,11 +254,83 @@ const ROWS: readonly Row[] = [
       'Same constructor identity — module re-evaluation. Update metadata only.',
   },
 
+  // --- Same-named inheritance (#5143) -----------------------------------
+  //
+  // A candidate is always a class of the incoming class's simple name, so an
+  // inheritance edge between the two is a class extending a same-named class
+  // of another package. What happens is what the subclass declares
+  // (`replaceParent`), and nothing else: not which package either belongs to,
+  // not where it loaded from, not which registered first. These rows precede
+  // every origin, source-file, package and stub row for that reason. The two
+  // directions are the two load orders of one pair and give one registry.
+
+  {
+    scenario: 'same-name-subclass-replaces-parent',
+    match: (i) =>
+      i.newExtendsExisting &&
+      !i.existingExtendsNew &&
+      i.newDeclaredChoice === 'replace',
+    policy: 'replace',
+    reason: () =>
+      'New class extends the same-named existing class and declares replaceParent: true; it replaces the parent, whose declaration is kept for ancestry.',
+  },
+
+  {
+    scenario: 'same-name-subclass-is-subtype',
+    match: (i) =>
+      i.newExtendsExisting &&
+      !i.existingExtendsNew &&
+      i.newDeclaredChoice === 'subtype',
+    policy: 'coexist-qualified',
+    reason: () =>
+      'New class extends the same-named existing class and declares replaceParent: false; both stay registered under their own qualified keys.',
+  },
+
+  {
+    scenario: 'same-name-subclass-undeclared',
+    match: (i) => i.newExtendsExisting && !i.existingExtendsNew,
+    policy: 'throw',
+    reason: () =>
+      'New class extends the same-named existing class without declaring replaceParent.',
+  },
+
+  {
+    scenario: 'same-name-parent-of-replacement',
+    match: (i) =>
+      i.existingExtendsNew &&
+      !i.newExtendsExisting &&
+      i.existingDeclaredChoice === 'replace',
+    policy: 'retain-as-replaced',
+    reason: () =>
+      'Existing entry extends the incoming same-named class and declares replaceParent: true; the incoming parent is kept as a replaced declaration.',
+  },
+
+  {
+    scenario: 'same-name-parent-of-subtype',
+    match: (i) =>
+      i.existingExtendsNew &&
+      !i.newExtendsExisting &&
+      i.existingDeclaredChoice === 'subtype',
+    policy: 'coexist-qualified',
+    reason: () =>
+      'Existing entry extends the incoming same-named class and declares replaceParent: false; the incoming parent registers under its own qualified key.',
+  },
+
+  {
+    scenario: 'same-name-parent-of-undeclared',
+    match: (i) => i.existingExtendsNew && !i.newExtendsExisting,
+    policy: 'throw',
+    reason: () =>
+      'Existing entry extends the incoming same-named class without declaring replaceParent.',
+  },
+
   {
     // Decorator-only: the decorator fires after a manifest builder
     // pre-registered a stub placeholder under this name. The real class
     // takes over. Manifest-origin stub-to-stub arrivals fall through to
-    // the source-file / STI rows instead.
+    // the source-file rows instead. A class that extends the stub's class is
+    // never this row's: the caller reads that edge from declared lineage (a
+    // stub has no prototype to test), and the same-name rows above decide it.
     // A stub another package's manifest registered is that package's class:
     // a class from another package that is known not to be the stub's — its
     // source file differs (outside bundled output, whose stack package is the
@@ -267,24 +363,6 @@ const ROWS: readonly Row[] = [
     policy: 'skip',
     reason: () =>
       'Same source file — consumer manifest re-export, not a real collision.',
-  },
-
-  {
-    scenario: 'manifest-sti-child-wins',
-    match: (i) =>
-      i.origin === 'manifest' && i.newExtendsExisting && !i.existingExtendsNew,
-    policy: 'replace',
-    reason: () =>
-      'Manifest entry extends existing — STI child wins over parent.',
-  },
-
-  {
-    scenario: 'manifest-sti-parent-skip',
-    match: (i) =>
-      i.origin === 'manifest' && i.existingExtendsNew && !i.newExtendsExisting,
-    policy: 'skip',
-    reason: () =>
-      'Existing entry is the STI child of the incoming manifest parent; keep the child.',
   },
 
   {
@@ -380,7 +458,7 @@ const ROWS: readonly Row[] = [
     // own package is known and differs from the existing entry's package is a
     // different class, not a duplicate — e.g. a consumer's `LicenseSale` next
     // to smrt-commerce's. Both live under their qualified keys. Inheritance
-    // between them is left to the STI rows. In bundled output the declaring
+    // between them was decided by the same-name rows above. In bundled output the declaring
     // package is only trusted when the new class declares another table: a
     // consumer bundle that inlined a dependency reports the consumer's
     // package for the dependency's classes, and the same class may also load
@@ -394,8 +472,6 @@ const ROWS: readonly Row[] = [
       i.existingHasAnyPackage &&
       !i.samePackage &&
       !i.sameSourceFile &&
-      !i.newExtendsExisting &&
-      !i.existingExtendsNew &&
       (!i.newInBundledContext ||
         i.declaresDifferentTable ||
         i.existingPackageStampsConstructors),
@@ -429,23 +505,6 @@ const ROWS: readonly Row[] = [
     policy: 'accept',
     reason: () =>
       'Source file unavailable for comparison; allow re-registration rather than block legitimate updates.',
-  },
-
-  // --- Cross-origin STI fallbacks (used by decorator path; manifest
-  //     path has its own explicit rows above that come first) ------------
-
-  {
-    scenario: 'sti-child-wins',
-    match: (i) => i.newExtendsExisting && !i.existingExtendsNew,
-    policy: 'replace',
-    reason: () => 'New class extends existing — STI child wins over parent.',
-  },
-
-  {
-    scenario: 'sti-parent-skip',
-    match: (i) => i.existingExtendsNew && !i.newExtendsExisting,
-    policy: 'skip',
-    reason: () => 'Existing entry extends new — STI child already registered.',
   },
 
   // --- Default: unresolvable decorator collision ------------------------

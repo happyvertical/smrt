@@ -37,7 +37,7 @@ it('hosts the effective app STI children when the exposure list names their prov
           tableStrategy: 'sti',
           ...(packageName === '@fixture/provider'
             ? { api: { include: ['list', 'get', 'create'] } }
-            : {}),
+            : { replaceParent: true }),
         },
       } as SmartObjectDefinition;
     }
@@ -137,7 +137,7 @@ it('aliases colliding host routes while preserving storage, permissions and prov
         ...object('@fixture/z'),
         extends: 'Account',
         extendsQualified: '@fixture/a:Account',
-        decoratorConfig: { tableName: 'a_accounts' },
+        decoratorConfig: { tableName: 'a_accounts', replaceParent: true },
       },
     },
   };
@@ -170,4 +170,47 @@ it('aliases colliding host routes while preserving storage, permissions and prov
   expect(() =>
     aliasHostedCollections(manifest, { '@fixture/b:Account': '../escape' }),
   ).toThrow('Invalid hosted collection alias');
+});
+
+it('leaves a same-named subtype served through its parent out of route aliasing, in either package order', async () => {
+  const { aliasHostedCollections } = await import(
+    './hosted-sti-collections.js'
+  );
+  const scene = (packageName: string, decoratorConfig: object) => ({
+    className: 'Scene',
+    name: 'scene',
+    qualifiedName: `${packageName}:Scene`,
+    packageName,
+    collection: 'scenes',
+    filePath: 'scene.ts',
+    fields: {},
+    methods: {},
+    decoratorConfig: { tableName: 'scenes', ...decoratorConfig },
+  });
+  for (const [parentPackage, subtypePackage] of [
+    ['@fixture/a-video', '@fixture/z-histrio'],
+    ['@fixture/z-video', '@fixture/a-histrio'],
+  ]) {
+    const parent = `${parentPackage}:Scene`;
+    const subtype = `${subtypePackage}:Scene`;
+    const manifest = {
+      objects: {
+        [parent]: scene(parentPackage, { tableStrategy: 'sti' }),
+        [subtype]: {
+          ...scene(subtypePackage, { replaceParent: false }),
+          extends: 'Scene',
+          extendsQualified: parent,
+        },
+      },
+    };
+    const aliased = aliasHostedCollections(manifest, {}, [parent, subtype]);
+    expect(aliased.objects[parent].collection).toBe('scenes');
+    expect(aliased.objects[parent].decoratorConfig).not.toHaveProperty(
+      'collection',
+    );
+    expect(aliased.objects[subtype].collection).toBe('scenes');
+    expect(aliased.objects[subtype].decoratorConfig).not.toHaveProperty(
+      'collection',
+    );
+  }
 });

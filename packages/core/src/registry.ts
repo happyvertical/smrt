@@ -95,9 +95,11 @@ import {
   register as _register,
   registerCollection as _registerCollection,
   registerFromManifest as _registerFromManifest,
+  assertNoPendingSameNameRegistrations,
   ensureTenantScopedField,
   isBundledOutputPath,
   isSameSourcePath,
+  registerCollectionItem,
 } from './registry/class-registration';
 import {
   applyRuntimeOverrides,
@@ -111,7 +113,9 @@ import {
   checkpointSubtypeLineage,
   clearSubtypeLineage,
   findReplacement,
+  generatedSurfaceName,
   replacedDeclarations,
+  servedThroughParent,
 } from './registry/subtype-lineage';
 import {
   isRuntimeModelEnabled,
@@ -1819,6 +1823,26 @@ export class ObjectRegistry {
         selected.name === catalog.base.name ? collectionName : selected.name,
       data,
     };
+  }
+
+  /**
+   * Whether the class registered under `key` (a registry key) is a
+   * same-named subtype (`replaceParent: false`) with no collection of its own:
+   * its parent's generated surface serves it, so run-time generators give it
+   * no route, tool, command or schema of its own (#5143).
+   */
+  static isServedByParent(key: string): boolean {
+    return servedThroughParent(key);
+  }
+
+  /**
+   * The name run-time generators publish the class under `key` (a registry
+   * key) by: `undefined` when its parent serves it (see `isServedByParent`),
+   * its declared `collection` for a same-named subtype that declares one, and
+   * its simple name otherwise (#5143).
+   */
+  static getSurfaceName(key: string): string | undefined {
+    return generatedSurfaceName(key);
   }
 
   /** Effective model identity for runtime exposure, including collection-hosted actions. */
@@ -3571,6 +3595,9 @@ export class ObjectRegistry {
   static getAllSchemasAsDefinitions(
     options?: Parameters<typeof _getAllSchemasAsDefinitions>[0],
   ): Record<string, SchemaDefinition> {
+    // A same-named subclass still waiting for its direct parent means the
+    // model set is incomplete (#5143).
+    assertNoPendingSameNameRegistrations();
     return _getAllSchemasAsDefinitions(options);
   }
   /**
@@ -5246,8 +5273,11 @@ export function smrt(config: SmartObjectConfig = {}) {
           ? tableName
           : ObjectRegistry.getClassByConstructor(itemClass)?.schema
               ?.tableName || tableName;
-        ObjectRegistry.register(itemClass, {
-          ...config,
+        // `replaceParent` is the collection's own declaration about a
+        // same-named parent collection; it says nothing about the item (#5143).
+        const { replaceParent: _collectionChoice, ...itemConfig } = config;
+        registerCollectionItem(itemClass, {
+          ...itemConfig,
           // The collection may belong to a different package. Its config must
           // not move an already-registered item out of its declaring package.
           packageName:
@@ -5288,6 +5318,26 @@ export function smrt(config: SmartObjectConfig = {}) {
     } else {
       // Handle SmrtObject registration (existing behavior)
       let tableName = config.tableName;
+
+      if (!tableName && config.replaceParent !== undefined) {
+        // A declared replacement or same-named subtype stores rows in the
+        // table of the same-named class it extends (#5143); a name derived
+        // from this class could differ from a parent's explicit one.
+        const ownName = config.name ?? ctor.name;
+        for (
+          let proto = Object.getPrototypeOf(ctor);
+          typeof proto === 'function' && proto !== Function.prototype;
+          proto = Object.getPrototypeOf(proto)
+        ) {
+          const parent = ObjectRegistry.getEffectiveClassByConstructor(
+            proto as SmrtObjectConstructor,
+          );
+          if (parent?.name === ownName && parent.schema?.tableName) {
+            tableName = parent.schema.tableName;
+            break;
+          }
+        }
+      }
 
       if (!tableName) {
         // First, check manifest for tableName (manifest generator correctly handles STI inheritance)
@@ -5333,6 +5383,10 @@ export function smrt(config: SmartObjectConfig = {}) {
         const manifestEntry = keepForeignEntry ? lookedUp : undefined;
         if (manifestEntry?.decoratorConfig?.tableName) {
           tableName = manifestEntry.decoratorConfig.tableName;
+        } else if (config.replaceParent !== undefined) {
+          // A same-named subclass whose parent has not registered yet takes
+          // that parent's table when it does (#5143); a name derived here
+          // would read as declared and contradict it.
         } else if (config.tableStrategy === 'sti') {
           // Fallback: Runtime prototype chain walking for STI detection
           // This is used when:

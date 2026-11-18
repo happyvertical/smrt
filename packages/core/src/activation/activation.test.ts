@@ -96,6 +96,7 @@ function fixture() {
     foreignKey: { table: 'activation_profiles', column: 'id' },
   };
   const app = define(APP, 'activation_customers', CUSTOMER);
+  app.decoratorConfig.replaceParent = true;
   app.fields = { ...customer.fields, preferredPose: { type: 'text' } };
   app.schema!.columns = {
     ...customer.schema!.columns,
