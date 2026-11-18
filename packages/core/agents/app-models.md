@@ -44,7 +44,14 @@ The surrounding cookbook still requires its normal schema/version/recipes/
 features/policies. New lists are enabled through qualified `features`.
 `models.fields` names the provider; registration makes its same-name app
 subclass effective, retaining the provider's table, methods, exposure and
-tenancy. An existing same-name app subclass is refreshed.
+tenancy. An existing same-name app subclass is refreshed. New `models.fields`
+declarations need their provider in the app (`MODEL_NOT_IN_APP` otherwise).
+Disabling a provider's last recipe keeps its journalled declarations, inactive:
+they are not registered (a replacement this editor added leaves the registry),
+migrated or held closed, the provider need not be
+loaded (a lazy host's restart), and enabling the recipe again restores the
+fields with their stored data. Their app-scope policies (labels) are pruned
+with the recipe like any other policy of an uncovered model.
 
 Field types: `text`, `longText`, `integer`, `decimal`, `money` (requires
 `currency: "CAD"`), `date`, `datetime`, `boolean`, `choice` (requires

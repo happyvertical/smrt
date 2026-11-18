@@ -380,9 +380,26 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         `INVALID_MODEL_EDIT: ${tooLong.map((e) => `${e.path} ${e.message}`).join('; ')}`,
       );
     const used = coveredModels(options.catalog, doc);
-    for (const target of Object.keys(models.fields))
-      if (!used.has(target) || !ObjectRegistry.getClass(target))
+    for (const [target, fields] of Object.entries(models.fields)) {
+      if (used.has(target)) {
+        if (!ObjectRegistry.getClass(target))
+          throw new Error(`MODEL_NOT_IN_APP: ${target}`);
+        continue;
+      }
+      // Disabling a provider's last recipe keeps its field declarations,
+      // inactive until the recipe is enabled again. Only declarations the
+      // journal already holds may stay; a new one needs the model in the app.
+      const kept = archived?.fields[target];
+      if (
+        !kept ||
+        Object.entries(fields).some(
+          ([name, field]) =>
+            !Object.hasOwn(kept, name) ||
+            stableStringify(kept[name]) !== stableStringify(field),
+        )
+      )
         throw new Error(`MODEL_NOT_IN_APP: ${target}`);
+    }
     const names = new Set<string>();
     for (const target of Object.keys(models.fields)) {
       const name = target.split(':').at(-1)!;
@@ -649,6 +666,29 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     };
   }
 
+  /**
+   * The storage that registers and migrates for `target`: every list, and the
+   * provider overrides whose model `target` covers. An override whose recipe
+   * is off stays declared and keeps its columns, inactive (never registered,
+   * migrated or held closed) until the recipe is enabled again.
+   */
+  function active(
+    all: CookbookModels | undefined,
+    target: Cookbook,
+  ): CookbookModels | undefined {
+    if (!all) return all;
+    const used = coveredModels(options.catalog, target);
+    return {
+      ...all,
+      fields: Object.fromEntries(
+        Object.entries(all.fields).filter(([id]) => used.has(id)),
+      ),
+    };
+  }
+
+  /** Registry checkpoints taken before this editor first replaced each provider. */
+  const replacements = new Map<string, () => void>();
+
   /** Register storage declarations; affected readiness closes until release(). */
   function register(all: CookbookModels | undefined) {
     setRuntimeModelReadiness(identities(all), false);
@@ -712,7 +752,15 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           fieldValidators: fieldValidators(runtimeFields(list.fields, all)),
         },
       );
-    for (const [model, fields] of Object.entries(all.fields))
+    for (const [model, fields] of Object.entries(all.fields)) {
+      const replacement = `${all.packageName}:${model.split(':').at(-1)}`;
+      // Remember the registry before this editor first adds a replacement, so
+      // disabling the provider's recipe can take the replacement out again.
+      if (!replacements.has(model) && !ObjectRegistry.getClass(replacement))
+        replacements.set(
+          model,
+          ObjectRegistry.checkpointRegistrations([model, replacement]),
+        );
       registerRuntimeModel(
         {
           packageName: all.packageName,
@@ -726,6 +774,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           fieldValidators: fieldValidators(runtimeFields(fields, all)),
         },
       );
+    }
   }
 
   /** Physical tables of the given (registered) model identities. */
@@ -821,6 +870,13 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
   function release(all?: CookbookModels) {
     const held = identities(all);
     ready = true;
+    // A provider whose recipe is now off keeps its declarations inactive; its
+    // replacement leaves the registry so no projection shows its fields.
+    for (const [model, restore] of replacements)
+      if (!all?.fields[model]) {
+        restore();
+        replacements.delete(model);
+      }
     // Deleted lists remain in storage/registry but are closed on every surface.
     const enabled = new Set(coveredModels(options.catalog, doc));
     setRuntimeModelReadiness(
@@ -885,9 +941,9 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     return structuredClone(found);
   }
 
-  /** Boot reconciles every journalled storage declaration, as before. */
+  /** Boot reconciles every active journalled storage declaration, as before. */
   const bootChanges = () =>
-    changedModels(undefined, storageModels(documents()));
+    changedModels(undefined, active(storageModels(documents()), doc));
 
   await withRuntimeSchemaActivation(async () => {
     // Boots are serialized here; check again, so two editors constructed at
@@ -897,7 +953,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     let restore = () => {};
     const readiness = new Map<string, boolean | undefined>();
     const checkpoint = () => {
-      const held = identities(storageModels(documents()));
+      const held = identities(active(storageModels(documents()), doc));
       for (const id of held) readiness.set(id, getRuntimeModelReadiness(id));
       restore = ObjectRegistry.checkpointRegistrations(held);
     };
@@ -914,7 +970,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           checkpoint();
           await activate(
             doc,
-            storageModels(documents()),
+            active(storageModels(documents()), doc),
             bootChanges(),
             db,
             false,
@@ -928,7 +984,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         checkpoint();
         await activate(
           doc,
-          storageModels(documents()),
+          active(storageModels(documents()), doc),
           bootChanges(),
           options.db,
           false,
@@ -958,7 +1014,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       );
       history = await store.read();
     }
-    release(storageModels(documents()));
+    release(active(storageModels(documents()), doc));
   });
 
   async function apply(
@@ -1263,8 +1319,8 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           : {}),
       };
       const previous = { history, revision, doc, ready };
-      const all = storageModels([...documents(), next]);
-      const changed = changedModels(archived, all);
+      const all = active(storageModels([...documents(), next]), next);
+      const changed = changedModels(active(archived, doc), all);
       const held = identities(all);
       const readiness = new Map(
         held.map((id) => [id, getRuntimeModelReadiness(id)]),
@@ -1323,7 +1379,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         appOperationResult(change.operation, receipt),
       );
       history = await store.read();
-      release(storageModels(documents()));
+      release(active(storageModels(documents()), doc));
       const result = snapshot();
       for (const listener of listeners) {
         try {
