@@ -629,29 +629,42 @@ it('reuses an open draft that has no changes', async () => {
       ?.status,
   ).toBe('discarded');
 });
-it('keeps a draft that gets a change after the unused check', async () => {
-  await startDraft('Changed after check', h.owner.id);
+it('keeps a draft whose edit lands as the unused discard begins (#5122)', async () => {
+  await startDraft('Edited during discard', h.owner.id);
   const host = await hostFor('draft');
-  const chain = host.draftChain.bind(host);
-  let reads = 0;
-  // The first read (the caller's own check) sees an empty draft; the change
-  // lands before the in-lock read.
-  vi.spyOn(host, 'draftChain').mockImplementation(async () => {
-    reads += 1;
-    if (reads === 1) return chain();
-    await host.execute(
-      {
-        type: 'defineModel',
-        name: 'Pets',
-        fields: { name: { type: 'text' } },
-      },
-      { author: h.owner.id },
-    );
-    return chain();
-  });
-  expect(await discardIfUnused()).toBe(false);
-  expect(reads).toBe(2);
-  expect((await getDraftSlot())?.name).toBe('Changed after check');
+  let edit: Promise<string> | undefined;
+  // The edit is issued the moment the discard starts, after the caller's own
+  // unused check: the old code's in-lock check had already passed by then.
+  const landEdit = () => {
+    edit ??= host
+      .execute(
+        {
+          type: 'defineModel',
+          name: 'Pets',
+          fields: { name: { type: 'text' } },
+        },
+        { author: h.owner.id },
+      )
+      .then(
+        () => 'applied',
+        () => 'refused',
+      );
+  };
+  for (const name of ['discard', 'discardIfEmpty'] as const) {
+    if (typeof host[name] !== 'function') continue;
+    const original = host[name].bind(host);
+    vi.spyOn(host, name).mockImplementation(() => {
+      landEdit();
+      return original() as never;
+    });
+  }
+  const discarded = await discardIfUnused();
+  expect(await edit).toBe('applied');
+  expect(discarded).toBe(false);
+  expect((await getDraftSlot())?.name).toBe('Edited during discard');
+  expect(
+    (await host.draftChain()).versions.map((v) => v.definition),
+  ).toHaveLength(1);
 });
 it('refuses tracking-off and disconnected AI before consuming bytes, and validates owner cell settings', async () => {
   config({ usage: { enabled: false } });
