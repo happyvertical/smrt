@@ -18,6 +18,92 @@ Generated registration reads the merged declaration, so older manifests with a
 derived top-level collection still agree with native decorators. Explicit runtime
 registration options win; absent declarations retain manifest/STI/default naming.
 
+## What a manifest build reads, and when it fails
+
+Decorator configuration reaches the manifest in full or the build fails. The
+scanner reads `@smrt`, `@TenantScoped`, `@report`, `@method`, field decorator
+options and the agent static properties statically: literals, same-file
+module `const`s, same-file enum members and constant folding. A value it
+cannot read (an imported constant, a call, a `let`) is an error-severity scan
+diagnostic naming the file, class and option, and both producers
+(`smrtPlugin`, `ManifestBuilder`) abort on it. It is never recorded as an
+empty config or as the identifier's name. Two model classes of one name in a
+package fail the same way. The full table of forms, the constant and mutation
+rules, relationship targets and runtime-only options (`validate` callbacks)
+are in the scanner's
+[static-config.md](../../scanner/agents/static-config.md).
+
+Write decorator config so the scanner can read it:
+
+```typescript
+const INTERNAL = { api: false, mcp: false, cli: false } as const; // same file
+const MAX_KEY_LENGTH = 64;
+
+@smrt({ tableName: 'vault_keys', ...INTERNAL }) // or @smrt(SOME_CONST)
+class VaultKey extends SmrtObject {
+  @field({ sensitive: true, maxLength: MAX_KEY_LENGTH })
+  secret = '';
+}
+```
+
+A value imported from another module must be inlined; imports are not
+followed.
+
+**Imported parents.** A class whose `extends` is imported from another scoped
+package is qualified by that import (`extendsQualified`, #4145).
+`verifyImportedParents` keeps the qualification when the package's manifest
+declares the class. Path aliases never reach it: the scanner's module
+resolver resolves a `tsconfig.json` `paths` alias to the file it maps to, and
+a default import from a package to a scan error, so a qualification here
+always names a package export. One that resolves to no package fails. When the package is
+installed — without a manifest, or with one that does not declare the class
+— generation throws `CONFIG_UNRESOLVED_IMPORTED_PARENT`, even if this package
+or a dependency declares a class of that name: a namesake is not the parent
+the source imports. A confirmed parent is the parent for every later pass,
+including exposure inheritance and the widening check (`findParentModel`
+resolves the qualified name, never a local namesake). Every relationship
+target and report source must then name a class of the manifest or a loadable
+dependency, or generation throws `CONFIG_UNKNOWN_RELATIONSHIP_TARGET`
+(`assertKnownTargets`; `@crossPackageRef` is checked at save time). A target
+the scanner traced to a package export carries `relatedQualified` (a report
+source `sourceQualified`); it is confirmed by that identity only, against the
+package's manifest, and `related` becomes the declaring class. A same-named
+model in the app or another dependency never satisfies it. A single-table
+child also receives its confirmed ancestors' manifest static metadata
+(`staticProperties`), nearest first, its own last. Generating without the parent would give
+a single-table child its own table and skip the fields and surface limits it
+inherits. Build the parent package first and declare it as a dependency.
+
+**Resolution root.** Dependency manifests are resolved from the project being
+built, not from `process.cwd()`: `applyGenerationPasses(manifest, {
+projectRoot })` loads each dependency, once per run, from the manifest
+package discovery selected for that root, else from the package's
+`./manifest` export as seen from the root, else from the conventional
+locations the consumer plugin reads (`conventionalManifestCandidates`:
+`dist/manifest.json`, then `manifest.json`). Both producers pass their root; a
+new producer must too. `loadExternalManifestSync(name, { baseDir })` is the
+root-anchored form of the loader: it neither reads nor writes the
+process-wide cache, and keeps its own cache keyed by root and package, so a
+build for another project never changes what this process's default-root
+lookups return. Every `applyGenerationPasses` run is scoped to a root: the explicit
+`projectRoot`, else the working directory. Generation reads dependency manifests uncached
+(`loadManifestFromPathSync(path, { cache: false })`,
+`loadExternalManifestSync(name, { baseDir, cache: false })`) and holds them
+for one run only, so a rebuild in the same process (a dev server) reads a
+provider that changed between builds.
+The runtime loader stays anchored to the app process's working directory and
+to the `./manifest` export.
+
+A confirmed parent is then loaded from its own package by every pass
+(`parentPackages`), whether or not that package is in `smrtDependencies`: the
+list comes from package discovery, and an app can extend a class of a package
+it names only in its consumer configuration.
+
+**Scan scope.** The shared package build excludes `**/__tests__/**` from the
+production scan. A test manifest scans tests too, so a fixture that stands in
+for another package under a package model's class name must be excluded from
+that scan (`smrtVitestPlugin({ exclude })`).
+
 ## @field() UI hints (#2046)
 
 `@field({ ui: { basic, group, order, locked } })` — a static, presentation-only
