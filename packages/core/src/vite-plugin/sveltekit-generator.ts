@@ -18,7 +18,6 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import { generateActivationRegistration } from '../activation/generate.js';
 import { publishArtifactFiles } from '../consumer-plugin/artifact-publication.js';
-import { generatedExpression } from '../generated-fields.js';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
 import {
   type ApiMethodExposure,
@@ -48,7 +47,6 @@ import {
 } from '../query-bounds.js';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type {
-  ApiConfig,
   ApiHttpMethod,
   ApiSerializerReference,
 } from '../registry/types.js';
@@ -69,6 +67,16 @@ import {
   reservesResourcesRoute,
 } from './resources-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
+import {
+  collectRouteReadonlyFields,
+  generateTenantContextHelper,
+  getApiConfigObject,
+  getApiPublicAccess,
+  getApiWritableAllowlist,
+  isTenantScoped,
+  resolvePermissionCollection,
+  usesPrincipalContext,
+} from './route-policy.js';
 import {
   assertSvelteKitConfigModuleNotReserved,
   generateCollectionAccessImports,
@@ -284,14 +292,6 @@ function toSingleQuotedStringLiteral(value: string): string {
   return `'${jsonContent}'`;
 }
 
-function getApiConfigObject(apiConfig: unknown): ApiConfig | null {
-  if (!apiConfig || typeof apiConfig !== 'object') {
-    return null;
-  }
-
-  return apiConfig as ApiConfig;
-}
-
 function isSameSerializerReference(
   left?: ApiSerializerReference,
   right?: ApiSerializerReference,
@@ -441,35 +441,6 @@ function findObjectDefByRegistryKey(
 }
 
 /**
- * Collect property names marked `@field({ readonly: true })` for an object, so
- * the generated write surfaces can strip them from request bodies (#1540, 2b).
- */
-function collectReadonlyFieldNames(objectDef: SmartObjectDefinition): string[] {
-  const fields = objectDef.fields || {};
-  const names: string[] = [];
-  for (const [name, def] of Object.entries(fields)) {
-    const meta = (def as { _meta?: Record<string, unknown> })._meta;
-    if (
-      (def as { readonly?: boolean }).readonly === true ||
-      meta?.readonly === true ||
-      generatedExpression(def) !== undefined
-    ) {
-      names.push(name);
-    }
-  }
-  return names;
-}
-
-/**
- * Resolve the optional `@smrt({ api: { writable: [...] } })` allowlist. When
- * present, only these fields may be set from a create/update request body.
- */
-function getApiWritableAllowlist(apiConfig: unknown): string[] | null {
-  const config = getApiConfigObject(apiConfig);
-  return Array.isArray(config?.writable) ? config.writable : null;
-}
-
-/**
  * Emit the mass-assignment guard helper injected into generated route files
  * (#1540, 2b). It strips framework/server-managed (`id`, `tenantId`,
  * timestamps, `_`-prefixed) and `@field({ readonly: true })` fields from
@@ -486,10 +457,8 @@ function generateWritablePolicyHelper(
   objectDef: SmartObjectDefinition,
   dynamicTarget = false,
 ): string {
-  const readonly = [
-    ...collectReadonlyFieldNames(objectDef),
-    ...(objectDef.displayLabelProjection ? ['displayLabel'] : []),
-  ];
+  // The same read-only set the generated sync-apply route uses.
+  const readonly = collectRouteReadonlyFields(objectDef);
   const writable = getApiWritableAllowlist(objectDef.decoratorConfig?.api);
 
   return `
@@ -532,21 +501,6 @@ ${
   return result;
 }
 `;
-}
-
-/**
- * Resolve the `@smrt({ api: { public } })` posture (fail-closed default).
- * - `false`/unset → all routes require an authenticated principal.
- * - `true` → all routes are public.
- * - `'read'` → reads are public, mutations still require auth.
- */
-function getApiPublicAccess(apiConfig: unknown): boolean | 'read' {
-  const config = getApiConfigObject(apiConfig);
-  const value = config?.public;
-  if (value === true || value === 'read') {
-    return value;
-  }
-  return false;
 }
 
 function toFieldColumnAlias(fieldName: string): string {
@@ -656,23 +610,6 @@ function collectReadPermissionFields(
     }
   }
   return result;
-}
-
-/**
- * The collection segment of generated operation permission slugs. Mirrors the
- * smrt-users `PermissionCatalogService` derivation: an explicit
- * `@smrt({ collection })` wins, then the manifest collection. A hosted STI
- * subclass moved to its own route collection keeps the STI base's slugs through
- * `permissionCollection` (#3770).
- */
-function resolvePermissionCollection(objectDef: SmartObjectDefinition): string {
-  if (objectDef.permissionCollection) return objectDef.permissionCollection;
-  const configured = (
-    objectDef.decoratorConfig as { collection?: unknown } | undefined
-  )?.collection;
-  return typeof configured === 'string' && configured.length > 0
-    ? configured
-    : objectDef.collection;
 }
 
 /**
@@ -881,15 +818,6 @@ function toPublicResult(
 }
 
 /**
- * Whether an object is `@TenantScoped` (carries a `tenantScoped` config in its
- * `@smrt()`/`@TenantScoped()` decorator). Drives tenant-context establishment in
- * generated routes (#1540, facet 2).
- */
-function isTenantScoped(objectDef: SmartObjectDefinition): boolean {
-  return !!objectDef.decoratorConfig?.tenantScoped;
-}
-
-/**
  * The registry name an emitted route resolves its tenant read scope with at
  * request time: the model's qualified name, or its class name.
  *
@@ -909,16 +837,6 @@ function readScopeModelName(
       ? `${objectDef.packageName}:${objectDef.className}`
       : objectDef.className || fallback)
   );
-}
-
-/**
- * Whether generated routes must publish the authenticated principal into the
- * tenancy ALS without making the model itself tenant-scoped. This is an
- * explicit model-level opt-in: body data is never an identity source.
- */
-function usesPrincipalContext(objectDef: SmartObjectDefinition): boolean {
-  const api = getApiConfigObject(objectDef.decoratorConfig?.api);
-  return api?.principalContext === true;
 }
 
 function needsRouteTenantContext(objectDef: SmartObjectDefinition): boolean {
@@ -1010,92 +928,6 @@ function resolveDefaultListOrderBy(
 }
 
 /**
- * Emit the tenant-context establishment helper for `@TenantScoped` objects
- * (#1540 facet 2; #1782). Generated handlers call
- * `establishTenantContext(locals)` after the auth guard so every query runs
- * inside the tenant context derived from the authenticated principal — engaging
- * the `@TenantScoped` interceptors that auto-filter by tenant.
- *
- * `establishTenantContext` reads the canonical `locals.tenantId` set by the
- * smrt-users auth hook (with `user`/`session` fallbacks). An upstream context
- * must identify the same tenant/user; conflicting authority fails closed.
- *
- * When no context could be established, an `optional`-mode read would otherwise
- * fall through the interceptor UNFILTERED and return rows from ALL tenants (the
- * interceptor only hard-fails `required` mode) — the #1782 leak. So every
- * generated read also calls core's `resolveAnonymousTenantReadScope()` (or,
- * for custom GET actions taking options, `resolveTenantReadOptionsScope()`),
- * resolved at request time from the live registry, which restricts reads to
- * rows without an owner when tenancy is on and no tenant is active. That call
- * is emitted for every model, since tenancy can be registered at runtime; it
- * resolves to nothing for a model that is not tenant-scoped. This helper is
- * imported only for tenant-scoped routes, which already depend on
- * `@happyvertical/smrt-tenancy`; `includeSuperAdminBypass` adds
- * `isSuperAdminBypass` for routes whose action options carry the scope.
- */
-function generateTenantContextHelper(
-  requirePrincipal: boolean,
-  includeSuperAdminBypass: boolean,
-): string {
-  const principalGuard = requirePrincipal
-    ? `  if (
-    typeof tenantId !== 'string' || !tenantId ||
-    typeof userId !== 'string' || !userId ||
-    !permissions
-  ) {
-    throw error(403, 'Authenticated principal context is incomplete');
-  }
-`
-    : '';
-  const contextArgument = requirePrincipal
-    ? '{ tenantId, userId, permissions }'
-    : '{ tenantId }';
-  const activeUserMismatch = requirePrincipal
-    ? 'active.userId !== userId'
-    : "typeof userId === 'string' && userId && active.userId && active.userId !== userId";
-  const tenancyImport = includeSuperAdminBypass
-    ? 'enterTenantContext, getCurrentTenant, isSuperAdminBypass'
-    : 'enterTenantContext, getCurrentTenant';
-  return `
-import { ${tenancyImport} } from '@happyvertical/smrt-tenancy';
-
-function establishTenantContext(locals: unknown): void {
-  if (!locals || typeof locals !== 'object') return;
-  const l = locals as Record<string, unknown>;
-  const user = l.user as Record<string, unknown> | undefined;
-  const session = l.session as Record<string, unknown> | undefined;
-  const tenantContext = l.tenantContext as Record<string, unknown> | undefined;
-  const tenantId = l.tenantId ?? user?.tenantId ?? session?.tenantId ?? tenantContext?.tenantId;
-  const userId = l.userId ?? user?.id ?? user?.userId ?? session?.userId ?? tenantContext?.userId;
-  const rawPermissions =
-    l.permissions ?? l.permissionSet ?? l.smrtPermissions ?? tenantContext?.permissions;
-  const permissions =
-    rawPermissions instanceof Set && [...rawPermissions].every((value) => typeof value === 'string')
-      ? rawPermissions
-      : Array.isArray(rawPermissions) && rawPermissions.every((value) => typeof value === 'string')
-        ? new Set(rawPermissions)
-        : undefined;
-${principalGuard}
-  const active = getCurrentTenant();
-  if (active) {
-    if (
-      (typeof tenantId === 'string' && tenantId && active.tenantId !== tenantId) ||
-      (${activeUserMismatch})
-    ) {
-      throw error(403, 'Tenant context does not match authenticated principal');
-    }
-${requirePrincipal ? '    enterTenantContext({ ...active, tenantId, userId, permissions });\n' : ''}    return;
-  }
-  if (typeof tenantId === 'string' && tenantId) {
-    enterTenantContext(
-      ${contextArgument},
-    );
-  }
-}
-
-`;
-}
-
 /**
  * The per-handler guard preamble: the fail-closed auth check (#1540 2c) plus, for
  * tenant-scoped objects, tenant-context establishment (#1540 facet 2).
@@ -1116,6 +948,11 @@ function routeGuardPreamble(
   }
   if (needsRouteTenantContext(objectDef)) {
     lines.push('  establishTenantContext(locals);');
+  }
+  // A write to a tenant-scoped model needs a tenant (or an explicitly
+  // cross-tenant principal), whatever the model's tenancy mode.
+  if (mutating && isTenantScoped(objectDef)) {
+    lines.push('  requireTenantWriteContext(locals);');
   }
   return lines.join('\n');
 }
@@ -3498,7 +3335,7 @@ ${serializerImports ? `${serializerImports}\n` : ''}${hasPost ? "import { Object
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
 // Note: ${className} is auto-registered by the Vite plugin scanner
-${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), false) : ''}${hasPost ? generateWritablePolicyHelper(className, objectDef, true) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateListQueryHelper(className) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPost ? generateWritablePolicyHelper(className, objectDef, true) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateListQueryHelper(className) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: tenant-scoped reads fail closed to global (NULL-tenant) rows when no
   // tenant context is active (public/anonymous read). The scope is resolved at
@@ -3700,7 +3537,7 @@ import { error${hasPut || hasDelete ? ', json' : ''} } from '@sveltejs/kit';
 ${serializerImports ? `${serializerImports}\n` : ''}${hasPut || hasDelete ? "import { normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}${hasPut ? "import { applyUpdateInput, ObjectRegistry } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { resolveAnonymousTenantReadScope } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
-${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), false) : ''}${hasPut ? generateWritablePolicyHelper(className, objectDef) : ''}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPut ? generateWritablePolicyHelper(className, objectDef) : ''}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: a tenant-scoped single read fails closed to global (NULL-tenant)
   // rows when no tenant context is active, so a public/anonymous GET /:id can't
@@ -3965,7 +3802,7 @@ ${generateAuthGuardHelper(
     isCollectionManifestClass(semanticManifest, objectDef)
     ? firstSpec.lookupObjectDef
     : objectDef,
-)}${needsTenantContext ? generateTenantContextHelper(principalContext, tenantScoped && readsOptionsScope) : ''}
+)}${needsTenantContext ? generateTenantContextHelper(principalContext, tenantScoped, tenantScoped && readsOptionsScope) : ''}
 ${generateTypedRouteErrorHelper()}
 ${handlers}`;
 }
@@ -4001,6 +3838,10 @@ function generateActionRouteHandler(
   }
   if (needsTenantContext) {
     guardLines.push('  establishTenantContext(locals);');
+  }
+  // A mutating action on a tenant-scoped model needs a tenant too.
+  if (mutating && tenantScoped) {
+    guardLines.push('  requireTenantWriteContext(locals);');
   }
   const authGuardLine = guardLines.join('\n');
   // Even input-free actions need request context for failure correlation.

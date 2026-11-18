@@ -206,12 +206,16 @@ describe('generateSyncApplyRouteTemplate', () => {
     expect(content).toContain('hasAuthenticatedPrincipal');
     expect(content).toContain('permissionCollection: "products"');
     expect(content).toContain('hasOperationPermission(locals');
-    expect(content).toContain('target.publicAccess === true');
+    expect(content).toContain('target.publicAccess !== true');
     expect(content).toContain("'auth_required'");
   });
 
   it('establishes tenant context only when a target is tenant-scoped', () => {
-    expect(content).toContain('establishTenantContext(locals);');
+    // Per item, with that target's own principal requirement.
+    expect(content).toContain(
+      'establishTenantContext(locals, target.principalContext);',
+    );
+    expect(content).toContain('hasTenantWriteContext(locals)');
     expect(content).toContain("from '@happyvertical/smrt-tenancy'");
 
     const withoutTenants = generateSyncApplyRouteTemplate(
@@ -316,6 +320,8 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
     delete (globalThis as Record<string, unknown>).__smrtSyncCreateCalls;
     delete (globalThis as Record<string, unknown>).__smrtSyncDeclaredFields;
     delete (globalThis as Record<string, unknown>).__smrtSyncStoredRow;
+    delete (globalThis as Record<string, unknown>).__smrtSyncTenantContext;
+    delete (globalThis as Record<string, unknown>).__smrtSyncSystemContext;
   });
 
   async function importRoute(
@@ -335,7 +341,7 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
     const kitShim = join(projectRoot, 'kit-shim.ts');
     writeFileSync(
       kitShim,
-      'export function json(body: unknown, init: ResponseInit = {}): Response {\n  return new Response(JSON.stringify(body), init);\n}\n',
+      'export function json(body: unknown, init: ResponseInit = {}): Response {\n  return new Response(JSON.stringify(body), init);\n}\nexport function error(status: number, message: string): never {\n  throw Object.assign(new Error(message), { status });\n}\n',
     );
     const smrtShim = join(projectRoot, 'smrt-shim.ts');
     writeFileSync(
@@ -354,6 +360,20 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
         '    },',
         '  };',
         '}',
+      ].join('\n'),
+    );
+    // Tenancy with enforcement on: the context a route enters is recorded,
+    // and tests set an ambient or system context through `globalThis`.
+    const tenancyShim = join(projectRoot, 'tenancy-shim.ts');
+    writeFileSync(
+      tenancyShim,
+      [
+        'const state = globalThis as any;',
+        'export function getCurrentTenant() { return state.__smrtSyncTenantContext; }',
+        'export function hasTenantContext() { return Boolean(state.__smrtSyncTenantContext); }',
+        'export function isSystemContext() { return state.__smrtSyncSystemContext === true; }',
+        'export function isTenancyEnabled() { return true; }',
+        'export function enterTenantContext(context: unknown) { state.__smrtSyncTenantContext = context; }',
       ].join('\n'),
     );
     // The REAL core engine, so the generated authorize() closure is exercised
@@ -395,6 +415,9 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
             b.onResolve({ filter: /^@happyvertical\/smrt-core$/ }, () => ({
               path: coreEntry,
             }));
+            b.onResolve({ filter: /^@happyvertical\/smrt-tenancy$/ }, () => ({
+              path: tenancyShim,
+            }));
           },
         },
       ],
@@ -433,6 +456,209 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
     methods: {},
     decoratorConfig: { api: { include: ['list', 'get', 'create'] } },
   };
+
+  describe('tenant and principal context (the CRUD route helper)', () => {
+    const tenantDef = {
+      className: 'TenantWidget',
+      collection: 'tenantwidgets',
+      fields: {
+        name: { type: 'text' },
+        code: { type: 'text', readonly: true },
+        total: { type: 'integer', generated: { col: 'name' } },
+      },
+      methods: {},
+      displayLabelProjection: { field: 'name' },
+      decoratorConfig: {
+        api: { include: ['list', 'get', 'create'] },
+        tenantScoped: { mode: 'optional' },
+      },
+    };
+    const principalDef = {
+      ...tenantDef,
+      className: 'PrincipalWidget',
+      collection: 'principalwidgets',
+      decoratorConfig: {
+        api: { include: ['list', 'get', 'create'], principalContext: true },
+        tenantScoped: { mode: 'optional' },
+      },
+    };
+    const publicDef = {
+      ...tenantDef,
+      className: 'PublicWidget',
+      collection: 'publicwidgets',
+      decoratorConfig: {
+        api: { include: ['list', 'get', 'create'], public: true },
+        tenantScoped: { mode: 'optional' },
+      },
+    };
+    const state = globalThis as Record<string, unknown>;
+    // One route serving all three models, as a generated app has.
+    const apply = async (
+      object: string,
+      locals: unknown,
+      payload: Record<string, unknown> = { name: 'Widget' },
+    ) => {
+      const route = await importRoute({
+        TenantWidget: tenantDef,
+        PrincipalWidget: principalDef,
+        PublicWidget: publicDef,
+      });
+      return firstResult(
+        await route.POST({
+          locals,
+          request: new Request('http://localhost/api/sync/apply', {
+            body: JSON.stringify({
+              items: [
+                {
+                  itemId: 'q-1',
+                  object,
+                  op: 'create',
+                  id: '0f8fad5b-d9cb-469f-a165-70867728950e',
+                  payload,
+                },
+              ],
+            }),
+            method: 'POST',
+          }),
+        }),
+      );
+    };
+
+    it('strips the same read-only fields as the CRUD route', async () => {
+      const [target] = collectSyncApplyTargets(
+        manifestWith({ TenantWidget: tenantDef }),
+      );
+      // Read-only, calculated and projected-label fields, from the one
+      // function both generators call.
+      expect(target.readonlyFields).toEqual(['code', 'total', 'displayLabel']);
+
+      const result = await apply(
+        'tenantwidgets',
+        {
+          tenantId: 'tenant-a',
+          permissions: ['tenantwidgets.create'],
+          user: { id: 'user-1' },
+        },
+        {
+          name: 'Widget',
+          code: 'forged',
+          total: 999,
+          displayLabel: 'forged',
+          tenantId: 'tenant-b',
+        },
+      );
+      expect(result).toMatchObject({ status: 'applied' });
+      expect(createCalls).toEqual([
+        {
+          name: 'Widget',
+          id: '0f8fad5b-d9cb-469f-a165-70867728950e',
+          _insertOnly: true,
+        },
+      ]);
+    });
+
+    it('reads the tenant from every place the CRUD route does', async () => {
+      for (const locals of [
+        { tenantId: 'tenant-a' },
+        { user: { id: 'user-1', tenantId: 'tenant-a' } },
+        { session: { tenantId: 'tenant-a' } },
+        { tenantContext: { tenantId: 'tenant-a' } },
+      ]) {
+        delete state.__smrtSyncTenantContext;
+        createCalls.length = 0;
+        const result = await apply('tenantwidgets', {
+          user: { id: 'user-1' },
+          permissions: ['tenantwidgets.create'],
+          ...locals,
+        });
+        expect(result).toMatchObject({ status: 'applied' });
+        expect(state.__smrtSyncTenantContext).toMatchObject({
+          tenantId: 'tenant-a',
+        });
+        expect(createCalls).toHaveLength(1);
+      }
+    });
+
+    it('rejects a write by a signed-in caller with no tenant', async () => {
+      const result = await apply('tenantwidgets', {
+        user: { id: 'user-1' },
+        permissions: ['tenantwidgets.create'],
+      });
+      expect(result).toMatchObject({ status: 'rejected', reason: 'forbidden' });
+      expect(createCalls).toHaveLength(0);
+    });
+
+    it('rejects an anonymous write to a public model with no tenant', async () => {
+      const result = await apply('publicwidgets', {});
+      expect(result).toMatchObject({
+        status: 'rejected',
+        reason: 'auth_required',
+      });
+      expect(createCalls).toHaveLength(0);
+    });
+
+    it('applies a write for an explicitly cross-tenant principal or an active context', async () => {
+      const superAdmin = await apply('tenantwidgets', {
+        user: { id: 'operator' },
+        tenantContext: { superAdminBypass: true },
+      });
+      expect(superAdmin).toMatchObject({ status: 'applied' });
+
+      state.__smrtSyncSystemContext = true;
+      const system = await apply('publicwidgets', {});
+      expect(system).toMatchObject({ status: 'applied' });
+      delete state.__smrtSyncSystemContext;
+
+      state.__smrtSyncTenantContext = { tenantId: 'tenant-a' };
+      const ambient = await apply('publicwidgets', {});
+      expect(ambient).toMatchObject({ status: 'applied' });
+      expect(createCalls).toHaveLength(3);
+    });
+
+    it('rejects a tenant that does not match the active context', async () => {
+      state.__smrtSyncTenantContext = { tenantId: 'tenant-b' };
+      const result = await apply('tenantwidgets', {
+        tenantId: 'tenant-a',
+        user: { id: 'user-1' },
+        permissions: ['tenantwidgets.create'],
+      });
+      expect(result).toMatchObject({ status: 'rejected', reason: 'forbidden' });
+      expect(createCalls).toHaveLength(0);
+    });
+
+    it('requires a complete principal for a principal-context model and enters it', async () => {
+      const incomplete = await apply('principalwidgets', {
+        smrtAuth: true,
+        tenantContext: {
+          tenantId: 'tenant-a',
+          permissions: ['principalwidgets.create'],
+        },
+      });
+      expect(incomplete).toMatchObject({
+        status: 'rejected',
+        reason: 'forbidden',
+      });
+      expect(createCalls).toHaveLength(0);
+
+      const complete = await apply('principalwidgets', {
+        user: { id: 'user-1' },
+        tenantContext: {
+          tenantId: 'tenant-a',
+          userId: 'user-1',
+          permissions: new Set(['principalwidgets.create']),
+        },
+      });
+      expect(complete).toMatchObject({ status: 'applied' });
+      expect(state.__smrtSyncTenantContext).toMatchObject({
+        tenantId: 'tenant-a',
+        userId: 'user-1',
+      });
+      expect(
+        (state.__smrtSyncTenantContext as { permissions: Set<string> })
+          .permissions,
+      ).toEqual(new Set(['principalwidgets.create']));
+    });
+  });
 
   it('rejects a signed-in principal lacking <collection>.create as forbidden', async () => {
     const route = await importRoute({ Widget: widgetDef });

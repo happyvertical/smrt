@@ -84,3 +84,6 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
 - Generated MCP tools (`single/index.ts`, `modular/handlers/index.ts`): the
   get, update, delete and item-action cases read `id` / `slug` through
   `requireIdentifierArgument()` / `identifierArgument()`.
+- Generated sync route (`sync/apply/+server.ts`): each target carries
+  `tenantScoped` and `principalContext`, and its read-only list comes from the
+  function the CRUD routes use (`collectRouteReadonlyFields`).

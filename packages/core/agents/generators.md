@@ -67,6 +67,51 @@ Tests: `src/__tests__/update-input-fields.test.ts` executes all seven
 transports; `packages/cli/src/__tests__/cli-writable-policy.test.ts`;
 `packages/chat/src/tool-loop.test.ts`.
 
+### Tenant-scoped models: every operation runs in a tenant
+
+The runtime REST server runs every operation on a tenant-scoped model through
+`runWithTenantGate` (`generators/tenant-gate.ts`), the gate the in-process MCP
+generator uses. The tenant comes from the host per request:
+`APIConfig.resolveTenant(req)` returns `{ tenantId?, allowCrossTenant?,
+authenticated? }` and is called after `authMiddleware` admitted the request,
+with the request the middleware returned, only for tenant-scoped models.
+Without it the fixed `APIContext.tenantId` / `allowCrossTenant` apply.
+
+| Caller | Read | Write (create, update, delete, custom action, sync item) |
+|---|---|---|
+| Has a tenant | Inside that tenant | Inside that tenant |
+| `allowCrossTenant` | System context | System context |
+| Neither, optional-mode model | Global rows only (#1782) | Refused |
+| Neither, required-mode model | Refused | Refused |
+| A context the host already entered | Kept | Kept |
+
+A refusal is `{ error: { code: 'TENANT_CONTEXT_REQUIRED', status } }`: 403 for
+a signed-in caller, 401 for an anonymous one (no `authMiddleware`, or
+`authenticated: false`); a sync item is `rejected` with `forbidden` /
+`auth_required`. The read of a caller with no tenant stays outside the gate,
+which has no global-only mode; its #1782 scope and the interceptor's refusal
+go through the same error mapping. A caller with no tenant never writes a
+tenant-scoped row, global rows included.
+
+The emitted SvelteKit routes read the tenant from `locals`
+(`establishTenantContext`) and then, for a mutating handler of a tenant-scoped
+model (create, update, delete, mutating custom action), call
+`requireTenantWriteContext(locals)`: with tenancy enabled and no tenant
+context it throws 403 (401 for an anonymous caller) unless a system context is
+active or `locals.tenantContext.superAdminBypass === true`.
+
+The emitted sync-apply route and the CRUD routes are generated from one set
+of policy functions (`vite-plugin/route-policy.ts`): the read-only field list
+(`collectRouteReadonlyFields`: read-only, calculated and `displayLabel`), the
+writable allowlist, public access, the permission collection, and the tenant
+and principal helper (`generateTenantContextHelper`). The sync route takes the
+principal requirement per item (`api.principalContext` of the target) and
+rejects the item as `forbidden` when the CRUD helper would have thrown.
+
+Tests: `packages/tenancy/src/__tests__/rest-write-tenant-gate.test.ts` (real
+tenancy), `src/vite-plugin/sveltekit-generator.runtime.test.ts` and
+`src/vite-plugin/sync-apply-route.test.ts` (emitted handlers, executed).
+
 ### Tool identifiers are non-empty strings
 
 MCP arguments are untyped JSON. The `get`, `update`, `delete` and item-action

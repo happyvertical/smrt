@@ -140,6 +140,16 @@ function normalizePublicToolError(
     return { code: error.code, message: error.message };
   if (!error || typeof error !== 'object') return undefined;
   const candidate = error as { code?: unknown; publicMessage?: unknown };
+  // Another tenant's row is refused as a plain permission denial, unless the
+  // error states its own public message.
+  if (
+    candidate.code === 'TENANT_ISOLATION_VIOLATION' &&
+    !(
+      typeof candidate.publicMessage === 'string' &&
+      candidate.publicMessage.length > 0
+    )
+  )
+    return { code: 'permission_denied', message: 'Permission denied.' };
   if (
     typeof candidate.code !== 'string' ||
     !/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/.test(candidate.code) ||
@@ -3105,6 +3115,9 @@ function errorResult(structuredContent: any, text: string, _meta?: Record<string
 
 function normalizePublicToolError(error: any): { code: string; message: string } | undefined {
   if (!error || typeof error !== 'object') return undefined;
+  // Another tenant's row is refused as a plain permission denial, unless the
+  // error states its own public message.
+  if (error.code === 'TENANT_ISOLATION_VIOLATION' && !(typeof error.publicMessage === 'string' && error.publicMessage.length > 0)) return { code: 'permission_denied', message: 'Permission denied.' };
   if (
     typeof error.code !== 'string' ||
     !/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/.test(error.code) ||
