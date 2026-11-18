@@ -1345,7 +1345,10 @@ describe('membership-backed hosted MCP principal', () => {
       // Only a selector; every class below is overridden onto the SQLite db.
       env: { DATABASE_URL: 'postgres://unused.invalid/db' },
       classOverrides: Object.fromEntries(
-        ['OidcIdentity', 'User', 'Membership'].map((name) => [name, { db }]),
+        ['OidcIdentity', 'User', 'Membership', 'Profile'].map((name) => [
+          name,
+          { db },
+        ]),
       ),
     });
     const identities = await OidcIdentityCollection.create({ db });

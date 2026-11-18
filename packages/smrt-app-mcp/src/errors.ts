@@ -24,6 +24,12 @@ export class McpAccessError extends Error {
     readonly status: number,
     message: string,
     readonly metadata: McpAccessErrorMetadata = {},
+    /**
+     * Audit-only code. Never serialized to the wire: lets a denial that must
+     * look exactly like an unknown tool (no existence oracle) still be
+     * recorded as a policy denial.
+     */
+    readonly auditCode?: string,
   ) {
     super(message);
     this.name = 'McpAccessError';

@@ -1097,6 +1097,14 @@ export const runtime = createSmrtSvelteKitRuntime({
 
 ## Self-hosted and cloud applications
 
+To make the app its own MCP issuer, pass
+`mcp: { authorizationServer: { server, authorization, resource, scopes } }` to
+`createSmrtSvelteKitRuntime` (`server` from `@happyvertical/auth/server`,
+`authorization` a `SmrtOAuthAuthorizationService`). Hosted `/mcp` then verifies
+the app's own tokens in process, refuses the call after the grant is revoked,
+and advertises the app's issuer. See
+`docs/content/architecture/remote-mcp-authorization.md`.
+
 The deployed initializer validates the selected profile against concrete,
 provider-owned bindings. Database URLs, OIDC credentials, storage keys, and
 secret-manager identifiers stay inside those adapters and are never copied into

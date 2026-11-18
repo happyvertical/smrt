@@ -491,7 +491,7 @@ describe('remote protected resource', () => {
                   text: '<!doctype html><title>View</title>',
                 });
               } else {
-                await expect(call).rejects.toMatchObject({ status: 403 });
+                await expect(call).rejects.toMatchObject({ status: 404 });
                 expect(dispatched).not.toHaveBeenCalled();
                 expect(
                   await server.listResources?.({ principal: result.principal }),

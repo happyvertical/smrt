@@ -496,11 +496,12 @@ postgresDescribe('hosted bearer MCP under database-rls', () => {
         const { status, body } = await call(revoked);
         // Active membership, token still carries READ, role no longer grants it.
         expect(status).toBe(200);
-        expect(body.error).toEqual({
-          code: -32600,
-          message: 'MCP tool access is not permitted.',
-          data: { code: 'mcp_tool_access_denied', retryable: false },
+        // Refused exactly like an unknown tool (#5086).
+        expect(body.error).toMatchObject({
+          code: -32602,
+          message: 'Unknown MCP tool.',
         });
+        expect(body.error.data?.code).toBeUndefined();
         expect(revoked.executions).toEqual([]);
 
         const granted = setup(profile, undefined, true, form);

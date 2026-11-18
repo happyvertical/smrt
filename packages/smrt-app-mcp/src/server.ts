@@ -38,6 +38,16 @@ import {
 } from '@happyvertical/smrt-jobs';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
+  buildMcpApprovalSummary,
+  MCP_APPROVAL_CONSUMED_CODE,
+  MCP_APPROVAL_PENDING_CODE,
+  MCP_APPROVAL_REFUSED_CODE,
+  MCP_APPROVAL_REQUESTED_CODE,
+  MCP_APPROVAL_UNAVAILABLE_CODE,
+  type McpApprovalGate,
+  mcpApprovalBindingHash,
+} from './approval-gate.js';
+import {
   type McpAuditSink,
   mcpArgumentKeyNames,
   mcpAuditRecordFromEvent,
@@ -305,6 +315,23 @@ export interface CreateMcpAppServerOptions {
    * `requiresConfirm`.
    */
   confirmTools?: readonly string[];
+  /**
+   * Approval adapter for gated tools (`confirmTools` and `requiresConfirm`).
+   * When set, `confirm: true` no longer authorizes a gated call: the first call
+   * opens an approval request and answers `approval_pending`; a person decides
+   * out of band (never through this server); the identical retried call
+   * consumes the approval and runs once. Fails closed: an adapter error,
+   * a principal without id and tenant, or non-JSON arguments refuse the call.
+   * Host assertions run first so an invalid call never opens or burns an
+   * approval. Omitted: the legacy `confirm: true` gate.
+   */
+  approvals?: McpApprovalGate;
+  /**
+   * Narrow or mask the arguments shown to the approver (applied before the
+   * default secret-key redaction, which always runs). The binding hash still
+   * covers the real arguments.
+   */
+  approvalRedact?: (tool: string, args: Record<string, unknown>) => unknown;
   /** Receives (never rethrown) failures of {@link onToolCall}. */
   onToolCallHookError?: (error: unknown) => void;
   /**
@@ -438,6 +465,9 @@ function configuredEffects(
 /** Failure codes that mean the call was refused, not that it broke. */
 const DENIED_FAILURE_CODES: ReadonlySet<string> = new Set([
   'forbidden',
+  MCP_APPROVAL_PENDING_CODE,
+  MCP_APPROVAL_REFUSED_CODE,
+  MCP_APPROVAL_UNAVAILABLE_CODE,
   MCP_CONFIRM_REQUIRED_CODE,
   MCP_TOOL_ACCESS_DENIED_CODE,
   MCP_AUTHENTICATION_REQUIRED_CODE,
@@ -929,11 +959,118 @@ export function createMcpAppServer(
       : { ...requestedToolListCacheHint, cacheScope: 'private' };
   }
 
+  /** Fail-closed approval check for one gated call. */
+  async function gateWithApproval(
+    tool: MCPTool,
+    args: Record<string, unknown>,
+    principal: McpAppPrincipal | null,
+  ): Promise<{ block?: { failure: McpToolErrorInfo; auditCode: string } }> {
+    const unavailable = {
+      block: {
+        failure: {
+          code: MCP_APPROVAL_UNAVAILABLE_CODE,
+          message: 'Approval could not be checked; the call was not run.',
+        },
+        auditCode: MCP_APPROVAL_UNAVAILABLE_CODE,
+      },
+    };
+    const gate = options.approvals;
+    if (
+      !gate ||
+      typeof principal?.id !== 'string' ||
+      !principal.id ||
+      typeof principal.tenantId !== 'string' ||
+      !principal.tenantId
+    ) {
+      return unavailable;
+    }
+    try {
+      // `confirm` is the legacy gate's argument; it is never part of the call.
+      const { confirm: _confirm, ...callArgs } = args;
+      const bindingHash = await mcpApprovalBindingHash({
+        tool: tool.name,
+        tenantId: principal.tenantId,
+        principalId: principal.id,
+        args: callArgs,
+      });
+      const summary = buildMcpApprovalSummary({
+        tool: tool.name,
+        principalId: principal.id,
+        principalKind: principal.kind ?? null,
+        args: callArgs,
+        redact: options.approvalRedact,
+      });
+      if (summary === null) {
+        return {
+          block: {
+            failure: {
+              code: MCP_APPROVAL_REFUSED_CODE,
+              message:
+                'Approval refused: arguments_too_large_to_review. Send smaller arguments.',
+              details: { reason: 'arguments_too_large_to_review' },
+            },
+            auditCode: MCP_APPROVAL_REFUSED_CODE,
+          },
+        };
+      }
+      const result = await gate.check({
+        tool: tool.name,
+        tenantId: principal.tenantId,
+        principalId: principal.id,
+        principalKind: principal.kind ?? null,
+        bindingHash,
+        requestKey: `mcp:${bindingHash}`,
+        summary,
+      });
+      if (result?.state === 'approved') return {};
+      if (result?.state === 'pending') {
+        return {
+          block: {
+            failure: {
+              code: MCP_APPROVAL_PENDING_CODE,
+              message:
+                'Approval is pending: a person must approve this exact call, then call again with the same arguments.',
+              ...(result.approvalId
+                ? { details: { approvalId: result.approvalId } }
+                : {}),
+            },
+            auditCode: result.created
+              ? MCP_APPROVAL_REQUESTED_CODE
+              : MCP_APPROVAL_PENDING_CODE,
+          },
+        };
+      }
+      if (result?.state === 'refused') {
+        const reason = String(result.reason ?? 'refused')
+          .replace(/[^a-z0-9_]/gi, '_')
+          .slice(0, 64);
+        return {
+          block: {
+            failure: {
+              code: MCP_APPROVAL_REFUSED_CODE,
+              message:
+                reason === 'changes_requested'
+                  ? 'Approval refused: a reviewer requested changes. Change the arguments to open a new request.'
+                  : `Approval refused: ${reason}.`,
+              details: { reason },
+            },
+            auditCode: MCP_APPROVAL_REFUSED_CODE,
+          },
+        };
+      }
+      return unavailable;
+    } catch {
+      return unavailable;
+    }
+  }
+
   async function authorizeCall(input: CallToolInput): Promise<{
     args: Record<string, unknown>;
     principal: McpAppPrincipal | null;
     tool: MCPTool;
     confirmRequired: boolean;
+    approvalBlock?: { failure: McpToolErrorInfo; auditCode: string };
+    approvalConsumed?: boolean;
   }> {
     const args = input.arguments ?? {};
     const principal = principalForCall(input);
@@ -953,10 +1090,36 @@ export function createMcpAppServer(
       );
     }
     if (!(await passesToolPolicy(tool, principal))) {
-      throw new McpAccessError(403, 'MCP tool access is not permitted.', {
-        code: MCP_TOOL_ACCESS_DENIED_CODE,
-        retryable: false,
-      });
+      // Answer exactly like an unknown tool so a caller cannot tell a tool it
+      // may not use from one that does not exist; only the audit record
+      // carries the real reason.
+      throw new McpAccessError(
+        404,
+        'Unknown MCP tool.',
+        {},
+        MCP_TOOL_ACCESS_DENIED_CODE,
+      );
+    }
+    if (needsConfirm(tool) && options.approvals) {
+      // Assertions first: an invalid call must not open or burn an approval.
+      runWorkflowAssertions(tool, identity, args, principal);
+      const gated = await gateWithApproval(tool, args, principal);
+      if (gated.block) {
+        return {
+          args,
+          principal,
+          tool,
+          confirmRequired: false,
+          approvalBlock: gated.block,
+        };
+      }
+      return {
+        args,
+        principal,
+        tool,
+        confirmRequired: false,
+        approvalConsumed: true,
+      };
     }
     // The gate runs before any host assertion or handler can act.
     if (needsConfirm(tool) && args.confirm !== true) {
@@ -1070,6 +1233,7 @@ export function createMcpAppServer(
    */
   function deniedInfo(error: McpAccessError): McpToolErrorInfo {
     const code =
+      error.auditCode ??
       error.metadata.code ??
       (error.status === 404
         ? MCP_TOOL_NOT_FOUND_CODE
@@ -1099,6 +1263,18 @@ export function createMcpAppServer(
         await audit(input, principal, 'error', safeMcpToolError(error));
       }
       throw error;
+    }
+    if (authorized.approvalBlock) {
+      const { failure, auditCode } = authorized.approvalBlock;
+      await audit(input, principal, 'denied', {
+        code: auditCode,
+        message: failure.message,
+      });
+      return {
+        isError: true,
+        content: [{ type: 'text', text: failure.message }],
+        structuredContent: { error: failure },
+      } as MCPResponse;
     }
     if (authorized.confirmRequired) {
       const failure = {
@@ -1142,7 +1318,17 @@ export function createMcpAppServer(
         failure,
       );
     } else {
-      await audit(input, principal, 'ok');
+      await audit(
+        input,
+        principal,
+        'ok',
+        authorized.approvalConsumed
+          ? {
+              code: MCP_APPROVAL_CONSUMED_CODE,
+              message: 'An approval was consumed by this call.',
+            }
+          : undefined,
+      );
     }
     return result.response;
   }

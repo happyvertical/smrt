@@ -85,6 +85,7 @@ function fakeRun(): PrincipalRun {
     } satisfies SessionPermissionRuntimeContext,
     permissions,
     allowedTools: tools,
+    sessionId: null,
     isToolAllowed: (tool) => tools.includes(tool),
     assertToolAllowed(tool) {
       if (!tools.includes(tool)) throw new Error(`denied:${tool}`);

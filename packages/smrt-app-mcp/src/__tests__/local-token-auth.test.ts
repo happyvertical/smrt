@@ -36,6 +36,7 @@ const cookieLocals = {
   user: { id: 'cookie-user' },
   tenantId: 'cookie-tenant',
   permissions: ['notes.read'],
+  principalKind: 'human',
   sessionId: 'sid',
 };
 

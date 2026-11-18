@@ -55,6 +55,7 @@ const owner = {
   tenantId: 'tenant-a',
   permissions: ['notes.read'],
   sessionId: 'sid-1',
+  principalKind: 'human',
 };
 async function send(method, params, locals) {
   const url = new URL('http://127.0.0.1/mcp');

@@ -1,5 +1,6 @@
 import { requireTenant } from '@happyvertical/smrt-tenancy';
 import { WebhookSubscriptionCollection } from './models.js';
+import type { WebhookSigningProfileConfig } from './signing.js';
 import type { WebhookStore } from './store.js';
 import type {
   WebhookDeliveryRecord,
@@ -61,6 +62,7 @@ export class WebhookAdminService {
     events: string[];
     models: string[];
     secret: string;
+    signingProfile?: WebhookSigningProfileConfig | null;
   }): Promise<void> {
     await this.guard();
     const collection = await WebhookSubscriptionCollection.create({
@@ -72,6 +74,7 @@ export class WebhookAdminService {
       events: input.events,
       models: input.models,
       secret: input.secret,
+      signingProfile: input.signingProfile ?? null,
       enabled: true,
     });
     await sub.save();

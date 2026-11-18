@@ -5,7 +5,10 @@ import {
   sendPublicWebhook,
   type WebhookTransport,
 } from './security.js';
-import { signWebhookPayload } from './signing.js';
+import {
+  buildWebhookHeaders,
+  resolveWebhookSigningProfile,
+} from './signing.js';
 import { WebhookStore } from './store.js';
 import type { WebhookEventEnvelope } from './types.js';
 
@@ -101,22 +104,16 @@ export class WebhookDispatcher {
       assertHmacSecret(sub.secret);
       const event = JSON.parse(delivery.payload) as WebhookEventEnvelope;
       assertWebhookEvent(event);
-      const timestamp = new Date().toISOString();
       responseStatus = await this.transport({
         url: sub.url,
         body: delivery.payload,
-        headers: {
-          'content-type': 'application/json',
-          'user-agent': 'smrt-webhooks/1',
-          'x-smrt-event': event.event,
-          'x-smrt-delivery': deliveryId,
-          'x-smrt-timestamp': timestamp,
-          'x-smrt-signature': signWebhookPayload(
-            sub.secret,
-            timestamp,
-            delivery.payload,
-          ),
-        },
+        headers: buildWebhookHeaders({
+          secret: sub.secret,
+          body: delivery.payload,
+          deliveryId,
+          event: event.event,
+          profile: resolveWebhookSigningProfile(sub.signingProfile),
+        }),
       });
       if (responseStatus < 200 || responseStatus >= 300)
         throw new Error('Webhook rejected.');

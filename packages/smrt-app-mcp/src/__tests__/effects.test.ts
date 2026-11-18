@@ -50,6 +50,7 @@ const readerLocals = {
   user: { id: 'reader-1' },
   tenantId: 'tenant-a',
   permissions: ['items.read'],
+  principalKind: 'human',
   sessionId: 'sid',
 };
 

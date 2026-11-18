@@ -156,6 +156,7 @@ function fakeRun(
     } satisfies SessionPermissionRuntimeContext,
     permissions,
     allowedTools,
+    sessionId: null,
     isToolAllowed: (tool) => allowedTools.includes(tool),
     assertToolAllowed(tool) {
       if (!allowedTools.includes(tool)) throw new Error(`denied:${tool}`);

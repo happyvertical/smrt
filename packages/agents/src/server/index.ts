@@ -49,6 +49,7 @@ export {
   type DataSurfaceActionExecution,
   type DataSurfaceActionPayloadValidation,
   type DataSurfaceActionStateStore,
+  type DataSurfaceActionVisibilityContext,
   type DataSurfaceBackgroundActionEnvelope,
   type DataSurfaceBackgroundActionJob,
   type DataSurfaceBackgroundQueue,
@@ -64,6 +65,7 @@ export {
   isBoundedDataSurfaceJsonValue,
   type ResolvedDataSurfaceActions,
   type ResolvedDataSurfaceSelection,
+  visibleDataSurfaceDescriptor,
 } from './data-surface-actions.js';
 export type {
   DataSurfaceActionJobArgs,
