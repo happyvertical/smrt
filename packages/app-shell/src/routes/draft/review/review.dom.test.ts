@@ -100,18 +100,12 @@ describe('publish review', () => {
         'Publishing… a large import can take a minute',
       ),
     );
-    release(
-      json(
-        {
-          status: 'pending_approval',
-          approvalId: 'approval-publish',
-          summary: 'Publish Better orders',
-          preview,
-        },
-        202,
-      ),
+    release(json({ id: 'approval-publish', status: 'approved', result: {} }));
+    await vi.waitFor(() =>
+      expect(navigation.goto).toHaveBeenCalledWith('/', {
+        invalidateAll: true,
+      }),
     );
-    await vi.waitFor(() => expect(container.textContent).toContain('Approve'));
   });
   it('renders the preview counts, changes and every method in full', async () => {
     await render();
