@@ -166,6 +166,7 @@ describe('OXC Parser', () => {
 
     it('should extract report decorator config', () => {
       const source = `
+        import { Invoice } from './invoice';
         @report({
           source: Invoice,
           where: { status: 'paid' },

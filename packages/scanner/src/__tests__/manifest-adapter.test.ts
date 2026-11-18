@@ -350,9 +350,10 @@ describe('ManifestAdapter', () => {
       });
 
       it('rejects an empty string target', () => {
-        expect(
-          adapter.inferFieldType(thunkField('foreignKey', "'  '")).related,
-        ).toBeUndefined();
+        // A relationship field without its edge is never published.
+        expect(() =>
+          adapter.inferFieldType(thunkField('foreignKey', "'  '")),
+        ).toThrow(/empty target/);
       });
 
       it('resolves thunks for @oneToMany and @manyToMany', () => {
