@@ -28,7 +28,10 @@ import type {
   RawDecoratorConfig,
   RawFieldDefinition,
   RawMethodDefinition,
+  RawModuleExports,
   RawParameterDefinition,
+  RawReExport,
+  RawReferenceImport,
   ScanError,
 } from './types.js';
 
@@ -554,6 +557,9 @@ export function parseFile(filePath: string): FileScanResult {
   let smrtImports: Map<string, Set<string>> | undefined;
   let agentSurface: AgentSurface | undefined;
   let recipes: RawRecipe[] | undefined;
+  let reExports: RawReExport[] | undefined;
+  let moduleExports: RawModuleExports | undefined;
+  let imports: Record<string, ImportBinding> | undefined;
 
   try {
     const sourceText = readFileSync(filePath, 'utf-8');
@@ -602,6 +608,9 @@ export function parseFile(filePath: string): FileScanResult {
         }
       }
       resolveReplacementExports(classes, program.body);
+      reExports = extractReExports(program.body);
+      moduleExports = extractModuleExports(program.body);
+      imports = Object.fromEntries(ctx.importBindings ?? []);
       resolveLocalParameterAliases(classes, typeAliases);
       reportUnresolvedSpreads(ctx.unresolved, filePath, sourceText, errors);
       agentSurface = maybeExtractAgentSurface(program, sourceText, filePath);
@@ -639,6 +648,11 @@ export function parseFile(filePath: string): FileScanResult {
   if (recipes) {
     result2.recipes = recipes;
   }
+  if (reExports && reExports.length > 0) {
+    result2.reExports = reExports;
+  }
+  if (moduleExports) result2.moduleExports = moduleExports;
+  if (imports && Object.keys(imports).length > 0) result2.imports = imports;
   return result2;
 }
 
@@ -800,6 +814,9 @@ export function parseSource(
   let smrtImports: Map<string, Set<string>> | undefined;
   let agentSurface: AgentSurface | undefined;
   let recipes: RawRecipe[] | undefined;
+  let reExports: RawReExport[] | undefined;
+  let moduleExports: RawModuleExports | undefined;
+  let imports: Record<string, ImportBinding> | undefined;
 
   try {
     const result = parseSync(filename, sourceText, {
@@ -845,6 +862,9 @@ export function parseSource(
         }
       }
       resolveReplacementExports(classes, program.body);
+      reExports = extractReExports(program.body);
+      moduleExports = extractModuleExports(program.body);
+      imports = Object.fromEntries(ctx.importBindings ?? []);
       resolveLocalParameterAliases(classes, typeAliases);
       reportUnresolvedSpreads(ctx.unresolved, filename, sourceText, errors);
       agentSurface = maybeExtractAgentSurface(program, sourceText, filename);
@@ -882,6 +902,11 @@ export function parseSource(
   if (recipes) {
     result2.recipes = recipes;
   }
+  if (reExports && reExports.length > 0) {
+    result2.reExports = reExports;
+  }
+  if (moduleExports) result2.moduleExports = moduleExports;
+  if (imports && Object.keys(imports).length > 0) result2.imports = imports;
   return result2;
 }
 
@@ -941,8 +966,8 @@ function extractImportAliases(body: Statement[]): Map<string, string> {
 
 /**
  * Where one local import binding comes from (#4145).
- * `imported` is the exported name for a named import, `null` for a namespace
- * import (`import * as ns`).
+ * `imported` is the exported name for a named import, `'default'` for a
+ * default import, `null` for a namespace import (`import * as ns`).
  */
 interface ImportBinding {
   source: string;
@@ -950,9 +975,10 @@ interface ImportBinding {
 }
 
 /**
- * Map each local name bound by a named or namespace VALUE import to its
- * module specifier. Default imports are left out (the exported class name is
- * unknown) and so are type-only imports (they cannot be extended).
+ * Map each local name bound by a named, default or namespace VALUE import to
+ * its module specifier. A default import is recorded with `imported:
+ * 'default'`: its source is known, the exported class's own name is not.
+ * Type-only imports are left out (they cannot be extended).
  */
 function extractImportBindings(body: Statement[]): Map<string, ImportBinding> {
   const bindings = new Map<string, ImportBinding>();
@@ -969,6 +995,8 @@ function extractImportBindings(body: Statement[]): Map<string, ImportBinding> {
         bindings.set(spec.local.name, { source, imported: spec.imported.name });
       } else if (spec.type === 'ImportNamespaceSpecifier') {
         bindings.set(spec.local.name, { source, imported: null });
+      } else if (spec.type === 'ImportDefaultSpecifier') {
+        bindings.set(spec.local.name, { source, imported: 'default' });
       }
     }
   }
@@ -1385,6 +1413,12 @@ interface DecoratorConfigContext {
    */
   classReference?: (path: string | undefined) => boolean;
   /**
+   * Where each class reference read at a {@link classReference} path came
+   * from, for one imported through a module: the option path and the import.
+   * `OxcScanner.resolve()` follows it to the declaring class.
+   */
+  referenceImports?: RawReferenceImport[];
+  /**
    * Option paths whose value only exists at runtime (a callback such as a
    * field's `validate`). The value is not read; the key is kept, holding
    * {@link RUNTIME_ONLY_OPTION}, so the manifest can record that the option
@@ -1484,51 +1518,83 @@ function extractTopLevelClassNames(body: Statement[]): Set<string> {
 }
 
 /**
- * The model name the runtime records for a class reference written as
- * `reference` (an identifier, or `ns.Class` through a namespace import):
- * the class's own name, which the relationship and report decorators read
- * from the constructor.
+ * A class reference written as `reference` (an identifier, or `ns.Class` /
+ * `ns['Class']` through a namespace import), as far as this file can tell:
  *
- * - A class declared in this file: its name.
- * - A named import (`import { Product as P }`): the exported name `Product`,
- *   never the local alias.
- * - A namespace member (`catalog.Sku`): the export name `Sku`.
+ * - a class declared in this file: its name, final;
+ * - an imported binding (named, default, or a namespace member): the import
+ *   it comes from. The name is provisional; `OxcScanner.resolve()` follows
+ *   the import to the declaring class (or the package export) and records
+ *   that, or reports a scan error.
  *
- * Anything else cannot be identified statically and returns `undefined`: a
- * default import (the exported class's name is not in this file), a
- * namespace object, a local alias or `let`, or a member of a local object.
- * An imported binding is taken as a class only when its exported name is
- * written as a class name; an imported string constant (`TARGET_MODEL`)
- * holds a value this file cannot read.
+ * `undefined` for anything else: a namespace object itself, a local alias or
+ * `let`, a member of a local object.
  */
 function classIdentity(
   reference: string,
   ctx: DecoratorConfigContext,
-): string | undefined {
+):
+  | { value: string; import?: { source: string; imported: string } }
+  | undefined {
   const parts = reference.split('.');
   if (parts.length === 1) {
     const binding = ctx.importBindings?.get(reference);
     if (binding) {
-      return binding.imported &&
-        binding.imported !== 'default' &&
-        isClassLikeName(binding.imported)
-        ? binding.imported
-        : undefined;
+      if (binding.imported === null) return undefined;
+      return {
+        value: binding.imported === 'default' ? reference : binding.imported,
+        import: { source: binding.source, imported: binding.imported },
+      };
     }
-    return ctx.localClasses?.has(reference) ? reference : undefined;
+    return ctx.localClasses?.has(reference) ? { value: reference } : undefined;
   }
   if (parts.length === 2) {
     const binding = ctx.importBindings?.get(parts[0]);
-    if (binding && binding.imported === null && isClassLikeName(parts[1])) {
-      return parts[1];
+    if (binding && binding.imported === null) {
+      return {
+        value: parts[1],
+        import: { source: binding.source, imported: parts[1] },
+      };
     }
   }
   return undefined;
 }
 
-/** `PascalCase` with at least one lowercase letter: how a class is named. */
-function isClassLikeName(name: string): boolean {
-  return /^[A-Z][A-Za-z0-9_$]*$/.test(name) && /[a-z]/.test(name);
+/** The provisional name of a class reference; records where it was imported from. */
+function recordReference(
+  identity: { value: string; import?: { source: string; imported: string } },
+  ctx: DecoratorConfigContext,
+): string {
+  if (ctx.referenceImports && ctx.path) {
+    ctx.referenceImports.push(
+      identity.import
+        ? { path: ctx.path, ...identity.import }
+        : // A class declared in this file: checked to be a model.
+          { path: ctx.path, source: '', imported: identity.value, local: true },
+    );
+  }
+  return identity.value;
+}
+
+/**
+ * Forget the class-reference provenance recorded for `path` (and anything
+ * below it) before index `before` of `ctx.referenceImports`: a later
+ * property or spread wrote that key, so the earlier class reference is no
+ * longer the value the decorator receives.
+ */
+function clearReferenceProvenance(
+  ctx: DecoratorConfigContext | undefined,
+  path: string,
+  before: number,
+): void {
+  const recorded = ctx?.referenceImports;
+  if (!recorded) return;
+  for (let index = Math.min(before, recorded.length) - 1; index >= 0; index--) {
+    const entry = recorded[index];
+    if (entry.path === path || entry.path.startsWith(`${path}.`)) {
+      recorded.splice(index, 1);
+    }
+  }
 }
 
 /**
@@ -2516,6 +2582,7 @@ function extractClassDeclaration(
   // `@TenantScoped` feed the schema (source model, tenant column), so a value
   // that silently became its own identifier name is as wrong there as a
   // dropped `api: false` is on `@smrt`.
+  const referenceImports: RawReferenceImport[] = [];
   const readClassDecorator = (
     decorator: Decorator,
     label: string,
@@ -2531,6 +2598,7 @@ function extractClassDeclaration(
             requireLiteralValues: true,
             path: undefined,
             classReference,
+            referenceImports,
           }
         : ctx,
     );
@@ -2565,11 +2633,13 @@ function extractClassDeclaration(
       : smrtConfig;
 
   // Extract extends clause
-  const { extendsClause, extendsTypeArg, extendsSource } = extractExtendsClause(
-    node,
-    importAliases,
-    ctx?.importBindings,
-  );
+  const {
+    extendsClause,
+    extendsTypeArg,
+    extendsSource,
+    extendsDefaultImport,
+    extendsUnreadable,
+  } = extractExtendsClause(node, importAliases, ctx?.importBindings);
 
   // Extract fields and methods
   const fields: RawFieldDefinition[] = [];
@@ -2655,6 +2725,8 @@ function extractClassDeclaration(
     extendsClause,
     extendsTypeArg,
     ...(extendsSource ? { extendsSource } : {}),
+    ...(extendsDefaultImport ? { extendsDefaultImport } : {}),
+    ...(extendsUnreadable ? { extendsUnreadable } : {}),
     decoratorConfig,
     hasSmartDecorator,
     ...(description ? { description } : {}),
@@ -2666,7 +2738,166 @@ function extractClassDeclaration(
       ? { bodyStart: node.body.start }
       : {}),
     ...(configErrors.length > 0 ? { configErrors } : {}),
+    ...(referenceImports.length > 0 ? { referenceImports } : {}),
   };
+}
+
+/**
+ * The value re-exports of a module: `export { A as B } from './a'`,
+ * `export * from './a'`, and the local rename `export { A as B }`. The
+ * inheritance resolver follows them to find the file that declares a class
+ * imported through a barrel.
+ */
+function extractReExports(statements: Statement[]): RawReExport[] {
+  const reExports: RawReExport[] = [];
+  for (const node of statements) {
+    const loose = node as unknown as {
+      type: string;
+      source?: Literal | null;
+      exportKind?: string;
+      exported?: unknown;
+    };
+    if (loose.type === 'ExportAllDeclaration') {
+      const source = loose.source?.value;
+      // `export * as ns from` binds a namespace object, not the classes.
+      if (
+        typeof source === 'string' &&
+        !loose.exported &&
+        loose.exportKind !== 'type'
+      ) {
+        reExports.push({ source });
+      }
+      continue;
+    }
+    if (
+      node.type !== 'ExportNamedDeclaration' ||
+      node.declaration ||
+      node.exportKind === 'type'
+    ) {
+      continue;
+    }
+    const source = node.source?.value;
+    for (const specifier of node.specifiers) {
+      if (specifier.exportKind === 'type') continue;
+      const imported = specifier.local?.name;
+      const exported = specifier.exported?.name;
+      if (!imported || !exported) continue;
+      if (typeof source === 'string') {
+        reExports.push({ source, imported, exported });
+      } else if (imported !== exported) {
+        reExports.push({ imported, exported });
+      }
+    }
+  }
+  return reExports;
+}
+
+/**
+ * What a module exports, by exported name, and the modules it re-exports
+ * whole (`export *`). A named export is a local binding of the file (a
+ * declaration, or an import it re-exports: `import { A } from './a';
+ * export { A }`) or a binding of another module (`export { A as B } from
+ * './a'`). The module resolver follows these to the declaring class.
+ */
+function extractModuleExports(statements: Statement[]): RawModuleExports {
+  const named: RawModuleExports['named'] = {};
+  const star: string[] = [];
+  // Interfaces and type aliases: `export { Name }` of one exports no value.
+  const typeNames = new Set<string>();
+  const classNames = extractTopLevelClassNames(statements);
+  for (const node of statements) {
+    const declaration = (
+      node.type === 'ExportNamedDeclaration' ? node.declaration : node
+    ) as { type?: string; id?: { name?: string } | null } | null | undefined;
+    if (
+      (declaration?.type === 'TSInterfaceDeclaration' ||
+        declaration?.type === 'TSTypeAliasDeclaration') &&
+      declaration.id?.name
+    ) {
+      typeNames.add(declaration.id.name);
+    }
+  }
+  for (const node of statements) {
+    const loose = node as unknown as {
+      type: string;
+      source?: Literal | null;
+      exportKind?: string;
+      exported?: { name?: string; value?: string } | null;
+      declaration?: {
+        type?: string;
+        id?: { name?: string } | null;
+        name?: string;
+        declarations?: Array<{ id?: { type?: string; name?: string } }>;
+      } | null;
+    };
+    if (loose.exportKind === 'type') continue;
+    if (loose.type === 'ExportAllDeclaration') {
+      const source = loose.source?.value;
+      if (typeof source !== 'string') continue;
+      const as = loose.exported?.name ?? loose.exported?.value;
+      if (as) named[as] = { from: source, imported: null };
+      else star.push(source);
+      continue;
+    }
+    if (loose.type === 'ExportDefaultDeclaration') {
+      const declaration = loose.declaration;
+      const local =
+        declaration?.type === 'Identifier'
+          ? declaration.name
+          : declaration?.type === 'ClassDeclaration'
+            ? declaration.id?.name
+            : undefined;
+      named.default = local ? { local } : { local: '' };
+      continue;
+    }
+    if (node.type !== 'ExportNamedDeclaration') continue;
+    const declaration = loose.declaration;
+    if (declaration) {
+      // Types and ambient declarations bind no runtime value.
+      if (
+        (declaration as { declare?: boolean }).declare === true ||
+        declaration.type === 'TSInterfaceDeclaration' ||
+        declaration.type === 'TSTypeAliasDeclaration' ||
+        declaration.type === 'TSModuleDeclaration' ||
+        declaration.type === 'TSDeclareFunction'
+      ) {
+        continue;
+      }
+      if (declaration.type === 'ClassDeclaration' && declaration.id?.name) {
+        named[declaration.id.name] = { local: declaration.id.name };
+      } else if (declaration.type === 'VariableDeclaration') {
+        for (const d of declaration.declarations ?? []) {
+          if (d.id?.type === 'Identifier' && d.id.name) {
+            named[d.id.name] = { local: d.id.name };
+          }
+        }
+      } else if (declaration.id?.name) {
+        named[declaration.id.name] = { local: declaration.id.name };
+      }
+      continue;
+    }
+    const source = node.source?.value;
+    for (const specifier of node.specifiers) {
+      if (specifier.exportKind === 'type') continue;
+      const local = specifier.local as { name?: string; value?: string };
+      const exported = specifier.exported as { name?: string; value?: string };
+      const localName = local?.name ?? local?.value;
+      const exportedName = exported?.name ?? exported?.value;
+      if (!localName || !exportedName) continue;
+      if (
+        typeof source !== 'string' &&
+        typeNames.has(localName) &&
+        !classNames.has(localName)
+      ) {
+        continue;
+      }
+      named[exportedName] =
+        typeof source === 'string'
+          ? { from: source, imported: localName }
+          : { local: localName };
+    }
+  }
+  return { named, star };
 }
 
 /** Only a local value export matching the imported parent names a replacement. */
@@ -2957,12 +3188,20 @@ function resolveDecoratorName(
     ) {
       return callee.property.value;
     }
-    // `ns[KEY]` with `const KEY = 'smrt'` in this file names that export.
+    // `ns[KEY]` with `const KEY = 'smrt'` in this file names that export,
+    // but only through a clean read: a scalar copied from an object member
+    // that a module statement writes is not the string its initializer
+    // shows, so the decorator stays unnamed (and is reported).
     if (callee.computed && callee.property.type === 'Identifier') {
       const constant = CONSTANTS_BY_BINDINGS.get(importBindings)?.get(
         callee.property.name,
       );
-      if (constant?.kind === 'scalar' && typeof constant.value === 'string') {
+      if (
+        constant?.kind === 'scalar' &&
+        typeof constant.value === 'string' &&
+        constant.unresolved.length === 0 &&
+        constant.unsafeReferences.length === 0
+      ) {
         return constant.value;
       }
     }
@@ -3135,6 +3374,9 @@ function extractObjectLiteral(
       // *open*. Resolve it, or record it for a scan error. Never drop it
       // silently. See issue #2100.
       const argument = unwrapTypeAssertion(prop.argument);
+      // Class-reference provenance recorded before this spread; the spread
+      // replaces it for every key it writes.
+      const provenanceBefore = ctx?.referenceImports?.length ?? 0;
       const constant =
         argument?.type === 'Identifier'
           ? ctx?.constants.get(argument.name)
@@ -3161,6 +3403,11 @@ function extractObjectLiteral(
         }
         for (const [key, value] of Object.entries(resolved)) {
           if (isSafeObjectKey(key)) {
+            clearReferenceProvenance(
+              ctx,
+              ctx?.path ? `${ctx.path}.${key}` : key,
+              provenanceBefore,
+            );
             // Copy nested values: two classes that spread one constant must
             // not end up sharing a nested config object in the manifest. The
             // raw-shape reader keeps identity, which its consumer dedupes on.
@@ -3210,6 +3457,9 @@ function extractObjectLiteral(
       // `''` is a valid key; test against null, not truthiness.
       if (isSafeObjectKey(key)) {
         const path = ctx?.path ? `${ctx.path}.${key}` : key;
+        // This property replaces whatever an earlier property or spread
+        // wrote for the key, provenance included.
+        clearReferenceProvenance(ctx, path, ctx?.referenceImports?.length ?? 0);
         const child = ctx ? { ...ctx, path } : ctx;
         const value = ctx?.runtimeOnly?.(path)
           ? extractRuntimeOnlyValue(prop.value, sourceText, child)
@@ -3417,7 +3667,7 @@ function extractValueOf(
         if (resolved !== UNRESOLVED) return resolved;
         if (ctx.classReference?.(ctx.path)) {
           const identity = classIdentity(node.name, ctx);
-          if (identity) return identity;
+          if (identity) return recordReference(identity, ctx);
         }
         return unresolvedValue(node, sourceText, ctx, node.name);
       }
@@ -3483,7 +3733,7 @@ function extractValueOf(
           ? [chain.root.name, ...chain.path].join('.')
           : undefined;
         const identity = reference ? classIdentity(reference, ctx) : undefined;
-        if (identity) return identity;
+        if (identity) return recordReference(identity, ctx);
       }
       break;
     }
@@ -3726,6 +3976,8 @@ function extractExtendsClause(
   extendsClause: string | null;
   extendsTypeArg: string | null;
   extendsSource?: string;
+  extendsDefaultImport?: boolean;
+  extendsUnreadable?: string;
 } {
   if (!node.superClass) {
     return { extendsClause: null, extendsTypeArg: null };
@@ -3734,39 +3986,75 @@ function extractExtendsClause(
   let extendsClause: string | null = null;
   let extendsTypeArg: string | null = null;
   let extendsSource: string | undefined;
+  let extendsDefaultImport = false;
+  // A superclass written as anything but `X` or `ns.X` is recorded as
+  // unreadable, so the scan reports it for a model. A TypeScript-only
+  // wrapper (`X as T`, `X!`, `X satisfies T`) is looked through for the
+  // binding it wraps, so whether the class reaches the manifest at all (an
+  // undecorated collection) is still decided, and the error still reported.
+  let extendsUnreadable: string | undefined;
+  let superClass: Expression | null = node.superClass;
+  for (let depth = 0; superClass && depth < 8; depth++) {
+    const type = (superClass as unknown as { type: string }).type;
+    if (type === 'ParenthesizedExpression') {
+      superClass = (superClass as unknown as TSTypeAssertionExpression)
+        .expression;
+      continue;
+    }
+    if (
+      type === 'TSAsExpression' ||
+      type === 'TSSatisfiesExpression' ||
+      type === 'TSNonNullExpression' ||
+      type === 'TSTypeAssertion'
+    ) {
+      extendsUnreadable ??= type;
+      superClass = (superClass as unknown as TSTypeAssertionExpression)
+        .expression;
+      continue;
+    }
+    break;
+  }
 
   // Get class name
-  if (node.superClass.type === 'Identifier') {
-    extendsClause = node.superClass.name;
+  if (superClass?.type === 'Identifier') {
+    extendsClause = superClass.name;
     const binding = importBindings?.get(extendsClause);
     if (binding?.imported) extendsSource = binding.source;
-  } else if (node.superClass.type === 'MemberExpression') {
-    const member = node.superClass;
+    if (binding?.imported === 'default') extendsDefaultImport = true;
+  } else if (superClass?.type === 'MemberExpression') {
+    const member = superClass;
+    // `ns.Class` and `ns['Class']` name the same export.
+    const memberName =
+      !member.computed && member.property.type === 'Identifier'
+        ? member.property.name
+        : member.computed &&
+            member.property.type === 'Literal' &&
+            typeof member.property.value === 'string'
+          ? member.property.value
+          : undefined;
     const namespace =
-      !member.computed &&
-      member.object.type === 'Identifier' &&
-      member.property.type === 'Identifier'
+      memberName && member.object.type === 'Identifier'
         ? importBindings?.get(member.object.name)
         : undefined;
-    if (
-      namespace &&
-      namespace.imported === null &&
-      member.property.type === 'Identifier'
-    ) {
+    if (namespace && namespace.imported === null && memberName) {
       // `ns.Class` through `import * as ns from '...'`: the parent is that
       // module's export `Class` (#4145).
-      extendsClause = member.property.name;
+      extendsClause = memberName;
       extendsSource = namespace.source;
     } else {
       // Handle Namespace.Class
       extendsClause = getMemberExpressionString(member);
     }
+  } else if (superClass) {
+    // A call (`Mixin(Base)`), a conditional, a class expression: no binding
+    // the scan can name.
+    extendsUnreadable ??= (superClass as unknown as { type: string }).type;
   }
 
   // Resolve import aliases (e.g., import { Performer as PerformerBase }).
   // A namespace member's name is an export name, never a local alias.
   if (
-    node.superClass.type === 'Identifier' &&
+    superClass?.type === 'Identifier' &&
     extendsClause &&
     importAliases.has(extendsClause)
   ) {
@@ -3789,6 +4077,8 @@ function extractExtendsClause(
     extendsClause,
     extendsTypeArg,
     ...(extendsSource ? { extendsSource } : {}),
+    ...(extendsDefaultImport ? { extendsDefaultImport } : {}),
+    ...(extendsUnreadable ? { extendsUnreadable } : {}),
   };
 }
 
@@ -4387,17 +4677,11 @@ function extractRelationshipTarget(
   const identify = (reference: string): RawDecoratorArgumentValue => {
     const identity = classIdentity(reference, ctx);
     if (identity) {
-      const parts = reference.split('.');
-      const binding = ctx.importBindings?.get(parts[0]);
-      const imported =
-        parts.length === 2 && binding?.imported === null
-          ? parts[1]
-          : parts.length === 1 && binding?.imported
-            ? binding.imported
-            : undefined;
-      return binding && imported
-        ? { value: identity, import: { source: binding.source, imported } }
-        : { value: identity };
+      // A class declared in this file is marked, so the scan can check that
+      // it is a model rather than a plain class that shares a model's name.
+      return identity.import
+        ? { value: identity.value, import: identity.import }
+        : { value: identity.value, local: true };
     }
     ctx.unresolved.push({
       expression: sliceSource(argument, sourceText) ?? reference,

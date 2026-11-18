@@ -70,7 +70,6 @@ describe('#4145 import-qualified extends', () => {
       import { Shared } from './shared';
       import { Aliased } from '$lib/models/aliased';
       import { AtAlias } from '@/models/at-alias';
-      import Defaulted from '@happyvertical/smrt-commerce';
       import { Self } from '@anytown/dashboard';
       import type { TypeOnly } from '@happyvertical/smrt-sales';
       @smrt() export class Base extends SmrtObject {}
@@ -78,7 +77,6 @@ describe('#4145 import-qualified extends', () => {
       @smrt() export class Relative extends Shared {}
       @smrt() export class SvelteAlias extends Aliased {}
       @smrt() export class AtAliasChild extends AtAlias {}
-      @smrt() export class DefaultChild extends Defaulted {}
       @smrt() export class SelfImport extends Self {}
       @smrt() export class TypeOnlyChild extends TypeOnly {}
     `);
@@ -87,6 +85,22 @@ describe('#4145 import-qualified extends', () => {
     }
     expect(objects[`${CONSUMER}:Local`]?.extends).toBe('Base');
     expect(objects[`${CONSUMER}:Base`]?.extends).toBe('SmrtObject');
+  });
+
+  it("qualifies a default import as the package's default export", () => {
+    // The exported class's own name is not in this file and a manifest does
+    // not record which class a package exports by default, so the local name
+    // is never the claim: generation cannot confirm `default` and fails
+    // (CONFIG_UNRESOLVED_IMPORTED_PARENT).
+    const objects = manifestObjects(`
+      import { smrt } from '@happyvertical/smrt-core';
+      import Agreement from '@happyvertical/smrt-commerce';
+      @smrt() export class Retainer extends Agreement {}
+    `);
+    expect(objects[`${CONSUMER}:Retainer`]).toMatchObject({
+      extends: 'Agreement',
+      extendsQualified: '@happyvertical/smrt-commerce:default',
+    });
   });
 
   it('qualifies without an own package but never a framework base', () => {

@@ -26,6 +26,8 @@ import type {
   ExternalManifest,
   FileScanResult,
   OxcScannerOptions,
+  RawClassDefinition,
+  RawReferenceImport,
   ResolvedClassDefinition,
   ScanError,
   ScanResults,
@@ -175,6 +177,7 @@ export class OxcScanner {
     this.resolver = new InheritanceResolver({
       baseClasses: this.options.baseClasses,
       externalManifests: this.options.externalManifests,
+      projectRoot: resolve(this.options.cwd),
     });
   }
 
@@ -265,8 +268,12 @@ export class OxcScanner {
       results.errors.push(...uiSelectors.errors);
     }
 
-    // Add classes to resolver
+    // Add classes to resolver, with the files and re-exports that let it
+    // follow a relative import to the file declaring a parent. A rescan
+    // replaces the previous scan's classes rather than adding to them.
+    this.resolver.clearClasses();
     this.resolver.addClasses(results.classes);
+    this.resolver.addModules(fileResults);
 
     this.scanResults = results;
     return results;
@@ -297,7 +304,13 @@ export class OxcScanner {
     // Diagnostics that only exist once inheritance is known. They join the
     // scan errors every caller already fails closed on. resolve() may run
     // more than once; never report the same error twice.
-    const resolutionErrors = this.collectConfigErrors(resolved);
+    const resolutionErrors = [
+      ...this.resolver.getResolutionErrors(),
+      ...this.collectConfigErrors(resolved),
+      ...this.resolver.parentResolutionErrors(resolved),
+      ...this.confirmImportedReferences(resolved),
+      ...this.resolver.exportNameErrors(resolved),
+    ];
     this.scanResults.errors = this.scanResults.errors.filter(
       (error) => !this.resolutionErrors.includes(error),
     );
@@ -323,6 +336,145 @@ export class OxcScanner {
   }
 
   /**
+   * Prove every class reference a model makes (a relationship target, a
+   * `@report` `source` or `joins.*.source`), in the module of the class that
+   * declares it: each model's own fields (a single-table override included,
+   * whose decorators the merged field shares) and its report config. Every
+   * scanned ancestor of a model is itself a model (or a scan error), so its
+   * fields are visited as its own. A class outside every model is not
+   * visited.
+   *
+   * A reference to a scanned class must be a model and is recorded as that
+   * class's own name; one to a declared package's export keeps the package
+   * identity and full specifier, which generation confirms against the
+   * package's manifest; anything else is a scan error.
+   */
+  private confirmImportedReferences(
+    resolved: ResolvedClassDefinition[],
+  ): ScanError[] {
+    const errors: ScanError[] = [];
+    const fail = (
+      classDef: RawClassDefinition,
+      where: string,
+      what: string,
+      origin: { source: string; imported: string; local?: boolean },
+      reason: string,
+      line?: number,
+    ) =>
+      errors.push({
+        message:
+          `${classDef.className}${where}: ${what} \`${origin.imported}\`` +
+          `${origin.local ? '' : ` imported from '${origin.source}'`}, which the scan cannot accept: ${reason}.`,
+        filePath: classDef.filePath,
+        line: line ?? classDef.startLine,
+        severity: 'error',
+      });
+    // A plain class sharing a model's name must never stand in for it.
+    const prove = (owner: RawClassDefinition, origin: RawReferenceImport) => {
+      const proof = origin.local
+        ? this.resolver.resolveLocalClass(owner, origin.imported)
+        : this.resolver.resolveImportedClass(
+            owner,
+            origin.source,
+            origin.imported,
+          );
+      if (proof?.kind === 'framework') {
+        return {
+          kind: 'error' as const,
+          reason: `${proof.name} is a framework base, not a model`,
+        };
+      }
+      if (proof?.kind === 'class') {
+        if (!this.resolver.isModelClass(proof.definition)) {
+          return {
+            kind: 'error' as const,
+            reason: `${proof.definition.className} (${proof.definition.filePath}) is not a model; decorate it with @smrt(), or reference the model class`,
+          };
+        }
+      }
+      return proof;
+    };
+    const seenClasses = new Set<RawClassDefinition>();
+    for (const model of resolved) {
+      const raw = (this.scanResults?.classes ?? []).find(
+        (candidate) =>
+          candidate.className === model.className &&
+          candidate.filePath === model.filePath,
+      );
+      if (!raw || seenClasses.has(raw)) continue;
+      seenClasses.add(raw);
+      for (const field of raw.fields) {
+        for (const decorator of field.decorators) {
+          for (const entry of decorator.argumentValues ?? []) {
+            if (!entry || (!entry.import && !entry.local)) continue;
+            const origin: RawReferenceImport = entry.import
+              ? { path: field.name, ...entry.import }
+              : {
+                  path: field.name,
+                  source: '',
+                  imported: String(entry.value),
+                  local: true,
+                };
+            const result = prove(raw, origin);
+            if (!result) continue;
+            if (result.kind === 'class') {
+              entry.value = result.definition.className;
+            } else if (result.kind === 'package') {
+              entry.value = result.exportName;
+              entry.package = {
+                packageName: result.packageName,
+                exportName: result.exportName,
+                specifier: result.specifier,
+              };
+            } else {
+              fail(
+                raw,
+                `.${field.name}`,
+                `@${decorator.name}() targets`,
+                origin,
+                result.reason,
+                field.line,
+              );
+            }
+          }
+        }
+      }
+      for (const origin of raw.referenceImports ?? []) {
+        const result = prove(raw, origin);
+        if (!result) continue;
+        const report = raw.decoratorConfig?.report as
+          | Record<string, unknown>
+          | undefined;
+        if (result.kind === 'error') {
+          fail(raw, '', `@report() ${origin.path}`, origin, result.reason);
+          continue;
+        }
+        if (!report) continue;
+        const path = origin.path.split('.');
+        let holder: Record<string, unknown> | undefined = report;
+        for (const key of path.slice(0, -1)) {
+          const next: unknown = holder?.[key];
+          holder =
+            next && typeof next === 'object'
+              ? (next as Record<string, unknown>)
+              : undefined;
+        }
+        const last = path[path.length - 1];
+        if (!holder) continue;
+        if (result.kind === 'class') {
+          holder[last] = result.definition.className;
+        } else {
+          holder[last] = result.exportName;
+          holder[`${last}Qualified`] =
+            `${result.packageName}:${result.exportName}`;
+          holder[`${last}ImportPath`] = result.specifier;
+        }
+      }
+    }
+    return errors;
+  }
+
+  /**
    * Field-decorator and static-property diagnostics the parser held back on
    * classes without `@smrt()` ({@link RawClassDefinition.configErrors}),
    * for every class that turned out to reach the manifest: a resolved class
@@ -336,10 +488,8 @@ export class OxcScanner {
     for (const classDef of resolved) {
       for (const error of classDef.configErrors ?? []) errors.add(error);
       if (!classDef.isSTI) continue;
-      for (const ancestorName of classDef.inheritanceChain) {
-        if (ancestorName === classDef.className) continue;
-        const ancestor = this.resolver.findClassDefinition(ancestorName);
-        for (const error of ancestor?.configErrors ?? []) errors.add(error);
+      for (const ancestor of this.resolver.getAncestors(classDef)) {
+        for (const error of ancestor.configErrors ?? []) errors.add(error);
       }
     }
     return [...errors];

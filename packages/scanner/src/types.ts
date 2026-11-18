@@ -36,12 +36,33 @@ export interface RawClassDefinition {
 
   /**
    * Module specifier the `extends` identifier is imported from, through a
-   * named (possibly aliased) or namespace import (#4145). Absent when the
-   * parent is declared in this file, default-imported, or not imported.
-   * `extendsClause` is then the parent's exported name, so a bare package
-   * specifier names the parent's package.
+   * named (possibly aliased), default or namespace import (#4145). Absent
+   * when the parent is declared in this file or not imported. For a named or
+   * namespace import `extendsClause` is the parent's exported name, so a bare
+   * package specifier names the parent's package; for a default import see
+   * {@link extendsDefaultImport}.
    */
   extendsSource?: string;
+  /**
+   * The parent is a module's DEFAULT export (`import Base from '…'`). The
+   * class's own name is not in this file; `extendsClause` is the local name.
+   */
+  extendsDefaultImport?: boolean;
+
+  /**
+   * The superclass is written as an expression other than `X` or `ns.X`:
+   * the AST node type (`TSAsExpression`, `CallExpression`, …). A
+   * TypeScript-only wrapper is looked through for `extendsClause`; either way
+   * the scan reports it for a model.
+   */
+  extendsUnreadable?: string;
+
+  /**
+   * Class references in the class decorators' config (`@report` `source`,
+   * `joins.*.source`): imported ones with their import, same-file ones
+   * marked `local`.
+   */
+  referenceImports?: RawReferenceImport[];
 
   /** Parsed @smrt() decorator configuration object */
   decoratorConfig: RawDecoratorConfig | null;
@@ -217,6 +238,24 @@ export interface RawDecorator {
   argumentValues?: RawDecoratorArgumentValue[];
 }
 
+/**
+ * A class reference in a class decorator's config (a `@report` `source` or
+ * `joins.*.source`) imported through a module: its option path and the import.
+ */
+export interface RawReferenceImport {
+  /** Option path inside the decorator config, e.g. `source`, `joins.items.source`. */
+  path: string;
+  /** Module specifier of the import (`''` for a same-file class). */
+  source: string;
+  /**
+   * Export name imported (`'default'` for a default import); the class name
+   * for a same-file class.
+   */
+  imported: string;
+  /** The reference is a class declared in the same file. */
+  local?: boolean;
+}
+
 /** One statically read decorator argument; see {@link RawDecorator.argumentValues}. */
 export type RawDecoratorArgumentValue = {
   value: unknown;
@@ -227,7 +266,26 @@ export type RawDecoratorArgumentValue = {
    * own name; generation checks every target names a known class.
    */
   import?: { source: string; imported: string };
+  /** The target is a class declared in the same file (checked to be a model). */
+  local?: boolean;
+  /**
+   * Set by `OxcScanner.resolve()` when the import is a declared package's
+   * export: the adapter records it as `relatedQualified` and the full
+   * specifier as `relatedImportPath`, and generation confirms both against
+   * that package's manifest.
+   */
+  package?: PackageExportIdentity;
 } | null;
+
+/**
+ * A class imported from another package: the package, the name it is
+ * exported as, and the full specifier it is imported from.
+ */
+export interface PackageExportIdentity {
+  packageName: string;
+  exportName: string;
+  specifier: string;
+}
 
 /**
  * Raw method definition from OXC AST
@@ -360,6 +418,27 @@ export interface ParameterTypeBranch {
 export interface ResolvedClassDefinition extends RawClassDefinition {
   /** Full inheritance chain from base to this class */
   inheritanceChain: string[];
+
+  /**
+   * How the parent bound, for a class the scan parsed: a scanned class
+   * (`local`), a framework base, a package export (`extendsPackage`, confirmed
+   * at generation), or `unresolved` (a scan error). Absent for a hand-built
+   * definition, whose parent is resolved by name.
+   */
+  extendsResolution?: 'local' | 'framework' | 'package' | 'unresolved';
+
+  /** The parent's own name as resolved (the declaring class's, or the export's). */
+  extendsName?: string;
+
+  /** The package export the parent binds, when `extendsResolution` is `package`. */
+  extendsPackage?: PackageExportIdentity;
+
+  /**
+   * For a collection's item (`SmrtCollection<Item>`) imported from another
+   * package: that package export. Generation looks the item up by this
+   * identity, never by its simple name.
+   */
+  extendsTypeArgPackage?: PackageExportIdentity;
 
   /** STI base class name (if part of STI hierarchy) */
   stiBase: string | null;
@@ -524,6 +603,54 @@ export interface FileScanResult {
    * (#3590). Omitted when the file declares none.
    */
   recipes?: RawRecipe[];
+
+  /**
+   * Names the file exports from another module or under another name, so a
+   * class imported through a barrel can be traced to the file that declares
+   * it. Omitted when the file re-exports nothing.
+   */
+  reExports?: RawReExport[];
+
+  /** What the file exports, by name; see {@link RawModuleExports}. */
+  moduleExports?: RawModuleExports;
+
+  /** The file's value import bindings, by local name. */
+  imports?: Record<string, RawImportBinding>;
+}
+
+/** One local import binding: its module and the export it binds. */
+export interface RawImportBinding {
+  /** Module specifier imported from. */
+  source: string;
+  /** Export name; `'default'` for a default import; `null` for `import * as`. */
+  imported: string | null;
+}
+
+/**
+ * A module's exports. `named` maps each exported name to a local binding of
+ * the file (`{ local }`: a declaration, or an import the file re-exports) or
+ * a binding of another module (`{ from, imported }`; `imported: null` is
+ * `export * as name from`). `star` lists the modules re-exported whole.
+ */
+export interface RawModuleExports {
+  named: Record<
+    string,
+    { local: string } | { from: string; imported: string | null }
+  >;
+  star: string[];
+}
+
+/**
+ * One re-export of a file: `export { A as B } from './a'`, `export * from
+ * './a'`, or the local rename `export { A as B }`.
+ */
+export interface RawReExport {
+  /** Module specifier re-exported from. Absent for a local rename. */
+  source?: string;
+  /** Name in the source module (or of the local declaration). Absent for `export *`. */
+  imported?: string;
+  /** Name this file exports it as. Absent for `export *`. */
+  exported?: string;
 }
 
 /**

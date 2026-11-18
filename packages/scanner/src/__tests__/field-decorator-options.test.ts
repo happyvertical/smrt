@@ -654,8 +654,14 @@ describe('field decorator diagnostics on classes without @smrt()', () => {
       'src/models/OptionRecord.ts': `import { smrt } from '@happyvertical/smrt-core';\nimport { OptionMixin } from './OptionMixin.js';\n@smrt({ tableStrategy: 'sti' })\nexport class OptionRecord extends OptionMixin {}`,
     });
 
-    expect(errors).toHaveLength(1);
-    expect(errors[0].message).toContain('OptionMixin.token');
+    // The field diagnostic, and the plain class in the model's chain.
+    expect(errors).toHaveLength(2);
+    expect(errors.map((e) => e.message).join('\n')).toContain(
+      'OptionMixin.token',
+    );
+    expect(errors.map((e) => e.message).join('\n')).toContain(
+      'OptionRecord extends OptionMixin',
+    );
   });
 
   it('stays quiet for a class that is not part of any model', async () => {
