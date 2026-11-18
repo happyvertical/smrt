@@ -42,6 +42,7 @@ import {
   resetMailAccess,
   runWithMailSystemAccess,
 } from '../access.js';
+import { NotificationDeliveryCollection } from '../collections/NotificationDeliveryCollection.js';
 import {
   AccountCollection,
   AttachmentCollection,
@@ -54,6 +55,7 @@ import { Email } from '../models/Email';
 import { EmailAccount } from '../models/EmailAccount';
 import { EmailFolder } from '../models/EmailFolder';
 import { Tweet } from '../models/Tweet';
+import { NotificationOutboxService } from '../services/NotificationOutboxService.js';
 import { prepareMessageParents } from './fk-fixtures.js';
 
 const ALL_MAIL_SLUGS = [
@@ -1145,6 +1147,56 @@ describe('mail account access (#5129)', () => {
         accounts.get({ id: openAccountId }),
       );
       expect(row?.ownerUserId).toBe(owner.id);
+    });
+
+    it('requires messages.manage-access to transfer ownership or list access, not only ownership', async () => {
+      const lowly = await withSystemContext(() =>
+        newPerson(tenantA, ['messages.read'], 'lowly-owner'),
+      );
+      const lowlyAccount = await seedAccount(tenantA, 'lowly2', lowly.id);
+      await expect(
+        asUser(lowly).setOwner(lowlyAccount, grantee.id),
+      ).rejects.toThrow();
+      await expect(asUser(lowly).list(lowlyAccount)).rejects.toThrow();
+      const accounts = await AccountCollection.create(options);
+      const row = await withTenant({ tenantId: tenantA }, () =>
+        accounts.get({ id: lowlyAccount }),
+      );
+      expect(row?.ownerUserId).toBe(lowly.id);
+      // The same owner with the permission still can.
+      await asUser(owner).setOwner(sharedAccountId, grantee.id);
+      await asUser(grantee).setOwner(sharedAccountId, owner.id);
+    });
+  });
+
+  describe('trusted notification outbox', () => {
+    it('sends from an owned account with no mail principal (ordinary sends stay gated, see send scope)', async () => {
+      const recipient = grantee.id;
+      const outbox = new NotificationOutboxService({
+        db,
+        linkBaseUrl: 'https://work.example.com',
+        resolveRecipient: () => ({ address: 'someone@example.com' }),
+        resolveSenderAccountId: () => sharedAccountId,
+      });
+      current = null;
+      const queued = await outbox.enqueueEmail({
+        tenantId: tenantA,
+        recipientUserId: recipient,
+        sourceRef: 'access-test:1',
+        kind: 'access-test',
+        subject: 'hello',
+        text: 'hello',
+        path: '/x',
+      });
+      const report = await outbox.dispatchDue({ tenantIds: [tenantA] });
+      expect(report.leased).toBe(1);
+      const stored = await withTenant({ tenantId: tenantA }, async () =>
+        (await NotificationDeliveryCollection.create(options)).get({
+          id: queued.delivery.id as string,
+        }),
+      );
+      // Past the mail gate and the message store: only the provider is missing.
+      expect(stored?.lastError ?? '').toMatch(/no client implementation/);
     });
   });
 

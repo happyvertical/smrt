@@ -530,6 +530,23 @@ export class MailAccessService {
     });
   }
 
+  /** Tenant RBAC ceiling for administering mail access (grants, owner). */
+  private async assertManageAccess(): Promise<void> {
+    const { assertOperationPermission } = await import(
+      '@happyvertical/smrt-users'
+    );
+    await assertOperationPermission({
+      ...this.options,
+      collection: 'messages',
+      action: 'manage-access',
+      tenantId: this.actor.tenantId,
+      userId: this.actor.userId,
+      allowSuperAdminBypass: false,
+      allowSystemContextBypass: false,
+      onDeny: 'throw',
+    });
+  }
+
   /** The new owner must be a real, active member of this tenant. */
   private async assertTenantMember(userId: string): Promise<void> {
     const users = await import('@happyvertical/smrt-users');
@@ -677,6 +694,7 @@ export class MailAccessService {
     if (account.ownerUserId !== this.actor.userId) {
       throw new Error('Only the account owner can list mail access.');
     }
+    await this.assertManageAccess();
     const { users } = await this.grantsApi();
     const grants = await users.ResourceGrantCollection.create(
       withoutListBounds(this.options),
@@ -706,6 +724,7 @@ export class MailAccessService {
       if (account.ownerUserId !== this.actor.userId) {
         throw new Error('Only the account owner can transfer ownership.');
       }
+      await this.assertManageAccess();
     } else {
       const { assertOperationPermission } = await import(
         '@happyvertical/smrt-users'

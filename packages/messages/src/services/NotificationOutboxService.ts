@@ -2,6 +2,7 @@ import {
   isUniqueViolationError,
   type SmrtClassOptions,
 } from '@happyvertical/smrt-core';
+import { runWithMailSystemAccess } from '../access.js';
 import { AccountCollection } from '../collections/AccountCollection.js';
 import { EmailCollection } from '../collections/EmailCollection.js';
 import { MessageCollection } from '../collections/MessageCollection.js';
@@ -740,8 +741,10 @@ export class NotificationOutboxService {
         });
         continue;
       }
+      // The outbox is trusted server work: callers were authorized per tenant
+      // above, so the per-account mail policy is lifted for the handoff.
       const outcome = await withTenant({ tenantId: candidate.tenantId }, () =>
-        this.dispatchOne(candidate),
+        runWithMailSystemAccess(() => this.dispatchOne(candidate)),
       );
       if (!outcome) continue;
       report.leased += 1;
@@ -788,7 +791,20 @@ export class NotificationOutboxService {
     // Ids may come from requests; on a native uuid column (PostgreSQL) a
     // malformed one would fail the query (22P02) instead of matching nothing.
     if (!UUID_PATTERN.test(input.deliveryId ?? '')) return false;
-    return withTenant({ tenantId }, async () => {
+    return withTenant({ tenantId }, () =>
+      runWithMailSystemAccess(() => this.reconcileImpl(tenantId, input)),
+    );
+  }
+
+  private async reconcileImpl(
+    tenantId: string,
+    input: {
+      deliveryId: string;
+      outcome: NotificationReconcileOutcome;
+      note?: string;
+    },
+  ): Promise<boolean> {
+    {
       const delivery = (
         await (
           await this.collection()
@@ -840,7 +856,7 @@ export class NotificationOutboxService {
         default:
           throw new Error(`Unknown reconcile outcome '${input.outcome}'.`);
       }
-    });
+    }
   }
 
   // ───────────────────────────────────────────────────────────────────────
