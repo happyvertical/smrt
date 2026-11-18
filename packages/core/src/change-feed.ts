@@ -88,11 +88,13 @@
  * ## Failure semantics
  *
  * A feed-write failure must never fail the user's write. The interceptor
- * wraps the append in a try/catch: on failure it logs a warning (deduped per
- * database) and continues. The trade-off is availability of the user's
- * write over completeness of the feed — consumers already need a
- * full-resync path for cursors older than the retention window, and the
- * same path covers a (rare) dropped feed row. PostgreSQL runs the INSERT in a
+ * wraps the append in a try/catch: on failure it logs a warning (at most once
+ * a minute per database and table, with a count of what it suppressed) and
+ * continues. The trade-off is availability of the user's write over
+ * completeness of the feed: the dropped change is not marked in the log —
+ * sequences stay contiguous and a resync is only signalled for pruned or
+ * foreign cursors — so a consumer is not told it missed it. PostgreSQL runs
+ * the INSERT in a
  * PL/pgSQL exception subtransaction and returns a caught SQLSTATE as data;
  * JavaScript only throws/logs after PostgreSQL has restored the caller's
  * transaction, so a swallowed append failure cannot surface later as 25P02.
@@ -2193,8 +2195,19 @@ async function deleteCounted(
 
 export const CHANGE_FEED_WAS_PERSISTED_KEY = '_smrtChangeFeedWasPersisted';
 
-/** Databases we already warned about after a failed feed append. */
-const warnedAppendFailures = new Set<string>();
+/**
+ * Append-failure logging state per `database + table`: when it last logged and
+ * how many failures it has suppressed since. A persistent failure on one table
+ * keeps reporting (at most once per {@link APPEND_FAILURE_LOG_INTERVAL_MS}),
+ * and a failure on one table never silences another's.
+ */
+const appendFailureLog = new Map<
+  string,
+  { lastLoggedAt: number; suppressed: number }
+>();
+
+/** Minimum interval between append-failure warnings for one table. */
+const APPEND_FAILURE_LOG_INTERVAL_MS = 60_000;
 
 /** Databases we already warned about after a failed signal publish (#1763). */
 const warnedSignalPublishFailures = new Set<string>();
@@ -2296,6 +2309,8 @@ async function appendForInstance(
 ): Promise<void> {
   let db: DatabaseInterface;
   let table: string;
+  let rowId: string | null;
+  let rowTenantId: string | null;
   try {
     table = instance.tableName;
     // Framework-owned tables are bookkeeping, not client-syncable data —
@@ -2311,6 +2326,10 @@ async function appendForInstance(
     // that name, closing the read path and the signal bus for it.
     if (isChangeFeedSensitiveWrite(table, instance.constructor)) return;
     db = instance.db;
+    const id = (instance as { id?: unknown }).id;
+    const tenantId = (instance as unknown as Record<string, unknown>).tenantId;
+    rowId = typeof id === 'string' && id ? id : null;
+    rowTenantId = typeof tenantId === 'string' && tenantId ? tenantId : null;
   } catch {
     // Not a fully initialized SmrtObject (e.g. plain-object doubles in
     // tests) — nothing to record.
@@ -2318,11 +2337,6 @@ async function appendForInstance(
   }
 
   try {
-    const id = (instance as { id?: unknown }).id;
-    const tenantId = (instance as unknown as Record<string, unknown>).tenantId;
-    const rowId = typeof id === 'string' && id ? id : null;
-    const rowTenantId =
-      typeof tenantId === 'string' && tenantId ? tenantId : null;
     const seq = await appendChange(db, {
       table,
       rowId,
@@ -2356,7 +2370,7 @@ async function appendForInstance(
       warnSignalPublishFailureOnce(db, table, error);
     }
   } catch (error) {
-    warnAppendFailureOnce(db, table, error);
+    warnAppendFailure(db, table, error);
   }
 }
 
@@ -2427,7 +2441,7 @@ export async function recordInstanceChanges(
       }
     }
   } catch (error) {
-    warnAppendFailureOnce(db, prepared[0].input.table, error);
+    warnAppendFailure(db, prepared[0].input.table, error);
   }
 }
 
@@ -2439,21 +2453,34 @@ export async function recordInstanceChange(
   await appendForInstance(instance, operation);
 }
 
-function warnAppendFailureOnce(
+/**
+ * Log a failed feed append, at most once per {@link
+ * APPEND_FAILURE_LOG_INTERVAL_MS} per `database + table`, reporting how many
+ * failures were suppressed in between.
+ */
+function warnAppendFailure(
   db: DatabaseInterface,
   table: string,
   error: unknown,
 ): void {
   try {
-    const dbKey = resolveDbCacheKey(db);
-    if (warnedAppendFailures.has(dbKey)) return;
-    warnedAppendFailures.add(dbKey);
+    const key = `${resolveDbCacheKey(db)}\u0000${table}`;
+    const now = Date.now();
+    const state = appendFailureLog.get(key);
+    if (state && now - state.lastLoggedAt < APPEND_FAILURE_LOG_INTERVAL_MS) {
+      state.suppressed++;
+      return;
+    }
+    const suppressed = state?.suppressed ?? 0;
+    appendFailureLog.set(key, { lastLoggedAt: now, suppressed: 0 });
     logger.warn(
       `Change feed: failed to append a change entry for '${table}'. The ` +
-        'write itself succeeded; the feed is missing this change (further ' +
-        'failures for this database are suppressed). Consumers recover on ' +
-        'full resync.',
-      { error: error instanceof Error ? error.message : String(error) },
+        'write itself succeeded; the feed is missing this change, and nothing ' +
+        'in the feed marks the gap.',
+      {
+        error: error instanceof Error ? error.message : String(error),
+        suppressedSinceLastWarning: suppressed,
+      },
     );
   } catch {
     // Logging must never propagate into the write path.
@@ -2503,7 +2530,7 @@ function warnSignalPublishFailureOnce(
  * Reset the append-failure and signal-publish warning dedups (test helper).
  */
 export function resetChangeFeedWarnings(): void {
-  warnedAppendFailures.clear();
+  appendFailureLog.clear();
   warnedSignalPublishFailures.clear();
   warnedDrainFailures.clear();
   // The append path's drain interval is process state too; a test that asserts

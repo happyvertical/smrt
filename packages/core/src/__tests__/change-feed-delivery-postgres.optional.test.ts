@@ -1,8 +1,12 @@
 /**
  * PostgreSQL coverage for change-feed read consistency and delivery.
  *
- * Runs only when `SMRT_TEST_POSTGRES_URL` points at a DISPOSABLE database:
- * the suite deletes every row from `_smrt_changes` before and after.
+ * Runs only when `SMRT_TEST_POSTGRES_URL` points at a DISPOSABLE database.
+ * The `test:postgres` shard runs every optional suite against one database
+ * in parallel, and these tests reason about exact sequences and prune the
+ * whole feed, so they run in a schema of their own: `options=-c search_path`
+ * applies to every pooled connection, and the framework's unqualified feed
+ * tables and helpers resolve there.
  *
  * @example
  * ```bash
@@ -11,6 +15,7 @@
  * ```
  */
 
+import { randomUUID } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -66,24 +71,36 @@ async function readUntil(
 
 const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
 const TABLE = 'delivery_pg_items';
+const SCHEMA = 'change_feed_delivery_test';
 
-describe.skipIf(!pgUrl)('change feed delivery on PostgreSQL (optional)', () => {
+async function connect(label: string): Promise<DatabaseInterface> {
+  const separator = (pgUrl as string).includes('?') ? '&' : '?';
+  return (await getDatabase({
+    type: 'postgres',
+    url: `${pgUrl}${separator}options=-c%20search_path%3D${SCHEMA}`,
+    dbid: `smrt-test-delivery-${label}-${randomUUID()}`,
+  } as Parameters<typeof getDatabase>[0])) as DatabaseInterface;
+}
+
+const postgresDescribe = pgUrl ? describe.sequential : describe.skip;
+
+postgresDescribe('change feed delivery on PostgreSQL (optional)', () => {
+  let admin: DatabaseInterface;
   let reader: DatabaseInterface;
   let sweeper: DatabaseInterface;
 
   beforeAll(async () => {
-    // Distinct dbids → distinct pools: the prune really runs on another
-    // connection, as a retention sweep would.
-    reader = (await getDatabase({
+    admin = (await getDatabase({
       type: 'postgres',
       url: pgUrl,
-      dbid: 'smrt-test-delivery-reader',
+      dbid: `smrt-test-delivery-admin-${randomUUID()}`,
     } as Parameters<typeof getDatabase>[0])) as DatabaseInterface;
-    sweeper = (await getDatabase({
-      type: 'postgres',
-      url: pgUrl,
-      dbid: 'smrt-test-delivery-sweeper',
-    } as Parameters<typeof getDatabase>[0])) as DatabaseInterface;
+    await admin.query(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
+    await admin.query(`CREATE SCHEMA ${SCHEMA}`);
+    // Distinct pools: the prune really runs on another connection, as a
+    // retention sweep would.
+    reader = await connect('reader');
+    sweeper = await connect('sweeper');
     await getTestDatabase({ db: reader, classes: [] });
     registerChangeFeedWriter();
   });
@@ -96,10 +113,10 @@ describe.skipIf(!pgUrl)('change feed delivery on PostgreSQL (optional)', () => {
   });
 
   afterAll(async () => {
-    await reader?.query('DELETE FROM _smrt_changes_pending');
-    await reader?.query('DELETE FROM _smrt_changes');
     await reader?.close?.();
     await sweeper?.close?.();
+    await admin?.query(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
+    await admin?.close?.();
   });
 
   describe('getChangesSince with a prune committed on another connection', () => {
