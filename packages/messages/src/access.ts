@@ -377,9 +377,22 @@ export async function deniedMailAccountIds(
   // Without a configured policy every database a mail collection has opened
   // is checked: ids are unique, so a union never hides the wrong thing.
   for (const config of getEffectiveMailAccessConfigs()) {
-    const accounts = await runWithMailSystemAccess(async () =>
-      (await AccountCollection.create(config.options)).list({}),
-    );
+    let accounts: Awaited<
+      ReturnType<InstanceType<typeof AccountCollection>['list']>
+    >;
+    try {
+      accounts = await runWithMailSystemAccess(async () =>
+        (await AccountCollection.create(config.options)).list({}),
+      );
+    } catch (error) {
+      // A learned database that has since been closed holds nothing to read
+      // through it; forget it. Any other failure stays fail-closed.
+      if (!state().config && /CLIENT_CLOSED/.test(String(error))) {
+        state().learned.delete(config.options.db ?? config.options);
+        continue;
+      }
+      throw error;
+    }
     const principal = await resolvePrincipal(config);
     for (const account of accounts) {
       if (!account.id) continue;
