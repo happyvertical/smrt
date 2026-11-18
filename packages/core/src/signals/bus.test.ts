@@ -189,4 +189,46 @@ describe('SignalBus', () => {
 
     expect(receivedTypes).toEqual(['start', 'step', 'end', 'error']);
   });
+
+  describe('sanitization configuration', () => {
+    const credentialSignal = (): Signal => ({
+      id: 'sanitize-1',
+      objectId: 'obj-1',
+      className: 'Test',
+      method: 'setCredentials',
+      type: 'start',
+      args: [{ apiSecret: 'value-a', label: 'visible' }],
+      timestamp: new Date(),
+    });
+
+    async function received(target: SignalBus): Promise<Signal> {
+      let seen: Signal | undefined;
+      target.register({
+        async handle(signal: Signal) {
+          seen = signal;
+        },
+      });
+      await target.emit(credentialSignal());
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      if (!seen) throw new Error('adapter received nothing');
+      return seen;
+    }
+
+    it('passes signals through unmodified when sanitization is not configured', async () => {
+      const seen = await received(new SignalBus());
+      expect(seen.args).toEqual([{ apiSecret: 'value-a', label: 'visible' }]);
+    });
+
+    it('passes signals through unmodified when sanitization is false', async () => {
+      const seen = await received(new SignalBus({ sanitization: false }));
+      expect(seen.args).toEqual([{ apiSecret: 'value-a', label: 'visible' }]);
+    });
+
+    it('applies the standard redactions for an empty sanitization config', async () => {
+      const seen = await received(new SignalBus({ sanitization: {} }));
+      expect(seen.args).toEqual([
+        { apiSecret: '[REDACTED]', label: 'visible' },
+      ]);
+    });
+  });
 });
