@@ -2,6 +2,7 @@
 import { smrt } from '@happyvertical/smrt-core';
 import { FieldUsageCounter as BaseFieldUsageCounter } from '../models/FieldUsageCounter.js';
 @smrt({
+  replaceParent: true,
   packageName: '@local/issue4931-fields',
   tableName: '_smrt_field_usage_counters',
 })
