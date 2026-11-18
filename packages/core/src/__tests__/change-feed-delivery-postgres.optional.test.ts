@@ -23,10 +23,17 @@ import {
   appendChange,
   getChangesSince,
   pruneChangeFeed,
+  recordInstanceChange,
   registerChangeFeedWriter,
   resetChangeFeedWarnings,
 } from '../change-feed';
-import { publishChangeSignal, resetChangeSignals } from '../change-signals';
+import {
+  type ChangeSignal,
+  publishChangeSignal,
+  resetChangeSignals,
+  subscribeToChangeSignals,
+} from '../change-signals';
+import { withEmbeddedWriteTransaction } from '../embedded-write-queue';
 import { buildChangeEventStream } from '../generators/events-route';
 import { getTestDatabase } from '../testing/database';
 
@@ -202,7 +209,6 @@ postgresDescribe('change feed delivery on PostgreSQL (optional)', () => {
       try {
         // The framework path swallows the failure; recordInstanceChange is
         // the same path a save takes, without needing a model table.
-        const { recordInstanceChange } = await import('../change-feed');
         const instance = {
           tableName: notesTable,
           db: reader,
@@ -218,7 +224,6 @@ postgresDescribe('change feed delivery on PostgreSQL (optional)', () => {
       }
       expect((await getChangesSince(reader, { since: 0 })).changes).toEqual([]);
 
-      const { recordInstanceChange } = await import('../change-feed');
       await recordInstanceChange(
         {
           tableName: TABLE,
@@ -233,6 +238,43 @@ postgresDescribe('change feed delivery on PostgreSQL (optional)', () => {
         [notesTable, null],
         [TABLE, 'next-row'],
       ]);
+    });
+  });
+
+  describe('live signals follow the commit of a framework transaction', () => {
+    function instanceOn(db: DatabaseInterface, rowId: string) {
+      return {
+        tableName: TABLE,
+        db,
+        id: rowId,
+        constructor: Object,
+      } as unknown as Parameters<typeof recordInstanceChange>[0];
+    }
+
+    it('publishes nothing for an append that is rolled back with its transaction', async () => {
+      const received: ChangeSignal[] = [];
+      const unsubscribe = subscribeToChangeSignals(reader, (signal) =>
+        received.push(signal),
+      );
+      try {
+        await expect(
+          withEmbeddedWriteTransaction(reader, false, async (tx) => {
+            // The transaction's first statement: allocated directly, not
+            // staged, so before this fix its signal went out pre-commit.
+            await recordInstanceChange(instanceOn(tx, 'rolled-back'));
+            throw new Error('roll back');
+          }),
+        ).rejects.toThrow('roll back');
+        expect(received).toEqual([]);
+
+        await withEmbeddedWriteTransaction(reader, false, async (tx) => {
+          await recordInstanceChange(instanceOn(tx, 'committed'));
+          expect(received).toEqual([]);
+        });
+        expect(received.map((signal) => signal.rowId)).toEqual(['committed']);
+      } finally {
+        unsubscribe();
+      }
     });
   });
 });

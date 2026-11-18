@@ -148,6 +148,7 @@ import { type ChangeSignal, publishChangeSignal } from './change-signals.js';
 import { resolveDbCacheKey } from './collection-cache.js';
 import { resolveDispatchTenantScope } from './dispatch/tenant-resolver.js';
 import {
+  deferUntilFrameworkCommit,
   isEmbeddedDatabase,
   isKnownDatabaseTransaction,
   usesPostgresDialect,
@@ -2382,20 +2383,12 @@ async function appendForInstance(
     // Publish a coarse live signal for the SSE `_events` route (#1763). This
     // runs only after the durable feed append SUCCEEDED (same try block, so a
     // failed append never emits a signal — "no signal without a durable feed
-    // row"). Its own try/catch (distinct dedup key) keeps a signal-publish
-    // problem from failing the user's write or masking the append's own
-    // failure semantics above.
-    try {
-      publishChangeSignal(db, {
-        table,
-        operation,
-        rowId,
-        tenantId: rowTenantId,
-        seq,
-      });
-    } catch (error) {
-      warnSignalPublishFailureOnce(db, table, error);
-    }
+    // row"), and only once the write has committed (see publishWhenCommitted).
+    // publishSignals has its own try/catch, so a signal problem never fails
+    // the user's write or masks the append's failure semantics above.
+    publishWhenCommitted(db, [
+      { table, operation, rowId, tenantId: rowTenantId, seq },
+    ]);
   } catch (error) {
     recordAppendGap(db, [{ table, tenantId: rowTenantId }]);
     warnAppendFailure(db, table, error);
@@ -2459,22 +2452,20 @@ export async function recordInstanceChanges(
       db,
       prepared.map(({ input }) => input),
     );
+    const signals: ChangeSignal[] = [];
     for (let index = 0; index < prepared.length; index++) {
       const seq = sequences[index];
       if (seq == null) continue;
       const input = prepared[index].input;
-      try {
-        publishChangeSignal(db, {
-          table: input.table,
-          operation: input.operation ?? 'update',
-          rowId: input.rowId ?? null,
-          tenantId: input.tenantId ?? null,
-          seq,
-        });
-      } catch (error) {
-        warnSignalPublishFailureOnce(db, input.table, error);
-      }
+      signals.push({
+        table: input.table,
+        operation: input.operation ?? 'update',
+        rowId: input.rowId ?? null,
+        tenantId: input.tenantId ?? null,
+        seq,
+      });
     }
+    publishWhenCommitted(db, signals);
   } catch (error) {
     recordAppendGap(
       db,
@@ -2485,6 +2476,31 @@ export async function recordInstanceChanges(
     );
     warnAppendFailure(db, prepared[0].input.table, error);
   }
+}
+
+/**
+ * Publish write-path signals once their write has committed.
+ *
+ * An append made on a framework transaction's handle is sequenced inside that
+ * transaction on SQLite and DuckDB (and on PostgreSQL when it is the
+ * transaction's first statement). Published at once, its signal would
+ * announce a write a later rollback undoes, and the rollback frees the
+ * sequence for the next write — a subscriber that dedupes by sequence then
+ * drops the real change. The signals are therefore handed to the
+ * transaction and published after it commits, in order, and dropped if it
+ * rolls back. Outside a framework transaction (autocommit) they publish now.
+ * Writes inside a transaction the framework does not manage (a raw
+ * `db.transaction()`, or a caller-owned one) still publish immediately.
+ */
+function publishWhenCommitted(
+  db: DatabaseInterface,
+  signals: ChangeSignal[],
+): void {
+  if (signals.length === 0) return;
+  if (deferUntilFrameworkCommit(db, (root) => publishSignals(root, signals))) {
+    return;
+  }
+  publishSignals(db, signals);
 }
 
 /**

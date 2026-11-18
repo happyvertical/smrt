@@ -48,6 +48,66 @@ const activeQueueKeys = createAsyncContext<ReadonlySet<string | object>>();
 const frameworkTransactions =
   createAsyncContext<ReadonlySet<DatabaseInterface>>();
 
+/**
+ * Work to run once a framework transaction has committed, one frame per
+ * active transaction (innermost last). See {@link deferUntilFrameworkCommit}.
+ */
+interface CommitFrame {
+  /** The transaction's bound handle. */
+  readonly handle: DatabaseInterface;
+  /** The root database the outermost transaction was opened on. */
+  readonly root: DatabaseInterface;
+  readonly callbacks: Array<(root: DatabaseInterface) => void>;
+}
+const commitFrames = createAsyncContext<readonly CommitFrame[]>();
+
+/**
+ * Run `callback` after the framework transaction that `db` is bound to has
+ * committed, and never if it rolls back. The callback receives the root
+ * database the transaction was opened on — the handle other parties key
+ * their subscriptions by, since a transaction's bound handle can carry a
+ * different identity. Returns false — and does nothing —
+ * when `db` is not the handle of an active framework transaction in this
+ * async context; the caller then runs the work itself.
+ *
+ * Exists for side effects that announce a write to other parties, such as
+ * the change feed's live signals: announced before commit, a write a later
+ * rollback undoes is still announced, and on engines that allocate the feed
+ * sequence inside the transaction a rollback frees that sequence for the next
+ * write — so a client that dedupes by sequence drops the real change. A nested
+ * framework transaction on the same handle hands its callbacks to the
+ * enclosing one, so they wait for the outermost commit. Hosts without async
+ * context propagation (a browser) cannot see the frame and run the work
+ * immediately, as before.
+ */
+export function deferUntilFrameworkCommit(
+  db: DatabaseInterface,
+  callback: (root: DatabaseInterface) => void,
+): boolean {
+  const frames = commitFrames.getStore();
+  if (!frames) return false;
+  for (let index = frames.length - 1; index >= 0; index--) {
+    if (frames[index].handle === db) {
+      frames[index].callbacks.push(callback);
+      return true;
+    }
+  }
+  return false;
+}
+
+function runCommitCallbacks(
+  callbacks: Array<(root: DatabaseInterface) => void>,
+  root: DatabaseInterface,
+): void {
+  for (const callback of callbacks) {
+    try {
+      callback(root);
+    } catch {
+      // A post-commit announcement must never fail the committed write.
+    }
+  }
+}
+
 /** Whether this exact handle belongs to a currently active framework transaction. */
 export function isFrameworkTransactionHandle(db: DatabaseInterface): boolean {
   return frameworkTransactions.getStore()?.has(db) === true;
@@ -197,27 +257,46 @@ export async function withEmbeddedWriteTransaction<T>(
   }
   // The transaction handle carries no adapter markers: identify the root.
   noteNativeDuckDbHandle(db);
+  // Frames of the framework transactions enclosing this call. When `db` is
+  // one of their handles, this transaction is nested inside it and commits
+  // only with it.
+  const outerFrames = commitFrames.getStore() ?? [];
+  let enclosing: CommitFrame | undefined;
+  for (const candidate of outerFrames) {
+    if (candidate.handle === db) enclosing = candidate;
+  }
   return withEmbeddedWriteQueue(db, serialize, async () => {
     let entered = false;
+    let frame: CommitFrame | null = null;
     try {
-      return await transaction((bound) => {
+      const result = await transaction((bound) => {
         entered = true;
         inheritDatabaseSyncDeviceId(db, bound);
         if (isEmbeddedDatabase(db) && !usesEmbeddedRevisionFallback(db)) {
           remoteLibSqlHandles.add(bound);
         }
-        return frameworkTransactions.run(
-          new Set([...(frameworkTransactions.getStore() ?? []), bound]),
-          () => {
-            if (!serialize) return operation(bound);
-            const active = activeQueueKeys.getStore();
-            return activeQueueKeys.run(
-              new Set([...(active ?? []), queueKey(bound)]),
-              () => operation(bound),
-            );
-          },
+        frame = { handle: bound, root: enclosing?.root ?? db, callbacks: [] };
+        const frames = [...outerFrames, frame];
+        return commitFrames.run(frames, () =>
+          frameworkTransactions.run(
+            new Set([...(frameworkTransactions.getStore() ?? []), bound]),
+            () => {
+              if (!serialize) return operation(bound);
+              const active = activeQueueKeys.getStore();
+              return activeQueueKeys.run(
+                new Set([...(active ?? []), queueKey(bound)]),
+                () => operation(bound),
+              );
+            },
+          ),
         );
       });
+      const committed = (frame as CommitFrame | null)?.callbacks ?? [];
+      if (committed.length > 0) {
+        if (enclosing) enclosing.callbacks.push(...committed);
+        else runCommitCallbacks(committed, db);
+      }
+      return result;
     } catch (error) {
       // The SDK explicitly refuses no-savepoint nesting before invoking the
       // callback or touching the enclosing transaction. A helper that needs
