@@ -417,9 +417,11 @@ caller-supplied path value (an item `id`, a named route parameter) as exactly
 one `encodeURIComponent` segment (`__smrtPathSegment`). An empty, `.` or `..`
 value cannot be one segment, and a lone UTF-16 surrogate cannot be encoded, so
 its request promise rejects (nothing is sent) instead of the request resolving
-onto another route or the call throwing. Fetchers stay plain functions returning
-that promise; a missing named route parameter still throws synchronously.
-Static collection and route segments are emitted as JSON string literals.
+onto another route. Every fetcher is `async`, so any bad argument (a missing
+named route parameter included) rejects like a failed request. `list(params)`
+sends `params` as query parameters with the GET custom-action serialization
+(arrays repeat, objects JSON-encode); the list response shape is unchanged
+here. Static collection and route segments are emitted as JSON string literals.
 
 
 `src/vite-preset/` (`@happyvertical/smrt-core/vite`, `smrt()`) composes the Oxc

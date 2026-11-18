@@ -87,46 +87,48 @@ export function generateClientModule(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(options || {})
     }`;
-          return `    ${methodName}: (${args}) => __smrtWithUrl(${actionUrl}, (url) => __smrtFetchActionResult(url, ${requestInit}))`;
+          return `    ${methodName}: async (${args}) => __smrtWithUrl(${actionUrl}, (url) => __smrtFetchActionResult(url, ${requestInit}))`;
         })
         .join(',\n');
 
+      // Every fetcher is async so an invalid argument (a missing named route
+      // parameter included) rejects like a failed request does.
       const enabledCrudMethods = new Set(crudMethods);
       const crudMethodImpls = [
         enabledCrudMethods.has('list')
-          ? `    list: (params) => __smrtFetchJson(${collectionPath}, {
+          ? `    list: async (params) => __smrtFetchJson(__smrtWithQuery(${collectionPath}, params), {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
     })`
           : '',
         enabledCrudMethods.has('get')
-          ? `    get: (id) => __smrtWithUrl(${itemUrl()}, (url) => __smrtFetchJson(url, {
+          ? `    get: async (id) => __smrtWithUrl(${itemUrl()}, (url) => __smrtFetchJson(url, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
     }))`
           : '',
         enabledCrudMethods.has('create')
-          ? `    create: (data) => __smrtFetchJson(${collectionPath}, {
+          ? `    create: async (data) => __smrtFetchJson(${collectionPath}, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     })`
           : '',
         enabledCrudMethods.has('update')
-          ? `    update: (id, data) => __smrtWithUrl(${itemUrl()}, (url) => __smrtFetchJson(url, {
+          ? `    update: async (id, data) => __smrtWithUrl(${itemUrl()}, (url) => __smrtFetchJson(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     }))`
           : '',
         enabledCrudMethods.has('delete')
-          ? `    delete: (id) => __smrtWithUrl(${itemUrl()}, (url) => __smrtFetchOk(url, {
+          ? `    delete: async (id) => __smrtWithUrl(${itemUrl()}, (url) => __smrtFetchOk(url, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' }
     }))`
           : '',
         enabledCrudMethods.has('search')
-          ? `    search: (query) => __smrtFetchJson(basePath + ${JSON.stringify(`/${collection}/search?q=`)} + encodeURIComponent(query), {
+          ? `    search: async (query) => __smrtFetchJson(basePath + ${JSON.stringify(`/${collection}/search?q=`)} + encodeURIComponent(query), {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
     })`
@@ -197,7 +199,6 @@ function __smrtWithUrl(url, request) {
 
 function __smrtActionUrl(url, options, pathParamNames, includeQuery) {
   const values = options && typeof options === 'object' ? options : {};
-  const pathParams = new Set(pathParamNames);
   for (const name of pathParamNames) {
     const value = values[name];
     if (value === undefined || value === null) {
@@ -212,11 +213,17 @@ function __smrtActionUrl(url, options, pathParamNames, includeQuery) {
     resolvedUrl = resolvedUrl.replace('[' + name + ']', segment);
   }
 
-  if (!includeQuery) return resolvedUrl;
+  return includeQuery
+    ? __smrtWithQuery(resolvedUrl, values, pathParamNames)
+    : resolvedUrl;
+}
 
+function __smrtWithQuery(url, values, skipNames) {
+  if (!values || typeof values !== 'object') return url;
+  const skip = new Set(skipNames || []);
   const searchParams = new URLSearchParams();
   for (const [name, value] of Object.entries(values)) {
-    if (pathParams.has(name) || value === undefined) continue;
+    if (skip.has(name) || value === undefined) continue;
     if (Array.isArray(value)) {
       for (const item of value) searchParams.append(name, String(item));
       continue;
@@ -230,7 +237,7 @@ function __smrtActionUrl(url, options, pathParamNames, includeQuery) {
   }
 
   const query = searchParams.toString();
-  return query ? resolvedUrl + '?' + query : resolvedUrl;
+  return query ? url + '?' + query : url;
 }
 
 export function createClient(basePath = '/api/v1') {
