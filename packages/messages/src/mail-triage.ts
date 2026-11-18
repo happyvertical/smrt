@@ -31,7 +31,11 @@ import type {
   EmailMessage,
   WriteBackResult,
 } from '@happyvertical/email';
-import { assertMailAccess, runWithMailSystemAccess } from './access.js';
+import {
+  assertMailAccess,
+  MailAccessError,
+  runWithMailSystemAccess,
+} from './access.js';
 import type { EmailCollection } from './collections/EmailCollection.js';
 import type { EmailFolderCollection } from './collections/EmailFolderCollection.js';
 import {
@@ -128,6 +132,12 @@ export interface MailTriageResult {
    * right and the row is behind; the next sync corrects it.
    */
   stale: string[];
+  /**
+   * Set when the server refused the saved sign-in after earlier work already
+   * landed: the account is now marked for reconnection and the partial result
+   * is still returned rather than thrown away.
+   */
+  needsReconnect?: boolean;
 }
 
 export interface MailTriageDeps {
@@ -294,15 +304,16 @@ function plan(
  * `EmailAccount.triage()` rather than this directly.
  */
 export async function triageMailMessages(
-  account: EmailAccount,
+  suppliedAccount: EmailAccount,
   action: MailTriageAction,
   emailIds: readonly string[],
   deps: MailTriageDeps,
 ): Promise<MailTriageResult> {
-  if (!account.id) {
+  if (!suppliedAccount.id) {
     throw new Error('EmailAccount.triage requires a persisted account');
   }
-  const accountId = account.id;
+  const accountId = suppliedAccount.id;
+  let account = suppliedAccount;
   assertValid(action);
   // Fail closed before touching anything. Triage acts on what the principal
   // can see, so it takes the read scope as well as the triage scope.
@@ -318,13 +329,32 @@ export async function triageMailMessages(
   };
   const requested = [...new Set(emailIds)];
   if (requested.length === 0) return result;
-  if (!account.isActive) throw new Error('Mail account is inactive');
-  if (account.needsReconnect) {
-    throw new Error('Mail account needs to be reconnected');
-  }
 
-  return inLane(accountId, () =>
-    runWithMailSystemAccess(async () => {
+  return inLane(accountId, async () => {
+    // The caller's instance may be stale: the account can have been claimed,
+    // transferred or had a grant revoked while this call waited for the lane.
+    // Re-authorize against the stored row before any server call or write.
+    const { EmailAccountCollection: AccountCollectionClass } = await import(
+      './collections/EmailAccountCollection.js'
+    );
+    const stored = (await runWithMailSystemAccess(async () =>
+      (
+        await AccountCollectionClass.create(deps.childOptions)
+      ).get({
+        id: accountId,
+      }),
+    )) as EmailAccount | null;
+    if (!stored?.id) throw new MailAccessError('read', 'denied');
+    await assertMailAccess(stored, 'read');
+    await assertMailAccess(stored, 'triage');
+    account = stored;
+    if (!account.isActive || !suppliedAccount.isActive) {
+      throw new Error('Mail account is inactive');
+    }
+    if (account.needsReconnect || suppliedAccount.needsReconnect) {
+      throw new Error('Mail account needs to be reconnected');
+    }
+    return runWithMailSystemAccess(async () => {
       const { EmailCollection: EmailCollectionClass } = await import(
         './collections/EmailCollection.js'
       );
@@ -453,9 +483,15 @@ export async function triageMailMessages(
         }
 
         // The server accepted these: store each as the server now has it.
+        let readBackAuthError: unknown;
         for (const providerId of accepted) {
           const row = rows.get(providerId);
           if (!row?.id) continue;
+          if (readBackAuthError) {
+            // The sign-in was refused: the server applied it, the row lags.
+            result.stale.push(row.id);
+            continue;
+          }
           try {
             if (row.folderId) touched.add(row.folderId);
             const fresh: EmailMessage = await client.getMessage(providerId);
@@ -472,21 +508,31 @@ export async function triageMailMessages(
             await row.save();
             if (folderId) touched.add(folderId);
             result.updated.push(row.id);
-          } catch {
+          } catch (error) {
             result.stale.push(row.id);
+            if (deps.isAuthFailure(error)) readBackAuthError = error;
           }
         }
         if (touched.size > 0) await refreshCounts(ctx, touched).catch(() => {});
         // Nothing reached the server: surface the cause as an error.
         if (firstError && completed === 0) throw firstError;
-        if (authError)
-          await rethrowAfterAuthCheck(account, authError, deps.isAuthFailure);
+        const lateAuthError = authError ?? readBackAuthError;
+        if (lateAuthError) {
+          // Earlier work landed on the server: keep the result and flag the
+          // reconnect rather than throwing the outcome away.
+          const err =
+            lateAuthError instanceof Error
+              ? lateAuthError
+              : new Error(String(lateAuthError));
+          await account.markNeedsReconnect(err.message).catch(() => undefined);
+          result.needsReconnect = true;
+        }
         return result;
       } catch (error) {
         return rethrowAfterAuthCheck(account, error, deps.isAuthFailure);
       } finally {
         await client.disconnect().catch(() => undefined);
       }
-    }),
-  );
+    });
+  });
 }

@@ -380,6 +380,53 @@ describe('EmailAccount.triage: partial failure', () => {
   });
 });
 
+describe('EmailAccount.triage: read-back and partial auth failures', () => {
+  it('reports stale and flags reconnect when read-back is refused after write-back', async () => {
+    const { server, account } = await seeded();
+    const id = ((await rows(account)).get('m1') as Email).id as string;
+    vi.spyOn(server.client, 'getMessage').mockRejectedValue(
+      Object.assign(new Error('Authentication failed'), { code: 'EAUTH' }),
+    );
+    const result = await account.triage({ kind: 'markRead' }, [id]);
+    expect(result).toMatchObject({
+      updated: [],
+      failed: [],
+      stale: [id],
+      needsReconnect: true,
+    });
+    expect(server.messages.get('m1')?.flags).toEqual(['\\Seen']);
+    expect((await reload(account)).needsReconnect).toBe(true);
+  });
+
+  it('returns the partial result when a later group is refused the sign-in', async () => {
+    const { server, account } = await seeded();
+    const list = await rows(account);
+    const m1 = list.get('m1') as Email;
+    const m2 = list.get('m2') as Email;
+    // Different current mailboxes make two server calls for one move.
+    m2.labels = JSON.stringify(['INBOX', 'Other']);
+    await runWithMailSystemAccess(() => m2.save());
+    const real = server.client.updateLabels!.bind(server.client);
+    let n = 0;
+    vi.spyOn(server.client, 'updateLabels').mockImplementation(
+      async (...args: Parameters<typeof real>) => {
+        if (++n === 1) return real(...args);
+        throw Object.assign(new Error('Authentication failed'), {
+          code: 'EAUTH',
+        });
+      },
+    );
+    const result = await account.triage({ kind: 'move', folder: 'Projects' }, [
+      m1.id as string,
+      m2.id as string,
+    ]);
+    expect(result.needsReconnect).toBe(true);
+    expect(result.updated.length + result.stale.length).toBe(1);
+    expect(result.failed).toHaveLength(1);
+    expect((await reload(account)).needsReconnect).toBe(true);
+  });
+});
+
 describe('EmailAccount.triage: provider capabilities', () => {
   it('throws a typed error, changing nothing, when the provider has no write-back', async () => {
     const { server, account } = await seeded();

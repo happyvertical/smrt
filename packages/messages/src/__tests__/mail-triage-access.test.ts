@@ -33,6 +33,7 @@ import {
   runWithMailSystemAccess,
 } from '../access.js';
 import { EmailAccountCollection, EmailCollection } from '../index.js';
+import { inLane } from '../mail-sync.js';
 import type { Email } from '../models/Email';
 import { EmailAccount } from '../models/EmailAccount';
 import { prepareMessageParents } from './fk-fixtures.js';
@@ -314,6 +315,62 @@ describe('mail triage access (#5131)', () => {
     await expectDenied(() =>
       triageAs(principalFor(grantee), ownedId, ownedEmailId),
     );
+  });
+
+  it('re-authorizes against the stored account: ownership changed after load', async () => {
+    // Loaded while ownerless (tenant-wide), then claimed by someone else.
+    const stale = (await runWithMailSystemAccess(async () =>
+      (await EmailAccountCollection.create(options)).get({ id: openId }),
+    )) as EmailAccount;
+    await runWithMailSystemAccess(async () => {
+      const fresh = (await (
+        await EmailAccountCollection.create(options)
+      ).get({ id: openId })) as EmailAccount;
+      fresh.ownerUserId = owner.id;
+      await fresh.save();
+    });
+    current = principalFor(stranger);
+    const before = server.calls.length;
+    const error = await withTenant({ tenantId: tenantA }, () =>
+      stale.triage({ kind: 'markRead' }, [openEmailId]),
+    ).then(
+      () => null,
+      (e) => e,
+    );
+    expect(error).toBeInstanceOf(MailAccessError);
+    expect(server.calls.length).toBe(before);
+    expect(server.messages.get('open1')?.flags).toEqual([]);
+  });
+
+  it('re-authorizes inside the lane: grant revoked while queued', async () => {
+    await grantRow(grantee.id, ownedId, 'read');
+    const grant = await grantRow(grantee.id, ownedId, 'triage');
+    current = principalFor(grantee);
+    let release!: () => void;
+    const held = inLane(
+      ownedId,
+      () => new Promise<void>((resolve) => (release = resolve)),
+    );
+    const before = server.calls.length;
+    const pending = withTenant({ tenantId: tenantA }, async () => {
+      const account = (await runWithMailSystemAccess(async () =>
+        (await EmailAccountCollection.create(options)).get({ id: ownedId }),
+      )) as EmailAccount;
+      return account.triage({ kind: 'markRead' }, [ownedEmailId]);
+    }).then(
+      () => null,
+      (e) => e,
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    await withTenant({ tenantId: tenantA }, async () => {
+      await grant.delete();
+    });
+    release();
+    await held;
+    const error = await pending;
+    expect(error).toBeInstanceOf(MailAccessError);
+    expect(server.calls.length).toBe(before);
+    expect(await isRead(ownedEmailId)).toBe(false);
   });
 
   it('refuses a principal whose host ceiling excludes triage or the account', async () => {
