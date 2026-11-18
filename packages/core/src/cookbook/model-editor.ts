@@ -1049,6 +1049,55 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     release(active(storageModels(documents()), doc));
   });
 
+  /**
+   * Undo and import can bring back recipes a lazy host has not loaded. With a
+   * coordinator, activate the models the restored cookbook covers first, so
+   * they are loaded, migrated and ready before the edit applies. This runs
+   * outside the activation queue the edit itself takes (the coordinator
+   * queues there too). Custom lists are editor-owned and not in its graph.
+   */
+  async function activateRestored(edit: AppModelEdit) {
+    if (!options.activation || (edit.type !== 'undo' && edit.type !== 'import'))
+      return;
+    let target: Cookbook | undefined;
+    if (edit.type === 'import') {
+      const result = validateCookbook(edit.cookbook);
+      if (!result.ok) return; // the edit refuses it
+      target = result.cookbook;
+    } else {
+      const undone = new Set(
+        history.flatMap((row) =>
+          row.undoes === undefined ? [] : [row.undoes],
+        ),
+      );
+      target = history.findLast(
+        (row) =>
+          row.status === 'applied' &&
+          !row.abandoned &&
+          row.undoes === undefined &&
+          !undone.has(row.revision),
+      )?.before;
+    }
+    if (!target) return;
+    const models = target.models;
+    const lists = new Set(
+      Object.keys(models?.lists ?? {}).map(
+        (name) => `${models?.packageName}:${name}`,
+      ),
+    );
+    try {
+      await options.activation.activate(
+        [...coveredModels(options.catalog, target)].filter(
+          (id) => !lists.has(id),
+        ),
+      );
+    } catch (error) {
+      throw new Error(
+        `MODEL_ACTIVATION_FAILED: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   async function apply(
     edit: AppModelEdit,
     context: AppModelEditContext,
@@ -1430,7 +1479,10 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           receipt,
       );
     };
-    const operation = tail.then(() => withRuntimeSchemaActivation(execute));
+    const operation = tail.then(async () => {
+      await activateRestored(edit);
+      return withRuntimeSchemaActivation(execute);
+    });
     tail = operation.then(
       () => {},
       () => {},

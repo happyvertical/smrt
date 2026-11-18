@@ -1251,6 +1251,32 @@ describe('app customization tools', () => {
     );
   });
 
+  it('activates the recipes an undo restores before applying it', async () => {
+    expect(await approve('recipes.disable', { id: 'customers' })).toMatchObject(
+      { status: 'ok' },
+    );
+    const activate = vi.fn(async (_ids: Iterable<string>) => {});
+    options.activation = { activate };
+    expect(await approve('app.undo', {})).toMatchObject({ status: 'ok' });
+    expect(activate).toHaveBeenCalledTimes(1);
+    expect([...(activate.mock.calls[0][0] as Iterable<string>)]).toEqual([
+      CUSTOMER,
+    ]);
+    expect(editor.snapshot().cookbook.recipes).toContain('customers');
+
+    // A failed activation undoes nothing.
+    expect(await approve('recipes.disable', { id: 'customers' })).toMatchObject(
+      { status: 'ok' },
+    );
+    activate.mockRejectedValueOnce(new Error('loader failed'));
+    const revision = editor.snapshot().revision;
+    await expect(approve('app.undo', {})).rejects.toThrow(
+      /Recipe activation failed; nothing was undone/,
+    );
+    expect(editor.snapshot().revision).toBe(revision);
+    expect(editor.snapshot().cookbook.recipes).not.toContain('customers');
+  });
+
   it('asks about missing choices/currency and ambiguous field labels without journaling', async () => {
     expect(
       await write('app.addField', {

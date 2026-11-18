@@ -760,6 +760,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       if (error instanceof AppToolQuestion) return read(error.result);
       throw error;
     }
+    let restored: Cookbook | undefined;
     if (name === 'app.undo') {
       const history = await editor.history();
       const undone = new Set(history.map((row) => row.undoes));
@@ -771,6 +772,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
           !undone.has(row.revision),
       );
       if (!previous) return fail('not_found', 'There is no change to undo.');
+      restored = previous.before;
       const edit = JSON.parse(previous.command) as {
         summary?: string;
         type: string;
@@ -814,6 +816,29 @@ export function createCookbookToolService(options: CookbookToolOptions) {
           'conflict',
           'Your app changed before this action could apply.',
         );
+      // Undo can bring back recipes a lazy host has not loaded: activate the
+      // restored cookbook's models first, as recipes.enable does.
+      if (options.activation && restored) {
+        const document = restored;
+        const customLists = new Set(
+          Object.keys(document.models?.lists ?? {}).map(
+            (list) => `${document.models?.packageName}:${list}`,
+          ),
+        );
+        try {
+          await options.activation.activate(
+            [...coveredModels(options.catalog, document)].filter(
+              (id) => !customLists.has(id),
+            ),
+          );
+        } catch (error) {
+          fail(
+            'activation_failed',
+            `Recipe activation failed; nothing was undone: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        await assertAllowed(context, name);
+      }
       // The editor journal is the durable mutation audit; the host sink records the tool/transport identity.
       await options.audit({
         context,

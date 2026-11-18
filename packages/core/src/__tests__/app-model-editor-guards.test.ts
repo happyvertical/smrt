@@ -1057,3 +1057,140 @@ describe('app model editor: provider fields across recipe disable', () => {
     expect([...fields.keys()]).toContain('vip');
   });
 });
+
+describe('app model editor: undo and import activate restored recipes', () => {
+  const RECIPE = 'guards.members';
+  const recipeCatalog = {
+    ...memberCatalog,
+    recipes: [
+      { id: RECIPE, label: 'Members', models: [MEMBER], nav: [], requires: [] },
+    ],
+  };
+  const memberManifest: ActivationManifest = {
+    version: 1,
+    modules: {
+      members: { specifier: 'fixture', models: [MEMBER], dependencies: [] },
+    },
+    models: {
+      [MEMBER]: {
+        module: 'members',
+        effective: MEMBER,
+        table: MEMBER_TABLE,
+        dependencies: [],
+      },
+    },
+    tables: { [MEMBER_TABLE]: { owners: [MEMBER], dependencies: [] } },
+  };
+  let restore: () => void;
+  let db: Awaited<ReturnType<typeof getDatabase>>;
+  let enabled: string[];
+  beforeEach(async () => {
+    restore = snapshotObjectRegistryState();
+    ObjectRegistry.clear();
+    globalThis.__smrtModelReadiness?.clear();
+    db = await getTestDatabase({
+      type: databaseType,
+      classes: [],
+      includeSystemTables: false,
+    });
+    enableTenancy();
+    enabled = [MEMBER];
+  });
+  afterEach(async () => {
+    setRuntimeExposureGate(undefined);
+    globalThis.__smrtModelReadiness?.clear();
+    disableTenancy();
+    await db.close?.();
+    restore();
+  });
+  /** A process start: a fresh registry and coordinator that loads only enabled models. */
+  const boot = async () => {
+    ObjectRegistry.clear();
+    globalThis.__smrtModelReadiness?.clear();
+    const activation = createActivationCoordinator({
+      scope: `editor-guards-undo-${crypto.randomUUID()}`,
+      db,
+      packageName: APP,
+      manifest: memberManifest,
+      loaders: {
+        members: async () => {
+          if (!ObjectRegistry.getClass(MEMBER)) registerMember();
+        },
+      },
+      readEnabled: async () => enabled,
+    });
+    await activation.boot();
+    return activation;
+  };
+  const editorFor = (
+    activation?: Awaited<ReturnType<typeof boot>>,
+    cookbook: Cookbook = { ...book(), recipes: [RECIPE] },
+  ) =>
+    createAppModelEditor({
+      db,
+      application: 'editor-guards-undo',
+      tenantId: TENANT,
+      packageName: APP,
+      cookbook,
+      catalog: recipeCatalog,
+      authorize: (c) => c.actor === 'owner',
+      ...(activation ? { activation } : {}),
+    });
+  const applier =
+    (e: Awaited<ReturnType<typeof editorFor>>) => (value: AppModelEdit) =>
+      e.apply(value, {
+        actor: 'owner',
+        tenantId: TENANT,
+        expectedRevision: e.snapshot().revision,
+        requestId: `req-${crypto.randomUUID()}`,
+      });
+  const disable = (cookbook: Cookbook) => {
+    const staged = createCookbookEngine({ catalog: recipeCatalog, cookbook });
+    staged.run({ name: 'remove_recipes', input: { ids: [RECIPE] } });
+    return staged.cookbook();
+  };
+
+  it('undo of a recipe disable after a restart loads, migrates and opens the recipe', async () => {
+    let activation = await boot();
+    let e = await editorFor(activation);
+    await applier(e)({
+      type: 'add_field',
+      model: MEMBER,
+      name: 'vip',
+      field: { type: 'boolean' },
+    });
+    await applier(e)({
+      type: 'import',
+      cookbook: disable(e.snapshot().cookbook),
+    });
+
+    // Restart with the recipe off: the provider is not loaded.
+    enabled = [];
+    activation = await boot();
+    expect(ObjectRegistry.getClass(MEMBER)).toBeUndefined();
+    e = await editorFor(activation);
+    expect(activation.isReady(MEMBER)).toBe(false);
+
+    await applier(e)({ type: 'undo' });
+    expect(e.snapshot().cookbook.recipes).toEqual([RECIPE]);
+    expect(ObjectRegistry.getClass(MEMBER)).toBeDefined();
+    expect(activation.isReady(MEMBER)).toBe(true);
+    const fields = await ObjectRegistry.getAllFields(`${APP}:GuardMember`);
+    expect([...fields.keys()]).toContain('vip');
+    // A further undo is not blocked.
+    await applier(e)({ type: 'undo' });
+    expect(e.snapshot().cookbook.models?.fields[MEMBER]).toBeUndefined();
+  });
+
+  it('import of a cookbook that enables a recipe activates it first', async () => {
+    enabled = [];
+    const activation = await boot();
+    const e = await editorFor(activation, book());
+    await applier(e)({
+      type: 'import',
+      cookbook: { ...book(), recipes: [RECIPE] },
+    });
+    expect(activation.isReady(MEMBER)).toBe(true);
+    expect(e.snapshot().cookbook.recipes).toEqual([RECIPE]);
+  });
+});
