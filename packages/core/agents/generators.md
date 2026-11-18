@@ -67,6 +67,18 @@ Tests: `src/__tests__/update-input-fields.test.ts` executes all seven
 transports; `packages/cli/src/__tests__/cli-writable-policy.test.ts`;
 `packages/chat/src/tool-loop.test.ts`.
 
+### Tool identifiers are non-empty strings
+
+MCP arguments are untyped JSON. The `get`, `update`, `delete` and item-action
+tools of the in-process generator and of both emitted servers read `id` /
+`slug` through `requireIdentifierArgument()` / `identifierArgument()`
+(`src/tool-arguments.ts`): `undefined`, `null` and `''` are absent (the
+existing "ID is required" answers), a non-empty string is the identifier, and
+any other value (a number, a boolean, an array, an object of conditions) is
+`ToolArgumentError`, code `VALIDATION_INVALID_ARGUMENT`, a typed 400. A
+present, unusable `id` never falls back to `slug`. Tests:
+`src/__tests__/tool-identifier-arguments.test.ts`.
+
 The same web virtual module exports `webMcpToolDefinitions` (#2518), a
 canonical per-tool array selected independently of list materialization. Every
 non-empty canonical API action set contributes tools, so get-only and

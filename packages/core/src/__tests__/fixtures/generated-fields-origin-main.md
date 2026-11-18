@@ -81,3 +81,6 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   `modular/handlers/index.ts`, and the list route of each model): the caller's
   filter and ordering pass `assertQueryAccess()` first, and the list route
   answers any typed 4xx refusal of the query with its status.
+- Generated MCP tools (`single/index.ts`, `modular/handlers/index.ts`): the
+  get, update, delete and item-action cases read `id` / `slug` through
+  `requireIdentifierArgument()` / `identifierArgument()`.

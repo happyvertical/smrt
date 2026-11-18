@@ -19,7 +19,9 @@ export const BUILT_CORE_ENTRY = fileURLToPath(
 export const REQUEST_HELPER_NAMES = [
   'applyUpdateInput',
   'assertQueryAccess',
+  'identifierArgument',
   'publicSerializerOf',
+  'requireIdentifierArgument',
   'toPublicJSONValue',
 ] as const;
 

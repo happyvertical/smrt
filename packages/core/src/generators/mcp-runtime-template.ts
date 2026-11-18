@@ -225,16 +225,14 @@ ${indent}}`;
 
           case 'get':
             return `${indent}case '${tool.name}': {
-${indent}  if (!args.id && !args.slug) {
-${indent}    throw new Error('Either id or slug is required');
-${indent}  }
+${indent}  // An identifier is a non-empty string; any other value is refused.
+${indent}  const filter = requireIdentifierArgument(args, ['id', 'slug'], 'Either id or slug is required');
 
 ${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(lookup)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
 
-${indent}  const filter = args.id || args.slug;
 ${indent}  const item = await collection.get(filter);
 
 ${indent}  if (!item) {
@@ -255,10 +253,8 @@ ${indent}}`;
 
           case 'update':
             return `${indent}case '${tool.name}': {
-${indent}  const { id, ...updateData } = args;
-${indent}  if (!id) {
-${indent}    throw new Error('ID is required for update');
-${indent}  }
+${indent}  const { id: _id, ...updateData } = args;
+${indent}  const id = requireIdentifierArgument(args, ['id'], 'ID is required for update');
 
 ${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(lookup)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
@@ -281,21 +277,19 @@ ${indent}}`;
 
           case 'delete':
             return `${indent}case '${tool.name}': {
-${indent}  if (!args.id) {
-${indent}    throw new Error('ID is required for delete');
-${indent}  }
+${indent}  const id = requireIdentifierArgument(args, ['id'], 'ID is required for delete');
 
 ${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(lookup)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
 
-${indent}  const toDelete = await collection.get(args.id);
+${indent}  const toDelete = await collection.get(id);
 ${indent}  if (!toDelete) {
 ${indent}    throw new Error('Object not found');
 ${indent}  }
 
-${indent}  await collection.delete(args.id);
+${indent}  await collection.delete(id);
 
 ${indent}  return successResult({ success: true, message: 'Object deleted successfully' });
 ${indent}}`;
@@ -305,7 +299,8 @@ ${indent}}`;
             // from TOOLS so MCP clients receive only protocol-defined fields.
             return `${indent}case '${tool.name}': {
 ${indent}  const actionMeta = CUSTOM_ACTIONS['${tool.name}'] || { scope: 'item', isStatic: false, legacyOptions: true };
-${indent}  const { id, options, ...directArgs } = args;
+${indent}  const { id: _id, options, ...directArgs } = args;
+${indent}  const id = identifierArgument(args, 'id');
 
 ${indent}  if (actionMeta.scope === 'item' && !id) {
 ${indent}    throw new Error(${JSON.stringify(`ID is required for custom action ${action}`)});
@@ -391,7 +386,7 @@ import { pathToFileURL } from 'node:url';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from '@happyvertical/smrt-core';
 import { normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY } from '@happyvertical/smrt-core';
-import { applyUpdateInput, assertQueryAccess, publicSerializerOf, toPublicJSONValue } from '@happyvertical/smrt-core';
+import { applyUpdateInput, assertQueryAccess, identifierArgument, publicSerializerOf, requireIdentifierArgument, toPublicJSONValue } from '@happyvertical/smrt-core';
 import { COOKBOOK_TOOL_NAMES, getCookbookToolService } from '@happyvertical/smrt-core/cookbook/tools';
 import { loadConfig } from '@happyvertical/smrt-config';
 ${hasTaskActions ? "import { McpTaskStore, TaskRunner } from '@happyvertical/smrt-jobs';\n" : ''}

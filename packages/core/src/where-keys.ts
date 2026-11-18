@@ -194,3 +194,30 @@ export function applyWhereScope(
   }
   return { ...scoped, ...scope };
 }
+
+/**
+ * Refuse a `get()` / `delete()` filter that does not name a row.
+ *
+ * A filter is an id or slug string, or a plain object with at least one
+ * condition. A number, a boolean, an array, `null` or `{}` carries no
+ * condition: read as a filter it would select whichever row the engine
+ * returns first.
+ *
+ * @throws {WhereClauseError} code `INVALID_GET_FILTER`, a typed 400
+ */
+export function assertGetFilter(filter: unknown): void {
+  if (typeof filter === 'string') return;
+  if (filter !== null && typeof filter === 'object' && !Array.isArray(filter)) {
+    const prototype = Object.getPrototypeOf(filter);
+    if (
+      (prototype === Object.prototype || prototype === null) &&
+      Object.keys(filter).length > 0
+    ) {
+      return;
+    }
+  }
+  throw new WhereClauseError(
+    'Invalid get filter: expected an id or slug string, or an object with at least one condition.',
+    'INVALID_GET_FILTER',
+  );
+}
