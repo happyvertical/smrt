@@ -608,6 +608,12 @@ export class NotificationOutboxService {
         );
       }
       const accountId = await this.requireSenderAccount(tenantId);
+      if (!(await this.principalMaySend({ tenantId, accountId }))) {
+        throw new NotificationOutboxDeniedError(
+          'permission',
+          'The principal lacks send access on the sender account.',
+        );
+      }
       const suppressed = await this.isSuppressed({
         tenantId,
         ...(recipientUserId ? { recipientUserId } : {}),
@@ -819,9 +825,10 @@ export class NotificationOutboxService {
   }
 
   /** True without a principal (trusted worker); else needs `send` on the account. */
-  private async principalMaySend(
-    delivery: NotificationDelivery,
-  ): Promise<boolean> {
+  private async principalMaySend(delivery: {
+    tenantId: string;
+    accountId?: string;
+  }): Promise<boolean> {
     const principal = this.options.principal;
     if (!principal) return true;
     const tenantId = delivery.tenantId;

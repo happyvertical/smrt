@@ -1213,6 +1213,13 @@ describe('mail account access (#5129)', () => {
             userId: person.id,
           }),
         });
+      const trustedOutbox = () =>
+        new NotificationOutboxService({
+          db,
+          linkBaseUrl: 'https://work.example.com',
+          resolveRecipient: () => ({ address: 'someone@example.com' }),
+          resolveSenderAccountId: () => sharedAccountId,
+        });
       const queue = (outbox: NotificationOutboxService, ref: string) =>
         outbox.enqueueEmail({
           tenantId: tenantA,
@@ -1228,9 +1235,30 @@ describe('mail account access (#5129)', () => {
           (await NotificationDeliveryCollection.create(options)).get({ id }),
         );
 
+      it('refuses to enqueue on an account the principal holds no send grant on', async () => {
+        await expect(
+          queue(outboxFor(stranger), 'principal:0'),
+        ).rejects.toMatchObject({ reason: 'permission' });
+        // The queue-by-principal, dispatch-by-worker path is closed at enqueue.
+        const worker = new NotificationOutboxService({
+          db,
+          linkBaseUrl: 'https://work.example.com',
+          resolveRecipient: () => ({ address: 'someone@example.com' }),
+          resolveSenderAccountId: () => sharedAccountId,
+        });
+        expect(
+          (await worker.dispatchDue({ tenantIds: [tenantA] })).leased,
+        ).toBe(0);
+        await grantRow(grantee.id, sharedAccountId, 'send');
+        await expect(
+          queue(outboxFor(grantee), 'principal:0'),
+        ).resolves.toMatchObject({ created: true });
+      });
+
       it('blocks dispatch from an account the principal holds no send grant on', async () => {
+        // Queued by a trusted worker, then dispatched by a principal without the grant.
+        const queued = await queue(trustedOutbox(), 'principal:1');
         const outbox = outboxFor(stranger);
-        const queued = await queue(outbox, 'principal:1');
         const report = await outbox.dispatchDue({ tenantIds: [tenantA] });
         expect(report.leased).toBe(0);
         expect(report.outcomes.map((o) => o.outcome)).toEqual(['blocked']);
@@ -1250,13 +1278,7 @@ describe('mail account access (#5129)', () => {
       });
 
       it('refuses to reconcile a delivery on an account without the send grant', async () => {
-        const trusted = new NotificationOutboxService({
-          db,
-          linkBaseUrl: 'https://work.example.com',
-          resolveRecipient: () => ({ address: 'someone@example.com' }),
-          resolveSenderAccountId: () => sharedAccountId,
-        });
-        const queued = await queue(trusted, 'principal:3');
+        const queued = await queue(trustedOutbox(), 'principal:3');
         await withTenant({ tenantId: tenantA }, () =>
           queued.delivery.transition({ status: 'uncertain' }),
         );
