@@ -60,7 +60,10 @@ const PRUNE_PAGE = 500;
 // slot keeps a single sync job per account.
 const lanes = new Map<string, Promise<unknown>>();
 
-async function inLane<T>(accountId: string, run: () => Promise<T>): Promise<T> {
+export async function inLane<T>(
+  accountId: string,
+  run: () => Promise<T>,
+): Promise<T> {
   const previous = lanes.get(accountId) ?? Promise.resolve();
   const next = previous.then(run, run);
   const tail = next.catch(() => undefined);
@@ -117,7 +120,18 @@ export function applyServerMessage(
   }
 }
 
-interface SyncContext {
+/**
+ * JMAP folders are mailboxes a message may sit in several at once; keep them
+ * all as labels when the server sent no provider labels. Shared by sync and
+ * triage write-back so both store a server message identically.
+ */
+export function withMailboxLabels(msg: EmailMessage): EmailMessage {
+  return msg.labels?.length || !msg.folders?.length
+    ? msg
+    : { ...msg, labels: msg.folders };
+}
+
+export interface SyncContext {
   account: EmailAccount;
   accountId: string;
   emails: EmailCollection;
@@ -127,7 +141,7 @@ interface SyncContext {
   folderIds: Map<string, string>;
 }
 
-async function ensureFolder(
+export async function ensureFolder(
   ctx: SyncContext,
   path: string,
   details: Partial<Folder> = {},
@@ -161,7 +175,10 @@ async function ensureFolder(
   return id;
 }
 
-async function folderIdFor(ctx: SyncContext, path: string): Promise<string> {
+export async function folderIdFor(
+  ctx: SyncContext,
+  path: string,
+): Promise<string> {
   if (!path) return '';
   return ctx.folderIds.get(path) ?? (await ensureFolder(ctx, path));
 }
@@ -200,11 +217,7 @@ async function upsertMessage(
   email.providerMessageId = msg.id;
   applyServerMessage(
     email,
-    // JMAP folders are mailboxes a message may sit in several at once; keep
-    // them all when the server sent no provider labels.
-    msg.labels?.length || !msg.folders?.length
-      ? msg
-      : { ...msg, labels: msg.folders },
+    withMailboxLabels(msg),
     { folderId, folderPath },
     { keepBodies: isChange, deriveState: true },
   );
@@ -253,7 +266,7 @@ async function pruneUnseen(
   }
 }
 
-async function refreshCounts(
+export async function refreshCounts(
   ctx: SyncContext,
   folderIds: Set<string>,
 ): Promise<void> {
@@ -336,7 +349,7 @@ async function persistCursor(
   await account.save();
 }
 
-async function rethrowAfterAuthCheck(
+export async function rethrowAfterAuthCheck(
   account: EmailAccount,
   error: unknown,
   isAuthFailure: (e: unknown) => boolean,
