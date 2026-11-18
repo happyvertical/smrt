@@ -311,7 +311,7 @@ describe('smrtConsumer load with a populated manifest', () => {
 
     const client = (await load.call({}, '\0smrt-consumer:client')) as string;
     expect(client).toContain('"widgets":');
-    expect(client).toContain("'/widgets'");
+    expect(client).toContain('basePath + "/widgets"');
     expect(client).toContain('search:');
     expect(client).toContain('"reports":');
     expect(client).toContain('revealSecret:');
@@ -353,8 +353,12 @@ describe('smrtConsumer load with a populated manifest', () => {
     const load = getHook(plugin, 'load');
     const client = (await load.call({}, '\0smrt-consumer:client')) as string;
 
-    expect(client).toContain("'/reports/' + id + '/reveal-secret'");
-    expect(client).not.toContain("'/reports/' + id + '/revealSecret'");
+    expect(client).toContain(
+      '__smrtItemUrl(basePath + "/reports", id, "/reveal-secret")',
+    );
+    expect(client).not.toContain(
+      '__smrtItemUrl(basePath + "/reports", id, "/revealSecret")',
+    );
   });
 
   it('emits SYNTACTICALLY VALID client code for a package-qualified manifest key (#1795)', async () => {
@@ -2010,9 +2014,11 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
 
     const load = getHook(plugin, 'load');
     const client = (await load.call({}, '\0smrt-consumer:client')) as string;
-    expect(client).toContain("'/kebab-route-widgets/' + id + '/publish-now'");
+    expect(client).toContain(
+      '__smrtItemUrl(basePath + "/kebab-route-widgets", id, "/publish-now")',
+    );
     expect(client).not.toContain(
-      "'/kebab-route-widgets/' + id + '/publishNow'",
+      '__smrtItemUrl(basePath + "/kebab-route-widgets", id, "/publishNow")',
     );
 
     const web = (await load.call({}, '\0smrt-consumer:web')) as string;
@@ -2069,7 +2075,9 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     ).toBe(true);
     const load = getHook(plugin, 'load');
     const client = (await load.call({}, '\0smrt-consumer:client')) as string;
-    expect(client).toContain("'/kebab-route-widgets/' + id + '/publishNow'");
+    expect(client).toContain(
+      '__smrtItemUrl(basePath + "/kebab-route-widgets", id, "/publishNow")',
+    );
     const web = (await load.call({}, '\0smrt-consumer:web')) as string;
     const webModule = await import(
       `data:text/javascript,${encodeURIComponent(web)}`
