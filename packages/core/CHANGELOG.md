@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.62.9
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - flush a fetch-set session cookie as soon as its response completes (#5161) (capacitor-session)
+- @happyvertical/smrt-config@0.62.9
+  - @happyvertical/smrt-scanner@0.62.9
+  - @happyvertical/smrt-types@0.62.9
+
 ## 0.62.8
 
 ### Patch Changes
