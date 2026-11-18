@@ -314,6 +314,8 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
   afterEach(() => {
     rmSync(projectRoot, { force: true, recursive: true });
     delete (globalThis as Record<string, unknown>).__smrtSyncCreateCalls;
+    delete (globalThis as Record<string, unknown>).__smrtSyncDeclaredFields;
+    delete (globalThis as Record<string, unknown>).__smrtSyncStoredRow;
   });
 
   async function importRoute(
@@ -341,10 +343,14 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
       [
         'export async function getCollection() {',
         '  return {',
-        '    async get() { return null; },',
+        '    // A stored row, when a test supplies one for an update.',
+        '    async get() { return (globalThis as any).__smrtSyncStoredRow ?? null; },',
         '    async create(data: Record<string, unknown>) {',
         '      (globalThis as any).__smrtSyncCreateCalls.push(data);',
         "      return { id: data.id, updated_at: '2026-01-01T00:00:00.000Z', async save() {}, async delete() {} };",
+        '    },',
+        '    async withAuditMutation(row: unknown, _action: string, mutate: (bound: unknown) => Promise<void>) {',
+        '      return mutate(row);',
         '    },',
         '  };',
         '}',
@@ -358,10 +364,10 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
       [
         `export * from ${JSON.stringify(fileURLToPath(new URL('../sync/apply.ts', import.meta.url)))}; export * from ${JSON.stringify(fileURLToPath(new URL('../runtime-exposure.ts', import.meta.url)))};`,
         // The route asks the registry which body keys never reach a model.
-        // The fixture models declare no service-named fields, so the real
-        // rule with no declared fields stands in for the registry.
+        // The real rule runs here over the field names a test declares
+        // (none by default), standing in for the registry's field lookup.
         `import { isServiceOptionInput } from ${JSON.stringify(fileURLToPath(new URL('../service-options.ts', import.meta.url)))};`,
-        'export const ObjectRegistry = { isServiceOptionInput: (_name: string, key: string) => isServiceOptionInput(key, () => false) };',
+        'export const ObjectRegistry = { isServiceOptionInput: (_name: string, key: string) => isServiceOptionInput(key, (field: string) => ((globalThis as any).__smrtSyncDeclaredFields ?? []).includes(field)) };',
       ].join('\n'),
     );
     const outFile = join(projectRoot, 'route.mjs');
@@ -517,6 +523,104 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
       await route.POST({ locals: {}, request: createBatch('widgets') }),
     );
     expect(result).toMatchObject({ status: 'applied' });
+  });
+
+  describe('payloads set fields only', () => {
+    const ITEM_ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
+    const SERVICE_KEYS = [
+      'db',
+      'persistence',
+      'fs',
+      'ai',
+      'decisions',
+      'inference',
+      'usage',
+      'logging',
+      'metrics',
+      'pubsub',
+      'sanitization',
+      'signals',
+    ];
+    const payload = () => ({
+      name: 'Widget',
+      ...Object.fromEntries(SERVICE_KEYS.map((key) => [key, { from: key }])),
+      options: { db: 'file:/elsewhere.db' },
+      _skipLoad: false,
+      _className: 'Other',
+    });
+    const batch = (op: 'create' | 'update') =>
+      new Request('http://localhost/api/sync/apply', {
+        body: JSON.stringify({
+          items: [
+            {
+              itemId: 'q-1',
+              object: 'widgets',
+              op,
+              id: ITEM_ID,
+              payload: payload(),
+            },
+          ],
+        }),
+        method: 'POST',
+      });
+    const writer = {
+      permissions: ['widgets.create', 'widgets.update'],
+      user: { id: 'u' },
+    };
+    const writableDef = {
+      ...widgetDef,
+      decoratorConfig: {
+        api: { include: ['list', 'get', 'create', 'update'] },
+      },
+    };
+
+    it('a create payload reaches the collection with field values only', async () => {
+      const route = await importRoute({ Widget: writableDef });
+      const result = await firstResult(
+        await route.POST({ locals: writer, request: batch('create') }),
+      );
+      expect(result).toMatchObject({ status: 'applied' });
+      expect(createCalls).toEqual([
+        { name: 'Widget', id: ITEM_ID, _insertOnly: true },
+      ]);
+    });
+
+    it('a create payload keeps a service-named key the model declares as a field', async () => {
+      (globalThis as Record<string, unknown>).__smrtSyncDeclaredFields = [
+        'metrics',
+      ];
+      const route = await importRoute({ Widget: writableDef });
+      await route.POST({ locals: writer, request: batch('create') });
+      expect(createCalls).toEqual([
+        {
+          name: 'Widget',
+          metrics: { from: 'metrics' },
+          id: ITEM_ID,
+          _insertOnly: true,
+        },
+      ]);
+    });
+
+    it('an update payload assigns field values only onto the stored row', async () => {
+      const stored: Record<string, unknown> = {
+        id: ITEM_ID,
+        name: 'Before',
+        updated_at: '2026-01-01T00:00:00.000Z',
+        options: { db: 'collection-db' },
+        save: async () => {},
+      };
+      (globalThis as Record<string, unknown>).__smrtSyncStoredRow = stored;
+      const route = await importRoute({ Widget: writableDef });
+      const result = await firstResult(
+        await route.POST({ locals: writer, request: batch('update') }),
+      );
+      expect(result).toMatchObject({ status: 'applied' });
+      expect(stored.name).toBe('Widget');
+      expect(stored.options).toEqual({ db: 'collection-db' });
+      expect(Object.keys(stored).sort()).toEqual(
+        ['id', 'name', 'options', 'save', 'updated_at'].sort(),
+      );
+    });
   });
 
   // #2807: two models share the `records` segment. In either manifest
