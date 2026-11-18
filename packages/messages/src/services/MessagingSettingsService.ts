@@ -182,6 +182,13 @@ export class MessagingSettingsService {
     });
   }
 
+  /**
+   * Stores account settings only: it never opens a connection, so it is not an
+   * SSRF vector by itself (connecting goes through `connectMailbox`, which is
+   * allowlisted). The SMTP host/port it stores predate this change and are
+   * used later by the sender; hosts that need an outbound allowlist apply it
+   * there.
+   */
   async saveAccount(
     input: MessagingAccountInput,
   ): Promise<MessagingAccountView> {
@@ -555,7 +562,14 @@ export class MessagingSettingsService {
     }
   }
 
-  /** Host and port allowlist for the built-in validator (SSRF guard). */
+  /**
+   * Host and port allowlist for the built-in validator (SSRF guard).
+   *
+   * Names are checked, not resolved: an allowlisted name that resolves (or is
+   * rebound) to a private address is the host's allowlist responsibility, so
+   * list only names you control, or pass a `validateMailbox` that resolves and
+   * pins the address it connects to.
+   */
   private assertAllowedTarget(configuration: Record<string, unknown>): void {
     let host = typeof configuration.host === 'string' ? configuration.host : '';
     let port =

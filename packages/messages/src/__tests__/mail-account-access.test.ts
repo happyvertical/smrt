@@ -263,6 +263,61 @@ describe('mail account access (#5129)', () => {
     });
   });
 
+  describe('cold process (nothing configured, nothing learned yet)', () => {
+    // A fresh process: no configureMailAccess, no row ever hydrated. Opening a
+    // mail collection alone must be enough to close owned accounts.
+    const cold = async <T>(
+      fn: (emails: EmailCollection) => Promise<T>,
+    ): Promise<T> => {
+      resetMailAccess();
+      current = null;
+      return withTenant({ tenantId: tenantA }, async () =>
+        fn(await EmailCollection.create(options)),
+      );
+    };
+
+    it('does not leak owned mail through count', async () => {
+      expect(await cold((emails) => emails.count({}))).toBe(1);
+    });
+
+    it('does not leak owned mail through projections', async () => {
+      const rows = await cold((emails) => emails.list({ select: ['subject'] }));
+      expect(rows.map((row) => row.subject)).toEqual(['open subject']);
+    });
+
+    it('does not leak owned mail through facets', async () => {
+      const result = await cold((emails) =>
+        emails.facets({ fields: ['accountId'] }),
+      );
+      const values = JSON.stringify(result);
+      expect(values).toContain(openAccountId);
+      expect(values).not.toContain(privateAccountId);
+      expect(values).not.toContain(sharedAccountId);
+    });
+
+    it('refuses raw queries', async () => {
+      await expect(
+        cold((emails) =>
+          emails.query('SELECT * FROM messages', [], {
+            allowRawOnTenantScoped: true,
+          }),
+        ),
+      ).rejects.toThrow(/Mail access denied/);
+    });
+
+    it('keeps the policy for each database when a process opens several', async () => {
+      const other = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+      await prepareMessageParents(other);
+      resetMailAccess();
+      await withTenant({ tenantId: tenantA }, async () => {
+        await EmailCollection.create({ db: other });
+        const emails = await EmailCollection.create(options);
+        expect(await emails.count({})).toBe(1);
+      });
+      await other.close?.();
+    });
+  });
+
   describe('owner and read grants', () => {
     it('lets the owner read everything of theirs, implicitly', async () => {
       expect(await subjects(principalFor(owner))).toEqual([

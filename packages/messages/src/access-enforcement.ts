@@ -26,7 +26,7 @@ import {
 import {
   assertHydratedMailAccess,
   deniedMailAccountIds,
-  getEffectiveMailAccessConfig,
+  getEffectiveMailAccessConfigs,
   inMailSystemAccess,
   learnMailAccessOptions,
   MailAccessError,
@@ -125,8 +125,9 @@ export function createMailAccessInterceptor(): CollectionInterceptor {
     priority: 50,
 
     async beforeList(className, options, context) {
-      const config = getEffectiveMailAccessConfig();
-      if (!config || inMailSystemAccess()) return options;
+      if (!getEffectiveMailAccessConfigs().length || inMailSystemAccess()) {
+        return options;
+      }
       const kind = kindOf(className, context);
       if (!kind || kind === 'account') return options;
       const denied = await deniedMailAccountIds('read');
@@ -214,7 +215,7 @@ export function createMailAccessInterceptor(): CollectionInterceptor {
       context,
     ): Promise<QueryInterceptResult> {
       const unchanged = { sql: options.sql, params: options.params };
-      if (!getEffectiveMailAccessConfig() || inMailSystemAccess()) {
+      if (!getEffectiveMailAccessConfigs().length || inMailSystemAccess()) {
         return unchanged;
       }
       const kind = kindOf(className, context);

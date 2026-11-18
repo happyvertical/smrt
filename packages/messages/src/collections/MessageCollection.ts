@@ -5,12 +5,23 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { learnMailAccessOptions } from '../access.js';
 import { queryGlobal, queryWithGlobals } from '../host.js';
 import { Message } from '../models/Message';
 import type { MessageSearchFilters } from '../types';
 
 export class MessageCollection extends SmrtCollection<Message> {
   static readonly _itemClass = Message;
+
+  /**
+   * Opening a mail collection registers its database with the access policy,
+   * so every read path (list, count, projections, facets, raw query) is
+   * filtered even in a process that never called `configureMailAccess`.
+   */
+  override async ensureStorageReady(): Promise<void> {
+    learnMailAccessOptions(this.options);
+    await super.ensureStorageReady();
+  }
 
   /**
    * Search messages with filters

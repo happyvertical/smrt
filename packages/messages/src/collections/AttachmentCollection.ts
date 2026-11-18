@@ -3,12 +3,22 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
-import { runWithMailSystemAccess } from '../access.js';
+import { learnMailAccessOptions, runWithMailSystemAccess } from '../access.js';
 import { queryGlobal, queryWithGlobals } from '../host.js';
 import { Attachment } from '../models/Attachment';
 
 export class AttachmentCollection extends SmrtCollection<Attachment> {
   static readonly _itemClass = Attachment;
+
+  /**
+   * Opening a mail collection registers its database with the access policy,
+   * so every read path (list, count, projections, facets, raw query) is
+   * filtered even in a process that never called `configureMailAccess`.
+   */
+  override async ensureStorageReady(): Promise<void> {
+    learnMailAccessOptions(this.options);
+    await super.ensureStorageReady();
+  }
 
   /**
    * Fill `accountId` on attachments saved before the column existed, from

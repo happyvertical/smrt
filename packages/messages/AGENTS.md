@@ -71,7 +71,9 @@ owners and call `configureMailAccess({ options, resolvePrincipal })` at startup
   cannot read, self-grant or take over an owned mailbox. Unowned accounts can be
   claimed once with `messages.manage-credentials`.
 - Before `configureMailAccess` is called the policy still fails closed on
-  owned accounts: it learns the database from the first mail or account row it
+  owned accounts: opening any mail collection (and any account or mail row) registers its
+  database, per database, and the policy hides every owned account's mail
+  through list, count, projections, facets and raw queries; it learns the database from the first mail or account row it
   sees and, with no principal resolver, hides every owned account's mail.
   Direct hydration (`new Email({ id }).initialize()`, `loadRelated()`) is gated
   in the models' `loadFromId`/`loadFromSlug`.

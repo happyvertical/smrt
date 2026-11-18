@@ -3,12 +3,23 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { learnMailAccessOptions } from '../access.js';
 import { queryGlobal, queryWithGlobals } from '../host.js';
 import { EmailFolder } from '../models/EmailFolder';
 import type { EmailFolderSearchFilters } from '../types';
 
 export class EmailFolderCollection extends SmrtCollection<EmailFolder> {
   static readonly _itemClass = EmailFolder;
+
+  /**
+   * Opening a mail collection registers its database with the access policy,
+   * so every read path (list, count, projections, facets, raw query) is
+   * filtered even in a process that never called `configureMailAccess`.
+   */
+  override async ensureStorageReady(): Promise<void> {
+    learnMailAccessOptions(this.options);
+    await super.ensureStorageReady();
+  }
 
   /**
    * Get folder by path for an account

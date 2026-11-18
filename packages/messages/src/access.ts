@@ -110,7 +110,7 @@ export interface MailAccessConfig {
 interface MailAccessState {
   config: MailAccessConfig | null;
   /** Database options seen on a mail row, used until the host configures. */
-  learned: SmrtClassOptions | null;
+  learned: Map<unknown, SmrtClassOptions>;
   system: ReturnType<typeof createHandoffContext<true>>;
 }
 
@@ -124,7 +124,7 @@ function state(): MailAccessState {
   if (!current) {
     current = {
       config: null,
-      learned: null,
+      learned: new Map(),
       system: createHandoffContext<true>(),
     };
     holder[STATE_KEY] = current;
@@ -143,7 +143,7 @@ export function configureMailAccess(config: MailAccessConfig): void {
 /** Remove the configuration (tests). Owned accounts then fail closed. */
 export function resetMailAccess(): void {
   state().config = null;
-  state().learned = null;
+  state().learned.clear();
 }
 
 /**
@@ -155,17 +155,30 @@ export function learnMailAccessOptions(
   options: SmrtClassOptions | undefined,
 ): void {
   const current = state();
-  if (!current.config && options) {
-    current.learned = options;
+  if (current.config || !options) return;
+  // One entry per database, so a process with several keeps each of them.
+  const key = options.db ?? options;
+  current.learned.delete(key);
+  current.learned.set(key, options);
+  if (current.learned.size > 16) {
+    const oldest = current.learned.keys().next().value;
+    current.learned.delete(oldest);
   }
+}
+
+/** Every policy in force: the configured one, else one per learned database. */
+export function getEffectiveMailAccessConfigs(): MailAccessConfig[] {
+  const current = state();
+  if (current.config) return [current.config];
+  return [...current.learned.values()].map((options) => ({ options }));
 }
 
 /** The configured policy, else a closed one over the learned database. */
 export function getEffectiveMailAccessConfig(): MailAccessConfig | null {
   const current = state();
-  return (
-    current.config ?? (current.learned ? { options: current.learned } : null)
-  );
+  if (current.config) return current.config;
+  const latest = [...current.learned.values()].pop();
+  return latest ? { options: latest } : null;
 }
 
 export function getMailAccessConfig(): MailAccessConfig | null {
@@ -357,30 +370,32 @@ export async function deniedMailAccountIds(
   scope: MailScope,
 ): Promise<string[]> {
   if (inMailSystemAccess()) return [];
-  const config = getEffectiveMailAccessConfig();
-  if (!config) return [];
   const { AccountCollection } = await import(
     './collections/AccountCollection.js'
   );
-  const accounts = await runWithMailSystemAccess(async () =>
-    (await AccountCollection.create(config.options)).list({}),
-  );
-  const principal = await resolvePrincipal(config);
-  const denied: string[] = [];
-  for (const account of accounts) {
-    if (!account.id) continue;
-    const decision = await decideMailAccess(
-      {
-        id: account.id,
-        tenantId: account.tenantId,
-        ownerUserId: account.ownerUserId,
-      },
-      scope,
-      principal,
+  const denied = new Set<string>();
+  // Without a configured policy every database a mail collection has opened
+  // is checked: ids are unique, so a union never hides the wrong thing.
+  for (const config of getEffectiveMailAccessConfigs()) {
+    const accounts = await runWithMailSystemAccess(async () =>
+      (await AccountCollection.create(config.options)).list({}),
     );
-    if (!decision.allowed) denied.push(account.id);
+    const principal = await resolvePrincipal(config);
+    for (const account of accounts) {
+      if (!account.id) continue;
+      const decision = await decideMailAccess(
+        {
+          id: account.id,
+          tenantId: account.tenantId,
+          ownerUserId: account.ownerUserId,
+        },
+        scope,
+        principal,
+      );
+      if (!decision.allowed) denied.add(account.id);
+    }
   }
-  return denied;
+  return [...denied];
 }
 
 /** Whether the current principal may read mail of `accountId` (empty: yes). */
