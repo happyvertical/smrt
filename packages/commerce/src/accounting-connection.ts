@@ -360,10 +360,13 @@ export async function completeQuickBooksConnection(
       },
     );
     const at = now(deps);
+    // Decide from the row as it is now, inside the lease: another connect may
+    // have rebound it while this call waited.
+    const before = await findConnection(deps, tenantId);
     const rebound =
-      connection.realmId !== '' &&
-      (connection.realmId !== realmId ||
-        connection.environment !== input.environment);
+      !!before &&
+      before.realmId !== '' &&
+      (before.realmId !== realmId || before.environment !== input.environment);
     await mutateConnection(deps, tenantId, (row) => {
       row.realmId = realmId;
       row.environment = input.environment;
@@ -503,6 +506,9 @@ export async function withTenantQuickBooksProvider<T>(
             : 'NOT_CONNECTED',
           'The accounting connection is not usable',
         );
+      // Rotations are fenced on the row's version: a rotated token is saved only
+      // while the row is the connection this refresh started from.
+      let expectedVersion = current.tokenVersion;
       let attempt = 0;
       for (;;) {
         attempt += 1;
@@ -517,21 +523,37 @@ export async function withTenantQuickBooksProvider<T>(
           refreshToken: usedToken,
           onTokenRefresh: async (tokens) => {
             // Persist the rotated token before anything can use the new access
-            // token. Persist even if the lease lapsed: the newest token wins.
-            await lease.renew();
-            await config.secrets.storeForTenant(
-              tenantId,
-              QUICKBOOKS_REFRESH_TOKEN_SECRET,
-              tokens.refreshToken,
-              { category: ACCOUNTING_SECRET_CATEGORY },
-            );
-            const at = now(config);
-            await mutateConnection(config, tenantId, (row) => {
-              row.tokenVersion += 1;
-              row.lastRefreshedAt = at;
-              row.lastError = '';
-              row.lastErrorAt = null;
-            });
+            // token, but only into the connection this refresh started from. A
+            // refresh that outlived its lease (or runs after it) takes the lease
+            // again and skips the save if the row was reconnected, rebound,
+            // disconnected or flagged meanwhile: those credentials supersede it.
+            const persist = async () => {
+              const row = await findConnection(config, tenantId);
+              if (
+                !row ||
+                row.status !== 'connected' ||
+                row.realmId !== current.realmId ||
+                row.environment !== current.environment ||
+                row.tokenVersion !== expectedVersion
+              )
+                return;
+              await config.secrets.storeForTenant(
+                tenantId,
+                QUICKBOOKS_REFRESH_TOKEN_SECRET,
+                tokens.refreshToken,
+                { category: ACCOUNTING_SECRET_CATEGORY },
+              );
+              const at = now(config);
+              await mutateConnection(config, tenantId, (r) => {
+                r.tokenVersion += 1;
+                r.lastRefreshedAt = at;
+                r.lastError = '';
+                r.lastErrorAt = null;
+              });
+              expectedVersion += 1;
+            };
+            if (await lease.renew()) await persist();
+            else await withLease(config, tenantId, connectionId, persist);
           },
         });
         try {

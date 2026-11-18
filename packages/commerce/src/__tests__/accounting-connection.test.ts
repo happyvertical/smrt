@@ -256,6 +256,77 @@ describe('accounting connection (#5136)', () => {
     );
   });
 
+  it('does not overwrite a newer connection with a rotation that outlived its lease', async () => {
+    await connect();
+    let lateTokens:
+      | { accessToken: string; refreshToken: string; expiresAt: Date }
+      | undefined;
+    const slow = {
+      ...config(),
+      createProvider: ((options: {
+        refreshToken: string;
+        onTokenRefresh: (t: never) => Promise<void>;
+      }) => ({
+        async ensureAccessToken() {
+          lateTokens = await intuit.refresh(options.refreshToken);
+          // The lease lapses mid-refresh; the tenant reconnects to another company.
+          await db.query(
+            "UPDATE accounting_connections SET lease_token = '', lease_expires_at = ''",
+          );
+          await completeQuickBooksConnection(deps, {
+            tenantId: TENANT,
+            realmId: 'realm-2',
+            environment: 'sandbox',
+            tokens: { refreshToken: 'fresh-connect-token' },
+          });
+          await options.onTokenRefresh(lateTokens as never);
+          return 'at';
+        },
+      })) as never,
+    };
+    await withTenantQuickBooksProvider(slow, TENANT, async () => 'ok');
+    const stored = secrets.rows.get(
+      `${TENANT}:${QUICKBOOKS_REFRESH_TOKEN_SECRET}`,
+    );
+    expect(stored).toBe('fresh-connect-token');
+    const connection = await getAccountingConnection(deps, TENANT);
+    expect(connection).toMatchObject({
+      realmId: 'realm-2',
+      status: 'connected',
+    });
+    expect(connection?.tokenVersion).toBe(2);
+  });
+
+  it('decides a rebind from the row inside the lease, not the one read before waiting', async () => {
+    await completeQuickBooksConnection(deps, {
+      tenantId: TENANT,
+      realmId: 'realm-1',
+      environment: 'production',
+      tokens: { refreshToken: intuit.issue() },
+    });
+    const id = (await getAccountingConnection(deps, TENANT))?.id;
+    // Another process holds the lease; while we wait it finishes the same rebind.
+    await db.query(
+      "UPDATE accounting_connections SET lease_token = 'other', lease_expires_at = ? WHERE id = ?",
+      new Date(Date.now() + 60_000).toISOString(),
+      id,
+    );
+    const waiting = completeQuickBooksConnection(deps, {
+      tenantId: TENANT,
+      realmId: 'realm-2',
+      environment: 'production',
+      tokens: { refreshToken: intuit.issue() },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    await db.query(
+      "UPDATE accounting_connections SET realm_id = 'realm-2', live_enabled_realm_id = 'realm-2', lease_token = '', lease_expires_at = '' WHERE id = ?",
+      id,
+    );
+    const result = await waiting;
+    // Already on realm-2 inside the lease: not a rebind, so enablement stands.
+    expect(result.liveEnabledRealmId).toBe('realm-2');
+  });
+
   it('refuses a provider when not connected', async () => {
     await expect(
       withTenantQuickBooksProvider(config(), TENANT, async () => 'x'),

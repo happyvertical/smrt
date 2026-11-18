@@ -280,6 +280,49 @@ describe('payment sync and readback (#5139)', () => {
       expect(calls[1]?.requestId).toBe(calls[0]?.requestId);
     });
 
+    it('lets only one of two racing reconciliations apply', async () => {
+      const s = await seed();
+      const paymentId = await paidPayment(s);
+      const { impl } = port(async () => Promise.reject(new Error('timeout')));
+      await run(paymentId, impl).catch(() => undefined);
+      const unknown = await rowOf(paymentId);
+      const ids = {
+        requestId: String(unknown?.requestId),
+        attemptId: String(unknown?.attemptId),
+      };
+      const reconcile = (
+        outcome: Parameters<
+          typeof reconcileAccountingPaymentSync
+        >[0]['outcome'],
+      ) =>
+        inTenant(() =>
+          reconcileAccountingPaymentSync({
+            db,
+            tenantId: TENANT,
+            paymentId,
+            ...ids,
+            outcome,
+          }),
+        );
+      const results = await Promise.allSettled([
+        reconcile({
+          status: 'found',
+          externalId: 'qb-pay-7',
+          syncedAt: new Date('2026-11-05T00:00:00Z'),
+        }),
+        reconcile({ status: 'absent' }),
+      ]);
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      const final = await rowOf(paymentId);
+      const winner = results.findIndex((r) => r.status === 'fulfilled');
+      expect(final?.status).toBe(winner === 0 ? 'synced' : 'rejected');
+      // A late stale reconciliation can never overwrite the outcome.
+      await expect(reconcile({ status: 'absent' })).rejects.toMatchObject({
+        code: 'RECONCILIATION_REQUIRED',
+      });
+      expect((await rowOf(paymentId))?.status).toBe(final?.status);
+    });
+
     it('records a found outcome as synced without a second push', async () => {
       const s = await seed();
       const paymentId = await paidPayment(s);

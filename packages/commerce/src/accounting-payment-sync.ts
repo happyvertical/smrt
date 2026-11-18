@@ -494,18 +494,52 @@ export async function reconcileAccountingPaymentSync(
       'SYNC_IN_PROGRESS',
       'Reconciliation cannot release a live push owner',
     );
+  // Apply against the observed owner atomically: two reconciliations that read
+  // the same unresolved attempt cannot both win, and a stale one never
+  // overwrites a later success.
+  let applied: { rows: unknown[] };
   if (input.outcome.status === 'found') {
     if (!input.outcome.externalId || !(input.outcome.syncedAt instanceof Date))
       refuse('INVALID_INPUT', 'Reconciliation requires a provider id and time');
-    row.status = 'synced';
-    row.externalId = input.outcome.externalId;
-    row.syncedAt = input.outcome.syncedAt;
-    row.lastError = '';
+    applied = await input.db.query(
+      `UPDATE accounting_payment_syncs
+          SET status = 'synced', external_id = ?, synced_at = ?, last_error = ''
+        WHERE id = ? AND tenant_id = ? AND status = ? AND request_id = ?
+          AND attempt_id = ?
+        RETURNING id`,
+      input.outcome.externalId,
+      input.outcome.syncedAt.toISOString(),
+      row.id,
+      input.tenantId,
+      row.status,
+      input.requestId,
+      input.attemptId,
+    );
   } else {
-    row.status = 'rejected';
-    row.lastError = 'ABSENT_AT_PROVIDER';
+    applied = await input.db.query(
+      `UPDATE accounting_payment_syncs
+          SET status = 'rejected', last_error = 'ABSENT_AT_PROVIDER'
+        WHERE id = ? AND tenant_id = ? AND status = ? AND request_id = ?
+          AND attempt_id = ?
+        RETURNING id`,
+      row.id,
+      input.tenantId,
+      row.status,
+      input.requestId,
+      input.attemptId,
+    );
   }
-  return writeAccountingSyncRecord(row, () => row.save());
+  if (applied.rows.length !== 1)
+    refuse(
+      'RECONCILIATION_REQUIRED',
+      'The payment push changed while it was being reconciled',
+    );
+  return (await collection.findForPayment({
+    tenantId: input.tenantId,
+    realmId: scope.realmId,
+    environment: scope.environment,
+    paymentId: input.paymentId,
+  })) as AccountingPaymentSync;
 }
 
 // ---------------------------------------------------------------------------
