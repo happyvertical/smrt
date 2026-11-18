@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.62.3
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - emit publish-policy.js so the packaged account card resolves its import (#5118) (social)
+- @happyvertical/smrt-config@0.62.3
+  - @happyvertical/smrt-scanner@0.62.3
+  - @happyvertical/smrt-types@0.62.3
+
 ## 0.62.2
 
 ### Patch Changes
