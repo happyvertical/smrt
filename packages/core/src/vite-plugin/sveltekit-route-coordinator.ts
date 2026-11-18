@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import type { SmartObjectManifest } from '../scanner/types.js';
+import { assertSvelteKitObjectRoutesValid } from './generated-route-preflight.js';
 import type { SmrtConfigEnv, SmrtVitePlugin } from './plugin-contract.js';
 import {
   assertNoCrossObjectRouteCollisions,
@@ -439,13 +440,24 @@ async function generateWhenReady(
       }
     },
   };
+  const routeManifest = mergeManifests(
+    contributions.map(({ routeManifest }) => routeManifest),
+  );
+  const semanticManifest = mergeManifests(
+    contributions.map(({ semanticManifest }) => semanticManifest),
+  );
+  // Validate every object's routes before generation sweeps the route tree.
+  assertSvelteKitObjectRoutesValid(
+    primary.projectRoot,
+    routeManifest,
+    semanticManifest,
+    options,
+  );
   await generateSvelteKitRoutes(
     primary.projectRoot,
-    mergeManifests(contributions.map(({ routeManifest }) => routeManifest)),
+    routeManifest,
     options,
-    mergeManifests(
-      contributions.map(({ semanticManifest }) => semanticManifest),
-    ),
+    semanticManifest,
     utilityManifests(
       contributions,
       protectedProducerKnowledgeRoutePaths(sessions, coordinator),

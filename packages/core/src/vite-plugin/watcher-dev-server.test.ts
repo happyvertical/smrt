@@ -36,6 +36,17 @@ ${fields.map((field) => `  ${field} = '';`).join('\n')}
 `;
 }
 
+/** The scanner's start and end log lines, in order. */
+function scanEvents(calls: unknown[][]): Array<'start' | 'end'> {
+  const events: Array<'start' | 'end'> = [];
+  for (const [message] of calls) {
+    const text = String(message);
+    if (text.includes('Using experimental OXC scanner')) events.push('start');
+    if (text.includes('OXC scan completed')) events.push('end');
+  }
+  return events;
+}
+
 describe('smrtPlugin dev-server rescans (real Vite dev server)', () => {
   let projectRoot: string;
   let server: ViteDevServer;
@@ -170,6 +181,48 @@ describe('smrtPlugin dev-server rescans (real Vite dev server)', () => {
     }, WAIT);
     expect(await ssrCollectionNames()).toEqual(['watchdevnotes']);
   }, 30_000);
+
+  it('runs one rescan at a time for a burst of edits and ends on the latest sources', async () => {
+    const logs = vi.mocked(console.log);
+    logs.mockClear();
+    const names = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo'];
+    for (const name of names) {
+      writeFileSync(
+        join(modelsDir(), `WatchDevBurst${name}.ts`),
+        modelSource(`WatchDevBurst${name}`, ['label']),
+      );
+    }
+
+    await vi.waitFor(() => {
+      const keys = Object.keys(readManifest().objects);
+      for (const name of names) {
+        expect(keys).toContain(`@fixture/watch-dev-app:WatchDevBurst${name}`);
+      }
+    }, WAIT);
+    // Let any queued rescan finish before reading the log.
+    await vi.waitFor(() => {
+      const events = scanEvents(logs.mock.calls);
+      expect(events.at(-1)).toBe('end');
+    }, WAIT);
+
+    const events = scanEvents(logs.mock.calls);
+    expect(events.length).toBeGreaterThan(0);
+    // Starts and ends strictly alternate: no scan began while another ran.
+    events.forEach((event, index) => {
+      expect(event).toBe(index % 2 === 0 ? 'start' : 'end');
+    });
+
+    for (const name of names) {
+      unlinkSync(join(modelsDir(), `WatchDevBurst${name}.ts`));
+    }
+    await vi.waitFor(() => {
+      expect(
+        Object.keys(readManifest().objects).filter((key) =>
+          key.includes('WatchDevBurst'),
+        ),
+      ).toEqual([]);
+    }, WAIT);
+  }, 60_000);
 
   it('ignores changes to files outside the include globs', async () => {
     const before = readFileSync(

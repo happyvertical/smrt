@@ -376,7 +376,21 @@ add and unlink alike invalidate every loaded virtual module by its resolved
 environment's hot channel a full reload; `server.reloadModule` cannot be used
 because it skips modules without a file. `watcher-dev-server.test.ts` drives a
 real Vite dev server; a handler test with a relative path cannot see either
-defect.
+defect. Rescans are serialized: one runs and at most one waits; events that
+arrive meanwhile join the waiting one, which scans the latest sources once the
+running one finishes, so an older scan never publishes over a newer one.
+
+Route generation validates every object's routes
+(`assertSvelteKitObjectRoutesValid`, `vite-plugin/generated-route-preflight.ts`:
+the generator's own claim pass per object) before `generateSvelteKitRoutes()`
+sweeps the route tree, on the producer's direct path and the coordinator path
+alike, so a duplicate or mixed-host custom route fails with the previous
+routes still on disk. It checks only what rendering already enforced: two
+claims on one handler file (`Conflicting SvelteKit route`, within an object or
+across objects) stay a hosted-consumer (`rejectRouteCollisions`) rule, so a
+producer-only app still generates STI siblings that share a collection, a
+static action whose path is `[id]` beside CRUD, or a `sync` collection with an
+`apply` action beside the sync-apply route, exactly as before.
 
 The generated API client (`generateClientModule`, behind both
 `@happyvertical/smrt-virt-client` and `@smrt/client`) sends every
