@@ -11,7 +11,38 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
+import { ensureMailAccessEnforcementRegistered } from './access-enforcement.js';
 import { ensureMessagingPermissionsRegistered } from './permissions.js';
+
+// ─────────────────────────────────────────────────────────────────────────
+// Per-account mail access (owner + grants; see access.ts)
+// ─────────────────────────────────────────────────────────────────────────
+export {
+  assertMailAccess,
+  canAccessMailAccount,
+  configureMailAccess,
+  decideMailAccess,
+  deniedMailAccountIds,
+  type GrantMailAccessInput,
+  isMailScope,
+  MAIL_ACCOUNT_RESOURCE_TYPE,
+  MAIL_SCOPES,
+  type MailAccessAdmin,
+  type MailAccessConfig,
+  type MailAccessDecision,
+  MailAccessError,
+  type MailAccessReason,
+  type MailAccessResolver,
+  type MailAccessResolverContext,
+  MailAccessService,
+  type MailAccessSubject,
+  type MailPrincipal,
+  type MailScope,
+  mailScopePermission,
+  resetMailAccess,
+  runWithMailSystemAccess,
+} from './access.js';
+
 import { ensureBuiltinMessagingProvidersRegistered } from './providers.js';
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -226,6 +257,7 @@ export type {
 
 ensureBuiltinMessagingProvidersRegistered();
 ensureMessagingPermissionsRegistered();
+ensureMailAccessEnforcementRegistered();
 
 export {
   assertNotificationProfileRecipientSchema,

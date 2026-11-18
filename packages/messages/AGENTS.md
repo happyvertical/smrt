@@ -34,6 +34,39 @@ Multi-channel messaging with STI hierarchies for both messages and accounts. Cre
   generated mutations around the settings service or make secret fields writable.
 - **Recipe `messages.slack`** (`src/recipes.ts`, help in `src/help/slack.md`): lists Slack messages and workspaces beside the Mailbox and Notifications recipes; workspaces stay read-only and sending goes through the senders, not generated routes. Fields it shows carry `@field({ description })` in plain words; keep them when editing the models.
 
+## Per-account mail access (owner + grants)
+
+Optional by default: `Account.ownerUserId` is nullable, and an account without
+an owner stays tenant-wide. Apps that want private or shared mailboxes set
+owners and call `configureMailAccess({ options, resolvePrincipal })` at startup
+(`access.ts`); smrt never knows the host's credential model, the host returns a
+`MailPrincipal` (`userId` + tenant, optional `scopes` / `accountIds` ceilings).
+
+- Scopes `read`, `triage`, `draft`, `send` are `ResourceGrant` rows (resource
+  type `messages:account`, permission `messages.<scope>`) checked by
+  `checkResourceOperationPermission`, so the grantee also needs the tenant
+  `messages.<scope>` permission (the ceiling). The owner holds every scope
+  implicitly. Agents are `User` rows the host maps its credential to; the
+  principal ceilings are intersected with the grant, never added to it.
+- `access-enforcement.ts` is a `GlobalInterceptors` entry registered at package
+  load. Emails, folders and attachments (matched by STI ancestry) are filtered
+  in `beforeList`/`afterList`/`afterGet`; raw `query()` on them is refused while
+  any account is closed to the principal. Fail closed: no principal, no
+  resolver or a foreign tenant means owned accounts are invisible. No tenant
+  admin or super-admin bypass; trusted work (sync, outbox) uses
+  `runWithMailSystemAccess()`. `EmailAccount.syncFrom()` does so itself.
+- `Message.send()` needs the `send` scope on an owned account. Account rows are
+  not filtered (senders, routes and the outbox read them without a principal).
+- `MailAccessService` (`grant`, `revoke`, `list`, `setOwner`) needs tenant
+  `messages.manage-access` AND ownership (or delegation); an administrator
+  cannot read, self-grant or take over an owned mailbox. Unowned accounts can be
+  claimed once with `messages.manage-credentials`.
+- Not unconfigured-safe: with no `configureMailAccess` call, reads are
+  unenforced (the collection layer has no database handle); only sends from an
+  owned account fail closed.
+- `connectionStatus` (`connected` / `needs_reconnect`) and `statusMessage` mark
+  an account whose sign-in the server refused; `syncFrom()` sets it.
+
 ## In-app notifications (`UserNotification`)
 
 The in-app channel: one stored row per person, with read state.

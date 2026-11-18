@@ -47,6 +47,14 @@ export class Attachment extends SmrtObject {
 
   @foreignKey('Message')
   messageId = '';
+  /**
+   * The mail account this file belongs to. Copied from its message when the
+   * attachment is saved, so per-account mail access can filter attachment
+   * reads (lists, projections, counts) without a join. Null for rows saved
+   * before the column existed: run `AttachmentCollection.backfillAccountIds()`.
+   */
+  @foreignKey('Account')
+  accountId: string | null = null;
   filename = '';
   contentType = '';
   size = 0;
@@ -63,6 +71,8 @@ export class Attachment extends SmrtObject {
 
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.messageId !== undefined) this.messageId = options.messageId;
+    if (options.accountId !== undefined)
+      this.accountId = options.accountId || null;
     if (options.filename !== undefined) this.filename = options.filename;
     if (options.contentType !== undefined)
       this.contentType = options.contentType;

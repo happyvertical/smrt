@@ -217,6 +217,10 @@ export interface AccountOptions extends SmrtObjectOptions {
   providerType?: string;
   channelType?: MessagingChannel;
   credentialSecretId?: string | null;
+  ownerUserId?: string | null;
+  label?: string | null;
+  connectionStatus?: string | null;
+  statusMessage?: string | null;
   isActive?: boolean;
   lastSyncAt?: Date | null;
   settings?: string;
@@ -270,6 +274,7 @@ export interface AttachmentOptions extends SmrtObjectOptions {
   id?: string;
   tenantId?: string | null;
   messageId?: string;
+  accountId?: string | null;
   filename?: string;
   contentType?: string;
   size?: number;

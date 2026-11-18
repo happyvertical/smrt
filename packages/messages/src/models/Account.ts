@@ -7,7 +7,12 @@
 // Register the package manifest before this module's @smrt() decorator
 // runs, whichever chunk the library build places it in (#3098).
 import '../__smrt-register__.js';
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  field,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
 import {
   createAccountSecretService,
@@ -48,6 +53,31 @@ export class Account extends SmrtObject {
   credentialSecretId: string | null = null;
   @field({ description: 'Whether this account is enabled for messaging.' })
   isActive = true;
+  /**
+   * The person who owns this account. Optional at framework level: an account
+   * with no owner keeps tenant-wide access. An app that wants private or
+   * shared mailboxes sets it (and hardens it to required); see `access.ts`.
+   */
+  @crossPackageRef('@happyvertical/smrt-users:User')
+  @field({
+    description:
+      'The person who owns this account and decides who else may use it.',
+  })
+  ownerUserId: string | null = null;
+  @field({
+    description:
+      'A short name shown beside this account, such as Support or Personal.',
+  })
+  label: string | null = null;
+  @field({
+    description:
+      'Whether the saved sign-in still works: connected, or needs_reconnect after the server refused it.',
+  })
+  connectionStatus: string | null = null;
+  @field({
+    description: 'Why the account needs attention, in plain words.',
+  })
+  statusMessage: string | null = null;
   @field({ description: 'When this account last checked for new messages.' })
   lastSyncAt: Date | null = null;
   // JSON. Sensitive (#1540): may hold a plaintext credential fallback, so it is
@@ -80,6 +110,13 @@ export class Account extends SmrtObject {
     if (options.credentialSecretId !== undefined)
       this.credentialSecretId = options.credentialSecretId || null;
     if (options.isActive !== undefined) this.isActive = options.isActive;
+    if (options.ownerUserId !== undefined)
+      this.ownerUserId = options.ownerUserId || null;
+    if (options.label !== undefined) this.label = options.label || null;
+    if (options.connectionStatus !== undefined)
+      this.connectionStatus = options.connectionStatus || null;
+    if (options.statusMessage !== undefined)
+      this.statusMessage = options.statusMessage || null;
     if (options.lastSyncAt !== undefined)
       this.lastSyncAt = options.lastSyncAt || null;
     if (options.settings !== undefined) this.settings = options.settings;
@@ -122,6 +159,31 @@ export class Account extends SmrtObject {
 
   get hasCredentials(): boolean {
     return Boolean(this.credentialSecretId || this.settings);
+  }
+
+  /** Whether this account needs its sign-in entered again. */
+  get needsReconnect(): boolean {
+    return this.connectionStatus === 'needs_reconnect';
+  }
+
+  /**
+   * Record that the server refused this account's sign-in, so the host can ask
+   * the owner to reconnect instead of failing every sync silently.
+   */
+  async markNeedsReconnect(reason: string): Promise<void> {
+    this.connectionStatus = 'needs_reconnect';
+    this.statusMessage = reason.slice(0, 200);
+    this.updatedAt = new Date();
+    await this.save();
+  }
+
+  /** Record a working sign-in (after connect, reconnect, or a good sync). */
+  async markConnected(): Promise<void> {
+    if (this.connectionStatus === 'connected' && !this.statusMessage) return;
+    this.connectionStatus = 'connected';
+    this.statusMessage = null;
+    this.updatedAt = new Date();
+    await this.save();
   }
 
   /**
