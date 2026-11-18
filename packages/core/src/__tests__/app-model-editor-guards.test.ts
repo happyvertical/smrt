@@ -7,11 +7,13 @@ import {
   disableTenancy,
   enableTenancy,
 } from '../../../tenancy/src/interceptor.js';
+import { planAppEdit } from '../cookbook/app-tool-edits.js';
 import {
   type AppModelEdit,
   type AppModelEditorOptions,
   createAppModelEditor,
 } from '../cookbook/model-editor.js';
+import { fitsStorageIdentifier, storageColumns } from '../cookbook/models.js';
 import { COOKBOOK_SCHEMA_URL } from '../cookbook/validate.js';
 import { field } from '../decorators/index.js';
 import { migrateSmrtSchemas } from '../migrations/orchestrate.js';
@@ -381,5 +383,129 @@ describe('app model editor: reconciliation scope and pending revisions', () => {
       field: { type: 'text' },
     });
     expect(await columns(MEMBER_TABLE)).toContain('nickname');
+  });
+});
+
+/** identifier('Name Of The Person Who Signed Off On The Last Fire Inspection Here'): a 66-byte column. */
+const LONG_FIELD = 'nameOfThePersonWhoSignedOffOnTheLastFireInspectionHere';
+/** A 61-byte column whose money companion is 70 bytes. */
+const LONG_MONEY = 'dateOfLastInspectionByTheFireMarshalForThisLocation';
+
+describe('app model editor: storage identifier length', () => {
+  let restore: () => void;
+  let db: Awaited<ReturnType<typeof getDatabase>>;
+  beforeEach(async () => {
+    restore = snapshotObjectRegistryState();
+    ObjectRegistry.clear();
+    globalThis.__smrtModelReadiness?.clear();
+    db = await getTestDatabase({
+      type: databaseType,
+      classes: [],
+      includeSystemTables: false,
+    });
+    registerMember();
+    enableTenancy();
+    await migrateSmrtSchemas({ db, packageName: APP, engineHint: engine });
+  });
+  afterEach(async () => {
+    setRuntimeExposureGate(undefined);
+    globalThis.__smrtModelReadiness?.clear();
+    disableTenancy();
+    await db.close?.();
+    restore();
+  });
+  const application = 'editor-guards-identifiers';
+  const editorFor = () =>
+    createAppModelEditor({
+      db,
+      application,
+      tenantId: TENANT,
+      packageName: APP,
+      cookbook: memberBook(),
+      catalog: memberCatalog,
+      authorize: (c) => c.actor === 'owner',
+    });
+  const applier =
+    (e: Awaited<ReturnType<typeof editorFor>>) => (value: AppModelEdit) =>
+      e.apply(value, {
+        actor: 'owner',
+        tenantId: TENANT,
+        expectedRevision: e.snapshot().revision,
+        requestId: `req-${crypto.randomUUID()}`,
+      });
+
+  it('refuses derived tables and columns over 63 bytes, money companions included', async () => {
+    const e = await editorFor();
+    const apply = applier(e);
+    await expect(
+      apply({
+        type: 'add_field',
+        model: MEMBER,
+        name: LONG_FIELD,
+        field: { type: 'text' },
+      }),
+    ).rejects.toThrow(
+      /INVALID_MODEL_EDIT: .*name_of_the_person_who_signed_off_on_the_last_fire_inspection_here" \(66 bytes\); PostgreSQL allows 63/,
+    );
+    await expect(
+      apply({
+        type: 'add_field',
+        model: MEMBER,
+        name: LONG_MONEY,
+        field: { type: 'money', currency: 'CAD' },
+      }),
+    ).rejects.toThrow(/INVALID_MODEL_EDIT: .*_currency" \(70 bytes\)/);
+    await expect(
+      apply({
+        type: 'create_list',
+        name: 'GuardAnExceptionallyLongListNameThatNoPostgresTableCouldEverHold',
+        list: mats,
+      }),
+    ).rejects.toThrow(/INVALID_MODEL_EDIT: models\.lists\..* stores as table/);
+    expect(await e.history()).toEqual([]);
+    // The same 61-byte name is fine as a plain field.
+    await apply({
+      type: 'add_field',
+      model: MEMBER,
+      name: LONG_MONEY,
+      field: { type: 'date' },
+    });
+  });
+
+  it('the assistant derives names that fit from long labels', async () => {
+    const e = await editorFor();
+    const snapshot = e.snapshot();
+    const field = planAppEdit(
+      'app.addField',
+      {
+        list: MEMBER,
+        label: 'Date Of Last Inspection By The Fire Marshal For This Location',
+        kind: 'money',
+        currency: 'CAD',
+        expectedRevision: 0,
+      },
+      snapshot,
+      memberCatalog,
+    );
+    const name = (field.edit as { name: string }).name;
+    expect(
+      storageColumns(name, { type: 'money' }).every(fitsStorageIdentifier),
+    ).toBe(true);
+    await applier(e)(field.edit);
+    const list = planAppEdit(
+      'app.addList',
+      {
+        label:
+          'Equipment Loaned Out To Members During The Winter Season Every Year',
+        nameField: 'Item',
+        fields: [{ label: 'Item', kind: 'text' }],
+        expectedRevision: 1,
+      },
+      e.snapshot(),
+      memberCatalog,
+    );
+    const listName = (list.edit as { name: string }).name;
+    expect(fitsStorageIdentifier(runtimeListTableName(listName))).toBe(true);
+    await applier(e)(list.edit);
   });
 });

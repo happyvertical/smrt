@@ -50,7 +50,10 @@ import {
 import {
   CUSTOM_MODEL_REF,
   cookbookModelCatalog,
+  fitsStorageIdentifier,
   isCustomIdentifier,
+  MAX_STORAGE_IDENTIFIER_BYTES,
+  storageIdentifierProblems,
   validateCookbookModels,
 } from './models.js';
 import { validateCookbook } from './validate.js';
@@ -347,6 +350,13 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     const errors = validateCookbookModels(models);
     if (errors.length)
       throw new Error(errors.map((e) => `${e.path}: ${e.message}`).join('; '));
+    // Derived table and column names must fit the strictest supported engine.
+    // Declarations the journal already holds are not new and stay accepted.
+    const tooLong = storageIdentifierProblems(models, archived);
+    if (tooLong.length)
+      throw new Error(
+        `INVALID_MODEL_EDIT: ${tooLong.map((e) => `${e.path} ${e.message}`).join('; ')}`,
+      );
     const used = coveredModels(options.catalog, doc);
     for (const target of Object.keys(models.fields))
       if (!used.has(target) || !ObjectRegistry.getClass(target))
@@ -686,6 +696,22 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
    */
   async function plan(db: DatabaseInterface, tables: Set<string>) {
     if (!tables.size) return;
+    if (engine === 'postgres') {
+      // PostgreSQL truncates a longer identifier, so a declaration over the
+      // limit (journalled before edits were checked) never matches its own
+      // column again and every migration of its table would fail. Refuse the
+      // edit up front; the model keeps working and other models stay editable.
+      const schemas = ObjectRegistry.getAllSchemasAsDefinitions({ tables });
+      const long = Object.values(schemas).flatMap((schema) =>
+        [schema.tableName, ...Object.keys(schema.columns)]
+          .filter((name) => !fitsStorageIdentifier(name))
+          .map((name) => `${schema.tableName}.${name}`),
+      );
+      if (long.length)
+        throw new Error(
+          `MODEL_MIGRATION_REQUIRED: ${long.join(', ')} exceed PostgreSQL's ${MAX_STORAGE_IDENTIFIER_BYTES}-byte identifier limit, so this table cannot take new fields. Add the field to another list, or have an operator rename the stored column and its declaration`,
+        );
+    }
     const pending = await getPendingSchemaStatements(db, {
       engineHint: engine,
       tables,
