@@ -5,10 +5,10 @@ description: "Core SMRT framework for business objects, persistence, and generat
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-18T08:20:27Z"
+  at: "2026-11-18T19:28:42Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:c429767bcae0deefc81648ef4b04b073f7bc39b631f18aeb2baa07e8430b591b"
+source_revision: "sha256:ae3729accaa7881817f33ba577c2c9cb1dd4ee5c847efcd6e63feca029b32877"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/package.json"
@@ -116,6 +116,9 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/test-types.md"
     title: "@happyvertical/smrt-core packages/core/agents/test-types.md"
   - id: "agents-35"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/transport-kernel.md"
+    title: "@happyvertical/smrt-core packages/core/agents/transport-kernel.md"
+  - id: "agents-36"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/core/agents/write-through.md"
     title: "@happyvertical/smrt-core packages/core/agents/write-through.md"
 ---
@@ -165,6 +168,7 @@ sources:
 - `packages/core/agents/sqlite-lock-wait.md`
 - `packages/core/agents/system-diagnostics.md`
 - `packages/core/agents/test-types.md`
+- `packages/core/agents/transport-kernel.md`
 - `packages/core/agents/write-through.md`
 
 ## Framework dependencies
@@ -195,6 +199,7 @@ sources:
 - `./cookbook/engine`
 - `./cookbook/tools`
 - `./cookbook/v1.schema.json`
+- `./error-contract`
 - `./filesystem`
 - `./generators`
 - `./generators/custom-action`
@@ -222,6 +227,7 @@ sources:
 - `./smrt-knowledge.json`
 - `./table-cache`
 - `./testing`
+- `./transport`
 - `./ui-metadata`
 - `./utils`
 - `./utils/database-url`

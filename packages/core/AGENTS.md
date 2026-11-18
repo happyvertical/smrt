@@ -39,6 +39,7 @@ and repository rules.
 | `src/app-models.ts`, `src/cookbook/model-{editor,history}.ts` | Versioned app fields/lists: runtime replacement, tracked migrations, SQLite/PostgreSQL history, host publication | [agents/app-models.md](agents/app-models.md) |
 | `src/cookbook/engine/` | Headless cookbook command engine: typed commands, idempotent retries, atomic batches, receipts, tool schemas (`./cookbook/engine`; #3753) | [agents/cookbook-engine.md](agents/cookbook-engine.md) |
 | `src/inference.ts`, `getAiClient(tier?)`, `src/inference-target.ts`, `src/inference-availability.ts`, `src/inference-capabilities.ts`, `src/inference-gate.ts` | Inference tiers (`cheap`…`best`, `auto`), `inference` config, `setInferenceResolver()` / `setInferenceExecutor()` seams, per-tier clients and usage tags, fusion kind and run seams (#4750, #4752, #4753); raw-client bindings `resolveInferenceTarget()` (#4756); mode and typed `AI_UNAVAILABLE`, status probe and `_inference` route (#4757); capability detection and recorded fallbacks (#4758); hosted gate seam `setInferenceGate()` (#4760) | [agents/inference.md](agents/inference.md) |
+| `src/transport/`, `src/error-contract.ts` | Transport kernel: one request pipeline, legacy profiles, error contract (#5158) | [agents/transport-kernel.md](agents/transport-kernel.md) |
 | `src/browser.ts`, `src/host.ts`, `src/host.browser.ts` | Browser entry that builds and evaluates without Node-only modules: host seam, `package.json#browser` swaps, `pnpm test:browser` (#2838) | [agents/browser-entry.md](agents/browser-entry.md) |
 
 ## Cross-module invariants
@@ -100,12 +101,10 @@ and repository rules.
   The claim insert must never raise on conflict: PostgreSQL aborts the whole
   transaction on any raised error, which would take the recovery `SELECT`
   down with it too — this is why it is `DO NOTHING`, not a plain `INSERT`
-  caught for `isUniqueViolationError`. Completed claims are bounded by
-  `runRetentionSweep()`'s `run-once-claims` task (`system/retention.ts`,
-  `DEFAULT_RETENTION_POLICY.runOnceClaims`, default 30 days on
-  `completed_at`; `in_progress` rows are never matched) — the window is a
-  replay deadline, not just disk hygiene: a token replayed after its claim
-  is swept runs `work()` again. See `agents/run-once.md`.
+  caught for `isUniqueViolationError`. `runRetentionSweep()` prunes completed
+  claims (default 30 days on `completed_at`, never `in_progress`): a replay
+  deadline, since a token replayed after the sweep runs `work()` again. See
+  `agents/run-once.md`.
 - `ensureSystemTables(db, typeHint?)` provisions framework tables idempotently;
   call it on a base PostgreSQL connection before caller-owned transactions.
   Bootstrap uses a transaction-scoped advisory lock, taken only when the
