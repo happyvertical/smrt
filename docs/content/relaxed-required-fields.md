@@ -17,7 +17,7 @@ If your app relied on one of these fields being required, harden it in a
 same-named subclass. For a text field:
 
 ```ts
-@smrt()
+@smrt({ replaceParent: true })
 export class Course extends SmrtCourse {
   @field({ required: true })
   override title: string = '';
