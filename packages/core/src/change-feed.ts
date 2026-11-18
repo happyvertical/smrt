@@ -142,6 +142,7 @@ import { resolveDbCacheKey } from './collection-cache.js';
 import { resolveDispatchTenantScope } from './dispatch/tenant-resolver.js';
 import {
   isEmbeddedDatabase,
+  usesPostgresDialect,
   withEmbeddedWriteQueue,
 } from './embedded-write-queue.js';
 import { GlobalInterceptors, type InterceptorContext } from './interceptors.js';
@@ -542,6 +543,9 @@ function getEngine(
   typeHint?: string,
 ): ReturnType<typeof detectEngine> {
   const withConfig = db as DatabaseWithConfig;
+  // An embedded PostgreSQL (PGlite) handle names a data directory, not a
+  // `postgres://` URL, so URL detection would pick SQLite's dialect for it.
+  if (!typeHint && usesPostgresDialect(db)) return 'postgres';
   const engine = detectEngine(
     db.url || withConfig.config?.url || '',
     typeHint || withConfig.type || withConfig.config?.type,
