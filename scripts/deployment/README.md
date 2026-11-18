@@ -260,10 +260,14 @@ the release still records it on resume. A legacy manager seen at `finalized` or 
 legacy applier wrote again and blocks. The legacy Kustomization must keep
 reconciling, unsuspended, through `helm-established`; finalization requires it
 suspended (the platform's reviewed retirement step), and every normal mutable
-command afterwards refuses a resumed or unsuspended legacy Kustomization. Keep
-the suspended legacy Kustomization and its source while adoption commands may
-still be run: `adopt-status`/`adopt-or-resume` reobserve them, while normal
-commands also accept their deletion.
+command afterwards refuses a resumed or unsuspended legacy Kustomization. Once
+finalized, the suspended legacy Kustomization and its source may also be
+deleted (pruning was disabled at relinquishment, so the adopted objects stay):
+their absence is the retired state, accepted alike by normal commands and by
+`adopt-or-resume`'s reobservation once the journal records `finalized`, which
+still requires a present legacy Kustomization to be the journaled UID and
+suspended. Until then, including the observation that commits finalization,
+absence is an error: that gate must see the suspended, non-pruning applier.
 Finalization atomically renames staging to canonical with status `complete`,
 `adoption-proof` (observation identity) and `adoption-state` (journal identity).
 Actual binding-version annotations are pinned. Resume after finalization

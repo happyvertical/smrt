@@ -656,15 +656,23 @@ test('native legacy gates bind actual UID, stop/relinquish revisions, selectors,
         [plan.qualification.file]: qualificationBytes,
       },
     };
+    // After finalization the legacy objects may be gone (retired); the fake
+    // models deletion by name through getIfPresent only.
+    const deleted = new Set();
     const helpers = {
-      get: async (kind, name) =>
-        name === 'new-app'
+      get: async (kind, name) => {
+        // A plain read of a deleted object fails like the live adapter's.
+        if (deleted.has(kind) && !['new-app', 'new-source'].includes(name))
+          throw new Error(`Kubernetes read failed: get ${kind}/${name}`);
+        return name === 'new-app'
           ? targetKS
           : name === 'new-source'
             ? { metadata: { uid: 'new-source-uid' } }
             : kind === 'gitrepository'
               ? source
-              : ks,
+              : ks;
+      },
+      getIfPresent: async (kind, name) => (deleted.has(kind) ? null : helpers.get(kind, name)),
       namespaceInventory: async () => [actual, ingress],
       verifyStopped: async () => {},
       maintenance: async () => {},
@@ -859,6 +867,36 @@ test('native legacy gates bind actual UID, stop/relinquish revisions, selectors,
     await assert.rejects(counting.observeAdopted(plan, adopted, 'finalized'), /not acknowledged/);
     ks.status.conditions = conditions;
     assert.ok(await counting.observeAdopted(plan, adopted, 'finalized'));
+    // Retired for good: a deleted legacy Kustomization (and source) is the
+    // state assertAdoptionComplete already accepts, so the finalized
+    // reobservation accepts it too — but only once the journal records
+    // finalization. The observation that commits finalization (journal still
+    // at helm-established) must see the suspended applier; before that
+    // absence is an error, and a same-name replacement with another UID
+    // never passes.
+    deleted.add('kustomization');
+    await assert.rejects(counting.observeAdopted(plan, { ...adopted, state: { stage: 'helm-established' } }, 'finalized'), /Kubernetes read failed/, 'absence is refused while committing finalization');
+    await assert.rejects(counting.observeAdopted(plan, { ...adopted, state: { stage: 'helm-established' } }, 'helm-established'), /Kubernetes read failed/);
+    const retired = { ...adopted, state: { stage: 'finalized' } };
+    assert.ok(await counting.observeAdopted(plan, retired, 'finalized'), 'deleted legacy Kustomization is retired');
+    deleted.add('gitrepository');
+    assert.ok(await counting.observeAdopted(plan, retired, 'finalized'), 'deleted legacy source too');
+    deleted.delete('kustomization');
+    assert.ok(await counting.observeAdopted(plan, retired, 'finalized'), 'suspended Kustomization without its source');
+    deleted.clear();
+    source.metadata.uid = 'replacement';
+    deleted.add('kustomization');
+    await assert.rejects(counting.observeAdopted(plan, retired, 'finalized'), /not acknowledged/);
+    source.metadata.uid = plan.legacy.source.uid;
+    deleted.clear();
+    const uid = ks.metadata.uid;
+    ks.metadata.uid = 'replacement';
+    await assert.rejects(counting.observeAdopted(plan, retired, 'finalized'), /not acknowledged/);
+    ks.metadata.uid = uid;
+    // A present but unsuspended applier is still refused at the retired stage.
+    delete ks.spec.suspend;
+    await assert.rejects(counting.observeAdopted(plan, retired, 'finalized'), /must be suspended/);
+    ks.spec.suspend = true;
     actual.metadata.managedFields.unshift(structuredClone(legacyEntry));
     await assert.rejects(counting.observeAdopted(plan, adopted, 'finalized'), /returned after establishment/);
     assert.equal(released.length, 2, 'nothing is released after establishment');

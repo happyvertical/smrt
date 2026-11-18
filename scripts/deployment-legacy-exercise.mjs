@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { request as httpsRequest } from 'node:https';
+import { Agent as HttpsAgent, request as httpsRequest } from 'node:https';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   appendFileSync,
@@ -324,7 +324,7 @@ export function assertRetryOnFailureSupport(documents) {
 // comes back, so every later probe sees ECONNREFUSED with no diagnosis. Keep
 // the local port stable, respawn on exit until stopped, and report each exit.
 export function supervisedForward(start, { name, note, retryMs = 2000, startupMs = 30000 }) {
-  let child, output = '', port = 0, stopped = false;
+  let child, output = '', port = 0, stopped = false, exits = 0;
   const lastLine = () => output.trim().split('\n').filter(Boolean).at(-1) ?? '';
   const spawnChild = () => {
     output = '';
@@ -333,6 +333,7 @@ export function supervisedForward(start, { name, note, retryMs = 2000, startupMs
       stream?.on('data', (chunk) => { output += chunk; });
     child.on('exit', (code, signal) => {
       if (stopped) return;
+      exits++;
       note(`port-forward ${name} exited (${code ?? signal}): ${lastLine()}; restarting on 127.0.0.1:${port}`);
       setTimeout(() => { if (!stopped) spawnChild(); }, retryMs).unref?.();
     });
@@ -349,7 +350,7 @@ export function supervisedForward(start, { name, note, retryMs = 2000, startupMs
       if (!match) return;
       child.off('exit', first.exit);
       port = Number(match[1]);
-      settle(() => resolve({ port, stop, kill: stop }));
+      settle(() => resolve({ port, stop, kill: stop, exits: () => exits }));
     }, 50);
     poll.unref?.();
   });
@@ -433,7 +434,13 @@ export async function legacyMain(env = process.env) {
   const kubeconfig = resolve(env.KUBECONFIG),
     children = [];
   let created = false;
-  const note = (message) => console.log(`[legacy-exercise] ${message}`);
+  const startedAt = Date.now();
+  // Elapsed seconds let a continuity sample (timestamped) be placed against
+  // the stage the exercise was in.
+  const note = (message) =>
+    console.log(
+      `[legacy-exercise] ${message} (t+${((Date.now() - startedAt) / 1000).toFixed(1)}s)`,
+    );
   const sanitize = (output) => {
     let text = String(output ?? '').replace(
       /fixture-[a-z-]+-password/g,
@@ -563,6 +570,7 @@ export async function legacyMain(env = process.env) {
     }
     throw new Error(`Timeout ${description}${last ? `: ${last}` : ''}`);
   };
+  const forwards = new Map();
   const forward = async (name, port, ns = fixtures) => {
     const handle = await supervisedForward(
       (local) =>
@@ -586,6 +594,7 @@ export async function legacyMain(env = process.env) {
       { name, note },
     );
     children.push(handle);
+    forwards.set(handle.port, handle);
     return handle.port;
   };
   const download = async (artifact, name) => {
@@ -1280,6 +1289,8 @@ export async function legacyMain(env = process.env) {
     assert.ok(!Object.hasOwn(historyPods()[0].metadata.labels ?? {}, 'app.kubernetes.io/instance'), 'legacy history Pod must lack the instance label');
     const historyUids = [historyJob.metadata.uid, historyPods()[0].metadata.uid];
     const ingressTlsPort=await forward('legacy-ingress-ingress-nginx-controller',443,'ingress-nginx');
+    const probeAgent=new HttpsAgent({keepAlive:true,maxSockets:4});
+    children.push({kill:()=>probeAgent.destroy()});
     const tlsOptions={trustedCa:[readFileSync(join(tlsDir,'ca.crt'),'utf8')],endpoint:async(host,port)=>{assert.ok(['app.legacy.invalid','www.legacy.invalid'].includes(host));assert.equal(port,443);return{host:'127.0.0.1',port:ingressTlsPort};}};
     const publicRequest = async (url, options = {}) => {
       const parsed=new URL(url);
@@ -1303,10 +1314,16 @@ export async function legacyMain(env = process.env) {
       assert.equal(parsed.protocol,'https:');
       return new Promise((resolve,reject)=>{
         let responseStarted=false;
-        const request=httpsRequest({hostname:'127.0.0.1',port:ingressTlsPort,servername:parsed.hostname,ca:tlsOptions.trustedCa,method:options.method??'GET',path:parsed.pathname+parsed.search,headers:{host:parsed.hostname},rejectUnauthorized:true},response=>{
-          responseStarted=true;response.on('error',reject);
+        // Keep-alive on purpose: every fresh connection is a new stream over
+        // the kubectl port-forward, which dies ("lost connection to pod")
+        // under that churn, and lands on a freshly reloaded nginx worker
+        // before its backends are synced. A reused socket the server closed
+        // meanwhile is reported with request.reusedSocket so the probe can
+        // retry that one race on a new socket.
+        const request=httpsRequest({agent:probeAgent,hostname:'127.0.0.1',port:ingressTlsPort,servername:parsed.hostname,ca:tlsOptions.trustedCa,method:options.method??'GET',path:parsed.pathname+parsed.search,headers:{host:parsed.hostname},rejectUnauthorized:true},response=>{
+          responseStarted=true;response.on('error',error=>{error.responseStarted=true;reject(error);});
           let body='';response.setEncoding('utf8');response.on('data',chunk=>{body+=chunk;});response.on('end',()=>resolve(new Response(body,{status:response.statusCode,headers:response.headers})));
-        });request.setTimeout(10000,()=>request.destroy(new Error('fixture HTTPS timeout')));request.on('error',error=>{if(!responseStarted)reject(error);});request.end(options.body);
+        });request.setTimeout(10000,()=>request.destroy(new Error('fixture HTTPS timeout')));request.on('error',error=>{if(!responseStarted){error.reusedSocket=request.reusedSocket;reject(error);}});request.end(options.body);
       });
     };
     const assertHTTP = async (status) => {
@@ -1324,23 +1341,79 @@ export async function legacyMain(env = process.env) {
       await assertHTTP(200);
       return true;
     });
+    // A connection refused or reset before any response is retried only when
+    // the supervised kubectl port-forward is observed to have exited (it dies
+    // on "lost connection to pod" and is respawned): that is the fixture's
+    // transport, not the ingress. The exit may be reported a moment after the
+    // fault, so the probe waits a bounded window for it; without an exit the
+    // fault stays fatal, as does every error after a response started and
+    // every response the ingress itself produced.
+    const ingressForward = forwards.get(ingressTlsPort);
+    let forwardExitsSeen = ingressForward.exits();
+    const transportFault = (error) =>
+      ['ECONNREFUSED', 'ECONNRESET', 'EPIPE'].includes(error?.code) &&
+      !error.responseStarted;
+    const probe = async (url, retries) => {
+      let reuseRetries = 0;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const response = await publicRequest(url);
+          forwardExitsSeen = ingressForward.exits();
+          return response;
+        } catch (error) {
+          // The keep-alive reuse race (server closed an idle socket as the
+          // request was written): retry at once on a new socket, as Node
+          // documents for request.reusedSocket; bounded by the pool size.
+          if (error.reusedSocket && error.code === 'ECONNRESET' && reuseRetries++ < 4) {
+            retries.reused = (retries.reused ?? 0) + 1;
+            continue;
+          }
+          if (!transportFault(error) || attempt >= 25) throw error;
+          // Wait briefly for the forward's exit to be reported; a fault with
+          // a forward that never exited is the ingress's, and fatal.
+          for (let i = 0; i < 15 && ingressForward.exits() === forwardExitsSeen; i++)
+            await delay(200);
+          if (ingressForward.exits() === forwardExitsSeen) throw error;
+          retries.count++;
+          await delay(200);
+        }
+      }
+    };
     sampler = (async () => {
       while (!sampleStop) {
         try {
-          const app = await publicRequest('https://app.legacy.invalid/'),
-            site = await publicRequest('https://www.legacy.invalid/legal.html');
-          samples.push({
+          const retries = { count: 0 };
+          const app = await probe('https://app.legacy.invalid/', retries),
+            site = await probe('https://www.legacy.invalid/legal.html', retries);
+          const sample = {
             at: Date.now(),
             app: app.status,
             site: site.status,
             release: app.headers.get('x-smrt-release'),
             sequence: app.headers.get('x-smrt-sequence'),
+            ...(retries.count ? { forwardRetries: retries.count } : {}),
+            ...(retries.reused ? { reusedSocketRetries: retries.reused } : {}),
+          };
+          samples.push(sample);
+          // Attribute an unexpected answer: the responder's 503 carries the
+          // release headers; the ingress's own carries none and a nginx body.
+          const detail = async () => ({
+            sample,
+            elapsed: (sample.at - startedAt) / 1000,
+            appHeaders: Object.fromEntries(app.headers),
+            appBody: (await app.text()).slice(0, 200),
+            siteHeaders: Object.fromEntries(site.headers),
           });
-          assert.ok([200, 503].includes(app.status));
-          assert.equal(site.status, 200);
-          if (app.status === 503) {
-            assert.equal(app.headers.get('x-smrt-release'), 'adopt-4481');
-            assert.ok(Number(app.headers.get('x-smrt-sequence')) >= 1);
+          try {
+            assert.ok([200, 503].includes(app.status));
+            assert.equal(site.status, 200);
+            if (app.status === 503) {
+              assert.equal(app.headers.get('x-smrt-release'), 'adopt-4481');
+              assert.ok(Number(app.headers.get('x-smrt-sequence')) >= 1);
+            }
+          } catch (error) {
+            error.detail = await detail();
+            throw error;
           }
         } catch (error) {
           sampleFailure = error;
@@ -2383,6 +2456,16 @@ export async function legacyMain(env = process.env) {
       /resumed after adoption/,
     );
     k(['-n', 'flux-system', 'patch', 'kustomization', 'legacy-app', '--type=merge', '-p', '{"spec":{"suspend":true}}']);
+    // Retired for good: the suspended legacy applier and its source may be
+    // deleted after finalization. The journaled UID is gone, so the finalized
+    // reobservation and every ordinary command below accept their absence,
+    // while the adopted objects stay (pruning was disabled at relinquishment).
+    k(['-n', 'flux-system', 'delete', 'kustomization', 'legacy-app', '--wait=true', '--timeout=120s']);
+    k(['-n', 'flux-system', 'delete', 'gitrepository', 'legacy-source', '--wait=true', '--timeout=120s']);
+    assert.equal(
+      (await resumeAdoption('adoption finalized (legacy applier deleted)')).stage,
+      'finalized',
+    );
     for (const old of original) {
       const actual = get(old.kind, old.metadata.name);
       assert.equal(actual.metadata.uid, old.metadata.uid);
@@ -2717,7 +2800,15 @@ export async function legacyMain(env = process.env) {
     // can be placed against the stage notes in the job log.
     writeFileSync(
       join(evidence, 'http-samples.json'),
-      JSON.stringify({ failure: sampleFailure?.message ?? null, samples }, null, 2),
+      JSON.stringify(
+        {
+          failure: sampleFailure?.message ?? null,
+          failureDetail: sampleFailure?.detail ?? null,
+          samples,
+        },
+        null,
+        2,
+      ),
     );
     assert.ifError(sampleFailure);
     assert.ok(

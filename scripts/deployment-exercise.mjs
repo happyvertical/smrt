@@ -289,8 +289,11 @@ function existingOwnedResource(desired, serviceAccount = 'exercise-reconciler') 
 }
 function snapshot(existing) {
   if (!existing) return null;
+  // Ownership identity without the entry timestamps: a controller's status
+  // update between the two reads moves `time` without any write of ours.
   return JSON.stringify({ spec: existing.spec, data: existing.data, binaryData: existing.binaryData,
-    labels: existing.metadata.labels, annotations: existing.metadata.annotations, managedFields: existing.metadata.managedFields });
+    labels: existing.metadata.labels, annotations: existing.metadata.annotations,
+    managedFields: existing.metadata.managedFields?.map(({ time, ...entry }) => entry) });
 }
 function preflightObjects(objects, serviceAccount = 'exercise-reconciler') {
   const before = objects.map((object) => snapshot(existingOwnedResource(object, serviceAccount)));
