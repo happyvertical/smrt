@@ -3432,6 +3432,16 @@
   },
   {
     "kind": "model",
+    "name": "@happyvertical/smrt-commerce:AccountingInvoiceReadback",
+    "issue": 5139,
+    "nearest": [
+      "@happyvertical/smrt-commerce:Invoice",
+      "@happyvertical/smrt-commerce:TaxSummaryReport"
+    ],
+    "reason": "The stored provider readback of one synced invoice (projection, in_step/drift/needs_reconciliation, provider-only payments, observation time), re-written on every read. Invoice is a frozen money document whose sync identity must not change on a read, and TaxSummaryReport is a local tax projection; this is a provider-observed cache keyed per invoice."
+  },
+  {
+    "kind": "model",
     "name": "@happyvertical/smrt-commerce:AccountingMapping",
     "issue": 5137,
     "nearest": [
@@ -3439,6 +3449,16 @@
       "@happyvertical/smrt-commerce:TaxCode"
     ],
     "reason": "A reference from a commerce record to the provider's record, keyed by tenant, provider, realm and environment so a different company never reuses it. Customer and TaxCode hold local facts only (Invoice.customerExternalId was a flat, unscoped string), and adding provider ids to them would tie every local row to one realm; the mapping set is also what builds the frozen tax mapping the sync requires."
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-commerce:AccountingPaymentSync",
+    "issue": 5139,
+    "nearest": [
+      "@happyvertical/smrt-commerce:Payment",
+      "@happyvertical/smrt-commerce:Invoice"
+    ],
+    "reason": "The exactly-once push record for one payment per company and environment: persisted request id, attempt owner, unknown/rejected/synced state. Invoice keeps this in its command-owned accountingSyncStateJson, but a payment can be pushed to several companies over time and Payment's settlement fields are frozen once completed, so the push state needs its own unique-keyed row rather than extra columns on Payment."
   },
   {
     "kind": "model",

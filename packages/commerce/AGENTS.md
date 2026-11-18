@@ -32,9 +32,7 @@ recipes show carry `@field({ description })` text; keep both in plain
 language for end users and update them when a recipe's fields change. See
 [core recipes](../core/agents/recipes.md).
 
-See [tenant accounting connection](agents/accounting-connection.md) for the tenant-level QuickBooks connection, serialized refresh-token rotation, `needs_reconnect` and revoke.
-See [accounting mappings](agents/accounting-mapping.md) for per-tenant/realm/environment provider references, `buildFrozenInvoiceMapping` and customer resolution.
-See [live-mode gate](agents/accounting-live-gate.md): production accounting writes need `enableLiveAccounting`; sandbox is the default.
+QuickBooks for tenants (#5136-#5139): [connection](agents/accounting-connection.md), [mappings](agents/accounting-mapping.md), [live gate](agents/accounting-live-gate.md), [payment sync](agents/accounting-payment-sync.md).
 See [historical issued sales](agents/historical-sales.md) for exact original source
 money, immutable source children and combined historical/live customer funds.
 See [payment allocation integrity](agents/payment-allocations.md) for atomic splits,

@@ -70,10 +70,15 @@ import './__smrt-register__.js';
 export * from './accounting-connection.js';
 export * from './accounting-live-gate.js';
 export * from './accounting-mapping.js';
+export * from './accounting-payment-sync.js';
 // Billing-period close, provider events, prepaid credit (#3060)
 export * from './billing/index.js';
 export { AccountingConnectionCollection } from './collections/AccountingConnectionCollection.js';
 export { AccountingMappingCollection } from './collections/AccountingMappingCollection.js';
+export {
+  AccountingInvoiceReadbackCollection,
+  AccountingPaymentSyncCollection,
+} from './collections/AccountingSyncRecordCollections.js';
 export {
   HistoricalCustomerFundsAllocationCollection,
   HistoricalCustomerFundsCollection,
@@ -319,6 +324,12 @@ export {
   type AccountingMappingOptions,
   type AccountingMappingStatus,
 } from './models/AccountingMapping.js';
+export {
+  AccountingInvoiceReadback,
+  AccountingPaymentSync,
+  type AccountingPaymentSyncStatus,
+  type AccountingReadbackStatus,
+} from './models/AccountingSyncRecords.js';
 export {
   HistoricalCustomerFunds,
   type HistoricalCustomerFundsOptions,

@@ -5,10 +5,10 @@ description: "Commerce models for the SMRT framework - contracts, fulfillments, 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T21:17:44Z"
+  at: "2026-11-18T09:43:42Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:b69d297d85a62bf7b9022c57e93f432d5ce7b0a0861c9f413f897b85fac467d2"
+source_revision: "sha256:316610435f74d9d1b7dde18b7ba1e4d30e54db49d35d58315010e5463cec3b0d"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/package.json"
@@ -20,69 +20,81 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/README.md"
     title: "@happyvertical/smrt-commerce packages/commerce/README.md"
   - id: "agents-3"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/accounting-connection.md"
+    title: "@happyvertical/smrt-commerce packages/commerce/agents/accounting-connection.md"
+  - id: "agents-4"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/accounting-live-gate.md"
+    title: "@happyvertical/smrt-commerce packages/commerce/agents/accounting-live-gate.md"
+  - id: "agents-5"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/accounting-mapping.md"
+    title: "@happyvertical/smrt-commerce packages/commerce/agents/accounting-mapping.md"
+  - id: "agents-6"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/accounting-payment-sync.md"
+    title: "@happyvertical/smrt-commerce packages/commerce/agents/accounting-payment-sync.md"
+  - id: "agents-7"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/commercial-ui.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/commercial-ui.md"
-  - id: "agents-4"
+  - id: "agents-8"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/connected-payments.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/connected-payments.md"
-  - id: "agents-5"
+  - id: "agents-9"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/contract-billing-schedules.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/contract-billing-schedules.md"
-  - id: "agents-6"
+  - id: "agents-10"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/contract-money.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/contract-money.md"
-  - id: "agents-7"
+  - id: "agents-11"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/cost-billing.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/cost-billing.md"
-  - id: "agents-8"
+  - id: "agents-12"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/customer-funds.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/customer-funds.md"
-  - id: "agents-9"
+  - id: "agents-13"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/customer-vendor-ui.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/customer-vendor-ui.md"
-  - id: "agents-10"
+  - id: "agents-14"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/document-money.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/document-money.md"
-  - id: "agents-11"
+  - id: "agents-15"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/estimate-conversion.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/estimate-conversion.md"
-  - id: "agents-12"
+  - id: "agents-16"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/historical-sales.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/historical-sales.md"
-  - id: "agents-13"
+  - id: "agents-17"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/invoice-quantity.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/invoice-quantity.md"
-  - id: "agents-14"
+  - id: "agents-18"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/invoice-source-binding.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/invoice-source-binding.md"
-  - id: "agents-15"
+  - id: "agents-19"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/money-calculator.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/money-calculator.md"
-  - id: "agents-16"
+  - id: "agents-20"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/money-model.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/money-model.md"
-  - id: "agents-17"
+  - id: "agents-21"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/money-upgrade.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/money-upgrade.md"
-  - id: "agents-18"
+  - id: "agents-22"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/observed-purchase-prices.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/observed-purchase-prices.md"
-  - id: "agents-19"
+  - id: "agents-23"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/ordinary-accounting.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/ordinary-accounting.md"
-  - id: "agents-20"
+  - id: "agents-24"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/payment-allocations.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/payment-allocations.md"
-  - id: "agents-21"
+  - id: "agents-25"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/purchasing-ui.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/purchasing-ui.md"
-  - id: "agents-22"
+  - id: "agents-26"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/quote-ui.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/quote-ui.md"
-  - id: "agents-23"
+  - id: "agents-27"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/received-sales-contract-money.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/received-sales-contract-money.md"
-  - id: "agents-24"
+  - id: "agents-28"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/tax-codes.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/tax-codes.md"
 ---
@@ -100,6 +112,10 @@ sources:
 
 - `packages/commerce/AGENTS.md`
 - `packages/commerce/README.md`
+- `packages/commerce/agents/accounting-connection.md`
+- `packages/commerce/agents/accounting-live-gate.md`
+- `packages/commerce/agents/accounting-mapping.md`
+- `packages/commerce/agents/accounting-payment-sync.md`
 - `packages/commerce/agents/commercial-ui.md`
 - `packages/commerce/agents/connected-payments.md`
 - `packages/commerce/agents/contract-billing-schedules.md`
@@ -156,6 +172,14 @@ sources:
 
 ## Models
 
+- `AccountingConnection` (collection `accountingconnections`, extends `SmrtObject`)
+- `AccountingConnectionCollection` (collection `accountingconnections`, extends `SmrtCollection`)
+- `AccountingInvoiceReadback` (collection `accountinginvoicereadbacks`, extends `SmrtObject`)
+- `AccountingInvoiceReadbackCollection` (collection `accountinginvoicereadbacks`, extends `SmrtCollection`)
+- `AccountingMapping` (collection `accountingmappings`, extends `SmrtObject`)
+- `AccountingMappingCollection` (collection `accountingmappings`, extends `SmrtCollection`)
+- `AccountingPaymentSync` (collection `accountingpaymentsyncs`, extends `SmrtObject`)
+- `AccountingPaymentSyncCollection` (collection `accountingpaymentsyncs`, extends `SmrtCollection`)
 - `Agreement` (collection `contracts`, extends `SalesContract`, STI table)
 - `BillingAccount` (collection `billingaccounts`, extends `SmrtObject`)
 - `BillingAccountCollection` (collection `billingaccounts`, extends `SmrtCollection`)
@@ -231,6 +255,14 @@ sources:
 
 ## MCP tools
 
+- `accountingconnection_get`: get on `@happyvertical/smrt-commerce:AccountingConnection`
+- `accountingconnection_list`: list on `@happyvertical/smrt-commerce:AccountingConnection`
+- `accountinginvoicereadback_get`: get on `@happyvertical/smrt-commerce:AccountingInvoiceReadback`
+- `accountinginvoicereadback_list`: list on `@happyvertical/smrt-commerce:AccountingInvoiceReadback`
+- `accountingmapping_get`: get on `@happyvertical/smrt-commerce:AccountingMapping`
+- `accountingmapping_list`: list on `@happyvertical/smrt-commerce:AccountingMapping`
+- `accountingpaymentsync_get`: get on `@happyvertical/smrt-commerce:AccountingPaymentSync`
+- `accountingpaymentsync_list`: list on `@happyvertical/smrt-commerce:AccountingPaymentSync`
 - `agreement_get`: get on `@happyvertical/smrt-commerce:Agreement`
 - `agreement_list`: list on `@happyvertical/smrt-commerce:Agreement`
 - `cart_get`: get on `@happyvertical/smrt-commerce:Cart`

@@ -17,6 +17,12 @@ export {
   type AccountingMappingStatus,
 } from './AccountingMapping.js';
 export {
+  AccountingInvoiceReadback,
+  AccountingPaymentSync,
+  type AccountingPaymentSyncStatus,
+  type AccountingReadbackStatus,
+} from './AccountingSyncRecords.js';
+export {
   BillingAccount,
   type BillingCloseKind,
   BillingLineSource,

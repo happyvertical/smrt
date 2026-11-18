@@ -240,6 +240,24 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
         'AccountingMapping writes are owned by setAccountingMapping/removeAccountingMapping; its owner must run once against a minimal row.',
     },
     {
+      model: '@happyvertical/smrt-commerce:AccountingPaymentSync',
+      kind: 'service-only',
+      field: '(service-only write)',
+      error:
+        'AccountingPaymentSync is written only by the accounting payment-sync commands',
+      reason:
+        'AccountingPaymentSync writes are owned by syncPaymentToAccounting and reconcileAccountingPaymentSync, which persist the request before the provider call; its owner must run once against a minimal row.',
+    },
+    {
+      model: '@happyvertical/smrt-commerce:AccountingInvoiceReadback',
+      kind: 'service-only',
+      field: '(service-only write)',
+      error:
+        'AccountingInvoiceReadback is written only by the accounting payment-sync commands',
+      reason:
+        'AccountingInvoiceReadback writes are owned by readbackInvoice; its owner must run once against a minimal row.',
+    },
+    {
       model: '@happyvertical/smrt-content:ContentContributionType',
       kind: 'optional-field',
       field: 'promotion',
