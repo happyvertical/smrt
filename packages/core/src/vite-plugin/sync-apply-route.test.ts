@@ -355,7 +355,14 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
     const coreEntry = join(projectRoot, 'core-entry.ts');
     writeFileSync(
       coreEntry,
-      `export * from ${JSON.stringify(fileURLToPath(new URL('../sync/apply.ts', import.meta.url)))}; export * from ${JSON.stringify(fileURLToPath(new URL('../runtime-exposure.ts', import.meta.url)))};`,
+      [
+        `export * from ${JSON.stringify(fileURLToPath(new URL('../sync/apply.ts', import.meta.url)))}; export * from ${JSON.stringify(fileURLToPath(new URL('../runtime-exposure.ts', import.meta.url)))};`,
+        // The route asks the registry which body keys never reach a model.
+        // The fixture models declare no service-named fields, so the real
+        // rule with no declared fields stands in for the registry.
+        `import { isServiceOptionInput } from ${JSON.stringify(fileURLToPath(new URL('../service-options.ts', import.meta.url)))};`,
+        'export const ObjectRegistry = { isServiceOptionInput: (_name: string, key: string) => isServiceOptionInput(key, () => false) };',
+      ].join('\n'),
     );
     const outFile = join(projectRoot, 'route.mjs');
     await build({

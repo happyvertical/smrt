@@ -21,6 +21,7 @@ import {
   isRuntimeModelEnabled,
 } from '../runtime-exposure.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
+import { resolveAnonymousTenantReadScope } from '../tenant-read-scope.js';
 import { getTestDatabase } from '../testing/database.js';
 import { generateSvelteKitRoutes } from '../vite-plugin/sveltekit-generator.js';
 
@@ -500,10 +501,14 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
       shared[key] = {
         records,
         createGeneratedCollectionAccess,
+        // The emitted update handler asks the real registry which body keys
+        // are fields of the model.
+        ObjectRegistry,
         isRuntimeModelEnabled,
         hasRuntimeExposureGate,
         normalizeTypedHttpError,
         reportUnexpectedHttpError,
+        resolveAnonymousTenantReadScope,
       };
       try {
         await generateSvelteKitRoutes(
@@ -577,7 +582,7 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
                     if (args.path === '@happyvertical/smrt-core')
                       return {
                         contents:
-                          'const host = globalThis[Symbol.for("smrt.issue3460.generated-route")]; export const isRuntimeModelEnabled = host.isRuntimeModelEnabled; export const hasRuntimeExposureGate = host.hasRuntimeExposureGate; export const createGeneratedCollectionAccess = host.createGeneratedCollectionAccess; export const normalizeTypedHttpError = host.normalizeTypedHttpError; export const reportUnexpectedHttpError = host.reportUnexpectedHttpError;',
+                          'const host = globalThis[Symbol.for("smrt.issue3460.generated-route")]; export const isRuntimeModelEnabled = host.isRuntimeModelEnabled; export const hasRuntimeExposureGate = host.hasRuntimeExposureGate; export const createGeneratedCollectionAccess = host.createGeneratedCollectionAccess; export const normalizeTypedHttpError = host.normalizeTypedHttpError; export const reportUnexpectedHttpError = host.reportUnexpectedHttpError; export const ObjectRegistry = host.ObjectRegistry; export const resolveAnonymousTenantReadScope = host.resolveAnonymousTenantReadScope;',
                         loader: 'js',
                       };
                     if (args.path.endsWith('smrt-register'))

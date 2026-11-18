@@ -23,6 +23,7 @@ import { parseRestListWhere } from '../query-bounds.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 import { setRuntimeExposureGate } from '../runtime-exposure.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
+import { isServiceOptionInput } from '../service-options.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { applyWhereScope, WhereClauseError } from '../where-keys.js';
 import { generateSvelteKitRoutes } from './sveltekit-generator.js';
@@ -185,6 +186,8 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       'export const ObjectRegistry = {',
       '  resolveCreateTarget(name, data, context) { return globalThis.__smrtGeneratedRegistry?.resolveCreateTarget(name, data, context) ?? { name, collectionName: name, data }; },',
       '  getFields(name) { return globalThis.__smrtGeneratedRegistry?.getFields(name) ?? new Map(); },',
+      // The real request-key rule over the fixture registry's fields.
+      '  isServiceOptionInput(name, key) { return globalThis.__smrtGeneratedIsServiceOptionInput(key, (field) => (globalThis.__smrtGeneratedRegistry?.getFields(name) ?? new Map()).has(field)); },',
       '  getConfig(name) { return globalThis.__smrtGeneratedRegistry?.getConfig(name) ?? {}; },',
       '  async getCollection(...args) {',
       '    globalThis.__smrtGeneratedHelperCalls.push(args);',
@@ -215,6 +218,10 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       `export const parseRestListWhere = (${parseRestListWhere.toString()});`,
       // The real scope helper: the emitted tenant-scoped list route calls it.
       'export const applyWhereScope = globalThis.__smrtGeneratedApplyWhereScope;',
+      // Every emitted read resolves its tenant scope at request time; a test
+      // that needs one installs `__smrtGeneratedReadScope`.
+      'export function resolveAnonymousTenantReadScope(name) { return globalThis.__smrtGeneratedReadScope?.(name); }',
+      'export function resolveTenantReadOptionsScope(name, options) { return globalThis.__smrtGeneratedReadOptionsScope?.(name, options); }',
       "export function resolveTenantEtagDiscriminator() { return 't:global'; }",
       'export function ifNoneMatchHasConcreteMatch() { return false; }',
       'export function ifNoneMatchSatisfied() { return false; }',
@@ -264,6 +271,9 @@ describe('generated SvelteKit helper runtime', () => {
       reportUnexpectedHttpError;
     (globalThis as Record<string, unknown>).__smrtGeneratedApplyWhereScope =
       applyWhereScope;
+    (
+      globalThis as Record<string, unknown>
+    ).__smrtGeneratedIsServiceOptionInput = isServiceOptionInput;
     (globalThis as Record<string, unknown>).__smrtGeneratedHelperCalls = [];
     (globalThis as Record<string, unknown>).__smrtGeneratedHelperRegistrations =
       [];
@@ -314,6 +324,8 @@ describe('generated SvelteKit helper runtime', () => {
     delete (globalThis as Record<string, unknown>).__smrtGeneratedReportError;
     delete (globalThis as Record<string, unknown>)
       .__smrtGeneratedApplyWhereScope;
+    delete (globalThis as Record<string, unknown>)
+      .__smrtGeneratedIsServiceOptionInput;
     vi.restoreAllMocks();
     clearCache();
 
@@ -1316,7 +1328,7 @@ describe('generated SvelteKit helper runtime', () => {
       // a mocked factory. It must construct and initialize against this DB.
       writeFileSync(
         join(projectRoot, 'node_modules/@happyvertical/smrt-core/index.js'),
-        `export const { ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere } = globalThis.__smrt4320Core;`,
+        `export const { ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere, applyWhereScope, resolveAnonymousTenantReadScope, resolveTenantReadOptionsScope } = globalThis.__smrt4320Core;`,
       );
       const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
       writeFileSync(
@@ -2231,12 +2243,168 @@ describe('generated SvelteKit helper runtime', () => {
   });
 
   /**
+   * Emitted create and update handlers hand the collection field values only.
+   * A request body never carries a service option key, the `options` bag or an
+   * underscore control key into construction or onto a loaded item, unless
+   * the model declares a field with that name.
+   */
+  describe('generated write routes take fields only from the body', () => {
+    const SERVICE_KEYS = [
+      'db',
+      'persistence',
+      'fs',
+      'ai',
+      'decisions',
+      'inference',
+      'usage',
+      'logging',
+      'metrics',
+      'pubsub',
+      'sanitization',
+      'signals',
+    ];
+    const body = () => ({
+      name: 'Widget',
+      ...Object.fromEntries(SERVICE_KEYS.map((key) => [key, { from: key }])),
+      options: { db: 'file:/elsewhere.db' },
+      _insertOnly: true,
+      _skipLoad: false,
+      _className: 'Other',
+    });
+    const declareFields = (...names: string[]) => {
+      (globalThis as Record<string, unknown>).__smrtGeneratedRegistry = {
+        getConfig: () => ({}),
+        getFields: () => new Map(names.map((name) => [name, {}])),
+        resolveCreateTarget: (name: string, data: unknown) => ({
+          name,
+          collectionName: name,
+          data,
+        }),
+      };
+    };
+
+    async function importGeneratedItemPut() {
+      const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
+      await generateSvelteKitRoutes(
+        projectRoot,
+        createManifest(projectRoot, objectFilePath, ['update']),
+        {
+          configFileName: 'smrt.ts',
+          configPath: 'src/lib/server',
+          enabled: true,
+          objectsDir: 'src/lib/objects',
+          routesDir: 'src/routes/api',
+        },
+      );
+      return await bundleGeneratedRoute(
+        'src/routes/api/widgets/[id]/+server.ts',
+        'generated-put-route.mjs',
+      );
+    }
+
+    async function post(...declared: string[]) {
+      const route = await importGeneratedCollectionPost();
+      declareFields(...declared);
+      const created: Array<Record<string, unknown>> = [];
+      (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+        create: async (data: Record<string, unknown>) => {
+          created.push(data);
+          return { toPublicJSON: () => data };
+        },
+      };
+      const response = await route.POST({
+        locals: { permissions: ['widgets.create'], user: { id: 'user-1' } },
+        request: new Request('http://localhost/api/widgets', {
+          body: JSON.stringify(body()),
+          method: 'POST',
+        }),
+      });
+      return { created, response };
+    }
+
+    async function put(...declared: string[]) {
+      const route = await importGeneratedItemPut();
+      declareFields(...declared);
+      const item: Record<string, unknown> = {
+        options: { db: 'collection-db' },
+        save: async () => {},
+        toPublicJSON: () => ({}),
+      };
+      (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+        get: async () => item,
+        withAuditMutation: async (
+          bound: unknown,
+          _action: string,
+          mutate: (bound: unknown) => Promise<void>,
+        ) => mutate(bound),
+      };
+      const response = await route.PUT({
+        locals: { permissions: ['widgets.update'], user: { id: 'user-1' } },
+        params: { id: 'widget-1' },
+        request: new Request('http://localhost/api/widgets/widget-1', {
+          body: JSON.stringify(body()),
+          method: 'PUT',
+        }),
+      });
+      return { item, response };
+    }
+
+    it('POST passes only field values to create', async () => {
+      const { created, response } = await post();
+      expect(response.status).toBe(201);
+      expect(created).toEqual([{ name: 'Widget' }]);
+    });
+
+    it('POST keeps a service-named key the model declares as a field', async () => {
+      const { created } = await post('metrics', 'usage');
+      expect(created).toEqual([
+        {
+          name: 'Widget',
+          usage: { from: 'usage' },
+          metrics: { from: 'metrics' },
+        },
+      ]);
+    });
+
+    it('PUT assigns only field values onto the loaded item', async () => {
+      const { item, response } = await put();
+      expect(response.status).toBe(200);
+      expect(Object.keys(item).sort()).toEqual(
+        ['name', 'options', 'save', 'toPublicJSON'].sort(),
+      );
+      expect(item.name).toBe('Widget');
+      expect(item.options).toEqual({ db: 'collection-db' });
+    });
+
+    it('PUT keeps a service-named key the model declares as a field', async () => {
+      const { item } = await put('metrics');
+      expect(item.metrics).toEqual({ from: 'metrics' });
+      expect(item.options).toEqual({ db: 'collection-db' });
+      expect(Object.hasOwn(item, 'usage')).toBe(false);
+    });
+  });
+
+  /**
    * The emitted list route of a tenant-scoped, publicly readable model. With
    * tenancy enabled and no tenant context, the only tenant predicate it hands
    * the collection is its own `{ tenantId: null }`, whatever spelling of the
    * tenant key the query string carries.
    */
   describe('generated list route tenant read scope', () => {
+    // Core's resolver, reduced to what these tests need: rows without an
+    // owner when no tenant context is active, nothing otherwise.
+    beforeEach(() => {
+      (globalThis as Record<string, unknown>).__smrtGeneratedReadScope = () =>
+        (globalThis as Record<string, unknown>)
+          .__smrtGeneratedActiveTenantContext
+          ? undefined
+          : { tenantId: null };
+    });
+    afterEach(() => {
+      (globalThis as Record<string, unknown>).__smrtGeneratedReadScope =
+        undefined;
+    });
+
     async function importTenantScopedList() {
       const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
       const manifest = createManifest(projectRoot, objectFilePath, ['list']);
