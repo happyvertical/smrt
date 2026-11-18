@@ -55,9 +55,11 @@ import {
 } from '@happyvertical/smrt-agents';
 import {
   applySyncWritablePolicy,
+  applyUpdateInput,
   fieldTypeToJsonSchema,
   ObjectRegistry,
   type PublicJsonOptions,
+  publicSerializerOf,
   type SmrtClassOptions,
   type SmrtObject,
   ValidationError,
@@ -977,15 +979,11 @@ async function itemToObservation(
     );
     return serializer(item as SmrtObject, publicOptions);
   }
-  const candidate = item as {
-    toPublicJSON?: (options?: PublicJsonOptions) => unknown;
-    toJSON?: () => unknown;
-  } | null;
-  return typeof candidate?.toPublicJSON === 'function'
-    ? candidate.toPublicJSON(publicOptions)
-    : typeof candidate?.toJSON === 'function'
-      ? candidate.toJSON()
-      : item;
+  // The serialiser the item's class provides, never an instance property.
+  const serialize = publicSerializerOf(item);
+  if (serialize) return serialize(publicOptions);
+  const candidate = item as { toJSON?: () => unknown } | null;
+  return typeof candidate?.toJSON === 'function' ? candidate.toJSON() : item;
 }
 
 /** Check the effective model identity using the authenticated assistant tenant. */
@@ -1090,7 +1088,13 @@ export async function invokeManifestTool(
       if (!item) {
         return { found: false };
       }
-      Object.assign(item, writableToolInput(tool, rest));
+      // Arguments set declared fields and settable accessors, nothing else:
+      // the same rule the REST routes and MCP tools apply to an update.
+      applyUpdateInput(
+        item,
+        writableToolInput(tool, rest),
+        registryKeyFor(tool),
+      );
       await item.save();
       return itemToObservation(item, run);
     }
