@@ -1319,3 +1319,69 @@ describe('read-only cookbook policy command', () => {
     ).toBeUndefined();
   });
 });
+
+describe('commits only what it can publish', () => {
+  const withLabel = (label: unknown) => ({
+    ...IMPORTED,
+    recipes: ['commerce.sales'],
+    layout: { version: 1, items: { 'commerce:customer': { label } } },
+  });
+
+  it('a throwing subscriber neither fails the command nor hides it from later subscribers', () => {
+    const e = engine();
+    const later: number[] = [];
+    e.subscribe((s) => {
+      if (s.revision > 0) throw new Error('render failed');
+    });
+    e.subscribe((s) => later.push(s.revision));
+    const run = e.run({
+      id: 'r1',
+      name: 'add_recipes',
+      input: { ids: ['commerce.sales'] },
+    });
+    expect(run.ok).toBe(true);
+    const batch = e.batch({
+      id: 'b1',
+      commands: [{ name: 'set_settings', input: { currency: 'CAD' } }],
+    });
+    expect(batch.ok).toBe(true);
+    expect(e.snapshot().revision).toBe(2);
+    expect(later).toEqual([0, 1, 2]);
+  });
+
+  it('refuses a layout label that is not text and keeps the state and later snapshots intact', () => {
+    const e = engine();
+    const before = e.state();
+    const r = e.run({
+      name: 'import_cookbook',
+      input: { document: withLabel(5), replace: true },
+    });
+    expect(r.ok).toBe(false);
+    expect(e.state()).toEqual(before);
+    expect(() => e.snapshot()).not.toThrow();
+    expect(
+      validateCookbook({
+        ...withLabel(5),
+        layout: { version: 1, sections: { sales: { label: 7 } } },
+      }).ok,
+    ).toBe(false);
+    expect(() =>
+      createCookbookEngine({
+        catalog,
+        state: {
+          version: 1,
+          revision: 3,
+          applied: null,
+          cookbook: withLabel(5),
+        },
+      } as never),
+    ).toThrow(/Invalid saved cookbook/);
+    // A text label is accepted.
+    ok(
+      e.run({
+        name: 'import_cookbook',
+        input: { document: withLabel('Clients'), replace: true },
+      }),
+    );
+  });
+});

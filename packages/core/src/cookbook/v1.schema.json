@@ -372,13 +372,23 @@
         },
         "sections": {
           "type": "object",
-          "additionalProperties": { "type": "object" }
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "label": { "type": "string" },
+              "singularLabel": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          }
         },
         "items": {
           "type": "object",
           "additionalProperties": {
             "type": "object",
             "properties": {
+              "label": { "type": "string" },
+              "singularLabel": { "type": "string" },
+              "description": { "type": "string" },
               "icon": {
                 "type": "string",
                 "maxLength": 64,

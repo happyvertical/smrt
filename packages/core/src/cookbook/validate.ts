@@ -264,6 +264,23 @@ function checkLayout(value: unknown, diagnostics: CookbookDiagnostic[]) {
       );
     }
   }
+  // Navigation renders these as text; a non-string would fail every snapshot.
+  for (const key of ['sections', 'items'] as const) {
+    if (!isObject(value[key])) continue;
+    for (const [id, entry] of Object.entries(value[key])) {
+      if (!isObject(entry)) continue;
+      for (const text of ['label', 'singularLabel', 'description'] as const) {
+        if (entry[text] !== undefined && typeof entry[text] !== 'string') {
+          error(
+            diagnostics,
+            'invalid_type',
+            `layout.${key}.${id}.${text}`,
+            `layout.${key}.${id}.${text} must be a string`,
+          );
+        }
+      }
+    }
+  }
   if (isObject(value.items)) {
     for (const [id, item] of Object.entries(value.items)) {
       if (!isObject(item) || item.icon === undefined) continue;
