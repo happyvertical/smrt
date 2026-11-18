@@ -88,11 +88,17 @@
  * ## Failure semantics
  *
  * A feed-write failure must never fail the user's write. The interceptor
- * wraps the append in a try/catch: on failure it logs a warning (deduped per
- * database) and continues. The trade-off is availability of the user's
- * write over completeness of the feed — consumers already need a
- * full-resync path for cursors older than the retention window, and the
- * same path covers a (rare) dropped feed row. PostgreSQL runs the INSERT in a
+ * wraps the append in a try/catch: on failure it logs a warning (at most once
+ * a minute per table, with a count of what it suppressed) and continues. The
+ * trade-off is availability of the user's write over completeness of the
+ * feed. Because sequences stay contiguous, nothing in the log would show a
+ * consumer the dropped change — a resync is only ever signalled for pruned or
+ * foreign cursors — so the gap is recorded instead: the next framework append
+ * to the same database first writes a table-level entry (`rowId: null`) for
+ * each `(table, tenant)` that lost a change, and that table's consumers
+ * refetch it. The marker is held in process memory until then; a process
+ * that exits first, or a crash between the data write and its append, leaves
+ * the gap unmarked. PostgreSQL runs the INSERT in a
  * PL/pgSQL exception subtransaction and returns a caught SQLSTATE as data;
  * JavaScript only throws/logs after PostgreSQL has restored the caller's
  * transaction, so a swallowed append failure cannot surface later as 25P02.
@@ -142,6 +148,7 @@ import { resolveDbCacheKey } from './collection-cache.js';
 import { resolveDispatchTenantScope } from './dispatch/tenant-resolver.js';
 import {
   isEmbeddedDatabase,
+  isKnownDatabaseTransaction,
   usesPostgresDialect,
   withEmbeddedWriteQueue,
 } from './embedded-write-queue.js';
@@ -2193,8 +2200,32 @@ async function deleteCounted(
 
 export const CHANGE_FEED_WAS_PERSISTED_KEY = '_smrtChangeFeedWasPersisted';
 
-/** Databases we already warned about after a failed feed append. */
-const warnedAppendFailures = new Set<string>();
+/**
+ * Append-failure logging state per `database + table`: when it last logged and
+ * how many failures it has suppressed since. A persistent failure on one table
+ * keeps reporting (at most once per {@link APPEND_FAILURE_LOG_INTERVAL_MS}),
+ * and a failure on one table never silences another's.
+ */
+const appendFailureLog = new Map<
+  string,
+  { lastLoggedAt: number; suppressed: number }
+>();
+
+/** Minimum interval between append-failure warnings for one table. */
+const APPEND_FAILURE_LOG_INTERVAL_MS = 60_000;
+
+/**
+ * Feed gaps waiting to be recorded, per database: one table-level entry per
+ * `(table, tenant)` whose change could not be appended. See
+ * {@link recordAppendGap}.
+ */
+const pendingGapMarkers = new Map<
+  string,
+  Map<string, { table: string; tenantId: string | null }>
+>();
+
+/** Bound on remembered gap markers per database. */
+const MAX_PENDING_GAP_MARKERS = 10_000;
 
 /** Databases we already warned about after a failed signal publish (#1763). */
 const warnedSignalPublishFailures = new Set<string>();
@@ -2296,6 +2327,8 @@ async function appendForInstance(
 ): Promise<void> {
   let db: DatabaseInterface;
   let table: string;
+  let rowId: string | null;
+  let rowTenantId: string | null;
   try {
     table = instance.tableName;
     // Framework-owned tables are bookkeeping, not client-syncable data —
@@ -2311,18 +2344,19 @@ async function appendForInstance(
     // that name, closing the read path and the signal bus for it.
     if (isChangeFeedSensitiveWrite(table, instance.constructor)) return;
     db = instance.db;
+    const id = (instance as { id?: unknown }).id;
+    const tenantId = (instance as unknown as Record<string, unknown>).tenantId;
+    rowId = typeof id === 'string' && id ? id : null;
+    rowTenantId = typeof tenantId === 'string' && tenantId ? tenantId : null;
   } catch {
     // Not a fully initialized SmrtObject (e.g. plain-object doubles in
     // tests) — nothing to record.
     return;
   }
 
+  // Record any earlier gap ahead of this change (see recordAppendGap).
+  await flushGapMarkers(db);
   try {
-    const id = (instance as { id?: unknown }).id;
-    const tenantId = (instance as unknown as Record<string, unknown>).tenantId;
-    const rowId = typeof id === 'string' && id ? id : null;
-    const rowTenantId =
-      typeof tenantId === 'string' && tenantId ? tenantId : null;
     const seq = await appendChange(db, {
       table,
       rowId,
@@ -2356,7 +2390,8 @@ async function appendForInstance(
       warnSignalPublishFailureOnce(db, table, error);
     }
   } catch (error) {
-    warnAppendFailureOnce(db, table, error);
+    recordAppendGap(db, [{ table, tenantId: rowTenantId }]);
+    warnAppendFailure(db, table, error);
   }
 }
 
@@ -2400,11 +2435,15 @@ export async function recordInstanceChanges(
   if (prepared.length === 0) return;
   const db = prepared[0].db;
   if (prepared.some((entry) => entry.db !== db)) {
+    for (const entryDb of new Set(prepared.map((entry) => entry.db))) {
+      await flushGapMarkers(entryDb);
+    }
     await Promise.all(
       prepared.map(({ input, db: entryDb }) => appendChange(entryDb, input)),
     );
     return;
   }
+  await flushGapMarkers(db);
   try {
     const sequences = await appendChanges(
       db,
@@ -2427,8 +2466,121 @@ export async function recordInstanceChanges(
       }
     }
   } catch (error) {
-    warnAppendFailureOnce(db, prepared[0].input.table, error);
+    recordAppendGap(
+      db,
+      prepared.map(({ input }) => ({
+        table: input.table,
+        tenantId: input.tenantId ?? null,
+      })),
+    );
+    warnAppendFailure(db, prepared[0].input.table, error);
   }
+}
+
+/**
+ * Remember that changes to these `(table, tenant)` pairs could not be
+ * appended, so the feed can say so.
+ *
+ * A failed append is dropped rather than failing the user's write (#2026),
+ * and the feed's sequences stay contiguous, so nothing in the log itself would
+ * show a consumer that it missed a change. The gap is therefore recorded as a
+ * **table-level entry** (`rowId: null`, `operation: 'update'`) for the same
+ * table and tenant — the documented "anything in this table may have
+ * changed" signal that `bumpChangeFeed()` writes — on the next append this
+ * process makes to the same database. Consumers of that table refetch it;
+ * everyone else is unaffected.
+ *
+ * Residual: the marker lives in process memory until that next append. A
+ * process that exits first (or a crash between the data write and its feed
+ * append) leaves the gap unmarked; recovering those needs the data row and its
+ * feed entry in one transaction.
+ */
+function recordAppendGap(
+  db: DatabaseInterface,
+  entries: ReadonlyArray<{ table: string; tenantId: string | null }>,
+): void {
+  let dbKey: string;
+  try {
+    dbKey = resolveDbCacheKey(db);
+  } catch {
+    return;
+  }
+  let markers = pendingGapMarkers.get(dbKey);
+  if (!markers) {
+    markers = new Map();
+    pendingGapMarkers.set(dbKey, markers);
+  }
+  for (const entry of entries) {
+    if (!isChangeFeedObservableTable(entry.table)) continue;
+    const key = `${entry.table}\u0000${entry.tenantId ?? ''}`;
+    if (markers.has(key)) continue;
+    if (markers.size >= MAX_PENDING_GAP_MARKERS) {
+      warnAppendFailure(
+        db,
+        entry.table,
+        new Error('too many unrecorded change-feed gaps; this one is dropped'),
+      );
+      continue;
+    }
+    markers.set(key, { table: entry.table, tenantId: entry.tenantId });
+  }
+}
+
+/**
+ * Append the pending gap markers for `db` (see {@link recordAppendGap}) and
+ * publish their signals. Runs ahead of a framework append, never inside a
+ * transaction the framework knows about — a rollback there would discard
+ * the marker with the caller's work. Best-effort: on failure the markers stay
+ * pending for the next attempt.
+ */
+async function flushGapMarkers(db: DatabaseInterface): Promise<void> {
+  let dbKey: string;
+  try {
+    dbKey = resolveDbCacheKey(db);
+  } catch {
+    return;
+  }
+  const markers = pendingGapMarkers.get(dbKey);
+  if (!markers || markers.size === 0) return;
+  if (isKnownDatabaseTransaction(db)) return;
+  // Claim synchronously so two concurrent appends do not both record them.
+  pendingGapMarkers.delete(dbKey);
+  const claimed = [...markers.values()];
+  let sequences: Array<number | null>;
+  try {
+    sequences = await appendChanges(
+      db,
+      claimed.map(({ table, tenantId }) => ({
+        table,
+        rowId: null,
+        operation: 'update' as const,
+        tenantId,
+      })),
+    );
+  } catch {
+    recordAppendGap(db, claimed);
+    return;
+  }
+  const unsequenced: typeof claimed = [];
+  claimed.forEach((marker, index) => {
+    const seq = sequences[index];
+    if (seq == null) {
+      // Staged inside a transaction the framework could not see; keep it
+      // pending too — a second table-level entry costs one refetch.
+      unsequenced.push(marker);
+      return;
+    }
+    publishSignals(db, [
+      {
+        table: marker.table,
+        operation: 'update',
+        rowId: null,
+        tenantId: marker.tenantId,
+        seq,
+      },
+    ]);
+  });
+  if (unsequenced.length > 0) recordAppendGap(db, unsequenced);
 }
 
 /** Record a framework-owned mutation that intentionally bypasses save hooks. */
@@ -2439,21 +2591,34 @@ export async function recordInstanceChange(
   await appendForInstance(instance, operation);
 }
 
-function warnAppendFailureOnce(
+/**
+ * Log a failed feed append, at most once per {@link
+ * APPEND_FAILURE_LOG_INTERVAL_MS} per `database + table`, reporting how many
+ * failures were suppressed in between.
+ */
+function warnAppendFailure(
   db: DatabaseInterface,
   table: string,
   error: unknown,
 ): void {
   try {
-    const dbKey = resolveDbCacheKey(db);
-    if (warnedAppendFailures.has(dbKey)) return;
-    warnedAppendFailures.add(dbKey);
+    const key = `${resolveDbCacheKey(db)}\u0000${table}`;
+    const now = Date.now();
+    const state = appendFailureLog.get(key);
+    if (state && now - state.lastLoggedAt < APPEND_FAILURE_LOG_INTERVAL_MS) {
+      state.suppressed++;
+      return;
+    }
+    const suppressed = state?.suppressed ?? 0;
+    appendFailureLog.set(key, { lastLoggedAt: now, suppressed: 0 });
     logger.warn(
       `Change feed: failed to append a change entry for '${table}'. The ` +
-        'write itself succeeded; the feed is missing this change (further ' +
-        'failures for this database are suppressed). Consumers recover on ' +
-        'full resync.',
-      { error: error instanceof Error ? error.message : String(error) },
+        'write itself succeeded. A table-level entry for this table is ' +
+        'recorded on the next successful append, so its consumers refetch it.',
+      {
+        error: error instanceof Error ? error.message : String(error),
+        suppressedSinceLastWarning: suppressed,
+      },
     );
   } catch {
     // Logging must never propagate into the write path.
@@ -2503,7 +2668,8 @@ function warnSignalPublishFailureOnce(
  * Reset the append-failure and signal-publish warning dedups (test helper).
  */
 export function resetChangeFeedWarnings(): void {
-  warnedAppendFailures.clear();
+  appendFailureLog.clear();
+  pendingGapMarkers.clear();
   warnedSignalPublishFailures.clear();
   warnedDrainFailures.clear();
   // The append path's drain interval is process state too; a test that asserts
