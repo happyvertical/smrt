@@ -36,6 +36,8 @@ const SPEC = [
       'public void checkCookies(PluginCall call)',
       'R.raw.smrt_session_watch',
       'onPageLoaded',
+      // Bridge.Builder replaces the listener list after load(); attach later (#5160).
+      'handler.post(this::attachPageListener)',
     ],
   },
   { path: WATCH, mustContain: ['PerformanceObserver', 'checkCookies'] },
