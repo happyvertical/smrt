@@ -66,9 +66,15 @@ function fixture() {
       }
     },
   };
+  const calls = { create: 0, createMany: [] as number[] };
   const collection = {
     getStiChildMetaType: () => undefined,
+    createMany: async (inputs: any[]) => {
+      calls.createMany.push(inputs.length);
+      for (const input of inputs) await collection.create(input);
+    },
     create: async (data: any) => {
+      calls.create++;
       // Stand in for SDK defaults, a variable slug and a normalizing save hook.
       sqlite
         .prepare(
@@ -104,6 +110,8 @@ function fixture() {
   return {
     sqlite,
     db,
+    calls,
+    collection,
     before,
     close: () => {
       spy.mockRestore();
@@ -296,5 +304,72 @@ it('agrees with real SDK metadata and preserves undo through restart', async () 
   } finally {
     await host.close();
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it('loads new records through one bulk create per bounded batch, updates one by one', async () => {
+  const f = fixture();
+  try {
+    f.sqlite.exec(
+      "INSERT INTO u_notes (id,name,body,sdk_meta,updated_at) VALUES ('keep','existing','old','old','t')",
+    );
+    const rows = [
+      { name: 'existing', body: 'changed' },
+      ...Array.from({ length: 250 }, (_, n) => ({
+        name: `new ${n}`,
+        body: 'x',
+      })),
+    ];
+    // Loads of 100 records per savepoint scope: 3 scopes, one bulk create each.
+    await f.db.transaction((tx) =>
+      applyLoad(def, tx, { ...command, rows }, 1, 'seed'),
+    );
+    expect(f.calls.create).toBe(250);
+    // The existing record is first, so no create run precedes it.
+    expect(f.calls.createMany).toEqual([99, 100, 51]);
+    expect(
+      (f.sqlite.prepare('SELECT COUNT(*) AS n FROM u_notes').get() as any).n,
+    ).toBe(251);
+  } finally {
+    f.close();
+  }
+});
+
+it('keeps input order between updates and creates inside one batch', async () => {
+  const f = fixture();
+  try {
+    f.sqlite.exec(
+      "INSERT INTO u_notes (id,name,body,sdk_meta,updated_at) VALUES ('keep','existing','old','old','t')",
+    );
+    const order: string[] = [];
+    const original = f.collection.create;
+    f.collection.create = async (data: any) => {
+      order.push(`create ${data.name}`);
+      return original(data);
+    };
+    const update = f.collection.update;
+    f.collection.update = async (id: string, data: any) => {
+      order.push(`update ${data.name}`);
+      return update(id, data);
+    };
+    await f.db.transaction((tx) =>
+      applyLoad(
+        def,
+        tx,
+        {
+          ...command,
+          rows: [
+            { name: 'a', body: 'x' },
+            { name: 'existing', body: 'y' },
+            { name: 'b', body: 'x' },
+          ],
+        },
+        1,
+        'seed',
+      ),
+    );
+    expect(order).toEqual(['create a', 'update existing', 'create b']);
+  } finally {
+    f.close();
   }
 });

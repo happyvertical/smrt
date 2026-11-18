@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.62.5
+
+### Patch Changes
+
+- ### Features
+  
+  - flush the WebView cookie jar so a cookie session survives a kill (#5142) (capacitor-session)
+  - agent-ready smrt apps (epic #5079) (#5115)
+  
+  ### Other Changes
+  
+  - ci: send release and merged-PR events to Work (#5124)
+- @happyvertical/smrt-config@0.62.5
+  - @happyvertical/smrt-scanner@0.62.5
+  - @happyvertical/smrt-types@0.62.5
+
 ## 0.62.4
 
 ### Patch Changes

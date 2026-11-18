@@ -209,6 +209,12 @@ const doc = documents.create({
 });
 await doc.save();
 
+// Bulk create: one all-or-nothing batch, same rows as create() per input
+const imported = await documents.createMany([
+  { title: 'Guide 1', content: '...', wordCount: 900 },
+  { title: 'Guide 2', content: '...', wordCount: 1100 }
+]);
+
 // Advanced querying with operators
 const recentDocs = await documents.list({
   where: {
