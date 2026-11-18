@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.62.7
+
+### Patch Changes
+
+- ### Features
+  
+  - export QuickBooks provider adapters for the accounting ports (#5155) (commerce)
+  - mail account owner, per-account grants and mailbox connect (#5128, #5129) (#5149)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.114.0 (#5148) (deps)
+- @happyvertical/smrt-config@0.62.7
+  - @happyvertical/smrt-scanner@0.62.7
+  - @happyvertical/smrt-types@0.62.7
+
 ## 0.62.6
 
 ### Patch Changes
