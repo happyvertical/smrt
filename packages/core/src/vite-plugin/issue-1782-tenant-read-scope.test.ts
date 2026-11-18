@@ -84,16 +84,18 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
     const collectionRoute = findRouteContent('publictenantdocs/+server.ts');
     const itemRoute = findRouteContent('publictenantdocs/[id]/+server.ts');
 
-    // The fail-closed helper is emitted and depends on isTenancyEnabled().
-    expect(collectionRoute).toContain('function tenantReadScope()');
-    expect(collectionRoute).toContain('isTenancyEnabled()');
-    expect(collectionRoute).toContain('!hasTenantContext()');
-    expect(collectionRoute).toContain('{ tenantId: null }');
-
-    // List + count both carry the scope.
+    // The scope is resolved at request time by core, from the live registry,
+    // exactly as runtime REST resolves it; no manifest-derived helper.
+    expect(collectionRoute).not.toContain('function tenantReadScope()');
     expect(collectionRoute).toContain(
-      'const where = { ...parseRestListWhere(url.searchParams), ...tenantReadScope() };',
+      "import { applyWhereScope, resolveAnonymousTenantReadScope } from '@happyvertical/smrt-core';",
     );
+    // List + count both carry the scope, applied by the helper the runtime
+    // REST route uses so no spelling of the tenant key survives beside it.
+    expect(collectionRoute).toContain(
+      'const where = applyWhereScope(parseRestListWhere(url.searchParams), resolveAnonymousTenantReadScope("@test/smrt:PublicTenantDoc")) ?? {};',
+    );
+    expect(collectionRoute).not.toContain('...tenantReadScope()');
     // #2367 added the deterministic ordering; the read scope still rides along.
     expect(collectionRoute).toContain(
       'collection.list({ limit, offset, orderBy, where })',
@@ -101,7 +103,9 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
     expect(collectionRoute).toContain('collection.count({ where })');
 
     // Single-read get scopes the id lookup to global when no tenant is active.
-    expect(itemRoute).toContain('const readScope = tenantReadScope();');
+    expect(itemRoute).toContain(
+      'const readScope = resolveAnonymousTenantReadScope("@test/smrt:PublicTenantDoc");',
+    );
     expect(itemRoute).toContain(
       'readScope ? { id: params.id, ...readScope } : params.id',
     );
@@ -141,8 +145,9 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
       'publictenantdocs/[id]/versions/+server.ts',
     );
 
-    expect(actionRoute).toContain('function tenantReadScope()');
-    expect(actionRoute).toContain('const readScope = tenantReadScope();');
+    expect(actionRoute).toContain(
+      'const readScope = resolveAnonymousTenantReadScope("@test/smrt:PublicTenantDoc");',
+    );
     expect(actionRoute).toContain(
       'readScope ? { id: params.id, ...readScope } : params.id',
     );
@@ -195,26 +200,21 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
       'publictenantdocs/by-slug/+server.ts',
     );
 
-    expect(collectionActionRoute).toContain('function tenantReadScope()');
+    // Core's shared helper takes ownership out of the caller's options and
+    // sets the request's scope under the ownership field, resolving tenancy
+    // and the super-admin bypass at request time.
     expect(collectionActionRoute).toContain(
-      'function tenantReadOptionsScope()',
-    );
-    expect(collectionActionRoute).toContain('isSuperAdminBypass()');
-    expect(collectionActionRoute).toContain(
-      'getCurrentTenant()?.tenantId ?? null',
+      'const scopedOptions = scopeTenantReadOptions("@test/smrt:PublicTenantDoc", options);',
     );
     expect(collectionActionRoute).toContain(
-      'const readScope = tenantReadOptionsScope();',
-    );
-    expect(collectionActionRoute).toContain(
-      '? ({ ...options, ...readScope } as ActionArgs[0])',
+      "import { enterTenantContext, getCurrentTenant } from '@happyvertical/smrt-tenancy';",
     );
     expect(collectionActionRoute).toContain(
       'await typedCollection.getBySlug(scopedOptions)',
     );
   });
 
-  it('does NOT add the read scope to a non-tenant model’s routes', async () => {
+  it('resolves the scope of a model without manifest tenancy at request time, with no tenancy import', async () => {
     await generate({
       objects: {
         PlainDoc: {
@@ -233,12 +233,18 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
     const collectionRoute = findRouteContent('plaindocs/+server.ts');
     const itemRoute = findRouteContent('plaindocs/[id]/+server.ts');
 
-    expect(collectionRoute).not.toContain('tenantReadScope');
+    // Tenancy can be registered at runtime, so every read asks core; for a
+    // model that is not tenant-scoped the answer is no scope at all.
     expect(collectionRoute).not.toContain('@happyvertical/smrt-tenancy');
+    expect(collectionRoute).toContain(
+      'resolveAnonymousTenantReadScope("@test/smrt:PlainDoc")',
+    );
     expect(collectionRoute).toContain(
       'collection.list({ limit, offset, orderBy, where })',
     );
-    expect(itemRoute).not.toContain('tenantReadScope');
-    expect(itemRoute).toContain('collection.get(params.id)');
+    expect(itemRoute).not.toContain('@happyvertical/smrt-tenancy');
+    expect(itemRoute).toContain(
+      'const readScope = resolveAnonymousTenantReadScope("@test/smrt:PlainDoc");',
+    );
   });
 });

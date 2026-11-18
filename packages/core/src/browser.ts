@@ -667,6 +667,17 @@ export {
   type SubclassExposureEscalation,
   surfaceOpensOperation,
 } from './registry/subclass-exposure';
+// How `where` keys resolve to columns, shared by the collection and by anything
+// that inspects a filter before it runs (interceptors, generated routes).
+// Request tenant context hooks (installed by smrt-tenancy, which browser
+// bundles may include).
+export {
+  enterRequestTenantContext,
+  getRequestTenantContext,
+  type RequestTenantContext,
+  type RequestTenantContextHooks,
+  setRequestTenantContextHooks,
+} from './request-tenant-context';
 // Revision compare-and-swap predicate helpers (#2620)
 export {
   POSTGRES_REVISION_GUARD_EXPRESSION,
@@ -778,8 +789,6 @@ export {
   parseQualifiedName,
   qualifiedNamesEqual,
 } from './utils/qualified-names';
-// How `where` keys resolve to columns, shared by the collection and by anything
-// that inspects a filter before it runs (interceptors, generated routes).
 export {
   applyWhereScope,
   effectiveWhereOperator,

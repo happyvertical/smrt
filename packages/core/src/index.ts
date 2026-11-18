@@ -654,6 +654,15 @@ export {
   type SubclassExposureEscalation,
   surfaceOpensOperation,
 } from './registry/subclass-exposure';
+// The tenant scope request-facing reads add when no interceptor narrows them,
+// and the request tenant context hooks smrt-tenancy installs.
+export {
+  enterRequestTenantContext,
+  getRequestTenantContext,
+  type RequestTenantContext,
+  type RequestTenantContextHooks,
+  setRequestTenantContextHooks,
+} from './request-tenant-context';
 // Revision compare-and-swap predicate helpers (#2620)
 export {
   POSTGRES_REVISION_GUARD_EXPRESSION,
@@ -722,6 +731,11 @@ export type {
 } from './system/types';
 // Table existence verification cache (for test setup reset)
 export { resetVerifiedTables } from './table-cache';
+export {
+  isTenantScopedModel,
+  resolveAnonymousTenantReadScope,
+  scopeTenantReadOptions,
+} from './tenant-read-scope';
 // Testing utilities (for test setup only)
 export {
   getTestDatabase,
