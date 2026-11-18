@@ -555,6 +555,30 @@ export function createLiveAdapter(
     }
     return output.trim() ? JSON.parse(output) : null;
   };
+  // kubectl omits managedFields unless asked; the legacy snapshot records the
+  // field manager each legacy object actually has. `type` is kubectl's
+  // `resource[.group]` form derived from a Flux inventory entry.
+  const getManaged = async (type, name, ns = namespace) => {
+    try {
+      return JSON.parse(
+        await command('kubectl', [
+          '--namespace',
+          ns,
+          'get',
+          type,
+          name,
+          '--show-managed-fields=true',
+          '-o',
+          'json',
+        ]),
+      );
+    } catch {
+      throw new DeploymentError(
+        `Kubernetes read failed: get ${safeReference(type)}/${safeReference(name)} namespace ${safeReference(ns)}`,
+        'RESOURCE_READ',
+      );
+    }
+  };
   async function read() {
     await git('fetch', 'origin', branch);
     const revision = (await git('rev-parse', `origin/${branch}`)).trim();
@@ -2082,6 +2106,7 @@ export function createLiveAdapter(
     {
       get,
       getIfPresent,
+      getManaged,
       bindings,
       inventory,
       preflight,

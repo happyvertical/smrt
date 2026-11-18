@@ -1442,6 +1442,65 @@ export async function legacyMain(env = process.env) {
     const original = legacyManifests('active').map((o) =>
       get(o.kind, o.metadata.name),
     );
+    // The reviewed snapshot is observed by the operator command, never built by
+    // hand: capture now while the legacy application is active, complete once
+    // the reviewed stop revision is applied. The command needs only the
+    // ordinary protected configuration and the operator's reachable legacy
+    // fetch address; the target Flux objects need not exist yet.
+    const snapshotConfigFile = join(scratch, 'snapshot-config.json'),
+      snapshotRequestFile = join(scratch, 'snapshot-request.json'),
+      captureFile = join(scratch, 'snapshot-capture.json');
+    writeFileSync(
+      snapshotConfigFile,
+      JSON.stringify({
+        repository,
+        branch: 'main',
+        file: 'deploy/adoption/flux/release.yaml',
+        namespace,
+        helmReleaseName: 'legacy',
+        chart,
+        source: { name: 'target-source', namespace: 'flux-system' },
+        kustomization: { name: 'target-app', namespace: 'flux-system' },
+        adoption: { legacyFetchUrl: legacyBare },
+      }),
+    );
+    const snapshotRequest = {
+      apiVersion: 'smrt.happyvertical.com/legacy-snapshot-request-v1',
+      adoptionId: 'fixture-4481',
+      legacy: {
+        revision: originalRevision,
+        source: { namespace: 'flux-system', name: 'legacy-source' },
+        kustomization: { namespace: 'flux-system', name: 'legacy-app' },
+      },
+      current,
+      explanation:
+        'Actual original pod specifications retained; reviewed stopped revision scales only nonstatic Deployments and suspends CronJobs; exact immutable selectors and external configuration preserved.',
+    };
+    writeFileSync(snapshotRequestFile, JSON.stringify(snapshotRequest));
+    const snapshotCli = (...args) =>
+      releaseCli(['adopt-snapshot', snapshotConfigFile, ...args], (c) =>
+        createLiveAdapter(c, nativeCommand, publicRequest),
+      );
+    const capture = await snapshotCli(snapshotRequestFile);
+    assert.equal(
+      capture.apiVersion,
+      'smrt.happyvertical.com/legacy-snapshot-capture-v1',
+    );
+    const captureBytes = `${JSON.stringify(capture, null, 2)}\n`;
+    writeFileSync(captureFile, captureBytes);
+    // Completion admits the capture only by the SHA256 recorded in protected
+    // configuration before the stop; without it (or with another) it refuses.
+    const snapshotConfig = JSON.parse(readFileSync(snapshotConfigFile, 'utf8'));
+    writeFileSync(
+      snapshotConfigFile,
+      JSON.stringify({
+        ...snapshotConfig,
+        adoption: {
+          ...snapshotConfig.adoption,
+          captureSha256: digest(captureBytes),
+        },
+      }),
+    );
     // A careful platform lands maintenance in two reviewed legacy commits:
     // first the responder itself (ingress still on the app), then the ingress
     // switch once the responder has endpoints, so the ingress never answers
@@ -1603,7 +1662,47 @@ export async function legacyMain(env = process.env) {
       legacyKS = get('kustomization', 'legacy-app', 'flux-system'),
       targetSource = get('gitrepository', 'target-source', 'flux-system'),
       targetKS = get('kustomization', 'target-app', 'flux-system');
-    const legacy = {
+    // Completion binds the revision the legacy applier actually acknowledges
+    // and the capture's Flux identities; a request naming an unapplied stop
+    // revision or a capture from other Flux objects is refused.
+    const completion = (legacyOverrides) =>
+      JSON.stringify({
+        ...snapshotRequest,
+        legacy: {
+          ...snapshotRequest.legacy,
+          maintenanceRevision,
+          stopRevision,
+          relinquishRevision,
+          ...legacyOverrides,
+        },
+      });
+    writeFileSync(
+      snapshotRequestFile,
+      completion({ stopRevision: maintenanceRevision }),
+    );
+    await assert.rejects(
+      snapshotCli(snapshotRequestFile, captureFile),
+      /acknowledged the reviewed revision/,
+    );
+    writeFileSync(snapshotRequestFile, completion({}));
+    const foreignCapture = join(scratch, 'snapshot-capture-foreign.json');
+    writeFileSync(
+      foreignCapture,
+      JSON.stringify({
+        ...capture,
+        legacy: {
+          ...capture.legacy,
+          kustomization: { ...capture.legacy.kustomization, uid: randomUUID() },
+        },
+      }),
+    );
+    await assert.rejects(
+      snapshotCli(snapshotRequestFile, foreignCapture),
+      /protected adoption.captureSha256/,
+    );
+    const snapshot = await snapshotCli(snapshotRequestFile, captureFile);
+    const legacy = snapshot.legacy;
+    assert.deepEqual(legacy, {
       repository: legacyRepoUrl,
       revision: originalRevision,
       maintenanceRevision,
@@ -1619,48 +1718,36 @@ export async function legacyMain(env = process.env) {
         name: 'legacy-app',
         uid: legacyKS.metadata.uid,
       },
-    };
-    const snapshot = {
-      apiVersion: 'smrt.happyvertical.com/legacy-snapshot-v1',
-      adoptionId: 'fixture-4481',
-      legacy,
-      normalization: {
-        normalizedCurrentIdentity: hash(current),
-        explanation:
-          'Actual original pod specifications retained; reviewed stopped revision scales only nonstatic Deployments and suspends CronJobs; exact immutable selectors and external configuration preserved.',
-      },
-      resources: original.map((o, i) => ({
-        apiVersion: o.apiVersion,
-        kind: o.kind,
-        namespace,
-        name: o.metadata.name,
-        uid: o.metadata.uid,
-        spec: o.spec ?? o.data ?? {},
-        specIdentity: hash(o.spec ?? o.data ?? {}),
-        normalizedSpecIdentity: hash(stopped[i].spec ?? stopped[i].data ?? {}),
-        selector: o.spec?.selector ?? {},
-        legacyManager: 'kustomize-controller',
-        fluxInventoryId: legacyKS.status.inventory.entries.find((e) =>
-          e.id.includes(`_${o.metadata.name}_`),
-        )?.id,
-        ...(['Deployment', 'CronJob'].includes(o.kind)
-          ? {
-              podSpec:
-                o.kind === 'CronJob'
-                  ? o.spec.jobTemplate.spec.template.spec
-                  : o.spec.template.spec,
-              oldImages: (o.kind === 'CronJob'
-                ? o.spec.jobTemplate.spec.template.spec
-                : o.spec.template.spec
-              ).containers.map((c) => c.image),
-            }
-          : {}),
-      })),
-    };
-    assert.ok(
-      snapshot.resources.every((o) => o.fluxInventoryId),
-      'actual legacy Flux inventory IDs required',
+    });
+    // The observed snapshot covers exactly the active legacy inventory and
+    // reproduces the identities the fixture knows independently.
+    const key = (o) => `${o.kind}/${o.name ?? o.metadata.name}`;
+    assert.deepEqual(
+      snapshot.resources.map(key).sort(),
+      original.map(key).sort(),
     );
+    for (const r of snapshot.resources) {
+      const o = original.find((o) => key(o) === key(r)),
+        stoppedObject = stopped.find((o) => key(o) === key(r));
+      assert.equal(r.uid, o.metadata.uid);
+      assert.equal(r.specIdentity, hash(o.spec ?? o.data ?? {}));
+      assert.equal(
+        r.normalizedSpecIdentity,
+        hash(stoppedObject.spec ?? stoppedObject.data ?? {}),
+      );
+      assert.equal(r.legacyManager, 'kustomize-controller');
+      assert.ok(
+        legacyKS.status.inventory.entries.some((e) => e.id === r.fluxInventoryId),
+      );
+      if (['Deployment', 'CronJob'].includes(o.kind))
+        assert.deepEqual(
+          r.oldImages,
+          (o.kind === 'CronJob'
+            ? o.spec.jobTemplate.spec.template.spec
+            : o.spec.template.spec
+          ).containers.map((c) => c.image),
+        );
+    }
     const snapshotBytes = `${JSON.stringify(snapshot, null, 2)}\n`,
       snapshotSha256 = digest(snapshotBytes);
     // Real qualification producer executes the exact application fixture wrapper,

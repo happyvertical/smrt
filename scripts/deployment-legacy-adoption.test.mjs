@@ -7,8 +7,12 @@ import {
   adoptionStages,
   adoptOrResume,
   allowedManagers,
+  legacyInventoryEntry,
   planAdoption,
+  snapshotCaptureVersion,
+  snapshotRequestVersion,
   validateAdoptionPlan,
+  validateSnapshotRequest,
   verifyAdoptionGate,
 } from './deployment/adopt.mjs';
 import { hash } from './deployment/release.mjs';
@@ -1188,6 +1192,173 @@ test('legacy ancestry is proven against the legacy repository in push order and 
     await assert.rejects(prove(stray, true, { relinquishRevision: stray }), /git/, 'observed revision must be on the tracked ref');
     const { readdir } = await import('node:fs/promises');
     assert.deepEqual((await readdir(repository)).filter((n) => n.startsWith('.git-smrt-legacy-')), [], 'private stores are removed');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('snapshot request and Flux inventory ids are strict', () => {
+  const request = {
+    apiVersion: snapshotRequestVersion,
+    adoptionId: 'adopt-1',
+    legacy: {
+      revision,
+      source: { namespace: 'flux-system', name: 'legacy' },
+      kustomization: { namespace: 'flux-system', name: 'legacy-app' },
+    },
+    current: { workloads: {} },
+    explanation: 'Reviewed stop scales Deployments to zero',
+  };
+  assert.ok(validateSnapshotRequest(structuredClone(request)));
+  assert.ok(validateSnapshotRequest({ ...request, legacy: { ...request.legacy, maintenanceRevision: revision, stopRevision: revision, relinquishRevision: revision } }));
+  for (const broken of [
+    { ...request, apiVersion: 'smrt.happyvertical.com/legacy-snapshot-v1' },
+    { ...request, legacy: { ...request.legacy, stopRevision: revision } },
+    { ...request, legacy: { ...request.legacy, revision: 'HEAD' } },
+    { ...request, legacy: { ...request.legacy, source: { namespace: 'flux-system', name: 'legacy', uid: 'x' } } },
+    { ...request, current: {} },
+    { ...request, current: [] },
+    { ...request, explanation: '  ' },
+    { ...request, extra: true },
+  ])
+    assert.throws(() => validateSnapshotRequest(broken), /snapshot request|legacy/i);
+  assert.deepEqual(legacyInventoryEntry('test_app-web_apps_Deployment'), { id: 'test_app-web_apps_Deployment', namespace: 'test', name: 'app-web', group: 'apps', kind: 'Deployment' });
+  assert.deepEqual(legacyInventoryEntry('test_cfg__ConfigMap').group, '');
+  assert.deepEqual(legacyInventoryEntry('_ns_rbac.authorization.k8s.io_ClusterRole').namespace, '');
+  for (const id of ['test_app_Deployment', 'test_a_b_c_d', 'Test_app__ConfigMap', 42, 'test__apps_Deployment'])
+    assert.throws(() => legacyInventoryEntry(id), /inventory entry/);
+});
+test('adopt-snapshot observes the legacy inventory with managed fields, then completes it after the reviewed stop', async () => {
+  const { plan, config } = fixture();
+  Object.assign(config, { repository: '/unit', source: { name: 'new-source', namespace: 'flux-system' }, kustomization: { name: 'new-app', namespace: 'test' }, chart: '/unit/chart.tgz' });
+  const condition = { conditions: [{ type: 'Ready', status: 'True', observedGeneration: 1 }] };
+  const stop = 'c'.repeat(40), maintenance = 'd'.repeat(40), relinquish = 'e'.repeat(40);
+  let applied = revision, drift = null, ref = { branch: 'legacy' };
+  const source = () => ({ metadata: { uid: 'source-uid', generation: 1 }, spec: { url: 'https://example.test/legacy', ref }, status: { ...condition, artifact: { revision: `legacy@sha1:${applied}` } } });
+  let fluxReads = 0;
+  // `drift` models a reconcile landing between the first Flux check and the
+  // steadiness re-read: a new generation whose Ready condition still matches.
+  const ks = () => { const generation = drift && ++fluxReads > 1 ? 2 : 1; return ({ metadata: { uid: 'ks-uid', generation, namespace: 'flux-system' }, spec: { prune: true, sourceRef: { kind: 'GitRepository', name: 'legacy' } }, status: { conditions: [{ type: 'Ready', status: 'True', observedGeneration: generation }], lastAppliedRevision: `legacy@sha1:${applied}`, inventory: { entries: [{ id: 'test_app-web_apps_Deployment', v: 'v1' }, { id: 'test_app-config__ConfigMap', v: 'v1' }, { id: 'other_app-web_apps_Deployment', v: 'v1' }, { id: 'test_app-monitor_batch_CronJob', v: 'v1' }] } } }); };
+  const podSpec = { containers: [{ name: 'web', image }], initContainers: [{ name: 'init', image: `${image}-init` }] };
+  const selector = { matchLabels: { app: 'app-web' } };
+  const managedFields = [
+    { manager: 'kustomize-controller', operation: 'Apply', fieldsType: 'FieldsV1', fieldsV1: { 'f:spec': {} } },
+    { manager: 'kube-controller-manager', operation: 'Update', fieldsType: 'FieldsV1', fieldsV1: { 'f:metadata': { 'f:annotations': { 'f:deployment.kubernetes.io/revision': {} } } } },
+    { manager: 'kube-controller-manager', operation: 'Update', subresource: 'status', fieldsType: 'FieldsV1', fieldsV1: { 'f:status': { 'f:replicas': {} } } },
+  ];
+  const deployment = () => ({ apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'app-web', namespace: 'test', uid: 'workload-uid', managedFields: structuredClone(managedFields) }, spec: { replicas: applied === revision ? 1 : 0, selector, template: { spec: podSpec } } });
+  const cron = () => ({ apiVersion: 'batch/v1', kind: 'CronJob', metadata: { name: 'app-monitor', namespace: 'test', uid: 'cron-uid', managedFields: [managedFields[0]] }, spec: { schedule: '* * * * *', suspend: applied !== revision, jobTemplate: { spec: { template: { spec: { containers: [{ name: 'monitor', image }] } } } } } });
+  const configMap = () => ({ apiVersion: 'v1', kind: 'ConfigMap', metadata: { name: 'app-config', namespace: 'test', uid: 'config-uid', managedFields: [managedFields[0]] }, data: { key: 'value' } });
+  const reads = [];
+  const commands = [];
+  const helpers = {
+    get: async (kind) => (kind === 'gitrepository' ? source() : ks()),
+    getManaged: async (type, name, ns) => {
+      reads.push(`${type} ${name} ${ns}`);
+      return { 'deployment.apps': deployment, 'cronjob.batch': cron, configmap: configMap }[type]();
+    },
+  };
+  const methods = createAdoptionMethods(config, async (tool, args) => { commands.push([tool, ...args]); return ''; }, helpers, {});
+  const request = {
+    apiVersion: snapshotRequestVersion,
+    adoptionId: plan.adoptionId,
+    legacy: { revision, source: { namespace: 'flux-system', name: 'legacy' }, kustomization: { namespace: 'flux-system', name: 'legacy-app' } },
+    current: plan.candidate.spec.values.current,
+    explanation: 'Reviewed stop scales the Deployment to zero and suspends the CronJob',
+  };
+  const { createHash } = await import('node:crypto');
+  const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+  const bytesOf = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+  const capture = await methods.snapshotLegacy(structuredClone(request));
+  assert.equal(capture.apiVersion, snapshotCaptureVersion);
+  const captureBytes = bytesOf(capture);
+  config.adoption.captureSha256 = sha256(captureBytes);
+  assert.deepEqual(reads, ['deployment.apps app-web test', 'configmap app-config test', 'cronjob.batch app-monitor test'], 'only this namespace, each object read with managed fields');
+  assert.deepEqual(capture.legacy, { repository: 'https://example.test/legacy', revision, source: { namespace: 'flux-system', name: 'legacy', uid: 'source-uid' }, kustomization: { namespace: 'flux-system', name: 'legacy-app', uid: 'ks-uid' } });
+  assert.equal(capture.normalization.normalizedCurrentIdentity, plan.normalizedCurrentIdentity);
+  const web = capture.resources.find((r) => r.kind === 'Deployment');
+  assert.deepEqual({ ...web, spec: undefined, podSpec: undefined }, { apiVersion: 'apps/v1', kind: 'Deployment', namespace: 'test', name: 'app-web', uid: 'workload-uid', spec: undefined, specIdentity: hash(deployment().spec), selector, legacyManager: 'kustomize-controller', fluxInventoryId: 'test_app-web_apps_Deployment', podSpec: undefined, oldImages: [image, `${image}-init`] });
+  assert.deepEqual(web.podSpec, podSpec);
+  assert.equal(capture.resources.find((r) => r.kind === 'ConfigMap').specIdentity, hash({ key: 'value' }));
+  assert.ok(capture.resources.every((r) => !('normalizedSpecIdentity' in r)), 'capture precedes the stop');
+  // Completion is refused while the legacy applier is not at the stop revision.
+  const completion = { ...request, legacy: { ...request.legacy, maintenanceRevision: maintenance, stopRevision: stop, relinquishRevision: relinquish } };
+  await assert.rejects(methods.snapshotLegacy(structuredClone(completion), captureBytes), /acknowledged the reviewed revision/);
+  await assert.rejects(methods.snapshotLegacy(structuredClone(request), captureBytes), /completion requires/);
+  await assert.rejects(methods.snapshotLegacy(structuredClone(completion)), /capture precedes/);
+  applied = stop;
+  commands.length = 0;
+  const snapshot = await methods.snapshotLegacy(structuredClone(completion), captureBytes);
+  assert.equal(snapshot.apiVersion, 'smrt.happyvertical.com/legacy-snapshot-v1');
+  assert.deepEqual(snapshot.legacy, { ...capture.legacy, maintenanceRevision: maintenance, stopRevision: stop, relinquishRevision: relinquish });
+  const stoppedWeb = snapshot.resources.find((r) => r.kind === 'Deployment');
+  assert.equal(stoppedWeb.specIdentity, web.specIdentity, 'original spec identity retained');
+  assert.equal(stoppedWeb.normalizedSpecIdentity, hash({ ...deployment().spec, replicas: 0 }));
+  assert.deepEqual(Object.keys(stoppedWeb), ['apiVersion', 'kind', 'namespace', 'name', 'uid', 'spec', 'specIdentity', 'normalizedSpecIdentity', 'selector', 'legacyManager', 'fluxInventoryId', 'podSpec', 'oldImages']);
+  const store = commands.find(([tool, , dir]) => tool === 'git' && /\.git-smrt-legacy-/.test(dir))?.[2];
+  assert.ok(store, 'reviewed revisions are proven in the legacy repository');
+  assert.ok(commands.some((c) => c.join(' ') === `git -C ${store} fetch --quiet --no-tags https://example.test/legacy +refs/heads/legacy:refs/smrt/legacy`));
+  assert.ok(commands.some((c) => c.join(' ') === `git -C ${store} merge-base --is-ancestor ${stop} refs/smrt/legacy`));
+  assert.ok(!commands.some((c) => c.join(' ').includes(relinquish)), 'the relinquish commit is pushed only after the writers stop');
+  // The completed snapshot is exactly what the plan later qualifies.
+  const bytes = `${JSON.stringify(snapshot, null, 2)}\n`;
+  plan.legacy = snapshot.legacy;
+  plan.snapshot.sha256 = sha256(bytes);
+  Object.assign(config.adoption, { fluxPath: 'apps', sourceUid: 'new-source-uid', kustomizationUid: 'new-ks-uid', snapshotSha256: plan.snapshot.sha256, qualificationSha256: plan.qualification.sha256 });
+  // The capture is admitted by protected byte identity: any edit, including a
+  // self-consistent rewrite of the original PodSpec and images, fails closed
+  // unless the protected digest is updated for it.
+  const forged = structuredClone(capture);
+  const web0 = forged.resources.find((r) => r.kind === 'Deployment');
+  web0.podSpec.containers[0].image = 'registry/evil@sha256:' + 'f'.repeat(64);
+  web0.spec.template.spec = web0.podSpec;
+  web0.oldImages = [web0.podSpec.containers[0].image, `${image}-init`];
+  web0.specIdentity = hash(web0.spec);
+  await assert.rejects(methods.snapshotLegacy(structuredClone(completion), bytesOf(forged)), /protected adoption.captureSha256/);
+  await assert.rejects(methods.snapshotLegacy(structuredClone(completion), Buffer.from(`${captureBytes.toString()} `)), /protected adoption.captureSha256/);
+  const bound = async (value, override = {}) => {
+    const b = bytesOf(value);
+    config.adoption.captureSha256 = sha256(b);
+    try { return await methods.snapshotLegacy(structuredClone({ ...completion, ...override }), b); } finally { config.adoption.captureSha256 = sha256(captureBytes); }
+  };
+  // Even a bound (reviewed) capture must still match the live cluster.
+  await assert.rejects(bound({ ...capture, legacy: { ...capture.legacy, kustomization: { ...capture.legacy.kustomization, uid: 'other' } } }), /identity changed/);
+  await assert.rejects(bound(capture, { adoptionId: 'adopt-2' }), /belong to this request/);
+  await assert.rejects(bound({ ...capture, resources: capture.resources.map((r) => ({ ...r, uid: 'forged' })) }), /UID\/selector changed/);
+  await assert.rejects(bound({ ...capture, resources: capture.resources.filter((r) => r.kind !== 'ConfigMap') }), /inventory differs/, 'a dropped record is refused');
+  await assert.rejects(bound({ ...capture, resources: capture.resources.map((r) => (r.kind === 'ConfigMap' ? { ...r, kind: 'Secret', name: 'app-config' } : r)) }), /UID\/selector changed|inventory entry/, 'a renamed record is refused');
+  // An apply landing between the Flux check and the resource reads fails closed.
+  drift = true; fluxReads = 0;
+  await assert.rejects(methods.snapshotLegacy(structuredClone(completion), captureBytes), /changed while the snapshot was observed/);
+  drift = null;
+  ref = {};
+  await assert.rejects(methods.snapshotLegacy(structuredClone(completion), captureBytes), /acknowledged the reviewed revision/, 'the source must track a branch or tag');
+  ref = { branch: 'legacy' };
+  // A second non-native field manager on a legacy object blocks the capture.
+  managedFields.push({ manager: 'kubectl-client-side-apply', operation: 'Update', fieldsType: 'FieldsV1', fieldsV1: { 'f:spec': { 'f:replicas': {} } } });
+  applied = revision;
+  await assert.rejects(methods.snapshotLegacy(structuredClone(request)), /exactly one non-native field manager/);
+  managedFields.pop();
+  drift = true; fluxReads = 0;
+  await assert.rejects(methods.snapshotLegacy(structuredClone(request)), /changed while the snapshot was observed/, 'capture also brackets its reads');
+});
+test('adopt-snapshot CLI prints the capture and the snapshot and forwards the saved capture', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'smrt-adopt-snapshot-'));
+  try {
+    const { plan, config } = fixture();
+    const request = { apiVersion: snapshotRequestVersion, adoptionId: plan.adoptionId, legacy: { revision, source: { namespace: 'flux-system', name: 'legacy' }, kustomization: { namespace: 'flux-system', name: 'legacy-app' } }, current: plan.candidate.spec.values.current, explanation: 'reviewed' };
+    const configFile = join(dir, 'config.json'), requestFile = join(dir, 'request.json'), captureFile = join(dir, 'capture.json');
+    await writeFile(configFile, JSON.stringify(config));
+    await writeFile(requestFile, JSON.stringify(request));
+    await writeFile(captureFile, JSON.stringify({ apiVersion: snapshotCaptureVersion }));
+    const calls = [];
+    const adapter = { snapshotLegacy: async (r, capture) => { calls.push([r, capture === null ? null : JSON.parse(capture.toString())]); assert.ok(capture === null || Buffer.isBuffer(capture), 'the capture reaches the adapter as bytes'); return { apiVersion: capture ? 'snapshot' : 'capture' }; } };
+    assert.deepEqual(await main(['adopt-snapshot', configFile, requestFile], () => adapter), { apiVersion: 'capture' });
+    assert.deepEqual(await main(['adopt-snapshot', configFile, requestFile, captureFile], () => adapter), { apiVersion: 'snapshot' });
+    assert.deepEqual(calls.map(([r, c]) => [r.adoptionId, c]), [[plan.adoptionId, null], [plan.adoptionId, { apiVersion: snapshotCaptureVersion }]]);
+    await writeFile(requestFile, JSON.stringify({ ...request, explanation: '' }));
+    await assert.rejects(main(['adopt-snapshot', configFile, requestFile], () => adapter), /explanation/);
+    await assert.rejects(main(['adopt-snapshot', configFile], () => adapter), /request file/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

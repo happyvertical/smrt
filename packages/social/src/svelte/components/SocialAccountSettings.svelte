@@ -364,7 +364,7 @@ function statusLabel(account: SocialAccountSettingsItem): string {
   }
   .smrt-social-account-settings__confirm {
     border: 1px solid currentColor;
-    border-radius: var(--smrt-radius-md, 8px);
+    border-radius: var(--smrt-radius-md);
   }
   .smrt-social-account-settings__empty {
     border: 1px dashed var(--smrt-color-outline-variant);

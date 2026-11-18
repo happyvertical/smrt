@@ -62,6 +62,87 @@ export function legacyRepositoryUrl(value) {
   }
 }
 
+export const snapshotRequestVersion =
+  'smrt.happyvertical.com/legacy-snapshot-request-v1';
+export const snapshotCaptureVersion =
+  'smrt.happyvertical.com/legacy-snapshot-capture-v1';
+export const snapshotVersion = 'smrt.happyvertical.com/legacy-snapshot-v1';
+export const laterLegacyRevisions = [
+  'maintenanceRevision',
+  'stopRevision',
+  'relinquishRevision',
+];
+// The operator's reviewed input to `adopt-snapshot`: the legacy Flux objects by
+// name, the reviewed legacy revisions (the original alone while capturing; the
+// maintenance, stop and relinquish revisions too when completing), the
+// normalized current runtime the candidate will carry, and the reviewed
+// explanation of how the stopped runtime differs from the original.
+export function validateSnapshotRequest(request) {
+  demand(
+    keys(request, [
+      'apiVersion',
+      'adoptionId',
+      'legacy',
+      'current',
+      'explanation',
+    ]) &&
+      request.apiVersion === snapshotRequestVersion &&
+      text(request.adoptionId),
+    'Invalid snapshot request',
+  );
+  const legacy = request.legacy;
+  demand(
+    (keys(legacy, ['revision', 'source', 'kustomization']) ||
+      keys(legacy, [
+        'revision',
+        ...laterLegacyRevisions,
+        'source',
+        'kustomization',
+      ])) &&
+      ['revision', ...laterLegacyRevisions].every(
+        (k) => !Object.hasOwn(legacy, k) || revision(legacy[k]),
+      ),
+    'Invalid reviewed legacy revisions',
+  );
+  for (const ref of [legacy.source, legacy.kustomization])
+    demand(
+      keys(ref, ['namespace', 'name']) && Object.values(ref).every(text),
+      'Invalid legacy Flux reference',
+    );
+  demand(
+    request.current &&
+      typeof request.current === 'object' &&
+      !Array.isArray(request.current) &&
+      Object.keys(request.current).length > 0,
+    'Snapshot request requires the normalized current runtime',
+  );
+  demand(
+    typeof request.explanation === 'string' &&
+      request.explanation.trim().length > 0 &&
+      request.explanation.length <= 4000,
+    'Snapshot request requires a reviewed normalization explanation',
+  );
+  return request;
+}
+// Flux inventory entry ids are `namespace_name_group_kind`; none of the four
+// parts may contain an underscore, cluster-scoped entries leave the namespace
+// empty and core-group entries leave the group empty.
+export function legacyInventoryEntry(id) {
+  const parts = typeof id === 'string' ? id.split('_') : [];
+  const label = (p) => /^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$/.test(p);
+  demand(
+    parts.length === 4 &&
+      (parts[0] === '' ||
+        /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/.test(parts[0])) &&
+      label(parts[1]) &&
+      (parts[2] === '' || label(parts[2])) &&
+      label(parts[3]),
+    'Invalid legacy Flux inventory entry',
+  );
+  const [namespace, name, group, kind] = parts;
+  return { id, namespace, name, group, kind };
+}
+
 export function validateAdoptionPlan(plan) {
   demand(
     keys(plan, [
