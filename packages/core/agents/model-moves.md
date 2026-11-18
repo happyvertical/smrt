@@ -103,6 +103,19 @@ Known gap: STI child-collection reads filter `_meta_type` by the current name
 only. Run the backfill before relying on subclass collections of a moved STI
 class.
 
+## Same-named subclasses and aliases
+
+A class that extends the moved class under the same simple name declares
+`replaceParent: true` ([app-subclasses.md](app-subclasses.md), #5143), and the
+alias follows the replacement. `getClassByQualifiedName(old)`,
+`resolveType(old)` and association hydration resolve to the replacing class,
+and the replaced class's own current name resolves to it too. The replacement
+must not redeclare the alias (two claimants collide).
+
+Whether `smrt doctor --db` and `db:migrate-qualified-names` count and rewrite
+towards a replacement, rather than the class that declares the alias, is
+tracked in #3347.
+
 ## Lifecycle
 
 1. Move the class, keep its table, and declare `previousQualifiedNames`. This
