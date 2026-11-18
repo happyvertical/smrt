@@ -38,7 +38,10 @@ final. `resume` passes the definition version, the app ceiling and the
 reconciler to `resumeAiRun`; a budget stop needs the stopping limit raised.
 `retry` opens a new run with `retry_of_run_id`, carrying the failed run's
 accepted outputs of completed steps; refusals are core's
-`AiRunResumeRefusedError` reasons.
+`AiRunResumeRefusedError` reasons. Core treats another tenant's run as
+absent (`retry_source_pruned`, as an unknown id); the driver itself refuses
+only its own tenant's runs of another owner or definition
+(`WorkflowRunNotFoundError`).
 
 ## Leases and fencing
 

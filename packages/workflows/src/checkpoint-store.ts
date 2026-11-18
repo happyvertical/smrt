@@ -4,6 +4,7 @@ import {
   type AiRunClaimFence,
   type AiRunRow,
   getAiRun,
+  listAiRuns,
   readAiRunCheckpoint,
   saveAiRunCheckpoint,
 } from '@happyvertical/smrt-core';
@@ -108,6 +109,14 @@ export function createRunCheckpointStore(
     ownerId: options.ownerId,
     tenantId,
     async load(runId) {
+      // Looked up in the store's tenant first (a SQL predicate): a run of
+      // another tenant is not read, only not found.
+      const listed = await listAiRuns(options.db, {
+        id: runId,
+        tenantId,
+        limit: 1,
+      });
+      if (listed.length === 0) return null;
       const run = await getAiRun(options.db, runId);
       if (
         !run ||

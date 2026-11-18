@@ -14,6 +14,7 @@ import {
   finishAiRun,
   getAiRun,
   getRunTrajectory,
+  listAiRuns,
   reconcileAiRunOnClaim,
   resumeAiRun,
   startAiRunStep,
@@ -1102,14 +1103,20 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
         throw new WorkflowRunNotFoundError(runId);
       }
       if (!failed) {
-        // Not visible, or pruned: core decides which and refuses.
-        const visible = await getAiRun(db, runId);
+        // Not visible, or pruned: core decides which and refuses. Core treats
+        // a run of another tenant as absent (`retry_source_pruned`, as for an
+        // unknown id), so only this tenant's rows are judged here: another
+        // owner's run, or another definition's, is not this caller's.
+        const visible =
+          (await listAiRuns(db, { id: runId, tenantId, limit: 1 })).length > 0
+            ? await getAiRun(db, runId)
+            : null;
         if (
           visible &&
+          (visible.tenantId ?? null) === tenantId &&
           (visible.type !== WORKFLOW_RUN_TYPE ||
             visible.definitionKey !== definition.key ||
-            visible.ownerId !== ownerId ||
-            (visible.tenantId ?? null) !== tenantId)
+            visible.ownerId !== ownerId)
         ) {
           throw new WorkflowRunNotFoundError(runId);
         }
