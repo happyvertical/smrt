@@ -6,6 +6,7 @@ export default createPackageConfig('messages', {
     'host',
     'host.browser',
     'ui',
+    'connect',
     'playground',
     // Explicit provider entry points (#1979): the only modules allowed to
     // reference the provider SDK wrappers (@happyvertical/email//messages).

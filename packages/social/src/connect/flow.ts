@@ -9,17 +9,25 @@
  * No role checks live here; authorize before calling.
  */
 
+import {
+  beginConnect,
+  ConnectError,
+  type ConnectStateRecord,
+  type ConnectStateStore,
+  consumeConnect,
+} from '@happyvertical/smrt-secrets/connect';
 import { getCurrentTenant, withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { OAuthStateCollection } from '../collections/oauth-state-collection.js';
 import { SocialAccountCollection } from '../collections/social-account-collection.js';
-import { OAuthState } from '../oauth-state.js';
+import type { OAuthState } from '../oauth-state.js';
 import { getDefaultSocialAccountName } from '../server.js';
 import type { SocialAccount } from '../social-account.js';
 import { getSocialConnectProvider } from './registry.js';
 import {
   type SocialClientCredentials,
   SocialConnectError,
+  type SocialConnectErrorCode,
   type SocialConnectProvider,
 } from './types.js';
 
@@ -105,6 +113,73 @@ function resolveTenantId(options: SocialConnectContext): string {
   return tenantId;
 }
 
+/**
+ * The shared connect kernel's store contract over this package's `OAuthState`
+ * table, so social connects use the same state lifecycle as every other
+ * credential connect without a schema change.
+ */
+function oauthStateStore(states: OAuthStateCollection): ConnectStateStore {
+  const rows = new WeakMap<ConnectStateRecord, OAuthState>();
+  const toRecord = (row: OAuthState): ConnectStateRecord => {
+    const record: ConnectStateRecord = {
+      state: row.state,
+      kind: row.platform,
+      codeVerifier: row.codeVerifier,
+      redirectUri: row.redirectUri,
+      scopes: row.scopes,
+      tenantId: row.tenantId,
+      initiatedByUserId: row.initiatedByUserId,
+      returnTo: row.returnTo,
+      expiresAt: row.expiresAt,
+    };
+    rows.set(record, row);
+    return record;
+  };
+  return {
+    async create(input) {
+      return toRecord(
+        await states.create({
+          platform: input.kind as OAuthState['platform'],
+          state: input.state,
+          codeVerifier: input.codeVerifier,
+          redirectUri: input.redirectUri,
+          scopes: input.scopes,
+          tenantId: input.tenantId,
+          initiatedByUserId: input.initiatedByUserId,
+          returnTo: input.returnTo ?? null,
+          expiresAt: input.expiresAt,
+        }),
+      );
+    },
+    async findByState(state) {
+      const row = await states.findByState(state);
+      return row ? toRecord(row) : null;
+    },
+    async consume(record) {
+      const row = rows.get(record);
+      return row ? states.consume(row) : false;
+    },
+  };
+}
+
+/** The kernel's neutral error, surfaced as this package's public error. */
+async function asSocialError<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    if (
+      error instanceof ConnectError &&
+      !(error instanceof SocialConnectError)
+    ) {
+      throw new SocialConnectError(
+        error.code as SocialConnectErrorCode,
+        error.message,
+      );
+    }
+    throw error;
+  }
+}
+
 function inTenant<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
   return getCurrentTenant()?.tenantId === tenantId
     ? fn()
@@ -135,27 +210,22 @@ export async function startSocialConnect(
   const tenantId = resolveTenantId(options);
   const scopes = options.scopes ?? provider.defaultScopes;
 
-  const state = OAuthState.generateState();
-  const codeVerifier = provider.usesPkce
-    ? OAuthState.generateCodeVerifier()
-    : null;
-  const codeChallenge = codeVerifier
-    ? await OAuthState.generateCodeChallenge(codeVerifier)
-    : undefined;
-
-  await inTenant(tenantId, async () => {
-    const states = await OAuthStateCollection.create({ db: options.db });
-    await states.create({
-      platform: provider.platform,
-      state,
-      codeVerifier,
-      redirectUri: options.redirectUri,
-      scopes,
-      tenantId,
-      initiatedByUserId: options.userId ?? null,
-      expiresAt: new Date(Date.now() + (options.ttlMs ?? 10 * 60 * 1000)),
-    });
-  });
+  const { state, codeChallenge } = await asSocialError(() =>
+    inTenant(tenantId, async () =>
+      beginConnect({
+        store: oauthStateStore(
+          await OAuthStateCollection.create({ db: options.db }),
+        ),
+        kind: provider.platform,
+        tenantId,
+        userId: options.userId ?? null,
+        redirectUri: options.redirectUri,
+        scopes,
+        usesPkce: provider.usesPkce,
+        ttlMs: options.ttlMs,
+      }),
+    ),
+  );
 
   return {
     authorizeUrl: provider.buildAuthorizeUrl({
@@ -176,54 +246,23 @@ export async function completeSocialConnect(
   const client = resolveClient(provider, options);
   const tenantId = resolveTenantId(options);
   const fetchImpl = options.fetch ?? fetch;
-  const { code, state: stateToken, error } = options.query;
 
   return inTenant(tenantId, async () => {
-    const states = await OAuthStateCollection.create({ db: options.db });
-
-    // Always burn the state first when we can find it, including for a
-    // refused grant, so a callback URL cannot be replayed.
-    const stored = stateToken ? await states.findByState(stateToken) : null;
-    if (
-      !stored ||
-      stored.platform !== provider.platform ||
-      stored.tenantId !== tenantId ||
-      stored.redirectUri !== options.redirectUri ||
-      (stored.initiatedByUserId !== null &&
-        stored.initiatedByUserId !== (options.userId ?? null))
-    ) {
-      throw new SocialConnectError(
-        'invalid_state',
-        'This connect link is not valid. Start the connection again.',
-      );
-    }
-    const consumed = await states.consume(stored);
-    if (!consumed) {
-      throw new SocialConnectError(
-        'invalid_state',
-        'This connect link was already used. Start the connection again.',
-      );
-    }
-    if (stored.isExpired) {
-      throw new SocialConnectError(
-        'state_expired',
-        'This connect link expired. Start the connection again.',
-      );
-    }
-    if (error) {
-      throw new SocialConnectError(
-        error === 'access_denied' ? 'access_denied' : 'provider_error',
-        error === 'access_denied'
-          ? `${provider.label} access was not granted.`
-          : `${provider.label} returned an error (${error.slice(0, 64)}).`,
-      );
-    }
-    if (!code) {
-      throw new SocialConnectError(
-        'provider_error',
-        `${provider.label} did not return an authorization code.`,
-      );
-    }
+    // The state is burned first, including for a refused grant, so a
+    // callback URL cannot be replayed.
+    const { record: stored, code } = await asSocialError(async () =>
+      consumeConnect({
+        store: oauthStateStore(
+          await OAuthStateCollection.create({ db: options.db }),
+        ),
+        kind: provider.platform,
+        tenantId,
+        userId: options.userId ?? null,
+        redirectUri: options.redirectUri,
+        query: options.query,
+        label: provider.label,
+      }),
+    );
 
     const tokens = await provider.exchangeCode({
       client,

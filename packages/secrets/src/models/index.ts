@@ -7,6 +7,7 @@
 // subpath without the main entry. See src/__smrt-register__.ts (issue #1132).
 import '../__smrt-register__.js';
 
+export { ConnectState, type ConnectStateOptions } from './ConnectState.js';
 export { Secret, type SecretStatus } from './Secret.js';
 export {
   createAuditEntry,

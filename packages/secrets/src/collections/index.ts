@@ -3,6 +3,7 @@
  * @packageDocumentation
  */
 
+export { ConnectStateCollection } from './ConnectStateCollection.js';
 export {
   type ListAuditLogsOptions,
   SecretAuditLogCollection,

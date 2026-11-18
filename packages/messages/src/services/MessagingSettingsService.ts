@@ -2,7 +2,11 @@ import {
   ObjectRegistry,
   type SmrtClassOptions,
 } from '@happyvertical/smrt-core';
+import { runWithMailSystemAccess } from '../access.js';
 import { AccountCollection } from '../collections/AccountCollection.js';
+import { AttachmentCollection } from '../collections/AttachmentCollection.js';
+import { EmailFolderCollection } from '../collections/EmailFolderCollection.js';
+import { MessageCollection } from '../collections/MessageCollection.js';
 import { MessagingEndpointCollection } from '../collections/MessagingEndpointCollection.js';
 import { PersonaMessageRouteCollection } from '../collections/PersonaMessageRouteCollection.js';
 import { withTenant } from '../host.js';
@@ -35,6 +39,34 @@ export interface MessagingAccountInput {
   /** Omit on update to leave the stored secret unchanged. */
   credentials?: Record<string, unknown>;
   active?: boolean;
+  /**
+   * The new account's owner (create only; must be the acting principal).
+   * Ownership changes later go through `MailAccessService.setOwner`.
+   */
+  ownerUserId?: string | null;
+  /** A short name shown beside the account, such as Support. */
+  label?: string | null;
+}
+
+/** A mailbox connected with a write-only secret such as an app password. */
+export interface MailboxConnectInput {
+  /** Reconnect an existing mailbox: replaces its credential. */
+  id?: string;
+  name: string;
+  label?: string | null;
+  providerId: string;
+  /** Non-secret connection settings, including this account's own endpoint. */
+  configuration: Record<string, unknown>;
+  /** Write-only: validated, stored in smrt-secrets, never returned. */
+  credentials: Record<string, unknown>;
+}
+
+/** What `connectMailbox` hands to the validator before anything is stored. */
+export interface MailboxValidationRequest {
+  provider: MessagingProviderDefinition;
+  configuration: Record<string, unknown>;
+  /** The normalized secret payload exactly as it would be stored. */
+  credentials: Record<string, unknown>;
 }
 
 export interface MessagingEndpointInput {
@@ -64,6 +96,10 @@ export interface MessagingAccountView {
   configuration: Record<string, unknown>;
   hasCredentials: boolean;
   active: boolean;
+  ownerUserId: string | null;
+  label: string | null;
+  connectionStatus: string | null;
+  statusMessage: string | null;
 }
 
 export interface MessagingEndpointView {
@@ -85,6 +121,12 @@ export class MessagingSettingsService {
       principal: MessagingPrincipal;
       /** Cross-package ownership check supplied by the host/personas layer. */
       resolvePersonaTenantId: (personaId: string) => Promise<string | null>;
+      /**
+       * Opens a session with the candidate credential before `connectMailbox`
+       * stores anything. Defaults to the provider's email client; reject to
+       * refuse the connection.
+       */
+      validateMailbox?: (request: MailboxValidationRequest) => Promise<void>;
     },
   ) {}
 
@@ -133,9 +175,20 @@ export class MessagingSettingsService {
   async saveAccount(
     input: MessagingAccountInput,
   ): Promise<MessagingAccountView> {
+    return this.persistAccount(input, false);
+  }
+
+  /**
+   * `receiveOnly` admits providers that are not outbound transports (IMAP,
+   * POP3): a mailbox can be connected for reading without being a sender.
+   */
+  private async persistAccount(
+    input: MessagingAccountInput,
+    receiveOnly: boolean,
+  ): Promise<MessagingAccountView> {
     this.assert(MANAGE_MESSAGE_CREDENTIALS_PERMISSION);
     const provider = this.requireProvider(input.providerId);
-    if (!provider.available)
+    if (!provider.available && !(receiveOnly && provider.channel === 'email'))
       throw new Error(`Provider '${provider.id}' is not available.`);
     this.validateFields(
       input.configuration,
@@ -164,6 +217,21 @@ export class MessagingSettingsService {
           'A messaging account provider cannot be changed in place.',
         );
       }
+      if (account) this.assertMayManage(account);
+      if (account && input.ownerUserId !== undefined) {
+        if ((input.ownerUserId ?? null) !== (account.ownerUserId ?? null)) {
+          throw new Error(
+            'Change a mail account owner with MailAccessService.setOwner.',
+          );
+        }
+      }
+      if (
+        !account &&
+        input.ownerUserId &&
+        input.ownerUserId !== this.actingUserId
+      ) {
+        throw new Error('A new mail account can only be owned by its creator.');
+      }
       if (
         isNew &&
         !input.credentials &&
@@ -180,6 +248,9 @@ export class MessagingSettingsService {
       }
 
       account.name = input.name.trim();
+      if (isNew && input.ownerUserId) account.ownerUserId = input.ownerUserId;
+      if (input.label !== undefined)
+        account.label = input.label?.trim() || null;
       account.isActive = input.active ?? account.isActive;
       account.channelType = provider.channel;
       const configuration = this.normalizeConfiguration(
@@ -200,6 +271,115 @@ export class MessagingSettingsService {
       }
 
       return this.accountView(account);
+    });
+  }
+
+  /**
+   * Connect a mailbox with a write-only secret (an app password). The
+   * credential is validated by opening a session first; a refusal leaves no
+   * account and no secret behind. The connecting user becomes the owner.
+   */
+  async connectMailbox(
+    input: MailboxConnectInput,
+  ): Promise<MessagingAccountView> {
+    this.assert(MANAGE_MESSAGE_CREDENTIALS_PERMISSION);
+    // A connected mailbox always has an owner: without a user to own it the
+    // account would silently be readable tenant-wide.
+    if (!this.actingUserId) {
+      throw new Error('Connecting a mailbox needs a signed-in user.');
+    }
+    if (input.id) {
+      // Reconnect, never create-by-id: fails before any server is contacted.
+      await withTenant({ tenantId: this.options.tenantId }, async () => {
+        this.assertMayManage(await this.loadAccount(input.id as string));
+      });
+    }
+    const provider = this.requireProvider(input.providerId);
+    if (provider.channel !== 'email') {
+      throw new Error(`Provider '${provider.id}' cannot connect a mailbox.`);
+    }
+    this.validateFields(
+      input.configuration,
+      provider.configurationFields,
+      'configuration',
+    );
+    this.validateFields(
+      input.credentials,
+      provider.credentialFields,
+      'credentials',
+    );
+    const configuration = this.normalizeConfiguration(
+      provider,
+      input.configuration,
+    );
+    const credentials = this.normalizeCredentials(provider, input.credentials);
+    await this.validateConnection({ provider, configuration, credentials });
+    const view = await this.persistAccount(
+      {
+        id: input.id,
+        name: input.name,
+        label: input.label,
+        providerId: input.providerId,
+        configuration: input.configuration,
+        credentials: input.credentials,
+        active: true,
+        ownerUserId: input.id ? undefined : (this.actingUserId ?? null),
+      },
+      true,
+    );
+    return withTenant({ tenantId: this.options.tenantId }, async () => {
+      const account = await this.loadAccount(view.id);
+      await account.markConnected();
+      return this.accountView(account);
+    });
+  }
+
+  /** Pause or resume a mailbox without touching its credential. */
+  async setAccountActive(
+    accountId: string,
+    active: boolean,
+  ): Promise<MessagingAccountView> {
+    this.assert(MANAGE_MESSAGE_CREDENTIALS_PERMISSION);
+    return withTenant({ tenantId: this.options.tenantId }, async () => {
+      const account = await this.loadAccount(accountId);
+      this.assertMayManage(account);
+      account.isActive = active;
+      account.updatedAt = new Date();
+      await account.save();
+      return this.accountView(account);
+    });
+  }
+
+  /**
+   * Remove a mailbox: its stored credential, its synced emails, folders and
+   * attachments, and the account itself.
+   */
+  async removeAccount(accountId: string): Promise<void> {
+    this.assert(MANAGE_MESSAGE_CREDENTIALS_PERMISSION);
+    await withTenant({ tenantId: this.options.tenantId }, async () => {
+      const account = await this.loadAccount(accountId);
+      this.assertMayManage(account);
+      await runWithMailSystemAccess(async () => {
+        const db = this.options.db;
+        const messages = await MessageCollection.create({ db });
+        const attachments = await AttachmentCollection.create({ db });
+        const folders = await EmailFolderCollection.create({ db });
+        for (const message of await messages.list({ where: { accountId } })) {
+          if (message.id) {
+            for (const attachment of await attachments.list({
+              where: { messageId: message.id },
+            })) {
+              await attachment.delete();
+            }
+          }
+          await message.delete();
+        }
+        for (const folder of await folders.list({ where: { accountId } })) {
+          await folder.delete();
+        }
+      });
+      await account.removeCredentials();
+      await account.delete();
     });
   }
 
@@ -308,6 +488,63 @@ export class MessagingSettingsService {
       await route.save();
       return route;
     });
+  }
+
+  /** The user who owns accounts this principal creates; null when unknown. */
+  private get actingUserId(): string | null {
+    return this.options.principal.userId ?? this.options.principal.id ?? null;
+  }
+
+  private async loadAccount(accountId: string): Promise<Account> {
+    const accounts = await AccountCollection.create({ db: this.options.db });
+    const account = await accounts.get({ id: accountId });
+    if (!account || account.tenantId !== this.options.tenantId) {
+      throw new Error('Messaging account was not found in this tenant.');
+    }
+    return account;
+  }
+
+  /** An owned mailbox is managed by its owner only; unowned ones by admins. */
+  private assertMayManage(account: Account): void {
+    if (account.ownerUserId && account.ownerUserId !== this.actingUserId) {
+      throw new Error('Only the mail account owner can change this account.');
+    }
+  }
+
+  private async validateConnection(
+    request: MailboxValidationRequest,
+  ): Promise<void> {
+    const secrets = collectSecretStrings(request.credentials);
+    try {
+      if (this.options.validateMailbox) {
+        await this.options.validateMailbox(request);
+        return;
+      }
+      const create = request.provider.createEmailClient;
+      if (!create) {
+        throw new Error('this provider cannot check a mailbox sign-in');
+      }
+      const settings: Record<string, unknown> = {
+        ...request.configuration,
+        ...request.credentials,
+      };
+      delete settings.email;
+      const client = await create({
+        type: request.provider.id,
+        ...settings,
+      } as Parameters<typeof create>[0]);
+      try {
+        await client.connect();
+      } finally {
+        await client.disconnect().catch(() => undefined);
+      }
+    } catch (error) {
+      let reason = error instanceof Error ? error.message : String(error);
+      for (const secret of secrets) reason = reason.split(secret).join('***');
+      throw new Error(
+        `The mail server did not accept this connection: ${reason.slice(0, 200)}`,
+      );
+    }
   }
 
   private assert(permission: string): void {
@@ -435,6 +672,10 @@ export class MessagingSettingsService {
       configuration: account.getConfiguration(),
       hasCredentials: account.hasCredentials,
       active: account.isActive,
+      ownerUserId: account.ownerUserId,
+      label: account.label,
+      connectionStatus: account.connectionStatus,
+      statusMessage: account.statusMessage,
     };
   }
 
@@ -449,4 +690,14 @@ export class MessagingSettingsService {
       verified: endpoint.verifiedAt !== null,
     };
   }
+}
+
+/** Every string inside a credential payload, longest first, for redaction. */
+function collectSecretStrings(value: unknown, out: string[] = []): string[] {
+  if (typeof value === 'string') {
+    if (value.length >= 4) out.push(value);
+  } else if (value && typeof value === 'object') {
+    for (const child of Object.values(value)) collectSecretStrings(child, out);
+  }
+  return out.sort((a, b) => b.length - a.length);
 }

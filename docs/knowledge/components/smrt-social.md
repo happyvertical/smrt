@@ -5,10 +5,10 @@ description: "Social media account management for multi-platform publishing in t
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T18:51:08Z"
+  at: "2026-11-18T09:35:23Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:8de26bf47e461aeb99363ef3f9a12fd0cbd407e58411d46033403e4e6f78cb32"
+source_revision: "sha256:20f45496945676b6e75b0a13b9a665e252bf0d0f59126b40e33165fc84585b68"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/social/package.json"

@@ -34,6 +34,19 @@ no default key anywhere in this package.
 | `reencryptAll()` | Decrypt with old TDEK, re-encrypt with new — **must call separately after rotateKey()** |
 | `disable(name)` / `enable(name)` | Toggle status |
 
+## Credential connect (`@happyvertical/smrt-secrets/connect`)
+
+Provider-neutral kernel shared by smrt-social and smrt-messages: `beginConnect` /
+`consumeConnect` (single-use, tenant- and user-bound state; replay, wrong user,
+wrong tenant, wrong redirect and expiry all fail with a neutral `ConnectError`),
+PKCE helpers, `isSafeReturnPath`, and generic OAuth 2.0 / OIDC mechanics
+(`buildOAuth2AuthorizeUrl`, `exchangeOAuth2Code`, `fetchOidcUserInfo`,
+`discoverOidcEndpoints` which requires https and an exact issuer match).
+`ConnectState` + `ConnectStateCollection.asStore()` are the shipped store
+(generated REST/MCP/CLI off); a package may adapt its own table to
+`ConnectStateStore` (smrt-social keeps `OAuthState` that way). No account
+upsert or role checks here: the owning package does that.
+
 ## Gotchas
 
 - **Key rotation doesn't auto-re-encrypt**: call `reencryptAll()` separately after `rotateKey()`

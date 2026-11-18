@@ -239,6 +239,19 @@ export class Account extends SmrtObject {
   }
 
   /**
+   * Delete the stored credential from smrt-secrets (used when the account is
+   * removed, so a removed mailbox never leaves a live secret behind).
+   */
+  async removeCredentials(): Promise<void> {
+    if (!this.credentialSecretId) return;
+    const tenantId = this.requireCredentialTenantId('remove credentials');
+    const secretService = await createAccountSecretService(this.db);
+    const name = this.credentialSecretId;
+    await withTenant({ tenantId }, () => secretService.delete(name));
+    this.credentialSecretId = null;
+  }
+
+  /**
    * Create a sender for this account.
    * Subclasses must override to return a concrete sender.
    */

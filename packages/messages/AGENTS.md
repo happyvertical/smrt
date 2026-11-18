@@ -55,6 +55,14 @@ owners and call `configureMailAccess({ options, resolvePrincipal })` at startup
   resolver or a foreign tenant means owned accounts are invisible. No tenant
   admin or super-admin bypass; trusted work (sync, outbox) uses
   `runWithMailSystemAccess()`. `EmailAccount.syncFrom()` does so itself.
+- Attachments carry a denormalized `accountId` (copied from the message in a
+  `beforeSave` interceptor) so lists, projections and counts filter in SQL; run
+  `AttachmentCollection.backfillAccountIds()` once after upgrading (legacy rows
+  are still hidden when hydrated, but not from projections or counts until then).
+- Residual risks for hosts: the default `connectMailbox` validator opens a real
+  connection to the host named in the (permission-gated) configuration, so pass
+  a `validateMailbox` that enforces an allowlist; policy lookups use the
+  configured db handle, not a caller's transaction.
 - `Message.send()` needs the `send` scope on an owned account. Account rows are
   not filtered (senders, routes and the outbox read them without a principal).
 - `MailAccessService` (`grant`, `revoke`, `list`, `setOwner`) needs tenant
@@ -66,6 +74,31 @@ owners and call `configureMailAccess({ options, resolvePrincipal })` at startup
   owned account fail closed.
 - `connectionStatus` (`connected` / `needs_reconnect`) and `statusMessage` mark
   an account whose sign-in the server refused; `syncFrom()` sets it.
+
+## Mailbox connect (provider-neutral)
+
+Credentials reach smrt-secrets in two ways; neither writes the plaintext `settings` fallback.
+
+- **Write-only app password**: `MessagingSettingsService.connectMailbox()`
+  (permission `messages.manage-credentials`). The candidate credential is
+  validated by opening a session first (`validateMailbox` option, default the
+  provider's email client); a refusal leaves no account and no secret, and the
+  error text has the secret redacted. The connecting user becomes the owner;
+  `label` and the per-account endpoint (`configuration`) are stored; reconnect
+  replaces the secret and is owner-only. `setAccountActive()` pauses/resumes
+  (`isActive`), `removeAccount()` deletes the secret, the synced mail and the
+  account. IMAP/POP3 are admitted here (receive-only), not by `saveAccount`.
+- **Generic OAuth 2.0 / OIDC**: `@happyvertical/smrt-messages/connect`
+  (`startMailOAuthConnect`, `completeMailOAuthConnect`, `MailOAuthProvider`)
+  on the shared kernel `@happyvertical/smrt-secrets/connect` (single-use
+  tenant- and user-bound `ConnectState`, PKCE, safe return path, OIDC
+  discovery with issuer check). The signed-in user becomes the owner; an
+  account owned by someone else or by no one is never taken over. No role
+  checks in the flow: authorize before calling.
+- **Reconnect**: `syncFrom()` marks an auth failure `connectionStatus =
+  'needs_reconnect'` (`Account.markNeedsReconnect/markConnected`) instead of
+  failing silently.
+- The Google provider is a later step (sdk#1405), not part of this flow.
 
 ## In-app notifications (`UserNotification`)
 
