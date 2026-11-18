@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.62.8
+
+### Patch Changes
+
+- ### Features
+  
+  - cursor-based JMAP mail sync, one lane per account (#5130) (#5159) (messages)
+- @happyvertical/smrt-config@0.62.8
+  - @happyvertical/smrt-scanner@0.62.8
+  - @happyvertical/smrt-types@0.62.8
+
 ## 0.62.7
 
 ### Patch Changes

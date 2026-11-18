@@ -1,5 +1,9 @@
 # @happyvertical/smrt-spreadsheets
 
+## 0.62.8
+
+No changes in this release.
+
 ## 0.62.7
 
 No changes in this release.
