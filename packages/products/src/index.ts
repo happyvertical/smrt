@@ -20,6 +20,7 @@
 // downstream. Must come first so the side effect runs ahead of the class
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
+import { pathToFileURL } from 'node:url';
 
 export { demonstrateClient } from './client';
 // Re-export everything from the lib directory
@@ -62,6 +63,9 @@ export async function startAll() {
 }
 
 // Auto-start if running directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   startAll().catch(console.error);
 }

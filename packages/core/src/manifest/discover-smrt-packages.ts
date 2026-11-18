@@ -27,6 +27,7 @@ import {
 } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { parse } from '../utils/json.js';
 import { manifestExportCandidates } from './package-manifest-exports.js';
 
@@ -730,7 +731,10 @@ export function discoverSmrtPackages(options: DiscoveryOptions = {}): string[] {
 }
 
 // Run if called directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   const noCache = process.argv.includes('--no-cache');
   const verbose =
     process.argv.includes('--verbose') || process.argv.includes('-v');

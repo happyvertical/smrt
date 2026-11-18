@@ -5,6 +5,7 @@
  * No manual route definitions needed - everything is generated from @smrt() decorated classes.
  */
 
+import { pathToFileURL } from 'node:url';
 import { startRestServer } from '@happyvertical/smrt-core';
 import { Category } from './lib/models/Category';
 import { Product } from './lib/models/Product';
@@ -79,7 +80,10 @@ async function startServer() {
 }
 
 // Start if running directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   startServer().catch(console.error);
 }
 
