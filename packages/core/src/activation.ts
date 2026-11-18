@@ -45,6 +45,12 @@ export interface ActivationCoordinator {
   /** Await BEFORE publishing/persisting cookbook enablement. Never unloads or drops on disable. */
   activate(models: Iterable<string>): Promise<void>;
   isReady(model: RuntimeExposureModel | string): boolean;
+  /**
+   * The installed graph, loaded or not. The app model editor reads its model
+   * ids and tables so a custom list never takes an installed model's name or
+   * table while that model's recipe is off.
+   */
+  readonly manifest?: ActivationManifest;
   /** AND readiness with the host's live tenant gate. Install before boot, never per request. */
   gate(exposure: RuntimeExposureGate): RuntimeExposureGate;
 }
@@ -116,6 +122,7 @@ export function createActivationCoordinator(
   const pending = new Map<string, Promise<void>>();
   let invalidGraph: Error | undefined;
   const coordinator: ActivationCoordinator = {
+    manifest: options.manifest,
     async boot() {
       await coordinator.activate(await options.readEnabled());
     },
@@ -131,6 +138,25 @@ export function createActivationCoordinator(
       const work = withRuntimeSchemaActivation(async () => {
         if (closure.models.every((id) => ready.has(id))) return;
         if (invalidGraph) throw invalidGraph;
+        // A run-time list (app model editor) can already hold one of these
+        // tables. Refuse before importing anything, so the process keeps one
+        // class family per table and later schema builds still work.
+        const tables = new Set(closure.tables);
+        const members = new Set(closure.models);
+        for (const entry of ObjectRegistry.getAllClasses().values()) {
+          const id = entry.qualifiedName ?? entry.name;
+          if (
+            !entry.sourceFilePath?.startsWith('runtime-model:') ||
+            members.has(id) ||
+            entry.replacedQualifiedNames?.some((model) => members.has(model))
+          )
+            continue;
+          const table = ObjectRegistry.getTableName(id);
+          if (table && tables.has(table))
+            throw new Error(
+              `Activation table ${table} is already used by the run-time model ${id}; it cannot also hold ${closure.models.join(', ')}`,
+            );
+        }
         const before = new Set(ObjectRegistry.getAllClasses().keys());
         const allowed = new Set([
           ...closure.models,

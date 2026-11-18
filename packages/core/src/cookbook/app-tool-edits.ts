@@ -261,6 +261,13 @@ export function planAppEdit(
       [...ObjectRegistry.getAllClasses().values()].some(
         (entry) => entry.name.toLowerCase() === listName.toLowerCase(),
       ) ||
+      // Installed models count whether or not their recipe is on.
+      catalog.models.some(
+        (model) =>
+          model.name.toLowerCase() === listName.toLowerCase() &&
+          model.id !==
+            `${snapshot.cookbook.models?.packageName ?? ''}:${listName}`,
+      ) ||
       snapshot.cookbook.models?.lists[listName]
     )
       question(

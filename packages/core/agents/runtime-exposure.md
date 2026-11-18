@@ -138,6 +138,10 @@ fail activation before migration and remain refused on retry until regeneration
 and restart. This contract is for a fixed build graph, not
 package installation at runtime. Runtime table bindings that disagree with the AOT
 physical names are refused; regenerate the graph with the host's bindings.
+A closure table already held by a run-time model outside the closure (an app
+editor list) is refused before any loader runs, so the process never holds two
+unrelated class families on one table. `coordinator.manifest` exposes the
+installed graph to the app model editor for its name and table checks.
 
 A host supplies its existing database, persisted cookbook store, tenant gate and
 always-on models. Install the readiness gate **before accepting requests**, and
