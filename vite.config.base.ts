@@ -314,7 +314,10 @@ export function createPackageConfig(
           ? [
               smrtPlugin({
                 include: ['src/**/*.ts'],
-                exclude: ['**/*.test.ts', '**/*.spec.ts'],
+                // `__tests__` holds fixtures as well as tests. A fixture
+                // model is never a package model, and one that replaces a
+                // package model by name would collide with it in the scan.
+                exclude: ['**/*.test.ts', '**/*.spec.ts', '**/__tests__/**'],
                 generateTypes: true,
                 hmr: false, // Disable HMR for library builds
               }),
