@@ -185,6 +185,28 @@ function requireCapability(
   }
 }
 
+/**
+ * Resolve a requested mailbox against the account's known folders: exact path,
+ * then case-insensitive path, then a unique case-insensitive display name.
+ * Unknown names pass through for the server to judge.
+ */
+async function resolveMailbox(
+  folders: EmailFolderCollection,
+  accountId: string,
+  requested: string,
+): Promise<string> {
+  const wanted = requested.trim();
+  const known = await folders.getByAccount(accountId);
+  const lower = wanted.toLowerCase();
+  const exact = known.find((f) => f.path === wanted);
+  if (exact?.path) return exact.path;
+  const byPath = known.filter((f) => f.path?.toLowerCase() === lower);
+  if (byPath.length === 1 && byPath[0].path) return byPath[0].path;
+  const byName = known.filter((f) => f.name?.toLowerCase() === lower);
+  if (byName.length === 1 && byName[0].path) return byName[0].path;
+  return wanted;
+}
+
 /** One server call: the provider ids it covers, and how to make it. */
 interface Call {
   ids: string[];
@@ -234,16 +256,20 @@ function plan(
       // current mailboxes share one call.
       const target = destination ?? action.folder;
       const groups = new Map<string, { remove: string[]; ids: string[] }>();
+      const inPlace: string[] = [];
       for (const [id, row] of rows) {
-        const remove = parseLabels(row)
-          .filter((label) => label !== target)
-          .sort();
+        const labels = parseLabels(row);
+        const remove = labels.filter((label) => label !== target).sort();
+        if (remove.length === 0 && labels.includes(target)) {
+          inPlace.push(id); // already exactly there: nothing to tell the server
+          continue;
+        }
         const key = JSON.stringify(remove);
         const group = groups.get(key) ?? { remove, ids: [] };
         group.ids.push(id);
         groups.set(key, group);
       }
-      return [...groups.values()].map((group) => ({
+      const calls: Call[] = [...groups.values()].map((group) => ({
         ids: group.ids,
         run: () =>
           client.updateLabels!(group.ids, {
@@ -251,6 +277,13 @@ function plan(
             ...(group.remove.length > 0 ? { remove: group.remove } : {}),
           }),
       }));
+      if (inPlace.length > 0) {
+        calls.unshift({
+          ids: inPlace,
+          run: async () => ({ updated: inPlace, failed: [] }),
+        });
+      }
+      return calls;
     }
   }
 }
@@ -343,8 +376,7 @@ export async function triageMailMessages(
 
         const destination =
           action.kind === 'move'
-            ? ((await folders.getByPath(accountId, action.folder))?.path ??
-              action.folder)
+            ? await resolveMailbox(folders, accountId, action.folder)
             : null;
 
         const ctx: SyncContext = {
@@ -358,8 +390,38 @@ export async function triageMailMessages(
         const touched = new Set<string>();
         const accepted = new Set<string>();
 
-        for (const call of plan(action, client, rows, destination)) {
-          const outcome = await call.run();
+        const calls = plan(action, client, rows, destination);
+        let firstError: unknown;
+        let authError: unknown;
+        let completed = 0;
+        for (const call of calls) {
+          let outcome: WriteBackResult;
+          if (authError) {
+            outcome = { updated: [], failed: [] };
+            for (const id of call.ids)
+              outcome.failed.push({
+                id,
+                code: 'skipped',
+                message: 'Not attempted: the server refused the sign-in',
+              });
+          } else {
+            try {
+              outcome = await call.run();
+              completed++;
+            } catch (error) {
+              // Earlier calls were already applied on the server: report this
+              // call's ids as failed and carry on, never lose the rest.
+              firstError ??= error;
+              if (deps.isAuthFailure(error)) authError = error;
+              outcome = { updated: [], failed: [] };
+              for (const id of call.ids)
+                outcome.failed.push({
+                  id,
+                  code: 'serverError',
+                  message: 'The server call failed before reporting an outcome',
+                });
+            }
+          }
           const wanted = new Set(call.ids);
           const settled = new Set<string>();
           for (const providerId of outcome.updated) {
@@ -415,6 +477,10 @@ export async function triageMailMessages(
           }
         }
         if (touched.size > 0) await refreshCounts(ctx, touched).catch(() => {});
+        // Nothing reached the server: surface the cause as an error.
+        if (firstError && completed === 0) throw firstError;
+        if (authError)
+          await rethrowAfterAuthCheck(account, authError, deps.isAuthFailure);
         return result;
       } catch (error) {
         return rethrowAfterAuthCheck(account, error, deps.isAuthFailure);

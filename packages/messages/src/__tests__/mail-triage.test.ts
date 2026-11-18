@@ -190,6 +190,27 @@ describe('EmailAccount.triage: actions', () => {
     }
   });
 
+  it('resolves a move target by case or name, and treats the current folder as accepted', async () => {
+    const { server, account } = await seeded(['m1', 'm2']);
+    server.add('m9', ['Projects']);
+    server.touch('m9');
+    await account.syncChanges();
+    const map = await rows(account);
+    const m1 = (map.get('m1') as Email).id as string;
+    const m2 = (map.get('m2') as Email).id as string;
+    const same = await account.triage({ kind: 'move', folder: 'inbox' }, [m1]);
+    expect(same).toMatchObject({ updated: [m1], failed: [], stale: [] });
+    expect(server.messages.get('m1')?.folders).toEqual(['INBOX']);
+    const moved = await account.triage({ kind: 'move', folder: 'projects' }, [
+      m2,
+    ]);
+    expect(moved).toMatchObject({ updated: [m2], failed: [] });
+    expect(server.messages.get('m2')?.folders).toEqual(['Projects']);
+    expect(((await rows(account)).get('m2') as Email).folderPath).toBe(
+      'Projects',
+    );
+  });
+
   it('rejects an unknown action or an empty label list without calling the server', async () => {
     const { server, account } = await seeded();
     const before = server.calls.length;
@@ -290,6 +311,29 @@ describe('EmailAccount.triage: partial failure', () => {
       expect.objectContaining({ id, code: 'unknown' }),
     ]);
     expect(((await rows(account)).get('m1') as Email).isRead).toBe(false);
+  });
+
+  it('reports a move partially when a later server call throws (deleted mailbox label)', async () => {
+    const { server, account } = await seeded(['m1', 'm2']);
+    server.messages.get('m2')?.folders.push('Ghost');
+    server.touch('m2');
+    await account.syncChanges();
+    const map = await rows(account);
+    const m1 = (map.get('m1') as Email).id as string;
+    const m2 = (map.get('m2') as Email).id as string;
+    const result = await account.triage({ kind: 'move', folder: 'Projects' }, [
+      m1,
+      m2,
+    ]);
+    expect(result.updated).toEqual([m1]);
+    expect(result.failed).toEqual([
+      expect.objectContaining({ id: m2, code: 'serverError' }),
+    ]);
+    expect(JSON.stringify(result.failed)).not.toMatch(/Ghost|Folder not found/);
+    expect(server.messages.get('m1')?.folders).toEqual(['Projects']);
+    const after = await rows(account);
+    expect((after.get('m1') as Email).folderPath).toBe('Projects');
+    expect(synced(after.get('m2') as Email).labels).toEqual(['Ghost', 'INBOX']);
   });
 
   it('leaves rows unchanged and throws when the server call itself fails', async () => {
