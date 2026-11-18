@@ -39,6 +39,9 @@ const HEADING = /^ {0,3}(#{1,3})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
 const UNORDERED_ITEM = /^ {0,3}[-*+][ \t]+(.*)$/;
 const ORDERED_ITEM = /^ {0,3}(\d{1,9})[.)][ \t]+(.*)$/;
 const TABLE_DELIMITER_CELL = /^:?-{1,}:?$/;
+/** Table budget: wider or larger tables render as escaped plain text. */
+export const MAX_TABLE_COLUMNS = 20;
+export const MAX_TABLE_CELLS = 2000;
 const CONTINUATION = /^(?: {2,}|\t)\S/;
 
 /** A safe absolute http(s) URL for an href, already attribute-escaped. */
@@ -228,6 +231,8 @@ export function renderAssistantMarkdown(source: string): string {
       flush();
       const columns = header.length;
       const rows: string[] = [];
+      const sourceLines = [line, lines[index + 1]];
+      let rowCount = 0;
       index += 2;
       while (
         index < lines.length &&
@@ -236,14 +241,31 @@ export function renderAssistantMarkdown(source: string): string {
       ) {
         const cells = tableCells(lines[index]);
         if (!cells) break;
-        // Short rows are padded and long rows trimmed to the header width.
-        const row = Array.from({ length: columns }, (_, c) => cells[c] ?? '');
-        rows.push(
-          `<tr>${row.map((c) => `<td>${inline(c)}</td>`).join('')}</tr>`,
-        );
+        sourceLines.push(lines[index]);
+        rowCount += 1;
+        // Over budget: stop building rows (the block falls back to text).
+        if (
+          columns <= MAX_TABLE_COLUMNS &&
+          columns * (rowCount + 1) <= MAX_TABLE_CELLS
+        ) {
+          // Short rows are padded and long rows trimmed to the header width.
+          const row = Array.from({ length: columns }, (_, c) => cells[c] ?? '');
+          rows.push(
+            `<tr>${row.map((c) => `<td>${inline(c)}</td>`).join('')}</tr>`,
+          );
+        }
         index += 1;
       }
       index -= 1;
+      if (
+        columns > MAX_TABLE_COLUMNS ||
+        columns * (rowCount + 1) > MAX_TABLE_CELLS
+      ) {
+        blocks.push(
+          `<p>${sourceLines.map((l) => escapeHtml(l)).join('<br>')}</p>`,
+        );
+        continue;
+      }
       blocks.push(
         `<table><thead><tr>${header.map((c) => `<th>${inline(c)}</th>`).join('')}</tr></thead>` +
           `<tbody>${rows.join('')}</tbody></table>`,

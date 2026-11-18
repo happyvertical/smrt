@@ -2,6 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   escapeHtml,
+  MAX_TABLE_CELLS,
+  MAX_TABLE_COLUMNS,
   renderAssistantMarkdown as md,
 } from '../assistant-markdown.js';
 
@@ -136,5 +138,25 @@ describe('renderAssistantMarkdown (#4505)', () => {
   it('leaves a pipe line without a delimiter row as text', () => {
     expect(md('| a | b |\n| c | d |')).toBe('<p>| a | b |<br>| c | d |</p>');
     expect(md('| a | b |\n| --- |')).not.toContain('<table');
+  });
+  it('bounds rendered cells for wide or huge tables (#5102)', () => {
+    const wide = `|${Array.from({ length: 500 }, (_, i) => `h${i}`).join('|')}|\n|${'---|'.repeat(500)}\n${'| x |\n'.repeat(1000)}`;
+    const html = md(wide);
+    expect((html.match(/<td>/g) ?? []).length).toBeLessThanOrEqual(
+      MAX_TABLE_CELLS,
+    );
+    expect(html).not.toContain('<table');
+    expect(html).toContain('h499');
+
+    const rows = `| a | b |\n| --- | --- |\n${'| 1 | 2 |\n'.repeat(MAX_TABLE_CELLS)}`;
+    expect(md(rows)).not.toContain('<table');
+    expect(md(rows)).toContain('<br>');
+  });
+
+  it('keeps a small table within the budget as a table', () => {
+    const html = md('| a | b |\n| --- | --- |\n| 1 | 2 |');
+    expect(html).toContain('<table');
+    expect((html.match(/<td>/g) ?? []).length).toBe(2);
+    expect(MAX_TABLE_COLUMNS).toBeGreaterThanOrEqual(2);
   });
 });
