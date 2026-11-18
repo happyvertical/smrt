@@ -75,6 +75,12 @@ import {
 } from './utils';
 import { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';
 import { jsonValuesEqual, parseJsonContainerText } from './utils/json-equal';
+import {
+  effectiveWhereOperator,
+  mergeOwnedWhere,
+  resolveWhereKey,
+  WhereClauseError,
+} from './where-keys';
 
 const logger = createLogger({ level: 'info' });
 
@@ -276,7 +282,14 @@ function resolveMetaTypeInWhere<T extends Record<string, unknown>>(
   return where;
 }
 
-/** Add an AND predicate without collapsing a caller's DNF OR branches. */
+/**
+ * Add an AND predicate without collapsing a caller's DNF OR branches.
+ *
+ * The collection-owned predicate is an enforcement boundary (for example, an
+ * STI child collection's discriminator), so it wins over a caller key for the
+ * same column and operator under any spelling of that key. In the DNF form it
+ * is a condition of its own in every branch, which no caller key can replace.
+ */
 function andWhereCondition<T extends Record<string, unknown>>(
   where: T | T[][] | undefined,
   condition: T,
@@ -284,10 +297,7 @@ function andWhereCondition<T extends Record<string, unknown>>(
   if (Array.isArray(where)) {
     return where.map((group) => [condition, ...group]);
   }
-  // The collection-owned predicate is an enforcement boundary (for example,
-  // an STI child collection's discriminator), so it must win when a caller
-  // supplies the same key.
-  return { ...(where ?? {}), ...condition } as T;
+  return mergeOwnedWhere(where, condition);
 }
 
 /**
@@ -1220,8 +1230,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    *
    * Uses cached fields for sync access (issue #663) to avoid async overhead on every query.
    *
+   * This is the last step before SQL, after interceptors and the collection's
+   * own predicates have been merged in, and it is where a record is refused
+   * (`WhereClauseError`, a typed 400) when two of its keys resolve to the same
+   * column and operator. So no predicate an interceptor or the collection
+   * added can be replaced by another spelling of its key: it is either in the
+   * query or the query does not run. Two operators on one column are a range
+   * and stay legal. In the DNF form each condition record is checked on its
+   * own; the records of one branch are ANDed by the SQL layer, never merged.
+   *
    * @param where - WHERE clause object with camelCase field names
    * @returns WHERE clause object with snake_case field names
+   * @throws {WhereClauseError} If two keys resolve to the same column and operator
    * @private
    *
    * @example
@@ -1230,6 +1250,37 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * // Output: { 'type_id': 'foo', 'category_id >': 100 }
    * ```
    */
+  /**
+   * Run a caller `where` through the same steps `list()` takes before its
+   * query — `beforeList` interceptors, the STI read scope and key checking —
+   * and throw what `list()` would throw for it. For reads that can return
+   * early without reaching `list()` (an empty semantic ranking), so a refused
+   * filter is refused whatever the stored data.
+   */
+  private async assertWhereAccepted(
+    where: SmrtListWhereClause<ModelType> | undefined,
+  ): Promise<void> {
+    if (where === undefined) return;
+    await this.ensureStorageReady();
+    const itemClassName = this.getResolvedItemClassName();
+    const intercepted = await GlobalInterceptors.executeBeforeList(
+      itemClassName,
+      { where } as InterceptorListOptions,
+      createInterceptorContext(
+        itemClassName,
+        'list',
+        this.constructor.name,
+        undefined,
+        this.getResolvedItemQualifiedName(),
+      ),
+    );
+    this.convertWhereKeys(
+      resolveMetaTypeInWhere(
+        this.applyStiReadScope(intercepted?.where ?? where, undefined),
+      ) || {},
+    );
+  }
+
   private convertWhereKeys(
     where: SmrtListWhereClause<ModelType>,
   ): SmrtListWhereClause<ModelType> {
@@ -1306,6 +1357,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       this.collectQueryableFieldNames(fields);
 
     const converted: Record<string, unknown> = {};
+    // Caller key each resolved predicate came from, for the duplicate check.
+    const resolvedFrom = new Map<string, string>();
 
     // Check for prototype pollution attempts using own properties only
     // __proto__ is a special property that doesn't show up in Object.entries()
@@ -1322,10 +1375,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
 
     for (const [key, value] of Object.entries(where)) {
-      // Split field name and operator (e.g., "typeId >" → ["typeId", ">"])
-      const parts = key.trim().split(/\s+/);
-      const fieldName = parts[0];
-      const operator = parts.slice(1).join(' ') || '=';
+      // Split field name and operator (e.g., "typeId >" → ["typeId", ">"]).
+      // `resolveWhereKey` is the one definition of how a key names a column;
+      // interceptors and routes that inspect a filter use it too.
+      const resolvedKey = resolveWhereKey(key);
+      const fieldName = resolvedKey.field;
+      const operator = resolvedKey.operator;
 
       // Check for dangerous prototype pollution field names
       if (
@@ -1348,15 +1403,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       // — the #1379 identifier check, the #1540 sensitive-`@meta`-path check,
       // and the schema field whitelist — still see the whole key rather than a
       // truncated column name.
-      const dotIndex = fieldName.indexOf('.');
-      const baseFieldName =
-        dotIndex >= 0 ? fieldName.substring(0, dotIndex) : fieldName;
-      const jsonPath = dotIndex >= 0 ? fieldName.substring(dotIndex) : null;
+      const baseFieldName = resolvedKey.baseField;
+      const jsonPath = resolvedKey.path;
 
-      // Convert base field name to snake_case, preserving leading underscores
-      const snakeBaseFieldName = baseFieldName.startsWith('_')
-        ? `_${toSnakeCase(baseFieldName.slice(1))}`
-        : toSnakeCase(baseFieldName);
+      // Base field name in snake_case, preserving leading underscores
+      const snakeBaseFieldName = resolvedKey.column;
 
       // Full snake_case field name with JSON path preserved
       const snakeFieldName = jsonPath
@@ -1422,8 +1473,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       }
 
       // Auto-detect IN operator when value is an array without explicit operator
-      const effectiveOperator =
-        operator === '=' && Array.isArray(value) ? 'in' : operator;
+      const effectiveOperator = effectiveWhereOperator(operator, value);
 
       // Validate operator
       if (!VALID_OPERATORS.includes(effectiveOperator)) {
@@ -1519,6 +1569,24 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         effectiveOperator === '='
           ? snakeFieldName
           : `${snakeFieldName} ${effectiveOperator}`;
+
+      // Two keys that resolve to the same column and operator would leave one
+      // predicate, chosen by key order: `{ ownerId: a, owner_id: b }` filtered
+      // on `b` alone. Whatever inspected the filter before this point (an
+      // interceptor, a route) may have read the other key, so the record is
+      // refused instead. Different operators on one column stay legal and are
+      // ANDed: `{ 'price >=': 1, 'price <': 9 }` is a range.
+      const earlierKey = resolvedFrom.get(newKey);
+      if (earlierKey !== undefined) {
+        throw new WhereClauseError(
+          `Invalid WHERE clause: '${earlierKey}' and '${key}' both filter ` +
+            `'${snakeFieldName}' with operator '${effectiveOperator}'. ` +
+            `Give each column one condition per operator.`,
+          'INVALID_WHERE_CLAUSE',
+          { column: snakeFieldName, operator: effectiveOperator },
+        );
+      }
+      resolvedFrom.set(newKey, key);
 
       converted[newKey] = value;
     }
@@ -5827,6 +5895,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       );
     }
 
+    // A filter the collection refuses is refused before the query is embedded
+    // or ranked, so the outcome never depends on stored vectors.
+    await this.assertWhereAccepted(where);
+
     // Determine which field to search.
     // `generateEmbeddings()` also stores a vector under the configured
     // `combinedField.name`, and `findSimilar`/`findSimilarToEmbedding` happily
@@ -6251,6 +6323,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       );
     }
 
+    // Refuse a filter before ranking: the early returns below (no candidates,
+    // no scored vectors) must not let a filter `list()` would refuse succeed.
+    await this.assertWhereAccepted(where);
+
     // Determine which field to search
     const searchField = field || embeddingConfig.fields[0];
 
@@ -6347,14 +6423,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       scored.map((s) => [s.objectId, s.similarity]),
     );
 
-    // Build where clause with additional filters
-    const whereClause = where
-      ? { 'id in': objectIds, ...where }
-      : { 'id in': objectIds };
+    // The ranked ids are a condition of their own, ANDed with the caller's
+    // filter (a separate record of each DNF branch), so a caller filter on
+    // `id` in any spelling narrows the ranking and never replaces it or
+    // collides with it.
+    const ranked = { 'id in': objectIds } as Record<string, unknown>;
+    const whereClause: SmrtListWhereClause<ModelType> = !where
+      ? (ranked as SmrtListWhereClause<ModelType>)
+      : Array.isArray(where)
+        ? ((where as Record<string, unknown>[][]).map((group) => [
+            ranked,
+            ...group,
+          ]) as SmrtListWhereClause<ModelType>)
+        : ([[ranked, where]] as unknown as SmrtListWhereClause<ModelType>);
 
-    const objects = await this.list({
-      where: whereClause as SmrtWhereClause<ModelType>,
-    });
+    const objects = await this.list({ where: whereClause });
 
     // Add similarity scores to objects and sort by similarity.
     // We directly assign _similarity to avoid losing class properties when
