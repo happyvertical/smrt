@@ -8,6 +8,7 @@
 import type { RecipeDefinition } from '@happyvertical/smrt-types';
 import { type EnumValue, resolveEnumValues } from './enum-values.js';
 import {
+  declaredPackageName,
   FRAMEWORK_BASE_CLASSES,
   scopedPackageOfSpecifier,
 } from './inheritance-resolver.js';
@@ -517,6 +518,17 @@ export class ManifestAdapter {
     this.typeAliases = options.typeAliases || {};
     const objects: Record<string, SmartObjectDefinition> = {};
 
+    // A class that declares another package (`@smrt({ packageName })`) is a
+    // stand-in for that package's class, typically a test fixture. It is
+    // still keyed under the scanned package, so it can meet this package's
+    // own class of the same name; the own class is then the entry, whatever
+    // the file order.
+    const isOwn = (classDef: ResolvedClassDefinition): boolean => {
+      const declared = declaredPackageName(classDef);
+      return declared === undefined || declared === options.packageName;
+    };
+    const owners = new Map<string, ResolvedClassDefinition>();
+
     for (const classDef of resolved) {
       const definition = this.toSmartObjectDefinition(classDef, options);
 
@@ -524,18 +536,27 @@ export class ManifestAdapter {
       // This enables namespace isolation for multi-package scenarios
       const manifestKey =
         definition.qualifiedName || definition.name.toLowerCase();
-      // One key holds one class. Two classes that reach the same key are a
-      // scan diagnostic (`InheritanceResolver.resolveAll`); a caller that
-      // converts anyway must not get a manifest with one of them missing.
+      // One key holds one class. Two classes of one package that reach the
+      // same key are a scan diagnostic (`InheritanceResolver.resolveAll`); a
+      // caller that converts anyway must not get a manifest with one of them
+      // missing.
       const existing = objects[manifestKey];
-      if (existing) {
-        throw new Error(
-          `Class name collision: '${definition.className}' (${manifestKey}) is defined in multiple files:\n` +
-            `  1. ${existing.filePath}\n` +
-            `  2. ${definition.filePath}\n\n` +
-            `Class names must be unique within a package. Rename one of the classes.`,
-        );
+      const owner = owners.get(manifestKey);
+      if (existing && owner) {
+        if (isOwn(owner) && !isOwn(classDef)) continue;
+        if (isOwn(owner) || !isOwn(classDef)) {
+          throw new Error(
+            `Class name collision: '${definition.className}' (${manifestKey}) is defined in multiple files:\n` +
+              `  1. ${existing.filePath}\n` +
+              `  2. ${definition.filePath}\n\n` +
+              `Class names must be unique within a package. Rename one of the classes.`,
+          );
+        }
+        // `classDef` is this package's own class; it replaces the stand-in at
+        // its own position.
+        delete objects[manifestKey];
       }
+      owners.set(manifestKey, classDef);
       objects[manifestKey] = definition;
     }
 

@@ -187,6 +187,73 @@ describe('classes that share a name across files', () => {
   });
 });
 
+describe('a class that declares another package', () => {
+  // An app-side replacement of a package model, as a test fixture writes it:
+  // the same class name, declared for the app's package.
+  const STAND_IN = `import { smrt } from '@happyvertical/smrt-core';
+import { LedgerInvoice as BaseLedgerInvoice } from '../models/LedgerInvoice.js';
+@smrt({ packageName: '@fixture/ledger-app', tableName: 'ledger_invoices' })
+export class LedgerInvoice extends BaseLedgerInvoice {
+  appOnly = '';
+}
+`;
+
+  it('does not collide with the scanned package own class of that name', async () => {
+    const { errors, manifest, root } = await scanProject({
+      'src/__tests__/app.fixture.ts': STAND_IN,
+      'src/models/LedgerInvoice.ts': MODEL,
+    });
+
+    expect(errors).toHaveLength(0);
+    const objects = manifest().objects;
+    expect(Object.keys(objects)).toEqual([`${PACKAGE}:LedgerInvoice`]);
+    // The package's own class is the entry, not the stand-in.
+    expect(objects[`${PACKAGE}:LedgerInvoice`].filePath).toBe(
+      join(root, 'src/models/LedgerInvoice.ts'),
+    );
+    expect(objects[`${PACKAGE}:LedgerInvoice`].fields.appOnly).toBeUndefined();
+  });
+
+  it('gives the same entry when the stand-in is read last', async () => {
+    const { errors, manifest, root } = await scanProject({
+      'src/models/LedgerInvoice.ts': MODEL,
+      'src/z-app/app.fixture.ts': STAND_IN.replace(
+        '../models/LedgerInvoice.js',
+        '../models/LedgerInvoice.js',
+      ),
+    });
+
+    expect(errors).toHaveLength(0);
+    expect(manifest().objects[`${PACKAGE}:LedgerInvoice`].filePath).toBe(
+      join(root, 'src/models/LedgerInvoice.ts'),
+    );
+  });
+
+  it('still fails for two classes that declare the same package', async () => {
+    const declared = (field: string) =>
+      `${CORE}\n@smrt({ packageName: '@fixture/ledger-app' })\nexport class LedgerInvoice extends SmrtObject { ${field} = ''; }`;
+    const { errors } = await scanProject({
+      'src/a/LedgerInvoice.ts': declared('first'),
+      'src/b/LedgerInvoice.ts': declared('second'),
+    });
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('Class name collision');
+  });
+
+  it('refuses a manifest for two stand-ins of different packages under one name', async () => {
+    const standIn = (packageName: string) =>
+      `${CORE}\n@smrt({ packageName: '${packageName}' })\nexport class LedgerInvoice extends SmrtObject { total = 0; }`;
+    const { manifest } = await scanProject({
+      'src/a/LedgerInvoice.ts': standIn('@fixture/ledger-app'),
+      'src/b/LedgerInvoice.ts': standIn('@fixture/ledger-upstream'),
+    });
+
+    // Neither is this package's class and one key cannot hold both.
+    expect(() => manifest()).toThrow(/Class name collision/);
+  });
+});
+
 describe('a parent is the class the declaring module names', () => {
   const STI_BASE = `${CORE}
 @smrt({ tableStrategy: 'sti', tableName: 'ledger_entries' })
