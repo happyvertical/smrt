@@ -21,6 +21,9 @@ import { FakeMailServer } from './helpers/fake-mail-server';
 
 let db: DatabaseInterface;
 let counter = 0;
+// The sync lane reloads the account from the store, so the client is wired by
+// account id on the prototype rather than on one instance.
+const servers = new Map<string, FakeMailServer>();
 
 async function makeAccount(
   server: FakeMailServer,
@@ -36,16 +39,14 @@ async function makeAccount(
   });
   await account.initialize();
   await account.save();
-  vi.spyOn(account, 'createClient').mockResolvedValue(server.client as never);
+  servers.set(account.id as string, server);
   return account;
 }
 
 async function reload(account: EmailAccount): Promise<EmailAccount> {
   const accounts = await EmailAccountCollection.create({ db });
   const fresh = (await accounts.get({ id: account.id })) as EmailAccount;
-  vi.spyOn(fresh, 'createClient').mockImplementation(
-    (account as unknown as { createClient: () => Promise<never> }).createClient,
-  );
+  servers.set(fresh.id as string, servers.get(account.id as string) as never);
   return fresh;
 }
 
@@ -84,6 +85,12 @@ async function seeded(
 beforeEach(async () => {
   db = await getTestDatabase();
   await prepareMessageParents(db);
+  servers.clear();
+  vi.spyOn(EmailAccount.prototype, 'createClient').mockImplementation(
+    async function (this: EmailAccount) {
+      return servers.get(this.id as string)?.client as never;
+    },
+  );
 });
 
 afterEach(async () => {
