@@ -4,7 +4,15 @@
  */
 import type { Cookbook } from '@happyvertical/smrt-types';
 import { getDatabase } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import {
   disableTenancy,
   enableTenancy,
@@ -73,11 +81,28 @@ describe.skipIf(!pgUrl)('app model editor identifiers on PostgreSQL', () => {
   let restore: () => void;
   let db: Awaited<ReturnType<typeof getDatabase>>;
   let application: string;
+  // Its own database: other optional suites share the server and migrate or
+  // drop tables concurrently.
+  let url: string;
+  const database = `smrt_editor_identifiers_${crypto.randomUUID().replaceAll('-', '')}`;
+  beforeAll(async () => {
+    const admin = await getDatabase({ type: 'postgres', url: pgUrl });
+    await admin.query(`CREATE DATABASE ${database}`);
+    await admin.close?.();
+    const target = new URL(pgUrl!);
+    target.pathname = `/${database}`;
+    url = target.toString();
+  });
+  afterAll(async () => {
+    const admin = await getDatabase({ type: 'postgres', url: pgUrl });
+    await admin.query(`DROP DATABASE IF EXISTS ${database} WITH (FORCE)`);
+    await admin.close?.();
+  });
   beforeEach(async () => {
     restore = snapshotObjectRegistryState();
     ObjectRegistry.clear();
     globalThis.__smrtModelReadiness?.clear();
-    db = await getDatabase({ type: 'postgres', url: pgUrl });
+    db = await getDatabase({ type: 'postgres', url });
     for (const table of [TABLE, LIST_TABLE])
       await db.query(`DROP TABLE IF EXISTS ${table} CASCADE`);
     application = `pg-identifiers-${crypto.randomUUID()}`;
