@@ -141,7 +141,7 @@ export interface MailTriageResult {
 }
 
 export interface MailTriageDeps {
-  createClient: () => Promise<EmailClient>;
+  createClient: (account: EmailAccount) => Promise<EmailClient>;
   childOptions: Record<string, unknown>;
   isAuthFailure: (error: unknown) => boolean;
 }
@@ -221,6 +221,8 @@ async function resolveMailbox(
 interface Call {
   ids: string[];
   run: () => Promise<WriteBackResult>;
+  /** Never touches the server (nothing to change there). */
+  local?: boolean;
 }
 
 function plan(
@@ -290,6 +292,7 @@ function plan(
       if (inPlace.length > 0) {
         calls.unshift({
           ids: inPlace,
+          local: true,
           run: async () => ({ updated: inPlace, failed: [] }),
         });
       }
@@ -393,7 +396,7 @@ export async function triageMailMessages(
         }
       }
 
-      const client = await deps.createClient();
+      const client = await deps.createClient(account);
       try {
         await client.connect();
         requireCapability(
@@ -437,7 +440,7 @@ export async function triageMailMessages(
           } else {
             try {
               outcome = await call.run();
-              completed++;
+              if (!call.local) completed++;
             } catch (error) {
               // Earlier calls were already applied on the server: report this
               // call's ids as failed and carry on, never lose the rest.

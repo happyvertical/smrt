@@ -427,6 +427,28 @@ describe('EmailAccount.triage: read-back and partial auth failures', () => {
   });
 });
 
+describe('EmailAccount.triage: no-op calls', () => {
+  it('still throws when the only server call fails auth and other rows were already in place', async () => {
+    const { server, account } = await seeded();
+    const list = await rows(account);
+    const m1 = list.get('m1') as Email;
+    const m2 = list.get('m2') as Email;
+    m2.labels = JSON.stringify(['INBOX', 'Other']);
+    await runWithMailSystemAccess(() => m2.save());
+    vi.spyOn(server.client, 'updateLabels').mockRejectedValue(
+      Object.assign(new Error('Authentication failed'), { code: 'EAUTH' }),
+    );
+    // m1 is already exactly in INBOX (a local no-op); m2 needs the server.
+    await expect(
+      account.triage({ kind: 'move', folder: 'INBOX' }, [
+        m1.id as string,
+        m2.id as string,
+      ]),
+    ).rejects.toThrow(/Authentication failed/);
+    expect((await reload(account)).needsReconnect).toBe(true);
+  });
+});
+
 describe('EmailAccount.triage: provider capabilities', () => {
   it('throws a typed error, changing nothing, when the provider has no write-back', async () => {
     const { server, account } = await seeded();

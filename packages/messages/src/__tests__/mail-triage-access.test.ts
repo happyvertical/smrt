@@ -61,6 +61,7 @@ describe('mail triage access (#5131)', () => {
   let stranger: Person;
   let current: MailPrincipal | null = null;
   let server: FakeMailServer;
+  let clientBuiltFor: EmailAccount[] = [];
   let ownedId: string;
   let openId: string;
   let ownedEmailId: string;
@@ -204,8 +205,12 @@ describe('mail triage access (#5131)', () => {
     await prepareMessageParents(db);
     enableTenancy();
     server = new FakeMailServer();
+    clientBuiltFor = [];
     vi.spyOn(EmailAccount.prototype, 'createClient').mockImplementation(
-      async () => server.client as never,
+      async function (this: EmailAccount) {
+        clientBuiltFor.push(this);
+        return server.client as never;
+      },
     );
     await withSystemContext(async () => {
       await syncPermissionCatalog(options);
@@ -371,6 +376,70 @@ describe('mail triage access (#5131)', () => {
     expect(error).toBeInstanceOf(MailAccessError);
     expect(server.calls.length).toBe(before);
     expect(await isRead(ownedEmailId)).toBe(false);
+  });
+
+  /** Queue a triage behind a held lane, change the stored row, then release. */
+  async function triageWhileStoredChanges(
+    accountId: string,
+    emailId: string,
+    mutate: (stored: EmailAccount) => void,
+  ) {
+    let release!: () => void;
+    const held = inLane(
+      accountId,
+      () => new Promise<void>((resolve) => (release = resolve)),
+    );
+    const pending = withTenant({ tenantId: tenantA }, async () => {
+      const account = (await runWithMailSystemAccess(async () =>
+        (await EmailAccountCollection.create(options)).get({ id: accountId }),
+      )) as EmailAccount;
+      return account.triage({ kind: 'markRead' }, [emailId]);
+    }).then(
+      (value) => ({ value, error: null as unknown }),
+      (error) => ({ value: null, error }),
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    await runWithMailSystemAccess(async () => {
+      const row = (await (
+        await EmailAccountCollection.create(options)
+      ).get({ id: accountId })) as EmailAccount;
+      mutate(row);
+      await row.save();
+    });
+    release();
+    await held;
+    return pending;
+  }
+
+  it('denies when the stored owner changes while queued, with no server call', async () => {
+    current = principalFor(owner);
+    const before = server.calls.length;
+    const { error } = await triageWhileStoredChanges(
+      ownedId,
+      ownedEmailId,
+      (row) => {
+        row.ownerUserId = stranger.id;
+      },
+    );
+    expect(error).toBeInstanceOf(MailAccessError);
+    expect(server.calls.length).toBe(before);
+    expect(await isRead(ownedEmailId)).toBe(false);
+  });
+
+  it('builds the client from the stored row, not the caller instance', async () => {
+    current = principalFor(owner);
+    clientBuiltFor = [];
+    const { value, error } = await triageWhileStoredChanges(
+      ownedId,
+      ownedEmailId,
+      (row) => {
+        row.name = 'reconnected-while-queued';
+      },
+    );
+    expect(error).toBeNull();
+    expect(value?.updated).toEqual([ownedEmailId]);
+    expect(clientBuiltFor).toHaveLength(1);
+    expect(clientBuiltFor[0].name).toBe('reconnected-while-queued');
   });
 
   it('refuses a principal whose host ceiling excludes triage or the account', async () => {

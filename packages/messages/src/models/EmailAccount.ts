@@ -427,7 +427,7 @@ export class EmailAccount extends Account {
     emailIds: readonly string[],
   ): Promise<MailTriageResult> {
     return triageMailMessages(this, action, emailIds, {
-      createClient: () => this.createClient(),
+      createClient: (account) => account.createClient(),
       childOptions: this.childOptions(),
       isAuthFailure: isMailAuthFailure,
     });
