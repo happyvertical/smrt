@@ -461,16 +461,20 @@ export async function applyLoad(
     await db.transaction((batch: any) =>
       withCallerOwnedDatabaseTransaction(batch, async () => {
         const collection = await collectionFor(def, batch, cmd.model);
-        for (const write of prepared.slice(offset, offset + 100)) {
+        const slice = prepared.slice(offset, offset + 100);
+        for (const write of slice)
           if (write.before)
             await collection.update(write.id, write.data as never);
-          else
-            await collection.create({
-              ...defaults,
-              ...write.data,
-              id: write.id,
-            } as never);
-        }
+        // New records go in as one core batch: same rows, ids, defaults and
+        // change-feed entries as creating them one by one, in a few statements.
+        await collection.createMany(
+          slice
+            .filter((write) => !write.before)
+            .map(
+              (write) =>
+                ({ ...defaults, ...write.data, id: write.id }) as never,
+            ),
+        );
         const batchWrites = prepared.slice(offset, offset + 100);
         const byId = new Map(batchWrites.map((write) => [write.id, write]));
         const rows = (
