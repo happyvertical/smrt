@@ -11,7 +11,12 @@
  *
  * Cache Strategy:
  * - ENABLED by default (5-50x faster startup)
- * - Automatically invalidates when lockfile or any manifest.json changes
+ * - Automatically invalidates when the lockfile (found by walking up to the
+ *   workspace root), the project's package.json, any selected manifest, or the
+ *   manifest candidates of a declared dependency that had none change
+ * - A failed discovery is never cached
+ * - Repeat calls in one process reuse the answer while a stat-only
+ *   fingerprint of those inputs is unchanged
  * - Disable with SMRT_DISABLE_DISCOVERY_CACHE=true for debugging
  */
 
@@ -42,7 +47,7 @@ const CACHE_FILE = 'discovery-cache.json';
  * and never re-probe a package whose manifest is only at, say,
  * `dist/lib/manifest.json`.
  */
-const CACHE_VERSION = 7;
+const CACHE_VERSION = 8;
 
 /** Timing data for --timing flag */
 interface TimingData {
@@ -61,21 +66,56 @@ export function getDiscoveryTiming(): TimingData {
   return { ...lastTimingData };
 }
 
-/**
- * Get hash of lockfile for cache invalidation
- */
-function getLockfileHash(baseDir: string): string | null {
-  // Check for pnpm or npm lockfile
-  const lockfile = existsSync(join(baseDir, 'pnpm-lock.yaml'))
-    ? join(baseDir, 'pnpm-lock.yaml')
-    : join(baseDir, 'package-lock.json');
+const LOCKFILE_NAMES = [
+  'pnpm-lock.yaml',
+  'package-lock.json',
+  'yarn.lock',
+  'bun.lock',
+  'bun.lockb',
+] as const;
 
-  if (!existsSync(lockfile)) {
+/**
+ * The lockfile that governs `baseDir`'s installs: the nearest one at or above
+ * it. A workspace app has none of its own (the workspace root holds it), so
+ * looking only at `baseDir` would leave the lockfile out of every cache check.
+ */
+function findLockfile(baseDir: string): string | null {
+  let dir = baseDir;
+  for (;;) {
+    for (const name of LOCKFILE_NAMES) {
+      const candidate = join(dir, name);
+      if (existsSync(candidate)) return candidate;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/** Content hashes keyed by path, reused while the file's size and mtime hold. */
+const fileHashMemo = new Map<string, { marker: string; hash: string }>();
+
+function hashFile(path: string): string | null {
+  let stats: ReturnType<typeof statSync>;
+  try {
+    stats = statSync(path);
+  } catch {
     return null;
   }
+  const marker = `${stats.mtimeMs}:${stats.ctimeMs}:${stats.size}:${stats.dev}:${stats.ino}`;
+  const memo = fileHashMemo.get(path);
+  if (memo?.marker === marker) {
+    return memo.hash;
+  }
+  const hash = createHash('sha256').update(readFileSync(path)).digest('hex');
+  fileHashMemo.set(path, { marker, hash });
+  return hash;
+}
 
-  const content = readFileSync(lockfile, 'utf-8');
-  return createHash('sha256').update(content).digest('hex');
+/** Hash of the governing lockfile (see {@link findLockfile}). */
+function getLockfileHash(baseDir: string): string | null {
+  const lockfile = findLockfile(baseDir);
+  return lockfile ? hashFile(lockfile) : null;
 }
 
 /**
@@ -83,14 +123,19 @@ function getLockfileHash(baseDir: string): string | null {
  * changes its declared dependencies without a colocated lockfile.
  */
 function getPackageJsonHash(baseDir: string): string | null {
-  const packageJsonPath = join(baseDir, 'package.json');
+  return hashFile(join(baseDir, 'package.json'));
+}
 
-  if (!existsSync(packageJsonPath)) {
-    return null;
+/** `path:mtime:size`, or `path:missing`: a stat-only change marker. */
+function statMarker(path: string): string {
+  try {
+    const stats = statSync(path);
+    // ctime and file identity change on every write or replacement, even
+    // when a rebuild keeps the byte length and restores the mtime.
+    return `${path}:${stats.mtimeMs}:${stats.ctimeMs}:${stats.size}:${stats.dev}:${stats.ino}`;
+  } catch {
+    return `${path}:missing`;
   }
-
-  const content = readFileSync(packageJsonPath, 'utf-8');
-  return createHash('sha256').update(content).digest('hex');
 }
 
 /**
@@ -136,6 +181,22 @@ function getLocationsHash(packages: DiscoveredSmrtPackages): string {
   return createHash('sha256').update(parts.join('|')).digest('hex');
 }
 
+/**
+ * A dependency the project declares, whose directory was found but which had
+ * no SMRT manifest when discovery ran. A workspace package is commonly linked
+ * before it is first built; building it must invalidate the cached answer.
+ */
+interface DiscoveryProbe {
+  /** The dependency name it was reached under. */
+  name: string;
+  packageDir: string;
+  /** {@link probeSignature} of `packageDir` when discovery ran. */
+  signature: string;
+}
+
+/** Probes keyed by resolved package directory. */
+type DiscoveryProbes = Record<string, DiscoveryProbe>;
+
 interface DiscoveryCache {
   version: number;
   lockfileHash: string | null;
@@ -143,6 +204,14 @@ interface DiscoveryCache {
   manifestsHash: string;
   timestamp: number;
   packages: DiscoveredSmrtPackages;
+  probes: DiscoveryProbes;
+}
+
+interface DiscoveryResult {
+  packages: DiscoveredSmrtPackages;
+  probes: DiscoveryProbes;
+  /** False when discovery threw part way: such a result is never cached. */
+  complete: boolean;
 }
 
 /**
@@ -158,12 +227,43 @@ interface DiscoveryCache {
  * mode this file is fixing.
  */
 function manifestPathCandidates(pkgPath: string): string[] {
+  return allManifestPathCandidates(pkgPath).filter((candidate) =>
+    existsSync(candidate),
+  );
+}
+
+/** Export-map candidates, reused while the package's package.json holds. */
+const exportCandidateMemo = new Map<
+  string,
+  { marker: string; candidates: string[] }
+>();
+
+/** Every manifest location probed for a package, existing or not. */
+function allManifestPathCandidates(pkgPath: string): string[] {
+  const marker = statMarker(join(pkgPath, 'package.json'));
+  let exported = exportCandidateMemo.get(pkgPath);
+  if (exported?.marker !== marker) {
+    exported = { marker, candidates: manifestExportCandidates(pkgPath) };
+    exportCandidateMemo.set(pkgPath, exported);
+  }
   return [
-    ...manifestExportCandidates(pkgPath),
+    ...exported.candidates,
     join(pkgPath, 'dist', 'manifest.json'),
     join(pkgPath, '.smrt', 'manifest.json'),
     join(pkgPath, 'src', 'manifest', 'manifest.json'),
-  ].filter((candidate) => existsSync(candidate));
+  ];
+}
+
+/**
+ * Stat-only signature of everything manifest selection reads for a package:
+ * its package.json and each candidate location. A candidate appearing,
+ * disappearing or being rewritten changes it.
+ */
+function probeSignature(pkgPath: string): string {
+  return [
+    statMarker(join(pkgPath, 'package.json')),
+    ...allManifestPathCandidates(pkgPath).map(statMarker),
+  ].join('|');
 }
 
 function normalizePackagePath(pkgPath: string): string {
@@ -299,7 +399,7 @@ function selectManifestPath(pkgPath: string): string | null {
 function getCachedDiscovery(
   baseDir: string,
   verbose: boolean,
-): DiscoveredSmrtPackages | null {
+): DiscoveryResult | null {
   const cachePath = join(baseDir, CACHE_DIR, CACHE_FILE);
 
   if (!existsSync(cachePath)) {
@@ -347,7 +447,17 @@ function getCachedDiscovery(
       return null;
     }
 
-    return cache.packages;
+    // A declared dependency that had no manifest may have been built since.
+    if (!probesUnchanged(cache.probes)) {
+      if (verbose) {
+        console.log(
+          '[discovery] Cache invalid: a dependency without a manifest changed',
+        );
+      }
+      return null;
+    }
+
+    return { packages: cache.packages, probes: cache.probes, complete: true };
   } catch (error) {
     if (verbose) {
       console.warn(
@@ -359,14 +469,26 @@ function getCachedDiscovery(
   }
 }
 
+function probesUnchanged(probes: unknown): boolean {
+  if (!probes || typeof probes !== 'object' || Array.isArray(probes)) {
+    return false;
+  }
+  return Object.values(probes as DiscoveryProbes).every(
+    (probe) =>
+      typeof probe?.packageDir === 'string' &&
+      probeSignature(probe.packageDir) === probe.signature,
+  );
+}
+
 /**
  * Save discovery results to cache
  */
 function saveCachedDiscovery(
   baseDir: string,
-  packages: DiscoveredSmrtPackages,
+  result: DiscoveryResult,
   verbose: boolean,
 ): void {
+  const { packages, probes } = result;
   const cache: DiscoveryCache = {
     version: CACHE_VERSION,
     lockfileHash: getLockfileHash(baseDir),
@@ -374,6 +496,7 @@ function saveCachedDiscovery(
     manifestsHash: getLocationsHash(packages),
     timestamp: Date.now(),
     packages,
+    probes,
   };
 
   try {
@@ -408,6 +531,26 @@ function hasManifestExport(
   memo?: ResolutionMemo,
 ): boolean {
   return resolveManifestPath(packageName, baseDir, memo) !== null;
+}
+
+/** Every dependency name `baseDir`'s package.json declares. */
+function getDeclaredDependencyNames(baseDir: string): string[] {
+  try {
+    const packageJson = parse<{
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
+    }>(readFileSync(join(baseDir, 'package.json'), 'utf-8'));
+    return Object.keys({
+      ...packageJson.dependencies,
+      ...packageJson.devDependencies,
+      ...packageJson.peerDependencies,
+      ...packageJson.optionalDependencies,
+    });
+  } catch {
+    return [];
+  }
 }
 
 function getDeclaredSmrtPackages(
@@ -525,6 +668,7 @@ function addTransitiveSmrtPackages(
   found: DiscoveredSmrtPackages,
   memo: ResolutionMemo,
   verbose: boolean,
+  probes: DiscoveryProbes,
 ): void {
   const queue = Object.keys(found);
   const visited = new Set<string>();
@@ -552,7 +696,10 @@ function addTransitiveSmrtPackages(
     for (const dependency of dependencies) {
       if (found[dependency]) continue;
       const location = locate(dependency, current.packageDir, memo, name);
-      if (!location) continue;
+      if (!location) {
+        recordProbe(probes, dependency, current.packageDir, memo);
+        continue;
+      }
       found[dependency] = location;
       queue.push(dependency);
       if (verbose) {
@@ -565,16 +712,36 @@ function addTransitiveSmrtPackages(
 }
 
 /**
+ * Remember a dependency whose directory resolved but which has no manifest
+ * yet, so a later build of it invalidates the cached answer. Keyed by the
+ * resolved directory: two installs of one dependency name are two probes,
+ * and building either one invalidates the answer.
+ */
+function recordProbe(
+  probes: DiscoveryProbes,
+  name: string,
+  from: string,
+  memo: ResolutionMemo,
+): void {
+  const packageDir = resolvePackageDir(name, from, memo);
+  if (!packageDir || probes[packageDir]) return;
+  probes[packageDir] = {
+    name,
+    packageDir,
+    signature: probeSignature(packageDir),
+  };
+}
+
+/**
  * Perform fresh discovery of SMRT packages
  */
-function performDiscovery(
-  baseDir: string,
-  verbose: boolean,
-): DiscoveredSmrtPackages {
+
+function performDiscovery(baseDir: string, verbose: boolean): DiscoveryResult {
   if (verbose) {
     console.log('[discovery] Scanning node_modules for SMRT packages...');
   }
 
+  const probes: DiscoveryProbes = {};
   try {
     const memo: ResolutionMemo = new Map();
     const found: DiscoveredSmrtPackages = {};
@@ -595,7 +762,11 @@ function performDiscovery(
       if (location) found[pkgName] = location;
     }
 
-    addTransitiveSmrtPackages(found, memo, verbose);
+    for (const pkgName of getDeclaredDependencyNames(baseDir)) {
+      if (!found[pkgName]) recordProbe(probes, pkgName, baseDir, memo);
+    }
+
+    addTransitiveSmrtPackages(found, memo, verbose, probes);
 
     if (verbose) {
       console.log(
@@ -603,14 +774,68 @@ function performDiscovery(
       );
     }
 
-    return found;
+    return { packages: found, probes, complete: true };
   } catch (error) {
     console.error(
       '[discovery] Failed to discover packages:',
       (error as Error).message,
     );
-    return {};
+    return { packages: {}, probes, complete: false };
   }
+}
+
+/**
+ * In-process reuse of a discovery answer (X3-4: a registry miss used to
+ * re-read and re-hash the lockfile on every call). Keyed by `baseDir`; valid
+ * while {@link discoveryFingerprint} is unchanged.
+ */
+const discoveryMemo = new Map<
+  string,
+  {
+    fingerprint: string;
+    packages: DiscoveredSmrtPackages;
+    probes: DiscoveryProbes;
+  }
+>();
+
+/**
+ * Stat-only fingerprint of every input a discovery answer depends on: the
+ * cache file, the lockfile, the project's package.json, and each found or
+ * probed package's manifest candidates. No file is read or hashed unless a
+ * package.json changed since its export candidates were last parsed.
+ */
+function discoveryFingerprint(
+  baseDir: string,
+  result: Pick<DiscoveryResult, 'packages' | 'probes'>,
+): string {
+  const lockfile = findLockfile(baseDir);
+  return [
+    statMarker(join(baseDir, CACHE_DIR, CACHE_FILE)),
+    lockfile ? statMarker(lockfile) : 'no-lockfile',
+    statMarker(join(baseDir, 'package.json')),
+    ...Object.keys(result.packages)
+      .sort()
+      .map(
+        (name) => `${name}=${probeSignature(result.packages[name].packageDir)}`,
+      ),
+    ...Object.keys(result.probes)
+      .sort()
+      .map(
+        (name) => `${name}?${probeSignature(result.probes[name].packageDir)}`,
+      ),
+  ].join('\n');
+}
+
+function rememberDiscovery(baseDir: string, result: DiscoveryResult): void {
+  if (!result.complete) {
+    discoveryMemo.delete(baseDir);
+    return;
+  }
+  discoveryMemo.set(baseDir, {
+    fingerprint: discoveryFingerprint(baseDir, result),
+    packages: result.packages,
+    probes: result.probes,
+  });
 }
 
 export interface DiscoveryOptions {
@@ -663,7 +888,7 @@ export function discoverSmrtPackageLocations(
       console.log('[discovery] Cache disabled, performing fresh discovery...');
     }
 
-    const packages = performDiscovery(baseDir, verbose);
+    const { packages } = performDiscovery(baseDir, verbose);
 
     if (options.timing) {
       lastTimingData.discovery = performance.now() - startTime;
@@ -673,18 +898,25 @@ export function discoverSmrtPackageLocations(
     return packages;
   }
 
-  // Try cache first
+  // Try the in-process answer, then the on-disk cache.
   const cacheCheckStart = options.timing ? performance.now() : 0;
-  const cached = getCachedDiscovery(baseDir, verbose);
+  const remembered = discoveryMemo.get(baseDir);
+  const memoHit =
+    remembered !== undefined &&
+    remembered.fingerprint === discoveryFingerprint(baseDir, remembered);
+  const cached = memoHit ? remembered : getCachedDiscovery(baseDir, verbose);
 
   if (options.timing) {
     lastTimingData.cacheCheck = performance.now() - cacheCheckStart;
   }
 
   if (cached) {
+    if (!memoHit) {
+      rememberDiscovery(baseDir, { ...cached, complete: true });
+    }
     if (verbose) {
       console.log(
-        `[discovery] ✅ Using cached SMRT packages (${Object.keys(cached).length} package(s))`,
+        `[discovery] ✅ Using cached SMRT packages (${Object.keys(cached.packages).length} package(s))`,
       );
     }
 
@@ -692,7 +924,7 @@ export function discoverSmrtPackageLocations(
       lastTimingData.total = performance.now() - startTime;
     }
 
-    return cached;
+    return { ...cached.packages };
   }
 
   // No valid cache - perform fresh discovery
@@ -701,20 +933,24 @@ export function discoverSmrtPackageLocations(
   }
 
   const discoveryStart = options.timing ? performance.now() : 0;
-  const packages = performDiscovery(baseDir, verbose);
+  const result = performDiscovery(baseDir, verbose);
 
   if (options.timing) {
     lastTimingData.discovery = performance.now() - discoveryStart;
   }
 
-  // Save to cache
-  saveCachedDiscovery(baseDir, packages, verbose);
+  // A failed discovery is not an answer: caching its empty result would keep
+  // every package out until an input happened to change.
+  if (result.complete) {
+    saveCachedDiscovery(baseDir, result, verbose);
+  }
+  rememberDiscovery(baseDir, result);
 
   if (options.timing) {
     lastTimingData.total = performance.now() - startTime;
   }
 
-  return packages;
+  return { ...result.packages };
 }
 
 /**
