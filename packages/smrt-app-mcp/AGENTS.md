@@ -23,6 +23,13 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
   `@smrt()` `McpCallAudit` model lives only behind the `./audit-store` subpath
   (smrt#4957), never in the main entry.
 
+- `approvals` (`src/approval-gate.ts`, structural `McpApprovalGate`) replaces
+  `confirm: true` for gated tools: assertions first, then the gate opens or
+  consumes an approval keyed by `mcpApprovalBindingHash` (tool, canonical args
+  without `confirm`, tenant, principal). Fail closed (`approval_unavailable`);
+  no decide path exists here; the adapter lives in `@happyvertical/smrt-approvals`
+  (`createApprovalMcpGate`). Never import approvals from this package.
+
 - Generate tools from core scoped to the allow-list (`MCPConfig.classNames`),
   then filter by allowed class names: a duplicate tool name among registered
   classes the app never publishes must not fail its catalog or calls (#3490).
@@ -33,13 +40,16 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
 - Keep app policy outside generated tool schemas. The wrapper owns auth, allow-list, and workflow assertion behavior.
 - Return 404 for tools outside the app allow-list so private generated tools are not enumerated by mistake.
 - Trust only a principal supplied by the application adapter. This package
-  does not implement an OAuth authorization server. The opt-in `./auth` entry
+  validates tokens and does not issue them; issuance lives in
+  `@happyvertical/smrt-users` (see
+  `docs/content/architecture/remote-mcp-authorization.md`). The opt-in `./auth` entry
   validates JWT access tokens and requires an application-owned principal mapper.
 - Mount `mountMcpRoute` as one modern `POST` endpoint. It creates a fresh
   protocol server per request, emits no session id, and refuses subscriptions.
 - `mountMcpAppRoute` (`src/defaults.ts` + `./sveltekit`) is the one-call app
   route: explicit `models` allow-list, required `requiredScopes`, principal from
-  session locals (`principalFromSessionLocals`). App policies compose with the
+  session locals (`principalFromSessionLocals`; absent `principalKind` denies
+  unless `defaultPrincipalKind` is set). App policies compose with the
   default and may only narrow it. Its `Origin` check (default on; opt-in on
   `mountMcpRoute`) runs before auth and dispatch; no-`Origin` clients pass.
   `effects` filters the catalog by `mcpToolEffect` (excluded tools 404).
@@ -63,11 +73,26 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
   principal; a presented bearer must verify (401, never cookie fallback); no
   metadata (404). Hosted, `runtime.resolveMcpPrincipal` is the default
   identity mapping; an explicit `resolvePrincipal` overrides it.
+  `runtime.mcpSelfIssuer` (app is its own issuer, #5080): verify in process via
+  `verifyAccessToken(token, resource)`, then `validateGrant(claims)` on every
+  call (anything but `true` = 401); no JWKS/issuer env; metadata advertises
+  its issuer. Override mappings never skip the liveness check.
 - Adapters stamp `principal.tenantBinding` for `bindPrincipal`: the local
   token adapter always `direct`; the JWT adapter the mapping's value or
   `direct-or-inherited`. Never derive it from request input. Both adapters
   read principals/mappings from own data only (`own-data.ts`): inherited
   values, accessors and poison keys deny.
+- A policy-denied call (scopes, `toolPolicy`, effects) answers exactly like an
+  unknown tool (404 `Unknown MCP tool.`, no `data.code`) so the catalog cannot
+  be probed; only the audit record carries `mcp_tool_access_denied` (the
+  `McpAccessError.auditCode`). Anonymous callers still get 401 for a tool that
+  needs authentication, which the OAuth challenge requires. Agent principals
+  (`kind: 'agent'`, #5086) pass the default policy only when `principalKinds`
+  lists them.
+- `mountMcpToolsRoute`/`mountMcpCallRoute` share the modern route's
+  `auth`/`bindPrincipal` sequence (`authenticateAndDispatch`): a bearer agent
+  lists and calls with the same live-capped scopes on every route. `mountMcpRoute`
+  with `auth` but no `bindPrincipal` authorizes on token scopes only.
 - Keep tool catalogs private by default. Public caching requires an explicit
   attestation and a global, unauthenticated, read-only, non-tenant catalog with
   no principal-aware policy.

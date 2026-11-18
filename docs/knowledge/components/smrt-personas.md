@@ -5,7 +5,7 @@ description: "Tenant-owned, context-scoped agent personas and resolution for the
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-08T08:57:02Z"
+  at: "2026-11-17T18:51:08Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:7172af7274cf4543e2a502e3bd413a10ed8e534d71a4a9137ef7628d10c3b2f1"

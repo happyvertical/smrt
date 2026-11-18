@@ -52,7 +52,11 @@ export const POST = mountMcpAppRoute({
   error (404 semantics).
 - **Principal** — `principalFromSessionLocals` reads only `locals.user.id`, the
   session-authorized `locals.tenantId`, and `locals.permissions` (as sorted
-  `scopes`, `kind: 'human'`). Missing or malformed fields mean unauthenticated.
+  `scopes`, `kind` from `locals.principalKind` as classified by the app
+  runtime). An absent or unclassifiable kind is unauthenticated, so a session
+  hook that never sets it (for example `smrt-users` `createSessionHandler`
+  without the app runtime) is denied; a host that knowingly asserts one kind
+  opts in with `defaultPrincipalKind`, unset by default. Missing or malformed fields mean unauthenticated.
   URL-selected tenants, headers and bodies are never identity inputs. Override
   with `resolvePrincipal`.
 - **Policy** — `requiredScopes` is required: every authenticated principal must
@@ -196,10 +200,19 @@ methods; the s-m-r-t SvelteKit runtime has both.
   membership, and denies anything else. Pass `resolvePrincipal` when users
   belong to several tenants.
 
+- **The app as its own issuer.** A runtime that sets `mcpSelfIssuer` (the
+  s-m-r-t runtime's `mcp.authorizationServer` option) makes hosted auth verify
+  tokens in process, re-check the grant's liveness on every call (revoked
+  grant, inactive user or tenant: 401), and advertise its own issuer; no
+  `SMRT_MCP_ISSUER` / `SMRT_MCP_JWKS_URI` is read. The default mapping is
+  `sub` to the principal id and the live grant's tenant to `tenantId`
+  (`kind: 'human'`); claims never select a tenant. An explicit
+  `resolvePrincipal` still overrides the mapping, not the liveness check.
+
 `mountMcpProtectedResourceMetadataRoute` serves the RFC 9728 document only at
 the adapter's advertised `metadataUrl` path. It returns 404 for any other
-path, and in the `local` profile (no adapter, or the local token adapter). It
-does not implement an OAuth authorization server.
+path, and in the `local` profile (no adapter, or the local token adapter). This
+route does not issue tokens.
 
 For piping a deployed app's MCP surface to a local stdio MCP client, see `@happyvertical/smrt-app-cli` — the client-side runtime CLI exposes a `startMcpBridge()` default and a generic `smrt-mcp-bridge` bin.
 
@@ -208,8 +221,18 @@ For public deployments, follow the
 The server trusts the principal supplied by the application adapter. Validate
 bearer tokens at an application gateway or with the server-only `./auth` JWT
 adapter, then resolve fresh application membership and tenant authority on every
-request. The OAuth issuer remains operator-owned; this package does not implement
-an OAuth authorization server.
+request. This package validates tokens; it does not issue them. Two issuer paths
+are supported: the application as its own OAuth authorization server through
+`@happyvertical/smrt-users` (authorization code with S256 PKCE, refresh,
+RFC 8414 discovery, JWKS, revocation, RFC 8707 resource binding, RFC 9207 `iss`,
+opt-in Dynamic Client Registration, opt-in Client ID Metadata Documents through
+`createCimdAuthorizationServer` with a required `allowClientOrigin` policy,
+host-owned login and consent), or an external issuer you operate. The contract
+page above describes both, with the end-to-end app-as-issuer wiring (pass
+`mcp: { authorizationServer: { server, authorization, resource, scopes } }` to
+`createSmrtSvelteKitRuntime`), live per-call revocation, the default principal
+mapping, client registration choices, webhook signing profiles for waking
+agents and an ordered agent-ready app checklist.
 
 ```ts
 // src/lib/server/mcp.ts
@@ -268,6 +291,16 @@ workflowTools: [{
 }],
 ```
 
+### Agent users
+
+An agent is a user with a `bot` profile. `runtime.resolveMcpPrincipal` stamps
+`kind: 'agent'` for it (app-issued or OIDC tokens); the default policy accepts
+`human` only, so serve agents with `principalKinds: ['human', 'agent']`. With
+`mountMcpAppRoute({ runtime })` the binder caps the token's scopes by the
+agent's live role permissions, and `toolScopes` maps tools to permission slugs:
+the agent lists and calls only what both its role and its token allow, and a
+revoked permission removes the tool from the next list and call.
+
 ### Tool scopes, confirm gate and persistent audit
 
 Scoped credentials for external agents need no app-local policy parsing:
@@ -286,14 +319,17 @@ createDefaultMcpAppServer({
 
 - **Scopes.** A workflow tool declares `requiredScopes`; the host may also map
   patterns with `toolScopes`. A tool whose scopes the principal (`principal.scopes`)
-  does not hold is hidden from `tools/list` and denied (403) on call; this is
-  ANDed with `toolPolicy`. An anonymous caller holds none, so a scoped tool is
+  does not hold is hidden from `tools/list` and refused on call exactly like an
+  unknown tool (404, no existence oracle; the audit record keeps the real
+  reason); this is ANDed with `toolPolicy`. An anonymous caller holds none, so a scoped tool is
   never public.
 - **Confirm.** A gated tool is refused before any `workflowAssertions` or
   handler runs unless `arguments.confirm === true`: the result is `isError` with
   `structuredContent.error.code === 'confirm_required'`, audited `denied`.
   Discovery advertises a boolean `confirm` property. For generated tools the
-  `confirm` flag is consumed by the gate and not forwarded.
+  `confirm` flag is consumed by the gate and not forwarded. The flag is supplied
+  by the caller: it stops an agent acting without asking its user, and is not a
+  human sign-off (use `@happyvertical/smrt-approvals` for that).
 - **Audit.** `onToolCall` events now also carry `tenantId`, `argumentKeys`
   and `occurredAt`; `auditSink.record(record)` receives the persistable
   `McpAuditRecord` (`principalId`, `principalKind`, `tool`, `tenantId`,
@@ -307,6 +343,44 @@ createDefaultMcpAppServer({
   outcome?, limit? })`; `tenantId` is mandatory (`null` lists global rows).
   Run your schema bootstrap/migrations so the table exists. Implement
   `McpAuditSink` for any other store; `createInMemoryMcpAuditSink()` suits tests.
+
+### Person-approved gated calls (`approvals`)
+
+Set `approvals` to an `McpApprovalGate` (structural `{ check(request) }`) and a
+`confirmTools`/`requiresConfirm` call stops being authorized by
+`confirm: true`. `@happyvertical/smrt-approvals` ships the adapter, so neither
+package depends on the other:
+
+```ts
+import { createApprovalMcpGate } from '@happyvertical/smrt-approvals';
+
+createMcpAppServer({
+  confirmTools: ['mail_send'],
+  approvals: createApprovalMcpGate({ service: new ApprovalService({ db }) }),
+  auditSink,
+  // ...
+});
+```
+
+1. First call: host assertions run, then one approval request is opened per
+   binding (idempotent) and the call answers `isError` `approval_pending`
+   (`details.approvalId`). Nothing runs.
+2. A person (a `human` principal holding `approvals.approve-mcp-tool`, never the
+   requester, never an agent or service) decides through the host's approval UI
+   or `ApprovalService.decide`. This server exposes no decide path.
+3. The identical retried call consumes the approval and runs once. The binding
+   is SHA-256 over tool, canonical arguments (key order ignored, `confirm`
+   excluded), tenant and principal id. Replays, changed arguments, another
+   principal or tenant, rejection, expiry and an already-consumed approval
+   answer `approval_refused` with a short reason.
+
+The approver reviews a server-built summary stored on the request (tool, principal kind and id, and the arguments as JSON with values under secret-looking keys such as password, token, apiKey, authorization or cookie replaced by `[redacted]`, at any depth; `approvalRedact(tool, args)` can mask more). It never contains agent-supplied free text outside that JSON, and arguments too large to review (3000 characters) are refused. The binding hash covers the real arguments, so changing even a redacted value needs a new approval. After a reviewer requests changes the call is refused with a hint to change the arguments. A consumed or expired approval never runs again, but the identical call later opens a fresh request (concurrent retries share one live request), so a failed or legitimately repeated call can be approved again; a rejected or changes-requested call stays refused until its arguments change. Any adapter error, missing principal id or tenant, or non-JSON
+argument answers `approval_unavailable` and the call does not run. The approval
+is consumed before the tool runs, so a tool that fails after consumption needs a
+new approval. Audit records use `errorCode`: `approval_requested` (request
+opened, `denied`), `approval_pending`, `approval_refused`, `approval_unavailable`
+(all `denied`) and `approval_consumed` on the `allowed` record of the call that
+ran; the approver and decision are in the approvals event ledger.
 
 ### Host operations, audit and typed errors
 
@@ -403,7 +477,9 @@ await client.callTool({
 Applications that have not moved their route path can retain the deprecated
 handlers below while they migrate. They are REST-shaped compatibility aliases,
 not an MCP transport. Direct calls to a tool outside the app allow-list
-continue to receive the safe 404 behavior.
+continue to receive the safe 404 behavior. They honor `auth` and
+`bindPrincipal` like `mountMcpRoute`, so a bearer principal (including an
+agent user) gets the same live-role-filtered list and the same refusals.
 
 ```ts
 // src/routes/api/mcp/tools/+server.ts

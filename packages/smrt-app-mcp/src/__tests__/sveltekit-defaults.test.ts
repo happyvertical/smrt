@@ -26,7 +26,6 @@ import {
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createMcpResourceAuth } from '../auth.js';
-import { MCP_TOOL_ACCESS_DENIED_CODE } from '../errors.js';
 
 it('mounts the published route without the SDK and reports its first-use load failure', () => {
   const child = spawnSync(
@@ -103,6 +102,7 @@ const ownerLocals = {
   tenantId: 'tenant-a',
   permissions: ['items.read', 'items.create'],
   sessionId: 'sid-1',
+  principalKind: 'human',
 };
 const scopelessLocals = { ...ownerLocals, permissions: [] as string[] };
 const otherTenantLocals = {
@@ -209,6 +209,34 @@ describe('principalFromSessionLocals', () => {
     expect(principalFromSessionLocals({ locals: otherTenantLocals })).toEqual(
       expect.objectContaining({ tenantId: 'tenant-b' }),
     );
+  });
+
+  it('denies a session with no principalKind unless the host opts in', () => {
+    const { principalKind: _kind, ...unclassified } = ownerLocals;
+    expect(principalFromSessionLocals({ locals: unclassified })).toBeNull();
+    expect(
+      principalFromSessionLocals(
+        { locals: unclassified },
+        { defaultPrincipalKind: 'human' },
+      ),
+    ).toEqual(expect.objectContaining({ id: 'owner-1', kind: 'human' }));
+  });
+
+  it('carries the classified kind, human or agent, over any default', () => {
+    for (const kind of ['human', 'agent']) {
+      expect(
+        principalFromSessionLocals(
+          { locals: { ...ownerLocals, principalKind: kind } },
+          { defaultPrincipalKind: 'human' },
+        ),
+      ).toEqual(expect.objectContaining({ kind }));
+    }
+    expect(
+      principalFromSessionLocals(
+        { locals: { ...ownerLocals, principalKind: null } },
+        { defaultPrincipalKind: 'human' },
+      ),
+    ).toBeNull();
   });
 
   it.each([
@@ -336,10 +364,10 @@ describe('mountMcpAppRoute', () => {
         title: 'nope',
       },
     );
-    expect(body.error).toEqual({
-      code: -32600,
-      message: 'MCP tool access is not permitted.',
-      data: { code: MCP_TOOL_ACCESS_DENIED_CODE, retryable: false },
+    // Refused exactly like an unknown tool.
+    expect(body.error).toMatchObject({
+      code: -32602,
+      message: 'Unknown MCP tool.',
     });
     expect(await rowCount('lane_route_items')).toBe(before);
   });
@@ -434,10 +462,8 @@ describe('mountMcpAppRoute', () => {
     expect(await toolNames(throwing, ownerLocals)).toEqual([]);
     const { body } = await call(throwing, 'lanerouteitem_list', ownerLocals);
     expect(JSON.stringify(body)).not.toContain('secret policy detail');
-    expect(body.error.data).toEqual({
-      code: MCP_TOOL_ACCESS_DENIED_CODE,
-      retryable: false,
-    });
+    expect(body.error).toMatchObject({ message: 'Unknown MCP tool.' });
+    expect(body.error.data?.code).toBeUndefined();
   });
 
   it('matches the overlay policy: non-human or tenant-less principals see nothing', async () => {

@@ -146,6 +146,7 @@ such as `MessagingSettingsService`.
 | `SmrtCollectionQueryCollection` | Structural collection interface the generic adapter executes against |
 | `SmrtCollectionQueryScope` | Trusted, server-derived scope conditions for the generic adapter |
 | `SmrtCollectionDataSurfaceAction` | Declarative row/bulk action catalog entry surfaced via `metadata.actionCatalog` |
+| `PrincipalBinding` / `PrincipalRun` | `executeAsPrincipal` binding and run handle. Optional server-set `sessionId`, `credentialKind` (`PrincipalCredentialKind`), and `bindingMetadata` pass through to the run (`run.context.sessionId`, `run.credentialKind`, frozen `run.bindingMetadata`). Set them from verified server auth state, never browser input; they never affect `allowedTools` or permissions |
 
 ### Summary Discovery
 
@@ -284,6 +285,17 @@ result through `reconcileIdempotency()` after the configured live-authority
 callback accepts evidence for the exact request fingerprint and reservation
 timestamp. `InMemoryDataSurfaceActionStateStore` is for single-process test
 harnesses only.
+
+An action may declare an optional `visibleTo({ run, descriptor, action })`
+seam (sync or async) for a per-principal gate the RBAC catalog does not express.
+The adapter evaluates it before the descriptor/map consistency check: a false,
+non-`true`, throwing, or rejecting result refuses `denied` (fail closed), while an
+action id the surface does not define still refuses `unsupported`. The
+distinction is deliberate and truthful: `denied` tells the caller the action
+exists but is not theirs, so hosts that must not reveal existence should keep
+the action out of the surface instead. A describe-style read should return
+`visibleDataSurfaceDescriptor(run, surface)`, which drops hidden actions from the
+descriptor. Without the seam behaviour is unchanged.
 
 `createJobsDataSurfaceBackgroundQueue()` persists a versioned envelope in
 `@happyvertical/smrt-jobs`. The envelope contains the request and a non-secret

@@ -85,9 +85,12 @@
     "@happyvertical/sql": "catalog:"
   },
   "devDependencies": {
+    "@happyvertical/auth": "catalog:",
+    "@happyvertical/smrt-app-mcp": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/kit": "2.70.3",
     "@types/node": "24.13.6",
+    "jose": "^6.2.12",
     "svelte": "^5.57.1",
     "tsx": "^4.23.13",
     "typescript": "6.0.3",

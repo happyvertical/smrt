@@ -86,7 +86,12 @@ and a valid `selfApprovalPermission` audit slug. Otherwise it refuses
   `approval:<id>:<event>`), profiles `AuditLog` mirror, expiry and reminder
   job calling `expireDue`.
 - Slice 4: adopters (social, personas, content, subscriptions).
-- Slice 5: agent and MCP request tools (deciding stays human-only).
+- Slice 5 (shipped, #5087): `createApprovalMcpGate` (`src/mcp-gate.ts`) for
+  app-mcp `confirmTools`; kind `mcp.tool.call`, subject id the tool name,
+  revision hash the call binding, `requestKey` `mcp:<binding>`. The caller is
+  mapped to a permissionless principal; unknown principal kinds are `agent`.
+  The snapshot lives in the readonly `summary` (no schema change; a dedicated context column would need a migration); a request in `changes_requested` is refused (rejected too); a consumed or expired binding opens a new request under key `<key>:<epoch>`. The dependency edge is dev-only (app-mcp does not import approvals); keep it
+  that way so the graph stays acyclic.
 - Slice 6: #3667 `pending_approval` hand-off.
 
 Known gaps: listing every holder of a permission needs a users-package

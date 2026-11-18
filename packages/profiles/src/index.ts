@@ -25,6 +25,7 @@ export {
   resolveAgentProfile,
   resolveAgentProfileId,
 } from './agent-profile';
+export { AgentTypeChangeError } from './agent-type-guard';
 export * from './audit-trail.js';
 // Auth module - Identity resolution
 // Auth module - Nostr crypto

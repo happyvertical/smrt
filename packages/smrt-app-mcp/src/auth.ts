@@ -1,5 +1,10 @@
 /** Server-only OAuth protected-resource boundary. This is not an issuer. */
-import { createRemoteJWKSet, type JWTPayload, jwtVerify } from 'jose';
+import {
+  createRemoteJWKSet,
+  type JWTPayload,
+  type JWTVerifyGetKey,
+  jwtVerify,
+} from 'jose';
 import { stampVerifiedIdentity } from './identity.js';
 import { ownStringArray, readOwnFields } from './own-data.js';
 import type { McpAppPrincipal, McpTenantBinding } from './server.js';
@@ -25,14 +30,45 @@ export interface McpPrincipalMapping {
 }
 
 const TENANT_BINDINGS: readonly string[] = ['direct', 'direct-or-inherited'];
+/**
+ * The application's own in-process OAuth issuer (smrt#5080). Verification
+ * never touches the network: the issuer's own key checks the token.
+ */
+export interface McpSelfIssuer {
+  /** Exact issuer identifier tokens carry and metadata advertises. */
+  readonly issuer: string;
+  /**
+   * Verify signature, issuer, expiry, the audience and server-side access
+   * token revocation, and return the payload; reject otherwise.
+   */
+  verifyAccessToken(
+    token: string,
+    audience: string,
+  ): Promise<Readonly<JWTPayload>>;
+  /**
+   * Per-call grant liveness (`smrt_grant_id` not revoked, user and tenant
+   * still active). Fail closed: anything but `true` denies.
+   */
+  validateGrant(claims: Readonly<JWTPayload>): Promise<boolean>;
+}
+
 export interface McpResourceAuthOptions {
   profile: McpDeploymentProfile;
   /** Exact public resource identifier; also the required token audience. */
   resource: string;
   /** Exact issuer identifier, including any trailing slash. */
   issuer: string;
-  /** Operator-configured signing keys. Never derived from an untrusted token. */
-  jwksUri: string;
+  /**
+   * Operator-configured signing keys. Never derived from an untrusted token.
+   * Ignored (and not required) with {@link McpResourceAuthOptions.selfIssuer}.
+   */
+  jwksUri?: string;
+  /**
+   * The app is its own issuer: tokens are verified in process by this issuer
+   * (no JWKS fetch) and every call re-checks grant liveness. `issuer` must
+   * equal `selfIssuer.issuer`.
+   */
+  selfIssuer?: McpSelfIssuer;
   scopes: readonly string[];
   algorithms: readonly ('RS256' | 'ES256')[];
   /** Default at+jwt. Select JWT only for a provider that uses it for access tokens. */
@@ -137,6 +173,18 @@ export interface McpAuthRuntime {
   resolveMcpPrincipal?(
     identity: McpVerifiedIdentity,
   ): Promise<McpPrincipalMapping | null>;
+  /**
+   * Set when the application is its own MCP issuer (the runtime's
+   * `mcp.authorizationServer` option). Hosted resource auth then verifies
+   * in process and checks grant liveness on every call instead of reading
+   * `SMRT_MCP_ISSUER` / `SMRT_MCP_JWKS_URI`.
+   */
+  readonly mcpSelfIssuer?: McpSelfIssuer & {
+    /** Resource identifier; falls back to `SMRT_MCP_RESOURCE`. */
+    readonly resource?: string;
+    /** Required scopes; falls back to `SMRT_MCP_SCOPES`. */
+    readonly scopes?: readonly string[];
+  };
 }
 
 /** Options for {@link createLocalMcpTokenAuth}. */
@@ -324,12 +372,17 @@ export function createHostedMcpResourceAuth(
         'Hosted MCP requires an application-owned resolvePrincipal binding or a runtime with resolveMcpPrincipal.',
       );
     }
+    const self = runtime?.mcpSelfIssuer;
     cached = createMcpResourceAuth({
       profile,
-      resource: required(HOSTED_MCP_AUTH_ENV.resource),
-      issuer: required(HOSTED_MCP_AUTH_ENV.issuer),
-      jwksUri: required(HOSTED_MCP_AUTH_ENV.jwksUri),
-      scopes: required(HOSTED_MCP_AUTH_ENV.scopes).split(/\s+/u),
+      resource: self?.resource ?? required(HOSTED_MCP_AUTH_ENV.resource),
+      issuer: self ? self.issuer : required(HOSTED_MCP_AUTH_ENV.issuer),
+      ...(self
+        ? { selfIssuer: self }
+        : { jwksUri: required(HOSTED_MCP_AUTH_ENV.jwksUri) }),
+      scopes: self?.scopes
+        ? [...self.scopes]
+        : required(HOSTED_MCP_AUTH_ENV.scopes).split(/\s+/u),
       algorithms: options.algorithms ?? ['RS256'],
       tokenType: options.tokenType,
       requireTenant: options.requireTenant,
@@ -347,7 +400,20 @@ export function createMcpResourceAuth(
   }
   const resourceUrl = validateUrl(options.resource, options.profile);
   validateUrl(options.issuer, options.profile);
-  validateUrl(options.jwksUri, options.profile);
+  const selfIssuer = options.selfIssuer;
+  if (selfIssuer) {
+    if (
+      selfIssuer.issuer !== options.issuer ||
+      typeof selfIssuer.verifyAccessToken !== 'function' ||
+      typeof selfIssuer.validateGrant !== 'function'
+    ) {
+      throw new Error('Invalid MCP self issuer.');
+    }
+  } else if (typeof options.jwksUri === 'string') {
+    validateUrl(options.jwksUri, options.profile);
+  } else {
+    throw new Error('Invalid MCP authorization URL.');
+  }
   if (
     !options.algorithms.length ||
     options.algorithms.some((alg) => !['RS256', 'ES256'].includes(alg))
@@ -371,9 +437,11 @@ export function createMcpResourceAuth(
   const tokenType = options.tokenType ?? 'at+jwt';
   const requireTenant = options.requireTenant !== false;
   const resolvePrincipal = options.resolvePrincipal;
-  const keys = createRemoteJWKSet(new URL(options.jwksUri), {
-    timeoutDuration: 5000,
-  });
+  const keys = selfIssuer
+    ? undefined
+    : createRemoteJWKSet(new URL(options.jwksUri as string), {
+        timeoutDuration: 5000,
+      });
   const metadataUrl = `${resourceUrl.origin}/.well-known/oauth-protected-resource${resourceUrl.pathname === '/' ? '' : resourceUrl.pathname}`;
   function deny(error?: 'invalid_token' | 'insufficient_scope'): {
     ok: false;
@@ -413,14 +481,24 @@ export function createMcpResourceAuth(
         );
       if (!match) return deny('invalid_token');
       try {
-        const { payload } = await jwtVerify(match[1], keys, {
-          issuer,
-          audience: resource,
-          algorithms,
-          typ: tokenType,
-          requiredClaims: ['iss', 'aud', 'sub', 'exp'],
-          clockTolerance: 0,
-        });
+        let payload: JWTPayload;
+        if (selfIssuer) {
+          payload = {
+            ...(await selfIssuer.verifyAccessToken(match[1], resource)),
+          };
+          // Revoked grant, inactive user or tenant: refuse this very call.
+          if ((await selfIssuer.validateGrant(Object.freeze(payload))) !== true)
+            return deny('invalid_token');
+        } else {
+          ({ payload } = await jwtVerify(match[1], keys as JWTVerifyGetKey, {
+            issuer,
+            audience: resource,
+            algorithms,
+            typ: tokenType,
+            requiredClaims: ['iss', 'aud', 'sub', 'exp'],
+            clockTolerance: 0,
+          }));
+        }
         if (!validString(payload.sub) || typeof payload.scope !== 'string')
           return deny('invalid_token');
         const granted = payload.scope === '' ? [] : payload.scope.split(' ');

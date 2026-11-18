@@ -177,14 +177,14 @@ describe('generated tools: scopes, confirm and task lifecycle', () => {
       errorCode: 'confirm_required',
     });
 
-    // callTask: scope missing is a 403 before anything runs.
+    // callTask: scope missing is refused as an unknown tool before anything runs.
     await expect(
       app.callTask({
         name: TOOL,
         arguments: { id: vaultId, _options: {}, confirm: true },
         principal: { ...principal, scopes: [] },
       }),
-    ).rejects.toMatchObject({ status: 403 });
+    ).rejects.toMatchObject({ status: 404, message: 'Unknown MCP tool.' });
 
     // Confirmed call creates the task; `confirm` is consumed, not forwarded.
     const handler = route();

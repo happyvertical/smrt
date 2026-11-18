@@ -21,3 +21,17 @@ success); a throwing audit sink is reported to `onFailure` and the refusal
 stands. `onDenied` is separate from `onFailure`: a denial is an authorization
 outcome, not a server error. Request errors (including hidden fields, which
 get `DATA_QUERY_FIELD_NOT_ALLOWED`) are not denials.
+
+## Action visibility (#2986)
+
+`DataSurfaceServerActionDefinition.visibleTo?({ run, descriptor, action })` is
+the per-principal gate for actions that exist on a surface but that this
+principal may neither see nor run. `createDataSurfaceActionAdapter` evaluates it
+in `resolveInvocation` before the descriptor/map consistency check: a false,
+non-`true`, throwing, or rejecting result refuses `denied` (fail closed); an id
+absent from the surface's action map still refuses `unsupported`. `denied` vs
+`unsupported` is therefore a truthful existence signal, so a host that must not
+reveal an action's existence should omit it from the surface instead.
+Describe-style reads return `visibleDataSurfaceDescriptor(run, surface)`, which
+drops hidden actions from the descriptor. Without the seam behaviour is
+unchanged.

@@ -33,6 +33,7 @@ const cookieLocals = {
   user: { id: 'cookie-user' },
   tenantId: 'tenant-c',
   permissions: ['items.read'],
+  principalKind: 'human',
   sessionId: 'sid',
 };
 
@@ -261,10 +262,11 @@ describe('bindPrincipal effective authority (D1)', () => {
         rpc('tools/call', { name: 'items_overview', arguments: {} }),
       )
     ).json();
+    // Refused exactly like an unknown tool: no existence oracle.
     expect(call.error).toEqual({
-      code: -32600,
-      message: 'MCP tool access is not permitted.',
-      data: { code: MCP_TOOL_ACCESS_DENIED_CODE, retryable: false },
+      code: -32602,
+      message: 'Unknown MCP tool.',
+      data: {},
     });
     expect(seen.execute).toEqual([]);
   });
@@ -298,7 +300,7 @@ describe('bindPrincipal effective authority (D1)', () => {
         rpc('tools/call', { name: 'items_overview', arguments: {} }),
       )
     ).json();
-    expect(widened.error.data.code).toBe(MCP_TOOL_ACCESS_DENIED_CODE);
+    expect(widened.error.message).toBe('Unknown MCP tool.');
     expect(widening.seen.execute).toEqual([]);
 
     for (const effective of [

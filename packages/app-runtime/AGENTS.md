@@ -276,9 +276,8 @@ Application infrastructure composition for the validated runtime profiles in
 - `verifyLocalMcpToken` (local only) and `resolveMcpPrincipal` (hosted only:
   issuer/subject → `oidc_identities` → exactly one active user with exactly
   one active direct membership, else `null`) are the runtime's MCP credential
-  bindings; pass the runtime as `mountMcpAppRoute({ runtime })` (or
-  `createHostedMcpResourceAuth({ runtime })`).
-  Token claims never select a tenant.
+  bindings; pass the runtime as `mountMcpAppRoute({ runtime })`. Claims never
+  pick a tenant. Own issuer: [agents/self-issuer-mcp.md](agents/self-issuer-mcp.md).
 - `resolveApplicationId()` / `runtimeConfigurationFingerprint()` must stay
   byte-compatible with process managers (golden vectors in tests).
 
