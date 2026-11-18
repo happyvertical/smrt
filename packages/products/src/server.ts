@@ -36,6 +36,20 @@ function demoAuthMiddleware(_objectName: string, _action: string) {
   };
 }
 
+/**
+ * Reference tenant resolver. Tenant-scoped models (`Product` is
+ * `@TenantScoped`) run inside the tenant of the request: when tenancy is
+ * enabled, a request with no tenant reads global rows only and cannot write.
+ *
+ * Return the tenant of the principal `demoAuthMiddleware` verified — from the
+ * verified token or session, never from a header or parameter the caller
+ * controls. This stub verifies nothing, so it knows no tenant.
+ */
+function demoResolveTenant(_req: Request): { tenantId?: string } {
+  // TODO: return { tenantId: <tenant of the verified principal> }.
+  return {};
+}
+
 async function startServer() {
   console.log('🚀 Starting SMRT Template Server...');
 
@@ -52,6 +66,7 @@ async function startServer() {
       enableCors: true,
       allowedOrigins: ['http://localhost:3000'],
       authMiddleware: demoAuthMiddleware,
+      resolveTenant: demoResolveTenant,
     },
   );
 
