@@ -399,17 +399,33 @@ defect. Rescans are serialized: one runs and at most one waits; events that
 arrive meanwhile join the waiting one, which scans the latest sources once the
 running one finishes, so an older scan never publishes over a newer one.
 
+Route-file ownership has one rule (`generated-route-ownership.ts`): a
+generator-owned file is a `+server.ts` starting with the route header; any
+other `+server.ts` and any `+server.js` is application code. Writers go
+through `writeGeneratedRouteFile()` (`_changes`, `_events`, `_dev`) or
+`findApplicationServerModule()` (`_resources`, which preserves an application
+handler and skips itself). The preflight reports an application file at any
+destination a model's CRUD/custom-action routes, `_changes`, `_events`, `_dev`
+or the knowledge route needs (`ApplicationRouteConflictError`, naming the
+file) before anything is swept; it finds the object routes by running the
+generator's claim pass with the application files as reserved paths, so it
+never mirrors route derivation. Pending: `sveltekit-generator.ts` `writeRoute`
+and `sync-apply-route.ts` still write without calling the shared helper; the
+preflight covers them on every plugin path, direct `generateSvelteKitRoutes()`
+callers are not covered until they do.
+
 Route generation validates every object's routes
-(`assertSvelteKitObjectRoutesValid`, `vite-plugin/generated-route-preflight.ts`:
+(`preflightSvelteKitRouteGeneration`, `vite-plugin/generated-route-preflight.ts`:
 the generator's own claim pass per object) before `generateSvelteKitRoutes()`
 sweeps the route tree, on the producer's direct path and the coordinator path
 alike, so a duplicate or mixed-host custom route fails with the previous
-routes still on disk. It checks only what rendering already enforced: two
-claims on one handler file (`Conflicting SvelteKit route`, within an object or
-across objects) stay a hosted-consumer (`rejectRouteCollisions`) rule, so a
-producer-only app still generates STI siblings that share a collection, a
-static action whose path is `[id]` beside CRUD, or a `sync` collection with an
-`apply` action beside the sync-apply route, exactly as before.
+routes still on disk. Within one object it also refuses two generated handlers
+for one file (`Conflicting SvelteKit route`): a static action whose path is
+`[id]` beside the CRUD item route, or a `sync` collection with an `apply`
+action beside the sync-apply route, which rendering used to resolve by writing
+one over the other. Two claims across objects stay a hosted-consumer
+(`rejectRouteCollisions`) rule, so a producer-only app still generates STI
+siblings that share a collection.
 
 The generated API client (`generateClientModule`, behind both
 `@happyvertical/smrt-virt-client` and `@smrt/client`) sends every

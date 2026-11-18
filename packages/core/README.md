@@ -456,6 +456,17 @@ the option reconciles only consumer-managed generated handlers before SvelteKit
 inventories routes. Handwritten handlers and current producer-owned routes are
 preserved.
 
+A route file is generator output only when it is a `+server.ts` that starts
+with the generated-route header comment the generator writes on its first
+line. Any other `+server.ts`, and any `+server.js`, is application code:
+generation never overwrites it and never writes a `+server.ts` beside it. When
+application code sits at a path a model's routes (or the `_changes`, `_events`,
+`_dev` or knowledge route) would need, generation fails before it changes the
+route tree, with an error naming the file; move or rename the file, or stop
+generating that route (`api: false`, `api.exclude`, or the route's
+`enabled: false`). A handwritten `_resources` or `sync/apply` handler is the
+exception: it replaces that generated route, which is skipped.
+
 The plugin records only the concrete `+server.ts` files it generated in a
 bounded `.gitignore` block. Handwritten handlers below `routesDir` remain
 visible to Git, including routes that live beside generated resource handlers.

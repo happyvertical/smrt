@@ -47,6 +47,15 @@ vi.mock('node:module', () => ({
   createRequire: () => ({ resolve: mockSmrtUsersResolve }),
 }));
 
+/**
+ * Every path exists except route files: those tests model an earlier tree, and
+ * an existing route file without the generated header is application code the
+ * route writers refuse to replace.
+ */
+function existsExceptRouteFiles(path: unknown): boolean {
+  return !/[\\/]\+server\.(ts|js)$/.test(String(path));
+}
+
 // Import after mocking
 import {
   findCliApiCoherenceViolations,
@@ -739,7 +748,7 @@ describe('SvelteKit Route Generator', () => {
     });
 
     it('should skip config generation when file already exists', async () => {
-      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(existsSync).mockImplementation(existsExceptRouteFiles);
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
@@ -2414,7 +2423,7 @@ describe('SvelteKit Route Generator', () => {
     });
 
     it('should remove stale auto-generated route files before regenerating', async () => {
-      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(existsSync).mockImplementation(existsExceptRouteFiles);
       vi.mocked(readdirSync).mockImplementation((path) => {
         if (path.toString() === join(projectRoot, 'src/routes/api')) {
           return [
@@ -2571,7 +2580,7 @@ describe('SvelteKit Route Generator', () => {
 
   describe('.gitignore Updates', () => {
     it('should add exact generated route paths to .gitignore', async () => {
-      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(existsSync).mockImplementation(existsExceptRouteFiles);
       vi.mocked(readFileSync).mockReturnValue('node_modules/\n.env\n');
 
       const manifest: SmartObjectManifest = {
@@ -2623,7 +2632,7 @@ describe('SvelteKit Route Generator', () => {
     });
 
     it('should migrate only the legacy SMRT broad route entry', async () => {
-      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(existsSync).mockImplementation(existsExceptRouteFiles);
       vi.mocked(readFileSync).mockReturnValue(
         [
           'node_modules/',
@@ -2728,7 +2737,7 @@ describe('SvelteKit Route Generator', () => {
       // `src/routes/api` and later moved to `src/routes/api/v1`, so the legacy
       // pair never matched a routesDir-derived pattern and survived every
       // regeneration.
-      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(existsSync).mockImplementation(existsExceptRouteFiles);
       vi.mocked(readFileSync).mockReturnValue(
         [
           'node_modules/',
@@ -2786,7 +2795,7 @@ describe('SvelteKit Route Generator', () => {
     it('should migrate a surviving legacy pair alongside an existing bounded block', async () => {
       // #2198: the first #2185 release appended its bounded block without
       // migrating an unmatched legacy pair, leaving both shapes in the file.
-      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(existsSync).mockImplementation(existsExceptRouteFiles);
       vi.mocked(readFileSync).mockReturnValue(
         [
           '# SMRT auto-generated routes (from Vite plugin)',
@@ -2849,7 +2858,7 @@ describe('SvelteKit Route Generator', () => {
     });
 
     it('should leave a legacy header with no recognizable pattern beneath it', async () => {
-      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(existsSync).mockImplementation(existsExceptRouteFiles);
       vi.mocked(readFileSync).mockReturnValue(
         [
           '# SMRT auto-generated routes (from Vite plugin)',

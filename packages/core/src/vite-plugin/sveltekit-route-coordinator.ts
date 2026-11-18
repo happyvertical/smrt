@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import type { SmartObjectManifest } from '../scanner/types.js';
-import { assertSvelteKitObjectRoutesValid } from './generated-route-preflight.js';
+import { preflightSvelteKitRouteGeneration } from './generated-route-preflight.js';
 import type { SmrtConfigEnv, SmrtVitePlugin } from './plugin-contract.js';
 import {
   assertNoCrossObjectRouteCollisions,
@@ -446,32 +446,36 @@ async function generateWhenReady(
   const semanticManifest = mergeManifests(
     contributions.map(({ semanticManifest }) => semanticManifest),
   );
-  // Validate every object's routes before generation sweeps the route tree.
-  assertSvelteKitObjectRoutesValid(
+  const utilities = utilityManifests(
+    contributions,
+    protectedProducerKnowledgeRoutePaths(sessions, coordinator),
+    new Set(
+      [...sessions.entries()]
+        .filter(
+          ([target, candidate]) =>
+            target !==
+              routeTarget(primary.projectRoot, primary.options.routesDir) &&
+            candidate.contributions.size > 0,
+        )
+        .map(([target]) => target),
+    ),
+  );
+  // Validate routes and destination ownership before generation sweeps the
+  // route tree, so a failure leaves the previous generated routes in place.
+  preflightSvelteKitRouteGeneration(
     primary.projectRoot,
     routeManifest,
     semanticManifest,
     options,
+    utilities,
+    utilities.protectedRouteRoots,
   );
   await generateSvelteKitRoutes(
     primary.projectRoot,
     routeManifest,
     options,
     semanticManifest,
-    utilityManifests(
-      contributions,
-      protectedProducerKnowledgeRoutePaths(sessions, coordinator),
-      new Set(
-        [...sessions.entries()]
-          .filter(
-            ([target, candidate]) =>
-              target !==
-                routeTarget(primary.projectRoot, primary.options.routesDir) &&
-              candidate.contributions.size > 0,
-          )
-          .map(([target]) => target),
-      ),
-    ),
+    utilities,
     mergeManifests(
       registrationContributions.map(
         ({ routeManifest, semanticManifest, options }) =>

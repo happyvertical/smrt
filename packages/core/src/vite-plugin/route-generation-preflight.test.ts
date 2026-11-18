@@ -165,7 +165,7 @@ describe.each([
     );
   });
 
-  it('still builds an object whose static action takes the item route path', async () => {
+  it('refuses an object whose static action takes the item route path', async () => {
     writeModel(`import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 
 @smrt({ api: { routes: { lookup: { path: '[id]', scope: 'collection' } } } })
@@ -177,11 +177,10 @@ export class PreflightTicket extends SmrtObject {
   }
 }
 `);
-    await expect(generate()).resolves.toBeUndefined();
-    expect(existsSync(itemRoute())).toBe(true);
+    await expect(generate()).rejects.toThrow(/Conflicting SvelteKit route/);
   });
 
-  it('still builds a collection named sync with an apply action beside the sync-apply route', async () => {
+  it('refuses a collection named sync whose apply action would replace the sync-apply route', async () => {
     writeModel(`import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 
 @smrt({
@@ -196,9 +195,6 @@ export class PreflightTicket extends SmrtObject {
   }
 }
 `);
-    await expect(generate()).resolves.toBeUndefined();
-    expect(
-      existsSync(join(projectRoot, 'src/routes/api/sync/apply/+server.ts')),
-    ).toBe(true);
+    await expect(generate()).rejects.toThrow(/Conflicting SvelteKit route/);
   });
 });

@@ -1,6 +1,6 @@
 /**
  * Validation that runs before SvelteKit route generation changes the route
- * tree.
+ * tree: per-object route validation and route-file ownership.
  *
  * `generateSvelteKitRoutes()` sweeps every header-owned route file before it
  * renders the first object's routes, and a per-object failure (two methods
@@ -10,14 +10,25 @@
  * leaves the previous generated routes in place.
  */
 
+import { dirname, join } from 'node:path';
 import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
+import { willGenerateChangesRoute } from './changes-route.js';
+import { willGenerateDevPlaneRoute } from './dev-plane-route.js';
+import { willGenerateEventsRoute } from './events-route.js';
+import {
+  ApplicationRouteConflictError,
+  assertGeneratedRouteDestination,
+  collectApplicationServerModules,
+} from './generated-route-ownership.js';
 import {
   assertNoCrossObjectRouteCollisions,
+  knowledgeRoutePath,
   type SvelteKitOptions,
 } from './sveltekit-generator.js';
+import { canonicalSvelteKitPath } from './sveltekit-path.js';
 import { findManifestObjectByName } from './web-collections.js';
 
 /**
@@ -82,50 +93,112 @@ function isolateObject(
   return { ...routeManifest, objects };
 }
 
-/**
- * The claim pass also reports two claims on one handler file (`Conflicting
- * SvelteKit route`). Generation of an object never enforced that rule (it
- * wrote the later handler over the earlier one), and a hosted consumer asks
- * the generator for it before cleanup itself; so this preflight leaves it out
- * and every configuration that generated before still generates.
- */
-const UNENFORCED_CLAIM_CONFLICT = /^Conflicting SvelteKit route /;
+/** Utility manifests, when they differ from the route manifest (coordinator). */
+export interface SvelteKitPreflightUtilityManifests {
+  changes: SmartObjectManifest;
+  events: SmartObjectManifest;
+}
 
 /**
- * Run, for every object in the route manifest, the per-object route checks
- * generation already performs while rendering (two methods resolving to one
- * custom route handler; handlers sharing a route with mixed hosts or scopes),
- * so they fail before the route tree is swept.
+ * Validate a generation before it changes the route tree:
  *
- * @throws The generator's validation error for the first invalid object.
+ * 1. Every object's routes pass the generator's own per-object validation
+ *    (the claim pass), without the cross-object collision rule: a
+ *    producer-only app still writes STI siblings that share a collection to
+ *    one file, and a hosted consumer asks the generator for that rule itself.
+ * 2. No path the generator will write is occupied by application code (the
+ *    ownership rule in `generated-route-ownership.ts`). `_resources` and
+ *    `sync/apply` are excluded: their writers deliberately preserve an
+ *    application handler and skip generating that one route.
+ *
+ * @throws The generator's validation error, or an
+ *   {@link ApplicationRouteConflictError} naming the application file.
  */
-export function assertSvelteKitObjectRoutesValid(
+export function preflightSvelteKitRouteGeneration(
   projectRoot: string,
   routeManifest: SmartObjectManifest,
   semanticManifest: SmartObjectManifest,
   options: SvelteKitOptions,
+  utilityManifests: SvelteKitPreflightUtilityManifests = {
+    changes: routeManifest,
+    events: routeManifest,
+  },
+  protectedRouteRoots: ReadonlySet<string> = new Set(),
 ): void {
   if (!options.enabled) return;
+  const routesRoot = join(projectRoot, options.routesDir);
+  const applicationFiles = collectApplicationServerModules(
+    routesRoot,
+    protectedRouteRoots,
+  );
+  for (const preserved of [
+    join(routesRoot, '_resources', '+server.ts'),
+    join(routesRoot, 'sync', 'apply', '+server.ts'),
+  ]) {
+    applicationFiles.delete(canonicalSvelteKitPath(preserved));
+  }
+
   const claimOptions = objectRouteOptions(options);
+  const reserved = new Set(applicationFiles.keys());
   for (const [key, definition] of Object.entries(routeManifest.objects)) {
-    try {
+    const isolated = isolateObject(
+      key,
+      definition,
+      routeManifest,
+      semanticManifest,
+    );
+    const claim = (paths: ReadonlySet<string>) =>
       assertNoCrossObjectRouteCollisions(
         projectRoot,
-        isolateObject(key, definition, routeManifest, semanticManifest),
+        isolated,
         claimOptions,
         semanticManifest,
+        paths,
       );
+    try {
+      claim(reserved);
     } catch (error) {
-      // Custom-action grouping runs before an object's handler claims, so an
-      // unenforced claim conflict is only ever reached after the checks this
-      // preflight exists for have passed.
-      if (
-        error instanceof Error &&
-        UNENFORCED_CLAIM_CONFLICT.test(error.message)
-      ) {
-        continue;
+      if (reserved.size === 0) throw error;
+      // A genuine validation error wins over an ownership conflict.
+      claim(new Set());
+      for (const [claimPath, file] of applicationFiles) {
+        try {
+          claim(new Set([claimPath]));
+        } catch (cause) {
+          throw new ApplicationRouteConflictError(
+            file,
+            `the routes of ${key}`,
+            { cause },
+          );
+        }
       }
       throw error;
     }
+  }
+
+  const utilityRoutes: Array<[boolean, string, string]> = [
+    [
+      willGenerateChangesRoute(utilityManifests.changes, options),
+      join(routesRoot, '_changes'),
+      'the _changes route',
+    ],
+    [
+      willGenerateEventsRoute(utilityManifests.events, options),
+      join(routesRoot, '_events'),
+      'the _events route',
+    ],
+    [
+      willGenerateDevPlaneRoute(projectRoot, options),
+      join(routesRoot, '_dev', '[...tool]'),
+      'the _dev route',
+    ],
+    [
+      options.knowledge?.api?.enabled === true,
+      dirname(knowledgeRoutePath(projectRoot, options)),
+      'the knowledge route',
+    ],
+  ];
+  for (const [generated, routeDir, route] of utilityRoutes) {
+    if (generated) assertGeneratedRouteDestination(routeDir, route);
   }
 }

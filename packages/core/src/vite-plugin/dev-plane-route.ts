@@ -10,9 +10,9 @@
  * only emitted when that subpath resolves from the consumer.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { consumerResolvesImport } from './consumer-import.js';
+import { writeGeneratedRouteFile } from './generated-route-ownership.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import { generateCollectionAccessImports } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
@@ -56,18 +56,14 @@ export function generateDevPlaneRoute(
     return false;
   }
   const routeDir = join(projectRoot, options.routesDir, '_dev', '[...tool]');
-  if (!existsSync(routeDir)) {
-    mkdirSync(routeDir, { recursive: true });
-  }
-  const filePath = join(routeDir, '+server.ts');
-  writeFileSync(
-    filePath,
+  const filePath = writeGeneratedRouteFile(
+    routeDir,
     generateDevPlaneRouteTemplate(
       generateCollectionAccessImports(projectRoot, routeDir, options, [
         'getSmrtConfig',
       ]),
     ),
-    'utf-8',
+    'the _dev route',
   );
   console.log(`[smrt] Generated: ${filePath}`);
   return true;

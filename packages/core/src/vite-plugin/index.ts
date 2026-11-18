@@ -82,7 +82,7 @@ import {
   GENERATED_CLIENT_CRUD_METHODS,
   generateClientModule,
 } from './generated-client.js';
-import { assertSvelteKitObjectRoutesValid } from './generated-route-preflight.js';
+import { preflightSvelteKitRouteGeneration } from './generated-route-preflight.js';
 import {
   assertNoHostToolNameCollisions,
   type HostToolNameDeclaration,
@@ -1006,7 +1006,7 @@ export function smrtPlugin(
       return;
     }
     // Validate every object's routes before generation sweeps the route tree.
-    assertSvelteKitObjectRoutesValid(
+    preflightSvelteKitRouteGeneration(
       rootDir,
       currentManifest,
       currentManifest,

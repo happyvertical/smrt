@@ -10,7 +10,7 @@
  * route.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -164,6 +164,10 @@ describe('generateResourcesRoute (#2663)', () => {
     resolveSmrtUsers();
     vi.mocked(existsSync).mockImplementation(
       (path) => String(path) === routeFilePath,
+    );
+    // Hand-written: the file does not start with the generated-route header.
+    vi.mocked(readFileSync).mockReturnValue(
+      'export const GET = () => new Response("mine");\n',
     );
 
     const generated = generateResourcesRoute(projectRoot, baseOptions);

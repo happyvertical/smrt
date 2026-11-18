@@ -34,13 +34,13 @@
  *   {@link AUTO_GENERATED_ROUTE_HEADER}.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SmartObjectManifest } from '../scanner/types';
 import {
   manifestHasTenantScopedObject,
   resolveAnchorClassName,
 } from './changes-route.js';
+import { writeGeneratedRouteFile } from './generated-route-ownership.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import { generateCollectionAccessImports } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
@@ -81,13 +81,27 @@ export function generateEventsRoute(
     ]),
   );
 
-  if (!existsSync(routeDir)) {
-    mkdirSync(routeDir, { recursive: true });
-  }
-  const filePath = join(routeDir, '+server.ts');
-  writeFileSync(filePath, content, 'utf-8');
+  const filePath = writeGeneratedRouteFile(
+    routeDir,
+    content,
+    'the _events route',
+  );
   console.log(`[smrt] Generated: ${filePath}`);
   return true;
+}
+
+/**
+ * Whether {@link generateEventsRoute} writes a file for this manifest, so
+ * generation can check that destination before it changes the route tree.
+ */
+export function willGenerateEventsRoute(
+  manifest: SmartObjectManifest,
+  options: SvelteKitOptions,
+): boolean {
+  return (
+    options.eventsRoute?.enabled !== false &&
+    resolveAnchorClassName(manifest) !== null
+  );
 }
 
 /**

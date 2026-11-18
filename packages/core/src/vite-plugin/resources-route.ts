@@ -66,11 +66,11 @@
  * already only deletes `+server.ts` files that start with
  * {@link AUTO_GENERATED_ROUTE_HEADER}, so a hand-written `_resources` route —
  * which never carries that header — survives the pre-generation sweep
- * untouched. This emitter additionally checks `existsSync` on the target
- * path before writing: by the time it runs, anything still there is
- * necessarily hand-written (a generator-owned copy would already have been
- * swept), so its mere presence is sufficient to skip generation and leave it
- * alone.
+ * untouched. This emitter applies the shared ownership rule
+ * (`findApplicationServerModule`, `generated-route-ownership.ts`) before
+ * writing: an application `+server.ts` or `+server.js` there is preserved
+ * and generation of this one route is skipped. Every other generated route
+ * fails generation instead when application code occupies its path.
  *
  * Once a consumer's `_resources` route IS generator-owned (no hand-written
  * file present, `smrt-users` resolvable), its path is generator-owned for
@@ -84,9 +84,12 @@
  * manual `.gitignore` edit outside the managed block is preserved.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { consumerResolvesImport } from './consumer-import.js';
+import {
+  findApplicationServerModule,
+  writeGeneratedRouteFile,
+} from './generated-route-ownership.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import { resolveSvelteKitConfigImport } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
@@ -117,14 +120,7 @@ export function willGenerateResourcesRoute(
     return false;
   }
   const routeDir = join(projectRoot, options.routesDir, '_resources');
-  for (const name of ['+server.ts', '+server.js']) {
-    const file = join(routeDir, name);
-    if (!existsSync(file)) continue;
-    if (!readFileSync(file, 'utf-8').startsWith(AUTO_GENERATED_ROUTE_HEADER)) {
-      return false;
-    }
-  }
-  return true;
+  return findApplicationServerModule(routeDir) === undefined;
 }
 
 /** Whether `_resources` is occupied by its generated utility or a preserved
@@ -136,13 +132,7 @@ export function reservesResourcesRoute(
 ): boolean {
   if (willGenerateResourcesRoute(projectRoot, options)) return true;
   const routeDir = join(projectRoot, options.routesDir, '_resources');
-  return ['+server.ts', '+server.js'].some((name) => {
-    const file = join(routeDir, name);
-    return (
-      existsSync(file) &&
-      !readFileSync(file, 'utf-8').startsWith(AUTO_GENERATED_ROUTE_HEADER)
-    );
-  });
+  return findApplicationServerModule(routeDir) !== undefined;
 }
 
 /**
@@ -170,20 +160,15 @@ export function generateResourcesRoute(
   }
 
   const routeDir = join(projectRoot, options.routesDir, '_resources');
-  const filePath = join(routeDir, '+server.ts');
 
   // By this point in generation, clearGeneratedRouteFiles has already swept
   // any previously generator-owned copy at this path — anything still here
-  // is necessarily hand-written. Preserve it rather than clobbering a
-  // consumer's customized discovery route. Check every server-module
-  // extension SvelteKit resolves by default (`.js` and `.ts` — see
-  // https://svelte.dev/docs/kit/configuration#moduleExtensions), not only
-  // `.ts`: a hand-written `+server.js` is invisible to a `.ts`-only check,
-  // so the generator would write `+server.ts` alongside it and SvelteKit
-  // would then refuse the route with "Multiple endpoint files found".
-  const existingServerFile = ['+server.ts', '+server.js'].find((name) =>
-    existsSync(join(routeDir, name)),
-  );
+  // is application code (the shared ownership rule: a `+server.ts` without
+  // the generated header, or any `+server.js`, which SvelteKit would refuse
+  // beside a generated `+server.ts` as "Multiple endpoint files found").
+  // `_resources` is the one generated route an application may replace on
+  // purpose, so its handler is preserved rather than reported as a conflict.
+  const existingServerFile = findApplicationServerModule(routeDir);
   if (existingServerFile) {
     console.log(
       `[smrt] Preserving hand-written _resources route (${existingServerFile}, not generator-owned)`,
@@ -191,11 +176,8 @@ export function generateResourcesRoute(
     return false;
   }
 
-  if (!existsSync(routeDir)) {
-    mkdirSync(routeDir, { recursive: true });
-  }
-  writeFileSync(
-    filePath,
+  const filePath = writeGeneratedRouteFile(
+    routeDir,
     generateResourcesRouteTemplate(
       resolveSvelteKitConfigImport(projectRoot, routeDir, options),
       resolveSvelteKitConfigImport(projectRoot, routeDir, {
@@ -204,7 +186,7 @@ export function generateResourcesRoute(
       }),
       options,
     ),
-    'utf-8',
+    'the _resources route',
   );
   console.log(`[smrt] Generated: ${filePath}`);
   return true;
