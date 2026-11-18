@@ -61,6 +61,11 @@ Options require `db`, `application`, `tenantId`, `packageName`, initial
 `authorize(context)`. Identity comes from host authentication. Schema
 definitions belong to the application runtime: the host must not run
 independently customized application registries in the same global registry.
+This is enforced: once one editor's journal (application + tenant) has
+registered customisations, constructing or editing through an editor for
+another journal in the same process fails `MODEL_EDITOR_CONFLICT` instead of
+merging fields and lists between them. Reopening the same journal is allowed.
+Serve each further customised tenant from its own process.
 Rows retain the existing tenancy interceptor; install it as for normal models.
 
 `editor.apply(edit, { actor, tenantId, requestId, expectedRevision })` supports:

@@ -286,6 +286,13 @@ async function tableExists(
   return rows.length > 0;
 }
 
+declare global {
+  /** Run-time classes each app model editor registered, by journal identity. */
+  var __smrtAppModelEditorClasses: WeakMap<object, string> | undefined;
+}
+const editorClasses = () =>
+  (globalThis.__smrtAppModelEditorClasses ??= new WeakMap<object, string>());
+
 /** Async construction replays persisted customizations and resolves pending activation BEFORE serving. */
 export async function createAppModelEditor(options: AppModelEditorOptions) {
   if (!options.application || !options.tenantId || !options.authorize)
@@ -304,6 +311,20 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     throw new Error(
       'MODEL_HISTORY_JOURNAL_REQUIRED: a custom history store must append through a store createAppModelHistory made, so the app model journal (_smrt_app_model_changes) records every list and smrt db:migrate never treats a list table as undeclared',
     );
+  // The registry is process-global: two independently customised editors
+  // (another tenant's or application's journal) would merge their fields and
+  // lists into the same classes. One application registry per process.
+  const journal = JSON.stringify([options.application, options.tenantId]);
+  const assertSoleEditor = () => {
+    for (const entry of ObjectRegistry.getAllClasses().values()) {
+      const owner = editorClasses().get(entry.constructor);
+      if (owner !== undefined && owner !== journal)
+        throw new Error(
+          'MODEL_EDITOR_CONFLICT: this process already holds app model customisations from another tenant or application journal; run one customised application registry per process',
+        );
+    }
+  };
+  assertSoleEditor();
   const store = options.store ?? (await createAppModelHistory(options));
   if (engine === 'postgres' && !store.transaction)
     throw new Error(
@@ -655,6 +676,17 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     setRuntimeModelReadiness(identities(all), false);
     ready = false;
     if (!all) return;
+    try {
+      registerAll(all);
+    } finally {
+      for (const id of identities(all)) {
+        if (!id.startsWith(`${options.packageName}:`)) continue;
+        const entry = ObjectRegistry.getClass(id);
+        if (entry) editorClasses().set(entry.constructor, journal);
+      }
+    }
+  }
+  function registerAll(all: CookbookModels) {
     // Register non-reference fields first, so mutually referencing app lists resolve through registry APIs.
     for (const [name, list] of Object.entries(all.lists))
       registerRuntimeModel(
@@ -984,6 +1016,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     edit = structuredClone(edit);
     context = structuredClone(context);
     const execute = async () => {
+      assertSoleEditor();
       if (
         context.tenantId !== options.tenantId ||
         !context.actor ||
