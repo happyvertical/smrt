@@ -301,8 +301,11 @@ instances and never use this path to overwrite a loaded revision.
 This is rule 3 of the [data shape rules](data-shape-rules.md): an app hardens a
 smrt class by overriding fields on a subclass, and the name decides the reach.
 
-An app class that extends a smrt class and declares the SAME simple name takes
-over the registry entry (`sti-child-wins`, `registry/collision-policy.ts`) and
+An app class that extends a smrt class, declares the SAME simple name and
+declares `replaceParent: true` takes over the registry entry
+(`same-name-subclass-replaces-parent`, `registry/collision-policy.ts`;
+`replaceParent: false` registers a subtype instead, see
+[app-subclasses.md](app-subclasses.md)) and
 records the old key in `replacedQualifiedNames`. smrt's own collections follow
 it: `create()` and non-STI hydration build the app's class (`get()`/`list()` on
 a shared table already resolved by `_meta_type`), and the STI discriminator is
