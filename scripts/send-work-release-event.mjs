@@ -53,6 +53,12 @@ export function changelogFromSubjects(subjects, repo) {
   return { changelog, prUrls };
 }
 
+/**
+ * @param {{ pkg: string, version: string, repo?: string, releaseUrl?: string,
+ *   summary?: string, subjects?: string[] }} input
+ * @returns {{ package: string, version: string, changelog?: string[],
+ *   prUrls?: string[], releaseUrl?: string, summary?: string, repo?: string }}
+ */
 export function buildPackagePublish({ pkg, version, repo, releaseUrl, summary, subjects = [] }) {
   if (!pkg || !version) throw new Error('--package and --version are required');
   const { changelog, prUrls } = changelogFromSubjects(subjects, repo);
