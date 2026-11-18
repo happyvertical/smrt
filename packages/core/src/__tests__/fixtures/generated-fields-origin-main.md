@@ -87,3 +87,15 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
 - Generated sync route (`sync/apply/+server.ts`): each target carries
   `tenantScoped` and `principalContext`, and its read-only list comes from the
   function the CRUD routes use (`collectRouteReadonlyFields`).
+- Generated create paths (both MCP servers `single/index.ts` and
+  `modular/handlers/index.ts`, and the list route of each model): a create
+  target selected through an STI base passes `assertCreateTargetSurface()`.
+- Generated MCP error results (`single/index.ts`, `modular/handlers/index.ts`):
+  a `TENANT_ISOLATION_VIOLATION` with no public message of its own is
+  reported as `permission_denied` / "Permission denied.".
+- Round-2 request-path checks (both MCP servers, the list and item routes of
+  each model, and `sync/apply/+server.ts`): create input passes
+  `assertCreateInput()`; routes authenticate before the exposure gate and read
+  the request tenant from every \`locals\` source; item-route lookups map
+  typed refusals; the sync route checks exposure in \`run\`, update payloads
+  with \`assertUpdateInput()\` and super-admin bypass per target.

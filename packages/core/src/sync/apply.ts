@@ -54,6 +54,7 @@ import { jsonValuesEqual } from '../utils/json-equal.js';
 import {
   assignUpdateInput,
   isWriteInputError,
+  resolveUpdateInput,
   STRUCTURAL_UPDATE_RULES,
 } from '../write-input.js';
 
@@ -213,6 +214,30 @@ export interface SyncApplyTarget {
    * the item with a reason.
    */
   run?: <T>(op: SyncApplyOp, apply: () => Promise<T>) => Promise<T>;
+  /**
+   * Host check on the stored row an update or delete targets, before anything
+   * about it is answered (replay, staleness, the write). A host whose route
+   * does not serve that row (an STI subtype the server does not serve, or
+   * whose own policy refuses the operation) throws
+   * {@link SyncApplyRejection}.
+   */
+  admitRow?: (
+    row: SyncApplyRowLike,
+    op: 'update' | 'delete',
+  ) => Promise<void> | void;
+  /**
+   * Refuse an update payload the row does not accept, without changing the
+   * row: a key that is not a declared field or settable accessor throws
+   * `WriteInputError` (the item is `rejected` / `invalid_payload`). Hosts with
+   * a registered model check with `assertUpdateInput`; without this hook the
+   * row's own plain properties and settable accessors are the rule.
+   */
+  assertUpdate?: (row: SyncApplyRowLike, data: Record<string, unknown>) => void;
+  /**
+   * Refuse create input the model does not accept (`assertCreateInput`):
+   * the item is `rejected` / `invalid_payload` and nothing is written.
+   */
+  assertCreate?: (data: Record<string, unknown>) => void;
   /** Registry/class name, for diagnostics. */
   objectName: string;
   /** Collection whose get/create/save/delete run the full interceptor stack. */
@@ -592,6 +617,7 @@ async function applyAuthorizedItem(
   // Tenant isolation: collection.get runs the interceptor stack, so rows
   // outside the caller's tenant are simply not visible here.
   const row = await target.collection.get(item.id);
+  if (row && item.op !== 'create') await target.admitRow?.(row, item.op);
 
   switch (item.op) {
     case 'create': {
@@ -614,6 +640,7 @@ async function applyAuthorizedItem(
         };
       }
 
+      target.assertCreate?.(data);
       try {
         // Strict insert (`_insertOnly`): row identity is the envelope UUID
         // alone. Without it, `create()` saves new objects with natural-key
@@ -646,6 +673,11 @@ async function applyAuthorizedItem(
       if (!row) {
         return { ...base, status: 'rejected', reason: 'not_found' };
       }
+      // The payload is checked before anything is answered about the row: a
+      // key it does not accept rejects the item, never reports a replay or a
+      // stale write.
+      if (target.assertUpdate) target.assertUpdate(row, data);
+      else resolveUpdateInput(row, data, STRUCTURAL_UPDATE_RULES);
       if (payloadMatchesRow(data, row)) {
         // Idempotent replay of an already-applied update (checked before the
         // stale guard: our own earlier apply advanced `updated_at`).

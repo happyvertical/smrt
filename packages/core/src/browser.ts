@@ -188,6 +188,13 @@ export type {
 } from './config';
 // Global configuration (callable function)
 export { config } from './config';
+// Which STI subtypes a create through a base may select on a transport.
+export {
+  assertCreateTargetSurface,
+  type CreateSurface,
+  CreateTargetError,
+  isCreateOpenOnSurface,
+} from './create-target';
 // Canonical bounded query protocol — adapters supply their own authorization
 // and execution, while this runtime normalizes the shared envelope (#2444).
 export {
@@ -596,7 +603,11 @@ export {
 } from './postgres-timeouts';
 // The public serialiser an object's class provides, for request-facing
 // output; never an own property of the instance.
-export { publicSerializerOf, toPublicJSONValue } from './public-json';
+export {
+  publicSerializerOf,
+  toPublicJSONValue,
+  toPublicResultValue,
+} from './public-json';
 // Which fields a caller may filter and sort a list by: the ones it may read.
 export {
   assertQueryAccess,
@@ -681,6 +692,7 @@ export {
 // `applyUpdateInput`.
 export {
   applyUpdateInput,
+  assertCreateInput,
   assertUpdateInput,
   updateInputRulesFor,
 } from './request-input';

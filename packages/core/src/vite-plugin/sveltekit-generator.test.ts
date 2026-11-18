@@ -1283,7 +1283,7 @@ describe('SvelteKit Route Generator', () => {
       expect(content).toContain('await collection.create');
       expect(content).not.toContain('await item.save()');
       expect(content).toContain(
-        "import { ObjectRegistry, normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';",
+        "import { assertCreateInput, assertCreateTargetSurface, ObjectRegistry, normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';",
       );
       expect(content).toContain('function smrtRouteErrorResponse');
       expect(content).toContain(

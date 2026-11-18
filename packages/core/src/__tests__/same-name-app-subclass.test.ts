@@ -1012,10 +1012,9 @@ describe('same-name app subclass', () => {
       new Request('http://fixture/api/profiles', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          title: 'STI name',
-          firstName: 'Person',
-        }),
+        // A create through the base names the base's own fields; a subtype's
+        // field (`firstName`) needs the subtype selected.
+        body: JSON.stringify({ title: 'STI name' }),
       }),
     );
     expect(created.status).toBe(201);

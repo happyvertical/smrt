@@ -109,6 +109,22 @@ export function isTenantScoped(objectDef: SmartObjectDefinition): boolean {
 }
 
 /**
+ * Whether a tenant-scoped model lets a verified super-admin bypass act with
+ * no tenant: `tenantScoped: { allowSuperAdminBypass: true }`.
+ */
+export function allowsSuperAdminBypass(
+  objectDef: SmartObjectDefinition,
+): boolean {
+  const config = objectDef.decoratorConfig?.tenantScoped;
+  return (
+    !!config &&
+    typeof config === 'object' &&
+    (config as { allowSuperAdminBypass?: unknown }).allowSuperAdminBypass ===
+      true
+  );
+}
+
+/**
  * Whether generated routes must publish the authenticated principal into the
  * tenancy ALS without making the model itself tenant-scoped. This is an
  * explicit model-level opt-in: body data is never an identity source.
@@ -156,11 +172,17 @@ export function usesPrincipalContext(
  *   imports it needs)
  * @param includeSuperAdminBypass - Whether to import `isSuperAdminBypass`
  *   for routes whose action options carry the read scope
+ * @param superAdminBypass - Whether a verified super-admin bypass admits a
+ *   write with no tenant: the model's own `allowSuperAdminBypass` (the
+ *   tenancy interceptor lifts its filter only for models that opt in).
+ *   `'per-target'` emits `hasTenantWriteContext(locals, allowSuperAdminBypass)`
+ *   for a route that serves several models.
  */
 export function generateTenantContextHelper(
   requirePrincipal: boolean | 'per-target',
   tenantScoped: boolean,
   includeSuperAdminBypass = false,
+  superAdminBypass: boolean | 'per-target' = false,
 ): string {
   const perTarget = requirePrincipal === 'per-target';
   const principalCondition = `typeof tenantId !== 'string' || !tenantId ||
@@ -216,10 +238,14 @@ export function generateTenantContextHelper(
 // optional-mode write would run with no tenant predicate at all, so it is
 // refused unless the principal is explicitly cross-tenant (a system context,
 // or a verified super-admin bypass). Global rows are no exception.
-function hasTenantWriteContext(locals: unknown): boolean {
+function hasTenantWriteContext(locals: unknown${superAdminBypass === 'per-target' ? ', allowSuperAdminBypass: boolean' : ''}): boolean {
   if (!isTenancyEnabled() || hasTenantContext() || isSystemContext()) {
     return true;
   }
+  // A super-admin bypass admits only a model that opts in with
+  // \`allowSuperAdminBypass\`: for every other model the tenancy interceptor
+  // keeps filtering, and with no tenant it would filter nothing at all.
+  if (!${superAdminBypass === 'per-target' ? 'allowSuperAdminBypass' : String(superAdminBypass)}) return false;
   const l =
     locals && typeof locals === 'object'
       ? (locals as Record<string, unknown>)
@@ -231,8 +257,8 @@ function hasTenantWriteContext(locals: unknown): boolean {
   return tenantContext.superAdminBypass === true;
 }
 
-function requireTenantWriteContext(locals: unknown): void {
-  if (hasTenantWriteContext(locals)) return;
+function requireTenantWriteContext(locals: unknown${superAdminBypass === 'per-target' ? ', allowSuperAdminBypass: boolean' : ''}): void {
+  if (hasTenantWriteContext(locals${superAdminBypass === 'per-target' ? ', allowSuperAdminBypass' : ''})) return;
   throw error(
     hasAuthenticatedPrincipal(locals) ? 403 : 401,
     'Tenant context required',

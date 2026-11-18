@@ -654,11 +654,12 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
       request: Request;
       url: URL;
     }) => Promise<Response>;
-    /** Call a generated route anonymously, in its own async scope. */
+    /** Call a generated route (anonymously by default), in its own async scope. */
     const call = (
       path: string,
       params: Record<string, string> = {},
       query = '',
+      locals: Record<string, unknown> = {},
     ) =>
       new AsyncResource('emitted-route-request').runInAsyncScope(async () => {
         const url = new URL(
@@ -671,7 +672,7 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
         if (!handler) throw new Error(`No GET route for ${path}`);
         try {
           return await handler({
-            locals: {},
+            locals,
             params,
             request: new Request(url),
             url,
@@ -691,8 +692,17 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
       // `browse` lists with its options as the filter: the scope must name
       // `organizationId`, not the ordinary `tenantId` column.
       expect(
-        await actionResult(await call('emittedroutebulletins/browse')),
-      ).toEqual(['bulletin for everyone', 'bulletin for everyone, labelled']);
+        await actionResult(
+          await call('emittedroutebulletins/browse', {}, '', {
+            tenantId: OURS,
+            user: { id: 'reader' },
+          }),
+        ),
+      ).toEqual(['our bulletin']);
+    });
+
+    it('a collection GET action is refused to a caller with no tenant', async () => {
+      expect((await call('emittedroutebulletins/browse')).status).toBe(401);
     });
 
     it('an item GET action loads only rows without an owner', async () => {

@@ -28,6 +28,14 @@ function hasPublicMessage(details: { publicMessage?: unknown }): boolean {
   );
 }
 
+const TENANT_CONTEXT_CODE = 'TENANT_CONTEXT_REQUIRED';
+const TENANT_CONTEXT_REFUSAL: TypedHttpFailure = Object.freeze({
+  code: TENANT_CONTEXT_CODE,
+  message: 'Tenant context required.',
+  ok: false,
+  status: 403,
+});
+
 export function normalizeTypedHttpError(
   error: unknown,
 ): TypedHttpFailure | undefined {
@@ -44,6 +52,15 @@ export function normalizeTypedHttpError(
   // own public message was written for the caller and keeps it.
   if (details.code === TENANT_ISOLATION_CODE && !hasPublicMessage(details)) {
     return TENANT_ISOLATION_REFUSAL;
+  }
+  // A tenant-scoped operation reached with no tenant is a refusal, not a
+  // server fault.
+  if (
+    details.code === TENANT_CONTEXT_CODE &&
+    details.status === undefined &&
+    !hasPublicMessage(details)
+  ) {
+    return TENANT_CONTEXT_REFUSAL;
   }
   const status = details.status;
   if (

@@ -16,6 +16,10 @@ import {
   getCookbookToolService,
 } from '../cookbook/tools.js';
 import {
+  assertCreateTargetSurface,
+  isCreateOpenOnSurface,
+} from '../create-target';
+import {
   type McpGetSerializer,
   resolveMcpGetSerializer,
 } from '../mcp-serializer.js';
@@ -34,7 +38,7 @@ import type {
   ApiSerializerReference,
   RegisteredClass,
 } from '../registry/types.js';
-import { applyUpdateInput } from '../request-input';
+import { applyUpdateInput, assertCreateInput } from '../request-input';
 import {
   isRuntimeModelEnabled,
   type RuntimeExposureContext,
@@ -1210,8 +1214,16 @@ export class MCPGenerator {
       objectName,
       exposureContext,
     );
+    // A create offers only the subtypes whose own `mcp` surface opens create,
+    // the same rule `executeAction` applies to the selector.
     const variants = catalog.polymorphic
-      ? [catalog.base, ...catalog.subtypes].map((target) => ({
+      ? [
+          catalog.base,
+          ...catalog.subtypes.filter(
+            (target) =>
+              action !== 'create' || isCreateOpenOnSurface(target.name, 'mcp'),
+          ),
+        ].map((target) => ({
           name: target.name,
           discriminator: target.name,
           label: target.label,
@@ -1880,6 +1892,8 @@ export class MCPGenerator {
         surface: 'mcp',
         tenantId: this.context.tenantId,
       });
+      // A subtype whose own surface closes create is not a target here.
+      assertCreateTargetSurface(objectName, target, 'mcp');
       args = target.data;
       if (target.collectionName !== objectName) {
         const classInfo = ObjectRegistry.getClass(target.name);
@@ -2090,6 +2104,8 @@ export class MCPGenerator {
           objectName,
           args,
         );
+        // Create input names declared fields and settable accessors only.
+        if (objectName) assertCreateInput(objectName, createData, collection);
         // Server-set ownership context (not caller-controlled).
         if (this.context.user) {
           createData.created_by = this.context.user.id;
@@ -2800,7 +2816,10 @@ ${indent}}`;
               return `${indent}case '${tool.name}': {
 ${indent}  const { collection, objectName: targetObjectName, data } = await resolveCreateTarget(${JSON.stringify(lookup)}, args, aiConfig);
 
-${indent}  const newItem = await collection.create(applyWritablePolicy(targetObjectName, data));
+${indent}  const createData = applyWritablePolicy(targetObjectName, data);
+${indent}  // Create input names declared fields and settable accessors only.
+${indent}  assertCreateInput(targetObjectName, createData, collection);
+${indent}  const newItem = await collection.create(createData);
 
 ${indent}  return successResult(toPublicJSONValue(newItem, PUBLIC_JSON_OPTIONS));
 ${indent}}`;
@@ -2977,7 +2996,7 @@ ${indent}}`;
 
 import { ObjectRegistry, normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY } from '@happyvertical/smrt-core';
 import { hasRuntimeExposureGate, isRuntimeModelEnabled } from '@happyvertical/smrt-core';
-import { applyUpdateInput, assertQueryAccess, identifierArgument, publicSerializerOf, requireIdentifierArgument, toPublicJSONValue } from '@happyvertical/smrt-core';
+import { applyUpdateInput, assertCreateInput, assertCreateTargetSurface, assertQueryAccess, identifierArgument, publicSerializerOf, requireIdentifierArgument, toPublicJSONValue } from '@happyvertical/smrt-core';
 import { COOKBOOK_TOOL_NAMES, getCookbookToolService } from '@happyvertical/smrt-core/cookbook/tools';
 ${hasTenantScoped ? "import { enableTenancy, runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}${
   hasTenantScoped
@@ -3063,6 +3082,8 @@ async function resolveCreateTarget(baseObjectName: string, args: Record<string, 
   const target = ObjectRegistry.resolveCreateTarget(baseObjectName, args, {
     surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID,
   });
+  // A subtype whose own surface closes create is not a target here.
+  assertCreateTargetSurface(baseObjectName, target, 'mcp');
   const objectName = target.collectionName;
   const collection = await ObjectRegistry.getCollection(target.collectionName, {
     persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },

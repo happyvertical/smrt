@@ -206,7 +206,7 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
       'const readScope = resolveTenantReadOptionsScope("@test/smrt:PublicTenantDoc", { superAdminBypass: isSuperAdminBypass() });',
     );
     expect(collectionActionRoute).toContain(
-      "import { enterTenantContext, getCurrentTenant, isSuperAdminBypass } from '@happyvertical/smrt-tenancy';",
+      "import { enterTenantContext, getCurrentTenant, hasTenantContext, isSuperAdminBypass, isSystemContext, isTenancyEnabled } from '@happyvertical/smrt-tenancy';",
     );
     expect(collectionActionRoute).toContain(
       '? ({ ...options, ...readScope } as ActionArgs[0])',

@@ -35,8 +35,11 @@ import {
 const OTHER_TENANT = 'tenant-of-someone-else';
 const FOREIGN_ID = '11111111-2222-4333-8444-555555555555';
 
+const OTHER_TENANT_ROW = '22222222-3333-4444-8555-666666666666';
+const TENANTLESS_ROW = '33333333-4444-4555-8666-777777777777';
+
 @smrt({
-  api: { include: ['list', 'get', 'create'] },
+  api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create'] },
 })
 class IsolationNote extends SmrtObject {
@@ -56,6 +59,27 @@ class IsolationNote extends SmrtObject {
 }
 class IsolationNoteCollection extends SmrtCollection<IsolationNote> {
   static readonly _itemClass = IsolationNote;
+
+  /**
+   * Stands in for the tenancy interceptor refusing a lookup: a row another
+   * tenant owns, and a required-mode model read with no tenant.
+   */
+  async get(...args: Parameters<SmrtCollection<IsolationNote>['get']>) {
+    const [filter] = args;
+    const id =
+      typeof filter === 'string' ? filter : (filter as { id?: unknown })?.id;
+    if (id === OTHER_TENANT_ROW) {
+      throw new TenantIsolationError(
+        `Tenant isolation violation: row is owned by '${OTHER_TENANT}'`,
+      );
+    }
+    if (id === TENANTLESS_ROW) {
+      throw Object.assign(new Error('Tenant context required'), {
+        code: 'TENANT_CONTEXT_REQUIRED',
+      });
+    }
+    return super.get(...args);
+  }
 }
 
 const REFUSAL = {
@@ -149,6 +173,32 @@ describe('tenant isolation refusals', () => {
       ok: false,
       status: 403,
     });
+  });
+
+  it('the emitted item route answers a refused lookup with 403', async () => {
+    const locals = {
+      user: { id: 'user-1' },
+      permissions: [`${segment}.update`, `${segment}.delete`],
+    };
+    for (const [id, message] of [
+      [OTHER_TENANT_ROW, 'Permission denied.'],
+      [TENANTLESS_ROW, 'Tenant context required.'],
+    ] as const) {
+      for (const method of ['GET', 'PUT', 'DELETE']) {
+        const result = await emitted.http(
+          `${segment}/[id]/+server.ts`,
+          method,
+          {
+            params: { id },
+            body: method === 'PUT' ? { title: 'changed' } : undefined,
+            locals,
+          },
+        );
+        expect(result.status).toBe(403);
+        expect(JSON.stringify(result.body)).toContain(message);
+        expect(JSON.stringify(result.body)).not.toContain(OTHER_TENANT);
+      }
+    }
   });
 
   it('runtime REST answers 403 without naming the other tenant', async () => {

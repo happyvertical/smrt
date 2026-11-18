@@ -112,9 +112,14 @@ Keys are read by resolved column (`resolveWhereKey`), DNF branches are walked,
 and for a shared table the policies of every family member apply. A refused
 filter key is `QueryFieldError`: code `QUERY_FIELD_NOT_ALLOWED`, a typed 400
 whose text (`Invalid filter field: '<key>'.`) is the same for an unknown and
-an unreadable field. A `_meta_data` ordering is `INVALID_ORDER_BY_UNKNOWN_FIELD`.
-`orderBy` on a `readPermission` field is still refused by the collection for
-every caller ([query-bounds.md](query-bounds.md)).
+an unreadable field. A refused sort term has one answer too: an ordering by
+the `_meta_data` column, a `sensitive` field, a `readPermission` field (the
+collection refuses those for every caller, [query-bounds.md](query-bounds.md))
+or a field the model does not have is `QueryOrderByError`, code
+`INVALID_ORDER_BY_UNKNOWN_FIELD`, text `Invalid orderBy field: '<field>'.`,
+on every transport, so the answer never says which of these it was. An
+ordering that is not a string or a list of strings is refused
+(`INVALID_ORDER_BY`): what is checked is exactly what runs.
 
 Where each transport takes the caller's permissions, which is where it takes
 them for projection: runtime REST `APIContext.permissions`; in-process MCP

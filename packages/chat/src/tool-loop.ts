@@ -56,13 +56,16 @@ import {
 import {
   applySyncWritablePolicy,
   applyUpdateInput,
+  assertCreateInput,
+  assertCreateTargetSurface,
   assertQueryAccess,
   fieldTypeToJsonSchema,
+  isCreateOpenOnSurface,
   ObjectRegistry,
   type PublicJsonOptions,
-  publicSerializerOf,
   type SmrtClassOptions,
   type SmrtObject,
+  toPublicResultValue,
   ValidationError,
 } from '@happyvertical/smrt-core';
 import { isRuntimeModelEnabled } from '@happyvertical/smrt-core/runtime-exposure';
@@ -652,6 +655,13 @@ function actionFromDefinition(def: PermissionDefinition): string | null {
 }
 
 /** Prefer the catalog's collision-safe registry key whenever it supplies one. */
+/**
+ * The surface whose `create` an STI subtype must open to be created through
+ * its base by the assistant: the generated CRUD (`api`) surface, whose write
+ * policy and permission catalog the assistant's manifest tools follow.
+ */
+const ASSISTANT_CREATE_SURFACE = 'api';
+
 function registryKeyFor(tool: ManifestTool): string {
   return tool.qualifiedName ?? tool.className;
 }
@@ -837,7 +847,14 @@ function toolParameters(
         tenantId,
       });
       if (catalog.polymorphic) {
-        const choices = [catalog.base, ...catalog.subtypes];
+        // The assistant writes through the generated CRUD surface's policy,
+        // so it offers only the subtypes whose own `api` surface opens create.
+        const choices = [
+          catalog.base,
+          ...catalog.subtypes.filter((choice) =>
+            isCreateOpenOnSurface(choice.name, ASSISTANT_CREATE_SURFACE),
+          ),
+        ];
         for (const choice of choices)
           Object.assign(
             properties,
@@ -978,13 +995,15 @@ async function itemToObservation(
       serializerReference,
       serializerOwnerRegistryKey,
     );
-    return serializer(item as SmrtObject, publicOptions);
+    // A model the serialiser placed in its output is projected too.
+    return toPublicResultValue(
+      await serializer(item as SmrtObject, publicOptions),
+      publicOptions,
+    );
   }
-  // The serialiser the item's class provides, never an instance property.
-  const serialize = publicSerializerOf(item);
-  if (serialize) return serialize(publicOptions);
-  const candidate = item as { toJSON?: () => unknown } | null;
-  return typeof candidate?.toJSON === 'function' ? candidate.toJSON() : item;
+  // Every model in the result, nested ones included, is serialised by the
+  // public serialiser its class provides, never by its ordinary `toJSON()`.
+  return toPublicResultValue(item, publicOptions);
 }
 
 /** Check the effective model identity using the authenticated assistant tenant. */
@@ -1039,6 +1058,15 @@ export async function invokeManifestTool(
           tenantId: run.context.tenantId,
         })
       : undefined;
+  // A subtype whose own surface closes create is not a target, whoever may
+  // create the base.
+  if (target) {
+    assertCreateTargetSurface(
+      registryKeyFor(tool),
+      target,
+      ASSISTANT_CREATE_SURFACE,
+    );
+  }
   const collection = await ObjectRegistry.getCollection(
     target?.collectionName ?? registryKeyFor(tool),
     db ? { db } : {},
@@ -1075,14 +1103,15 @@ export async function invokeManifestTool(
       return Promise.all(items.map((item) => itemToObservation(item, run)));
     }
     case 'create': {
+      const createModel = target?.collectionName ?? registryKeyFor(tool);
+      const createData = writableToolInput(
+        { ...tool, qualifiedName: createModel },
+        target?.data ?? args,
+      );
+      // Create input names declared fields and settable accessors only.
+      assertCreateInput(createModel, createData, collection);
       const item = (await collection.create(
-        writableToolInput(
-          {
-            ...tool,
-            qualifiedName: target?.collectionName ?? tool.qualifiedName,
-          },
-          target?.data ?? args,
-        ),
+        createData,
       )) as unknown as OperableItem;
       await item.save();
       return itemToObservation(item, run);
