@@ -707,6 +707,14 @@ export {
 } from './schema/system-table-shapes';
 // Schema types (for generated code from SchemaCodeGenerator)
 export type { SchemaDefinition } from './schema/types';
+// Option keys that configure services rather than describe a row, and the
+// request-body rule built on them.
+export {
+  isServiceOptionInput,
+  isServiceOptionKey,
+  SMRT_SERVICE_OPTION_KEYS,
+  type SmrtServiceOptionKey,
+} from './service-options';
 // Universal signaling system
 export * from './signals/index';
 // Idempotent sync-apply batch write contract (#1759) — shared by the runtime

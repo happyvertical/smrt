@@ -45,7 +45,7 @@ import {
   type ListOptions as InterceptorListOptions,
   resolveGetStringFilter,
 } from './interceptors';
-import type { SmrtObject } from './object';
+import type { SmrtObject, SmrtObjectOptions } from './object';
 import {
   DEFAULT_LIST_LIMIT,
   MAX_LIST_LIMIT,
@@ -62,6 +62,11 @@ import {
 } from './relationship-loader';
 import { detectEngine } from './schema/ddl/index';
 import { verifyPersistenceTable } from './schema/table-verifier';
+import {
+  buildItemOptions,
+  SMRT_SERVICE_OPTION_KEYS,
+  type SmrtServiceOptionKey,
+} from './service-options';
 import { prependSmrtSystemFields } from './system-fields';
 import { resolveDisplayLabelProjection } from './ui-metadata';
 import {
@@ -83,6 +88,9 @@ import {
 } from './where-keys';
 
 const logger = createLogger({ level: 'info' });
+
+/** Model and key pairs already reported by `noteIgnoredServiceKeys`. */
+const ignoredServiceKeyNotes = new Set<string>();
 
 /** SQL words outside comments and quoted literals/identifiers. */
 function executableSqlWords(sql: string): string[] {
@@ -4313,17 +4321,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     // For non-STI or STI base class without _meta_type, proceed with direct instantiation
     // Schema already initialized in Collection.create() static factory
-    const params = {
-      ai: this.options.ai,
-      decisions: this.options.decisions,
-      // Pass the actual database instance, not options
-      // This ensures objects share the same connection as the collection
-      // Critical for in-memory databases like DuckDB :memory: where each
-      // connection gets a separate database
-      db: this.db,
-      _skipLoad: true, // Don't try to load from DB - this is a new object
-      ...options,
-    };
+    const params = this.buildItemOptions(
+      options,
+      { _skipLoad: true }, // Don't try to load from DB - this is a new object
+      'create',
+    );
 
     // Direct instantiation - all SmrtObject classes support this pattern
     const instance = new (this.resolveItemConstructor())(params);
@@ -4351,6 +4353,71 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       instance.adoptNaturalKeyOnSave();
     }
     return instance;
+  }
+
+  /**
+   * Constructor options for a model this collection creates or hydrates.
+   *
+   * `data` is a create input or a stored row. It supplies field values and
+   * the control keys it always could (`id`, `_meta_type`, `_skipLoad`,
+   * `_insertOnly`, ...), but never a service: every service option key
+   * (`SMRT_SERVICE_OPTION_KEYS`) is taken out of the data, and the services
+   * this collection binds — its database, AI client and decision provider,
+   * plus any other service it was created with (`fs`, `signals`, ...) — are
+   * applied last. A service the collection does not bind is resolved by the
+   * model from configuration.
+   * A model that declares a field with one of those names still receives the
+   * value as row data (see `buildItemOptions`).
+   *
+   * To create through another database handle or AI client, bind a
+   * collection to it: `await Collection.create({ db: transaction })`.
+   */
+  private buildItemOptions(
+    data: Record<string, unknown>,
+    flags: Record<string, unknown>,
+    path: 'create' | 'hydrate',
+  ): SmrtObjectOptions {
+    // Every service this collection was bound to, so a collection created
+    // with `{ fs }`, `{ signals }`, ... gives its models that service.
+    const bound: Partial<Record<SmrtServiceOptionKey, unknown>> = {};
+    for (const key of SMRT_SERVICE_OPTION_KEYS) {
+      if (Object.hasOwn(this.options, key)) {
+        bound[key] = (this.options as Record<string, unknown>)[key];
+      }
+    }
+    const { options, dataServiceKeys } = buildItemOptions(data, flags, {
+      ...(bound as Partial<SmrtClassOptions>),
+      ai: this.options.ai,
+      decisions: this.options.decisions,
+      // The actual database instance, not the configured value, so objects
+      // share the collection's connection. Critical for in-memory databases
+      // such as DuckDB :memory:, where each connection is a separate database.
+      db: this.db,
+    });
+    if (path === 'create' && dataServiceKeys.length > 0) {
+      this.noteIgnoredServiceKeys(dataServiceKeys);
+    }
+    return options as SmrtObjectOptions;
+  }
+
+  /**
+   * Tell a programmatic caller, once per model and key, that a service option
+   * key in create data did not configure anything. Keys the model declares as
+   * fields are row data and are not reported.
+   */
+  private noteIgnoredServiceKeys(keys: readonly string[]): void {
+    const fields = this.getFieldsSync();
+    const className = this.getResolvedItemClassName();
+    for (const key of keys) {
+      if (Object.hasOwn(fields, key)) continue;
+      const noteKey = `${this.getResolvedItemQualifiedName()}\u0000${key}`;
+      if (ignoredServiceKeyNotes.has(noteKey)) continue;
+      ignoredServiceKeyNotes.add(noteKey);
+      logger.warn(
+        `[smrt] ${className}: '${key}' in create data is not a field and does not configure the new object; ` +
+          `service options come from the collection. Bind the collection instead, e.g. Collection.create({ ${key} }).`,
+      );
+    }
   }
 
   /**
@@ -4411,19 +4478,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       }
     }
 
-    const params = {
-      ai: this.options.ai,
-      decisions: this.options.decisions,
-      db: this.db,
-      _skipLoad: true,
-      ...(hydrationRow
+    const params = this.buildItemOptions(
+      options,
+      hydrationRow
         ? {
+            _skipLoad: true,
             _reuseInitializedDb: true,
             _deferRuntimeInitialization: true,
           }
-        : {}),
-      ...options,
-    };
+        : { _skipLoad: true },
+      hydrationRow ? 'hydrate' : 'create',
+    );
 
     // Instantiate the correct subclass
     const instance = new registeredClass.constructor(params);
@@ -5371,15 +5436,15 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       return polymorphicInstance;
     }
 
-    const instanceParams = {
-      ai: this.options.ai,
-      decisions: this.options.decisions,
-      db: this.db,
-      _skipLoad: true,
-      _reuseInitializedDb: true,
-      _deferRuntimeInitialization: true,
-      ...formattedData,
-    };
+    const instanceParams = this.buildItemOptions(
+      formattedData,
+      {
+        _skipLoad: true,
+        _reuseInitializedDb: true,
+        _deferRuntimeInitialization: true,
+      },
+      'hydrate',
+    );
 
     const instance = new (this.resolveItemConstructor())(instanceParams);
     instance.hydrateSyncMetadata(row);
