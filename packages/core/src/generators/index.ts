@@ -66,13 +66,17 @@ export {
 // only).
 export {
   buildChangeEventStream,
+  type ChangeEventPrincipalContext,
   type ChangeEventStreamOptions,
   changeEventSubscribersAtCapacity,
   DEFAULT_EVENTS_HEARTBEAT_MS,
+  DEFAULT_EVENTS_MAX_CONNECTION_MS,
   DEFAULT_EVENTS_MAX_SUBSCRIBERS,
+  DEFAULT_EVENTS_MAX_SUBSCRIBERS_PER_PRINCIPAL,
   DEFAULT_EVENTS_RETRY_AFTER_SECONDS,
   eventStreamCapacityExceededResponse,
   normalizeEventsMaxSubscribers,
+  resolveChangeEventPrincipalKey,
   signalVisibleToTenant,
   tryReserveChangeEventSubscriberSlot,
 } from './events-route';

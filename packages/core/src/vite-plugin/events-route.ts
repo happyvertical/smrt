@@ -202,8 +202,8 @@ function generateEventsRouteTemplate(
       : undefined;
   const maxSubscribersArg =
     configuredMaxSubscribers === undefined
-      ? ''
-      : `, ${JSON.stringify(configuredMaxSubscribers)}`;
+      ? 'undefined'
+      : JSON.stringify(configuredMaxSubscribers);
   const manifestHashLiteral =
     manifestHash === undefined ? 'undefined' : JSON.stringify(manifestHash);
   // CORS is emitted only when an explicit allowlist is configured (#1861).
@@ -309,7 +309,9 @@ export const GET: RequestHandler = async ({ locals, url, request }) => {
   // The feed lives in the project's database; anchor on the
   // ${anchorClassName} collection to reuse its configured connection.
   const collection = await getCollection('${anchorClassName}');
-  const releaseSubscriberSlot = tryReserveChangeEventSubscriberSlot(collection.db${maxSubscribersArg});
+  // One slot of the process-wide cap and one of this principal's, so a
+  // single user or session cannot take every slot.
+  const releaseSubscriberSlot = tryReserveChangeEventSubscriberSlot(collection.db, ${maxSubscribersArg}, { locals, request });
   if (!releaseSubscriberSlot) {
 ${corsBlock.capacityReturn}
   }

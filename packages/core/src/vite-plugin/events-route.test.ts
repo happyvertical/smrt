@@ -131,7 +131,7 @@ describe('generateEventsRoute (#1763)', () => {
     );
     expect(content).toContain('const MANIFEST_HASH = undefined;');
     expect(content).toContain(
-      'const releaseSubscriberSlot = tryReserveChangeEventSubscriberSlot(collection.db)',
+      'const releaseSubscriberSlot = tryReserveChangeEventSubscriberSlot(collection.db, undefined, { locals, request })',
     );
     expect(content).toContain(
       'buildChangeEventStream(collection.db, {\n      cursor,\n      tenantScope,\n      manifestHash: MANIFEST_HASH,\n      releaseSubscriberSlot,\n      locals,\n      request,\n    })',
@@ -166,7 +166,7 @@ describe('generateEventsRoute (#1763)', () => {
 
     const content = writtenRouteContent();
     expect(content).toContain(
-      'tryReserveChangeEventSubscriberSlot(collection.db, 42)',
+      'tryReserveChangeEventSubscriberSlot(collection.db, 42, { locals, request })',
     );
     expect(content).toContain('eventStreamCapacityExceededResponse()');
   });
