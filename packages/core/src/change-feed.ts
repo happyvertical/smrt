@@ -1732,6 +1732,30 @@ export async function getChangesSince(
   params.push(limit);
 
   const rows = getQueryRows(await db.query(sql, ...params));
+
+  // The floor the pruned-gap check above compared against was read in an
+  // EARLIER statement. A retention prune that committed between that read
+  // and the page query deleted rows in (since, newFloor) that the page can no
+  // longer contain — and nothing in the page shows it, because filters
+  // legitimately hide rows too. Re-read the floor AFTER the page: a prune
+  // that committed before the page query is visible to this later statement
+  // under every isolation level the feed runs at, and a prune that committed
+  // after the page query cannot have removed anything the page missed. So a
+  // cursor this read would otherwise have advanced past deleted rows is
+  // always answered with a resync instead.
+  const recheckRows = getQueryRows(
+    await db.query(`SELECT MIN(seq) AS floor FROM ${CHANGE_FEED_TABLE}`),
+  );
+  const floorAfterPage = toSeqNumber(recheckRows[0]?.floor);
+  if (floorAfterPage === 0 || since < floorAfterPage - 1) {
+    return {
+      changes: [],
+      cursor: since,
+      resyncRequired: true,
+      resyncCursor: servedHorizon,
+    };
+  }
+
   const entries = rows.map(rowToEntry);
   // Re-check against the live set: a table declared sensitive while the query
   // was in flight is not in the NOT IN list above, and its rows must still not
