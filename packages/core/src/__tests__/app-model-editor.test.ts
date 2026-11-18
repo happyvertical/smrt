@@ -961,9 +961,12 @@ describe('durable app model editor', () => {
         tenantId: TENANT,
       });
       const read = store.read.bind(store);
+      // The editor's pre-transaction fence reads the latest row; a competing
+      // writer commits right after it.
+      const latest = store.latest!.bind(store);
       let race = false;
-      store.read = async () => {
-        const observed = await read();
+      store.latest = async () => {
+        const observed = await latest();
         if (race) {
           race = false;
           await store.transaction!(async (scoped, tx) => {
