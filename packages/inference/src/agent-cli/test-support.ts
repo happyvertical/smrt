@@ -67,7 +67,7 @@ case "$*" in *'model_provider="smrt_preflight"'*)
 case "$1 $2" in
   "--version "*) ${options.brokenVersion ? 'exit 3' : `echo "${tool === 'claude-code' ? `${version} (Claude Code)` : `codex-cli ${version}`}"`};;
   ${statusCase}) ${status};;
-  ${loginCase}) touch "$HOME/signed-in"; exit 0;;
+  ${loginCase}) : > "$HOME/signed-in"; exit 0;;
   *) exit 2;;
 esac
 `;
@@ -85,7 +85,8 @@ export function fakeDeps(
   return {
     env: {
       HOME: home,
-      // /usr/bin and /bin only for the fake scripts' own `env` and `touch`.
+      // /usr/bin and /bin only for the fake scripts' own `env`; the login
+      // case uses a shell redirection, since NixOS has no /usr/bin/touch.
       PATH: [...pathDirs, '/usr/bin', '/bin'].join(':'),
       ...extraEnv,
     },

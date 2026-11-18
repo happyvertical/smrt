@@ -133,7 +133,7 @@ test('standalone publishing cannot bypass a reserved window and primary completi
 
 test('PostgreSQL aggregate rejects any failed, cancelled or skipped selected shard', () => {
   const suites = job(postgres, 'postgres');
-  assert.match(suites, /shard: \[ingestion, remaining\]/);
+  assert.match(suites, /shard: \['ingestion:1\/2', 'ingestion:2\/2', 'remaining:1\/3', 'remaining:2\/3', 'remaining:3\/3'\]/);
   assert.match(suites, /fail-fast: false/);
   const aggregate = job(postgres, 'postgres-required');
   assert.match(aggregate, /name: postgres-required/);

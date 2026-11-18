@@ -31,7 +31,9 @@ never prevent the tests from running.
   behavior; GitHub-hosted Ubuntu supports those service containers.
 - `mobile.yml`'s `gradle-macos` and `xcode-ios` remain on `macos-latest`
   because Kotlin/Native iOS compilation and Xcode require macOS.
-- The four three-shard test matrices use literal `max-parallel: 3`.
+- Every test matrix sets `max-parallel` to its shard count, so no shard waits
+  for a slot: three for the core matrices, five for the package matrices and
+  the PostgreSQL lane.
 
 `CI_HOSTED_FALLBACK_ENABLED` no longer controls a workflow runner or matrix
 cap. It is safe to remove if it has no external use.
@@ -360,19 +362,38 @@ reversal lever.
 
 - Unset/false: PRs run the historical full suite.
 - `true`: PRs run lint and typecheck across the changed packages and everything
-  that depends on them. Their selected test-task closure is split into three
+  that depends on them. Their selected test-task closure is split into five
   deterministic non-core shards; when Turbo's selected test-task closure also
   contains core, the existing three Vitest core shards run. The selectors read
   Turbo's dry-run task list, log selected/total package counts, and emit each
   selected non-core test task exactly once, so wide core closures use the full
   suite's parallel shape without silently changing coverage. The core and
-  package matrices run concurrently. Only when knowledge-sensitive paths change
-  do PRs also run affected knowledge freshness. The complete suite runs for
-  `merge_group`.
+  package matrices run concurrently. Every PR also runs affected knowledge
+  freshness: it has no paths filter, because the merge group always runs the
+  check and a PR that skipped it was ejected there (#5045). The complete suite
+  runs for `merge_group`.
 
 All four test matrices — `affected-core-tests`, `affected-package-tests`,
-`test-core`, and `test-packages` — use literal `max-parallel: 3`, matching their
-three deterministic shards.
+`test-core`, and `test-packages` — set `max-parallel` to their shard count;
+`scripts/ci-runner-inventory.test.mjs` fails a matrix that has more shards than
+runners, which is how the fourth `test-packages` shard waited ten minutes for a
+slot in every merge group (#5045).
+
+Both package matrices share `scripts/test-shard-balance.mjs`. It gives
+`smrt-template-sveltekit` the last shard to itself (#4990) and assigns every
+other package to the shard with the least measured time so far, longest first;
+assigning by name had put 39.7 minutes of tests in one shard and 10.6 in the
+next. Its duration tables only steer balance: a stale or missing entry makes
+shards uneven and never drops a package.
+
+`Merge Group Fail Fast` runs for merge groups only. `Required CI` reports when
+every job has finished, so a group that failed in its first minute used to hold
+the one-entry queue for the rest of the run. The job polls its own run and
+cancels it on the first job that did not succeed; `Required CI` then runs under
+`always()` and fails, which removes the entry. It is not one of `Required CI`'s
+needs and never fails the run itself. Jobs still running at that moment do not
+report, so a group with several defects shows one per attempt; the PR run is
+never cancelled this way.
 
 `affected-package-tests` depends on `affected-test-scope` alone and runs with
 `affected-core-tests`; the matrices shard disjoint package sets, while a
@@ -421,6 +442,10 @@ carries no paths filter: the gate serves a real generated application, so its
 blast radius is template-sveltekit's whole workspace closure, and a
 hand-maintained list of that closure is a silent-skip generator. It therefore
 runs in `affected` mode as well as in `full`, which is every merge group.
+The gate runs template-sveltekit's whole Vitest suite in two passes: files
+named `*.postgres.optional.test.ts` share one disposable database and run one
+at a time; every other file opens its own SQLite database and runs two at a
+time, the shape its dedicated `test` shard already uses (#5045).
 Every other lane in `on-pull-request.yml` and `test-suite.yml` is
 PostgreSQL-free; the registered PostgreSQL suites live in
 `postgres-tests.yml`, described under PostgreSQL isolation below.
@@ -467,9 +492,13 @@ Rollout status:
 4. Done. The required status list is `Required CI` and `postgres-required`
    (the latter added to the `Repository CI / required` ruleset on 2026-09-23,
    after the lane was proven green on `main`: run 35875902114).
-5. Done. The repository merge queue uses squash merges, up to five entries
-   building concurrently, one entry merged at a time, zero wait, all-green
-   behavior, and a 60-minute timeout.
+5. Done. The repository merge queue uses squash merges, one entry built and
+   one merged at a time, zero wait, all-green behavior, and a 180-minute check
+   timeout. The one-entry width is load-bearing: `verifyFence()` in
+   `scripts/release-admission.mjs` refuses to close or publish a
+   [release window](release-window.md) on a wider queue. A serial queue makes
+   every entry wait for the runs ahead of it, so the length of one merge-group
+   run is what to shorten.
 
 When merge queue mode is enabled, the main workflow skips duplicate tests and
 the standalone build. The versioned release build, exact-artifact publication,
@@ -498,13 +527,17 @@ read-only token. There is no enabling variable.
   them unless every changed file is Markdown or under `docs/`; merge groups and
   every other event always run them. External fork PRs never execute trusted
   PR-head code; Fork PR Validation calls this workflow in the sandbox instead.
-- **Registered PostgreSQL Suites** uses two `ubuntu-latest` jobs, each with
-  its own PostgreSQL 18 service: ingestion and every remaining registered
-  suite. The selector discovers workspaces through pnpm and partitions the
-  complete registry; it does not skip unaffected packages. The #4306 sample
-  measured ingestion at 20m17s within a 33m23s execution step, with only
-  seconds of runner queueing. Isolating it removes contention without
-  dropping coverage. Both jobs retain `--concurrency=2 --continue --summarize`,
+- **Registered PostgreSQL Suites** uses five `ubuntu-latest` jobs, each with
+  its own PostgreSQL 18 service: ingestion as two Vitest file slices
+  (`ingestion:1/2`, `ingestion:2/2`) and every other registered suite in three
+  duration-balanced groups (`remaining:1/3` to `remaining:3/3`). The selector
+  discovers workspaces through pnpm and partitions the complete registry; it
+  does not skip unaffected packages. A package's PostgreSQL files share one
+  database and run one at a time, so ingestion's 22 minutes only shorten
+  across jobs: the selector appends `-- --shard=<i>/<n>` and Turbo hands it to
+  the package's Vitest run. Its 303-case proposal suite is four files per
+  backend for the same reason. Every job retains
+  `--concurrency=2 --continue --summarize`,
   run every selected package even after one fails, and
   `scripts/postgres-lane-summary.mjs` writes a per-package table to the job
   summary.
@@ -676,7 +709,7 @@ mode, so only the publication step differs between the two.
 
 Verify the first merge-group transit after a runner change: required contexts
 must remain present, the PostgreSQL lane must retain its isolation behavior,
-and the sharded matrices (three shards, four for `test-packages`) must schedule every shard. Merge-queue rollout
+and the sharded matrices (three core shards, five package shards, five PostgreSQL jobs) must schedule every shard. Merge-queue rollout
 can be reversed independently by clearing `CI_MERGE_QUEUE_ENABLED`, restoring
 the previous required status list, and removing the merge-queue rule.
 PostgreSQL is not part of the `Required CI` aggregator: its lane reports its

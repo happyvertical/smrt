@@ -1970,8 +1970,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       var(--smrt-admin-shell-top-track) minmax(0, 1fr)
       var(--smrt-admin-shell-bottom-track)
       var(--smrt-admin-shell-phone-bar-track);
-    min-block-size: 100svh;
-    block-size: 100svh;
+    /* Host-sizable: a host that places the shell in a container of its own
+    height sets the public `--smrt-admin-shell-block-size` on the container
+    or the shell (inherited, so it crosses the planner's theme provider).
+    Unset, the shell is the viewport. */
+    min-block-size: var(--smrt-admin-shell-block-size, 100svh);
+    block-size: var(--smrt-admin-shell-block-size, 100svh);
     /* `clip`, not `hidden`: a hidden box is still programmatically scrollable
     (focus / scrollIntoView on a grid-track child shifts the whole shell
     and its sidebars); a clipped box can never scroll. Only main and the
@@ -2657,8 +2661,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   browser's collapsing toolbar never hides it. */
   .smrt-admin-shell[data-bottom-bar='nav'],
   .smrt-admin-shell[data-bottom-bar='form'] {
-    min-block-size: 100dvh;
-    block-size: 100dvh;
+    min-block-size: var(--smrt-admin-shell-block-size, 100dvh);
+    block-size: var(--smrt-admin-shell-block-size, 100dvh);
   }
   @media (max-width: 48rem) {
     .smrt-admin-shell__band--top :global(.smrt-admin-shell__brand.smrt-shell-brand__compact) {

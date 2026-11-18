@@ -134,6 +134,8 @@ export const OVERRIDE_HOOKS = new Set([
   '--smrt-admin-shell-left-rail-padding',
   '--smrt-admin-shell-left-rail-padding-collapsed',
   '--smrt-admin-shell-tenant-gap',
+  // Host sizing (#4416): unset keeps the viewport-tall shell.
+  '--smrt-admin-shell-block-size',
   '--smrt-shell-title-font-family',
   '--smrt-control-hit-size',
   '--smrt-popover-panel-padding',

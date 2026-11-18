@@ -70,6 +70,14 @@ const chips = Array.from({ length: 8 }, (_, index) => ({
   <p>Main content</p>
   {#if signedOut}<p>Signed out callback</p>{/if}
 </AppShell>
+{:else if query.has('host-height')}
+<header class="host-bar">Host header</header>
+<div class="host-frame">
+  <AppShell title="Hosted shell" nav={tabNav} currentHref={tabCurrent} phoneTabBar storageKey="host-height-fixture">
+    <p>Main content</p>
+    <div class="tall">Long content</div>
+  </AppShell>
+</div>
 {:else if query.has('tabs')}
 <AppShell title="Tab fixture" nav={tabNav} currentHref={tabCurrent} phoneTabBar={tabBar}
   dockToggles={[{ tool: 'assistant', label: 'Assistant' }]} storageKey="phone-tabs-fixture">
@@ -92,4 +100,8 @@ const chips = Array.from({ length: 8 }, (_, index) => ({
 
 <style>
   :global(body) { margin: 0; font-family: sans-serif; }
+  .host-bar { block-size: 48px; }
+  /* The documented host opt-in: a size container that sets the public property. */
+  .host-frame { block-size: 600px; container-type: size; --smrt-admin-shell-block-size: 100cqb; }
+  .tall { block-size: 2000px; }
 </style>

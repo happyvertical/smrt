@@ -3,8 +3,8 @@ import { backgroundEligible } from '@happyvertical/smrt-jobs';
 import { proposalSuite } from './test-support/proposals.js';
 
 @smrt({ api: false, cli: false, mcp: false })
-class PostgresProposalFixtureWorker extends SmrtObject {
+class ProposalFixtureWorker2 extends SmrtObject {
   @backgroundEligible()
   async process(): Promise<void> {}
 }
-proposalSuite('postgres', 'PostgresProposalFixtureWorker');
+proposalSuite('sqlite', 'ProposalFixtureWorker2', { index: 2, count: 4 });

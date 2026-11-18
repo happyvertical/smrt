@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vite';
 import { smrtWorkbenchVitePlugin } from '../src/vite.js';
 
@@ -178,7 +180,11 @@ export default defineConfig({
       projectRoot,
       workspaceRoot: sourceWorkspaceRoot || undefined,
     }),
-    sveltekit(),
+    // SvelteKit 3 reads its config here; svelte.config.js is no longer used.
+    sveltekit({
+      preprocess: vitePreprocess(),
+      adapter: adapter({ strict: false }),
+    }),
   ],
   server: {
     fs: {

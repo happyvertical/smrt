@@ -677,7 +677,7 @@ test('a job header a line reader cannot place cannot hide a runs-on', () => {
   assert.ok(generic(`${text}\n---\nother: 1\n`).some((v) => /not plain YAML/.test(v)));
 });
 
-test('test matrices retain the hosted three-shard parallelism', () => {
+test('each test matrix runs every shard at once (#5045)', () => {
   const { declarations } = runnerDeclarations('test-suite.yml');
 
   for (const job of [
@@ -692,7 +692,17 @@ test('test matrices retain the hosted three-shard parallelism', () => {
     );
     const workflow = readFileSync(path.join(workflowsDir, 'test-suite.yml'), 'utf8').split('\n');
     const jobLines = jobBlock(workflow, job);
-    assert.ok(jobLines.includes('      max-parallel: 3'), `${job} must use all hosted shards`);
+    // A matrix with more shards than `max-parallel` leaves one waiting for a
+    // slot: #4990 added a fourth shard under a cap of three.
+    const shards = jobLines
+      .map((line) => /^ {8}shard: \[(.+)\]$/.exec(line)?.[1])
+      .find(Boolean)
+      ?.split(',').length;
+    assert.ok(shards > 0, `${job} must declare its shards inline`);
+    assert.ok(
+      jobLines.includes(`      max-parallel: ${shards}`),
+      `${job} must run all ${shards} shards at once`,
+    );
   }
 });
 
