@@ -101,13 +101,13 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
       );
     }
     expect(collectionRoute).toContain(
-      "import { parseRestListWhere } from '@happyvertical/smrt-core';",
+      "import { assertQueryAccess, parseRestListWhere } from '@happyvertical/smrt-core';",
     );
     expect(collectionRoute).toContain(
-      'applyWhereScope(parseRestListWhere(url.searchParams), resolveAnonymousTenantReadScope(',
+      'applyWhereScope(query.where, resolveAnonymousTenantReadScope(',
     );
     expect(collectionRoute).toContain(
-      "const orderBy = url.searchParams.get('orderBy') || LIST_ORDER_BY;",
+      'const orderBy = query.orderBy || LIST_ORDER_BY;',
     );
     expect(itemRoute).toContain('{ displayLabel: true }');
     expect(collectionRoute).toContain(

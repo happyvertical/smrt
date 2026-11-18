@@ -3338,11 +3338,16 @@ describe('SvelteKit Route Generator', () => {
       expect(collectionContent).toContain(
         'const { limit, offset } = listBounds(url);',
       );
+      // The caller's filter and ordering are read once, through the checked
+      // `listQuery`, before the bounds reach the collection.
       expect(collectionContent).toContain(
-        "const orderBy = url.searchParams.get('orderBy') || LIST_ORDER_BY;",
+        'const query = listQuery(url, publicJsonOptions);',
       );
       expect(collectionContent).toContain(
-        'const count = await collection.count({ where }).catch(rejectListWhere);',
+        'const orderBy = query.orderBy || LIST_ORDER_BY;',
+      );
+      expect(collectionContent).toContain(
+        'const count = await collection.count({ where }).catch(rejectListQuery);',
       );
       expect(collectionContent).not.toContain(
         "Number(url.searchParams.get('limit')) || 50",

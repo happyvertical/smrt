@@ -3437,20 +3437,38 @@ function smrtRouteErrorResponse(cause: unknown, request: Request) {
 }
 
 /**
- * Emit the list route's answer to a where clause the collection refuses: two
- * query filters that resolve to the same column and operator. That is the
- * caller's error, so it is answered with the error's own 4xx status. Every
- * other failure is rethrown unchanged.
+ * Emit the list route's query helpers.
+ *
+ * `listQuery` reads the caller's filter and ordering and refuses any that
+ * names a field the caller may not read, with the same `assertQueryAccess`
+ * rule and the same projection options the runtime REST route uses.
+ * `rejectListQuery` answers a query the route or the collection refuses (a
+ * typed 4xx) with that status. Every other failure is rethrown unchanged.
  */
-function generateListWhereErrorHelper(): string {
+function generateListQueryHelper(className: string): string {
   return `
-// A where clause the collection refuses is a client error, not a server fault.
-function rejectListWhere(cause: unknown): never {
+// A query the route or the collection refuses is a client error, not a
+// server fault.
+function rejectListQuery(cause: unknown): never {
   const failure = normalizeTypedHttpError(cause);
-  if (failure?.code === 'INVALID_WHERE_CLAUSE') {
-    throw error(failure.status, failure.message);
-  }
+  if (failure) throw error(failure.status, failure.message);
   throw cause;
+}
+
+// The caller's filter and ordering. Both may name only fields this caller
+// may read: the permissions the rows are projected with.
+function listQuery(
+  url: URL,
+  options: PublicJsonOptions,
+): { where: Record<string, string | string[]>; orderBy: string | null } {
+  const where = parseRestListWhere(url.searchParams);
+  const orderBy = url.searchParams.get('orderBy');
+  try {
+    assertQueryAccess(${JSON.stringify(className)}, { where, orderBy }, options);
+  } catch (cause) {
+    rejectListQuery(cause);
+  }
+  return { where, orderBy };
 }
 `;
 }
@@ -3505,12 +3523,12 @@ function generateCollectionRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 import { error${hasPost ? ', json' : ''} } from '@sveltejs/kit';
-${hasGet ? "import { parseRestListWhere } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { applyWhereScope, resolveAnonymousTenantReadScope } from '@happyvertical/smrt-core';\n" : ''}${hasGet && !hasPost ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
+${hasGet ? "import { assertQueryAccess, parseRestListWhere } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { applyWhereScope, resolveAnonymousTenantReadScope } from '@happyvertical/smrt-core';\n" : ''}${hasGet && !hasPost ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${serializerImports ? `${serializerImports}\n` : ''}${hasPost ? "import { ObjectRegistry, normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
 // Note: ${className} is auto-registered by the Vite plugin scanner
-${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), !needsRouteTenantContext(objectDef))}${hasPost ? generateWritablePolicyHelper(className, objectDef, true) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateListWhereErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), !needsRouteTenantContext(objectDef))}${hasPost ? generateWritablePolicyHelper(className, objectDef, true) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateListQueryHelper(className) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: tenant-scoped reads fail closed to global (NULL-tenant) rows when no
   // tenant context is active (public/anonymous read). The scope is resolved at
@@ -3522,11 +3540,13 @@ ${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHe
   // #2367: every generated page is ordered. `LIST_ORDER_BY` is emitted as a
   // module constant so the ordering is visible in the generated file rather
   // than implied by the database's row order.
-  const listWhere = `applyWhereScope(parseRestListWhere(url.searchParams), resolveAnonymousTenantReadScope(${JSON.stringify(readScopeModelName(objectDef, className))})) ?? {}`;
+  // `query` is the caller's filter and ordering, already checked against the
+  // fields this caller may read (`listQuery`), before any ETag or table work.
+  const listWhere = `applyWhereScope(query.where, resolveAnonymousTenantReadScope(${JSON.stringify(readScopeModelName(objectDef, className))})) ?? {}`;
   const listAndCount = `  const where = ${listWhere};
-  const orderBy = url.searchParams.get('orderBy') || LIST_ORDER_BY;
-  const items = await collection.list({ limit, offset, orderBy, where${objectDef.displayLabelProjection ? ', displayLabel: true' : ''} }).catch(rejectListWhere);
-  const count = await collection.count({ where }).catch(rejectListWhere);`;
+  const orderBy = query.orderBy || LIST_ORDER_BY;
+  const items = await collection.list({ limit, offset, orderBy, where${objectDef.displayLabelProjection ? ', displayLabel: true' : ''} }).catch(rejectListQuery);
+  const count = await collection.count({ where }).catch(rejectListQuery);`;
 
   const getHandler = hasGet
     ? `
@@ -3535,6 +3555,7 @@ export const GET: RequestHandler = async ({ locals, url, request }) => {
 ${routeGuardPreamble(objectDef, false)}
   const publicJsonOptions = getPublicJsonOptions(locals);
   const { limit, offset } = listBounds(url);
+  const query = listQuery(url, publicJsonOptions);
 
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
 ${
