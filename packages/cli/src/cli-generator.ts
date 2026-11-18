@@ -16,6 +16,7 @@ import type {
   SmrtObject,
 } from '@happyvertical/smrt-core';
 import {
+  applyUpdateInput,
   isCrudOperation,
   isFrameworkBaseClass,
   ObjectRegistry,
@@ -2326,6 +2327,8 @@ export class CLIGenerator {
       data as Record<string, unknown>,
     )) {
       if (key.startsWith('_')) continue;
+      // Input sets fields only, never a service of the object.
+      if (ObjectRegistry.isServiceOptionInput(objectName, key)) continue;
       if (serverManaged.has(key) || readonly.has(key)) continue;
       if (writable && !writable.includes(key)) continue;
       result[key] = value;
@@ -2456,7 +2459,9 @@ export class CLIGenerator {
       const spinner = this.createSpinner(`Updating ${objectName}...`);
 
       await collection.withAuditMutation(existing, 'updated', async (bound) => {
-        Object.assign(bound, data);
+        // Input sets declared fields and settable accessors, nothing else:
+        // the same rule the REST routes and MCP tools apply to an update.
+        applyUpdateInput(bound, data, objectName);
         await bound.save();
       });
 
