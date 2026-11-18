@@ -55,6 +55,14 @@ export {
   MAIL_SYNC_QUEUE,
   mailSyncDedupeKey,
 } from './mail-sync-jobs.js';
+export {
+  type MailTriageAction,
+  type MailTriageActionKind,
+  type MailTriageFailure,
+  type MailTriageResult,
+  type MailWriteBackCapability,
+  MailWriteBackUnsupportedError,
+} from './mail-triage.js';
 
 import { ensureBuiltinMessagingProvidersRegistered } from './providers.js';
 

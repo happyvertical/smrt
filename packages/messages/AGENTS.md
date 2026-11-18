@@ -270,3 +270,32 @@ Profile email uses exclusive `recipientProfileId` plus `resolveProfileRecipient`
   a renamed server folder creates a new folder row (stored messages keep the old
   path until they change); `jmap` has no connect-flow validator yet and is not an
   outbound transport.
+
+## Triage write-back
+
+`EmailAccount.triage(action, emailIds)` (and `Email.triage(action)`,
+`mail-triage.ts`) writes mark read/unread, star/unstar, archive, spam/not spam,
+label add/remove and move to the server, then updates the local row. Actions are
+`{ kind: 'markRead' | 'markUnread' | 'star' | 'unstar' | 'archive' | 'markSpam' |
+'unmarkSpam' }`, `{ kind: 'addLabels' | 'removeLabels', labels }` and
+`{ kind: 'move', folder }`; ids are local `Email` row ids.
+
+- Access: needs `read` **and** `triage` on the account (`assertMailAccess`, fail
+  closed; `MailAccessError`) before any server call or local write.
+- Server first, per message: the result is `{ updated, failed, stale }`. Only ids
+  the server accepted are written; refusals (and ids that are missing, on another
+  account, or not yet synced) come back in `failed`. A thrown client error
+  changes nothing. Auth failures mark the account `needs_reconnect`.
+- Convergence: an accepted message is read back (`getMessage`) and stored through
+  `applyServerMessage`, exactly as sync stores it, so the next sync is a no-op.
+  If the read-back fails the id is `stale` and sync fixes the row. Triage runs in
+  the account's sync lane (`inLane`), so it never interleaves with a sync here.
+- Providers whose `getCapabilities().writeBack` lacks the needed key (`flags`,
+  `labels`, `archive`, `spam`) throw `MailWriteBackUnsupportedError` first.
+- `move` removes a message from the mailboxes it is in now (from its stored
+  labels) and adds `folder`; pass a path as stored on `EmailFolder`.
+- Every public method on an `@smrt()` class becomes a `<collection>.<method>`
+  permission; `Email.triage` is why `messages.triage` in `permissions.ts` carries
+  the generated name and description (the catalog rejects two for one slug).
+- Known gaps: drafts and send, the acting principal is not recorded (#5141), and
+  a mailbox the server has not reported yet has no `EmailFolder` row until sync.

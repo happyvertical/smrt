@@ -35,9 +35,10 @@ export const MESSAGING_PERMISSION_DEFINITIONS: PermissionDefinition[] = [
   {
     slug: TRIAGE_MAIL_PERMISSION,
     category: 'messages',
-    name: 'Triage Mail',
-    description:
-      'Archive, flag and file mail; a mail account grant narrows this per account',
+    name: 'Triage Messages',
+    // Must equal the description generated for Email.triage(), like `send`
+    // above: the catalog refuses two descriptions for one slug.
+    description: 'Allows triage on messages',
   },
   {
     slug: DRAFT_MAIL_PERMISSION,

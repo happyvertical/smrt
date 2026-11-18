@@ -15,6 +15,11 @@ import {
   type MailSyncOptions,
   type MailSyncResult,
 } from '../mail-sync.js';
+import {
+  type MailTriageAction,
+  type MailTriageResult,
+  triageMailMessages,
+} from '../mail-triage.js';
 import type {
   EmailAccountOptions,
   MessageSenderInterface,
@@ -400,6 +405,31 @@ export class EmailAccount extends Account {
         childOptions: this.childOptions(),
         isAuthFailure: isMailAuthFailure,
       });
+    });
+  }
+
+  /**
+   * Triage synced messages: mark read or unread, star, archive, spam, label or
+   * move. `emailIds` are local `Email` row ids of this account.
+   *
+   * Needs the `read` and `triage` scopes on this account (`MailAccessError`
+   * otherwise, nothing sent or changed). The change is written to the mail
+   * server first; only messages the server accepted are updated locally, and
+   * the rest come back in `failed` with the server's reason. A provider
+   * without the matching write-back capability throws
+   * `MailWriteBackUnsupportedError`. Repeating a call changes nothing.
+   *
+   * Local rows are stored as the server reports them after the change, so the
+   * next sync agrees with them. See `mail-triage.ts`.
+   */
+  async triage(
+    action: MailTriageAction,
+    emailIds: readonly string[],
+  ): Promise<MailTriageResult> {
+    return triageMailMessages(this, action, emailIds, {
+      createClient: (account) => account.createClient(),
+      childOptions: this.childOptions(),
+      isAuthFailure: isMailAuthFailure,
     });
   }
 
