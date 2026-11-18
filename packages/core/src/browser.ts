@@ -594,6 +594,9 @@ export {
   type ResolvedPostgresTimeouts,
   resolvePostgresTimeouts,
 } from './postgres-timeouts';
+// The public serialiser an object's class provides, for request-facing
+// output; never an own property of the instance.
+export { publicSerializerOf, toPublicJSONValue } from './public-json';
 // Shared list query bounds for every generated read surface (#2367)
 export {
   buildDefaultListOrderBy,
@@ -667,6 +670,14 @@ export {
   type SubclassExposureEscalation,
   surfaceOpensOperation,
 } from './registry/subclass-exposure';
+// What an update body may set on a loaded object: declared fields and
+// settable accessors. Every request-facing update path assigns through
+// `applyUpdateInput`.
+export {
+  applyUpdateInput,
+  assertUpdateInput,
+  updateInputRulesFor,
+} from './request-input';
 // Revision compare-and-swap predicate helpers (#2620)
 export {
   POSTGRES_REVISION_GUARD_EXPRESSION,
@@ -798,6 +809,16 @@ export {
   WhereClauseError,
   whereColumnName,
 } from './where-keys';
+export {
+  assignUpdateInput,
+  classifyUpdateKey,
+  isWriteInputError,
+  resolveUpdateInput,
+  STRUCTURAL_UPDATE_RULES,
+  type UpdateInputRules,
+  type UpdateKeyKind,
+  WriteInputError,
+} from './write-input';
 
 // Vite plugin excluded (Node.js-only)
 

@@ -1351,7 +1351,12 @@ describe('SvelteKit Route Generator', () => {
       // Should include PUT handler
       expect(content).toContain('export const PUT: RequestHandler');
       expect(content).toContain("collection.withAuditMutation(item, 'updated'");
-      expect(content).toContain('Object.assign(bound, data)');
+      // The body is assigned through the shared update-input rule, for the
+      // route's own model.
+      expect(content).toMatch(
+        /applyUpdateInput\(bound, data, "[^"]*Product"\);/,
+      );
+      expect(content).not.toContain('Object.assign(bound');
       expect(content).toContain('await bound.save()');
       expect(content).toContain(
         'return smrtRouteErrorResponse(cause, request);',

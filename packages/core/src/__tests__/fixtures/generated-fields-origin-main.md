@@ -72,3 +72,8 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   count and point read resolves its tenant read scope at request time with
   `resolveAnonymousTenantReadScope()`, for every model, since tenancy can be
   registered at runtime.
+- Generated update paths and output (both MCP servers `single/index.ts` and
+  `modular/handlers/index.ts`, the list and item routes of each model, and
+  `sync/apply/+server.ts`): an update is assigned with `applyUpdateInput()`,
+  and items are serialised through `toPublicJSONValue()` /
+  `publicSerializerOf()`.

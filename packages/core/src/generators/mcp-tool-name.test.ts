@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { describe, expect, it, vi } from 'vitest';
+import { REQUEST_HELPER_EXPORTS } from '../__tests__/fixtures/emitted-core-stub.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry } from '../registry.js';
 import { MCPGenerator } from './mcp.js';
@@ -339,6 +340,7 @@ export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure
           export const ObjectRegistry = { loadAllManifests() {}, getClass(name) { if (!name.includes(':') || !classes[simple(name)]) throw Error('wrong class '+name); return {constructor: classes[simple(name)]}; }, async getCollection(name) {if(!name.includes(':') || !classes[simple(name)]) throw Error('wrong collection '+name); return {};} };
           export function normalizeCustomActionFailure() {}
           export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';
+          ${REQUEST_HELPER_EXPORTS}
         `,
         },
       };
@@ -445,6 +447,7 @@ export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure
           };
           export function normalizeCustomActionFailure() {}
           export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';
+          ${REQUEST_HELPER_EXPORTS}
         `,
         },
       };

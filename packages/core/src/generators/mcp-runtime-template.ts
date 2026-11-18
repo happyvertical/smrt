@@ -212,7 +212,7 @@ ${indent}    ai: aiConfig
 ${indent}  });
 
 ${indent}  const items = await collection.list({ where, limit, offset, orderBy });
-${indent}  const itemsPublic = items.map((item) => item.toPublicJSON(PUBLIC_JSON_OPTIONS));
+${indent}  const itemsPublic = items.map((item) => toPublicJSONValue(item, PUBLIC_JSON_OPTIONS));
 ${indent}  const structuredContent = {
 ${indent}    data: itemsPublic,
 ${indent}    meta: { total: await collection.count({ where }), limit, offset, count: items.length },
@@ -247,7 +247,7 @@ ${indent}  const { collection, objectName: targetObjectName, data } = await reso
 
 ${indent}  const newItem = await collection.create(applyWritablePolicy(targetObjectName, data));
 
-${indent}  return successResult(newItem.toPublicJSON(PUBLIC_JSON_OPTIONS));
+${indent}  return successResult(toPublicJSONValue(newItem, PUBLIC_JSON_OPTIONS));
 ${indent}}`;
 
           case 'update':
@@ -268,11 +268,12 @@ ${indent}    throw new Error('Object not found');
 ${indent}  }
 
 ${indent}  await collection.withAuditMutation(existing, 'updated', async (bound) => {
-${indent}    Object.assign(bound, applyWritablePolicy(${JSON.stringify(lookup)}, updateData));
+${indent}    // Arguments set declared fields and settable accessors only.
+${indent}    applyUpdateInput(bound, applyWritablePolicy(${JSON.stringify(lookup)}, updateData), ${JSON.stringify(lookup)});
 ${indent}    await bound.save();
 ${indent}  });
 
-${indent}  return successResult(existing.toPublicJSON(PUBLIC_JSON_OPTIONS));
+${indent}  return successResult(toPublicJSONValue(existing, PUBLIC_JSON_OPTIONS));
 ${indent}}`;
 
           case 'delete':
@@ -387,6 +388,7 @@ import { pathToFileURL } from 'node:url';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from '@happyvertical/smrt-core';
 import { normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY } from '@happyvertical/smrt-core';
+import { applyUpdateInput, publicSerializerOf, toPublicJSONValue } from '@happyvertical/smrt-core';
 import { COOKBOOK_TOOL_NAMES, getCookbookToolService } from '@happyvertical/smrt-core/cookbook/tools';
 import { loadConfig } from '@happyvertical/smrt-config';
 ${hasTaskActions ? "import { McpTaskStore, TaskRunner } from '@happyvertical/smrt-jobs';\n" : ''}
@@ -435,7 +437,7 @@ const GET_SERIALIZERS: Record<string, { importPath: string; exportName: string }
 
 async function serializeGetResult(toolName: string, item: any): Promise<any> {
   const reference = GET_SERIALIZERS[toolName];
-  if (!reference) return item.toPublicJSON(PUBLIC_JSON_OPTIONS);
+  if (!reference) return toPublicJSONValue(item, PUBLIC_JSON_OPTIONS);
   const serializerModule = await import(reference.importPath);
   const serializer = serializerModule[reference.exportName];
   if (typeof serializer !== 'function') {
@@ -519,7 +521,9 @@ async function resolveCreateTarget(baseObjectName: string, args: Record<string, 
  */
 function toPublicResult(value: any, seen: WeakSet<object> = new WeakSet()): any {
   if (value === null || typeof value !== 'object') return value;
-  if (typeof value.toPublicJSON === 'function') return value.toPublicJSON(PUBLIC_JSON_OPTIONS);
+  // The serialiser the value's class provides, never an instance property.
+  const serialize = publicSerializerOf(value);
+  if (serialize) return serialize(PUBLIC_JSON_OPTIONS);
   if (Array.isArray(value)) {
     if (seen.has(value)) return value;
     seen.add(value);

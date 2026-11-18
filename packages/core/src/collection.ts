@@ -86,6 +86,7 @@ import {
   resolveWhereKey,
   WhereClauseError,
 } from './where-keys';
+import { WriteInputError } from './write-input';
 
 const logger = createLogger({ level: 'info' });
 
@@ -4241,9 +4242,19 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const fields = await ObjectRegistry.getAllFields(name);
     if (registered?.generatedFields)
       ObjectRegistry.assertWritableInput(name, values);
+    let writeThrough:
+      | ReturnType<typeof ObjectRegistry.getWriteThroughFields>
+      | undefined;
     for (const key of Object.keys(values)) {
-      const definition =
-        fields.get(key) ?? ObjectRegistry.getWriteThroughFields(name)[key];
+      // Own entries only: a key must name a field this model declares, never
+      // something a plain object inherits (`constructor`, `toString`, ...).
+      let definition = fields.get(key) as
+        | ReturnType<typeof ObjectRegistry.getWriteThroughFields>[string]
+        | undefined;
+      if (!definition) {
+        writeThrough ??= ObjectRegistry.getWriteThroughFields(name);
+        if (Object.hasOwn(writeThrough, key)) definition = writeThrough[key];
+      }
       if (
         !definition ||
         definition.readonly ||
@@ -4258,7 +4269,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         ].includes(key) ||
         key.startsWith('_')
       ) {
-        throw new Error(`Collection update cannot assign field '${key}'`);
+        throw new WriteInputError(
+          `Collection update cannot assign field '${key}'`,
+          'VALIDATION_UNKNOWN_FIELD',
+          { field: key },
+        );
       }
     }
     await this.withAuditMutation(

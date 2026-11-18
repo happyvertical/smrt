@@ -51,6 +51,11 @@
 import { isUniqueViolationError } from '../db-errors.js';
 import { isServiceOptionInput } from '../service-options.js';
 import { jsonValuesEqual } from '../utils/json-equal.js';
+import {
+  assignUpdateInput,
+  isWriteInputError,
+  STRUCTURAL_UPDATE_RULES,
+} from '../write-input.js';
 
 /**
  * URL segments of the generated batch apply endpoint, relative to the API
@@ -190,7 +195,12 @@ export type SyncApplyAuthzDecision = 'ok' | 'auth_required' | 'forbidden';
  * and mass-assignment rules as the host's plain CRUD routes.
  */
 export interface SyncApplyTarget {
-  /** Host-owned transactional mutation seam (including opt-in audit recording). */
+  /**
+   * Host-owned transactional mutation seam (including opt-in audit recording).
+   * An update assigns `data` through `applyUpdateInput`, so a payload sets
+   * declared fields and settable accessors only; a refused key rejects the
+   * item as `invalid_payload`.
+   */
   mutate?: (
     row: SyncApplyRowLike,
     op: 'update' | 'delete',
@@ -580,7 +590,11 @@ async function applyValidatedItem(
       }
       if (target.mutate) await target.mutate(row, 'update', data);
       else {
-        Object.assign(row, data);
+        // No host mutation seam: nothing is known about the row's model, so
+        // the payload may set the row's own plain properties and settable
+        // accessors only. Hosts with a registered model supply `mutate` and
+        // assign through `applyUpdateInput`.
+        assignUpdateInput(row, data, STRUCTURAL_UPDATE_RULES);
         await row.save();
       }
       return { ...base, status: 'applied', updatedAt: rowUpdatedAtIso(row) };
@@ -628,13 +642,14 @@ async function processOneItem(
       };
     }
     return await applyValidatedItem(item, target);
-  } catch {
-    // One item's failure must never fail the batch.
+  } catch (error) {
+    // One item's failure must never fail the batch. A payload key the object
+    // does not accept is the client's error, reported as such.
     return {
       itemId: item.itemId,
       id: item.id,
       status: 'rejected',
-      reason: 'write_failed',
+      reason: isWriteInputError(error) ? 'invalid_payload' : 'write_failed',
     };
   }
 }

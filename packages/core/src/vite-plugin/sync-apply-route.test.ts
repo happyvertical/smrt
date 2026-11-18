@@ -368,6 +368,11 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
         // (none by default), standing in for the registry's field lookup.
         `import { isServiceOptionInput } from ${JSON.stringify(fileURLToPath(new URL('../service-options.ts', import.meta.url)))};`,
         'export const ObjectRegistry = { isServiceOptionInput: (_name: string, key: string) => isServiceOptionInput(key, (field: string) => ((globalThis as any).__smrtSyncDeclaredFields ?? []).includes(field)) };',
+        // The route assigns an update payload through `applyUpdateInput`. The
+        // fixture rows are structural, so the real rule runs with nothing
+        // registered about them.
+        `import { assignUpdateInput, STRUCTURAL_UPDATE_RULES } from ${JSON.stringify(fileURLToPath(new URL('../write-input.ts', import.meta.url)))};`,
+        'export const applyUpdateInput = (row: object, data: Record<string, unknown>) => assignUpdateInput(row, data, STRUCTURAL_UPDATE_RULES);',
       ].join('\n'),
     );
     const outFile = join(projectRoot, 'route.mjs');

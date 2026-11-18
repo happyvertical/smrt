@@ -15,7 +15,9 @@ import { APIGenerator } from '../generators/rest.js';
 import { reportUnexpectedHttpError } from '../generators/route-error.js';
 import { normalizeTypedHttpError } from '../generators/typed-http-error.js';
 import { SmrtObject } from '../object.js';
+import { publicSerializerOf, toPublicJSONValue } from '../public-json.js';
 import { ObjectRegistry, smrt } from '../registry.js';
+import { applyUpdateInput } from '../request-input.js';
 import {
   hasRuntimeExposureGate,
   isRuntimeModelEnabled,
@@ -509,6 +511,11 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
         normalizeTypedHttpError,
         reportUnexpectedHttpError,
         resolveAnonymousTenantReadScope,
+        // The real request helpers the emitted handlers assign an update and
+        // serialise a row with.
+        applyUpdateInput,
+        publicSerializerOf,
+        toPublicJSONValue,
       };
       try {
         await generateSvelteKitRoutes(
@@ -582,7 +589,7 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
                     if (args.path === '@happyvertical/smrt-core')
                       return {
                         contents:
-                          'const host = globalThis[Symbol.for("smrt.issue3460.generated-route")]; export const isRuntimeModelEnabled = host.isRuntimeModelEnabled; export const hasRuntimeExposureGate = host.hasRuntimeExposureGate; export const createGeneratedCollectionAccess = host.createGeneratedCollectionAccess; export const normalizeTypedHttpError = host.normalizeTypedHttpError; export const reportUnexpectedHttpError = host.reportUnexpectedHttpError; export const ObjectRegistry = host.ObjectRegistry; export const resolveAnonymousTenantReadScope = host.resolveAnonymousTenantReadScope;',
+                          'const host = globalThis[Symbol.for("smrt.issue3460.generated-route")]; export const { isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeTypedHttpError, reportUnexpectedHttpError, ObjectRegistry, resolveAnonymousTenantReadScope, applyUpdateInput, publicSerializerOf, toPublicJSONValue } = host;',
                         loader: 'js',
                       };
                     if (args.path.endsWith('smrt-register'))
