@@ -404,7 +404,9 @@ export function discardNow(
         'this is not the draft that was asked about',
         'refused',
       );
-    // A change that landed after the caller's own check keeps the draft.
+    // A change that landed after the caller's own check keeps the draft. Edits
+    // do not take this lock, so a change landing after this read and before
+    // the discard below can still be lost: that narrow window is accepted.
     if (
       options.expectEmpty &&
       (!slot.host || (await slot.host.draftChain()).versions.length > 0)

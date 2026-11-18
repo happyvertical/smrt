@@ -630,19 +630,28 @@ it('reuses an open draft that has no changes', async () => {
   ).toBe('discarded');
 });
 it('keeps a draft that gets a change after the unused check', async () => {
-  const draft = await startDraft('Just changed', h.owner.id);
-  expect(await discardIfUnused()).toBe(true);
-  const next = await startDraft('Changed after check', h.owner.id);
-  await (await hostFor('draft')).execute(
-    { type: 'defineModel', name: 'Pets', fields: { name: { type: 'text' } } },
-    { author: h.owner.id },
-  );
-  await expect(
-    discardNow(next.id, { expectEmpty: true }),
-  ).rejects.toMatchObject({ code: 'refused' });
-  expect((await getDraftSlot())?.id).toBe(next.id);
+  await startDraft('Changed after check', h.owner.id);
+  const host = await hostFor('draft');
+  const chain = host.draftChain.bind(host);
+  let reads = 0;
+  // The first read (the caller's own check) sees an empty draft; the change
+  // lands before the in-lock read.
+  vi.spyOn(host, 'draftChain').mockImplementation(async () => {
+    reads += 1;
+    if (reads === 1) return chain();
+    await host.execute(
+      {
+        type: 'defineModel',
+        name: 'Pets',
+        fields: { name: { type: 'text' } },
+      },
+      { author: h.owner.id },
+    );
+    return chain();
+  });
   expect(await discardIfUnused()).toBe(false);
-  expect(draft.id).not.toBe(next.id);
+  expect(reads).toBe(2);
+  expect((await getDraftSlot())?.name).toBe('Changed after check');
 });
 it('refuses tracking-off and disconnected AI before consuming bytes, and validates owner cell settings', async () => {
   config({ usage: { enabled: false } });
