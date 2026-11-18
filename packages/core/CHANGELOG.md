@@ -1,5 +1,22 @@
 # @happyvertical/smrt-core
 
+## 0.62.4
+
+### Patch Changes
+
+- ### Features
+  
+  - Tricia QA train — review, publish, related records and polish (#5121) (app-shell)
+  - observe the legacy adoption snapshot with adopt-snapshot (#5067) (deployment)
+  - import a workbook into a draft as a workflow run (#5054) (app-shell)
+  
+  ### Bug Fixes
+  
+  - retired legacy Kustomization, exercise sampler faults (#5069) (deployment)
+- @happyvertical/smrt-config@0.62.4
+  - @happyvertical/smrt-scanner@0.62.4
+  - @happyvertical/smrt-types@0.62.4
+
 ## 0.62.3
 
 ### Patch Changes

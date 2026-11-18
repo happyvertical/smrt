@@ -1,5 +1,23 @@
 # @happyvertical/smrt-commerce
 
+## 0.62.4
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.62.4
+  - @happyvertical/smrt-agents@0.62.4
+  - @happyvertical/smrt-jobs@0.62.4
+  - @happyvertical/smrt-ledgers@0.62.4
+  - @happyvertical/smrt-products@0.62.4
+  - @happyvertical/smrt-profiles@0.62.4
+  - @happyvertical/smrt-reports@0.62.4
+  - @happyvertical/smrt-svelte@0.62.4
+  - @happyvertical/smrt-subscriptions@0.62.4
+  - @happyvertical/smrt-tenancy@0.62.4
+  - @happyvertical/smrt-ui@0.62.4
+  - @happyvertical/smrt-types@0.62.4
+
 ## 0.62.3
 
 ### Patch Changes
