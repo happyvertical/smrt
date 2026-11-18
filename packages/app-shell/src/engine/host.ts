@@ -2314,6 +2314,7 @@ export class AppHost extends EventEmitter {
     fields: string[],
     order: string,
     sourceRows?: number[],
+    options?: { limit?: number; nullsLast?: boolean },
   ) {
     return this.onApp<Row[]>(
       'readStoredRows',
@@ -2321,7 +2322,13 @@ export class AppHost extends EventEmitter {
       fields,
       order,
       sourceRows,
+      options,
     );
+  }
+
+  /** Read only the linked records requested, in bounded core batches. */
+  listByIds(model: string, ids: string[]) {
+    return this.onApp<Row[]>('listByIds', model, ids);
   }
 
   list(model: string, limit = 200) {

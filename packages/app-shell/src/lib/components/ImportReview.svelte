@@ -9,28 +9,26 @@ import {
   IMPORT_PREVIEW_ROWS,
   type ImportState,
   importTotal,
-  type LinkLabels,
   previewCell,
   previewType,
-  readLinkLabels,
 } from '../ui/import.ts';
 
 let { current }: { current: ImportState } = $props();
-// Loaded draft rows per table key, read through the existing draft records route.
+// Loaded draft rows and link labels from the workbook-ordered preview read.
 let rows = $state<Record<string, Record<string, unknown>[]>>({});
 let expanded = $state<Record<string, boolean>>({});
-let labels = $state<LinkLabels>({});
-let labelsRead = false;
+let labels = $state<Record<string, Record<string, Record<string, string>>>>({});
 async function read(key: string, limit: number) {
-  const model = current.plan?.engineNames?.tables[key]?.model;
-  if (!model) return;
   try {
     const response = await fetch(
-      `/api/shell/records/${encodeURIComponent(model)}?target=draft&limit=${limit}`,
+      `/api/shell/import/preview?table=${encodeURIComponent(key)}&limit=${limit}`,
     );
     if (!response.ok) return;
     const body = await response.json();
-    if (Array.isArray(body.records)) rows[key] = body.records;
+    if (Array.isArray(body.records)) {
+      rows[key] = body.records;
+      labels[key] = body.labels ?? {};
+    }
   } catch {
     // The preview is optional; the proof above stands without it.
   }
@@ -40,28 +38,6 @@ const previewable = $derived(
 );
 $effect(() => {
   if (!previewable) return;
-  const plan = current.plan;
-  const names = plan?.engineNames?.tables;
-  if (!labelsRead && plan?.tables.length) {
-    labelsRead = true;
-    void readLinkLabels(
-      (plan?.tables ?? []).flatMap((table) => {
-        const target = names?.[table.key];
-        return target
-          ? [
-              {
-                model: target.model,
-                fields: Object.fromEntries(
-                  table.fields.map((f) => [target.fields[f.key] ?? f.key, f]),
-                ),
-              },
-            ]
-          : [];
-      }),
-    ).then((found) => {
-      labels = found;
-    });
-  }
   for (const table of current.plan?.tables ?? [])
     if (!rows[table.key]) void read(table.key, IMPORT_PREVIEW_ROWS);
 });
@@ -105,7 +81,7 @@ async function showAll(key: string) {
         <div class="smrt-app-shell__tablewrap" data-smrt-part="body">
           <table class="smrt-app-shell__table" data-smrt-part="table" aria-label="{table.label} row preview">
             <thead><tr>{#each table.fields as field (field.key)}<th scope="col">{field.label}<br /><small data-smrt-part="hint">{columnHint(table, field)}</small></th>{/each}</tr></thead>
-            <tbody>{#each shown as row, index (row.id ?? index)}<tr>{#each table.fields as field (field.key)}<td>{previewCell(row[names[field.key]], field, field.reference ? labels[current.plan?.engineNames?.tables[field.reference.table]?.model ?? '']?.[String(row[names[field.key]])] : undefined)}</td>{/each}</tr>{/each}</tbody>
+            <tbody>{#each shown as row, index (row.id ?? index)}<tr>{#each table.fields as field (field.key)}<td>{previewCell(row[names[field.key]], field, labels[table.key]?.[String(row.id)]?.[names[field.key]])}</td>{/each}</tr>{/each}</tbody>
           </table>
         </div>
         {#if have.length}<p data-smrt-part="hint">Showing {shown.length} of {loaded} rows
