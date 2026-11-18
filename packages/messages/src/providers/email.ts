@@ -2,7 +2,7 @@
  * Explicit email provider entry point (#1979).
  *
  * Importing this module upgrades the builtin metadata-only email provider
- * definitions (smtp, imap, pop3, gmail) with a functional
+ * definitions (smtp, imap, pop3, gmail, jmap) with a functional
  * `createEmailClient` backed by `@happyvertical/email`. Until a server
  * imports it, provider-neutral consumers carry zero email-SDK weight
  * (googleapis, nodemailer, imapflow, mailparser) and
@@ -25,7 +25,7 @@ import {
   registerMessagingProvider,
 } from '../providers.js';
 
-const EMAIL_PROVIDER_IDS = ['smtp', 'imap', 'pop3', 'gmail'] as const;
+const EMAIL_PROVIDER_IDS = ['smtp', 'imap', 'pop3', 'gmail', 'jmap'] as const;
 
 let registered = false;
 

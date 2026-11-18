@@ -154,6 +154,26 @@ export function ensureBuiltinMessagingProvidersRegistered(): void {
     });
   }
 
+  // JMAP (RFC 8620/8621): receive and sync only. Mailbox changes arrive through
+  // the server's change feed (see `EmailAccount.syncChanges()`); sending stays
+  // on SMTP, so JMAP is not offered as an outbound transport.
+  registerBuiltinMessagingProvider({
+    id: 'jmap',
+    label: 'JMAP',
+    channel: 'email',
+    available: false,
+    configurationFields: [
+      { id: 'email', label: 'Mailbox address', type: 'email', required: true },
+      { id: 'url', label: 'Mail server URL', type: 'string', required: true },
+    ],
+    credentialFields: [
+      { id: 'username', label: 'Username', type: 'string' },
+      { id: 'password', label: 'Password', type: 'password' },
+      { id: 'token', label: 'Access token', type: 'password' },
+    ],
+    endpointFields: emailEndpoint,
+  });
+
   registerBuiltinMessagingProvider({
     id: 'gmail',
     label: 'Gmail',
