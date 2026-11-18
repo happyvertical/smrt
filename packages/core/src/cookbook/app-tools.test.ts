@@ -1226,6 +1226,31 @@ describe('app customization tools', () => {
     expect(engine.cookbook().recipes).not.toContain('customers');
   });
 
+  it('disables the last recipe of a customised provider and keeps its field for re-enable', async () => {
+    await write('app.addField', {
+      list: 'Customers',
+      label: 'Preferred instructor',
+      kind: 'text',
+    });
+    expect(await approve('recipes.disable', { id: 'customers' })).toMatchObject(
+      { status: 'ok' },
+    );
+    expect(editor.snapshot().cookbook.recipes).not.toContain('customers');
+    expect(editor.snapshot().cookbook.models?.fields[CUSTOMER]).toHaveProperty(
+      'preferredInstructor',
+    );
+    expect(
+      await call('recipes.enable', {
+        id: 'customers',
+        expectedRevision: engine.snapshot().revision,
+      }),
+    ).toMatchObject({ status: 'ok' });
+    const customers = (await lists()).find((list) => list.id === CUSTOMER);
+    expect(customers?.fields.map((field) => field.name)).toContain(
+      'preferredInstructor',
+    );
+  });
+
   it('asks about missing choices/currency and ambiguous field labels without journaling', async () => {
     expect(
       await write('app.addField', {

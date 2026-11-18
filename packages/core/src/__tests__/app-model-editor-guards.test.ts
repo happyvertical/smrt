@@ -12,6 +12,7 @@ import {
   createActivationCoordinator,
 } from '../activation.js';
 import { planAppEdit } from '../cookbook/app-tool-edits.js';
+import { createCookbookEngine } from '../cookbook/engine/engine.js';
 import {
   type AppModelEdit,
   type AppModelEditorOptions,
@@ -946,5 +947,113 @@ describe('app model editor: one customised registry per process', () => {
     const fields = await ObjectRegistry.getAllFields(`${APP}:GuardMember`);
     expect([...fields.keys()]).not.toContain('vip');
     expect(await first.history()).toEqual([]);
+  });
+});
+
+describe('app model editor: provider fields across recipe disable', () => {
+  const RECIPE = 'guards.members';
+  const recipeCatalog = {
+    ...memberCatalog,
+    recipes: [
+      { id: RECIPE, label: 'Members', models: [MEMBER], nav: [], requires: [] },
+    ],
+  };
+  const recipeBook = (): Cookbook => ({ ...book(), recipes: [RECIPE] });
+  let restore: () => void;
+  let db: Awaited<ReturnType<typeof getDatabase>>;
+  beforeEach(async () => {
+    restore = snapshotObjectRegistryState();
+    ObjectRegistry.clear();
+    globalThis.__smrtModelReadiness?.clear();
+    db = await getTestDatabase({
+      type: databaseType,
+      classes: [],
+      includeSystemTables: false,
+    });
+    registerMember();
+    enableTenancy();
+    await migrateSmrtSchemas({ db, packageName: APP, engineHint: engine });
+  });
+  afterEach(async () => {
+    setRuntimeExposureGate(undefined);
+    globalThis.__smrtModelReadiness?.clear();
+    disableTenancy();
+    await db.close?.();
+    restore();
+  });
+  const editorFor = () =>
+    createAppModelEditor({
+      db,
+      application: 'editor-guards-disable',
+      tenantId: TENANT,
+      packageName: APP,
+      cookbook: recipeBook(),
+      catalog: recipeCatalog,
+      authorize: (c) => c.actor === 'owner',
+    });
+  const applier =
+    (e: Awaited<ReturnType<typeof editorFor>>) => (value: AppModelEdit) =>
+      e.apply(value, {
+        actor: 'owner',
+        tenantId: TENANT,
+        expectedRevision: e.snapshot().revision,
+        requestId: `req-${crypto.randomUUID()}`,
+      });
+  /** The cookbook engine's own recipe removal, as recipes.disable stages it. */
+  const withoutRecipe = (cookbook: Cookbook) => {
+    const staged = createCookbookEngine({ catalog: recipeCatalog, cookbook });
+    const result = staged.run({
+      name: 'remove_recipes',
+      input: { ids: [RECIPE] },
+    });
+    if (!result.ok) throw new Error(result.error.message);
+    return staged.cookbook();
+  };
+
+  it('disables the last recipe of a customised provider and restores its fields on re-enable', async () => {
+    const e = await editorFor();
+    const apply = applier(e);
+    await apply({
+      type: 'add_field',
+      model: MEMBER,
+      name: 'vip',
+      field: { type: 'boolean' },
+    });
+    const disabled = withoutRecipe(e.snapshot().cookbook);
+    expect(disabled.models?.fields[MEMBER]).toHaveProperty('vip');
+    await apply({ type: 'import', cookbook: disabled });
+    expect(e.snapshot().cookbook.recipes).toEqual([]);
+
+    // New fields on a model outside the app stay refused.
+    await expect(
+      apply({
+        type: 'add_field',
+        model: MEMBER,
+        name: 'tier',
+        field: { type: 'text' },
+      }),
+    ).rejects.toThrow(/MODEL_NOT_IN_APP/);
+
+    // Restart with the recipe off: a lazy host does not load the provider.
+    ObjectRegistry.clear();
+    globalThis.__smrtModelReadiness?.clear();
+    const cold = await editorFor();
+    expect(cold.snapshot().revision).toBe(2);
+
+    // Enabling the recipe again (the provider loads first) restores the field.
+    registerMember();
+    const staged = createCookbookEngine({
+      catalog: recipeCatalog,
+      cookbook: cold.snapshot().cookbook,
+    });
+    expect(
+      staged.run({ name: 'add_recipes', input: { ids: [RECIPE] } }).ok,
+    ).toBe(true);
+    await applier(cold)({ type: 'import', cookbook: staged.cookbook() });
+    const enabled = structuredClone(cold.snapshot().cookbook);
+    expect(enabled.recipes).toEqual([RECIPE]);
+    expect(enabled.models?.fields[MEMBER]).toHaveProperty('vip');
+    const fields = await ObjectRegistry.getAllFields(`${APP}:GuardMember`);
+    expect([...fields.keys()]).toContain('vip');
   });
 });
