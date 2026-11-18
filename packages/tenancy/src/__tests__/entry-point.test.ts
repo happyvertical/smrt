@@ -132,11 +132,39 @@ describe('runTenantScopedEntryPoint (#1554)', () => {
       expect(observed).toBe('outer');
     });
 
-    it('prefers an active context over an explicit tenantId selector', async () => {
+    it('runs inside an active context that matches the explicit tenantId', async () => {
       let observed: string | undefined;
       await withTenant({ tenantId: 'outer' }, async () => {
         await runTenantScopedEntryPoint(
-          { tenantScoped: true, tenantId: 'ignored', surface: 'CLI' },
+          { tenantScoped: true, tenantId: 'outer', surface: 'CLI' },
+          async () => {
+            observed = getTenantId();
+          },
+        );
+      });
+      expect(observed).toBe('outer');
+    });
+
+    it('refuses an explicit tenantId that differs from the active context', async () => {
+      let ran = false;
+      await withTenant({ tenantId: 'outer' }, async () => {
+        await expect(
+          runTenantScopedEntryPoint(
+            { tenantScoped: true, tenantId: 'other', surface: 'CLI' },
+            async () => {
+              ran = true;
+            },
+          ),
+        ).rejects.toMatchObject({ code: 'TENANT_ISOLATION_VIOLATION' });
+      });
+      expect(ran).toBe(false);
+    });
+
+    it('keeps an active context for a caller that names no tenant', async () => {
+      let observed: string | undefined;
+      await withTenant({ tenantId: 'outer' }, async () => {
+        await runTenantScopedEntryPoint(
+          { tenantScoped: true, surface: 'CLI' },
           async () => {
             observed = getTenantId();
           },
