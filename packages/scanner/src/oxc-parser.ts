@@ -24,6 +24,7 @@ import type {
   FileScanResult,
   RawClassDefinition,
   RawDecorator,
+  RawDecoratorArgumentValue,
   RawDecoratorConfig,
   RawFieldDefinition,
   RawMethodDefinition,
@@ -1384,6 +1385,15 @@ interface DecoratorConfigContext {
    */
   classReference?: (path: string | undefined) => boolean;
   /**
+   * Option paths whose value only exists at runtime (a callback such as a
+   * field's `validate`). The value is not read; the key is kept, holding
+   * {@link RUNTIME_ONLY_OPTION}, so the manifest can record that the option
+   * was stated.
+   */
+  runtimeOnly?: (path: string | undefined) => boolean;
+  /** Same-file `const name = () => Target` thunks, by name, to their target. */
+  thunks?: Map<string, string>;
+  /**
    * Local-name -> imported-name for this file's renamed named imports, so a
    * decorator reached through an alias is still recognized. Without it
    * `import { method as action }` made `@action({ expose: false })` invisible
@@ -1397,6 +1407,8 @@ interface DecoratorConfigContext {
    * exports its parent (#4145).
    */
   importBindings?: Map<string, ImportBinding>;
+  /** Classes declared at the top level of this file, by name. */
+  localClasses?: ReadonlySet<string>;
 }
 
 /**
@@ -1432,20 +1444,155 @@ function createDecoratorConfigContext(
 ): DecoratorConfigContext {
   const importBindings = extractImportBindings(body);
   const enums = extractEnumMemberValues(body);
-  return {
-    constants: collectModuleConstants(body, sourceText, {
-      resolveReferences: true,
-      enums,
-      importAliases,
-      importBindings,
-    }),
+  const constants = collectModuleConstants(body, sourceText, {
+    resolveReferences: true,
     enums,
+    importAliases,
+    importBindings,
+  });
+  CONSTANTS_BY_BINDINGS.set(importBindings, constants);
+  return {
+    constants,
+    enums,
+    thunks: extractModuleThunks(body),
     unresolved: [],
     importAliases,
     importBindings,
+    localClasses: extractTopLevelClassNames(body),
     requireLiteralValues: true,
     resolveReferences: true,
   };
+}
+
+/** Names of the classes declared at the top level of a file. */
+function extractTopLevelClassNames(body: Statement[]): Set<string> {
+  const names = new Set<string>();
+  for (const node of body) {
+    const declaration =
+      node.type === 'ExportNamedDeclaration' ||
+      node.type === 'ExportDefaultDeclaration'
+        ? (node.declaration as Statement | null | undefined)
+        : node;
+    if (
+      declaration?.type === 'ClassDeclaration' &&
+      declaration.id?.type === 'Identifier'
+    ) {
+      names.add(declaration.id.name);
+    }
+  }
+  return names;
+}
+
+/**
+ * The model name the runtime records for a class reference written as
+ * `reference` (an identifier, or `ns.Class` through a namespace import):
+ * the class's own name, which the relationship and report decorators read
+ * from the constructor.
+ *
+ * - A class declared in this file: its name.
+ * - A named import (`import { Product as P }`): the exported name `Product`,
+ *   never the local alias.
+ * - A namespace member (`catalog.Sku`): the export name `Sku`.
+ *
+ * Anything else cannot be identified statically and returns `undefined`: a
+ * default import (the exported class's name is not in this file), a
+ * namespace object, a local alias or `let`, or a member of a local object.
+ * An imported binding is taken as a class only when its exported name is
+ * written as a class name; an imported string constant (`TARGET_MODEL`)
+ * holds a value this file cannot read.
+ */
+function classIdentity(
+  reference: string,
+  ctx: DecoratorConfigContext,
+): string | undefined {
+  const parts = reference.split('.');
+  if (parts.length === 1) {
+    const binding = ctx.importBindings?.get(reference);
+    if (binding) {
+      return binding.imported &&
+        binding.imported !== 'default' &&
+        isClassLikeName(binding.imported)
+        ? binding.imported
+        : undefined;
+    }
+    return ctx.localClasses?.has(reference) ? reference : undefined;
+  }
+  if (parts.length === 2) {
+    const binding = ctx.importBindings?.get(parts[0]);
+    if (binding && binding.imported === null && isClassLikeName(parts[1])) {
+      return parts[1];
+    }
+  }
+  return undefined;
+}
+
+/** `PascalCase` with at least one lowercase letter: how a class is named. */
+function isClassLikeName(name: string): boolean {
+  return /^[A-Z][A-Za-z0-9_$]*$/.test(name) && /[a-z]/.test(name);
+}
+
+/**
+ * Module-scope `const lazyTarget = () => Target` declarations. The runtime
+ * relationship decorators invoke a thunk passed by name, so the scanner must
+ * read the same target rather than record the constant's own name.
+ */
+function extractModuleThunks(body: Statement[]): Map<string, string> {
+  const thunks = new Map<string, string>();
+  for (const node of body) {
+    const decl =
+      node.type === 'VariableDeclaration'
+        ? node
+        : node.type === 'ExportNamedDeclaration' &&
+            node.declaration?.type === 'VariableDeclaration'
+          ? (node.declaration as VariableDeclaration)
+          : null;
+    if (decl?.kind !== 'const') continue;
+    for (const declarator of decl.declarations) {
+      if (declarator.id?.type !== 'Identifier' || !declarator.init) continue;
+      const target = thunkTarget(declarator.init);
+      if (target) thunks.set(declarator.id.name, target);
+    }
+  }
+  return thunks;
+}
+
+/** The class a zero-argument arrow returns: `() => Target` or `() => { return Target; }`. */
+function thunkTarget(node: Expression): string | undefined {
+  const arrow = unwrapTypeAssertion(node) as unknown as {
+    type?: string;
+    params?: unknown[];
+    body?: BaseNode & {
+      type: string;
+      body?: Array<{ type: string; argument?: Expression | null }>;
+    };
+  } | null;
+  if (arrow?.type !== 'ArrowFunctionExpression' || arrow.params?.length !== 0) {
+    return undefined;
+  }
+  let returned: Expression | null | undefined;
+  if (arrow.body?.type === 'BlockStatement') {
+    const statements = arrow.body.body ?? [];
+    if (statements.length !== 1 || statements[0].type !== 'ReturnStatement') {
+      return undefined;
+    }
+    returned = statements[0].argument;
+  } else {
+    returned = arrow.body as unknown as Expression | undefined;
+  }
+  return returned ? classReferenceName(returned) : undefined;
+}
+
+/** `Target` or the dotted `Target.column` / `ns.Target` form, else `undefined`. */
+function classReferenceName(node: Expression): string | undefined {
+  const expression = unwrapTypeAssertion(node);
+  if (expression?.type === 'Identifier') return expression.name;
+  if (expression?.type === 'MemberExpression') {
+    const chain = staticMemberChain(expression);
+    if (chain?.path.every((part) => /^[A-Za-z_$][\w$]*$/.test(part))) {
+      return [chain.root.name, ...chain.path].join('.');
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -1633,6 +1780,30 @@ function taintUnsafeModuleConstantReferences(
   }
 
   const tainted = new Set<string>();
+  // Every read-only reference of each object/array constant, to judge the
+  // ones a static property holds once the walk is complete.
+  const safeReferences = new Map<
+    string,
+    Array<{
+      node: Record<string, unknown>;
+      staticInitializer?: boolean;
+      /** The module constant whose initializer holds this reference. */
+      inConstant?: string;
+    }>
+  >();
+  const taint = (node: Record<string, unknown>): void => {
+    const name = node.name as string;
+    if (tainted.has(name)) return;
+    tainted.add(name);
+    const unresolved = {
+      expression: sliceSource(node as unknown as BaseNode, sourceText) ?? name,
+      start:
+        typeof node.start === 'number' ? (node.start as number) : undefined,
+    };
+    const constant = constants.get(name);
+    constant?.unsafeReferences.push(unresolved);
+    constant?.unresolved.push(unresolved);
+  };
 
   const visit = (
     value: unknown,
@@ -1658,21 +1829,21 @@ function taintUnsafeModuleConstantReferences(
       // A scalar cannot be mutated through a reference, so it never taints.
       (constants.get(node.name)?.kind ?? 'scalar') !== 'scalar' &&
       !shadowed.has(node.name) &&
-      !isTypeOnlyReference(node, ancestors) &&
-      !isSafeModuleConstantReference(node, ancestors, constants, imports)
+      !isTypeOnlyReference(node, ancestors)
     ) {
-      const name = node.name;
-      if (!tainted.has(name)) {
-        tainted.add(name);
-        const unresolved = {
-          expression:
-            sliceSource(node as unknown as BaseNode, sourceText) ?? name,
-          start:
-            typeof node.start === 'number' ? (node.start as number) : undefined,
-        };
-        const constant = constants.get(name);
-        constant?.unsafeReferences.push(unresolved);
-        constant?.unresolved.push(unresolved);
+      const via: { name?: boolean; staticInitializer?: boolean } = {};
+      if (
+        !isSafeModuleConstantReference(node, ancestors, constants, imports, via)
+      ) {
+        taint(node);
+      } else if (!via.name) {
+        const references = safeReferences.get(node.name) ?? [];
+        references.push({
+          node,
+          staticInitializer: via.staticInitializer,
+          inConstant: enclosingConstant(ancestors, constants),
+        });
+        safeReferences.set(node.name, references);
       }
     }
 
@@ -1688,6 +1859,98 @@ function taintUnsafeModuleConstantReferences(
   };
 
   visit(body, [], new Set());
+
+  // A static property that holds a constant keeps a second, writable
+  // reference to it on the class, which runtime code reaches through the
+  // class or `this.constructor` where no static walk can follow. A write
+  // through it changes every object reachable from that constant: the
+  // constant itself, every constant it holds by reference or spreads with
+  // nested objects, and every constant that holds one of those, at any depth.
+  // So the static property is safe only when it is the sole reader of that
+  // whole group; otherwise its reference taints the constant like an escape
+  // (taint then propagates through the group, see
+  // `propagateModuleConstantTaint`).
+  const groups = sharedObjectGroups(constants);
+  for (const [name, references] of safeReferences) {
+    for (const held of references.filter((r) => r.staticInitializer)) {
+      const group = groups.get(name) ?? new Set([name]);
+      let readers = 0;
+      for (const member of group) {
+        for (const reference of safeReferences.get(member) ?? []) {
+          // A reference inside another member's initializer is the edge
+          // that put it in the group, not a reader of its own.
+          if (reference.inConstant && group.has(reference.inConstant)) continue;
+          readers++;
+        }
+      }
+      if (readers > 1) taint(held.node);
+    }
+  }
+}
+
+/** The top-level module constant whose initializer `ancestors` lie in. */
+function enclosingConstant(
+  ancestors: Array<Record<string, unknown>>,
+  constants: Map<string, ModuleConstant>,
+): string | undefined {
+  for (let index = ancestors.length - 1; index >= 0; index--) {
+    const node = ancestors[index];
+    if (node.type !== 'VariableDeclarator') continue;
+    const id = node.id as Record<string, unknown> | undefined;
+    return id?.type === 'Identifier' &&
+      typeof id.name === 'string' &&
+      constants.has(id.name)
+      ? id.name
+      : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * For each object or array constant, the constants that share objects with
+ * it: linked by a by-reference use (`{ inner: POLICY }`) or by a spread whose
+ * source holds nested objects (`{ ...WRAPPER }`), in either direction and
+ * transitively. A write to any object of a group is visible to every reader
+ * of the group.
+ */
+function sharedObjectGroups(
+  constants: Map<string, ModuleConstant>,
+): Map<string, Set<string>> {
+  const links = new Map<string, Set<string>>();
+  const link = (a: string, b: string) => {
+    if (!links.has(a)) links.set(a, new Set());
+    links.get(a)?.add(b);
+  };
+  for (const [name, constant] of constants) {
+    // A scalar copies a value out of the group when it is declared: it is a
+    // reader of the group, never part of it.
+    if (constant.kind === 'scalar') continue;
+    for (const dependency of constant.dependencies) {
+      const source = constants.get(dependency.name);
+      if (!source || source.kind === 'scalar') continue;
+      if (dependency.shared || hasNestedReferenceValue(source.value)) {
+        link(name, dependency.name);
+        link(dependency.name, name);
+      }
+    }
+  }
+  const groups = new Map<string, Set<string>>();
+  for (const start of links.keys()) {
+    if (groups.has(start)) continue;
+    const group = new Set<string>([start]);
+    const queue = [start];
+    while (queue.length > 0) {
+      const next = queue.pop() as string;
+      for (const linked of links.get(next) ?? []) {
+        if (!group.has(linked)) {
+          group.add(linked);
+          queue.push(linked);
+        }
+      }
+    }
+    for (const member of group) groups.set(member, group);
+  }
+  return groups;
 }
 
 function createsLexicalScope(node: Record<string, unknown>): boolean {
@@ -1951,6 +2214,12 @@ function isSafeModuleConstantReference(
     importAliases?: Map<string, string>;
     importBindings?: Map<string, ImportBinding>;
   } = {},
+  /**
+   * Set to how the occurrence was judged safe: `name` when it is not a
+   * reference at all (a declaration, a property key), `staticInitializer`
+   * when a manifest static property holds it.
+   */
+  via: { name?: boolean; staticInitializer?: boolean } = {},
 ): boolean {
   let child = identifier;
   // Set once the walk passes a position that READS the constant as a value
@@ -1962,6 +2231,7 @@ function isSafeModuleConstantReference(
 
     if (child === identifier) {
       if (parent.type === 'VariableDeclarator' && parent.id === child) {
+        via.name = true;
         return true;
       }
 
@@ -1974,6 +2244,7 @@ function isSafeModuleConstantReference(
         parent.computed === false &&
         parent.value !== child
       ) {
+        via.name = true;
         return true;
       }
 
@@ -1982,6 +2253,7 @@ function isSafeModuleConstantReference(
         parent.property === child &&
         parent.computed === false
       ) {
+        via.name = true;
         return true;
       }
     }
@@ -2051,6 +2323,23 @@ function isSafeModuleConstantReference(
       parent.arguments.includes(child)
     ) {
       return isReadDecoratorCall(parent, ancestors[index - 1], imports);
+    }
+
+    // The initializer of a static property the scanner reads into the
+    // manifest: a read by the class, like a decorator argument.
+    if (
+      parent.type === 'PropertyDefinition' &&
+      parent.value === child &&
+      parent.static === true &&
+      parent.computed === false
+    ) {
+      const key = parent.key as Record<string, unknown> | undefined;
+      const read =
+        key?.type === 'Identifier' &&
+        typeof key.name === 'string' &&
+        MANIFEST_STATIC_PROPERTIES.has(key.name);
+      if (read) via.staticInitializer = true;
+      return read;
     }
 
     if (parent.type === 'VariableDeclarator' && parent.init === child) {
@@ -2286,13 +2575,38 @@ function extractClassDeclaration(
   const fields: RawFieldDefinition[] = [];
   const methods: RawMethodDefinition[] = [];
 
+  // Field decorators and static properties are read into their own collector:
+  // whether they are diagnostics at all depends on the class being a model,
+  // which is known here only when it carries `@smrt()`.
+  const memberCtx = ctx ? { ...ctx, unresolved: [] } : ctx;
+  // A class decorator decides whether the class is a model at all
+  // (`@smrt`), so one the reader cannot name is reported now, before model
+  // filtering could drop the class and its diagnostic together.
+  recordUnnamedNamespaceDecorators(decorators, sourceText, ctx, {
+    className,
+  });
   for (const member of node.body.body) {
     if (member.type === 'PropertyDefinition') {
-      const field = extractPropertyDefinition(member, sourceText);
+      const field = extractPropertyDefinition(
+        member,
+        sourceText,
+        memberCtx,
+        className,
+      );
       if (field) {
         fields.push(field);
       }
     } else if (member.type === 'MethodDefinition') {
+      recordUnnamedNamespaceDecorators(
+        member.decorators,
+        sourceText,
+        memberCtx,
+        {
+          className,
+          member:
+            member.key.type === 'Identifier' ? member.key.name : undefined,
+        },
+      );
       const method = extractMethodDefinition(
         member,
         sourceText,
@@ -2301,6 +2615,22 @@ function extractClassDeclaration(
       );
       if (method) {
         methods.push(method);
+      }
+    }
+  }
+
+  // A `@smrt()` class is a model: report now. Any other class is held back
+  // until inheritance shows whether it reaches the manifest
+  // (`RawClassDefinition.configErrors`).
+  const configErrors: ScanError[] = [];
+  if (ctx && memberCtx && memberCtx.unresolved.length > 0) {
+    if (hasSmartDecorator) {
+      ctx.unresolved.push(...memberCtx.unresolved);
+    } else {
+      for (const unresolved of memberCtx.unresolved) {
+        configErrors.push(
+          unresolvedToScanError(unresolved, filePath, sourceText),
+        );
       }
     }
   }
@@ -2335,6 +2665,7 @@ function extractClassDeclaration(
     ...(typeof node.body?.start === 'number'
       ? { bodyStart: node.body.start }
       : {}),
+    ...(configErrors.length > 0 ? { configErrors } : {}),
   };
 }
 
@@ -2468,7 +2799,119 @@ const READ_DECORATOR_NAMES: ReadonlySet<string> = new Set([
   'TenantScoped',
   'report',
   'method',
+  'field',
+  'meta',
+  'tenantId',
+  'foreignKey',
+  'crossPackageRef',
+  'oneToMany',
+  'manyToMany',
+  'groupBy',
+  'aggregate',
+  'sum',
+  'avg',
+  'min',
+  'max',
+  'count',
+  'minute',
+  'hour',
+  'day',
+  'week',
+  'month',
+  'quarter',
+  'year',
 ]);
+
+/**
+ * What each positional argument of a field decorator holds, by decorator.
+ *
+ * - `options`: an options object. Read statically; an unreadable value is a
+ *   scan diagnostic.
+ * - `text`: a string (a column, a qualified model name), or an options object
+ *   where the decorator accepts either. Read statically.
+ * - `target`: a relationship target — a class name string, a class
+ *   reference, or a `() => Class` thunk. A class cannot be read as a literal,
+ *   so a reference is recorded by name; only an expression that identifies no
+ *   class at all is a diagnostic.
+ */
+const FIELD_DECORATOR_ARGUMENTS: Readonly<
+  Record<string, ReadonlyArray<'options' | 'text' | 'target'>>
+> = {
+  field: ['options'],
+  meta: ['options'],
+  tenantId: ['options'],
+  foreignKey: ['target', 'options'],
+  oneToMany: ['target', 'options'],
+  manyToMany: ['target', 'options'],
+  crossPackageRef: ['text', 'options'],
+  groupBy: ['text'],
+  aggregate: ['options'],
+  sum: ['text', 'options'],
+  avg: ['text', 'options'],
+  min: ['text', 'options'],
+  max: ['text', 'options'],
+  count: ['text', 'options'],
+  minute: ['text'],
+  hour: ['text'],
+  day: ['text'],
+  week: ['text'],
+  month: ['text'],
+  quarter: ['text'],
+  year: ['text'],
+};
+
+/**
+ * What argument `index` of field decorator `name` holds, or `undefined` for
+ * a decorator or position the scanner does not read.
+ */
+export function fieldDecoratorArgumentKind(
+  name: string,
+  index: number,
+): 'options' | 'text' | 'target' | undefined {
+  return Object.hasOwn(FIELD_DECORATOR_ARGUMENTS, name)
+    ? FIELD_DECORATOR_ARGUMENTS[name][index]
+    : undefined;
+}
+
+/** Static properties the manifest carries for agent classes. */
+export const MANIFEST_STATIC_PROPERTIES: ReadonlySet<string> = new Set([
+  'uiSlots',
+  'adminRoutes',
+  'signalSubscriptions',
+  'createEntries',
+]);
+
+/**
+ * Decorators whose `validate` option is a runtime callback: a custom
+ * validator function on a plain field (`@field`, and `@meta`, which takes the
+ * same options). Nowhere else is `validate` a callback; on
+ * `@crossPackageRef` it is a boolean that turns on save-time checking, and on
+ * every other decorator it is not an option. There it is read with the
+ * static rules like any option, so an unreadable value is a scan error and
+ * never silently drops the check.
+ */
+const RUNTIME_VALIDATE_DECORATORS: ReadonlySet<string> = new Set([
+  'field',
+  'meta',
+]);
+
+function isValidateOption(path: string | undefined): boolean {
+  return path === 'validate';
+}
+
+/**
+ * The runtime-only option rule for one field decorator: the option paths
+ * whose value is accepted without being read (recorded as stated, with no
+ * value). `undefined` for a decorator that has none, so every option of it is
+ * read statically. Keyed on the decorator, never on the option name alone.
+ */
+export function runtimeOnlyFieldOptions(
+  decoratorName: string,
+): ((path: string | undefined) => boolean) | undefined {
+  return RUNTIME_VALIDATE_DECORATORS.has(decoratorName)
+    ? isValidateOption
+    : undefined;
+}
 
 /**
  * `@report()` option paths that hold a model class: the report source and
@@ -2500,14 +2943,97 @@ function resolveDecoratorName(
   }
   if (
     callee.type === 'MemberExpression' &&
-    !callee.computed &&
     callee.object.type === 'Identifier' &&
-    callee.property.type === 'Identifier' &&
     importBindings?.get(callee.object.name)?.imported === null
   ) {
-    return callee.property.name;
+    // `ns.field` and `ns['field']` name the same export.
+    if (!callee.computed && callee.property.type === 'Identifier') {
+      return callee.property.name;
+    }
+    if (
+      callee.computed &&
+      callee.property.type === 'Literal' &&
+      typeof callee.property.value === 'string'
+    ) {
+      return callee.property.value;
+    }
+    // `ns[KEY]` with `const KEY = 'smrt'` in this file names that export.
+    if (callee.computed && callee.property.type === 'Identifier') {
+      const constant = CONSTANTS_BY_BINDINGS.get(importBindings)?.get(
+        callee.property.name,
+      );
+      if (constant?.kind === 'scalar' && typeof constant.value === 'string') {
+        return constant.value;
+      }
+    }
   }
   return null;
+}
+
+/**
+ * Each file's module constants, keyed by its import-binding table, so the
+ * decorator-name reader (which receives the bindings) can resolve a
+ * computed namespace member through a same-file string constant.
+ */
+const CONSTANTS_BY_BINDINGS = new WeakMap<
+  Map<string, ImportBinding>,
+  Map<string, ModuleConstant>
+>();
+
+/**
+ * A decorator reached through a namespace import by a computed member the
+ * reader cannot name (`ns[key]`). Which export it is cannot be known, so it
+ * may be a field decorator whose options would be lost: a scan error.
+ */
+/**
+ * Record every decorator in `decorators` reached through a namespace import
+ * by a computed member the reader cannot name, labeled with the class and
+ * member it decorates. Class and method decorators carry exposure and
+ * tenancy (`@smrt`, `@TenantScoped`, `@method`): one silently not read is a
+ * model published open.
+ */
+function recordUnnamedNamespaceDecorators(
+  decorators: readonly Decorator[] | undefined,
+  sourceText: string,
+  ctx: DecoratorConfigContext | undefined,
+  target: { className?: string; member?: string },
+): void {
+  if (!ctx?.resolveReferences || !decorators) return;
+  for (const decorator of decorators) {
+    if (!isUnnamedNamespaceDecorator(decorator, ctx.importBindings)) continue;
+    const from = ctx.unresolved.length;
+    ctx.unresolved.push({
+      expression:
+        sliceSource(decorator.expression, sourceText) ?? '<decorator>',
+      start: decorator.start,
+    });
+    labelUnresolved(ctx, from, {
+      decorator: '@<namespace member>()',
+      className: target.className,
+      member: target.member,
+    });
+  }
+}
+
+function isUnnamedNamespaceDecorator(
+  decorator: Decorator,
+  importBindings?: Map<string, ImportBinding>,
+): boolean {
+  if (resolveDecoratorName(decorator, undefined, importBindings) !== null) {
+    return false;
+  }
+  const expr = decorator.expression;
+  const callee = expr.type === 'CallExpression' ? expr.callee : expr;
+  return (
+    callee.type === 'MemberExpression' &&
+    callee.computed &&
+    callee.object.type === 'Identifier' &&
+    importBindings?.get(callee.object.name)?.imported === null &&
+    !(
+      callee.property.type === 'Literal' &&
+      typeof callee.property.value === 'string'
+    )
+  );
 }
 
 /**
@@ -2668,10 +3194,12 @@ function extractObjectLiteral(
 
     if (prop.type === 'Property') {
       const key = getPropertyKey(prop.key);
+      // A key the reader cannot name (a computed expression, a bigint) is a
+      // scan error, never a silently missing property.
       if (
+        key === null ||
         (prop.shorthand && !ctx?.resolveReferences) ||
-        (prop.computed &&
-          !(prop.key.type === 'Literal' && typeof prop.key.value === 'string'))
+        (prop.computed && prop.key.type !== 'Literal')
       ) {
         recordUnresolved(prop, '<unknown property>');
         continue;
@@ -2679,12 +3207,13 @@ function extractObjectLiteral(
       // Skip prototype-pollution keys (__proto__/constructor/prototype) so a
       // decorator-config property of that name cannot mutate the metadata
       // object's prototype.
-      if (key && isSafeObjectKey(key)) {
-        const value = extractValue(
-          prop.value,
-          sourceText,
-          ctx ? { ...ctx, path: ctx.path ? `${ctx.path}.${key}` : key } : ctx,
-        );
+      // `''` is a valid key; test against null, not truthiness.
+      if (isSafeObjectKey(key)) {
+        const path = ctx?.path ? `${ctx.path}.${key}` : key;
+        const child = ctx ? { ...ctx, path } : ctx;
+        const value = ctx?.runtimeOnly?.(path)
+          ? extractRuntimeOnlyValue(prop.value, sourceText, child)
+          : extractValue(prop.value, sourceText, child);
         if (value !== UNRESOLVED) result[key] = value;
       }
     }
@@ -2712,6 +3241,15 @@ function getPropertyKey(node: Expression): string | null {
   }
   if (node.type === 'Literal' && typeof node.value === 'string') {
     return node.value;
+  }
+  // A numeric key names the property by its JavaScript string form:
+  // `{ 0: 'draft' }` and `{ 1.50: x }` have keys "0" and "1.5".
+  if (
+    node.type === 'Literal' &&
+    typeof node.value === 'number' &&
+    Number.isFinite(node.value)
+  ) {
+    return String(node.value);
   }
   return null;
 }
@@ -2825,6 +3363,24 @@ function extractValue(
   sourceText: string,
   ctx?: DecoratorConfigContext,
 ): unknown {
+  const value = extractValueOf(node, sourceText, ctx);
+  // A manifest is JSON: `Infinity`, `NaN` and a non-finite folded result
+  // would be written as `null`, which clears a limit instead of carrying it.
+  if (
+    ctx?.resolveReferences &&
+    typeof value === 'number' &&
+    !Number.isFinite(value)
+  ) {
+    return unresolvedValue(node, sourceText, ctx);
+  }
+  return value;
+}
+
+function extractValueOf(
+  node: Expression | Pattern,
+  sourceText: string,
+  ctx?: DecoratorConfigContext,
+): unknown {
   const unwrapped = unwrapTypeAssertion(node as Expression);
   if (unwrapped && unwrapped !== node) {
     return extractValue(unwrapped, sourceText, ctx);
@@ -2859,9 +3415,10 @@ function extractValue(
       if (resolving && ctx) {
         const resolved = resolveStaticReference(node, [], ctx);
         if (resolved !== UNRESOLVED) return resolved;
-        if (node.name === 'Infinity') return Number.POSITIVE_INFINITY;
-        if (node.name === 'NaN') return Number.NaN;
-        if (ctx.classReference?.(ctx.path)) return node.name;
+        if (ctx.classReference?.(ctx.path)) {
+          const identity = classIdentity(node.name, ctx);
+          if (identity) return identity;
+        }
         return unresolvedValue(node, sourceText, ctx, node.name);
       }
       if (ctx?.requireLiteralValues) {
@@ -2922,13 +3479,23 @@ function extractValue(
         if (resolved !== UNRESOLVED) return resolved;
       }
       if (ctx.classReference?.(ctx.path)) {
-        return sliceSource(node, sourceText) ?? getMemberExpressionString(node);
+        const reference = chain
+          ? [chain.root.name, ...chain.path].join('.')
+          : undefined;
+        const identity = reference ? classIdentity(reference, ctx) : undefined;
+        if (identity) return identity;
       }
       break;
     }
 
+    case 'NewExpression': {
+      if (!resolving) break;
+      const date = extractStaticDate(node, sourceText, ctx);
+      if (date !== NOT_FOLDABLE) return date;
+      break;
+    }
+
     case 'CallExpression':
-    case 'NewExpression':
       break;
   }
 
@@ -2992,6 +3559,85 @@ function extractUnaryValue(
 }
 
 const NOT_FOLDABLE: unique symbol = Symbol('smrt.scanner.not-foldable');
+
+/**
+ * Stands in for the value of an option that only exists at runtime — a
+ * callback such as a field's `validate`. A function cannot be carried in a
+ * manifest, and it is not configuration the manifest would otherwise lose:
+ * the runtime decorator holds the real one. The key is kept so a reader knows
+ * the option was stated; `ManifestAdapter` lists it in `__statedOptions` and
+ * emits no value for it.
+ */
+export const RUNTIME_ONLY_OPTION: unique symbol = Symbol.for(
+  'smrt.scanner.runtime-only-option',
+);
+
+/**
+ * Read an option whose value may be a runtime callback. A value that IS
+ * static is returned as usual (`validate: true` on `@crossPackageRef`);
+ * anything else is, by declaration of the option, a runtime value and is
+ * replaced by {@link RUNTIME_ONLY_OPTION} without a diagnostic.
+ */
+function extractRuntimeOnlyValue(
+  node: Expression | Pattern,
+  sourceText: string,
+  ctx: DecoratorConfigContext | undefined,
+): unknown {
+  const expression = unwrapTypeAssertion(node as Expression) as
+    | (BaseNode & { type: string })
+    | null;
+  if (
+    !expression ||
+    expression.type === 'ArrowFunctionExpression' ||
+    expression.type === 'FunctionExpression'
+  ) {
+    return RUNTIME_ONLY_OPTION;
+  }
+  const probe: UnresolvedSpread[] = [];
+  const value = extractValue(
+    node,
+    sourceText,
+    ctx ? { ...ctx, unresolved: probe } : ctx,
+  );
+  return value === UNRESOLVED || probe.length > 0 ? RUNTIME_ONLY_OPTION : value;
+}
+
+/**
+ * `new Date(<static arguments>)` as the `Date` it constructs. Building a
+ * `Date` from literal arguments runs no source and is the same on every
+ * build. `new Date()` reads the build clock, so it is left unresolved.
+ */
+function extractStaticDate(
+  node: NewExpression,
+  sourceText: string,
+  ctx: DecoratorConfigContext | undefined,
+): unknown {
+  if (
+    node.callee.type !== 'Identifier' ||
+    node.callee.name !== 'Date' ||
+    node.arguments.length === 0
+  ) {
+    return NOT_FOLDABLE;
+  }
+  const args: Array<string | number> = [];
+  for (const argument of node.arguments) {
+    const probe: UnresolvedSpread[] = [];
+    const value = extractValue(
+      argument,
+      sourceText,
+      ctx ? { ...ctx, unresolved: probe } : ctx,
+    );
+    if (
+      probe.length > 0 ||
+      (typeof value !== 'string' && typeof value !== 'number')
+    ) {
+      return NOT_FOLDABLE;
+    }
+    args.push(value);
+  }
+  const date = new Date(...(args as [number]));
+  return Number.isNaN(date.getTime()) ? NOT_FOLDABLE : date;
+}
 
 /**
  * Fold the constant expressions authors write in place of a literal:
@@ -3438,6 +4084,8 @@ function getQualifiedName(node: TSQualifiedName): string {
 function extractPropertyDefinition(
   node: PropertyDefinition,
   sourceText: string,
+  ctx?: DecoratorConfigContext,
+  className?: string,
 ): RawFieldDefinition | null {
   // Skip computed properties
   if (node.computed) return null;
@@ -3528,11 +4176,38 @@ function extractPropertyDefinition(
   const decorators: RawDecorator[] = [];
   if (node.decorators) {
     for (const dec of node.decorators) {
-      const extracted = extractFieldDecorator(dec, sourceText);
+      const extracted = extractFieldDecorator(dec, sourceText, ctx, {
+        className,
+        member: name,
+      });
       if (extracted) {
         decorators.push(extracted);
       }
     }
+  }
+
+  // A static property the manifest carries is read from the AST like a
+  // decorator config: in full, or with a diagnostic for what cannot be read.
+  let initializerValue: RawFieldDefinition['initializerValue'];
+  if (
+    ctx?.resolveReferences &&
+    node.static &&
+    node.value &&
+    MANIFEST_STATIC_PROPERTIES.has(name)
+  ) {
+    const from = ctx.unresolved.length;
+    const value = extractValue(node.value, sourceText, {
+      ...ctx,
+      requireLiteralValues: true,
+      path: undefined,
+      classReference: undefined,
+      runtimeOnly: undefined,
+    });
+    labelUnresolved(ctx, from, {
+      decorator: `\`static ${name}\``,
+      className,
+    });
+    initializerValue = { value: value === UNRESOLVED ? undefined : value };
   }
 
   return {
@@ -3547,37 +4222,220 @@ function extractPropertyDefinition(
     readonly: node.readonly || false,
     accessibility: node.accessibility || 'public',
     line: node.loc?.start.line || 0,
+    ...(initializerValue ? { initializerValue } : {}),
+  };
+}
+
+/**
+ * Read a decorator argument or static initializer given only as source text,
+ * with the same static rules the parser applies to a file: literals, nested
+ * objects and arrays, and constant folding. No module is in scope, so every
+ * identifier is unresolved. The text is parsed, never evaluated.
+ *
+ * `ManifestAdapter` uses this for a hand-built {@link RawDecorator} that
+ * carries no `argumentValues`.
+ *
+ * @returns The value, and the source of each expression that could not be
+ *   read (empty when the value is complete).
+ */
+export function parseStaticLiteralSource(
+  source: string,
+  options: { runtimeOnly?: (path: string | undefined) => boolean } = {},
+): { value: unknown; unresolved: string[] } {
+  const text = `(${source}\n)`;
+  const unreadable = { value: undefined, unresolved: [source.trim()] };
+  let statement: { type?: string; expression?: Expression } | undefined;
+  try {
+    const result = parseSync('inline.ts', text, {
+      lang: 'ts',
+      preserveParens: false,
+    });
+    if (result.errors?.some((error) => error.severity === 'Error')) {
+      return unreadable;
+    }
+    statement = (result.program as Program).body[0] as unknown as
+      | { type?: string; expression?: Expression }
+      | undefined;
+  } catch {
+    return unreadable;
+  }
+  if (statement?.type !== 'ExpressionStatement' || !statement.expression) {
+    return unreadable;
+  }
+  const ctx: DecoratorConfigContext = {
+    constants: new Map(),
+    unresolved: [],
+    requireLiteralValues: true,
+    resolveReferences: true,
+    runtimeOnly: options.runtimeOnly,
+  };
+  const value = extractValue(statement.expression, text, ctx);
+  return {
+    value: value === UNRESOLVED ? undefined : value,
+    unresolved: ctx.unresolved.map((entry) => entry.expression),
   };
 }
 
 /**
  * Extract field decorator
+ *
+ * The decorator is named by what it was exported as, so an aliased or
+ * namespaced import is read like a direct one. For the decorators in
+ * {@link FIELD_DECORATOR_ARGUMENTS} every argument is also read statically
+ * into `argumentValues`; nothing downstream evaluates the raw source text.
  */
 function extractFieldDecorator(
   decorator: Decorator,
   sourceText: string,
+  ctx?: DecoratorConfigContext,
+  target?: { className?: string; member: string },
 ): RawDecorator | null {
   const expr = decorator.expression;
-
-  let name: string | null = null;
-  const args: string[] = [];
-
-  if (expr.type === 'CallExpression') {
-    if (expr.callee.type === 'Identifier') {
-      name = expr.callee.name;
+  const name = resolveDecoratorName(
+    decorator,
+    ctx?.importAliases,
+    ctx?.importBindings,
+  );
+  if (!name) {
+    if (
+      ctx?.resolveReferences &&
+      isUnnamedNamespaceDecorator(decorator, ctx.importBindings)
+    ) {
+      const from = ctx.unresolved.length;
+      ctx.unresolved.push({
+        expression: sliceSource(expr, sourceText) ?? '<decorator>',
+        start: decorator.start,
+      });
+      labelUnresolved(ctx, from, {
+        decorator: '@<namespace member>()',
+        className: target?.className,
+        member: target?.member,
+      });
     }
+    return null;
+  }
+
+  const args: string[] = [];
+  if (expr.type === 'CallExpression') {
     // Extract arguments as strings
     for (const arg of expr.arguments) {
       const argSrc = sliceSource(arg, sourceText);
       if (argSrc) args.push(argSrc);
     }
-  } else if (expr.type === 'Identifier') {
-    name = expr.name;
   }
 
-  if (!name) return null;
+  const signature = Object.hasOwn(FIELD_DECORATOR_ARGUMENTS, name)
+    ? FIELD_DECORATOR_ARGUMENTS[name]
+    : undefined;
+  if (!signature || !ctx?.resolveReferences) {
+    return { name, arguments: args };
+  }
 
-  return { name, arguments: args };
+  const from = ctx.unresolved.length;
+  const argumentValues: NonNullable<RawDecorator['argumentValues']> = [];
+  const callArguments = expr.type === 'CallExpression' ? expr.arguments : [];
+  callArguments.forEach((arg, index) => {
+    const kind = signature[index];
+    if (!kind) {
+      argumentValues.push(null);
+      return;
+    }
+    const readCtx: DecoratorConfigContext = {
+      ...ctx,
+      requireLiteralValues: true,
+      path: undefined,
+      classReference: undefined,
+      runtimeOnly: runtimeOnlyFieldOptions(name),
+    };
+    if (kind === 'target') {
+      argumentValues.push(extractRelationshipTarget(arg, sourceText, readCtx));
+      return;
+    }
+    const value = extractValue(arg, sourceText, readCtx);
+    argumentValues.push(value === UNRESOLVED ? null : { value });
+  });
+  labelUnresolved(ctx, from, {
+    decorator: `@${name}()`,
+    className: target?.className,
+    member: target?.member,
+  });
+
+  return { name, arguments: args, argumentValues };
+}
+
+/**
+ * Read a relationship decorator's target argument.
+ *
+ * A name that IS statically a string — a literal, a same-file string
+ * constant, a same-file `const lazy = () => Target` thunk — is returned as
+ * that name. A class reference (`Target`, `ns.Target`) or an inline
+ * `() => Target` thunk returns `null`: the class is identified by the name in
+ * the raw argument, exactly as the runtime decorator reads `Target.name`.
+ * Anything else (a call, a conditional) identifies no class, so it is a
+ * diagnostic rather than a relationship without a target.
+ */
+function extractRelationshipTarget(
+  node: Expression,
+  sourceText: string,
+  ctx: DecoratorConfigContext,
+): RawDecoratorArgumentValue {
+  const argument = unwrapTypeAssertion(node);
+  if (!argument) return null;
+  // A class reference, inline or behind a thunk, is recorded by the name the
+  // runtime reads from the constructor; one that cannot be identified is a
+  // scan error, never its alias or binding name.
+  const identify = (reference: string): RawDecoratorArgumentValue => {
+    const identity = classIdentity(reference, ctx);
+    if (identity) {
+      const parts = reference.split('.');
+      const binding = ctx.importBindings?.get(parts[0]);
+      const imported =
+        parts.length === 2 && binding?.imported === null
+          ? parts[1]
+          : parts.length === 1 && binding?.imported
+            ? binding.imported
+            : undefined;
+      return binding && imported
+        ? { value: identity, import: { source: binding.source, imported } }
+        : { value: identity };
+    }
+    ctx.unresolved.push({
+      expression: sliceSource(argument, sourceText) ?? reference,
+      start: argument.start,
+    });
+    return null;
+  };
+  if (argument.type === 'Identifier') {
+    const constant = ctx.constants.get(argument.name);
+    if (constant?.kind === 'scalar' && typeof constant.value === 'string') {
+      // Through the reference reader, so a scalar copied from an object
+      // that is written elsewhere reports that write.
+      const before = ctx.unresolved.length;
+      const value = resolveStaticReference(argument, [], ctx);
+      // A reported write leaves no stale name standing in for the target.
+      if (ctx.unresolved.length !== before) return null;
+      if (typeof value === 'string' && value.trim() !== '') return { value };
+      ctx.unresolved.push({
+        expression: sliceSource(argument, sourceText) ?? argument.name,
+        start: argument.start,
+      });
+      return null;
+    }
+    const thunk = ctx.thunks?.get(argument.name);
+    return identify(thunk ?? argument.name);
+  }
+  const reference = classReferenceName(argument) ?? thunkTarget(argument);
+  if (reference) return identify(reference);
+  const value = extractValue(argument, sourceText, ctx);
+  if (typeof value === 'string' && value.trim() !== '') return { value };
+  if (value !== UNRESOLVED) {
+    // Static, but not a class name: nothing identifies the target.
+    ctx.unresolved.push({
+      expression: sliceSource(argument, sourceText) ?? '<target>',
+      start: argument.start,
+    });
+  }
+  return null;
 }
 
 /**

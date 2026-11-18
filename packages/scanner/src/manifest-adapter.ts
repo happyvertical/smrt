@@ -8,12 +8,19 @@
 import type { RecipeDefinition } from '@happyvertical/smrt-types';
 import { type EnumValue, resolveEnumValues } from './enum-values.js';
 import { FRAMEWORK_BASE_CLASSES } from './inheritance-resolver.js';
-import { isSafeObjectKey } from './oxc-parser.js';
+import {
+  fieldDecoratorArgumentKind,
+  MANIFEST_STATIC_PROPERTIES,
+  parseStaticLiteralSource,
+  RUNTIME_ONLY_OPTION,
+  runtimeOnlyFieldOptions,
+} from './oxc-parser.js';
 import type {
   FieldTypeInference,
   InferredFieldType,
   ParameterTypeBranch,
   RawClassDefinition,
+  RawDecorator,
   RawFieldDefinition,
   RawMethodDefinition,
   ResolvedClassDefinition,
@@ -233,90 +240,71 @@ interface SmartObjectManifest {
 // Utilities
 // ============================================================================
 
-/**
- * Property keys that must never appear as own properties on a manifest object.
- * Object literals authored as `{ constructor: ... }` or `{ prototype: ... }`
- * produce real own keys; spreading such a parsed object into a manifest
- * `_meta` / `staticProperties` entry (or assigning it under a class field name)
- * would carry a prototype-pollution gadget into the emitted JSON.
- */
-/**
- * Recursively strip prototype-pollution keys (via the shared
- * {@link isSafeObjectKey} guard — single source of truth with oxc-parser) from a
- * value parsed out of source. Returns a new plain object/array; primitives and
- * built-in objects pass through unchanged.
- */
-function sanitizeParsed(value: unknown, seen = new WeakSet<object>()): unknown {
-  if (value === null || typeof value !== 'object') return value;
-
-  const isArray = Array.isArray(value);
-  // Preserve built-ins (Date, RegExp, Map, …) intact. They carry no
-  // attacker-controlled own keys, and iterating their enumerable keys would
-  // silently turn e.g. `@field({ default: new Date() })` into `{}` (review #1559).
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
   const proto = Object.getPrototypeOf(value);
-  if (!isArray && proto !== Object.prototype && proto !== null) return value;
-
-  // Cycle guard: a cyclic literal (e.g. an IIFE returning a self-referential
-  // object) would otherwise recurse forever and hang the build (review #1559).
-  if (seen.has(value as object)) return undefined;
-  seen.add(value as object);
-
-  if (isArray) {
-    return (value as unknown[]).map((item) => sanitizeParsed(item, seen));
-  }
-  const clean: Record<string, unknown> = {};
-  for (const key of Object.keys(value as Record<string, unknown>)) {
-    if (!isSafeObjectKey(key)) continue;
-    clean[key] = sanitizeParsed((value as Record<string, unknown>)[key], seen);
-  }
-  return clean;
+  return proto === Object.prototype || proto === null;
 }
 
 /**
- * Parse a JavaScript literal (object or array) from source text.
+ * Read a decorator argument or static initializer that arrived as source
+ * text — a hand-built `RawDecorator`/`RawFieldDefinition`, not one the parser
+ * produced. The text is parsed and read with the scanner's static rules; it
+ * is never evaluated. With `strict` (a position that can only hold a value:
+ * a decorator's options argument, a static initializer) any text is read, so
+ * a bare identifier (`SECRET_OPTIONS`) throws rather than standing for an
+ * options object that silently is not there. Without it (a position that may
+ * hold a column name or class reference, read by the caller) only an object
+ * or array literal is a value.
  *
- * Uses the Function constructor to evaluate literal syntax at build time.
- * This is intentional — AST-based extraction can't handle computed keys,
- * template literals, or spread syntax that may appear in static initializers.
- *
- * The parsed result is run through {@link sanitizeParsed} to strip
- * prototype-pollution keys (`__proto__` / `constructor` / `prototype`) before
- * it is merged into a manifest object.
- *
- * WARNING: This executes the source text. It is only safe when scanning
- * your own trusted codebase at build time. Never run the scanner against
- * untrusted third-party code.
+ * Fails closed: a value that cannot be read statically throws, because a
+ * silently discarded options object takes `sensitive`, `transient`, `unique`
+ * and a relationship's delete policy with it. `runtimeOnly` is the decorator's
+ * runtime-only option rule (see `runtimeOnlyFieldOptions`); a static
+ * initializer has none.
  */
-function parseLiteralInitializer(
-  source: string,
-): Record<string, unknown> | unknown[] | null {
+function readStaticSource(
+  source: string | null | undefined,
+  what: string,
+  runtimeOnly?: (path: string | undefined) => boolean,
+  strict = false,
+) {
   const trimmed = source?.trim();
-  if (!trimmed || (!trimmed.startsWith('{') && !trimmed.startsWith('[')))
-    return null;
-  try {
-    // Use indirect eval via Function to parse the object/array literal
-    // This runs at build time only, on trusted source code from our own codebase
-    // The existing pattern (unchanged) uses Function constructor for object literal parsing
-    // eslint-disable-next-line no-new-func
-    const parsed = new Function(`return (${source})`)() as
-      | Record<string, unknown>
-      | unknown[];
-    return sanitizeParsed(parsed) as Record<string, unknown> | unknown[];
-  } catch {
-    return null;
+  if (!trimmed) return undefined;
+  if (!strict && !trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+    return undefined;
   }
+  const { value, unresolved } = parseStaticLiteralSource(trimmed, {
+    runtimeOnly,
+  });
+  if (unresolved.length > 0) {
+    throw new Error(
+      `Cannot statically resolve ${unresolved
+        .map((expression) => `\`${expression}\``)
+        .join(', ')} in ${what}. Only literal values can be read from source ` +
+        `text; an unresolved value would drop configuration from the manifest.`,
+    );
+  }
+  return value;
 }
 
-/**
- * Strip surrounding quotes from a raw source string.
- * sliceSource() returns raw source text which includes quotes for string
- * literals (e.g., "'TestProfile'" or '"TestProfile"').
- */
-function stripQuotes(value: string | undefined): string | undefined {
-  if (!value) return value;
-  const match = value.match(/^(['"`])(.+)\1$/);
-  return match ? match[2] : value;
-}
+/** Field types whose `related` names another model. */
+const RELATIONSHIP_TYPES: ReadonlySet<string> = new Set([
+  'foreignKey',
+  'oneToMany',
+  'manyToMany',
+]);
+
+/** Aggregate decorators whose first argument may be an options object. */
+const AGGREGATE_OBJECT_FIRST: ReadonlySet<string> = new Set([
+  'sum',
+  'avg',
+  'min',
+  'max',
+  'count',
+]);
 
 /** A quoted string literal in raw decorator source: `'Target'` / `"Target"`. */
 const QUOTED_LITERAL_PATTERN = /^(['"`])(.*)\1$/s;
@@ -632,29 +620,41 @@ export class ManifestAdapter {
     // child-wins semantics (static override), not parent-wins like STI columns.
     // Fall back to allFields for inherited static props not redeclared by child.
     let staticProperties: Record<string, unknown> | undefined;
-    const knownStaticProps = [
-      'uiSlots',
-      'adminRoutes',
-      'signalSubscriptions',
-      'createEntries',
-    ];
+    const where = (member: string) =>
+      `${classDef.filePath ? `${classDef.filePath}: ` : ''}${classDef.className}.${member}`;
+    const staticValue = (field: RawFieldDefinition): unknown => {
+      // The parser reads these from the AST; a hand-built definition carries
+      // only the initializer text, which is read with the same static rules.
+      let value: unknown;
+      try {
+        value = field.initializerValue
+          ? field.initializerValue.value
+          : readStaticSource(
+              field.initializer,
+              `\`static ${field.name}\``,
+              undefined,
+              true,
+            );
+      } catch (error) {
+        throw new Error(
+          `${where(field.name)}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      return isPlainRecord(value) || Array.isArray(value) ? value : undefined;
+    };
     const ownStaticNames = new Set<string>();
     // First pass: own fields (child overrides win)
     for (const field of classDef.fields) {
       if (
         field.isStatic &&
-        knownStaticProps.includes(field.name) &&
+        MANIFEST_STATIC_PROPERTIES.has(field.name) &&
         field.initializer
       ) {
-        try {
-          const parsed = parseLiteralInitializer(field.initializer);
-          if (parsed) {
-            if (!staticProperties) staticProperties = {};
-            staticProperties[field.name] = parsed;
-            ownStaticNames.add(field.name);
-          }
-        } catch {
-          // Failed to parse static property initializer — skip
+        const parsed = staticValue(field);
+        if (parsed) {
+          if (!staticProperties) staticProperties = {};
+          staticProperties[field.name] = parsed;
+          ownStaticNames.add(field.name);
         }
       }
     }
@@ -662,18 +662,14 @@ export class ManifestAdapter {
     for (const field of classDef.allFields) {
       if (
         field.isStatic &&
-        knownStaticProps.includes(field.name) &&
+        MANIFEST_STATIC_PROPERTIES.has(field.name) &&
         field.initializer
       ) {
         if (ownStaticNames.has(field.name)) continue;
-        try {
-          const parsed = parseLiteralInitializer(field.initializer);
-          if (parsed) {
-            if (!staticProperties) staticProperties = {};
-            staticProperties[field.name] = parsed;
-          }
-        } catch {
-          // Failed to parse static property initializer — skip
+        const parsed = staticValue(field);
+        if (parsed) {
+          if (!staticProperties) staticProperties = {};
+          staticProperties[field.name] = parsed;
         }
       }
     }
@@ -682,7 +678,14 @@ export class ManifestAdapter {
     const fields: Record<string, FieldDefinition> = {};
     for (const field of classDef.allFields) {
       if (field.isStatic) continue;
-      const converted = this.convertField(field);
+      let converted: FieldDefinition | null;
+      try {
+        converted = this.convertField(field);
+      } catch (error) {
+        throw new Error(
+          `${where(field.name)}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
       if (converted) {
         fields[field.name] = converted;
       }
@@ -784,7 +787,8 @@ export class ManifestAdapter {
 
     // Check if field is a function type (automatically transient)
     const isFunctionType = field.typeAnnotation === 'Function';
-    const fieldDecoratorOptions = this.extractFieldDecoratorOptions(field);
+    const { options: fieldDecoratorOptions, stated: statedDecoratorOptions } =
+      this.extractFieldDecoratorOptions(field);
 
     const inference = this.inferFieldType(field);
 
@@ -931,9 +935,7 @@ export class ManifestAdapter {
       ...definition._meta,
       __statedOptions: [
         ...new Set([
-          ...Object.keys(fieldDecoratorOptions).filter(
-            (key) => fieldDecoratorOptions[key] !== undefined,
-          ),
+          ...statedDecoratorOptions,
           ...Object.keys(inference._meta ?? {}).filter(
             (key) => inference._meta?.[key] !== undefined,
           ),
@@ -1068,7 +1070,8 @@ export class ManifestAdapter {
     for (const decorator of field.decorators) {
       if (decorator.name !== 'field') continue;
       const fieldDefault = this.parseFieldDecoratorOptions(
-        decorator.arguments[0],
+        decorator,
+        0,
       )?.default;
       if (typeof fieldDefault === 'boolean') return fieldDefault;
     }
@@ -1079,17 +1082,12 @@ export class ManifestAdapter {
    * Infer type from field decorator
    */
   private inferFromDecorator(
-    decorator: {
-      name: string;
-      arguments: string[];
-    },
+    decorator: RawDecorator,
     field: RawFieldDefinition,
   ): FieldTypeInference | null {
     // @field decorator with type config
     if (decorator.name === 'field' && decorator.arguments.length > 0) {
-      const fieldOptions = this.parseFieldDecoratorOptions(
-        decorator.arguments[0],
-      );
+      const fieldOptions = this.parseFieldDecoratorOptions(decorator, 0);
       const type = this.normalizeFieldType(fieldOptions?.type);
 
       if (type) {
@@ -1120,9 +1118,7 @@ export class ManifestAdapter {
     // field as STI meta storage AND preserves opt-in options like `indexed`
     // so the manifest-only schema path can emit the JSON-path index.
     if (decorator.name === 'meta') {
-      const parsedOptions = this.parseFieldDecoratorOptions(
-        decorator.arguments[0],
-      );
+      const parsedOptions = this.parseFieldDecoratorOptions(decorator, 0);
       const hasDefaultValue = field.initializer !== null;
       const meta: Record<string, unknown> = {};
       if (parsedOptions?.indexed !== undefined)
@@ -1150,10 +1146,8 @@ export class ManifestAdapter {
       // reference, or a `() => Target` forward-reference thunk. sliceSource()
       // returns raw source text, so quotes and thunk syntax are unwrapped here
       // (issue #2379).
-      const relatedClass = resolveRelatedArgument(decorator.arguments[0]);
-      const parsedOptions = this.parseFieldDecoratorOptions(
-        decorator.arguments[1],
-      );
+      const relatedClass = this.relationshipTarget(decorator);
+      const parsedOptions = this.parseFieldDecoratorOptions(decorator, 1);
       const meta: Record<string, unknown> = {};
       const META_KEYS = [
         'required',
@@ -1200,9 +1194,7 @@ export class ManifestAdapter {
 
     // @tenantId({ nullable?, required?, autoFilter?, autoPopulate? }) decorator
     if (decorator.name === 'tenantId') {
-      const parsedOptions = this.parseFieldDecoratorOptions(
-        decorator.arguments[0],
-      );
+      const parsedOptions = this.parseFieldDecoratorOptions(decorator, 0);
       const nullable = parsedOptions?.nullable === true;
       const required =
         parsedOptions?.required !== undefined
@@ -1234,14 +1226,12 @@ export class ManifestAdapter {
 
     // @crossPackageRef('@pkg:Class', { validate?, unique?, nullable?, default?, description? }) decorator
     if (decorator.name === 'crossPackageRef') {
-      const qualifiedName = stripQuotes(decorator.arguments[0]?.trim());
+      const qualifiedName = this.textArgument(decorator, 0);
       const hasDefaultValue = field.initializer !== null;
       // Preserve every standard field option from the second argument so
       // manifest-only consumers generate the same schema/constraints that
       // the runtime decorator would produce.
-      const parsedOptions = this.parseFieldDecoratorOptions(
-        decorator.arguments[1],
-      );
+      const parsedOptions = this.parseFieldDecoratorOptions(decorator, 1);
       const meta: Record<string, unknown> = {};
       const META_KEYS = [
         'validate',
@@ -1285,13 +1275,11 @@ export class ManifestAdapter {
 
     // @oneToMany(RelatedClass, { foreignKey? }) decorator
     if (decorator.name === 'oneToMany') {
-      const relatedClass = resolveRelatedArgument(decorator.arguments[0]);
+      const relatedClass = this.relationshipTarget(decorator);
       // Preserve an explicit inverse `foreignKey` so manifest-only consumers
       // disambiguate the inverse side the same way the runtime decorator does
       // (needed when the target declares multiple FKs back to this class).
-      const parsedOptions = this.parseFieldDecoratorOptions(
-        decorator.arguments[1],
-      );
+      const parsedOptions = this.parseFieldDecoratorOptions(decorator, 1);
       const meta: Record<string, unknown> = {};
       if (parsedOptions?.foreignKey !== undefined) {
         meta.foreignKey = parsedOptions.foreignKey;
@@ -1307,12 +1295,10 @@ export class ManifestAdapter {
 
     // @manyToMany(RelatedClass, { through?, sourceKey?, targetKey? }) decorator
     if (decorator.name === 'manyToMany') {
-      const relatedClass = resolveRelatedArgument(decorator.arguments[0]);
+      const relatedClass = this.relationshipTarget(decorator);
       // Preserve junction-table coordinates so manifest-only consumers can
       // execute manyToMany loads without the decorator firing in-process.
-      const parsedOptions = this.parseFieldDecoratorOptions(
-        decorator.arguments[1],
-      );
+      const parsedOptions = this.parseFieldDecoratorOptions(decorator, 1);
       const meta: Record<string, unknown> = {};
       if (parsedOptions?.through !== undefined)
         meta.through = parsedOptions.through;
@@ -1332,15 +1318,24 @@ export class ManifestAdapter {
     return null;
   }
 
-  private extractFieldDecoratorOptions(
-    field: RawFieldDefinition,
-  ): FieldDecoratorOptions {
-    const options: FieldDecoratorOptions = {};
+  /**
+   * The options every decorator on `field` states, merged in source order.
+   *
+   * `stated` lists each option key the author wrote, including one whose
+   * value only exists at runtime (a `validate` callback): the manifest
+   * records that it was stated and carries no value for it. `options` holds
+   * the values the manifest can carry.
+   */
+  private extractFieldDecoratorOptions(field: RawFieldDefinition): {
+    options: FieldDecoratorOptions;
+    stated: string[];
+  } {
+    const merged: FieldDecoratorOptions = {};
 
     for (const decorator of field.decorators) {
       const reportMetadata = this.parseReportFieldDecorator(decorator, field);
       if (reportMetadata) {
-        options.__report = reportMetadata;
+        merged.__report = reportMetadata;
         continue;
       }
 
@@ -1350,31 +1345,43 @@ export class ManifestAdapter {
         'oneToMany',
         'manyToMany',
       ].includes(decorator.name)
-        ? decorator.arguments[1]
+        ? 1
         : ['field', 'meta'].includes(decorator.name)
-          ? decorator.arguments[0]
+          ? 0
           : undefined;
-      const parsed = this.parseFieldDecoratorOptions(optionArgument);
+      if (optionArgument === undefined) continue;
+      const parsed = this.parseFieldDecoratorOptions(
+        decorator,
+        optionArgument,
+        true,
+      );
       if (parsed) {
-        Object.assign(options, parsed);
+        Object.assign(merged, parsed);
       }
     }
 
-    return options;
+    const stated = Object.keys(merged).filter(
+      (key) => merged[key] !== undefined,
+    );
+    const options: FieldDecoratorOptions = {};
+    for (const [key, value] of Object.entries(merged)) {
+      if (value !== RUNTIME_ONLY_OPTION) options[key] = value;
+    }
+    return { options, stated };
   }
 
   private parseReportFieldDecorator(
-    decorator: { name: string; arguments: string[] },
+    decorator: RawDecorator,
     field: RawFieldDefinition,
   ): Record<string, unknown> | null {
     if (decorator.name === 'groupBy') {
-      const options = this.parseFieldDecoratorOptions(decorator.arguments[0]);
+      const options = this.parseFieldDecoratorOptions(decorator, 0);
       if (options && typeof options.expr === 'object' && options.expr) {
         return { kind: 'group', expr: options.expr };
       }
       return {
         kind: 'group',
-        sourceColumn: stripQuotes(decorator.arguments[0]?.trim()) ?? field.name,
+        sourceColumn: this.textArgument(decorator, 0) ?? field.name,
       };
     }
 
@@ -1388,7 +1395,7 @@ export class ManifestAdapter {
       'year',
     ]);
     if (bucketUnits.has(decorator.name)) {
-      const sourceColumn = stripQuotes(decorator.arguments[0]?.trim());
+      const sourceColumn = this.textArgument(decorator, 0);
       if (!sourceColumn) return null;
       return {
         kind: 'bucket',
@@ -1398,7 +1405,7 @@ export class ManifestAdapter {
     }
 
     if (decorator.name === 'aggregate') {
-      const parsed = this.parseFieldDecoratorOptions(decorator.arguments[0]);
+      const parsed = this.parseFieldDecoratorOptions(decorator, 0);
       if (!parsed?.fn || typeof parsed.fn !== 'string') return null;
       return {
         kind: 'aggregate',
@@ -1413,14 +1420,10 @@ export class ManifestAdapter {
 
     const aggregateNames = new Set(['sum', 'avg', 'min', 'max']);
     if (aggregateNames.has(decorator.name)) {
-      const firstOptions = this.parseFieldDecoratorOptions(
-        decorator.arguments[0],
-      );
-      const column = firstOptions
-        ? undefined
-        : stripQuotes(decorator.arguments[0]?.trim());
+      const firstOptions = this.parseFieldDecoratorOptions(decorator, 0);
+      const column = firstOptions ? undefined : this.textArgument(decorator, 0);
       const parsedOptions =
-        firstOptions ?? this.parseFieldDecoratorOptions(decorator.arguments[1]);
+        firstOptions ?? this.parseFieldDecoratorOptions(decorator, 1);
       return {
         kind: 'aggregate',
         fn: decorator.name,
@@ -1433,12 +1436,9 @@ export class ManifestAdapter {
     }
 
     if (decorator.name === 'count') {
-      const firstArg = decorator.arguments[0]?.trim();
-      const firstOptions = this.parseFieldDecoratorOptions(firstArg);
-      const secondOptions = this.parseFieldDecoratorOptions(
-        decorator.arguments[1],
-      );
-      const column = firstOptions ? undefined : stripQuotes(firstArg);
+      const firstOptions = this.parseFieldDecoratorOptions(decorator, 0);
+      const secondOptions = this.parseFieldDecoratorOptions(decorator, 1);
+      const column = firstOptions ? undefined : this.textArgument(decorator, 0);
       const options = firstOptions ?? secondOptions;
       return {
         kind: 'aggregate',
@@ -1468,17 +1468,106 @@ export class ManifestAdapter {
     return out;
   }
 
-  private parseFieldDecoratorOptions(
-    rawArgument: string | undefined,
-  ): FieldDecoratorOptions | null {
-    if (!rawArgument) return null;
-
-    const parsed = parseLiteralInitializer(rawArgument);
-    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
-      return null;
+  /**
+   * Argument `index` of `decorator` as a statically read value.
+   *
+   * The parser reads each argument from the AST into `argumentValues`, with
+   * a scan diagnostic for anything it cannot resolve. A hand-built decorator
+   * carries only source text, which is read with the same rules and throws on
+   * an unreadable value. Nothing is evaluated on either path.
+   */
+  private argumentValue(decorator: RawDecorator, index: number): unknown {
+    if (decorator.argumentValues) {
+      return decorator.argumentValues[index]?.value;
     }
+    return readStaticSource(
+      decorator.arguments[index],
+      `the arguments of @${decorator.name}()`,
+      runtimeOnlyFieldOptions(decorator.name),
+      fieldDecoratorArgumentKind(decorator.name, index) === 'options',
+    );
+  }
 
-    return parsed as FieldDecoratorOptions;
+  /**
+   * A string argument (a column, a qualified model name). A hand-built
+   * decorator's raw text is taken as written, minus its quotes.
+   */
+  private textArgument(
+    decorator: RawDecorator,
+    index: number,
+  ): string | undefined {
+    if (decorator.argumentValues) {
+      const value = decorator.argumentValues[index]?.value;
+      return typeof value === 'string' ? value : undefined;
+    }
+    // A hand-built decorator's text position holds a string literal, or an
+    // options object where the decorator takes one (read by the caller).
+    // Anything else (`QUALIFIED_NAME`, `STATUS`, `OPTIONS`) names a value this
+    // text cannot carry: never record the identifier as the value.
+    const raw = decorator.arguments[index]?.trim();
+    if (!raw) return undefined;
+    if (raw.startsWith('{')) {
+      // An options object here is read by the caller, and only where the
+      // decorator has an object overload (an aggregate's first argument).
+      if (index === 0 && AGGREGATE_OBJECT_FIRST.has(decorator.name)) {
+        return undefined;
+      }
+      throw new Error(
+        `@${decorator.name}() takes a string here, not an options object (\`${raw}\`).`,
+      );
+    }
+    const { value, unresolved } = parseStaticLiteralSource(raw);
+    if (unresolved.length === 0 && typeof value === 'string') return value;
+    throw new Error(
+      `Cannot statically resolve \`${raw}\` in the arguments of @${decorator.name}(). ` +
+        `A column or qualified name given as source text must be a string literal; ` +
+        `an identifier would be recorded as the value.`,
+    );
+  }
+
+  /**
+   * A relationship decorator's target class name: the statically read name
+   * when the parser found one, else the class reference or `() => Class`
+   * thunk named in the raw argument.
+   */
+  private relationshipTarget(decorator: RawDecorator): string | undefined {
+    const value = decorator.argumentValues?.[0]?.value;
+    if (typeof value === 'string') return value.trim() || undefined;
+    const raw = decorator.arguments[0]?.trim();
+    // An empty target names no model: the runtime decorator rejects it, so
+    // the manifest must not carry a relationship field without its edge. The
+    // parser reports it for parsed source; hand-built text throws here.
+    if (
+      !decorator.argumentValues &&
+      raw !== undefined &&
+      /^(['"`])\s*\1$/.test(raw)
+    ) {
+      throw new Error(
+        `@${decorator.name}() is given an empty target. Name the related model class.`,
+      );
+    }
+    return resolveRelatedArgument(decorator.arguments[0]);
+  }
+
+  /**
+   * The options object at argument `index`, or `null` when the argument is
+   * absent or is not an object. A runtime-only option (a callback) is left
+   * out unless `keepRuntimeOnly` is set, where it holds
+   * {@link RUNTIME_ONLY_OPTION}.
+   */
+  private parseFieldDecoratorOptions(
+    decorator: RawDecorator,
+    index: number,
+    keepRuntimeOnly = false,
+  ): FieldDecoratorOptions | null {
+    const value = this.argumentValue(decorator, index);
+    if (!isPlainRecord(value)) return null;
+    if (keepRuntimeOnly) return value as FieldDecoratorOptions;
+    const options: FieldDecoratorOptions = {};
+    for (const [key, entry] of Object.entries(value)) {
+      if (entry !== RUNTIME_ONLY_OPTION) options[key] = entry;
+    }
+    return options;
   }
 
   private normalizeFieldType(

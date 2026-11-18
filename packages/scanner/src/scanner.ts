@@ -140,6 +140,7 @@ export class OxcScanner {
   private resolver: InheritanceResolver;
   private scanResults: ScanResults | null = null;
   private recipeErrors: ScanError[] = [];
+  private resolutionErrors: ScanError[] = [];
   private outsideRecipes: RawRecipe[] = [];
 
   /**
@@ -293,6 +294,16 @@ export class OxcScanner {
 
     const resolved = this.resolver.resolveAll();
 
+    // Diagnostics that only exist once inheritance is known. They join the
+    // scan errors every caller already fails closed on. resolve() may run
+    // more than once; never report the same error twice.
+    const resolutionErrors = this.collectConfigErrors(resolved);
+    this.scanResults.errors = this.scanResults.errors.filter(
+      (error) => !this.resolutionErrors.includes(error),
+    );
+    this.resolutionErrors = resolutionErrors;
+    this.scanResults.errors.push(...resolutionErrors);
+
     // Recipes name model classes, so they resolve only once the classes do.
     // Their errors join the scan errors every caller already fails closed on.
     const raw = [
@@ -309,6 +320,29 @@ export class OxcScanner {
     this.scanResults.errors.push(...errors);
 
     return resolved;
+  }
+
+  /**
+   * Field-decorator and static-property diagnostics the parser held back on
+   * classes without `@smrt()` ({@link RawClassDefinition.configErrors}),
+   * for every class that turned out to reach the manifest: a resolved class
+   * itself, and each ancestor whose fields a single-table model merges in.
+   * A class that is not part of any model reports nothing.
+   */
+  private collectConfigErrors(
+    resolved: ResolvedClassDefinition[],
+  ): ScanError[] {
+    const errors = new Set<ScanError>();
+    for (const classDef of resolved) {
+      for (const error of classDef.configErrors ?? []) errors.add(error);
+      if (!classDef.isSTI) continue;
+      for (const ancestorName of classDef.inheritanceChain) {
+        if (ancestorName === classDef.className) continue;
+        const ancestor = this.resolver.findClassDefinition(ancestorName);
+        for (const error of ancestor?.configErrors ?? []) errors.add(error);
+      }
+    }
+    return [...errors];
   }
 
   /**

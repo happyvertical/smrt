@@ -54,6 +54,7 @@ export {
   parseFile,
   parseRecipeFile,
   parseSource,
+  RUNTIME_ONLY_OPTION,
 } from './oxc-parser.js';
 export {
   deriveHelpFieldRefs,

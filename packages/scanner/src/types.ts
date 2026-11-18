@@ -73,6 +73,20 @@ export interface RawClassDefinition {
    * (#3490); absent when the parser reports none.
    */
   bodyStart?: number;
+
+  /**
+   * Field-decorator and static-property values of THIS class that could not
+   * be read statically, held back because the class carries no `@smrt()`.
+   *
+   * Whether such a class is a model at all is only known once inheritance is
+   * resolved: an undecorated base whose fields a model inherits must fail the
+   * scan, while a plain helper class that happens to use a same-named
+   * decorator from another library must not. `OxcScanner.resolve()` moves
+   * these into `ScanResults.errors` for every class that reaches the
+   * manifest. A `@smrt()` class reports the same diagnostics directly in
+   * `FileScanResult.errors`, and this is absent.
+   */
+  configErrors?: ScanError[];
 }
 
 /**
@@ -163,18 +177,57 @@ export interface RawFieldDefinition {
 
   /** Start line in source */
   line: number;
+
+  /**
+   * Statically read initializer of a static property the manifest carries
+   * (`uiSlots`, `adminRoutes`, `signalSubscriptions`, `createEntries`).
+   * Present only for those names; an unreadable part is a scan diagnostic.
+   */
+  initializerValue?: { value: unknown };
 }
 
 /**
  * Raw decorator information
  */
 export interface RawDecorator {
-  /** Decorator name (e.g., "field", "foreignKey") */
+  /**
+   * Decorator name as exported (e.g., "field", "foreignKey"), whatever local
+   * name it was imported under: `import { field as f }` then `@f()` and
+   * `import * as core` then `@core.field()` both read as `field`.
+   */
   name: string;
 
   /** Raw arguments as strings */
   arguments: string[];
+
+  /**
+   * Each argument read statically from the AST, aligned with `arguments`.
+   *
+   * Set by the parser for the field decorators the scanner reads. An entry is
+   * `{ value }` when the argument is a static value (an options object, a
+   * column or target name), and `null` when it is deliberately not read as a
+   * value: a relationship target given as a class reference or `() => Class`
+   * thunk (resolved by name from `arguments`), or an argument that could not
+   * be resolved, for which a scan diagnostic was recorded.
+   *
+   * Absent on a hand-built `RawDecorator`; `ManifestAdapter` then reads
+   * `arguments` with the same static rules and throws on an unreadable value.
+   * Source text is never evaluated either way.
+   */
+  argumentValues?: RawDecoratorArgumentValue[];
 }
+
+/** One statically read decorator argument; see {@link RawDecorator.argumentValues}. */
+export type RawDecoratorArgumentValue = {
+  value: unknown;
+  /**
+   * For a relationship target given as an imported class: the module and
+   * export it was imported as. The scan confirms, through re-exports, that a
+   * scanned module exports a class under that name and records that class's
+   * own name; generation checks every target names a known class.
+   */
+  import?: { source: string; imported: string };
+} | null;
 
 /**
  * Raw method definition from OXC AST
