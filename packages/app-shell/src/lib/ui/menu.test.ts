@@ -25,6 +25,7 @@ describe('user menu', () => {
     expect(userMenuItems(0).map((i) => [i.label, i.href])).toEqual([
       ['Approvals', '/approvals'],
       ['History', '/history'],
+      ['Import workbook', '/import'],
     ]);
   });
 

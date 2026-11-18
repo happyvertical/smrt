@@ -272,3 +272,71 @@ describe.each([
     ).toMatchObject({ status: 'running', stopReason: null });
   });
 });
+
+describe('host effect assertion in a workflow check', () => {
+  it('allows a held claim and rejects a taken-over claim before another effect', async () => {
+    const db = await workflowDb('sqlite', JOB_CLASSES);
+    const jobs = await SmrtJobCollection.create({ db });
+    const { model } = scriptedModel(() => ({ output: { value: 1 } }));
+    const gate = deferred();
+    const entered = deferred();
+    let effects = 0;
+    const driver = driverFor(
+      db,
+      model,
+      definitionOf([
+        {
+          ...twoSteps[0],
+          check: async (_output, context) => {
+            await context.assertActive();
+            effects++;
+            entered.resolve();
+            await gate.promise;
+            await context.assertActive();
+            effects++;
+            return {};
+          },
+        },
+      ]),
+    );
+    const run = await driver.start({ ownerId: 'owner' });
+    const claim = await claimFor(jobs, run.id, `worker-${randomUUID()}`);
+    const working = driver.run(run.id, 'owner', {
+      fence: workflowClaimFence(claim),
+    });
+    await entered.promise;
+    await takeOver(jobs, claim);
+    gate.resolve();
+    await expect(working).rejects.toBeInstanceOf(AiRunClaimLostError);
+    expect(effects).toBe(1);
+    expect((await getAiRun(db, run.id))?.status).toBe('running');
+  });
+});
+it('checks the active duration budget before a long check applies a host effect', async () => {
+  const db = await workflowDb('sqlite', JOB_CLASSES);
+  const { model } = scriptedModel(() => ({ output: { value: 1 } }));
+  let effects = 0;
+  const driver = driverFor(
+    db,
+    model,
+    definitionOf([
+      {
+        ...twoSteps[0],
+        check: async (_output, context) => {
+          await new Promise((resolve) => setTimeout(resolve, 150));
+          await context.assertActive();
+          effects++;
+          return {};
+        },
+      },
+    ]),
+  );
+  const run = await driver.start({
+    ownerId: 'owner',
+    budget: { maxDurationMs: 100 },
+  });
+  const result = await driver.run(run.id, 'owner');
+  expect(result.status).toBe('stopped');
+  expect(result.stopReason).toBe('max_duration');
+  expect(effects).toBe(0);
+});

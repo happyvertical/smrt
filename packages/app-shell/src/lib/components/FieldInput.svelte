@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { FieldSpec, FormValue } from '$lib/ui/fields';
 import { recordLabel } from '$lib/ui/fields';
+import { minorToInput } from '$lib/ui/money';
 import type { ModelInfo, RecordRow } from '$lib/ui/types';
 
 interface Props {
@@ -34,7 +35,8 @@ const describedBy = $derived(
 );
 
 function hintFor(s: FieldSpec): string {
-  if (s.kind === 'money') return 'Amount, for example 12.50';
+  if (s.kind === 'money')
+    return `Amount${s.money ? ` in ${s.money.currency}` : ''}, for example ${minorToInput(125 * 10 ** Math.max(0, (s.money?.scale ?? 2) - 1), s.money?.scale)}`;
   if (s.kind === 'json') return 'JSON, for example {"a": 1}';
   return '';
 }

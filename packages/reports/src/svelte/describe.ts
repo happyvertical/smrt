@@ -260,6 +260,8 @@ export function reportFigures(
     groupLabel: (row: RuntimeReportResult['rows'][number]) => string;
     /** The measure's function, when the spec is known. */
     fn?: string;
+    /** Host-owned formatting, including units and precision. */
+    formatValue?: (value: number) => string;
   },
 ): ReportFigure[] {
   const { t, locale, currency } = options;
@@ -271,6 +273,7 @@ export function reportFigures(
     );
   if (values.length === 0) return [];
   const show = (value: number) =>
+    options.formatValue?.(value) ??
     reportCell(
       measure.type === 'integer' && !Number.isInteger(value)
         ? Math.round(value * 100) / 100

@@ -71,5 +71,6 @@ export function userMenuItems(pending = 0): UserMenuItem[] {
         : {}),
     },
     { id: 'history', href: '/history', label: 'History', badge: null },
+    { id: 'import', href: '/import', label: 'Import workbook', badge: null },
   ];
 }

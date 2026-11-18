@@ -28,6 +28,8 @@ exports the import surface. `src/index.ts` is the type-only root, and
 
 - `src/import/plan.ts`: `validatePlan` (closed shapes, JSON-cloned input, limits),
   `loadOrder`. Calculated expressions may read column fields only.
+- `src/import/plan-schema.ts`: exported `IMPORT_PLAN_SCHEMA` (shape); always pair
+  with `validatePlan` for graph/expression/source semantics.
 - `src/import/coerce.ts`: `coerceCell`, the one typing rule. Nothing is guessed.
 - `src/import/evaluate.ts`: reads and types every table; shared by `checkPlan` and
   `planLoad`. A row that fails never reaches a record.

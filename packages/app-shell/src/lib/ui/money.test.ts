@@ -27,3 +27,13 @@ describe('money', () => {
     expect(inputToMinor('')).toBeNull();
   });
 });
+
+it.each([
+  0, 3, 6,
+])('round trips scale %i without accepting excess precision', (scale) => {
+  const minor = 123456;
+  expect(inputToMinor(minorToInput(minor, scale), scale)).toBe(minor);
+  expect(
+    inputToMinor(scale ? `1.${'1'.repeat(scale + 1)}` : '1.1', scale),
+  ).toBeNull();
+});

@@ -25,6 +25,7 @@ export function reportCell(
     return formatTimeBucket(value, column.bucket as TimeBucketUnit, 'en-US');
   return cellText(
     {
+      ...(column.money ? { money: column.money } : {}),
       type:
         column.format === 'money'
           ? 'money'

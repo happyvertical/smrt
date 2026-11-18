@@ -163,6 +163,99 @@ describe.each(engines)('workflow runs on %s', (engine) => {
     expect(calls[0]?.options.signal).toBeInstanceOf(AbortSignal);
   });
 
+  it('records bounded structured schema and host diagnostics linked to the judged call', async () => {
+    const db = await workflowDb(engine);
+    const { model, calls } = byStep(0);
+    let first = true;
+    const issue = {
+      code: 'invalid-expression',
+      path: 'tables[0].fields[2].calculated',
+      message: `mul requires left and right. ${'x'.repeat(1100)}`,
+      repair: 'model-only fragment',
+    };
+    const driver = driverFor(
+      db,
+      model,
+      definitionOf([
+        {
+          ...twoSteps[0],
+          check: () => ({ complete: true, diagnostics: [issue] }),
+        },
+      ]),
+      {
+        validate: () => {
+          if (!first) return [];
+          first = false;
+          return [issue];
+        },
+      },
+    );
+    const run = await driver.start({
+      ownerId: 'owner',
+      budget: { repairRetries: 1 },
+    });
+    expect((await driver.run(run.id, 'owner')).status).toBe('done');
+    expect(calls[1]?.text).toContain('mul requires left and right');
+    expect(calls[1]?.text).toContain('model-only fragment');
+    const events = (await getRunTrajectory(db, run.id))!.entries
+      .map((e) => e.event)
+      .filter((e) => e?.type === 'check');
+    expect(events.map((e) => e?.status)).toEqual(['failed', 'passed']);
+    for (const event of events) {
+      expect(event?.parentEventId).toBeTruthy();
+      expect(JSON.stringify(event?.payload)).not.toContain(
+        'model-only fragment',
+      );
+      expect(event?.payload).toMatchObject({
+        diagnostics: [
+          {
+            code: issue.code,
+            path: issue.path,
+            message: issue.message.slice(0, 1000),
+          },
+        ],
+      });
+    }
+    const rejected = driverFor(db, model, definitionOf([twoSteps[0]]), {
+      validate: () => [issue],
+    });
+    const failed = await rejected.start({
+      ownerId: 'owner',
+      budget: { repairRetries: 0 },
+    });
+    expect((await rejected.run(failed.id, 'owner')).stopReason).toBe(
+      'repairs_exhausted',
+    );
+    expect((await readAiRunCheckpoint(db, failed.id))?.state).toMatchObject({
+      invalid: {
+        output: { value: 3 },
+        errors: [expect.stringContaining('invalid-expression')],
+      },
+    });
+    const many = driverFor(
+      db,
+      model,
+      definitionOf([
+        {
+          ...twoSteps[0],
+          check: () => ({
+            complete: true,
+            diagnostics: Array.from({ length: 20 }, () => issue),
+          }),
+        },
+      ]),
+    );
+    const large = await many.start({ ownerId: 'owner' });
+    await many.run(large.id, 'owner');
+    const event = (await getRunTrajectory(db, large.id))?.entries.find(
+      (e) => e.event?.type === 'check',
+    )?.event;
+    expect(event?.truncated).toBe(false);
+    expect(
+      new TextEncoder().encode(JSON.stringify(event?.payload)).byteLength,
+    ).toBeLessThan(9000);
+  });
+
   it('repairs invalid output on the same step instance, then fails with repairs_exhausted', async () => {
     const db = await workflowDb(engine);
     const { model, calls } = scriptedModel((_call, n) => ({

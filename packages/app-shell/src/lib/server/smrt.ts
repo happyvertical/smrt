@@ -19,6 +19,7 @@ import { prepareShellSchema } from './schema.ts';
 
 export const runtime = createSmrtSvelteKitRuntime({
   providerReadiness: createProviderReadinessProbe,
+  backgroundJobs: true,
   // Idempotent; creates the shell's tables (and the users/tenancy/profiles
   // tables) on an empty data directory. See schema.ts for the pending hook.
   prepareDatabase: async (db) => {

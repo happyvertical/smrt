@@ -1,4 +1,17 @@
+import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
 import type { Command } from './commands.ts';
+
+// Keep the advertised example checked by the owning grammar, rather than asking
+// an assistant to guess the shape of an untyped object.
+const reportExample = parseRuntimeReportSpec({
+  title: 'Open orders',
+  source: 'Orders',
+  measures: [
+    { fn: 'count', as: 'order_count' },
+    { fn: 'sum', field: 'total', as: 'order_total' },
+  ],
+  filters: [{ field: 'status', op: 'eq', value: 'Open' }],
+});
 
 // Transport-neutral engine tool schemas. Hosts own authorization and dispatch.
 const string = { type: 'string' };
@@ -73,7 +86,10 @@ export const ENGINE_TOOLS = [
     name: 'app_runreport',
     description: 'Run a saved report name or an ad-hoc declarative spec.',
     properties: {
-      report: { type: ['string', 'object'] },
+      report: {
+        type: ['string', 'object'],
+        description: `A saved report name or a report object. For an object, source is the exact model name from app_describe (case-sensitive), never a table or REST route. Fields are the exact camelCase field names. Use measures with fn/as and optional field; omit field for count. IMPORTANT: as is an output alias, not a source field. Output aliases must be unique lowercase_snake_case, at most 40 characters (for example order_count and order_total, NEVER orderCount or orderTotal). You may omit as to let the report choose safe aliases. Only source field names use camelCase. Filters use field/op/value. Example: ${JSON.stringify(reportExample)}`,
+      },
       maxRows: { type: 'integer', minimum: 1, maximum: 1000 },
       timeoutMs: { type: 'integer', minimum: 1, maximum: 10000 },
     },

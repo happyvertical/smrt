@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-app-shell",
-  "version": "0.62.1",
+  "version": "0.62.3",
   "description": "A smrt app that builds and runs a person's own smrt app from definitions",
   "type": "module",
   "engines": {
@@ -57,7 +57,12 @@
     "@happyvertical/smrt-web": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@modelcontextprotocol/server": "2.3.1",
-    "quickjs-emscripten": "0.31.0"
+    "quickjs-emscripten": "0.31.0",
+    "@happyvertical/spreadsheets": "catalog:",
+    "@happyvertical/smrt-spreadsheets": "workspace:*",
+    "@happyvertical/smrt-workflows": "workspace:*",
+    "@happyvertical/smrt-jobs": "workspace:*",
+    "ajv": "8.20.0"
   },
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",

@@ -480,6 +480,9 @@ importers:
       '@happyvertical/smrt-inference':
         specifier: workspace:*
         version: link:../inference
+      '@happyvertical/smrt-jobs':
+        specifier: workspace:*
+        version: link:../jobs
       '@happyvertical/smrt-preferences':
         specifier: workspace:*
         version: link:../preferences
@@ -495,6 +498,9 @@ importers:
       '@happyvertical/smrt-secrets':
         specifier: workspace:*
         version: link:../secrets
+      '@happyvertical/smrt-spreadsheets':
+        specifier: workspace:*
+        version: link:../spreadsheets
       '@happyvertical/smrt-svelte':
         specifier: workspace:*
         version: link:../smrt-svelte
@@ -510,12 +516,21 @@ importers:
       '@happyvertical/smrt-web':
         specifier: workspace:*
         version: link:../smrt-web
+      '@happyvertical/smrt-workflows':
+        specifier: workspace:*
+        version: link:../workflows
+      '@happyvertical/spreadsheets':
+        specifier: ^0.113.0
+        version: 0.113.0(supports-color@10.2.2)
       '@happyvertical/sql':
         specifier: ^0.113.0
         version: 0.113.0(@electric-sql/pglite@0.5.16)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@modelcontextprotocol/server':
         specifier: 2.3.1
         version: 2.3.1
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
       quickjs-emscripten:
         specifier: 0.31.0
         version: 0.31.0
@@ -4148,6 +4163,9 @@ importers:
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
       typescript:
         specifier: 6.0.3
         version: 6.0.3

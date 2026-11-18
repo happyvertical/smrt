@@ -43,6 +43,11 @@ See [turn-driver contracts and callback example](agents/turn-drivers.md),
 including MCP authorization responsibilities, engine status, and browser
 continuation limits.
 
+A host without chat storage can run a tool-free workflow child turn with
+`runWorkflowStepTurn` from the package root. It reuses the internal-turn run,
+handoff, tracked calls and parent budget/fence; the host supplies its engine
+and validates the returned JSON. See [child-turn accounting](agents/assistant-turn-runs.md).
+
 ## Data-surface bridge security
 
 The `./data-surface-bridge` entry point is the server half of the browser data-

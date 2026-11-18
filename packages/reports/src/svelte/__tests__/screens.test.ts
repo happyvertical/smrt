@@ -308,3 +308,26 @@ describe('host report display', () => {
     expect(document.querySelector('[href^="javascript:"]')).toBeNull();
   });
 });
+
+it('uses the host cell formatter for money chart figures and values', () => {
+  const custom = structuredClone(result);
+  custom.columns = [
+    {
+      id: 'amount',
+      label: 'Amount',
+      role: 'measure',
+      type: 'integer',
+      format: 'money',
+    },
+  ];
+  custom.rows = [{ amount: 1234 }];
+  custom.rowCount = 1;
+  custom.chart = { type: 'stat', y: ['amount'] };
+  render(ReportResult, {
+    result: custom,
+    variant: 'full',
+    formatCell: (value: unknown) => `${(Number(value) / 1000).toFixed(3)} CAD`,
+  });
+  expect(screen.getAllByText('1.234 CAD').length).toBeGreaterThan(1);
+  expect(document.body.textContent).not.toContain('$');
+});

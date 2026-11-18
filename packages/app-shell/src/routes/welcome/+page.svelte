@@ -14,7 +14,7 @@ import {
 
 let step = $state<1 | 2>(page.url.searchParams.get('step') === '2' ? 2 : 1);
 let ready = $state(false);
-let start = $state<'fresh' | 'wizard'>('fresh');
+let start = $state<'fresh' | 'wizard' | 'spreadsheet'>('fresh');
 let busy = $state(false);
 let error = $state('');
 let heading: HTMLHeadingElement | undefined = $state();
@@ -31,6 +31,11 @@ async function finish() {
   error = '';
   try {
     await completeFresh();
+    if (start === 'spreadsheet') {
+      await invalidateAll();
+      await goto('/import');
+      return;
+    }
     // Land in the shell with the assistant open and ready to use.
     await invalidateAll();
     await goto('/');
@@ -90,7 +95,7 @@ async function skip() {
       class="smrt-app-shell__card"
       onsubmit={(e) => {
         e.preventDefault();
-        if (start === 'fresh') void finish();
+        if (start !== 'wizard') void finish();
       }}
     >
       <fieldset>
@@ -100,6 +105,13 @@ async function skip() {
           <span>
             <strong>Fresh</strong>
             <span class="smrt-app-shell__muted">Start with an empty app. Tell the assistant what to build.</span>
+          </span>
+        </label>
+        <label class="smrt-app-shell__choice" class:smrt-app-shell__choice-on={start === 'spreadsheet'}>
+          <input type="radio" name="start" value="spreadsheet" bind:group={start} />
+          <span>
+            <strong>From a spreadsheet</strong>
+            <span class="smrt-app-shell__muted">Bring an Excel workbook into a draft, then review and publish it.</span>
           </span>
         </label>
         <label class="smrt-app-shell__choice smrt-app-shell__choice-off">
@@ -112,7 +124,7 @@ async function skip() {
       </fieldset>
       <div class="smrt-app-shell-welcome__actions">
         <button type="button" class="smrt-app-shell__btn" onclick={() => go(1)} disabled={busy}>Back</button>
-        <button type="submit" class="smrt-app-shell__btn smrt-app-shell__btn-primary" disabled={busy || start !== 'fresh'}>
+        <button type="submit" class="smrt-app-shell__btn smrt-app-shell__btn-primary" disabled={busy || start === 'wizard'}>
           {busy ? 'Starting…' : 'Start'}
         </button>
       </div>

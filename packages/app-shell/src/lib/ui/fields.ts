@@ -30,6 +30,7 @@ export interface FieldSpec {
   required: boolean;
   choices: string[];
   ref: string | null;
+  money?: FieldDef['money'];
 }
 
 export function inputKind(def: FieldDef): InputKind {
@@ -59,6 +60,7 @@ export function fieldSpec(name: string, def: FieldDef): FieldSpec {
     required: !!def.required,
     choices: def.choices ?? [],
     ref: def.ref ?? null,
+    ...(def.money ? { money: def.money } : {}),
   };
 }
 
@@ -91,7 +93,7 @@ export function toFormValue(def: FieldDef, v: unknown): FormValue {
     case 'boolean':
       return isTrue(v);
     case 'money':
-      return minorToInput(v);
+      return minorToInput(v, def.money?.scale);
     case 'date':
       return dateToInput(v);
     case 'json':
@@ -164,9 +166,12 @@ export function coerceInput(
         : { ok: false, error: 'Enter a whole number' };
     }
     case 'money': {
-      const minor = inputToMinor(text);
+      const minor = inputToMinor(text, def.money?.scale);
       return minor === null
-        ? { ok: false, error: 'Enter an amount like 12.50' }
+        ? {
+            ok: false,
+            error: `Enter an amount like ${minorToInput(12 * 10 ** (def.money?.scale ?? 2), def.money?.scale)}`,
+          }
         : { ok: true, value: minor };
     }
     case 'json':

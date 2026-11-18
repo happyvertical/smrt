@@ -284,3 +284,14 @@ to a removed id is repointed to keep; chosen writable values survive on keep.
 Raw originals and changed-column postimages are archived before updates/removals. Undo
 restores only changed columns and merged-away records; later deletions of merge source rows or conflicting edits refuse the whole undo. Referring records deleted later stay deleted and are skipped; undo returns `skipped` and includes that count in its summary (also aggregated by `undoTo`). A removed id reused since the merge also refuses. Draft publish
 recomputes affected references on current live data. No arbitrary SQL is accepted.
+
+## Workbook target (#5034)
+
+`createEngineImportTarget(draft)` uses replayable data commands and the shared
+spreadsheet contract. Names reverse through the retained plan. Temporary source
+row/lookup fields are hidden by `seal()` before the workflow releases its draft
+hold; source-row read-back remains bounded through `readStoredRows` (engine-only,
+no tool surface). Preflight refuses unsupported calculations before loading.
+The 10,000-row fixture rehearses publishing all 500-row command versions under
+unchanged journal caps. See [imports](imports.md). `defineModel.titleField`
+preserves the workbook's explicit display field.

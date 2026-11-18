@@ -191,3 +191,33 @@ describe('method parameters in the generated tool schema', () => {
     });
   });
 });
+
+it('validates optional per-field money units without changing legacy defaults', () => {
+  const definition = (money: unknown) =>
+    app({ Amount: { fields: { value: { type: 'money', money } as never } } });
+  expect(validate(definition({ currency: 'JPY', scale: 0 }))).toEqual([]);
+  for (const money of [
+    null,
+    { currency: 'CAD', scale: -1 },
+    { currency: 'USD', scale: 7 },
+    { currency: 'dollars', scale: 2 },
+  ])
+    expect(validate(definition(money)).length).toBeGreaterThan(0);
+  expect(
+    validate(app({ Amount: { fields: { value: { type: 'money' } } } })),
+  ).toEqual([]);
+});
+
+it('explains which money units are missing and rejects units on other types', () => {
+  const definition = (type: string, money: unknown) =>
+    app({ Amount: { fields: { value: { type, money } as never } } });
+  expect(validate(definition('money', { scale: 2 })).join(' ')).toContain(
+    'three-letter currency',
+  );
+  expect(
+    validate(definition('money', { currency: 'CAD' })).join(' '),
+  ).toContain('decimal places from 0 to 6');
+  expect(
+    validate(definition('text', { currency: 'CAD', scale: 2 })).join(' '),
+  ).toContain('only money fields can have currency and decimal places');
+});

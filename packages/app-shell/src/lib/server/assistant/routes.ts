@@ -21,12 +21,7 @@ import type {
 } from '../../assistant/events.ts';
 import { tokenCredentials } from '../agent-cli/credentials.ts';
 import { type AgentCliStatus, locateCli } from '../agent-cli/detect.ts';
-import {
-  agentCliDeps,
-  asSettingsOwner,
-  assistantSettings,
-  cliStatus,
-} from '../agent-cli/service.ts';
+import { agentCliDeps, cliStatus } from '../agent-cli/service.ts';
 import type { AgentTool } from '../agent-cli/tools.ts';
 import { dataRoot } from '../host.ts';
 import {
@@ -40,7 +35,7 @@ import {
 import { runAs } from '../owner.ts';
 import { type AgentEngineDeps, runAgentTurn } from './agent-turn.ts';
 import { type AssistantConfigOptions, unavailableBody } from './config.ts';
-import { cliTool, statusFor } from './engine.ts';
+import { assistantEngine, cliTool, statusFor } from './engine.ts';
 import type { holdForUser } from './hold.ts';
 import { type AssistantModelFactory, createAiModelFactory } from './model.ts';
 import {
@@ -68,7 +63,7 @@ export interface AssistantRoutesOptions extends AssistantConfigOptions {
 }
 
 /** Production wiring of the CLI engine: this app's runtime and data root. */
-function productionAgent(): AgentEngineDeps {
+export function productionAgent(): AgentEngineDeps {
   return {
     locate: (tool) => locateCli(tool, agentCliDeps()),
     credentials: tokenCredentials(async () => {
@@ -109,12 +104,7 @@ export function mountAssistantRoutes(
     options.cliStatus ?? ((tool: AgentTool) => cliStatus(tool));
   const agent = (): AgentEngineDeps => (options.agent ??= productionAgent());
   const engineOf = (owner: Parameters<typeof runAs>[0]) =>
-    options.engine
-      ? options.engine()
-      : asSettingsOwner(
-          owner,
-          async () => (await assistantSettings().read()).engine,
-        );
+    options.engine ? options.engine() : assistantEngine(owner);
 
   return {
     status: guard(async (event) => {

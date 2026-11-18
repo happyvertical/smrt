@@ -123,3 +123,20 @@ driver wiring on every job (after a restart nothing lives in a closure); its
   job (the run is then failed on the next read), so create every
   definition's host in each process that registers the handler, or give
   definitions their own queues. Upgrade every runner before enqueueing.
+
+## Host effects during a check
+
+`WorkflowCheckContext.assertActive()` checks the abort signal, job claim and
+running status through the driver's serialized accounting transaction. Call it
+before each host effect in a long check. It throws `AiRunClaimLostError` for a
+taken-over worker and `AiRunStoppedError` after a stop/cancel or active-duration budget stop. The assertion is
+a boundary check, not a transaction spanning another database: effects must
+still be safe to repeat and isolated by their host's durable identity.
+
+Checks may return `diagnostics: {code,path,message}[]`. The host's `validate`
+callback may return these objects alongside existing string errors. Structured
+issues are recorded on failed schema checks and host checks, linked to the
+judged call/handoff. At most 20 issues are kept (code 80, path 300, message
+1000 characters, 8 KiB total); repair input receives the same bounded details. An optional
+`repair` hint (4000 characters) is checkpoint/model-only, excluded from events. Hosts must
+supply safe validation text, never credentials or source data/fragments.

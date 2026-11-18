@@ -24,6 +24,7 @@ export {
   type FindingCode,
   MAX_EXAMPLES,
 } from './findings.js';
+export { type UntranslatedFormula, untranslatedFormulas } from './formulas.js';
 export {
   DEFAULT_IMPORT_LIMITS,
   DEFAULT_MAX_CELLS,
@@ -47,6 +48,7 @@ export {
   type ImportPlan,
   loadOrder,
   PLAN_KEY_PATTERN,
+  PLAN_VALUE_LIMITS,
   type PlanField,
   type PlanLimits,
   type PlanReference,
@@ -54,6 +56,12 @@ export {
   type PlanTable,
   validatePlan,
 } from './plan.js';
+export {
+  IMPORT_PLAN_EXAMPLES,
+  IMPORT_PLAN_GUIDE,
+  importPlanRule,
+} from './plan-grammar.js';
+export { IMPORT_PLAN_SCHEMA } from './plan-schema.js';
 export {
   type RunImportOptions,
   type RunImportResult,

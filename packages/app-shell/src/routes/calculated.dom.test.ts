@@ -248,3 +248,44 @@ it('resets sorting when navigating to another model with different fields', asyn
     list.$destroy();
   }
 });
+
+it.each([
+  ['JPY', 0, 1000, '1000'],
+  ['USD', 3, 1234, '1.234'],
+  ['CAD', 2, 1250, '12.50'],
+] as const)('edits imported %s scale %i without changing units', async (currency, scale, minor, input) => {
+  const d = data();
+  d.models.Customer.fields = {
+    amount: { type: 'money', label: 'Amount', money: { currency, scale } },
+  };
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () => new Response(JSON.stringify({ id: 'c1', amount: minor })),
+    ),
+  );
+  component = mount(RecordForm, {
+    target: container,
+    props: {
+      model: 'Customer',
+      description: d,
+      record: { id: 'c1', amount: minor },
+    },
+  });
+  await tick();
+  const control = container.querySelector<HTMLInputElement>('input')!;
+  expect(control.value).toBe(input);
+  expect(container.textContent).toContain(`Amount in ${currency}`);
+  control.value = String(Number(input) + 1);
+  control.dispatchEvent(new Event('input', { bubbles: true }));
+  await tick();
+  container
+    .querySelector('form')!
+    .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
+  expect(
+    JSON.parse(
+      (vi.mocked(fetch).mock.calls[0][1] as RequestInit).body as string,
+    ),
+  ).toEqual({ amount: minor + 10 ** scale });
+});
