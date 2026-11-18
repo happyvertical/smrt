@@ -229,7 +229,8 @@ with the root database handle, never one that is already inside a transaction
 
 ## Extending Employment
 
-Declare a same-named subclass over the `employments` table in the application,
+Declare a same-named subclass over the `employments` table in the application
+with `@smrt({ replaceParent: true, ... })` (core `agents/app-subclasses.md`),
 restating the fields and the closed surface, and add application fields there
 (teamworks-os keeps succession rank and acting-role fields this way). Only one
 inheritance family may share a table; the deepest same-named subclass wins.
