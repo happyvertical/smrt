@@ -52,6 +52,7 @@ import {
   assertPackageRelativeFilePaths,
   relativizeManifestFilePaths,
 } from '../manifest/file-paths.js';
+import { retainInstalledCarriedEntries } from '../manifest/installed-package-manifest.js';
 import {
   createObjectDeclarationIndex,
   selectObjectDeclarations,
@@ -741,10 +742,10 @@ function readManifestDependencies(
  *
  * The local scan is authoritative for the objects it owns — a deleted local
  * object must disappear from the file — so only entries owned by another
- * package are carried forward, and a local entry wins any key collision. As
- * with the consumer plugin's merge, `.smrt/` is a build cache: dropping a
- * package from `smrtConsumer()` leaves its stale entries until the directory
- * is removed and the project rebuilt.
+ * package are carried forward, and a local entry wins any key collision. A
+ * carried entry is dropped once its provider is no longer installed, no
+ * longer declares it, or is installed at another version than it records
+ * (#5035).
  *
  * `smrtDependencies` is merged the same way and for the same reason. The
  * consumer writer owns that list too — `aggregateTypeManifests()` seeds it
@@ -791,12 +792,19 @@ function mergeExternalManifestEntries(
     localPackageNames.add(existing.packageName);
   }
 
-  const preserved: SmartObjectManifest['objects'] = {};
+  const carried: SmartObjectManifest['objects'] = {};
   for (const [name, entry] of Object.entries(existing.objects)) {
     if (!isLocallyOwnedManifestEntry(entry, localPackageNames)) {
-      preserved[name] = entry;
+      carried[name] = entry;
     }
   }
+  // A carried entry survives only while its provider is installed, declares
+  // it and has its recorded version: otherwise a model removed from a
+  // consumed package would stay in the file schema commands read (#5035).
+  const preserved = retainInstalledCarriedEntries(
+    carried,
+    dirname(dirname(manifestPath)),
+  ).retained;
 
   const scannedDependencies = new Set(readManifestDependencies(manifest));
   const mergedDependencies = new Set([

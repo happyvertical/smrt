@@ -310,7 +310,17 @@ re-reading or re-hashing the lockfile (module-private, no new export).
 at that explicit root, including installed providers and external base classes;
 omitting the argument retains the current-working-directory
 behavior. Both manifest writers retain declared package dependencies when merging
-their local and consumed-object projections.
+their local and consumed-object projections. A consumed package's entry carried
+forward from the previous `.smrt/manifest.json` is kept only while its provider
+is installed (nearest `node_modules` at or above the project), its installed
+manifest declares it, and the installed version is the one it records
+(`retainInstalledCarriedEntries`, `manifest/installed-package-manifest.ts`,
+#5035). When the consumer's write has just aggregated a provider, that
+provider's declarations decide alone, including an empty set and an
+executable-only (`static-manifest.js`) provider whose manifest the JSON check
+cannot read; that module is imported at its current file revision, so a
+provider rebuilt in place between two builds in one process is re-read; otherwise a model removed from a consumed package stays in the file
+schema commands read.
 
 Test manifests carry `artifactPurpose: 'test'` and are valid only as the active
 test manifest of the run that registered them. Every other reader refuses them
