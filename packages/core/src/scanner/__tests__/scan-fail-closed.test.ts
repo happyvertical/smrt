@@ -163,6 +163,92 @@ describe('field decorator options in the generated manifest', () => {
   });
 });
 
+describe('configuration forms applications rely on', () => {
+  it('keeps a feature table spread into a nested option', async () => {
+    const { entry } = await build({
+      'src/models/setting.ts': `${CORE}
+export const FAIL_CLOSED_FEATURES = {
+  'time.paid_break': { defaultEnabled: false, label: 'Paid break' },
+  'time.offline_punch': { defaultEnabled: true, label: 'Offline punch' },
+} as const;
+@smrt({
+  tableName: 'fail_closed_settings',
+  api: { include: [] },
+  features: { ...FAIL_CLOSED_FEATURES },
+})
+export class FailClosedSetting extends SmrtObject {
+  key = '';
+}`,
+    });
+
+    expect(entry('FailClosedSetting')?.decoratorConfig.features).toEqual({
+      'time.paid_break': { defaultEnabled: false, label: 'Paid break' },
+      'time.offline_punch': { defaultEnabled: true, label: 'Offline punch' },
+    });
+  });
+
+  it('keeps a pattern literal as a validation rule beside its other options', async () => {
+    const { entry } = await build({
+      'src/models/order.ts': `${CORE}
+@smrt()
+export class FailClosedOrder extends SmrtObject {
+  @field({ required: true, maxLength: 16, pattern: /^(draft|published)$/ })
+  status = 'draft';
+}`,
+    });
+    const order = entry('FailClosedOrder');
+
+    expect(order?.fields.status).toMatchObject({
+      required: true,
+      maxLength: 16,
+    });
+    expect(order?.validationRules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: 'status',
+          rule: 'pattern',
+          value: '^(draft|published)$',
+        }),
+        expect.objectContaining({ field: 'status', rule: 'maxLength' }),
+      ]),
+    );
+    // The serialized manifest carries the pattern in the form it always has.
+    expect(
+      JSON.parse(JSON.stringify(order?.fields.status._meta)).pattern,
+    ).toEqual({});
+  });
+
+  it('keeps a relationship whose target is a class reference', async () => {
+    const { entry } = await build({
+      'src/models/run.ts': `${CORE}\n@smrt()\nexport class FailClosedRun extends SmrtObject { name = ''; }`,
+      'src/models/order.ts': `${CORE}
+import { FailClosedRun } from './run.js';
+@smrt()
+export class FailClosedOrder extends SmrtObject {
+  @foreignKey(FailClosedRun, { nullable: true, onDelete: 'RESTRICT' })
+  runId: string | null = null;
+  @foreignKey(() => FailClosedRun)
+  lazyRunId = '';
+}`,
+    });
+    const order = entry('FailClosedOrder');
+
+    expect(order?.fields.runId).toMatchObject({
+      type: 'foreignKey',
+      related: 'FailClosedRun',
+      required: false,
+    });
+    expect(order?.fields.runId._meta).toMatchObject({
+      nullable: true,
+      onDelete: 'RESTRICT',
+    });
+    expect(order?.fields.lazyRunId.related).toBe('FailClosedRun');
+    expect(Object.keys(order?.schema?.columns ?? {})).toEqual(
+      expect.arrayContaining(['run_id', 'lazy_run_id']),
+    );
+  });
+});
+
 describe('classes that share a name in the generated manifest', () => {
   const MODEL = `${CORE}\n@smrt()\nexport class FailClosedInvoice extends SmrtObject {\n  total = 0;\n}`;
 
