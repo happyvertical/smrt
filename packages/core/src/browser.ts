@@ -764,6 +764,12 @@ export type {
 } from './system/types';
 // Table existence verification cache (for test setup reset)
 export { resetVerifiedTables } from './table-cache';
+// Identifier arguments of generated tools are checked before use.
+export {
+  identifierArgument,
+  requireIdentifierArgument,
+  ToolArgumentError,
+} from './tool-arguments';
 // AI function calling tools
 export * from './tools/index';
 export {
@@ -817,6 +823,7 @@ export {
 } from './utils/qualified-names';
 export {
   applyWhereScope,
+  assertGetFilter,
   effectiveWhereOperator,
   mergeOwnedWhere,
   normalizeWhereKey,

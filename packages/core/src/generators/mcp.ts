@@ -41,6 +41,10 @@ import {
   subscribeRuntimeExposure,
 } from '../runtime-exposure.js';
 import type { FieldDefinition, MethodDefinition } from '../scanner/types.js';
+import {
+  identifierArgument,
+  requireIdentifierArgument,
+} from '../tool-arguments';
 import { resolveDisplayLabelField } from '../ui-metadata.js';
 import {
   isQualifiedName,
@@ -2054,11 +2058,13 @@ export class MCPGenerator {
       }
 
       case 'get': {
-        if (!args.id && !args.slug) {
-          throw new Error('Either id or slug is required');
-        }
-
-        const filter = (args.id ? args.id : args.slug) as string;
+        // An identifier is a non-empty string; any other value is refused
+        // before it can be read as a filter.
+        const filter = requireIdentifierArgument(
+          args,
+          ['id', 'slug'],
+          'Either id or slug is required',
+        );
         const item = await collection.get(filter);
 
         if (!item) {
@@ -2090,10 +2096,11 @@ export class MCPGenerator {
       }
 
       case 'update': {
-        const id = args.id as string | undefined;
-        if (!id) {
-          throw new Error('ID is required for update');
-        }
+        const id = requireIdentifierArgument(
+          args,
+          ['id'],
+          'ID is required for update',
+        );
 
         const existing = await collection.get(id);
         if (!existing) {
@@ -2125,16 +2132,18 @@ export class MCPGenerator {
       }
 
       case 'delete': {
-        if (!args.id) {
-          throw new Error('ID is required for delete');
-        }
+        const id = requireIdentifierArgument(
+          args,
+          ['id'],
+          'ID is required for delete',
+        );
 
-        const toDelete = await collection.get(args.id as string);
+        const toDelete = await collection.get(id);
         if (!toDelete) {
           throw new Error('Object not found');
         }
 
-        await collection.delete(args.id as string);
+        await collection.delete(id);
 
         return { success: true, message: 'Object deleted successfully' };
       }
@@ -2208,7 +2217,9 @@ export class MCPGenerator {
     args: ToolArgs,
     objectName?: string,
   ): Promise<unknown> {
-    const id = args.id;
+    // The row a custom action runs on is named by a string id, like every
+    // other tool's.
+    const id = identifierArgument(args, 'id');
     const [methodName, methodDef] = objectName
       ? resolveCustomActionMethod(
           await ObjectRegistry.getAllMethods(objectName),
@@ -2237,7 +2248,7 @@ export class MCPGenerator {
 
       // If an ID is provided, get the specific object and call the method on it
       if (id) {
-        const object = await collection.get(id as string);
+        const object = await collection.get(id);
         if (!object) {
           throw new Error('Object not found');
         }
@@ -2758,16 +2769,14 @@ ${indent}}`;
 
             case 'get':
               return `${indent}case '${tool.name}': {
-${indent}  if (!args.id && !args.slug) {
-${indent}    throw new Error('Either id or slug is required');
-${indent}  }
+${indent}  // An identifier is a non-empty string; any other value is refused.
+${indent}  const filter = requireIdentifierArgument(args, ['id', 'slug'], 'Either id or slug is required');
 
 ${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(lookup)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
 
-${indent}  const filter = args.id || args.slug;
 ${indent}  const item = await collection.get(filter);
 
 ${indent}  if (!item) {
@@ -2788,10 +2797,8 @@ ${indent}}`;
 
             case 'update':
               return `${indent}case '${tool.name}': {
-${indent}  const { id, ...updateData } = args;
-${indent}  if (!id) {
-${indent}    throw new Error('ID is required for update');
-${indent}  }
+${indent}  const { id: _id, ...updateData } = args;
+${indent}  const id = requireIdentifierArgument(args, ['id'], 'ID is required for update');
 
 ${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(lookup)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
@@ -2814,21 +2821,19 @@ ${indent}}`;
 
             case 'delete':
               return `${indent}case '${tool.name}': {
-${indent}  if (!args.id) {
-${indent}    throw new Error('ID is required for delete');
-${indent}  }
+${indent}  const id = requireIdentifierArgument(args, ['id'], 'ID is required for delete');
 
 ${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(lookup)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
 
-${indent}  const toDelete = await collection.get(args.id);
+${indent}  const toDelete = await collection.get(id);
 ${indent}  if (!toDelete) {
 ${indent}    throw new Error('Object not found');
 ${indent}  }
 
-${indent}  await collection.delete(args.id);
+${indent}  await collection.delete(id);
 
 ${indent}  return successResult({ success: true, message: 'Object deleted successfully' });
 ${indent}}`;
@@ -2871,7 +2876,8 @@ ${indent}}`;
                       )
                       .join(', ')}]`;
               return `${indent}case '${tool.name}': {
-${indent}  const { id, options, ...directArgs } = args;
+${indent}  const { id: _id, options, ...directArgs } = args;
+${indent}  const id = identifierArgument(args, 'id');
 
 ${indent}  if (${JSON.stringify(metadata.scope)} === 'item' && !id) {
 ${indent}    throw new Error(${JSON.stringify(`ID is required for custom action ${action}`)});
@@ -2961,7 +2967,7 @@ ${indent}}`;
 
 import { ObjectRegistry, normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY } from '@happyvertical/smrt-core';
 import { hasRuntimeExposureGate, isRuntimeModelEnabled } from '@happyvertical/smrt-core';
-import { applyUpdateInput, assertQueryAccess, publicSerializerOf, toPublicJSONValue } from '@happyvertical/smrt-core';
+import { applyUpdateInput, assertQueryAccess, identifierArgument, publicSerializerOf, requireIdentifierArgument, toPublicJSONValue } from '@happyvertical/smrt-core';
 import { COOKBOOK_TOOL_NAMES, getCookbookToolService } from '@happyvertical/smrt-core/cookbook/tools';
 ${hasTenantScoped ? "import { enableTenancy, runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}${
   hasTenantScoped
