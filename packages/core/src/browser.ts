@@ -288,6 +288,9 @@ export {
 } from './embedded-write-queue';
 // Embeddings support (semantic search)
 export * from './embeddings/index';
+// Public error contract (#5158). Import-free and browser-safe; keep this
+// line identical in index.ts and browser.ts.
+export * from './error-contract';
 export * from './errors';
 // Filesystem boundary (keeps @happyvertical/files out of neutral bundles)
 export {
