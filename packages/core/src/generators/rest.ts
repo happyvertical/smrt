@@ -8,6 +8,14 @@ import { getRegistryGeneration } from '../registry/generation.js';
 import http from 'node:http';
 import { getTableVersion } from '../change-feed';
 import type { SmrtCollection, SmrtCollectionOptions } from '../collection';
+import {
+  assertCreateTargetSurface,
+  CreateTargetError,
+  type FamilyRowOperation,
+  isFamilyRowServed,
+  servedFamilyTypes,
+} from '../create-target';
+import { resolveDispatchTenantId } from '../dispatch';
 import { ConfigurationError } from '../errors';
 import type { PublicJsonOptions, SmrtObject } from '../object';
 import { publicSerializerOf } from '../public-json';
@@ -26,7 +34,12 @@ import type {
   RegisteredField,
   SmrtObjectConstructor,
 } from '../registry/types';
-import { applyUpdateInput } from '../request-input';
+import {
+  applyUpdateInput,
+  assertCreateInput,
+  assertUpdateInput,
+  modelOfInstance,
+} from '../request-input';
 import {
   hasRuntimeExposureGate,
   isRuntimeModelEnabled,
@@ -153,9 +166,11 @@ export interface APIConfig {
    * Every operation on a tenant-scoped model runs inside the tenant gate, the
    * same one the in-process MCP generator uses. The gate needs to know, per
    * request, which tenant the caller belongs to; the generator cannot derive
-   * that from a `Request`, so the host says. It is called after
-   * `authMiddleware` admitted the request, with the request that middleware
-   * returned, and only for tenant-scoped models.
+   * that from a `Request`, so the host says. It is called once for every
+   * admitted request (and once per sync item), whatever the model, after
+   * `authMiddleware` admitted it, with the request that middleware returned:
+   * the runtime exposure gate and STI create targets read the same tenant.
+   * Return `{}` for a caller with no tenant; do not throw.
    *
    * - `{ tenantId }` runs the operation inside that tenant.
    * - `{ allowCrossTenant: true }` runs it across tenants. Only for a
@@ -167,7 +182,9 @@ export interface APIConfig {
    * from request input. When omitted, the fixed {@link APIContext.tenantId} /
    * {@link APIContext.allowCrossTenant} are used, which suits a server that
    * serves one tenant. A host that already runs the handler inside a tenant
-   * context (`withTenant(...)`) needs neither: an active context is kept.
+   * context (`withTenant(...)`) needs neither: an active context is kept, and
+   * the exposure gate reads it too. Naming a different tenant than that
+   * context is refused with 403.
    *
    * @example
    * ```typescript
@@ -379,6 +396,12 @@ interface ResolvedRequestTenant {
   tenantId: string | null;
   allowCrossTenant: boolean;
   authenticated: boolean;
+  /**
+   * The tenant the request acts in: `tenantId`, else the tenant context the
+   * host already entered. What the exposure gate and create targets read, so
+   * they see the tenant persistence runs in.
+   */
+  effectiveTenantId: string | null;
 }
 
 /**
@@ -417,6 +440,16 @@ export class APIGenerator {
   private manifestGeneration = -1;
   /** Models auto-discovery may serve; every registered model when unset. */
   private readonly modelScope: ReadonlySet<string> | undefined;
+  /** Per-request tenant answers; see `requestTenant()`. */
+  private readonly requestTenants = new WeakMap<
+    Request,
+    Promise<ResolvedRequestTenant>
+  >();
+  /** The settled answers of `requestTenants`, for synchronous read paths. */
+  private readonly settledTenants = new WeakMap<
+    Request,
+    ResolvedRequestTenant
+  >();
   private segmentIndex:
     | { generation: number; entries: Map<string, CollectionSegmentEntry> }
     | undefined;
@@ -752,32 +785,13 @@ export class APIGenerator {
 
       const objectName = this.getCollectionObjectName(collection) || objectType;
 
-      if (
-        !isRuntimeModelEnabled(ObjectRegistry.getExposureModel(objectName), {
-          surface: 'rest',
-          tenantId: this.context.tenantId,
-          request: req,
-        })
-      ) {
-        return this.createErrorResponse(404, 'Not found');
-      }
-      // Apply auth middleware if configured
-      if (this.config.authMiddleware) {
-        const authCheck = this.config.authMiddleware(
-          objectName,
-          req.method.toLowerCase(),
-        );
-        const authResult = await authCheck(req);
-        if (authResult instanceof Response) {
-          return authResult; // Auth failed
-        }
-        // Auth passed, use the potentially modified request
-        req = authResult;
-      } else if (!this.isRoutePublic(objectName, req.method)) {
-        // Fail-closed (#1540): no auth middleware wired and the object isn't
-        // marked `@smrt({ api: { public } })` → refuse rather than serve open.
-        return this.createErrorResponse(401, 'Authentication required');
-      }
+      const admitted = await this.admitObjectRequest(
+        req,
+        objectName,
+        ObjectRegistry.getExposureModel(objectName),
+      );
+      if (admitted instanceof Response) return admitted;
+      req = admitted;
 
       // Use registered collection directly
       return await this.executeCrudOperation(
@@ -800,35 +814,13 @@ export class APIGenerator {
       );
     }
 
-    if (
-      !isRuntimeModelEnabled(classInfo, {
-        surface: 'rest',
-        tenantId: this.context.tenantId,
-        request: req,
-      })
-    ) {
-      return this.createErrorResponse(404, 'Not found');
-    }
     // Every policy lookup below uses the model's qualified registry key. Two
     // packages may declare models with the same simple name; a simple name
     // resolves to whichever registered first.
     const objectName = registryKeyOf(classInfo);
-    // Apply auth middleware if configured
-    if (this.config.authMiddleware) {
-      const authCheck = this.config.authMiddleware(
-        objectName,
-        req.method.toLowerCase(),
-      );
-      const authResult = await authCheck(req);
-      if (authResult instanceof Response) {
-        return authResult; // Auth failed
-      }
-      // Auth passed, use the potentially modified request
-      req = authResult;
-    } else if (!this.isRoutePublic(objectName, req.method)) {
-      // Fail-closed (#1540): see registered-collection branch above.
-      return this.createErrorResponse(401, 'Authentication required');
-    }
+    const admitted = await this.admitObjectRequest(req, objectName, classInfo);
+    if (admitted instanceof Response) return admitted;
+    req = admitted;
 
     // Get or create collection
     const collection = await this.getCollection(classInfo);
@@ -855,13 +847,38 @@ export class APIGenerator {
     // Every operation on a tenant-scoped model runs inside the tenant gate.
     let tenant: ResolvedRequestTenant | undefined;
     try {
-      tenant = await this.resolveRequestTenant(req, objectName);
-      return await this.runInTenantGate(
-        objectName,
-        tenant,
-        req.method === 'GET' || req.method === 'HEAD',
-        () =>
-          this.routeCrudOperation(req, collection, objectId, url, objectName),
+      tenant = this.isTenantScopedModel(objectName)
+        ? await this.requestTenant(req)
+        : undefined;
+      const read = req.method === 'GET' || req.method === 'HEAD';
+      // A read by a caller with no tenant runs outside the gate only for the
+      // CRUD read handlers, which scope it to global rows themselves. A
+      // custom action has no such scope, so it runs inside the gate, which
+      // refuses it when tenancy is enabled.
+      const tenantless =
+        read && !!tenant && !tenant.tenantId && !tenant.allowCrossTenant;
+      const gateCustomAction = <T>(action: () => Promise<T>): Promise<T> =>
+        tenantless && objectName
+          ? runWithTenantGate(
+              {
+                className: objectName,
+                tenantScoped: true,
+                tenantId: null,
+                allowCrossTenant: false,
+                surface: 'REST',
+              },
+              action,
+            )
+          : action();
+      return await this.runInTenantGate(objectName, tenant, read, () =>
+        this.routeCrudOperation(
+          req,
+          collection,
+          objectId,
+          url,
+          objectName,
+          gateCustomAction,
+        ),
       );
     } catch (error) {
       const refusal = tenantRefusal(error, tenant?.authenticated);
@@ -880,30 +897,139 @@ export class APIGenerator {
   }
 
   /**
-   * The tenant a request acts for: what the host's `resolveTenant` says, or
-   * the server's fixed context. `undefined` for a model that is not
-   * tenant-scoped, which the gate does not concern.
+   * Admit a request to an object route: authentication (or the model's public
+   * access), then the runtime exposure gate, evaluated for the tenant the
+   * admitted request acts for. Returns the admitted request, or the answer
+   * that refuses it.
    */
-  private async resolveRequestTenant(
+  private async admitObjectRequest(
     req: Request,
+    objectName: string,
+    exposureModel: RegisteredClass | undefined,
+  ): Promise<Request | Response> {
+    if (this.config.authMiddleware) {
+      const authResult = await this.config.authMiddleware(
+        objectName,
+        req.method.toLowerCase(),
+      )(req);
+      if (authResult instanceof Response) return authResult;
+      req = authResult;
+    } else if (!this.isRoutePublic(objectName, req.method)) {
+      // Fail-closed (#1540): no auth middleware wired and the object isn't
+      // marked `@smrt({ api: { public } })` → refuse rather than serve open.
+      return this.createErrorResponse(401, 'Authentication required');
+    }
+    let tenant: ResolvedRequestTenant;
+    try {
+      tenant = await this.requestTenant(req);
+    } catch (error) {
+      const failure = normalizeTypedHttpError(error);
+      if (failure) {
+        return this.createJsonResponse({ error: failure }, failure.status);
+      }
+      return this.createJsonResponse(
+        reportUnexpectedHttpError(error, req),
+        500,
+      );
+    }
+    if (
+      !isRuntimeModelEnabled(exposureModel, {
+        surface: 'rest',
+        tenantId: tenant.effectiveTenantId ?? undefined,
+        request: req,
+      })
+    ) {
+      return this.createErrorResponse(404, 'Not found');
+    }
+    return req;
+  }
+
+  /**
+   * Authorize an operation on a row whose type is not the route's model: an
+   * STI subtype created, updated or deleted through its base. The subtype's
+   * own action gate and authorization apply as well as the base's: its
+   * `authMiddleware` decision (with the subtype's name), or its public access
+   * when no middleware is configured. Returns the refusal, or `undefined`.
+   *
+   * @param req - The admitted request, with a readable body
+   * @param rowModel - Registry key of the row's own model
+   * @param action - The CRUD action performed
+   */
+  private async authorizeRowModel(
+    req: Request,
+    rowModel: string,
+    action: 'create' | 'update' | 'delete',
+  ): Promise<Response | undefined> {
+    if (!this.isApiActionEnabled(rowModel, action)) {
+      return this.createErrorResponse(405, 'Method not allowed');
+    }
+    if (this.config.authMiddleware) {
+      const decision = await this.config.authMiddleware(
+        rowModel,
+        req.method.toLowerCase(),
+      )(req);
+      return decision instanceof Response ? decision : undefined;
+    }
+    return this.isRoutePublic(rowModel, req.method)
+      ? undefined
+      : this.createErrorResponse(401, 'Authentication required');
+  }
+
+  /**
+   * The `where` restriction that keeps a read through `objectName` to the
+   * row types served on this route ({@link servedFamilyTypes}), or
+   * `undefined` when every type is served.
+   */
+  private familyReadScope(
     objectName: string | undefined,
-  ): Promise<ResolvedRequestTenant | undefined> {
-    if (!this.isTenantScopedModel(objectName)) return undefined;
-    const resolved = this.config.resolveTenant
-      ? ((await this.config.resolveTenant(req)) ?? {})
-      : {
-          tenantId: this.context.tenantId,
-          allowCrossTenant: this.context.allowCrossTenant,
+    operation: FamilyRowOperation,
+  ): Record<string, unknown> | undefined {
+    if (!objectName) return undefined;
+    const types = servedFamilyTypes(
+      objectName,
+      'api',
+      operation,
+      this.modelScope,
+    );
+    return types ? { '_meta_type in': types } : undefined;
+  }
+
+  /**
+   * The tenant a request acts for: what the host's `resolveTenant` says for
+   * the admitted request, or the server's fixed context. Resolved once per
+   * request; the exposure gate, create targets and the tenant gate all read
+   * this answer.
+   */
+  private requestTenant(req: Request): Promise<ResolvedRequestTenant> {
+    let pending = this.requestTenants.get(req);
+    if (!pending) {
+      pending = (async () => {
+        const resolved = this.config.resolveTenant
+          ? ((await this.config.resolveTenant(req)) ?? {})
+          : {
+              tenantId: this.context.tenantId,
+              allowCrossTenant: this.context.allowCrossTenant,
+            };
+        const tenantId =
+          typeof resolved.tenantId === 'string' && resolved.tenantId
+            ? resolved.tenantId
+            : null;
+        const ambient = resolveDispatchTenantId();
+        const answer: ResolvedRequestTenant = {
+          tenantId,
+          allowCrossTenant: resolved.allowCrossTenant === true,
+          authenticated:
+            resolved.authenticated ?? Boolean(this.config.authMiddleware),
+          effectiveTenantId:
+            tenantId ??
+            (typeof ambient === 'string' && ambient ? ambient : null),
         };
-    return {
-      tenantId:
-        typeof resolved.tenantId === 'string' && resolved.tenantId
-          ? resolved.tenantId
-          : null,
-      allowCrossTenant: resolved.allowCrossTenant === true,
-      authenticated:
-        resolved.authenticated ?? Boolean(this.config.authMiddleware),
-    };
+        this.settledTenants.set(req, answer);
+        return answer;
+      })();
+      this.requestTenants.set(req, pending);
+    }
+    return pending;
   }
 
   /**
@@ -956,7 +1082,8 @@ export class APIGenerator {
     collection: SmrtCollection<SmrtObject>,
     objectId: string | undefined,
     url: URL,
-    objectName?: string,
+    objectName: string | undefined,
+    gateCustomAction: <T>(action: () => Promise<T>) => Promise<T>,
   ): Promise<Response> {
     // Decorator-declared custom collection actions dispatch BEFORE CRUD
     // routing: without this, `POST /<collection>/<action>` would fall into
@@ -968,6 +1095,7 @@ export class APIGenerator {
         objectId,
         url,
         objectName,
+        gateCustomAction,
       );
       if (customResponse) {
         return customResponse;
@@ -981,7 +1109,12 @@ export class APIGenerator {
 
     // Handle special /count endpoint
     if (objectId === 'count' && req.method === 'GET') {
-      return await this.handleCount(collection, url.searchParams, objectName);
+      return await this.handleCount(
+        collection,
+        url.searchParams,
+        req,
+        objectName,
+      );
     }
 
     // Route to appropriate CRUD operation
@@ -1010,7 +1143,7 @@ export class APIGenerator {
         if (!objectId) {
           return this.createErrorResponse(400, 'Object ID required for delete');
         }
-        return await this.handleDelete(collection, objectId);
+        return await this.handleDelete(collection, objectId, req, objectName);
 
       default:
         return this.createErrorResponse(405, 'Method not allowed');
@@ -1200,6 +1333,8 @@ export class APIGenerator {
     pathSegment: string,
     url: URL,
     objectName: string,
+    gateAction: <T>(action: () => Promise<T>) => Promise<T> = (action) =>
+      action(),
   ): Promise<Response | null> {
     const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
     if (!apiConfig || typeof apiConfig !== 'object') {
@@ -1406,7 +1541,16 @@ export class APIGenerator {
           })
         : [options];
 
-      const result = await invoke(invocationArgs);
+      // A read handed the scoped options (`scopeTenantReadOptions` above) is
+      // scoped through them. Any other action body reads through the
+      // collection with no tenant scope of its own; `gateAction` puts it
+      // inside the tenant gate.
+      const receivesScopedOptions =
+        routeMethod === 'GET' &&
+        !(metadata.parameters && metadata.parameters.length === 0);
+      const result = await (receivesScopedOptions
+        ? invoke(invocationArgs)
+        : gateAction(async () => invoke(invocationArgs)));
 
       const failure = normalizeCustomActionFailure(result);
       if (failure) {
@@ -1488,7 +1632,11 @@ export class APIGenerator {
    */
   private resolveTenantReadScope(
     objectName?: string,
+    req?: Request,
   ): Record<string, null> | undefined {
+    // An explicitly cross-tenant caller reads every tenant's rows: the gate
+    // ran it in a system context, which has no tenant but is not tenantless.
+    if (req && this.settledTenants.get(req)?.allowCrossTenant) return undefined;
     return objectName ? resolveAnonymousTenantReadScope(objectName) : undefined;
   }
 
@@ -1504,8 +1652,29 @@ export class APIGenerator {
   private applyTenantReadScope(
     objectName: string | undefined,
     where: Record<string, string | string[]> | undefined,
+    req?: Request,
+    operation: FamilyRowOperation = 'list',
   ): Record<string, unknown> | undefined {
-    return applyWhereScope(where, this.resolveTenantReadScope(objectName));
+    const scoped = applyWhereScope(
+      where,
+      this.resolveTenantReadScope(objectName, req),
+    );
+    const family = this.familyReadScope(objectName, operation);
+    return family ? { ...(scoped ?? {}), ...family } : scoped;
+  }
+
+  /** A point-read filter for `id`: tenant scope and served row types. */
+  private pointReadFilter(
+    objectName: string | undefined,
+    id: string,
+    req: Request,
+    operation: FamilyRowOperation,
+  ): string | Record<string, unknown> {
+    const scope = {
+      ...(this.resolveTenantReadScope(objectName, req) ?? {}),
+      ...(this.familyReadScope(objectName, operation) ?? {}),
+    };
+    return Object.keys(scope).length > 0 ? { id, ...scope } : id;
   }
 
   /**
@@ -1528,8 +1697,7 @@ export class APIGenerator {
     if (this.hasReadPermissionFields(objectName) || displayLabel) {
       // Caller-specific fields and linked names can change without a parent
       // table write. Validate the actual public body in both cases.
-      const scope = this.resolveTenantReadScope(objectName);
-      const filter = scope ? { id, ...scope } : id;
+      const filter = this.pointReadFilter(objectName, id, req, 'get');
       const object = displayLabel
         ? await collection.get(filter, { displayLabel: true })
         : await collection.get(filter);
@@ -1562,10 +1730,9 @@ export class APIGenerator {
 
     // #1782: scope a public/anonymous read of a tenant-scoped model to global
     // (NULL-tenant) rows when no tenant context is active.
-    const scope = this.resolveTenantReadScope(objectName);
-    const object = scope
-      ? await collection.get({ id, ...scope })
-      : await collection.get(id);
+    const object = await collection.get(
+      this.pointReadFilter(objectName, id, req, 'get'),
+    );
     if (!object) {
       return this.createErrorResponse(404, 'Object not found');
     }
@@ -1631,7 +1798,7 @@ export class APIGenerator {
 
       // #1782: fail closed to global (NULL-tenant) rows for a public/anonymous
       // read of a tenant-scoped model with no active tenant context.
-      const scopedWhere = this.applyTenantReadScope(objectName, where);
+      const scopedWhere = this.applyTenantReadScope(objectName, where, req);
 
       const objects = await collection.list({
         ...(displayLabel ? { displayLabel: true } : {}),
@@ -1671,6 +1838,7 @@ export class APIGenerator {
   private async handleCount(
     collection: SmrtCollection<SmrtObject>,
     params: URLSearchParams,
+    req: Request,
     objectName?: string,
   ): Promise<Response> {
     const where = parseRestListWhere(params);
@@ -1681,7 +1849,7 @@ export class APIGenerator {
 
     // #1782: a count leaks cross-tenant cardinality just as a list leaks rows,
     // so apply the same fail-closed global scope for anonymous tenant reads.
-    const scopedWhere = this.applyTenantReadScope(objectName, where);
+    const scopedWhere = this.applyTenantReadScope(objectName, where, req);
 
     const count = await collection.count({
       where:
@@ -1701,17 +1869,46 @@ export class APIGenerator {
     req: Request,
     objectName?: string,
   ): Promise<Response> {
-    const body = await req.json();
+    const rawBody = await req.text();
+    const body = rawBody.trim() === '' ? {} : JSON.parse(rawBody);
     let targetName = objectName;
     let data = body;
     if (objectName) {
+      const tenant = await this.requestTenant(req);
       const target = ObjectRegistry.resolveCreateTarget(objectName, body, {
         surface: 'rest',
-        tenantId: this.context.tenantId,
+        tenantId: tenant.effectiveTenantId ?? undefined,
         request: req,
       });
+      // A subtype whose own surface closes create is not a target here.
+      assertCreateTargetSurface(objectName, target, 'api');
+      // A server given its models creates only those models. A subtype of a
+      // served base is a model of its own: served when it was given too.
+      if (
+        this.modelScope &&
+        target.collectionName !== objectName &&
+        !this.modelScope.has(
+          registryKeyOf(
+            ObjectRegistry.getExposureModel(target.name) ??
+              ({ name: target.name } as RegisteredClass),
+          ),
+        )
+      ) {
+        throw new CreateTargetError(target.name, objectName);
+      }
       targetName = target.collectionName;
       if (target.collectionName !== objectName) {
+        // The subtype authorizes its own create too.
+        const refusal = await this.authorizeRowModel(
+          new Request(req.url, {
+            method: req.method,
+            headers: req.headers,
+            body: rawBody,
+          }),
+          target.collectionName,
+          'create',
+        );
+        if (refusal) return refusal;
         const info = ObjectRegistry.getClass(targetName);
         if (!info)
           return this.createErrorResponse(404, 'Create target unavailable');
@@ -1720,7 +1917,23 @@ export class APIGenerator {
       data = target.data;
     }
     const writable = this.applyWritablePolicy(targetName, data);
-    const object = await collection.create({ ...writable, _skipLoad: true });
+    // Create input names declared fields and settable accessors only.
+    if (targetName) assertCreateInput(targetName, writable, collection);
+    const create = () => collection.create({ ...writable, _skipLoad: true });
+    // A tenant-scoped subtype of a base that is not tenant-scoped creates
+    // inside the tenant gate as well.
+    const object =
+      targetName &&
+      targetName !== objectName &&
+      this.isTenantScopedModel(targetName) &&
+      !this.isTenantScopedModel(objectName)
+        ? await this.runInTenantGate(
+            targetName,
+            await this.requestTenant(req),
+            false,
+            create,
+          )
+        : await create();
     return this.createJsonResponse(this.toPublicData(object), 201);
   }
 
@@ -1733,11 +1946,30 @@ export class APIGenerator {
     req: Request,
     objectName?: string,
   ): Promise<Response> {
-    const data = this.applyWritablePolicy(objectName, await req.json());
-    const object = await collection.get(id);
+    const rawBody = await req.text();
+    const data = this.applyWritablePolicy(
+      objectName,
+      rawBody.trim() === '' ? {} : JSON.parse(rawBody),
+    );
+    const object = await collection.get(
+      this.pointReadFilter(objectName, id, req, 'get'),
+    );
 
     if (!object) {
       return this.createErrorResponse(404, 'Object not found');
+    }
+    const rowModel = modelOfInstance(object);
+    if (objectName && rowModel && rowModel !== objectName) {
+      const refusal = await this.authorizeRowModel(
+        new Request(req.url, {
+          method: req.method,
+          headers: req.headers,
+          body: rawBody,
+        }),
+        rowModel,
+        'update',
+      );
+      if (refusal) return refusal;
     }
 
     // The body sets declared fields and settable accessors, nothing else.
@@ -1755,11 +1987,20 @@ export class APIGenerator {
   private async handleDelete(
     collection: SmrtCollection<SmrtObject>,
     id: string,
+    req: Request,
+    objectName?: string,
   ): Promise<Response> {
-    const object = await collection.get(id);
+    const object = await collection.get(
+      this.pointReadFilter(objectName, id, req, 'get'),
+    );
 
     if (!object) {
       return this.createErrorResponse(404, 'Object not found');
+    }
+    const rowModel = modelOfInstance(object);
+    if (objectName && rowModel && rowModel !== objectName) {
+      const refusal = await this.authorizeRowModel(req, rowModel, 'delete');
+      if (refusal) return refusal;
     }
 
     await collection.delete(id);
@@ -1814,29 +2055,27 @@ export class APIGenerator {
       // Same canonical-`collection` match as the CRUD path so a client and the
       // batch contract resolve identical segments (#1794).
       const info = this.findClassByCollectionSegment(objectSegment);
-      if (
-        info &&
-        isRuntimeModelEnabled(info, {
-          surface: 'rest',
-          tenantId: this.context.tenantId,
-          request: req,
-        })
-      ) {
-        collection = await this.getCollection(info);
-        objectName = registryKeyOf(info);
-      }
+      if (info) objectName = registryKeyOf(info);
     }
 
-    if (
-      !collection ||
-      !objectName ||
-      !isRuntimeModelEnabled(ObjectRegistry.getExposureModel(objectName), {
+    if (!objectName) return null;
+    const exposureModel = ObjectRegistry.getExposureModel(objectName);
+    const exposedFor = (
+      tenantId: string | null | undefined,
+      request: Request,
+    ) =>
+      isRuntimeModelEnabled(exposureModel, {
         surface: 'rest',
-        tenantId: this.context.tenantId,
-        request: req,
-      })
-    ) {
-      return null;
+        tenantId: tenantId ?? undefined,
+        request,
+      });
+    // The exposure gate runs once the item's request was admitted (in `run`),
+    // with or without `resolveTenant`: a caller that authorization refuses
+    // never learns whether a model is switched on.
+    if (!collection) {
+      const info = ObjectRegistry.getClass(objectName);
+      if (!info) return null;
+      collection = await this.getCollection(info);
     }
 
     const resolvedName = objectName;
@@ -1850,7 +2089,13 @@ export class APIGenerator {
       // Every sync item is a write: it runs inside the tenant gate, like the
       // CRUD route it mirrors. A refusal rejects the item.
       run: async (_op, apply) => {
-        const tenant = await this.resolveRequestTenant(admitted, resolvedName);
+        const requestTenant = await this.requestTenant(admitted);
+        if (!exposedFor(requestTenant.effectiveTenantId, admitted)) {
+          throw new SyncApplyRejection('unknown_object');
+        }
+        const tenant = this.isTenantScopedModel(resolvedName)
+          ? requestTenant
+          : undefined;
         try {
           return await this.runInTenantGate(resolvedName, tenant, false, apply);
         } catch (error) {
@@ -1861,6 +2106,45 @@ export class APIGenerator {
           );
         }
       },
+      // A row through a base route: its type must be served on this route,
+      // and its own model authorizes the write too.
+      admitRow: async (row, op) => {
+        const rowModel = modelOfInstance(row);
+        if (!rowModel || rowModel === resolvedName) return;
+        // A row the route does not read is not found; a row it reads but
+        // whose own model refuses the operation is refused below.
+        if (
+          !isFamilyRowServed(
+            resolvedName,
+            rowModel,
+            'api',
+            'get',
+            this.modelScope,
+          )
+        ) {
+          throw new SyncApplyRejection('not_found');
+        }
+        if (!this.isApiActionEnabled(rowModel, op)) {
+          throw new SyncApplyRejection('op_not_allowed');
+        }
+        const refusal = await this.authorizeRowModel(
+          new Request(admitted.url, {
+            method: op === 'update' ? 'PUT' : 'DELETE',
+            headers: admitted.headers,
+            body: op === 'update' ? rawBody : undefined,
+          }),
+          rowModel,
+          op,
+        );
+        if (refusal) {
+          throw new SyncApplyRejection(
+            refusal.status === 401 ? 'auth_required' : 'forbidden',
+          );
+        }
+      },
+      assertUpdate: (row, data) => assertUpdateInput(row, data, resolvedName),
+      assertCreate: (data) =>
+        assertCreateInput(resolvedName, data, resolvedCollection),
       mutate: async (row, op, data) => {
         await resolvedCollection.withAuditMutation(
           row as SmrtObject,
@@ -2130,7 +2414,7 @@ export class APIGenerator {
     const version = await getTableVersion(collection.db, collection.tableName);
     const representation = canonicalReadRepresentation(
       req,
-      this.readTenantDiscriminator(objectName),
+      this.readTenantDiscriminator(objectName, req),
     );
     // Salt the ETag with the web-collection shape digest (#1764) so a
     // shape-only deploy busts every read validator. Runtime APIGenerator
@@ -2162,8 +2446,13 @@ export class APIGenerator {
    * of the same table and params. `undefined` for non-tenant-scoped models,
    * whose bodies do not vary by tenant.
    */
-  private readTenantDiscriminator(objectName?: string): string | undefined {
+  private readTenantDiscriminator(
+    objectName?: string,
+    req?: Request,
+  ): string | undefined {
     if (!this.isTenantScopedModel(objectName)) return undefined;
+    // A cross-tenant read has its own representation: every tenant's rows.
+    if (req && this.settledTenants.get(req)?.allowCrossTenant) return 't:*';
     // Shared with the generated SvelteKit route so both transports key the ETag
     // on the active tenant identically (cross-tenant false-304 guard).
     return resolveTenantEtagDiscriminator();
@@ -2425,7 +2714,9 @@ export function createRestServer(
 ): { server: http.Server; url: string } {
   const scope = new Set<string>();
   for (const obj of objects) {
-    const registered = ObjectRegistry.getClassByConstructor(
+    // The class a provider exported may have been replaced by an app's
+    // same-name class; the replacement serves its rows.
+    const registered = ObjectRegistry.getEffectiveClassByConstructor(
       obj as unknown as SmrtObjectConstructor,
     );
     if (!registered) {

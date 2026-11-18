@@ -175,6 +175,13 @@ export type {
 } from './config';
 // Global configuration (callable function)
 export { config } from './config';
+// Which STI subtypes a create through a base may select on a transport.
+export {
+  assertCreateTargetSurface,
+  type CreateSurface,
+  CreateTargetError,
+  isCreateOpenOnSurface,
+} from './create-target';
 // Canonical bounded query protocol — adapters supply their own authorization
 // and execution, while this runtime normalizes the shared envelope (#2444).
 export {
@@ -583,7 +590,11 @@ export {
 } from './postgres-timeouts';
 // The public serialiser an object's class provides, for request-facing
 // output; never an own property of the instance.
-export { publicSerializerOf, toPublicJSONValue } from './public-json';
+export {
+  publicSerializerOf,
+  toPublicJSONValue,
+  toPublicResultValue,
+} from './public-json';
 // Which fields a caller may filter and sort a list by: the ones it may read.
 export {
   assertQueryAccess,
@@ -663,6 +674,15 @@ export {
   type SubclassExposureEscalation,
   surfaceOpensOperation,
 } from './registry/subclass-exposure';
+// What an update body may set on a loaded object: declared fields and
+// settable accessors. Every request-facing update path assigns through
+// `applyUpdateInput`.
+export {
+  applyUpdateInput,
+  assertCreateInput,
+  assertUpdateInput,
+  updateInputRulesFor,
+} from './request-input';
 // The tenant scope request-facing reads add when no interceptor narrows them,
 // and the request tenant context hooks smrt-tenancy installs.
 export {
@@ -673,14 +693,6 @@ export {
   type RequestTenantContextHooks,
   setRequestTenantContextHooks,
 } from './request-tenant-context';
-// What an update body may set on a loaded object: declared fields and
-// settable accessors. Every request-facing update path assigns through
-// `applyUpdateInput`.
-export {
-  applyUpdateInput,
-  assertUpdateInput,
-  updateInputRulesFor,
-} from './request-input';
 // Revision compare-and-swap predicate helpers (#2620)
 export {
   POSTGRES_REVISION_GUARD_EXPRESSION,

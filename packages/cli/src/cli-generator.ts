@@ -17,6 +17,9 @@ import type {
 } from '@happyvertical/smrt-core';
 import {
   applyUpdateInput,
+  assertCreateInput,
+  assertCreateTargetSurface,
+  isCreateOpenOnSurface,
   isCrudOperation,
   isFrameworkBaseClass,
   ObjectRegistry,
@@ -1215,19 +1218,23 @@ export class CLIGenerator {
         surface: 'cli',
         tenantId: this.context.tenantId,
       });
+      // Only subtypes whose own `cli` surface opens create are offered.
+      const subtypes = targets.subtypes.filter((target) =>
+        isCreateOpenOnSurface(target.name, 'cli'),
+      );
       if (targets.polymorphic) {
         options.createType = {
           type: 'string',
           description:
             'createType target: ' +
-            [targets.base, ...targets.subtypes]
+            [targets.base, ...subtypes]
               .map((target) => `${target.name} (${target.label})`)
               .join(', '),
         };
       }
       // Include subtype fields so an explicit create type can receive its own input.
       const fields = new Map(
-        [targets.base, ...targets.subtypes].flatMap((target) => [
+        [targets.base, ...subtypes].flatMap((target) => [
           ...ObjectRegistry.getFields(target.name),
           ...Object.entries(ObjectRegistry.getWriteThroughFields(target.name)),
         ]),
@@ -2354,6 +2361,9 @@ export class CLIGenerator {
         { createType: options.createType },
         context,
       );
+      // A subtype whose own `cli` surface closes create is not a target,
+      // checked before any prompt.
+      assertCreateTargetSurface(objectName, initialTarget, 'cli');
 
       // Declared kebab option ('from-file') arrives verbatim from parseCliArgs;
       // keep the camel fallback for handler-direct callers.
@@ -2389,10 +2399,13 @@ export class CLIGenerator {
           : { ...data, createType: options.createType },
         context,
       );
+      assertCreateTargetSurface(objectName, target, 'cli');
       data = this.applyWritablePolicy(target.collectionName, target.data);
       const spinner = this.createSpinner(`Creating ${objectName}...`);
 
       const collection = await this.getCollection(target.collectionName);
+      // Create input names declared fields and settable accessors only.
+      assertCreateInput(target.collectionName, data, collection);
       const result = await collection.create(data);
 
       spinner.succeed(`Created ${objectName} with ID: ${result.id}`);

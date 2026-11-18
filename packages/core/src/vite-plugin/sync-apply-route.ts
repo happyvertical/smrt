@@ -25,6 +25,7 @@ import type {
 } from '../scanner/types';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import {
+  allowsSuperAdminBypass,
   collectRouteReadonlyFields,
   generateTenantContextHelper,
   getApiPublicAccess,
@@ -70,6 +71,8 @@ interface SyncTargetSpec {
   writableAllowlist: string[] | null;
   publicAccess: boolean | 'read';
   tenantScoped: boolean;
+  /** `tenantScoped.allowSuperAdminBypass`: a verified bypass may write. */
+  allowSuperAdminBypass: boolean;
   /** `api.principalContext`: writes need a complete principal. */
   principalContext: boolean;
 }
@@ -191,6 +194,7 @@ export function collectSyncApplyTargets(
       writableAllowlist: getApiWritableAllowlist(apiConfig),
       publicAccess: getApiPublicAccess(apiConfig),
       tenantScoped: !!objectDef.decoratorConfig?.tenantScoped,
+      allowSuperAdminBypass: allowsSuperAdminBypass(objectDef),
       principalContext: usesPrincipalContext(objectDef),
     };
     bySegment.set(objectDef.collection, { target, isStiChild });
@@ -212,6 +216,7 @@ function serializeTargets(targets: SyncTargetSpec[]): string {
       `writableAllowlist: ${JSON.stringify(target.writableAllowlist)}`,
       `publicAccess: ${JSON.stringify(target.publicAccess)}`,
       `tenantScoped: ${JSON.stringify(target.tenantScoped)}`,
+      `allowSuperAdminBypass: ${JSON.stringify(target.allowSuperAdminBypass)}`,
       `principalContext: ${JSON.stringify(target.principalContext)}`,
     ];
     return `  ${JSON.stringify(target.segment)}: {\n    ${fields.join(',\n    ')},\n  },`;
@@ -236,7 +241,12 @@ export function generateSyncApplyRouteTemplate(
   // the same generator function. One route serves many models here, so the
   // principal requirement is passed per item instead of baked in.
   const tenantHelper = needsTenantContext
-    ? generateTenantContextHelper('per-target', anyTenantScoped)
+    ? generateTenantContextHelper(
+        'per-target',
+        anyTenantScoped,
+        false,
+        'per-target',
+      )
     : '';
 
   return `${AUTO_GENERATED_ROUTE_HEADER}
@@ -250,9 +260,10 @@ import {
   applySyncWritablePolicy,
   processSyncApplyBatch,
   type SyncApplyOp,
+  SyncApplyRejection,
   type SyncApplyTarget,
 } from '@happyvertical/smrt-core';
-import { applyUpdateInput, isRuntimeModelEnabled, ObjectRegistry } from '@happyvertical/smrt-core';
+import { applyUpdateInput, assertCreateInput, assertUpdateInput, isRuntimeModelEnabled, ObjectRegistry } from '@happyvertical/smrt-core';
 import { ${needsTenantContext ? 'error, ' : ''}json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 ${collectionAccessImports}
@@ -283,6 +294,8 @@ interface SyncTargetConfig {
   publicAccess: boolean | 'read';
   /** The model is tenant-scoped: a write needs a tenant. */
   tenantScoped: boolean;
+  /** A verified super-admin bypass may write this model with no tenant. */
+  allowSuperAdminBypass: boolean;
   /** \`api.principalContext\`: a write needs a complete principal. */
   principalContext: boolean;
 }
@@ -295,6 +308,18 @@ function readRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object'
     ? (value as Record<string, unknown>)
     : {};
+}
+
+// The tenant the request acts for, from the same \`locals\` sources the
+// tenant helper enters (\`tenantId\`, \`user\`, \`session\`, \`tenantContext\`).
+function requestTenantOf(locals: unknown): string | undefined {
+  const l = readRecord(locals);
+  const tenant =
+    l.tenantId ??
+    readRecord(l.user).tenantId ??
+    readRecord(l.session).tenantId ??
+    readRecord(l.tenantContext).tenantId;
+  return typeof tenant === 'string' && tenant ? tenant : undefined;
 }
 
 function hasGrantedPermission(value: unknown, permission: string): boolean {
@@ -341,10 +366,6 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     resolveTarget: async (segment: string): Promise<SyncApplyTarget | null> => {
       const target = SYNC_TARGETS[segment];
       if (!target) return null;
-      const context = locals as { tenantId?: unknown; tenantContext?: unknown };
-      const nested = context.tenantContext && typeof context.tenantContext === 'object' ? context.tenantContext as Record<string, unknown> : {};
-      const tenant = context.tenantId ?? nested.tenantId;
-      if (!isRuntimeModelEnabled({ qualifiedName: target.registryKey, replacedQualifiedNames: target.replacedQualifiedNames }, { surface: 'rest', locals, tenantId: typeof tenant === 'string' ? tenant : undefined })) return null;
       // The verbatim manifest key, exactly as the generated CRUD routes pass
       // it — package-qualified keys stay qualified so same-simple-name
       // classes across packages resolve unambiguously.
@@ -352,6 +373,17 @@ export const POST: RequestHandler = async ({ locals, request }) => {
       return {
         objectName: target.registryKey,
         collection,
+        // After the item was authorized, as on the CRUD routes: a model the
+        // runtime exposure gate closes for the request's tenant is unknown.
+        run: async (_op, apply) => {
+          if (!isRuntimeModelEnabled({ qualifiedName: target.registryKey, replacedQualifiedNames: target.replacedQualifiedNames }, { surface: 'rest', locals, tenantId: requestTenantOf(locals) })) {
+            throw new SyncApplyRejection('unknown_object');
+          }
+          return apply();
+        },
+        // A payload is checked against the row before replay or staleness.
+        assertUpdate: (row, data) => assertUpdateInput(row, data, target.registryKey),
+        assertCreate: (data) => assertCreateInput(target.registryKey, data, collection),
         mutate: async (row, op, data) => {
           await collection.withAuditMutation(row as import('@happyvertical/smrt-core').SmrtObject, op === 'update' ? 'updated' : 'deleted', async (bound) => {
             if (op === 'update') {
@@ -386,7 +418,7 @@ ${
             }
 ${
   anyTenantScoped
-    ? `            if (target.tenantScoped && !hasTenantWriteContext(locals)) {
+    ? `            if (target.tenantScoped && !hasTenantWriteContext(locals, target.allowSuperAdminBypass)) {
               return authenticated ? ('forbidden' as const) : ('auth_required' as const);
             }
 `

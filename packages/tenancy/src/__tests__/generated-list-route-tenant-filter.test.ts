@@ -136,6 +136,11 @@ class EmittedRouteBulletin extends SmrtObject {
 class EmittedRouteBulletinCollection extends SmrtCollection<EmittedRouteBulletin> {
   static readonly _itemClass = EmittedRouteBulletin;
 
+  /** A custom GET action taking no options: nothing scopes its reads. */
+  async countAll() {
+    return (await this.list({})).length;
+  }
+
   /** A custom GET action that reads with its options as the filter. */
   async browse(options: Record<string, unknown> = {}) {
     return (await this.list({ where: options })).map((row) => row.title).sort();
@@ -419,12 +424,25 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
           readOrg: optionsMethod('readOrg'),
           readTenant: optionsMethod('readTenant'),
           readOrgNamed: optionsMethod('readOrgNamed', 'organizationId'),
+          countAll: {
+            name: 'countAll',
+            parameters: [],
+            returnType: 'Promise<any>',
+            isPublic: true,
+          },
         },
         decoratorConfig: {
           api: {
             public: 'read',
-            include: ['browse', 'readOrg', 'readTenant', 'readOrgNamed'],
+            include: [
+              'browse',
+              'readOrg',
+              'readTenant',
+              'readOrgNamed',
+              'countAll',
+            ],
             routes: {
+              countAll: { method: 'GET', path: 'count-all' },
               readOrgNamed: { method: 'GET', path: 'read-org-named' },
               browse: { method: 'GET', path: 'browse' },
               readOrg: { method: 'GET', path: 'read-org' },
@@ -537,6 +555,7 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
 
     for (const path of [
       'emittedroutebulletins/browse',
+      'emittedroutebulletins/count-all',
       'emittedroutebulletins/read-org',
       'emittedroutebulletins/read-tenant',
       'emittedroutebulletins/read-org-named',
@@ -806,7 +825,7 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
       request: Request;
       url: URL;
     }) => Promise<Response>;
-    /** Call a generated route anonymously, in its own async scope. */
+    /** Call a generated route (anonymously by default), in its own async scope. */
     const call = (
       path: string,
       params: Record<string, string> = {},
@@ -843,6 +862,20 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
     it('a collection GET action receives the ownership field as its scope', async () => {
       // `browse` lists with its options as the filter: the scope must name
       // `organizationId`, not the ordinary `tenantId` column.
+      expect(
+        await actionResult(
+          await call('emittedroutebulletins/browse', {}, '', {
+            locals: { tenantId: OURS, user: { id: 'reader' } },
+          }),
+        ),
+      ).toEqual(['our bulletin']);
+    });
+
+    it('a collection GET action taking no options is refused to a caller with no tenant', async () => {
+      expect((await call('emittedroutebulletins/count-all')).status).toBe(401);
+    });
+
+    it('a collection GET action taking options reads rows without an owner for a caller with no tenant', async () => {
       expect(
         await actionResult(await call('emittedroutebulletins/browse')),
       ).toEqual(['bulletin for everyone', 'bulletin for everyone, labelled']);

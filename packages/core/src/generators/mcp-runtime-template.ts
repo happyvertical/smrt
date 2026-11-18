@@ -246,7 +246,10 @@ ${indent}}`;
             return `${indent}case '${tool.name}': {
 ${indent}  const { collection, objectName: targetObjectName, data } = await resolveCreateTarget(${JSON.stringify(lookup)}, args, aiConfig);
 
-${indent}  const newItem = await collection.create(applyWritablePolicy(targetObjectName, data));
+${indent}  const createData = applyWritablePolicy(targetObjectName, data);
+${indent}  // Create input names declared fields and settable accessors only.
+${indent}  assertCreateInput(targetObjectName, createData, collection);
+${indent}  const newItem = await collection.create(createData);
 
 ${indent}  return successResult(toPublicJSONValue(newItem, PUBLIC_JSON_OPTIONS));
 ${indent}}`;
@@ -386,7 +389,7 @@ import { pathToFileURL } from 'node:url';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from '@happyvertical/smrt-core';
 import { normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY } from '@happyvertical/smrt-core';
-import { applyUpdateInput, assertQueryAccess, identifierArgument, publicSerializerOf, requireIdentifierArgument, toPublicJSONValue } from '@happyvertical/smrt-core';
+import { applyUpdateInput, assertCreateInput, assertCreateTargetSurface, assertQueryAccess, identifierArgument, publicSerializerOf, requireIdentifierArgument, toPublicJSONValue } from '@happyvertical/smrt-core';
 import { COOKBOOK_TOOL_NAMES, getCookbookToolService } from '@happyvertical/smrt-core/cookbook/tools';
 import { loadConfig } from '@happyvertical/smrt-config';
 ${hasTaskActions ? "import { McpTaskStore, TaskRunner } from '@happyvertical/smrt-jobs';\n" : ''}
@@ -504,6 +507,8 @@ async function resolveCreateTarget(baseObjectName: string, args: Record<string, 
   const target = ObjectRegistry.resolveCreateTarget(baseObjectName, args, {
     surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID,
   });
+  // A subtype whose own surface closes create is not a target here.
+  assertCreateTargetSurface(baseObjectName, target, 'mcp');
   const objectName = target.collectionName;
   const collection = await ObjectRegistry.getCollection(target.collectionName, {
     persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },

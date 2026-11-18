@@ -30,9 +30,9 @@ are **clamped** to `MAX_LIST_LIMIT` (1000) rather than rejected, and an explicit
   manifest-less inline test classes (#869), exactly as `where` skips it. `where`
   still whitelists those omitted system columns; that is a pre-existing gap of
   the same family, not closed here because `where: { id }` is on internal
-  hydration paths. Request-facing surfaces additionally refuse the whole
-  `_meta_data` column as a sort key and hold `where` to the fields the caller
-  may read (`assertQueryAccess`; see
+  hydration paths. Request-facing surfaces additionally refuse a sort by the
+  whole `_meta_data` column, a sensitive, permission-gated or unknown field
+  with one code and text, and hold `where` to the fields the caller may read (`assertQueryAccess`; see
   [collection-reads.md](collection-reads.md), "Request filters").
 - Every generated list surface (REST, SvelteKit, MCP, and the emitted stdio MCP
   runtime) pages with `ORDER BY created_at DESC, <pk> ASC` unless the caller

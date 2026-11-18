@@ -215,7 +215,9 @@ describe('generateSyncApplyRouteTemplate', () => {
     expect(content).toContain(
       'establishTenantContext(locals, target.principalContext);',
     );
-    expect(content).toContain('hasTenantWriteContext(locals)');
+    expect(content).toContain(
+      'hasTenantWriteContext(locals, target.allowSuperAdminBypass)',
+    );
     expect(content).toContain("from '@happyvertical/smrt-tenancy'");
 
     const withoutTenants = generateSyncApplyRouteTemplate(
@@ -391,8 +393,11 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
         // The route assigns an update payload through `applyUpdateInput`. The
         // fixture rows are structural, so the real rule runs with nothing
         // registered about them.
-        `import { assignUpdateInput, STRUCTURAL_UPDATE_RULES } from ${JSON.stringify(fileURLToPath(new URL('../write-input.ts', import.meta.url)))};`,
+        `import { assignUpdateInput, resolveUpdateInput, STRUCTURAL_UPDATE_RULES } from ${JSON.stringify(fileURLToPath(new URL('../write-input.ts', import.meta.url)))};`,
         'export const applyUpdateInput = (row: object, data: Record<string, unknown>) => assignUpdateInput(row, data, STRUCTURAL_UPDATE_RULES);',
+        'export const assertUpdateInput = (row: object, data: Record<string, unknown>) => { resolveUpdateInput(row, data, STRUCTURAL_UPDATE_RULES); };',
+        // The fixture models are structural; nothing is registered to check create input against.
+        'export const assertCreateInput = () => {};',
       ].join('\n'),
     );
     const outFile = join(projectRoot, 'route.mjs');
@@ -491,8 +496,17 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
         tenantScoped: { mode: 'optional' },
       },
     };
+    const bypassDef = {
+      ...tenantDef,
+      className: 'BypassWidget',
+      collection: 'bypasswidgets',
+      decoratorConfig: {
+        api: { include: ['list', 'get', 'create'] },
+        tenantScoped: { mode: 'optional', allowSuperAdminBypass: true },
+      },
+    };
     const state = globalThis as Record<string, unknown>;
-    // One route serving all three models, as a generated app has.
+    // One route serving all the models, as a generated app has.
     const apply = async (
       object: string,
       locals: unknown,
@@ -502,6 +516,7 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
         TenantWidget: tenantDef,
         PrincipalWidget: principalDef,
         PublicWidget: publicDef,
+        BypassWidget: bypassDef,
       });
       return firstResult(
         await route.POST({
@@ -597,8 +612,17 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
       expect(createCalls).toHaveLength(0);
     });
 
+    it('rejects a super-admin bypass on a model that does not opt in', async () => {
+      const result = await apply('tenantwidgets', {
+        user: { id: 'operator' },
+        tenantContext: { superAdminBypass: true },
+      });
+      expect(result).toMatchObject({ status: 'rejected', reason: 'forbidden' });
+      expect(createCalls).toHaveLength(0);
+    });
+
     it('applies a write for an explicitly cross-tenant principal or an active context', async () => {
-      const superAdmin = await apply('tenantwidgets', {
+      const superAdmin = await apply('bypasswidgets', {
         user: { id: 'operator' },
         tenantContext: { superAdminBypass: true },
       });

@@ -207,7 +207,7 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
       'const scopedOptions = scopeTenantReadOptions("@test/smrt:PublicTenantDoc", options);',
     );
     expect(collectionActionRoute).toContain(
-      "import { enterTenantContext, getCurrentTenant } from '@happyvertical/smrt-tenancy';",
+      "import { enterTenantContext, getCurrentTenant, hasTenantContext, isSystemContext, isTenancyEnabled } from '@happyvertical/smrt-tenancy';",
     );
     expect(collectionActionRoute).toContain(
       'await typedCollection.getBySlug(scopedOptions)',

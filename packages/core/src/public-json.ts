@@ -56,3 +56,37 @@ export function toPublicJSONValue(
   const serialize = publicSerializerOf(value);
   return serialize ? serialize(options) : value;
 }
+
+/**
+ * Serialise a result that may hold models anywhere inside it: every object
+ * with a public serialiser is replaced by its public projection, and arrays
+ * and plain objects are walked. Other instances (a `Date`, a `Map`) and
+ * primitives pass through. Cycle-safe.
+ *
+ * For values a transport returns to a caller — a custom action's result, an
+ * envelope a custom serialiser built — whose nested models would otherwise be
+ * written by their ordinary `toJSON()`.
+ */
+export function toPublicResultValue(
+  value: unknown,
+  options?: PublicJsonOptions,
+  seen: WeakSet<object> = new WeakSet(),
+): unknown {
+  if (value === null || typeof value !== 'object') return value;
+  const serialize = publicSerializerOf(value);
+  if (serialize) return serialize(options);
+  if (seen.has(value)) return value;
+  if (Array.isArray(value)) {
+    seen.add(value);
+    return value.map((entry) => toPublicResultValue(entry, options, seen));
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return value;
+  seen.add(value);
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [
+      key,
+      toPublicResultValue(entry, options, seen),
+    ]),
+  );
+}

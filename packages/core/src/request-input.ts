@@ -26,7 +26,7 @@ import {
  * An STI row loaded through its base collection is its own subtype, so the
  * subtype's fields are the ones it may set.
  */
-function modelOfInstance(instance: object): string | undefined {
+export function modelOfInstance(instance: object): string | undefined {
   const prototype = Object.getPrototypeOf(instance) as {
     constructor?: unknown;
   } | null;
@@ -141,4 +141,55 @@ export function applyUpdateInput(
   model?: string,
 ): void {
   assignUpdateInput(instance, data, updateInputRulesFor(instance, model));
+}
+
+/**
+ * Refuse create input that names anything but a declared field or settable
+ * accessor of `model`, before the object is constructed.
+ *
+ * A constructor that copies its options onto the instance would otherwise
+ * install any request key as an own property, shadowing a method or a
+ * serialiser. Request-facing create paths call this after their writable
+ * policy and the create-target selector removed the keys they ignore. A model
+ * nothing is registered about (no field metadata) is not checked.
+ *
+ * @param model - Registry key of the model being created
+ * @param data - The create input
+ * @param collection - The collection that will construct the object, when
+ *   known; its item class is the authority over its fields
+ * @throws {WriteInputError} a typed 400 naming the first refused key
+ */
+export function assertCreateInput(
+  model: string,
+  data: Record<string, unknown>,
+  collection?: unknown,
+): void {
+  // The class the collection constructs decides when it is known: it is the
+  // class whose constructor receives the input.
+  const itemClass = itemClassOf(collection);
+  const registered =
+    (itemClass
+      ? ObjectRegistry.getEffectiveClassByConstructor(itemClass)
+      : undefined) ?? ObjectRegistry.getClass(model);
+  const ctor = (itemClass ?? registered?.constructor) as
+    | { prototype?: object }
+    | undefined;
+  if (!registered || !ctor?.prototype) return;
+  const name = registered.qualifiedName || registered.name;
+  if (!hasFieldMetadata(name)) return;
+  const blank = Object.create(ctor.prototype) as object;
+  resolveUpdateInput(blank, data, updateInputRulesFor(blank, name));
+}
+
+/** The item class a collection constructs, read from its `_itemClass`. */
+function itemClassOf(collection: unknown): SmrtObjectConstructor | undefined {
+  if (!collection || typeof collection !== 'object') return undefined;
+  const own = (collection as { _itemClass?: unknown })._itemClass;
+  const fromClass = (
+    (collection as { constructor?: { _itemClass?: unknown } }).constructor ?? {}
+  )._itemClass;
+  const candidate = own ?? fromClass;
+  return typeof candidate === 'function'
+    ? (candidate as SmrtObjectConstructor)
+    : undefined;
 }

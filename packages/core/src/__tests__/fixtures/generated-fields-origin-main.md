@@ -75,3 +75,9 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   tenant through core's request hooks when the model is tenant-scoped at
   request time, and choose the read cache policy and ETag tenant
   discriminator at request time.
+- Request-path checks (#5164): both MCP servers (`single/index.ts`,
+  `modular/handlers/index.ts`), the list and item routes of each model, and
+  `sync/apply/+server.ts` apply the update-input, filter and tenant write gate
+  rules (an update assigns declared fields only, a list filter names readable
+  fields, a write to a tenant-scoped model needs a tenant, a create through a
+  base selects only subtypes open on the transport).

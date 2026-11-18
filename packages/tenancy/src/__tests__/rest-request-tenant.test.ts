@@ -125,6 +125,14 @@ describe('runtime REST request tenant', () => {
       'ScopedLegacyMemo',
       ScopedLegacyMemoCollection as never,
     );
+    // The scanned manifest says `recent` takes no options, so nothing hands it
+    // a tenant scope.
+    ObjectRegistry.getMethods('ScopedMemo').set('recent', {
+      name: 'recent',
+      parameters: [],
+      returnType: 'Promise<any>',
+      isPublic: true,
+    } as never);
     dir = mkdtempSync(join(tmpdir(), 'smrt-request-tenant-'));
     db = await getTestDatabase({
       type: 'sqlite',
