@@ -124,6 +124,32 @@ any other value (a number, a boolean, an array, an object of conditions) is
 present, unusable `id` never falls back to `slug`. Tests:
 `src/__tests__/tool-identifier-arguments.test.ts`.
 
+### A request reaches one model, under that model's policy
+
+Runtime REST resolves a URL or sync `object` segment to one registered model
+and then looks up every policy by that model's qualified registry key
+(`qualifiedName || name`): the `authMiddleware(objectName, action)` argument,
+`api.public`, enabled actions, the writable policy, read permissions, tenant
+scope and the collection factory. Two packages may declare models with the
+same simple name; a simple-name lookup resolves to whichever registered first,
+so no REST policy lookup uses one. The `registerCollection()` branch already
+passed the qualified name; auto-discovery and sync now do too.
+
+Auto-discovery (`findClassByCollectionSegment` over `collectionSegmentIndex()`,
+rebuilt when the registry generation moves) maps each segment to the model it
+serves: a collection class to its row model, an STI subtype that keeps its
+base's collection to the ancestor that owns it. Models with `api: false` are
+not candidates. A segment that two distinct models serve is ambiguous: a
+request naming it fails with `ConfigurationError`
+(`REST_COLLECTION_SEGMENT_AMBIGUOUS`, an opaque 500) before any middleware or
+policy runs, instead of being served by registration order.
+`createRestServer(objects)` / `startRestServer(objects)` serve the models in
+`objects` and no other registered model (an unregistered class is warned about
+and not served); two of them on one segment make the server refuse to start
+with the same error. A plain `new APIGenerator()` spans the whole registry,
+which may hold models the host never serves, so it does not refuse at
+construction. Tests: `src/__tests__/rest-model-identity.test.ts`.
+
 The same web virtual module exports `webMcpToolDefinitions` (#2518), a
 canonical per-tool array selected independently of list materialization. Every
 non-empty canonical API action set contributes tools, so get-only and
