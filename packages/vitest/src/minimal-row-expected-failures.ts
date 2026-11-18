@@ -231,6 +231,15 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
         'AccountingConnection writes are owned by completeQuickBooksConnection and the accounting-connection commands (lease, refresh, reconnect, disconnect, live enablement); its owner must run once against a minimal row.',
     },
     {
+      model: '@happyvertical/smrt-commerce:AccountingMapping',
+      kind: 'service-only',
+      field: '(service-only write)',
+      error:
+        'AccountingMapping is written only by the accounting-mapping commands',
+      reason:
+        'AccountingMapping writes are owned by setAccountingMapping/removeAccountingMapping; its owner must run once against a minimal row.',
+    },
+    {
       model: '@happyvertical/smrt-content:ContentContributionType',
       kind: 'optional-field',
       field: 'promotion',

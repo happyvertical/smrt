@@ -11,6 +11,12 @@ export {
   type AccountingConnectionStatus,
 } from './AccountingConnection.js';
 export {
+  AccountingMapping,
+  type AccountingMappingKind,
+  type AccountingMappingOptions,
+  type AccountingMappingStatus,
+} from './AccountingMapping.js';
+export {
   BillingAccount,
   type BillingCloseKind,
   BillingLineSource,

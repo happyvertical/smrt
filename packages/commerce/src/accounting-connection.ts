@@ -26,6 +26,7 @@ import type {
 import { getAccountingProvider } from '@happyvertical/accounting';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { withTenant } from '@happyvertical/smrt-tenancy';
+import { invalidateAccountingMappingsOutside } from './accounting-mapping.js';
 import { AccountingConnectionCollection } from './collections/AccountingConnectionCollection.js';
 import {
   type AccountingConnection,
@@ -352,6 +353,10 @@ export async function completeQuickBooksConnection(
       },
     );
     const at = now(deps);
+    const rebound =
+      connection.realmId !== '' &&
+      (connection.realmId !== realmId ||
+        connection.environment !== input.environment);
     await mutateConnection(deps, tenantId, (row) => {
       row.realmId = realmId;
       row.environment = input.environment;
@@ -364,6 +369,18 @@ export async function completeQuickBooksConnection(
       row.lastRefreshedAt = at;
       row.tokenVersion += 1;
     });
+    // Mappings of the company or environment the tenant left are never reused.
+    if (rebound)
+      await invalidateAccountingMappingsOutside(
+        deps,
+        {
+          tenantId,
+          provider: 'quickbooks',
+          realmId,
+          environment: input.environment,
+        },
+        at,
+      );
   });
   return (await findConnection(deps, tenantId)) as AccountingConnection;
 }

@@ -50,6 +50,12 @@ export interface QuickBooksFrozenInvoiceMapping
   extends FrozenQuickBooksTaxMapping {
   readonly realmId: string;
   readonly environment: 'sandbox' | 'production';
+  /**
+   * The provider customer id for this realm and environment (from the
+   * tenant's accounting mapping, `buildFrozenInvoiceMapping`). When set it
+   * replaces the flat, unscoped `Invoice.customerExternalId`.
+   */
+  readonly customerRef?: string;
 }
 
 export interface FrozenInvoiceAccountingOptions {
@@ -521,7 +527,15 @@ function toSdkInput(
     unsupported(
       'Signed-line accounting sync requires a public accounting SDK signed-line representation',
     );
-  return mapFrozenAccountingSnapshot(snapshot.document, mapping);
+  return mapFrozenAccountingSnapshot(
+    mapping.customerRef
+      ? {
+          ...snapshot.document,
+          customerExternalId: mapping.customerRef,
+        }
+      : snapshot.document,
+    mapping,
+  );
 }
 
 /** Load and validate one authoritative issued snapshot without provider I/O. */

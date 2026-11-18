@@ -3432,6 +3432,16 @@
   },
   {
     "kind": "model",
+    "name": "@happyvertical/smrt-commerce:AccountingMapping",
+    "issue": 5137,
+    "nearest": [
+      "@happyvertical/smrt-commerce:Customer",
+      "@happyvertical/smrt-commerce:TaxCode"
+    ],
+    "reason": "A reference from a commerce record to the provider's record, keyed by tenant, provider, realm and environment so a different company never reuses it. Customer and TaxCode hold local facts only (Invoice.customerExternalId was a flat, unscoped string), and adding provider ids to them would tie every local row to one realm; the mapping set is also what builds the frozen tax mapping the sync requires."
+  },
+  {
+    "kind": "model",
     "name": "@happyvertical/smrt-commerce:Agreement",
     "grandfathered": true
   },

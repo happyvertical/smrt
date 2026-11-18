@@ -68,9 +68,11 @@ import './__smrt-register__.js';
 
 // Tenant-scoped accounting connection (#5136)
 export * from './accounting-connection.js';
+export * from './accounting-mapping.js';
 // Billing-period close, provider events, prepaid credit (#3060)
 export * from './billing/index.js';
 export { AccountingConnectionCollection } from './collections/AccountingConnectionCollection.js';
+export { AccountingMappingCollection } from './collections/AccountingMappingCollection.js';
 export {
   HistoricalCustomerFundsAllocationCollection,
   HistoricalCustomerFundsCollection,
@@ -310,6 +312,12 @@ export {
   type AccountingConnectionProvider,
   type AccountingConnectionStatus,
 } from './models/AccountingConnection.js';
+export {
+  AccountingMapping,
+  type AccountingMappingKind,
+  type AccountingMappingOptions,
+  type AccountingMappingStatus,
+} from './models/AccountingMapping.js';
 export {
   HistoricalCustomerFunds,
   type HistoricalCustomerFundsOptions,

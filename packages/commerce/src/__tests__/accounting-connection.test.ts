@@ -14,6 +14,7 @@ import {
   withTenantQuickBooksProvider,
 } from '../accounting-connection.js';
 
+const databaseType = process.env.SMRT_TEST_PGLITE === '1' ? 'pglite' : 'sqlite';
 const TENANT = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
 
@@ -91,7 +92,7 @@ describe('accounting connection (#5136)', () => {
   });
 
   beforeEach(async () => {
-    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    db = await getTestDatabase({ type: databaseType, url: ':memory:' });
     enableTenancy();
     secrets = new FakeSecrets();
     intuit = new FakeIntuit();
