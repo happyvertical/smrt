@@ -137,7 +137,7 @@ class HostMemo extends SmrtObject {
   @field() title = '';
 }
 // Same empty replacement the public generator emits; retain provider STI ancestry.
-@smrt({ packageName: '@fixture/host', name: 'Profile' })
+@smrt({ packageName: '@fixture/host', name: 'Profile', replaceParent: true })
 class Profile extends ProfileBase {}
 void HostMemo;
 void Customer;
