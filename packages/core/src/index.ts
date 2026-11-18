@@ -584,6 +584,12 @@ export {
 // The public serialiser an object's class provides, for request-facing
 // output; never an own property of the instance.
 export { publicSerializerOf, toPublicJSONValue } from './public-json';
+// Which fields a caller may filter and sort a list by: the ones it may read.
+export {
+  assertQueryAccess,
+  QueryFieldError,
+  type RequestQuery,
+} from './query-access';
 // Shared list query bounds for every generated read surface (#2367)
 export {
   buildDefaultListOrderBy,

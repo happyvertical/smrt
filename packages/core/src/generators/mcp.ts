@@ -21,6 +21,7 @@ import {
 } from '../mcp-serializer.js';
 import type { PublicJsonOptions, SmrtObject } from '../object';
 import { publicSerializerOf } from '../public-json';
+import { assertQueryAccess } from '../query-access';
 import {
   buildDefaultListOrderBy,
   resolveListLimit,
@@ -2015,6 +2016,15 @@ export class MCPGenerator {
           offset: resolveListOffset(args.offset),
         };
 
+        // A filter or ordering may name only fields this caller may read: the
+        // same permissions the rows are projected with. The count below uses
+        // the same filter.
+        assertQueryAccess(
+          objectName,
+          { where: args.where, orderBy: args.orderBy },
+          this.getPublicJsonOptions(),
+        );
+
         if (args.where) {
           listOptions.where = args.where as (typeof listOptions)['where'];
         }
@@ -2729,6 +2739,8 @@ export const tools: Array<{
 ${indent}  const limit = args.limit ?? 50;
 ${indent}  const offset = args.offset ?? 0;
 ${indent}  const where = args.where ?? {};
+${indent}  // A filter may name only fields the configured permissions may read.
+${indent}  assertQueryAccess(${JSON.stringify(lookup)}, { where: args.where }, PUBLIC_JSON_OPTIONS);
 
 ${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(lookup)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
@@ -2949,7 +2961,7 @@ ${indent}}`;
 
 import { ObjectRegistry, normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY } from '@happyvertical/smrt-core';
 import { hasRuntimeExposureGate, isRuntimeModelEnabled } from '@happyvertical/smrt-core';
-import { applyUpdateInput, publicSerializerOf, toPublicJSONValue } from '@happyvertical/smrt-core';
+import { applyUpdateInput, assertQueryAccess, publicSerializerOf, toPublicJSONValue } from '@happyvertical/smrt-core';
 import { COOKBOOK_TOOL_NAMES, getCookbookToolService } from '@happyvertical/smrt-core/cookbook/tools';
 ${hasTenantScoped ? "import { enableTenancy, runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}${
   hasTenantScoped

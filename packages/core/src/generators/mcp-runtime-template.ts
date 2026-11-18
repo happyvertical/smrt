@@ -205,6 +205,9 @@ ${indent}  const orderBy = args.orderBy ?? ${JSON.stringify(
               listOrderBy[objectName] ?? DEFAULT_LIST_ORDER_BY,
             )};
 ${indent}  const where = args.where ?? {};
+${indent}  // A filter or ordering may name only fields the configured permissions
+${indent}  // may read.
+${indent}  assertQueryAccess(${JSON.stringify(lookup)}, { where: args.where, orderBy: args.orderBy }, PUBLIC_JSON_OPTIONS);
 
 ${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(lookup)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
@@ -388,7 +391,7 @@ import { pathToFileURL } from 'node:url';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from '@happyvertical/smrt-core';
 import { normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY } from '@happyvertical/smrt-core';
-import { applyUpdateInput, publicSerializerOf, toPublicJSONValue } from '@happyvertical/smrt-core';
+import { applyUpdateInput, assertQueryAccess, publicSerializerOf, toPublicJSONValue } from '@happyvertical/smrt-core';
 import { COOKBOOK_TOOL_NAMES, getCookbookToolService } from '@happyvertical/smrt-core/cookbook/tools';
 import { loadConfig } from '@happyvertical/smrt-config';
 ${hasTaskActions ? "import { McpTaskStore, TaskRunner } from '@happyvertical/smrt-jobs';\n" : ''}

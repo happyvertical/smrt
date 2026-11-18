@@ -77,3 +77,7 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   `sync/apply/+server.ts`): an update is assigned with `applyUpdateInput()`,
   and items are serialised through `toPublicJSONValue()` /
   `publicSerializerOf()`.
+- Generated list paths (both MCP servers `single/index.ts` and
+  `modular/handlers/index.ts`, and the list route of each model): the caller's
+  filter and ordering pass `assertQueryAccess()` first, and the list route
+  answers any typed 4xx refusal of the query with its status.

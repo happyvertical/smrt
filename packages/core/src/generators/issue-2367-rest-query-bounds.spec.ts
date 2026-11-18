@@ -240,8 +240,15 @@ describe('#2367 REST list query bounds', () => {
   it('rejects ordering by a sensitive field at the API boundary', async () => {
     const res = await handler(listUrl('?orderBy=apiSecret%20DESC&limit=1'));
     expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: { message: string } };
-    expect(body.error.message).toMatch(/sensitive/i);
+    // The same answer as for a field the model does not have: the refusal
+    // never says the field exists or why it is refused.
+    const body = (await res.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(body.error).toMatchObject({
+      code: 'INVALID_ORDER_BY_UNKNOWN_FIELD',
+      message: "Invalid orderBy field: 'apiSecret'.",
+    });
   });
 
   it('rejects the snake_case column form of the same oracle', async () => {

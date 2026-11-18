@@ -11,6 +11,7 @@ import type { SmrtCollection, SmrtCollectionOptions } from '../collection';
 import { isTenantScopedClassResolved } from '../dispatch';
 import type { PublicJsonOptions, SmrtObject } from '../object';
 import { publicSerializerOf } from '../public-json';
+import { assertQueryAccess } from '../query-access';
 import {
   buildDefaultListOrderBy,
   parseRestListWhere,
@@ -1351,6 +1352,17 @@ export class APIGenerator {
     const limit = resolveListLimit(params.get('limit'));
     const offset = resolveListOffset(params.get('offset'));
 
+    // A filter or ordering may name only fields this caller may read: the
+    // same permissions the rows are projected with. Checked here, with the
+    // bounds, so a refused query is answered before any ETag or table work.
+    const where = parseRestListWhere(params);
+    const orderByParam = params.get('orderBy');
+    assertQueryAccess(
+      objectName,
+      { where, orderBy: orderByParam },
+      this.getPublicJsonOptions(),
+    );
+
     const displayLabel = !!(
       objectName &&
       resolveDisplayLabelProjection(
@@ -1362,12 +1374,9 @@ export class APIGenerator {
       // a `created_at` tick tie under `created_at DESC` alone, and a tie leaves
       // the order unspecified — so successive LIMIT/OFFSET pages could repeat
       // and skip those rows. An explicit `?orderBy` still wins.
-      const orderByParam = params.get('orderBy');
       const orderBy: string | string[] = orderByParam
         ? orderByParam
         : this.resolveDefaultListOrderBy(objectName);
-
-      const where = parseRestListWhere(params);
 
       // #1782: fail closed to global (NULL-tenant) rows for a public/anonymous
       // read of a tenant-scoped model with no active tenant context.
@@ -1414,6 +1423,10 @@ export class APIGenerator {
     objectName?: string,
   ): Promise<Response> {
     const where = parseRestListWhere(params);
+
+    // A count answers the same question a filtered list does, so its filter
+    // is held to the same rule: fields this caller may read.
+    assertQueryAccess(objectName, { where }, this.getPublicJsonOptions());
 
     // #1782: a count leaks cross-tenant cardinality just as a list leaks rows,
     // so apply the same fail-closed global scope for anonymous tenant reads.

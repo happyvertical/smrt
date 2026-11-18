@@ -228,6 +228,9 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       // rule over the fixture registry's fields.
       'export const publicSerializerOf = (value) => globalThis.__smrtGeneratedRequestHelpers.publicSerializerOf(value);',
       'export const toPublicJSONValue = (value, options) => globalThis.__smrtGeneratedRequestHelpers.toPublicJSONValue(value, options);',
+      // The fixture registry declares no field policy, so a list query passes
+      // the check; `request-query-fields.test.ts` executes the real rule.
+      'export const assertQueryAccess = (...args) => globalThis.__smrtGeneratedRequestHelpers.assertQueryAccess?.(...args);',
       'export const applyUpdateInput = (instance, data, name) => {',
       '  const fields = globalThis.__smrtGeneratedRegistry?.getFields(name) ?? new Map();',
       '  return globalThis.__smrtGeneratedRequestHelpers.assignUpdateInput(instance, data, {',
@@ -1348,7 +1351,7 @@ describe('generated SvelteKit helper runtime', () => {
       // a mocked factory. It must construct and initialize against this DB.
       writeFileSync(
         join(projectRoot, 'node_modules/@happyvertical/smrt-core/index.js'),
-        `export const { ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere, applyWhereScope, resolveAnonymousTenantReadScope, resolveTenantReadOptionsScope, publicSerializerOf, toPublicJSONValue } = globalThis.__smrt4320Core;`,
+        `export const { ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere, applyWhereScope, resolveAnonymousTenantReadScope, resolveTenantReadOptionsScope, publicSerializerOf, toPublicJSONValue, assertQueryAccess } = globalThis.__smrt4320Core;`,
       );
       const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
       writeFileSync(

@@ -93,7 +93,7 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
     // List + count both carry the scope, applied by the helper the runtime
     // REST route uses so no spelling of the tenant key survives beside it.
     expect(collectionRoute).toContain(
-      'const where = applyWhereScope(parseRestListWhere(url.searchParams), resolveAnonymousTenantReadScope("@test/smrt:PublicTenantDoc")) ?? {};',
+      'const where = applyWhereScope(query.where, resolveAnonymousTenantReadScope("@test/smrt:PublicTenantDoc")) ?? {};',
     );
     expect(collectionRoute).not.toContain('...tenantReadScope()');
     // #2367 added the deterministic ordering; the read scope still rides along.
