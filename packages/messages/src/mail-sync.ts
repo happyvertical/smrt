@@ -266,6 +266,23 @@ async function refreshCounts(
   }
 }
 
+/**
+ * Recompute every folder's counts from the stored messages. A batch that
+ * deleted or moved messages and then failed before refreshCounts() leaves its
+ * mutations persisted but the cursor unmoved; on replay those rows are gone or
+ * already moved, so the folders they left never enter `touched`. Reconciling
+ * every folder up front repairs that.
+ */
+async function reconcileAllCounts(ctx: SyncContext): Promise<void> {
+  const folders = (await ctx.folders.list({
+    where: { accountId: ctx.accountId },
+  })) as Array<{ id?: string }>;
+  await refreshCounts(
+    ctx,
+    new Set(folders.map((f) => f.id).filter((id): id is string => !!id)),
+  );
+}
+
 async function applyBatch(
   ctx: SyncContext,
   batch: ChangeFeedBatch,
@@ -342,7 +359,7 @@ export async function syncMailChanges(
   source: EmailAccount,
   options: MailSyncOptions = {},
   deps: {
-    createClient: () => Promise<EmailClient>;
+    createClient: (account: EmailAccount) => Promise<EmailClient>;
     childOptions: Record<string, unknown>;
     isAuthFailure: (error: unknown) => boolean;
   },
@@ -392,7 +409,7 @@ export async function syncMailChanges(
 
       const limit = options.limit ?? DEFAULT_LIMIT;
       const maxBatches = options.maxBatches ?? DEFAULT_MAX_BATCHES;
-      const client = await deps.createClient();
+      const client = await deps.createClient(account);
       try {
         await client.connect();
         if (typeof client.getChanges !== 'function') return skip('unsupported');
@@ -411,6 +428,8 @@ export async function syncMailChanges(
           childOptions: deps.childOptions,
           folderIds: new Map(),
         };
+
+        await reconcileAllCounts(ctx);
 
         let cursor: string | undefined = account.syncCursor || undefined;
         // A pass that starts without a cursor sees every server message, so what

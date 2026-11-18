@@ -396,7 +396,7 @@ export class EmailAccount extends Account {
     return runWithMailSystemAccess(async () => {
       const { syncMailChanges } = await import('../mail-sync.js');
       return syncMailChanges(this, options, {
-        createClient: () => this.createClient(),
+        createClient: (account) => account.createClient(),
         childOptions: this.childOptions(),
         isAuthFailure: isMailAuthFailure,
       });

@@ -31,6 +31,7 @@ import {
 } from '../mail-sync-jobs';
 import type { Email } from '../models/Email';
 import { EmailAccount } from '../models/EmailAccount';
+import { EmailFolder } from '../models/EmailFolder';
 import { prepareMessageParents } from './fk-fixtures.js';
 
 // ---------------------------------------------------------------------------
@@ -152,11 +153,22 @@ async function providerIds(account: EmailAccount): Promise<string[]> {
   return (await emailsOf(account)).map((e) => e.providerMessageId).sort();
 }
 
+const feeds = new Map<string, Feed>();
+
 function useFeed(account: EmailAccount, feed: Feed): void {
-  vi.spyOn(account, 'createClient').mockResolvedValue(feed.client as never);
+  // The run builds its client from the reloaded row, so key the feed by id.
+  feeds.set(account.id as string, feed);
+  vi.spyOn(EmailAccount.prototype, 'createClient').mockImplementation(
+    async function (this: EmailAccount) {
+      const mine = feeds.get(this.id as string);
+      if (!mine) throw new Error('no feed scripted for this account');
+      return mine.client as never;
+    },
+  );
 }
 
 beforeEach(async () => {
+  feeds.clear();
   db = await getTestDatabase();
   await prepareMessageParents(db);
 });
@@ -430,6 +442,73 @@ describe('EmailAccount.syncChanges: idempotent apply', () => {
 });
 
 describe('EmailAccount.syncChanges: cursor safety', () => {
+  it('recovers folder counts when a failed batch that deleted and moved messages is replayed', async () => {
+    const account = await makeAccount();
+    const archive: Folder = {
+      ...INBOX,
+      id: 'mb-arch',
+      name: 'Archive',
+      path: 'Archive',
+      specialUse: '\\Archive',
+    };
+    useFeed(
+      account,
+      makeFeed([
+        batch('c1', {
+          initial: true,
+          folders: [INBOX, archive],
+          added: [msg('m1'), msg('m2')],
+        }),
+      ]),
+    );
+    await account.syncChanges();
+
+    const mutating = (): ChangeFeedResult =>
+      batch('c2', {
+        changed: [msg('m2', { folder: 'Archive', folders: ['Archive'] })],
+        removed: ['m1'],
+      });
+    const failing = await reload(account);
+    useFeed(failing, makeFeed([mutating()]));
+    // The batch is applied (m1 deleted, m2 moved) but counting fails.
+    vi.spyOn(EmailFolder.prototype, 'save').mockRejectedValueOnce(
+      new Error('count write failed'),
+    );
+    await expect(failing.syncChanges()).rejects.toThrow('count write failed');
+    expect((await reload(account)).syncCursor).toBe('c1');
+
+    const retry = await reload(account);
+    useFeed(retry, makeFeed([mutating()]));
+    await retry.syncChanges();
+
+    const folders = await (
+      await EmailFolderCollection.create({ db })
+    ).getByAccount(account.id as string);
+    expect(
+      Object.fromEntries(folders.map((f) => [f.path, f.messageCount])),
+    ).toEqual({ INBOX: 0, Archive: 1 });
+    expect((await reload(account)).syncCursor).toBe('c2');
+  });
+
+  it('builds the sync client from the reloaded account, not the stale instance', async () => {
+    const account = await makeAccount();
+    const stale = await reload(account);
+    const fresh = await reload(account);
+    fresh.setConfiguration({ url: 'https://new.example.com' });
+    await fresh.save();
+
+    const seen: unknown[] = [];
+    const feed = makeFeed([batch('c1', { initial: true })]);
+    vi.spyOn(EmailAccount.prototype, 'createClient').mockImplementation(
+      async function (this: EmailAccount) {
+        seen.push(this.getConfiguration().url);
+        return feed.client as never;
+      },
+    );
+    await stale.syncChanges();
+    expect(seen).toEqual(['https://new.example.com']);
+  });
+
   it('does not save the cursor when applying the batch fails, and the retry succeeds', async () => {
     const account = await makeAccount();
     const bad = msg('m2');
@@ -563,8 +642,8 @@ describe('EmailAccount.syncChanges: one lane per account', () => {
     // Two instances of the same row, as two job runs would build.
     const first = await reload(account);
     const second = await reload(account);
-    useFeed(first, makeFeed([slow('c1')]));
-    useFeed(second, makeFeed([slow('c2')]));
+    // One shared script: both runs resolve to the same stored account.
+    useFeed(first, makeFeed([slow('c1'), slow('c2')]));
     // The second run reads the stored cursor c1 once the first has finished.
     await Promise.all([first.syncChanges(), second.syncChanges()]);
     expect(peak).toBe(1);
@@ -581,7 +660,7 @@ describe('EmailAccount.syncChanges: closed accounts', () => {
     ],
   ])('skips an account that is %s without opening a connection', async (_name, overrides, reason) => {
     const account = await makeAccount(overrides);
-    const create = vi.spyOn(account, 'createClient');
+    const create = vi.spyOn(EmailAccount.prototype, 'createClient');
     const result = await account.syncChanges();
     expect(result).toMatchObject({
       status: 'skipped',
@@ -594,7 +673,9 @@ describe('EmailAccount.syncChanges: closed accounts', () => {
   it('skips a provider without a change feed', async () => {
     const account = await makeAccount({ providerType: 'imap' });
     const client = { connect: async () => {}, disconnect: async () => {} };
-    vi.spyOn(account, 'createClient').mockResolvedValue(client as never);
+    vi.spyOn(EmailAccount.prototype, 'createClient').mockResolvedValue(
+      client as never,
+    );
     const result = await account.syncChanges();
     expect(result).toMatchObject({ status: 'skipped', skipped: 'unsupported' });
   });
@@ -603,7 +684,7 @@ describe('EmailAccount.syncChanges: closed accounts', () => {
     const account = await makeAccount();
     const stale = await reload(account);
     await account.markNeedsReconnect('sign-in refused');
-    const create = vi.spyOn(stale, 'createClient');
+    const create = vi.spyOn(EmailAccount.prototype, 'createClient');
     const result = await stale.syncChanges();
     expect(result.skipped).toBe('needs-reconnect');
     expect(create).not.toHaveBeenCalled();
