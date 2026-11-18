@@ -84,7 +84,6 @@ export class NostrIdentityCollection extends SmrtCollection<NostrIdentity> {
 
     // Create identity
     const identity = await this.create({
-      ...this.options,
       profileId: profile.id as string,
       pubkey: keypair.pubkey,
       encryptedPrivkey: encrypted.ciphertext,
@@ -124,7 +123,6 @@ export class NostrIdentityCollection extends SmrtCollection<NostrIdentity> {
     }
 
     const identity = await this.create({
-      ...this.options,
       profileId: profile.id as string,
       pubkey: nostrData.pubkey,
       encryptedPrivkey: nostrData.encryptedPrivkey,
