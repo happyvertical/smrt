@@ -634,7 +634,26 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
       `?TenantId=${THEIRS}`,
       `?${enc('tenant_id[=]')}=${THEIRS}`,
     ])('refuses %s', async (query) => {
-      await expect(asUs(query)).rejects.toThrow(TenantIsolationError);
+      // A filter outside the caller's tenant is a permission denial that
+      // names neither tenant.
+      const refusal = await asUs(query).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(refusal).toMatchObject({
+        status: 403,
+        message: 'Permission denied.',
+      });
+    });
+
+    it('refuses a required-mode read by a caller with no tenant with a 403', async () => {
+      const refusal = await request(orderRoute, 'emittedrouteorders', {
+        user: { id: 'reader' },
+      }).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(refusal).toMatchObject({ status: 403 });
     });
 
     it('answers 400 when two spellings both name the caller tenant', async () => {
@@ -699,7 +718,7 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
           `emittedroutenotices?tenantId=${OURS}&tenant_id=${THEIRS}`,
           signedIn,
         ),
-      ).rejects.toThrow(TenantIsolationError);
+      ).rejects.toMatchObject({ status: 403, message: 'Permission denied.' });
     });
   });
 
