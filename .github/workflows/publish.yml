@@ -156,11 +156,18 @@ jobs:
           # unreleased changesets found", which failed the scheduled run and
           # left validate-release-shards without a decision. Record an
           # explicit skip decision instead so validate and publish skip.
-          if ! node scripts/release-pending-changesets.mjs; then
+          # Exit 3 is the only "nothing pending" signal; any other failure of
+          # the check fails the step rather than skipping a real release.
+          pending_rc=0
+          node scripts/release-pending-changesets.mjs || pending_rc=$?
+          if [ "$pending_rc" -eq 3 ]; then
             echo "ℹ️  No unreleased changesets - no release needed"
             echo "should_publish=false" >> "$GITHUB_OUTPUT"
             echo "version=" >> "$GITHUB_OUTPUT"
             exit 0
+          elif [ "$pending_rc" -ne 0 ]; then
+            echo "release-pending-changesets failed with exit $pending_rc"
+            exit "$pending_rc"
           fi
 
           pnpm run changeset:version

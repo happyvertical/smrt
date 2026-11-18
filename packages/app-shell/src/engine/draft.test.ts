@@ -230,6 +230,37 @@ describe('forkDraft', () => {
     await expect(d.list('Chore')).rejects.toThrow(/closed/);
   });
 
+  it('discardIfEmpty keeps a changed draft and refuses an edit queued behind the discard (#5122)', async () => {
+    const dir = join(root, 'discard-if-empty');
+    const d = await live.forkDraft(dir, { store: new MemoryVersionStore() });
+    // An edit queued behind the discard: it must be refused, not restart a
+    // worker on the removed directory.
+    const discarded = d.discardIfEmpty();
+    const late = d
+      .execute(
+        { type: 'defineModel', name: 'Late', fields: { n: { type: 'text' } } },
+        { author: 'owner' },
+      )
+      .then(
+        () => 'applied',
+        (e) => String((e as Error).message),
+      );
+    expect(await discarded).toBe(true);
+    expect(await late).toMatch(/closed/);
+    expect(existsSync(dir)).toBe(false);
+    // A changed draft is kept, and stays usable.
+    const kept = await live.forkDraft(join(root, 'discard-if-empty-kept'), {
+      store: new MemoryVersionStore(),
+    });
+    await kept.execute(
+      { type: 'defineModel', name: 'Early', fields: { n: { type: 'text' } } },
+      { author: 'owner' },
+    );
+    expect(await kept.discardIfEmpty()).toBe(false);
+    expect(await kept.list('Chore')).toBeDefined();
+    await kept.discard();
+  });
+
   it('a live host cannot be discarded', async () => {
     await expect(live.discard()).rejects.toMatchObject({ code: 'refused' });
     expect(existsSync(join(liveDir, 'app.db'))).toBe(true);

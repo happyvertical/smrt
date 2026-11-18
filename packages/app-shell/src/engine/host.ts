@@ -381,7 +381,14 @@ export class AppHost extends EventEmitter {
   private run<T>(fn: () => Promise<T>): Promise<T> {
     if (this.closed)
       return Promise.reject(new EngineError('the host is closed', 'refused'));
-    const p = this.queue.then(fn, fn);
+    // Re-check when the work starts: a discard or close that ran ahead of this
+    // item on the queue must refuse it, not let it restart a worker on the
+    // removed directory (#5122).
+    const guarded = () =>
+      this.closed
+        ? Promise.reject(new EngineError('the host is closed', 'refused'))
+        : fn();
+    const p = this.queue.then(guarded, guarded);
     this.queue = p.catch(() => {});
     return p;
   }

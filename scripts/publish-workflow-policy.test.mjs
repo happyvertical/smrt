@@ -393,6 +393,8 @@ test('prepare-release records an explicit skip decision when nothing is pending 
   assert.ok(check > prepare.indexOf('pnpm run changeset:auto'));
   assert.ok(check > 0 && check < version, 'check must run before changeset version');
   const guard = prepare.slice(check, version);
+  assert.match(guard, /pending_rc" -eq 3/);
+  assert.match(guard, /exit "\$pending_rc"/);
   assert.match(guard, /should_publish=false/);
   assert.match(guard, /exit 0/);
   // validate-release-shards accepts exactly that decision and skips.
