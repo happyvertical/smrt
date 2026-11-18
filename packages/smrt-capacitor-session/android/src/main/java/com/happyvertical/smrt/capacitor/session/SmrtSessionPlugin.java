@@ -4,6 +4,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.webkit.CookieManager;
 import android.webkit.WebView;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 import com.getcapacitor.Logger;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -12,6 +15,13 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 /**
  * Keeps a WebView cookie session durable (happyvertical/smrt#5077).
+ *
+ * Origins whose cookies are watched, deduplicated: the origin of the current
+ * page, the origin of Capacitor's {@code server.url}, and any extra origins
+ * listed in this plugin's config ({@code plugins.SmrtSession.origins}). A shell
+ * that serves the app from https://localhost but signs in against a remote
+ * origin must list that origin or set server.url. Cookies of any other origin
+ * are flushed only on pause, stop and destroy.
  *
  * Android's WebView holds new cookies in memory and writes them to disk on its
  * own schedule (about every 30 seconds), so a process killed soon after sign-in
@@ -91,14 +101,29 @@ public class SmrtSessionPlugin extends Plugin {
         handler.removeCallbacks(poll);
     }
 
-    private void flushIfChanged() {
+    private Set<String> watchedOrigins() {
+        List<String> urls = new ArrayList<>();
         WebView webView = getBridge() == null ? null : getBridge().getWebView();
-        String url = webView == null ? null : webView.getUrl();
-        if (url == null) {
-            return;
+        if (webView != null) {
+            urls.add(webView.getUrl());
         }
-        if (policy.shouldFlush(CookieManager.getInstance().getCookie(url))) {
-            CookieManager.getInstance().flush();
+        if (getBridge() != null && getBridge().getConfig() != null) {
+            urls.add(getBridge().getConfig().getServerUrl());
+        }
+        String[] extra = getConfig().getArray("origins");
+        if (extra != null) {
+            for (String o : extra) {
+                urls.add(o);
+            }
+        }
+        return CookieFlushPolicy.origins(urls);
+    }
+
+    private void flushIfChanged() {
+        CookieManager cookies = CookieManager.getInstance();
+        String snapshot = CookieFlushPolicy.snapshot(watchedOrigins(), cookies::getCookie);
+        if (policy.shouldFlush(snapshot)) {
+            cookies.flush();
         }
     }
 
