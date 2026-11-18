@@ -74,3 +74,15 @@ Both are bounded (`limit` default 25, max 100) and resumable (`cursor` in,
 
 Invoices with retention or ordinary-accounting state keep their own commands and
 are not picked up by `syncPending`.
+
+## Provider adapters (#5154)
+
+`src/accounting-provider-adapters.ts` adapts the provider that
+`withTenantQuickBooksProvider` hands you to the injected ports, typed
+structurally against the SDK operations (no SDK bump needed):
+`paymentPortFromProvider(provider)` (sdk#1540: minor to major units, `requestId`
+forwarded as the QuickBooks `requestid`, unknown currency refused, write errors
+pass through), `invoiceReaderFromProvider(provider, tenantId)` (sdk#1548) and
+`customerDirectoryFromProvider(provider)` (sdk#1539; `create` never creates over
+a match and throws `CUSTOMER_NEEDS_CONFIRMATION`). A provider without the
+operation fails the call with a plain error.
