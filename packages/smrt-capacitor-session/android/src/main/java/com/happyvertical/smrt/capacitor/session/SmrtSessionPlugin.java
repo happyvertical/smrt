@@ -4,6 +4,10 @@ import android.os.Handler;
 import android.os.Looper;
 import android.webkit.CookieManager;
 import android.webkit.WebView;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -11,6 +15,7 @@ import com.getcapacitor.Logger;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.WebViewListener;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 /**
@@ -30,9 +35,13 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  * and `am force-stop` of a foreground app runs none either. This plugin
  * therefore watches the cookie jar of the current page while the app is
  * resumed, flushes within POLL_MS of any change, and also flushes on pause,
- * stop and destroy. It registers itself when the app runs `cap sync`; the web
- * app needs no call. `flush()` is exposed for a page that wants a deterministic
- * flush right after it sets a cookie.
+ * stop and destroy. To close that POLL_MS window for a fetch-set cookie
+ * (#5160), every page load also checks the jar and installs a small observer
+ * (res/raw/smrt_session_watch.js) that calls {@code checkCookies()} as soon as
+ * a fetch, XHR or beacon completes, so the sign-in cookie is flushed within one
+ * bridge hop of its response. It registers itself when the app runs `cap sync`;
+ * the web app needs no call. `flush()` is exposed for a page that wants a
+ * deterministic flush right after it sets a cookie.
  */
 @CapacitorPlugin(name = "SmrtSession")
 public class SmrtSessionPlugin extends Plugin {
@@ -42,6 +51,18 @@ public class SmrtSessionPlugin extends Plugin {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final CookieFlushPolicy policy = new CookieFlushPolicy();
     private boolean polling = false;
+    private String watchScript;
+
+    /** Checks the jar and installs the fetch-completion observer on every page load. */
+    private final WebViewListener pageListener = new WebViewListener() {
+        @Override
+        public void onPageLoaded(WebView webView) {
+            flushIfChanged();
+            if (watchScript != null) {
+                webView.evaluateJavascript(watchScript, null);
+            }
+        }
+    };
 
     private final Runnable poll = new Runnable() {
         @Override
@@ -57,11 +78,15 @@ public class SmrtSessionPlugin extends Plugin {
     @Override
     public void load() {
         Logger.info(getLogTag(), "session cookie flush active");
+        watchScript = readWatchScript();
+        // Not added here: Bridge.Builder replaces the listener list after plugins load.
+        handler.post(this::attachPageListener);
         startPolling();
     }
 
     @Override
     protected void handleOnResume() {
+        attachPageListener();
         startPolling();
     }
 
@@ -86,6 +111,37 @@ public class SmrtSessionPlugin extends Plugin {
     public void flush(PluginCall call) {
         flushNow();
         call.resolve();
+    }
+
+    /** Check-and-flush, called by the page observer when a fetch, XHR or beacon completes. */
+    @PluginMethod
+    public void checkCookies(PluginCall call) {
+        getBridge().executeOnMainThread(() -> {
+            flushIfChanged();
+            call.resolve();
+        });
+    }
+
+    private String readWatchScript() {
+        try (InputStream in = getContext().getResources().openRawResource(R.raw.smrt_session_watch)) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            for (int n; (n = in.read(buf)) != -1; ) {
+                out.write(buf, 0, n);
+            }
+            return out.toString(StandardCharsets.UTF_8.name());
+        } catch (IOException | RuntimeException e) {
+            Logger.warn(getLogTag(), "session watch script unavailable; polling only");
+            return null;
+        }
+    }
+
+    /** Idempotent: the listener list is not readable, so remove before adding. */
+    private void attachPageListener() {
+        if (getBridge() != null) {
+            getBridge().removeWebViewListener(pageListener);
+            getBridge().addWebViewListener(pageListener);
+        }
     }
 
     private void startPolling() {

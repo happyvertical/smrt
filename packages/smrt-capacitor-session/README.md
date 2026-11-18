@@ -10,9 +10,16 @@ pnpm add @happyvertical/smrt-capacitor-session   # in the Capacitor shell, not t
 pnpm exec cap sync android
 ```
 
-`cap sync` registers the plugin; no web or Java change is needed. The plugin flushes within
-500 ms of any cookie change, and on pause, stop and destroy. A page can
+`cap sync` registers the plugin; no web or Java change is needed. The plugin flushes as soon
+as a fetch, XHR or beacon that changed a watched cookie completes (a `use:enhance` sign-in),
+otherwise within 500 ms of any cookie change, and on pause, stop and destroy. A page can
 force one with `Capacitor.Plugins.SmrtSession.flush()`.
+
+On every page load the plugin checks the jar and injects a small `PerformanceObserver`
+(`android/src/main/res/raw/smrt_session_watch.js`) that calls
+`Capacitor.Plugins.SmrtSession.checkCookies()` when a fetch, XHR or beacon completes; the
+plugin flushes only if the watched cookies changed. It reads no cookie and adds no idle work
+(#5160).
 
 Android only (the plugin has no iOS code). Requires `@capacitor/core` >= 8.
 
