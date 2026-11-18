@@ -218,7 +218,13 @@ migration. See the
 
 `AppModelHistoryStore` has `read()`, atomic
 `append(change, expectedRevision)`, `complete(revision, elapsedMs)` and the
-optional `abandon(revision, { actor, reason? })`.
+optional `abandon(revision, { actor, reason? })`. Reads are bounded: each stored
+receipt carries a full projection, so the editor reads the journal once at boot
+with `read({ receipts: false })`, keeps it in memory, and per edit reads only
+the optional single-row `latest()` (revision fence) and `find(requestId)`
+(replay/recovery); the union of journalled declarations is cached. Custom
+stores without `latest`/`find` fall back to `read()`. `editor.history()` takes
+the same `{ receipts: false }` option; the stored format is unchanged.
 
 A pending revision that can never complete (its migration keeps failing, or
 its publication target is gone) is abandoned by an operator with

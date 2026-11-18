@@ -733,7 +733,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       });
     }
     if (name === 'app.history') {
-      const history = await editor.history();
+      const history = await editor.history({ receipts: false });
       return read({
         status: 'ok',
         summary: `Change history: ${history.length} structure changes. The last structure change can be reversed. Hidden lists and fields keep their data; deleted records are not restored.`,
@@ -762,7 +762,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     }
     let restored: Cookbook | undefined;
     if (name === 'app.undo') {
-      const history = await editor.history();
+      const history = await editor.history({ receipts: false });
       const undone = new Set(history.map((row) => row.undoes));
       const previous = history.findLast(
         (row) =>
@@ -890,7 +890,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       if (
         hold &&
         (!context.workflowAction ||
-          !(await editor.history()).some(
+          !(await editor.history({ receipts: false })).some(
             (row) => row.requestId === actionKey(context),
           ))
       )
@@ -1329,9 +1329,11 @@ export function createCookbookToolService(options: CookbookToolOptions) {
         if (
           hold &&
           (!context.workflowAction ||
-            !(await options.modelEditorFor!(context)!.history()).some(
-              (row) => row.requestId === actionKey(context),
-            ))
+            !(
+              await options.modelEditorFor!(context)!.history({
+                receipts: false,
+              })
+            ).some((row) => row.requestId === actionKey(context)))
         )
           await options.approvals.complete(context.tenantId!, hold, false, {
             status: 'refused',

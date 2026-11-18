@@ -1194,3 +1194,101 @@ describe('app model editor: undo and import activate restored recipes', () => {
     expect(e.snapshot().cookbook.recipes).toEqual([RECIPE]);
   });
 });
+
+describe('app model editor: history reads stay bounded', () => {
+  let restore: () => void;
+  let db: Awaited<ReturnType<typeof getDatabase>>;
+  beforeEach(async () => {
+    restore = snapshotObjectRegistryState();
+    ObjectRegistry.clear();
+    globalThis.__smrtModelReadiness?.clear();
+    db = await getTestDatabase({
+      type: databaseType,
+      classes: [],
+      includeSystemTables: false,
+    });
+    registerMember();
+    enableTenancy();
+    await migrateSmrtSchemas({ db, packageName: APP, engineHint: engine });
+  });
+  afterEach(async () => {
+    setRuntimeExposureGate(undefined);
+    globalThis.__smrtModelReadiness?.clear();
+    disableTenancy();
+    await db.close?.();
+    restore();
+  });
+
+  it('an edit reads single journal rows, never the whole history or its receipts', async () => {
+    const application = 'editor-guards-history';
+    const base = await createAppModelHistory({
+      db,
+      application,
+      tenantId: TENANT,
+    });
+    const reads: Array<{ receipts?: boolean } | undefined> = [];
+    const store = {
+      ...base,
+      read: (options?: { receipts?: boolean }) => {
+        reads.push(options);
+        return base.read(options);
+      },
+    };
+    const open = () =>
+      createAppModelEditor({
+        db,
+        application,
+        tenantId: TENANT,
+        packageName: APP,
+        cookbook: memberBook(),
+        catalog: memberCatalog,
+        authorize: (c) => c.actor === 'owner',
+        store,
+      });
+    const e = await open();
+    const apply = (
+      value: AppModelEdit,
+      requestId: string = crypto.randomUUID(),
+    ) =>
+      e.apply(value, {
+        actor: 'owner',
+        tenantId: TENANT,
+        expectedRevision: e.snapshot().revision,
+        requestId,
+      });
+    await apply({ type: 'create_list', name: 'GuardMat', list: mats });
+    for (let i = 0; i < 6; i++)
+      await apply({
+        type: 'relabel_list',
+        name: 'GuardMat',
+        label: `Mats ${i}`,
+      });
+    // Boot reads the light journal once; edits read no full history at all.
+    expect(reads).toEqual([{ receipts: false }]);
+
+    const receipt = await apply(
+      { type: 'relabel_list', name: 'GuardMat', label: 'Final' },
+      'req-final',
+    );
+    expect(receipt.revision).toBe(8);
+    expect(receipt.manifest.objects).toBeDefined();
+    // A committed retry still replays its stored receipt.
+    const replayed = await e.apply(
+      { type: 'relabel_list', name: 'GuardMat', label: 'Final' },
+      {
+        actor: 'owner',
+        tenantId: TENANT,
+        expectedRevision: 7,
+        requestId: 'req-final',
+      },
+    );
+    expect(replayed).toMatchObject({ revision: 8, replayed: true });
+    expect(reads).toEqual([{ receipts: false }]);
+
+    const light = await base.read({ receipts: false });
+    expect(light).toHaveLength(8);
+    expect(light.every((row) => !row.receipt && !row.result)).toBe(true);
+    expect((await base.read()).every((row) => !!row.receipt)).toBe(true);
+    expect((await open()).snapshot().revision).toBe(8);
+  });
+});

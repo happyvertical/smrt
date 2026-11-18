@@ -40,7 +40,15 @@ export interface AppModelChange {
 /** One application/tenant binding per store. append must atomically check the latest revision. */
 export interface AppModelHistoryStore {
   readonly supportsDurableOperations?: boolean;
-  read(): Promise<AppModelChange[]>;
+  /**
+   * Every revision in order. `{ receipts: false }` may leave out `receipt` and
+   * `result` (each holds a full projection); the editor reads that way.
+   */
+  read(options?: { receipts?: boolean }): Promise<AppModelChange[]>;
+  /** The latest revision without receipt/result, or undefined. Optional; falls back to read(). */
+  latest?(): Promise<AppModelChange | undefined>;
+  /** The revision for a request id, with receipt and result. Optional; falls back to read(). */
+  find?(requestId: string): Promise<AppModelChange | undefined>;
   append(change: AppModelChange, expectedRevision: number): Promise<void>;
   complete(
     revision: number,
@@ -115,48 +123,61 @@ export async function createAppModelHistory(options: {
     JOURNAL_APPENDS.add(store.append);
     return store;
   };
+  // Receipts and results each hold a full projection; the light column list
+  // keeps them out of the editor's reads, with the abandoned marker computed.
+  const LIGHT = `revision, request_id, actor, command, before_doc, after_doc, status, undoes, elapsed_ms, operation_json, CASE WHEN result_json LIKE '{"abandoned":%' THEN 1 ELSE 0 END AS abandoned_marker`;
+  const toChange = (row: Record<string, unknown>): AppModelChange => ({
+    revision: toSafeInteger(row.revision, 'App model revision'),
+    requestId: String(row.request_id),
+    actor: String(row.actor),
+    command: String(row.command),
+    before: JSON.parse(String(row.before_doc)),
+    after: JSON.parse(String(row.after_doc)),
+    status: row.status as AppModelChange['status'],
+    ...(Number(row.abandoned_marker) === 1 || abandonedResult(row.result_json)
+      ? { abandoned: true as const }
+      : {}),
+    ...(row.operation_json
+      ? { operation: JSON.parse(String(row.operation_json)) }
+      : {}),
+    ...(row.receipt_json
+      ? { receipt: JSON.parse(String(row.receipt_json)) }
+      : {}),
+    ...(row.result_json ? { result: JSON.parse(String(row.result_json)) } : {}),
+    ...(row.undoes != null
+      ? { undoes: toSafeInteger(row.undoes, 'Undone revision') }
+      : {}),
+    ...(row.elapsed_ms != null
+      ? {
+          elapsedMs:
+            engine === 'postgres'
+              ? toSafeInteger(row.elapsed_ms, 'App model elapsed milliseconds')
+              : Number(row.elapsed_ms),
+        }
+      : {}),
+  });
   const journalStore = (db: DatabaseInterface): AppModelHistoryStore => ({
     supportsDurableOperations: true,
-    async read() {
+    async read(options) {
       const { rows } = await db.query(
-        `SELECT * FROM _smrt_app_model_changes WHERE application = ? AND tenant_id = ? ORDER BY revision`,
+        `SELECT ${options?.receipts === false ? LIGHT : '*'} FROM _smrt_app_model_changes WHERE application = ? AND tenant_id = ? ORDER BY revision`,
         [application, tenantId],
       );
-      return rows.map((row) => ({
-        revision: toSafeInteger(row.revision, 'App model revision'),
-        requestId: String(row.request_id),
-        actor: String(row.actor),
-        command: String(row.command),
-        before: JSON.parse(String(row.before_doc)),
-        after: JSON.parse(String(row.after_doc)),
-        status: row.status as AppModelChange['status'],
-        ...(abandonedResult(row.result_json)
-          ? { abandoned: true as const }
-          : {}),
-        ...(row.operation_json
-          ? { operation: JSON.parse(String(row.operation_json)) }
-          : {}),
-        ...(row.receipt_json
-          ? { receipt: JSON.parse(String(row.receipt_json)) }
-          : {}),
-        ...(row.result_json
-          ? { result: JSON.parse(String(row.result_json)) }
-          : {}),
-        ...(row.undoes != null
-          ? { undoes: toSafeInteger(row.undoes, 'Undone revision') }
-          : {}),
-        ...(row.elapsed_ms != null
-          ? {
-              elapsedMs:
-                engine === 'postgres'
-                  ? toSafeInteger(
-                      row.elapsed_ms,
-                      'App model elapsed milliseconds',
-                    )
-                  : Number(row.elapsed_ms),
-            }
-          : {}),
-      }));
+      return rows.map(toChange);
+    },
+    async latest() {
+      const { rows } = await db.query(
+        `SELECT ${LIGHT} FROM _smrt_app_model_changes WHERE application = ? AND tenant_id = ? ORDER BY revision DESC LIMIT 1`,
+        [application, tenantId],
+      );
+      return rows[0] ? toChange(rows[0]) : undefined;
+    },
+    async find(requestId) {
+      const { rows } = await db.query(
+        `SELECT * FROM _smrt_app_model_changes WHERE application = ? AND tenant_id = ? AND request_id = ?`,
+        [application, tenantId, requestId],
+      );
+      return rows[0] ? toChange(rows[0]) : undefined;
     },
     async append(change, expectedRevision) {
       if (
@@ -263,7 +284,7 @@ export async function createAppModelHistory(options: {
     store.complete = (revision, elapsedMs, receipt, result) =>
       runSerializedAgainstSystemTableBootstrap(db, engine, async (tx) => {
         const scoped = bound(tx);
-        const latest = (await scoped.read()).at(-1);
+        const latest = await scoped.latest!();
         if (latest?.revision !== revision)
           throw new Error('MODEL_EDIT_CONFLICT: history advanced');
         if (latest.status === 'pending')
