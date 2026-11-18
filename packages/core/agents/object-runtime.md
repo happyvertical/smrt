@@ -44,6 +44,22 @@ See [audit contract](../../../docs/content/audit-trail.md).
   the per-row path. A late untracked collision updates the existing row in
   place, while a tracked collision rolls back all additions. Callers still
   own the transaction for an atomic remove-and-add replacement.
+- `SmrtCollection.createMany(inputs)` is the bulk create: all-or-nothing, in
+  input order, joined to the caller's transaction. An eligible batch (the
+  framework's own create/save lifecycle, so no overridden create or model
+  lifecycle, no audit trail, embeddings, write-through or `hooks` config, only
+  `bulkMutation`-compatible interceptors, one table) shares `prepareSave()`
+  with `save()` (validation, `beforeSave`, id, slug, timestamps, STI
+  discriminator, derived columns), then probes once for stored ids and natural
+  keys, sync tombstones and in-batch duplicates, writes multi-row INSERTs, reads
+  generated/calculated values back once, and completes through
+  `executeBulkAfter('afterSave')` (one change-feed append). Any ineligibility,
+  preparation failure or collision returns the whole batch to `create()` per
+  input inside one transaction, so adoption, derived-slug renumbering and the
+  exact per-record errors are unchanged; the interceptors that ran during
+  preparation run again there. A database error from a batch statement names the
+  table, not the input. Insert-only, STI and referenced models are batchable
+  (unlike junction batches).
 - PostgreSQL nullable natural-key upserts recheck an initial miss on the
   bound transaction under a per-key advisory lock. A late same-owner match
   keeps its original ID and creation time. An unloaded write to a tracked
