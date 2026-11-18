@@ -10,6 +10,11 @@ import '../__smrt-register__.js';
 import type { FetchOptions, GetEmailClientOptions } from '@happyvertical/email';
 import { field, ObjectRegistry, smrt } from '@happyvertical/smrt-core';
 import { runWithMailSystemAccess } from '../access.js';
+import {
+  applyServerMessage,
+  type MailSyncOptions,
+  type MailSyncResult,
+} from '../mail-sync.js';
 import type {
   EmailAccountOptions,
   MessageSenderInterface,
@@ -42,6 +47,17 @@ export class EmailAccount extends Account {
     description: 'The time in minutes between scheduled mailbox checks.',
   })
   syncIntervalMinutes = 60;
+  /**
+   * Opaque resume point of the mail server's change feed. Written only after
+   * the batch it came from has been applied; null means the next sync starts
+   * with a full pass. Internal state: never exposed over generated surfaces.
+   */
+  @field({
+    sensitive: true,
+    readonly: true,
+    description: 'Where the next mailbox check resumes.',
+  })
+  syncCursor: string | null = null;
 
   constructor(options: EmailAccountOptions = {}) {
     super(options);
@@ -51,6 +67,8 @@ export class EmailAccount extends Account {
       this.providerType = options.providerType;
     if (options.syncIntervalMinutes !== undefined)
       this.syncIntervalMinutes = options.syncIntervalMinutes;
+    if (options.syncCursor !== undefined)
+      this.syncCursor = options.syncCursor || null;
     this.channelType = 'email';
   }
 
@@ -60,9 +78,9 @@ export class EmailAccount extends Account {
    * identity fields. When this account was hydrated from the DB, `this.options`
    * holds the account row's `id`/`slug`/`_skipLoad`; spreading those into a new
    * child would make every synced row inherit the account's primary key and
-   * upsert over each other.
+   * upsert over each other. Internal: the mail sync engine reuses it.
    */
-  private childOptions(): Record<string, unknown> {
+  childOptions(): Record<string, unknown> {
     const rest = { ...(this.options as Record<string, unknown>) };
     delete rest.id;
     delete rest.slug;
@@ -108,6 +126,22 @@ export class EmailAccount extends Account {
       ...((await this.getCredentials()) ?? {}),
     };
     delete settings.email;
+    if (this.providerType === 'jmap') {
+      // The stored sign-in is flat (token, or username + password); the JMAP
+      // client wants one `auth` value.
+      const { token, username, password } = settings;
+      for (const key of ['token', 'username', 'password']) delete settings[key];
+      if (settings.auth === undefined) {
+        if (typeof token === 'string' && token) {
+          settings.auth = { type: 'bearer', token };
+        } else if (
+          typeof username === 'string' &&
+          typeof password === 'string'
+        ) {
+          settings.auth = { user: username, pass: password };
+        }
+      }
+    }
 
     return await createEmailClient({
       type: this.providerType as ProviderType,
@@ -270,31 +304,10 @@ export class EmailAccount extends Account {
                 await email.initialize();
               }
 
-              // Update fields
-              email.messageId = msg.messageId || '';
-              email.threadId = msg.threadId || '';
-              email.inReplyTo = msg.inReplyTo || '';
-              email.fromAddress = msg.from?.address || '';
-              email.fromName = msg.from?.name || '';
-              email.toAddresses = JSON.stringify(msg.to || []);
-              email.ccAddresses = JSON.stringify(msg.cc || []);
-              email.bccAddresses = JSON.stringify(msg.bcc || []);
-              email.replyToAddress = msg.replyTo?.address || '';
-              email.replyToName = msg.replyTo?.name || '';
-              email.subject = msg.subject || '';
-              email.date = msg.date || null;
-              email.textBody = msg.text || '';
-              email.htmlBody = msg.html || '';
-              email.body = msg.text || '';
-              email.folderId = folder.id ?? '';
-              email.folderPath = folderName;
-              email.labels = JSON.stringify(msg.labels || []);
-              email.flags = JSON.stringify(msg.flags || []);
-              email.hasAttachments =
-                (msg.attachments && msg.attachments.length > 0) || false;
-              email.size = msg.size || 0;
-              email.headers = JSON.stringify(msg.headers || {});
-              email.updatedAt = new Date();
+              applyServerMessage(email, msg, {
+                folderId: folder.id ?? '',
+                folderPath: folderName,
+              });
 
               await email.save();
               result.messagesDownloaded++;
@@ -364,6 +377,46 @@ export class EmailAccount extends Account {
 
     result.duration = Date.now() - startTime;
     return result;
+  }
+
+  /**
+   * Sync new, changed and deleted mail since the last run, from the server's
+   * change feed (JMAP). The feed cursor is saved on `syncCursor` only after
+   * each batch has been applied; replaying a batch is harmless; a rejected
+   * cursor restarts with a full pass. One run per account at a time.
+   *
+   * Closed accounts (inactive, or needing reconnection) are skipped. A server
+   * that refuses the sign-in marks the account `needs_reconnect` and throws an
+   * error flagged `retryable: false`. Every other failure throws and leaves the
+   * cursor where it was, so the job can simply retry.
+   *
+   * This is the method the sync job runs (`enqueueMailSync`).
+   */
+  async syncChanges(options: MailSyncOptions = {}): Promise<MailSyncResult> {
+    return runWithMailSystemAccess(async () => {
+      const { syncMailChanges } = await import('../mail-sync.js');
+      return syncMailChanges(this, options, {
+        createClient: () => this.createClient(),
+        childOptions: this.childOptions(),
+        isAuthFailure: isMailAuthFailure,
+      });
+    });
+  }
+
+  /**
+   * Every message in one server-side conversation, oldest first, read straight
+   * from the mail server (providers with native threads, such as JMAP).
+   * Returns null when the provider has no thread lookup.
+   */
+  async fetchThread(threadId: string) {
+    const client = await this.createClient();
+    try {
+      await client.connect();
+      if (typeof client.getThread !== 'function') return null;
+      return await client.getThread(threadId);
+    } finally {
+      await client.disconnect().catch(() => undefined);
+    }
   }
 
   /**

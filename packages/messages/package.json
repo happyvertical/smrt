@@ -93,10 +93,14 @@
   },
   "peerDependencies": {
     "@happyvertical/encryption": "*",
+    "@happyvertical/smrt-jobs": "workspace:*",
     "svelte": "^5.57.0"
   },
   "peerDependenciesMeta": {
     "@happyvertical/encryption": {
+      "optional": true
+    },
+    "@happyvertical/smrt-jobs": {
       "optional": true
     },
     "svelte": {
@@ -104,6 +108,7 @@
     }
   },
   "devDependencies": {
+    "@happyvertical/smrt-jobs": "workspace:*",
     "@happyvertical/smrt-ledgers": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/package": "^2.5.8",
