@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.62.6
+
+### Patch Changes
+
+- ### Features
+  
+  - tenant QuickBooks connection, mappings, live gate, payment sync (#5147) (commerce)
+  - SmrtCollection.createMany bulk create; import loads use it (#5146) (core)
+- @happyvertical/smrt-config@0.62.6
+  - @happyvertical/smrt-scanner@0.62.6
+  - @happyvertical/smrt-types@0.62.6
+
 ## 0.62.5
 
 ### Patch Changes

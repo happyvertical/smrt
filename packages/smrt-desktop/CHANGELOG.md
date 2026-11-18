@@ -1,5 +1,11 @@
 # @happyvertical/smrt-desktop
 
+## 0.62.6
+
+### Patch Changes
+
+- @happyvertical/smrt-app-runtime@0.62.6
+
 ## 0.62.5
 
 ### Patch Changes
